@@ -9,7 +9,7 @@
 ## Workspace
 - Root: `/home/carlos/Documents/projects/papersmith-ai`
 - Git root: recognized by `git rev-parse`
-- Entrypoints: `CLAUDE.md`, `OPENCODE.md`, `PI.md`, `.antigravity/rules.md` (all route to `openspec/project-context.md`, `guidance/paper-guide/`, `skills/*/SKILL.md`)
+- Entrypoints: `CLAUDE.md`, `OPENCODE.md`, `.pi/APPEND_SYSTEM.md`, `.antigravity/rules.md` (all route to `openspec/project-context.md`, `guidance/paper-guide/`, `skills/*/SKILL.md`)
 - No `AGENTS.md`, `GEMINI.md`, or `.cursorrules` present
 
 ## Stack signals
@@ -27,7 +27,7 @@
 - `src/papersmith/core/` — init, status, ingest, upgrade, executor, ledger
 - `src/papersmith/bridges/` — Node, Python, deliberation, remote-execution bridges
 - `src/papersmith/mcp/` — stdio Model Context Protocol server exposing workspace and paper-writing verbs
-- `skills/` — canonical skill tree (`experimental-deliberation`, `experimental-implementation`, `figure-review`, `kaggle-accounts`, `paper-ingestion`, `paper-writing`, `proposal-deliberation`, `proposal-implementation`, `remote-execution`, `skill-audit`), projected into `.claude/skills`, `.opencode/skills`, `.pi/skills`, `.antigravity/skills` by `npm run setup:harnesses`
+- `skills/` — canonical skill tree (`experimental-deliberation`, `experimental-implementation`, `figure-review`, `kaggle-accounts`, `paper-ingestion`, `paper-writing`, `proposal-deliberation`, `proposal-implementation`, `remote-execution`, `skill-audit`), projected into `.claude/skills`, `.opencode/skills` and `.antigravity/skills` by `npm run setup:harnesses`; Pi discovers it through `.pi/settings.json` (`"../skills"`) with no symlink
 - `guidance/paper-guide/` — domain guidelines; `scripts/setup_env.py` — isolated runtime provisioning
 - CI (`.github/workflows/test.yml`): Node suite (`npm ci` + `npm test`) and Python suite (`pip install -r requirements.txt`, `pytest` on 3.11/3.12)
 

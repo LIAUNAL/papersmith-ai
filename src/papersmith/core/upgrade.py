@@ -12,6 +12,7 @@ from ..generators import (
     context_for_workspace,
     read_workspace_version,
     render_files,
+    seed_missing,
 )
 from ..kit import resolve_and_validate
 from ..schema import validate_tools
@@ -203,6 +204,18 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
     # Rendered files are framework-owned projections. Context is read after
     # raw agent/config files have been synchronized so the new roster appears.
     context = context_for_workspace(root)
+
+    # Seeds close the gap a newer framework left behind: a workspace that
+    # predates a file has none, and neither the kit loop above (not a kit file)
+    # nor the projections below (not rendered) can reach it. Preserved either
+    # way -- seeding never rewrites, and a seeded path is never baselined, so a
+    # failed seed is retried by the next run instead of tracked as drift.
+    unseeded: list[str] = []
+    seeded = seed_missing(root, active_tools, context=context, unwritten=unseeded)
+    for relpath in seeded:
+        if relpath not in changed:
+            changed.append(relpath)
+
     generated = apply_generated(root, context, active_tools, skipped=unsynchronized)
     for relpath in generated:
         if relpath not in changed:
@@ -274,6 +287,8 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
         "version": version,
         "active_tools": active_tools,
         "changed_files": changed,
+        "seeded_files": seeded,
+        "unseeded_files": unseeded,
         "preserved_files": preserved,
         "removed": removed,
         "stranded": stranded,
@@ -299,6 +314,10 @@ def run_cli(args) -> int:
                      allow_downgrade=args.allow_downgrade)
     print(f"Upgraded papersmith workspace: {result['workspace']}")
     print(f"Framework version: {result['version']}; changed files: {len(result['changed_files'])}")
+    for relpath in result["seeded_files"]:
+        print(f"Seeded '{relpath}' (absent, and the workspace declares its runtime)")
+    for relpath in result["unseeded_files"]:
+        print(f"Warning: could not seed '{relpath}'; the next upgrade retries it")
     for relpath in result["unsynchronized"]:
         print(f"Warning: could not write '{relpath}'; it stays reported as drift")
     return 0

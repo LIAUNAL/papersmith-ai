@@ -21,7 +21,14 @@ skills/paper-ingestion/.venv/
 # canonical `skills/` tree is the only versioned copy; each harness link is
 # a relative symlink rebuilt on demand.
 .claude/skills
+# Pi no longer links `.pi/skills`: it discovers the canonical tree through
+# `.pi/settings.json`, whose `"../skills"` entry needs no symlink. The rule
+# stays to ignore stale links left by earlier runs of `setup-harnesses.sh`, not
+# a link this repository still builds. `.pi/gentle-ai/` (the generated persona)
+# stays derived and ignored, while the versioned Pi surfaces --
+# `.pi/APPEND_SYSTEM.md` and `.pi/settings.json` -- match no rule here.
 .pi/skills
+.pi/gentle-ai/
 .opencode/skills
 .antigravity/skills
 

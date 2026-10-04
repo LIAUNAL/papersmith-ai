@@ -67,7 +67,8 @@ class InitTests(unittest.TestCase):
             "README.md",
             "CLAUDE.md",
             "OPENCODE.md",
-            "PI.md",
+            ".pi/APPEND_SYSTEM.md",
+            ".pi/settings.json",
             ".pi/gentle-ai/persona.json",
             ".antigravity/rules.md",
             ".gitignore",
@@ -124,6 +125,23 @@ class InitTests(unittest.TestCase):
                 assert data["compute_targets"]["default"] == target
                 cfg = config.load_workspace_config(workspace)
                 assert cfg["execution_engine"]["active_compute_target"] == target
+
+    def test_pi_settings_seed_is_conditional_on_the_declared_tool_set(self) -> None:
+        """The seed is written only when ``pi`` is declared, and preserved once written.
+
+        ``.pi/settings.json`` is the one thing that lets Pi discover the
+        canonical ``skills/`` tree; a workspace that never declares ``pi`` must
+        not carry it, so a later audit has nothing to call surplus.
+        """
+        tmp_path = self.new_tmp()
+        without_pi = tmp_path / "without-pi"
+        init_module.initialize(without_pi, tools=("claude",), run_npm=False)
+        assert not (without_pi / ".pi/settings.json").exists()
+
+        with_pi = tmp_path / "with-pi"
+        init_module.initialize(with_pi, tools=("claude", "pi"), run_npm=False)
+        rendered = json.loads((with_pi / ".pi/settings.json").read_text(encoding="utf-8"))
+        assert rendered == {"skills": ["../skills"]}
 
     def test_initialize_rejects_unknown_tools(self) -> None:
         tmp_path = self.new_tmp()

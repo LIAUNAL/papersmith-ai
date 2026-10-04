@@ -1,6 +1,6 @@
 ---
 name: remote-execution
-description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once. This skill ships the append-only ledger (write path and the fold that derives per-entrypoint state), the backend-agnostic adapter seam (ABC + frozen shapes + registry), the packer's capacity clamp and worker auto-selection, the full `remote_cli` front door (`submit` with its path guard, optional `--worker` and `--smoke`, repeatable `--unit` for full-spread campaign mode, `status`, `poll`, `fetch` with quarantine, `reconcile`, `distribute`, `generate-job`, `smoke`, `record`, `readiness`), and one concrete backend: `adapters/kaggle.py` — the ONLY file in this entire skill allowed to name a service. It shells out to `adapters/kaggle_driver.py`, the ONLY file in this skill permitted to import the packaged `kagglesdk` client (pinned `kagglesdk==0.1.37`, a standalone distribution since 2025-07-11 -- NOT vendored inside the `kaggle` CLI, a claim that was true of the retired `kaggle==1.7.4.5` and does not carry forward) rather than the `kaggle` CLI's own Basic-auth path, which the stored token shape cannot authenticate against at all; derives worker identity solely from kaggle-accounts' own sanctioned `list --json` command, and accepts credentials only as a `CredentialHandle(worker_id, token_path)` — read at exactly one expression, in that one file, and put on `KAGGLE_API_TOKEN` for one child process, because `kagglesdk`'s own `_try_fill_auth()` reads that variable by value with no path check at all — the CLI itself authenticates neither a path nor that variable. A rehearsal run (`smoke.jsonl`, a distinct file from the main ledger) proves readiness from evidence-completeness, never a human assertion, and never a clock. Stdlib-only except that one named driver script."
+description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `generate-job`, `smoke`, `record`, `readiness`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
 ---
 
 # Remote Execution
@@ -1562,7 +1562,8 @@ different words. Every module here — the ledger, the adapter seam, the packer,
 library. The one exception is `adapters/kaggle_driver.py`: it imports
 `kagglesdk`, this repository's own `requirements.txt` pins at
 `kagglesdk==0.1.37` (see the credential-transport table above) — a
-STANDALONE distribution, not vendored inside the `kaggle` CLI; that claim
+STANDALONE distribution since 2025-07-11, not vendored inside the `kaggle`
+CLI; that claim
 was true of the retired `kaggle==1.7.4.5` and does not carry forward — and
 it is the ONLY file in this skill permitted to import it. Nothing
 else in this skill needs it: the ledger, the packer, the seam and every

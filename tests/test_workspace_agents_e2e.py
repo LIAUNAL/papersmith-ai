@@ -23,7 +23,7 @@ from papersmith.generators import check_generated
 
 from workspace_series import REPO_ROOT, make_workspace, new_tmp
 
-ROUTING_DOCS = ("CLAUDE.md", "OPENCODE.md", "PI.md", ".antigravity/rules.md")
+ROUTING_DOCS = ("CLAUDE.md", "OPENCODE.md", ".pi/APPEND_SYSTEM.md", ".antigravity/rules.md")
 SKILL_BINDING = re.compile(r"skills/([\w-]+)/SKILL\.md")
 
 
@@ -112,9 +112,9 @@ class AgentRoutingTests(unittest.TestCase):
         workspace = make_workspace(new_tmp(self))
         self.assertEqual(check_generated(workspace), [],
                          "a fresh workspace must carry no generator drift")
-        pi = workspace / "PI.md"
+        pi = workspace / ".pi/APPEND_SYSTEM.md"
         pi.write_text("drift\n", encoding="utf-8")
-        self.assertIn("PI.md", check_generated(workspace))
+        self.assertIn(".pi/APPEND_SYSTEM.md", check_generated(workspace))
 
     def test_agent_tree_is_declared_the_single_source_of_truth(self) -> None:
         workspace = make_workspace(new_tmp(self))
@@ -129,7 +129,12 @@ class AgentRoutingTests(unittest.TestCase):
         self.assertIn("refuse-offpath-push.js", opencode)
         claude = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertIn(".claude/commands/", claude)
-        for doc_name in ("PI.md", ".antigravity/rules.md"):
-            with self.subTest(doc=doc_name):
-                text = (workspace / doc_name).read_text(encoding="utf-8")
-                self.assertIn("no generated slash commands", text)
+        pi = (workspace / ".pi/APPEND_SYSTEM.md").read_text(encoding="utf-8")
+        # Pi routes skills through the settings file and exposes them natively
+        # as ``/skill:<name>``; it therefore documents no command directory it
+        # does not have.
+        self.assertIn(".pi/settings.json", pi)
+        self.assertIn("/skill:", pi)
+        self.assertIn("no command files are generated", pi)
+        antigravity = (workspace / ".antigravity/rules.md").read_text(encoding="utf-8")
+        self.assertIn("no generated slash commands", antigravity)

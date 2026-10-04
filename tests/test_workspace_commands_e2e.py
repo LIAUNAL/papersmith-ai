@@ -104,7 +104,8 @@ class GeneratedWorkspaceTests(unittest.TestCase):
             "papersmith.yaml",
             "CLAUDE.md",
             "OPENCODE.md",
-            "PI.md",
+            ".pi/APPEND_SYSTEM.md",
+            ".pi/settings.json",
             ".pi/gentle-ai/persona.json",
             ".antigravity/rules.md",
             "README.md",
@@ -155,7 +156,7 @@ class UpgradeCommandTests(unittest.TestCase):
 class HarnessProjectionTests(unittest.TestCase):
     """The workspace ships the script its package.json advertises for harness wiring."""
 
-    HARNESS_LINKS = (".claude/skills", ".pi/skills", ".opencode/skills", ".antigravity/skills")
+    HARNESS_LINKS = (".claude/skills", ".opencode/skills", ".antigravity/skills")
 
     def test_projection_script_wires_every_harness(self) -> None:
         workspace = make_workspace(new_tmp(self))
@@ -180,6 +181,11 @@ class HarnessProjectionTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         for relpath in self.HARNESS_LINKS:
             self.assertTrue((workspace / relpath).is_symlink(), f"{relpath} must survive a re-run")
+        # Pi is deliberately not linked: it discovers the canonical tree through
+        # `.pi/settings.json`, which needs no symlink. Pi dedupes skills by
+        # canonical path, so the link would not have collided -- it would just
+        # have been a second mechanism for the same job.
+        self.assertFalse((workspace / ".pi/skills").exists())
 
 
 class HarnessCommandProjectionTests(unittest.TestCase):
@@ -208,9 +214,17 @@ class HarnessCommandProjectionTests(unittest.TestCase):
                 self.assertIn("$ARGUMENTS", body)
                 self.assertIn("skills/paper-ingestion/SKILL.md", body)
 
-    def test_non_command_harnesses_receive_no_command_directory(self) -> None:
+    def test_pi_and_antigravity_receive_no_command_or_prompt_directory(self) -> None:
+        """Pi has no command files because it exposes ``/skill:<name>`` natively.
+
+        Pi loads the workspace's skills through ``.pi/settings.json`` and, with
+        ``enableSkillCommands`` defaulting to true, already surfaces each as a
+        native ``/skill:<name>``. Generating ``.pi/commands`` or ``.pi/prompts``
+        would duplicate commands that exist without a file.
+        """
         workspace = make_workspace(new_tmp(self))
         self.assertFalse((workspace / ".pi/commands").exists())
+        self.assertFalse((workspace / ".pi/prompts").exists())
         self.assertFalse((workspace / ".antigravity/commands").exists())
 
     def test_opencode_json_is_valid_and_declares_no_plugin_key(self) -> None:
@@ -257,7 +271,7 @@ class RenderedSetLifecycleTests(unittest.TestCase):
     """
 
     KIT_COMMAND_NAMES = HarnessCommandProjectionTests.COMMAND_NAMES
-    STATIC_ENTRYPOINTS = ("OPENCODE.md", "PI.md", ".antigravity/rules.md")
+    STATIC_ENTRYPOINTS = ("OPENCODE.md", ".pi/APPEND_SYSTEM.md", ".antigravity/rules.md")
 
     @staticmethod
     def _init_subset(base: Path, tools: str) -> Path:
@@ -277,6 +291,23 @@ class RenderedSetLifecycleTests(unittest.TestCase):
         rc, out, _ = capture(["audit", str(workspace), "--check-drift"])
         self.assertEqual(rc, SUCCESS)
         self.assertIn("drift: clean", out)
+
+    def test_a_leftover_pi_settings_is_reported_as_surplus(self) -> None:
+        """``.pi/settings.json`` is seeded, not a rendered projection.
+
+        A workspace that stops declaring ``pi`` keeps the file, because it is
+        operator-owned once written. ``_EXTRA_STATIC`` is what makes the
+        surplus scan see it anyway: without the entry, a file the framework
+        wrote becomes invisible to the audit that is supposed to name it.
+        """
+        workspace = self._init_subset(new_tmp(self), "claude")
+        settings = workspace / ".pi" / "settings.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{"skills": ["../skills"]}\n', encoding="utf-8")
+
+        rc, out, _ = capture(["audit", str(workspace), "--check-drift"])
+        self.assertEqual(rc, DRIFT_ERROR)
+        self.assertIn(".pi/settings.json", out)
 
     def test_migration_keeps_static_entrypoints_and_names_them_as_surplus(self) -> None:
         """Criterion 4: pre-Change-B subset workspaces are reported, never damaged."""

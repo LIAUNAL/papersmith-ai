@@ -256,7 +256,7 @@ class ExecutorTests(unittest.TestCase):
         workspace = _workspace(self.new_tmp())
         (workspace / "skills/skill-audit/references/probes/skill-audit.subcommands.json").write_text("{}")
         self.patch(audit_bridge, "run_script", lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "audit ok\n", ""))
-        self.patch(audit_bridge, "check_generated", lambda *args, **kwargs: ["PI.md"])
+        self.patch(audit_bridge, "check_generated", lambda *args, **kwargs: [".pi/APPEND_SYSTEM.md"])
         result = audit_bridge.execute(workspace, check_drift=True)
         assert result == DRIFT_ERROR
 

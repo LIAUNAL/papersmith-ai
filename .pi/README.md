@@ -1,24 +1,40 @@
 # Papersmith AI — Pi harness directory
 
-This directory looks almost empty in a fresh clone, and that is correct: the
-only thing Pi needs here is `skills`, and `skills` is **generated**, not
-versioned.
+Pi's entrypoint is `APPEND_SYSTEM.md` here. Pi appends it to the project system
+prompt, which is why it lives in this directory and not at the repository root:
+Pi's context-file candidates are only `AGENTS.override.md`, `AGENTS.md`,
+`AGENTS.MD`, `CLAUDE.md` and `CLAUDE.MD`, so a root-level `PI.md` was never
+read.
 
-```
-npm run setup:harnesses
+`settings.json` is how Pi finds the skills:
+
+```json
+{
+  "skills": ["../skills"]
+}
 ```
 
-That command links `.pi/skills -> ../skills`, the one canonical tree every
-harness reads. The link is a relative symlink rebuilt on demand rather than a
-fourth copy of the skills, because four copies of one tree are four things that
-can drift from each other while all four look equally authoritative.
+Pi resolves project settings from the `<cwd>/.pi` base directory, so that
+`"../skills"` entry reaches the canonical repository-root `skills/` tree with no
+symlink and no setup step. Every workspace `papersmith init` creates gets the
+same file, so Pi discovers the ten skills with nothing to run first.
+
+There is deliberately no `.pi/skills` link. Pi dedupes skills by canonical path,
+so the old link would not have collided; it would only have been a second
+mechanism for one job, and `ln -sfn` is the one projection this repository never
+made portable. `.gitignore` still matches `.pi/skills` so a stale link left by
+an earlier run of `scripts/setup-harnesses.sh` is not a repository change;
+nothing builds it anymore.
 
 This file exists so the directory itself travels with the repository. Without
 it a collaborator cloning the repo sees `.claude/`, `.opencode/` and
 `.antigravity/` and no `.pi/` at all, and reasonably concludes Pi is not a
-supported harness — or opens Pi, which creates its own empty directory pointing
-nowhere. Pi is supported; `PI.md` at the repository root is its entrypoint.
+supported harness. Pi is supported.
 
-Pi receives no generated slash commands. Only `claude` and `opencode` produce
-command files; Antigravity and Pi invoke a capability by name and the agent
-reads `skills/<name>/SKILL.md` before the work starts.
+`APPEND_SYSTEM.md` and `settings.json` are versioned. `gentle-ai/` (the
+generated persona) is derived and stays ignored.
+
+Pi receives no generated slash commands. It loads every workspace skill through
+`settings.json` and exposes each natively as `/skill:<name>`, so no command
+files are generated for it; the agent reads `skills/<name>/SKILL.md` before the
+work starts.

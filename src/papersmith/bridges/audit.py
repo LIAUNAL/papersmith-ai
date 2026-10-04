@@ -20,8 +20,16 @@ from .python import emit_result, run_script
 
 #: Static entrypoints that postdate ``TOOL_OUTPUTS``. Kept beside the check so
 #: the surplus scan covers a runtime's whole static surface.
+#:
+#: ``.pi/settings.json`` is deliberately here and not in ``TOOL_OUTPUTS``:
+#: ``TOOL_OUTPUTS`` is the *managed* static surface, and this file is seeded
+#: (``generators.SEED_OUTPUTS``: once by ``init``, and by ``upgrade`` into a
+#: workspace that predates it) and then owned by the operator, so a workspace
+#: that later stops declaring ``pi`` still gets its leftover reported as surplus
+#: rather than silently ignored.
 _EXTRA_STATIC = {
     "opencode": ("opencode.json", ".opencode/plugins/refuse-offpath-push.js"),
+    "pi": (".pi/settings.json",),
 }
 
 

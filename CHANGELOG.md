@@ -44,6 +44,24 @@ number is `0`, breaking changes can still arrive without a major bump.
   is therefore unchanged -- recaptured and confirmed byte-identical, not
   regenerated.
 
+### Fixed
+
+- **Pi reads its own entrypoint now, and its two longest descriptions fit the
+  Agent Skills budget.** Pi's context-file candidates are only
+  `AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md` and `CLAUDE.MD`,
+  so the repository-root `PI.md` a Pi workspace shipped was never read: Pi was
+  routed by the Claude projection while 7.1K of Pi routing documentation sat
+  unread beside it. The entrypoint is now `.pi/APPEND_SYSTEM.md`, which Pi
+  appends to the project system prompt, and the canonical `skills/` tree is
+  discovered through the seeded, operator-owned `.pi/settings.json`
+  (`"../skills"`) -- no symlink, no setup step, so `.pi/skills` left the
+  harness roster. Separately, `paper-writing` (1680) and `remote-execution`
+  (1814) exceeded Pi's `MAX_DESCRIPTION_LENGTH = 1024`; both descriptions were
+  compressed to fit (1015 and 923) with every routing trigger kept, and the
+  provenance of the pinned `kagglesdk==0.1.37` dependency moved from the
+  `remote-execution` description into its body, so compressing it deleted no
+  fact. `tests/test_skill_descriptions.py` holds the ceiling.
+
 ## 0.5.0
 
 ### Added

@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 import warnings as _warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .core import fs
 from .core.config import load_papersmith_yaml, load_workspace_config
@@ -29,8 +29,23 @@ ALL_TOOLS = ("claude", "opencode", "pi", "antigravity")
 TOOL_OUTPUTS = {
     "claude": ("CLAUDE.md",),
     "opencode": ("OPENCODE.md",),
-    "pi": ("PI.md", ".pi/gentle-ai/persona.json"),
+    "pi": (".pi/APPEND_SYSTEM.md", ".pi/gentle-ai/persona.json"),
     "antigravity": (".antigravity/rules.md",),
+}
+
+#: Per-tool surfaces that are **seeded** rather than synchronized: written only
+#: when the path is absent, never overwritten, and never baselined.
+#:
+#: :data:`TOOL_OUTPUTS` is the *managed* static surface -- regenerated from its
+#: template on every ``init`` and ``upgrade``. This table is its sibling, for
+#: files written once and then owned by the operator (``PRESERVE_PATTERNS``),
+#: which is the same split ``bridges/audit.py`` already draws when it reports
+#: these paths separately from ``TOOL_OUTPUTS``. The distinction is not
+#: cosmetic: a workspace created before a seed existed has no file at all, and
+#: ``upgrade`` synchronizes framework files, so closing that gap is its job --
+#: and it can close it without touching an operator's copy.
+SEED_OUTPUTS = {
+    "pi": ((".pi/settings.json", "pi-settings.json.tpl"),),
 }
 
 #: Baseline marker for a managed path a run could not synchronize or remove.
@@ -273,7 +288,7 @@ def render_files(workspace: Path, context: dict[str, Any] | None = None,
     templates = {
         "claude": ("CLAUDE.md", "claude.md.tpl"),
         "opencode": ("OPENCODE.md", "opencode.md.tpl"),
-        "pi": ("PI.md", "pi.md.tpl"),
+        "pi": (".pi/APPEND_SYSTEM.md", "pi.md.tpl"),
         "antigravity": (".antigravity/rules.md", "antigravity-rules.md.tpl"),
     }
     commands: list[dict[str, str]] | None = None
@@ -302,6 +317,36 @@ def render_files(workspace: Path, context: dict[str, Any] | None = None,
                 rendered[f"{prefix}/{command['name']}.md"] = render_package_template(
                     "command.md.tpl", command_ctx)
     return rendered
+
+
+def seed_missing(workspace: Path, tools: Sequence[str], *,
+                 context: dict[str, Any] | None = None,
+                 unwritten: list[str] | None = None) -> list[str]:
+    """Create each declared tool's seed file this workspace does not have.
+
+    Absent-only by contract: an existing path is never read, rewritten or
+    deleted, whatever it holds, so an operator's edits survive untouched and a
+    second run is a no-op. A path that cannot be written is appended to
+    ``unwritten`` -- the bucket every other failed write in a run lands in --
+    and never raised, because the caller may already have synchronized earlier
+    files.
+
+    Nothing here is baselined. ``manifest.synchronized_paths`` excludes
+    preserved paths deliberately, so an operator's edit after seeding is not
+    drift, and a seed that could not be written is retried by the next run (the
+    path is still absent) rather than tracked as a baseline entry.
+    """
+    ctx = _context_with_defaults(context or context_for_workspace(workspace))
+    written: list[str] = []
+    for tool in tools:
+        for relpath, template in SEED_OUTPUTS.get(tool, ()):
+            if fs.exists(workspace / relpath):
+                continue
+            if fs.write_text(workspace / relpath, render_package_template(template, ctx)):
+                written.append(relpath)
+            elif unwritten is not None:
+                unwritten.append(relpath)
+    return written
 
 
 def apply_generated(workspace: Path, context: dict[str, Any] | None = None,

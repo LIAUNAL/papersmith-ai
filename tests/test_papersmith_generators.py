@@ -88,7 +88,7 @@ class GeneratorsTests(unittest.TestCase):
             ".gitignore",
             "CLAUDE.md",
             "OPENCODE.md",
-            "PI.md",
+            ".pi/APPEND_SYSTEM.md",
             ".pi/gentle-ai/persona.json",
             ".antigravity/rules.md",
             "opencode.json",
@@ -97,6 +97,14 @@ class GeneratorsTests(unittest.TestCase):
         expected |= {f".opencode/commands/{name}.md" for name in COMMAND_NAMES}
         expected |= {f".claude/commands/{name}.md" for name in COMMAND_NAMES}
         assert set(render_files(workspace, tools=ALL_TOOLS)) == expected
+        # Pi's entrypoint is a system-prompt append it actually reads; the old
+        # ``PI.md`` name was never a context-file candidate. The settings file
+        # is seeded once by ``init`` (see the conditional-seed test in
+        # ``test_papersmith_init``), not rendered, so it is asserted here as a
+        # workspace file, not via ``render_files``.
+        assert (workspace / ".pi/APPEND_SYSTEM.md").is_file()
+        assert (workspace / ".pi/settings.json").is_file()
+        assert not (workspace / "PI.md").exists()
         agents = collect_agents(workspace)
         assert any(agent["name"] == "paper-ingestion" for agent in agents)
 
@@ -149,15 +157,15 @@ class GeneratorsTests(unittest.TestCase):
         assert generated.returncode == 0, generated.stderr
         assert output.read_bytes() == original
 
-    def test_pi_generator_repairs_both_outputs(self) -> None:
+    def test_pi_generator_repairs_every_output(self) -> None:
         workspace = _workspace(self.new_tmp())
-        (workspace / "PI.md").write_text("drift", encoding="utf-8")
+        (workspace / ".pi/APPEND_SYSTEM.md").write_text("drift", encoding="utf-8")
         (workspace / ".pi/gentle-ai/persona.json").write_text("{}", encoding="utf-8")
         command = [sys.executable, str(ROOT / "scripts/gen-pi.py"), "--root", str(workspace)]
         result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
         assert '"mode": "gentleman"' in (workspace / ".pi/gentle-ai/persona.json").read_text()
-        assert "drift" not in (workspace / "PI.md").read_text()
+        assert "drift" not in (workspace / ".pi/APPEND_SYSTEM.md").read_text()
 
     def test_antigravity_check_is_exit_three_on_missing_output(self) -> None:
         workspace = _workspace(self.new_tmp())

@@ -12,9 +12,16 @@
 #
 # Harnesses:
 #   .claude/skills       Claude Code
-#   .pi/skills           Pi
 #   .opencode/skills     OpenCode
 #   .antigravity/skills  Google Antigravity
+#
+# Pi is deliberately absent. It discovers project skills through
+# `.pi/settings.json`, whose `"../skills"` entry points at the canonical tree
+# -- no symlink needed, which matters because `ln -sfn` is the one mechanism
+# this repository never made portable and nothing tests on Windows. Pi dedupes
+# skills by canonical path, so keeping the link as well would not have
+# collided; it would have been a second mechanism for one job. See the
+# workspace seed in `src/papersmith/core/init.py`.
 #
 # Usage:
 #   npm run setup:harnesses
@@ -33,7 +40,6 @@ fi
 # harness-relative skill directory -> human label (order preserved)
 HARNESSES=(
   ".claude/skills:Claude Code"
-  ".pi/skills:Pi"
   ".opencode/skills:OpenCode"
   ".antigravity/skills:Google Antigravity"
 )

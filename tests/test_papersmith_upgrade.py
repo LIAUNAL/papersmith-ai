@@ -132,7 +132,152 @@ class UpgradeTests(unittest.TestCase):
         assert result["active_tools"] == ["claude", "pi"]
         assert config.load_workspace_config(workspace)["active_tools"] == ["claude", "pi"]
         assert (workspace / "CLAUDE.md").is_file()
-        assert (workspace / "PI.md").is_file()
+        assert (workspace / ".pi/APPEND_SYSTEM.md").is_file()
+
+    def test_upgrade_preserves_operator_edits_to_the_pi_settings_seed(self) -> None:
+        """``.pi/settings.json`` is seeded once, then owned by the operator.
+
+        Its whole reason for being a seed rather than a generated projection is
+        that the operator may edit it; ``upgrade`` must therefore leave an
+        edited copy byte-for-byte, exactly as it treats ``papersmith.yaml``.
+        """
+        tmp_path = self.new_tmp()
+        workspace = _workspace(tmp_path)
+        settings = workspace / ".pi" / "settings.json"
+        assert settings.is_file()
+        edited = '{\n  "skills": ["../skills"],\n  "theme": "operator"\n}\n'
+        settings.write_text(edited, encoding="utf-8")
+
+        result = upgrade_module.upgrade(workspace)
+
+        assert settings.read_text(encoding="utf-8") == edited
+        assert ".pi/settings.json" not in result["changed_files"]
+        assert result["seeded_files"] == []
+
+    def test_upgrade_seeds_the_pi_settings_a_workspace_predates(self) -> None:
+        """A workspace created before the seed existed has no file at all.
+
+        ``PRESERVE_PATTERNS`` answers "never overwrite or delete" and is silent
+        on "absent because this workspace predates me". Nothing else in the run
+        can close that gap either: the file is not a kit file and not a
+        rendered projection, so before this the operator's only options were to
+        write it by hand or re-``init`` the workspace.
+        """
+        tmp_path = self.new_tmp()
+        workspace = _workspace(tmp_path)
+        settings = workspace / ".pi" / "settings.json"
+        settings.unlink()
+
+        result = upgrade_module.upgrade(workspace)
+
+        assert settings.is_file(), "the workspace still cannot discover Pi skills"
+        assert json.loads(settings.read_text(encoding="utf-8")) == {"skills": ["../skills"]}
+        assert ".pi/settings.json" in result["seeded_files"]
+        assert ".pi/settings.json" in result["changed_files"]
+
+    def test_upgrade_does_not_seed_a_runtime_the_workspace_does_not_declare(self) -> None:
+        """The declared tool set is the gate, the same one ``init`` uses."""
+        tmp_path = self.new_tmp()
+        workspace = tmp_path / "paper"
+        init_module.initialize(workspace, tools=("claude",), run_npm=False)
+
+        result = upgrade_module.upgrade(workspace)
+
+        assert not (workspace / ".pi/settings.json").exists()
+        assert result["seeded_files"] == []
+
+    def test_a_seeded_pi_settings_is_never_baselined_and_never_rewritten(self) -> None:
+        """Seeding leaves the manifest alone, exactly like every other
+        preserved path.
+
+        ``manifest.synchronized_paths`` excludes preserved paths on purpose, so
+        an operator's edit after seeding is not drift and a second ``upgrade``
+        has nothing to synchronize. Baselining the path would report drift that
+        no ``upgrade`` can ever clear.
+        """
+        tmp_path = self.new_tmp()
+        workspace = _workspace(tmp_path)
+        settings = workspace / ".pi" / "settings.json"
+        settings.unlink()
+        upgrade_module.upgrade(workspace)
+
+        baseline = json.loads((workspace / ".papersmith/manifest.json").read_text())
+        assert ".pi/settings.json" not in baseline["files"]
+
+        edited = '{\n  "skills": ["../skills"],\n  "operator": true\n}\n'
+        settings.write_text(edited, encoding="utf-8")
+
+        second = upgrade_module.upgrade(workspace)
+
+        assert settings.read_text(encoding="utf-8") == edited
+        assert second["seeded_files"] == []
+        assert ".pi/settings.json" not in second["changed_files"]
+
+    def test_a_seed_that_cannot_be_written_is_reported_and_never_raises(self) -> None:
+        """The same contract as every other failed write in a run: name the
+        path and keep going, because earlier files may already be synchronized.
+
+        The fixture's own brokenness is asserted before the result is trusted,
+        so a silently ineffective ``chmod`` cannot report a pass while testing
+        nothing.
+        """
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root ignores file permission bits; this check needs a non-root run")
+
+        tmp_path = self.new_tmp()
+        workspace = _workspace(tmp_path)
+        settings = workspace / ".pi" / "settings.json"
+        settings.unlink()
+        pi_dir = settings.parent
+        pi_dir.chmod(0o500)
+        try:
+            with self.assertRaises(PermissionError):
+                (pi_dir / "probe").write_text("x", encoding="utf-8")
+
+            result = upgrade_module.upgrade(workspace)
+        finally:
+            pi_dir.chmod(0o755)
+
+        assert result["seeded_files"] == []
+        assert result["unseeded_files"] == [".pi/settings.json"]
+
+    def test_adding_pi_to_an_existing_workspace_seeds_the_settings(self) -> None:
+        """The gate reads the effective tool set, so the ``--tools`` override is
+        enough. This is the path a workspace that never declared ``pi`` takes to
+        gain it, and nothing else in the run can reach the file.
+        """
+        tmp_path = self.new_tmp()
+        workspace = tmp_path / "paper"
+        init_module.initialize(workspace, tools=("claude",), run_npm=False)
+        assert not (workspace / ".pi/settings.json").exists()
+
+        result = upgrade_module.upgrade(workspace, tools=("claude", "pi"))
+
+        assert result["active_tools"] == ["claude", "pi"]
+        assert (workspace / ".pi/settings.json").is_file()
+        assert result["seeded_files"] == [".pi/settings.json"]
+
+    def test_a_dangling_seed_link_is_neither_followed_nor_reported(self) -> None:
+        """A dangling symlink is not an absence.
+
+        ``fs.exists`` lstats, so the link counts as occupied and the seed never
+        writes through it to whatever the target would have been -- the same
+        regularity gate every managed path uses, asserted here for the seed.
+        The fixture proves the link is dangling before the result is trusted.
+        """
+        tmp_path = self.new_tmp()
+        workspace = _workspace(tmp_path)
+        settings = workspace / ".pi" / "settings.json"
+        settings.unlink()
+        settings.symlink_to(workspace / ".pi" / "nowhere.json")
+        assert not settings.exists(), "the fixture's link is not dangling"
+
+        result = upgrade_module.upgrade(workspace)
+
+        assert settings.is_symlink(), "the link was replaced by a write"
+        assert not (workspace / ".pi" / "nowhere.json").exists(), "the write followed the link"
+        assert result["seeded_files"] == []
+        assert result["unseeded_files"] == []
 
     def test_upgrade_refuses_missing_manifest(self) -> None:
         tmp_path = self.new_tmp()

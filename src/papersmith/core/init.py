@@ -141,6 +141,17 @@ def _write_workspace_seed(root: Path, *, name: str, title: str, topic: str,
     # ``papersmith mcp print-config --workspace <path>`` prints it and writes
     # nothing -- and the operator pastes it wherever their harness reads it.
     _write_text(root, "package.json", render_package_template("package.json.tpl", context))
+    if "pi" in tools:
+        # Pi discovers project skills through ``<cwd>/.pi/settings.json`` (its
+        # project settings resolve from the ``<cwd>/.pi`` base directory), so a
+        # ``"../skills"`` entry reaches the canonical tree without a symlink.
+        # Seeded once rather than generated, for the same reason
+        # ``papersmith.yaml`` and ``package.json`` are: it is operator-editable,
+        # and ``manifest.PRESERVE_PATTERNS`` keeps ``upgrade`` from clobbering
+        # those edits. The neighbouring comment explains why no ``.mcp.json``
+        # is written; this one records why the Pi settings file IS.
+        _write_text(root, ".pi/settings.json",
+                    render_package_template("pi-settings.json.tpl", context))
 
 
 def _run_npm_install(root: Path) -> str | None:
