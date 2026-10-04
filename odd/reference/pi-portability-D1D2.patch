@@ -1,0 +1,986 @@
+diff --git a/.gitignore b/.gitignore
+index d855d0f..bb1f508 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -11,6 +11,9 @@ research-concept-r02(1).md
+ research-concept-r02(1) 2.md
+ .codegraph/
+ .gga
++# Seguimiento ODD del harness Pi (y su espejo en Engram): estado de la máquina,
++# no del repo. Misma regla que `.atl/`.
++odd/
+ # Node dependencies
+ node_modules/
+ 
+@@ -21,7 +24,16 @@ skills/paper-ingestion/.venv/
+ # canonical `skills/` tree is the only versioned copy; each harness link is
+ # a relative symlink rebuilt on demand.
+ .claude/skills
+-.pi/
++# Pi no longer links `.pi/skills`: it discovers the canonical tree through
++# `.pi/settings.json`, whose `"../skills"` entry needs no symlink. The rule
++# stays to ignore stale links left by earlier runs of `setup-harnesses.sh`, not
++# a link this repository still builds. `.pi/gentle-ai/` (the generated persona)
++# stays derived and ignored, while `.pi/extensions/` is a source artifact
++# projected by `scripts/sync-repo-harness.py` and therefore versioned. The
++# versioned Pi surfaces -- `.pi/APPEND_SYSTEM.md` and `.pi/settings.json` --
++# match no rule here.
++.pi/skills
++.pi/gentle-ai/
+ .opencode/skills
+ .antigravity/skills
+ 
+@@ -90,6 +102,15 @@ __pycache__/
+ # byte a byte y quedaban fuera de una regla con el nombre exacto.
+ Target*.md
+ 
++# El diagrama de flujo del proyecto sigue el mismo contrato que `.claude/skills`
++# o el kit: viaja la fuente tipada (`papersmith-flow.workflow.json`, que declara
++# su propio `output`), y se ignoran los derivados que la herramienta regenera
++# -- el HTML, sus capturas de verificación visual y el reporte del chequeo.
++# Ignorar la familia entera, no cada archivo nombrado: el próximo artefacto que
++# produzca la herramienta queda cubierto sin tocar esto.
++docs/papersmith-flow.html
++docs/papersmith-flow.visual-check.*
++
+ # Permisos locales de Claude Code: rutas de máquina y comandos de una sesión
+ .claude/settings.json
+ 
+diff --git a/.pi/APPEND_SYSTEM.md b/.pi/APPEND_SYSTEM.md
+new file mode 100644
+index 0000000..cd42108
+--- /dev/null
++++ b/.pi/APPEND_SYSTEM.md
+@@ -0,0 +1,32 @@
++# Papersmith AI — Pi Runtime
++
++Minimal harness entrypoint. This file does not duplicate guidance; it only routes
++to the canonical sources of truth so a single set of docs drives every harness.
++Pi appends it to the project system prompt.
++
++## Canonical context
++
++- **Project context**: `openspec/project-context.md`
++- **Domain guidelines**: `guidance/paper-guide/` (user drop-zone; loaded automatically by `proposal-deliberation`, optional at rest)
++- **Available capabilities (skills)**: `skills/*/SKILL.md`
++
++## Skills
++
++Skills live once at the repository-root `skills/` tree and are discovered through
++`.pi/settings.json`, whose `"../skills"` entry resolves to that tree. Read each
++skill's `SKILL.md` before invoking it; it is the source of truth for that
++capability.
++
++## Invoking skills
++
++Pi loads every workspace skill and exposes it natively as `/skill:<name>`, so no
++command files are generated for Pi. Invoke a capability by asking for it by name
++or as `/skill:<name>`; the agent reads `skills/<name>/SKILL.md` before the work
++starts, and that file remains the source of truth.
++
++## Precedence
++
++A trusted project `.pi/APPEND_SYSTEM.md` takes precedence over the operator's
++own `~/.pi/agent/APPEND_SYSTEM.md`, and the two are never combined. This file
++therefore suppresses the operator's own system-prompt append inside this
++workspace.
+diff --git a/.pi/settings.json b/.pi/settings.json
+new file mode 100644
+index 0000000..7d5be6e
+--- /dev/null
++++ b/.pi/settings.json
+@@ -0,0 +1,3 @@
++{
++  "skills": ["../skills"]
++}
+diff --git a/PI.md b/PI.md
+deleted file mode 100644
+index 93b0b2c..0000000
+--- a/PI.md
++++ /dev/null
+@@ -1,23 +0,0 @@
+-# Papersmith AI — Pi Entrypoint
+-
+-Minimal harness entrypoint. This file does not duplicate guidance; it only routes
+-to the canonical sources of truth so a single set of docs drives every harness.
+-
+-## Canonical context
+-
+-- **Project context**: `openspec/project-context.md`
+-- **Domain guidelines**: `guidance/paper-guide/` (user drop-zone; loaded automatically by `proposal-deliberation`, optional at rest)
+-- **Available capabilities (skills)**: `skills/*/SKILL.md`
+-
+-## Skills
+-
+-Skills live once at the repository-root `skills/` tree and are projected into
+-`.pi/skills` by `npm run setup:harnesses`. Read each skill's `SKILL.md`
+-before invoking it; it is the source of truth for that capability.
+-
+-## Invoking skills
+-
+-Pi receives no generated slash commands — only `claude` and `opencode` produce
+-command files. Invoke a capability by asking for it by name; the agent reads
+-`skills/<name>/SKILL.md` before the work starts, and that file remains the source
+-of truth.
+diff --git a/scripts/setup-harnesses.sh b/scripts/setup-harnesses.sh
+index 92bb160..e4a4a7a 100755
+--- a/scripts/setup-harnesses.sh
++++ b/scripts/setup-harnesses.sh
+@@ -12,10 +12,17 @@
+ #
+ # Harnesses:
+ #   .claude/skills       Claude Code
+-#   .pi/skills           Pi
+ #   .opencode/skills     OpenCode
+ #   .antigravity/skills  Google Antigravity
+ #
++# Pi is deliberately absent. It discovers project skills through
++# `.pi/settings.json`, whose `"../skills"` entry points at the canonical tree
++# -- no symlink needed, which matters because `ln -sfn` is the one mechanism
++# this repository never made portable and nothing tests on Windows. Pi dedupes
++# skills by canonical path, so keeping the link as well would not have
++# collided; it would have been a second mechanism for one job. See the
++# workspace seed in `src/papersmith/core/init.py`.
++#
+ # Usage:
+ #   npm run setup:harnesses
+ #   bash scripts/setup-harnesses.sh
+@@ -33,7 +40,6 @@ fi
+ # harness-relative skill directory -> human label (order preserved)
+ HARNESSES=(
+   ".claude/skills:Claude Code"
+-  ".pi/skills:Pi"
+   ".opencode/skills:OpenCode"
+   ".antigravity/skills:Google Antigravity"
+ )
+diff --git a/skills/paper-writing/SKILL.md b/skills/paper-writing/SKILL.md
+index 30654bc..bb5f5bc 100644
+--- a/skills/paper-writing/SKILL.md
++++ b/skills/paper-writing/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paper-writing
+-description: "Trigger: create or re-enter the paper/ tree, write into a named block of paper/main.tex without touching anything else in the file, read what sections/*.md declares about itself (ids, requirements, writing order), see which writing phase is unlocked and which blocks still gate the next one, open the empty section/block skeleton once from two structural decisions inferred off disk thereafter, assemble a block's own redactor packet (contract prose plus reference heading outlines, never reference prose, plus -- for a transposition-mode block -- its own bound source sections), record/reopen a declaration or fact resolution and see the paper's overall plan, resolve a citation's metadata against OpenAlex/Crossref/arXiv, rebuild refs.bib from cached resolved metadata, validate a citation's verdict and placement before writing a block, judge an already-drafted, already-audited block against its own evidence set and contract before it ever reaches main.tex, compile a standalone diagram and prove it against the contract's own figure: obligation, or check whether the cross-section couplings (contribution list, chain, the gap, diagram disjointness, future-work/limitations), citation integrity and contract currency still hold. Stdlib-only, keyless, fail-closed CLI (paper_cli.py) — scaffold, status, open, substitute, contract, readiness, phases, skeleton, order, declare, observe, plan, resolve, bib build, validate, write, render, place, couplings, verify, packet, figure optimize, figure audit. Offline except `resolve`, which sits behind a config role that can be emptied; `render` is the one other path that reaches outside this process, invoking `latexmk` as a child."
++description: "Trigger: create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and which blocks gate the next; open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, never reference prose, plus its bound source sections in transposition mode); record or reopen a declaration or fact resolution and see the paper's plan; resolve a citation against OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement before writing a block; judge a drafted, audited block against its own evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; or check the cross-section couplings (contribution list, chain, the gap, diagram disjointness, future-work/limitations), citation integrity and contract currency. Stdlib-only, keyless, fail-closed CLI (paper_cli.py)."
+ ---
+ 
+ # Paper Writing
+diff --git a/skills/remote-execution/SKILL.md b/skills/remote-execution/SKILL.md
+index 72a5761..a814261 100644
+--- a/skills/remote-execution/SKILL.md
++++ b/skills/remote-execution/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: remote-execution
+-description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once. This skill ships the append-only ledger (write path and the fold that derives per-entrypoint state), the backend-agnostic adapter seam (ABC + frozen shapes + registry), the packer's capacity clamp and worker auto-selection, the full `remote_cli` front door (`submit` with its path guard, optional `--worker` and `--smoke`, repeatable `--unit` for full-spread campaign mode, `status`, `poll`, `fetch` with quarantine, `reconcile`, `distribute`, `generate-job`, `smoke`, `record`, `readiness`), and one concrete backend: `adapters/kaggle.py` — the ONLY file in this entire skill allowed to name a service. It shells out to `adapters/kaggle_driver.py`, the ONLY file in this skill permitted to import the packaged `kagglesdk` client (pinned `kagglesdk==0.1.37`, a standalone distribution since 2025-07-11 -- NOT vendored inside the `kaggle` CLI, a claim that was true of the retired `kaggle==1.7.4.5` and does not carry forward) rather than the `kaggle` CLI's own Basic-auth path, which the stored token shape cannot authenticate against at all; derives worker identity solely from kaggle-accounts' own sanctioned `list --json` command, and accepts credentials only as a `CredentialHandle(worker_id, token_path)` — read at exactly one expression, in that one file, and put on `KAGGLE_API_TOKEN` for one child process, because `kagglesdk`'s own `_try_fill_auth()` reads that variable by value with no path check at all — the CLI itself authenticates neither a path nor that variable. A rehearsal run (`smoke.jsonl`, a distinct file from the main ledger) proves readiness from evidence-completeness, never a human assertion, and never a clock. Stdlib-only except that one named driver script."
++description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `generate-job`, `smoke`, `record`, `readiness`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
+ ---
+ 
+ # Remote Execution
+@@ -1562,7 +1562,8 @@ different words. Every module here — the ledger, the adapter seam, the packer,
+ library. The one exception is `adapters/kaggle_driver.py`: it imports
+ `kagglesdk`, this repository's own `requirements.txt` pins at
+ `kagglesdk==0.1.37` (see the credential-transport table above) — a
+-STANDALONE distribution, not vendored inside the `kaggle` CLI; that claim
++STANDALONE distribution since 2025-07-11, not vendored inside the `kaggle`
++CLI; that claim
+ was true of the retired `kaggle==1.7.4.5` and does not carry forward — and
+ it is the ONLY file in this skill permitted to import it. Nothing
+ else in this skill needs it: the ledger, the packer, the seam and every
+diff --git a/src/papersmith/bridges/audit.py b/src/papersmith/bridges/audit.py
+index f902f4c..764fee5 100644
+--- a/src/papersmith/bridges/audit.py
++++ b/src/papersmith/bridges/audit.py
+@@ -20,8 +20,16 @@ from .python import emit_result, run_script
+ 
+ #: Static entrypoints that postdate ``TOOL_OUTPUTS``. Kept beside the check so
+ #: the surplus scan covers a runtime's whole static surface.
++#:
++#: ``.pi/settings.json`` is deliberately here and not in ``TOOL_OUTPUTS``:
++#: ``TOOL_OUTPUTS`` is the *managed* static surface, and this file is seeded
++#: (``generators.SEED_OUTPUTS``: once by ``init``, and by ``upgrade`` into a
++#: workspace that predates it) and then owned by the operator, so a workspace
++#: that later stops declaring ``pi`` still gets its leftover reported as surplus
++#: rather than silently ignored.
+ _EXTRA_STATIC = {
+     "opencode": ("opencode.json", ".opencode/plugins/refuse-offpath-push.js"),
++    "pi": (".pi/settings.json",),
+ }
+ 
+ 
+diff --git a/src/papersmith/core/init.py b/src/papersmith/core/init.py
+index 567a8dc..2acfa53 100644
+--- a/src/papersmith/core/init.py
++++ b/src/papersmith/core/init.py
+@@ -141,6 +141,17 @@ def _write_workspace_seed(root: Path, *, name: str, title: str, topic: str,
+     # ``papersmith mcp print-config --workspace <path>`` prints it and writes
+     # nothing -- and the operator pastes it wherever their harness reads it.
+     _write_text(root, "package.json", render_package_template("package.json.tpl", context))
++    if "pi" in tools:
++        # Pi discovers project skills through ``<cwd>/.pi/settings.json`` (its
++        # project settings resolve from the ``<cwd>/.pi`` base directory), so a
++        # ``"../skills"`` entry reaches the canonical tree without a symlink.
++        # Seeded once rather than generated, for the same reason
++        # ``papersmith.yaml`` and ``package.json`` are: it is operator-editable,
++        # and ``manifest.PRESERVE_PATTERNS`` keeps ``upgrade`` from clobbering
++        # those edits. The neighbouring comment explains why no ``.mcp.json``
++        # is written; this one records why the Pi settings file IS.
++        _write_text(root, ".pi/settings.json",
++                    render_package_template("pi-settings.json.tpl", context))
+ 
+ 
+ def _run_npm_install(root: Path) -> str | None:
+diff --git a/src/papersmith/core/manifest.py b/src/papersmith/core/manifest.py
+index 17f0849..3a0e6e9 100644
+--- a/src/papersmith/core/manifest.py
++++ b/src/papersmith/core/manifest.py
+@@ -54,10 +54,17 @@ KIT_ENTRIES = (
+     "requirements.txt",
+ )
+ 
+-# Paths ``upgrade`` must never overwrite or delete. ``papersmith.yaml`` and
+-# ``package.json`` are seeded once at init (see ``init._write_workspace_seed``)
+-# and then belong to the user like ``README.md`` does; the rest is research
+-# state the user produces under the topology ``init`` scaffolds.
++# Paths ``upgrade`` must never overwrite or delete. ``papersmith.yaml``,
++# ``package.json`` and ``.pi/settings.json`` are seeded once at init (see
++# ``init._write_workspace_seed``) and then belong to the user like ``README.md``
++# does; the rest is research state the user produces under the topology
++# ``init`` scaffolds.
++#
++# Preserving is not the same question as seeding. This tuple answers "never
++# overwrite or delete", which says nothing about a workspace that predates the
++# file and therefore has none -- that is
++# :data:`generators.SEED_OUTPUTS`, written only into that absence and never
++# baselined, so a seeded path stays exactly as preserved as this tuple makes it.
+ PRESERVE_PATTERNS = (
+     "guidance/**",
+     "proposals/**",
+@@ -67,6 +74,7 @@ PRESERVE_PATTERNS = (
+     "kaggle-inbox/**",
+     "papersmith.yaml",
+     "package.json",
++    ".pi/settings.json",
+     "README.md",
+     ".env*",
+ )
+diff --git a/src/papersmith/core/upgrade.py b/src/papersmith/core/upgrade.py
+index 22eaf2d..95a4fc4 100644
+--- a/src/papersmith/core/upgrade.py
++++ b/src/papersmith/core/upgrade.py
+@@ -12,6 +12,7 @@ from ..generators import (
+     context_for_workspace,
+     read_workspace_version,
+     render_files,
++    seed_missing,
+ )
+ from ..kit import resolve_and_validate
+ from ..schema import validate_tools
+@@ -203,6 +204,18 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
+     # Rendered files are framework-owned projections. Context is read after
+     # raw agent/config files have been synchronized so the new roster appears.
+     context = context_for_workspace(root)
++
++    # Seeds close the gap a newer framework left behind: a workspace that
++    # predates a file has none, and neither the kit loop above (not a kit file)
++    # nor the projections below (not rendered) can reach it. Preserved either
++    # way -- seeding never rewrites, and a seeded path is never baselined, so a
++    # failed seed is retried by the next run instead of tracked as drift.
++    unseeded: list[str] = []
++    seeded = seed_missing(root, active_tools, context=context, unwritten=unseeded)
++    for relpath in seeded:
++        if relpath not in changed:
++            changed.append(relpath)
++
+     generated = apply_generated(root, context, active_tools, skipped=unsynchronized)
+     for relpath in generated:
+         if relpath not in changed:
+@@ -274,6 +287,8 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
+         "version": version,
+         "active_tools": active_tools,
+         "changed_files": changed,
++        "seeded_files": seeded,
++        "unseeded_files": unseeded,
+         "preserved_files": preserved,
+         "removed": removed,
+         "stranded": stranded,
+@@ -299,6 +314,10 @@ def run_cli(args) -> int:
+                      allow_downgrade=args.allow_downgrade)
+     print(f"Upgraded papersmith workspace: {result['workspace']}")
+     print(f"Framework version: {result['version']}; changed files: {len(result['changed_files'])}")
++    for relpath in result["seeded_files"]:
++        print(f"Seeded '{relpath}' (absent, and the workspace declares its runtime)")
++    for relpath in result["unseeded_files"]:
++        print(f"Warning: could not seed '{relpath}'; the next upgrade retries it")
+     for relpath in result["unsynchronized"]:
+         print(f"Warning: could not write '{relpath}'; it stays reported as drift")
+     return 0
+diff --git a/src/papersmith/generators.py b/src/papersmith/generators.py
+index ed5e24e..af1ff6b 100644
+--- a/src/papersmith/generators.py
++++ b/src/papersmith/generators.py
+@@ -10,7 +10,7 @@ from __future__ import annotations
+ import ast
+ import warnings as _warnings
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Sequence
+ 
+ from .core import fs
+ from .core.config import load_papersmith_yaml, load_workspace_config
+@@ -29,10 +29,25 @@ ALL_TOOLS = ("claude", "opencode", "pi", "antigravity")
+ TOOL_OUTPUTS = {
+     "claude": ("CLAUDE.md",),
+     "opencode": ("OPENCODE.md",),
+-    "pi": ("PI.md", ".pi/gentle-ai/persona.json"),
++    "pi": (".pi/APPEND_SYSTEM.md", ".pi/gentle-ai/persona.json", ".pi/extensions/refuse-offpath-push.ts"),
+     "antigravity": (".antigravity/rules.md",),
+ }
+ 
++#: Per-tool surfaces that are **seeded** rather than synchronized: written only
++#: when the path is absent, never overwritten, and never baselined.
++#:
++#: :data:`TOOL_OUTPUTS` is the *managed* static surface -- regenerated from its
++#: template on every ``init`` and ``upgrade``. This table is its sibling, for
++#: files written once and then owned by the operator (``PRESERVE_PATTERNS``),
++#: which is the same split ``bridges/audit.py`` already draws when it reports
++#: these paths separately from ``TOOL_OUTPUTS``. The distinction is not
++#: cosmetic: a workspace created before a seed existed has no file at all, and
++#: ``upgrade`` synchronizes framework files, so closing that gap is its job --
++#: and it can close it without touching an operator's copy.
++SEED_OUTPUTS = {
++    "pi": ((".pi/settings.json", "pi-settings.json.tpl"),),
++}
++
+ #: Baseline marker for a managed path a run could not synchronize or remove.
+ #: A sha256 digest is 64 hex characters, so this cannot collide with one, and
+ #: ``workspace_framework_files`` omits such a path from the live map — the
+@@ -273,7 +288,7 @@ def render_files(workspace: Path, context: dict[str, Any] | None = None,
+     templates = {
+         "claude": ("CLAUDE.md", "claude.md.tpl"),
+         "opencode": ("OPENCODE.md", "opencode.md.tpl"),
+-        "pi": ("PI.md", "pi.md.tpl"),
++        "pi": (".pi/APPEND_SYSTEM.md", "pi.md.tpl"),
+         "antigravity": (".antigravity/rules.md", "antigravity-rules.md.tpl"),
+     }
+     commands: list[dict[str, str]] | None = None
+@@ -286,6 +301,8 @@ def render_files(workspace: Path, context: dict[str, Any] | None = None,
+         rendered[output] = render_package_template(template, ctx)
+         if tool == "pi":
+             rendered[".pi/gentle-ai/persona.json"] = render_package_template("persona.json.tpl", ctx)
++            rendered[".pi/extensions/refuse-offpath-push.ts"] = render_package_template(
++                "pi-extension.ts.tpl", ctx)
+         if tool == "opencode":
+             rendered["opencode.json"] = render_package_template("opencode.json.tpl", ctx)
+             rendered[".opencode/plugins/refuse-offpath-push.js"] = render_package_template(
+@@ -304,6 +321,36 @@ def render_files(workspace: Path, context: dict[str, Any] | None = None,
+     return rendered
+ 
+ 
++def seed_missing(workspace: Path, tools: Sequence[str], *,
++                 context: dict[str, Any] | None = None,
++                 unwritten: list[str] | None = None) -> list[str]:
++    """Create each declared tool's seed file this workspace does not have.
++
++    Absent-only by contract: an existing path is never read, rewritten or
++    deleted, whatever it holds, so an operator's edits survive untouched and a
++    second run is a no-op. A path that cannot be written is appended to
++    ``unwritten`` -- the bucket every other failed write in a run lands in --
++    and never raised, because the caller may already have synchronized earlier
++    files.
++
++    Nothing here is baselined. ``manifest.synchronized_paths`` excludes
++    preserved paths deliberately, so an operator's edit after seeding is not
++    drift, and a seed that could not be written is retried by the next run (the
++    path is still absent) rather than tracked as a baseline entry.
++    """
++    ctx = _context_with_defaults(context or context_for_workspace(workspace))
++    written: list[str] = []
++    for tool in tools:
++        for relpath, template in SEED_OUTPUTS.get(tool, ()):
++            if fs.exists(workspace / relpath):
++                continue
++            if fs.write_text(workspace / relpath, render_package_template(template, ctx)):
++                written.append(relpath)
++            elif unwritten is not None:
++                unwritten.append(relpath)
++    return written
++
++
+ def apply_generated(workspace: Path, context: dict[str, Any] | None = None,
+                     tools: list[str] | tuple[str, ...] = ALL_TOOLS, *,
+                     warnings: list[str] | None = None,
+diff --git a/src/papersmith/templates/pi-settings.json.tpl b/src/papersmith/templates/pi-settings.json.tpl
+new file mode 100644
+index 0000000..7d5be6e
+--- /dev/null
++++ b/src/papersmith/templates/pi-settings.json.tpl
+@@ -0,0 +1,3 @@
++{
++  "skills": ["../skills"]
++}
+diff --git a/src/papersmith/templates/pi.md.tpl b/src/papersmith/templates/pi.md.tpl
+index 522744b..ce01bdc 100644
+--- a/src/papersmith/templates/pi.md.tpl
++++ b/src/papersmith/templates/pi.md.tpl
+@@ -1,7 +1,8 @@
+-# {{title}} — Pi Entrypoint
++# {{title}} — Pi Runtime
+ 
+-This Pi workspace is a deterministic projection of the `.claude/` SSOT,
+-generated by `papersmith` {{version}}.
++Pi appends this file to the project system prompt. The workspace's agent
++definitions come from the canonical `.claude/agents/` tree and its skills from
++the canonical `skills/` tree, both projected by `papersmith` {{version}}.
+ 
+ Read `papersmith.yaml`, `guidance/paper-guide/`, and the applicable
+ `skills/*/SKILL.md` before working on the paper.
+@@ -10,8 +11,29 @@ Read `papersmith.yaml`, `guidance/paper-guide/`, and the applicable
+ 
+ {{agents}}
+ 
+-## Commands
++## Skills
+ 
+-Pi receives no generated slash commands — only the `claude` and `opencode`
+-projections emit command files. Invoke a capability by name; read the applicable
+-`skills/<name>/SKILL.md` first, since that file remains the source of truth.
++Pi discovers this workspace's skills through `.pi/settings.json`, whose
++`"../skills"` entry resolves from the project `.pi/` directory to the canonical
++`skills/` tree. Pi exposes each loaded skill natively as `/skill:<name>`
++(`enableSkillCommands` defaults to true), so no command files are generated for
++Pi — generating them would duplicate nine commands that already exist. Read the
++applicable `skills/<name>/SKILL.md`; it remains the source of truth.
++
++## Precedence
++
++A trusted project `.pi/APPEND_SYSTEM.md` takes precedence over the operator's
++own `~/.pi/agent/APPEND_SYSTEM.md`, and the two are never combined. This file
++therefore suppresses the operator's own system-prompt append inside this
++workspace.
++
++## Safety extension
++
++`.pi/extensions/refuse-offpath-push.ts` is generated and loaded by Pi from the
++project `.pi/` directory. It relays each `bash` invocation to the
++`remote-execution` skill's own `refuse_offpath_push.py`, so the predicate has
++exactly one authority and a second service is covered by that service's own
++adapter. It blocks — by returning `{ block: true, reason }` naming the matched
++surface — a command that names a service's push surface without also invoking
++`remote_cli.py`, and it degrades loudly rather than silently allowing when the
++guard cannot be loaded. It is a tripwire, not a gate.
+diff --git a/tests/test_papersmith_executor.py b/tests/test_papersmith_executor.py
+index 31bb6b4..dd27426 100644
+--- a/tests/test_papersmith_executor.py
++++ b/tests/test_papersmith_executor.py
+@@ -256,7 +256,7 @@ class ExecutorTests(unittest.TestCase):
+         workspace = _workspace(self.new_tmp())
+         (workspace / "skills/skill-audit/references/probes/skill-audit.subcommands.json").write_text("{}")
+         self.patch(audit_bridge, "run_script", lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "audit ok\n", ""))
+-        self.patch(audit_bridge, "check_generated", lambda *args, **kwargs: ["PI.md"])
++        self.patch(audit_bridge, "check_generated", lambda *args, **kwargs: [".pi/APPEND_SYSTEM.md"])
+         result = audit_bridge.execute(workspace, check_drift=True)
+         assert result == DRIFT_ERROR
+ 
+diff --git a/tests/test_papersmith_generators.py b/tests/test_papersmith_generators.py
+index 0647762..678a93d 100644
+--- a/tests/test_papersmith_generators.py
++++ b/tests/test_papersmith_generators.py
+@@ -87,15 +87,24 @@ class GeneratorsTests(unittest.TestCase):
+             ".gitignore",
+             "CLAUDE.md",
+             "OPENCODE.md",
+-            "PI.md",
++            ".pi/APPEND_SYSTEM.md",
+             ".pi/gentle-ai/persona.json",
+             ".antigravity/rules.md",
+             "opencode.json",
+             ".opencode/plugins/refuse-offpath-push.js",
++            ".pi/extensions/refuse-offpath-push.ts",
+         }
+         expected |= {f".opencode/commands/{name}.md" for name in COMMAND_NAMES}
+         expected |= {f".claude/commands/{name}.md" for name in COMMAND_NAMES}
+         assert set(render_files(workspace, tools=ALL_TOOLS)) == expected
++        # Pi's entrypoint is a system-prompt append it actually reads; the old
++        # ``PI.md`` name was never a context-file candidate. The settings file
++        # is seeded once by ``init`` (see the conditional-seed test), not
++        # rendered, so it is asserted here as a workspace file, not via
++        # ``render_files``.
++        assert (workspace / ".pi/APPEND_SYSTEM.md").is_file()
++        assert (workspace / ".pi/settings.json").is_file()
++        assert not (workspace / "PI.md").exists()
+         agents = collect_agents(workspace)
+         assert any(agent["name"] == "paper-ingestion" for agent in agents)
+ 
+@@ -148,15 +157,17 @@ class GeneratorsTests(unittest.TestCase):
+         assert generated.returncode == 0, generated.stderr
+         assert output.read_bytes() == original
+ 
+-    def test_pi_generator_repairs_both_outputs(self) -> None:
++    def test_pi_generator_repairs_every_output(self) -> None:
+         workspace = _workspace(self.new_tmp())
+-        (workspace / "PI.md").write_text("drift", encoding="utf-8")
++        (workspace / ".pi/APPEND_SYSTEM.md").write_text("drift", encoding="utf-8")
+         (workspace / ".pi/gentle-ai/persona.json").write_text("{}", encoding="utf-8")
++        (workspace / ".pi/extensions/refuse-offpath-push.ts").write_text("drift", encoding="utf-8")
+         command = [sys.executable, str(ROOT / "scripts/gen-pi.py"), "--root", str(workspace)]
+         result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+         assert result.returncode == 0, result.stderr
+         assert '"mode": "gentleman"' in (workspace / ".pi/gentle-ai/persona.json").read_text()
+-        assert "drift" not in (workspace / "PI.md").read_text()
++        assert "drift" not in (workspace / ".pi/APPEND_SYSTEM.md").read_text()
++        assert "drift" not in (workspace / ".pi/extensions/refuse-offpath-push.ts").read_text()
+ 
+     def test_antigravity_check_is_exit_three_on_missing_output(self) -> None:
+         workspace = _workspace(self.new_tmp())
+diff --git a/tests/test_papersmith_init.py b/tests/test_papersmith_init.py
+index 8a1c8c0..e90518b 100644
+--- a/tests/test_papersmith_init.py
++++ b/tests/test_papersmith_init.py
+@@ -67,8 +67,10 @@ class InitTests(unittest.TestCase):
+             "README.md",
+             "CLAUDE.md",
+             "OPENCODE.md",
+-            "PI.md",
++            ".pi/APPEND_SYSTEM.md",
++            ".pi/settings.json",
+             ".pi/gentle-ai/persona.json",
++            ".pi/extensions/refuse-offpath-push.ts",
+             ".antigravity/rules.md",
+             ".gitignore",
+         ):
+@@ -125,6 +127,23 @@ class InitTests(unittest.TestCase):
+                 cfg = config.load_workspace_config(workspace)
+                 assert cfg["execution_engine"]["active_compute_target"] == target
+ 
++    def test_pi_settings_seed_is_conditional_on_the_declared_tool_set(self) -> None:
++        """The seed is written only when ``pi`` is declared, and preserved once written.
++
++        ``.pi/settings.json`` is the one thing that lets Pi discover the
++        canonical ``skills/`` tree; a workspace that never declares ``pi`` must
++        not carry it, so a later audit has nothing to call surplus.
++        """
++        tmp_path = self.new_tmp()
++        without_pi = tmp_path / "without-pi"
++        init_module.initialize(without_pi, tools=("claude",), run_npm=False)
++        assert not (without_pi / ".pi/settings.json").exists()
++
++        with_pi = tmp_path / "with-pi"
++        init_module.initialize(with_pi, tools=("claude", "pi"), run_npm=False)
++        rendered = json.loads((with_pi / ".pi/settings.json").read_text(encoding="utf-8"))
++        assert rendered == {"skills": ["../skills"]}
++
+     def test_initialize_rejects_unknown_tools(self) -> None:
+         tmp_path = self.new_tmp()
+         with self.assertRaisesRegex(UserError, "unsupported runtime"):
+diff --git a/tests/test_papersmith_upgrade.py b/tests/test_papersmith_upgrade.py
+index c512b79..682e301 100644
+--- a/tests/test_papersmith_upgrade.py
++++ b/tests/test_papersmith_upgrade.py
+@@ -132,7 +132,152 @@ class UpgradeTests(unittest.TestCase):
+         assert result["active_tools"] == ["claude", "pi"]
+         assert config.load_workspace_config(workspace)["active_tools"] == ["claude", "pi"]
+         assert (workspace / "CLAUDE.md").is_file()
+-        assert (workspace / "PI.md").is_file()
++        assert (workspace / ".pi/APPEND_SYSTEM.md").is_file()
++
++    def test_upgrade_preserves_operator_edits_to_the_pi_settings_seed(self) -> None:
++        """``.pi/settings.json`` is seeded once, then owned by the operator.
++
++        Its whole reason for being a seed rather than a generated projection is
++        that the operator may edit it; ``upgrade`` must therefore leave an
++        edited copy byte-for-byte, exactly as it treats ``papersmith.yaml``.
++        """
++        tmp_path = self.new_tmp()
++        workspace = _workspace(tmp_path)
++        settings = workspace / ".pi" / "settings.json"
++        assert settings.is_file()
++        edited = '{\n  "skills": ["../skills"],\n  "theme": "operator"\n}\n'
++        settings.write_text(edited, encoding="utf-8")
++
++        result = upgrade_module.upgrade(workspace)
++
++        assert settings.read_text(encoding="utf-8") == edited
++        assert ".pi/settings.json" not in result["changed_files"]
++        assert result["seeded_files"] == []
++
++    def test_upgrade_seeds_the_pi_settings_a_workspace_predates(self) -> None:
++        """A workspace created before the seed existed has no file at all.
++
++        ``PRESERVE_PATTERNS`` answers "never overwrite or delete" and is silent
++        on "absent because this workspace predates me". Nothing else in the run
++        can close that gap either: the file is not a kit file and not a
++        rendered projection, so before this the operator's only options were to
++        write it by hand or re-``init`` the workspace.
++        """
++        tmp_path = self.new_tmp()
++        workspace = _workspace(tmp_path)
++        settings = workspace / ".pi" / "settings.json"
++        settings.unlink()
++
++        result = upgrade_module.upgrade(workspace)
++
++        assert settings.is_file(), "the workspace still cannot discover Pi skills"
++        assert json.loads(settings.read_text(encoding="utf-8")) == {"skills": ["../skills"]}
++        assert ".pi/settings.json" in result["seeded_files"]
++        assert ".pi/settings.json" in result["changed_files"]
++
++    def test_upgrade_does_not_seed_a_runtime_the_workspace_does_not_declare(self) -> None:
++        """The declared tool set is the gate, the same one ``init`` uses."""
++        tmp_path = self.new_tmp()
++        workspace = tmp_path / "paper"
++        init_module.initialize(workspace, tools=("claude",), run_npm=False)
++
++        result = upgrade_module.upgrade(workspace)
++
++        assert not (workspace / ".pi/settings.json").exists()
++        assert result["seeded_files"] == []
++
++    def test_a_seeded_pi_settings_is_never_baselined_and_never_rewritten(self) -> None:
++        """Seeding leaves the manifest alone, exactly like every other
++        preserved path.
++
++        ``manifest.synchronized_paths`` excludes preserved paths on purpose, so
++        an operator's edit after seeding is not drift and a second ``upgrade``
++        has nothing to synchronize. Baselining the path would report drift that
++        no ``upgrade`` can ever clear.
++        """
++        tmp_path = self.new_tmp()
++        workspace = _workspace(tmp_path)
++        settings = workspace / ".pi" / "settings.json"
++        settings.unlink()
++        upgrade_module.upgrade(workspace)
++
++        baseline = json.loads((workspace / ".papersmith/manifest.json").read_text())
++        assert ".pi/settings.json" not in baseline["files"]
++
++        edited = '{\n  "skills": ["../skills"],\n  "operator": true\n}\n'
++        settings.write_text(edited, encoding="utf-8")
++
++        second = upgrade_module.upgrade(workspace)
++
++        assert settings.read_text(encoding="utf-8") == edited
++        assert second["seeded_files"] == []
++        assert ".pi/settings.json" not in second["changed_files"]
++
++    def test_a_seed_that_cannot_be_written_is_reported_and_never_raises(self) -> None:
++        """The same contract as every other failed write in a run: name the
++        path and keep going, because earlier files may already be synchronized.
++
++        The fixture's own brokenness is asserted before the result is trusted,
++        so a silently ineffective ``chmod`` cannot report a pass while testing
++        nothing.
++        """
++        if hasattr(os, "geteuid") and os.geteuid() == 0:
++            self.skipTest("root ignores file permission bits; this check needs a non-root run")
++
++        tmp_path = self.new_tmp()
++        workspace = _workspace(tmp_path)
++        settings = workspace / ".pi" / "settings.json"
++        settings.unlink()
++        pi_dir = settings.parent
++        pi_dir.chmod(0o500)
++        try:
++            with self.assertRaises(PermissionError):
++                (pi_dir / "probe").write_text("x", encoding="utf-8")
++
++            result = upgrade_module.upgrade(workspace)
++        finally:
++            pi_dir.chmod(0o755)
++
++        assert result["seeded_files"] == []
++        assert result["unseeded_files"] == [".pi/settings.json"]
++
++    def test_adding_pi_to_an_existing_workspace_seeds_the_settings(self) -> None:
++        """The gate reads the effective tool set, so the ``--tools`` override is
++        enough. This is the path a workspace that never declared ``pi`` takes to
++        gain it, and nothing else in the run can reach the file.
++        """
++        tmp_path = self.new_tmp()
++        workspace = tmp_path / "paper"
++        init_module.initialize(workspace, tools=("claude",), run_npm=False)
++        assert not (workspace / ".pi/settings.json").exists()
++
++        result = upgrade_module.upgrade(workspace, tools=("claude", "pi"))
++
++        assert result["active_tools"] == ["claude", "pi"]
++        assert (workspace / ".pi/settings.json").is_file()
++        assert result["seeded_files"] == [".pi/settings.json"]
++
++    def test_a_dangling_seed_link_is_neither_followed_nor_reported(self) -> None:
++        """A dangling symlink is not an absence.
++
++        ``fs.exists`` lstats, so the link counts as occupied and the seed never
++        writes through it to whatever the target would have been -- the same
++        regularity gate every managed path uses, asserted here for the seed.
++        The fixture proves the link is dangling before the result is trusted.
++        """
++        tmp_path = self.new_tmp()
++        workspace = _workspace(tmp_path)
++        settings = workspace / ".pi" / "settings.json"
++        settings.unlink()
++        settings.symlink_to(workspace / ".pi" / "nowhere.json")
++        assert not settings.exists(), "the fixture's link is not dangling"
++
++        result = upgrade_module.upgrade(workspace)
++
++        assert settings.is_symlink(), "the link was replaced by a write"
++        assert not (workspace / ".pi" / "nowhere.json").exists(), "the write followed the link"
++        assert result["seeded_files"] == []
++        assert result["unseeded_files"] == []
+ 
+     def test_upgrade_refuses_missing_manifest(self) -> None:
+         tmp_path = self.new_tmp()
+diff --git a/tests/test_skill_descriptions.py b/tests/test_skill_descriptions.py
+new file mode 100644
+index 0000000..54af408
+--- /dev/null
++++ b/tests/test_skill_descriptions.py
+@@ -0,0 +1,138 @@
++"""The Agent Skills description budget, enforced over every shipped skill.
++
++A skill's ``description`` is its routing signal: Pi tells the agent to load a
++skill when the task matches its description, and
++:func:`papersmith.generators.derive_command_description` derives each slash
++command's own description from the same value's first sentence. Pi validates it
++against the Agent Skills spec and rejects anything longer than
++``MAX_DESCRIPTION_LENGTH = 1024`` (``dist/core/skills.js:11``; the check is
++``validateDescription`` at 80-87). Pi warns and still loads, so the defect is
++invisible in a run and other harnesses may simply enforce it.
++
++Two of the nine shipped skills were over that budget when this test was
++written -- ``remote-execution`` 1814 and ``paper-writing`` 1680, against a next
++longest of 624 -- so the ceiling is a real bound rather than a tight one. It is
++a test and not a lint on purpose: the next description that grows past it fails
++here, instead of printing a warning nobody reads.
++
++Counted in UTF-16 code units, which is the unit JavaScript's ``length`` uses,
++because the runtime that defines the ceiling is the one that has to agree with
++the count.
++"""
++
++from __future__ import annotations
++
++import ast
++import unittest
++from pathlib import Path
++
++from papersmith.generators import derive_command_description
++
++#: The Agent Skills spec's own ceiling, as Pi implements it.
++MAX_DESCRIPTION_LENGTH = 1024
++
++FORGE_ROOT = Path(__file__).resolve().parents[1]
++SKILLS_DIR = FORGE_ROOT / "skills"
++
++#: Enough to prove the discovery below is not silently matching nothing. The
++#: roster itself is asserted in ``test_workspace_skills_e2e``, so adding a skill
++#: needs no edit here.
++MINIMUM_SKILLS = 9
++
++
++def skill_docs() -> list[Path]:
++    """Every top-level skill's ``SKILL.md``, sorted by name.
++
++    ``_``-prefixed directories are engine shelves, not commands
++    (``generators.collect_commands`` skips them silently), so they are skipped
++    here for the same reason.
++    """
++    return sorted(
++        path / "SKILL.md"
++        for path in SKILLS_DIR.iterdir()
++        if path.is_dir() and not path.name.startswith("_")
++        and (path / "SKILL.md").is_file()
++    )
++
++
++def frontmatter_lines(path: Path) -> list[str]:
++    """The lines between the opening and closing ``---``, or a failure."""
++    lines = path.read_text(encoding="utf-8").split("\n")
++    if not lines or lines[0] != "---":
++        raise AssertionError(f"{path} does not open its frontmatter on line 1")
++    try:
++        closing = lines.index("---", 1)
++    except ValueError:  # pragma: no cover - only reachable through a defect
++        raise AssertionError(f"{path} never closes its frontmatter") from None
++    return lines[1:closing]
++
++
++def description_value(path: Path) -> str:
++    """The ``description`` value, unquoted, exactly as a harness reads it."""
++    line = frontmatter_lines(path)[1]
++    raw = line[len("description:"):].strip()
++    if raw[:1] in {'"', "'"}:
++        return str(ast.literal_eval(raw))
++    return raw
++
++
++class SkillDescriptionTests(unittest.TestCase):
++    def test_the_discovery_finds_the_shipped_skills(self) -> None:
++        """A discovery that silently matched nothing would make every check
++        below vacuously pass, so the count is asserted first."""
++        found = [path.parent.name for path in skill_docs()]
++        self.assertGreaterEqual(
++            len(found), MINIMUM_SKILLS,
++            f"only found {found}; the skill tree is not where this test looks")
++        self.assertNotIn("_core", found)
++
++    def test_every_frontmatter_is_exactly_name_then_description(self) -> None:
++        """One shape for every skill: ``---``, ``name``, ``description``, ``---``.
++
++        The single line matters beyond tidiness: a folded or multi-line scalar
++        would be read differently by the harnesses that consume it, and
++        ``derive_command_description`` would derive a command description from
++        a fragment.
++        """
++        for path in skill_docs():
++            with self.subTest(skill=path.parent.name):
++                lines = frontmatter_lines(path)
++                self.assertEqual(len(lines), 2, f"{path}: extra frontmatter key in {lines!r}")
++                self.assertEqual(lines[0], f"name: {path.parent.name}", path)
++                self.assertTrue(lines[1].startswith("description: "), path)
++
++    def test_every_description_fits_the_spec_budget(self) -> None:
++        """Pi's own ceiling, counted the way Pi counts it."""
++        for path in skill_docs():
++            with self.subTest(skill=path.parent.name):
++                value = description_value(path)
++                units = len(value.encode("utf-16-le")) // 2
++                self.assertLessEqual(
++                    units, MAX_DESCRIPTION_LENGTH,
++                    f"{path.parent.name}: description is {units} UTF-16 code "
++                    f"units, {units - MAX_DESCRIPTION_LENGTH} over the "
++                    f"{MAX_DESCRIPTION_LENGTH} the Agent Skills spec allows")
++
++    def test_every_description_states_its_own_trigger(self) -> None:
++        """The routing convention every shipped skill follows: the description
++        opens with ``Trigger:`` so the matched task, not the skill's internals,
++        is what a reader sees first."""
++        for path in skill_docs():
++            with self.subTest(skill=path.parent.name):
++                value = description_value(path)
++                self.assertTrue(value.startswith("Trigger: "), f"{path}: {value[:60]!r}")
++                self.assertGreater(len(value), len("Trigger: "), path)
++
++    def test_the_derived_command_description_is_never_empty(self) -> None:
++        """The command front door reads the first sentence of this value, so a
++        description whose first sentence is empty is a command with no
++        description."""
++        for path in skill_docs():
++            with self.subTest(skill=path.parent.name):
++                derived = derive_command_description(description_value(path))
++                self.assertTrue(derived.strip(), path)
++                self.assertLessEqual(len(derived), len(description_value(path)))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_workspace_agents_e2e.py b/tests/test_workspace_agents_e2e.py
+index aba8d89..d50c2ce 100644
+--- a/tests/test_workspace_agents_e2e.py
++++ b/tests/test_workspace_agents_e2e.py
+@@ -23,7 +23,7 @@ from papersmith.generators import check_generated
+ 
+ from workspace_series import REPO_ROOT, make_workspace, new_tmp
+ 
+-ROUTING_DOCS = ("CLAUDE.md", "OPENCODE.md", "PI.md", ".antigravity/rules.md")
++ROUTING_DOCS = ("CLAUDE.md", "OPENCODE.md", ".pi/APPEND_SYSTEM.md", ".antigravity/rules.md")
+ SKILL_BINDING = re.compile(r"skills/([\w-]+)/SKILL\.md")
+ 
+ 
+@@ -112,9 +112,9 @@ class AgentRoutingTests(unittest.TestCase):
+         workspace = make_workspace(new_tmp(self))
+         self.assertEqual(check_generated(workspace), [],
+                          "a fresh workspace must carry no generator drift")
+-        pi = workspace / "PI.md"
++        pi = workspace / ".pi/APPEND_SYSTEM.md"
+         pi.write_text("drift\n", encoding="utf-8")
+-        self.assertIn("PI.md", check_generated(workspace))
++        self.assertIn(".pi/APPEND_SYSTEM.md", check_generated(workspace))
+ 
+     def test_agent_tree_is_declared_the_single_source_of_truth(self) -> None:
+         workspace = make_workspace(new_tmp(self))
+@@ -129,7 +129,14 @@ class AgentRoutingTests(unittest.TestCase):
+         self.assertIn("refuse-offpath-push.js", opencode)
+         claude = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
+         self.assertIn(".claude/commands/", claude)
+-        for doc_name in ("PI.md", ".antigravity/rules.md"):
+-            with self.subTest(doc=doc_name):
+-                text = (workspace / doc_name).read_text(encoding="utf-8")
+-                self.assertIn("no generated slash commands", text)
++        pi = (workspace / ".pi/APPEND_SYSTEM.md").read_text(encoding="utf-8")
++        self.assertIn(".pi/extensions/refuse-offpath-push.ts", pi)
++        self.assertIn("refuse_offpath_push.py", pi)
++        # Pi routes skills through the settings file and exposes them natively
++        # as ``/skill:<name>``; it therefore documents no command directory it
++        # does not have.
++        self.assertIn(".pi/settings.json", pi)
++        self.assertIn("/skill:", pi)
++        self.assertIn("no command files are generated", pi)
++        antigravity = (workspace / ".antigravity/rules.md").read_text(encoding="utf-8")
++        self.assertIn("no generated slash commands", antigravity)
+diff --git a/tests/test_workspace_commands_e2e.py b/tests/test_workspace_commands_e2e.py
+index d736cf1..f555955 100644
+--- a/tests/test_workspace_commands_e2e.py
++++ b/tests/test_workspace_commands_e2e.py
+@@ -104,8 +104,10 @@ class GeneratedWorkspaceTests(unittest.TestCase):
+             "papersmith.yaml",
+             "CLAUDE.md",
+             "OPENCODE.md",
+-            "PI.md",
++            ".pi/APPEND_SYSTEM.md",
++            ".pi/settings.json",
+             ".pi/gentle-ai/persona.json",
++            ".pi/extensions/refuse-offpath-push.ts",
+             ".antigravity/rules.md",
+             "README.md",
+             "package.json",
+@@ -155,7 +157,7 @@ class UpgradeCommandTests(unittest.TestCase):
+ class HarnessProjectionTests(unittest.TestCase):
+     """The workspace ships the script its package.json advertises for harness wiring."""
+ 
+-    HARNESS_LINKS = (".claude/skills", ".pi/skills", ".opencode/skills", ".antigravity/skills")
++    HARNESS_LINKS = (".claude/skills", ".opencode/skills", ".antigravity/skills")
+ 
+     def test_projection_script_wires_every_harness(self) -> None:
+         workspace = make_workspace(new_tmp(self))
+@@ -180,6 +182,11 @@ class HarnessProjectionTests(unittest.TestCase):
+         self.assertEqual(second.returncode, 0, second.stderr)
+         for relpath in self.HARNESS_LINKS:
+             self.assertTrue((workspace / relpath).is_symlink(), f"{relpath} must survive a re-run")
++        # Pi is deliberately not linked: it discovers the canonical tree through
++        # `.pi/settings.json`, which needs no symlink. Pi dedupes skills by
++        # canonical path, so the link would not have collided -- it would just
++        # have been a second mechanism for the same job.
++        self.assertFalse((workspace / ".pi/skills").exists())
+ 
+ 
+ class HarnessCommandProjectionTests(unittest.TestCase):
+@@ -207,9 +214,17 @@ class HarnessCommandProjectionTests(unittest.TestCase):
+                 self.assertIn("$ARGUMENTS", body)
+                 self.assertIn("skills/paper-ingestion/SKILL.md", body)
+ 
+-    def test_non_command_harnesses_receive_no_command_directory(self) -> None:
++    def test_pi_and_antigravity_receive_no_command_or_prompt_directory(self) -> None:
++        """Pi has no command files because it exposes ``/skill:<name>`` natively.
++
++        Pi loads the workspace's skills through ``.pi/settings.json`` and, with
++        ``enableSkillCommands`` defaulting to true, already surfaces each as a
++        native ``/skill:<name>``. Generating ``.pi/commands`` or ``.pi/prompts``
++        would duplicate nine commands that exist without a file.
++        """
+         workspace = make_workspace(new_tmp(self))
+         self.assertFalse((workspace / ".pi/commands").exists())
++        self.assertFalse((workspace / ".pi/prompts").exists())
+         self.assertFalse((workspace / ".antigravity/commands").exists())
+ 
+     def test_opencode_json_is_valid_and_declares_no_plugin_key(self) -> None:
+@@ -256,7 +271,7 @@ class RenderedSetLifecycleTests(unittest.TestCase):
+     """
+ 
+     KIT_COMMAND_NAMES = HarnessCommandProjectionTests.COMMAND_NAMES
+-    STATIC_ENTRYPOINTS = ("OPENCODE.md", "PI.md", ".antigravity/rules.md")
++    STATIC_ENTRYPOINTS = ("OPENCODE.md", ".pi/APPEND_SYSTEM.md", ".antigravity/rules.md")
+ 
+     @staticmethod
+     def _init_subset(base: Path, tools: str) -> Path:
