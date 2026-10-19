@@ -41,8 +41,6 @@ DEFAULT_HEALTH_TTL_SECONDS = 10.0
 
 _log = logging.getLogger(__name__)
 
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-
 #: Headers on every paper preview response.
 _PAPER_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -150,18 +148,44 @@ def origin_is_same(request: Request) -> bool:
     return urlparse(origin).netloc == request.headers.get("host", "")
 
 
-def build_allowed_hosts(host: str, port: int, extra: list[str] | None = None) -> frozenset[str] | None:
-    """The ``Host`` values to accept for a bind address, or ``None`` for any.
+def is_loopback_bind(host: str) -> bool:
+    """Whether binding ``host`` keeps the dashboard on this machine.
 
-    A loopback bind accepts only its own loopback names on ``port`` (plus every
-    ``--allowed-host``), which stops DNS-rebinding pages from reading the API.
-    Other binds are left open. For ``npm run dev`` (Vite proxies with
-    ``changeOrigin: false``, so the backend sees ``localhost:5173``) start the
-    backend with ``--allowed-host localhost:5173``.
+    ``localhost`` and loopback literals (``127.0.0.0/8``, ``::1``, bracketed or
+    not) do. A wildcard (``0.0.0.0``, ``::``), any other address and any other
+    name do not: the network may reach them.
     """
-    if host.strip("[]").lower() not in _LOOPBACK_HOSTS:
-        return None
-    hosts = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+    import ipaddress
+
+    bare = host.strip("[]").lower()
+    if bare == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(bare).is_loopback
+    except ValueError:
+        return False
+
+
+def _host_header(host: str, port: int) -> str:
+    """The ``Host`` value a client sends for ``host`` on ``port``."""
+    bare = host.strip("[]").lower()
+    return f"[{bare}]:{port}" if ":" in bare else f"{bare}:{port}"
+
+
+def build_allowed_hosts(host: str, port: int, extra: list[str] | None = None) -> frozenset[str]:
+    """The ``Host`` values to accept for a bind address.
+
+    Every bind accepts its own address on ``port`` and each ``--allowed-host``;
+    a loopback bind also accepts the loopback names. Any other ``Host`` gets
+    421, which stops DNS-rebinding pages from reading the API, on a non-loopback
+    bind as well (``main`` refuses one without ``--allow-unauthenticated-network``).
+    For ``npm run dev`` (Vite proxies with ``changeOrigin: false``, so the
+    backend sees ``localhost:5173``) start the backend with
+    ``--allowed-host localhost:5173``.
+    """
+    hosts = {_host_header(host, port)}
+    if is_loopback_bind(host):
+        hosts.update(_host_header(name, port) for name in ("127.0.0.1", "localhost", "::1"))
     hosts.update(value.strip().lower() for value in extra or [] if value.strip())
     return frozenset(hosts)
 
@@ -1691,8 +1715,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--export-static", metavar="<dir>", default=None,
                         help="copy the dashboard build to <dir> and exit")
     parser.add_argument("--allowed-host", action="append", default=[], metavar="HOST:PORT",
-                        help="extra Host header to accept on a loopback bind (repeatable); "
+                        help="extra Host header to accept (repeatable); "
                              "for `npm run dev` use --allowed-host localhost:5173")
+    parser.add_argument("--allow-unauthenticated-network", action="store_true",
+                        help="serve on a non-loopback --host; the dashboard has no "
+                             "authentication, so only on a network you trust (the Host "
+                             "check still accepts only the bind address and --allowed-host)")
     parser.add_argument("--log-level", default="info")
     return parser
 
@@ -1705,10 +1733,18 @@ def open_browser(url: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     root = Path(args.root).expanduser().resolve()
     if args.export_static:
         return export_static(root, Path(args.export_static))
+    if not is_loopback_bind(args.host) and not args.allow_unauthenticated_network:
+        parser.error(
+            f"--host {args.host} is not a loopback address, and the dashboard has no "
+            "authentication: anyone who reaches the port could read and edit this "
+            "workspace and start its compile and smoke runs. Serve on 127.0.0.1 and "
+            f"forward the port (ssh -L {args.port}:127.0.0.1:{args.port} <server>), "
+            "or pass --allow-unauthenticated-network on a network you trust.")
 
     import uvicorn
 

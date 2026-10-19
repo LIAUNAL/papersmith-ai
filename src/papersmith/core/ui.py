@@ -179,7 +179,8 @@ def find_available_port(host: str, preferred: int,
 def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool,
                       export_static: str | None = None,
                       interpreter: str | None = None,
-                      allowed_hosts: list[str] | None = None) -> list[str]:
+                      allowed_hosts: list[str] | None = None,
+                      allow_unauthenticated_network: bool = False) -> list[str]:
     """Build the child command that runs the workspace's backend."""
     argv = [
         interpreter or sys.executable,
@@ -200,6 +201,8 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
     # flag keeps working.
     for allowed in allowed_hosts or []:
         argv.extend(["--allowed-host", allowed])
+    if allow_unauthenticated_network:
+        argv.append("--allow-unauthenticated-network")
     return argv
 
 
@@ -283,7 +286,9 @@ def run_cli(args) -> int:
     print("papersmith ui: press Ctrl+C to stop")
     argv = build_server_argv(workspace, args.host, port, no_browser=args.no_browser,
                              interpreter=interpreter,
-                             allowed_hosts=getattr(args, "allowed_host", None))
+                             allowed_hosts=getattr(args, "allowed_host", None),
+                             allow_unauthenticated_network=getattr(
+                                 args, "allow_unauthenticated_network", False))
     return _run_child(argv, workspace)
 
 
@@ -305,6 +310,9 @@ def register(subparsers) -> None:
     parser.add_argument("--allowed-host", action="append", default=None, metavar="HOST:PORT",
                         help="also accept this Host header (repeatable), e.g. when forwarding "
                              "the port or running the Vite dev server")
+    parser.add_argument("--allow-unauthenticated-network", action="store_true",
+                        help="permit a non-loopback --host; the dashboard has no "
+                             "authentication, so only on a network you trust")
     parser.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     parser.set_defaults(handler=run_cli)
 

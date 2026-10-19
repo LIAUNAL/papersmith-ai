@@ -274,6 +274,48 @@ class AllowedHostArgvTests(unittest.TestCase):
         assert args.allowed_host == ["a:1", "b:2"]
 
 
+class NetworkOptInArgvTests(unittest.TestCase):
+    """#61: the backend refuses a non-loopback bind unless asked by flag; the
+    wrapper forwards that flag only when given, like ``--allowed-host``."""
+
+    def argv(self, **kwargs) -> list[str]:
+        return ui_command.build_server_argv(
+            Path("/tmp/paper"), "0.0.0.0", 8123, no_browser=True, **kwargs)
+
+    def test_argv_forwards_the_opt_in_only_when_set(self) -> None:
+        assert "--allow-unauthenticated-network" in self.argv(allow_unauthenticated_network=True)
+        assert "--allow-unauthenticated-network" not in self.argv()
+
+    def test_parser_accepts_the_opt_in(self) -> None:
+        parser = argparse.ArgumentParser()
+        ui_command.register(parser.add_subparsers())
+
+        assert parser.parse_args(["ui", "--allow-unauthenticated-network"]).allow_unauthenticated_network
+        assert parser.parse_args(["ui"]).allow_unauthenticated_network is False
+
+    def test_run_cli_forwards_the_opt_in_to_the_backend(self) -> None:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        root = Path(holder.name).resolve()
+        _seed_command_center(root)
+        captured: list[list[str]] = []
+        stubs = {
+            "_run_child": lambda argv, workspace: captured.append(argv) or 0,
+            "require_runnable_backend": lambda workspace, interpreter: None,
+            "port_is_free": lambda host, port: True,
+        }
+        for name, stub in stubs.items():
+            self.addCleanup(setattr, ui_command, name, getattr(ui_command, name))
+            setattr(ui_command, name, stub)
+
+        args = argparse.Namespace(directory=str(root), host="0.0.0.0", port=8080,
+                                  no_browser=True, export_static=None,
+                                  allowed_host=None, allow_unauthenticated_network=True)
+
+        assert ui_command.run_cli(args) == 0
+        assert "--allow-unauthenticated-network" in captured[0]
+
+
 class WorkspaceInterpreterTests(unittest.TestCase):
     def new_dir(self) -> Path:
         holder = tempfile.TemporaryDirectory()

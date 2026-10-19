@@ -7,7 +7,9 @@ receive, send)`` harness, so no HTTP client dependency is needed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
+import io
 import json
 import tempfile
 import unittest
@@ -304,6 +306,17 @@ class HostAllowListTests(_Workspace):
 
         assert status == 403
 
+    def test_a_network_bind_keeps_the_host_and_origin_checks(self) -> None:
+        app = self.app(server.build_allowed_hosts("0.0.0.0", 8099, ["dash.example:443"]))
+        foreign = _host("dash.example:443") + [(b"origin", b"http://evil.example")]
+
+        assert asyncio.run(_call(app, headers=_host("dash.example:443")))[0] == 200
+        assert asyncio.run(_call(app, headers=_host("0.0.0.0:8099")))[0] == 200
+        assert asyncio.run(_call(app, headers=_host("evil.example:8099")))[0] == 421
+        assert asyncio.run(_call(app))[0] == 421
+        assert asyncio.run(_call(
+            app, "/api/health/run-wiring-smoke", method="POST", headers=foreign))[0] == 403
+
 
 class MainWiringTests(unittest.TestCase):
     def test_parser_collects_repeatable_allowed_hosts(self) -> None:
@@ -319,8 +332,15 @@ class MainWiringTests(unittest.TestCase):
         assert hosts == frozenset({"127.0.0.1:8099", "localhost:8099", "[::1]:8099",
                                    "localhost:5173"})
 
-    def test_non_loopback_binds_disable_the_check(self) -> None:
-        assert server.build_allowed_hosts("0.0.0.0", 8099, ["x:1"]) is None
+    def test_non_loopback_binds_keep_the_check_on_their_own_address(self) -> None:
+        assert server.build_allowed_hosts("0.0.0.0", 8099, ["X:1"]) == frozenset(
+            {"0.0.0.0:8099", "x:1"})
+        assert server.build_allowed_hosts("::", 8099) == frozenset({"[::]:8099"})
+        assert server.build_allowed_hosts("[fe80::1]", 8099) == frozenset({"[fe80::1]:8099"})
+
+    def test_any_loopback_literal_also_gets_the_loopback_names(self) -> None:
+        assert server.build_allowed_hosts("127.0.0.2", 8099) == frozenset(
+            {"127.0.0.2:8099", "127.0.0.1:8099", "localhost:8099", "[::1]:8099"})
 
     def test_main_passes_the_allow_list_to_create_app(self) -> None:
         with mock.patch.object(server, "create_app") as created, \
@@ -331,6 +351,71 @@ class MainWiringTests(unittest.TestCase):
         assert created.call_args.kwargs["allowed_hosts"] == frozenset(
             {"127.0.0.1:8099", "localhost:8099", "[::1]:8099", "localhost:5173"})
         run.assert_called_once()
+
+
+class NetworkExposureTests(unittest.TestCase):
+    """#61: the dashboard has no authentication, so a bind the network can
+    reach is refused unless named by flag, and the Host check stays on."""
+
+    NETWORK = ("0.0.0.0", "::", "[::]", "192.168.1.5", "dashboard.example", "localhost.example")
+    LOOPBACK = ("127.0.0.1", "127.0.0.2", "localhost", "LocalHost", "::1", "[::1]")
+
+    def _main(self, *flags: str):
+        stderr = io.StringIO()
+        with mock.patch.object(server, "create_app") as created, \
+                mock.patch("uvicorn.run") as run, contextlib.redirect_stderr(stderr):
+            try:
+                code = server.main(["--root", ".", "--port", "8099", "--no-browser", *flags])
+            except SystemExit as stop:
+                code = stop.code
+        return code, created, run, stderr.getvalue()
+
+    def test_only_loopback_names_and_literals_are_loopback_binds(self) -> None:
+        for host in self.LOOPBACK:
+            with self.subTest(host=host):
+                assert server.is_loopback_bind(host)
+        for host in (*self.NETWORK, ""):
+            with self.subTest(host=host):
+                assert not server.is_loopback_bind(host)
+
+    def test_a_network_bind_is_refused_without_the_flag(self) -> None:
+        for host in self.NETWORK:
+            with self.subTest(host=host):
+                code, created, run, stderr = self._main(f"--host={host}")
+
+                assert code == 2
+                created.assert_not_called()
+                run.assert_not_called()
+                assert "no authentication" in stderr
+                assert "--allow-unauthenticated-network" in stderr
+
+    def test_the_flag_serves_a_network_bind_with_the_check_still_on(self) -> None:
+        code, created, run, _ = self._main(
+            "--host", "0.0.0.0", "--allow-unauthenticated-network",
+            "--allowed-host", "dash.example:443")
+
+        assert code == 0
+        assert created.call_args.kwargs["allowed_hosts"] == frozenset(
+            {"0.0.0.0:8099", "dash.example:443"})
+        assert run.call_args.kwargs["host"] == "0.0.0.0"
+
+    def test_a_loopback_bind_needs_no_flag(self) -> None:
+        for host in self.LOOPBACK:
+            with self.subTest(host=host):
+                code, created, run, _ = self._main(f"--host={host}")
+
+                assert code == 0
+                run.assert_called_once()
+                assert "localhost:8099" in created.call_args.kwargs["allowed_hosts"]
+
+    def test_export_static_binds_nothing_so_is_not_refused(self) -> None:
+        with mock.patch.object(server, "export_static", return_value=0) as exported, \
+                mock.patch("uvicorn.run") as run:
+            code = server.main(["--host", "0.0.0.0", "--export-static", "out"])
+
+        assert code == 0
+        exported.assert_called_once()
+        run.assert_not_called()
 
 
 if __name__ == "__main__":
