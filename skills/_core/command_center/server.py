@@ -23,6 +23,7 @@ import sys
 import logging
 import threading
 import time
+from html import escape as _escape_html
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
@@ -980,6 +981,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.post("/api/pdf/execute")
     async def api_pdf_execute(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
+                                status_code=403)
         try:
             payload = await request.json()
         except Exception as e:
@@ -1029,6 +1033,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.post("/api/phase/run")
     async def api_phase_run(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
+                                status_code=403)
         try:
             payload = await request.json()
         except Exception:
@@ -1174,8 +1181,15 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             except Exception:
                 pass
         
-        candidates_json = json.dumps(candidates)
-        families_options = "".join(f'<option value="{f}">{f}</option>' for f in families)
+        # Candidates come from scouted literature (titles, abstracts, URLs), so
+        # nothing from them reaches the page unescaped: the JSON cannot close
+        # its <script>, the options are attribute-escaped, and the client
+        # escapes every field it renders (esc/safeUrl below).
+        candidates_json = (json.dumps(candidates).replace("<", "\\u003c")
+                           .replace(">", "\\u003e").replace("&", "\\u0026"))
+        families_options = "".join(
+            f'<option value="{_escape_html(str(f), quote=True)}">{_escape_html(str(f))}</option>'
+            for f in families)
         
         html_content = f"""<!DOCTYPE html>
 <html lang="es" data-theme="dark">
@@ -1445,6 +1459,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
   <script>
     const CANDIDATES = {candidates_json};
+    function esc(v) {{
+      return String(v ?? '').replace(/[&<>"']/g, ch => ({{'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}})[ch]);
+    }}
+    function safeUrl(u) {{
+      try {{ const url = new URL(String(u), location.href); return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '#'; }}
+      catch (e) {{ return '#'; }}
+    }}
     function getFamilyBadgeClass(family) {{
       if (!family) return 'badge-family--hardware';
       if (family.includes('hardware')) return 'badge-family--hardware';
@@ -1482,17 +1503,17 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         const authors = (c.authors || []).slice(0, 3).join(', ') + ((c.authors || []).length > 3 ? ' et al.' : '');
         tr.innerHTML = `
           <td style="text-align: center; font-weight: 600; color: var(--text-dim);">${{idx + 1}}</td>
-          <td style="text-align: center;"><span class="badge badge--ok" style="font-family: var(--font-mono);">${{c.year || '—'}}</span></td>
+          <td style="text-align: center;"><span class="badge badge--ok" style="font-family: var(--font-mono);">${{esc(c.year || '—')}}</span></td>
           <td>
-            <div style="font-weight: 700; color: var(--text); line-height: 1.35; margin-bottom: 0.25rem;">${{c.title}}</div>
+            <div style="font-weight: 700; color: var(--text); line-height: 1.35; margin-bottom: 0.25rem;">${{esc(c.title)}}</div>
             <div style="font-size: 0.76rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-              <span>👥 ${{authors}}</span>
-              ${{c.identifier ? `<a href="${{c.source_url || ('https://doi.org/' + c.identifier)}}" target="_blank" class="badge badge--info">🔗 ${{c.identifier}}</a>` : ''}}
+              <span>👥 ${{esc(authors)}}</span>
+              ${{c.identifier ? `<a href="${{esc(safeUrl(c.source_url || ('https://doi.org/' + c.identifier)))}}" target="_blank" rel="noopener noreferrer" class="badge badge--info">🔗 ${{esc(c.identifier)}}</a>` : ''}}
             </div>
           </td>
-          <td><span style="font-style: italic; color: var(--text-dim);">${{c.venue || 'Revista Q1'}}</span></td>
-          <td><span class="badge ${{getFamilyBadgeClass(c.family)}}">${{c.family || 'general'}}</span></td>
-          <td><div style="font-size: 0.78rem; color: var(--text); background: rgba(56, 189, 248, 0.05); padding: 0.4rem 0.6rem; border-radius: 4px; border-left: 2px solid var(--accent);">${{c.plausibility_note || 'Plausibilidad metodológica validada'}}</div></td>
+          <td><span style="font-style: italic; color: var(--text-dim);">${{esc(c.venue || 'Revista Q1')}}</span></td>
+          <td><span class="badge ${{getFamilyBadgeClass(c.family)}}">${{esc(c.family || 'general')}}</span></td>
+          <td><div style="font-size: 0.78rem; color: var(--text); background: rgba(56, 189, 248, 0.05); padding: 0.4rem 0.6rem; border-radius: 4px; border-left: 2px solid var(--accent);">${{esc(c.plausibility_note || 'Plausibilidad metodológica validada')}}</div></td>
           <td style="text-align: center;"><button class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.72rem;" onclick="toggleAbs(${{idx}})" id="btn-${{idx}}">📄 Resumen ▾</button></td>
         `;
         tbody.appendChild(tr);
@@ -1503,8 +1524,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         trAbs.innerHTML = `
           <td colspan="7" style="background: var(--surface-2); padding: 1rem 1.25rem;">
             <div style="font-weight: 700; color: var(--accent); font-size: 0.8rem; margin-bottom: 0.35rem; text-transform: uppercase;">Resumen Científico Completo</div>
-            <p style="font-size: 0.81rem; line-height: 1.6; color: var(--text); text-align: justify; margin-bottom: 0.5rem;">${{c.abstract || 'Sin resumen registrado.'}}</p>
-            <div style="font-size: 0.74rem; color: var(--text-dim);"><strong>Autores completos:</strong> ${{ (c.authors || []).join(', ') }}</div>
+            <p style="font-size: 0.81rem; line-height: 1.6; color: var(--text); text-align: justify; margin-bottom: 0.5rem;">${{esc(c.abstract || 'Sin resumen registrado.')}}</p>
+            <div style="font-size: 0.74rem; color: var(--text-dim);"><strong>Autores completos:</strong> ${{ esc((c.authors || []).join(', ')) }}</div>
           </td>
         `;
         tbody.appendChild(trAbs);
