@@ -43,9 +43,8 @@ export const escapedRevisionPrefix = REVISION_PREFIX;
 // STRICT: anchored, lowercase-alnum lineage (or none), minimum two digits. Byte-identical to the
 // five previously hardcoded stem-(lineage-)?prefix\d{2,}.md sites.
 const STRICT_SOURCE = `^${ESCAPED_STEM}-(?:${SEGMENT}-)?${REVISION_PREFIX}\\d{2,}\\.md$`;
-// LAX PARSE: the sole gate on `loadDocumentState`. ANY lineage character, ONE-digit revision --
-// genuinely looser than STRICT, and it must stay that way (mutation M2b proves it).
-const LAX_SOURCE = `^${ESCAPED_STEM}-(?:(.+)-)?${REVISION_PREFIX}(\\d+)\\.md$`;
+// LAX PARSE: safe legacy ASCII lineage, ONE-digit revision -- still looser than STRICT.
+const LAX_SOURCE = `^${ESCAPED_STEM}-(?:([A-Za-z0-9_.-]+)-)?${REVISION_PREFIX}(\\d+)\\.md$`;
 // INCREMENT: captures the "stem[-lineage]-prefix" head and the ordinal digits separately, so a
 // successor slug can be built by bumping the ordinal and re-padding it to the same width.
 const INCREMENT_SOURCE = `^(${ESCAPED_STEM}-(?:${SEGMENT}-)?${REVISION_PREFIX})(\\d+)\\.md$`;
@@ -84,8 +83,9 @@ export function strictRevisionLabel(value: string): boolean {
 	return STRICT_REVISION_LABEL_RE.test(value);
 }
 
-/** LAX PARSE: the sole gate on `loadDocumentState`. Accepts any lineage character and a single ordinal digit. */
+/** LAX PARSE: the sole gate on `loadDocumentState`. Accepts safe legacy lineage and a single ordinal digit. */
 export function parseManagedRevision(name: string): { lineage: 'ROOT' | string; revision: string; ordinal: number; digits: string } | undefined {
+	if (name.includes('..') || /[\x00-\x1f\x7f-\x9f]/.test(name)) return undefined;
 	const match = LAX_RE.exec(name);
 	if (!match) return undefined;
 	const digits = match[2]!;
