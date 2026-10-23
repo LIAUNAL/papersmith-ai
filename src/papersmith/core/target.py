@@ -13,6 +13,19 @@ from ..errors import ExecutionError, UserError
 from . import config
 
 
+def ssh_destination(host: str | None, *, missing_message: str) -> str:
+    """Accept one native SSH destination token, never options or whitespace/control characters."""
+    if not isinstance(host, str) or not host:
+        raise UserError(missing_message)
+    if host.startswith("-") or any(
+        char.isspace() or ord(char) < 32 or 127 <= ord(char) <= 159 for char in host
+    ):
+        raise UserError(
+            "remote-ssh host must be a single destination token without a leading '-' or whitespace/control characters"
+        )
+    return host
+
+
 def list_targets(workspace: str | Path = ".") -> list[dict]:
     root = Path(workspace).expanduser().resolve()
     yaml = config.load_papersmith_yaml(root)
@@ -54,11 +67,9 @@ def check_target(workspace: str | Path, name: str | None = None) -> tuple[int, d
             "detail": (result.stdout or result.stderr).strip(),
         }
     if provider == "remote-ssh":
-        host = target.get("host")
-        if not isinstance(host, str) or not host:
-            raise UserError(f"target {target_name} has no host")
+        host = ssh_destination(target.get("host"), missing_message=f"target {target_name} has no host")
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "true"],
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", host, "true"],
             cwd=root, capture_output=True, text=True, check=False,
         )
         return (SUCCESS if result.returncode == 0 else EXECUTION_ERROR), {

@@ -499,14 +499,15 @@ class ExecutorTests(unittest.TestCase):
         dry = executor.run_profile(workspace, "slurm-train", dry_run=True)
         assert dry["status"] == "ok"
         command = dry["jobs"][0]["command"]
-        assert command[0] == "ssh"
-        assert "hpc.university.edu" in command
-        assert "sbatch" in command
-        assert "--partition" in command
-        assert "gpu-a100" in command
-        assert "--time" in command
-        assert "12:00:00" in command
-        assert "--wrap" in command
+        # #82: the remote sbatch argv travels as ONE shell-quoted string after
+        # `--`, so ssh's space-join cannot split or reinterpret it remotely.
+        assert command[:3] == ["ssh", "--", "hpc.university.edu"]
+        assert len(command) == 4
+        remote = shlex.split(command[3])
+        assert remote[0] == "sbatch"
+        assert remote[remote.index("--partition") + 1] == "gpu-a100"
+        assert remote[remote.index("--time") + 1] == "12:00:00"
+        assert remote[remote.index("--wrap") + 1] == "python implementations/paper/src/train.py"
         captured: dict = {}
 
         def _fake_run(command, **kwargs):
@@ -517,7 +518,7 @@ class ExecutorTests(unittest.TestCase):
             result = executor.run_profile(workspace, "slurm-train", dry_run=False)
             assert result["status"] == "ok"
             assert captured["argv"][0] == "ssh"
-            assert "sbatch" in captured["argv"]
+            assert shlex.split(captured["argv"][-1])[0] == "sbatch"
         broken = _workspace(self.new_tmp())
         _write_broken_ssh_manifest(broken)
         with self.assertRaisesRegex(UserError, "requires host"):
