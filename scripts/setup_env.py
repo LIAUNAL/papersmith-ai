@@ -30,17 +30,23 @@ Usage
     python3 scripts/setup_env.py install --cuda   # force CUDA torch
     python3 scripts/setup_env.py clean            # remove the environment
     python3 scripts/setup_env.py clean --full     # also remove bootstrapped micromamba
+
+The micromamba it bootstraps is a pinned release (`MICROMAMBA_VERSION`), checked
+against a SHA-256 kept here (`MICROMAMBA_SHA256`) before it is put in place or
+run. The comment above those constants is the procedure for moving the pin.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import platform
 import shutil
 import subprocess
 import sys
 import urllib.request
+import uuid
 from pathlib import Path
 
 ENV_NAME = "papersmith"
@@ -120,10 +126,38 @@ CONDA_BASE_PACKAGES = [
     "pydantic",
 ]
 
+# The micromamba release `install` bootstraps, and the SHA-256 of each
+# platform's binary in it. A download is checked against this table before it
+# is put in place or run, so a changed or substituted binary stops the install
+# instead of executing.
+#
+# Moving the pin is one deliberate, reviewed change to both constants:
+#   1. Pick a tag from https://github.com/mamba-org/micromamba-releases/releases.
+#   2. List GitHub's digests for its assets:
+#        gh api repos/mamba-org/micromamba-releases/releases/tags/<tag> \
+#          --jq '.assets[] | "\(.name) \(.digest)"'
+#   3. For every platform below, download `micromamba-<platform>` and its
+#      `.sha256` file. The local `sha256sum`, that file and GitHub's digest must
+#      agree before the digest goes in the table.
+#   4. Update MICROMAMBA_VERSION and every entry, then run
+#      `pytest tests/test_setup_env_micromamba.py` and a fresh `install`.
+MICROMAMBA_VERSION = "2.9.0-0"
+MICROMAMBA_SHA256 = {
+    "linux-64": "366cd9cd8be14df1ab8ed50352a82111082a36686b2d389fdb79a92c3fafb3e3",
+    "linux-aarch64": "9f93b974adcb4d166996af969b6cd371287d1a3e52733704727884d9b74cb7a7",
+    "osx-64": "1e71054bb3ac9a076e21f7ec48acfef536f9b3f1408f371a942784bf5ef83d8a",
+    "osx-arm64": "ec2a072f028e1a7cf20f3e2e74d5a8127cf5a5f27636375b5359811565f4e5be",
+    "win-64": "a6d804394b2418991c4e29562853eaace2f2ce9d9da661a98e74e02e8dbb44b0",
+    "win-arm64": "f0da836d2398c00ac0b43e01f7581ba3430224a04405075c39eb3dd78bf0339a",
+}
 MICROMAMBA_URL = (
-    "https://github.com/mamba-org/micromamba-releases/releases/latest/download/"
-    "micromamba-{asset}"
+    "https://github.com/mamba-org/micromamba-releases/releases/download/"
+    "{version}/micromamba-{asset}"
 )
+#: Ceiling on a download; the largest pinned binary is about 22 MB.
+MICROMAMBA_MAX_BYTES = 64 * 1024 * 1024
+#: Seconds a connect or a read may stall before the download is abandoned.
+MICROMAMBA_TIMEOUT = 60
 
 
 # --------------------------------------------------------------------------- #
@@ -168,38 +202,107 @@ def micromamba_exe() -> Path:
     return MAMBA_ROOT / "bin" / ("micromamba.exe" if os.name == "nt" else "micromamba")
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def is_pinned(path: Path) -> bool:
+    """True when ``path`` is the pinned micromamba binary for this platform."""
+    return path.is_file() and _sha256(path) == MICROMAMBA_SHA256[platform_asset()]
+
+
+def _is_project_local(path: Path) -> bool:
+    """True when ``path`` is this project's own bootstrapped binary, however it
+    is reached: a PATH entry, an activated environment, a symlink."""
+    local = micromamba_exe()
+    try:
+        return local.exists() and os.path.samefile(path, local)
+    except OSError:
+        return False
+
+
 def find_micromamba() -> Path | None:
-    """Locate an existing micromamba: PATH first, then project-local, then common homes."""
+    """Locate an existing micromamba: PATH first, then project-local, then common homes.
+
+    The project-local binary is the one `install` bootstraps, so it counts only
+    when it is the pinned release, however it is reached (PATH, or a home
+    install that links to it); any other file there (an older download, a
+    replaced binary) is downloaded again rather than run. Any other
+    micromamba on PATH or in a home install is the operator's own and is
+    used as installed.
+    """
     on_path = shutil.which("micromamba")
-    if on_path:
+    if on_path and not _is_project_local(Path(on_path)):
         return Path(on_path)
 
-    candidates = [micromamba_exe()]
+    if is_pinned(micromamba_exe()):
+        return micromamba_exe()
     home = Path.home()
-    candidates += [
+    candidates = [
         home / "micromamba" / "bin" / "micromamba.exe" if os.name == "nt"
         else home / "micromamba" / "bin" / "micromamba",
         home / ".local" / "bin" / "micromamba",
     ]
     for candidate in candidates:
-        if candidate.is_file():
+        if candidate.is_file() and not _is_project_local(candidate):
             return candidate
     return None
 
 
+def _download(url: str, destination: Path) -> str:
+    """Stream ``url`` into ``destination``, bounded in size and stall time, and
+    return the SHA-256 of the bytes that arrived."""
+    digest = hashlib.sha256()
+    received = 0
+    with urllib.request.urlopen(url, timeout=MICROMAMBA_TIMEOUT) as response, \
+            destination.open("xb") as out:
+        while chunk := response.read(1 << 20):
+            received += len(chunk)
+            if received > MICROMAMBA_MAX_BYTES:
+                raise SystemExit(
+                    f"[setup] refusing {url}: larger than {MICROMAMBA_MAX_BYTES} bytes")
+            digest.update(chunk)
+            out.write(chunk)
+    return digest.hexdigest()
+
+
 def bootstrap_micromamba() -> Path:
-    """Download the standalone micromamba binary for this platform."""
+    """Download the pinned micromamba binary for this platform, verified first.
+
+    The download goes to a temporary file beside the target, named for this
+    run alone so a second install at the same time cannot write into it, and
+    is moved into place only when its SHA-256 matches `MICROMAMBA_SHA256`; a
+    mismatch stops the install and leaves nothing behind to run.
+    """
     target = micromamba_exe()
-    if target.is_file():
+    if is_pinned(target):
         return target
 
+    asset = platform_asset()
+    expected = MICROMAMBA_SHA256[asset]
+    url = MICROMAMBA_URL.format(version=MICROMAMBA_VERSION, asset=asset)
+    if target.exists():
+        print(f"[setup] replacing {target}: it is not micromamba {MICROMAMBA_VERSION}")
     target.parent.mkdir(parents=True, exist_ok=True)
-    url = MICROMAMBA_URL.format(asset=platform_asset())
-    print(f"[setup] downloading micromamba for {platform_asset()} ...")
-    urllib.request.urlretrieve(url, target)
-    if os.name != "nt":
-        target.chmod(target.stat().st_mode | 0o111)
-    print(f"[setup] micromamba ready at {target}")
+    partial = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+    print(f"[setup] downloading micromamba {MICROMAMBA_VERSION} for {asset} ...")
+    try:
+        actual = _download(url, partial)
+        if actual != expected:
+            raise SystemExit(
+                f"[setup] refusing {url}: its SHA-256 is {actual}, but micromamba "
+                f"{MICROMAMBA_VERSION} for {asset} is pinned to {expected}. "
+                "Nothing was installed.")
+        if os.name != "nt":
+            partial.chmod(partial.stat().st_mode | 0o111)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
+    print(f"[setup] micromamba {MICROMAMBA_VERSION} verified, ready at {target}")
     return target
 
 

@@ -257,7 +257,10 @@ it records, unless `--allow-downgrade` is passed.
 `scripts/setup_env.py install` provisions **the whole** ingestion stack in a
 separate micromamba environment (CPU or CUDA, depending on what it detects),
 including the `llama-server` binary that the OCR needs — it is **not** Ollama
-nor a Homebrew installation. `npm run setup:harnesses` symlinks the canonical
+nor a Homebrew installation. The micromamba it bootstraps is a pinned release
+whose SHA-256 is checked before it runs; the comment above `MICROMAMBA_VERSION`
+in `scripts/setup_env.py` is the procedure for moving the pin.
+`npm run setup:harnesses` symlinks the canonical
 `skills/` tree into `.claude/skills`, `.pi/skills`, `.opencode/skills`
 and `.agents/skills`, with relative, idempotent symlinks (see
 [Harnesses and skill projection](#harnesses-and-skill-projection)). The first
