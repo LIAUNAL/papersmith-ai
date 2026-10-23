@@ -63,6 +63,8 @@ from __future__ import annotations
 
 import json
 import sys
+import urllib.parse
+import uuid
 from pathlib import Path
 
 try:
@@ -432,6 +434,110 @@ def cmd_capacity(client: "KernelsApiClient") -> dict:
     return {"kernels": kernels, "unresolved": unresolved}
 
 
+#: Hosts a per-file download may send this session's stored credential to:
+#: Kaggle's API endpoint and its web origin, over https on the default port.
+#: Any other host, a signed storage URL say, is fetched with no credential.
+KAGGLE_CREDENTIAL_HOSTS = frozenset({"api.kaggle.com", "www.kaggle.com", "kaggle.com"})
+#: Redirect hops one per-file download may follow before it is refused.
+FETCH_MAX_REDIRECTS = 5
+#: Seconds to connect, and seconds a read may stall, on each download hop.
+FETCH_TIMEOUT = (10, 60)
+#: Bytes one fetch may write, every file together: 20 GiB, above the 20 GB a
+#: Kaggle notebook's output directory holds, so only a runaway answer
+#: reaches it.
+FETCH_MAX_BYTES = 20 * 1024**3
+
+
+def _is_kaggle_origin(url: str) -> bool:
+    """True when `url` is https on a `KAGGLE_CREDENTIAL_HOSTS` host, on the
+    default port and with no userinfo of its own."""
+    parts = urllib.parse.urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme == "https"
+        and parts.hostname in KAGGLE_CREDENTIAL_HOSTS
+        and port in (None, 443)
+        and parts.username is None
+        and parts.password is None
+    )
+
+
+def _send(session, prepared):
+    """Send one download hop through the transport mounted for its URL.
+
+    Not through `session.send`, which reads a redirect's whole body itself,
+    unbounded, even with redirects off. Skipping it also skips what it adds
+    on top of the transport, on purpose: no response hook runs (`kagglesdk`
+    registers none) and no cookie a file host sets joins the authenticated
+    session. The environment's proxy and CA bundle settings still apply, as
+    they do on every `session.request`.
+    """
+    settings = session.merge_environment_settings(prepared.url, {}, True, None, None)
+    return session.get_adapter(prepared.url).send(prepared, timeout=FETCH_TIMEOUT, **settings)
+
+
+def _stream_into(response, destination: Path, budget: int, url: str) -> int:
+    """Stream `response`'s body into `destination`, refusing past `budget`
+    bytes; returns the bytes written.
+
+    The body lands in a temporary file beside `destination` that replaces it
+    only once complete, so a refused or broken download leaves no partial
+    file behind and never truncates a copy an earlier fetch wrote.
+    """
+    declared = response.headers.get("Content-Length", "")
+    if declared.isdigit() and int(declared) > budget:
+        raise DriverError(
+            f"refusing to download {url!r}: it declares {declared} bytes, over the "
+            f"{budget} this fetch has left of its {FETCH_MAX_BYTES}-byte limit"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.parent / f".fetch-{uuid.uuid4().hex}.part"
+    written = 0
+    out = partial.open("xb")
+    try:
+        with out:
+            for chunk in response.iter_content(chunk_size=1 << 20):
+                written += len(chunk)
+                if written > budget:
+                    raise DriverError(
+                        f"refusing to download {url!r}: it sent more than the {budget} "
+                        f"bytes this fetch has left of its {FETCH_MAX_BYTES}-byte limit"
+                    )
+                out.write(chunk)
+        partial.replace(destination)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    return written
+
+
+def _fetch_file(session, url: str, destination: Path, budget: int) -> int:
+    """Download one listed file through `session`; returns the bytes written.
+
+    Each hop's request is built here: with the session's auth, headers and
+    cookies while every hop so far has been a Kaggle origin, bare from the
+    first one that was not. Redirects are followed here too, https only and
+    at most `FETCH_MAX_REDIRECTS` of them.
+    """
+    credentialed = True
+    for _hop in range(FETCH_MAX_REDIRECTS + 1):
+        if urllib.parse.urlsplit(url).scheme != "https":
+            raise DriverError(f"refusing to download {url!r}: only https is fetched")
+        credentialed = credentialed and _is_kaggle_origin(url)
+        request = requests.Request("GET", url)
+        prepared = session.prepare_request(request) if credentialed else request.prepare()
+        with _send(session, prepared) as response:
+            if response.is_redirect:
+                url = urllib.parse.urljoin(url, response.headers["Location"])
+                continue
+            response.raise_for_status()
+            return _stream_into(response, destination, budget, url)
+    raise DriverError(f"refusing to download {url!r}: more than {FETCH_MAX_REDIRECTS} redirects")
+
+
 def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dict:
     """Materialize one kernel session's output under `into`, file by file.
 
@@ -460,25 +566,24 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
     echo of `download_kernel_output`'s own `owner_slug`.
     either side.
 
-    OPEN QUESTION, named here rather than guessed at (see the design's own
-    Open Questions and this repository's tasks for Phase 3): whether those
-    per-file `url`s need THIS session's own Bearer credential, or answer to
-    an anonymous GET, is settled only by a live rehearsal against a real
-    account — not run by this commit, not run by this file, ever, without
-    the user's explicit permission. This function makes the DEFENSIVE
-    choice instead of picking a side: it downloads through
-    `client._client._session` — the exact same already-authenticated
-    `requests.Session` the `list_kernel_session_output` call just above
-    used — so `requests`' own `session.auth` hook attaches the identical
-    `Authorization: Bearer <token>` header to every per-file GET too,
-    without this function constructing a second auth mechanism of its own.
-    If a URL needs no such header, an extra one that the URL's own host
-    simply ignores costs nothing; if a URL DOES need it, omitting it would
-    be a silent, wrong download disguised as a successful one — the costlier
-    of the two wrong guesses this open question names, and the one this
-    choice avoids. Doctrine (`SKILL.md`'s credential-transport table,
-    rewritten in a later commit) must record this row as
-    `unverified-by-rehearsal` rather than a settled guarantee.
+    Which download carries this session's stored credential is decided
+    here, not by `requests` (#55). The per-file `url`s come from a response,
+    and a URL in a response is no authority to send the credential wherever
+    it points. Each file goes through `client._client._session`, the one
+    session a test transport is mounted on, but `_fetch_file` applies that
+    session's auth, headers and cookies only to a Kaggle origin
+    (`KAGGLE_CREDENTIAL_HOSTS`, https, default port). Any other host, such
+    as a signed storage URL, gets a bare GET with no credential at all.
+    Redirects are followed by hand: https only, at most
+    `FETCH_MAX_REDIRECTS`, and the credential stops for good at the first
+    hop that leaves a Kaggle origin. Every hop has `FETCH_TIMEOUT`, and each
+    body streams into a temporary file, renamed into place once complete,
+    under one `FETCH_MAX_BYTES` budget for the whole fetch, so a stalled or
+    oversized answer is refused instead of hanging or filling the disk.
+    Whether Kaggle's own file URLs need the credential at all is still
+    unrehearsed against a live account; one that did, on a host that is not
+    a Kaggle origin, would answer 401 or 403, which `main()` reports as
+    unauthorized rather than as a download.
 
     `client._client._session` reaches into two attributes the SDK marks
     private (`KernelsApiClient._client`, `KaggleHttpClient._session`)
@@ -513,6 +618,7 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
         written.append("log.txt")
 
     root = into.resolve()
+    budget = FETCH_MAX_BYTES
     for output_file in response.files or []:
         name = output_file.file_name
         url = output_file.url
@@ -535,10 +641,7 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
                 f"list_kernel_session_output for {submission_id} returned a "
                 f"file name that leaves the destination: {name!r}"
             )
-        file_response = session.get(url)
-        file_response.raise_for_status()
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(file_response.content)
+        budget -= _fetch_file(session, url, destination, budget)
         written.append(name)
 
     return {"files": sorted(written)}
