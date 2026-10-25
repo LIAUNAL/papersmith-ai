@@ -62,7 +62,8 @@ from impl_layout import FORGE_ROOT, IGNORED_DIRS, LFS_POINTER_PREFIX  # noqa: E4
 from impl_refusals import NameRefused, Refused  # noqa: E402
 from impl_gitops import (git, lfs_state, present_files,  # noqa: E402
                          repository_ignored, tracked_files)
-from impl_guards import require_clean_worktree, require_non_forge_interpreter, resolve_target  # noqa: E402
+from impl_guards import (require_clean_worktree, require_in_workspace,  # noqa: E402
+                         require_non_forge_interpreter, resolve_target)
 from impl_naming import normalize_name, package_name, validate_name  # noqa: E402
 from impl_references import (prefix_mappings, reference_pattern,  # noqa: E402
                              scan_reference_updates, scan_stale_references)
@@ -19760,24 +19761,6 @@ def _adopt_normalize_name(raw: str) -> str:
     return resolved["directory"]
 
 
-def _adopt_workspace_target(raw: str) -> Path:
-    """The survey half of `resolve_target`: containment under
-    `implementations/`, without requiring a repository that does not exist
-    yet. The message mirrors the guard's, so the two never disagree about
-    where generated code may live.
-    """
-    target = Path(raw).expanduser().resolve()
-    try:
-        target.relative_to(WORKSPACE.resolve())
-    except ValueError:
-        raise Refused(
-            "OUTSIDE_WORKSPACE",
-            f"Target must live under {WORKSPACE}. Clone the repository there first — "
-            "the forge's own environment is never a workspace for generated code.",
-        )
-    return target
-
-
 def _adopt_tree_entries(root: Path) -> list[tuple[str, bytes]]:
     """Every regular file under `root` as `(relative posix path, bytes)`.
 
@@ -19921,7 +19904,7 @@ def _adopt_survey(args: argparse.Namespace) -> dict:
         raise Refused(
             "SOURCE_NOT_FOUND",
             f"Source folder {source} does not exist or is not a directory.")
-    target = _adopt_workspace_target(args.target)
+    target = require_in_workspace(args.target)
     if target.exists():
         raise Refused(
             "DESTINATION_CONFLICT",
