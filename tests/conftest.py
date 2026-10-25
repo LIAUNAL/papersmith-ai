@@ -113,6 +113,12 @@ def _isolate_test_process_state():
 TESTS = Path(__file__).resolve().parent
 if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
-import orphan_sweep  # noqa: E402
-
-orphan_sweep.register_run()
+try:
+    import orphan_sweep  # noqa: E402
+except ImportError:
+    # A conftest copied into a scratch suite (test_process_state_isolation)
+    # travels without its siblings; an unrecorded run only means its own
+    # orphans are never swept.
+    orphan_sweep = None
+if orphan_sweep is not None:
+    orphan_sweep.register_run()
