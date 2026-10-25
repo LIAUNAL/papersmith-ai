@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 import zlib
+from unittest import mock
 from contextlib import redirect_stderr
 from pathlib import Path
 
@@ -375,6 +376,7 @@ class RoutedEngineTests(_Tmp):
             def convert(self, source, page_range):
                 return type("Result", (), {"document": Document()})()
 
+        self._stub_docling_core()
         heavy = pdf_pipeline.HeavyEngine()
         heavy._formula = ("granite_docling", "stub")
         heavy._converters[(False, False)] = Converter()
@@ -388,6 +390,16 @@ class RoutedEngineTests(_Tmp):
         self.assertIn("$$\\beta_2$$", text)
         cache = self.tmp / "cache"
         self.assertEqual(sorted(e.parent.name[:5] for e in cache.glob("*/*/*/entry.json")), ["p0001", "p0002", "p0004"])
+
+    def _stub_docling_core(self) -> None:
+        """The real `HeavyEngine.convert` imports docling_core, which an
+        environment without the optional Docling stack (CI) lacks."""
+        doc = type(sys)("docling_core.types.doc")
+        doc.PictureItem = type("PictureItem", (), {})
+        stubs = {"docling_core": type(sys)("docling_core"),
+                 "docling_core.types": type(sys)("docling_core.types"),
+                 "docling_core.types.doc": doc}
+        self.enterContext(mock.patch.dict(sys.modules, stubs))
 
     def _partial_docling(self):
         class Document:
@@ -403,6 +415,7 @@ class RoutedEngineTests(_Tmp):
             def convert(self, source, page_range):
                 return type("Result", (), {"document": Document()})()
 
+        self._stub_docling_core()
         heavy = pdf_pipeline.HeavyEngine()
         heavy._formula = ("granite_docling", "stub")
         heavy._converters[(False, False)] = Converter()
