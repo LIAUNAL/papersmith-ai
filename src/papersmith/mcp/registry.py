@@ -88,7 +88,13 @@ class ToolRefusal(Exception):
 
 @dataclass(frozen=True)
 class Flag:
-    """One argument a tool accepts, and how it becomes child argv."""
+    """One argument a tool accepts, and how it becomes child argv.
+
+    A ``flag`` that does not begin with ``-`` names a positional: its value
+    is emitted after ``--`` (see ``_cli_child``), never behind its own name.
+    ``default`` is the one value an omitted argument takes, both in the
+    advertised schema and in the argv the child receives.
+    """
 
     name: str
     flag: str
@@ -97,6 +103,11 @@ class Flag:
     choices: tuple[str, ...] | None = None
     path: bool = False
     description: str = ""
+    default: Any = None
+
+    @property
+    def positional(self) -> bool:
+        return not self.flag.startswith("-")
 
 
 @dataclass(frozen=True)
@@ -318,6 +329,8 @@ def _schema(flags: tuple[Flag, ...]) -> dict[str, Any]:
             properties[spec.name]["enum"] = list(spec.choices)
         if spec.description:
             properties[spec.name]["description"] = spec.description
+        if spec.default is not None:
+            properties[spec.name]["default"] = spec.default
         if spec.required:
             required.append(spec.name)
     schema: dict[str, Any] = {
@@ -801,10 +814,29 @@ def _cli_child(
     *,
     timeout: float | None = None,
 ) -> ChildPlan:
+    """Options first, then ``--``, then positionals in declared order.
+
+    A positional value never follows its own name and never precedes the
+    options, so a value beginning with ``-`` cannot be read as an option.
+    Every ``cli`` verb taking a positional list (``extra``) declares an
+    optional ``[<dir>]`` before it; the child runs in the workspace, so
+    ``.`` fills that slot rather than letting the first extra become it.
+    """
     argv = list(tokens)
+    positionals: list[str] = []
     for spec in flags:
-        value = arguments.get(spec.name)
+        value = arguments.get(spec.name, spec.default)
         if value is None:
+            continue
+        if spec.positional:
+            if spec.kind == "list":
+                if value:
+                    positionals.extend([".", *(str(item) for item in value)])
+                continue
+            text = str(value)
+            if spec.path:
+                text = str(resolve_under(workspace, text))
+            positionals.append(text)
             continue
         if spec.kind == "bool":
             if value:
@@ -818,6 +850,8 @@ def _cli_child(
         if spec.path:
             text = str(resolve_under(workspace, text))
         argv.extend([spec.flag, text])
+    if positionals:
+        argv.extend(["--", *positionals])
     return ChildPlan("cli", tuple(argv), timeout=timeout)
 
 
@@ -849,8 +883,12 @@ def _refuse_stdin_file(arguments: dict[str, Any], workspace: Path) -> None:
 
 
 def _refuse_run_without_consent(arguments: dict[str, Any], workspace: Path) -> None:
-    """A real dispatch spends quota; MCP defaults to planning only."""
-    if not arguments.get("dry_run", True) and not arguments.get("consent"):
+    """A real dispatch spends quota; MCP defaults to planning only.
+
+    Reads the same ``_DRY_RUN`` default ``_cli_child`` emits, so an omitted
+    ``dry_run`` is judged as exactly the ``--dry-run`` argv the child gets.
+    """
+    if not arguments.get("dry_run", _DRY_RUN.default) and not arguments.get("consent"):
         raise ToolRefusal(
             "CONSENT_REQUIRED",
             "a non-dry run dispatches real work; pass an explicit consent token",
@@ -1367,9 +1405,12 @@ _IMPLEMENT_FLAGS = (
     Flag("extra", "extra", kind="list", description="additional implementation_cli arguments, verbatim"),
 )
 
+_DRY_RUN = Flag(
+    "dry_run", "--dry-run", kind="bool", default=True, description="plan only; the MCP default"
+)
 _RUN_FLAGS = (
     Flag("target", "--target"),
-    Flag("dry_run", "--dry-run", kind="bool", description="plan only; the MCP default"),
+    _DRY_RUN,
     Flag("shard", "--shard", kind="int"),
     Flag("consent", "--consent", description="required for a non-dry dispatch"),
 )
