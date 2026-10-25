@@ -349,6 +349,12 @@ producer it never reached: it cannot tell "never read the box" from
 indistinguishable forever. Only once the control passes does a per-input
 `unchanged` cell mean anything.
 
+The baseline drive, with every declared input present, must then exit
+`0`. A producer that refuses even with its box intact passes the control
+and fills every cell with `producer-refused`, so the sweep stalls
+(`kind=sensitivity-baseline-refused`) rather than report a matrix measured
+against values the producer never computed.
+
 **Hard cap: four declared inputs varied per run**, sorted-first-four for
 determinism -- overflow lands in `## Unchecked`, naming the total. A count
 cap, never a wall-clock budget, for the same reason Move 6's own cap is
@@ -884,6 +890,7 @@ landed" and "its row landed" can outlive one commit undetected.
 | A `sensitivity` box already holds files | Exit `2` naming the path; never adopt a non-empty box |
 | The subject declares no computed values in a parseable table | Emit "this subject declares no computed values" naming the range searched; exit `2`, never a clean verdict |
 | A sensitivity control drive exits `0` and the declared values do not change | Exit `2`, `kind=sensitivity-control-stalled`; every pair is `unreached` until a producer is proven to consume its box |
+| A sensitivity baseline drive (every declared input present) exits nonzero | Exit `2`, `kind=sensitivity-baseline-refused`; no matrix is reported against a baseline the producer never computed. A refusal only once an input is removed stays a `producer-refused` cell, exit `0` |
 | A sensitivity per-variation restore does not reproduce its pre-variation bytes | Exit `2`; the sweep halts, and the next variation is never attempted |
 | A sensitivity drive writes outside its own box | Exit `2` as `build-escaped-the-box`; never reported as a finding |
 | A declared value is `unchanged` for every varied input | `not adjudicable`, never `artefact wrong`; the finding states the observation and the tested range, never a motive |

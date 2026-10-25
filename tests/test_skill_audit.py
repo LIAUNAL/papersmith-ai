@@ -7399,6 +7399,52 @@ class SensitivityControlGateTests(SensitivityBoxMixin, unittest.TestCase):
         self.assertEqual(payload["control"], "passed")
 
 
+#: A producer that refuses whatever its box holds -- the baseline it is
+#: measured against was never computed (#101).
+ALWAYS_REFUSING_PRODUCER = "import sys\nsys.exit(1)\n"
+
+#: A producer that refuses only once `data/a.txt` is gone, and otherwise
+#: computes like `COMPUTED_PRODUCER`: a refusal that is a valid signal.
+REFUSES_WITHOUT_A_PRODUCER = (
+    "import pathlib, sys\n"
+    "if not pathlib.Path('data/a.txt').is_file():\n"
+    "    sys.exit(1)\n" + COMPUTED_PRODUCER)
+
+
+class SensitivityBaselineGateTests(SensitivityBoxMixin, unittest.TestCase):
+    """A matrix is only meaningful against a baseline the producer computed."""
+
+    def test_a_producer_refusing_with_every_input_present_stalls_the_sweep(self):
+        surface = "baseline_refused"
+        box = self.sensitivity_box(surface)
+        subject = self.make_sensitivity_subject(
+            "baseline_refused_subject", initial_value=7,
+            data_files={"a.txt": "one\n"}, producer=ALWAYS_REFUSING_PRODUCER)
+        spec = self.make_recipe(subject, surface)
+        result, payload = sensitivity_json(spec, subject, repo=FORGE)
+        self.assertEqual(result.returncode, 2, payload)
+        self.assertIn("sensitivity-baseline-refused", payload["error"])
+        self.assertNotIn("matrix", payload)
+        self.assertNotIn("notAdjudicable", payload)
+        self.assertFalse(box.exists())
+
+    def test_a_refusal_only_when_an_input_is_missing_stays_a_signal(self):
+        surface = "input_refused"
+        self.sensitivity_box(surface)
+        subject = self.make_sensitivity_subject(
+            "input_refused_subject", initial_value=999,
+            data_files={"a.txt": "one\ntwo\n", "b.txt": "three\n"},
+            producer=REFUSES_WITHOUT_A_PRODUCER)
+        spec = self.make_recipe(subject, surface)
+        result, payload = sensitivity_json(spec, subject, repo=FORGE)
+        self.assertEqual(result.returncode, 0, payload)
+        self.assertEqual(payload["control"], "passed")
+        self.assertEqual(payload["matrix"]["rows"],
+                         {"data/a.txt": "producer-refused",
+                          "data/b.txt": "moved"})
+        self.assertEqual(payload["notAdjudicable"], [])
+
+
 class SensitivityDeclarationTests(SensitivityBoxMixin, unittest.TestCase):
     """Candidate pairs derive from the subject's own declaration alone."""
 
@@ -7592,6 +7638,20 @@ class SensitivityBoxLifecycleTests(SensitivityBoxMixin, unittest.TestCase):
             after, {},
             "the box must be content-empty in a fresh walk of its own "
             "subtree, never proven by `git status`")
+        self.assertFalse(box.exists())
+
+    def test_an_exit_zero_run_reports_its_box_removed(self):
+        """`afterRemoved` is read once the box is erased (#102)."""
+        surface = "after_removed"
+        box = self.sensitivity_box(surface)
+        subject = self.make_sensitivity_subject(
+            "after_removed_subject", initial_value=999,
+            data_files={"a.txt": "one\n"}, producer=COMPUTED_PRODUCER)
+        spec = self.make_recipe(subject, surface)
+        result, payload = sensitivity_json(spec, subject, repo=FORGE)
+        self.assertEqual(result.returncode, 0, payload)
+        self.assertTrue(payload["containment"]["beforeEmpty"])
+        self.assertTrue(payload["containment"]["afterRemoved"], payload)
         self.assertFalse(box.exists())
 
     def test_a_sensitivity_run_leaves_the_subject_untouched(self):

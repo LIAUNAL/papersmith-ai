@@ -5,7 +5,7 @@
     {
       "fact": "the schema version SKILL.md's own prose is held to",
       "file": "scripts/audit_cli.py",
-      "line": 3901,
+      "line": 3910,
       "literal": "REPORT_SCHEMA_VERSION = 1",
       "replacement": "REPORT_SCHEMA_VERSION = 97",
       "observe": {
