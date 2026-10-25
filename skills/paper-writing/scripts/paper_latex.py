@@ -208,8 +208,18 @@ def compile(
     rather than reading an absent log as either verdict. `FileNotFoundError`
     at spawn time — the binary vanished between `discover_latexmk` and this
     call — maps to the SAME `LATEX_TOOLCHAIN_ABSENT` code, never a second
-    one for a race that reads identically to the caller.
+    one for a race that reads identically to the caller. An id beginning
+    with `-` refuses `DIAGRAM_SOURCE_ABSENT` before anything runs.
     """
+    if figure_id.startswith("-"):
+        # `<id>.tex` is a positional argument; a leading `-` would make
+        # latexmk read it as an option. Rejected before discovery or any
+        # write -- `figure optimize --file` reaches here with the file stem,
+        # never through `paper_figure.figure_paths`' own name check.
+        raise Refused(
+            "DIAGRAM_SOURCE_ABSENT",
+            f"{figure_id!r} begins with '-'; latexmk would read it as an option",
+        )
     binary = discover_latexmk(path)
     scratch_dir.mkdir(parents=True, exist_ok=True)
     log_path = scratch_dir / f"{figure_id}.log"
