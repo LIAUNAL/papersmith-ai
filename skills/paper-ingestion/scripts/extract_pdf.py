@@ -652,6 +652,13 @@ class RoutedEngine:
                     self.heavy_missing = str(exc)
                     produced = {}
                 heavy_seconds += time.monotonic() - run_started
+                dropped = [n for n in range(first, last + 1) if n not in produced]
+                if dropped and self.engine == "docling":
+                    # `docling` reads no page any other way: fail the paper so
+                    # it stays loose and the next run retries it, rather than
+                    # file it with these pages empty (#105).
+                    raise EngineError(f"Docling did not convert page(s) {', '.join(map(str, dropped))} of "
+                                      f"{pdf_path.name}; the paper was not ingested and the next run retries it")
                 for number in range(first, last + 1):
                     probe = probes[number - 1]
                     if number in produced:
@@ -667,7 +674,8 @@ class RoutedEngine:
                         finally:
                             page.close()
                         engines[number] = "pdfium"
-                        probe.reason += "; Docling unavailable, read on the fast path"
+                        probe.reason += ("; Docling unavailable, read on the fast path" if self.heavy_missing
+                                         else "; Docling did not convert this page, read on the fast path")
         finally:
             document.close()
 
