@@ -81,6 +81,33 @@ class CitationVocabularyTests(unittest.TestCase):
         self.assertEqual(report["cited"], ["a-key", "b-key"])
 
 
+class VerifyCitationVocabularyTests(unittest.TestCase):
+    """`paper_verify.check_citations` reads the same vocabulary as `paper_bib`."""
+
+    def _check(self, tex: bytes, bib: bytes) -> dict:
+        import types
+
+        import paper_verify
+
+        evidence = types.SimpleNamespace(main_tex_bytes=tex, refs_bib_bytes=bib)
+        return paper_verify.check_citations(evidence)
+
+    def test_a_dangling_citep_or_citet_key_fails_the_check(self) -> None:
+        tex = b"\\citep[see][ch.~2]{ghost} and \\citet*{known}"
+        result = self._check(tex, b"@article{known,\n}")
+        self.assertEqual(result["verdict"], "fail")
+        self.assertEqual(result["evidence"]["dangling"], ["ghost"])
+
+    def test_a_plain_cite_with_its_entry_still_passes(self) -> None:
+        result = self._check(b"\\cite{known}", b"@article{known,\n}")
+        self.assertEqual(result["verdict"], "pass")
+
+    def test_verify_and_bib_declare_the_same_vocabulary(self) -> None:
+        import paper_verify
+
+        self.assertEqual(paper_verify.CITE_COMMANDS, paper_bib.CITE_COMMANDS)
+
+
 class FigureIdOptionTests(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()

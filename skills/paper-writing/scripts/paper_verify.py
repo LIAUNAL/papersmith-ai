@@ -84,7 +84,14 @@ UNMEASURED_REASONS: tuple[str, ...] = (
 
 _VERDICTS = ("pass", "fail", "unmeasured")
 
-_CITE_RE = re.compile(rb"\\cite\{([^}]*)\}")
+# The same citation vocabulary as `paper_bib.CITE_COMMANDS` (#81). This module
+# may import nothing beyond its allowlist, so the tuple is restated here and
+# `tests/test_paper_argv_boundaries.py` holds the two equal.
+CITE_COMMANDS = ("cite", "citep", "citet", "citealp", "citealt", "citeauthor", "citeyear")
+_CITE_RE = re.compile(
+    rb"\\(?:" + "|".join(sorted(CITE_COMMANDS, key=len, reverse=True)).encode("ascii") + rb")\*?"
+    rb"(?:\s*\[[^\]]*\]){0,2}\s*\{([^}]*)\}"
+)
 _BIB_ENTRY_RE = re.compile(rb"@[A-Za-z]+\{\s*([^,\s]+)\s*,")
 _ITEM_RE = re.compile(r"^\\item (.*)$", re.MULTILINE)
 _CLOSING_RE = re.compile(r"^Closing: (.*)$", re.MULTILINE)
