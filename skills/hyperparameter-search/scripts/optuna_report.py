@@ -27,18 +27,24 @@ from pathlib import Path
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 
-import matplotlib  # noqa: E402
+# Optuna and matplotlib belong to the target's venv, never to the forge: the
+# guard keeps them out of the forge interpreter's required imports, and hpo_cli
+# refuses `optuna-missing` before this script ever runs without them.
+try:
+    import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import optuna  # noqa: E402
-from optuna.importance import (  # noqa: E402
-    FanovaImportanceEvaluator,
-    MeanDecreaseImpurityImportanceEvaluator,
-    PedAnovaImportanceEvaluator,
-    get_param_importances,
-)
-from optuna.trial import TrialState  # noqa: E402
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import optuna
+    from optuna.importance import (
+        FanovaImportanceEvaluator,
+        MeanDecreaseImpurityImportanceEvaluator,
+        PedAnovaImportanceEvaluator,
+        get_param_importances,
+    )
+    from optuna.trial import TrialState
+except ImportError as exc:  # pragma: no cover - hpo_cli probes for these first
+    sys.exit(f"optuna_report needs optuna and matplotlib in the target's venv: {exc}")
 
 warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
