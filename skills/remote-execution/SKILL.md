@@ -599,18 +599,21 @@ Three modules exist so far, each service-blind and stdlib-only:
 | 8 | `reached` | Every interception point this driver topology adds — the OUTER double (`kaggle_driver.py` faked on `PATH`) and the INNER double (a recording `requests` transport mounted on the driver's own client session) — asserts a non-zero recorded-call count before any assertion about content; a bypassed double fails rather than passing silently | `_run()`'s subprocess boundary (outer); the driver's own mounted transport in its test fixtures (inner) | `test_outer_interception_reached_count` |
 | 9 | `no-sdk-above-the-driver` | `adapters/kaggle.py` names `kagglesdk` nowhere at all — text AND AST, so a live `import` and a docstring mention are both caught, not a reader's promise | `adapters/kaggle.py`'s own source (the absence of the name) | `test_driver_names_kagglesdk_nowhere_in_adapter` |
 | 10 | `wire-bearer` | The prepared outbound request carries `Authorization: Bearer <the token's stripped value>`, observed below `BearerAuth.__call__` and above the socket — never a Basic header, anywhere on this path | `kaggle_driver.py`'s `_build_client()` plus the recording `requests` transport mounted on it in its own tests | `test_wire_bearer_header_carries_token_value` |
+| 11 | `fetch-origin` | A per-file download sends the stored credential only to a Kaggle origin (`api.kaggle.com`, `www.kaggle.com`, `kaggle.com`, over https); any other host, a signed storage URL included, gets a bare GET, and a redirect that leaves Kaggle drops the credential for every later hop | `kaggle_driver.py`'s `_fetch_file()` | `test_fetch_sends_the_bearer_credential_only_to_kaggle_origins` |
 
   Rows 8-10 are new to the child-driver topology; rows 1-7 hold verbatim
   under it — the sink is still `_env_for()`, only what reads the value on
   the other end changed (the `kaggle` CLI's `authenticate()` before this
-  change, `kagglesdk`'s own `_try_fill_auth()` now). `fetch`'s per-file
-  download URLs (`list_kernel_session_output`) are a known open question,
-  not a row: whether they need this session's own Bearer credential or
-  answer to an anonymous GET is settled only by a live rehearsal, not run
-  by this change. `cmd_fetch` attaches the defensive choice (the same
-  already-authenticated session `poll`/`submit` use) rather than guessing,
-  and that choice stays **`unverified-by-rehearsal`** until a rehearsal,
-  run only on the user's explicit permission, settles it either way.
+  change, `kagglesdk`'s own `_try_fill_auth()` now). Row 11 retires the
+  defensive choice `fetch` used to make for the per-file download URLs
+  `list_kernel_session_output` returns: it sent this session's Bearer
+  credential to whatever host a URL named, and a URL in a response is no
+  authority to send a credential there. Those downloads also follow
+  redirects by hand (https only, at most five), give every hop a 10 s
+  connect and 60 s read timeout, and stream to disk under one 20 GiB
+  budget per fetch. Whether Kaggle's own file URLs need the credential at
+  all is still unrehearsed against a live account; a rehearsal runs only
+  on the user's explicit permission.
 
   `REQUEST_GPU = True` and `KAGGLE_MACHINE_SHAPE = "NvidiaTeslaT4"` are
   declared here, and here alone in this whole skill — a request, not a
