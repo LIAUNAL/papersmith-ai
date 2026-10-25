@@ -3,13 +3,19 @@ import { DOMAIN } from './domain-profile.js';
 import { scanManagedRevision } from './artifact-naming.js';
 const REVISION_REFERENCE=/(?:\brevisi[oó]n\s+(?:administrada\s+)?(?:[a-z0-9-]+\s+)?r\d{2,}\b|\br\d{2,}\b)/i;
 const OPERATION_ID=/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+// Operation verbs match as whole words (Unicode letters on both sides), allowing only the
+// infinitive `r` and enclitic pronouns, so "borrador", "preliminares" or "remueve" never
+// select DELETE or MOVE by substring.
+const verbs=(...stems:string[])=>new RegExp(`(?<![\\p{L}\\p{N}])(?:${stems.join('|')})r?(?:l[oa]s?|les?)?(?![\\p{L}\\p{N}])`,'iu');
+const DESTRUCTIVE_VERB=verbs('elimina','borra','quita','suprime','remueve');
+const MOVE_VERB=verbs('mueve','traslada');
 const position=(s:string):Position|undefined=>/al inicio|dentro.*inicio|inside.?start/i.test(s)?'inside_start':/al final|dentro.*final|inside.?end/i.test(s)?'inside_end':/antes de|before/i.test(s)?'before':/despu[eé]s de|after/i.test(s)?'after':undefined;
 function descriptions(instruction:string){const match=instruction.match(/(?:mueve|traslada|copia|duplica|pasa este contenido)\s+(.+?)\s+(?:a|en|antes de|despu[eé]s de)\s+(.+)/i);return {source:match?.[1]?.trim(),destination:match?.[2]?.trim()};}
 function fidelityConstraints(instruction:string):FidelityConstraints {const match=instruction.match(/(?:reemplaza|sustituye)\s+(?:exactamente\s+|literalmente\s+)?este\s+bloque\s*:\s*([\s\S]*?)\s*\n(?:por|con)\s+este\s+bloque\s*:\s*([\s\S]*?)(?:\s*\n(?:no\s+(?:modifiques|cambies)\s+(?:ningún|ningun|nada)|no\s+reformatees)|\s*$)/i);if(!match)return {};return {targetBlock:match[1],replacementBlock:match[2],preserveExternalBytes:true,noReformat:true,noSemanticReinterpretation:true};}
 function lifecycleIntent(instruction:string):ResolvedIntent['intent']|undefined {
  const restore=/(?:restaura|restaurar|restore|reinstala|recupera)\b/i.test(instruction);
  const withdraw=/(?:retira|retirar|retire|withdraw|jubila|remove\s+(?:the\s+)?revision|remueve\s+(?:la\s+)?revisi[oó]n|quita\s+(?:la\s+)?revisi[oó]n)\b/i.test(instruction);
- const destructive=/(?:elimina|borra|quita|suprime|remueve)\b/i.test(instruction);
+ const destructive=DESTRUCTIVE_VERB.test(instruction);
  const filename=scanManagedRevision(instruction)!==undefined,revision=REVISION_REFERENCE.test(instruction),operationId=OPERATION_ID.test(instruction);
  if (restore&&(filename||revision||operationId)) return 'RESTORE_WITHDRAWN_REVISION';
  if (withdraw&&(filename||revision)) return 'WITHDRAW_REVISION';
@@ -24,13 +30,13 @@ const CLOSE_DELIBERATION=/(?:cierra|finaliza|termina)\s+(?:la\s+|el\s+)?(?:delib
 
 export function resolveIntent(instruction:string):ResolvedIntent {
  const s=instruction.toLowerCase(),has=(...x:string[])=>x.some(v=>s.includes(v));
- const destructive=has('elimina','borra','quita','suprime','remueve');
+ const destructive=DESTRUCTIVE_VERB.test(instruction);
  // Explicit natural-language CLOSE (task 2.3): recognized before any other keyword, never ambiguous.
  const closeDeliberation=CLOSE_DELIBERATION.test(instruction);
  const lifecycleSelection=lifecycleIntent(instruction);
  let intent:ResolvedIntent['intent']=closeDeliberation?'CLOSE_DELIBERATION':(lifecycleSelection??'AMBIGUOUS');
  if(intent==='AMBIGUOUS'&&lifecycleSelection===undefined) {
-  if(has('mueve','traslada','pasa este contenido a'))intent='MOVE';
+  if(MOVE_VERB.test(instruction)||has('pasa este contenido a'))intent='MOVE';
   else if(has('copia','duplica en')||(has('incluye también en')&&has('conserva','mantén','preserva')))intent='COPY';
   else if(destructive)intent='DELETE';
   else if(has('agrega','inserta','añade'))intent='INSERT';
