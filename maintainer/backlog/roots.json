@@ -2,30 +2,13 @@
   "pinned_commit": "2d31f873",
   "roots": [
     {
-      "key": "delivered",
+      "key": "tracker",
       "tier": 0,
-      "state": "close",
-      "title": "Feature requests already delivered on main",
-      "fix": "Close with the path that delivers each one.",
+      "state": "keep-open",
+      "title": "The published tracker issue for this map",
+      "fix": "Re-render with `python3 maintainer/backlog.py render` and edit #110's body after each root closes.",
       "issues": [
-        10,
-        11,
-        12
-      ],
-      "evidence": {
-        "10": "skills/experimental-deliberation/{cli.mjs,profile.ts}",
-        "11": "skills/experimental-implementation/",
-        "12": "skills/paper-writing/ (Python scripts, not a deliberation-core consumer)"
-      }
-    },
-    {
-      "key": "audit-tracker",
-      "tier": 0,
-      "state": "close-on-confirmation",
-      "title": "The v0.13.0 audit tracker, superseded by the root map",
-      "fix": "Close #86 as superseded once the backlog tracker issue (render) is published; every audit item maps to a root here.",
-      "issues": [
-        86
+        110
       ]
     },
     {
