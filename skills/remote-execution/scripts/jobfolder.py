@@ -2179,7 +2179,7 @@ GIT_TIMEOUT_SECONDS = 120.0
 # `<transport>::<address>` form (`ext::`, `fd::`) names a helper command
 # outright; both are refused by `_remote_transport_admissible()`. Local and
 # scp-shaped remotes carry no scheme and stay admissible.
-REMOTE_URL_SCHEMES = ("https", "http", "ssh", "git", "file")
+REMOTE_URL_SCHEMES = ("https", "http", "ssh", "git", "file", "git+ssh", "ssh+git")
 
 # The env name the probe's askpass script reads the credential VALUE from.
 # The value is handed to the git child through its environment — never
@@ -2342,7 +2342,9 @@ def _remote_transport_admissible(repo_url: str) -> bool:
     `git@host:owner/repo.git` names no helper and stays admissible: this
     gate decides which transport may run, never which remote is wanted.
     """
-    if not repo_url or repo_url.startswith("-") or "::" in repo_url:
+    # The helper form is `<transport>::<address>` at the start of the URL; a
+    # `::` inside an IPv6 literal (`https://[2001:db8::1]/r.git`) is not one.
+    if not repo_url or repo_url.startswith("-") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*::", repo_url):
         return False
     scheme = re.match(r"([A-Za-z][A-Za-z0-9+.-]*)://", repo_url)
     return scheme is None or scheme.group(1).lower() in REMOTE_URL_SCHEMES
