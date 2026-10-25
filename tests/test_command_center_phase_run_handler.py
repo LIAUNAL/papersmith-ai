@@ -18,6 +18,7 @@ from skills._core.command_center import server
 class Req:
     def __init__(self, body):
         self.body = body
+        self.headers = {}  # a same-origin guard reads it; no Origin header, as from curl
 
     async def json(self):
         return self.body
