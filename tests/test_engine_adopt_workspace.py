@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,13 @@ class AdoptSurveyWorkspaceTests(unittest.TestCase):
         patcher = unittest.mock.patch.object(impl_guards, "WORKSPACE", self.workspace)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # `adopt` commits the survey; a runner has no git identity of its own.
+        identity = unittest.mock.patch.dict(os.environ, {
+            "GIT_AUTHOR_NAME": "adopt-tests", "GIT_COMMITTER_NAME": "adopt-tests",
+            "GIT_AUTHOR_EMAIL": "adopt-tests@example.invalid",
+            "GIT_COMMITTER_EMAIL": "adopt-tests@example.invalid"})
+        identity.start()
+        self.addCleanup(identity.stop)
         self.source = self.root / "prior-work"
         (self.source / "src").mkdir(parents=True)
         (self.source / "src" / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
