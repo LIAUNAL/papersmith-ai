@@ -49,6 +49,19 @@ VERIFY_TOOL = "get_accelerator_quota"
 VERIFY_TIMEOUT_SECONDS = 20
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow no redirect: the verify request carries the token, and a redirect
+    would hand it to whatever host ``Location`` names. Returning ``None`` makes
+    urllib raise the 3xx as an ``HTTPError`` (#106)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+#: The only opener a request carrying the Kaggle token goes through.
+_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
 def token_path() -> Path:
     """Where ``activate`` writes: the official client's own file."""
     return Path.home() / OFFICIAL_DIR / OFFICIAL_FILES[0]
@@ -189,7 +202,7 @@ def verify_token(token: str) -> tuple[bool, str]:
         "Authorization": f"Bearer {token}",
     })
     try:
-        with urllib.request.urlopen(request, timeout=VERIFY_TIMEOUT_SECONDS) as response:
+        with _OPENER.open(request, timeout=VERIFY_TIMEOUT_SECONDS) as response:
             text = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         return False, f"HTTP {exc.code}"
