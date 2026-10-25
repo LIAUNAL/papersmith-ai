@@ -90,3 +90,29 @@ class RepoUrlArgvBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RemoteTransportAdmissibilityTests(unittest.TestCase):
+    """Review follow-up: only the helper form `<transport>::` is refused, not a
+    `::` inside an IPv6 literal, and the git+ssh spellings stay admissible."""
+
+    def setUp(self) -> None:
+        import importlib.util
+
+        path = REPOSITORY_ROOT / "skills/remote-execution/scripts/jobfolder.py"
+        sys.path.insert(0, str(path.parent))
+        self.addCleanup(sys.path.remove, str(path.parent))
+        spec = importlib.util.spec_from_file_location("jobfolder_admissibility", path)
+        self.jobfolder = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = self.jobfolder  # dataclasses resolve their module
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(self.jobfolder)
+
+    def test_ipv6_literals_and_git_ssh_schemes_are_admissible(self) -> None:
+        for url in ("https://[2001:db8::1]/o/r.git", "ssh://git@[::1]/r.git",
+                    "git+ssh://host/r.git", "ssh+git://host/r.git", "git@host:o/r.git"):
+            self.assertTrue(self.jobfolder._remote_transport_admissible(url), url)
+
+    def test_helper_transports_and_options_stay_refused(self) -> None:
+        for url in ("ext::sh -c x", "fd::3", "EXT::x", "-u", "--upload-pack=x", "ftp://h/r", ""):
+            self.assertFalse(self.jobfolder._remote_transport_admissible(url), url)
