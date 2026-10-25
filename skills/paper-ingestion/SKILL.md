@@ -100,7 +100,9 @@ cached under `.papersmith/cache/ingestion/`, keyed by the PDF's SHA-256, the
 route, the engine version and its options; an entry records the hashes of its
 Markdown and figures and is re-checked before use (`--verify-cache` checks them
 all). Re-ingesting a paper, or the same PDF fetched again under another name,
-converts nothing twice.
+converts nothing twice. A page Docling fails on inside a run is never cached
+empty: it is read on the fast path and its sidecar row says so, and the next
+run converts it again.
 
 The formula model depends on the hardware, because on the wrong device it is
 unusable: Granite-Docling-258M on MLX on Apple Silicon (7 s for a page of six
