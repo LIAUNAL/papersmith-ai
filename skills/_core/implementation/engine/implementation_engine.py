@@ -62,7 +62,8 @@ from impl_layout import FORGE_ROOT, IGNORED_DIRS, LFS_POINTER_PREFIX  # noqa: E4
 from impl_refusals import NameRefused, Refused  # noqa: E402
 from impl_gitops import (git, lfs_state, present_files,  # noqa: E402
                          repository_ignored, tracked_files)
-from impl_guards import (require_clean_worktree, require_in_workspace,  # noqa: E402
+from impl_guards import (own_bookkeeping_snapshot, require_clean_worktree,  # noqa: E402
+                         require_in_workspace,
                          require_non_forge_interpreter, resolve_target)
 from impl_naming import normalize_name, package_name, validate_name  # noqa: E402
 from impl_references import (prefix_mappings, reference_pattern,  # noqa: E402
@@ -9528,13 +9529,13 @@ def cmd_apply(args: argparse.Namespace) -> dict:
             f"No rule covers: {current['unclassified']}. Ask where they belong; never guess.",
         )
 
+    kept = own_bookkeeping_snapshot(target)
     try:
         migrate(target, current)
     except Exception as failure:  # noqa: BLE001 - the repository must not stay half-migrated
         # The tree was verified clean before any mutation, so discarding the
         # partial work restores exactly the reviewed starting point.
-        git(target, "reset", "-q", "--hard", check=False)
-        git(target, "clean", "-qfd", check=False)
+        _roll_back_to_head(target, kept)
         raise Refused(
             "APPLY_ABORTED",
             f"{failure}. Nothing was committed and the working tree was restored "
@@ -9554,6 +9555,33 @@ def cmd_apply(args: argparse.Namespace) -> dict:
         "createdDirs": current["createDirs"],
         "note": "Structure only. Revert this single commit to undo the whole migration.",
     }
+
+
+def _roll_back_to_head(target: Path, kept: dict[str, bytes | None]) -> None:
+    """Undo a failed mutation: the tree returns to `HEAD`, and the ledger
+    files `require_clean_worktree` admitted come back byte for byte.
+
+    Ownership. Every caller proved the tree clean before mutating, and the
+    guard refuses every pre-existing change except `.implementation/`
+    bookkeeping, so whatever else is tracked-and-modified or untracked (and
+    not ignored) at the failure was written by the operation and is the
+    operation's to discard; ignored files are never touched (`clean`
+    without `-x`). The bookkeeping is not the operation's: `reset --hard`
+    reverted a modified ledger and deleted one the operation had staged,
+    and `clean -fd` deleted an untracked one -- the record of the session
+    that hit the failure (#80). `kept` is `own_bookkeeping_snapshot` taken
+    before the mutation and is written back after the reset. Its index
+    state is not restored: a ledger that was staged comes back unstaged.
+    """
+    git(target, "reset", "-q", "--hard", check=False)
+    git(target, "clean", "-qfd", check=False)
+    for rel, data in kept.items():
+        path = target / rel
+        if data is None:
+            path.unlink(missing_ok=True)
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
 
 
 def migrate(target: Path, current: dict) -> None:
@@ -19165,6 +19193,7 @@ def _stage_scaffold(target: Path, name: str, seed: str,
             "would overwrite. Resolve with the user first.",
         )
 
+    kept = own_bookkeeping_snapshot(target)
     written: list[str] = []
     try:
         for destination in destinations:
@@ -19179,8 +19208,7 @@ def _stage_scaffold(target: Path, name: str, seed: str,
     except Exception as failure:  # noqa: BLE001 - the tree must not stay half-written
         # `require_clean_worktree` proved the tree clean before this ran, so
         # discarding everything just written restores exactly that state.
-        git(target, "reset", "-q", "--hard", check=False)
-        git(target, "clean", "-qfd", check=False)
+        _roll_back_to_head(target, kept)
         raise Refused(
             "APPLY_ABORTED",
             f"{failure}. Nothing was recorded; the working tree was restored "
@@ -19339,6 +19367,7 @@ def _write_kit_stage(target: Path, name: str, stage: str, destinations: list[str
             "would overwrite. Resolve with the user first.",
         )
 
+    kept = own_bookkeeping_snapshot(target)
     written: list[str] = []
     try:
         for destination in destinations:
@@ -19349,8 +19378,7 @@ def _write_kit_stage(target: Path, name: str, stage: str, destinations: list[str
     except Exception as failure:  # noqa: BLE001 - the tree must not stay half-written
         # `require_clean_worktree` proved the tree clean before this ran, so
         # discarding everything just written restores exactly that state.
-        git(target, "reset", "-q", "--hard", check=False)
-        git(target, "clean", "-qfd", check=False)
+        _roll_back_to_head(target, kept)
         raise Refused(
             "APPLY_ABORTED",
             f"{failure}. Nothing was recorded; the working tree was restored "
@@ -20213,11 +20241,11 @@ def _adopt_apply(args: argparse.Namespace) -> dict:
             "UNCLASSIFIED_FILES",
             f"No rule covers: {current['unclassified']}. Ask where they belong; never guess.",
         )
+    kept = own_bookkeeping_snapshot(target)
     try:
         migrate(target, current)
     except Exception as failure:  # noqa: BLE001 - the repository must not stay half-migrated
-        git(target, "reset", "-q", "--hard", check=False)
-        git(target, "clean", "-qfd", check=False)
+        _roll_back_to_head(target, kept)
         raise Refused(
             "APPLY_ABORTED",
             f"{failure}. Nothing was committed and the working tree was restored "
