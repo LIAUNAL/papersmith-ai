@@ -2205,7 +2205,8 @@ def run_sensitivity(args):
     Exit `0` for any verdict, a `not adjudicable` finding included, and
     the degenerate "this subject declares no computed values" result.
     Exit `2` only when the tool could not look: an occupied box, a
-    stalled control, a restore mismatch, or an escape.
+    stalled control, a baseline the producer refused, a restore
+    mismatch, or an escape.
     """
     spec_path = Path(args.spec)
     if not spec_path.is_file():
@@ -2296,6 +2297,14 @@ def run_sensitivity(args):
         # --- Baseline: every declared input present. ---
         baseline_completed = run_sensitivity_drive(
             recipe, subject, copy_root, box, repo, args.timeout)
+        if baseline_completed.returncode != 0:
+            raise Unprobeable(
+                "kind=sensitivity-baseline-refused: with every declared "
+                "input present, the producer exited "
+                f"{baseline_completed.returncode}. A matrix measured "
+                "against a baseline the producer never computed would "
+                "read every refusal as a signal; every pair is unreached "
+                "until the producer completes with its inputs present")
         baseline_text = read_site(declared_path)
         baseline_pairs = dict(declared_value_pairs(baseline_text, declared_site))
 
@@ -2360,10 +2369,10 @@ def run_sensitivity(args):
         not_adjudicable = sorted(
             label for label, row in matrix.items()
             if row and all(outcome == "unchanged" for outcome in row.values()))
-
-        after_removed = box_empty_or_absent(box)
     finally:
         erase_box(box)
+
+    after_removed = box_empty_or_absent(box)
 
     emit({
         "containment": {"afterRemoved": after_removed, "beforeEmpty": before_empty,
