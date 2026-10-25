@@ -87,6 +87,21 @@ STORE_PATH = STORE_DIR / STORE_FILE
 VALIDATION_URL = "https://www.kaggle.com/api/v1/competitions/list?page=1"
 VALIDATION_TIMEOUT = 20
 
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow no redirect: the validation request carries the credential, and a
+    redirect would hand it to whatever host `Location` names. Returning `None`
+    makes urllib raise the 3xx as an `HTTPError` (#106). This script ships to
+    workspaces and imports nothing from papersmith, so `smith mcp kaggle`
+    keeps its own copy of this handler."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+# The only opener a request carrying a Kaggle credential goes through.
+_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
 STORE_VERSION = 1
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -477,7 +492,7 @@ def _attempt(scheme: str, credential: str) -> None:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=VALIDATION_TIMEOUT) as response:
+        with _OPENER.open(request, timeout=VALIDATION_TIMEOUT) as response:
             if response.status != 200:
                 raise CredentialError(f"Kaggle answered HTTP {response.status}")
     except urllib.error.HTTPError as exc:
