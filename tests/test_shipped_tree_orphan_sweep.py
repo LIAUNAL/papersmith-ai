@@ -125,3 +125,20 @@ class OwnershipLicensesTheSweepTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegistryPruningTests(unittest.TestCase):
+    """Review follow-up: the append-only registry is pruned of expired runs."""
+
+    def test_pruning_drops_expired_runs_and_keeps_recent_ones(self):
+        import tempfile
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "papersmith-test-runs"
+            now = time.time()
+            old = now - orphan_sweep.RUN_TTL_SECONDS - 10
+            registry.write_text(f"111 {old:.0f}\n222 {now:.0f}\nnot a line\n", encoding="utf-8")
+            with mock.patch.object(orphan_sweep, "registry_path", return_value=registry):
+                orphan_sweep.prune_registry(now)
+            self.assertEqual(registry.read_text(encoding="utf-8"), f"222 {now:.0f}\n")
