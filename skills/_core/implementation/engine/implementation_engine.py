@@ -9461,13 +9461,38 @@ def cmd_plan(args: argparse.Namespace) -> dict:
     return build_plan(target, name, args.revision)
 
 
+def _read_approved_plan(plan_path: str) -> dict:
+    """The approved plan JSON at `plan_path`, or the refusal it earns.
+
+    A plan path is operator input. Missing, unreadable or malformed bytes
+    refuse `PLAN_STALE` (the binding to the reviewed plan is unestablished)
+    and JSON that is not an object refuses `PLAN_MISMATCH`. Raised
+    uncaught, either reached `main()`'s crash recorder and became a
+    persistent forge defect that blocked every gated command (#67).
+    """
+    try:
+        approved = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise Refused(
+            "PLAN_STALE",
+            f"The approved plan {plan_path} cannot be read; the binding to "
+            "the reviewed plan is unestablished. Re-run `plan` and get "
+            "approval again.")
+    if not isinstance(approved, dict):
+        raise Refused(
+            "PLAN_MISMATCH",
+            f"The approved plan {plan_path} is not a plan object; point "
+            "--plan at the JSON `plan` printed.")
+    return approved
+
+
 def cmd_apply(args: argparse.Namespace) -> dict:
     target = resolve_target(args.target)
     name = validate_name(args.name)
     _require_no_open_defect(target, name)
     require_clean_worktree(target)
 
-    approved = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+    approved = _read_approved_plan(args.plan)
     if approved.get("target") != str(target) or approved.get("name") != name:
         raise Refused("PLAN_MISMATCH", "The approved plan was produced for a different target or name.")
 
@@ -19029,6 +19054,15 @@ def _record_engine_defect(args: argparse.Namespace, exc: BaseException) -> None:
     take none), the key is OMITTED from the event, never written as `null`
     -- the identical discipline `cmd_defect`'s own `detail` already keeps.
 
+    The ledger is located through the same three guards `cmd_defect` and
+    every gate run (`resolve_target`, `validate_name`,
+    `require_named_product_dir`), and nothing is recorded when any of them
+    refuses: a ledger no gate reads blocks nothing and only litters, and
+    the raw arguments once wrote outside the workspace, created a target
+    that did not exist yet (so the next `adopt` refused
+    `DESTINATION_CONFLICT`), followed `--name ../x`, and opened the phantom
+    `<name>/` tree `PRODUCT_DIR_MISNAMED` exists to prevent (#88).
+
     Called only from `main()`'s own guard, itself wrapped in its own
     `try/except Exception: pass` -- a failure in here must never replace
     the original traceback with one about this function instead.
@@ -19036,6 +19070,12 @@ def _record_engine_defect(args: argparse.Namespace, exc: BaseException) -> None:
     target_raw = getattr(args, "target", None)
     name_raw = getattr(args, "name", None)
     if target_raw is None or name_raw is None:
+        return
+    try:
+        target = resolve_target(target_raw)
+        name = validate_name(name_raw)
+        require_named_product_dir(target, name)
+    except Refused:
         return
     crashing_file = _crashing_forge_file(exc)
     if crashing_file is None:
@@ -19052,8 +19092,7 @@ def _record_engine_defect(args: argparse.Namespace, exc: BaseException) -> None:
     if session is not None:
         event["session"] = session
 
-    ledger_path = (Path(target_raw).expanduser().resolve() / name_raw
-                   / ".implementation" / "position.jsonl")
+    ledger_path = target / name / ".implementation" / "position.jsonl"
     impl_position.append_event(ledger_path, event)
 def _materialize_plan_gate(target: Path, name: str, plan_path: str) -> dict:
     """The exact pattern `cmd_apply` runs: `PLAN_MISMATCH` when the approved
@@ -19061,7 +19100,7 @@ def _materialize_plan_gate(target: Path, name: str, plan_path: str) -> dict:
     repository's structure has moved since approval. `materialize --stage`
     reuses it rather than minting a second gate over the same fact.
     """
-    approved = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    approved = _read_approved_plan(plan_path)
     if approved.get("target") != str(target) or approved.get("name") != name:
         raise Refused("PLAN_MISMATCH",
                       "The approved plan was produced for a different target or name.")
