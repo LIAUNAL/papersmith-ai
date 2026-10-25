@@ -31,8 +31,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 #: Bumped whenever routing or fast-path output changes, so cached pages from an
-#: older pipeline are never mistaken for current ones.
-PIPELINE_VERSION = "4"
+#: older pipeline are never mistaken for current ones. 5: pages a partial
+#: Docling run failed on were cached empty by 4, so its entries are dropped.
+PIPELINE_VERSION = "5"
 
 #: Fonts that only typeset mathematics: TeX's math italic, symbols and
 #: extensions (CMMI, CMSY, CMEX and their Latin Modern / AMS / Euler kin), and
@@ -128,6 +129,29 @@ def _font_name(textpage, index: int, buffer) -> tuple[str, int]:
     return (name.split("+", 1)[1] if "+" in name[:7] else name), flags.value
 
 
+def _code_points(textpage, count: int):
+    """``(index, code point)`` for each character of a text page.
+
+    PDFium hands a character outside the BMP (math italic 𝑥, an emoji) out as
+    its two UTF-16 surrogates at consecutive indices; they are joined into one
+    code point at the first index. A surrogate without its partner, from a
+    broken ToUnicode map, reads as U+FFFD.
+    """
+    import pypdfium2.raw as raw
+
+    index = 0
+    while index < count:
+        code = raw.FPDFText_GetUnicode(textpage, index)
+        if 0xD800 <= code <= 0xDBFF and index + 1 < count:
+            low = raw.FPDFText_GetUnicode(textpage, index + 1)
+            if 0xDC00 <= low <= 0xDFFF:
+                yield index, 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                index += 2
+                continue
+        yield index, 0xFFFD if 0xD800 <= code <= 0xDFFF else code
+        index += 1
+
+
 def _is_math_char(code: int) -> bool:
     return any(low <= code <= high for low, high in _MATH_RANGES)
 
@@ -187,8 +211,7 @@ def probe_page(page, number: int) -> PageProbe:
         lines: list[tuple[int, int, dict[str, int]]] = []  # (math, visible, fonts) per line
         line_math = line_visible = 0
         line_fonts: dict[str, int] = {}
-        for index in range(count + 1):
-            code = raw.FPDFText_GetUnicode(textpage, index) if index < count else 0x0A
+        for index, code in [*_code_points(textpage, count), (count, 0x0A)]:
             if code == 0x0A:
                 lines.append((line_math, line_visible, line_fonts))
                 line_math = line_visible = 0
@@ -252,8 +275,7 @@ def _lines(page) -> list[Line]:
                                   hyphen=hyphen))
             chars.clear(); sizes.clear(); bold.clear(); tops.clear(); bottoms.clear()
 
-        for index in range(textpage.count_chars()):
-            code = raw.FPDFText_GetUnicode(textpage, index)
+        for index, code in _code_points(textpage, textpage.count_chars()):
             if code == 0x0A:
                 flush()
                 hyphen = False
@@ -267,10 +289,7 @@ def _lines(page) -> list[Line]:
                 hyphen = True
                 continue
             hyphen = False
-            try:
-                chars.append(chr(code))
-            except ValueError:
-                continue
+            chars.append(chr(code))
             if code == 0x20 or raw.FPDFText_IsGenerated(textpage, index) == 1:
                 continue
             sizes.append(round(raw.FPDFText_GetFontSize(textpage, index), 1))
@@ -529,7 +548,15 @@ class HeavyEngine:
         return self._converters[(ocr, tables)]
 
     def convert(self, pdf_path: Path, first: int, last: int, ocr: bool, tables: bool = True) -> dict[int, FastPage]:
-        """Markdown and figures for pages ``first..last`` (1-based, inclusive)."""
+        """Markdown and figures for the pages of ``first..last`` (1-based,
+        inclusive) that Docling converted.
+
+        When a stage fails on some pages of a run, Docling still returns
+        (``PARTIAL_SUCCESS``) but leaves those pages out of the document, and
+        exporting one gives an empty string. Such a page is left out of the
+        result too, so the caller reads it another way and never caches it
+        as an empty page.
+        """
         try:  # docling_core ships with docling, which is optional
             from docling_core.types.doc import PictureItem
         except ImportError:
@@ -543,6 +570,8 @@ class HeavyEngine:
                 pictures.setdefault(item.prov[0].page_no, []).append(item)
         pages: dict[int, FastPage] = {}
         for number in range(first, last + 1):
+            if number not in document.pages:
+                continue
             text = document.export_to_markdown(page_no=number, escape_underscores=False, compact_tables=True)
             figures: dict = {}
             for picture in pictures.get(number, []):
