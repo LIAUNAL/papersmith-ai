@@ -353,6 +353,7 @@ If your resolution or decision was wrong, the engine rejects it instead of silen
 - `WRONG_TARGET_ENTRY_ID` — re-resolve the locus (previous section) and rebuild the decision; do not reuse a stale or guessed ID.
 - `ALTERED_REPLACEMENT_TEXT` — for an exact byte-preserving edit, copy the original block into `replacementText` unchanged.
 - `NO_MATCHING_DECISION` / `AMBIGUOUS_MATCHING_DECISIONS` — every resolved locus in the request needs exactly one decision claiming it.
+- `DECISIONS_OUTSIDE_SELECTION` — a single `selectedEntryId` was sent with decisions for other sections too (listed in `outsideSelection`); those would have been dropped, so nothing is previewed. Send one query per section in `selectedEntryIds`.
 - `SOURCE_EQUALS_DESTINATION` / `HIERARCHY_CYCLE_DESTINATION_DESCENDANT` / `NO_OP_PLAN` — the described relocation or replacement is structurally impossible; go back to the user rather than forcing a shape that would satisfy validation without satisfying the request.
 
 ## The operations this host accepts

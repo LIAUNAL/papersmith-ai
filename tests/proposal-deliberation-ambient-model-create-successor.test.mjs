@@ -164,3 +164,30 @@ test('CREATE_SUCCESSOR + resolvedDecisions: the existing model-backed path is un
 	assert.equal(result.status, 'blocked');
 	assert.equal(result.reason, 'SEMANTIC_EDIT_PLANNER_REQUIRED');
 });
+
+test('CREATE_SUCCESSOR + resolvedDecisions: a single selectedEntryId with a decision for another section is refused, never published with that decision dropped', async () => {
+	const source = '# 1 Intro\n\nKeep prefix exactly.\n\n# 2 Alpha\n\nOld alpha body.\n\n# 3 Middle\n\nKeep middle exactly.\n\n# 4 Beta\n\nOld beta body.\n\n# 5 Tail\n\nKeep suffix exactly.\n';
+	const { root, adapter } = await seed(source);
+	const orchestrator = orchestratorWithoutPlanner(root, adapter);
+	const alphaEntryId = await resolveLocusEntryId(root, 'research-concept-r01.md', 'sección Alpha');
+	const betaEntryId = await resolveLocusEntryId(root, 'research-concept-r01.md', 'sección Beta');
+	const request = {
+		operation: 'CREATE_SUCCESSOR',
+		sourceFilename: 'research-concept-r01.md',
+		instruction: 'Modifica las secciones Alpha y Beta.',
+		selectedEntryId: 'sección Alpha',
+		resolvedDecisions: [
+			{ kind: 'replace', targetEntryId: alphaEntryId, replacementText: '# 2 Alpha\n\nNew alpha body.\n\n' },
+			{ kind: 'replace', targetEntryId: betaEntryId, replacementText: '# 4 Beta\n\nNew beta body.\n\n' },
+		],
+	};
+	const preview = await orchestrator.execute(request);
+	assert.equal(preview.status, 'blocked', JSON.stringify(preview));
+	assert.equal(preview.reason, 'DECISIONS_OUTSIDE_SELECTION');
+	assert.deepEqual(preview.outsideSelection, [betaEntryId]);
+	assert.equal(preview.mutations, 0);
+	const accepted = await orchestrator.execute({ ...request, acceptSuccessor: true, successorAcceptanceToken: 'x'.repeat(43) });
+	assert.equal(accepted.status, 'blocked', JSON.stringify(accepted));
+	assert.equal(accepted.reason, 'DECISIONS_OUTSIDE_SELECTION');
+	assert.deepEqual((await readdir(path.join(root, 'proposals'))).filter((f) => f.endsWith('.md')), ['research-concept-r01.md']);
+});

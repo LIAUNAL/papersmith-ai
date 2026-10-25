@@ -483,6 +483,7 @@ That fires when a line asserts an achieved result. The right fix is almost alway
 - `WRONG_TARGET_ENTRY_ID` — re-resolve the locus and rebuild the decision; never reuse a stale or guessed ID.
 - `ALTERED_REPLACEMENT_TEXT` — for an exact byte-preserving edit, copy the original block unchanged.
 - `NO_MATCHING_DECISION` / `AMBIGUOUS_MATCHING_DECISIONS` — every resolved locus needs exactly one decision claiming it.
+- `DECISIONS_OUTSIDE_SELECTION` — a single `selectedEntryId` was sent with decisions for other sections too (listed in `outsideSelection`); those would have been dropped, so nothing is previewed. Send one query per section in `selectedEntryIds`.
 - `OVERLAPPING_PATCHES` — two edits over one span. On an all-`replace` batch the engine appends its own edit over the `## Changes` block, so do not also target that block yourself.
 - `SOURCE_EQUALS_DESTINATION` / `HIERARCHY_CYCLE_DESTINATION_DESCENDANT` / `NO_OP_PLAN` — the relocation or replacement described is structurally impossible. Go back to the user rather than forcing a shape that satisfies validation without satisfying the request.
 - `MULTIPLE_ACTIVE_REVISIONS` — a tied latest across lineages. Ask for the exact `sourceFilename`.

@@ -134,3 +134,29 @@ async function waitForLine(lines, index, timeoutMs = 10_000) {
 	}
 	return lines[index];
 }
+
+test('CLI keyless invocation: a single selectedEntryId with a decision for another section is refused with DECISIONS_OUTSIDE_SELECTION and names the other locus', async () => {
+	const source = '# 1 Intro\n\nKeep prefix exactly.\n\n# 2 Alpha\n\nOld alpha body.\n\n# 3 Beta\n\nOld beta body.\n\n# 4 Tail\n\nKeep suffix exactly.\n';
+	const projectRoot = await seedProjectRoot(source);
+	const alphaEntryId = await resolveLocusEntryId(projectRoot, 'research-concept-r01.md', 'sección Alpha');
+	const betaEntryId = await resolveLocusEntryId(projectRoot, 'research-concept-r01.md', 'sección Beta');
+	const request = {
+		operation: 'CREATE_SUCCESSOR',
+		sourceFilename: 'research-concept-r01.md',
+		instruction: 'Modifica las secciones Alpha y Beta.',
+		selectedEntryId: 'sección Alpha',
+		resolvedDecisions: [
+			{ kind: 'replace', targetEntryId: alphaEntryId, replacementText: '# 2 Alpha\n\nNew alpha body.\n\n' },
+			{ kind: 'replace', targetEntryId: betaEntryId, replacementText: '# 3 Beta\n\nNew beta body.\n\n' },
+		],
+	};
+	const { stdout } = await execFileAsync(process.execPath, [cliPath, JSON.stringify(request)], {
+		cwd: engineDir,
+		env: keylessEnv(projectRoot, 'ambient-cli-outside-selection'),
+	}).catch((error) => error);
+	const result = JSON.parse(stdout);
+	assert.equal(result.status, 'blocked', JSON.stringify(result));
+	assert.equal(result.message, 'DECISIONS_OUTSIDE_SELECTION');
+	assert.deepEqual(result.outsideSelection, [betaEntryId]);
+	assert.equal(result.patchCount, 0);
+});
