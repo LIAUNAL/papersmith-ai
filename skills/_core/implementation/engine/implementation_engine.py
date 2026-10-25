@@ -9462,28 +9462,28 @@ def cmd_plan(args: argparse.Namespace) -> dict:
 
 
 def _read_approved_plan(plan_path: str) -> dict:
-    """The approved plan JSON at `plan_path`, or the refusal it earns.
+    """The plan JSON at `plan_path`, or the refusal it earns.
 
     A plan path is operator input. Missing, unreadable or malformed bytes
     refuse `PLAN_STALE` (the binding to the reviewed plan is unestablished)
-    and JSON that is not an object refuses `PLAN_MISMATCH`. Raised
+    and JSON that is not a mapping refuses `PLAN_MISMATCH`. Raised
     uncaught, either reached `main()`'s crash recorder and became a
-    persistent forge defect that blocked every gated command (#67).
+    persistent forge defect that blocked every gate (#67).
     """
     try:
-        approved = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+        plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raise Refused(
             "PLAN_STALE",
-            f"The approved plan {plan_path} cannot be read; the binding to "
+            f"The plan {plan_path} cannot be read; the binding to "
             "the reviewed plan is unestablished. Re-run `plan` and get "
             "approval again.")
-    if not isinstance(approved, dict):
+    if not isinstance(plan, dict):
         raise Refused(
             "PLAN_MISMATCH",
-            f"The approved plan {plan_path} is not a plan object; point "
+            f"The plan {plan_path} is not a JSON mapping; point "
             "--plan at the JSON `plan` printed.")
-    return approved
+    return plan
 
 
 def cmd_apply(args: argparse.Namespace) -> dict:
@@ -19056,7 +19056,7 @@ def _record_engine_defect(args: argparse.Namespace, exc: BaseException) -> None:
 
     The ledger is located through the same three guards `cmd_defect` and
     every gate run (`resolve_target`, `validate_name`,
-    `require_named_product_dir`), and nothing is recorded when any of them
+    `require_named_product_dir`), and nothing is written when any of them
     refuses: a ledger no gate reads blocks nothing and only litters, and
     the raw arguments once wrote outside the workspace, created a target
     that did not exist yet (so the next `adopt` refused
