@@ -9,6 +9,10 @@ every suite stayed green.
 The unit is the one JS `length` counts: UTF-16 code units. Measuring in Python
 characters would call a description legal that the runtime measures as over,
 which is the whole difference the guard exists to catch.
+
+OpenCode adds the other half of its loading contract (#14): a skill's `name`
+must match its directory and be lowercase alphanumeric with single hyphens.
+A skill that breaks it does not error, it simply never appears.
 """
 
 from __future__ import annotations
@@ -29,6 +33,9 @@ PI_DESCRIPTION_LIMIT = 1024
 #: Single-line is the shape every harness's parser reads, so it is asserted
 #: rather than assumed.
 DESCRIPTION_RE = re.compile(r'^description:[ \t]*"(?P<value>.*)"[ \t]*$', re.MULTILINE)
+NAME_RE = re.compile(r'^name:[ \t]*"?(?P<value>[^"\n]*?)"?[ \t]*$', re.MULTILINE)
+#: OpenCode's `name` rule: 1-64 chars, lowercase alphanumerics joined by single hyphens.
+OPENCODE_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 def _utf16_length(text: str) -> int:
@@ -47,6 +54,13 @@ def _description(path: Path) -> str:
             f"{path.relative_to(FORGE_ROOT)} has no single-line double-quoted "
             "`description:` in its front matter")
     return matched.group("value")
+
+
+def _name(path: Path) -> str | None:
+    text = path.read_text(encoding="utf-8")
+    front = text.split("---", 2)[1] if text.startswith("---") else ""
+    matched = NAME_RE.search(front)
+    return matched.group("value") if matched else None
 
 
 def _measured() -> list[tuple[Path, str, int]]:
@@ -68,6 +82,23 @@ class SkillDescriptionTests(unittest.TestCase):
             f"a skill description exceeds Pi's {PI_DESCRIPTION_LIMIT}-unit "
             f"ceiling (measured in UTF-16 code units, the unit JS `length` "
             f"counts): {over}")
+
+    def test_every_skill_name_matches_its_directory(self) -> None:
+        mismatched = [(path.parent.name, _name(path)) for path in _skill_files()
+                      if _name(path) != path.parent.name]
+        self.assertEqual(
+            mismatched, [],
+            "a skill's front-matter `name` differs from its directory, so "
+            f"OpenCode does not load it: {mismatched}")
+
+    def test_every_skill_name_satisfies_the_opencode_format(self) -> None:
+        offenders = [path.parent.name for path in _skill_files()
+                     if len(path.parent.name) > 64
+                     or not OPENCODE_NAME_RE.fullmatch(path.parent.name)]
+        self.assertEqual(
+            offenders, [],
+            "a skill name is not 1-64 lowercase alphanumerics joined by single "
+            f"hyphens, so OpenCode does not load it: {offenders}")
 
     def test_every_skill_description_starts_with_the_trigger_convention(self) -> None:
         offenders = [path.relative_to(FORGE_ROOT).as_posix()
