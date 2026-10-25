@@ -86,6 +86,37 @@ def register_run() -> None:
         pass
 
 
+def prune_registry(now: float) -> None:
+    """Rewrites the registry keeping only runs inside `RUN_TTL_SECONDS`, so the
+    append-only file stays bounded. Atomic (`os.replace`); a line another
+    worker appends between the read and the replace is lost, which only means
+    that run's orphans are never swept -- the safe direction."""
+    registry = registry_path()
+    if registry is None:
+        return
+    try:
+        lines = registry.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    kept = []
+    for line in lines:
+        try:
+            pid, started = line.split()
+            int(pid)
+            if now - float(started) <= RUN_TTL_SECONDS:
+                kept.append(line)
+        except ValueError:
+            continue
+    if len(kept) == len(lines):
+        return
+    scratch = registry.with_name(f"{registry.name}.{os.getpid()}.tmp")
+    try:
+        scratch.write_text("".join(f"{line}\n" for line in kept), encoding="utf-8")
+        os.replace(scratch, registry)
+    except OSError:
+        scratch.unlink(missing_ok=True)
+
+
 def _registered_runs(now: float) -> dict[int, list[float]] | None:
     """pid -> start times of recent registered runs; None without a registry."""
     registry = registry_path()
@@ -218,5 +249,6 @@ def sweep_and_report() -> None:
     if os.environ.get("FORGE_SKIP_ORPHAN_SWEEP"):
         return
     register_run()
+    prune_registry(time.time())
     for path in sweep():
         print(f"orphan_sweep: removed {path} (left by a killed run)")
