@@ -11,6 +11,32 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.23.1
+
+### Fixed
+
+- **A successor no longer drops decisions silently.** `CREATE_SUCCESSOR` with
+  a single `selectedEntryId` and `resolvedDecisions` for other sections too
+  applied only the selected section's decision and published the rest away;
+  it now refuses with `DECISIONS_OUTSIDE_SELECTION`, naming the other loci in
+  `outsideSelection`, before any preview. Batches that name only other loci
+  keep their existing refusals.
+- **The forge interpreter no longer needs optuna or matplotlib.**
+  `hyperparameter-search`'s `optuna_report.py` runs under the target's venv;
+  its imports are now guarded, so the forge gate stops counting them as forge
+  requirements (0.23.0 failed `test_the_named_interpreter_carries_every_import_the_forge_requires`).
+
+### Security
+
+- **Command center binds to loopback unless a network bind is asked for**, and
+  keeps the Host header check on (#96).
+- **Command center escapes scouted candidates and refuses cross-origin
+  actions** (#99).
+- **remote-execution sends the Kaggle credential only to Kaggle origins.**
+- **Setup pins micromamba and verifies its SHA-256 before running it.**
+- **Deliberation rejects path traversal** in managed revision names and
+  sidecar writes.
+
 ## 0.23.0
 
 ### Added

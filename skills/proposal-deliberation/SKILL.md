@@ -383,6 +383,7 @@ The engine independently re-resolves every locus at call time and validates what
 - `ALTERED_REPLACEMENT_TEXT` — for an exact-block fidelity edit, your replacement text does not match the block the user asked to preserve byte-for-byte. Copy it exactly.
 - `MALFORMED_DECISION_SHAPE` / `UNEXPECTED_DECISION_FIELD` / `WRONG_ACTION_KIND` — your decision's shape or kind does not match the table above.
 - `NO_MATCHING_DECISION` / `AMBIGUOUS_MATCHING_DECISIONS` — every resolved locus needs exactly one decision; none or more than one was supplied for it.
+- `DECISIONS_OUTSIDE_SELECTION` — a single `selectedEntryId` was sent with decisions for other sections too (listed in `outsideSelection`); those would have been dropped, so nothing is previewed. Send one query per section in `selectedEntryIds`.
 - `SOURCE_EQUALS_DESTINATION` / `HIERARCHY_CYCLE_DESTINATION_DESCENDANT` / `NO_OP_PLAN` — the relocation or replacement you described is structurally impossible (self-referential, nests inside itself, or changes nothing). Ask the user to clarify instead of forcing it through.
 
 None of this is negotiable and none of it is something you should work around — if the engine rejects a decision, the fix is a better resolution or a clarified instruction, never a different request shape designed to slip past validation.
