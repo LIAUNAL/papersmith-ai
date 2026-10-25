@@ -74,6 +74,7 @@ class ServerNeutralTests(unittest.TestCase):
         class Req:
             def __init__(self, body):
                 self.body = body
+                self.headers = {}  # origin_is_same reads it; no Origin header, as from curl
 
             async def json(self):
                 return self.body
