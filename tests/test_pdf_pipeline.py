@@ -389,6 +389,41 @@ class RoutedEngineTests(_Tmp):
         cache = self.tmp / "cache"
         self.assertEqual(sorted(e.parent.name[:5] for e in cache.glob("*/*/*/entry.json")), ["p0001", "p0002", "p0004"])
 
+    def _partial_docling(self):
+        class Document:
+            pages = {2: object(), 4: object()}
+
+            def iterate_items(self):
+                return iter(())
+
+            def export_to_markdown(self, page_no, **_options):
+                return f"$$\\beta_{page_no}$$" if page_no in self.pages else ""
+
+        class Converter:
+            def convert(self, source, page_range):
+                return type("Result", (), {"document": Document()})()
+
+        heavy = pdf_pipeline.HeavyEngine()
+        heavy._formula = ("granite_docling", "stub")
+        heavy._converters[(False, False)] = Converter()
+        heavy.version = lambda: "stub-1"
+        return heavy
+
+    def test_a_page_docling_failed_on_says_so_rather_than_unavailable(self) -> None:
+        text, sidecar = self.render(self.engine(heavy=self._partial_docling()),
+                                    self.pdf(TEXT_PAGE, MATH_PAGE, MATH_PAGE, MATH_PAGE))
+        reason = sidecar["pages"][2]["reason"]
+        self.assertIn("Docling did not convert this page", reason)
+        self.assertNotIn("Docling unavailable", reason)
+
+    def test_engine_docling_fails_the_paper_when_docling_drops_a_page(self) -> None:
+        with self.assertRaises(extract_pdf.EngineError) as caught:
+            self.render(self.engine("docling", self._partial_docling()),
+                        self.pdf(TEXT_PAGE, MATH_PAGE, MATH_PAGE, MATH_PAGE))
+        self.assertIn("page(s) 1, 3 of", str(caught.exception))
+        cache = self.tmp / "cache"
+        self.assertNotIn("p0003", [e.parent.name[:5] for e in cache.glob("*/*/*/entry.json")])
+
     def test_engine_docling_without_docling_is_an_environment_error(self) -> None:
         with self.assertRaises(extract_pdf.EngineError):
             self.render(self.engine("docling", _StubHeavy(fail=True)), self.pdf(TEXT_PAGE))
