@@ -45,7 +45,7 @@ def own_bookkeeping_snapshot(target: Path) -> dict[str, bytes | None]:
     """The bytes of every dirty path `require_clean_worktree` excuses.
 
     The guard admits exactly this dirt and refuses every other change, so it
-    is the one pre-existing state a rollback after a failed mutation could
+    is the one pre-existing state a rollback of a failed mutation could
     destroy: `git reset --hard` reverts a modified ledger and deletes one the
     operation staged, and `git clean -fd` deletes an untracked one. Keyed by
     repository-relative path; `None` marks a ledger file deleted in the

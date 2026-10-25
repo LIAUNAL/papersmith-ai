@@ -9561,7 +9561,7 @@ def _roll_back_to_head(target: Path, kept: dict[str, bytes | None]) -> None:
     """Undo a failed mutation: the tree returns to `HEAD`, and the ledger
     files `require_clean_worktree` admitted come back byte for byte.
 
-    Ownership. Every caller proved the tree clean before mutating, and the
+    Ownership. Every caller proved the tree clean ahead of mutating, and the
     guard refuses every pre-existing change except `.implementation/`
     bookkeeping, so whatever else is tracked-and-modified or untracked (and
     not ignored) at the failure was written by the operation and is the
@@ -9570,7 +9570,7 @@ def _roll_back_to_head(target: Path, kept: dict[str, bytes | None]) -> None:
     reverted a modified ledger and deleted one the operation had staged,
     and `clean -fd` deleted an untracked one -- the record of the session
     that hit the failure (#80). `kept` is `own_bookkeeping_snapshot` taken
-    before the mutation and is written back after the reset. Its index
+    ahead of the mutation and is written back once the reset ran. Its index
     state is not restored: a ledger that was staged comes back unstaged.
     """
     git(target, "reset", "-q", "--hard", check=False)
