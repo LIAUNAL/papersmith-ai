@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -324,6 +325,10 @@ def _candidate_count(root: Path) -> int:
 
 AUDIT_TIMEOUT_SECONDS = 120
 _AUDIT_LOCK = threading.Lock()
+TEX_TIMEOUT_SECONDS = 35
+BUILD_TIMEOUT_SECONDS = 20
+# One job at a time writes paper/: the writing stage's build and the compile.
+_PAPER_LOCK = threading.Lock()
 
 
 def _audit_verdict(root: Path) -> bool | None:
@@ -456,6 +461,46 @@ def _pdf_page_count(pdf: Path) -> int:
         return len(re.findall(rb"/Type\s*/Page[^s]", pdf.read_bytes()))
     except OSError:
         return 0
+
+
+def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
+    """pdflatex, bibtex, pdflatex twice in paper/, each bounded by a timeout.
+    Blocking: the caller runs it off the event loop, holding _PAPER_LOCK."""
+    env = os.environ.copy()
+    env["PATH"] = f"/Library/TeX/texbin:/opt/homebrew/bin:{env.get('PATH', '')}"
+    p_dir = str(root / "paper")
+    pdflatex = ["pdflatex", "-interaction=nonstopmode", "main.tex"]
+    first = None
+    for argv in (pdflatex, ["bibtex", "main"], pdflatex, pdflatex):
+        try:
+            res = subprocess.run(argv, cwd=p_dir, capture_output=True, text=True, env=env,
+                                 timeout=TEX_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "outputs": [],
+                    "error": f"{argv[0]} no terminó en {TEX_TIMEOUT_SECONDS} s; compilación detenida."}, 504
+        first = first or res
+    return {
+        "ok": True,
+        "message": (f"paper/main.pdf compilado ({_pdf_page_count(root / 'paper' / 'main.pdf')} páginas)."
+                    if first.returncode == 0 else
+                    f"pdflatex terminó con código {first.returncode}; revisa el registro."),
+        "outputs": ["paper/main.pdf"],
+        "log_tail": first.stdout[-300:] if first.stdout else "",
+    }, 200
+
+
+def _build_manuscript(root: Path) -> tuple[dict[str, Any], int]:
+    """Run scripts/build_manuscript.py when the workspace has one. Blocking:
+    the caller runs it off the event loop, holding _PAPER_LOCK."""
+    b_script = root / "scripts" / "build_manuscript.py"
+    if b_script.is_file():
+        res = subprocess.run([sys.executable, str(b_script)], cwd=str(root), capture_output=True,
+                             text=True, timeout=BUILD_TIMEOUT_SECONDS)
+        msg = (f"Transposición ejecutada: {_block_count(root)} bloques en paper/main.tex "
+               f"(build_manuscript.py terminó con código {res.returncode}).")
+    else:
+        msg = f"Redacción: {_block_count(root)} bloques en paper/main.tex."
+    return {"ok": True, "message": msg, "outputs": ["paper/main.tex"]}, 200
 
 
 def terminal_allowed(host: str) -> bool:
@@ -1558,45 +1603,27 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "message": "No hay paper/main.tex que compilar: ábrelo primero con /paper-writing (Fase 6).",
                 "outputs": []
             })
-        if stage == "paper":
+        if stage in ("paper", "writing"):
+            if not _PAPER_LOCK.acquire(blocking=False):
+                return JSONResponse({"ok": False, "phase_id": phase_id, "stage": stage,
+                                     "error": "Otra compilación de paper/ sigue en curso; espera a que termine."},
+                                    status_code=409)
+            job = _compile_paper if stage == "paper" else _build_manuscript
+
+            def locked_job() -> tuple[dict[str, Any], int]:
+                # Released by the worker thread, so a cancelled request never
+                # frees the lock while its job still writes paper/.
+                try:
+                    return job(root_path)
+                finally:
+                    _PAPER_LOCK.release()
+
             try:
-                env = os.environ.copy()
-                env["PATH"] = f"/Library/TeX/texbin:/opt/homebrew/bin:{env.get('PATH', '')}"
-                p_dir = str(root_path / "paper")
-                res = subprocess.run(["pdflatex", "-interaction=nonstopmode", "main.tex"], cwd=p_dir, capture_output=True, text=True, env=env, timeout=35)
-                subprocess.run(["bibtex", "main"], cwd=p_dir, capture_output=True, env=env)
-                subprocess.run(["pdflatex", "-interaction=nonstopmode", "main.tex"], cwd=p_dir, capture_output=True, env=env)
-                subprocess.run(["pdflatex", "-interaction=nonstopmode", "main.tex"], cwd=p_dir, capture_output=True, env=env)
-                return JSONResponse({
-                    "ok": True,
-                    "phase_id": phase_id, "stage": stage,
-                    "message": (f"paper/main.pdf compilado ({_pdf_page_count(root_path / 'paper' / 'main.pdf')} páginas)."
-                                if res.returncode == 0 else
-                                f"pdflatex terminó con código {res.returncode}; revisa el registro."),
-                    "outputs": ["paper/main.pdf"],
-                    "log_tail": res.stdout[-300:] if res.stdout else ""
-                })
+                body, status_code = await asyncio.to_thread(locked_job)
             except Exception as exc:
                 return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-                
-        elif stage == "writing":
-            try:
-                b_script = root_path / "scripts" / "build_manuscript.py"
-                if b_script.is_file():
-                    res = subprocess.run([sys.executable, str(b_script)], cwd=str(root_path), capture_output=True, text=True, timeout=20)
-                    msg = (f"Transposición ejecutada: {_block_count(root_path)} bloques en paper/main.tex "
-                           f"(build_manuscript.py terminó con código {res.returncode}).")
-                else:
-                    msg = f"Redacción: {_block_count(root_path)} bloques en paper/main.tex."
-                return JSONResponse({
-                    "ok": True,
-                    "phase_id": phase_id, "stage": stage,
-                    "message": msg,
-                    "outputs": ["paper/main.tex"]
-                })
-            except Exception as exc:
-                return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-                
+            return JSONResponse({"phase_id": phase_id, "stage": stage, **body}, status_code=status_code)
+
         elif stage == "figures":
             fig_dir = root_path / "paper" / "Figures"
             figs = [f.name for f in fig_dir.glob("*.pdf")] if fig_dir.is_dir() else []
