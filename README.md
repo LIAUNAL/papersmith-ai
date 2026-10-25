@@ -3599,6 +3599,7 @@ smith ui --export-static ./dashboard-static
 | `--no-browser` | Does not open the browser |
 | `--export-static <dir>` | Copies the dashboard build to `<dir>` and exits |
 | `--allowed-host HOST:PORT` | Also accepts that `Host` header (repeatable); only forwarded to the backend when supplied |
+| `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
 | `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
 
 Serves the **Paper Command Center**: a local dashboard inside the workspace with
@@ -3654,9 +3655,10 @@ answers 422); the response carries `has_more`, `reset` (another process: a reloa
 is needed) and `gap` (older entries were dropped). New entries arrive over SSE as
 `history_append`.
 
-**Allowed-host list.** On a loopback bind the server only accepts the `Host`
-headers `127.0.0.1:<port>`, `localhost:<port>` and `[::1]:<port>` and answers 421
-to any other, which stops DNS-rebinding pages. Another host (when forwarding a
+**Allowed-host list.** The server only accepts the `Host` header of its own bind
+address (`<host>:<port>`, IPv6 in brackets), plus `127.0.0.1:<port>`,
+`localhost:<port>` and `[::1]:<port>` on a loopback bind, and answers 421 to any
+other, which stops DNS-rebinding pages. Another host (when forwarding a
 port, for instance) is accepted with the repeatable flag
 `smith ui --allowed-host HOST:PORT`. With `npm --prefix ui run dev` the Vite
 proxy keeps the `Host` `localhost:5173`; the backend is started like this (the
@@ -3665,6 +3667,18 @@ module accepts the same flag):
 ```bash
 python -m skills._core.command_center.server --port 8080 --allowed-host localhost:5173
 ```
+
+**Network exposure.** The dashboard has no authentication: whoever reaches its
+port can read the workspace, edit it through the PDF annotations, and start its
+compile and wiring-smoke runs. So it only serves on a loopback address
+(`127.0.0.1` by default, `localhost`, `::1` or another `127.x.y.z`) and refuses
+any other `--host`, `0.0.0.0` included, with exit code 2. To use it from another
+machine, keep the loopback bind and forward the port over SSH
+(`ssh -L 8080:127.0.0.1:8080 <server>`, then open `http://localhost:8080/`; a
+different local port needs `--allowed-host localhost:<port>`). On a network you
+trust, such as a container whose port is published only to its host,
+`--allow-unauthenticated-network` lifts the refusal. The `Host` check stays on,
+so name every address clients use with `--allowed-host`.
 
 **A new workspace starts clean.** `smith init` copies only the framework (the
 kit's skills, section contracts, agents and setup scripts) into an empty folder
