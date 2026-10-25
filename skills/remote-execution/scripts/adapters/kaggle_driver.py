@@ -446,6 +446,8 @@ FETCH_TIMEOUT = (10, 60)
 #: Kaggle notebook's output directory holds, so only a runaway answer
 #: reaches it.
 FETCH_MAX_BYTES = 20 * 1024**3
+#: The output listing is paged; a token that never empties must not loop forever.
+FETCH_MAX_PAGES = 1000
 
 
 def _is_kaggle_origin(url: str) -> bool:
@@ -599,10 +601,15 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
     rather than guessing at either.
     """
     worker, slug = submission_id.split("/", 1)
-    request = ApiListKernelSessionOutputRequest()
-    request.user_name = worker
-    request.kernel_slug = slug
-    response = client.list_kernel_session_output(request)
+
+    def list_page(token: str):
+        request = ApiListKernelSessionOutputRequest()
+        request.user_name = worker
+        request.kernel_slug = slug
+        request.page_token = token
+        return client.list_kernel_session_output(request)
+
+    response = list_page("")
 
     into.mkdir(parents=True, exist_ok=True)
     session = client._client._session
@@ -617,9 +624,31 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
         (into / "log.txt").write_text(response.log, encoding="utf-8")
         written.append("log.txt")
 
+    # The listing is paged, as `kaggle kernels output` reads it: follow
+    # `next_page_token` until it comes back empty (#93). The log rides on the
+    # first page and is already written.
+    files = list(response.files or [])
+    seen = {""}
+    pages = 1
+    token = getattr(response, "next_page_token", "") or ""
+    while token:
+        if token in seen:
+            raise DriverError(
+                f"list_kernel_session_output for {submission_id} returned a "
+                f"repeated page token {token!r}; refusing to loop")
+        if pages >= FETCH_MAX_PAGES:
+            raise DriverError(
+                f"list_kernel_session_output for {submission_id} returned more "
+                f"than {FETCH_MAX_PAGES} pages; refusing to continue")
+        seen.add(token)
+        response = list_page(token)
+        pages += 1
+        files.extend(response.files or [])
+        token = getattr(response, "next_page_token", "") or ""
+
     root = into.resolve()
     budget = FETCH_MAX_BYTES
-    for output_file in response.files or []:
+    for output_file in files:
         name = output_file.file_name
         url = output_file.url
         if not name or not url:
