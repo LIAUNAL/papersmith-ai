@@ -28,6 +28,7 @@ ENGINE_DIR = SKILLS_DIR / "_core" / "implementation" / "engine"
 ENGINE_FILE = ENGINE_DIR / "implementation_engine.py"
 
 from domain_profile import seeded_profile  # noqa: E402  (tests/ on path)
+import scratch_forge  # noqa: E402  (tests/ on path)
 
 
 def _import_engine_module():
@@ -997,6 +998,7 @@ class CampaignProposalExclusionTests(unittest.TestCase):
 
 SHIPPED_LAUNCHER = (
     SKILLS_DIR / "experimental-implementation" / "scripts" / "implementation_cli.py")
+SHIPPED_PROFILE = SKILLS_DIR / "experimental-implementation" / "impl_profile.py"
 
 
 class TwoDocumentReadProvenTests(unittest.TestCase):
@@ -1025,8 +1027,13 @@ class TwoDocumentReadProvenTests(unittest.TestCase):
         (self.doc1 / self.DOC1_NEW_REVISION).write_text(
             "the mathematical proposal, the current version.\n", encoding="utf-8")
 
+    #: The forge and launcher `_build_box`/`_verify` run against: the shipped
+    #: ones, unless a test swaps in a scratch forge (`scratch_forge.build`).
+    forge = FORGE
+    launcher = SHIPPED_LAUNCHER
+
     def _build_box(self, *, doc1_revision: str, suffix: str = ""):
-        box = FORGE / "implementations" / f"_lock_read_{os.getpid()}_{id(self)}{suffix}"
+        box = self.forge / "implementations" / f"_lock_read_{os.getpid()}_{id(self)}{suffix}"
         self.addCleanup(shutil.rmtree, box, ignore_errors=True)
         box.mkdir(parents=True)
         env = dict(os.environ)
@@ -1059,12 +1066,15 @@ class TwoDocumentReadProvenTests(unittest.TestCase):
     def _verify(self, box: Path) -> dict:
         env = dict(os.environ)
         env.pop("IMPLEMENTATION_DOMAIN_PROFILE", None)
+        if self.launcher != SHIPPED_LAUNCHER:
+            # A scratch launcher has no profile beside it: name the shipped one.
+            env["IMPLEMENTATION_DOMAIN_PROFILE"] = str(SHIPPED_PROFILE)
         env["IMPLEMENTATION_PROPOSALS"] = str(self.doc0)
         env["IMPLEMENTATION_PROPOSALS_1"] = str(self.doc1)
         proc = subprocess.run(
-            [sys.executable, str(SHIPPED_LAUNCHER), "verify", "--target", str(box),
+            [sys.executable, str(self.launcher), "verify", "--target", str(box),
              "--name", self.PACKAGE, "--revision", self.DOC0_REVISION],
-            capture_output=True, text=True, cwd=FORGE, env=env)
+            capture_output=True, text=True, cwd=self.forge, env=env)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         return json.loads(proc.stdout)
 
@@ -1090,27 +1100,38 @@ class TwoDocumentReadProvenTests(unittest.TestCase):
 
     def test_a_reverted_fold_is_caught_even_with_two_documents_declared(self):
         """The count-only failure mode this lock replaces: revert the
-        per-document derivation on the REAL engine (Y5's own mutation) --
-        `documents` still has two entries, but this lock still catches the
-        reversion, because it demonstrates the READ, not the count."""
+        per-document derivation of the real engine source (Y5's own
+        mutation), run from a scratch forge so the shipped engine is never
+        rewritten (#92) -- `documents` still has two entries, but this lock
+        still catches the reversion, because it demonstrates the READ, not
+        the count."""
         engine = (SKILLS_DIR / "_core" / "implementation" / "engine"
                  / "implementation_engine.py")
+        shipped_bytes = engine.read_bytes()
+        shipped_mtime = engine.stat().st_mtime_ns
+
+        def shipped_engine_untouched():
+            # Registered first, so it runs after every other cleanup: a
+            # byte-identical restore still moves the modification time.
+            self.assertEqual(engine.read_bytes(), shipped_bytes,
+                             "the shipped engine's bytes changed")
+            self.assertEqual(engine.stat().st_mtime_ns, shipped_mtime,
+                             "the shipped engine was rewritten on disk")
+        self.addCleanup(shipped_engine_untouched)
         old = "doc_revision_n = document_names[index]"
         new = "doc_revision_n = revision"
         original = engine.read_text(encoding="utf-8")
         self.assertEqual(original.count(old), 1)
         self.assertEqual(original.count(new), 0)
         mutated = original.replace(old, new, 1)
-        engine.write_text(mutated, encoding="utf-8")
-
-        def restore():
-            engine.write_text(original, encoding="utf-8")
-            self.assertEqual(engine.read_text(encoding="utf-8"), original)
-        self.addCleanup(restore)
+        self.forge, self.launcher = scratch_forge.build(
+            self, mutated, SHIPPED_LAUNCHER, prefix="lock-read-forge-")
 
         clean_box = self._build_box(
             doc1_revision=self.DOC1_NEW_REVISION, suffix="_mutated")
         clean = self._verify(clean_box)
+        self.assertEqual(engine.read_bytes(), shipped_bytes,
+                         "the mutation was written over the shipped engine")
         clean_by_doc = {e["label"]: e for e in clean["fidelity"]["fidelityByDocument"]}
         # Under the mutation, document 1's own current revision is
         # compared against document 0's `revision` instead of its own
