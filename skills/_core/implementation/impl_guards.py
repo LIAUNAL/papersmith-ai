@@ -52,7 +52,12 @@ def require_clean_worktree(target: Path) -> None:
         )
 
 
-def resolve_target(raw: str) -> Path:
+def require_in_workspace(raw: str) -> Path:
+    """The resolved target, refused `OUTSIDE_WORKSPACE` unless it lives under
+    `implementations/`. Existence is not asked: `adopt`'s survey checks a
+    target that does not exist yet, and shares this one rule with
+    `resolve_target` so the two never disagree about where generated code
+    may live."""
     target = Path(raw).expanduser().resolve()
     try:
         target.relative_to(WORKSPACE.resolve())
@@ -62,6 +67,11 @@ def resolve_target(raw: str) -> Path:
             f"Target must live under {WORKSPACE}. Clone the repository there first — "
             "the forge's own environment is never a workspace for generated code.",
         )
+    return target
+
+
+def resolve_target(raw: str) -> Path:
+    target = require_in_workspace(raw)
     if not (target / ".git").exists():
         raise Refused("NOT_A_GIT_REPO", f"{target} is not a git repository.")
     return target
