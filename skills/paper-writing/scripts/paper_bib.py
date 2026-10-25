@@ -57,7 +57,17 @@ import paper_resolve  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
 
-_CITE_RE = re.compile(r"\\cite\{([^}]*)\}")
+#: The citation commands `cited_keys` reads -- the declared vocabulary, not
+#: arbitrary TeX: each command may carry a `*` and up to two `[...]`
+#: optional arguments (`\\citep[see][ch.~2]{key}`) before one `{...}` of
+#: comma-separated keys. Deliberately unsupported: `\\nocite` (it lists
+#: entries without citing them), capitalised `\\Citet`-style variants,
+#: biblatex commands, and keys split across a nested brace group.
+CITE_COMMANDS = ("cite", "citep", "citet", "citealp", "citealt", "citeauthor", "citeyear")
+_CITE_RE = re.compile(
+    r"\\(?:" + "|".join(sorted(CITE_COMMANDS, key=len, reverse=True)) + r")\*?"
+    r"(?:\s*\[[^\]]*\]){0,2}\s*\{([^}]*)\}"
+)
 _BIB_ENTRY_RE = re.compile(r"@\w+\{([^,]+),")
 
 
