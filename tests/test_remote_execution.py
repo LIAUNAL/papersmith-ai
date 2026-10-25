@@ -6194,40 +6194,95 @@ def _kaggle_http_client_with_recorder(credential_value: str, response_json: dict
     return client, recorder
 
 
+def _streamed(body, *, status: int = 200, headers: dict | None = None) -> requests.Response:
+    """A `requests.Response` whose body is a stream, the way a download sent
+    with `stream=True` answers: `body` is bytes or a readable file object.
+    `Content-Type` defaults to binary."""
+    response = requests.Response()
+    response.status_code = status
+    response.headers["Content-Type"] = "application/octet-stream"
+    response.headers.update(headers or {})
+    response.raw = body if hasattr(body, "read") else io.BytesIO(body)
+    return response
+
+
+class _AnsweringTransport(requests.adapters.BaseAdapter):
+    """A transport that answers each request with `answer(request)`."""
+
+    def __init__(self, answer) -> None:
+        super().__init__()
+        self._answer = answer
+
+    def send(self, request, **kwargs):  # noqa: D401 - requests' own signature
+        response = self._answer(request)
+        response.request = request
+        return response
+
+    def close(self) -> None:
+        pass
+
+
+def _session_answering(answer) -> requests.Session:
+    """A real `requests.Session` whose https requests `answer(request)` serves."""
+    session = requests.Session()
+    session.mount("https://", _AnsweringTransport(answer))
+    return session
+
+
+class _Unreadable(io.BytesIO):
+    """A body that fails the test the moment anything reads it."""
+
+    def read(self, size: int = -1) -> bytes:
+        raise AssertionError("this body must never be read")
+
+
+class _DropsAfterFirstChunk(io.BytesIO):
+    """A body whose connection drops once its first chunk has arrived."""
+
+    def read(self, size: int = -1) -> bytes:
+        if self.tell():
+            raise ConnectionResetError("the remote hung up mid-file")
+        return super().read(max(1, len(self.getvalue()) // 2))
+
+
 class _RoutingRecordingTransport(requests.adapters.BaseAdapter):
     """Like `_RecordingTransport` above, but answers PER-URL rather than
     with one fixed payload -- what `cmd_fetch`'s own inner interception
     needs and `cmd_submit`'s does not: a single call to
     `list_kernel_session_output` (the RPC endpoint, JSON) is followed by
-    one plain `session.get(url)` PER FILE `cmd_fetch` reads off that
-    response, all through the SAME `requests.Session` (this is precisely
-    why `session.auth` -- and therefore the Bearer header -- reaches those
-    file requests too, unless something goes out of its way to strip it).
+    one download PER FILE `cmd_fetch` reads off that response, all through
+    the SAME `requests.Session` -- whose credential `cmd_fetch` applies to
+    a file request only when its URL is a Kaggle origin (#55).
 
     `file_bodies` maps an exact fixture URL to the raw bytes that URL
-    "downloads" to; any other URL gets `rpc_response_json` as a JSON body,
-    which is what the RPC endpoint itself needs. Every request is recorded
-    unconditionally, matching `_RecordingTransport`'s own reached-first
-    discipline.
+    "downloads" to, or to a `(status, headers, body)` answer (a redirect,
+    say); bodies are served as a stream, the way `cmd_fetch` reads them.
+    Any other URL gets `rpc_response_json` as a JSON body, which is what
+    the RPC endpoint itself needs. Every request, and the keyword arguments
+    it was sent with, is recorded unconditionally, matching
+    `_RecordingTransport`'s own reached-first discipline.
     """
 
-    def __init__(self, rpc_response_json: dict, file_bodies: dict[str, bytes]) -> None:
+    def __init__(self, rpc_response_json: dict, file_bodies: dict) -> None:
         super().__init__()
         self.calls: list = []
+        self.send_kwargs: list = []
         self._rpc_response_json = rpc_response_json
         self._file_bodies = file_bodies
 
     def send(self, request, **kwargs):  # noqa: D401 - requests' own signature
         self.calls.append(request)
-        response = requests.Response()
-        response.status_code = 200
-        response.request = request
+        self.send_kwargs.append(kwargs)
         if request.url in self._file_bodies:
-            response.headers["Content-Type"] = "application/octet-stream"
-            response._content = self._file_bodies[request.url]
+            answer = self._file_bodies[request.url]
+            status, headers, body = answer if isinstance(answer, tuple) else (200, {}, answer)
+            response = _streamed(body, status=status, headers=headers)
         else:
+            response = requests.Response()
+            response.status_code = 200
             response.headers["Content-Type"] = "application/json"
             response._content = json.dumps(self._rpc_response_json).encode("utf-8")
+        response.request = request
         return response
 
     def close(self) -> None:
@@ -7266,17 +7321,14 @@ class PollFetchDriverTests(unittest.TestCase):
         """
         driver = _load_kaggle_driver_module()
 
-        class _Session:
-            def get(self, url):
-                if "boom" in url:
-                    raise RuntimeError("the remote hung up on this one")
-                return SimpleNamespace(
-                    content=b"payload",
-                    raise_for_status=lambda: None)
+        def answer(request):
+            if "boom" in request.url:
+                raise RuntimeError("the remote hung up on this one")
+            return _streamed(b"payload")
 
         class _Client:
             def __init__(self):
-                self._client = SimpleNamespace(_session=_Session())
+                self._client = SimpleNamespace(_session=_session_answering(answer))
 
             def list_kernel_session_output(self, request):
                 return SimpleNamespace(
@@ -7320,14 +7372,10 @@ class PollFetchDriverTests(unittest.TestCase):
         """
         driver = _load_kaggle_driver_module()
 
-        class _Session:
-            def get(self, url):
-                return SimpleNamespace(
-                    content=b"x", raise_for_status=lambda: None)
-
         class _Client:
             def __init__(self):
-                self._client = SimpleNamespace(_session=_Session())
+                self._client = SimpleNamespace(
+                    _session=_session_answering(lambda request: _streamed(b"x")))
 
             def list_kernel_session_output(self, request):
                 return SimpleNamespace(
@@ -7349,8 +7397,8 @@ class PollFetchDriverTests(unittest.TestCase):
     def test_driver_cmd_fetch_reached_count_writes_files_and_log(self) -> None:
         """The inner interception point for `fetch`: a REAL `KaggleHttpClient`
         drives `list_kernel_session_output` through a recording transport,
-        then `cmd_fetch` issues one plain `session.get(url)` per listed
-        file through that SAME session — every one of those is recorded
+        then `cmd_fetch` issues one download per listed file through that
+        SAME session — every one of those is recorded
         too, since they share one mounted transport. Two files, not one:
         a `cmd_fetch` that silently dropped the second file on the way to
         disk must fail this test, not merely a `cmd_fetch` that dropped
@@ -7387,46 +7435,193 @@ class PollFetchDriverTests(unittest.TestCase):
                 (into / "log.txt").read_text(encoding="utf-8"), "kernel log line 1\n"
             )
 
-    def test_fetch_attaches_this_sessions_bearer_credential_defensively_to_file_urls(
-        self,
-    ) -> None:
-        """The open question this commit does NOT resolve: whether
-        `list_kernel_session_output`'s per-file URLs need this session's
-        own Bearer credential is settled only by a live rehearsal (see the
-        design's Open Questions and `kaggle_driver.py`'s own `cmd_fetch`
-        docstring) — not run here, not guessed at as true. What IS
-        measurable offline is what this commit's code actually does:
-        reuse the SAME already-authenticated session `list_kernel_session_output`
-        itself used, so `requests`' own `session.auth` hook attaches the
-        identical `Authorization: Bearer <token>` header to the per-file
-        GET too. If a live rehearsal later proves the URLs reject that
-        header, this is the one assertion that must change — not silently,
-        but as a deliberate, measured revision of this same test.
-        """
+    def _fetch_through(self, file_bodies: dict, files: list[tuple[str, str]], **patches):
+        """`cmd_fetch` on a REAL `KaggleHttpClient` whose session answers
+        `file_bodies`; returns the recorder and the destination directory
+        (kept until the test ends)."""
         driver = _load_kaggle_driver_module()
-        file_url = "https://files.example.invalid/output/result.csv"
         rpc_response = {
-            "files": [{"url": file_url, "fileName": "result.csv"}],
+            "files": [{"url": url, "fileName": name} for url, name in files],
             "log": None,
         }
         client, recorder = _kaggle_http_client_with_routing_recorder(
-            FIXTURE_TOKEN, rpc_response, {file_url: b"a,b\n1,2\n"}
+            FIXTURE_TOKEN, rpc_response, file_bodies
         )
-        kernels_client = driver.KernelsApiClient(client)
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        into = Path(holder.name) / "out"
+        with contextlib.ExitStack() as stack:
+            for name, value in patches.items():
+                stack.enter_context(unittest.mock.patch.object(driver, name, value))
+            self.outcome = None
+            try:
+                self.outcome = driver.cmd_fetch(
+                    driver.KernelsApiClient(client), "w1/papersmith-job", into)
+            except Exception as refused:  # the refusal is what most of these assert on
+                self.outcome = refused
+        return recorder, into
 
-        with tempfile.TemporaryDirectory() as tmp:
-            driver.cmd_fetch(kernels_client, "w1/papersmith-job", Path(tmp) / "out")
+    def _leftovers(self, into: Path) -> list[str]:
+        return sorted(path.name for path in into.rglob("*.part"))
 
-        file_request = next(c for c in recorder.calls if c.url == file_url)
+    def test_only_an_https_kaggle_origin_counts_as_one(self) -> None:
+        driver = _load_kaggle_driver_module()
+        for url, expected in (
+            ("https://www.kaggle.com/kernels/a/b/output/c.csv", True),
+            ("https://api.kaggle.com/v1/x", True),
+            ("https://kaggle.com/x", True),
+            ("https://WWW.Kaggle.COM/x", True),
+            ("https://www.kaggle.com:443/x", True),
+            ("http://www.kaggle.com/x", False),
+            ("https://www.kaggle.com:8443/x", False),
+            ("https://www.kaggle.com:bad/x", False),
+            ("https://user@www.kaggle.com/x", False),
+            ("https://www.kaggle.com@evil.example/x", False),
+            ("https://www.kaggle.com.evil.example/x", False),
+            ("https://evil.example/www.kaggle.com/x", False),
+            ("https://storage.googleapis.com/kaggle-output/x", False),
+            ("https://kaggleusercontent.com/x", False),
+        ):
+            with self.subTest(url=url):
+                self.assertIs(driver._is_kaggle_origin(url), expected)
+
+    def test_fetch_sends_the_bearer_credential_only_to_kaggle_origins(self) -> None:
+        """#55, the deliberate revision this test's predecessor asked for. It
+        pinned the defensive choice: the session's own Bearer header on every
+        per-file GET, whatever host the listing named. But a URL in a response
+        is no authority to send the credential there, so the credential now
+        reaches a Kaggle origin only; a signed storage URL, which carries its
+        own authorization, gets a bare GET -- no Authorization, no cookie.
+        """
+        kaggle_url = "https://www.kaggle.com/kernels/w1/papersmith-job/output/a.csv"
+        storage_url = "https://storage.googleapis.com/kaggle-output/b.bin?X-Goog-Signature=f00"
+        recorder, into = self._fetch_through(
+            {kaggle_url: b"a\n", storage_url: b"b\n"},
+            [(kaggle_url, "a.csv"), (storage_url, "b.bin")],
+        )
+
+        self.assertEqual(self.outcome, {"files": ["a.csv", "b.bin"]})
+        by_url = {call.url: call for call in recorder.calls}
+        rpc = [call for call in recorder.calls if call.url not in (kaggle_url, storage_url)]
+        self.assertTrue(rpc, "the listing RPC was never reached")
+        self.assertEqual(rpc[0].headers.get("Authorization"), f"Bearer {FIXTURE_TOKEN}")
+        self.assertEqual(by_url[kaggle_url].headers.get("Authorization"), f"Bearer {FIXTURE_TOKEN}")
+        for header in ("Authorization", "Cookie", "Proxy-Authorization"):
+            self.assertNotIn(header, by_url[storage_url].headers)
+        self.assertEqual((into / "b.bin").read_bytes(), b"b\n")
+
+    def test_fetch_drops_the_credential_for_good_once_a_redirect_leaves_kaggle(self) -> None:
+        start = "https://www.kaggle.com/kernels/w1/papersmith-job/output/a.csv"
+        storage = "https://storage.googleapis.com/kaggle-output/a.csv?sig=1"
+        back = "https://api.kaggle.com/v1/back-again"
+        recorder, into = self._fetch_through(
+            {
+                start: (302, {"Location": storage}, b""),
+                storage: (307, {"Location": back}, b""),
+                back: b"a\n",
+            },
+            [(start, "a.csv")],
+        )
+
+        self.assertEqual(self.outcome, {"files": ["a.csv"]})
+        hops = [call for call in recorder.calls if call.url in (start, storage, back)]
+        self.assertEqual([hop.url for hop in hops], [start, storage, back])
+        self.assertEqual(hops[0].headers.get("Authorization"), f"Bearer {FIXTURE_TOKEN}")
+        self.assertNotIn("Authorization", hops[1].headers)
+        self.assertNotIn("Authorization", hops[2].headers,
+                         "a hop back onto Kaggle after leaving it is not credentialed")
+        self.assertEqual((into / "a.csv").read_bytes(), b"a\n")
+
+    def test_fetch_refuses_plain_http_listed_or_redirected_to(self) -> None:
+        plain = "http://files.example.invalid/a.csv"
+        start = "https://files.example.invalid/b.csv"
+        for files, bodies in (
+            ([(plain, "a.csv")], {plain: b"a"}),
+            ([(start, "b.csv")], {start: (301, {"Location": plain}, b""), plain: b"b"}),
+        ):
+            with self.subTest(first=files[0][0]):
+                recorder, into = self._fetch_through(bodies, files)
+
+                self.assertIsInstance(self.outcome, Exception)
+                self.assertIn("only https", str(self.outcome))
+                self.assertNotIn(plain, [call.url for call in recorder.calls])
+                self.assertFalse((into / files[0][1]).exists())
+
+    def test_fetch_refuses_an_endless_redirect(self) -> None:
+        loop = "https://files.example.invalid/loop"
+        recorder, _ = self._fetch_through({loop: (302, {"Location": loop}, b"")}, [(loop, "x")])
+
+        self.assertIn("redirects", str(self.outcome))
+        driver = _load_kaggle_driver_module()
         self.assertEqual(
-            file_request.headers.get("Authorization"),
-            f"Bearer {FIXTURE_TOKEN}",
-            "fetch must attach this session's own Bearer credential "
-            "defensively to each per-file URL: whether it is actually "
-            "required is unresolved without a live rehearsal, and silently "
-            "omitting it risks a 401 that would look identical to a "
-            "backend refusal",
+            [call.url for call in recorder.calls].count(loop), driver.FETCH_MAX_REDIRECTS + 1)
+
+    def test_fetch_bounds_every_download_hop_in_time_and_follows_no_redirect_itself(self) -> None:
+        driver = _load_kaggle_driver_module()
+        start = "https://files.example.invalid/a"
+        final = "https://files.example.invalid/b"
+        recorder, _ = self._fetch_through(
+            {start: (302, {"Location": final}, b""), final: b"x"}, [(start, "a")])
+
+        sent = [kwargs for call, kwargs in zip(recorder.calls, recorder.send_kwargs)
+                if call.url in (start, final)]
+        self.assertEqual(len(sent), 2)
+        for kwargs in sent:
+            self.assertEqual(kwargs.get("timeout"), driver.FETCH_TIMEOUT)
+            self.assertIs(kwargs.get("stream"), True)
+
+    def test_fetch_never_reads_a_redirects_body(self) -> None:
+        """`requests`' own `Session.send` reads a redirect's whole body, with
+        no ceiling, even when told not to follow it; each hop bypasses it."""
+        start = "https://files.example.invalid/a"
+        final = "https://files.example.invalid/b"
+        _, into = self._fetch_through(
+            {start: (302, {"Location": final}, _Unreadable(b"x" * 64)), final: b"done"},
+            [(start, "a")],
         )
+
+        self.assertEqual(self.outcome, {"files": ["a"]})
+        self.assertEqual((into / "a").read_bytes(), b"done")
+
+    def test_a_broken_download_keeps_the_earlier_copy_and_leaves_no_partial(self) -> None:
+        url = "https://files.example.invalid/a.csv"
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        driver = _load_kaggle_driver_module()
+        rpc_response = {"files": [{"url": url, "fileName": "a.csv"}], "log": None}
+        client, _ = _kaggle_http_client_with_routing_recorder(
+            FIXTURE_TOKEN, rpc_response, {url: (200, {}, _DropsAfterFirstChunk(b"new copy"))}
+        )
+        into = Path(holder.name) / "out"
+        into.mkdir()
+        (into / "a.csv").write_bytes(b"earlier copy")
+
+        with self.assertRaises(ConnectionResetError):
+            driver.cmd_fetch(driver.KernelsApiClient(client), "w1/papersmith-job", into)
+
+        self.assertEqual((into / "a.csv").read_bytes(), b"earlier copy")
+        self.assertEqual(self._leftovers(into), [])
+
+    def test_fetch_refuses_past_its_byte_budget_and_leaves_no_partial_file(self) -> None:
+        declared = "https://files.example.invalid/declared"
+        undeclared = "https://files.example.invalid/undeclared"
+        first = "https://files.example.invalid/first"
+        second = "https://files.example.invalid/second"
+        for name, files, bodies in (
+            ("declared too big", [(declared, "d")],
+             {declared: (200, {"Content-Length": "11"}, _Unreadable(b""))}),
+            ("streams too big", [(undeclared, "u")], {undeclared: b"x" * 11}),
+            ("budget shared", [(first, "f"), (second, "s")],
+             {first: b"x" * 6, second: b"x" * 6}),
+        ):
+            with self.subTest(name):
+                _, into = self._fetch_through(bodies, files, FETCH_MAX_BYTES=10)
+
+                self.assertIsInstance(self.outcome, Exception)
+                self.assertIn("-byte limit", str(self.outcome))
+                self.assertFalse((into / files[-1][1]).exists())
+                self.assertEqual(self._leftovers(into), [])
+        self.assertEqual((into / "f").read_bytes(), b"x" * 6)
 
     def test_fetch_never_relies_on_kernel_session_id_from_status_response(self) -> None:
         """Task 3.4 / the design's own measured fact:
@@ -7441,20 +7636,9 @@ class PollFetchDriverTests(unittest.TestCase):
         """
         driver = _load_kaggle_driver_module()
 
-        class _FakeFileResponse:
-            def __init__(self, content: bytes) -> None:
-                self.content = content
-
-            def raise_for_status(self) -> None:
-                return None
-
-        class _FakeSession:
-            def get(self, url: str) -> "_FakeFileResponse":
-                return _FakeFileResponse(b"a,b\n1,2\n")
-
         class _FakeHttpClient:
             def __init__(self) -> None:
-                self._session = _FakeSession()
+                self._session = _session_answering(lambda request: _streamed(b"a,b\n1,2\n"))
 
         fake_output_response = SimpleNamespace(
             files=[
