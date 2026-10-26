@@ -6,8 +6,10 @@ to the canonical sources of truth so a single set of docs drives every harness.
 ## Canonical context
 
 - **Project context**: `openspec/project-context.md`
-- **Domain guidelines**: `guidance/paper-guide/`
+- **Domain guidelines**: `guidance/paper-guide/` (user drop-zone; loaded automatically by `proposal-deliberation`, optional at rest)
 - **Available capabilities (skills)**: `skills/*/SKILL.md`
+- **Release procedure**: `docs/releasing.md`
+- **Repository maintenance (issues and PRs)**: `maintainer/skills/backlog-steward/SKILL.md` (repo-only; never shipped to workspaces)
 
 ## Skills
 

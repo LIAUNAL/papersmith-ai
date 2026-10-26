@@ -161,7 +161,8 @@ def _write_workspace_seed(root: Path, *, name: str, title: str, topic: str,
     }
     _write_text(root, "papersmith.yaml", render_package_template("papersmith.yaml.tpl", context))
     _write_text(root, "README.md", render_package_template("readme.md.tpl", context))
-    # ``.mcp.json`` registers only the lab's banco-lia server (see
+    # ``.mcp.json`` registers only the servers papersmith manages -- banco-lia,
+    # kaggle and colab (see
     # ``generators.ensure_mcp_servers``). The papersmith server itself is never
     # written there (success criterion #6, tests/test_mcp_no_mcp_json.py): a
     # workspace that wants it wired asks for the snippet --
