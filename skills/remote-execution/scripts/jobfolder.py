@@ -2174,6 +2174,13 @@ GIT_ENV_ALLOWLIST = (
 )
 GIT_TIMEOUT_SECONDS = 120.0
 
+# The URL schemes a `repo_url` may name before any git call reaches it. Every
+# other `<scheme>://` makes git exec a `git-remote-<scheme>` helper, and the
+# `<transport>::<address>` form (`ext::`, `fd::`) names a helper command
+# outright; both are refused by `_remote_transport_admissible()`. Local and
+# scp-shaped remotes carry no scheme and stay admissible.
+REMOTE_URL_SCHEMES = ("https", "http", "ssh", "git", "file", "git+ssh", "ssh+git")
+
 # The env name the probe's askpass script reads the credential VALUE from.
 # The value is handed to the git child through its environment — never
 # argv, never a file — so it dies with the child process. S3/D6: this
@@ -2322,6 +2329,25 @@ def _run_git(
             f"git {' '.join(args)} exited {result.returncode}: {result.stderr.strip()}"
         )
     return result
+
+
+def _remote_transport_admissible(repo_url: str) -> bool:
+    """Whether `repo_url` may reach git at all, as a remote and nothing else.
+
+    `run-config.json` travels with a cloned repository, so its `repo_url` is
+    input, not configuration this process wrote. Refused: a value beginning
+    with `-` (an option, even though every call also ends options with
+    `--`), the `<transport>::<address>` helper form, and any `<scheme>://`
+    outside `REMOTE_URL_SCHEMES`. A local path or an scp-shaped
+    `git@host:owner/repo.git` names no helper and stays admissible: this
+    gate decides which transport may run, never which remote is wanted.
+    """
+    # The helper form is `<transport>::<address>` at the start of the URL; a
+    # `::` inside an IPv6 literal (`https://[2001:db8::1]/r.git`) is not one.
+    if not repo_url or repo_url.startswith("-") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*::", repo_url):
+        return False
+    scheme = re.match(r"([A-Za-z][A-Za-z0-9+.-]*)://", repo_url)
+    return scheme is None or scheme.group(1).lower() in REMOTE_URL_SCHEMES
 
 
 def _looks_like_ssh_remote(repo_url: str) -> bool:
@@ -2641,6 +2667,15 @@ def _verify_commit_reachable(
     reader's `no-local-repository` unmeasurable path without a single git
     call.
     """
+    if not _remote_transport_admissible(repo_url):
+        raise JobFolderError(
+            f"{decision} refuses: the declared remote {repo_url!r} is not a "
+            "repository URL git may fetch from as-is. A remote begins with "
+            f"one of {', '.join(s + '://' for s in REMOTE_URL_SCHEMES)}, or is "
+            "a local path or an scp-shaped host:path; a value beginning with "
+            "'-', a '<transport>::' helper address, or any other scheme would "
+            "make git run a command instead of contacting a remote."
+        )
     if repo_credential_path is not None:
         if repo_url.startswith("https://"):
             try:
@@ -3166,8 +3201,10 @@ def _published_equivalent(
     """
     if not (repo_url and repo_ref and clone_paths):
         return None
+    if not _remote_transport_admissible(repo_url):
+        return None
     try:
-        listed = _run_git(["ls-remote", repo_url, repo_ref], cwd=target).stdout
+        listed = _run_git(["ls-remote", "--", repo_url, repo_ref], cwd=target).stdout
     except JobFolderError:
         return None
     tip = listed.split("\t", 1)[0].strip() if listed.strip() else ""
