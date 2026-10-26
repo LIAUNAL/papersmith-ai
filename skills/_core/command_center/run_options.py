@@ -38,8 +38,11 @@ SCALE_KEYS = ("arms", "folds", "seeds", "epochs")
 RANGE = 0.20
 NOTE = "±20%, single-probe extrapolation"
 UNMEASURED = "sin medir"
-#: A proof of concept under this many seconds locally stays local.
-LOCAL_POC_LIMIT = 30 * 60
+#: Placement rules, read on the estimate's upper bound (the same ones
+#: `remote-parallelism estimate` states): a stage over this many seconds locally
+#: runs on a cloud host, and a proof of concept fits this budget where it runs.
+LOCAL_LIMIT = 20 * 60
+POC_BUDGET = 5 * 60 * 60
 MAX_MEASUREMENTS = 500
 MAX_TEXT = 120
 EMPTY_HINT = ("Sin Results/timing.json: corre antes del piloto la sonda de tiempo corta (una época de un fold "
@@ -176,24 +179,48 @@ def _row(stage: str, host: str, readiness: dict[str, Any], timing: dict[str, Any
 
 
 def _recommend(stage: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    advice = _place(stage, rows)
+    if stage == "poc":
+        chosen = next((r for r in rows if r["host"] == advice["host"] and r["estimate"]), None)
+        if chosen is None:
+            advice["poc_budget"] = "unmeasured"
+        elif chosen["estimate"]["high"] <= POC_BUDGET:
+            advice["poc_budget"] = "within"
+        else:
+            advice["poc_budget"] = "exceeds"
+            advice["text"] += (" Excede el presupuesto de 5 h de la prueba de concepto: reduce el diseño "
+                               "(sujetos, épocas, folds, semillas o brazos) antes de correrla.")
+    return advice
+
+
+def _place(stage: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     available = [r for r in rows if r["available"]]
-    measured = sorted((r for r in available if r["estimate"]), key=lambda r: r["estimate"]["seconds"])
     local = next((r for r in available if r["host"] == "local"), None)
-    unmeasured_remote = [r["host_label"] for r in available if r["host"] != "local" and not r["estimate"]]
+    remote = [r for r in available if r["host"] != "local"]
+    measured = sorted((r for r in remote if r["estimate"]), key=lambda r: r["estimate"]["high"])
+    unmeasured_remote = [r["host_label"] for r in remote if not r["estimate"]]
     rehearse = (f" Los hosts remotos ({', '.join(unmeasured_remote)}) necesitan antes un ensayo con "
                 "medición de tiempo." if unmeasured_remote else "")
-    if stage == "poc" and local and local["estimate"] and local["estimate"]["high"] <= LOCAL_POC_LIMIT:
-        return {"host": "local", "text": f"Local: estimación {local['estimate_label']}, bajo ~30 min."}
-    if measured:
-        best = measured[0]
-        confirm = (" Antes de la campaña, un ensayo en ese host confirma su tiempo."
-                   if stage == "full" and best["host"] != "local" else "")
-        return {"host": best["host"],
-                "text": f"{best['host_label']}: el más rápido medido y disponible ({best['estimate_label']})."
-                        + confirm + rehearse}
+    if local and local["estimate"]:
+        if local["estimate"]["high"] <= LOCAL_LIMIT:
+            return {"host": "local", "text": f"Local: estimación {local['estimate_label']}, dentro de 20 min."}
+        over = f"Local tardaría más de 20 min ({local['estimate_label']}): corre en la nube."
+        if measured:
+            best = measured[0]
+            confirm = (" Antes de la campaña, un ensayo en ese host confirma su tiempo." if stage == "full" else "")
+            return {"host": best["host"], "text": f"{over} {best['host_label']}: el más rápido medido "
+                                                  f"({best['estimate_label']}).{confirm}"}
+        if remote:
+            return {"host": remote[0]["host"], "text": f"{over} Corre antes la sonda de tiempo en "
+                                                       f"{remote[0]['host_label']} para estimarla."}
+        return {"host": None, "text": f"{over} Ningún host en la nube disponible: activa un servicio remoto."}
     if local:
         return {"host": "local", "text": "Local disponible pero sin medir: corre primero la sonda de tiempo "
                                          "(Results/timing.json)." + rehearse}
+    if measured:
+        best = measured[0]
+        return {"host": best["host"],
+                "text": f"{best['host_label']}: el más rápido medido y disponible ({best['estimate_label']})."}
     if available:
         best = available[0]
         return {"host": best["host"], "text": f"{best['host_label']} disponible pero sin medir: corre un ensayo "
@@ -234,4 +261,5 @@ def run_options(root: Path | str, view: Any) -> dict[str, Any]:
         recommendations[stage] = _recommend(stage, stage_rows)
     empty = not any(r["estimate"] for r in rows)
     return {"rows": rows, "recommendations": recommendations, "note": NOTE, "sources": sorted(sources),
-            "empty": empty, "empty_hint": EMPTY_HINT, "local_poc_limit_seconds": LOCAL_POC_LIMIT}
+            "empty": empty, "empty_hint": EMPTY_HINT, "local_limit_seconds": LOCAL_LIMIT,
+            "poc_budget_seconds": POC_BUDGET}

@@ -472,7 +472,7 @@
           ? `${esc(r.estimate_label)}<br><small>${esc(r.estimate.measurements)} medición(es)${(r.estimate.devices || []).length ? ` · ${esc(r.estimate.devices.join(', '))}` : ''}</small>`
           : `<span class="badge badge--info">${esc(r.estimate_label || 'sin medir')}</span>`;
         const recCell = i === 0
-          ? `<td rowspan="${list.length}">${rec.host ? `<strong>${esc((list.find((x) => x.host === rec.host) || {}).host_label || rec.host)}</strong> ` : ''}<small>${esc(rec.text || '—')}</small></td>`
+          ? `<td rowspan="${list.length}">${rec.poc_budget === 'exceeds' ? '<span class="badge badge--warn">excede 5 h</span> ' : ''}${rec.host ? `<strong>${esc((list.find((x) => x.host === rec.host) || {}).host_label || rec.host)}</strong> ` : ''}<small>${esc(rec.text || '—')}</small></td>`
           : '';
         const stageCell = i === 0 ? `<td rowspan="${list.length}"><strong>${esc(r.stage_label || r.stage)}</strong></td>` : '';
         return `<tr>${stageCell}<td>${esc(r.host_label || r.host)}</td><td>${avail}</td><td>${est}</td><td><small>${esc(r.reason)}</small></td>${recCell}</tr>`;
@@ -485,6 +485,7 @@
     return `<section class="panel exp-run-options" id="expRunOptions">
       <h3 class="panel__title">Opciones de corrida</h3>
       <p class="exp-intro">Por etapa y host: disponibilidad, estimación (rango ${esc(state.note || '±20%, single-probe extrapolation')}) desde las mediciones propias de cada host, y una recomendación. Un host sin medición propia se lee "sin medir"; nunca se escala desde la medición local.</p>
+      <p class="exp-intro">Reglas: una etapa que en local tardaría más de ${esc(Math.round((state.local_limit_seconds || 1200) / 60))} min corre en la nube (Colab o Kaggle), y la prueba de concepto cabe en ${esc(Math.round((state.poc_budget_seconds || 18000) / 3600))} h donde corre; ambas leen el extremo alto del rango.</p>
       ${hint}${sources}
       ${body ? `<div class="table-responsive"><table class="table exp-table"><thead><tr><th>Etapa</th><th>Host</th><th>Disponible</th><th>Estimación</th><th>Motivo</th><th>Recomendación</th></tr></thead>
       <tbody>${body}</tbody></table></div>` : ''}

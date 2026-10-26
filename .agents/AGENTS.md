@@ -77,7 +77,9 @@ skill refuses when its input is missing.
      before the pilot and again before the full run; the dashboard's
      Experimentos tab lists the local, Kaggle and Colab options, and
      `/remote-parallelism` (`estimate`, then `assess --owners <distinct
-     owners>`) decides whether to split a campaign.
+     owners>`) decides whether to split a campaign. A run whose local
+     estimate exceeds 20 minutes runs on Colab or Kaggle, never locally, and
+     a proof of concept is sized to at most 5 hours where it runs.
    - **Hyperparameter search** (only when the deliberation judged it
      worthwhile): `/hyperparameter-search plan|report|status` runs an
      Optuna search nested inside each outer fold, with the same trial

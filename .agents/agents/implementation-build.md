@@ -62,6 +62,12 @@ the declared pilot. Run it, then load
 record and report the range per stage and host. The estimate is never
 authorization.
 
+`placement` in the same output says where each stage runs: a stage whose
+local estimate exceeds 20 minutes is reported as a remote step on a cloud host, never run
+locally, and a proof of concept whose `placement.pocBudget` reads `exceeds`
+(over 5 hours on its host) is reported as a design to reduce before the pilot,
+never run as it stands.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which

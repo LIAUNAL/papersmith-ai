@@ -60,6 +60,12 @@ record with `--record` into the product tree. Report each stage's range per
 host, and every host that reads `unmeasured`. The estimate is never
 authorization: it is what the operator reads before deciding.
 
+`placement` in the same output says where each stage runs: a stage whose
+local estimate exceeds 20 minutes is a remote step on a cloud host, never run
+locally, and a proof of concept whose `placement.pocBudget` reads `exceeds`
+(over 5 hours on its host) is reported as a design to reduce before the pilot,
+never run as it stands.
+
 ## Whether to split a campaign
 
 Before generating jobs for more than one unit, load

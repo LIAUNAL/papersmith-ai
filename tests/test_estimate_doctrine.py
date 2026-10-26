@@ -53,6 +53,31 @@ class ImplementationDoctrineTests(unittest.TestCase):
                 self.assertNotIn(word, section, f"{skill}: {word}")
 
 
+class PlacementRuleTests(unittest.TestCase):
+    """The two placement rules: past 20 minutes locally a run goes to a cloud host,
+    and a proof of concept is sized to 5 hours where it runs."""
+
+    def test_both_skills_state_the_placement_rules(self) -> None:
+        for skill in ("proposal-implementation", "experimental-implementation"):
+            with self.subTest(skill=skill):
+                doc = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
+                text = " ".join(doc.split(HEADING, 1)[1].split("\n## ", 1)[0].split())
+                for fragment in ("20 minutes", "cloud host", "5 hours", "reduced", "`placement`"):
+                    self.assertIn(fragment, text, fragment)
+
+    def test_the_deliberation_sizes_the_proof_of_concept(self) -> None:
+        text = flat(SKILLS / "experimental-deliberation" / "SKILL.md")
+        self.assertIn("A proof of concept is designed to run in at most 5 hours", text)
+        self.assertIn("exceeds 20 minutes locally is placed on a cloud host", text)
+
+    def test_each_agent_follows_the_placement(self) -> None:
+        for agent in AGENT_BINDINGS:
+            with self.subTest(agent=agent):
+                text = flat(AGENTS / f"{agent}.md")
+                for fragment in ("`placement`", "20 minutes", "5 hours"):
+                    self.assertIn(fragment, text, fragment)
+
+
 class AgentEstimateTests(unittest.TestCase):
     def test_each_agent_runs_the_estimate_and_never_reads_it_as_authorization(self) -> None:
         for agent, binding in AGENT_BINDINGS.items():
