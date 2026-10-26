@@ -251,6 +251,28 @@ class DiagramCliTests(unittest.TestCase):
                       "ps primary", "ps secondary", "ps supervision", "ps feedback"):
             self.assertIn(style, tex)
 
+    def test_comparison_signs_survive_the_default_font_encoding(self) -> None:
+        """OT1 prints `<`, `>` and `|` as `¡`, `¿` and an em dash; a label such
+        as "p < 0.05" must reach the PDF as written."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("diagram_cli_escape", CLI)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        escaped = module.tex_escape("p < 0.05 | a > b")
+        for raw in ("<", ">", "|"):
+            self.assertNotIn(f" {raw} ", escaped)
+        self.assertIn(r"\ensuremath{<}", escaped)
+
+    def test_a_diagrams_folder_linked_outside_the_product_is_refused(self) -> None:
+        self.ws.approve("poc")
+        outside = Path(tempfile.mkdtemp(prefix="diagrams-outside-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside, ignore_errors=True))
+        (self.ws.product / "diagrams").symlink_to(outside, target_is_directory=True)
+        code, payload = self.derive("poc")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(payload["error"], "DIAGRAMS_OUTSIDE_PRODUCT")
+        self.assertEqual(list(outside.iterdir()), [])
+
     @unittest.skipUnless(_tex_available() and _raster_available(),
                          "needs a TeX engine and a rasterizer on PATH")
     def test_render_compiles_pdf_and_png(self) -> None:

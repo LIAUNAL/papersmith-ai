@@ -97,6 +97,9 @@ def resolve_product(raw_target: str, name: str) -> Path:
 
 def diagram_paths(product: Path, kind: str) -> dict[str, Path]:
     folder = product / "diagrams"
+    if folder.is_symlink() or (folder.exists() and product.resolve() not in folder.resolve().parents):
+        raise Refusal("DIAGRAMS_OUTSIDE_PRODUCT",
+                      f"{folder} is a link or leaves the product folder; diagrams are written only inside it")
     return {ext: folder / f"{kind}.{ext}" for ext in ("json", "tex", "pdf", "png")}
 
 
@@ -386,7 +389,9 @@ TIKZ_LIBRARY = r"""
 """.strip("\n")
 
 _SPECIALS = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
-             "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
+             "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
+             # OT1 has no glyphs for these: as text they print as ¡ ¿ and a dash.
+             "<": r"\ensuremath{<}", ">": r"\ensuremath{>}", "|": r"\ensuremath{|}"}
 
 
 def tex_escape(text: str) -> str:

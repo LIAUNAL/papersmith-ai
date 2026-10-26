@@ -39,6 +39,7 @@ Every command prints one JSON object. Refusals carry `"ok": false`, an
 | --- | --- | --- |
 | `APPROVAL_ABSENT` | the kind's approval marker is missing | wait for the approval; never write the marker yourself |
 | `PRODUCT_ABSENT` | no `<target>/<Name>/` folder | check the repo and product names |
+| `DIAGRAMS_OUTSIDE_PRODUCT` | `<Name>/diagrams` is a link or resolves outside the product | replace the link with a real folder inside the product |
 | `SPEC_INVALID` | the spec breaks a rule; the message names the field | fix that field (Corrector) |
 | `TEX_TOOLCHAIN_ABSENT` | no `latexmk`, `pdflatex` or `lualatex` on PATH or in the usual TeX folders | install TeX Live / MacTeX; the `.tex` is already written |
 | `TEX_COMPILE_FAILED` | TeX ran and failed; the message carries the log tail | usually an unusual character in a label |
