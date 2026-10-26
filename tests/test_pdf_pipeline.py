@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 import zlib
+from unittest import mock
 from contextlib import redirect_stderr
 from pathlib import Path
 
@@ -53,6 +54,14 @@ def make_pdf(path: Path, pages: list[dict]) -> Path:
     helvetica = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     bold = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
     symbol = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Symbol >>")
+    # Helvetica whose ToUnicode map sends x and y outside the BMP (math italic
+    # U+1D465, U+1D466), as unicode-math output does, and z to a lone surrogate.
+    cmap = (b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Astral def "
+            b"1 begincodespacerange <00> <FF> endcodespacerange 3 beginbfchar "
+            b"<78> <D835DC65> <79> <D835DC66> <7A> <D835> endbfchar endcmap "
+            b"CMapName currentdict /CMap defineresource pop end end")
+    to_unicode = add(b"<< /Length " + str(len(cmap)).encode() + b" >>\nstream\n" + cmap + b"\nendstream")
+    astral = add(f"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode {to_unicode} 0 R >>".encode())
     pixels = zlib.compress(bytes([90, 90, 90] * 64 * 64))
     image = add(b"<< /Type /XObject /Subtype /Image /Width 64 /Height 64 /ColorSpace /DeviceRGB "
                 b"/BitsPerComponent 8 /Filter /FlateDecode /Length " + str(len(pixels)).encode()
@@ -68,7 +77,7 @@ def make_pdf(path: Path, pages: list[dict]) -> Path:
         content = add(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
         kids.append(add(
             f"<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] /Contents {content} 0 R "
-            f"/Resources << /Font << /F1 {helvetica} 0 R /F2 {bold} 0 R /F3 {symbol} 0 R >> "
+            f"/Resources << /Font << /F1 {helvetica} 0 R /F2 {bold} 0 R /F3 {symbol} 0 R /F4 {astral} 0 R >> "
             f"/XObject << /Im1 {image} 0 R >> >> >>".encode()))
     objects[pages_id - 1] = (f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] "
                              f"/Count {len(kids)} >>").encode()
@@ -126,6 +135,9 @@ REFERENCES_PAGE = {"lines": [
     prose(686, "[2] B. Author. A second paper. 2021."),
 ]}
 APPENDIX_PAGE = {"lines": [("F2", 14, 72, 720, "A Appendix"), prose(700, "The appendix survives the cut.")]}
+# Prose whose x and y read as math italic letters outside the BMP (F4's map).
+ASTRAL_PAGE = {"lines": [prose(720, SENTENCE), ("F4", 10, 72, 700, "metadata x and the current solution y here"),
+                         prose(680, SENTENCE)]}
 SCAN_PAGE = {"image": True}
 BLANK_PAGE = {"lines": []}
 
@@ -164,6 +176,10 @@ class ProbeTests(_Tmp):
     def test_citation_brackets_are_not_table_rows(self) -> None:
         probe = self.probes(CITED_PAGE)[0]
         self.assertEqual((probe.route, probe.table_rows), ("text", 0))
+
+    def test_math_letters_outside_the_bmp_count_as_math_glyphs(self) -> None:
+        probe = self.probes(ASTRAL_PAGE)[0]
+        self.assertEqual((probe.route, probe.math_glyphs), ("text", 2))
 
     def test_heavy_runs_group_consecutive_pages_that_need_the_same_stages(self) -> None:
         probes = self.probes(TEXT_PAGE, MATH_PAGE, MATH_PAGE, TABLE_PAGE, SCAN_PAGE, TEXT_PAGE, MATH_PAGE)
@@ -333,6 +349,93 @@ class RoutedEngineTests(_Tmp):
         self.assertIn("Docling unavailable", sidecar["pages"][1]["reason"])
         self.assertIn("Docling is not installed", self.stderr)
         self.assertIn("where each symbol is defined", text)
+
+    def test_a_character_outside_the_bmp_reads_as_one_character(self) -> None:
+        text, sidecar = self.render(self.engine("pdfium"), self.pdf(ASTRAL_PAGE))
+        self.assertIn("metadata \U0001D465 and the current solution \U0001D466 here", text)
+        self.assertEqual(sidecar["pages"][0]["engine"], "pdfium")
+
+    def test_a_lone_surrogate_reads_as_a_replacement_character(self) -> None:
+        broken = {"lines": [prose(720, SENTENCE), ("F4", 10, 72, 700, "a broken z map"), prose(680, SENTENCE)]}
+        text, _sidecar = self.render(self.engine("pdfium"), self.pdf(broken))
+        self.assertIn("a broken \ufffd map", text)
+
+    def test_a_page_docling_failed_on_is_read_on_the_fast_path_and_never_cached(self) -> None:
+        class Document:
+            # Docling's PARTIAL_SUCCESS: page 3 of the 2-4 run failed, so it is
+            # absent from document.pages and exports as an empty string.
+            pages = {2: object(), 4: object()}
+
+            def iterate_items(self):
+                return iter(())
+
+            def export_to_markdown(self, page_no, **_options):
+                return f"$$\\beta_{page_no}$$" if page_no in self.pages else ""
+
+        class Converter:
+            def convert(self, source, page_range):
+                return type("Result", (), {"document": Document()})()
+
+        self._stub_docling_core()
+        heavy = pdf_pipeline.HeavyEngine()
+        heavy._formula = ("granite_docling", "stub")
+        heavy._converters[(False, False)] = Converter()
+        routed = self.engine(heavy=heavy)
+        heavy.version = lambda: "stub-1"
+        text, sidecar = self.render(routed, self.pdf(TEXT_PAGE, MATH_PAGE, MATH_PAGE, MATH_PAGE))
+        self.assertEqual([p["engine"] for p in sidecar["pages"]], ["pdfium", "docling", "pdfium", "docling"])
+        self.assertIn("read on the fast path", sidecar["pages"][2]["reason"])
+        page3 = text.split("<!-- page 3 -->", 1)[1].split("<!-- page 4 -->", 1)[0]
+        self.assertIn("where each symbol is defined", page3)
+        self.assertIn("$$\\beta_2$$", text)
+        cache = self.tmp / "cache"
+        self.assertEqual(sorted(e.parent.name[:5] for e in cache.glob("*/*/*/entry.json")), ["p0001", "p0002", "p0004"])
+
+    def _stub_docling_core(self) -> None:
+        """The real `HeavyEngine.convert` imports docling_core, which an
+        environment without the optional Docling stack (CI) lacks."""
+        doc = type(sys)("docling_core.types.doc")
+        doc.PictureItem = type("PictureItem", (), {})
+        stubs = {"docling_core": type(sys)("docling_core"),
+                 "docling_core.types": type(sys)("docling_core.types"),
+                 "docling_core.types.doc": doc}
+        self.enterContext(mock.patch.dict(sys.modules, stubs))
+
+    def _partial_docling(self):
+        class Document:
+            pages = {2: object(), 4: object()}
+
+            def iterate_items(self):
+                return iter(())
+
+            def export_to_markdown(self, page_no, **_options):
+                return f"$$\\beta_{page_no}$$" if page_no in self.pages else ""
+
+        class Converter:
+            def convert(self, source, page_range):
+                return type("Result", (), {"document": Document()})()
+
+        self._stub_docling_core()
+        heavy = pdf_pipeline.HeavyEngine()
+        heavy._formula = ("granite_docling", "stub")
+        heavy._converters[(False, False)] = Converter()
+        heavy.version = lambda: "stub-1"
+        return heavy
+
+    def test_a_page_docling_failed_on_says_so_rather_than_unavailable(self) -> None:
+        text, sidecar = self.render(self.engine(heavy=self._partial_docling()),
+                                    self.pdf(TEXT_PAGE, MATH_PAGE, MATH_PAGE, MATH_PAGE))
+        reason = sidecar["pages"][2]["reason"]
+        self.assertIn("Docling did not convert this page", reason)
+        self.assertNotIn("Docling unavailable", reason)
+
+    def test_engine_docling_fails_the_paper_when_docling_drops_a_page(self) -> None:
+        with self.assertRaises(extract_pdf.EngineError) as caught:
+            self.render(self.engine("docling", self._partial_docling()),
+                        self.pdf(TEXT_PAGE, MATH_PAGE, MATH_PAGE, MATH_PAGE))
+        self.assertIn("page(s) 1, 3 of", str(caught.exception))
+        cache = self.tmp / "cache"
+        self.assertNotIn("p0003", [e.parent.name[:5] for e in cache.glob("*/*/*/entry.json")])
 
     def test_engine_docling_without_docling_is_an_environment_error(self) -> None:
         with self.assertRaises(extract_pdf.EngineError):
