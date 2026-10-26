@@ -41,6 +41,38 @@ def _is_own_bookkeeping(porcelain_line: str) -> bool:
         for side in sides if side.strip())
 
 
+def own_bookkeeping_snapshot(target: Path) -> dict[str, bytes | None]:
+    """The bytes of every dirty path `require_clean_worktree` excuses.
+
+    The guard admits exactly this dirt and refuses every other change, so it
+    is the one pre-existing state a rollback of a failed mutation could
+    destroy: `git reset --hard` reverts a modified ledger and deletes one the
+    operation staged, and `git clean -fd` deletes an untracked one. Keyed by
+    repository-relative path; `None` marks a ledger file deleted in the
+    working tree. Listed file by file (`--untracked-files=all`), so an
+    untracked `.implementation/` directory yields its files.
+    """
+    entries = git(target, "status", "--porcelain", "-z",
+                  "--untracked-files=all").split("\0")
+    kept: dict[str, bytes | None] = {}
+    index = 0
+    while index < len(entries):
+        entry = entries[index]
+        index += 1
+        if len(entry) < 4:
+            continue
+        paths = [entry[3:]]
+        if entry[0] in "RC":            # `-z` puts a rename's source next
+            paths.append(entries[index])
+            index += 1
+        for rel in paths:
+            if LEDGER_DIRECTORY not in Path(rel).parts:
+                continue
+            full = target / rel
+            kept[rel] = full.read_bytes() if full.is_file() else None
+    return kept
+
+
 def require_clean_worktree(target: Path) -> None:
     dirty = [line for line in git(target, "status", "--porcelain").splitlines()
              if line.strip() and not _is_own_bookkeeping(line)]

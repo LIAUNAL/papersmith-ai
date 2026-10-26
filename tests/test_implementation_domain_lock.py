@@ -592,11 +592,14 @@ def build_denylist(profiles: list[dict[str, Any]]) -> dict[str, str]:
 #: backlog #52: `_resolve_survey_target` no longer restates the
 #: workspace's `implementations/` path in two docstrings. One SHRANK,
 #: deliberately: `implementations` 4->3.
+#: backlog #80: the four copies of the failed-mutation rollback
+#: (`reset --hard` + `clean -fd`, each with `check=False`) collapse into
+#: `_roll_back_to_head`. One SHRANK, deliberately: `check` 168->162.
 M5_PINNED_RESIDUE: dict[str, int] = {
     "actually": 83, "admissible": 3, "after": 93, "against": 196,
     "agreed": 16, "answered": 97, "answers": 107, "approved": 48,
     "audit": 19, "before": 261, "benchmark": 108, "beside": 111,
-    "check": 168, "checkable": 3, "claim": 41, "command": 276,
+    "check": 162, "checkable": 3, "claim": 41, "command": 276,
     "commands": 18, "compares": 25, "declaration": 212,
     "destinations": 36, "empty": 131, "established": 5, "experiment": 25,
     "experiments": 6, "implementations": 3, "incomplete": 29,
