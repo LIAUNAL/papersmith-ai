@@ -49,6 +49,12 @@ number is `0`, breaking changes can still arrive without a major bump.
   directory or on `PATH`, and its health panel reports `pdflatex`, `xelatex`,
   `lualatex` and `latexmk`.
 
+- **`smith ui` opens the browser on WSL and headless Linux.** Under WSL the
+  dashboard is handed to the Windows browser with `wslview`, then
+  `explorer.exe`, before Python's `webbrowser`; on Linux without `DISPLAY` or
+  `WAYLAND_DISPLAY` the URL is printed instead of starting a text browser on
+  the server's terminal. macOS is unchanged.
+
 ## 0.25.0
 
 ### Added

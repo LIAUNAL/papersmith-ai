@@ -2617,7 +2617,45 @@ def _is_wsl() -> bool:
     return sys.platform == "linux" and "microsoft" in platform.release().lower()
 
 
+#: Launchers that hand a URL to the Windows browser from WSL, in order.
+WSL_BROWSER_LAUNCHERS = ("wslview", "explorer.exe")
+
+
+def _has_graphical_display() -> bool:
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _print_url(url: str) -> None:
+    print(f"open the dashboard in a browser: {url}", flush=True)
+
+
 def open_browser(url: str) -> None:
+    """Open ``url`` in a browser that fits the platform; never raises.
+
+    Under WSL the Windows browser is reached through ``wslview`` (wslu), then
+    ``explorer.exe``. On Linux without a graphical display Python's
+    ``webbrowser`` would start a text browser (w3m, lynx) on the server's own
+    terminal, so the URL is printed instead. macOS and desktop Linux use
+    ``webbrowser``.
+    """
+    if _is_wsl():
+        for launcher in WSL_BROWSER_LAUNCHERS:
+            executable = shutil.which(launcher)
+            if not executable:
+                continue
+            # argv keeps query strings intact (and avoids cmd.exe/shell
+            # interpolation). Do not expose the terminal login URL through
+            # child process output.
+            try:
+                subprocess.Popen([executable, url], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 close_fds=True)
+                return
+            except OSError:
+                continue
+    if sys.platform.startswith("linux") and not _has_graphical_display():
+        _print_url(url)
+        return
     import webbrowser
 
     try:
@@ -2625,13 +2663,7 @@ def open_browser(url: str) -> None:
             return
     except Exception:  # Browser setup must not prevent the server from starting.
         pass
-    if _is_wsl():
-        # argv keeps query strings intact (and avoids cmd.exe/shell interpolation).
-        # Do not expose the terminal login URL through child process output.
-        with contextlib.suppress(OSError):
-            subprocess.Popen(["explorer.exe", url], stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             close_fds=True)
+    _print_url(url)
 
 
 def main(argv: list[str] | None = None) -> int:
