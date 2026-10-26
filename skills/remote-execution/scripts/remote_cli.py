@@ -173,6 +173,14 @@ class AuthorizationError(RemoteCLIError):
     """
 
 
+class DiagramValidationError(RemoteCLIError):
+    """ANY `submit` (rehearsal or full) refused because the product holds an
+    approval (`AGREED.md`, `Experimental_AGREED.md`) whose experiment diagram
+    the operator has not validated in the dashboard ("Validar diagrama"), or
+    validated and then drew again. The record is written only by that button
+    (`skills/experiment-diagrams/scripts/diagram_cli.py`, `write_validation`)."""
+
+
 class ConsentError(RemoteCLIError):
     """ANY `submit` refused for lack of, or a mismatch in, the consent
     token this invocation needs -- campaign, single send, and rehearsal
@@ -1048,7 +1056,8 @@ def cmd_submit(
 
     Guard order past the target resolution is unchanged either way:
     `guard_entrypoint()` → `product_for()` → `_gate_job_folder_pin()` →
-    the consent gate below → the digest, computed once and reused for
+    `_verify_diagrams_validated()` (the operator validated every approved
+    experiment diagram in the dashboard) → the consent gate below → the digest, computed once and reused for
     every assignment in campaign mode — a single `distribute()` call
     already reads live health for every worker in one pass, so there is
     no per-assignment health re-read to stagger the digest around.
@@ -1218,6 +1227,7 @@ def cmd_submit(
         units=units or (),
         worker=worker,
     )
+    _verify_diagrams_validated(target / resolved_product)
     _verify_launch_consent(
         consent=consent, expected_consent=expected_consent, units=units,
         worker=worker,
@@ -1981,6 +1991,48 @@ def _target_for_job_dir(resolved_job_dir: Path) -> Path:
 
 def _smoke_ledger_path(target: Path, product: str) -> Path:
     return target / product / LEDGER_DIRNAME / SMOKE_LEDGER_FILENAME
+
+
+#: The approvals that call for an operator-validated experiment diagram before
+#: anything of that product is launched (the kinds `experiment-diagrams` draws).
+DIAGRAM_APPROVALS = (("poc", "AGREED.md"), ("experiments", "Experimental_AGREED.md"))
+
+
+def _diagram_cli():
+    """The kit's `diagram_cli.py`, the one owner of the validation record."""
+    script = (Path(__file__).resolve().parents[2] / "experiment-diagrams"
+              / "scripts" / "diagram_cli.py")
+    module_name = "remote_execution_diagram_cli"
+    if module_name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[module_name]
+
+
+def _verify_diagrams_validated(product_dir: Path) -> None:
+    """Refuse `DIAGRAM_NOT_VALIDATED` while any approved kind's diagram is not
+    `validated`. A product holding neither approval marker is not gated."""
+    owed = [(kind, marker) for kind, marker in DIAGRAM_APPROVALS
+            if (product_dir / marker).is_file()]
+    if not owed:
+        return
+    try:
+        cli = _diagram_cli()
+    except OSError as exc:
+        raise DiagramValidationError(
+            "DIAGRAM_NOT_VALIDATED: the experiment-diagrams skill this check reads is not "
+            f"installed here ({exc}); run `smith upgrade`.") from None
+    open_items = [f"{kind}: {state}" for kind, _ in owed
+                  if (state := cli.validation_state(product_dir, kind)) != "validated"]
+    if open_items:
+        raise DiagramValidationError(
+            "DIAGRAM_NOT_VALIDATED: nothing of this product is launched until the operator "
+            "validates its experiment diagrams in the dashboard (Experimentos tab, "
+            f"\"Validar diagrama\"); open: {', '.join(open_items)}. Draw a missing one with "
+            "`/experiment-diagrams <poc|experiments>` or the panel's \"Generar diagrama\".")
 
 
 def _main_ledger_path(target: Path, product: str) -> Path:

@@ -305,6 +305,52 @@ class DiagramCliTests(unittest.TestCase):
         self.assertFalse(payload["kinds"]["experiments"]["approved"])
         self.assertFalse(payload["kinds"]["experiments"]["spec"])
 
+    # -- operator validation (recorded by the dashboard, read here) ---------------
+
+    def _drawn(self, kind: str = "poc") -> Path:
+        self.ws.approve(kind)
+        png = self.ws.product / "diagrams" / f"{kind}.png"
+        png.parent.mkdir(parents=True, exist_ok=True)
+        png.write_bytes(b"\x89PNG first drawing")
+        return png
+
+    def _validation(self, kind: str = "poc") -> str:
+        code, payload = run_cli("status", "--target", str(self.ws.target), "--name", "Sample")
+        self.assertEqual(code, 0, payload)
+        return payload["kinds"][kind]["validation"]
+
+    def test_status_reports_absent_pending_validated_and_stale(self) -> None:
+        self.ws.approve("poc")
+        self.assertEqual(self._validation(), "absent")
+        png = self._drawn()
+        self.assertEqual(self._validation(), "pending")
+        record = _load_cli().write_validation(self.ws.product, "poc")
+        self.assertEqual(record["kind"], "poc")
+        self.assertEqual(self._validation(), "validated")
+        png.write_bytes(b"\x89PNG second drawing")
+        self.assertEqual(self._validation(), "stale")
+
+    def test_render_drops_the_validation_of_the_previous_drawing(self) -> None:
+        self._drawn()
+        cli = _load_cli()
+        cli.write_validation(self.ws.product, "poc")
+        self.derive("poc")
+        with mock.patch.dict(os.environ, {"PATH": ""}), \
+                mock.patch.object(cli, "TEX_FALLBACK_DIRS", ()), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = cli.main(["render", "--spec", str(self.ws.product / "diagrams" / "poc.json")])
+        self.assertNotEqual(code, 0)
+        self.assertFalse((self.ws.product / "diagrams" / "poc.validated.json").exists())
+        self.assertEqual(self._validation(), "absent")
+
+    def test_no_cli_command_validates_a_diagram(self) -> None:
+        self._drawn()
+        code, payload = run_cli("validate", "--target", str(self.ws.target), "--name", "Sample",
+                                "--kind", "poc")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(payload["error"], "USAGE")
+        self.assertEqual(self._validation(), "pending")
+
     def test_status_refuses_an_absent_product(self) -> None:
         code, payload = run_cli("status", "--target", str(self.ws.target), "--name", "Nobody")
         self.assertNotEqual(code, 0)

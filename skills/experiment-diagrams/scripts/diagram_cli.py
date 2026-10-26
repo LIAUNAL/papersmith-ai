@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -31,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 FORGE_ROOT = Path(__file__).resolve().parents[3]
@@ -101,6 +103,54 @@ def diagram_paths(product: Path, kind: str) -> dict[str, Path]:
         raise Refusal("DIAGRAMS_OUTSIDE_PRODUCT",
                       f"{folder} is a link or leaves the product folder; diagrams are written only inside it")
     return {ext: folder / f"{kind}.{ext}" for ext in ("json", "tex", "pdf", "png")}
+
+
+# -- operator validation ----------------------------------------------------------
+#
+# The operator validates a drawn diagram with the dashboard's "Validar diagrama"
+# button, which calls `write_validation`; no subcommand here writes it. The
+# record holds the PNG's fingerprint, so a diagram drawn again reads `stale`
+# until the operator looks at it again. `remote-execution submit` reads
+# `validation_state` and refuses a launch until every approved kind reads
+# `validated`.
+
+VALIDATION_STATES = ("absent", "pending", "validated", "stale")
+
+
+def validation_path(product: Path, kind: str) -> Path:
+    return product / "diagrams" / f"{kind}.validated.json"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validation_state(product: Path, kind: str) -> str:
+    """`absent` (no PNG drawn), `pending` (drawn, not validated), `validated`,
+    or `stale` (validated, then drawn again)."""
+    png = product / "diagrams" / f"{kind}.png"
+    if png.is_symlink() or not png.is_file():
+        return "absent"
+    try:
+        record = json.loads(validation_path(product, kind).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "pending"
+    if not isinstance(record, dict) or record.get("kind") != kind:
+        return "pending"
+    return "validated" if record.get("png_sha256") == _sha256(png) else "stale"
+
+
+def write_validation(product: Path, kind: str) -> dict:
+    """Record that the operator validated the PNG drawn now (dashboard only)."""
+    if kind not in KINDS:
+        raise Refusal("USAGE", f"kind must be one of {KINDS}, not {kind!r}")
+    png = diagram_paths(product, kind)["png"]
+    if png.is_symlink() or not png.is_file():
+        raise Refusal("DIAGRAM_ABSENT", f"{png} has not been drawn yet")
+    record = {"kind": kind, "png_sha256": _sha256(png),
+              "validated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    validation_path(product, kind).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return record
 
 
 # -- text -----------------------------------------------------------------------
@@ -628,7 +678,8 @@ def cmd_render(args) -> dict:
         raise Refusal("SPEC_INVALID", "; ".join(problems))
     tex = spec_path.with_name(f"{spec['kind']}.tex")
     tex.write_text(build_tex(spec), encoding="utf-8")
-    for stale in (tex.with_suffix(".pdf"), tex.with_suffix(".png")):
+    for stale in (tex.with_suffix(".pdf"), tex.with_suffix(".png"),
+                  tex.with_name(f"{spec['kind']}.validated.json")):
         stale.unlink(missing_ok=True)
     compiled = compile_tex(tex)
     raster = rasterize(Path(compiled["pdf"]))
@@ -642,7 +693,8 @@ def cmd_status(args) -> dict:
     kinds = {}
     for kind in KINDS:
         paths = diagram_paths(product, kind)
-        entry = {"approved": (product / MARKERS[kind]).is_file(), "marker": MARKERS[kind]}
+        entry = {"approved": (product / MARKERS[kind]).is_file(), "marker": MARKERS[kind],
+                 "validation": validation_state(product, kind)}
         for ext, key in (("json", "spec"), ("tex", "tex"), ("pdf", "pdf"), ("png", "png")):
             entry[key] = paths[ext].is_file()
         entry["paths"] = {key: str(paths[ext]) for ext, key in

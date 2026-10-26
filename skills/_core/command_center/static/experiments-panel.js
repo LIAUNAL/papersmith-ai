@@ -243,21 +243,61 @@
     experiments: 'Diagrama de los experimentos completos',
   };
 
+  // validation: absent (not drawn), pending, validated, stale (drawn again
+  // after it was validated). Nothing is launched until each one is validated.
+  const DIAGRAM_STATES = {
+    absent: ['PENDIENTE', 'badge--warn'],
+    pending: ['POR VERIFICAR', 'badge--warn'],
+    stale: ['CAMBIÓ: VERIFICAR DE NUEVO', 'badge--warn'],
+    validated: ['VALIDADO', 'badge--ok'],
+  };
+
   function diagrams(p) {
     const list = p.diagrams || [];
     if (!list.length) return '';
     const items = list.map((d) => {
       const title = DIAGRAM_TITLES[d.kind] || d.kind;
       const files = [d.png, d.pdf].filter(Boolean);
+      const state = d.png ? (d.validation || 'pending') : 'absent';
+      const [label, tone] = DIAGRAM_STATES[state] || DIAGRAM_STATES.pending;
+      const validate = state === 'pending' || state === 'stale'
+        ? `<button type="button" class="btn" data-diagram-validate="${esc(d.kind)}" data-diagram-repo="${esc(p.repo || '')}"
+            data-diagram-name="${esc(p.name || '')}">Validar diagrama</button>` : '';
       const body = d.png
-        ? `<div class="exp-gallery">${files.map(artifact).join('')}</div>`
+        ? `<div class="exp-gallery">${files.map(artifact).join('')}</div>
+           <p class="exp-intro">Revísalo antes de lanzar: <code>submit</code> se niega mientras no esté validado.
+            Si no refleja lo aprobado en ${esc(d.marker || '')}, pide al agente que lo corrija con
+            <code>${esc(d.slash || '')}</code> o regenéralo aquí.</p>
+           <div class="exp-chips">${validate}${cliButton(d.command || '', 'Regenerar diagrama')}</div>`
         : `<p class="exp-intro">Aprobado en ${esc(d.marker || '')}; el diagrama aún no existe. El agente lo dibuja con
             <code>${esc(d.slash || '')}</code>, o genera un borrador aquí y revísalo.</p>
            <div class="exp-chips">${cliButton(d.command || '', 'Generar diagrama')}</div>`;
       return `<div class="exp-diagram"><div class="exp-file">${esc(title)}
-        <span class="badge ${d.png ? 'badge--ok' : 'badge--warn'}">${d.png ? 'POR VERIFICAR' : 'PENDIENTE'}</span></div>${body}</div>`;
+        <span class="badge ${tone}">${esc(label)}</span></div>${body}</div>`;
     }).join('');
     return `<h4 class="exp-h4">Diagramas para verificar</h4>${items}`;
+  }
+
+  async function validateDiagram(button) {
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/experiments/diagrams/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: button.getAttribute('data-diagram-repo'),
+          name: button.getAttribute('data-diagram-name'),
+          kind: button.getAttribute('data-diagram-validate'),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = `No se pudo validar: ${err.message}`;
+      return;
+    }
+    refreshExperimentsPanel();
   }
 
   function product(p) {
@@ -729,6 +769,8 @@ kaggle kernels output &lt;user/slug&gt; -p &lt;dest&gt;</code></pre>
         return;
       }
       if (closest('[data-exp-refresh]')) { refreshExperimentsPanel(); return; }
+      const validate = closest('[data-diagram-validate]');
+      if (validate) { validateDiagram(validate); return; }
       const button = closest('[data-exp-log]');
       if (!button) return;
       const id = button.getAttribute('data-exp-log');
