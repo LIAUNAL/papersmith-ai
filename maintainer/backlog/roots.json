@@ -91,20 +91,6 @@
       "proof": "fix/adopt-nameerror refs #52 (re-seal adopt-same-target open)"
     },
     {
-      "key": "rollback-data-loss",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "A failed operation's rollback can delete an untracked ledger",
-      "fix": "Reproduce first; roll back only the paths the operation wrote, never git clean the tree.",
-      "issues": [
-        80
-      ],
-      "evidence": {
-        "80": "implementation_engine.py:9510-9511; impl_guards.py:45 skips the ledger dir"
-      },
-      "proof": "fix/rollback-data-loss (tests/test_engine_rollback_ownership.py)"
-    },
-    {
       "key": "user-file-preservation",
       "tier": 2,
       "state": "open",
