@@ -30,6 +30,7 @@ from workspace_series import (
 
 SKILL_NAMES = (
     "datasets",
+    "experiment-diagrams",
     "experimental-deliberation",
     "experimental-implementation",
     "figure-review",

@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 #: top-level skill has to be acknowledged here.
 COMMAND_NAMES = (
     "datasets",
+    "experiment-diagrams",
     "experimental-deliberation",
     "experimental-implementation",
     "figure-review",

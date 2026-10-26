@@ -93,6 +93,11 @@ skill refuses when its input is missing.
      budget for every arm and a declared importance evaluator; its contour
      and importance plots land in `Results/hpo/` and the Experimentos tab
      shows them. It runs remotely like the full runs.
+   - **Experiment diagrams**: when the proof of concept is approved
+     (`AGREED.md`) and again when the full experiments are
+     (`Experimental_AGREED.md`), `/experiment-diagrams poc` and then
+     `/experiment-diagrams experiments` draw each one as a TikZ figure; the
+     Experimentos tab shows it beside its product for the operator to verify.
    - **Remote runs**: one account per person and service
      (`smith team add … --attest`), `/kaggle-accounts validate`, then
      `/remote-execution`: generate-job → submit --smoke → fetch --smoke /
