@@ -181,6 +181,10 @@ records a remote dispatch command verbatim, including its `--consent` operand.
 - **One bound root.** Every path argument is resolved and must stay inside the
   workspace; anything else is refused `WORKSPACE_ESCAPE`. Resources take no
   caller-supplied path at all.
+- **Declared types, checked first.** Every argument must match the type its
+  schema declares (`"false"` is not a boolean, `true` is not an integer) and
+  any declared `enum`; anything else is refused `INVALID_ARGUMENT` before argv
+  is built, so no child runs.
 - **Closed stdin.** Children are spawned with `stdin` closed, so `--body -` is
   refused `STDIN_NOT_AVAILABLE_OVER_MCP` rather than reading the JSON-RPC wire.
 - **Captured stdout.** A child's stdout can never reach the wire.

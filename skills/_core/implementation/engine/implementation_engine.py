@@ -13500,6 +13500,7 @@ def cmd_position(args: argparse.Namespace) -> dict:
             "and --sequence/--reconcile/--replace write a fresh or "
             "reconstructed one; only one of these describes this call's "
             "intent.")
+    impl_position.require_session_token(args.session)
 
     target = resolve_target(args.target)
     name = validate_name(args.name)
@@ -20455,6 +20456,7 @@ GATING_REFUSALS: dict[str, str] = {
     "POSITION_SEQUENCE_UNREADABLE": INVOCATION_DEFECT,     # fix the JSON typed
     "POSITION_SEQUENCE_EMPTY": INVOCATION_DEFECT,          # pass a real sequence
     "POSITION_BLOCK_EXISTS": INVOCATION_DEFECT,            # pass --replace
+    "POSITION_SESSION_INVALID": INVOCATION_DEFECT,         # pass one token
     # `implementation-holder-repair` (design D6): the identical shape as
     # `POSITION_SEQUENCE_AND_RECONCILE` just above -- drop one of the two
     # flags that named two different intents in the same call.

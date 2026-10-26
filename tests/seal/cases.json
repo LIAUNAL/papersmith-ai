@@ -455,6 +455,8 @@
   "argv": [
    "--target",
    "<TARGET>",
+   "--name",
+   "Seal",
    "--source",
    "<TARGET>"
   ]

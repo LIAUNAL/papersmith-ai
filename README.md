@@ -62,7 +62,7 @@ agent is used as a copilot, the ones already defined are in
 
 ## Use flow — the short path
 
-Fourteen skills. They are invoked by name in Claude Code (`/paper-ingestion`) or requested in
+Every skill is invoked by name in Claude Code (`/paper-ingestion`) or requested in
 Spanish (*"ingiere los papers"*). **Not all of them have to be used, or in this order**: each
 one declares what it needs first and refuses if it's missing, so an invocation from the middle
 of the flow reports which input is missing.
@@ -710,7 +710,7 @@ to establish it. The operator opens and closes the gates.
 | `math-tutor` | One turn of the Socratic tutor from the dashboard's math panel: reads the hand-drawn page back as LaTeX, gives one hint, asks one question and assesses understanding quoted from your own words, always tied to why the novelty holds. It never writes the workspace. | `math-tutor` |
 | `paper-ingestion` | Turns a paper into the form in which it can really be used: LaTeX equations, tables as tables, figures as files. Stages: `filed`, `extracted`, `readable`. It asks nobody anything. | `paper-ingestion` |
 | `contract-auditor` | Reads the `## Disqualifiers` of a contract, literally, and judges a draft block against each one: `fires`/`clear`/`undecidable`, with the passage quoted in each `fires`. | `paper-writing` |
-| `redactor` | Writes the LaTeX of a block from exactly four inputs (the contract's prose, its evidence set, its mode and its style set) and returns a binding map: where each sentence comes from. | `paper-writing` |
+| `redactor` | Writes the LaTeX of a block from exactly five inputs (the contract's prose, its evidence set, its mode, its style set and its own bound source sections) and returns a binding map: where each sentence comes from. | `paper-writing` |
 | `style-sampler` | Resolves the equivalent block, complete, in each style folder of `guidance/` and returns it verbatim, never trimmed. It is the only material an overlap check can compare. | `paper-writing` |
 | `diagram-author` | Writes a standalone TikZ diagram (`<id>.tex` + `<id>.diagram.json`) and compiles it in its own loop, up to the repair budget. It never draws a chart from measured numbers — that is the `place` verb. | `paper-writing` |
 | `figure-auditor` | Compares the components declared in the manifest against the section's prose and the pipeline steps; reports a structured verdict. | `paper-writing` |

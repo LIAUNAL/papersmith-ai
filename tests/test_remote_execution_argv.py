@@ -94,7 +94,9 @@ if __name__ == "__main__":
 
 class RemoteTransportAdmissibilityTests(unittest.TestCase):
     """Review follow-up: only the helper form `<transport>::` is refused, not a
-    `::` inside an IPv6 literal, and the git+ssh spellings stay admissible."""
+    `::` inside an IPv6 literal, and the git+ssh spellings stay admissible.
+    This is the transport gate the submit-time probe uses; `generate-job`
+    refuses SSH remotes by policy before it (tests/test_remote_url_policy.py)."""
 
     def setUp(self) -> None:
         import importlib.util

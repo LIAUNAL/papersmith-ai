@@ -186,11 +186,42 @@ class Server:
         sink.flush()
 
 
+def _matches(declared: dict[str, Any], value: Any) -> bool:
+    """Whether ``value`` has the JSON type the advertised schema declares.
+
+    Strict: ``"false"`` is not a boolean and ``True`` is not an integer, so a
+    value is never coerced into argv it was not declared to produce.
+    """
+    kind = declared.get("type")
+    if kind == "boolean":
+        ok = isinstance(value, bool)
+    elif kind == "integer":
+        ok = isinstance(value, int) and not isinstance(value, bool)
+    elif kind == "array":
+        ok = isinstance(value, list) and all(isinstance(item, str) for item in value)
+    else:
+        ok = isinstance(value, str)
+    return ok and ("enum" not in declared or value in declared["enum"])
+
+
 def _validate_arguments(spec: ToolSpec, arguments: dict[str, Any]) -> None:
+    """Refuse a call whose names or values the schema does not declare.
+
+    Runs before ``spec.build``, so a refused call never reaches argv or a child.
+    """
     properties = spec.input_schema.get("properties", {})
     for key in arguments:
         if key not in properties:
             raise ToolRefusal("UNKNOWN_ARGUMENT", f"{spec.name} has no argument {key!r}")
+    for key, value in arguments.items():
+        declared = properties[key]
+        if value is not None and not _matches(declared, value):
+            expected = declared.get("type", "string")
+            if "enum" in declared:
+                expected += " in " + ", ".join(map(str, declared["enum"]))
+            raise ToolRefusal(
+                "INVALID_ARGUMENT", f"{spec.name} argument {key!r} must be {expected}"
+            )
     for key in spec.input_schema.get("required", []):
         if arguments.get(key) is None:
             raise ToolRefusal("MISSING_ARGUMENT", f"{spec.name} requires {key!r}")

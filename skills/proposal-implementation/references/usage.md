@@ -45,7 +45,8 @@ documented below.
 
 `position`, `propose`, `gate`, `offer`, `close`, `step`, `settle`, `defect` and
 `walk` require `--session <id>` (`adopt --apply` accepts one). The id is yours:
-the engine never mints, looks up or validates it. It is stamped verbatim into
+the engine never mints or looks it up, and validates it only where `position`
+writes it into the header (below). It is stamped verbatim into
 every event the call appends to `<Name>/.implementation/position.jsonl` and, for
 `position`, into the position block's header, so a later reader can tell which
 working session made each write. Use one id for one working session (a
@@ -53,8 +54,10 @@ conversation, a sitting at the terminal) and pass the same id to every write in
 it; a new session gets a new id. Write it as one shell-safe token with no
 whitespace — for example `2026-10-12-a`, or your agent harness's own session
 id — because the commands `offer` publishes (its `launch` and `run-step` actions)
-carry it unquoted. It is an attribution, not a credential: `close` uses it only
-to recognize a repeat close by the same session over an unmoved position, which
+carry it unquoted. `position` refuses an empty, non-ASCII or whitespace-holding
+id as `POSITION_SESSION_INVALID` before writing, because the header reads it
+back as one ASCII token. It is an attribution, not a credential: `close` uses it
+only to recognize a repeat close by the same session over an unmoved position, which
 reports `not_open` instead of recording a second close.
 
 ## 0. Bind the revision
@@ -2878,7 +2881,7 @@ them. Which refusals carry the extra key is itself the answer to a question:
 > the repository?
 
 **Yes — an invocation defect.** The detail already names the flag, the token or
-the mutual exclusion. Fifty-eight codes, and nothing is published beside them:
+the mutual exclusion. Fifty-nine codes, and nothing is published beside them:
 `SETTLE_STDIN_CONFLICT`, `OFFER_ANSWER_NOT_A_TOKEN`, `MATERIALIZE_MODE_REQUIRED`,
 `NOT_A_GIT_REPO`, `GATE_ELECTION_REQUIRED` and the rest. Retype the call.
 

@@ -79,6 +79,20 @@ _LEGACY_BLOCK_OPEN_RE = re.compile(
     rb"session=(?P<session>\S+)\s*-->"
 )
 
+def require_session_token(session: str) -> str:
+    """The `session=` field as `locate_block` reads it back: one non-empty
+    ASCII token with no whitespace. Checked before `position` writes, so a
+    `--session` the header cannot carry is refused (#67) instead of leaving a
+    block that every later read refuses as malformed."""
+    if not session or not session.isascii() or any(c.isspace() for c in session):
+        raise Refused(
+            "POSITION_SESSION_INVALID",
+            f"--session {session!r} cannot be written into the position "
+            "block's header, which carries it as one ASCII token without "
+            "whitespace; pass an id such as `2026-10-12-a`.")
+    return session
+
+
 #: A sequence item line: `- [x] 1. <prose ending in a witness token>`. Modeled
 #: on `AGREEMENT_LINE` (implementation_cli.py:149), with an ordinal added: the
 #: sequence's numbering is part of what a human reads and is kept as its own

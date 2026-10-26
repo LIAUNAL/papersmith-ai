@@ -34741,6 +34741,9 @@ _ENGLISH_COUNTS = {
     # `cross-skill-consistency` (C11): `MODULE_STAGE_MISMATCH` and `MODULE_NAME_INVALID` (materialize --module), two invocation-defect codes -- 56 -> 58, 128 -> 130, measured by running the derivation.
     58: "Fifty-eight",
     130: "One hundred and thirty",
+    # #67: `POSITION_SESSION_INVALID`, one invocation-defect code -- 58 -> 59, 130 -> 131, measured by running the derivation.
+    59: "Fifty-nine",
+    131: "One hundred and thirty-one",
 }
 
 
@@ -35158,8 +35161,12 @@ class GatingRefusalRosterTests(unittest.TestCase):
         act) is that reading plus `SETTLE_UNWITNESSED_CONFLICT`,
         `SETTLE_REASON_REQUIRED` and `SETTLE_WITNESS_PRESENT`, all three
         raised inside `cmd_settle` -- measured here at exactly +3.
+        One hundred and thirty-one (#67) is that reading plus
+        `POSITION_SESSION_INVALID`, raised by
+        `impl_position.require_session_token` at the top of `cmd_position`
+        -- measured here at exactly +1.
         """
-        self.assertEqual(len(reachable_refusal_codes()), 130)
+        self.assertEqual(len(reachable_refusal_codes()), 131)
 
     def test_agree_joins_gating_commands_unconditionally_never_this_profiles_own_commands(self):
         """`the-agreement-nothing-computes` (Slice D, design.md D9, tasks.md
