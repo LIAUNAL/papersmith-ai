@@ -1496,6 +1496,9 @@ def validate_run_config(run_config: Mapping[str, object]) -> None:
             f"reads only {RUN_CONFIG_SCHEMA_VERSION}"
         )
     validate_commit_shape(run_config["commit"], source="run-config.json")
+    repo = run_config["repo"]
+    if isinstance(repo, Mapping):
+        refuse_repo_url_credentials(repo.get("url"), where="run-config.json")
     validate_clone_paths(run_config["clonePaths"])
     run_block = run_config["run"]
     # The union check, and the whole of it — see `run_block_kind()`. It is
@@ -1920,6 +1923,8 @@ def generate_job(
     """
     resolved_target = resolve_target(target)
     destination = resolve_destination(resolved_target, service, job_name)
+    # Before the pin is resolved: resolution may already call git with it.
+    refuse_repo_url_credentials(repo_url, where="generation")
 
     # The two shapes are decided HERE, before the pin is resolved and long
     # before anything is written, so a caller who declared neither shape —
@@ -2348,6 +2353,34 @@ def _remote_transport_admissible(repo_url: str) -> bool:
         return False
     scheme = re.match(r"([A-Za-z][A-Za-z0-9+.-]*)://", repo_url)
     return scheme is None or scheme.group(1).lower() in REMOTE_URL_SCHEMES
+
+
+def refuse_repo_url_credentials(repo_url: object, *, where: str) -> None:
+    """Refuse a `repo_url` that embeds a credential, without echoing it (#56).
+
+    `run-config.json` is committed and uploaded, and the URL reaches git's
+    argv and refusal text, so `https://<token>@host/…` or
+    `<user>:<password>@…` would leak the secret into all three. Any userinfo
+    is refused, except a bare SSH login name (`git@host:o/r.git`,
+    `ssh://git@host/r.git`), which names an account and carries no secret.
+    Private remotes authenticate through `--repo-credential` instead.
+    """
+    if not isinstance(repo_url, str):
+        return
+    scheme, separator, rest = repo_url.partition("://")
+    authority = re.split(r"[/?#]", rest if separator else repo_url, maxsplit=1)[0]
+    if "@" not in authority:
+        return
+    userinfo = authority.rsplit("@", 1)[0]
+    ssh_login = (not separator or scheme.lower() in ("ssh", "git+ssh", "ssh+git"))
+    if ssh_login and ":" not in userinfo:
+        return
+    raise JobFolderError(
+        f"{where} refuses: the declared remote embeds a credential (a user, "
+        "password or token before '@'); a credential is never written to "
+        "run-config.json, passed to git or printed. Declare the remote "
+        "without it and pass the token file with --repo-credential."
+    )
 
 
 def _looks_like_ssh_remote(repo_url: str) -> bool:

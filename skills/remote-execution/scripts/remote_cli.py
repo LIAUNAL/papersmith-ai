@@ -2626,7 +2626,13 @@ def _build_parser() -> argparse.ArgumentParser:
             "HEAD. Never resolved from the remote"
         ),
     )
-    generate_job.add_argument("--repo-url", required=True)
+    generate_job.add_argument(
+        "--repo-url", required=True,
+        help="the remote the runner clones; a URL embedding a credential "
+        "(a user, password or token before '@', other than a bare SSH "
+        "login) is refused before any git call or write: pass the token "
+        "with --repo-credential instead",
+    )
     generate_job.add_argument("--repo-ref", required=True)
     generate_job.add_argument(
         "--repo-credential", dest="repo_credential", type=Path, default=None,

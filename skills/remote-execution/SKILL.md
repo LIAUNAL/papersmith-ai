@@ -1732,6 +1732,11 @@ through the same staged material the runner's clone uses, so a pass means
 the RUNNER can clone. The bytes are read at exactly one expression per
 site, never appear on argv, in `run-config.json`, in the job folder or in
 the ledger, and the staged material is deleted on the VM after the run.
+A credential is never embedded in `--repo-url` itself: a URL carrying a
+user, password or token before `@` (a bare SSH login such as
+`git@host:o/r.git` excepted) is refused before any git call or write, and
+a job folder whose `run-config.json` carries one is refused on every read,
+without the refusal echoing the URL.
 
 A second backend brings its own answer to this section: nothing above the
 adapter seam knows a service exists, so nothing above it knows what a service
