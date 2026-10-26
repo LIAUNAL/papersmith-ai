@@ -2082,7 +2082,7 @@ nothing was asserted without a run having checked it.
   certifies that no module under `scripts/` imports `subprocess`, `os.system`,
   `os.popen`, `os.exec*` or `multiprocessing` — with one named exception, currently
   unused, reserved for `latexmk`. `write` cannot run unattended by construction: the
-  orchestrating agent assembles the redactor's four inputs, delegates, writes the
+  orchestrating agent assembles the redactor's inputs, delegates, writes the
   JSON to a file, and only then runs `write --draft <path> --audit <path>`.
 - **A single re-draft, counted on disk.** `AUDIT_EXHAUSTED` refuses a third attempt
   under the same contract/evidence/mode — the count lives in a file ledger, not in
