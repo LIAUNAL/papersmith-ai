@@ -1190,7 +1190,7 @@ named, currently-unused exception reserved for a sibling skill's own
 `latexmk` integration — see `tests/test_paper_writing.py`,
 `NoSubprocessScanTests`). `write` cannot run unattended, by construction:
 
-1. The orchestrating agent (you) assembles the four redactor inputs and
+1. The orchestrating agent (you) assembles the redactor's inputs and
    delegates to the `redactor` agent, which returns
    `{"latex": ..., "bindings": [...]}`. Write that JSON to a file.
 2. The orchestrating agent also delegates to the `contract-auditor` agent

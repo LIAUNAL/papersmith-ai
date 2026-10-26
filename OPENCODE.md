@@ -18,7 +18,7 @@ before invoking it; it is the source of truth for that capability.
 
 ## Slash commands
 
-The eleven top-level skills are projected as OpenCode slash commands under
+Every top-level skill is projected as an OpenCode slash command under
 `.opencode/commands/` by `python scripts/sync-repo-harness.py`. Each command body
 loads its `skills/<name>/SKILL.md` and takes your text as `$ARGUMENTS`. That
 directory is a derived artifact — regenerate it with the script (`--check` reports
