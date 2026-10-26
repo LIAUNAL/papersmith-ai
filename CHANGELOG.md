@@ -38,6 +38,15 @@ number is `0`, breaking changes can still arrive without a major bump.
   of Sivia (github.com/exsinger-hub/Sivia) in the skill's own words. The two
   implementation skills call it once each approval is settled.
 
+- **Colab jobs ask for a GPU by default.** The Colab adapter now registers
+  a default accelerator (`cuda`, `sm_75`), as the Kaggle adapter already did,
+  so `generate-job --service colab` with no `--accelerator-*` flags writes the
+  `accelerator` block and `submit` requests `--gpu T4`. A runtime that arrives
+  without CUDA is refused at the worker's bootstrap gate, so a CPU smoke no
+  longer passes as ready. Before, such a job ran on CPU silently. Ask for an
+  A100 or H100 with `--accelerator-kind cuda --accelerator-architecture sm_80`
+  (or `sm_90`).
+
 ### Fixed
 
 - **One TeX and rasterizer search on every platform.** `smith doctor`,
