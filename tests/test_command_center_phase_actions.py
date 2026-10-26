@@ -111,10 +111,10 @@ class PhaseActionCatalogueTests(unittest.TestCase):
                        "semilla", "ped-anova", "contornos", "solo el operador"):
             self.assertIn(phrase, guide)
 
-    def test_the_gates_live_in_the_pipeline_tab_and_telemetry_comes_last(self) -> None:
+    def test_the_gates_live_in_the_pipeline_tab_and_doctor_follows_telemetry(self) -> None:
         tabs = re.findall(r"onclick=\"navigateTab\('([a-z]+)'\)\">", PAGE)
         self.assertNotIn("gates", tabs)
-        self.assertEqual(tabs[-2:], ["artifacts", "telemetria"])
+        self.assertEqual(tabs[-3:], ["artifacts", "telemetria", "doctor"])
         pipeline = PAGE.split('<div id="pane-pipeline"', 1)[1].split('<div id="pane-', 1)[0]
         self.assertIn('id="gatesGrid"', pipeline)
         self.assertNotIn('id="pane-gates"', PAGE)

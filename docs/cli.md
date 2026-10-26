@@ -18,6 +18,7 @@ to the current directory and has to point at an initialized workspace, except fo
 | `remote` | Packs, pushes and follows remote jobs directly |
 | `target` | Lists, selects and checks compute targets |
 | `audit` | Audits the structure and detects drift in what was generated |
+| `doctor` | One health table: framework, packages, tools, skills, agents and phases |
 | `ui` | Serves the local Paper Command Center (DAG, gates, sections, wiring) |
 | `mcp` | Exposes the orchestrator and the paper verbs over Model Context Protocol |
 
@@ -384,6 +385,46 @@ subject today; drift is reported, not fixed.
 > `smith` subcommand yet — it runs as
 > `python3 skills/kaggle-accounts/scripts/accounts_cli.py …` or indirectly
 > through `target check`.
+
+### `smith doctor [<dir>]`
+
+```bash
+smith doctor            # readable table
+smith doctor --json     # {summary, rows}
+```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints `{summary, rows}`; each row is `{area, item, state, detail}` |
+
+One table of the workspace's health, read-only. Each row has a state: `ok`,
+`absent` (an optional piece that is not there, or a phase still pending),
+`warn` or `fail`; the summary is the worst state present. The areas:
+
+- **framework**: installed CLI, kit and workspace versions, drift (the same
+  generator, manifest and surplus checks as `smith audit --check-drift`),
+  pending migrations, and the sync of each harness projection.
+- **packages**: the workspace interpreter's Python and the packages the forge
+  needs (`numpy`, `pyyaml`, `fastapi`, ...).
+- **tools**: `git`, `node`, `micromamba`, TeX (`latexmk`, `lualatex`,
+  `pdflatex`) and the rasterizers (`pdftoppm`, `pdftocairo`, `gs`, `sips`).
+  Tools are looked up on `PATH` and then in the known TeX directories
+  (`/Library/TeX/texbin`, `/usr/local/texlive/*/bin/*`, `/opt/texlive/*/bin/*`),
+  so it works on macOS, Linux and Windows under WSL. A missing tool is a row,
+  never a crash; with no TeX engine or no rasterizer at all, a `warn` row says so.
+- **skills** and **agents**: each one present, projected to every enabled
+  harness, and each skill front door answering `--help`.
+- **flows**: the dashboard's phases and their status (`PASS`, `ACTIVE`,
+  `PENDING`).
+
+The packages, skills, agents and phases are measured by the workspace
+interpreter (`python -m skills._core.command_center.doctor_view <dir>`), the
+same one `smith ui` runs; if it cannot run, those areas report one `warn` row
+with the reason. The dashboard shows the same table in its **Smith Doctor** tab
+(`GET /api/doctor`).
+
+Exits `0` unless a row is `fail` (a skill without its `SKILL.md`, a missing
+agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).
 
 ### `smith ui [<dir>]`
 

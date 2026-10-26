@@ -38,6 +38,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import doctor_view
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -325,6 +326,8 @@ def _candidate_count(root: Path) -> int:
 
 AUDIT_TIMEOUT_SECONDS = 120
 _AUDIT_LOCK = threading.Lock()
+#: How long a Smith Doctor report is served from cache; `?fresh=1` re-measures.
+DOCTOR_TTL_SECONDS = 30.0
 TEX_TIMEOUT_SECONDS = 35
 BUILD_TIMEOUT_SECONDS = 20
 # One job at a time writes paper/: the writing stage's build and the compile.
@@ -1428,6 +1431,30 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/health/wiring")
     def api_health_wiring() -> JSONResponse:
         return JSONResponse(measure_health())
+
+    doctor_cache: dict[str, Any] = {"at": 0.0, "value": None}
+    doctor_lock = threading.Lock()
+
+    @app.get("/api/doctor")
+    def api_doctor(fresh: bool = False) -> JSONResponse:
+        # The Smith Doctor tab: the rows `smith doctor --json` prints, built by
+        # the same function from this process's wiring health and phases.
+        # Lock order: doctor_lock -> health_lock (measure_health).
+        with doctor_lock:
+            cached = doctor_cache["value"]
+            if (not fresh and cached is not None
+                    and time.monotonic() - doctor_cache["at"] < DOCTOR_TTL_SECONDS):
+                return JSONResponse(cached)
+            wiring = measure_health(force=fresh)
+            try:
+                phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
+                phases_error = None
+            except Exception as exc:  # noqa: BLE001 - one area degrades, not the report
+                phases, phases_error = None, f"/api/status failed: {type(exc).__name__}: {exc}"
+            value = doctor_view.get_doctor_view(root_path, wiring=wiring, phases=phases,
+                                                phases_error=phases_error)
+            doctor_cache["value"], doctor_cache["at"] = value, time.monotonic()
+            return JSONResponse(value)
 
     @app.post("/api/health/run-wiring-smoke")
     def api_run_wiring_smoke(request: Request) -> JSONResponse:

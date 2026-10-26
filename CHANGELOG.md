@@ -11,6 +11,20 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- **`smith doctor` and the Smith Doctor tab.** `smith doctor [<dir>] [--json]`
+  prints one table of project health rows (`ok`, `absent`, `warn`, `fail`):
+  framework versions and drift, the workspace interpreter's packages, external
+  tools (TeX, rasterizers, git, node, micromamba; found on `PATH` or in the
+  known TeX directories, so macOS, Linux and WSL behave alike), skills,
+  agents and the dashboard's phases. It exits `4` when a row fails. The
+  dashboard shows the same rows in a new **Smith Doctor** tab after
+  Telemetría y Costos (`GET /api/doctor`, cached 30 s; "Volver a revisar"
+  re-measures).
+
 ## 0.25.0
 
 ### Added

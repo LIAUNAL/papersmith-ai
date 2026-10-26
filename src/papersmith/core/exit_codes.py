@@ -11,7 +11,8 @@ Code                Name               Meaning
 3                   DRIFT_ERROR        Drift detected during lint/generator check
                                        or checksum mismatch.
 4                   EXECUTION_ERROR    Invariant test failure, remote run crash,
-                                       or build error.
+                                       build error, or a ``fail`` row in
+                                       ``smith doctor``.
 ==================  =================  ===========================================
 """
 
