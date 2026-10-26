@@ -133,9 +133,11 @@ class DashboardUsesTheSearch(unittest.TestCase):
                 mock.patch.object(server.subprocess, "run", fake_run):
             payload, status = server._compile_paper(self.tmp / "ws")
         self.assertEqual(status, 200, payload)
-        self.assertEqual([argv[0] for argv, _ in calls],
-                         [str(pdflatex), str(bibtex), str(pdflatex), str(pdflatex)])
-        self.assertTrue(calls[0][1].split(os.pathsep)[0] == str(texbin))
+        # Called by name (the phase-run contract); the search puts their
+        # directory first on PATH and keeps the inherited PATH after it.
+        self.assertEqual([argv[0] for argv, _ in calls], ["pdflatex", "bibtex", "pdflatex", "pdflatex"])
+        self.assertEqual(calls[0][1].split(os.pathsep), [str(texbin), str(self.tmp / "empty")])
+        self.assertTrue(pdflatex.is_file() and bibtex.is_file())
 
     def test_compile_paper_keeps_tools_found_on_path(self) -> None:
         from skills._core.command_center import server
@@ -154,9 +156,9 @@ class DashboardUsesTheSearch(unittest.TestCase):
                 mock.patch.object(server.subprocess, "run", fake_run):
             _payload, status = server._compile_paper(self.tmp / "ws")
         self.assertEqual(status, 200)
-        self.assertEqual([argv[0] for argv in calls],
-                         [str(pdflatex), str(bibtex), str(pdflatex), str(pdflatex)])
+        self.assertEqual([argv[0] for argv in calls], ["pdflatex", "bibtex", "pdflatex", "pdflatex"])
         self.assertEqual(calls[1][1:], ["main"])
+        self.assertTrue(pdflatex.is_file() and bibtex.is_file())
 
     def test_health_inspector_reports_every_tex_tool_through_the_search(self) -> None:
         from skills._core.command_center import health_inspector, toolchain

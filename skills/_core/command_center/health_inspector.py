@@ -30,7 +30,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import toolchain
+try:
+    from . import toolchain
+except ImportError:
+    # Loaded as a standalone file (the harness-parity tests do), with no parent
+    # package: read the sibling module by path instead.
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("command_center_toolchain", Path(__file__).with_name("toolchain.py"))
+    toolchain = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(toolchain)
 
 # --------------------------------------------------------------------------
 # Static wiring tables

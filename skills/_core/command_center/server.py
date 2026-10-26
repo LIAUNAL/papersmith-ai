@@ -475,14 +475,15 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
     # PATH first, then the shared fallback directories (MacTeX, Homebrew, TeX
     # Live on Linux and WSL). The engine's directory leads PATH so the helpers
     # TeX itself spawns (kpsewhich, mktextfm) come from the same distribution.
-    tex = toolchain.find_tool("pdflatex", path=env.get("PATH")) or "pdflatex"
-    bib = toolchain.find_tool("bibtex", path=env.get("PATH")) or "bibtex"
-    if os.path.isabs(tex):
-        env["PATH"] = os.pathsep.join(filter(None, (os.path.dirname(tex), env.get("PATH", ""))))
+    # The tools are still called by name, so the inherited PATH keeps deciding
+    # among equals; the search only adds the directories where it found them.
+    found = [toolchain.find_tool(name, path=env.get("PATH")) for name in ("pdflatex", "bibtex")]
+    lead = list(dict.fromkeys(os.path.dirname(f) for f in found if f and os.path.isabs(f)))
+    env["PATH"] = os.pathsep.join(filter(None, (*lead, env.get("PATH", ""))))
     p_dir = str(root / "paper")
-    pdflatex = [tex, "-interaction=nonstopmode", "main.tex"]
+    pdflatex = ["pdflatex", "-interaction=nonstopmode", "main.tex"]
     first = None
-    for argv in (pdflatex, [bib, "main"], pdflatex, pdflatex):
+    for argv in (pdflatex, ["bibtex", "main"], pdflatex, pdflatex):
         try:
             res = subprocess.run(argv, cwd=p_dir, capture_output=True, text=True, env=env,
                                  timeout=TEX_TIMEOUT_SECONDS)
