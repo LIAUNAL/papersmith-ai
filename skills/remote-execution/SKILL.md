@@ -771,7 +771,7 @@ executable — no test in this suite reaches the network or a real account).
 | 2 | `pin-is-head` | The pin is HEAD, or nothing changed between the pin and HEAD under the declared clone paths. `unknown` refuses as firmly as `drift`. | `generate-job`, `submit` | The changed clone paths, the pin and HEAD, and git's own message |
 | 3 | `declared-paths-exist` | Every declared clone path exists at the pin — `git cat-file -e <pin>:<path>`, asked of the pin and never of the working tree. `sparse-checkout` accepts a path the tree does not contain and fetches nothing for it, silently. | `generate-job`, `submit` | Every absent path, and that the remedy is committing them and pinning the commit that carries them |
 | 4 | `declared-notebook-reachable` | Every notebook the run block declares (`run.notebook`, `run.smoke.notebook`) is covered by a declared clone path AND exists at the pin — `git cat-file -e <pin>:<notebook>`. Nothing imports a notebook, so the import cross-check has no representative for it and `sparse-checkout` reports nothing for a path its patterns do not cover. A job declaring no notebook passes through untouched. | `generate-job`, `submit` | Every notebook no clone path covers, every notebook absent at the pin, and the remedy for each |
-| 5 | `pin-published` | The declared remote can serve the pin — `git fetch --dry-run --depth 1` from a scratch repository. Credentialless that probe is anonymous; with `--repo-credential` it authenticates through the staged askpass material (see the Colab environment block) and an SSH-shaped `--repo-url` refuses by name. | `generate-job`, `submit` | The commit, the remote URL, the missing push addressed to `--repo-ref`, and git's own message |
+| 5 | `pin-published` | The declared remote can serve the pin — `git fetch --dry-run --depth 1` from a scratch repository. Credentialless that probe is anonymous; with `--repo-credential` it authenticates through the staged askpass material (see the Colab environment block) and an SSH-shaped `--repo-url` refuses by name. `generate-job` refuses any SSH `--repo-url` before this probe, credential or not. | `generate-job`, `submit` | The commit, the remote URL, the missing push addressed to `--repo-ref`, and git's own message |
 
   **Why the `clean-worktree` condition exists, and why it is `status` and not `diff`.**
   `resolve_clone_paths()` walks the WORKING TREE. Without this condition
@@ -857,9 +857,13 @@ executable — no test in this suite reaches the network or a real account).
      `runner_bootstrap.py` clones with no credential step either, so a
      probe that authenticated would pass jobs whose runner can never
      clone the repository — the same defect one layer up. An SSH
-     `--repo-url` is not refused on sight; it is probed like any other
-     and, if it fails, the refusal says the probe was unauthenticated so
-     the failure is not misread as a local accident. With
+     `--repo-url` (scp-shaped `git@host:o/r.git`, `ssh://`, `git+ssh://`,
+     `ssh+git://`) is refused by `generate-job` before any git call, naming
+     the rule and the `https://` alternative: the runner's clone has no SSH
+     agent and no key, so no job generated from it could clone. `submit`
+     still probes an older job folder's SSH remote like any other and, if
+     it fails, the refusal says the probe was unauthenticated so the
+     failure is not misread as a local accident. With
      `--repo-credential`, the amendment S3 adds: the credential is
      staged for the RUNNER too (uploaded beside the executor, used by
      `clone_repo()`'s clone) and both transports are pinned to
@@ -1732,7 +1736,9 @@ through the same staged material the runner's clone uses, so a pass means
 the RUNNER can clone. The bytes are read at exactly one expression per
 site, never appear on argv, in `run-config.json`, in the job folder or in
 the ledger, and the staged material is deleted on the VM after the run.
-A credential is never embedded in `--repo-url` itself: a URL carrying a
+Credential or not, `generate-job` refuses an SSH `--repo-url` (the
+runner cannot clone over SSH): declare `https://`, or a local path for a
+local rehearsal. A credential is never embedded in `--repo-url` itself: a URL carrying a
 user, password or token before `@` (a bare SSH login such as
 `git@host:o/r.git` excepted) is refused before any git call or write, and
 a job folder whose `run-config.json` carries one is refused on every read,

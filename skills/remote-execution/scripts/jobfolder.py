@@ -1925,6 +1925,17 @@ def generate_job(
     destination = resolve_destination(resolved_target, service, job_name)
     # Before the pin is resolved: resolution may already call git with it.
     refuse_repo_url_credentials(repo_url, where="generation")
+    # #56: the runner clones with no SSH agent and no key, so an SSH remote
+    # is one no job generated from it could ever clone. Refused by rule here,
+    # before any git call; `submit` still probes an older job folder's remote.
+    if _looks_like_ssh_remote(repo_url):
+        raise JobFolderError(
+            "generation refuses: the declared remote is an SSH remote (scp-shaped "
+            "host:path, ssh://, git+ssh:// or ssh+git://), and the runner's clone "
+            "has no SSH agent and no key, so it could never clone it. Declare the "
+            "repository's https:// URL (with --repo-credential for a private one), "
+            "or a local path for a local rehearsal."
+        )
 
     # The two shapes are decided HERE, before the pin is resolved and long
     # before anything is written, so a caller who declared neither shape —
@@ -2384,25 +2395,26 @@ def refuse_repo_url_credentials(repo_url: object, *, where: str) -> None:
 
 
 def _looks_like_ssh_remote(repo_url: str) -> bool:
-    """`ssh://…`, or scp-shaped `git@host:owner/repo.git`.
+    """`ssh://…` (or `git+ssh://`, `ssh+git://`), or scp-shaped `git@host:owner/repo.git`.
 
-    Two uses, and they are deliberately different in kind (SD14):
+    Three uses (SD14, then #56):
 
+    * refusing an SSH remote at GENERATION, before any git call (#56,
+      operator decision): the runner's clone has no SSH agent and no key,
+      so no job generated from an SSH remote could ever clone it;
     * enriching a refusal that has already happened — its original use,
-      and the only one the credentialLESS probe has. It never decides
-      whether to probe: refusing SSH URLs on sight would be deciding
-      remote policy on the strength of a colon in a string;
+      and the only one the credentialLESS submit-time probe has, which
+      still probes an older job folder's SSH remote instead of refusing it;
     * deciding an explicit refusal BEFORE the probe's scratch repository
       exists — ONLY when a repository credential was supplied. With a
       credential, the old "not refused on sight" reasoning is void: the
       operator has declared a token path, so the runner will present one,
       and `runner_bootstrap`'s clone has no SSH agent and no key, so a
       credential cannot travel over SSH at all. In that one case an
-      SSH-shaped remote is refused by name; credentialless, this function
-      still never decides anything. See `_verify_commit_reachable()`.
+      SSH-shaped remote is refused by name. See `_verify_commit_reachable()`.
     """
     lowered = repo_url.lower()
-    if lowered.startswith("ssh://"):
+    if lowered.startswith(("ssh://", "git+ssh://", "ssh+git://")):
         return True
     if "://" in repo_url:
         return False

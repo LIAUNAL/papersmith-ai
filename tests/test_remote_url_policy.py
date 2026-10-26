@@ -5,13 +5,14 @@ URL such as `https://<user>:<token>@host/r.git` would put a secret into a
 persisted artifact, into git's argv and into refusal text. Generation refuses
 it before any git call or write, and every read of a job folder refuses it
 again. Every credential below is an inert dummy; no git process may start
-(`GIT_TRACE` would record one).
+(a `git` shim on PATH would record one).
 """
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,10 +51,20 @@ class RepoUrlUserinfoTests(unittest.TestCase):
         subprocess.run([*git, "add", "-A"], check=True)
         subprocess.run([*git, "commit", "-q", "-m", "published"], check=True)
         subprocess.run([*git, "push", "-q", str(self.origin), "HEAD:refs/heads/main"], check=True)
-        self.trace = self.root / "git-trace.log"
+        # A `git` shim first on PATH (which the git child's env allowlist keeps,
+        # unlike GIT_TRACE) records every invocation, then runs the real git.
+        self.trace = self.root / "git-calls.log"
+        shim_dir = self.root / "shim"
+        shim_dir.mkdir()
+        real_git = shutil.which("git")
+        shim = shim_dir / "git"
+        shim.write_text(f'#!/bin/sh\necho "$@" >> "{self.trace}"\nexec "{real_git}" "$@"\n',
+                        encoding="utf-8")
+        shim.chmod(0o755)
+        self.path = f"{shim_dir}{os.pathsep}{os.environ.get('PATH', '')}"
 
     def generate(self, repo_url: str) -> subprocess.CompletedProcess:
-        env = {**os.environ, "GIT_TRACE": str(self.trace)}
+        env = {**os.environ, "PATH": self.path}
         return subprocess.run(
             [sys.executable, str(REMOTE_CLI_SCRIPT), "generate-job",
              "--target", str(self.target), "--service", "kaggle",
@@ -92,6 +103,33 @@ class RepoUrlUserinfoTests(unittest.TestCase):
             jobfolder.read(config_path.parent)
         self.assertIn("credential", str(caught.exception))
         self.assertNotIn(DUMMY_SECRET, str(caught.exception))
+
+    def test_generation_refuses_ssh_remotes_the_runner_cannot_clone(self) -> None:
+        for url in ("git@example.invalid:o/r.git", "ssh://git@example.invalid/o/r.git",
+                    "git+ssh://example.invalid/o/r.git", "ssh+git://example.invalid/o/r.git",
+                    "SSH://example.invalid/o/r.git"):
+            with self.subTest(url=url):
+                completed = self.generate(url)
+                output = completed.stdout + completed.stderr
+                self.assertNotEqual(completed.returncode, 0, output[:300])
+                self.assertIn("SSH", output)
+                self.assertIn("https://", output)
+                self.assertNotIn("git@", output)
+                self.assertFalse(self.trace.exists(), "a git process started")
+                self.assertFalse((self.target / "tools").exists(), "a job folder was written")
+
+    def test_https_and_local_remotes_still_reach_generation(self) -> None:
+        # https reaches the reachability probe (git runs, the host is unresolvable):
+        # it is not refused by the SSH or credential rule.
+        completed = self.generate("https://example.invalid/o/r.git")
+        output = completed.stdout + completed.stderr
+        self.assertNotIn("SSH", output.split("{", 1)[0])
+        self.assertNotIn("credential", output.split("{", 1)[0])
+        self.assertIn("example.invalid", self.trace.read_text(encoding="utf-8"),
+                      "the https remote never reached git")
+        completed = self.generate(str(self.origin))
+        self.assertEqual(completed.returncode, 0, (completed.stdout + completed.stderr)[:300])
+        self.assertTrue((self.target / "tools" / "kaggle" / "probe-job" / "run-config.json").is_file())
 
     def test_ssh_login_names_and_plain_urls_stay_admissible(self) -> None:
         jobfolder = _load_jobfolder()

@@ -2628,7 +2628,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     generate_job.add_argument(
         "--repo-url", required=True,
-        help="the remote the runner clones; a URL embedding a credential "
+        help="the remote the runner clones: https:// (or a local path for a "
+        "local rehearsal); an SSH remote (git@host:o/r.git, ssh://, "
+        "git+ssh://, ssh+git://) is refused, since the runner has no SSH "
+        "agent or key, and a URL embedding a credential "
         "(a user, password or token before '@', other than a bare SSH "
         "login) is refused before any git call or write: pass the token "
         "with --repo-credential instead",
