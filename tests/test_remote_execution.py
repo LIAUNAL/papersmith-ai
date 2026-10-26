@@ -15147,9 +15147,30 @@ class StalenessTests(unittest.TestCase):
             # than forwarded from the parent, so it is the one key here
             # that is not an allowlist entry.
             self.assertEqual(
-                set(recorded_env) - {"GIT_TERMINAL_PROMPT"} - set(JOBFOLDER.GIT_ENV_ALLOWLIST),
+                set(recorded_env) - set(JOBFOLDER.GIT_FIXED_ENV) - set(JOBFOLDER.GIT_ENV_ALLOWLIST),
                 set(),
             )
+
+    def test_run_git_ignores_a_system_credential_helper(self) -> None:
+        """Dropping `HOME` drops `~/.gitconfig`, not the system config. A
+        system `credential.helper` (Homebrew's git ships `osxkeychain`)
+        still ran inside the probe, and with no `HOME` it waited on the
+        macOS keychain until the 240 s budget expired -- a published
+        commit refused as unconfirmable. The helper is reset to empty, so
+        only the probe's own askpass, or nothing, answers a prompt.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            system = Path(tmp) / "system.gitconfig"
+            system.write_text("[credential]\n\thelper = leak-me-not\n", encoding="utf-8")
+            result = JOBFOLDER._run_git(
+                ["config", "--get-all", "credential.helper"],
+                cwd=tmp,
+                extra_env={"GIT_CONFIG_SYSTEM": str(system)},
+            )
+            self.assertEqual(result.stdout.splitlines(), ["leak-me-not", ""])
+            result = JOBFOLDER._run_git(["config", "--get", "credential.helper"], cwd=tmp,
+                                        extra_env={"GIT_CONFIG_SYSTEM": str(system)})
+            self.assertEqual(result.stdout.strip(), "")
 
     def test_run_git_non_zero_exit_is_a_refusal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

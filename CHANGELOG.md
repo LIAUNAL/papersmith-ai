@@ -49,6 +49,15 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ### Fixed
 
+- **`generate-job` no longer hangs on a system credential helper.** The
+  pin-published probe dropped `HOME` (so `~/.gitconfig`) but still read the
+  system git config, and Homebrew's git names `osxkeychain` there. With no
+  `HOME`, that helper waited on the macOS keychain until the 240 s budget
+  expired, so a published commit was refused as unconfirmable whenever
+  `--repo-credential` was given. Every `_run_git` call now resets
+  `credential.helper` to empty through `GIT_CONFIG_COUNT`, so only the probe's
+  own askpass answers.
+
 - **One TeX and rasterizer search on every platform.** `smith doctor`,
   `experiment-diagrams`, the dashboard's paper compile and its health panel
   now look on `PATH` first and then in the same directories (MacTeX's
