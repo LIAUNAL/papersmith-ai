@@ -110,6 +110,7 @@ and auto-approve sensibly.
 |---|---|---|---|---|
 | `papersmith.workspace_status` | `smith status --json` | ✅ | — | — |
 | `papersmith.workspace_audit` | `smith audit --check-drift`; reports drift, never repairs it | ✅ | — | — |
+| `papersmith.workspace_doctor` | `smith doctor --json`: framework, packages, tools, skills, agents and phases, each `ok`/`absent`/`warn`/`fail` | ✅ | — | — |
 | `papersmith.ingest_fragment` | `pdf_fragment.py`: one page, heading section, display equation (LaTeX), search hits or the outline of an ingested paper, never the whole document | ✅ | — | — |
 | `papersmith.target_list` | configured compute targets | ✅ | — | — |
 | `papersmith.target_check` | target connectivity — runs `ssh` for a remote-ssh target | ✅ | — | ✅ |
