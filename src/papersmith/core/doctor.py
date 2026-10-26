@@ -44,10 +44,15 @@ STATES = ("ok", "absent", "warn", "fail")
 #: Every area a report carries, in table order.
 AREAS = ("framework", "packages", "tools", "skills", "agents", "flows")
 
-#: Where TeX distributions put their binaries when PATH misses them: MacTeX's
-#: symlink farm and TeX Live's per-year, per-platform trees (Linux, WSL).
-TEX_DIRS = (
+#: Where TeX engines and rasterizers live when PATH misses them: MacTeX's
+#: symlink farm, Homebrew and TeX Live's per-year, per-platform trees (Linux,
+#: WSL), searched newest year first. The same list is restated in
+#: ``skills/_core/command_center/toolchain.py`` and the experiment-diagrams
+#: script; ``tests/test_toolchain_search.py`` fails when they drift.
+TOOL_FALLBACK_DIRS = (
     "/Library/TeX/texbin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
     "/usr/local/texlive/*/bin/*",
     "/opt/texlive/*/bin/*",
     "~/texlive/*/bin/*",
@@ -90,8 +95,9 @@ def _row(area: str, item: str, state: str, detail: str) -> dict[str, str]:
 # tools
 # --------------------------------------------------------------------------
 def find_tool(name: str, *, which: Callable[[str], str | None] = shutil.which,
-              extra_dirs: Iterable[str] = TEX_DIRS) -> str | None:
-    """The path of ``name`` on PATH, else in a known TeX directory, else None."""
+              extra_dirs: Iterable[str] = TOOL_FALLBACK_DIRS) -> str | None:
+    """The path of ``name`` on PATH, else in a known fallback directory (newest
+    TeX Live year first), else None."""
     found = which(name)
     if found:
         return found

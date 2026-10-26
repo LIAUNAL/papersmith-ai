@@ -38,7 +38,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
-from . import doctor_view
+from . import doctor_view, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -472,11 +472,17 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
     """pdflatex, bibtex, pdflatex twice in paper/, each bounded by a timeout.
     Blocking: the caller runs it off the event loop, holding _PAPER_LOCK."""
     env = os.environ.copy()
-    env["PATH"] = f"/Library/TeX/texbin:/opt/homebrew/bin:{env.get('PATH', '')}"
+    # PATH first, then the shared fallback directories (MacTeX, Homebrew, TeX
+    # Live on Linux and WSL). The engine's directory leads PATH so the helpers
+    # TeX itself spawns (kpsewhich, mktextfm) come from the same distribution.
+    tex = toolchain.find_tool("pdflatex", path=env.get("PATH")) or "pdflatex"
+    bib = toolchain.find_tool("bibtex", path=env.get("PATH")) or "bibtex"
+    if os.path.isabs(tex):
+        env["PATH"] = os.pathsep.join(filter(None, (os.path.dirname(tex), env.get("PATH", ""))))
     p_dir = str(root / "paper")
-    pdflatex = ["pdflatex", "-interaction=nonstopmode", "main.tex"]
+    pdflatex = [tex, "-interaction=nonstopmode", "main.tex"]
     first = None
-    for argv in (pdflatex, ["bibtex", "main"], pdflatex, pdflatex):
+    for argv in (pdflatex, [bib, "main"], pdflatex, pdflatex):
         try:
             res = subprocess.run(argv, cwd=p_dir, capture_output=True, text=True, env=env,
                                  timeout=TEX_TIMEOUT_SECONDS)
