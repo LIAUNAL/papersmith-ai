@@ -165,6 +165,42 @@ class OptionTests(unittest.TestCase):
                                                            services=nothing))
         self.assertIsNone(options["recommendations"]["full"]["host"])
 
+    def test_the_placement_limits_are_reported(self) -> None:
+        options = run_options.run_options(Path("."), _view())
+        self.assertEqual(options["local_limit_seconds"], 1200)
+        self.assertEqual(options["poc_budget_seconds"], 18000)
+
+    def test_a_full_run_within_twenty_minutes_locally_stays_local(self) -> None:
+        small = json.loads(json.dumps(TIMING))
+        small["scales"]["full"] = {"arms": 2, "folds": 2, "seeds": 1, "epochs": 10}
+        # local 4.5 x 10 x 2 x 1 x 2 = 180 + setup 5 x 2 x 1 = 190 s, high 228 s
+        options = run_options.run_options(Path("."), _view(timing=small))
+        self.assertEqual(options["recommendations"]["full"]["host"], "local")
+        self.assertIn("20 min", options["recommendations"]["full"]["text"])
+
+    def test_over_twenty_minutes_locally_without_a_cloud_measurement_asks_for_a_cloud_probe(self) -> None:
+        local_only = json.loads(json.dumps(TIMING))
+        local_only["measurements"] = [m for m in local_only["measurements"] if m["host"] == "local"]
+        options = run_options.run_options(Path("."), _view(timing=local_only))
+        full = options["recommendations"]["full"]
+        # local 4.5 x 100 x 5 x 5 x 2 = 22500 s: over 20 minutes, no cloud host measured
+        self.assertIn(full["host"], (REMOTE_A, REMOTE_B))
+        self.assertIn("más de 20 min", full["text"])
+        self.assertIn("sonda", full["text"])
+
+    def test_a_proof_of_concept_over_five_hours_asks_to_reduce_the_design(self) -> None:
+        big = json.loads(json.dumps(TIMING))
+        big["scales"]["poc"] = {"arms": 2, "folds": 5, "seeds": 5, "epochs": 1000}
+        # remote 1 x 1000 x 5 x 5 x 2 = 50000 + 60 x 25 = 51500 s, over 5 h
+        options = run_options.run_options(Path("."), _view(timing=big))
+        poc = options["recommendations"]["poc"]
+        self.assertEqual(poc["host"], REMOTE_A)
+        self.assertEqual(poc["poc_budget"], "exceeds")
+        self.assertIn("5 h", poc["text"])
+        self.assertIn("reduce", poc["text"])
+        self.assertEqual(run_options.run_options(Path("."), _view())["recommendations"]["poc"]["poc_budget"],
+                         "within")
+
     def test_never_raises_on_a_broken_view(self) -> None:
         options = run_options.run_options(Path("."), {"products": "nope", "remote_services": None})
         self.assertEqual(len(options["rows"]), 6)
@@ -232,6 +268,19 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("<script>alert(2)", out)
         self.assertNotIn("<b>GPU</b>", out)
         self.assertLess(out.index("Opciones de corrida"), out.index("Prueba de concepto"))
+
+    def test_the_placement_rules_and_the_poc_budget_badge_render(self) -> None:
+        big = json.loads(json.dumps(TIMING))
+        big["scales"]["poc"] = {"arms": 2, "folds": 5, "seeds": 5, "epochs": 1000}
+        view = _view(timing=big)
+        view["run_options"] = run_options.run_options(Path("."), view)
+        out = self.render(view)
+        self.assertIn("más de 20 min corre en la nube", out)
+        self.assertIn("cabe en 5 h", out)
+        self.assertIn("excede 5 h", out)
+        view = _view()
+        view["run_options"] = run_options.run_options(Path("."), view)
+        self.assertNotIn("excede 5 h", self.render(view))
 
     def test_the_empty_state_names_the_timing_probe(self) -> None:
         view = _view(timing=None)
