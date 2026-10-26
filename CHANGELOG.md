@@ -11,6 +11,23 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- **A `capacity` toy profile in the datasets skill.** `synth --kind eeg
+  --profile capacity --rule {monotone,interaction,frequency-two}
+  [--d-prime D] --seed K` writes one replicate of fresh training, validation
+  and test subjects (60, 10 and 100 by default, 12 epochs each, the
+  19-channel montage) as a float32 `.npy` with a JSON sidecar: narrowband
+  Theta, Beta and Alpha over an AR(1) background, neighbour mixing, frontal
+  blinks and a class effect on the frontal and central channels, under a
+  monotone rule graded by d′ (Bayes limit Phi(d′/2)), an interaction rule
+  and a frequency-two rule. The generator (`scripts/capacity_toy.py`) is
+  stdlib and seeded, so a remote notebook regenerates a replicate instead of
+  downloading it. Options the profile cannot honour are refused; a replicate
+  already written needs `--force` (`member-exists`).
+
 ## 0.24.0
 
 ### Changed
