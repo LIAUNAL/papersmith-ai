@@ -52,7 +52,7 @@ python3 skills/datasets/scripts/datasets_cli.py [--root <workspace>] <verb> ...
 
 | Verb | What it does |
 |---|---|
-| `synth` | `--slug --kind {classification,eeg} --seed --n-subjects --n-per-subject --channels --length --sfreq [--profile {alpha,theta-beta}] [--label-per {trial,subject}] [--force]`: seeded toy CSV + `datasets/<slug>/TOY.md` with the generating parameters; role `toy`. Same seed, same bytes. For `eeg`, `--profile alpha` (default) is a 10 Hz rhythm whose band power depends on the class; `--profile theta-beta` is a Theta (6 Hz) and a Beta (20 Hz) rhythm whose ratio depends on the class (class 1 elevated), needing `--sfreq` above 40 Hz; both add a per-subject gain and Gaussian noise. `--label-per subject` gives every subject one class (balanced across subjects), which a protocol that decides per subject needs; the default `trial` alternates classes within each subject |
+| `synth` | `--slug --kind {classification,eeg} --seed --n-subjects --n-per-subject --channels --length --sfreq [--profile {alpha,theta-beta,capacity}] [--label-per {trial,subject}] [--force]`: seeded toy CSV + `datasets/<slug>/TOY.md` with the generating parameters; role `toy`. Same seed, same bytes. For `eeg`, `--profile alpha` (default) is a 10 Hz rhythm whose band power depends on the class; `--profile theta-beta` is a Theta (6 Hz) and a Beta (20 Hz) rhythm whose ratio depends on the class (class 1 elevated), needing `--sfreq` above 40 Hz; both add a per-subject gain and Gaussian noise. `--label-per subject` gives every subject one class (balanced across subjects), which a protocol that decides per subject needs; the default `trial` alternates classes within each subject. `--profile capacity` is described below |
 | `search` | `--query [--hosts ...] [--limit]`: queries every host module (official MCP `search_datasets` on Kaggle, Hugging Face Hub, OpenNeuro GraphQL, Zenodo) and writes `datasets/search-<date>.json` with every hit `{host, ref, title, url, license, retrieved}`. A host that fails is recorded, never fatal. Google Dataset Search has no API: its link is printed for a manual look |
 | `license` | `--slug --source-license "<text>" [--override "<reason>"] [--title] [--source-url] [--role]`: decision `allowed` / `refused` / `overridden`, mapped to a host license name (`CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `ODbL-1.0`, `CC-BY-NC-4.0`, `CC-BY-NC-SA-4.0`, `other`); creates the full entry when missing |
 | `qc` | `--slug --file <csv> [--label col] [--group col]`: rows/columns, missing values, constant columns, duplicates, class balance, group (subject) counts and single-class groups, numeric ranges → `datasets/<slug>/qc.json`, status `pass` / `warn` / `fail` with reasons |
@@ -67,6 +67,7 @@ Success prints one JSON object on stdout. A refusal prints
 |---|---|
 | `bad-slug` | slug is not 1–50 lowercase letters, digits and hyphens |
 | `slug-exists` | `synth` onto a registered slug without `--force` |
+| `member-exists` | `synth --profile capacity` onto a replicate file that already exists without `--force` |
 | `unknown-slug` | the verb needs a registered dataset; run `synth` or `license` first |
 | `bad-argument` | a size parameter is not positive |
 | `file-missing` | a named or registered file does not exist |
@@ -83,6 +84,33 @@ Success prints one JSON object on stdout. A refusal prints
 | `no-publisher` | no host module declares a publisher |
 | `host-cli-missing` | the official `kaggle` client is not installed |
 | `host-cli-failed` | the official client exited non-zero; nothing is recorded |
+
+## The capacity profile
+
+`synth --kind eeg --profile capacity --rule {monotone,interaction,frequency-two} [--d-prime D] --seed K
+[--n-train 60 --n-val 10 --n-test 100 --n-per-subject 12 --length 256 --sfreq 128] [--force]` writes one
+replicate of a family of toy sets meant to test what a classifier can represent, not just whether the
+pipeline runs (`scripts/capacity_toy.py`, stdlib, generator version 1):
+
+- **Fresh subjects per replicate.** Each replicate draws its own training, validation and test subjects,
+  one class per subject, balanced within each group (so every group size is even). Because the generator
+  yields independent subjects without limit, an experiment can score on new subjects instead of
+  cross-validating; that holds for synthetic data only.
+- **Signal.** The 19-channel montage of the declared dataset (Fp1 ... Pz in its own order); narrowband Theta,
+  Beta and Alpha over an AR(1) red-noise background, each channel mixed with its two neighbours, frontal eye
+  blinks in a fraction of the epochs; the class effect acts on the frontal and central channels only.
+- **Rules.** `monotone` draws the subject's log Theta/Beta offset from N(+-d'/2, 1) by class, so the
+  subject-level Bayes limit is Phi(d'/2) (`--d-prime` is required and positive); `interaction` draws
+  independent Theta and Beta deviations, class 1 when both deviate in the same direction, so the log ratio
+  carries no class; `frequency-two` draws a Theta deviation u uniform over one period, class 1 where
+  cos(2u) > 0. `--d-prime` with another rule is refused, as are `--n-subjects`, `--channels` other than 19,
+  `--label-per trial` and an `--sfreq` at or below 60 Hz: an option this profile cannot honour is never
+  silently ignored.
+- **Files.** `datasets/<slug>/<rule>[-d<d'>]-s<seed>.npy` (little-endian float32, epochs x channels x
+  samples, readable by `numpy.load`) and a `.json` sidecar with the subjects, their split, clean label and
+  deviation, the per-epoch subject/split/label, the parameters and the `.npy` sha256. All replicates share one
+  registry entry (role `toy`) whose `files` lists them, and one `TOY.md` that describes the family. Label
+  noise belongs to the experiment, which flips training labels itself; the files carry clean labels only.
 
 ## Workspace state
 

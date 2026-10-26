@@ -33,6 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hosts  # noqa: E402  (sibling package, resolved from this file's folder)
+import capacity_toy  # noqa: E402  (sibling module, same folder)
 
 OBJECTIVE_FLOW = {
     "purpose": (
@@ -73,7 +74,7 @@ OBJECTIVE_FLOW = {
 VERBS = ("synth", "search", "license", "qc", "prepare", "publish", "status")
 
 ERROR_CODES = (
-    "bad-slug", "slug-exists", "unknown-slug", "file-missing", "file-outside-workspace",
+    "bad-slug", "slug-exists", "member-exists", "unknown-slug", "file-missing", "file-outside-workspace",
     "bad-column", "bad-folds", "too-few-groups", "unknown-host", "license-not-allowed",
     "bad-owner", "bad-metadata", "public-consent-missing", "public-on-existing",
     "no-publisher", "host-cli-missing", "host-cli-failed", "bad-argument",
@@ -188,7 +189,7 @@ def sha256(path: Path) -> str:
 #: EEG toy profiles. `alpha`: one 10 Hz rhythm whose amplitude depends on the
 #: class. `theta-beta`: a Theta (6 Hz) and a Beta (20 Hz) rhythm whose ratio
 #: depends on the class -- class 1 carries the elevated Theta/Beta ratio.
-EEG_PROFILES = ("alpha", "theta-beta")
+EEG_PROFILES = ("alpha", "theta-beta", "capacity")
 THETA_HZ, BETA_HZ = 6.0, 20.0
 
 
@@ -233,8 +234,21 @@ def synth_rows(kind: str, seed: int, n_subjects: int, n_per_subject: int,
     return header, rows
 
 
+CAPACITY_ONLY = ("rule", "d_prime")
+
+
 def cmd_synth(args, root: Path, **_inject) -> dict:
     slug = check_slug(args.slug)
+    if args.kind == "eeg" and args.profile == "capacity":
+        return synth_capacity(args, root, slug)
+    for name in CAPACITY_ONLY:
+        if getattr(args, name) is not None:
+            raise Refusal("bad-argument", f"--{name.replace('_', '-')} is for --profile capacity only")
+    defaults = {"n_subjects": 6, "n_per_subject": 20, "channels": 4, "length": 128, "sfreq": 128.0,
+                "label_per": "trial"}
+    for name, value in defaults.items():
+        if getattr(args, name) is None:
+            setattr(args, name, value)
     registry = load_registry(root)
     if any(entry["slug"] == slug for entry in registry) and not args.force:
         raise Refusal("slug-exists", f"{slug} is already registered; pass --force to regenerate it")
@@ -283,6 +297,87 @@ def cmd_synth(args, root: Path, **_inject) -> dict:
     save_registry(root, registry)
     return {"slug": slug, "file": entry["files"][0], "rows": len(rows), "columns": len(header),
             "parameters": params}
+
+
+def synth_capacity(args, root: Path, slug: str) -> dict:
+    """One replicate of the capacity profile: `<rule>[-d<d'>]-s<seed>.npy` plus its JSON sidecar."""
+    if args.rule is None:
+        raise Refusal("bad-argument", f"--profile capacity needs --rule ({', '.join(capacity_toy.RULES)})")
+    if args.rule == "monotone" and (args.d_prime is None or not args.d_prime > 0):
+        raise Refusal("bad-argument", "--rule monotone needs a positive --d-prime")
+    if args.rule != "monotone" and args.d_prime is not None:
+        raise Refusal("bad-argument", f"--d-prime grades the monotone rule only, not {args.rule}")
+    if args.n_subjects is not None:
+        raise Refusal("bad-argument", "--profile capacity takes --n-train, --n-val and --n-test, not --n-subjects")
+    if args.channels not in (None, len(capacity_toy.CHANNELS)):
+        raise Refusal("bad-argument", f"--profile capacity uses the {len(capacity_toy.CHANNELS)}-channel montage")
+    if args.label_per not in (None, "subject"):
+        raise Refusal("bad-argument", "--profile capacity gives every subject one class")
+    sfreq = 128.0 if args.sfreq is None else args.sfreq
+    if sfreq <= 2 * capacity_toy.BANDS["beta"][1]:
+        raise Refusal("bad-argument", f"--sfreq must exceed {2 * capacity_toy.BANDS['beta'][1]:g} Hz for the Beta band")
+    length = 256 if args.length is None else args.length
+    n_per = 12 if args.n_per_subject is None else args.n_per_subject
+    sizes = {"train": args.n_train, "validation": args.n_val, "test": args.n_test}
+    for name, value in (("--length", length), ("--n-per-subject", n_per)):
+        if value < 1:
+            raise Refusal("bad-argument", f"{name} must be positive")
+    for name, value in sizes.items():
+        if value < 0 or value % 2:
+            raise Refusal("bad-argument", f"the {name} group needs an even, non-negative number of subjects "
+                                          "so both classes are balanced")
+    if not sizes["train"]:
+        raise Refusal("bad-argument", "--n-train must be positive")
+    d_prime = args.d_prime if args.rule == "monotone" else 0.0
+    folder = datasets_dir(root) / slug
+    stem = capacity_toy.member_name(args.rule, d_prime, args.seed)
+    if (folder / f"{stem}.npy").exists() and not args.force:
+        raise Refusal("member-exists", f"{slug}/{stem}.npy exists; pass --force to regenerate it")
+    meta = capacity_toy.write_member(folder, args.rule, d_prime, args.seed, sizes, n_per, length, sfreq)
+    registry = load_registry(root)
+    entry = next((e for e in registry if e["slug"] == slug), None)
+    if entry is None:
+        entry = new_entry(slug, "toy", f"Capacity toy EEG family ({slug})")
+        entry["source"] = {"kind": "synthetic", "url": "", "retrieved": today()}
+        entry["license"] = {"source_name": "generated by this workspace", "decision": "allowed",
+                            "host_license": "CC0-1.0", "reason": "synthetic data owes nobody a license"}
+        entry["files"] = []
+        registry.append(entry)
+    rel = (folder / meta["file"]).relative_to(root).as_posix()
+    entry["files"] = sorted(set(entry.get("files") or []) | {rel})
+    save_registry(root, registry)
+    write_capacity_toy_md(folder, slug, entry["files"])
+    return {"slug": slug, "file": rel, "sidecar": rel[:-4] + ".json", "shape": meta["shape"],
+            "sha256": meta["sha256"], "rule": args.rule, "dPrime": meta["dPrime"], "seed": args.seed,
+            "sizes": sizes}
+
+
+def write_capacity_toy_md(folder: Path, slug: str, files: list[str]) -> None:
+    params = capacity_toy.PARAMETERS
+    lines = [f"# Toy dataset `{slug}` (capacity profile)", "",
+             f"Seeded synthetic EEG, generator `capacity` version {capacity_toy.GENERATOR_VERSION}: every "
+             "replicate draws fresh training, validation and test subjects, one class per subject, balanced "
+             "within each group. Same rule, d', seed and sizes, same bytes.", "",
+             "- Montage: " + ", ".join(capacity_toy.CHANNELS) + "; the class effect acts on the frontal ("
+             + ", ".join(capacity_toy.FRONTAL) + ") and central (" + ", ".join(capacity_toy.CENTRAL) + ") channels.",
+             "- Signal: narrowband Theta (4-8 Hz), Beta (13-30 Hz) and Alpha (8-12 Hz), each a sum of "
+             f"{params['sinusoidsPerBand']} sinusoids at random in-band frequencies, over an AR(1) red-noise "
+             f"background (coefficient {params['backgroundAr']}), each channel mixed with its two neighbours, "
+             f"and a frontal eye blink in {params['blinkProbability']:.0%} of the epochs.",
+             "- Rules: `monotone` draws the subject's log Theta/Beta offset from N(+-d'/2, 1) by class, so the "
+             "subject-level Bayes limit is Phi(d'/2); `interaction` draws independent N(0, 1) Theta and Beta "
+             "deviations, class 1 when both deviate in the same direction; `frequency-two` draws a Theta "
+             "deviation u uniform on [-pi, pi), class 1 where cos(2u) > 0.",
+             "- Files: one float32 `.npy` (epochs x channels x samples) per replicate with a `.json` sidecar "
+             "(subjects, splits, clean labels, deviations, parameters, sha256). Label noise is applied by the "
+             "experiment, never stored here.", "",
+             "| Parameter | Value |", "|---|---|"]
+    lines += [f"| {key} | {value} |" for key, value in params.items()]
+    lines += ["", "## Members", ""] + [f"- `{Path(f).name}`" for f in files]
+    lines += ["", "Regenerate one: `python3 skills/datasets/scripts/datasets_cli.py synth --slug " + slug
+              + " --kind eeg --profile capacity --rule <rule> [--d-prime <d'>] --seed <k> --n-train 60 "
+              "--n-val 10 --n-test 100 --n-per-subject 12 --force`", ""]
+    (folder / "TOY.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 # -------------------------------------------------------------------- search
@@ -662,16 +757,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--slug", required=True)
     p.add_argument("--kind", choices=("classification", "eeg"), default="eeg")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--n-subjects", type=int, default=6)
-    p.add_argument("--n-per-subject", type=int, default=20)
-    p.add_argument("--channels", type=int, default=4)
-    p.add_argument("--length", type=int, default=128)
-    p.add_argument("--sfreq", type=float, default=128.0)
-    p.add_argument("--label-per", choices=("trial", "subject"), default="trial",
+    p.add_argument("--n-subjects", type=int, help="default 6; not with --profile capacity")
+    p.add_argument("--n-per-subject", type=int, help="default 20 (12 with --profile capacity)")
+    p.add_argument("--channels", type=int, help="default 4 (19, the declared montage, with --profile capacity)")
+    p.add_argument("--length", type=int, help="default 128 (256 with --profile capacity)")
+    p.add_argument("--sfreq", type=float, help="default 128")
+    p.add_argument("--rule", choices=capacity_toy.RULES, help="--profile capacity only: the class rule")
+    p.add_argument("--d-prime", type=float, help="--profile capacity --rule monotone only: between-subject separation")
+    p.add_argument("--n-train", type=int, default=60, help="--profile capacity: training subjects (even)")
+    p.add_argument("--n-val", type=int, default=10, help="--profile capacity: validation subjects (even)")
+    p.add_argument("--n-test", type=int, default=100, help="--profile capacity: test subjects (even)")
+    p.add_argument("--label-per", choices=("trial", "subject"),
                    help="trial: classes alternate within each subject (default); subject: one class per "
                         "subject, for protocols that decide per subject")
     p.add_argument("--profile", choices=EEG_PROFILES, default="alpha",
-                   help="eeg only: alpha (one 10 Hz rhythm) or theta-beta (class-dependent 6 Hz / 20 Hz ratio)")
+                   help="eeg only: alpha (one 10 Hz rhythm), theta-beta (class-dependent 6 Hz / 20 Hz ratio) or capacity "
+                        "(fresh training, validation and test subjects under --rule, written as .npy)")
     p.add_argument("--force", action="store_true", help="regenerate an existing slug")
     p.set_defaults(func=cmd_synth)
 

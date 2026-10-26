@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import struct
 import sys
 import tempfile
 import unittest
@@ -132,6 +133,97 @@ class SynthTests(Base):
         toy_md = (self.root / "datasets/toy-eeg/TOY.md").read_text(encoding="utf-8")
         for needle in ("seed", "5", "eeg", "sfreq"):
             self.assertIn(needle, toy_md)
+
+    # ---------------------------------------------------------- capacity
+    CAPACITY = ["synth", "--slug", "cap", "--kind", "eeg", "--profile", "capacity", "--seed", "3",
+                "--n-train", "4", "--n-val", "2", "--n-test", "2", "--n-per-subject", "2", "--length", "64"]
+
+    def npy(self, path: Path) -> tuple[tuple[int, ...], list[float]]:
+        blob = path.read_bytes()
+        self.assertEqual(blob[:8], b"\x93NUMPY\x01\x00")
+        size = struct.unpack("<H", blob[8:10])[0]
+        header = blob[10:10 + size].decode("latin1")
+        self.assertEqual((10 + size) % 64, 0)
+        self.assertIn("'descr': '<f4'", header)
+        shape = tuple(int(n) for n in re.search(r"\(([^)]*)\)", header).group(1).split(",") if n.strip())
+        values = list(struct.unpack(f"<{len(blob[10 + size:]) // 4}f", blob[10 + size:]))
+        return shape, values
+
+    def test_a_capacity_member_is_seeded_balanced_and_described(self) -> None:
+        first = self.run_cli(*self.CAPACITY, "--rule", "monotone", "--d-prime", "1.5")
+        self.assertEqual(first.code, 0, first.err)
+        folder = self.root / "datasets" / "cap"
+        npy, side = folder / "monotone-d1.5-s3.npy", folder / "monotone-d1.5-s3.json"
+        before = npy.read_bytes()
+        again = self.run_cli(*self.CAPACITY, "--rule", "monotone", "--d-prime", "1.5", "--force")
+        self.assertEqual(again.code, 0, again.err)
+        self.assertEqual(npy.read_bytes(), before, "same rule, d', seed and sizes must give the same bytes")
+        shape, values = self.npy(npy)
+        self.assertEqual(shape, ((4 + 2 + 2) * 2, 19, 64))
+        self.assertEqual(len(values), shape[0] * 19 * 64)
+        meta = json.loads(side.read_text(encoding="utf-8"))
+        self.assertEqual((meta["rule"], meta["dPrime"], meta["seed"]), ("monotone", 1.5, 3))
+        self.assertEqual(meta["sha256"], hashlib.sha256(before).hexdigest())
+        self.assertEqual(meta["channels"][:2], ["Fp1", "Fp2"])
+        for split, n in (("train", 4), ("validation", 2), ("test", 2)):
+            labels = [s["label"] for s in meta["subjects"] if s["split"] == split]
+            self.assertEqual(sorted(labels), [0] * (n // 2) + [1] * (n // 2))
+        self.assertEqual(len(meta["epochs"]["label"]), shape[0])
+        self.assertEqual(first.json["file"], "datasets/cap/monotone-d1.5-s3.npy")
+
+    def test_capacity_members_share_one_registry_entry_and_toy_md(self) -> None:
+        self.assertEqual(self.run_cli(*self.CAPACITY, "--rule", "monotone", "--d-prime", "1.5").code, 0)
+        other = self.run_cli(*self.CAPACITY, "--rule", "frequency-two")
+        self.assertEqual(other.code, 0, other.err)
+        entry = self.entry("cap")
+        self.assertEqual(entry["role"], "toy")
+        self.assertEqual(entry["files"], ["datasets/cap/frequency-two-s3.npy", "datasets/cap/monotone-d1.5-s3.npy"])
+        toy_md = (self.root / "datasets/cap/TOY.md").read_text(encoding="utf-8")
+        for needle in ("capacity", "frequency-two-s3.npy", "monotone-d1.5-s3.npy", "effectGain", "Phi(d'/2)"):
+            self.assertIn(needle, toy_md)
+        self.assertNotEqual((self.root / "datasets/cap/frequency-two-s3.npy").read_bytes(),
+                            (self.root / "datasets/cap/monotone-d1.5-s3.npy").read_bytes())
+
+    def test_the_monotone_rule_raises_the_theta_beta_ratio_of_class_one(self) -> None:
+        sys.path.insert(0, str(CLI_PATH.parent))
+        import capacity_toy
+        values, meta = capacity_toy.generate("monotone", 6.0, 1, {"train": 8, "validation": 0, "test": 0}, 2, 128)
+        n, c, t = meta["shape"]
+        fz = capacity_toy.CHANNELS.index("Fz")
+
+        def power(row, lo, hi):
+            out = 0.0
+            for k in range(int(lo * t / 128), int(hi * t / 128) + 1):
+                re_ = sum(row[i] * math.cos(2 * math.pi * k * i / t) for i in range(t))
+                im_ = sum(row[i] * math.sin(2 * math.pi * k * i / t) for i in range(t))
+                out += re_ * re_ + im_ * im_
+            return out
+
+        ratio = {0: [], 1: []}
+        for e in range(n):
+            row = values[(e * c + fz) * t:(e * c + fz + 1) * t]
+            ratio[meta["epochs"]["label"][e]].append(math.log(power(row, 4, 8) / power(row, 13, 30)))
+        self.assertGreater(sum(ratio[1]) / len(ratio[1]), sum(ratio[0]) / len(ratio[0]) + 1.0)
+
+    def test_capacity_refuses_what_it_would_otherwise_ignore(self) -> None:
+        cases = [((), "bad-argument"),                                   # no --rule
+                 (("--rule", "monotone"), "bad-argument"),                # monotone without d'
+                 (("--rule", "interaction", "--d-prime", "1"), "bad-argument"),
+                 (("--rule", "interaction", "--channels", "4"), "bad-argument"),
+                 (("--rule", "interaction", "--n-subjects", "6"), "bad-argument"),
+                 (("--rule", "interaction", "--label-per", "trial"), "bad-argument"),
+                 (("--rule", "interaction", "--sfreq", "50"), "bad-argument")]
+        for extra, code in cases:
+            with self.subTest(extra=extra):
+                run = self.run_cli(*self.CAPACITY, *extra)
+                self.assertEqual(run.code, 2, run.out)
+                self.assertEqual(run.error["error"], code)
+        odd = [a if a != "4" else "3" for a in self.CAPACITY]
+        self.assertEqual(self.run_cli(*odd, "--rule", "interaction").error["error"], "bad-argument")
+        self.assertEqual(self.run_cli(*self.CAPACITY, "--rule", "interaction").code, 0)
+        again = self.run_cli(*self.CAPACITY, "--rule", "interaction")
+        self.assertEqual(again.error["error"], "member-exists")
+        self.assertFalse((self.root / "datasets/cap/cap.csv").exists())
 
     def test_an_existing_slug_is_refused_without_force(self) -> None:
         self.run_cli("synth", "--slug", "toy-eeg", "--kind", "eeg", "--seed", "5")
@@ -652,7 +744,7 @@ class DoctrineTests(unittest.TestCase):
             self.assertIn(gate, self.flat)
 
     def test_the_cli_is_stdlib_only(self) -> None:
-        allowed = set(sys.stdlib_module_names) | {"hosts", "__future__"}
+        allowed = set(sys.stdlib_module_names) | {"hosts", "capacity_toy", "__future__"}
         for path in (SKILL / "scripts").rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             for name in re.findall(r"^\s*(?:from|import)\s+([A-Za-z_][\w]*)", text, re.MULTILINE):
