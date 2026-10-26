@@ -611,7 +611,9 @@ Three modules exist so far, each service-blind and stdlib-only:
   authority to send a credential there. Those downloads also follow
   redirects by hand (https only, at most five), give every hop a 10 s
   connect and 60 s read timeout, and stream to disk under one 20 GiB
-  budget per fetch. Whether Kaggle's own file URLs need the credential at
+  budget per fetch. The output listing is paged: `fetch` follows
+  `next_page_token` to the last page, and refuses a repeated token or more
+  than 1000 pages. Whether Kaggle's own file URLs need the credential at
   all is still unrehearsed against a live account; a rehearsal runs only
   on the user's explicit permission.
 
