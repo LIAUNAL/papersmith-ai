@@ -11413,7 +11413,8 @@ class DerivedScaffoldCountSweepTests(unittest.TestCase):
     hand-written numeral replaced them.
     """
 
-    DOCTRINE_FILES = (SKILL_MD, USAGE_MD, FORGE / "README.md", ENGINE)
+    DOCTRINE_FILES = (SKILL_MD, USAGE_MD, FORGE / "README.md",
+                      FORGE / "docs" / "skills.md", FORGE / "docs" / "cli.md", ENGINE)
 
     #: The exact number-words design §1.3 measured as stale scaffold/gap/
     #: kit-destination/ladder counts. Not every numeral in these files --
@@ -13912,7 +13913,7 @@ class MaterializeScriptStaysTestOnlyTests(unittest.TestCase):
     going through the CLI's plan-gate and receipt machinery. All three sites
     that once told a different, false story about this same script —
     `SKILL.md`'s step 5 ("performs this exact mapping for eight of the nine",
-    false in both halves), `README.md`'s Flow A diagram, and the docstring of
+    false in both halves), `docs/skills.md`'s Flow A diagram, and the docstring of
     `assets/kit/src_benchmark/__init__.py`, a template that ships *into* targets
     and told their readers the script had written their file — were corrected.
     Reinstating all three at once left all 394 tests passing.
@@ -13941,9 +13942,10 @@ class MaterializeScriptStaysTestOnlyTests(unittest.TestCase):
     """
 
     SCRIPTS = SKILL_ROOT / "scripts"
-    #: The diagrams live in the single manual. README.es.md was retired into
-    #: README.md (2026-09-17), so this guard follows the manual.
-    README = FORGE / "README.md"
+    #: The diagrams live in the skill tour. README.es.md was retired into
+    #: README.md (2026-09-17), and the tour moved to docs/skills.md (#79), so
+    #: this guard follows the diagrams.
+    README = FORGE / "docs" / "skills.md"
 
     MERMAID_RE = re.compile(r"^```mermaid\n(.*?)^```", re.DOTALL | re.MULTILINE)
     RUN_RE = re.compile(r"Run `([^` ]+)")
