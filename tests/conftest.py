@@ -101,3 +101,24 @@ def _isolate_test_process_state():
     # fixture stays for the rest of that class, and the module scope above
     # drops it before the next file.
     _restore(snapshot, modules=False)
+
+
+# --- Run registry for the orphan sweep (#60) --------------------------------
+#
+# Several suites write fixtures into the live `implementations/`, named after
+# the pid of the process that made them. `orphan_sweep` removes one a killed
+# run left behind only when that pid is recorded here as a test run (and is
+# dead); an operator's own repository never is. Every pytest process,
+# including each xdist worker, records itself before any test runs.
+TESTS = Path(__file__).resolve().parent
+if str(TESTS) not in sys.path:
+    sys.path.insert(0, str(TESTS))
+try:
+    import orphan_sweep  # noqa: E402
+except ImportError:
+    # A conftest copied into a scratch suite (test_process_state_isolation)
+    # travels without its siblings; an unrecorded run only means its own
+    # orphans are never swept.
+    orphan_sweep = None
+if orphan_sweep is not None:
+    orphan_sweep.register_run()

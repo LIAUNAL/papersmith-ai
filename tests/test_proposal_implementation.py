@@ -23145,7 +23145,26 @@ class PositionRungLadderTests(unittest.TestCase):
                          impl.WORK_STATE)
 
 
-class DefectCommandTests(unittest.TestCase):
+class _DefectScratchForge:
+    """A scratch forge for the `defect` classes below (#89). `defect --file`
+    only accepts a file under `<forge>/skills`, and the engine only accepts
+    a target under `<forge>/implementations`, so both live in a scratch copy
+    (`scratch_forge.build`) and every CLI call runs its copied launcher --
+    never the shipped `skills/proposal-implementation/scripts/`."""
+
+    def setUp(self):
+        super().setUp()
+        self.forge, self.cli = scratch_forge.build(
+            self, None, CLI, prefix="defect-forge-")
+
+    def _cli_env(self):
+        env = dict(os.environ)
+        # The copied launcher has no profile beside it: name the shipped one.
+        env["IMPLEMENTATION_DOMAIN_PROFILE"] = str(CLI.parents[1] / "impl_profile.py")
+        return env
+
+
+class DefectCommandTests(_DefectScratchForge, unittest.TestCase):
     """`defect` — declares a forge file broken (design decisions 1-4,
     `maintenance-blocks-it-does-not-mix`). These tests prove only the
     ledger side (declaring, refusing on a bad `--file`, appending on a
@@ -23156,7 +23175,7 @@ class DefectCommandTests(unittest.TestCase):
     """
 
     def _box(self):
-        box = FORGE / "implementations" / f"_e2e_defect_{os.getpid()}_{id(self)}"
+        box = self.forge / "implementations" / f"_e2e_defect_{os.getpid()}_{id(self)}"
         self.addCleanup(shutil.rmtree, box, ignore_errors=True)
         (box / "src" / "Method").mkdir(parents=True)
         (box / "Method").mkdir(parents=True, exist_ok=True)
@@ -23164,15 +23183,16 @@ class DefectCommandTests(unittest.TestCase):
         return box
 
     def _forge_file(self, data=b"placeholder = True\n"):
-        path = (FORGE / "skills" / "proposal-implementation" / "scripts"
+        path = (self.cli.parent
                / f"_defect_fixture_{os.getpid()}_{id(self)}.py")
         path.write_bytes(data)
         self.addCleanup(path.unlink, missing_ok=True)
         return path
 
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, str(CLI), *args],
-                              capture_output=True, text=True, cwd=FORGE)
+        return subprocess.run([sys.executable, str(self.cli), *args],
+                              capture_output=True, text=True, cwd=self.forge,
+                              env=self._cli_env())
 
     def ledger_path(self, box):
         return box / "Method" / ".implementation" / "position.jsonl"
@@ -23221,7 +23241,7 @@ class DefectCommandTests(unittest.TestCase):
         """The bypass, closed (design decision 1): a declaration against an
         already-absent path is refused, never recorded with the sentinel."""
         box = self._box()
-        never = (FORGE / "skills" / "proposal-implementation" / "scripts"
+        never = (self.cli.parent
                 / f"_defect_never_{os.getpid()}_{id(self)}.py")
         self.assertFalse(never.exists())
         proc = self.run_cli("defect", "--target", str(box), "--name", "Method",
@@ -23252,7 +23272,7 @@ class DefectCommandTests(unittest.TestCase):
         self.assertEqual(len(events), 2)
 
 
-class OpenDefectLadderTests(unittest.TestCase):
+class OpenDefectLadderTests(_DefectScratchForge, unittest.TestCase):
     """`_require_no_open_defect` wired into `step`/`gate`/`offer`/`close`/
     `settle`/`apply`/`admit` (Phase 2, `maintenance-blocks-it-does-not-mix`
     design decision 5): an open forge defect refuses `FORGE_DEFECT_OPEN` as
@@ -23280,6 +23300,7 @@ class OpenDefectLadderTests(unittest.TestCase):
     PROPOSAL_TEXT = "## 1\ntexto\n"
 
     def setUp(self):
+        super().setUp()
         self._fixtures = []
 
     def _proposals(self):
@@ -23290,7 +23311,7 @@ class OpenDefectLadderTests(unittest.TestCase):
 
     def _box(self, committed=True):
         self._box_count = getattr(self, "_box_count", 0) + 1
-        box = (FORGE / "implementations"
+        box = (self.forge / "implementations"
               / f"_e2e_open_defect_ladder_{os.getpid()}_{id(self)}_{self._box_count}")
         self.addCleanup(shutil.rmtree, box, ignore_errors=True)
         (box / "src" / "Method").mkdir(parents=True)
@@ -23320,7 +23341,7 @@ class OpenDefectLadderTests(unittest.TestCase):
         return box
 
     def _forge_file(self, data=b"placeholder = True\n"):
-        path = (FORGE / "skills" / "proposal-implementation" / "scripts"
+        path = (self.cli.parent
                / f"_open_defect_ladder_fixture_{os.getpid()}_{id(self)}_{len(self._fixtures)}.py")
         path.write_bytes(data)
         self.addCleanup(path.unlink, missing_ok=True)
@@ -23328,11 +23349,11 @@ class OpenDefectLadderTests(unittest.TestCase):
         return path
 
     def run_cli(self, *args, proposals=None, stdin=None):
-        env = dict(os.environ)
+        env = self._cli_env()
         if proposals is not None:
             env["IMPLEMENTATION_PROPOSALS"] = str(proposals)
-        return subprocess.run([sys.executable, str(CLI), *args], input=stdin,
-                              capture_output=True, text=True, cwd=FORGE, env=env)
+        return subprocess.run([sys.executable, str(self.cli), *args], input=stdin,
+                              capture_output=True, text=True, cwd=self.forge, env=env)
 
     def _arm(self, box, *, name="Method", session="s1", fixture=None, detail="broken"):
         """Declares a real open defect through the real `defect` subcommand
@@ -23518,7 +23539,7 @@ class OpenDefectLadderTests(unittest.TestCase):
         elsewhere = self._box()
         self._arm(elsewhere)
 
-        not_a_repo = (FORGE / "implementations"
+        not_a_repo = (self.forge / "implementations"
                      / f"_e2e_not_a_repo_{os.getpid()}_{id(self)}")
         self.addCleanup(shutil.rmtree, not_a_repo, ignore_errors=True)
         (not_a_repo / "Method").mkdir(parents=True)
@@ -23587,7 +23608,7 @@ class OpenDefectLadderTests(unittest.TestCase):
 
 
 
-class DiagnosticsAnsweringWhileDefectOpenTests(unittest.TestCase):
+class DiagnosticsAnsweringWhileDefectOpenTests(_DefectScratchForge, unittest.TestCase):
     """`probe`, `verify`, `position`, `plan`, `compose`, `handoff` and
     `discuss` carry no `FORGE_DEFECT_OPEN` check (spec "Diagnostic Commands
     Stay Reachable"; design decision 5's own scope). Every scenario below
@@ -23599,6 +23620,7 @@ class DiagnosticsAnsweringWhileDefectOpenTests(unittest.TestCase):
     """
 
     def setUp(self):
+        super().setUp()
         self._fixtures = []
 
     def _proposals(self, revision="r1.md", text="## 1\ntexto\n"):
@@ -23609,7 +23631,7 @@ class DiagnosticsAnsweringWhileDefectOpenTests(unittest.TestCase):
 
     def _box(self, committed=True):
         self._box_count = getattr(self, "_box_count", 0) + 1
-        box = (FORGE / "implementations"
+        box = (self.forge / "implementations"
               / f"_e2e_open_defect_diag_{os.getpid()}_{id(self)}_{self._box_count}")
         self.addCleanup(shutil.rmtree, box, ignore_errors=True)
         (box / "src" / "Method").mkdir(parents=True)
@@ -23636,7 +23658,7 @@ class DiagnosticsAnsweringWhileDefectOpenTests(unittest.TestCase):
         return box
 
     def _forge_file(self, data=b"placeholder = True\n"):
-        path = (FORGE / "skills" / "proposal-implementation" / "scripts"
+        path = (self.cli.parent
                / f"_open_defect_diag_fixture_{os.getpid()}_{id(self)}_{len(self._fixtures)}.py")
         path.write_bytes(data)
         self.addCleanup(path.unlink, missing_ok=True)
@@ -23644,11 +23666,11 @@ class DiagnosticsAnsweringWhileDefectOpenTests(unittest.TestCase):
         return path
 
     def run_cli(self, *args, proposals=None, stdin=None):
-        env = dict(os.environ)
+        env = self._cli_env()
         if proposals is not None:
             env["IMPLEMENTATION_PROPOSALS"] = str(proposals)
-        return subprocess.run([sys.executable, str(CLI), *args], input=stdin,
-                              capture_output=True, text=True, cwd=FORGE, env=env)
+        return subprocess.run([sys.executable, str(self.cli), *args], input=stdin,
+                              capture_output=True, text=True, cwd=self.forge, env=env)
 
     def _arm(self, box, *, name="Method", session="s1"):
         fixture = self._forge_file()
@@ -23728,7 +23750,7 @@ class DiagnosticsAnsweringWhileDefectOpenTests(unittest.TestCase):
         self._assert_spend_command_is_refused_here(box)
 
 
-class HandoffSurfacesOpenDefectsTests(unittest.TestCase):
+class HandoffSurfacesOpenDefectsTests(_DefectScratchForge, unittest.TestCase):
     """`handoff` gains `openDefects` (design decision 7): a new report key,
     additive, never folding forge health into `status`, which keeps meaning
     exactly what it means today -- findings routing."""
@@ -23740,7 +23762,7 @@ class HandoffSurfacesOpenDefectsTests(unittest.TestCase):
         return root
 
     def _box(self):
-        box = FORGE / "implementations" / f"_e2e_handoff_defects_{os.getpid()}_{id(self)}"
+        box = self.forge / "implementations" / f"_e2e_handoff_defects_{os.getpid()}_{id(self)}"
         self.addCleanup(shutil.rmtree, box, ignore_errors=True)
         (box / "src" / "Method").mkdir(parents=True)
         (box / "src" / "Method" / "__init__.py").write_text("", encoding="utf-8")
@@ -23752,18 +23774,18 @@ class HandoffSurfacesOpenDefectsTests(unittest.TestCase):
         return box
 
     def _forge_file(self, data=b"placeholder = True\n"):
-        path = (FORGE / "skills" / "proposal-implementation" / "scripts"
+        path = (self.cli.parent
                / f"_handoff_defects_fixture_{os.getpid()}_{id(self)}.py")
         path.write_bytes(data)
         self.addCleanup(path.unlink, missing_ok=True)
         return path
 
     def run_cli(self, *args, proposals=None):
-        env = dict(os.environ)
+        env = self._cli_env()
         if proposals is not None:
             env["IMPLEMENTATION_PROPOSALS"] = str(proposals)
-        return subprocess.run([sys.executable, str(CLI), *args],
-                              capture_output=True, text=True, cwd=FORGE, env=env)
+        return subprocess.run([sys.executable, str(self.cli), *args],
+                              capture_output=True, text=True, cwd=self.forge, env=env)
 
     def test_handoff_reports_no_open_defects_when_none_are_declared(self):
         box = self._box()
@@ -23802,6 +23824,35 @@ class HandoffSurfacesOpenDefectsTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertEqual(json.loads(proc.stdout)["openDefects"], [])
 
+
+class DefectFixturesStayOutOfTheShippedTreeTests(unittest.TestCase):
+    """#89: the `defect` classes declare against a fixture file, which must
+    live under `<forge>/skills`, and used to write it into the shipped
+    `skills/proposal-implementation/scripts/` (and their targets into the
+    live `implementations/`). A sibling worker's `papersmith init` then
+    listed the fixture in its kit manifest and found it gone, and a killed
+    run left it behind. Every fixture these classes make must resolve
+    outside the live checkout."""
+
+    CLASSES = ("DefectCommandTests", "OpenDefectLadderTests",
+               "DiagnosticsAnsweringWhileDefectOpenTests",
+               "HandoffSurfacesOpenDefectsTests")
+
+    def test_no_fixture_target_or_cli_resolves_inside_the_live_forge(self):
+        live = FORGE.resolve()
+        for name in self.CLASSES:
+            cls = globals()[name]
+            with self.subTest(cls=name):
+                case = cls(next(m for m in dir(cls) if m.startswith("test_")))
+                self.addCleanup(case.doCleanups)
+                case.setUp()
+                made = [case._forge_file(), case._box()]
+                for path in made:
+                    self.assertFalse(path.resolve().is_relative_to(live),
+                                     f"{name} wrote {path} into the live forge")
+                cli = getattr(case, "cli", CLI)
+                self.assertFalse(Path(cli).resolve().is_relative_to(live),
+                                 f"{name} still runs the live launcher")
 
 class _CustomForgeBug(Exception):
     """A crash type this suite owns, so "the same exception type survives"
