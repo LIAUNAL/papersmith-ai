@@ -8,7 +8,9 @@
 # canonical tree into each one. The links are relative and idempotent: re-running
 # converges to the same layout without duplicating or nesting anything, and the
 # checkout stays relocatable (an absolute link would keep pointing at wherever
-# the checkout happened to live when the script last ran).
+# the checkout happened to live when the script last ran). Only symlinks are
+# replaced: a real directory or file at a harness path is user-owned, so it is
+# left intact, reported, and the script exits non-zero.
 #
 # Harnesses:
 #   .claude/skills       Claude Code
@@ -38,6 +40,7 @@ HARNESSES=(
   ".agents/skills:Antigravity"
 )
 
+skipped=0
 for entry in "${HARNESSES[@]}"; do
   rel="${entry%%:*}"
   label="${entry#*:}"
@@ -45,10 +48,18 @@ for entry in "${HARNESSES[@]}"; do
 
   mkdir -p "$(dirname "$target")"
 
-  # Remove a prior link or a leftover real directory so `ln -sfn` can't nest
-  # a symlink inside a stale directory.
-  if [[ -e "$target" || -L "$target" ]]; then
-    rm -rf "$target"
+  # Only a symlink is this script's own projection, so only a symlink is
+  # replaced. Anything else at the harness path is user-owned: leave it intact
+  # and report it instead of deleting it. An empty directory holds nothing to
+  # lose and is cleared so `ln -sfn` cannot nest a link inside it.
+  if [[ -L "$target" ]]; then
+    rm -f "$target"
+  elif [[ -d "$target" ]] && rmdir "$target" 2>/dev/null; then
+    :
+  elif [[ -e "$target" ]]; then
+    printf 'skipped %-17s %s is not a symlink; move its contents into skills/ or elsewhere, remove it, and re-run\n' "$label" "$rel" >&2
+    skipped=$((skipped + 1))
+    continue
   fi
 
   # Relative link, computed rather than hardcoded so a harness nested deeper
@@ -59,4 +70,8 @@ for entry in "${HARNESSES[@]}"; do
   printf 'linked %-18s %s -> %s\n' "$label" "$rel" "$link_target"
 done
 
+if (( skipped > 0 )); then
+  echo "error: $skipped harness path(s) left untouched because they hold user-owned content." >&2
+  exit 1
+fi
 echo "Harness skill projection complete."
