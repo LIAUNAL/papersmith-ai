@@ -196,7 +196,8 @@ class BridgesTests(unittest.TestCase):
         assert stderr.getvalue() == ""
 
     def test_readme_names_every_engine_command_the_bridge_does_not_run(self) -> None:
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        # The CLI reference moved out of the README into docs/cli.md (#79).
+        readme = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
         start = readme.index("### `smith implement [<dir>]`")
         section = readme[start:readme.index("\n### ", start + 1)]
         for command in sorted(_engine_commands() - implementation.REAL_COMMANDS):
