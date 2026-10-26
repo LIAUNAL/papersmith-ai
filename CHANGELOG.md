@@ -11,6 +11,24 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- **`experiment-diagrams`, a skill that draws the proof of concept and the
+  full experiments.** `derive --target <repo> --name <Name> --kind
+  poc|experiments` drafts a diagram spec from the product's approval
+  (`AGREED.md` or `Experimental_AGREED.md`, refused `APPROVAL_ABSENT` without
+  it) and the revision it names; `render --spec <path>` validates it
+  (`SPEC_INVALID` naming the field), writes `diagrams/<kind>.tex` from
+  papersmith's own TikZ library, compiles it with shell escape disabled and
+  rasterizes it to PNG (`TEX_TOOLCHAIN_ABSENT` / `RASTER_TOOLCHAIN_ABSENT`
+  when the tools are missing, the `.tex` kept); `status` reports what exists.
+  The design discipline (one claim, one spine, one focal zone, a shape per
+  role, two connector prominences, grayscale-safe palette) restates the ideas
+  of Sivia (github.com/exsinger-hub/Sivia) in the skill's own words. The two
+  implementation skills call it once each approval is settled.
+
 ## 0.25.0
 
 ### Added
