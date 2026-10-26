@@ -72,34 +72,11 @@
     }).join('');
   }
 
-  function poc(spec) {
-    const block = spec.poc_deliberation || spec.poc_plan || {};
-    const list = (block.experiments || []).filter(Boolean);
-    const badge = document.getElementById('modelPocBadge');
-    if (badge) {
-      const passed = list.filter((e) => String(e.verdict || '').toUpperCase() === 'PASS').length;
-      badge.textContent = list.length ? `G-EXP-POC · ${passed}/${list.length} PASS` : 'G-EXP-POC · PENDIENTE';
-      badge.className = `badge ${list.length && passed === list.length ? 'badge--ok' : 'badge--warn'}`;
-    }
-    if (!list.length) return empty('Sin experimentos de prueba de concepto deliberados todavía (experiments/).');
-    return list.map((e) => `<div class="poc-card">
-        <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
-          <strong>${esc(e.id || '')} · ${esc(e.name || '')}</strong>
-          ${e.verdict ? `<span class="badge ${String(e.verdict).toUpperCase() === 'PASS' ? 'badge--ok' : 'badge--warn'}">${esc(e.verdict)}</span>` : ''}
-        </div>
-        ${e.objective ? `<p><strong>Objetivo:</strong> ${rich(e.objective)}</p>` : ''}
-        ${e.method ? `<p><strong>Método:</strong> ${rich(e.method)}</p>` : ''}
-        ${e.target_metric ? `<p><strong>Meta:</strong> ${rich(e.target_metric)}</p>` : ''}
-        ${e.observed_metric ? `<p><strong>Medido:</strong> ${rich(e.observed_metric)}</p>` : ''}
-      </div>`).join('');
-  }
-
   function renderModelModules(spec) {
     const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
     put('modelPillarGrid', pillars(spec || {}));
     put('modelHypothesisGrid', hypotheses(spec || {}));
     put('modelConceptLayers', layers(spec || {}));
-    put('modelPocGrid', poc(spec || {}));
   }
 
   window.renderModelModules = renderModelModules;

@@ -79,8 +79,7 @@ class ModelPanelTests(unittest.TestCase):
 
     def test_the_model_modules_are_drawn_from_data_and_escaped(self) -> None:
         page = (self.STATIC / "index.html").read_text(encoding="utf-8")
-        for element in ("modelPillarGrid", "modelHypothesisGrid", "modelConceptLayers",
-                        "modelPocGrid", "modelPocBadge"):
+        for element in ("modelPillarGrid", "modelHypothesisGrid", "modelConceptLayers"):
             self.assertIn(f'id="{element}"', page)
         self.assertIn("if (window.renderModelModules) window.renderModelModules(data);", page)
         script = (
@@ -99,7 +98,15 @@ class ModelPanelTests(unittest.TestCase):
         self.assertNotIn("red;x:1", out["modelPillarGrid"]["innerHTML"])
         self.assertIn("L1", out["modelConceptLayers"]["innerHTML"])
         self.assertIn("Hipótesis pendientes", out["modelHypothesisGrid"]["innerHTML"])
-        self.assertEqual(out["modelPocBadge"]["textContent"], "G-EXP-POC · PENDIENTE")
+        self.assertNotIn("modelPocGrid", out)
+
+    def test_the_concept_map_tab_no_longer_carries_the_poc_section(self) -> None:
+        """The PoC and its experiments live in the Experimentos tab, with their diagrams."""
+        page = (self.STATIC / "index.html").read_text(encoding="utf-8")
+        for gone in ('id="modelSecPoc"', 'id="modelPocGrid"', 'id="modelPocBadge"',
+                     "filterModelView('poc'", "Experimentos de Prueba de Concepto (PoC)"):
+            self.assertNotIn(gone, page)
+        self.assertNotIn("modelPocGrid", (self.STATIC / "model-panel.js").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

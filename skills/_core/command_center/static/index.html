@@ -2302,15 +2302,6 @@
       gap: 1.15rem;
       margin-top: 1rem;
     }
-    .poc-card {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.15rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.65rem;
-    }
 
 
     [data-theme="light"] .model-header-banner {
@@ -2805,9 +2796,6 @@
         <button class="model-subnav-btn" onclick="filterModelView('matematico', this)">
           📐 3. Matemática &amp; Tutor
         </button>
-        <button class="model-subnav-btn" onclick="filterModelView('poc', this)">
-          🧪 4. Plan de Prueba de Concepto (PoC)
-        </button>
       </div>
 
       <!-- MODULO 1: PROPUESTA Y NOVEDAD CIENTIFICA -->
@@ -2906,21 +2894,6 @@
         </div>
       </div>
 
-      <!-- MODULO 4: PRUEBA DE CONCEPTO (model-panel.js) -->
-      <div id="modelSecPoc" class="model-section">
-        <div class="panel">
-          <div class="panel__header">
-            <div class="panel__title">
-              <span>🧪 4. Deliberación &amp; Experimentos de Prueba de Concepto (PoC)</span>
-            </div>
-            <span id="modelPocBadge" class="badge badge--warn">G-EXP-POC · PENDIENTE</span>
-          </div>
-          <p style="font-size: 0.84rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
-            Protocolos empíricos para someter a prueba la viabilidad de la propuesta antes de la redacción definitiva, cada uno con su métrica objetivo y lo medido.
-          </p>
-          <div id="modelPocGrid" class="poc-grid"></div>
-        </div>
-      </div>
     </div>
 
     <!-- TAB: EXPERIMENTS (proof of concept + full experiments) -->
@@ -3599,33 +3572,23 @@
       const secPropuesta = document.getElementById('modelSecPropuesta');
       const secMapa = document.getElementById('modelSecMapa');
       const secMatematico = document.getElementById('modelSecMatematico');
-      const secPoc = document.getElementById('modelSecPoc');
 
       if (viewName === 'all') {
         if (secPropuesta) secPropuesta.style.display = 'block';
         if (secMapa) secMapa.style.display = 'block';
         if (secMatematico) secMatematico.style.display = 'block';
-        if (secPoc) secPoc.style.display = 'block';
       } else if (viewName === 'propuesta') {
         if (secPropuesta) secPropuesta.style.display = 'block';
         if (secMapa) secMapa.style.display = 'none';
         if (secMatematico) secMatematico.style.display = 'none';
-        if (secPoc) secPoc.style.display = 'none';
       } else if (viewName === 'mapa') {
         if (secPropuesta) secPropuesta.style.display = 'none';
         if (secMapa) secMapa.style.display = 'block';
         if (secMatematico) secMatematico.style.display = 'none';
-        if (secPoc) secPoc.style.display = 'none';
       } else if (viewName === 'matematico') {
         if (secPropuesta) secPropuesta.style.display = 'none';
         if (secMapa) secMapa.style.display = 'none';
         if (secMatematico) secMatematico.style.display = 'block';
-        if (secPoc) secPoc.style.display = 'none';
-      } else if (viewName === 'poc') {
-        if (secPropuesta) secPropuesta.style.display = 'none';
-        if (secMapa) secMapa.style.display = 'none';
-        if (secMatematico) secMatematico.style.display = 'none';
-        if (secPoc) secPoc.style.display = 'block';
       }
     }
 
