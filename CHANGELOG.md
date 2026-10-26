@@ -11,6 +11,23 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Changed
+
+- **A run past 20 minutes locally goes to the cloud.** `remote-parallelism
+  estimate` now reports `placement` per stage and `placementRules`: a stage
+  whose local upper bound exceeds 1200 s is placed on the fastest measured
+  cloud host, or on none with a request to time one first. The dashboard's
+  run options apply the same limit to both stages (it was 30 minutes, proof of
+  concept only) and state the rules above the table; `local_poc_limit_seconds`
+  is replaced by `local_limit_seconds` and `poc_budget_seconds`.
+- **A proof of concept is sized to 5 hours.** `placement.pocBudget` reads
+  `within`, `exceeds` or `unmeasured` on the host the proof of concept is
+  placed on, and the dashboard flags `excede 5 h`; the implementation skills,
+  the experimental deliberation, the walk and build agents and the paper flow
+  say to reduce the design before the pilot instead.
+
 ## 0.23.1
 
 ### Fixed
