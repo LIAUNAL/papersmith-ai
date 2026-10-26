@@ -80,6 +80,7 @@ The full path, from a PDF to a compiled paper:
 | 5b | `/proposal-implementation` (replication) | Replicates each comparison or baseline paper through the `paper-replicator` agent: it looks for the paper's published code first and, when it exists, adopts it pinned to a commit and audits that it corresponds to the paper and is implemented correctly; only when no code exists does it reimplement the method from the ingested Markdown | the target repo, with a `REPLICATION.md` correspondence table |
 | 6 | `/experimental-deliberation` | Discusses the experimental design that will put that mathematics to the test | `experiments/` |
 | 7 | `/experimental-implementation` | Turns the protocol into code and runs its measurements | the same target repo |
+| 7b | `/experiment-diagrams` | When the proof of concept (`AGREED.md`) and then the full experiments (`Experimental_AGREED.md`) are approved, draws one TikZ diagram of each, stating the experiment's single claim along one reading spine, compiles it to PDF and PNG and reviews it, grayscale included | `implementations/<repo>/<Name>/diagrams/`, shown in the Experimentos panel |
 | 8 | `/kaggle-accounts` | Proves that the Kaggle credentials really authenticate | `store/` (never leaves the disk) |
 | 9 | `/remote-execution` | Sends work to a remote worker and keeps the record of what came back | the target repo's ledger |
 | 10 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence | `paper/` |
@@ -742,6 +743,7 @@ Three rules that order everything else:
 The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). Each skill's `SKILL.md` is its source of truth:
 
 - [`datasets`](skills/datasets/SKILL.md)
+- [`experiment-diagrams`](skills/experiment-diagrams/SKILL.md)
 - [`experimental-deliberation`](skills/experimental-deliberation/SKILL.md)
 - [`experimental-implementation`](skills/experimental-implementation/SKILL.md)
 - [`figure-review`](skills/figure-review/SKILL.md)

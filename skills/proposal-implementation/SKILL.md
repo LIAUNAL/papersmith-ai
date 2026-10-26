@@ -1159,6 +1159,10 @@ holder (`Experimental_AGREED.md`) is that skill's checklist, never this one's:
 `agreements` and the position section never read it, and `agreements` lists it
 under `siblingHolders` (present only when such a file exists).
 
+**Once the proof of concept's approval in `<Name>/AGREED.md` is settled, run
+`/experiment-diagrams poc`** so the operator verifies the PoC diagram beside the
+product in the dashboard's Experimentos panel.
+
 Append to it at every gate, before writing any code the gate authorized. And never
 report the work done while an item is open: say which, and why it is still open.
 

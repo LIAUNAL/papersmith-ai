@@ -28,8 +28,9 @@ git+https://github.com/LIAUNAL/bancoProyectosPapersLIA banco-lia-mcp`:
 | Antigravity / agy | `.agents/mcp_config.json` | `mcpServers.banco-lia` |
 
 `.mcp.json`, `.pi/mcp.json` and `.agents/mcp_config.json` belong to the
-workspace: upgrade adds or refreshes only the `banco-lia` entry and keeps every
-other server. A file that is not valid JSON is left untouched and reported as a
+workspace: init and upgrade add or refresh only the three servers papersmith
+manages — `banco-lia`, Kaggle's official server (`kaggle`) and Google Colab's
+(`colab`) — and keep every other server. A file that is not valid JSON is left untouched and reported as a
 warning. `opencode.json` is a rendered file, so upgrade rewrites it whole.
 The `papersmith` server itself is never written to any of them; use
 `smith mcp print-config` for it. `uv` must be on `PATH` for the harness to
@@ -38,9 +39,9 @@ start the bank.
 ## Wiring
 
 The server is launched by the client as a subprocess; there is nothing to run
-by hand. `smith mcp print-config` emits the snippet for the host you are
-configuring, with the bound workspace filled in — treat its output as
-authoritative.
+by hand. `smith mcp print-config` emits the `mcpServers` snippet (Claude Code,
+Pi, Antigravity) with the bound workspace filled in; OpenCode takes the shape
+shown below.
 
 ### Claude Code (`.mcp.json`)
 
@@ -65,6 +66,19 @@ authoritative.
       "type": "local",
       "command": ["smith", "mcp", "serve", "--workspace", "/path/to/your/workspace"],
       "enabled": true
+    }
+  }
+}
+```
+
+### Pi (`.pi/mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "papersmith": {
+      "command": "smith",
+      "args": ["mcp", "serve", "--workspace", "/path/to/your/workspace"]
     }
   }
 }
@@ -110,6 +124,7 @@ and auto-approve sensibly.
 |---|---|---|---|---|
 | `papersmith.workspace_status` | `smith status --json` | ✅ | — | — |
 | `papersmith.workspace_audit` | `smith audit --check-drift`; reports drift, never repairs it | ✅ | — | — |
+| `papersmith.workspace_doctor` | `smith doctor --json`: framework, packages, tools, skills, agents and phases, each `ok`/`absent`/`warn`/`fail` | ✅ | — | — |
 | `papersmith.ingest_fragment` | `pdf_fragment.py`: one page, heading section, display equation (LaTeX), search hits or the outline of an ingested paper, never the whole document | ✅ | — | — |
 | `papersmith.target_list` | configured compute targets | ✅ | — | — |
 | `papersmith.target_check` | target connectivity — runs `ssh` for a remote-ssh target | ✅ | — | ✅ |

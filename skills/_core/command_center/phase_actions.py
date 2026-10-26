@@ -189,7 +189,8 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "El ledger es de solo anexar; si las cuentas no autentican, usa primero /kaggle-accounts.",
                 "Solo el operador autoriza un lanzamiento: ningún agente ejecuta submit por su cuenta.",
             ], "Ej.: genera el job de experiments/e1.py y prepara su ensayo smoke.", optional=True),
-            _redirect("Ver el tablero PoC", "modelo", "Experimentos y veredictos de la prueba de concepto.", "poc"),
+            _redirect("Ver la PoC y los experimentos", "experiments",
+                      "Productos, veredictos y diagramas de la prueba de concepto y de los experimentos."),
         ],
     },
     "scaffolding": {

@@ -119,7 +119,7 @@ and `.agents/rules/*.md`) hold. The generated Antigravity rules/routing entrypoi
 | Commands | supported (legacy format) | `.claude/commands/*.md`; "Custom commands have been merged into skills"; same frontmatter minus `name`/`paths`; `$ARGUMENTS`, `$N` | https://code.claude.com/docs/en/skills |
 | Agents | supported | `.claude/agents/*.md`; frontmatter `name`, `description` (required), `tools` (comma-separated), `model`, `permissionMode`, `skills`, `memory`, `mcpServers`, `maxTurns` | https://code.claude.com/docs/en/sub-agents |
 | Hooks | supported | `.claude/settings.json` (shareable), `.claude/settings.local.json`, `~/.claude/settings.json`; also plugin `hooks.json`, skill and subagent frontmatter. `PreToolUse` blocks via exit code 2 or JSON `permissionDecision: "deny"`. Documentation only here: this repo never writes `settings.json` | https://code.claude.com/docs/en/hooks |
-| MCP / config | supported | `.mcp.json` at the project root (`mcpServers`); requires workspace trust. `smith init`/`upgrade` add only the `banco-lia` server and keep the rest | https://code.claude.com/docs/en/mcp |
+| MCP / config | supported | `.mcp.json` at the project root (`mcpServers`); requires workspace trust. `smith init`/`upgrade` add only the servers papersmith manages (`banco-lia`, `kaggle`, `colab`) and keep the rest | https://code.claude.com/docs/en/mcp |
 
 ## Contradicted or unsupported repo claims
 

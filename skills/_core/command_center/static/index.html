@@ -20,6 +20,7 @@
   <script src="./model-panel.js?v=0.19.6"></script>
   <script src="./experiments-panel.js?v=0.25.0"></script>
   <script src="./agents-panel.js?v=0.20.0"></script>
+  <script src="./doctor-panel.js?v=0.26.0"></script>
   <script src="./phase-console.js?v=0.19.1"></script>
   <script src="./phase-run.js?v=0.21.2"></script>
   <style>
@@ -2302,15 +2303,6 @@
       gap: 1.15rem;
       margin-top: 1rem;
     }
-    .poc-card {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.15rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.65rem;
-    }
 
 
     [data-theme="light"] .model-header-banner {
@@ -2577,6 +2569,9 @@
     #pane-experiments .exp-figure img { width: 100%; max-height: 180px; object-fit: contain; background: #fff; border-radius: 4px; }
     #pane-experiments .exp-hpo-gallery { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); margin: 0.5rem 0; }
     #pane-experiments .exp-hpo-gallery .exp-figure img { max-height: 280px; }
+    #pane-experiments .exp-diagram { margin-bottom: 0.8rem; }
+    #pane-experiments .exp-diagram .exp-gallery { grid-template-columns: minmax(0, 3fr) minmax(120px, 1fr); }
+    #pane-experiments .exp-diagram .exp-figure img { max-height: 420px; }
     #pane-experiments .exp-hpo-importance { margin: 0.5rem 0; max-width: 560px; }
     #pane-experiments .exp-hpo-bar { display: grid; grid-template-columns: minmax(80px, 160px) 1fr 4.5rem; align-items: center; gap: 0.5rem; font-size: 0.75rem; }
     #pane-experiments .exp-hpo-bar__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2617,6 +2612,12 @@
       border-radius: 999px; background: var(--accent-dim); color: var(--accent); }
     .agents-empty { color: var(--text-dim); }
     .agents-warnings { color: var(--warn); font-size: 0.78rem; margin: 0.5rem 0 0; }
+    /* Smith Doctor: one health table grouped by area. */
+    .doctor-summary { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    .doctor-group th { background: var(--surface-2); color: var(--text); cursor: default; text-transform: uppercase;
+      font-size: 0.72rem; letter-spacing: 0.04em; }
+    .doctor-detail { color: var(--text-muted); word-break: break-word; }
+    .badge--absent { background: transparent; color: var(--text-dim); border-color: var(--border); }
   </style>
 </head>
 <body>
@@ -2666,6 +2667,7 @@
     <button class="tab-nav__btn" onclick="navigateTab('preview')">Previsualización PDF</button>
     <button class="tab-nav__btn" onclick="navigateTab('artifacts')">Artefactos</button>
     <button class="tab-nav__btn" onclick="navigateTab('telemetria')">Telemetría y Costos</button>
+    <button class="tab-nav__btn" onclick="navigateTab('doctor')">Smith Doctor</button>
   </nav>
 
   <!-- Main content area -->
@@ -2805,9 +2807,6 @@
         <button class="model-subnav-btn" onclick="filterModelView('matematico', this)">
           📐 3. Matemática &amp; Tutor
         </button>
-        <button class="model-subnav-btn" onclick="filterModelView('poc', this)">
-          🧪 4. Plan de Prueba de Concepto (PoC)
-        </button>
       </div>
 
       <!-- MODULO 1: PROPUESTA Y NOVEDAD CIENTIFICA -->
@@ -2906,21 +2905,6 @@
         </div>
       </div>
 
-      <!-- MODULO 4: PRUEBA DE CONCEPTO (model-panel.js) -->
-      <div id="modelSecPoc" class="model-section">
-        <div class="panel">
-          <div class="panel__header">
-            <div class="panel__title">
-              <span>🧪 4. Deliberación &amp; Experimentos de Prueba de Concepto (PoC)</span>
-            </div>
-            <span id="modelPocBadge" class="badge badge--warn">G-EXP-POC · PENDIENTE</span>
-          </div>
-          <p style="font-size: 0.84rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
-            Protocolos empíricos para someter a prueba la viabilidad de la propuesta antes de la redacción definitiva, cada uno con su métrica objetivo y lo medido.
-          </p>
-          <div id="modelPocGrid" class="poc-grid"></div>
-        </div>
-      </div>
     </div>
 
     <!-- TAB: EXPERIMENTS (proof of concept + full experiments) -->
@@ -3365,6 +3349,17 @@
       </div>
     </div>
 
+    <!-- SMITH DOCTOR: salud del proyecto (GET /api/doctor, doctor-panel.js) -->
+    <div id="pane-doctor" class="tab-pane">
+      <div class="panel">
+        <div class="panel__header">
+          <div class="panel__title">Smith Doctor: salud del proyecto</div>
+          <span class="panel__meta">Misma tabla que <code>smith doctor</code></span>
+        </div>
+        <div id="doctorPanel">Cargando diagnóstico…</div>
+      </div>
+    </div>
+
     <!-- TAB 8: ARTEFACTOS -->
     <div id="pane-artifacts" class="tab-pane">
       <div class="panel">
@@ -3586,6 +3581,9 @@
       if (tabId === 'experiments') {
         window.refreshExperimentsPanel?.();
       }
+      if (tabId === 'doctor') {
+        window.refreshDoctorPanel?.();
+      }
       if (tabId === 'modelo') {
         refreshModelData();
         if (window.refreshMathPanel) window.refreshMathPanel();
@@ -3599,33 +3597,23 @@
       const secPropuesta = document.getElementById('modelSecPropuesta');
       const secMapa = document.getElementById('modelSecMapa');
       const secMatematico = document.getElementById('modelSecMatematico');
-      const secPoc = document.getElementById('modelSecPoc');
 
       if (viewName === 'all') {
         if (secPropuesta) secPropuesta.style.display = 'block';
         if (secMapa) secMapa.style.display = 'block';
         if (secMatematico) secMatematico.style.display = 'block';
-        if (secPoc) secPoc.style.display = 'block';
       } else if (viewName === 'propuesta') {
         if (secPropuesta) secPropuesta.style.display = 'block';
         if (secMapa) secMapa.style.display = 'none';
         if (secMatematico) secMatematico.style.display = 'none';
-        if (secPoc) secPoc.style.display = 'none';
       } else if (viewName === 'mapa') {
         if (secPropuesta) secPropuesta.style.display = 'none';
         if (secMapa) secMapa.style.display = 'block';
         if (secMatematico) secMatematico.style.display = 'none';
-        if (secPoc) secPoc.style.display = 'none';
       } else if (viewName === 'matematico') {
         if (secPropuesta) secPropuesta.style.display = 'none';
         if (secMapa) secMapa.style.display = 'none';
         if (secMatematico) secMatematico.style.display = 'block';
-        if (secPoc) secPoc.style.display = 'none';
-      } else if (viewName === 'poc') {
-        if (secPropuesta) secPropuesta.style.display = 'none';
-        if (secMapa) secMapa.style.display = 'none';
-        if (secMatematico) secMatematico.style.display = 'none';
-        if (secPoc) secPoc.style.display = 'block';
       }
     }
 
@@ -6300,7 +6288,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'sections', 'telemetria', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'sections', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();

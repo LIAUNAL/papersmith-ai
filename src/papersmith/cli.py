@@ -16,6 +16,7 @@ from .bridges import audit as audit_command
 from .bridges import remote as remote_command
 from .core import atlas as atlas_command
 from .core import colab as colab_command
+from .core import doctor as doctor_command
 from .core import env as env_command
 from .core import executor as executor_command
 from .core import init as init_command
@@ -54,6 +55,7 @@ _REGISTRY: list = [
     remote_command.register,
     target_command.register,
     audit_command.register,
+    doctor_command.register,
     ui_command.register,
     atlas_command.register,
     mcp_command.register,

@@ -74,6 +74,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "mcp",
     "team",
     "colab",
+    "doctor",
 )
 
 
@@ -172,6 +173,10 @@ def resolve_under(root: Path, raw: str) -> Path:
 
 def _build_status(arguments: dict[str, Any], workspace: Path) -> ChildPlan:
     return ChildPlan("cli", ("status", "--json", str(workspace)))
+
+
+def _build_doctor(arguments: dict[str, Any], workspace: Path) -> ChildPlan:
+    return ChildPlan("cli", ("doctor", str(workspace), "--json"))
 
 
 def _build_audit(arguments: dict[str, Any], workspace: Path) -> ChildPlan:
@@ -650,6 +655,23 @@ _WORKSPACE_TOOLS = (
         ),
         input_schema=_no_args(),
         build=_build_status,
+        result_json=True,
+    ),
+    ToolSpec(
+        name="papersmith.workspace_doctor",
+        title="Workspace health",
+        description=(
+            "One table of the workspace's health: framework versions and drift, packages and "
+            "external tools (TeX, rasterizers, git, node, micromamba), skills, agents and the "
+            "dashboard's phases, each ok, absent, warn or fail."
+        ),
+        verb="doctor",
+        surface="cli",
+        annotations=tool_annotations(
+            "Workspace health", read_only=True, destructive=False, open_world=False, idempotent=True
+        ),
+        input_schema=_no_args(),
+        build=_build_doctor,
         result_json=True,
     ),
     ToolSpec(
@@ -1580,6 +1602,7 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # `colab login` runs an interactive Google consent for one person's own
     # account; `status` probes that sign-in. Both are an operator's acts.
     "colab": "out",
+    "doctor": "exposed",
 }
 
 PAPER_DISPOSITIONS: dict[str, str] = {

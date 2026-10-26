@@ -46,6 +46,7 @@ import json
 import math
 import os
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -710,6 +711,34 @@ def _product_dirs(root: Path, reader: _Reader) -> list[tuple[str, Path]]:
     return out
 
 
+#: The approvals that call for an experiment diagram, in the order the operator
+#: verifies them: the proof of concept, then the full experiments.
+DIAGRAM_KINDS = (("poc", "AGREED.md"), ("experiments", "Experimental_AGREED.md"))
+DIAGRAM_CLI = "skills/experiment-diagrams/scripts/diagram_cli.py"
+
+
+def _diagrams(root: Path, repo: str, folder: Path, reader: _Reader) -> list[dict[str, Any]]:
+    """One entry per approval the product holds, with the PNG and PDF that
+    `experiment-diagrams` drew under ``<product>/diagrams/`` (``None`` when
+    missing or linked outside the workspace) and the command that draws them."""
+    out: list[dict[str, Any]] = []
+    for kind, marker in DIAGRAM_KINDS:
+        if not (folder / marker).is_file():
+            continue
+        files: dict[str, str | None] = {}
+        for ext in ("png", "pdf"):
+            path = folder / "diagrams" / f"{kind}.{ext}"
+            files[ext] = _rel(root, path) if path.is_file() and reader.contained(path) else None
+        spec = _rel(root, folder / "diagrams" / f"{kind}.json")
+        command = (f"python3 {DIAGRAM_CLI} derive --target {shlex.quote(repo)} "
+                   f"--name {shlex.quote(folder.name)} --kind {kind} && "
+                   f"python3 {DIAGRAM_CLI} render --spec {shlex.quote(spec)}")
+        out.append({"kind": kind, "approved": True, "marker": marker, "png": files["png"],
+                    "pdf": files["pdf"], "command": command,
+                    "slash": f"/experiment-diagrams {kind}"})
+    return out
+
+
 def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
              global_warnings: list[str]) -> dict[str, Any]:
     warnings: list[str] = []
@@ -776,6 +805,7 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         "runs": _fold_runs(root, ledger, reader),
         "timing": timing,
         "hpo": hpo,
+        "diagrams": _diagrams(root, repo, folder, reader),
         "warnings": warnings,
     }
 

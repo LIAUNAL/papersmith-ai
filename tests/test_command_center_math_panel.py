@@ -19,7 +19,7 @@ SCRIPT = (STATIC / "math-panel.js").read_text(encoding="utf-8")
 class PageTests(unittest.TestCase):
     def section(self) -> str:
         start = PAGE.index('<div id="modelSecMatematico"')
-        return PAGE[start:PAGE.index('<div id="modelSecPoc"')]
+        return PAGE[start:PAGE.index('<!-- TAB: EXPERIMENTS', start)]
 
     def test_katex_and_the_panel_script_are_loaded(self) -> None:
         self.assertIn('<link rel="stylesheet" href="./vendor/katex/katex.min.css">', PAGE)
@@ -37,7 +37,7 @@ class PageTests(unittest.TestCase):
             self.assertIn(f'data-tutor-mode="{mode}"', section)
 
     def test_the_other_model_modules_and_the_tab_survive(self) -> None:
-        for module in ("modelSecPropuesta", "modelSecMapa", "modelSecPoc"):
+        for module in ("modelSecPropuesta", "modelSecMapa"):
             self.assertIn(f'id="{module}"', PAGE)
         self.assertIn("if (window.refreshMathPanel) window.refreshMathPanel();", PAGE)
 

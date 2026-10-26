@@ -11,6 +11,7 @@ from mcp_series import build_workspace, call_many, scaffold_paper, tool_call
 READ_ONLY_OK = (
     "papersmith.workspace_status",
     "papersmith.workspace_audit",
+    "papersmith.workspace_doctor",
     "papersmith.target_list",
     "papersmith.target_check",
     "papersmith.paper_status",

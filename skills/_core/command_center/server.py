@@ -38,6 +38,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import doctor_view, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -325,6 +326,8 @@ def _candidate_count(root: Path) -> int:
 
 AUDIT_TIMEOUT_SECONDS = 120
 _AUDIT_LOCK = threading.Lock()
+#: How long a Smith Doctor report is served from cache; `?fresh=1` re-measures.
+DOCTOR_TTL_SECONDS = 30.0
 TEX_TIMEOUT_SECONDS = 35
 BUILD_TIMEOUT_SECONDS = 20
 # One job at a time writes paper/: the writing stage's build and the compile.
@@ -469,7 +472,14 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
     """pdflatex, bibtex, pdflatex twice in paper/, each bounded by a timeout.
     Blocking: the caller runs it off the event loop, holding _PAPER_LOCK."""
     env = os.environ.copy()
-    env["PATH"] = f"/Library/TeX/texbin:/opt/homebrew/bin:{env.get('PATH', '')}"
+    # PATH first, then the shared fallback directories (MacTeX, Homebrew, TeX
+    # Live on Linux and WSL). The engine's directory leads PATH so the helpers
+    # TeX itself spawns (kpsewhich, mktextfm) come from the same distribution.
+    # The tools are still called by name, so the inherited PATH keeps deciding
+    # among equals; the search only adds the directories where it found them.
+    found = [toolchain.find_tool(name, path=env.get("PATH")) for name in ("pdflatex", "bibtex")]
+    lead = list(dict.fromkeys(os.path.dirname(f) for f in found if f and os.path.isabs(f)))
+    env["PATH"] = os.pathsep.join(filter(None, (*lead, env.get("PATH", ""))))
     p_dir = str(root / "paper")
     pdflatex = ["pdflatex", "-interaction=nonstopmode", "main.tex"]
     first = None
@@ -1428,6 +1438,30 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/health/wiring")
     def api_health_wiring() -> JSONResponse:
         return JSONResponse(measure_health())
+
+    doctor_cache: dict[str, Any] = {"at": 0.0, "value": None}
+    doctor_lock = threading.Lock()
+
+    @app.get("/api/doctor")
+    def api_doctor(fresh: bool = False) -> JSONResponse:
+        # The Smith Doctor tab: the rows `smith doctor --json` prints, built by
+        # the same function from this process's wiring health and phases.
+        # Lock order: doctor_lock -> health_lock (measure_health).
+        with doctor_lock:
+            cached = doctor_cache["value"]
+            if (not fresh and cached is not None
+                    and time.monotonic() - doctor_cache["at"] < DOCTOR_TTL_SECONDS):
+                return JSONResponse(cached)
+            wiring = measure_health(force=fresh)
+            try:
+                phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
+                phases_error = None
+            except Exception as exc:  # noqa: BLE001 - one area degrades, not the report
+                phases, phases_error = None, f"/api/status failed: {type(exc).__name__}: {exc}"
+            value = doctor_view.get_doctor_view(root_path, wiring=wiring, phases=phases,
+                                                phases_error=phases_error)
+            doctor_cache["value"], doctor_cache["at"] = value, time.monotonic()
+            return JSONResponse(value)
 
     @app.post("/api/health/run-wiring-smoke")
     def api_run_wiring_smoke(request: Request) -> JSONResponse:
@@ -2584,7 +2618,45 @@ def _is_wsl() -> bool:
     return sys.platform == "linux" and "microsoft" in platform.release().lower()
 
 
+#: Launchers that hand a URL to the Windows browser from WSL, in order.
+WSL_BROWSER_LAUNCHERS = ("wslview", "explorer.exe")
+
+
+def _has_graphical_display() -> bool:
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _print_url(url: str) -> None:
+    print(f"open the dashboard in a browser: {url}", flush=True)
+
+
 def open_browser(url: str) -> None:
+    """Open ``url`` in a browser that fits the platform; never raises.
+
+    Under WSL the Windows browser is reached through ``wslview`` (wslu), then
+    ``explorer.exe``. On Linux without a graphical display Python's
+    ``webbrowser`` would start a text browser (w3m, lynx) on the server's own
+    terminal, so the URL is printed instead. macOS and desktop Linux use
+    ``webbrowser``.
+    """
+    if _is_wsl():
+        for launcher in WSL_BROWSER_LAUNCHERS:
+            executable = shutil.which(launcher)
+            if not executable:
+                continue
+            # argv keeps query strings intact (and avoids cmd.exe/shell
+            # interpolation). Do not expose the terminal login URL through
+            # child process output.
+            try:
+                subprocess.Popen([executable, url], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 close_fds=True)
+                return
+            except OSError:
+                continue
+    if sys.platform.startswith("linux") and not _has_graphical_display():
+        _print_url(url)
+        return
     import webbrowser
 
     try:
@@ -2592,13 +2664,7 @@ def open_browser(url: str) -> None:
             return
     except Exception:  # Browser setup must not prevent the server from starting.
         pass
-    if _is_wsl():
-        # argv keeps query strings intact (and avoids cmd.exe/shell interpolation).
-        # Do not expose the terminal login URL through child process output.
-        with contextlib.suppress(OSError):
-            subprocess.Popen(["explorer.exe", url], stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             close_fds=True)
+    _print_url(url)
 
 
 def main(argv: list[str] | None = None) -> int:

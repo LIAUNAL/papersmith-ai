@@ -197,6 +197,7 @@ class HarnessCommandProjectionTests(unittest.TestCase):
 
     COMMAND_NAMES = (
         "datasets",
+        "experiment-diagrams",
         "experimental-deliberation",
         "experimental-implementation",
         "figure-review",

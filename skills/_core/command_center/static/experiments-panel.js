@@ -235,6 +235,31 @@
     return `${chips}<details class="exp-runs"><summary>Últimas ejecuciones (${esc(r.count)})</summary><ul>${latest}</ul></details>`;
   }
 
+  // ------------------------------------------------------------ diagrams
+  // One figure per approval, drawn by skills/experiment-diagrams: the proof of
+  // concept first, then the full experiments. The operator verifies each one here.
+  const DIAGRAM_TITLES = {
+    poc: 'Diagrama de la prueba de concepto',
+    experiments: 'Diagrama de los experimentos completos',
+  };
+
+  function diagrams(p) {
+    const list = p.diagrams || [];
+    if (!list.length) return '';
+    const items = list.map((d) => {
+      const title = DIAGRAM_TITLES[d.kind] || d.kind;
+      const files = [d.png, d.pdf].filter(Boolean);
+      const body = d.png
+        ? `<div class="exp-gallery">${files.map(artifact).join('')}</div>`
+        : `<p class="exp-intro">Aprobado en ${esc(d.marker || '')}; el diagrama aún no existe. El agente lo dibuja con
+            <code>${esc(d.slash || '')}</code>, o genera un borrador aquí y revísalo.</p>
+           <div class="exp-chips">${cliButton(d.command || '', 'Generar diagrama')}</div>`;
+      return `<div class="exp-diagram"><div class="exp-file">${esc(title)}
+        <span class="badge ${d.png ? 'badge--ok' : 'badge--warn'}">${d.png ? 'POR VERIFICAR' : 'PENDIENTE'}</span></div>${body}</div>`;
+    }).join('');
+    return `<h4 class="exp-h4">Diagramas para verificar</h4>${items}`;
+  }
+
   function product(p) {
     const pinned = p.pinned || [];
     const figures = (p.figures || []).filter((f) => !pinned.includes(f));
@@ -244,6 +269,7 @@
         <div><strong>${esc(p.name)}</strong> <small class="exp-muted">${esc(p.path)}</small></div>
         <div class="exp-chips">${runs(p)}</div>
       </header>
+      ${diagrams(p)}
       ${pinned.length ? `<h4 class="exp-h4">Artefactos aprobados en deliberación</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}
       <h4 class="exp-h4">Convergencia</h4>${convergence(p)}
       ${figures.length ? `<h4 class="exp-h4">Figuras</h4><div class="exp-gallery">${figures.map(artifact).join('')}</div>` : ''}
