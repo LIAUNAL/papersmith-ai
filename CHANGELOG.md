@@ -55,6 +55,11 @@ number is `0`, breaking changes can still arrive without a major bump.
   `WAYLAND_DISPLAY` the URL is printed instead of starting a text browser on
   the server's terminal. macOS is unchanged.
 
+- **LF line endings everywhere.** A root `.gitattributes` keeps text files,
+  and shell scripts explicitly, at LF in every checkout, so a clone made by
+  Windows git into `/mnt/c` still runs `setup-harnesses.sh` under WSL; images,
+  fonts, PDF and cmap assets are marked binary. No tracked file changes bytes.
+
 ## 0.25.0
 
 ### Added
