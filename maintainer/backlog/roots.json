@@ -1,5 +1,5 @@
 {
-  "pinned_commit": "2d31f873",
+  "pinned_commit": "dd46b7c9",
   "roots": [
     {
       "key": "tracker",
@@ -14,12 +14,10 @@
     {
       "key": "env-provisioning",
       "tier": 1,
-      "state": "fix-ready",
+      "state": "open",
       "title": "Provisioned environments drift from the pinned specification",
       "fix": "Pin what setup_env.py installs (kagglesdk now; derive from requirements.txt as the root fix), verify the micromamba artifact, and guard every optional import.",
       "issues": [
-        108,
-        57,
         58
       ],
       "evidence": {
@@ -30,74 +28,12 @@
       "proof": "fix/env-provisioning (#108, tests/test_env_pins.py); PR #95 (#57) accepted; #58 needs a decision"
     },
     {
-      "key": "credential-egress",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "Authenticated HTTP follows responses to any origin",
-      "fix": "One rule for every Kaggle-authenticated request: no cross-origin redirect, credential only to Kaggle origins, timeouts and bounded reads.",
-      "issues": [
-        55,
-        106
-      ],
-      "evidence": {
-        "55": "kaggle_driver.py:538 session.get(url) (PR #94)",
-        "106": "src/papersmith/core/kaggle_mcp.py:192, skills/kaggle-accounts/scripts/accounts_cli.py:480 plain urlopen"
-      },
-      "proof": "fix/credential-egress (#106, tests/test_credential_redirect.py); PR #94 (#55) accepted"
-    },
-    {
-      "key": "kaggle-fetch-pages",
-      "tier": 2,
-      "state": "open",
-      "title": "fetch reads only the first page of a kernel's output listing",
-      "fix": "Loop on next_page_token with a repeated-token refusal and a page ceiling (after #94 lands in the same function).",
-      "issues": [
-        93
-      ],
-      "evidence": {
-        "93": "kaggle_driver.py:500 single list_kernel_session_output"
-      }
-    },
-    {
-      "key": "dashboard-security",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "The unauthenticated dashboard trusts its network and its data",
-      "fix": "Loopback-only binds with the Host check always on; escape scouted records; same-origin guard on every state-changing endpoint.",
-      "issues": [
-        61,
-        91
-      ],
-      "evidence": {
-        "61": "server.py:199-200 (PR #96)",
-        "91": "server.py:1688-1689, :1445, :1514 (PR #99)"
-      },
-      "proof": "PR #96 (#61) and PR #99 (#91) accepted, squash-merge"
-    },
-    {
-      "key": "phase-run-handler",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "POST /api/phase/run cannot compile and blocks the event loop",
-      "fix": "Import os, run stage commands on a worker thread, bound every TeX run with a timeout.",
-      "issues": [
-        90,
-        107
-      ],
-      "evidence": {
-        "90": "server.py:1533 os.environ without import",
-        "107": "server.py:1514-1556 blocking subprocess.run in async handler"
-      },
-      "proof": "fix/phase-run-handler (tests/test_command_center_phase_run_handler.py)"
-    },
-    {
       "key": "live-sync",
       "tier": 2,
-      "state": "partial",
+      "state": "open",
       "title": "State the server measures is not pushed to the dashboard",
       "fix": "Publish health_update whenever a measurement is taken; refetch /api/state on SSE reconnect.",
       "issues": [
-        100,
         83
       ],
       "evidence": {
@@ -115,8 +51,7 @@
       "issues": [
         82,
         56,
-        59,
-        81
+        59
       ],
       "evidence": {
         "82": "src/papersmith/core/target.py:61, core/executor.py:260-264 (PR #98)",
@@ -127,28 +62,13 @@
       "proof": "fix/argv-boundaries closes #81, refs #56 #59; PR #98 (#82) needs the smith: error prefix"
     },
     {
-      "key": "revision-name-traversal",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "Managed revision names can escape their sidecar directory",
-      "fix": "Restrict the lax lineage grammar and confine every sidecar write.",
-      "issues": [
-        62
-      ],
-      "evidence": {
-        "62": "skills/_core/deliberation/engine/artifact-naming.ts:48 (PR #97)"
-      },
-      "proof": "PR #97 accepted (follow-up: non-ASCII legacy lineages)"
-    },
-    {
       "key": "engine-defect-recorder",
       "tier": 2,
       "state": "partial",
       "title": "The engine's crash recorder writes defects for invalid input, outside the gated targets",
       "fix": "Classify unreadable input as a refusal, and record a crash only through resolve_target/validate_name into an existing product dir.",
       "issues": [
-        67,
-        88
+        67
       ],
       "evidence": {
         "67": "implementation_engine.py:9470 unguarded --plan read",
@@ -185,63 +105,12 @@
       "proof": "fix/rollback-data-loss (tests/test_engine_rollback_ownership.py)"
     },
     {
-      "key": "tests-mutate-live-tree",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "Tests write into or delete from the shipped tree",
-      "fix": "Every mutating test works in a scratch forge (tests/scratch_forge.py); orphan cleanup touches only directories the run created.",
-      "issues": [
-        60,
-        89,
-        92
-      ],
-      "evidence": {
-        "60": "tests/orphan_sweep.py:37,80-95",
-        "89": "tests/test_proposal_implementation.py:23322-23325",
-        "92": "tests/test_implementation_domain_lock.py:1104"
-      },
-      "proof": "fix/tests-mutate-live-tree (tests/test_shipped_tree_orphan_sweep.py, test_shipped_engine_is_never_written.py)"
-    },
-    {
-      "key": "ingestion-silent-loss",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "Ingestion reports success while dropping text",
-      "fix": "Combine UTF-16 surrogate pairs; treat a page Docling did not convert as failed and never cache it.",
-      "issues": [
-        104,
-        105
-      ],
-      "evidence": {
-        "104": "skills/paper-ingestion/scripts/pdf_pipeline.py:191,271",
-        "105": "pdf_pipeline.py:538-546"
-      },
-      "proof": "fix/ingestion-silent-loss (tests/test_pdf_pipeline.py)"
-    },
-    {
-      "key": "sensitivity-reporting",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "skill-audit sensitivity reports readings it did not take",
-      "fix": "Stall when the baseline refuses; read containment after the box is erased.",
-      "issues": [
-        101,
-        102
-      ],
-      "evidence": {
-        "101": "skills/skill-audit/scripts/audit_cli.py:2297",
-        "102": "audit_cli.py:~2364-2365"
-      },
-      "proof": "fix/sensitivity-reporting (tests/test_skill_audit.py Sensitivity*)"
-    },
-    {
       "key": "user-file-preservation",
       "tier": 2,
-      "state": "partial",
+      "state": "open",
       "title": "Setup and upgrade overwrite what the user owns",
       "fix": "Replace only symlinks the setup created; upgrade compares to the recorded hash and writes atomically.",
       "issues": [
-        63,
         65
       ],
       "evidence": {
@@ -249,20 +118,6 @@
         "65": "src/papersmith/core/upgrade.py:124-133, core/fs.py write_text"
       },
       "proof": "fix/user-file-preservation closes #63; #65 open"
-    },
-    {
-      "key": "intent-parsing",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "Destructive intent matched inside ordinary words",
-      "fix": "Match whole words at both boundaries.",
-      "issues": [
-        75
-      ],
-      "evidence": {
-        "75": "skills/_core/deliberation/engine/intent-resolver.ts:12,27"
-      },
-      "proof": "fix/intent-parsing (tests/deliberation-intent-whole-word.test.mjs)"
     },
     {
       "key": "file-url-paths",
@@ -290,20 +145,6 @@
         "70": ".claude/agents/paper-ingestion.md:21-25 vs skills/paper-ingestion/SKILL.md:168"
       },
       "proof": "fix/agent-cli-drift refs #70 (roster count and redactor contract open)"
-    },
-    {
-      "key": "skill-loading",
-      "tier": 2,
-      "state": "fix-ready",
-      "title": "Every skill must load under OpenCode",
-      "fix": "Description length is enforced; add the name-matches-directory assertion.",
-      "issues": [
-        14
-      ],
-      "evidence": {
-        "14": "tests/test_skill_descriptions.py:26,62 (length only)"
-      },
-      "proof": "fix/skill-loading (tests/test_skill_descriptions.py)"
     },
     {
       "key": "model-output-validation",

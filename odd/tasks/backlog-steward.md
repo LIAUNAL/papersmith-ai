@@ -21,7 +21,7 @@ Branch: `feat/backlog-steward` · Delivery: ask-on-risk · Runner: `.micromamba/
 | T3 | S3 (#108 green CI) | inline | done locally, CI proof pending push | `fix/env-provisioning` `ad78fb3e` |
 | T4 | S3 (PRs #94–#99: rebase, RED/GREEN, dual review) | 1 verifier + 2 blind judges | done: #94 #95 #96 #97 #99 accept, #98 changes needed | scratchpad logs |
 | T5 | S3 (contained bug roots, repro-first) | 8 parallel writers in worktrees + parent fixes | done: 18 Closes, 5 Refs, 1 not reproduced (#76) | 15 `fix/*` branches |
-| T6 | S3 (GitHub batch: push, merge, close, tracker) | inline, after confirmation | pending operator confirmation | |
+| T6 | S3 (GitHub batch: push, merge, close, tracker) | inline, after confirmation | done except #118 (CI) and #98 (contributor) | merges #109, #126, #94–#97, #99, #112–#117, #119–#125, #127 |
 
 ## Log
 
@@ -31,3 +31,4 @@ Branch: `feat/backlog-steward` · Delivery: ask-on-risk · Runner: `.micromamba/
 - **L4** (2026-10-25) A concurrent session merged T1/T2 into main and released 0.22.1 (`2d31f873`); all later work moved to worktrees under `papersmith-ai-worktrees/`.
 - **L5** Review: two blind judges, no BLOCKER. Fixed after confirmation by both or deterministic proof: IPv6/`git+ssh` refused by the #56 boundary (`dec7c64a`), unbounded orphan registry (`29c9780d`). Refuted with evidence: MCP `extra` after `--` (the bridge forwards `extra` verbatim, `bridges/implementation.py:73`); agent doc lost overwrite/PDF rules (the skill owns them, `SKILL.md:362`, and moves the PDF).
 - **L6** Integration (all 15 branches + PRs #94–#97, #99 merged in order): node 832/832; python 7029 passed. Seams found and fixed: PR #99's origin guard needs `headers` on the phase-run fake request (`f5d1c56e`); conftest import broke test_process_state_isolation (`981bf66d`); a self-guarded-facts probe pins an audit_cli.py line (repinned in `6eb978bd`). Remaining: 5 test_forge_gate interpreter tests (fail on main in a worktree too: no `.micromamba`), and ReleaseHygieneTests, which requires a version bump with the merge.
+- **L7** (2026-10-25) Operator chose "Push + PRs + merge tras CI (Recomendado)". main was red after 0.23.0 (unguarded optuna/matplotlib in `optuna_report.py`); fixed by #126. CI-only seams fixed before merge: docling_core stub in the partial-Docling tests (#120), git identity for the adopt survey test (#117), domain-lock pins kept by rewording (#116, #118; deliberate shrinks `check` 168->162, `implementations` 4->3). #93 fixed by #127. Fork PRs were drafts; marked ready and merged. roots.json repinned to current main; 29 open issues in 19 roots.
