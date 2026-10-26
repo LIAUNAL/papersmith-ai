@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -62,7 +63,9 @@ class PhaseRunHandlerTests(unittest.TestCase):
         self.assertEqual([c[0][0] for c in stub.calls], ["pdflatex", "bibtex", "pdflatex", "pdflatex"])
         self.assertEqual(stub.calls[0][0], ["pdflatex", "-interaction=nonstopmode", "main.tex"])
         self.assertEqual(stub.calls[0][1]["cwd"], str(self.root / "paper"))
-        self.assertTrue(stub.calls[0][1]["env"]["PATH"].endswith(":/usr/bin:/bin"))
+        # The inherited PATH is kept, after any TeX directory the search found
+        # (none on a runner without TeX, MacTeX or TeX Live elsewhere).
+        self.assertEqual(stub.calls[0][1]["env"]["PATH"].split(os.pathsep)[-2:], ["/usr/bin", "/bin"])
         self.assertEqual(body["outputs"], ["paper/main.pdf"])
 
     def test_every_tex_run_has_a_timeout(self) -> None:
