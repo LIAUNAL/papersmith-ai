@@ -213,7 +213,7 @@ def _place(stage: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
         if remote:
             return {"host": remote[0]["host"], "text": f"{over} Corre antes la sonda de tiempo en "
                                                        f"{remote[0]['host_label']} para estimarla."}
-        return {"host": None, "text": f"{over} Ningún host en la nube disponible: activa Colab o Kaggle."}
+        return {"host": None, "text": f"{over} Ningún host en la nube disponible: activa un servicio remoto."}
     if local:
         return {"host": "local", "text": "Local disponible pero sin medir: corre primero la sonda de tiempo "
                                          "(Results/timing.json)." + rehearse}

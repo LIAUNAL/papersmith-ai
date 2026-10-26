@@ -259,6 +259,14 @@ over the timing probe's record.
   formula that verb defines. A remote GPU host reads `unmeasured` until a
   measured rehearsal on that host adds its own timing; local timings never
   stand in for it.
+- **Where it runs, and how long a proof of concept may take.** The same
+  output carries `placement` per stage, read on each range's upper bound. A
+  stage whose local estimate exceeds 20 minutes runs on a cloud host — the
+  fastest one measured, or one timed first — never locally. A proof of
+  concept is sized to run in at most 5 hours on the host it is placed on;
+  when `placement.pocBudget` reads `exceeds`, the design is reduced (subjects,
+  epochs, folds, seeds or arms) and estimated again before the pilot is asked
+  for.
 - **What it is.** A measurement-derived range (±20%, single-probe
   extrapolation), never a promise, and never authorization: the pilot and the
   launch stay the operator's to approve after reading it.
