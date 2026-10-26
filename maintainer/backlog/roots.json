@@ -1,96 +1,251 @@
 {
-  "pinned_commit": "06d27b33",
+  "pinned_commit": "dd46b7c9",
   "roots": [
-    {"key": "delivered", "tier": 0, "state": "close", "title": "Feature requests already delivered on main",
-     "fix": "Close with the path that delivers each one.",
-     "issues": [10, 11, 12],
-     "evidence": {"10": "skills/experimental-deliberation/{cli.mjs,profile.ts}", "11": "skills/experimental-implementation/", "12": "skills/paper-writing/ (Python scripts, not a deliberation-core consumer)"}},
-    {"key": "audit-tracker", "tier": 0, "state": "close-on-confirmation", "title": "The v0.13.0 audit tracker, superseded by the root map",
-     "fix": "Close #86 as superseded once the backlog tracker issue (render) is published; every audit item maps to a root here.",
-     "issues": [86]},
-
-    {"key": "env-provisioning", "tier": 1, "state": "open", "title": "Provisioned environments drift from the pinned specification",
-     "fix": "Pin what setup_env.py installs (kagglesdk now; derive from requirements.txt as the root fix), verify the micromamba artifact, and guard every optional import.",
-     "issues": [108, 57, 58],
-     "evidence": {"108": "scripts/setup_env.py:77 bare kagglesdk; skills/paper-ingestion/scripts/extract_pdf.py:543 unguarded marker import", "57": "scripts/setup_env.py:124 releases/latest, no checksum (PR #95)", "58": "scripts/setup_env.py:57+ own unpinned list"}},
-
-    {"key": "credential-egress", "tier": 2, "state": "open", "title": "Authenticated HTTP follows responses to any origin",
-     "fix": "One rule for every Kaggle-authenticated request: no cross-origin redirect, credential only to Kaggle origins, timeouts and bounded reads.",
-     "issues": [55, 106],
-     "evidence": {"55": "kaggle_driver.py:538 session.get(url) (PR #94)", "106": "src/papersmith/core/kaggle_mcp.py:192, skills/kaggle-accounts/scripts/accounts_cli.py:480 plain urlopen"}},
-    {"key": "kaggle-fetch-pages", "tier": 2, "state": "open", "title": "fetch reads only the first page of a kernel's output listing",
-     "fix": "Loop on next_page_token with a repeated-token refusal and a page ceiling (after #94 lands in the same function).",
-     "issues": [93], "evidence": {"93": "kaggle_driver.py:500 single list_kernel_session_output"}},
-    {"key": "dashboard-security", "tier": 2, "state": "open", "title": "The unauthenticated dashboard trusts its network and its data",
-     "fix": "Loopback-only binds with the Host check always on; escape scouted records; same-origin guard on every state-changing endpoint.",
-     "issues": [61, 91], "evidence": {"61": "server.py:199-200 (PR #96)", "91": "server.py:1688-1689, :1445, :1514 (PR #99)"}},
-    {"key": "phase-run-handler", "tier": 2, "state": "open", "title": "POST /api/phase/run cannot compile and blocks the event loop",
-     "fix": "Import os, run stage commands on a worker thread, bound every TeX run with a timeout.",
-     "issues": [90, 107], "evidence": {"90": "server.py:1533 os.environ without import", "107": "server.py:1514-1556 blocking subprocess.run in async handler"}},
-    {"key": "live-sync", "tier": 2, "state": "open", "title": "State the server measures is not pushed to the dashboard",
-     "fix": "Publish health_update whenever a measurement is taken; refetch /api/state on SSE reconnect.",
-     "issues": [100, 83], "evidence": {"100": "server.py:475-489 vs :514-515", "83": "ui/src/hooks/useWorkspaceEvents.ts:159,186-190"}},
-    {"key": "argv-boundaries", "tier": 2, "state": "open", "title": "Untrusted values reach argv where they can act as options",
-     "fix": "End options with -- (or reject a leading -) before every value-bearing positional, quote remote command text once, and make dry-run the default the guard assumes.",
-     "issues": [82, 56, 59, 81],
-     "evidence": {"82": "src/papersmith/core/target.py:61, core/executor.py:260-264 (PR #98)", "56": "skills/remote-execution/scripts/jobfolder.py:3170", "59": "src/papersmith/mcp/registry.py:1450-1451, :853", "81": "paper_bib.py:60 \\cite only; paper_figure.py:84-88, paper_latex.py:220"}},
-    {"key": "revision-name-traversal", "tier": 2, "state": "open", "title": "Managed revision names can escape their sidecar directory",
-     "fix": "Restrict the lax lineage grammar and confine every sidecar write.",
-     "issues": [62], "evidence": {"62": "skills/_core/deliberation/engine/artifact-naming.ts:48 (PR #97)"}},
-    {"key": "engine-defect-recorder", "tier": 2, "state": "open", "title": "The engine's crash recorder writes defects for invalid input, outside the gated targets",
-     "fix": "Classify unreadable input as a refusal, and record a crash only through resolve_target/validate_name into an existing product dir.",
-     "issues": [67, 88], "evidence": {"67": "implementation_engine.py:9470 unguarded --plan read", "88": "implementation_engine.py:19055-19057"}},
-    {"key": "adopt-nameerror", "tier": 2, "state": "open", "title": "adopt crashes on an undefined WORKSPACE",
-     "fix": "Resolve WORKSPACE through impl_layout; isolated adopt regression.",
-     "issues": [52], "evidence": {"52": "implementation_engine.py:19771,19775"}},
-    {"key": "rollback-data-loss", "tier": 2, "state": "open", "title": "A failed operation's rollback can delete an untracked ledger",
-     "fix": "Reproduce first; roll back only the paths the operation wrote, never git clean the tree.",
-     "issues": [80], "evidence": {"80": "implementation_engine.py:9510-9511; impl_guards.py:45 skips the ledger dir"}},
-    {"key": "tests-mutate-live-tree", "tier": 2, "state": "open", "title": "Tests write into or delete from the shipped tree",
-     "fix": "Every mutating test works in a scratch forge (tests/scratch_forge.py); orphan cleanup touches only directories the run created.",
-     "issues": [60, 89, 92], "evidence": {"60": "tests/orphan_sweep.py:37,80-95", "89": "tests/test_proposal_implementation.py:23322-23325", "92": "tests/test_implementation_domain_lock.py:1104"}},
-    {"key": "ingestion-silent-loss", "tier": 2, "state": "open", "title": "Ingestion reports success while dropping text",
-     "fix": "Combine UTF-16 surrogate pairs; treat a page Docling did not convert as failed and never cache it.",
-     "issues": [104, 105], "evidence": {"104": "skills/paper-ingestion/scripts/pdf_pipeline.py:191,271", "105": "pdf_pipeline.py:538-546"}},
-    {"key": "sensitivity-reporting", "tier": 2, "state": "open", "title": "skill-audit sensitivity reports readings it did not take",
-     "fix": "Stall when the baseline refuses; read containment after the box is erased.",
-     "issues": [101, 102], "evidence": {"101": "skills/skill-audit/scripts/audit_cli.py:2297", "102": "audit_cli.py:~2364-2365"}},
-    {"key": "user-file-preservation", "tier": 2, "state": "open", "title": "Setup and upgrade overwrite what the user owns",
-     "fix": "Replace only symlinks the setup created; upgrade compares to the recorded hash and writes atomically.",
-     "issues": [63, 65], "evidence": {"63": "scripts/setup-harnesses.sh:50-51", "65": "src/papersmith/core/upgrade.py:124-133, core/fs.py write_text"}},
-    {"key": "intent-parsing", "tier": 2, "state": "open", "title": "Destructive intent matched inside ordinary words",
-     "fix": "Match whole words at both boundaries.",
-     "issues": [75], "evidence": {"75": "skills/_core/deliberation/engine/intent-resolver.ts:12,27"}},
-    {"key": "file-url-paths", "tier": 2, "state": "open", "title": "A CLI converts its module URL by hand",
-     "fix": "fileURLToPath, as the sibling cli.mjs files do.",
-     "issues": [76], "evidence": {"76": "skills/_core/deliberation/engine/cli.mjs:83"}},
-    {"key": "agent-cli-drift", "tier": 2, "state": "open", "title": "Agent instructions name flags the CLI does not have",
-     "fix": "Derive the ingestion agent's commands from the CLI contract and guard them with a test.",
-     "issues": [70], "evidence": {"70": ".claude/agents/paper-ingestion.md:21-25 vs skills/paper-ingestion/SKILL.md:168"}},
-    {"key": "skill-loading", "tier": 2, "state": "open", "title": "Every skill must load under OpenCode",
-     "fix": "Description length is enforced; add the name-matches-directory assertion.",
-     "issues": [14], "evidence": {"14": "tests/test_skill_descriptions.py:26,62 (length only)"}},
-    {"key": "model-output-validation", "tier": 2, "state": "open", "title": "Generated JSON is indexed before it is validated",
-     "fix": "Validate draft envelopes at the paper_cli boundary before paper_write reads them.",
-     "issues": [71], "evidence": {"71": "skills/paper-writing/scripts/paper_cli.py:2486, paper_write.py:123"}},
-
-    {"key": "evidence-integrity", "tier": 3, "state": "needs-decision", "title": "Acceptance evidence is weaker than what it is read as",
-     "fix": "Decide the evidence contracts: executed invariants, byte-level revision identity, blocking undecidable findings.",
-     "issues": [72, 84, 85]},
-    {"key": "agent-authority", "tier": 3, "state": "needs-decision", "title": "Agents hold the authority the human gates depend on",
-     "fix": "Threat-model decision: credential isolation, permission defaults, approvals bound to authority the agent lacks.",
-     "issues": [54, 73]},
-    {"key": "ci-gates", "tier": 3, "state": "needs-decision", "title": "CI does not lint, type-check or measure coverage",
-     "fix": "Choose the gates and add them in slices.", "issues": [53]},
-    {"key": "cross-process-state", "tier": 3, "state": "needs-decision", "title": "Project mutations are coordinated only in-process; two YAML parsers",
-     "fix": "One cross-process lock and one papersmith.yaml parser.", "issues": [64, 68]},
-    {"key": "size-and-context", "tier": 3, "state": "needs-decision", "title": "Monolithic engine, tests, skills and README",
-     "fix": "Split by command module; progressive disclosure for skills and docs; behavioral evals.",
-     "issues": [66, 69, 74, 78, 79]},
-    {"key": "service-policy", "tier": 3, "state": "needs-decision", "title": "Multi-account Kaggle scheduling vs service policy",
-     "fix": "Record a policy review; the one-account-per-person attestation exists (core/team.py:39).", "issues": [77]},
-    {"key": "ingestion-device", "tier": 3, "state": "needs-decision", "title": "OCR device selection on Intel Macs",
-     "fix": "Decide whether to pin CPU when MPS is unusable; surfacing OCR timeouts is part of ingestion-silent-loss.", "issues": [103]},
-    {"key": "pixelrag", "tier": 3, "state": "needs-decision", "title": "Describe extracted figures", "fix": "Keyless vs model decision.", "issues": [13]}
+    {
+      "key": "tracker",
+      "tier": 0,
+      "state": "keep-open",
+      "title": "The published tracker issue for this map",
+      "fix": "Re-render with `python3 maintainer/backlog.py render` and edit #110's body after each root closes.",
+      "issues": [
+        110
+      ]
+    },
+    {
+      "key": "env-provisioning",
+      "tier": 1,
+      "state": "open",
+      "title": "Provisioned environments drift from the pinned specification",
+      "fix": "Pin what setup_env.py installs (kagglesdk now; derive from requirements.txt as the root fix), verify the micromamba artifact, and guard every optional import.",
+      "issues": [
+        58
+      ],
+      "evidence": {
+        "108": "scripts/setup_env.py:77 bare kagglesdk; skills/paper-ingestion/scripts/extract_pdf.py:543 unguarded marker import",
+        "57": "scripts/setup_env.py:124 releases/latest, no checksum (PR #95)",
+        "58": "scripts/setup_env.py:57+ own unpinned list"
+      },
+      "proof": "fix/env-provisioning (#108, tests/test_env_pins.py); PR #95 (#57) accepted; #58 needs a decision"
+    },
+    {
+      "key": "live-sync",
+      "tier": 2,
+      "state": "open",
+      "title": "State the server measures is not pushed to the dashboard",
+      "fix": "Publish health_update whenever a measurement is taken; refetch /api/state on SSE reconnect.",
+      "issues": [
+        83
+      ],
+      "evidence": {
+        "100": "server.py:475-489 vs :514-515",
+        "83": "ui/src/hooks/useWorkspaceEvents.ts:159,186-190"
+      },
+      "proof": "fix/live-sync closes #100 (tests/test_command_center_health_broadcast.py); #83 open"
+    },
+    {
+      "key": "argv-boundaries",
+      "tier": 2,
+      "state": "partial",
+      "title": "Untrusted values reach argv where they can act as options",
+      "fix": "End options with -- (or reject a leading -) before every value-bearing positional, quote remote command text once, and make dry-run the default the guard assumes.",
+      "issues": [
+        82,
+        56,
+        59
+      ],
+      "evidence": {
+        "82": "src/papersmith/core/target.py:61, core/executor.py:260-264 (PR #98)",
+        "56": "skills/remote-execution/scripts/jobfolder.py:3170",
+        "59": "src/papersmith/mcp/registry.py:1450-1451, :853",
+        "81": "paper_bib.py:60 \\cite only; paper_figure.py:84-88, paper_latex.py:220"
+      },
+      "proof": "fix/argv-boundaries closes #81, refs #56 #59; PR #98 (#82) needs the smith: error prefix"
+    },
+    {
+      "key": "engine-defect-recorder",
+      "tier": 2,
+      "state": "partial",
+      "title": "The engine's crash recorder writes defects for invalid input, outside the gated targets",
+      "fix": "Classify unreadable input as a refusal, and record a crash only through resolve_target/validate_name into an existing product dir.",
+      "issues": [
+        67
+      ],
+      "evidence": {
+        "67": "implementation_engine.py:9470 unguarded --plan read",
+        "88": "implementation_engine.py:19055-19057"
+      },
+      "proof": "fix/engine-defect-recorder closes #88, refs #67 (--session validation open)"
+    },
+    {
+      "key": "adopt-nameerror",
+      "tier": 2,
+      "state": "partial",
+      "title": "adopt crashes on an undefined WORKSPACE",
+      "fix": "Resolve WORKSPACE through impl_layout; isolated adopt regression.",
+      "issues": [
+        52
+      ],
+      "evidence": {
+        "52": "implementation_engine.py:19771,19775"
+      },
+      "proof": "fix/adopt-nameerror refs #52 (re-seal adopt-same-target open)"
+    },
+    {
+      "key": "rollback-data-loss",
+      "tier": 2,
+      "state": "fix-ready",
+      "title": "A failed operation's rollback can delete an untracked ledger",
+      "fix": "Reproduce first; roll back only the paths the operation wrote, never git clean the tree.",
+      "issues": [
+        80
+      ],
+      "evidence": {
+        "80": "implementation_engine.py:9510-9511; impl_guards.py:45 skips the ledger dir"
+      },
+      "proof": "fix/rollback-data-loss (tests/test_engine_rollback_ownership.py)"
+    },
+    {
+      "key": "user-file-preservation",
+      "tier": 2,
+      "state": "open",
+      "title": "Setup and upgrade overwrite what the user owns",
+      "fix": "Replace only symlinks the setup created; upgrade compares to the recorded hash and writes atomically.",
+      "issues": [
+        65
+      ],
+      "evidence": {
+        "63": "scripts/setup-harnesses.sh:50-51",
+        "65": "src/papersmith/core/upgrade.py:124-133, core/fs.py write_text"
+      },
+      "proof": "fix/user-file-preservation closes #63; #65 open"
+    },
+    {
+      "key": "file-url-paths",
+      "tier": 3,
+      "state": "not-reproduced",
+      "title": "A CLI converts its module URL by hand",
+      "fix": "Symptom not reproduced on macOS (jiti decodes the path); decide whether a source-level guard is worth it, and test on Windows.",
+      "issues": [
+        76
+      ],
+      "evidence": {
+        "76": "skills/_core/deliberation/engine/cli.mjs:83"
+      }
+    },
+    {
+      "key": "agent-cli-drift",
+      "tier": 2,
+      "state": "partial",
+      "title": "Agent instructions name flags the CLI does not have",
+      "fix": "Derive the ingestion agent's commands from the CLI contract and guard them with a test.",
+      "issues": [
+        70
+      ],
+      "evidence": {
+        "70": ".claude/agents/paper-ingestion.md:21-25 vs skills/paper-ingestion/SKILL.md:168"
+      },
+      "proof": "fix/agent-cli-drift refs #70 (roster count and redactor contract open)"
+    },
+    {
+      "key": "model-output-validation",
+      "tier": 2,
+      "state": "open",
+      "title": "Generated JSON is indexed before it is validated",
+      "fix": "Validate draft envelopes at the paper_cli boundary before paper_write reads them.",
+      "issues": [
+        71
+      ],
+      "evidence": {
+        "71": "skills/paper-writing/scripts/paper_cli.py:2486, paper_write.py:123"
+      }
+    },
+    {
+      "key": "evidence-integrity",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "Acceptance evidence is weaker than what it is read as",
+      "fix": "Decide the evidence contracts: executed invariants, byte-level revision identity, blocking undecidable findings.",
+      "issues": [
+        72,
+        84,
+        85
+      ]
+    },
+    {
+      "key": "agent-authority",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "Agents hold the authority the human gates depend on",
+      "fix": "Threat-model decision: credential isolation, permission defaults, approvals bound to authority the agent lacks.",
+      "issues": [
+        54,
+        73
+      ]
+    },
+    {
+      "key": "ci-gates",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "CI does not lint, type-check or measure coverage",
+      "fix": "Choose the gates and add them in slices.",
+      "issues": [
+        53
+      ]
+    },
+    {
+      "key": "cross-process-state",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "Project mutations are coordinated only in-process; two YAML parsers",
+      "fix": "One cross-process lock and one papersmith.yaml parser.",
+      "issues": [
+        64,
+        68
+      ]
+    },
+    {
+      "key": "size-and-context",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "Monolithic engine, tests, skills and README",
+      "fix": "Split by command module; progressive disclosure for skills and docs; behavioral evals.",
+      "issues": [
+        66,
+        69,
+        74,
+        78,
+        79
+      ]
+    },
+    {
+      "key": "service-policy",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "Multi-account Kaggle scheduling vs service policy",
+      "fix": "Record a policy review; the one-account-per-person attestation exists (core/team.py:39).",
+      "issues": [
+        77
+      ]
+    },
+    {
+      "key": "ingestion-device",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "OCR device selection on Intel Macs",
+      "fix": "Decide whether to pin CPU when MPS is unusable; surfacing OCR timeouts is part of ingestion-silent-loss.",
+      "issues": [
+        103
+      ]
+    },
+    {
+      "key": "pixelrag",
+      "tier": 3,
+      "state": "needs-decision",
+      "title": "Describe extracted figures",
+      "fix": "Keyless vs model decision.",
+      "issues": [
+        13
+      ]
+    }
   ]
 }
