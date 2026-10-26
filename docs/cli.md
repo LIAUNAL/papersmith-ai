@@ -421,7 +421,9 @@ The packages, skills, agents and phases are measured by the workspace
 interpreter (`python -m skills._core.command_center.doctor_view <dir>`), the
 same one `smith ui` runs; if it cannot run, those areas report one `warn` row
 with the reason. The dashboard shows the same table in its **Smith Doctor** tab
-(`GET /api/doctor`).
+(`GET /api/doctor`). Its backend runs under the workspace interpreter, which
+does not hold the `papersmith` package, so `smith ui` passes the CLI's own
+interpreter as `PAPERSMITH_CLI_PYTHON` and the tab builds its rows there.
 
 Exits `0` unless a row is `fail` (a skill without its `SKILL.md`, a missing
 agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).

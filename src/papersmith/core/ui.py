@@ -221,6 +221,9 @@ def _child_env(workspace: Path) -> dict[str, str]:
     # folder it was pointed at. The MCP bridge already sets this; the child here
     # did not.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # The workspace's environment does not hold `papersmith`; the Smith Doctor
+    # tab builds its rows with this interpreter instead.
+    env["PAPERSMITH_CLI_PYTHON"] = sys.executable
     return env
 
 

@@ -5,14 +5,18 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from papersmith.cli import main
 from papersmith.core import init as init_module
-from skills._core.command_center import server
+from papersmith.core import ui
+from skills._core.command_center import doctor_view, server
 
 REPO = Path(__file__).resolve().parents[1]
 STATIC = REPO / "skills/_core/command_center/static"
@@ -79,6 +83,50 @@ class DoctorTabTests(unittest.TestCase):
         self.assertIn("Volver a revisar", script)
         self.assertIn("&amp;", script)
         self.assertIn("window.refreshDoctorPanel", script)
+
+
+class DoctorWithoutPapersmithTests(unittest.TestCase):
+    """The dashboard runs under the workspace's environment, which does not
+    hold the `papersmith` package: the CLI lives in its own (pipx) venv."""
+
+    def setUp(self) -> None:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.workspace = Path(holder.name).resolve() / "doctor-env"
+        init_module.initialize(self.workspace, run_npm=False, run_env=False)
+        self.backend = {"wiring": {}, "phases": [], "phases_error": None}
+
+    def _view(self, cli_python: str | None) -> dict:
+        env = {k: v for k, v in os.environ.items() if k != doctor_view.CLI_PYTHON_ENV}
+        if cli_python is not None:
+            env[doctor_view.CLI_PYTHON_ENV] = cli_python
+        with mock.patch.dict(sys.modules, {"papersmith.core.doctor": None}), \
+                mock.patch.dict(os.environ, env, clear=True):
+            return doctor_view.get_doctor_view(self.workspace, **self.backend)
+
+    def test_rows_come_from_the_cli_interpreter_when_papersmith_is_not_importable(self) -> None:
+        payload = self._view(sys.executable)
+        areas = {row["area"] for row in payload["rows"]}
+        self.assertIn("tools", areas)
+        self.assertFalse(any("not importable" in row["detail"] for row in payload["rows"]))
+        self.assertEqual(payload["summary"]["workspace"], str(self.workspace))
+
+    def test_without_a_cli_interpreter_the_panel_says_so_in_one_warn_row(self) -> None:
+        payload = self._view(None)
+        self.assertEqual(payload["summary"]["state"], "warn")
+        self.assertEqual(len(payload["rows"]), 1)
+        self.assertIn("papersmith is not importable", payload["rows"][0]["detail"])
+
+    def test_a_broken_cli_interpreter_degrades_to_one_warn_row(self) -> None:
+        payload = self._view(str(self.workspace / "no-such-python"))
+        self.assertEqual(payload["summary"]["state"], "warn")
+        self.assertEqual(len(payload["rows"]), 1)
+        self.assertIn("no-such-python", payload["rows"][0]["detail"])
+
+    def test_smith_ui_hands_its_own_interpreter_to_the_dashboard(self) -> None:
+        env = ui._child_env(self.workspace)
+        self.assertEqual(env[doctor_view.CLI_PYTHON_ENV], sys.executable)
+        self.assertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
 
 
 if __name__ == "__main__":  # pragma: no cover
