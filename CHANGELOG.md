@@ -38,6 +38,35 @@ number is `0`, breaking changes can still arrive without a major bump.
   of Sivia (github.com/exsinger-hub/Sivia) in the skill's own words. The two
   implementation skills call it once each approval is settled.
 
+### Fixed
+
+- **One TeX and rasterizer search on every platform.** `smith doctor`,
+  `experiment-diagrams`, the dashboard's paper compile and its health panel
+  now look on `PATH` first and then in the same directories (MacTeX's
+  `/Library/TeX/texbin`, Homebrew, `/usr/local/bin` and TeX Live's
+  `/usr/local/texlive`, `/opt/texlive` and `~/texlive` trees, newest year
+  first). The dashboard no longer compiles only when TeX sits in a macOS
+  directory or on `PATH`, and its health panel reports `pdflatex`, `xelatex`,
+  `lualatex` and `latexmk`.
+
+- **`smith ui` opens the browser on WSL and headless Linux.** Under WSL the
+  dashboard is handed to the Windows browser with `wslview`, then
+  `explorer.exe`, before Python's `webbrowser`; on Linux without `DISPLAY` or
+  `WAYLAND_DISPLAY` the URL is printed instead of starting a text browser on
+  the server's terminal. macOS is unchanged.
+
+- **LF line endings everywhere.** A root `.gitattributes` keeps text files,
+  and shell scripts explicitly, at LF in every checkout, so a clone made by
+  Windows git into `/mnt/c` still runs `setup-harnesses.sh` under WSL; images,
+  fonts, PDF and cmap assets are marked binary. No tracked file changes bytes.
+
+- **Dashboard live updates on a Windows drive under WSL.** When the workspace
+  resolves under `/mnt/<letter>/`, the watcher polls (`force_polling`), since
+  inotify sees no change made from Windows there. `docs/wsl-dashboard.md` now
+  recommends the Linux filesystem, names the Developer Mode requirement for
+  symlinks on `/mnt/c` and `localhostForwarding=true`, and lists how
+  `smith ui` opens the browser.
+
 ## 0.25.0
 
 ### Added

@@ -1,0 +1,23 @@
+# Line endings: LF in the repository and in every checkout, on every platform.
+# A clone made by Windows git into /mnt/c must still run setup-harnesses.sh
+# under WSL, and bash fails on CRLF. tests/test_gitattributes.py pins this.
+* text=auto eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Binary assets: never converted, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.bcmap binary
+*.gz binary
+*.zip binary

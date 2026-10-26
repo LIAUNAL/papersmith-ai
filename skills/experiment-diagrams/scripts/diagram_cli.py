@@ -49,21 +49,21 @@ MAX_LABEL = 56
 MAX_CLAIM = 220
 MAX_SPINE = 7
 
-#: Where a TeX distribution usually lives when it is not on PATH: macOS
-#: (MacTeX), Linux and WSL (distribution packages, a TeX Live install).
-TEX_FALLBACK_DIRS: tuple[str, ...] = (
+#: Where TeX engines and rasterizers live when PATH misses them: macOS
+#: (MacTeX, Homebrew), Linux and WSL (a TeX Live install), searched newest
+#: TeX Live year first. The same list is restated in
+#: `skills/_core/command_center/toolchain.py` and `smith doctor`;
+#: `tests/test_toolchain_search.py` fails when they drift.
+TOOL_FALLBACK_DIRS: tuple[str, ...] = (
     "/Library/TeX/texbin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
     "/usr/local/texlive/*/bin/*",
+    "/opt/texlive/*/bin/*",
     "~/texlive/*/bin/*",
-    "/usr/bin",
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
 )
-RASTER_FALLBACK_DIRS: tuple[str, ...] = (
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-)
+TEX_FALLBACK_DIRS: tuple[str, ...] = TOOL_FALLBACK_DIRS
+RASTER_FALLBACK_DIRS: tuple[str, ...] = TOOL_FALLBACK_DIRS
 TEX_ENGINES = ("latexmk", "pdflatex", "lualatex")
 RASTERIZERS = ("pdftoppm", "pdftocairo", "gs", "sips")
 TEX_TIMEOUT_S = 180
@@ -499,10 +499,11 @@ def _which(name: str, path: str | None, fallback_dirs) -> str | None:
     if found:
         return found
     for pattern in fallback_dirs:
-        for directory in sorted(glob.glob(os.path.expanduser(pattern))):
-            candidate = Path(directory) / name
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return str(candidate)
+        for directory in sorted(glob.glob(os.path.expanduser(pattern)), reverse=True):
+            for filename in (name, f"{name}.exe"):
+                candidate = Path(directory) / filename
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return str(candidate)
     return None
 
 

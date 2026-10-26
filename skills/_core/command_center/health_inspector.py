@@ -30,6 +30,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import toolchain
+
 # --------------------------------------------------------------------------
 # Static wiring tables
 # --------------------------------------------------------------------------
@@ -203,6 +205,9 @@ KNOWN_HARNESS_TOOLS = frozenset({
 
 #: Python packages the command center itself depends on.
 REQUIRED_PACKAGES = ("fastapi", "uvicorn", "watchfiles", "pydantic")
+#: TeX engines, in preference order, and every TeX tool the environment row reports.
+LATEX_ENGINES = ("pdflatex", "xelatex", "lualatex")
+LATEX_TOOLS = LATEX_ENGINES + ("latexmk",)
 
 
 # --------------------------------------------------------------------------
@@ -460,7 +465,9 @@ def _referenced_skills(text: str) -> list[str]:
 # 4. environment
 # --------------------------------------------------------------------------
 def environment_health(root: Path) -> dict[str, Any]:
-    latex = shutil.which("pdflatex") or shutil.which("xelatex")
+    # PATH first, then the fallback directories `smith doctor` also searches.
+    tex_tools = {name: toolchain.find_tool(name) for name in LATEX_TOOLS}
+    latex = next((tex_tools[name] for name in LATEX_ENGINES if tex_tools[name]), None)
     packages = []
     for name in REQUIRED_PACKAGES:
         try:
@@ -478,6 +485,7 @@ def environment_health(root: Path) -> dict[str, Any]:
         "latex": {
             "engine": latex,
             "state": "WIRED" if latex else "TOOL_MISSING",
+            "tools": tex_tools,
         },
         "node": {
             "executable": node,
@@ -577,7 +585,7 @@ def get_wiring_health(root: Path | str) -> dict[str, Any]:
     if missing_tools:
         warnings.append("missing Python package(s): " + ", ".join(missing_tools))
     if environment["latex"]["state"] != "WIRED":
-        warnings.append("no LaTeX engine found (pdflatex/xelatex): compilation will fail")
+        warnings.append("no LaTeX engine found (pdflatex/xelatex/lualatex): compilation will fail")
 
     return {
         "generated_at": _utc_now(),
