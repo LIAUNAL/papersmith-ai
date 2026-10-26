@@ -343,6 +343,14 @@ def _schema(flags: tuple[Flag, ...]) -> dict[str, Any]:
     return schema
 
 
+# One tuple feeds both the schema and the argv, so `file` cannot be confined in
+# one and passed raw in the other.
+_CONTRACT_FLAGS = (
+    Flag("sections", "--sections", path=True),
+    Flag("file", "--file", path=True, description="one file's parsed header"),
+)
+
+
 def _no_args() -> dict[str, Any]:
     return {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -407,13 +415,8 @@ _PAPER_READONLY = (
         annotations=tool_annotations(
             "Section contract", read_only=True, destructive=False, open_world=False, idempotent=True
         ),
-        input_schema=_schema(
-            (Flag("sections", "--sections", path=True), Flag("file", "--file", description="one file's parsed header"))
-        ),
-        build=_paper_builder(
-            ("contract",),
-            (Flag("sections", "--sections", path=True), Flag("file", "--file")),
-        ),
+        input_schema=_schema(_CONTRACT_FLAGS),
+        build=_paper_builder(("contract",), _CONTRACT_FLAGS),
         result_json=True,
     ),
     ToolSpec(
