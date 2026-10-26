@@ -557,6 +557,29 @@ class SealMembershipTests(unittest.TestCase):
                 self.assertGreaterEqual(len(reason), 20)
 
 
+class SealReachesBehaviorTests(unittest.TestCase):
+    """#52: a case argparse refuses (usage on stderr, empty stdout, exit 2)
+    seals the usage text, not the command. `adopt-same-target` once omitted
+    the required `--name` and sealed exactly that."""
+
+    def test_seal_adopt_reaches_behavior(self):
+        result = _captured_results()["adopt-same-target"]
+        self.assertEqual(result.exit_status, 2)
+        payload = json.loads(result.stdout_text)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["code"], "DESTINATION_CONFLICT")
+
+    def test_no_sealed_case_is_an_argparse_usage_failure(self):
+        # A deliberate refusal prints its envelope on stdout; only argparse
+        # exits 2 with nothing there.
+        for case_id, golden in _load_digests().items():
+            if case_id == seal_capture.CORPUS_FINGERPRINT_KEY:
+                continue
+            with self.subTest(case=case_id):
+                self.assertFalse(golden["exit"] == 2 and golden["bytes"] == 0,
+                                 f"{case_id} seals an argparse usage failure")
+
+
 class CoverageTests(unittest.TestCase):
     """Coverage asserted over the captured OUTPUT, not the fixture
     (design.md D3)."""

@@ -13,9 +13,9 @@
     "sha256": "62c48f3777e6b119f30c00b528d32091bf17a240eafa02accc2027d524583185"
   },
   "adopt-same-target": {
-    "bytes": 0,
+    "bytes": 2765,
     "exit": 2,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "sha256": "0020d5b80d507b08dd02d2c71ca2ca24e10c8c4bd7aa8d83d2300cafaf19fd12"
   },
   "apply": {
     "bytes": 279,

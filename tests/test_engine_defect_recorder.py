@@ -10,7 +10,9 @@ holes made that mechanism poison state it was never meant to touch:
   the workspace, created absent targets, followed `--name ../x`, and opened
   the phantom `<name>/` tree `PRODUCT_DIR_MISNAMED` exists to prevent.
 - #67: an unreadable or malformed `--plan` raised an uncaught exception, so a
-  typo in operator input became a persistent forge defect.
+  typo in operator input became a persistent forge defect; and a `--session`
+  the position header cannot carry (whitespace, non-ASCII, empty) was written
+  into it on a refresh, leaving a block no later command could read.
 
 Every scenario runs `impl.main` in-process against a workspace in a temporary
 directory (`impl_guards.WORKSPACE` patched), never the checkout's
@@ -181,6 +183,86 @@ class InvalidPlanIsARefusalTests(_Workspace):
         plan = self.plans / "list.json"
         plan.write_text("[]", encoding="utf-8")
         self.assert_refused_without_poisoning(plan, "PLAN_MISMATCH")
+
+
+class InvalidSessionIsARefusalTests(_Workspace):
+    """#67: `position` stamps `--session` into the block's header, whose
+    grammar reads it back as one ASCII token. A value it cannot carry is
+    refused before anything is written, so the header stays readable and the
+    next valid command still runs."""
+
+    INVALID = ("two words", "caf\u00e9", "")
+
+    def setUp(self):
+        super().setUp()
+        self.target = self.repo(self.workspace)
+        for directory in ("src/Method", "src/Method_Benchmark", "tests", "Method"):
+            (self.target / directory).mkdir(parents=True, exist_ok=True)
+        (self.target / "src/Method/__init__.py").write_text("", encoding="utf-8")
+        (self.target / "src/Method_Benchmark/__init__.py").write_text("", encoding="utf-8")
+        proposals = self.root / "proposals"
+        proposals.mkdir()
+        (proposals / "r1.md").write_text("## 1\ntext\n", encoding="utf-8")
+        patcher = unittest.mock.patch.dict(
+            os.environ, {"IMPLEMENTATION_PROPOSALS": str(proposals)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.holder = self.target / "Method" / "AGREED.md"
+        self.ledger = self.target / "Method" / ".implementation" / "position.jsonl"
+
+    def position(self, session: str, install: bool = False,
+                 *extra: str) -> tuple[int, dict]:
+        argv = ["position", "--target", str(self.target), "--name", "Method",
+                "--revision", "r1.md", "--session", session, *extra]
+        if not install:
+            return self.main(argv)
+        sequence = json.dumps([{"text": "Rehearse the job.",
+                                "witness": {"kind": "rehearsal", "operand": "job1"}}])
+        with unittest.mock.patch("sys.stdin", io.StringIO(sequence)):
+            return self.main(argv + ["--sequence", "-", "--target-level", "local"])
+
+    def header_session(self) -> str:
+        return impl_position.locate_block(self.holder.read_bytes())["session"]
+
+    def test_invalid_session_preserves_readable_header(self):
+        self.assertEqual(self.position("s1", install=True)[0], 0)
+        # A new notebook gives `--reconcile` an item to append, so the call
+        # rewrites the header rather than reporting it unchanged.
+        notebook = self.target / "Method" / "Notebooks" / "a.ipynb"
+        notebook.parent.mkdir()
+        notebook.write_text("{}\n", encoding="utf-8")
+        before = self.holder.read_bytes()
+        events = impl_position.read_events(self.ledger)
+        for session in self.INVALID:
+            with self.subTest(session=session):
+                exit_code, payload = self.position(session, False, "--reconcile")
+                self.assertEqual(exit_code, 2)
+                self.assertEqual(payload["status"], "refused")
+                self.assertEqual(payload["code"], "POSITION_SESSION_INVALID")
+                self.assertEqual(self.holder.read_bytes(), before)
+                self.assertEqual(impl_position.read_events(self.ledger), events)
+                self.assertEqual(self.header_session(), "s1")
+        exit_code, payload = self.position("s2", False, "--reconcile")
+        self.assertEqual((exit_code, payload["status"]), (0, "written"), payload)
+        self.assertEqual(self.header_session(), "s2")
+
+    def test_an_invalid_session_on_install_writes_no_holder(self):
+        for session in self.INVALID:
+            with self.subTest(session=session):
+                exit_code, payload = self.position(session, install=True)
+                self.assertEqual((exit_code, payload["code"]),
+                                 (2, "POSITION_SESSION_INVALID"))
+                self.assertFalse(self.holder.exists())
+                self.assertFalse(self.ledger.exists())
+        self.assertEqual(self.position("s1", install=True)[0], 0)
+        self.assertEqual(self.header_session(), "s1")
+
+    def test_a_shell_safe_session_is_still_stamped_verbatim(self):
+        exit_code, payload = self.position("2026-10-12-a", install=True)
+        self.assertEqual(exit_code, 0, payload)
+        self.assertEqual(self.header_session(), "2026-10-12-a")
+        self.assertEqual(impl_position.read_events(self.ledger)[-1]["session"],
+                         "2026-10-12-a")
 
 
 if __name__ == "__main__":
