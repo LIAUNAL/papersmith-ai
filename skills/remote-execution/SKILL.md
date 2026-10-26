@@ -290,6 +290,14 @@ Three modules exist so far, each service-blind and stdlib-only:
     account is always named with its reason, never silently dropped.
     Single-unit `submit` (no `--unit` at all) is untouched: today's
     `select()`/`plan()` path, byte-identical.
+  - **Diagram validation, every launch**: when the resolved product holds
+    `AGREED.md` (proof of concept) or `Experimental_AGREED.md` (full
+    experiments), `submit` — `--smoke` included — refuses
+    `DIAGRAM_NOT_VALIDATED` until the operator has validated that kind's
+    experiment diagram in the dashboard's Experimentos tab ("Validar
+    diagrama"), naming each open kind and its state (`absent`, `pending`,
+    `stale`). It runs before the consent gate, so a refusal costs nothing. A
+    product with neither marker is not gated. See `skills/experiment-diagrams`.
   - **Consent gate, every launch** (Finding 3; Decisions 4, 5 — corrected
     in a later pass): `submit` refuses without an explicit `--consent
     <token>` — the "nothing is launched without explicit permission"

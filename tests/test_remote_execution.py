@@ -126,6 +126,9 @@ PACKER = _load_or_reuse("remote_execution_packer", PACKER_SCRIPT)
 # module objects rather than exec'ing any of the three a second time.
 REMOTE_CLI_SCRIPT = REPOSITORY_ROOT / "skills/remote-execution/scripts/remote_cli.py"
 REMOTE_CLI = _load_or_reuse("remote_execution_cli", REMOTE_CLI_SCRIPT)
+DIAGRAM_CLI = _load_or_reuse(
+    "diagram_cli_for_remote_tests",
+    REPOSITORY_ROOT / "skills/experiment-diagrams/scripts/diagram_cli.py")
 
 # Loaded AFTER adapter.py above, for the same sys.modules-reuse reason: this
 # module's own `isinstance(kaggle_adapter, ADAPTER.Adapter)` checks below
@@ -9473,6 +9476,86 @@ class ConsentGateTests(unittest.TestCase):
                 )
 
             self.assertEqual(adapter.submit_calls, [])
+
+    # -- the operator's diagram validation (dashboard "Validar diagrama") --
+
+    def _diagram(self, product: Path, kind: str, *, marker: str, validated: bool) -> Path:
+        (product / marker).write_text("agreed\n", encoding="utf-8")
+        png = product / "diagrams" / f"{kind}.png"
+        png.parent.mkdir(parents=True, exist_ok=True)
+        png.write_bytes(b"\x89PNG drawn")
+        if validated:
+            DIAGRAM_CLI.write_validation(product, kind)
+        return png
+
+    def _submit(self, target: Path, notebook: Path, *, smoke: bool) -> MultiWorkerFakeAdapter:
+        adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+        self._last_adapter = adapter
+        REMOTE_CLI.cmd_submit(target=target, entrypoint=notebook, requested=1, adapter=adapter,
+                              source_digest=lambda t, n: "d" * 64, smoke=smoke)
+        return adapter
+
+    def test_an_approved_product_without_a_validated_diagram_refuses_every_launch(self) -> None:
+        for smoke in (True, False):
+            with self.subTest(smoke=smoke), tempfile.TemporaryDirectory() as tmp:
+                target, notebook = self._target_and_notebook(tmp)
+                (target / "FEM-TOLLA" / "AGREED.md").write_text("agreed\n", encoding="utf-8")
+                with self.assertRaises(REMOTE_CLI.DiagramValidationError) as caught:
+                    self._submit(target, notebook, smoke=smoke)
+                self.assertIn("DIAGRAM_NOT_VALIDATED", str(caught.exception))
+                self.assertIn("poc", str(caught.exception))
+                self.assertIn("Validar diagrama", str(caught.exception))
+                self.assertEqual(self._last_adapter.submit_calls, [])
+
+    def test_a_drawn_but_unvalidated_or_redrawn_diagram_refuses(self) -> None:
+        for state in ("pending", "stale"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as tmp:
+                target, notebook = self._target_and_notebook(tmp)
+                png = self._diagram(target / "FEM-TOLLA", "poc", marker="AGREED.md",
+                                    validated=state == "stale")
+                if state == "stale":
+                    png.write_bytes(b"\x89PNG drawn again")
+                with self.assertRaises(REMOTE_CLI.DiagramValidationError) as caught:
+                    self._submit(target, notebook, smoke=True)
+                self.assertIn(state, str(caught.exception))
+                self.assertEqual(self._last_adapter.submit_calls, [])
+
+    def test_the_full_experiments_diagram_is_required_once_they_are_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            product = target / "FEM-TOLLA"
+            self._diagram(product, "poc", marker="AGREED.md", validated=True)
+            (product / "Experimental_AGREED.md").write_text("agreed\n", encoding="utf-8")
+            with self.assertRaises(REMOTE_CLI.DiagramValidationError) as caught:
+                self._submit(target, notebook, smoke=False)
+            self.assertIn("experiments", str(caught.exception))
+            self.assertNotIn("poc:", str(caught.exception))
+
+    def test_validated_diagrams_pass_on_to_the_consent_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            product = target / "FEM-TOLLA"
+            self._diagram(product, "poc", marker="AGREED.md", validated=True)
+            self._diagram(product, "experiments", marker="Experimental_AGREED.md", validated=True)
+            with self.assertRaises(REMOTE_CLI.ConsentError):
+                self._submit(target, notebook, smoke=True)
+
+    def test_a_product_without_approval_markers_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            with self.assertRaises(REMOTE_CLI.ConsentError):
+                self._submit(target, notebook, smoke=True)
+
+    def test_the_cli_prints_the_diagram_refusal_and_exits_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            (target / "FEM-TOLLA" / "AGREED.md").write_text("agreed\n", encoding="utf-8")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                code = REMOTE_CLI.main(["submit", "--target", str(target), "--entrypoint",
+                                        str(notebook), "--backend", "kaggle", "--smoke"])
+            self.assertEqual(code, 1)
+            self.assertIn("DIAGRAM_NOT_VALIDATED", err.getvalue())
 
     def test_single_send_refusal_prints_the_exact_token_it_needs(self) -> None:
         """A single send has no `distribute` step to mint a token ahead of

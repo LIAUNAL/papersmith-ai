@@ -129,7 +129,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
     "poc_experiments": {
         "skills": ["experimental-deliberation", "datasets", "proposal-implementation",
                    "remote-parallelism", "hyperparameter-search", "experimental-implementation",
-                   "kaggle-accounts", "remote-execution"],
+                   "experiment-diagrams", "kaggle-accounts", "remote-execution"],
         "agent": ("experimental-validation → experimental-publish → dataset-scout / dataset-curator → "
                   "paper-replicator → implementation-build → experiments-build → experiments-reviewer → "
                   "experiments-walk"),
@@ -173,6 +173,11 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "Indica el repositorio objetivo; la verificación compara contra el protocolo y la propuesta.",
                 "Antes de cualquier ensayo remoto, experiments-reviewer revisa el código (calidad, optimización, uso de GPU y pruebas estadísticas) y entrega su informe.",
             ], "Ej.: implementa E1 y E2 y reporta las métricas.", optional=True),
+            _prompt("/experiment-diagrams", "Diagramas de la PoC y de los experimentos", [
+                "Al aprobar la PoC (AGREED.md) dibuja el diagrama poc; al aprobar los experimentos completos (Experimental_AGREED.md), el diagrama experiments.",
+                "Cada uno es una figura TikZ (PDF y PNG) en <producto>/diagrams/; también se genera con el botón \"Generar diagrama\" de la pestaña Experimentos.",
+                "Valídalo tú en la pestaña Experimentos (\"Validar diagrama\"): submit se niega con DIAGRAM_NOT_VALIDATED hasta entonces, y redibujarlo pide validarlo de nuevo.",
+            ], "Ej.: poc para el producto implementations/mi-poc/Modelo.", optional=True),
             _prompt("/remote-parallelism", "Decidir si repartir entre cuentas", [
                 "Primero estimate --timing <objetivo>/<Nombre>/Results/timing.json: el rango por etapa y host (±20%).",
                 "Luego assess con las entradas medidas; --owners es el número de propietarios distintos del equipo (smith team list), nunca el de cuentas.",
@@ -188,6 +193,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "Orden: generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (solo el operador) → submit → status / poll → fetch.",
                 "El ledger es de solo anexar; si las cuentas no autentican, usa primero /kaggle-accounts.",
                 "Solo el operador autoriza un lanzamiento: ningún agente ejecuta submit por su cuenta.",
+                "submit (también --smoke) exige que hayas validado los diagramas de la PoC y de los experimentos aprobados.",
             ], "Ej.: genera el job de experiments/e1.py y prepara su ensayo smoke.", optional=True),
             _redirect("Ver la PoC y los experimentos", "experiments",
                       "Productos, veredictos y diagramas de la prueba de concepto y de los experimentos."),

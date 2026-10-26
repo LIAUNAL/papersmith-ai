@@ -8,6 +8,7 @@ that draws them when they are still missing.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -16,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from skills._core.command_center import experiments_view
+from skills._core.command_center import experiments_view, server
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO / "skills" / "_core" / "command_center" / "static" / "experiments-panel.js"
@@ -76,11 +77,96 @@ class DiagramViewTests(unittest.TestCase):
         experiments = self.products["FullModel"]["diagrams"][1]
         self.assertIsNone(experiments["png"])
 
+    def test_each_diagram_carries_its_validation_state(self) -> None:
+        self.assertEqual(self.products["PocModel"]["diagrams"][0]["validation"], "pending")
+        self.assertEqual(self.products["FullModel"]["diagrams"][0]["validation"], "absent")
+
+    def test_a_missing_diagram_offers_the_command_that_draws_it_again_with_force(self) -> None:
+        drawn = self.products["PocModel"]["diagrams"][0]
+        self.assertIn("--kind poc --force", drawn["command"])
+
     def test_a_product_without_an_approval_has_no_diagrams(self) -> None:
         _write(self.ws.root / "implementations" / "repo" / "Draft" / "Results" / "x.txt", "x")
         view = experiments_view.get_experiments_view(self.ws.root)
         draft = next(p for p in view["products"] if p["name"] == "Draft")
         self.assertEqual(draft["diagrams"], [])
+
+
+class _Req:
+    def __init__(self, body, origin: str | None = "http://127.0.0.1:8765") -> None:
+        self.body = body
+        self.headers = {"host": "127.0.0.1:8765"}
+        if origin is not None:
+            self.headers["origin"] = origin
+
+    async def json(self):
+        return self.body
+
+
+class DiagramValidationRouteTests(unittest.TestCase):
+    """`POST /api/experiments/diagrams/validate`: the operator's button."""
+
+    def setUp(self) -> None:
+        self.ws = DiagramWorkspace(self)
+        app = server.create_app(self.ws.root, history_store=None)
+        self.route = next(r.endpoint for r in app.routes
+                          if getattr(r, "path", None) == "/api/experiments/diagrams/validate")
+
+    def post(self, body, **kwargs) -> tuple[int, dict]:
+        response = asyncio.run(self.route(_Req(body, **kwargs)))
+        return response.status_code, json.loads(bytes(response.body))
+
+    def state(self, name: str, index: int = 0) -> str:
+        view = experiments_view.get_experiments_view(self.ws.root)
+        product = next(p for p in view["products"] if p["name"] == name)
+        return product["diagrams"][index]["validation"]
+
+    def test_the_button_records_the_validation_of_the_drawn_png(self) -> None:
+        code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc"})
+        self.assertEqual(code, 200, payload)
+        self.assertTrue(payload["ok"])
+        record = json.loads((self.ws.poc / "diagrams" / "poc.validated.json").read_text())
+        self.assertEqual(record["kind"], "poc")
+        self.assertEqual(len(record["png_sha256"]), 64)
+        self.assertEqual(self.state("PocModel"), "validated")
+
+    def test_a_record_planted_as_a_link_is_replaced_never_written_through(self) -> None:
+        victim = self.ws.outside / "victim.txt"
+        victim.write_text("untouched\n", encoding="utf-8")
+        record = self.ws.poc / "diagrams" / "poc.validated.json"
+        os.symlink(victim, record)
+        code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc"})
+        self.assertEqual(code, 200, payload)
+        self.assertEqual(victim.read_text(encoding="utf-8"), "untouched\n")
+        self.assertFalse(record.is_symlink())
+        self.assertEqual(self.state("PocModel"), "validated")
+
+    def test_a_refusal_names_no_absolute_path(self) -> None:
+        code, payload = self.post({"repo": "repo", "name": "FullModel", "kind": "poc"})
+        self.assertEqual(code, 409)
+        self.assertNotIn(str(self.ws.root), payload["error"])
+
+    def test_a_request_without_the_dashboard_origin_is_refused(self) -> None:
+        for origin in (None, "http://evil.example"):
+            with self.subTest(origin=origin):
+                code, _ = self.post({"repo": "repo", "name": "PocModel", "kind": "poc"}, origin=origin)
+                self.assertEqual(code, 403)
+        self.assertFalse((self.ws.poc / "diagrams" / "poc.validated.json").exists())
+
+    def test_a_diagram_not_drawn_yet_cannot_be_validated(self) -> None:
+        code, payload = self.post({"repo": "repo", "name": "FullModel", "kind": "poc"})
+        self.assertEqual(code, 409, payload)
+        self.assertFalse((self.ws.full / "diagrams" / "poc.validated.json").exists())
+
+    def test_an_unknown_product_or_kind_is_refused(self) -> None:
+        for body in ({"repo": "repo", "name": "Nobody", "kind": "poc"},
+                     {"repo": "../..", "name": "PocModel", "kind": "poc"},
+                     {"repo": "repo", "name": "PocModel", "kind": "experiments"},
+                     {"repo": "repo", "name": "PocModel", "kind": "other"}):
+            with self.subTest(body=body):
+                code, _ = self.post(body)
+                self.assertIn(code, (404, 409, 422))
+        self.assertFalse((self.ws.poc / "diagrams" / "poc.validated.json").exists())
 
 
 @unittest.skipUnless(shutil.which("node"), "node is required to run the panel renderer")
@@ -103,6 +189,18 @@ class DiagramRenderTests(unittest.TestCase):
         self.assertIn("/api/artifact?path=implementations%2Frepo%2FPocModel%2Fdiagrams%2Fpoc.png", out)
         self.assertIn("Generar diagrama", out)
         self.assertIn("/experiment-diagrams", out)
+
+    def test_a_drawn_diagram_offers_validation_then_shows_it_validated(self) -> None:
+        ws = DiagramWorkspace(self)
+        view = experiments_view.get_experiments_view(ws.root)
+        out = self.render(view)
+        self.assertIn("Validar diagrama", out)
+        self.assertIn('data-diagram-validate="poc"', out)
+        poc = next(p for p in view["products"] if p["name"] == "PocModel")
+        poc["diagrams"][0]["validation"] = "validated"
+        out = self.render(view)
+        self.assertIn("VALIDADO", out)
+        self.assertIn("Regenerar diagrama", out)
 
     def test_diagram_fields_are_escaped(self) -> None:
         ws = DiagramWorkspace(self)

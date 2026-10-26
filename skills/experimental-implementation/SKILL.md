@@ -482,7 +482,9 @@ are described in `references/usage.md`.
 
 **Once the full experiments' approval in `<Name>/Experimental_AGREED.md` is
 settled, run `/experiment-diagrams experiments`** so the operator verifies the
-experiments diagram beside the product in the dashboard's Experimentos panel.
+experiments diagram beside the product in the dashboard's Experimentos panel and
+validates it there; nothing of the product is launched remotely
+(`DIAGRAM_NOT_VALIDATED`) until then.
 
 ## What this skill has not written down
 

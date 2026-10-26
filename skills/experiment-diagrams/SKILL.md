@@ -1,6 +1,6 @@
 ---
 name: experiment-diagrams
-description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png, `status` reports what exists. Never runs an experiment, never edits the approval."
+description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`). Never runs an experiment, never edits the approval, never validates a diagram: the operator does, in the dashboard."
 ---
 
 # Experiment diagrams
@@ -13,8 +13,14 @@ Two figures per product folder, each drawn when its approval lands:
 | `experiments` | `<Name>/Experimental_AGREED.md` exists (full experiments approved) | the full protocol: data, the run, the tests, one evidence frame per experiment |
 
 The command center's Experimentos panel shows each PNG beside its product so
-the operator can check that the figure says what was agreed. A figure is a
-verification aid; it never passes a gate on anyone's behalf.
+the operator can check that the figure says what was agreed, and validate it
+there with **Validar diagrama**. That button is the only writer of
+`<Name>/diagrams/<kind>.validated.json`, which holds the PNG's SHA-256:
+`remote-execution submit` (rehearsal included) refuses `DIAGRAM_NOT_VALIDATED`
+while an approved kind's diagram reads anything but `validated`, and `render`
+drops the record, so a diagram drawn again is validated again. The panel's
+**Generar diagrama** / **Regenerar diagrama** buttons run `derive` and `render`
+in the dashboard's CLI assistant; this skill is the same step from an agent.
 
 ## Usage
 
@@ -131,3 +137,6 @@ template or asset of Sivia is copied here, and the TikZ library in
   `<Name>/diagrams/`.
 - `derive` keeps an existing spec (the Designer's edits) unless `--force` is
   passed.
+- It never validates a diagram and offers no command that does: validation is
+  the operator's act in the dashboard, and an agent never writes
+  `<kind>.validated.json` by hand.

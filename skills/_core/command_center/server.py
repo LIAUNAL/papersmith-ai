@@ -1500,6 +1500,26 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse(experiments_view.get_experiments_view(root_path),
                             headers=dict(_PAPER_HEADERS))
 
+    @app.post("/api/experiments/diagrams/validate")
+    async def api_validate_diagram(request: Request) -> JSONResponse:
+        # The operator's "Validar diagrama" button, the only writer of the
+        # record `remote-execution submit` reads before a launch. Unlike the
+        # other actions, a request without an Origin header (curl, an agent's
+        # shell) is refused too: the browser always sends one on a POST.
+        if not request.headers.get("origin") or not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "only the dashboard can validate a diagram"},
+                                status_code=403)
+        try:
+            payload = await request.json()
+        except ValueError:
+            payload = None
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "expected {repo, name, kind}"}, status_code=422)
+        status, body = experiments_view.validate_diagram(
+            root_path, str(payload.get("repo", "")), str(payload.get("name", "")),
+            str(payload.get("kind", "")))
+        return JSONResponse(body, status_code=status)
+
     @app.get("/api/model")
     def api_model() -> JSONResponse:
         """Return conceptual architecture, formal mathematical model, and PoC deliberation plan."""

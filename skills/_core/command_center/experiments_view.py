@@ -41,12 +41,14 @@ recorded in ``warnings``. Returned paths are relative to ``root`` so
 from __future__ import annotations
 
 import csv
+import importlib.util
 import io
 import json
 import math
 import os
 import re
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -731,12 +733,51 @@ def _diagrams(root: Path, repo: str, folder: Path, reader: _Reader) -> list[dict
             files[ext] = _rel(root, path) if path.is_file() and reader.contained(path) else None
         spec = _rel(root, folder / "diagrams" / f"{kind}.json")
         command = (f"python3 {DIAGRAM_CLI} derive --target {shlex.quote(repo)} "
-                   f"--name {shlex.quote(folder.name)} --kind {kind} && "
+                   f"--name {shlex.quote(folder.name)} --kind {kind}"
+                   f"{' --force' if files['png'] else ''} && "
                    f"python3 {DIAGRAM_CLI} render --spec {shlex.quote(spec)}")
         out.append({"kind": kind, "approved": True, "marker": marker, "png": files["png"],
                     "pdf": files["pdf"], "command": command,
-                    "slash": f"/experiment-diagrams {kind}"})
+                    "slash": f"/experiment-diagrams {kind}",
+                    "validation": (diagram_cli().validation_state(folder, kind)
+                                   if files["png"] else "absent")})
     return out
+
+
+def diagram_cli():
+    """The kit's `diagram_cli.py`, the one owner of the validation record."""
+    name = "papersmith_experiment_diagram_cli"
+    if name not in sys.modules:
+        script = Path(__file__).resolve().parents[2] / "experiment-diagrams" / "scripts" / "diagram_cli.py"
+        spec = importlib.util.spec_from_file_location(name, script)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+def validate_diagram(root: Path, repo: str, name: str, kind: str) -> tuple[int, dict[str, Any]]:
+    """The dashboard's "Validar diagrama": record the operator's validation of
+    one drawn diagram of one listed product. Returns ``(http status, body)``."""
+    markers = dict(DIAGRAM_KINDS)
+    if kind not in markers:
+        return 422, {"ok": False, "error": f"unknown diagram kind: {kind!r}"}
+    reader = _Reader(root, [])
+    folder = next((f for r, f in _product_dirs(root, reader) if r == repo and f.name == name), None)
+    if folder is None:
+        return 404, {"ok": False, "error": f"no product {repo}/{name} under implementations/"}
+    if not (folder / markers[kind]).is_file():
+        return 409, {"ok": False, "error": f"{markers[kind]} is absent: nothing to validate yet"}
+    png = folder / "diagrams" / f"{kind}.png"
+    if not png.is_file() or not reader.contained(png):
+        return 409, {"ok": False, "error": "the diagram has not been drawn yet"}
+    cli = diagram_cli()
+    try:
+        record = cli.write_validation(folder, kind)
+    except cli.Refusal as exc:
+        return 409, {"ok": False, "error": str(exc)}
+    return 200, {"ok": True, "validation": "validated", "record": record}
 
 
 def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
