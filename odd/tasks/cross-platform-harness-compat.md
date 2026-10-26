@@ -20,11 +20,12 @@ Objective: make the current papersmith (main plus PR #135) behave alike on Linux
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S1a-S1d | delegated (writer; parallel with T2, disjoint surfaces) | pending | |
-| T2 | S2a-S2d | inline (docs and guides only) | pending | |
+| T1 | S1a-S1d | delegated (writer; parallel with T2, disjoint surfaces) | done | S1a `2068bb96`, S1b `56ed6458`, S1c `8ac3d959`, S1d `027d548e` |
+| T2 | S2a-S2d | inline (docs and guides only) | done | `56fdb1ca` |
 | T3 | S3 | inline (CI, merge after #135, push, QMLEEG upgrade) | pending | |
 
 ## Log
 
 - **L1** (2026-10-26) User request, verbatim: "despues de correr y mergear, revisa que los cambios realizados, y el estado actual del proyecto paper smith, sea compatible con linux, mac, windows con wsl, y con agentes claude code, opencode, antigravity agy, y pi, aplica los cambios requeridos y comit, mergea y push"
 - **L2** Two read-only audits on `0bf2dfd2`. OS: no macOS-only command and nothing that crashes on Linux; defects: `server._compile_paper` prepends only macOS TeX dirs (`server.py:475`); `health_inspector.py:463` searches PATH only; three disagreeing fallback lists (`doctor.py:49`, `diagram_cli.py:54-66,502` oldest-year-first, `raster.py`/`paper_latex.py:122` PATH only); `open_browser` (`server.py:2614-2628`) tries `explorer.exe` only after `webbrowser.open` returns False, and `xdg-open` returns True; a text browser can take the `smith ui` terminal; no `.gitattributes`. Advisories: watcher without polling on `/mnt/c` (`watcher.py:198`); CI is Ubuntu-only without TeX. Harness: the new skill is projected for all four harnesses in the repo and in a `smith init` workspace (183 focused tests pass, `sync-repo-harness --check` clean); defects are documentation drift (`docs/cli.md:810`, `docs/mcp.md:30-31`, `docs/harness-support-matrix.md:122`, `core/init.py:164`, no Pi snippet, guide headers). Not changed here (pre-existing design, reported to the user): Claude Code prefers `.claude/skills/<name>` over `.claude/commands/<name>.md`, so the command files are shadowed; OpenCode and Pi read the same skill through several links.
+- **L3** T1 and T2 done and merged on this branch; 107 focused tests pass together. Notes from T1: the canonical search lives in `skills/_core/command_center/toolchain.py`, restated in `doctor.py` and `diagram_cli.py` with a drift test reading each copy from source; no tracked file had CRLF, so `.gitattributes` renormalizes nothing; WSL, `/mnt/c` and Linux TeX paths are tested with mocks only, not on a real WSL machine. Next: PR after #135 merges, CI, merge, push, QMLEEG upgrade.
