@@ -146,10 +146,20 @@ def write_validation(product: Path, kind: str) -> dict:
         raise Refusal("USAGE", f"kind must be one of {KINDS}, not {kind!r}")
     png = diagram_paths(product, kind)["png"]
     if png.is_symlink() or not png.is_file():
-        raise Refusal("DIAGRAM_ABSENT", f"{png} has not been drawn yet")
+        raise Refusal("DIAGRAM_ABSENT", f"diagrams/{png.name} has not been drawn yet")
     record = {"kind": kind, "png_sha256": _sha256(png),
               "validated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    validation_path(product, kind).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    # A temporary file renamed over the record replaces a link planted there
+    # instead of writing through it to wherever it points.
+    target = validation_path(product, kind)
+    handle, temporary = tempfile.mkstemp(prefix=f".{kind}.validated.", dir=target.parent)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, indent=2) + "\n")
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
     return record
 
 

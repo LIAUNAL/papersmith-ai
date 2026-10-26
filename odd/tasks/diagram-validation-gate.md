@@ -23,3 +23,4 @@ Branch: feat/diagram-validation-gate · Delivery: single-pr · Runner: pytest (P
 - L3 Map: no validation record existed; no launch path read the diagrams; Phase 5 actions had no `/experiment-diagrams` prompt.
 - L4 RED→GREEN: T1 10 tests (diagram CLI, view, `POST /api/experiments/diagrams/validate`, panel render); T2 6 tests in `ConsentGateTests`; affected suites 3601 passed. Pre-existing local failures (also at base): 3 workspace/convention e2e, 5 `GateInterpreterTests`; `test_the_toy_targets_left_nothing_behind` fails only under xdist, passes alone.
 - L5 Endpoint refuses requests without an Origin header (curl, an agent's shell); a local agent can still forge one, which the skills forbid.
+- L6 Verifier: S1 PASS, S2 PARTIAL (B1: record written through a planted symlink), S3 PASS, S4 PASS. Fixed: atomic temp-file + os.replace; refusal names no absolute path; regression tests added.

@@ -130,6 +130,22 @@ class DiagramValidationRouteTests(unittest.TestCase):
         self.assertEqual(len(record["png_sha256"]), 64)
         self.assertEqual(self.state("PocModel"), "validated")
 
+    def test_a_record_planted_as_a_link_is_replaced_never_written_through(self) -> None:
+        victim = self.ws.outside / "victim.txt"
+        victim.write_text("untouched\n", encoding="utf-8")
+        record = self.ws.poc / "diagrams" / "poc.validated.json"
+        os.symlink(victim, record)
+        code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc"})
+        self.assertEqual(code, 200, payload)
+        self.assertEqual(victim.read_text(encoding="utf-8"), "untouched\n")
+        self.assertFalse(record.is_symlink())
+        self.assertEqual(self.state("PocModel"), "validated")
+
+    def test_a_refusal_names_no_absolute_path(self) -> None:
+        code, payload = self.post({"repo": "repo", "name": "FullModel", "kind": "poc"})
+        self.assertEqual(code, 409)
+        self.assertNotIn(str(self.ws.root), payload["error"])
+
     def test_a_request_without_the_dashboard_origin_is_refused(self) -> None:
         for origin in (None, "http://evil.example"):
             with self.subTest(origin=origin):
