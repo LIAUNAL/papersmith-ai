@@ -460,6 +460,52 @@ class EstimateTests(Base):
         self.assertEqual((full["seconds"], full["low"], full["high"]), (24450, 19560, 29340))
         self.assertIs(run.json["launchAuthorization"], False)
 
+    def test_the_placement_rules_are_stated(self) -> None:
+        run = self.estimate()
+        self.assertEqual(run.json["placementRules"],
+                         {"localLimitSeconds": 1200, "pocBudgetSeconds": 18000, "bound": "high"})
+
+    def test_a_stage_within_twenty_minutes_locally_stays_local(self) -> None:
+        placement = self.estimate().json["placement"]["poc"]
+        # local high 456 s <= 1200 s
+        self.assertEqual((placement["where"], placement["host"]), ("local", "local"))
+        self.assertEqual(placement["pocBudget"], "within")
+
+    def test_a_stage_over_twenty_minutes_locally_goes_to_the_fastest_measured_cloud_host(self) -> None:
+        placement = self.estimate().json["placement"]["full"]
+        # local high 29340 s > 1200 s; svc:alice high 3600 s
+        self.assertEqual((placement["where"], placement["host"]), ("cloud", "svc:alice"))
+        self.assertIn("20 minutes", placement["reason"])
+        self.assertNotIn("pocBudget", placement)
+
+    def test_over_twenty_minutes_with_no_cloud_measurement_asks_for_a_cloud_probe(self) -> None:
+        record = timing_record()
+        record["measurements"] = [m for m in record["measurements"] if m["host"] == "local"]
+        record["scales"]["poc"]["epochs"] = 50
+        placement = self.estimate(record=record).json["placement"]["poc"]
+        # local high 16 x 50 x 2 x 1 x 2 = 3200 + 60 = 3260 s x 1.2 > 1200 s
+        self.assertEqual((placement["where"], placement["host"]), ("cloud", None))
+        self.assertEqual(placement["pocBudget"], "unmeasured")
+        self.assertIn("timing probe on a cloud host", placement["reason"])
+
+    def test_a_proof_of_concept_over_five_hours_on_its_host_exceeds_the_budget(self) -> None:
+        record = timing_record()
+        record["scales"]["poc"]["epochs"] = 2000
+        run = self.estimate(record=record)
+        self.assertEqual(run.code, 0, run.err)
+        placement = run.json["placement"]["poc"]
+        # svc:alice: 2 x 2000 x 2 x 1 x 2 = 16000 s, high 19200 s > 18000 s
+        self.assertEqual((placement["where"], placement["host"]), ("cloud", "svc:alice"))
+        self.assertEqual(placement["pocBudget"], "exceeds")
+        self.assertIn("reduce", placement["reason"])
+
+    def test_local_unmeasured_places_nothing(self) -> None:
+        record = timing_record()
+        record["measurements"] = [m for m in record["measurements"] if m["host"] != "local"]
+        placement = self.estimate(record=record).json["placement"]["full"]
+        self.assertIsNone(placement["where"])
+        self.assertIn("local timing probe", placement["reason"])
+
     def test_the_mean_is_taken_per_arm_not_over_all_measurements(self) -> None:
         run = self.estimate("--stage", "poc")
         # An overall mean would read (10 + 14 + 20) / 3 = 14.67 s/epoch.

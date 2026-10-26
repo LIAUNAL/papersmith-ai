@@ -202,6 +202,24 @@ are never multiplied by a guessed factor to stand in for a remote one, and one
 host timed on two devices is refused (`mixed-devices`), because timing never
 pools across machines.
 
+**Placement rules: twenty minutes, five hours.** Both read each estimate's
+upper bound (`high`), so a stage is placed by the conservative end of its
+range, and both are stated in every output as `placementRules`
+(`{localLimitSeconds: 1200, pocBudgetSeconds: 18000, bound: "high"}`).
+
+- **A stage over 20 minutes locally runs on a cloud host.** When the local
+  `high` is at most 1200 s the stage stays local; otherwise `placement` names
+  the fastest measured cloud host, or none with a request to time one first.
+  Local unmeasured places nothing: the local probe comes first.
+- **A proof of concept fits in 5 hours on the host it runs on.** For `poc`,
+  `placement.pocBudget` is `within`, `exceeds` or `unmeasured`, judged on the
+  host the stage is placed on. `exceeds` means the design is reduced —
+  subjects, epochs, folds, seeds or arms — before the proof of concept runs,
+  never that it runs longer.
+
+A placement is never launch authorization: the operator still authorizes
+every remote run.
+
 ## Accepted operations
 
 ```
@@ -211,7 +229,7 @@ python3 skills/remote-parallelism/scripts/parallelism_cli.py [--root <workspace>
 | Verb | What it does |
 |---|---|
 | `assess` | `--units N --unit-minutes M --owners N --sessions-per-account S --session-limit-hours H --quota-hours Q --setup-minutes O [--accounts A] [--service kaggle\|colab[,...]] [--tiers free,pro,...] [--stamps-identical] [--units-file units.json] [--axis <name>] [--quota-source <text>] [--quota-date YYYY-MM-DD] [--record <dir>]`: JSON `{inputs, thresholds, serialMinutes, singleAccountMinutes, parallelMinutes, speedup, savedMinutes, accountsUsed, recommendedAccounts, perAccount[{account, units, gpuHours, overQuota}], quotaOk, unitsOverSessionLimit, eligibleOwners, excludedOwners[{owner, tier}], verdict, reasons, unitSeeds?, reproducibilityChecklist, stampFields, launchAuthorization: false}`; each `perAccount` entry is one eligible owner's account. `--record <dir>` writes `<dir>/.remote-parallelism/assessment-<date>.json` (a second one the same day gets `-2`, never an overwrite); `<dir>` must resolve inside the workspace, through no symlink that leaves it |
-| `estimate` | `--timing <path to timing.json> [--stage poc\|full\|both] [--host <host>:<owner> ...] [--record <dir>] [--json]`: JSON `{estimates: {stage: {host: {seconds, low, high, formula, measurements, device, secondsPerUnit, perArm, setupSeconds} \| "unmeasured"}}, timing, range, unmeasuredMeans, launchAuthorization: false}`; `local` and every host the record measured are always reported, and each `--host` named adds a row (`unmeasured` when the record has no measurement of it). `--record <dir>` writes `<dir>/.remote-parallelism/estimate-<date>.json` under the same containment as `assess`, and then `--timing` too must resolve inside the workspace, through no symlink that leaves it |
+| `estimate` | `--timing <path to timing.json> [--stage poc\|full\|both] [--host <host>:<owner> ...] [--record <dir>] [--json]`: JSON `{estimates: {stage: {host: {seconds, low, high, formula, measurements, device, secondsPerUnit, perArm, setupSeconds} \| "unmeasured"}}, placement: {stage: {where: "local"\|"cloud"\|null, host, reason, pocBudget?: "within"\|"exceeds"\|"unmeasured"}}, placementRules, timing, range, unmeasuredMeans, launchAuthorization: false}`; `local` and every host the record measured are always reported, and each `--host` named adds a row (`unmeasured` when the record has no measurement of it). `--record <dir>` writes `<dir>/.remote-parallelism/estimate-<date>.json` under the same containment as `assess`, and then `--timing` too must resolve inside the workspace, through no symlink that leaves it |
 | `checklist` | the reproducibility checklist as JSON |
 | `stamp-fields` | the shard stamp fields to declare `identicalAcrossShards` |
 

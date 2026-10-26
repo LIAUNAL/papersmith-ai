@@ -145,6 +145,13 @@ SCALE_KEYS = ("arms", "folds", "seeds", "epochs")
 ESTIMATE_RANGE = 0.20
 RANGE_NOTE = "±20%, single-probe extrapolation"
 UNMEASURED = "unmeasured"
+#: Placement rules, read on each estimate's upper bound: a stage over this many
+#: seconds locally runs on a cloud host, and a proof of concept is sized to fit
+#: this budget on the host it runs on.
+LOCAL_LIMIT_SECONDS = 20 * 60
+POC_BUDGET_SECONDS = 5 * 60 * 60
+PLACEMENT_RULES = {"localLimitSeconds": LOCAL_LIMIT_SECONDS, "pocBudgetSeconds": POC_BUDGET_SECONDS,
+                   "bound": "high"}
 TIMING_KEYS = {"schema", "measurements", "scales"}
 MEASUREMENT_REQUIRED = ("measuredAt", "host", "device", "arm", "unit", "secondsPerUnit", "unitsMeasured")
 MEASUREMENT_KEYS = set(MEASUREMENT_REQUIRED) | {"setupSeconds"}
@@ -516,6 +523,36 @@ def host_estimate(measurements: list[dict], scale: dict) -> dict:
             "setupSeconds": num(setup)}
 
 
+def placement(stage: str, estimates: dict) -> dict:
+    """Where a stage runs under the placement rules, never whether it launches."""
+    local = estimates.get("local")
+    if not isinstance(local, dict):
+        return {"where": None, "host": None,
+                "reason": "local unmeasured: run the local timing probe before placing this stage"}
+    if local["high"] <= LOCAL_LIMIT_SECONDS:
+        result = {"where": "local", "host": "local",
+                  "reason": f"local upper bound {num(local['high'])} s is within 20 minutes"}
+        best = local
+    else:
+        remote = sorted((item["high"], host) for host, item in estimates.items()
+                        if host != "local" and isinstance(item, dict))
+        best = estimates[remote[0][1]] if remote else None
+        over = f"local upper bound {num(local['high'])} s exceeds 20 minutes, so it runs on a cloud host"
+        result = ({"where": "cloud", "host": remote[0][1], "reason": f"{over}; {remote[0][1]} is the fastest measured"}
+                  if remote else
+                  {"where": "cloud", "host": None, "reason": f"{over}; run a timing probe on a cloud host first"})
+    if stage == "poc":
+        if best is None:
+            result["pocBudget"] = UNMEASURED
+        elif best["high"] <= POC_BUDGET_SECONDS:
+            result["pocBudget"] = "within"
+        else:
+            result["pocBudget"] = "exceeds"
+            result["reason"] += (f"; its upper bound {num(best['high'])} s exceeds the 5-hour proof-of-concept "
+                                 "budget: reduce the design (subjects, epochs, folds, seeds, arms) before it runs")
+    return result
+
+
 def cmd_estimate(args, root: Path, today: str) -> dict:
     if args.timing is None:
         raise Refusal("missing-input", "--timing is required: the timing probe's Results/timing.json")
@@ -554,7 +591,8 @@ def cmd_estimate(args, root: Path, today: str) -> dict:
         name: {host: host_estimate(by_host[host], data["scales"][name]) if host in by_host else UNMEASURED
                for host in hosts}
         for name in stages}
-    result = {"estimates": estimates, "timing": args.timing, "range": RANGE_NOTE,
+    result = {"estimates": estimates, "placement": {name: placement(name, estimates[name]) for name in stages},
+              "placementRules": PLACEMENT_RULES, "timing": args.timing, "range": RANGE_NOTE,
               "unmeasuredMeans": "no measurement on that host; a remote host is never estimated from local timings",
               "launchAuthorization": False}
     if args.record is not None:
