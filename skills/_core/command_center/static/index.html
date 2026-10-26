@@ -20,6 +20,7 @@
   <script src="./model-panel.js?v=0.19.6"></script>
   <script src="./experiments-panel.js?v=0.25.0"></script>
   <script src="./agents-panel.js?v=0.20.0"></script>
+  <script src="./doctor-panel.js?v=0.26.0"></script>
   <script src="./phase-console.js?v=0.19.1"></script>
   <script src="./phase-run.js?v=0.21.2"></script>
   <style>
@@ -2608,6 +2609,12 @@
       border-radius: 999px; background: var(--accent-dim); color: var(--accent); }
     .agents-empty { color: var(--text-dim); }
     .agents-warnings { color: var(--warn); font-size: 0.78rem; margin: 0.5rem 0 0; }
+    /* Smith Doctor: one health table grouped by area. */
+    .doctor-summary { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    .doctor-group th { background: var(--surface-2); color: var(--text); cursor: default; text-transform: uppercase;
+      font-size: 0.72rem; letter-spacing: 0.04em; }
+    .doctor-detail { color: var(--text-muted); word-break: break-word; }
+    .badge--absent { background: transparent; color: var(--text-dim); border-color: var(--border); }
   </style>
 </head>
 <body>
@@ -2657,6 +2664,7 @@
     <button class="tab-nav__btn" onclick="navigateTab('preview')">Previsualización PDF</button>
     <button class="tab-nav__btn" onclick="navigateTab('artifacts')">Artefactos</button>
     <button class="tab-nav__btn" onclick="navigateTab('telemetria')">Telemetría y Costos</button>
+    <button class="tab-nav__btn" onclick="navigateTab('doctor')">Smith Doctor</button>
   </nav>
 
   <!-- Main content area -->
@@ -3338,6 +3346,17 @@
       </div>
     </div>
 
+    <!-- SMITH DOCTOR: salud del proyecto (GET /api/doctor, doctor-panel.js) -->
+    <div id="pane-doctor" class="tab-pane">
+      <div class="panel">
+        <div class="panel__header">
+          <div class="panel__title">Smith Doctor: salud del proyecto</div>
+          <span class="panel__meta">Misma tabla que <code>smith doctor</code></span>
+        </div>
+        <div id="doctorPanel">Cargando diagnóstico…</div>
+      </div>
+    </div>
+
     <!-- TAB 8: ARTEFACTOS -->
     <div id="pane-artifacts" class="tab-pane">
       <div class="panel">
@@ -3558,6 +3577,9 @@
       }
       if (tabId === 'experiments') {
         window.refreshExperimentsPanel?.();
+      }
+      if (tabId === 'doctor') {
+        window.refreshDoctorPanel?.();
       }
       if (tabId === 'modelo') {
         refreshModelData();
@@ -6263,7 +6285,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'sections', 'telemetria', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'sections', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();
