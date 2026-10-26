@@ -588,6 +588,9 @@ def build_denylist(profiles: list[dict[str, Any]]) -> dict[str, str]:
 #: holder's scaffold with the splice instead of first; the two copies of the
 #: comment explaining the early creation write are gone. Three SHRANK,
 #: deliberately: `before` 263->261, `empty` 132->131, `write` 156->154.
+#: backlog #52: `_resolve_survey_target` no longer restates the
+#: workspace's `implementations/` path in two docstrings. One SHRANK,
+#: deliberately: `implementations` 4->3.
 M5_PINNED_RESIDUE: dict[str, int] = {
     "actually": 83, "admissible": 3, "after": 93, "against": 196,
     "agreed": 16, "answered": 97, "answers": 107, "approved": 48,
@@ -595,7 +598,7 @@ M5_PINNED_RESIDUE: dict[str, int] = {
     "check": 168, "checkable": 3, "claim": 41, "command": 276,
     "commands": 18, "compares": 25, "declaration": 212,
     "destinations": 36, "empty": 131, "established": 5, "experiment": 25,
-    "experiments": 6, "implementations": 4, "incomplete": 29,
+    "experiments": 6, "implementations": 3, "incomplete": 29,
     "invariant": 22, "isolated": 5, "leave": 11, "leaves": 38,
     "local": 37, "longer": 54, "makes": 48, "materialized": 12,
     "measured": 143, "measurement": 43, "module": 199, "notebooks": 110,
