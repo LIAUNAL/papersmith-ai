@@ -13,6 +13,8 @@ server's SSE subscribers without reaching into their event loop directly.
 from __future__ import annotations
 
 import asyncio
+import platform
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -137,6 +139,26 @@ class EventBus:
             pass
 
 
+def _is_wsl() -> bool:
+    """WSL, identified by its kernel release (as the server does)."""
+    return sys.platform == "linux" and "microsoft" in platform.release().lower()
+
+
+def needs_polling(root: Path, *, wsl: bool | None = None) -> bool:
+    """Whether ``watchfiles`` must poll ``root`` instead of using inotify.
+
+    Under WSL, ``/mnt/<letter>/`` is a Windows drive mounted over 9P: changes
+    made from Windows raise no inotify event, so the live channel would stay
+    silent. Polling costs a little CPU and works there; the Linux filesystem
+    (``~/...``) keeps native notifications.
+    """
+    if not (_is_wsl() if wsl is None else wsl):
+        return False
+    parts = Path(root).resolve().parts
+    return (len(parts) >= 3 and parts[0] == "/" and parts[1] == "mnt"
+            and len(parts[2]) == 1 and parts[2].isalpha())
+
+
 class WorkspaceWatcher:
     """Run ``watchfiles`` in a daemon thread and call ``on_flush`` per burst."""
 
@@ -202,6 +224,9 @@ class WorkspaceWatcher:
                 stop_event=self._stop,
                 recursive=True,
                 raise_interrupt=False,
+                # None keeps watchfiles' own default (and its
+                # WATCHFILES_FORCE_POLLING variable) off a Windows drive.
+                force_polling=True if needs_polling(self.root) else None,
             ):
                 if self._stop.is_set():
                     break

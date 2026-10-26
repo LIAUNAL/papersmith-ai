@@ -60,6 +60,13 @@ number is `0`, breaking changes can still arrive without a major bump.
   Windows git into `/mnt/c` still runs `setup-harnesses.sh` under WSL; images,
   fonts, PDF and cmap assets are marked binary. No tracked file changes bytes.
 
+- **Dashboard live updates on a Windows drive under WSL.** When the workspace
+  resolves under `/mnt/<letter>/`, the watcher polls (`force_polling`), since
+  inotify sees no change made from Windows there. `docs/wsl-dashboard.md` now
+  recommends the Linux filesystem, names the Developer Mode requirement for
+  symlinks on `/mnt/c` and `localhostForwarding=true`, and lists how
+  `smith ui` opens the browser.
+
 ## 0.25.0
 
 ### Added
