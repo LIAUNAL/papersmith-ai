@@ -38,7 +38,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
-from . import doctor_view
+from . import doctor_view, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -472,11 +472,17 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
     """pdflatex, bibtex, pdflatex twice in paper/, each bounded by a timeout.
     Blocking: the caller runs it off the event loop, holding _PAPER_LOCK."""
     env = os.environ.copy()
-    env["PATH"] = f"/Library/TeX/texbin:/opt/homebrew/bin:{env.get('PATH', '')}"
+    # PATH first, then the shared fallback directories (MacTeX, Homebrew, TeX
+    # Live on Linux and WSL). The engine's directory leads PATH so the helpers
+    # TeX itself spawns (kpsewhich, mktextfm) come from the same distribution.
+    tex = toolchain.find_tool("pdflatex", path=env.get("PATH")) or "pdflatex"
+    bib = toolchain.find_tool("bibtex", path=env.get("PATH")) or "bibtex"
+    if os.path.isabs(tex):
+        env["PATH"] = os.pathsep.join(filter(None, (os.path.dirname(tex), env.get("PATH", ""))))
     p_dir = str(root / "paper")
-    pdflatex = ["pdflatex", "-interaction=nonstopmode", "main.tex"]
+    pdflatex = [tex, "-interaction=nonstopmode", "main.tex"]
     first = None
-    for argv in (pdflatex, ["bibtex", "main"], pdflatex, pdflatex):
+    for argv in (pdflatex, [bib, "main"], pdflatex, pdflatex):
         try:
             res = subprocess.run(argv, cwd=p_dir, capture_output=True, text=True, env=env,
                                  timeout=TEX_TIMEOUT_SECONDS)
@@ -2611,7 +2617,45 @@ def _is_wsl() -> bool:
     return sys.platform == "linux" and "microsoft" in platform.release().lower()
 
 
+#: Launchers that hand a URL to the Windows browser from WSL, in order.
+WSL_BROWSER_LAUNCHERS = ("wslview", "explorer.exe")
+
+
+def _has_graphical_display() -> bool:
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _print_url(url: str) -> None:
+    print(f"open the dashboard in a browser: {url}", flush=True)
+
+
 def open_browser(url: str) -> None:
+    """Open ``url`` in a browser that fits the platform; never raises.
+
+    Under WSL the Windows browser is reached through ``wslview`` (wslu), then
+    ``explorer.exe``. On Linux without a graphical display Python's
+    ``webbrowser`` would start a text browser (w3m, lynx) on the server's own
+    terminal, so the URL is printed instead. macOS and desktop Linux use
+    ``webbrowser``.
+    """
+    if _is_wsl():
+        for launcher in WSL_BROWSER_LAUNCHERS:
+            executable = shutil.which(launcher)
+            if not executable:
+                continue
+            # argv keeps query strings intact (and avoids cmd.exe/shell
+            # interpolation). Do not expose the terminal login URL through
+            # child process output.
+            try:
+                subprocess.Popen([executable, url], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 close_fds=True)
+                return
+            except OSError:
+                continue
+    if sys.platform.startswith("linux") and not _has_graphical_display():
+        _print_url(url)
+        return
     import webbrowser
 
     try:
@@ -2619,13 +2663,7 @@ def open_browser(url: str) -> None:
             return
     except Exception:  # Browser setup must not prevent the server from starting.
         pass
-    if _is_wsl():
-        # argv keeps query strings intact (and avoids cmd.exe/shell interpolation).
-        # Do not expose the terminal login URL through child process output.
-        with contextlib.suppress(OSError):
-            subprocess.Popen(["explorer.exe", url], stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             close_fds=True)
+    _print_url(url)
 
 
 def main(argv: list[str] | None = None) -> int:

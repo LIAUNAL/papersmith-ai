@@ -253,25 +253,32 @@ class SseFramingTests(unittest.TestCase):
 
 
 class BrowserLaunchTests(unittest.TestCase):
-    def test_wsl_uses_windows_browser_when_python_has_no_handler(self) -> None:
+    def test_wsl_hands_the_url_to_windows_before_python_webbrowser(self) -> None:
         url = "http://127.0.0.1:8080/api/terminal/login?token=private&next=home"
+        explorer = "/mnt/c/Windows/explorer.exe"
         with (mock.patch("webbrowser.open", return_value=False) as browser,
               mock.patch.object(server, "_is_wsl", return_value=True),
+              mock.patch.object(server.shutil, "which",
+                                lambda name: explorer if name == "explorer.exe" else None),
               mock.patch.object(server.subprocess, "Popen") as launch):
             server.open_browser(url)
 
-        browser.assert_called_once_with(url)
+        browser.assert_not_called()
         launch.assert_called_once_with(
-            ["explorer.exe", url], stdin=server.subprocess.DEVNULL,
+            [explorer, url], stdin=server.subprocess.DEVNULL,
             stdout=server.subprocess.DEVNULL, stderr=server.subprocess.DEVNULL,
             close_fds=True,
         )
 
-    def test_existing_browser_success_does_not_launch_windows_browser(self) -> None:
-        with (mock.patch("webbrowser.open", return_value=True),
+    def test_wsl_without_windows_launchers_uses_python_webbrowser_on_a_display(self) -> None:
+        with (mock.patch("webbrowser.open", return_value=True) as browser,
               mock.patch.object(server, "_is_wsl", return_value=True),
+              mock.patch.object(server.sys, "platform", "linux"),
+              mock.patch.dict(os.environ, {"DISPLAY": ":0"}),
+              mock.patch.object(server.shutil, "which", return_value=None),
               mock.patch.object(server.subprocess, "Popen") as launch):
             server.open_browser("http://localhost:8080/")
+        browser.assert_called_once_with("http://localhost:8080/")
         launch.assert_not_called()
 
     def test_non_wsl_does_not_launch_windows_browser(self) -> None:
