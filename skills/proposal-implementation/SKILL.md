@@ -806,6 +806,7 @@ date. Drift is Flow B's fourth step, not a reason to start over.
    | `pyproject.toml [tool.pytest.ini_options] pythonpath` | `assets/pyproject.template.toml`, or the anchor appended to the existing file |
    | `src/<Package>/__init__.py` | authored: exports the target's own modules (none yet), plus `__implementation__`/`__levels__`/`__steps__`/`__records__` prefilled empty, with guidance comments, awaiting step 8/9 |
    | `src/<Package>/report_digest.py` | `assets/kit/nb/report_digest.py` |
+   | `src/<Package>/remote_stamp.py` | `assets/kit/nb/remote_stamp.py` |
    | `tests/test_smoke.py` | `assets/kit/tests/test_smoke.py` |
    | `tests/findings.py` | `assets/kit/tests/findings.py` |
    | `tests/conftest.py` | `assets/kit/tests/conftest.py` |
@@ -813,6 +814,7 @@ date. Drift is Flow B's fourth step, not a reason to start over.
    | `tests/admissibility.py` | `assets/kit/tests/admissibility.py` |
    | `tests/test_audit.py` | `assets/kit/tests/test_audit.py` |
    | `tests/test_remedies.py` | `assets/kit/tests/test_remedies.py` |
+   | `tests/test_remote_readiness.py` | `assets/kit/tests/test_remote_readiness.py` |
    | `<Name>/Notebooks/verification.ipynb` | `assets/kit/nb/verification.ipynb` |
 
    `conftest.py`, `sweep.py` and `admissibility.py` declare no test of their own,
@@ -820,6 +822,28 @@ date. Drift is Flow B's fourth step, not a reason to start over.
    and `test_remedies.py` both open by importing them, so a tree without them is
    not collected at all. `admissibility.py` belongs in `tests/` specifically —
    it reads the ruling from beside itself, which is where `admit` writes it.
+
+   **Remote readiness ships with the scaffold.** `src/<Package>/remote_stamp.py`
+   writes the `shard.json` that `remote-execution`'s `smoke record` reads:
+   `write_shard(summary, directory=None, *, device=None)` writes it only when
+   `FORGE_RUN_MODE` is set (the runner exports it around the call it makes),
+   into the working directory unless `directory` names another, carrying
+   `mode`, `evidence.commit` (the repository's `HEAD`), `evidence.sourcesDigest`
+   (the `report_digest.py` seal), `environment.device` (`{kind, name}`, from
+   `device` or from `torch` when it is importable) and `runs` (the summary).
+   Anywhere else it writes nothing and returns `None`. The target's smoke
+   callable calls it once its work is done; pair it with `generate-job
+   --smoke-required-evidence evidence.commit --smoke-required-evidence
+   environment.device.kind`, so the smoke records only when the stamp
+   carries both. Like the seal, it proves nothing and owes no
+   `__provenance__` while its bytes are the kit's. `tests/test_remote_readiness.py`
+   tests that stamp and carries `single_device()`, a guard that patches
+   `torch.einsum`, `torch.matmul` and `@` to refuse operands on two devices.
+   Set its `FORWARD` to a callable that builds the target's inputs on the
+   device it is given and runs the forward: the test then runs it on
+   `torch.device("meta")`, which needs no GPU but does not on its own refuse a
+   CPU tensor mixed in. Until `FORWARD` is set that test skips and says what to
+   fill in, and every torch test skips when torch is not installed.
 
    **Both kit notebooks open with a cell this skill does not own.** Its first
    code cell binds `ROOT`, every later cell reads it, and its bytes are a copy

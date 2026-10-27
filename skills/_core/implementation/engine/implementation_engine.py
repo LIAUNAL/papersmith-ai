@@ -5091,6 +5091,11 @@ def scaffold_destinations(name: str) -> list[str]:
             # because Flow A must be able to stamp before any comparison is
             # ever offered — see design D7.
             f"src/{package_name(name)}/report_digest.py",
+            # The `shard.json` a remote smoke is recorded from, written only
+            # under the runner (`FORGE_RUN_MODE`). Beside the seal for the
+            # seal's own reason: it finds the repository from its own path,
+            # and it reuses the seal's digest so a shard and a report agree.
+            f"src/{package_name(name)}/remote_stamp.py",
             "tests/test_smoke.py",
             # `conftest.py`, `sweep.py` and `admissibility.py` are not tests and
             # were never asked for, so a scaffold built from exactly this list
@@ -5101,6 +5106,9 @@ def scaffold_destinations(name: str) -> list[str]:
             "tests/findings.py", "tests/conftest.py", "tests/sweep.py",
             "tests/admissibility.py",
             "tests/test_audit.py", "tests/test_remedies.py",
+            # Tests the stamp above and carries the device-mix guard a target
+            # wires to its own forward; it skips cleanly without torch.
+            "tests/test_remote_readiness.py",
             f"{name}/Notebooks/verification.ipynb"]
 
 
@@ -5338,6 +5346,9 @@ def scaffold_kit_source(destination: str, name: str) -> Path | None:
     package = package_name(name)
     mapping = {
         f"src/{package}/{KIT_SEAL.name}": KIT_SEAL,
+        f"src/{package}/remote_stamp.py": SKILL_ROOT / "assets" / "kit" / "nb" / "remote_stamp.py",
+        "tests/test_remote_readiness.py":
+            SKILL_ROOT / "assets" / "kit" / "tests" / "test_remote_readiness.py",
         "tests/test_smoke.py": SKILL_ROOT / "assets" / "kit" / "tests" / "test_smoke.py",
         "tests/findings.py": SKILL_ROOT / "assets" / "kit" / "tests" / "findings.py",
         "tests/conftest.py": SKILL_ROOT / "assets" / "kit" / "tests" / "conftest.py",
