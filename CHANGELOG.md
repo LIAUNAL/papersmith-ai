@@ -11,6 +11,25 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Fixed
+
+- `fetch` asked while a remote run is still going no longer leaves an empty
+  `.partial/` folder that refused every later fetch of the same submission. A
+  partial that holds any bytes keeps the existing refusal.
+- Notebooks fetched from Colab come back as JSON. google-colab-cli 0.6.0
+  writes a downloaded notebook as a Python dict repr; the adapter now restores
+  it, through `ast.literal_eval`, so the remote bytes are never executed.
+- `smoke record --from-artifact` accepts the fetched rehearsal folder and reads
+  the `shard.json` inside it. When the stamp is missing, the refusal says the
+  smoke must write it into its working directory.
+
+### Added
+
+- `generate-job` reports a `warnings` entry when a smoke block declares no
+  `--smoke-required-evidence`, since such a rehearsal passes on any stamp.
+
 ## 0.26.1
 
 ### Fixed

@@ -70,11 +70,16 @@ a suggested change in words. You never write the change.
    precision left off where the model tolerates it; repeated host-device
    copies. Measure a claim with a short local timing probe when you can;
    otherwise mark it unmeasured.
-3. **Remote GPU use (Kaggle).** The `remote-execution` Kaggle adapter
-   requests a GPU for a job (`enable_gpu` with the `NvidiaTeslaT4` machine
-   shape). Requesting one is not using one: check that the job's code selects
-   `cuda` when it is available, moves both the model and every batch to it,
-   and logs the device it actually ran on. Say when the GPU is likely wasted —
+3. **Remote GPU use (Kaggle and Colab).** The `remote-execution` Kaggle
+   adapter requests a GPU for a job (`enable_gpu` with the `NvidiaTeslaT4`
+   machine shape), and a Colab job asks for one by default. Requesting one is
+   not using one: check that the job's code selects `cuda` when it is
+   available, moves both the model and every batch to it, and logs the device
+   it actually ran on. Check too that every tensor created inside the forward
+   pass or the simulation is allocated on its input's device
+   (`torch.zeros(..., device=x.device)`, `torch.eye(..., device=...)`): a
+   bare `torch.zeros(...)` lands on the CPU, a CPU-only run never exposes it,
+   and the first GPU run dies at the first operation that mixes the two. Say when the GPU is likely wasted —
    small statevector circuits (a handful of qubits) often simulate faster on
    CPU than with GPU launch overhead — and when a CPU-only kernel would free
    the GPU quota instead. Read the generated job folders and the remote

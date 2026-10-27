@@ -2520,6 +2520,17 @@ class IncompleteFetchAdapter(FakeAdapter):
         return ADAPTER.Fetched(path=into, complete=False, files=())
 
 
+class EmptyIncompleteFetchAdapter(FakeAdapter):
+    """`fetch()` creates its destination and reports `complete=False` with
+    nothing downloaded -- what the Colab adapter does while the run is still
+    going, before the worker has written any manifest.
+    """
+
+    def fetch(self, submission_id: str, into: Path) -> "ADAPTER.Fetched":
+        into.mkdir(parents=True, exist_ok=True)
+        return ADAPTER.Fetched(path=into, complete=False, files=())
+
+
 class ScriptedListActiveAdapter(FakeAdapter):
     """A `FakeAdapter` whose `list_active()` answers with a fixed,
     test-controlled set of ids, independent of anything `submit()`/
@@ -3141,6 +3152,37 @@ class FetchTests(unittest.TestCase):
             self.assertIn(str(partial_dest), str(ctx.exception))
             self.assertFalse(dest.exists())
             self.assertFalse((partial_dest / "result.txt").exists())
+
+    def test_an_incomplete_fetch_that_downloaded_nothing_leaves_no_partial(self) -> None:
+        """Asking too early is ordinary: the run is still going. An EMPTY
+        `.partial/` holds no paid-for bytes, so it is removed instead of
+        blocking every later fetch of the same submission.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest = self._pending_fetch_fixture(tmp)
+
+            result = REMOTE_CLI.cmd_fetch(
+                target=target,
+                entrypoint=notebook,
+                submission_id="s1",
+                dest=dest,
+                adapter=EmptyIncompleteFetchAdapter(worker_id="w1", capacity=2),
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertFalse(result["complete"])
+            self.assertIsNone(result["path"])
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists())
+
+            retried = REMOTE_CLI.cmd_fetch(
+                target=target,
+                entrypoint=notebook,
+                submission_id="s1",
+                dest=dest,
+                adapter=FakeAdapter(worker_id="w1", capacity=2),
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertTrue(retried["complete"])
+            self.assertTrue(dest.exists())
 
     def test_force_neither_clears_a_leftover_partial_nor_deletes_the_destination(
         self,
@@ -18989,6 +19031,45 @@ class SmokeTests(unittest.TestCase):
                     job_dir=job_dir, artifact_path=missing, worker="w1"
                 )
 
+    def test_smoke_record_reads_the_stamp_inside_a_fetched_rehearsal_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            commit = self._init_repo(target)
+            job_dir = self._generate(tmp, target, commit=commit)
+            fetched = Path(tmp) / "rehearsal" / "s1"
+            fetched.mkdir(parents=True)
+            (fetched / "shard.json").write_text(
+                json.dumps({"evidence": {"commit": commit, "outputs": ["runs.jsonl"]}}),
+                encoding="utf-8",
+            )
+            result = REMOTE_CLI.cmd_smoke_record(job_dir=job_dir, artifact_path=fetched, worker="w1")
+            self.assertEqual(result["result"], "pass")
+
+    def test_a_rehearsal_folder_without_a_stamp_says_what_the_smoke_must_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            commit = self._init_repo(target)
+            job_dir = self._generate(tmp, target, commit=commit)
+            fetched = Path(tmp) / "rehearsal" / "s1"
+            fetched.mkdir(parents=True)
+            with self.assertRaises(REMOTE_CLI.RemoteCLIError) as ctx:
+                REMOTE_CLI.cmd_smoke_record(job_dir=job_dir, artifact_path=fetched, worker="w1")
+            message = str(ctx.exception)
+            self.assertIn("shard.json", message)
+            self.assertIn("working directory", message)
+            self.assertFalse((target / "FEM-TOLLA" / ".remote-execution" / "smoke.jsonl").exists())
+
+    def test_a_smoke_block_without_required_evidence_is_warned_about(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            commit = self._init_repo(target)
+            bare = JOBFOLDER.read(self._generate(tmp, target, commit=commit, required_evidence=None))
+            (warning,) = JOBFOLDER.smoke_warnings(bare.run_config)
+            self.assertIn("--smoke-required-evidence", warning)
+            self.assertIn("shard.json", warning)
+            declared = JOBFOLDER.read(self._generate(tmp, target, commit=commit, job_name="search-b"))
+            self.assertEqual(JOBFOLDER.smoke_warnings(declared.run_config), [])
+
     def test_smoke_record_parser_requires_job_dir_from_artifact_and_worker(self) -> None:
         parser = REMOTE_CLI._build_parser()
         args = parser.parse_args([
@@ -22835,7 +22916,12 @@ def main():
             )
             return 1
         local.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(str(remote), str(local))
+        if data.get("download_notebooks_as_repr") and remote.suffix == ".ipynb":
+            # google-colab-cli 0.6.0 writes `str(content)` for a notebook the
+            # contents API returns as JSON, i.e. a Python dict repr.
+            local.write_text(str(json.loads(remote.read_text(encoding="utf-8"))), encoding="utf-8")
+        else:
+            shutil.copy(str(remote), str(local))
         sys.stdout.write("[colab] Downloaded %r to %r\n" % (str(remote), str(local)))
         return 0
 
@@ -23050,6 +23136,35 @@ class ColabSessionLifecycleTests(unittest.TestCase):
                 stop_index,
                 "the release must run after the bytes are local (D9)",
             )
+
+    def test_colab_fetch_returns_notebooks_as_json_when_the_cli_hands_back_a_repr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(download_notebooks_as_repr=True)
+            adapter = self._adapter(sim)
+            submission = self._submit(adapter, self._job_folder(tmp))
+            deadline = time.time() + 120
+            while time.time() < deadline and adapter.poll(submission.id).state not in ("complete", "failed"):
+                time.sleep(0.5)
+            destination = Path(tmp) / "fetched"
+            self.assertTrue(adapter.fetch(submission.id, destination).complete)
+            notebook = json.loads((destination / "runner.executed.ipynb").read_text(encoding="utf-8"))
+            self.assertIn("cells", notebook)
+
+    def test_a_notebook_repr_is_restored_and_anything_else_is_left_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            body = {"cells": [{"cell_type": "code", "source": "x = 'it''s'"}], "nbformat": 4}
+            repr_file = root / "a.ipynb"
+            repr_file.write_text(str(body), encoding="utf-8")
+            COLAB.restore_notebook_json(repr_file)
+            self.assertEqual(json.loads(repr_file.read_text(encoding="utf-8")), body)
+            for name, text in (("b.ipynb", json.dumps(body)), ("c.ipynb", "not a notebook"),
+                               ("d.ipynb", "__import__('os')")):
+                path = root / name
+                path.write_text(text, encoding="utf-8")
+                COLAB.restore_notebook_json(path)
+                self.assertEqual(path.read_text(encoding="utf-8"), text)
 
     # -- submit: naming, pre-check, merge, cleanup, installs ---------------
 

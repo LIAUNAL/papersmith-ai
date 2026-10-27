@@ -1497,6 +1497,21 @@ record` routes through `jobfolder.read()`, and — unlike
 `_job_folder_staleness()` — does NOT swallow a `JobFolderError`: this
 command has no legacy-shape fallback to fall through to.
 
+**The smoke writes the stamp; nothing else does.** The runner never
+writes `shard.json`: the target's smoke does, into its own working
+directory, which is the folder `fetch --smoke` returns. A callable smoke
+runs with `FORGE_RUN_MODE` set (the runner exports it around the call),
+so writing the stamp only when that variable is present keeps local runs
+clean. Put in it what proves the rehearsal ran the code you think on the
+hardware you think — typically the commit (`git rev-parse HEAD` of the
+clone), a digest of the sources, and the device kind and name — and
+declare those paths with `--smoke-required-evidence`. `generate-job`
+reports a `warnings` entry when a smoke block declares none, because
+`completeness(stamp, [])` passes on any JSON at all. `smoke record
+--from-artifact` takes either the `shard.json` itself or the fetched
+rehearsal folder, and a folder with no stamp is refused with what the
+smoke must write.
+
 **Readiness, and no clock.** `remote_cli.py readiness --job-dir <dir>
 --worker <worker>` reports whether a job is ready for its full submission
 on that worker — issues no submission, offers no menu, the same

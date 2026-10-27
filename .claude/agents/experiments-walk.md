@@ -39,12 +39,38 @@ Two stops in your stretch are the operator's and are **not defects to
 repair**: publishing the commit a worker would clone, and the launch itself.
 Stalling on them is wrong; taking one is worse.
 
+Three refusals in the remote stretch have a known cause:
+
+- `DIRTY_WORKTREE` from `step` after a rehearsal usually means a generated job
+  folder or a drawn experiment diagram is still untracked. Commit them; both
+  belong in the history.
+- A `submit` that ends "timed out ... refusing to guess" did not say whether
+  the session exists. Run `reconcile` without `--resolve` (it only reads) and
+  retry only when it shows no live session for this job; otherwise you pay
+  for two rehearsals.
+- `smoke record` refusing a folder with no `shard.json` means the smoke never
+  wrote its evidence stamp; that is a gap in the target, not in the worker.
+
 ## The rehearsal is yours, the campaign is not
 
 A rehearsal is minutes and finds cheaply what a long run finds expensively —
 run it rather than offering it. A campaign is hours of quota and its plan is
 the operator's to approve. Report what a rehearsal found either way: a
 rehearsal that failed is the cheapest result this flow can produce.
+
+Mechanics of a rehearsal, learned the expensive way:
+
+- After any commit that changes what a worker clones, run
+  `generate-job --regenerate` so the job is re-pinned, then publish both. The
+  consent token is minted per pin: a re-pinned job needs a fresh one.
+- Wait with `poll`, which only reads the state. `fetch` is for a run that has
+  finished.
+- The smoke must write `shard.json` into its working directory with what
+  proves the run (commit, device), and the job must name those paths with
+  `--smoke-required-evidence`; `generate-job` warns when it names none.
+- Read the fetched `shard.json` and the run's own records before `smoke
+  record`: a rehearsal that ran on the CPU when the job asked for a GPU passed
+  nothing.
 
 ## Estimate before the pilot
 
