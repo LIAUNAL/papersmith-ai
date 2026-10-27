@@ -2801,6 +2801,19 @@ name (latest wins) against a live digest: `True` for a current `returned`,
 pre-change event with no digest at all, or no event at all — never a false
 `True`/`False` over code nobody ran against.
 
+A step that runs remotely — one declared `placement: "remote"` with a
+`job`, or one named after a job folder, the same two links `position
+--reconcile` uses — is not measured from this ledger at all, so running it
+locally with `step` never ticks it. `position` ticks it after `fetch`: the
+main remote-execution ledger (`<Name>/.remote-execution/ledger.jsonl`; a
+rehearsal in `smoke.jsonl` never counts) must hold a `returned` for every
+worker's latest submission of the job, judged `current` by the
+remote-execution fold (not quarantined as `fromStaleSubmission`), and the
+returned artifact's `bootstrap.json` must name the commit the job folder is
+pinned to now — a result from a pin the job has moved past expires, as a
+smoke record does at `readiness`. Anything else reads `unmeasured`, never
+`False`, and its `reason` says what is missing.
+
 The digest is not narrowed to the code a step executes, and that is
 deliberate: a step's callable may run the suite, read a file under `tests/`
 or spawn a subprocess, and the engine cannot see which. A narrower scope
