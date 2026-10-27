@@ -596,21 +596,21 @@ def build_denylist(profiles: list[dict[str, Any]]) -> dict[str, str]:
 #: (`reset --hard` + `clean -fd`, each with `check=False`) collapse into
 #: `_roll_back_to_head`. One SHRANK, deliberately: `check` 168->162.
 M5_PINNED_RESIDUE: dict[str, int] = {
-    "actually": 83, "admissible": 3, "after": 93, "against": 196,
-    "agreed": 16, "answered": 97, "answers": 107, "approved": 48,
-    "audit": 19, "before": 261, "benchmark": 108, "beside": 111,
-    "check": 162, "checkable": 3, "claim": 41, "command": 276,
-    "commands": 18, "compares": 25, "declaration": 212,
+    "actually": 83, "admissible": 3, "after": 96, "against": 198,
+    "agreed": 16, "answered": 97, "answers": 108, "approved": 48,
+    "audit": 19, "before": 269, "benchmark": 108, "beside": 114,
+    "check": 164, "checkable": 3, "claim": 41, "command": 295,
+    "commands": 23, "compares": 25, "declaration": 212,
     "destinations": 36, "empty": 131, "established": 5, "experiment": 25,
     "experiments": 6, "implementations": 3, "incomplete": 29,
     "invariant": 22, "isolated": 5, "leave": 11, "leaves": 38,
-    "local": 37, "longer": 54, "makes": 48, "materialized": 12,
-    "measured": 143, "measurement": 43, "module": 199, "notebooks": 110,
-    "object": 33, "pilot": 123, "place": 58, "produces": 51,
-    "rather": 384, "recorded": 81, "remedy": 57, "remote": 65,
-    "reported": 149, "resolves": 34, "ruled": 9, "runnable": 15,
-    "scaffolded": 12, "sitting": 9, "small": 8, "something": 76,
-    "steps": 139, "sweep": 11, "validated": 10, "value": 246, "whose": 156,
+    "local": 37, "longer": 55, "makes": 48, "materialized": 12,
+    "measured": 145, "measurement": 43, "module": 199, "notebooks": 110,
+    "object": 33, "pilot": 124, "place": 58, "produces": 51,
+    "rather": 386, "recorded": 82, "remedy": 60, "remote": 72,
+    "reported": 150, "resolves": 34, "ruled": 9, "runnable": 15,
+    "scaffolded": 12, "sitting": 9, "small": 8, "something": 77,
+    "steps": 139, "sweep": 11, "validated": 10, "value": 247, "whose": 161,
     "write": 154, "wrong": 52
 }
 #: Unit 6b (Part B, the transitions): thirteen pins grew from the new
@@ -910,8 +910,14 @@ L1_DELIBERATE_SHRINK = 3  # documents.label's ARMS_UNDECLARED_CONSEQUENCE conver
 #: Naming the real skill is not a rename campaign or an accidental sweep --
 #: it is the opposite of what this lock guards against.
 L1_HOLDER_DECLARES_GROWTH = 2
+#: `poc-launch-smoothing` (S3, `launch-plan`): +1, deliberate and recorded --
+#: `_proposal_blocker` matches the ledger's own `kind: "proposal"` event
+#: literal, the same spelling `cmd_propose` writes; every comment it brought
+#: says `propose` record instead, so the literal is the only new occurrence.
+L1_LAUNCH_PLAN_GROWTH = 1
 L1_EXPECTED_COUNT = (
-    L1_BASELINE_AT_S0 - L1_DELIBERATE_SHRINK + L1_HOLDER_DECLARES_GROWTH)
+    L1_BASELINE_AT_S0 - L1_DELIBERATE_SHRINK + L1_HOLDER_DECLARES_GROWTH
+    + L1_LAUNCH_PLAN_GROWTH)
 L1_EXPECTED_FILES = ["implementation_engine.py"]
 
 #: L2 (design.md D6): each of these must still resolve, spelled exactly --

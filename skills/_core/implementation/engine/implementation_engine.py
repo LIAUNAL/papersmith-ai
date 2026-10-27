@@ -5091,6 +5091,11 @@ def scaffold_destinations(name: str) -> list[str]:
             # because Flow A must be able to stamp before any comparison is
             # ever offered — see design D7.
             f"src/{package_name(name)}/report_digest.py",
+            # The `shard.json` a remote smoke is recorded from, written only
+            # under the runner (`FORGE_RUN_MODE`). Beside the seal for the
+            # seal's own reason: it finds the repository from its own path,
+            # and it reuses the seal's digest so a shard and a report agree.
+            f"src/{package_name(name)}/remote_stamp.py",
             "tests/test_smoke.py",
             # `conftest.py`, `sweep.py` and `admissibility.py` are not tests and
             # were never asked for, so a scaffold built from exactly this list
@@ -5101,6 +5106,9 @@ def scaffold_destinations(name: str) -> list[str]:
             "tests/findings.py", "tests/conftest.py", "tests/sweep.py",
             "tests/admissibility.py",
             "tests/test_audit.py", "tests/test_remedies.py",
+            # Tests the stamp above and carries the device-mix guard a target
+            # wires to its own forward; it skips cleanly without torch.
+            "tests/test_remote_readiness.py",
             f"{name}/Notebooks/verification.ipynb"]
 
 
@@ -5338,6 +5346,9 @@ def scaffold_kit_source(destination: str, name: str) -> Path | None:
     package = package_name(name)
     mapping = {
         f"src/{package}/{KIT_SEAL.name}": KIT_SEAL,
+        f"src/{package}/remote_stamp.py": SKILL_ROOT / "assets" / "kit" / "nb" / "remote_stamp.py",
+        "tests/test_remote_readiness.py":
+            SKILL_ROOT / "assets" / "kit" / "tests" / "test_remote_readiness.py",
         "tests/test_smoke.py": SKILL_ROOT / "assets" / "kit" / "tests" / "test_smoke.py",
         "tests/findings.py": SKILL_ROOT / "assets" / "kit" / "tests" / "findings.py",
         "tests/conftest.py": SKILL_ROOT / "assets" / "kit" / "tests" / "conftest.py",
@@ -13312,6 +13323,107 @@ def _reconcile_discovered_witnesses(target: Path, name: str, args: argparse.Name
     return witnesses
 
 
+def _steps_running_job(declared_steps: dict, job: str) -> set[str]:
+    """The step ids whose ladder item runs `job` remotely.
+
+    Two links, and only two: a step `__steps__` declares with `placement:
+    remote` and `job: <job>`, or a step whose id is the job's own name --
+    the fallback a repository that names its run step after its job folder
+    already relies on (an `@step <job>` item beside the `<job>` job
+    folder). Nothing else ties a step to a job, and
+    this guesses no third link.
+    """
+    linked = {job}
+    for step, entry in (declared_steps or {}).items():
+        if _step_placement(entry) == PLACEMENT_REMOTE and _step_job(entry) == job:
+            linked.add(step)
+    return linked
+
+
+def _rehearsal_insertion_index(items: list, job: str, declared_steps: dict) -> int | None:
+    """The index of the first ladder item that runs `job` remotely, or
+    `None` when no item does -- where a missing `@rehearsal <job>` belongs,
+    since `launch_available` refuses a launch while any item before the
+    rehearsal is open, and the run step itself is the launch."""
+    linked = _steps_running_job(declared_steps, job)
+    return next((index for index, item in enumerate(items)
+                 if item["witness"]["kind"] == "step"
+                 and item["witness"]["operand"] in linked), None)
+
+
+def _launch_job_names(target: Path, declared_steps: dict) -> list[str]:
+    """Every job a launch could be gated for: each discovered job folder's
+    own `jobName`, then each remote step's declared `job` not already
+    among them, in that order and without repeats."""
+    rcli = _load_remote_execution_cli()
+    names: list[str] = []
+    for job_dir in _discovered_job_folders(target, rcli):
+        try:
+            job = rcli.JOBFOLDER.read(job_dir).run_config.get("jobName", job_dir.name)
+        except rcli.JOBFOLDER.JobFolderError:
+            job = job_dir.name
+        if job not in names:
+            names.append(job)
+    for _, entry in sorted((declared_steps or {}).items()):
+        job = _step_job(entry) if _step_placement(entry) == PLACEMENT_REMOTE else None
+        if job and job not in names:
+            names.append(job)
+    return names
+
+
+def rehearsal_witness_missing_state(sequence: list, jobs: list[str],
+                                    declared_steps: dict) -> list[dict]:
+    """One entry per job whose ladder names no `@rehearsal <job>` item.
+
+    Without that item `offer` publishes no `launch` for the job and `gate`
+    refuses `SEQUENCE_NOT_REACHED` (`no_witness`) -- learned, in the field,
+    only at the launch. `beforeOrdinal` is the ordinal of the item that runs
+    the job remotely (`_rehearsal_insertion_index`), which is exactly where
+    `position --reconcile` inserts the missing item; `None` when no item
+    runs it, and reconcile then appends. `step` names that item's operand.
+    """
+    present = {item["witness"]["operand"] for item in sequence
+               if item["witness"]["kind"] == "rehearsal"}
+    missing = []
+    for job in jobs:
+        if job in present:
+            continue
+        index = _rehearsal_insertion_index(sequence, job, declared_steps)
+        missing.append({
+            "job": job,
+            "step": None if index is None else sequence[index]["witness"]["operand"],
+            "beforeOrdinal": None if index is None else sequence[index]["ordinal"],
+        })
+    return missing
+
+
+def launch_ladder_state(target: Path, name: str, position: dict,
+                        declared_steps: dict, revision: str | None) -> dict | None:
+    """What the ladder still owes a launch, before any job is generated:
+    the jobs with no `@rehearsal` witness and the ticked items nothing
+    measured (`POSITION_UNBACKED` at `gate`). `None` when it owes nothing,
+    so a reader that never reaches a remote step reads unchanged."""
+    if position["status"] == "absent" and not position["sequence"]:
+        missing = []
+    else:
+        missing = rehearsal_witness_missing_state(
+            position["sequence"], _launch_job_names(target, declared_steps),
+            declared_steps)
+    unbacked = [item["ordinal"] for item in position["unbacked"]]
+    if not missing and not unbacked:
+        return None
+    parts = ["position", "--target", str(target), "--name", name,
+             "--session", "<session>"]
+    if revision:
+        parts += ["--revision", str(revision)]
+    return {
+        "rehearsalWitnessMissing": missing,
+        "unbackedOrdinals": unbacked,
+        "resolve": _cli_command(*parts, "--reconcile") if missing
+                   else _cli_command(*parts),
+    }
+
+
 def position_reinstall_payload(sequence: list[dict]) -> list[dict]:
     """The exact `--sequence` array that reinstalls the sequence a report has
     just described: same items, same order, same text, same witness, and no
@@ -13724,15 +13836,29 @@ def cmd_position(args: argparse.Namespace) -> dict:
         known = {(item["witness"]["kind"], item["witness"]["operand"])
                 for item in existing}
         appended = []
+        # A rehearsal the ladder lacks goes immediately BEFORE the item that
+        # runs its job remotely, not at the end: `launch_available` refuses
+        # a launch while any item before the rehearsal is open, so appended
+        # after the run step it could never be reached. Existing
+        # items keep their text and order; only the ordinals after the
+        # insertion move. With no such item it is appended, as before.
+        declared_steps = resolve_steps_declaration(target, name)
+        items = list(existing)
         for witness in _reconcile_discovered_witnesses(target, name, args):
             key = (witness["kind"], witness["operand"])
             if key in known:
                 continue
             known.add(key)
-            appended.append({"mark": " ", "text": POSITION_PLACEHOLDER_TEXT,
-                             "witness": witness})
-        structure_changed = bool(appended)
-        items = existing + appended
+            entry = {"mark": " ", "text": POSITION_PLACEHOLDER_TEXT,
+                     "witness": witness}
+            index = (_rehearsal_insertion_index(items, witness["operand"], declared_steps)
+                     if witness["kind"] == "rehearsal" else None)
+            if index is None:
+                appended.append(entry)
+            else:
+                items.insert(index, entry)
+        structure_changed = len(items) != len(existing) or bool(appended)
+        items = items + appended
         for ordinal, item in enumerate(items, start=1):
             item["ordinal"] = ordinal
         target_path = existing_path or _chosen_holder(
@@ -16779,6 +16905,34 @@ def cmd_propose(args: argparse.Namespace) -> dict:
     }
 
 
+def _launch_position_state(target: Path, name: str, evidence: dict,
+                           revision: str | None, source: str) -> dict:
+    """The position a launch decision reads: `position_state`, folded to the
+    absent shape when the block found sits in a holder this skill does not
+    declare (see `cmd_gate`'s own comment beside its call). Shared by `gate`
+    and `launch-plan`, so the plan never reads a position the gate would
+    not."""
+    position = position_state(target, name, evidence, revision, source,
+                              _document_extra_sources(revision))
+    if (position["holder"] is not None
+            and Path(position["holder"]).name != HOLDER_FILENAME):
+        position = _absent_position_state(len(DOCUMENTS) > 1)
+    return position
+
+
+def _job_folder_named(target: Path, rcli, job: str):
+    """`(job_dir, run_config)` for the discovered job folder whose own
+    `jobName` (or folder name) is `job`, or `(None, None)`."""
+    for candidate in _discovered_job_folders(target, rcli):
+        try:
+            candidate_config = rcli.JOBFOLDER.read(candidate).run_config
+        except rcli.JOBFOLDER.JobFolderError:
+            continue
+        if candidate_config.get("jobName", candidate.name) == job:
+            return candidate, candidate_config
+    return None, None
+
+
 def cmd_gate(args: argparse.Namespace) -> dict:
     """The launch authorization record (design §4, domain launch-authorization).
 
@@ -16876,8 +17030,7 @@ def cmd_gate(args: argparse.Namespace) -> dict:
     revision_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
 
     evidence = _position_write_evidence(target, name)
-    position = position_state(target, name, evidence, args.revision, source,
-                              _document_extra_sources(args.revision))
+    position = _launch_position_state(target, name, evidence, args.revision, source)
     # `the-holder-each-skill-declares` Phase 8 (the READ face of the
     # CRITICAL defect Phase 7 closed on the WRITE side, Engram obs
     # 2139/2140): `position_state` falls back to its own raw by-shape
@@ -16896,9 +17049,8 @@ def cmd_gate(args: argparse.Namespace) -> dict:
     # every branch this comparison would otherwise be meaningless for
     # (already absent), so the check only ever narrows an existing read,
     # never widens one.
-    if (position["holder"] is not None
-            and Path(position["holder"]).name != HOLDER_FILENAME):
-        position = _absent_position_state(len(DOCUMENTS) > 1)
+    # The fold itself lives in `_launch_position_state`, shared with
+    # `launch-plan`, so the two read the identical position.
     smoke_ready = evidence["smokeReady"]
     verdict = impl_availability.launch_available(
         status=position["status"], unbacked=position["unbacked"],
@@ -17014,15 +17166,7 @@ def cmd_gate(args: argparse.Namespace) -> dict:
             f"the evidence reaches {facts['requiredLevel']!r}.")
 
     rcli = _load_remote_execution_cli()
-    job_dir = run_config = None
-    for candidate in _discovered_job_folders(target, rcli):
-        try:
-            candidate_config = rcli.JOBFOLDER.read(candidate).run_config
-        except rcli.JOBFOLDER.JobFolderError:
-            continue
-        if candidate_config.get("jobName", candidate.name) == args.job:
-            job_dir, run_config = candidate, candidate_config
-            break
+    job_dir, run_config = _job_folder_named(target, rcli, args.job)
     if job_dir is None:
         # `smoke_ready.get(args.job) is True` above already requires this job
         # to have been discovered and read successfully -- reaching here
@@ -17098,21 +17242,8 @@ def cmd_gate(args: argparse.Namespace) -> dict:
     # `probe_state`/`search_cost_forecast` call this command did not
     # already need for anything else, over the SAME `run_config` this
     # loop already opened, never a second `JOBFOLDER.read()`.
-    gate_resolved = resolve_benchmark_declaration(target, name)
-    gate_report = report_state(target, name, package_name(name))
-    gate_search = search_state(
-        gate_resolved["contract"],
-        list((gate_report.get("declared") or {}).get("records") or []),
-        target / name, declaration_status=gate_resolved["status"],
-        digest=source_digest(target, package_name(name)))
-    gate_state = probe_state(target, name, args.revision)
-    gate_cost_forecast = search_cost_forecast(
-        gate_state.get("reduction") or {}, declared_required_scale(gate_search))
-    gate_necessity = impl_execution_strategy.classify_remote_necessity(
-        jobs=[{"job": args.job, **_job_execution_fields(run_config),
-               "smokeReady": smoke_ready.get(args.job, False)}],
-        results_status=gate_state["status"], cost_forecast=gate_cost_forecast)
-    necessity_verdict = gate_necessity["jobs"][args.job]["necessity"]
+    necessity_verdict = _job_remote_necessity(
+        target, name, args.revision, args.job, run_config, smoke_ready)
     _verify_optional_election(args.job, necessity_verdict, args.elected)
 
     recorded_at = _now_iso8601()
@@ -17156,6 +17287,31 @@ def cmd_gate(args: argparse.Namespace) -> dict:
         "elected": elected,
         **({"documentRevisions": extra_documents} if len(DOCUMENTS) > 1 else {}),
     }
+
+
+def _job_remote_necessity(target: Path, name: str, revision: str | None, job: str,
+                          run_config: dict, smoke_ready: dict) -> str:
+    """`job`'s own remote-necessity verdict (design D3, `the-pilot-decides-
+    the-remote-strategy`), computed the same already-tolerated way
+    `cmd_probe` computes it -- one `search`/`probe_state`/
+    `search_cost_forecast` call over the job folder's own `run_config`.
+    Shared by `gate` (which refuses an `optional` job without `--elect`)
+    and `launch-plan` (which says so before the gate is reached)."""
+    resolved = resolve_benchmark_declaration(target, name)
+    report = report_state(target, name, package_name(name))
+    search = search_state(
+        resolved["contract"],
+        list((report.get("declared") or {}).get("records") or []),
+        target / name, declaration_status=resolved["status"],
+        digest=source_digest(target, package_name(name)))
+    state = probe_state(target, name, revision)
+    cost_forecast = search_cost_forecast(
+        state.get("reduction") or {}, declared_required_scale(search))
+    necessity = impl_execution_strategy.classify_remote_necessity(
+        jobs=[{"job": job, **_job_execution_fields(run_config),
+               "smokeReady": smoke_ready.get(job, False)}],
+        results_status=state["status"], cost_forecast=cost_forecast)
+    return necessity["jobs"][job]["necessity"]
 
 
 def _offer_launch_action(target, name, args, rcli, position, evidence, job_dir):
@@ -17302,6 +17458,19 @@ def _authorization_binding(action: dict, revision: str | None, revision_sha256: 
     }
 
 
+def _find_authorization(events: list, binding: dict) -> str | None:
+    """The newest unconsumed authorization token already covering exactly
+    `binding`, or `None` -- the lookup half of `_find_or_mint_authorization`,
+    held apart so `launch-plan` can ask it without minting anything."""
+    consumed = {e["token"] for e in events if e.get("kind") == "authorization-consumed"}
+    existing = next(
+        (e for e in reversed(events)
+         if e.get("kind") == "authorization" and e.get("token") not in consumed
+         and all(e.get(key) == value for key, value in binding.items())),
+        None)
+    return None if existing is None else existing["token"]
+
+
 def _find_or_mint_authorization(ledger_path: Path, events: list, binding: dict,
                                 session: str, at: str) -> str:
     """The authorization token for `binding`: an existing unconsumed one if
@@ -17350,14 +17519,9 @@ def _find_or_mint_authorization(ledger_path: Path, events: list, binding: dict,
     -- replaying the identical ledger from disk always reproduces the
     identical ordinal, unlike a wall clock or a random value.
     """
-    consumed = {e["token"] for e in events if e.get("kind") == "authorization-consumed"}
-    existing = next(
-        (e for e in reversed(events)
-         if e.get("kind") == "authorization" and e.get("token") not in consumed
-         and all(e.get(key) == value for key, value in binding.items())),
-        None)
+    existing = _find_authorization(events, binding)
     if existing is not None:
-        return existing["token"]
+        return existing
 
     mint_ordinal = sum(1 for e in events if e.get("kind") == "authorization")
     payload = {**binding, "session": session, "at": at, "mintOrdinal": mint_ordinal}
@@ -17572,6 +17736,205 @@ def cmd_offer(args: argparse.Namespace) -> dict:
         "revisionSha256": revision_sha256,
         "actions": actions, "session": args.session, "recordedAt": recorded_at,
         **({"documentRevisions": extra_documents} if len(DOCUMENTS) > 1 else {}),
+    }
+
+
+#: The acts between a rehearsed job and its launch, in the order they run.
+LAUNCH_PLAN_ACTS = ("propose", "offer", "gate", "submit")
+
+
+def _proposal_blocker(events: list, job: str, campaign: dict) -> str | None:
+    """The `GATE_PROPOSAL_*` code `gate` would raise for `job` against the
+    newest `propose` record current for `campaign`, or `None` when that
+    record stands. Asks `_verify_gate_proposal` itself, over the digest a token
+    minted now would bind (`_proposal_digest`), so the rule is the gate's
+    and not a copy. A `propose` record that names `job` but is no longer
+    current reads `GATE_PROPOSAL_STALE` rather than `_UNKNOWN`: both send the
+    reader to `propose`, and the narrower one says why."""
+    digest = _proposal_digest(events, campaign)
+    if digest is None and any(
+            e.get("kind") == "proposal" and job in (e.get("jobs") or [])
+            for e in events):
+        return "GATE_PROPOSAL_STALE"
+    try:
+        _verify_gate_proposal(events, job, {"proposalDigest": digest}, campaign)
+    except Refused as refused:
+        return refused.code
+    return None
+
+
+def cmd_launch_plan(args: argparse.Namespace) -> dict:
+    """What is still missing before `--job` launches, act by act, and the
+    exact next command (S3, `poc-launch-smoothing`). Read-only: appends no
+    ledger event, mints no token and writes no file.
+
+    The four acts, in order: `propose` (a current campaign record naming
+    the job), `offer` (an unconsumed authorization token for the launch's
+    current binding), `gate` (a `gate` record `submit` will accept) and
+    `submit`. Each carries `status` -- `done`, `blocked` (it would refuse
+    now), `next` (it would succeed now) or `pending` (an earlier act owes
+    first) -- the `code` it would raise now, and the `command` to run.
+
+    Every verdict is the engine's own: `offer`'s is
+    `impl_availability.launch_available` over the position `gate` reads
+    (`_launch_position_state`), the token lookup is `_find_authorization`
+    over `_authorization_binding`, the `propose` check is
+    `_verify_gate_proposal`, the election is `_job_remote_necessity`, the
+    gate record is `remote_cli._verify_launch_authorization` and the
+    diagram check is `remote_cli._verify_diagrams_validated` -- the same
+    functions the acts themselves call, so the plan cannot disagree with
+    the refusal it predicts.
+    """
+    target = resolve_target(args.target)
+    name = validate_name(args.name)
+    # No `require_named_product_dir`: that guard keeps a ledger APPEND from
+    # opening a second product tree, and this command appends nothing.
+    _require_no_open_defect(target, name)
+    source = revision_source(args.revision)
+    if source is None:
+        root = proposals_root()
+        raise Refused(
+            "REVISION_UNREADABLE",
+            f"{args.revision!r} is not readable under {root}; "
+            "a launch cannot be planned against a revision that cannot be read.")
+    revision_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+    job = args.job
+    session = args.session or "<session>"
+    worker_flag = args.worker or "<account>"
+    events = impl_position.read_events(target / name / ".implementation" / "position.jsonl")
+    evidence = _position_write_evidence(target, name)
+    position = _launch_position_state(target, name, evidence, args.revision, source)
+    rcli = _load_remote_execution_cli()
+    campaign = _campaign_identity(target, rcli)
+    job_dir, run_config = _job_folder_named(target, rcli, job)
+    commit = (run_config or {}).get("commit")
+    entrypoint = (str((job_dir / rcli.JOBFOLDER.RUNNER_FILENAME).relative_to(target))
+                  if job_dir is not None else None)
+    ladder = launch_ladder_state(target, name, position,
+                                 resolve_steps_declaration(target, name), args.revision)
+    target_args = ("--target", str(target), "--name", name)
+
+    gate_recorded = False
+    if commit and entrypoint:
+        try:
+            rcli._verify_launch_authorization(
+                smoke=False, target=target, product=name, pin_commit=commit,
+                relative_entrypoint=Path(entrypoint), units=[], worker=args.worker)
+            gate_recorded = True
+        except rcli.AuthorizationError:
+            gate_recorded = False
+
+    verdict = impl_availability.launch_available(
+        status=position["status"], unbacked=position["unbacked"],
+        disagreements=_launch_disagreements(position),
+        sequence=position["sequence"], ready=evidence["smokeReady"].get(job),
+        job=job, shards_declared=evidence["shardsArrived"] is not None,
+        levels=evidence["levels"], attained_level=position["attainedLevel"])
+
+    # propose -- `next` only once the launch itself is available: a record
+    # freezes the campaign's pin, and the work that clears `NOT_READY` (a
+    # re-generated job, a fresh rehearsal) is what moves that pin, staling a
+    # `propose` made too early (`GATE_PROPOSAL_STALE`), as a field launch found.
+    proposal_code = None if gate_recorded else _proposal_blocker(events, job, campaign)
+    propose = {"act": "propose",
+               "status": ("done" if proposal_code is None
+                          else "next" if verdict["available"] else "pending"),
+               "code": proposal_code,
+               "command": None if proposal_code is None else _cli_command(
+                   "propose", *target_args, "--session", session, "--job", job,
+                   "--worker", worker_flag, "--rationale", "-")}
+
+    # offer
+    token = None
+    offer_command = _cli_command("offer", *target_args, "--revision", str(args.revision),
+                                 "--session", session, "--answer", "yes")
+    if gate_recorded:
+        offer = {"act": "offer", "status": "done", "code": None, "command": None}
+    elif not verdict["available"]:
+        code = verdict["code"]
+        if code == "SEQUENCE_NOT_REACHED" and verdict["facts"].get("reason") == "no_witness":
+            remedy = _cli_command("position", *target_args, "--revision", str(args.revision),
+                                  "--session", session, "--reconcile")
+        else:
+            resolution = refusal_resolution(code, argparse.Namespace(
+                command="gate", target=str(target), name=name, revision=args.revision,
+                session=session, job=job, worker=args.worker, units=None))
+            remedy = (resolution or {}).get("command")
+        offer = {"act": "offer", "status": "blocked", "code": code,
+                 "facts": verdict["facts"], "command": remedy}
+    else:
+        action = (_offer_launch_action(
+            target, name, argparse.Namespace(revision=args.revision, session=session,
+                                             units=None),
+            rcli, position, evidence, job_dir) if job_dir is not None else None)
+        if action is None:
+            offer = {"act": "offer", "status": "blocked", "code": None,
+                     "detail": "offer publishes no `launch` for this job: its "
+                               "run-config.json names no commit or service, or no "
+                               "capacity reporter answers for that service",
+                     "command": None}
+        elif proposal_code is not None:
+            offer = {"act": "offer", "status": "pending", "code": None,
+                     "command": offer_command}
+        else:
+            binding = _authorization_binding(action, args.revision, revision_sha256,
+                                             position["status"], events, campaign)
+            token = _find_authorization(events, binding)
+            offer = ({"act": "offer", "status": "done", "code": None,
+                      "authorization": token, "command": None}
+                     if token is not None else
+                     {"act": "offer", "status": "next", "code": None,
+                      "command": offer_command})
+
+    # gate
+    if gate_recorded:
+        gate = {"act": "gate", "status": "done", "code": None, "command": None}
+    elif token is not None:
+        optional = _job_remote_necessity(target, name, args.revision, job, run_config,
+                                         evidence["smokeReady"]) == "optional"
+        gate = {"act": "gate", "status": "next", "code": None, "elect": optional,
+                "command": _cli_command(
+                    "gate", *target_args, "--revision", str(args.revision),
+                    "--session", session, "--job", job, "--worker", worker_flag,
+                    "--justification", "-", "--authorization", token,
+                    *(("--elect", job) if optional else ()))}
+    else:
+        gate = {"act": "gate", "status": "pending", "code": None, "command": None}
+
+    # submit
+    try:
+        rcli._verify_diagrams_validated(target / name)
+        diagram_code = None
+    except rcli.DiagramValidationError:
+        diagram_code = "DIAGRAM_NOT_VALIDATED"
+    submit_command = None
+    if entrypoint:
+        consent = (rcli.campaign_consent_token(pin_commit=commit,
+                                               relative_entrypoint=entrypoint,
+                                               units=(), worker=args.worker)
+                   if args.worker else "<consent>")
+        # `<service>`, never the run-config's own value: this engine may read
+        # a service name to walk a directory and never returns one.
+        submit_command = " ".join(shlex.quote(part) for part in (
+            sys.executable or "python3", str(REMOTE_EXECUTION_CLI_SCRIPT), "submit",
+            "--target", str(target), "--entrypoint", entrypoint,
+            "--backend", "<service>", "--worker", worker_flag, "--consent", consent))
+    submit = {"act": "submit",
+              "status": ("pending" if not gate_recorded
+                         else "blocked" if diagram_code else "next"),
+              "code": diagram_code, "command": submit_command if gate_recorded else None}
+
+    acts = [propose, offer, gate, submit]
+    upcoming = next((a for a in acts if a["status"] in ("blocked", "next")), None)
+    return {
+        "command": "launch-plan", "target": str(target), "name": name, "job": job,
+        "revision": args.revision, "revisionSha256": revision_sha256,
+        "acts": acts,
+        "next": None if upcoming is None else {
+            "act": upcoming["act"], "status": upcoming["status"],
+            "code": upcoming["code"], "command": upcoming["command"]},
+        **({"launchLadder": ladder} if ladder else {}),
     }
 
 
@@ -18797,6 +19160,7 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     # the target declared -- `undeclared_ladder_state`'s own stated reason for
     # taking `levels` as an argument.
     declared_steps = resolve_steps_declaration(target, name)
+    launch_ladder = launch_ladder_state(target, name, position, declared_steps, revision)
 
     # Computed before the return literal rather than inside it, because
     # `undeclaredOptional` is this list SUBTRACTED from the unanswered ones:
@@ -19041,6 +19405,14 @@ def cmd_verify(args: argparse.Namespace) -> dict:
         # lists deliberately overlap and why neither refuses.
         "undeclaredStepNotebooks": undeclared_step_notebooks_state(
             target, name, declared_steps),
+        # What the ladder still owes a launch, reported before a job is
+        # generated rather than refused one act at a time at the launch: a
+        # job with no `@rehearsal` item (`offer` publishes no `launch`,
+        # `gate` refuses `SEQUENCE_NOT_REACHED`) and ticked items nothing
+        # measured (`gate` refuses `POSITION_UNBACKED`). Present only when
+        # it owes something, so every verify that never reaches a remote
+        # step reads byte-identically. See `launch_ladder_state`.
+        **({"launchLadder": launch_ladder} if launch_ladder else {}),
     }
 
 
@@ -21728,6 +22100,7 @@ COMMANDS = {"walk": cmd_walk,
             "propose": cmd_propose,
             "gate": cmd_gate,
             "offer": cmd_offer,
+            "launch-plan": cmd_launch_plan,
             "close": cmd_close,
             "step": cmd_step,
             "settle": cmd_settle,
@@ -21804,7 +22177,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "alike); --reconcile additionally discovers "
                                 "one @shard witness per arrived shard")
         if name in {"verify", "admit", "handoff", "probe", "position", "gate",
-                   "offer", "close"}:
+                   "offer", "close", "launch-plan"}:
             p.add_argument("--revision", default=None,
                            help="pin document 0's revision to check against; "
                                 "omit it and verify discovers the newest of "
@@ -21963,6 +22336,22 @@ def main(argv: list[str] | None = None) -> int:
                                 "a different job, or names --job while it "
                                 "does not classify `optional`. Never "
                                 "stored and reused -- argv, every call")
+        if name == "launch-plan":
+            # Read-only: no ledger event, no token, no file. `--session`
+            # is optional here and only fills the commands this prints.
+            p.add_argument("--job", required=True,
+                           help="the job whose launch this plans: the name a "
+                                "`@rehearsal` witness and a job folder's own "
+                                "jobName carry")
+            p.add_argument("--worker", default=None,
+                           help="the account the launch is meant for; named in "
+                                "the printed gate/submit commands and used to "
+                                "find a `gate` record `submit` would accept. "
+                                "Omitted, the commands carry `<account>`")
+            p.add_argument("--session", default=None,
+                           help="identity to print into the commands it lists; "
+                                "nothing is stamped anywhere. Omitted, the "
+                                "commands carry `<session>`")
         if name == "offer":
             p.add_argument("--answer", default=None,
                            help="yes or no, answering whether every declared "

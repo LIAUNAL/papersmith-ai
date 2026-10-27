@@ -9047,7 +9047,9 @@ class NewlyCoveredSubjectRosterTests(unittest.TestCase):
         # 9 -> 10: the adoption operation (0.14.0), the shared host's own
         # widening, measured from its refusal.
         ("experimental-deliberation", 10),
-        ("experimental-implementation", 22),
+        # 22 -> 23: `launch-plan`, the shared engine's read-only launch
+        # checklist, measured from its refusal.
+        ("experimental-implementation", 23),
         ("kaggle-accounts", 5),
         # 27 -> 28: this fork's own `figure` namespace (`figure optimize` /
         # `figure audit`) joins the roster on top of upstream's `mark`

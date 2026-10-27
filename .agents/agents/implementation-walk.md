@@ -68,8 +68,15 @@ Mechanics of a rehearsal, learned the expensive way:
 - After any commit that changes what a worker clones, run
   `generate-job --regenerate` so the job is re-pinned, then publish both. The
   consent token is minted per pin: a re-pinned job needs a fresh one.
+- Pass the notebook a job runs as `--run-notebook` and do not declare its
+  folder as a `--clone-path`: `generate-job` clones that notebook on its own,
+  while a declared `Notebooks/` folder makes every notebook in it part of the
+  pin, so re-running an unrelated notebook stales the job.
 - Wait with `poll`, which only reads the state. `fetch` is for a run that has
-  finished.
+  finished, and it is due the moment `poll` says `complete`: a finished Colab
+  session sits idle until the service reclaims it, and its results live only
+  on that machine. Put the `fetch` in the same loop as the `poll`; a run fetched
+  hours later can come back `session not found`, and the quota is spent again.
 - The smoke must write `shard.json` into its working directory with what
   proves the run (commit, device), and the job must name those paths with
   `--smoke-required-evidence`; `generate-job` warns when it names none.
@@ -103,6 +110,17 @@ recorded quota — with `--record` into the product tree. Report the verdict, it
 reasons and every checklist item still unmet. The verdict is never launch
 authorization: placement stays with `distribute` and the launch with the
 operator.
+
+## What the launch still needs
+
+Run `launch-plan --job <job>` (with `--worker <account>`) before
+`generate-job` and again before `gate`. It writes nothing and lists, in order,
+what `propose`, `offer`, `gate` and `submit` would refuse now and the exact
+next command: a missing `@rehearsal <job>` item (clear it with `position
+--reconcile`, which inserts it before the remote step), ticked items nothing
+measured, a rehearsal not yet passed at the pin, a missing or stale proposal,
+an unvalidated diagram. `verify` reports the same ladder gaps under
+`launchLadder`. Report what it lists; do not discover it one refusal at a time.
 
 ## What you return
 

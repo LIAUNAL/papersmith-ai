@@ -263,6 +263,33 @@ def validate_clone_paths(
     return tuple(validated)
 
 
+def with_entry_notebooks(
+    clone_paths: Sequence[str], notebooks: Sequence[str]
+) -> list[str]:
+    """The declared clone paths plus every entry notebook no declared path
+    already covers, appended as a clone path of its own (S1).
+
+    The notebook a job runs is the only notebook it needs. Declaring its
+    whole folder made every notebook beside it part of the pin, so an
+    unrelated notebook re-run and committed staled the job (`pin-is-head`)
+    and forced the smoke and the launch chain again. A declared path is
+    never dropped or narrowed: a declared folder that covers the notebook
+    is kept exactly as declared, and nothing is appended.
+
+    A file clone path is delivered by `git sparse-checkout set` in both
+    modes: non-cone matches the file itself, and cone mode (the default
+    since git 2.37) includes every file directly inside the notebook's
+    parent directories — siblings arrive too, read from the same pinned
+    commit, but only the declared notebook enters staleness.
+    """
+    result = list(clone_paths)
+    for raw in notebooks:
+        notebook = validate_notebook_path(raw, where="generation's run block")
+        if not _covered_by_declared(notebook, result):
+            result.append(notebook)
+    return result
+
+
 def _module_to_relpath(dotted: str, source: Path) -> Path | None:
     """Resolve a dotted module name to the `.py` file it names under
     `source` (`<target>/src`) — a package's `__init__.py` when the dotted
@@ -1104,7 +1131,7 @@ def resolve_clone_paths(
             queued.add(name)
             queue.append((name, False))
 
-    def absorb(file: Path, tree: ast.Module) -> None:
+    def absorb(file: Path, tree: ast.Module, exempt=None) -> None:
         """Everything this walk learns from ONE already-parsed file:
         its own constant table, its read/write call sites, and every
         import it makes enqueued for the walk to follow.
@@ -1176,7 +1203,8 @@ def resolve_clone_paths(
                         f"{file}: non-literal importlib.import_module(...) call is uncertain"
                     )
             elif _is_sys_path_mutation(node):
-                unresolved.append(f"{file}: sys.path mutation is uncertain")
+                if exempt is None or not exempt(node):
+                    unresolved.append(f"{file}: sys.path mutation is uncertain")
 
     # A declared NOTEBOOK is an entry too, and the only one this walk can
     # reach by path rather than by dotted name: nothing imports a notebook,
@@ -1216,7 +1244,7 @@ def resolve_clone_paths(
             )
             continue
         try:
-            notebook_text = notebook_code_source(notebook_file)
+            notebook_text, bootstrap_end = _notebook_scan_source(notebook_file)
         except JobFolderError as exc:
             unresolved.append(str(exc))
             continue
@@ -1230,7 +1258,18 @@ def resolve_clone_paths(
         if notebook_file in visited:
             continue
         visited.add(notebook_file)
-        absorb(notebook_file, notebook_tree)
+        # S5: the kit bootstrap cell binds `ROOT` to the clone, so the one
+        # insert of exactly `ROOT / "src"` after it is the clone's own
+        # source root. Any other mutation, an insert before the cell, or a
+        # notebook that rebinds `ROOT` anywhere stays uncertain.
+        exempt = None
+        if bootstrap_end is not None and not _binds_root(notebook_tree):
+            def exempt(node: ast.AST, _after: int = bootstrap_end) -> bool:
+                return (
+                    getattr(node, "lineno", 0) > _after
+                    and ast.dump(node) == _KIT_SRC_INSERT_DUMP
+                )
+        absorb(notebook_file, notebook_tree, exempt)
 
     while queue:
         dotted, is_entry = queue.pop(0)
@@ -1439,13 +1478,23 @@ def notebook_code_source(path: Path) -> str:
     Raises `JobFolderError` when the file is not readable as a notebook;
     the caller turns that into an `unresolved` entry rather than a crash.
     """
+    return "\n".join(chunk for _raw, chunk in _notebook_code_cells(path)) + "\n"
+
+
+def _notebook_code_cells(path: Path) -> list[tuple[str, str]]:
+    """Every code cell of a notebook as `(raw, chunk)`: `raw` is the cell's
+    source exactly as stored (what `_is_kit_bootstrap_cell()` compares
+    byte for byte), `chunk` is that source with `%` magic and `!` shell
+    lines dropped — the piece `notebook_code_source()` joins. One reader,
+    so the joined text and the per-cell view can never disagree.
+    """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise JobFolderError(f"{path}: not readable as a notebook ({exc})") from exc
     if not isinstance(payload, Mapping):
         raise JobFolderError(f"{path}: notebook does not decode to a JSON object")
-    chunks: list[str] = []
+    cells: list[tuple[str, str]] = []
     for cell in payload.get("cells") or []:
         if not isinstance(cell, Mapping) or cell.get("cell_type") != "code":
             continue
@@ -1460,8 +1509,82 @@ def notebook_code_source(path: Path) -> str:
             line for line in text.splitlines()
             if not line.lstrip().startswith(("%", "!"))
         ]
-        chunks.append("\n".join(kept))
-    return "\n".join(chunks) + "\n"
+        cells.append((text, "\n".join(kept)))
+    return cells
+
+
+#: The kit's notebook bootstrap cell, owned by this skill and copied byte for
+#: byte as the first code cell of every kit notebook. Recognised by exact
+#: text, never by a heuristic: an edited copy is scanned like any other cell.
+KIT_BOOTSTRAP_CELL_ASSET = ASSETS_DIR / "notebook_repo_root.py"
+
+#: The one `sys.path` mutation the kit cell's `ROOT` makes safe: `src/` is
+#: the clone's own source root, already on the kernel's `PYTHONPATH`.
+_KIT_SRC_INSERT_DUMP = ast.dump(
+    ast.parse('sys.path.insert(0, str(ROOT / "src"))', mode="eval").body
+)
+
+_kit_bootstrap_text_cache: list[str | None] = []
+
+
+def _kit_bootstrap_text() -> str | None:
+    if not _kit_bootstrap_text_cache:
+        try:
+            text: str | None = KIT_BOOTSTRAP_CELL_ASSET.read_text(encoding="utf-8")
+        except OSError:
+            text = None
+        _kit_bootstrap_text_cache.append(text)
+    return _kit_bootstrap_text_cache[0]
+
+
+def _is_kit_bootstrap_cell(raw: str) -> bool:
+    """True only for a cell byte-identical to `assets/notebook_repo_root.py`."""
+    owned = _kit_bootstrap_text()
+    return owned is not None and raw == owned
+
+
+def _binds_root(tree: ast.AST) -> bool:
+    """Whether anything in `tree` (re)binds the name `ROOT`."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "ROOT" and not isinstance(
+            node.ctx, ast.Load
+        ):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) \
+                and node.name == "ROOT":
+            return True
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and any(
+            (alias.asname or alias.name.split(".")[0]) == "ROOT"
+            for alias in node.names
+        ):
+            return True
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and "ROOT" in node.names:
+            return True
+    return False
+
+
+def _notebook_scan_source(path: Path) -> tuple[str, int | None]:
+    """The text `resolve_clone_paths()` parses for a notebook entry, and the
+    last line of the first kit bootstrap cell in it (`None` without one).
+
+    A kit bootstrap cell is replaced by as many EMPTY lines as it occupies,
+    so every other cell keeps the line numbers `notebook_code_source()`
+    gives it and nothing else in the scan changes: the cell's own reads
+    (`.git`, `HEAD`, loose and packed refs of the runner's clone) are the
+    kit's proof of the pinned commit, not inputs a clone path must carry.
+    """
+    pieces: list[str] = []
+    line = 0
+    bootstrap_end: int | None = None
+    for raw, chunk in _notebook_code_cells(path):
+        span = chunk.count("\n") + 1
+        if _is_kit_bootstrap_cell(raw):
+            chunk = "\n" * (span - 1)
+            if bootstrap_end is None:
+                bootstrap_end = line + span
+        pieces.append(chunk)
+        line += span
+    return "\n".join(pieces) + "\n", bootstrap_end
 
 
 def validate_run_config(run_config: Mapping[str, object]) -> None:
@@ -1959,6 +2082,7 @@ def generate_job(
 
     entry_modules = [name for name in (run_module, smoke_module) if name]
     entry_notebooks = [nb for nb in (run_notebook, smoke_notebook) if nb]
+    clone_paths = with_entry_notebooks(clone_paths, entry_notebooks)
 
     commit = _resolve_pin(resolved_target, commit, repo_url=repo_url,
                           repo_ref=repo_ref, clone_paths=clone_paths)

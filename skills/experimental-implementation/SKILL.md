@@ -207,6 +207,16 @@ written at all; approving the map from the protocol's declared steps to
 runnable commands; publishing the commit a worker would clone; authorizing a
 launch, which is hours of somebody's quota.
 
+Before generating a job and again before `gate`, run this skill's own
+`launch-plan --target <repo> --name <Name> --revision <revision> --job <job>
+[--worker <account>]`. It is the shared engine's command, so it reads this
+skill's own holder (`Experimental_AGREED.md`) and writes nothing: it lists
+`propose`, `offer`, `gate` and `submit` in order, each with what it would
+refuse now and the exact next command, and `verify` reports the same ladder
+gaps under `launchLadder`. `proposal-implementation`'s `references/usage.md`
+(*`launch-plan` — what is still missing before a job launches*) documents its
+output.
+
 This north declares no stage nothing measures, and no `entrances` at all --
 declaring an entrance nothing produces would be a claim with no producer, the
 same reasoning `experimental-deliberation`'s own profile records for itself.
@@ -457,7 +467,16 @@ CLI, one directory over). Consequence, stated rather than discovered:
   `verify` here does not list it under `missingProvenance` while its bytes are
   exactly the ones the scaffold receipt's `materialized` entry recorded; a
   modified copy, an adopted one, or one with no receipt entry is reported
-  like any other module.
+  like any other module. The same holds for the sibling's remote stamp,
+  `src/<Package>/remote_stamp.py`, scaffolded beside it with
+  `tests/test_remote_readiness.py`. A full run's remote smoke callable calls
+  `write_shard(summary)` from it: under the runner (`FORGE_RUN_MODE`) it
+  writes the `shard.json` `smoke record` reads, carrying `evidence.commit`,
+  `evidence.sourcesDigest` and `environment.device`, and anywhere else it
+  writes nothing. Pair it with `generate-job --smoke-required-evidence
+  evidence.commit --smoke-required-evidence environment.device.kind`. The
+  readiness test's `FORWARD` placeholder is where the target wires its own
+  forward for the `meta` device-mix guard (see the sibling's step 5).
 
 Every other published command runs exactly as `proposal-implementation`'s own
 doctrine describes it, against this domain's own profile leaves instead of the

@@ -11,6 +11,42 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- `launch-plan`, a read-only implementation command that lists what a job
+  still needs before launch (`propose`, `offer`, `gate`, `submit`), the
+  refusal each act would raise now, and the exact next command. It reuses the
+  acts' own checks and writes nothing.
+- `verify` reports `launchLadder` when the AGREED ladder is missing a
+  `@rehearsal <job>` item for a remote step or has ticked items no
+  measurement backs, so both surface before `generate-job` instead of at the
+  gate.
+- New targets are scaffolded with `src/<Package>/remote_stamp.py`, which
+  writes the `shard.json` evidence stamp under the remote runner (commit,
+  source digest, device), and `tests/test_remote_readiness.py`, which checks
+  the stamp and guards the forward against mixing devices. Existing targets
+  get both with one more `materialize --stage scaffold`.
+
+### Changed
+
+- `generate-job` clones the run notebook on its own when no declared clone
+  path covers it, so a change to an unrelated notebook no longer stales the
+  pin. Declaring the whole notebooks folder still works and still pins every
+  notebook in it.
+- `position --reconcile` inserts a missing `@rehearsal <job>` item right
+  before the step that runs that job remotely, instead of appending it.
+
+### Fixed
+
+- The `generate-job` import and read scanner recognizes the kit's own
+  notebook bootstrap cell and its `ROOT / "src"` path insert, which no longer
+  require `--accept-unresolved` or `--accept-unresolved-reads`.
+- The walk agents and the remote-execution doctrine say to fetch a Colab run
+  as soon as `poll` reports it complete, because the service reclaims the
+  idle session and its results with it.
+
 ## 0.27.0
 
 ### Fixed

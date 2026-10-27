@@ -208,10 +208,12 @@ python3 skills/proposal-implementation/scripts/implementation_cli.py plan \
                     "pyproject.toml [tool.pytest.ini_options] pythonpath",
                     "src/Example_Method/__init__.py",
                     "src/Example_Method/report_digest.py",
+                    "src/Example_Method/remote_stamp.py",
                     "tests/test_smoke.py", "tests/findings.py",
                     "tests/conftest.py", "tests/sweep.py",
                     "tests/admissibility.py",
                     "tests/test_audit.py", "tests/test_remedies.py",
+                    "tests/test_remote_readiness.py",
                     "Example-Method/Notebooks/verification.ipynb"]
 }
 ```
@@ -597,6 +599,7 @@ importable form (hyphens become underscores).
 
 - `src/<Package>/__init__.py` (scaffold)
 - `src/<Package>/report_digest.py` (scaffold)
+- `src/<Package>/remote_stamp.py` (scaffold)
 - `tests/test_smoke.py` (scaffold)
 - `tests/findings.py` (scaffold)
 - `tests/conftest.py` (scaffold)
@@ -604,6 +607,7 @@ importable form (hyphens become underscores).
 - `tests/admissibility.py` (scaffold)
 - `tests/test_audit.py` (scaffold)
 - `tests/test_remedies.py` (scaffold)
+- `tests/test_remote_readiness.py` (scaffold)
 - `<Name>/Notebooks/verification.ipynb` (scaffold)
 - `src/<Package>/module.py` (objects)
 - `tests/test_invariants.py` (objects)
@@ -1193,6 +1197,21 @@ they were easy to leave undocumented:
   that missing file. It **never gates**. The kit ships both kinds of step in
   its own `__steps__` example, so a repository built from zero meets the
   pattern rather than discovering it after a pilot has run.
+One key sits outside that tally because it is not always there.
+`launchLadder` is what the ladder still owes a launch, read before any job
+is generated instead of refused one act at a time at the launch.
+`rehearsalWitnessMissing` lists each job (a discovered job folder, or the
+`job` a `placement: "remote"` step declares) whose ladder names no
+`@rehearsal <job>` item, as `{job, step, beforeOrdinal}`: `step` and
+`beforeOrdinal` name the item that runs the job remotely, which is exactly
+where `position --reconcile` inserts the missing rehearsal (`null` when no
+item runs it, and reconcile then appends). Without that item `offer`
+publishes no `launch` and `gate` refuses `SEQUENCE_NOT_REACHED`.
+`unbackedOrdinals` lists the ticked items nothing measured, which `gate`
+refuses as `POSITION_UNBACKED`; `resolve` is the `position` command that
+clears them (`--reconcile` when a rehearsal is missing). Present only when
+it owes something, so a target that never reaches a remote step reads
+unchanged. It **never gates**; `launch-plan` reports the same key per job.
 
 Omit `--revision` and `fidelity.status` is `unknown`: the modules' declared
 revisions are still listed, but nothing is compared. Never report an
@@ -1460,7 +1479,14 @@ step exists, never what a human means by it, and only a human editing
 `AGREED.md` to add `:level` afterward can say a step has rungs at all.
 Existing items are matched by witness identity (kind and operand) and keep
 their text and their order exactly; only a witness with no match is
-appended, its text a placeholder for a human to write over. Safe to run
+added, its text a placeholder for a human to write over. A missing
+`@rehearsal <job>` is inserted immediately before the item that runs that
+job remotely — an `@step` whose operand is the job's own name, or a step
+`__steps__` declares with `placement: "remote"` and `job: <job>` — because a
+launch is refused while any item before the rehearsal is open, so a
+rehearsal appended after its own run step could never be reached; only when
+no such item exists is it appended at the end. Every other witness is
+appended. Safe to run
 again: an unchanged target appends nothing and reports `"unchanged"`.
 `--sequence` and `--reconcile` together refuse `POSITION_SEQUENCE_AND_RECONCILE`
 — only one of the two may name this call's sequence. `--target-level` is
@@ -2502,6 +2528,49 @@ to close that gap. It is left open on purpose. `GATE_PROPOSAL_STALE` is a
 separate, later check over a separate fact (the proposal's own `commit`/
 `jobSet`, never `_AUTHORIZATION_BINDING_KEYS`' seven) — it does not widen
 what invalidates the token itself.
+
+## `launch-plan` — what is still missing before a job launches
+
+Read-only: appends no ledger event, mints no token and writes no file. Run it
+before `generate-job` and again before `gate`, so the refusals a launch would
+meet one at a time are read in one call instead.
+
+```bash
+python3 skills/proposal-implementation/scripts/implementation_cli.py launch-plan \
+  --target implementations/<repo> --name <Name> \
+  --revision research-concept-r05.md --job <jobName> \
+  --worker <account> --session <your-session-id>
+```
+
+Prints one object whose `acts` lists `propose`, `offer`, `gate` and `submit`
+in that order. Each act carries `status` — `done`, `blocked` (it would refuse
+now), `next` (it would succeed now) or `pending` (an earlier act owes first)
+— the `code` it would raise now, and the exact `command` to run; `next`
+repeats the first act that is `blocked` or `next`. Every verdict is the one
+the act itself reaches, read through the same functions:
+
+- `offer` is `blocked` with the shared launch rule's own code
+  (`impl_availability.launch_available`, the rule `gate` and `offer` read):
+  `POSITION_ABSENT`/`_STALE`/`_UNBACKED`/`_SHARDS_UNDECLARED`/`_DISAGREES`,
+  `NOT_READY`, `SEQUENCE_NOT_REACHED` (with `facts.reason` `no_witness` when
+  no item names `@rehearsal <job>` — its `command` is then `position
+  --reconcile`, which inserts the item before the remote step) or
+  `RUNG_NOT_ATTAINED`; `done` once an unconsumed authorization covers the
+  launch's current binding (its `authorization` names the token).
+- `propose` reports `GATE_PROPOSAL_UNKNOWN`, `_MISMATCH` or `_STALE` until a
+  current proposal names the job. It is `pending`, not `next`, while `offer`
+  is blocked: a proposal freezes the campaign's pin, and the work that clears
+  `NOT_READY` (a regenerated job, a fresh rehearsal) is what moves it.
+- `gate` is `next` once `offer` is done, with the token in its command and
+  `--elect <job>` when the job classifies `optional` (`elect: true`); `done`
+  once a `gate` record `submit` accepts for `--worker` exists at the pin.
+- `submit` carries `DIAGRAM_NOT_VALIDATED` while an approved experiment
+  diagram is not validated in the dashboard, and its command names the
+  consent token for `--worker` and `--backend <service>` (this engine never
+  prints a service name).
+
+When the ladder still owes the launch something, the object also carries
+`launchLadder`, the same key `verify` reports.
 
 ## `close` — the finishing precondition
 

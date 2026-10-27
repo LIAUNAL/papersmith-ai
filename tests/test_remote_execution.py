@@ -18489,6 +18489,245 @@ class NotebookGenerateJobTests(unittest.TestCase):
         self.assertNotIn("notebook", run_config["run"])
 
 
+class RunNotebookClonedOnItsOwnTests(unittest.TestCase):
+    """S1 of `poc-launch-smoothing`: the run notebook is its own clone unit.
+
+    Field evidence: a job declared `--clone-path <Name>/Notebooks` so its
+    run notebook would arrive, and `submit` then refused the pin as stale
+    because an UNRELATED notebook in that folder (`poc_report.ipynb`) had
+    been re-run and committed. Every notebook in a declared folder is part
+    of the pin; the one the job runs is the only one it needs.
+
+    Reachable red: `generate_job()` wrote `clonePaths` exactly as declared,
+    so a notebook no declared path covered never reached the pin at all.
+    """
+
+    FAKE_SERVICE = "run-notebook-clone-fake-service"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        ADAPTER.register_metadata(
+            cls.FAKE_SERVICE,
+            lambda run_config: ("fake-metadata.json", json.dumps({"ok": True})),
+        )
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "verify_pin_preconditions", return_value=None
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _git(self, cwd: Path, *args: str) -> str:
+        env = dict(os.environ)
+        env["GIT_AUTHOR_NAME"] = env["GIT_COMMITTER_NAME"] = "run-notebook-tests"
+        env["GIT_AUTHOR_EMAIL"] = env["GIT_COMMITTER_EMAIL"] = (
+            "run-notebook-tests@example.invalid"
+        )
+        return subprocess.run(
+            ["git", *args], cwd=cwd, env=env, capture_output=True, text=True,
+            check=True,
+        ).stdout.strip()
+
+    def _notebook(self, path: Path, source: str) -> None:
+        path.write_text(json.dumps({
+            "cells": [{"cell_type": "code", "source": [source]}],
+            "metadata": {}, "nbformat": 4, "nbformat_minor": 5,
+        }), encoding="utf-8")
+
+    def _repo(self, tmp: str) -> tuple:
+        target = Path(tmp) / "repo"
+        (target / "src" / "PackageA").mkdir(parents=True)
+        (target / "src" / "PackageA" / "__init__.py").write_text("", encoding="utf-8")
+        (target / "Notebooks").mkdir(parents=True)
+        self._notebook(target / "Notebooks" / "pilot.ipynb", "import PackageA\n")
+        self._notebook(target / "Notebooks" / "report.ipynb", "print(1)\n")
+        (target / ".gitignore").write_text("tools/\n", encoding="utf-8")
+        asset = Path(tmp) / "asset.py"
+        asset.write_text("# asset\n", encoding="utf-8")
+        self._git(target, "init", "-q")
+        self._git(target, "add", "-A")
+        self._git(target, "commit", "-q", "-m", "initial")
+        return target, asset, self._git(target, "rev-parse", "HEAD")
+
+    def _generate(self, target: Path, asset: Path, commit: str, clone_paths) -> Path:
+        return JOBFOLDER.generate_job(
+            target=target, service=self.FAKE_SERVICE, job_name="pilot-job",
+            product="FEM-TOLLA", commit=commit, repo_url=str(target),
+            repo_ref="main", clone_paths=clone_paths,
+            run_notebook="Notebooks/pilot.ipynb",
+            bootstrap_asset=asset, invoke_asset=asset,
+        )
+
+    def _commit_change(self, target: Path, notebook: str) -> None:
+        self._notebook(target / "Notebooks" / notebook, "print(2)\n")
+        self._git(target, "commit", "-q", "-am", f"touch {notebook}")
+
+    def test_the_run_notebook_alone_is_added_as_a_clone_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, asset, commit = self._repo(tmp)
+            job_dir = self._generate(target, asset, commit, ["src/PackageA"])
+            run_config = json.loads(
+                (job_dir / "run-config.json").read_text(encoding="utf-8")
+            )
+        self.assertEqual(
+            run_config["clonePaths"], ["src/PackageA", "Notebooks/pilot.ipynb"]
+        )
+
+    def test_an_unrelated_notebook_change_leaves_the_job_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, asset, commit = self._repo(tmp)
+            job_dir = self._generate(target, asset, commit, ["src/PackageA"])
+            self._commit_change(target, "report.ipynb")
+            unrelated = JOBFOLDER.read(job_dir).staleness
+            self._commit_change(target, "pilot.ipynb")
+            own = JOBFOLDER.read(job_dir).staleness
+        self.assertEqual(unrelated["status"], "fresh", unrelated)
+        self.assertEqual(own["status"], "drift", own)
+        self.assertEqual(own["changedPaths"], ["Notebooks/pilot.ipynb"])
+
+    def test_the_run_notebook_arrives_in_the_runner_sparse_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, asset, commit = self._repo(tmp)
+            job_dir = self._generate(target, asset, commit, ["src/PackageA"])
+            run_config = json.loads(
+                (job_dir / "run-config.json").read_text(encoding="utf-8")
+            )
+            clone = Path(tmp) / "clone"
+            RUNNER_BOOTSTRAP.clone_repo(run_config, clone)
+            verified = RUNNER_BOOTSTRAP.verify_notebooks_under_clone(
+                ["Notebooks/pilot.ipynb"], clone
+            )
+            arrived = (clone / "Notebooks" / "pilot.ipynb").is_file()
+        self.assertTrue(arrived)
+        self.assertIn("Notebooks/pilot.ipynb", verified)
+
+    def test_an_explicit_notebooks_folder_clone_path_still_works(self) -> None:
+        """Previous behaviour: a declared folder that covers the notebook is
+        kept exactly as declared, nothing is appended, and every notebook in
+        it stays part of the pin."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target, asset, commit = self._repo(tmp)
+            job_dir = self._generate(
+                target, asset, commit, ["src/PackageA", "Notebooks"]
+            )
+            run_config = json.loads(
+                (job_dir / "run-config.json").read_text(encoding="utf-8")
+            )
+            self._commit_change(target, "report.ipynb")
+            staleness = JOBFOLDER.read(job_dir).staleness
+        self.assertEqual(run_config["clonePaths"], ["src/PackageA", "Notebooks"])
+        self.assertEqual(staleness["status"], "drift", staleness)
+
+
+class KitNotebookBootstrapCellScanTests(unittest.TestCase):
+    """S5 of `poc-launch-smoothing`: the import/read scan recognises the
+    kit's own notebook bootstrap cell (`assets/notebook_repo_root.py`,
+    byte for byte) and the `sys.path.insert(0, str(ROOT / "src"))` that
+    follows it, and flags everything else exactly as before.
+
+    Reachable red: the cell's `.git`/`HEAD`/ref reads were uncertain reads
+    and the insert was an uncertain import, so every kit notebook needed
+    `--accept-unresolved` and `--accept-unresolved-reads` to generate.
+    """
+
+    FAKE_SERVICE = "kit-bootstrap-scan-fake-service"
+    INSERT = 'import sys\nsys.path.insert(0, str(ROOT / "src"))\nimport PackageA\n'
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        ADAPTER.register_metadata(
+            cls.FAKE_SERVICE,
+            lambda run_config: ("fake-metadata.json", json.dumps({"ok": True})),
+        )
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "verify_pin_preconditions", return_value=None
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _generate(self, tmp: str, cells: list) -> Path:
+        target = Path(tmp) / "repo"
+        (target / "src" / "PackageA").mkdir(parents=True)
+        (target / "src" / "PackageA" / "__init__.py").write_text("", encoding="utf-8")
+        (target / "Notebooks").mkdir(parents=True)
+        (target / "Notebooks" / "pilot.ipynb").write_text(json.dumps({
+            "cells": [
+                {"cell_type": "code", "source": source} for source in cells
+            ],
+            "metadata": {}, "nbformat": 4, "nbformat_minor": 5,
+        }), encoding="utf-8")
+        asset = Path(tmp) / "asset.py"
+        asset.write_text("# asset\n", encoding="utf-8")
+        return JOBFOLDER.generate_job(
+            target=target, service=self.FAKE_SERVICE, job_name="pilot-job",
+            product="FEM-TOLLA", commit="a" * 40,
+            repo_url="https://example.invalid/r.git", repo_ref="main",
+            clone_paths=["src/PackageA", "Notebooks"],
+            run_notebook="Notebooks/pilot.ipynb",
+            bootstrap_asset=asset, invoke_asset=asset,
+        )
+
+    def _bootstrap(self) -> list:
+        text = NOTEBOOK_REPO_ROOT_SCRIPT.read_text(encoding="utf-8")
+        return text.splitlines(keepends=True)
+
+    def test_the_kit_cell_and_its_src_insert_generate_without_accept_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            job_dir = self._generate(tmp, [self._bootstrap(), [self.INSERT]])
+            run_config = json.loads(
+                (job_dir / "run-config.json").read_text(encoding="utf-8")
+            )
+        self.assertNotIn("unresolvedImports", run_config)
+        self.assertNotIn("unresolvedReads", run_config)
+
+    def test_a_different_sys_path_mutation_still_refuses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(JOBFOLDER.JobFolderError) as raised:
+                self._generate(tmp, [
+                    self._bootstrap(),
+                    ['import sys\nsys.path.insert(0, str(ROOT / "lib"))\n'],
+                ])
+        self.assertIn("sys.path mutation is uncertain", str(raised.exception))
+
+    def test_the_src_insert_without_the_kit_cell_still_refuses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(JOBFOLDER.JobFolderError) as raised:
+                self._generate(tmp, [
+                    ["from pathlib import Path\nROOT = Path.cwd().parents[1]\n"],
+                    [self.INSERT],
+                ])
+        self.assertIn("sys.path mutation is uncertain", str(raised.exception))
+
+    def test_a_rebound_root_makes_the_src_insert_uncertain_again(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(JOBFOLDER.JobFolderError) as raised:
+                self._generate(tmp, [
+                    self._bootstrap(),
+                    ["from pathlib import Path\nROOT = Path('/elsewhere')\n"],
+                    [self.INSERT],
+                ])
+        self.assertIn("sys.path mutation is uncertain", str(raised.exception))
+
+    def test_a_read_outside_the_kit_cell_still_refuses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(JOBFOLDER.JobFolderError) as raised:
+                self._generate(tmp, [
+                    self._bootstrap(),
+                    [self.INSERT, '(ROOT / ".git" / "HEAD").read_text()\n'],
+                ])
+        self.assertIn("uncertain reads", str(raised.exception))
+
+    def test_an_edited_kit_cell_is_scanned_like_any_other_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            edited = self._bootstrap() + ["# edited\n"]
+            with self.assertRaises(JOBFOLDER.JobFolderError) as raised:
+                self._generate(tmp, [edited, [self.INSERT]])
+        self.assertIn("uncertain", str(raised.exception))
+
+
 class ShardIoTests(unittest.TestCase):
     """`shard_io.py` — the generic half of a target repository's shard reader.
 
