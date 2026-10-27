@@ -11,6 +11,22 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.30.0
+
+### Added
+
+- The command center has a **Historia con IA** tab, before Telemetría y
+  Costos. Its diagram draws every phase followed by its gate: red when the
+  phase has not run, orange when it shows errors, rework (more than one
+  proposal revision or deliberation edit) or iterations with the operator,
+  green when it passed directly. Clicking a phase shows its summarised
+  history: decisions, revisions and the chat turns of the workspace's
+  Claude Code, Pi and OpenCode sessions, attributed to the phase whose
+  command opened them. Antigravity keeps no readable chat history and is
+  reported as such. `GET /api/ai-history` serves it read-only; an agent
+  running outside WSL is pointed to with `PAPERSMITH_CLAUDE_CODE_SESSIONS`,
+  `PAPERSMITH_PI_SESSIONS` or `PAPERSMITH_OPENCODE_SESSIONS`.
+
 ## 0.29.0
 
 ### Added
