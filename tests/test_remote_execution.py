@@ -19031,6 +19031,45 @@ class SmokeTests(unittest.TestCase):
                     job_dir=job_dir, artifact_path=missing, worker="w1"
                 )
 
+    def test_smoke_record_reads_the_stamp_inside_a_fetched_rehearsal_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            commit = self._init_repo(target)
+            job_dir = self._generate(tmp, target, commit=commit)
+            fetched = Path(tmp) / "rehearsal" / "s1"
+            fetched.mkdir(parents=True)
+            (fetched / "shard.json").write_text(
+                json.dumps({"evidence": {"commit": commit, "outputs": ["runs.jsonl"]}}),
+                encoding="utf-8",
+            )
+            result = REMOTE_CLI.cmd_smoke_record(job_dir=job_dir, artifact_path=fetched, worker="w1")
+            self.assertEqual(result["result"], "pass")
+
+    def test_a_rehearsal_folder_without_a_stamp_says_what_the_smoke_must_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            commit = self._init_repo(target)
+            job_dir = self._generate(tmp, target, commit=commit)
+            fetched = Path(tmp) / "rehearsal" / "s1"
+            fetched.mkdir(parents=True)
+            with self.assertRaises(REMOTE_CLI.RemoteCLIError) as ctx:
+                REMOTE_CLI.cmd_smoke_record(job_dir=job_dir, artifact_path=fetched, worker="w1")
+            message = str(ctx.exception)
+            self.assertIn("shard.json", message)
+            self.assertIn("working directory", message)
+            self.assertFalse((target / "FEM-TOLLA" / ".remote-execution" / "smoke.jsonl").exists())
+
+    def test_a_smoke_block_without_required_evidence_is_warned_about(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            commit = self._init_repo(target)
+            bare = JOBFOLDER.read(self._generate(tmp, target, commit=commit, required_evidence=None))
+            (warning,) = JOBFOLDER.smoke_warnings(bare.run_config)
+            self.assertIn("--smoke-required-evidence", warning)
+            self.assertIn("shard.json", warning)
+            declared = JOBFOLDER.read(self._generate(tmp, target, commit=commit, job_name="search-b"))
+            self.assertEqual(JOBFOLDER.smoke_warnings(declared.run_config), [])
+
     def test_smoke_record_parser_requires_job_dir_from_artifact_and_worker(self) -> None:
         parser = REMOTE_CLI._build_parser()
         args = parser.parse_args([

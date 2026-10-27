@@ -3442,6 +3442,22 @@ def _staleness_for(target: Path, pinned_commit: str, clone_paths: Sequence[str])
     }
 
 
+def smoke_warnings(run_config: dict) -> list[str]:
+    """What a generated smoke block leaves unproven, reported by `generate-job`.
+
+    `smoke record` passes iff the returned stamp carries every path in
+    `run.smoke.requiredEvidence`; with none declared, any `shard.json` at all
+    passes, so a rehearsal proves nothing about the commit or the device.
+    """
+    smoke = (run_config.get("run") or {}).get("smoke")
+    if not smoke or smoke.get("requiredEvidence"):
+        return []
+    return ["the smoke block declares no --smoke-required-evidence, so `smoke record` "
+            "passes on any shard.json; declare the stamp paths that prove the run "
+            "(its commit, the device it ran on), and make the smoke write shard.json "
+            "into its working directory"]
+
+
 def read(job_dir: str | Path) -> JobFolder:
     """The ONLY reader. Every command that touches an already-generated
     job folder (`generate-job`'s own CLI output, `submit`, `status`,

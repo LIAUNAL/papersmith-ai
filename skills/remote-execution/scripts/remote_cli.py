@@ -2151,6 +2151,10 @@ def resolve_submission_ledger(
     return (main_path, main_state, None) if in_main else (smoke_path, smoke_state, None)
 
 
+#: The evidence stamp a smoke writes into its working directory.
+SHARD_STAMP_FILENAME = "shard.json"
+
+
 def cmd_smoke_record(
     *,
     job_dir: str | Path,
@@ -2190,8 +2194,20 @@ def cmd_smoke_record(
     smoke_block = run_config.get("run", {}).get("smoke") or {}
     required = list(smoke_block.get("requiredEvidence") or [])
 
+    artifact = Path(artifact_path)
+    if artifact.is_dir():
+        # A fetched rehearsal folder: the stamp is the file the smoke wrote
+        # into its working directory, which is that folder's root.
+        artifact = artifact / SHARD_STAMP_FILENAME
+        if not artifact.is_file():
+            raise RemoteCLIError(
+                f"no {SHARD_STAMP_FILENAME} in {artifact.parent}: the smoke "
+                f"must write its evidence stamp, {SHARD_STAMP_FILENAME}, into "
+                "its working directory -- the folder `fetch --smoke` returns -- "
+                "carrying every path the job's run.smoke.requiredEvidence names"
+            )
     try:
-        artifact_text = Path(artifact_path).read_text(encoding="utf-8")
+        artifact_text = artifact.read_text(encoding="utf-8")
     except OSError as exc:
         raise RemoteCLIError(
             f"could not read artifact {artifact_path}: {exc}"
@@ -3252,6 +3268,8 @@ def main(argv: list[str] | None = None) -> int:
                     # wrong thing about which code will run.
                     "commitSource": JOBFOLDER.pin_source(
                         args.target, args.commit, job_folder.run_config["commit"]),
+                    **({"warnings": warnings}
+                       if (warnings := JOBFOLDER.smoke_warnings(job_folder.run_config)) else {}),
                 },
                 sort_keys=True,
                 # `default=str`: `staleness` is the exact sub-dict `status`
