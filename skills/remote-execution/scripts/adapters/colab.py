@@ -84,6 +84,7 @@ Run with any Python 3.10+ (stdlib-only):
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import json
@@ -182,6 +183,29 @@ COLAB_CAMPAIGN_TIERS = frozenset({"pro", "payg", "enterprise"})
 # charge without a positive compute-unit balance.
 COLAB_FAQ_URL = "https://research.google.com/colaboratory/faq.html"
 COLAB_FAQ_FREE_RULE = "running distributed computing workers"
+
+def restore_notebook_json(path: Path) -> None:
+    """Rewrite a downloaded notebook the service CLI handed back as a dict repr.
+
+    google-colab-cli 0.6.0 asks the Jupyter contents API for the file and,
+    for a notebook (served as `format: json`, a dict), writes `str(content)`:
+    a Python repr, not JSON, that no notebook reader opens. `literal_eval`
+    accepts literals only, so the remote bytes are never executed; a file
+    that is already JSON, or is not a dict literal, is left exactly as is.
+    """
+    text = path.read_text(encoding="utf-8")
+    try:
+        json.loads(text)
+        return
+    except ValueError:
+        pass
+    try:
+        value = ast.literal_eval(text)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return
+    if isinstance(value, dict):
+        path.write_text(json.dumps(value, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+
 
 # Where the CLI keeps its session state under a given HOME — the value
 # passed to the CLI's own global `--config` flag for a team worker. It is
@@ -1667,6 +1691,8 @@ class ColabAdapter(ADAPTER.Adapter):
                     f"(exit {result.returncode}): "
                     f"{result.stderr.strip() or result.stdout.strip()}"
                 )
+            if local.suffix == ".ipynb":
+                restore_notebook_json(local)
             materialized.append(entry)
 
         status = payload.get("status")

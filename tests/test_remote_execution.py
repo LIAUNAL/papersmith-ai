@@ -22877,7 +22877,12 @@ def main():
             )
             return 1
         local.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(str(remote), str(local))
+        if data.get("download_notebooks_as_repr") and remote.suffix == ".ipynb":
+            # google-colab-cli 0.6.0 writes `str(content)` for a notebook the
+            # contents API returns as JSON, i.e. a Python dict repr.
+            local.write_text(str(json.loads(remote.read_text(encoding="utf-8"))), encoding="utf-8")
+        else:
+            shutil.copy(str(remote), str(local))
         sys.stdout.write("[colab] Downloaded %r to %r\n" % (str(remote), str(local)))
         return 0
 
@@ -23092,6 +23097,35 @@ class ColabSessionLifecycleTests(unittest.TestCase):
                 stop_index,
                 "the release must run after the bytes are local (D9)",
             )
+
+    def test_colab_fetch_returns_notebooks_as_json_when_the_cli_hands_back_a_repr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(download_notebooks_as_repr=True)
+            adapter = self._adapter(sim)
+            submission = self._submit(adapter, self._job_folder(tmp))
+            deadline = time.time() + 120
+            while time.time() < deadline and adapter.poll(submission.id).state not in ("complete", "failed"):
+                time.sleep(0.5)
+            destination = Path(tmp) / "fetched"
+            self.assertTrue(adapter.fetch(submission.id, destination).complete)
+            notebook = json.loads((destination / "runner.executed.ipynb").read_text(encoding="utf-8"))
+            self.assertIn("cells", notebook)
+
+    def test_a_notebook_repr_is_restored_and_anything_else_is_left_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            body = {"cells": [{"cell_type": "code", "source": "x = 'it''s'"}], "nbformat": 4}
+            repr_file = root / "a.ipynb"
+            repr_file.write_text(str(body), encoding="utf-8")
+            COLAB.restore_notebook_json(repr_file)
+            self.assertEqual(json.loads(repr_file.read_text(encoding="utf-8")), body)
+            for name, text in (("b.ipynb", json.dumps(body)), ("c.ipynb", "not a notebook"),
+                               ("d.ipynb", "__import__('os')")):
+                path = root / name
+                path.write_text(text, encoding="utf-8")
+                COLAB.restore_notebook_json(path)
+                self.assertEqual(path.read_text(encoding="utf-8"), text)
 
     # -- submit: naming, pre-check, merge, cleanup, installs ---------------
 
