@@ -157,6 +157,7 @@ MEASURED_MOVERS: dict[str, tuple[str, ...]] = {
         "admit-e0", "admit-e1", "adopt-same-target", "apply", "close-e0",
         "close-e1", "compose",
         "defect", "discuss", "gate-e0", "gate-e1", "handoff-e0", "handoff-e1",
+        "launch-plan",
         "materialize", "name", "offer-e0", "offer-e1", "plan-a", "plan-b",
         "position-e0", "position-e1", "probe", "settle", "step", "verify-a",
         "verify-b", "verify-t", "walk"),
