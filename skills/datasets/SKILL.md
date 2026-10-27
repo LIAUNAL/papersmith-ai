@@ -56,7 +56,7 @@ python3 skills/datasets/scripts/datasets_cli.py [--root <workspace>] <verb> ...
 | `search` | `--query [--hosts ...] [--limit]`: queries every host module (official MCP `search_datasets` on Kaggle, Hugging Face Hub, OpenNeuro GraphQL, Zenodo) and writes `datasets/search-<date>.json` with every hit `{host, ref, title, url, license, retrieved}`. A host that fails is recorded, never fatal. Google Dataset Search has no API: its link is printed for a manual look |
 | `license` | `--slug --source-license "<text>" [--override "<reason>"] [--title] [--source-url] [--role]`: decision `allowed` / `refused` / `overridden`, mapped to a host license name (`CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `ODbL-1.0`, `CC-BY-NC-4.0`, `CC-BY-NC-SA-4.0`, `other`); creates the full entry when missing |
 | `qc` | `--slug --file <csv> [--label col] [--group col]`: rows/columns, missing values, constant columns, duplicates, class balance, group (subject) counts and single-class groups, numeric ranges → `datasets/<slug>/qc.json`, status `pass` / `warn` / `fail` with reasons |
-| `prepare` | `--slug --file <csv> --label col --group col [--folds 5] [--seed]`: stratified group k-fold by subject (no subject in two folds) → `splits.json` + `PREPARATION.md` (source sha256, steps, parameters, per-fold counts); each run is a new preparation version |
+| `prepare` | `--slug --file <csv> --label col --group col [--folds 5] [--seed <n> \| --seeds <n> <n> ...]`: stratified group k-fold by subject (no subject in two folds) → `splits.json` + `PREPARATION.md` (source sha256, steps, parameters, per-fold counts); each run is a new preparation version. `--seed` writes one split; its seed only breaks ties between equal-sized subjects, so when every subject differs in size the output carries an `inert-seed` warning. `--seeds` writes one split per seed under `repetitions` (repeated cross-validation): subjects are taken largest first in size strata of `--folds` subjects that the seed shuffles, so each seed gives its own split; the first repetition is also the top-level `assignment` |
 | `publish` | `--slug --owner <user> [--version-notes] [--keyword ...] [--consent <slug>] [--public --consent-public <slug>] [--dry-run]`: builds `datasets/<slug>/remote/` (`dataset-metadata.json` + copies of the files) and, on consent, runs `kaggle datasets create -p <dir>` (private; `-u` only with both public flags) or `kaggle datasets version -p <dir> -m <notes>` when the dataset already exists; records the remote ref, visibility and version; prints how a notebook mounts it |
 | `status` | registry summary: slug, role, title, license decision, qc status, preparation, remote |
 
@@ -75,6 +75,7 @@ Success prints one JSON object on stdout. A refusal prints
 | `bad-column` | `--label` / `--group` is not a column of the file |
 | `bad-folds` | fewer than 2 folds |
 | `too-few-groups` | fewer subjects than folds: a subject would land in two folds |
+| `identical-repetitions` | two of the `--seeds` give the same split; choose seeds whose splits differ |
 | `unknown-host` | `--hosts` names no host module |
 | `license-not-allowed` | `publish` without an `allowed` or `overridden` decision |
 | `bad-owner` | the remote account name is malformed |

@@ -506,6 +506,104 @@ class PrepareTests(Base):
         self.assertEqual(result.error["error"], "too-few-groups")
 
 
+
+class RepetitionTests(Base):
+    """`--seeds` writes one split per seed, each from a seeded order of the subjects.
+
+    The single-seed procedure sorts subjects by size after its seeded shuffle,
+    so its seed only breaks ties between equal-sized subjects; a dataset whose
+    subjects all differ in size gets one split whatever the seed.
+    """
+
+    def make(self, subjects: int = 20) -> Path:
+        rows = []
+        for subject in range(subjects):
+            size = 6 + 3 * subject            # every subject a different size
+            label = "ADHD" if subject % 2 else "Control"
+            rows += [{"ID": f"s{subject:02d}", "Class": label, "x": str(i)} for i in range(size)]
+        self.run_cli("license", "--slug", "rep", "--source-license", "CC0")
+        return self.write_csv("rep.csv", rows)
+
+    def prepare(self, path: Path, *extra: str) -> Run:
+        return self.run_cli("prepare", "--slug", "rep", "--file", str(path), "--label", "Class",
+                            "--group", "ID", "--folds", "5", *extra)
+
+    def splits(self) -> dict:
+        return json.loads((self.root / "datasets/rep/splits.json").read_text(encoding="utf-8"))
+
+    def test_each_seed_gives_its_own_split_when_every_subject_differs_in_size(self) -> None:
+        path = self.make()
+        result = self.prepare(path, "--seeds", "42", "123", "456", "789", "1024")
+        self.assertEqual(result.code, 0, result.err)
+        splits = self.splits()
+        self.assertEqual(splits["seeds"], [42, 123, 456, 789, 1024])
+        self.assertEqual([r["seed"] for r in splits["repetitions"]], splits["seeds"])
+        assignments = [json.dumps(r["assignment"], sort_keys=True) for r in splits["repetitions"]]
+        self.assertEqual(len(set(assignments)), 5, "a repetition repeats another one")
+        for repetition in splits["repetitions"]:
+            self.assertEqual(len(repetition["assignment"]), 20)
+            self.assertEqual(set(repetition["assignment"].values()), set(range(5)))
+            for fold in repetition["folds_summary"]:
+                self.assertEqual(set(fold["class_counts"]), {"ADHD", "Control"})
+        self.assertEqual(splits["assignment"], splits["repetitions"][0]["assignment"],
+                         "the first repetition stays where single-split readers look")
+        self.assertEqual(splits["seed"], 42)
+        self.assertEqual(result.json["seeds"], [42, 123, 456, 789, 1024])
+        manifest = (self.root / "datasets/rep/PREPARATION.md").read_text(encoding="utf-8")
+        for seed in ("42", "123", "456", "789", "1024"):
+            self.assertIn(f"seed {seed}", manifest)
+
+    def test_repetitions_keep_classes_spread_over_the_folds(self) -> None:
+        path = self.make(30)
+        result = self.prepare(path, "--seeds", "1", "2", "3")
+        self.assertEqual(result.code, 0, result.err)
+        for repetition in self.splits()["repetitions"]:
+            groups = [fold["n_groups"] for fold in repetition["folds_summary"]]
+            self.assertLessEqual(max(groups) - min(groups), 2, groups)
+            sizes = [fold["n_rows"] for fold in repetition["folds_summary"]]
+            self.assertLess(max(sizes) / min(sizes), 1.6, sizes)
+
+    def test_a_single_seed_keeps_its_split_and_warns_that_the_seed_is_inert(self) -> None:
+        path = self.make()
+        result = self.prepare(path, "--seed", "7")
+        self.assertEqual(result.code, 0, result.err)
+        header, rows = CLI.read_rows(path)
+        expected = CLI.stratified_group_folds(rows, "Class", "ID", 5, 7)["assignment"]
+        splits = self.splits()
+        self.assertEqual(splits["assignment"], expected)
+        self.assertNotIn("repetitions", splits)
+        self.assertIn("inert-seed", [w["code"] for w in result.json["warnings"]])
+
+    def test_seed_and_seeds_together_are_refused(self) -> None:
+        path = self.make()
+        result = self.prepare(path, "--seed", "1", "--seeds", "1", "2")
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.error["error"], "bad-argument")
+        self.assertFalse((self.root / "datasets/rep/splits.json").exists())
+
+    def test_a_repeated_seed_is_refused(self) -> None:
+        path = self.make()
+        result = self.prepare(path, "--seeds", "3", "3")
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.error["error"], "bad-argument")
+
+    def test_two_seeds_giving_the_same_split_are_refused(self) -> None:
+        rows = [{"ID": name, "Class": label, "x": "0"} for name, label in (("a", "0"), ("b", "1"))]
+        path = self.write_csv("pair.csv", rows)
+        self.run_cli("license", "--slug", "rep", "--source-license", "CC0")
+        # With two subjects in two folds most seeds share one order; find two that do.
+        orders = {}
+        for seed in range(50):
+            order = ["a", "b"]
+            CLI.random.Random(seed).shuffle(order)
+            orders.setdefault(tuple(order), []).append(seed)
+        same = next(seeds for seeds in orders.values() if len(seeds) >= 2)[:2]
+        result = self.run_cli("prepare", "--slug", "rep", "--file", str(path), "--label", "Class",
+                              "--group", "ID", "--folds", "2", "--seeds", *map(str, same))
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.error["error"], "identical-repetitions")
+
+
 # ------------------------------------------------------------------- publish
 class FakeRunner:
     def __init__(self, codes: dict | None = None) -> None:

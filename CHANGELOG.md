@@ -11,6 +11,29 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- `datasets prepare --seeds <n> <n> ...` writes one subject-wise split per
+  seed under `repetitions` in `splits.json`, for repeated cross-validation,
+  and lists every repetition's folds in `PREPARATION.md`. Each repetition
+  takes the subjects largest first in size strata of `--folds` subjects that
+  its seed shuffles, so folds stay balanced and every seed gives its own split.
+  The first repetition is also the top-level `assignment`, so readers of a
+  single split keep working. Two seeds that give the same split are refused
+  `identical-repetitions`; `--seed` and `--seeds` together, or a repeated
+  seed, are refused `bad-argument`.
+
+### Fixed
+
+- `datasets prepare --seed` now warns `inert-seed` when every subject has a
+  different size. Its split sorts subjects by size after the seeded shuffle,
+  so the seed only breaks ties between equal-sized subjects: on such a
+  dataset every seed gives the same split, and a protocol that repeats its
+  cross-validation over several seeds would have repeated one split. The
+  split itself is unchanged, so existing preparations reproduce.
+
 ## 0.28.1
 
 ### Fixed
