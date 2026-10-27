@@ -15,7 +15,7 @@ User's list (approved items 1-5, quoted from the assistant's proposal the user a
 
 ## Tasks
 
-- T-A (S1, S5) delegated writer, worktree `poc-launch-smoothing-a` — pending
+- T-A (S1, S5) delegated writer, worktree `poc-launch-smoothing-a` — done, commit f605be77 (RED 5 failing → GREEN 10 new tests)
 - T-B (S2, S3) delegated writer, worktree `poc-launch-smoothing-b` — pending
 - T-C (S4) delegated writer, worktree `poc-launch-smoothing-c` — pending
 - T-D integration: merge A/B/C, full suites, CHANGELOG, release 0.28.0 — pending
