@@ -49,6 +49,52 @@ def _clip(text: Any, limit: int = TEXT_MAX) -> str:
     return value if len(value) <= limit else value[: limit - 1] + "…"
 
 
+MAX_PHASE_ARTIFACTS = 50
+
+
+def _workspace_file(root: Path, ref: Any) -> str | None:
+    """``ref`` (``path`` or ``path#anchor``) as a workspace-relative POSIX path
+    when it names a regular file inside the workspace, else ``None``."""
+    if not isinstance(ref, str) or not ref or ":" in ref.split("#", 1)[0]:
+        return None
+    try:
+        target = (root / ref.split("#", 1)[0]).resolve()
+        return target.relative_to(root).as_posix() if target.is_file() else None
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def phase_artifacts(root: Path, stage: str) -> list[dict[str, Any]]:
+    """The files that evidence ``stage`` (``phase_actions.EVIDENCE``), newest
+    first; a matched directory contributes its direct, visible files."""
+    seen: dict[str, dict[str, Any]] = {}
+    for label, pattern in phase_actions.EVIDENCE.get(stage, ()):
+        try:
+            matches = list(root.glob(pattern))[:phase_actions.MAX_MATCHES]
+        except (OSError, ValueError):
+            continue
+        for match in matches:
+            try:
+                files = ([match] if match.is_file()
+                         else sorted(p for p in match.iterdir() if p.is_file())[:MAX_PHASE_ARTIFACTS])
+            except OSError:
+                continue
+            for path in files:
+                if path.name.startswith("."):
+                    continue
+                rel = _workspace_file(root, path.relative_to(root).as_posix())
+                if rel is None or rel in seen:
+                    continue
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                seen[rel] = {"path": rel, "label": label, "size": stat.st_size,
+                             "mtime": int(stat.st_mtime * 1000)}
+    ordered = sorted(seen.values(), key=lambda a: (-a["mtime"], a["path"]))
+    return ordered[:MAX_PHASE_ARTIFACTS]
+
+
 def _revision_events(root: Path) -> list[dict[str, Any]]:
     out = []
     try:
@@ -132,6 +178,11 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
         stage = fase.get("stage_id", "")
         status = str(fase.get("status") or "PENDING")
         events = sorted(by_stage.get(stage, []), key=_sort_key)
+        for event in events[-MAX_PHASE_EVENTS:]:
+            path = _workspace_file(root, event.get("ref"))
+            if path:
+                event["path"] = path
+        artifacts = phase_artifacts(root, stage)
         colour, reasons, counts = _assess(status, events)
         phases.append({
             "id": fase.get("id"), "stage_id": stage,
@@ -139,6 +190,7 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
             "name": fase.get("name"), "gate": fase.get("gate"), "status": status,
             "agent": fase.get("agent"), "color": colour, "reasons": reasons, "counts": counts,
             "total_events": len(events), "events": events[-MAX_PHASE_EVENTS:],
+            "artifacts": artifacts,
         })
     return {"phases": phases, "sources": sources,
             "note": ("Resumen de solo lectura: decisiones persistidas, revisiones y "
