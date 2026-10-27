@@ -62,6 +62,8 @@ from .decisions import LEDGER_MAX_BYTES, MAX_LEDGER_LINES, _discover_ledgers, _r
 
 MAX_PRODUCTS = 50
 MAX_FILES_PER_PRODUCT = 200
+#: Bound on the files one product's walk visits, shown or not (run records count here only).
+MAX_SCANNED_FILES = 20000
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_POINTS = 500
 MAX_SERIES = 24
@@ -565,20 +567,56 @@ def _fold_runs(root: Path, ledger: Path | None, reader: _Reader) -> dict[str, An
 # --------------------------------------------------------------------------
 # products
 # --------------------------------------------------------------------------
-def _scan(folder: Path, cap: int, skip: tuple[str, ...] = ()) -> tuple[list[Path], bool]:
+def _scan(folder: Path, cap: int, skip: tuple[str, ...] = (), keep=None) -> tuple[list[Path], str | None]:
     """Files under ``folder`` without following directory symlinks; top-level
-    directories named in ``skip`` are read by their own reader instead."""
+    directories named in ``skip`` are read by their own reader instead.
+
+    ``keep(path)`` selects the files that count against ``cap``: files the
+    panel never shows (a campaign's run records) are walked past without using
+    it up. The walk itself stops after ``MAX_SCANNED_FILES`` files. The second
+    value names the bound that cut the scan, or is None.
+    """
     found: list[Path] = []
     if not folder.is_dir() or folder.is_symlink():
-        return found, False
+        return found, None
+    visited = 0
     for current, dirs, files in os.walk(folder, followlinks=False):
         top = Path(current) == folder
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not (top and d in skip))
         for name in sorted(files):
+            visited += 1
+            if visited > MAX_SCANNED_FILES:
+                return found, "visited"
+            path = Path(current) / name
+            if keep is not None and not keep(path):
+                continue
             if len(found) >= cap:
-                return found, True
-            found.append(Path(current) / name)
-    return found, False
+                return found, "kept"
+            found.append(path)
+    return found, None
+
+
+def _result_kind(results: Path, path: Path) -> str | None:
+    """What the panel shows a file under ``Results/`` as, or None.
+
+    A figure or a table sits in a ``figures`` or ``tables`` folder at any depth
+    (``Results/figures`` or ``Results/<experiment>/figures``); a summary is
+    ``Results/summary.json`` or ``Results/<experiment>/summary.json``.
+    """
+    parts = path.relative_to(results).parts
+    name, ext = path.name.lower(), path.suffix.lower()
+    folders = parts[:-1]
+    if len(parts) == 1 and name == "panel.json":
+        return "panel"
+    if name.startswith("history") and ext in HISTORY_EXTS:
+        return "history"
+    if name.startswith("significance") and ext == ".json":
+        return "significance"
+    if "figures" in folders and ext in FIGURE_EXTS:
+        return "figure"
+    if ("tables" in folders and ext in TABLE_EXTS) or (len(parts) <= 2 and name == "summary.json"):
+        return "table"
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -791,9 +829,12 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
     else:
         kind = "unknown"
     results = folder / "Results"
-    files, cut = _scan(results, MAX_FILES_PER_PRODUCT, skip=("hpo",))
-    if cut:
+    files, cut = _scan(results, MAX_FILES_PER_PRODUCT, skip=("hpo",),
+                       keep=lambda path: _result_kind(results, path) is not None)
+    if cut == "kept":
         reader.warn(f"{reader.label(results)}: only the first {MAX_FILES_PER_PRODUCT} files were scanned")
+    elif cut == "visited":
+        reader.warn(f"{reader.label(results)}: the scan stopped after {MAX_SCANNED_FILES} files were visited")
     convergence: list[dict[str, Any]] = []
     figures: list[str] = []
     tables: list[dict[str, Any]] = []
@@ -802,21 +843,20 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
     for path in files:
         if not reader.contained(path):
             continue  # A symlink leaving the workspace is ignored outright.
-        rel_parts = path.relative_to(results).parts
-        name, ext = path.name.lower(), path.suffix.lower()
-        if len(rel_parts) == 1 and name == "panel.json":
+        role = _result_kind(results, path)
+        if role == "panel":
             panel = path
-        elif name.startswith("history") and ext in HISTORY_EXTS:
+        elif role == "history":
             if len(convergence) < MAX_HISTORIES:
                 entry = _read_history(path, reader)
                 if entry:
                     convergence.append(entry)
-        elif name.startswith("significance") and ext == ".json":
+        elif role == "significance":
             significance.extend(_read_significance(path, reader))
-        elif rel_parts[0] == "figures" and ext in FIGURE_EXTS:
+        elif role == "figure":
             if len(figures) < MAX_FIGURES:
                 figures.append(_rel(root, path))
-        elif (rel_parts[0] == "tables" and ext in TABLE_EXTS) or (len(rel_parts) == 1 and name == "summary.json"):
+        elif role == "table":
             if len(tables) < MAX_TABLES:
                 table = _read_table(path, reader)
                 if table:

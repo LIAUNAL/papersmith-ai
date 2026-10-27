@@ -241,6 +241,73 @@ REGISTRY = [
 ]
 
 
+class PerExperimentResultsTests(unittest.TestCase):
+    """A product that keeps one folder per experiment under ``Results/``.
+
+    Figures and tables live in ``Results/<experiment>/figures`` and
+    ``Results/<experiment>/tables``, a summary in ``Results/<experiment>/summary.json``,
+    and hundreds of run records under ``Results/<experiment>/runs/`` that the panel
+    never shows.
+    """
+
+    def setUp(self) -> None:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.root = Path(holder.name).resolve()
+        self.product = self.root / "implementations" / "repo" / "Deep"
+        results = self.product / "Results"
+        (self.product / "Experimental_AGREED.md").parent.mkdir(parents=True)
+        (self.product / "Experimental_AGREED.md").write_text("# Agreed\n", encoding="utf-8")
+        for experiment in ("e1", "e2"):
+            runs = results / experiment / "runs" / "arm"
+            runs.mkdir(parents=True)
+            for i in range(150):
+                (runs / f"s{i}.json").write_text("{}", encoding="utf-8")
+        for experiment in ("e1", "e2"):
+            (results / experiment / "figures").mkdir(parents=True)
+            (results / experiment / "figures" / f"{experiment}-convergence.png").write_bytes(b"\x89PNG")
+            (results / experiment / "tables").mkdir(parents=True)
+            (results / experiment / "tables" / f"{experiment}.md").write_text(
+                "| arm | acc |\n|---|---|\n| dru | 0.9 |\n", encoding="utf-8")
+            (results / experiment / "summary.json").write_text(json.dumps({"met": True}), encoding="utf-8")
+        (results / "figures").mkdir()
+        (results / "figures" / "top.png").write_bytes(b"\x89PNG")
+
+    def product_view(self) -> dict:
+        view = experiments_view.get_experiments_view(self.root)
+        return next(p for p in view["products"] if p["name"] == "Deep")
+
+    def test_figures_and_tables_inside_an_experiment_folder_are_shown(self) -> None:
+        product = self.product_view()
+        base = "implementations/repo/Deep/Results/"
+        self.assertIn(base + "e1/figures/e1-convergence.png", product["figures"])
+        self.assertIn(base + "e2/figures/e2-convergence.png", product["figures"])
+        self.assertIn(base + "figures/top.png", product["figures"])
+        paths = [t["path"] for t in product["tables"]]
+        for experiment in ("e1", "e2"):
+            self.assertIn(base + f"{experiment}/tables/{experiment}.md", paths)
+            self.assertIn(base + f"{experiment}/summary.json", paths)
+
+    def test_run_records_do_not_use_up_the_file_cap(self) -> None:
+        product = self.product_view()
+        self.assertIn("implementations/repo/Deep/Results/e2/figures/e2-convergence.png", product["figures"])
+        self.assertFalse(any("only the first" in w for w in product["warnings"]), product["warnings"])
+
+    def test_the_walk_itself_stays_bounded(self) -> None:
+        original = experiments_view.MAX_SCANNED_FILES
+        experiments_view.MAX_SCANNED_FILES = 50
+        self.addCleanup(setattr, experiments_view, "MAX_SCANNED_FILES", original)
+        product = self.product_view()
+        self.assertTrue(any("files were visited" in w for w in product["warnings"]), product["warnings"])
+
+    def test_a_deeper_summary_is_not_read_as_a_table(self) -> None:
+        archived = self.product / "Results" / "e1" / "v05"
+        archived.mkdir()
+        (archived / "summary.json").write_text(json.dumps({"old": 1}), encoding="utf-8")
+        paths = [t["path"] for t in self.product_view()["tables"]]
+        self.assertNotIn("implementations/repo/Deep/Results/e1/v05/summary.json", paths)
+
+
 class DatasetsViewTests(unittest.TestCase):
     def setUp(self) -> None:
         holder = tempfile.TemporaryDirectory()

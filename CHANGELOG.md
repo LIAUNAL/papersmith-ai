@@ -11,6 +11,20 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Fixed
+
+- The experiments panel now shows figures and tables kept in one folder per
+  experiment: a file in a `figures` or `tables` folder at any depth under
+  `Results/` (for example `Results/e1/figures/`), and `Results/<experiment>/summary.json`.
+  Only `Results/figures/`, `Results/tables/` and `Results/summary.json` were read
+  before, so a product with `Results/e1/`, `Results/e2/` ... showed none of them.
+- Run records the panel never shows (for example `Results/<experiment>/runs/*.json`)
+  no longer use up the 200-file limit per product, which used to stop the scan
+  before a campaign's figures were reached. The walk itself is bounded separately
+  and warns when it stops.
+
 ## 0.30.2
 
 ### Changed
