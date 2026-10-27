@@ -11,6 +11,19 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.30.1
+
+### Changed
+
+- The Historia con IA phase detail lists the phase's artifacts (its evidence
+  files, newest first, with type, size and date) and every interaction that
+  names a workspace file shows its path. Each path is a link that opens the
+  file in a window over the dashboard, in the dashboard's own style: Markdown,
+  JSON and LaTeX rendered as in the Artefactos viewer (with a source toggle),
+  PDFs and images embedded, HTML and code as their source. The window can
+  hand the file to the Artefactos tab or a new tab and closes with Esc. Paths
+  outside the workspace are never linked.
+
 ## 0.30.0
 
 ### Added
