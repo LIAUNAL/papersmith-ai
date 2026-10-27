@@ -11,6 +11,22 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Fixed
+
+- The Experimentos tab opens with an "Antes de lanzar" notice listing every
+  experiment diagram still awaiting validation, each linked to its product, so
+  the diagrams no longer sit below eight setup sections.
+- A dashboard server started before `smith upgrade` keeps the old release's
+  code in memory while serving the new panel, so diagram buttons went missing
+  and "Validar diagrama" reached no route. `/api/experiments` now reports the
+  release the server started with and the workspace's current one, and the
+  panel asks for a restart when they differ.
+- The dashboard's page and scripts are served with `Cache-Control: no-cache`,
+  so a reload after an upgrade revalidates them instead of running a cached
+  panel.
+
 ## 0.26.0
 
 ### Added
