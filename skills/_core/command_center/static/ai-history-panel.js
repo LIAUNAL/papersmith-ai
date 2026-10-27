@@ -5,9 +5,11 @@
  * iterations, green: passed directly) and a timeline of decisions, revisions
  * and chat turns. The diagram draws the phases in order, each followed by its
  * gate; clicking a phase (or Enter on it) shows its summarised history and
- * the phase's artifacts. Every artifact path is a link: text files open in the
- * Artefactos viewer, anything else (PDF, images) in a new tab through
- * /api/artifact, which serves only files inside the workspace.
+ * the phase's artifacts. Every artifact path is a link that opens the file in
+ * a window over the dashboard: text rendered by the Artefactos viewer's own
+ * renderArtifactDoc (web view, with a raw source toggle), PDFs and images
+ * embedded, HTML as its source. A modified click (Cmd/Ctrl) keeps the link's
+ * new tab. Files come from /api/artifact, which serves only workspace files.
  * Every value is escaped before insertion.
  *
  * Public surface (window): refreshAiHistoryPanel(), AiHistoryPanel.render(view).
@@ -36,8 +38,12 @@
   const BOX_W = 190, BOX_H = 64, GATE = 26, GAP_X = 120, GAP_Y = 64, PAD = 16;
   const clip = (v, n) => (String(v ?? '').length > n ? `${String(v).slice(0, n - 1)}…` : String(v ?? ''));
 
-  // Extensions the Artefactos viewer renders as text; the rest open raw.
-  const VIEWER_EXT = /\.(md|markdown|txt|json|jsonl|tex|bib|ya?ml|toml|py|ts|js|mjs|csv|tsv|log|ini|cfg|sh|r|ipynb)$/i;
+  // How the window shows a file, by extension.
+  const WEB_EXT = /\.(md|markdown|txt|json|tex|bib|ya?ml|toml|csv|tsv|log|ini|cfg)$/i;
+  const SOURCE_EXT = /\.(jsonl|py|ts|js|mjs|sh|r|ipynb|html?|xml|sty|cls|lock)$/i;
+  const PDF_EXT = /\.pdf$/i;
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
+  const TEXT_MAX_BYTES = 1536 * 1024;
   const rawUrl = (path) => `/api/artifact?file=${encodeURIComponent(path)}`;
   const fileLink = (path, text) => `<a class="aih-file" href="${esc(rawUrl(path))}" target="_blank" rel="noopener"`
     + ` data-artifact="${esc(path)}" title="Abrir ${esc(path)}">${esc(text ?? path)}</a>`;
@@ -170,12 +176,124 @@
   function openArtifact(ev) {
     const link = ev.target.closest('a[data-artifact]');
     if (!link) return;
-    const path = link.getAttribute('data-artifact');
     if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
-    if (!VIEWER_EXT.test(path) || typeof window.loadArtifact !== 'function') return;
     ev.preventDefault();
-    window.navigateTab?.('artifacts');
-    window.loadArtifact(path);
+    showArtifact(link.getAttribute('data-artifact'), link);
+  }
+
+  // --- the artifact window ------------------------------------------------
+
+  let modal = null;
+  let returnFocus = null;
+  let viewMode = 'web';
+  let loaded = { path: '', text: null };
+
+  function ensureModal() {
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.className = 'aih-modal';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="aih-modal__backdrop" data-close="1"></div>'
+      + '<section class="aih-modal__dialog panel" role="dialog" aria-modal="true" aria-labelledby="aihModalTitle">'
+      + '<header class="aih-modal__head">'
+      + '<div class="aih-modal__titles"><div id="aihModalTitle" class="panel__title"></div>'
+      + '<div class="aih-modal__meta panel__meta"></div></div>'
+      + '<div class="aih-modal__actions">'
+      + '<button type="button" class="btn aih-modal__mode" data-mode="web">✨ Vista web</button>'
+      + '<button type="button" class="btn aih-modal__mode" data-mode="raw">📝 Código fuente</button>'
+      + '<button type="button" class="btn" data-action="artifacts" title="Abrir en la pestaña Artefactos">📂 Artefactos</button>'
+      + '<a class="btn" data-action="tab" target="_blank" rel="noopener" title="Abrir en una pestaña nueva">↗</a>'
+      + '<button type="button" class="btn aih-modal__close" data-close="1" aria-label="Cerrar">✕</button>'
+      + '</div></header>'
+      + '<div class="aih-modal__body"></div></section>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-close]')) { closeArtifact(); return; }
+      const mode = ev.target.closest('[data-mode]');
+      if (mode) { viewMode = mode.getAttribute('data-mode'); renderText(); return; }
+      if (ev.target.closest('[data-action="artifacts"]') && typeof window.loadArtifact === 'function') {
+        const path = loaded.path;
+        closeArtifact();
+        window.navigateTab?.('artifacts');
+        window.loadArtifact(path);
+      }
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (!modal.hidden && ev.key === 'Escape') closeArtifact();
+    });
+    return modal;
+  }
+
+  function closeArtifact() {
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    document.body.classList.remove('aih-modal-open');
+    modal.querySelector('.aih-modal__body').innerHTML = '';
+    returnFocus?.focus?.();
+  }
+
+  function setModes(enabled) {
+    modal.querySelectorAll('.aih-modal__mode').forEach((b) => {
+      b.hidden = !enabled;
+      b.classList.toggle('btn--primary', b.getAttribute('data-mode') === viewMode);
+    });
+  }
+
+  function renderText() {
+    const body = modal.querySelector('.aih-modal__body');
+    const { path, text } = loaded;
+    if (text === null) return;
+    const web = WEB_EXT.test(path) && viewMode === 'web' && typeof window.renderArtifactDoc === 'function';
+    setModes(WEB_EXT.test(path));
+    body.innerHTML = web
+      ? `<div class="artifact-web-article">${window.renderArtifactDoc(text, path)}</div>`
+      : `<pre class="aih-modal__raw">${esc(text)}</pre>`;
+    body.scrollTop = 0;
+  }
+
+  async function showArtifact(path, opener) {
+    ensureModal();
+    returnFocus = opener || document.activeElement;
+    loaded = { path, text: null };
+    viewMode = 'web';
+    const url = rawUrl(path);
+    modal.querySelector('#aihModalTitle').textContent = path.split('/').pop();
+    modal.querySelector('.aih-modal__meta').textContent = `Ruta: ${path}`;
+    modal.querySelector('[data-action="tab"]').setAttribute('href', url);
+    const body = modal.querySelector('.aih-modal__body');
+    setModes(false);
+    modal.hidden = false;
+    document.body.classList.add('aih-modal-open');
+    modal.querySelector('.aih-modal__close').focus();
+    if (PDF_EXT.test(path)) {
+      body.innerHTML = `<iframe class="aih-modal__frame" src="${esc(url)}" title="${esc(path)}"></iframe>`;
+      return;
+    }
+    if (IMAGE_EXT.test(path)) {
+      body.innerHTML = `<div class="aih-modal__image"><img src="${esc(url)}" alt="${esc(path)}"></div>`;
+      return;
+    }
+    if (!WEB_EXT.test(path) && !SOURCE_EXT.test(path) && /\.[a-z0-9]+$/i.test(path)) {
+      body.innerHTML = `<p class="aih-hint">Este tipo de archivo no se puede previsualizar aquí. Ábrelo en una pestaña nueva con ↗.</p>`;
+      return;
+    }
+    body.innerHTML = '<p class="aih-hint">Cargando artefacto…</p>';
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let text = await res.text();
+      const size = text.length;
+      const cut = size > TEXT_MAX_BYTES;
+      if (cut) text = text.slice(0, TEXT_MAX_BYTES);
+      if (loaded.path !== path) return;
+      modal.querySelector('.aih-modal__meta').textContent = `Ruta: ${path} · ${kb(size)} · `
+        + `${text.split('\n').length} líneas${cut ? ' · se muestra el inicio' : ''}`;
+      loaded = { path, text };
+      if (cut) viewMode = 'raw';
+      renderText();
+    } catch (err) {
+      body.innerHTML = `<p class="aih-hint">No se pudo abrir el artefacto: ${esc(err.message)}</p>`;
+    }
   }
 
   function legend() {
@@ -234,6 +352,6 @@
     }
   }
 
-  window.AiHistoryPanel = { render };
+  window.AiHistoryPanel = { render, showArtifact };
   window.refreshAiHistoryPanel = refresh;
 })();
