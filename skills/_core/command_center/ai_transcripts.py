@@ -22,6 +22,13 @@ workspace. Inside WSL every store is the Linux one; an agent running on the
 Windows side keeps its sessions under ``/mnt/c/Users/...``, which the
 ``PAPERSMITH_<HARNESS>_SESSIONS`` variables point the reader to.
 
+Reads are incremental: each session file keeps, per server process, the
+byte offset it was read up to and its compacted turns, so a request parses
+only the lines appended since the last one (a session that shrank or was
+replaced is read again from the start). Lines that cannot hold a turn are
+skipped before JSON parsing. OpenCode sessions are reused until their
+``time_updated`` moves.
+
 A command is recognised in the four shapes harnesses write it: Claude Code's
 ``<command-name>/x</command-name>``, Pi's ``<skill name="x">`` block, the
 expanded projected prompt ``Read `skills/x/SKILL.md` and follow it`` (Pi
@@ -34,6 +41,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
@@ -50,6 +58,13 @@ TEXT_MAX = 240
 HARNESSES = ("claude-code", "pi", "opencode", "antigravity")
 
 Turn = tuple["str | None", str, str]
+#: ``(ts, role, text, command)``: what :func:`attribute` needs of a turn, with
+#: the text already clipped and the command (``(skill, args)``) already parsed.
+Compact = tuple["str | None", str, str, "tuple[str, str] | None"]
+
+_cache_lock = threading.Lock()
+_file_cache: dict[str, dict[str, Any]] = {}
+_opencode_cache: dict[tuple[str, str], tuple[Any, list[Compact]]] = {}
 
 _COMMAND_RE = re.compile(r"<command-name>\s*/?([\w:.-]+)\s*</command-name>")
 _ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.S)
@@ -100,10 +115,26 @@ def _event(ts: Any, kind: str, summary: str, ref: str, actor: str) -> dict[str, 
             "summary": summary, "ref": ref, "actor": actor}
 
 
-def attribute(turns: Iterable[Turn], ref: str, skills: dict[str, str],
+def compact(ts: Any, role: str, text: str) -> Compact | None:
+    """One turn reduced to what attribution reads; ``None`` when it carries
+    nothing (an empty or harness-injected user turn, an empty reply)."""
+    if role == "assistant":
+        return (ts, role, _clip(text), None) if text.strip() else None
+    if role == "error":
+        return (ts, role, "", None)
+    if (not text.strip() or "<local-command-stdout>" in text
+            or text.lstrip().startswith("<system-reminder>")):
+        return None
+    command = command_of(text)
+    if command is not None:
+        return (ts, "user", "", (command[0], command[1][: TEXT_MAX * 2]))
+    return (ts, "user", _clip(_TAG_RE.sub(" ", text)), None)
+
+
+def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
               events: dict[str, list[dict[str, Any]]]) -> None:
-    """Assign one session's turns to phases. Only the agent's last reply
-    before the next user turn is kept."""
+    """Assign one session's compacted turns to phases. Only the agent's last
+    reply before the next user turn is kept."""
     stage: str | None = None
     reply: dict[str, Any] | None = None
 
@@ -113,20 +144,16 @@ def attribute(turns: Iterable[Turn], ref: str, skills: dict[str, str],
             events.setdefault(stage, []).append(reply)
         reply = None
 
-    for ts, role, text in turns:
+    for ts, role, text, command in turns:
         if role == "assistant":
-            if text.strip() and stage is not None:
-                reply = _event(ts, "agent_reply", _clip(text), ref, "agente")
+            if stage is not None:
+                reply = _event(ts, "agent_reply", text, ref, "agente")
             continue
         if role == "error":
             if stage is not None:
                 events.setdefault(stage, []).append(
                     _event(ts, "error", "Una herramienta falló durante la fase", ref, "herramienta"))
             continue
-        if (not text.strip() or "<local-command-stdout>" in text
-                or text.lstrip().startswith("<system-reminder>")):
-            continue
-        command = command_of(text)
         target = stage_for(*command, skills) if command else None
         flush()
         if target is not None:
@@ -134,8 +161,7 @@ def attribute(turns: Iterable[Turn], ref: str, skills: dict[str, str],
             events.setdefault(stage, []).append(
                 _event(ts, "command", _clip(f"/{command[0]} {command[1]}".strip()), ref, "operador"))
         elif stage is not None and command is None:
-            events.setdefault(stage, []).append(
-                _event(ts, "user_message", _clip(_TAG_RE.sub(" ", text)), ref, "operador"))
+            events.setdefault(stage, []).append(_event(ts, "user_message", text, ref, "operador"))
     flush()
 
 
@@ -220,17 +246,52 @@ def opencode_db() -> Path:
 
 # --- per-harness turn readers ----------------------------------------------
 
-def _jsonl(path: Path) -> Iterator[dict[str, Any]]:
+def session_turns(path: Path, line_turn: Callable[[dict[str, Any]], Turn | None],
+                  markers: tuple[bytes, ...]) -> list[Compact]:
+    """The compacted turns of one JSONL session, parsing only what was
+    appended since the last call. A partial last line (still being written)
+    waits for the next call."""
+    stat = path.stat()
+    key, ident = str(path), (stat.st_dev, stat.st_ino)
+    with _cache_lock:
+        entry = _file_cache.get(key)
+    if (entry is None or entry["ident"] != ident or stat.st_size < entry["offset"]
+            or (stat.st_size == entry["offset"] and stat.st_mtime_ns != entry["mtime"])):
+        entry = {"ident": ident, "offset": 0, "mtime": 0, "turns": []}
+    if stat.st_size == entry["offset"]:
+        return entry["turns"]
     with path.open("rb") as handle:
-        for raw in handle:
-            if len(raw) > MAX_LINE_BYTES:
-                continue
-            try:
-                line = json.loads(raw)
-            except ValueError:
-                continue
-            if isinstance(line, dict):
-                yield line
+        handle.seek(entry["offset"])
+        data = handle.read(stat.st_size - entry["offset"])
+    end = data.rfind(b"\n") + 1
+    tail = data[end:]
+    lines = data[:end].split(b"\n")
+    # A last line without its newline is complete only when it already parses:
+    # a JSON object cut short never does.
+    if tail.strip():
+        try:
+            json.loads(tail)
+        except ValueError:
+            pass
+        else:
+            lines.append(tail)
+            end = len(data)
+    turns = list(entry["turns"])
+    for raw in lines:
+        if not raw or len(raw) > MAX_LINE_BYTES or not any(m in raw for m in markers):
+            continue
+        try:
+            line = json.loads(raw)
+        except ValueError:
+            continue
+        turn = line_turn(line) if isinstance(line, dict) else None
+        small = compact(*turn) if turn else None
+        if small is not None:
+            turns.append(small)
+    with _cache_lock:
+        _file_cache[key] = {"ident": ident, "offset": entry["offset"] + end,
+                            "mtime": stat.st_mtime_ns, "turns": turns}
+    return turns
 
 
 def _blocks(content: Any, text_type: str = "text") -> tuple[str, list[dict[str, Any]]]:
@@ -240,33 +301,37 @@ def _blocks(content: Any, text_type: str = "text") -> tuple[str, list[dict[str, 
     return "\n".join(str(b.get("text") or "") for b in blocks if b.get("type") == text_type), blocks
 
 
-def claude_turns(path: Path) -> Iterator[Turn]:
-    for line in _jsonl(path):
-        if line.get("isSidechain") or line.get("isMeta"):
-            continue
-        kind, message = line.get("type"), line.get("message")
-        if kind not in ("user", "assistant") or not isinstance(message, dict):
-            continue
-        text, blocks = _blocks(message.get("content"))
-        if any(b.get("type") == "tool_result" and b.get("is_error") for b in blocks):
-            yield line.get("timestamp"), "error", ""
-        elif text:
-            yield line.get("timestamp"), kind, text
+def claude_line(line: dict[str, Any]) -> Turn | None:
+    if line.get("isSidechain") or line.get("isMeta"):
+        return None
+    kind, message = line.get("type"), line.get("message")
+    if kind not in ("user", "assistant") or not isinstance(message, dict):
+        return None
+    text, blocks = _blocks(message.get("content"))
+    if any(b.get("type") == "tool_result" and b.get("is_error") for b in blocks):
+        return line.get("timestamp"), "error", ""
+    return (line.get("timestamp"), kind, text) if text else None
 
 
-def pi_turns(path: Path) -> Iterator[Turn]:
-    for line in _jsonl(path):
-        message = line.get("message")
-        if line.get("type") != "message" or not isinstance(message, dict):
-            continue
-        role, ts = message.get("role"), line.get("timestamp")
-        if role == "toolResult":
-            if message.get("isError"):
-                yield ts, "error", ""
-        elif role in ("user", "assistant"):
-            text, _ = _blocks(message.get("content"))
-            if text:
-                yield ts, role, text
+def pi_line(line: dict[str, Any]) -> Turn | None:
+    message = line.get("message")
+    if line.get("type") != "message" or not isinstance(message, dict):
+        return None
+    role, ts = message.get("role"), line.get("timestamp")
+    if role == "toolResult":
+        return (ts, "error", "") if message.get("isError") else None
+    if role in ("user", "assistant"):
+        text, _ = _blocks(message.get("content"))
+        return (ts, role, text) if text else None
+    return None
+
+
+#: Per harness: how one JSONL line becomes a turn, and the bytes a line must
+#: contain to be worth parsing at all.
+LINE_READERS: dict[str, tuple[Callable[[dict[str, Any]], Turn | None], tuple[bytes, ...]]] = {
+    "claude-code": (claude_line, (b'"user"', b'"assistant"')),
+    "pi": (pi_line, (b'"message"',)),
+}
 
 
 def _iso(ms: Any) -> str | None:
@@ -279,7 +344,7 @@ def _iso(ms: Any) -> str | None:
     return stamp.strftime("%Y-%m-%dT%H:%M:%S.") + f"{stamp.microsecond // 1000:03d}Z"
 
 
-def opencode_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[Turn]]], str]:
+def opencode_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[Compact]]], str]:
     """``[(session id, turns)]`` of the workspace's OpenCode sessions."""
     if not db.is_file():
         return [], "absent"
@@ -288,15 +353,24 @@ def opencode_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[T
     try:
         marks = ",".join("?" for _ in roots)
         sessions = connection.execute(
-            f"SELECT id FROM session WHERE directory IN ({marks}) AND parent_id IS NULL "
+            f"SELECT id, time_updated FROM session WHERE directory IN ({marks}) AND parent_id IS NULL "
             "ORDER BY time_updated DESC LIMIT ?", (*sorted(roots), MAX_SESSIONS)).fetchall()
         out = []
-        for (session_id,) in sessions:
+        for session_id, updated in sessions:
+            key = (str(db), session_id)
+            with _cache_lock:
+                cached = _opencode_cache.get(key)
+            if cached is not None and cached[0] == updated:
+                out.append((session_id, cached[1]))
+                continue
             rows = connection.execute(
                 "SELECT m.data, p.data, p.time_created FROM part p JOIN message m ON m.id = p.message_id "
                 "WHERE p.session_id = ? ORDER BY p.time_created, p.id LIMIT ?",
                 (session_id, MAX_DB_ROWS)).fetchall()
-            out.append((session_id, list(_opencode_turns(rows))))
+            turns = [t for t in (compact(*turn) for turn in _opencode_turns(rows)) if t is not None]
+            with _cache_lock:
+                _opencode_cache[key] = (updated, turns)
+            out.append((session_id, turns))
         return out, "ok" if sessions else "absent"
     finally:
         connection.close()
@@ -321,20 +395,28 @@ def _opencode_turns(rows: Iterable[tuple[str, str, Any]]) -> Iterator[Turn]:
 
 # --- the combined read -----------------------------------------------------
 
-def _read_files(directory: Path | None, reader: Callable[[Path], Iterator[Turn]], harness: str,
+def _read_files(directory: Path | None, harness: str,
                 skills: dict[str, str], events: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     if directory is None or not directory.is_dir():
         return {"status": "absent", "sessions": 0}
+    line_turn, markers = LINE_READERS[harness]
     read, skipped = 0, 0
-    for path in _newest(directory)[:MAX_SESSIONS]:
+    current = _newest(directory)[:MAX_SESSIONS]
+    for path in current:
         try:
             if path.stat().st_size > SESSION_MAX_BYTES:
                 skipped += 1
                 continue
-            attribute(reader(path), f"{harness}:{path.stem[-8:]}", skills, events)
+            turns = session_turns(path, line_turn, markers)
+            attribute(turns, f"{harness}:{path.stem[-8:]}", skills, events)
             read += 1
         except OSError:
             skipped += 1
+    # Sessions that dropped out of the newest ones leave the cache.
+    keep, prefix = {str(p) for p in current}, str(directory)
+    with _cache_lock:
+        for key in [k for k in _file_cache if k.startswith(prefix) and k not in keep]:
+            del _file_cache[key]
     info: dict[str, Any] = {"status": "ok" if read else "absent", "sessions": read}
     if skipped:
         info["detail"] = f"{skipped} sesión(es) omitida(s): muy grandes o ilegibles"
@@ -364,9 +446,9 @@ def read_all(root: Path, locations: dict[str, Path | None] | None = None,
 
     guarded("claude-code", lambda: _read_files(
         overrides["claude-code"] if "claude-code" in overrides else claude_dir(roots),
-        claude_turns, "claude-code", skills, events))
+        "claude-code", skills, events))
     guarded("pi", lambda: _read_files(
-        overrides["pi"] if "pi" in overrides else pi_dir(roots), pi_turns, "pi", skills, events))
+        overrides["pi"] if "pi" in overrides else pi_dir(roots), "pi", skills, events))
 
     def opencode() -> dict[str, Any]:
         db = overrides["opencode"] if "opencode" in overrides else opencode_db()
@@ -383,4 +465,12 @@ def read_all(root: Path, locations: dict[str, Path | None] | None = None,
     return events, status
 
 
-__all__ = ["HARNESSES", "attribute", "command_of", "read_all", "skill_stages", "stage_for"]
+def clear_cache() -> None:
+    """Forget every cached session (tests, or a fresh install)."""
+    with _cache_lock:
+        _file_cache.clear()
+        _opencode_cache.clear()
+
+
+__all__ = ["HARNESSES", "attribute", "clear_cache", "command_of", "compact", "read_all",
+           "session_turns", "skill_stages", "stage_for"]

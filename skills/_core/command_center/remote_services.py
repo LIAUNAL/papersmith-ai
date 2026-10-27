@@ -87,6 +87,7 @@ _SMOKE_RESULT_KIND = "smokeResult"
 
 _version_cache: dict[str, tuple[float, str | None]] = {}
 _version_lock = threading.Lock()
+_version_refreshing: set[str] = set()
 
 
 def clear_cache() -> None:
@@ -105,20 +106,41 @@ def _row(row_id: str, service: str, purpose: str, state: str, detail: str,
             "detail": detail, "action": action, **extra}
 
 
+def _run_version(executable: str) -> str | None:
+    try:
+        done = subprocess.run([executable, "--version"], capture_output=True, text=True,
+                              timeout=VERSION_TIMEOUT, check=False)
+        text = (done.stdout or done.stderr or "").strip().splitlines()
+        return text[0][:MAX_TEXT] if text else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _refresh_version(executable: str) -> None:
+    try:
+        version = _run_version(executable)
+        with _version_lock:
+            _version_cache[executable] = (time.monotonic(), version)
+    finally:
+        with _version_lock:
+            _version_refreshing.discard(executable)
+
+
 def _cli_version(executable: str) -> str | None:
+    """``<executable> --version``, cached; an expired answer is served while
+    a background run replaces it, so the panel never waits on a CLI twice."""
     now = time.monotonic()
     with _version_lock:
         cached = _version_cache.get(executable)
         if cached and now - cached[0] < VERSION_TTL:
             return cached[1]
-    version: str | None = None
-    try:
-        done = subprocess.run([executable, "--version"], capture_output=True, text=True,
-                              timeout=VERSION_TIMEOUT, check=False)
-        text = (done.stdout or done.stderr or "").strip().splitlines()
-        version = text[0][:MAX_TEXT] if text else None
-    except (OSError, subprocess.SubprocessError, ValueError):
-        version = None
+        if cached:
+            if executable not in _version_refreshing:
+                _version_refreshing.add(executable)
+                threading.Thread(target=_refresh_version, args=(executable,),
+                                 name="cli-version", daemon=True).start()
+            return cached[1]
+    version = _run_version(executable)
     with _version_lock:
         _version_cache[executable] = (now, version)
     return version

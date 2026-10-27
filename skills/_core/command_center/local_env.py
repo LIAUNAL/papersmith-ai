@@ -85,6 +85,7 @@ print(json.dumps(out))
 _NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _cache: dict[tuple[str, float, tuple[str, ...], bool], tuple[float, dict[str, Any] | None]] = {}
 _lock = threading.Lock()
+_refreshing: set[tuple[str, float, tuple[str, ...], bool]] = set()
 
 
 def clear_cache() -> None:
@@ -151,8 +152,35 @@ def required_libraries(target: Path) -> dict[str, list[str]]:
     return {"names": sorted(names)[:MAX_NAMES], "sources": sorted(sources)}
 
 
+def _run_probe(python: Path, names: list[str], device: bool) -> dict[str, Any] | None:
+    try:
+        done = subprocess.run([str(python), "-I", "-c", PROBE_SCRIPT, json.dumps(names), "1" if device else "0"],
+                              capture_output=True, text=True, timeout=PROBE_TIMEOUT, check=False,
+                              cwd=tempfile.gettempdir(), stdin=subprocess.DEVNULL)
+        output = (done.stdout or "")[:MAX_OUTPUT_BYTES].strip().splitlines()
+        parsed = json.loads(output[-1]) if done.returncode == 0 and output else None
+        return parsed if isinstance(parsed, dict) and isinstance(parsed.get("python"), str) else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _refresh(key: tuple[str, float, tuple[str, ...], bool], python: Path, names: list[str],
+             device: bool) -> None:
+    try:
+        answer = _run_probe(python, names, device)
+        with _lock:
+            _cache[key] = (time.monotonic(), answer)
+    finally:
+        with _lock:
+            _refreshing.discard(key)
+
+
 def _probe(python: Path, names: list[str], device: bool) -> dict[str, Any] | None:
-    """The interpreter's answer to ``PROBE_SCRIPT``, cached; None when unverifiable."""
+    """The interpreter's answer to ``PROBE_SCRIPT``, cached; None when unverifiable.
+
+    An expired answer is still served while a background probe replaces it,
+    so a panel reload never waits on the interpreter once it answered once.
+    """
     try:
         mtime = python.stat().st_mtime
     except OSError:
@@ -163,16 +191,13 @@ def _probe(python: Path, names: list[str], device: bool) -> dict[str, Any] | Non
         cached = _cache.get(key)
         if cached and now - cached[0] < CACHE_TTL:
             return cached[1]
-    answer: dict[str, Any] | None = None
-    try:
-        done = subprocess.run([str(python), "-I", "-c", PROBE_SCRIPT, json.dumps(names), "1" if device else "0"],
-                              capture_output=True, text=True, timeout=PROBE_TIMEOUT, check=False,
-                              cwd=tempfile.gettempdir(), stdin=subprocess.DEVNULL)
-        output = (done.stdout or "")[:MAX_OUTPUT_BYTES].strip().splitlines()
-        parsed = json.loads(output[-1]) if done.returncode == 0 and output else None
-        answer = parsed if isinstance(parsed, dict) and isinstance(parsed.get("python"), str) else None
-    except (OSError, subprocess.SubprocessError, ValueError):
-        answer = None
+        if cached:
+            if key not in _refreshing:
+                _refreshing.add(key)
+                threading.Thread(target=_refresh, args=(key, python, names, device),
+                                 name="local-env-probe", daemon=True).start()
+            return cached[1]
+    answer = _run_probe(python, names, device)
     with _lock:
         _cache[key] = (now, answer)
     return answer

@@ -156,6 +156,8 @@ class HarnessTranscriptTests(unittest.TestCase):
         self.base = Path(self._tmp.name)
         self.root = self.base / "ws"
         self.root.mkdir()
+        ai_transcripts.clear_cache()
+        self.addCleanup(ai_transcripts.clear_cache)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -217,6 +219,36 @@ class HarnessTranscriptTests(unittest.TestCase):
         kinds = [e["kind"] for e in events["proposal"]]
         self.assertEqual(kinds, ["command", "error", "agent_reply"])
         self.assertTrue(events["proposal"][0]["ts"].endswith("Z"))
+
+    def test_session_reads_are_incremental(self) -> None:
+        path = self.base / "s.jsonl"
+        first = _line("user", "/plausibility idea", "2026-10-01T10:00:00Z")
+        path.write_text(first + "\n", encoding="utf-8")
+        reader, markers = ai_transcripts.LINE_READERS["claude-code"]
+        self.assertEqual(len(ai_transcripts.session_turns(path, reader, markers)), 1)
+        reply = _line("assistant", [{"type": "text", "text": "Listo."}], "2026-10-01T10:01:00Z")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(reply + "\n" + reply[:20])  # a complete line and a half-written one
+        with mock.patch.object(ai_transcripts.json, "loads", wraps=json.loads) as loads:
+            turns = ai_transcripts.session_turns(path, reader, markers)
+        self.assertEqual([t[1] for t in turns], ["user", "assistant"])
+        self.assertEqual(loads.call_count, 2)  # the new line, and the half one that fails
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(reply[20:] + "\n")
+        self.assertEqual(len(ai_transcripts.session_turns(path, reader, markers)), 3)
+        path.write_text(first + "\n", encoding="utf-8")  # replaced by a shorter session
+        self.assertEqual(len(ai_transcripts.session_turns(path, reader, markers)), 1)
+
+    def test_lines_without_a_turn_are_skipped_before_parsing(self) -> None:
+        path = self.base / "s.jsonl"
+        noise = json.dumps({"type": "progress", "data": "x" * 50})
+        path.write_text("\n".join([noise] * 50 + [_line("user", "/plausibility idea", "t")]) + "\n",
+                        encoding="utf-8")
+        reader, markers = ai_transcripts.LINE_READERS["claude-code"]
+        with mock.patch.object(ai_transcripts.json, "loads", wraps=json.loads) as loads:
+            turns = ai_transcripts.session_turns(path, reader, markers)
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(loads.call_count, 1)
 
     def test_stores_are_found_by_slug_or_by_recorded_cwd(self) -> None:
         claude = self.base / "claude" / "projects"

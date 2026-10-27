@@ -37,7 +37,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import agents_view, ai_history, ai_transcripts, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
 from . import doctor_view, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -2713,6 +2713,18 @@ def open_browser(url: str) -> None:
     _print_url(url)
 
 
+def warm_caches(root: Path) -> None:
+    """Fill the slow caches before the first visit: the experiments tab's
+    interpreter and CLI probes and the chat sessions Historia con IA reads.
+    Runs off the request path; a failure only means the first visit pays."""
+    for warm in (lambda: experiments_view.get_experiments_view(root),
+                 lambda: ai_transcripts.read_all(root)):
+        try:
+            warm()
+        except Exception:  # noqa: BLE001 - warming is best effort
+            _log.debug("warming a dashboard cache failed", exc_info=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -2740,6 +2752,7 @@ def main(argv: list[str] | None = None) -> int:
         # the cookie. Printed so --no-browser users can open it themselves.
         url = f"{url}api/terminal/login?token={app.state.terminal.token}"
         print(f"support terminal enabled; dashboard login URL: {url}", flush=True)
+    threading.Thread(target=warm_caches, args=(root,), name="warm-caches", daemon=True).start()
     if not args.no_browser:
         threading.Timer(1.0, open_browser, args=(url,)).start()
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
