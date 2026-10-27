@@ -75,7 +75,7 @@ VERBS = ("synth", "search", "license", "qc", "prepare", "publish", "status")
 
 ERROR_CODES = (
     "bad-slug", "slug-exists", "member-exists", "unknown-slug", "file-missing", "file-outside-workspace",
-    "bad-column", "bad-folds", "too-few-groups", "unknown-host", "license-not-allowed",
+    "bad-column", "bad-folds", "too-few-groups", "identical-repetitions", "unknown-host", "license-not-allowed",
     "bad-owner", "bad-metadata", "public-consent-missing", "public-on-existing",
     "no-publisher", "host-cli-missing", "host-cli-failed", "bad-argument",
 )
@@ -555,7 +555,16 @@ def cmd_qc(args, root: Path, **_inject) -> dict:
 
 
 # ------------------------------------------------------------------- prepare
-def stratified_group_folds(rows: list[dict], label: str, group: str, folds: int, seed: int) -> dict:
+def stratified_group_folds(rows: list[dict], label: str, group: str, folds: int, seed: int,
+                           size_ordered: bool = True) -> dict:
+    """Greedy stratified group k-fold: a group's rows all land in one fold.
+
+    `size_ordered` places the largest groups first after the seeded shuffle,
+    which balances rows best but leaves the seed to break ties between
+    equal-sized groups only. Off, the groups are cut into size strata of
+    `folds` groups, largest first, and the seed shuffles inside each stratum,
+    so every seed gives its own split; `--seeds` uses that for repetitions.
+    """
     per_group: dict[str, Counter] = {}
     for row in rows:
         per_group.setdefault(row[group], Counter())[row[label]] += 1
@@ -563,8 +572,17 @@ def stratified_group_folds(rows: list[dict], label: str, group: str, folds: int,
     totals = Counter(row[label] for row in rows)
     target = {c: totals[c] / folds for c in classes}
     order = sorted(per_group)
-    random.Random(seed).shuffle(order)
+    shuffler = random.Random(seed)
+    shuffler.shuffle(order)
     order.sort(key=lambda g: -sum(per_group[g].values()))
+    if not size_ordered:
+        # Size strata of `folds` groups each, largest first, shuffled inside:
+        # the large groups still go out first, and the seed decides which
+        # fold each group of a stratum lands in.
+        strata = [order[i:i + folds] for i in range(0, len(order), folds)]
+        for stratum in strata:
+            shuffler.shuffle(stratum)
+        order = [name for stratum in strata for name in stratum]
     fold_counts = [Counter() for _ in range(folds)]
     fold_groups = [0] * folds
     assignment: dict[str, int] = {}
@@ -606,15 +624,45 @@ def cmd_prepare(args, root: Path, **_inject) -> dict:
     if n_groups < args.folds:
         raise Refusal("too-few-groups", f"{n_groups} groups cannot fill {args.folds} folds without "
                                         "putting one subject in two folds")
+    if args.seeds is not None and args.seed is not None:
+        raise Refusal("bad-argument", "give either --seed (one split) or --seeds (one split per seed), not both")
+    if args.seeds is not None and len(set(args.seeds)) != len(args.seeds):
+        raise Refusal("bad-argument", f"--seeds repeats a seed: {args.seeds}")
+    warnings = []
+    if args.seeds is None:
+        seeds = [0 if args.seed is None else args.seed]
+        repetitions = [stratified_group_folds(rows, args.label, args.group, args.folds, seeds[0])]
+        sizes = Counter(row[args.group] for row in rows)
+        if len(set(sizes.values())) == len(sizes):
+            warnings.append({"code": "inert-seed",
+                             "message": "every group has a different size, so this seed changes nothing: "
+                                        "the split is the same for any --seed; use --seeds for repetitions"})
+    else:
+        seeds = list(args.seeds)
+        repetitions = [stratified_group_folds(rows, args.label, args.group, args.folds, seed, size_ordered=False)
+                       for seed in seeds]
+        seen = {}
+        for seed, repetition in zip(seeds, repetitions):
+            key = json.dumps(repetition["assignment"], sort_keys=True)
+            if key in seen:
+                raise Refusal("identical-repetitions", f"seeds {seen[key]} and {seed} give the same split; "
+                                                       "choose seeds whose splits differ")
+            seen[key] = seed
     digest = sha256(path)
-    split = stratified_group_folds(rows, args.label, args.group, args.folds, args.seed)
+    split = repetitions[0]
     version = ((entry.get("preparation") or {}).get("version") or 0) + 1
     folder = datasets_dir(root) / entry["slug"]
     folder.mkdir(parents=True, exist_ok=True)
     splits = {"slug": entry["slug"], "version": version, "file": rel, "sha256": digest, "label": args.label,
-              "group": args.group, "folds": args.folds, "seed": args.seed,
+              "group": args.group, "folds": args.folds, "seed": seeds[0],
               "method": "stratified group k-fold (greedy, seeded): a row's fold is its group's fold",
               **split}
+    if args.seeds is not None:
+        splits["method"] = ("stratified group k-fold (greedy, groups taken largest first in size strata of `folds` groups "
+                            "shuffled by the seed), repeated once per seed: a row's fold in a repetition is "
+                            "its group's fold there")
+        splits["seeds"] = seeds
+        splits["repetitions"] = [{"seed": seed, **repetition} for seed, repetition in zip(seeds, repetitions)]
     (folder / "splits.json").write_text(json.dumps(splits, indent=2) + "\n", encoding="utf-8")
     lines = [f"# Official preparation of `{entry['slug']}` (version {version})", "",
              "The single preparation the proof of concept and the full experiments both read.",
@@ -623,14 +671,26 @@ def cmd_prepare(args, root: Path, **_inject) -> dict:
              f"- Rows: {len(rows)}; groups ({args.group}): {n_groups}", "",
              "## Steps", "",
              f"1. Read `{rel}`; check its sha256 against the value above and refuse on mismatch.",
-             f"2. Assign every `{args.group}` to one of {args.folds} folds by stratified group k-fold "
-             f"on `{args.label}` (seed {args.seed}); no subject appears in two folds.",
-             "3. A row's fold is its group's fold, read from `splits.json` (`assignment`).", "",
+             (f"2. Assign every `{args.group}` to one of {args.folds} folds by stratified group k-fold "
+              f"on `{args.label}` (seed {seeds[0]}); no subject appears in two folds."
+              if args.seeds is None else
+              f"2. For each of {len(seeds)} repetitions, assign every `{args.group}` to one of {args.folds} "
+              f"folds by stratified group k-fold on `{args.label}`, taking the groups largest first in size "
+              f"strata of {args.folds} that its seed shuffles; no subject appears in two folds of one repetition."),
+             ("3. A row's fold is its group's fold, read from `splits.json` (`assignment`)."
+              if args.seeds is None else
+              "3. A row's fold in a repetition is its group's fold there, read from `splits.json` "
+              "(`repetitions[i].assignment`); the first repetition is also `assignment`."), "",
              "## Parameters", "", "| Parameter | Value |", "|---|---|",
              f"| label | `{args.label}` |", f"| group | `{args.group}` |", f"| folds | {args.folds} |",
-             f"| seed | {args.seed} |", "", "## Folds", "", "| Fold | Rows | Groups | Classes |", "|---|---|---|---|"]
-    lines += [f"| {f['fold']} | {f['n_rows']} | {f['n_groups']} | {json.dumps(f['class_counts'])} |"
-              for f in split["folds_summary"]]
+             f"| {'seed' if args.seeds is None else 'seeds'} | {', '.join(map(str, seeds))} |", ""]
+    for seed, repetition in zip(seeds, repetitions):
+        lines += [f"## Folds, seed {seed}" if args.seeds is not None else "## Folds", "",
+                  "| Fold | Rows | Groups | Classes |", "|---|---|---|---|"]
+        lines += [f"| {f['fold']} | {f['n_rows']} | {f['n_groups']} | {json.dumps(f['class_counts'])} |"
+                  for f in repetition["folds_summary"]]
+        lines.append("")
+    lines.pop()
     (folder / "PREPARATION.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     entry["preparation"] = {"manifest": (folder / "PREPARATION.md").relative_to(root).as_posix(),
                             "splits": (folder / "splits.json").relative_to(root).as_posix(),
@@ -638,7 +698,11 @@ def cmd_prepare(args, root: Path, **_inject) -> dict:
     if rel not in entry["files"]:
         entry["files"].append(rel)
     save_registry(root, registry)
-    return {"slug": entry["slug"], **entry["preparation"], "folds_summary": split["folds_summary"]}
+    result = {"slug": entry["slug"], **entry["preparation"], "folds_summary": split["folds_summary"],
+              "warnings": warnings}
+    if args.seeds is not None:
+        result["seeds"] = seeds
+    return result
 
 
 # ------------------------------------------------------------------- publish
@@ -804,7 +868,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--label", required=True)
     p.add_argument("--group", required=True)
     p.add_argument("--folds", type=int, default=5)
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--seed", type=int, default=None, help="one split (default 0)")
+    p.add_argument("--seeds", type=int, nargs="+", default=None,
+                   help="one split per seed (repeated cross-validation); the seed shuffles groups inside size strata")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("publish", help="upload privately on consent (dry run otherwise)")
