@@ -821,7 +821,13 @@ def _step_unmeasured_entry(target: Path, name: str, entry: dict,
     operand = entry["witness"].get("operand") or ""
     rerun = (f"`step --target {target} --name {name} --step {operand} "
              "--session <session>`")
-    if operand in (evidence.get("stepVerdicts") or {}):
+    remote = _remote_step_witnesses(target, name).get(operand)
+    if remote is not None:
+        reason = (f"step {operand!r} runs remotely as job {remote['job']!r}, so "
+                  "`position` ticks it from the remote-execution ledger once "
+                  "`fetch` returns its result, never from a local `step` run: "
+                  f"{remote['reason']}")
+    elif operand in (evidence.get("stepVerdicts") or {}):
         reason = (f"the latest run of step {operand!r} does not count now: it "
                   "did not report a verdict, or a file in its digest scope "
                   "(every .py under src/ and tests/, plus the environment "
@@ -11839,27 +11845,142 @@ def _step_verdicts(target: Path, name: str) -> dict:
     digests; it does not itself decide what a `True`/`False`/`None`
     verdict MEANS to a witness -- that reading is `_derive_step`'s
     (`impl_position.py`), a plain dict reader one layer up.
+
+    **A step that runs remotely is not read from this fold at all.** Its verdict
+    is `_remote_step_witnesses`' own, laid over whatever this fold found
+    under the same name: the run that counts for it happened on a remote
+    worker and came back through `fetch`, so a local `step` run of the same
+    name never ticks it.
     """
     events = impl_position.read_events(
         target / name / ".implementation" / "position.jsonl")
     step_events = _ledger_step_events(events)
-    if not step_events:
-        return {}
-    latest: dict[str, dict] = {}
-    for event in step_events:
-        latest[event["step"]] = event
-    live_digest = suite_digest(target)
     verdicts: dict[str, bool | None] = {}
-    for step_name, event in latest.items():
-        if event.get("suiteDigest") != live_digest:
-            verdicts[step_name] = None
-        elif event.get("outcome") == "returned":
-            verdicts[step_name] = True
-        elif event.get("outcome") == "raised":
-            verdicts[step_name] = False
-        else:
-            verdicts[step_name] = None
+    if step_events:
+        latest: dict[str, dict] = {}
+        for event in step_events:
+            latest[event["step"]] = event
+        live_digest = suite_digest(target)
+        for step_name, event in latest.items():
+            if event.get("suiteDigest") != live_digest:
+                verdicts[step_name] = None
+            elif event.get("outcome") == "returned":
+                verdicts[step_name] = True
+            elif event.get("outcome") == "raised":
+                verdicts[step_name] = False
+            else:
+                verdicts[step_name] = None
+    for step_name, witness in _remote_step_witnesses(target, name).items():
+        verdicts[step_name] = witness["verdict"]
     return verdicts
+
+
+#: The file the runner writes into its own working directory and `fetch`
+#: brings back inside the returned artifact (`runner_bootstrap.py`,
+#: `BOOTSTRAP_OUTPUT_FILENAME`): its `commit` is the commit the remote
+#: worker cloned.
+REMOTE_RESULT_BOOTSTRAP = "bootstrap.json"
+
+
+def _remote_step_witnesses(target: Path, name: str) -> dict:
+    """`{step: {"job", "verdict", "reason"}}` for every step that runs a
+    job remotely, by `_steps_running_job`'s two links and no third.
+
+    `verdict` is `True` only when the MAIN ledger
+    (`<Name>/.remote-execution/ledger.jsonl`; a rehearsal in `smoke.jsonl`
+    never counts) shows, for every worker's latest submission of the job,
+    a `returned` that `ledger.fold` judges `current` (not quarantined as
+    `fromStaleSubmission`), and the returned artifact's own
+    `bootstrap.json` names the commit the job folder is pinned to now --
+    readiness' rule for a smoke record, that a record expires the moment
+    the job re-pins. Every other case is `None`, unmeasured, with the
+    `reason` saying what is missing: a pending or errored submission is not
+    a verdict about the code, so it is never `False`.
+
+    The fold is `ledger.fold` itself, loaded through
+    `_load_remote_execution_ledger`; nothing here re-derives currency.
+    `{}` when remote-execution is not installed or no step runs remotely.
+    """
+    if not (REMOTE_EXECUTION_CLI_SCRIPT.is_file()
+            and REMOTE_EXECUTION_LEDGER_SCRIPT.is_file()):
+        return {}
+    declared = resolve_steps_declaration(target, name)
+    links: dict[str, str] = {}
+    for job in _launch_job_names(target, declared):
+        for step in sorted(_steps_running_job(declared, job)):
+            links.setdefault(step, job)
+    if not links:
+        return {}
+    rcli = _load_remote_execution_cli()
+    ledger = _load_remote_execution_ledger()
+    ledger_path = target / name / ".remote-execution" / "ledger.jsonl"
+    lines = (ledger_path.read_text(encoding="utf-8").splitlines()
+             if ledger_path.is_file() else [])
+    state = ledger.fold(lines, live_digest=lambda: source_digest(target, package_name(name)))
+    returned: dict[str, dict] = {}
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and event.get("kind") == "returned":
+            returned[event.get("submissionId")] = event
+    relative = f"{name}/.remote-execution/ledger.jsonl"
+    witnesses = {}
+    for step, job in links.items():
+        verdict, reason = _remote_job_result(target, rcli, state, returned, job, relative)
+        witnesses[step] = {"job": job, "verdict": verdict, "reason": reason}
+    return witnesses
+
+
+def _remote_job_result(target: Path, rcli, state, returned: dict, job: str,
+                       ledger: str) -> tuple[bool | None, str | None]:
+    """`(True, None)` when `job`'s result came back current, else
+    `(None, why)` -- `_remote_step_witnesses`' rule, for one job."""
+    job_dir, run_config = _job_folder_named(target, rcli, job)
+    if job_dir is None:
+        return None, (f"no job folder under tools/ declares job {job!r}; generate "
+                      "it, submit it and fetch its result")
+    if state.unreadable_lines:
+        return None, (f"{ledger} holds a line that could not be read, so nothing "
+                      "it says about this job can be trusted; reconcile it")
+
+    def _in_job(entrypoint: str) -> bool:
+        path = Path(entrypoint)
+        path = path if path.is_absolute() else target / path
+        return path.resolve().parent == job_dir.resolve()
+
+    keys = [key for key in state.latest if _in_job(key[0])]
+    if not keys:
+        return None, (f"{ledger} records no submission of job {job!r} (a rehearsal "
+                      "in smoke.jsonl does not count); submit it and fetch its result")
+    pin = run_config.get("commit")
+    for key in sorted(keys):
+        submission_id = state.latest[key]["submissionId"]
+        settled = state.entrypoints[key].state
+        if settled != "returned":
+            return None, (f"its latest submission {submission_id!r} is {settled} on "
+                          f"{ledger}; fetch its result once it completes")
+        if state.verdicts.get(submission_id) != "current":
+            return None, (f"the result of {submission_id!r} was quarantined as "
+                          "fromStaleSubmission: the source has moved past it; "
+                          "submit the job again and fetch its result")
+        artifact = Path(str(returned.get(submission_id, {}).get("artifactPath") or ""))
+        artifact = artifact if artifact.is_absolute() else target / artifact
+        try:
+            ran_at = json.loads((artifact / REMOTE_RESULT_BOOTSTRAP).read_text(
+                encoding="utf-8")).get("commit")
+        except (OSError, ValueError, AttributeError):
+            ran_at = None
+        if ran_at is None:
+            return None, (f"the result of {submission_id!r} carries no readable "
+                          f"{REMOTE_RESULT_BOOTSTRAP} naming the commit it ran at; "
+                          "fetch it again")
+        if ran_at != pin:
+            return None, (f"the result of {submission_id!r} ran at commit {ran_at}, "
+                          f"and job {job!r} is now pinned to {pin}; submit it again "
+                          "at the current pin and fetch its result")
+    return True, None
 
 
 def _flow_steps(steps: dict) -> list[tuple[str, int]]:

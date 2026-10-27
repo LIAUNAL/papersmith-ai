@@ -80,6 +80,10 @@ Mechanics of a rehearsal, learned the expensive way:
   session sits idle until the service reclaims it, and its results live only
   on that machine. Put the `fetch` in the same loop as the `poll`; a run fetched
   hours later can come back `session not found`, and the quota is spent again.
+- A remote step is ticked by `position` once `fetch` has returned its full run
+  to the main ledger: refresh the position after the `fetch`, and never run
+  that step locally with `step` to tick it, which does not count. A result
+  that ran at a pin the job has since moved past does not tick it either.
 - The smoke must write `shard.json` into its working directory with what
   proves the run (commit, device), and the job must name those paths with
   `--smoke-required-evidence`; `generate-job` warns when it names none.
