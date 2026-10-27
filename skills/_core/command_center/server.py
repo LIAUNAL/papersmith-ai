@@ -37,7 +37,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import agents_view, ai_history, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
 from . import doctor_view, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -2445,6 +2445,17 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         except decisions.DecisionsQueryError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=422,
                                 headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/ai-history")
+    def api_ai_history() -> JSONResponse:
+        # The Historia con IA pane: each phase's gate, colour and timeline,
+        # read-only from decisions, revisions and this workspace's transcripts.
+        try:
+            phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
+        except Exception:  # noqa: BLE001 - the pane still answers without phases
+            phases = []
+        return JSONResponse(ai_history.build_ai_history(root_path, phases),
+                            headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/events")
     async def api_events(request: Request) -> StreamingResponse:
