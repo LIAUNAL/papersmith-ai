@@ -137,6 +137,15 @@ class AiHistoryTests(unittest.TestCase):
         self.assertIn('id="pane-historia"', PAGE)
         self.assertIn("ai-history-panel.js", PAGE)
 
+    def test_artifact_links_open_in_a_window_styled_like_the_artefactos_viewer(self) -> None:
+        panel = (REPO / "skills" / "_core" / "command_center" / "static" / "ai-history-panel.js").read_text(encoding="utf-8")
+        self.assertIn('role="dialog"', panel)
+        self.assertIn("window.renderArtifactDoc(text, path)", panel)
+        self.assertIn('class="artifact-web-article"', panel)
+        self.assertIn("/api/artifact?file=", panel)
+        self.assertIn(".aih-modal {", PAGE)
+        self.assertIn("function renderArtifactDoc(", PAGE)
+
 
 class HarnessTranscriptTests(unittest.TestCase):
     """Claude Code, Pi and OpenCode sessions land in the same phases; the
