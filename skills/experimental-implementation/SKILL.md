@@ -457,7 +457,16 @@ CLI, one directory over). Consequence, stated rather than discovered:
   `verify` here does not list it under `missingProvenance` while its bytes are
   exactly the ones the scaffold receipt's `materialized` entry recorded; a
   modified copy, an adopted one, or one with no receipt entry is reported
-  like any other module.
+  like any other module. The same holds for the sibling's remote stamp,
+  `src/<Package>/remote_stamp.py`, scaffolded beside it with
+  `tests/test_remote_readiness.py`. A full run's remote smoke callable calls
+  `write_shard(summary)` from it: under the runner (`FORGE_RUN_MODE`) it
+  writes the `shard.json` `smoke record` reads, carrying `evidence.commit`,
+  `evidence.sourcesDigest` and `environment.device`, and anywhere else it
+  writes nothing. Pair it with `generate-job --smoke-required-evidence
+  evidence.commit --smoke-required-evidence environment.device.kind`. The
+  readiness test's `FORWARD` placeholder is where the target wires its own
+  forward for the `meta` device-mix guard (see the sibling's step 5).
 
 Every other published command runs exactly as `proposal-implementation`'s own
 doctrine describes it, against this domain's own profile leaves instead of the

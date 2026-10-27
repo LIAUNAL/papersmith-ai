@@ -11461,14 +11461,15 @@ class DerivedScaffoldCountSweepTests(unittest.TestCase):
             + "; ".join(offenders))
 
     def test_scaffold_gaps_maximum_is_derived_not_transcribed(self):
-        """Ten unconditional entries (spec "The Scaffold Stage Does Not
-        Create A Benchmark Package") plus up to two conditional merge
+        """Twelve unconditional entries (spec "The Scaffold Stage Does Not
+        Create A Benchmark Package", plus the remote stamp and its readiness
+        test, poc-launch-smoothing S4) plus up to two conditional merge
         anchors -- computed here from the same functions doctrine points
         readers at, never a literal this test carries independently."""
-        self.assertEqual(len(impl.scaffold_destinations("Method")), 10)
+        self.assertEqual(len(impl.scaffold_destinations("Method")), 12)
         with tempfile.TemporaryDirectory() as raw:
             gaps = impl.scaffold_gaps(Path(raw), "Method")
-        self.assertLessEqual(len(gaps), 12)
+        self.assertLessEqual(len(gaps), 14)
 
     def test_all_kit_destinations_docstring_carries_no_arithmetic_identity(self):
         """The `all_kit_destinations` docstring used to assert "Eleven +

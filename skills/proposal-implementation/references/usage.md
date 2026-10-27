@@ -208,10 +208,12 @@ python3 skills/proposal-implementation/scripts/implementation_cli.py plan \
                     "pyproject.toml [tool.pytest.ini_options] pythonpath",
                     "src/Example_Method/__init__.py",
                     "src/Example_Method/report_digest.py",
+                    "src/Example_Method/remote_stamp.py",
                     "tests/test_smoke.py", "tests/findings.py",
                     "tests/conftest.py", "tests/sweep.py",
                     "tests/admissibility.py",
                     "tests/test_audit.py", "tests/test_remedies.py",
+                    "tests/test_remote_readiness.py",
                     "Example-Method/Notebooks/verification.ipynb"]
 }
 ```
@@ -597,6 +599,7 @@ importable form (hyphens become underscores).
 
 - `src/<Package>/__init__.py` (scaffold)
 - `src/<Package>/report_digest.py` (scaffold)
+- `src/<Package>/remote_stamp.py` (scaffold)
 - `tests/test_smoke.py` (scaffold)
 - `tests/findings.py` (scaffold)
 - `tests/conftest.py` (scaffold)
@@ -604,6 +607,7 @@ importable form (hyphens become underscores).
 - `tests/admissibility.py` (scaffold)
 - `tests/test_audit.py` (scaffold)
 - `tests/test_remedies.py` (scaffold)
+- `tests/test_remote_readiness.py` (scaffold)
 - `<Name>/Notebooks/verification.ipynb` (scaffold)
 - `src/<Package>/module.py` (objects)
 - `tests/test_invariants.py` (objects)

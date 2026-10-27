@@ -17,7 +17,7 @@ User's list (approved items 1-5, quoted from the assistant's proposal the user a
 
 - T-A (S1, S5) delegated writer, worktree `poc-launch-smoothing-a` — pending
 - T-B (S2, S3) delegated writer, worktree `poc-launch-smoothing-b` — pending
-- T-C (S4) delegated writer, worktree `poc-launch-smoothing-c` — pending
+- T-C (S4) delegated writer, worktree `poc-launch-smoothing-c` — done (kit `remote_stamp.py` + `test_remote_readiness.py` scaffolded by default; tests/test_remote_stamp_kit.py RED 12 failed → GREEN 14 passed)
 - T-D integration: merge A/B/C, full suites, CHANGELOG, release 0.28.0 — pending
 
 Route evidence: Writer trigger (a) parallelism — three units with disjoint edit surfaces (remote-execution generate-job; implementation engine ladder/launch; target scaffold), each heavier than a subagent start, launched together.
