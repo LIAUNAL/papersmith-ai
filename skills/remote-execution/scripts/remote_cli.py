@@ -2723,7 +2723,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     generate_job.add_argument(
         "--clone-path", dest="clone_paths", action="append", default=[],
-        help="repeatable: one declared clone path, relative to the clone's own root",
+        help="repeatable: one declared clone path, relative to the clone's own "
+        "root. The run/smoke notebook is cloned on its own and needs no "
+        "--clone-path; declaring its whole folder makes every notebook in "
+        "it part of the pin, so an unrelated notebook change stales the job",
     )
     # `--run-module`/`--run-function` lost `required=True` when the notebook
     # shape landed, and the refusal for declaring neither moved INTO
@@ -2743,7 +2746,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="the clone-relative path of the notebook this job runs (an "
         "alternative to --run-module/--run-function, never a companion to "
         "them): the worker executes this notebook and returns it executed. "
-        "Must be covered by a --clone-path and exist at the pin",
+        "Must exist at the pin. Unless a --clone-path already covers it, "
+        "the notebook file itself is added as a clone path, so only this "
+        "notebook (not its folder) is part of the pin",
     )
     generate_job.add_argument("--smoke-module", default=None)
     generate_job.add_argument("--smoke-function", default=None)

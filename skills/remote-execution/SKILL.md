@@ -757,6 +757,21 @@ executable — no test in this suite reaches the network or a real account).
   it is not a module and maps to no package directory, and whether it is
   DELIVERED is the `declared-notebook-reachable` condition's question,
   asked of the pin.
+
+  **The run notebook is cloned on its own.** `generate-job` appends every
+  `--run-notebook`/`--smoke-notebook` that no declared `--clone-path`
+  covers to `clonePaths` as the notebook FILE itself
+  (`jobfolder.with_entry_notebooks()`), so the notebook needs no
+  `--clone-path` and only it enters the pin's staleness check. Declaring
+  the whole folder instead (`--clone-path <Name>/Notebooks`) still works
+  and is kept exactly as declared, but it makes EVERY notebook in that
+  folder part of the pin: re-running and committing an unrelated notebook
+  there (a report, say) stales the job (`pin-is-head`) and sends it back
+  through smoke, proposal, offer and gate. A declared path is never
+  dropped or narrowed. `git sparse-checkout set` delivers a file path in
+  both modes (cone mode, the default since git 2.37, also brings the
+  notebook's sibling files at the same pinned commit; they never enter
+  staleness).
   `runnerTemplate` records each runner asset's path and sha256 as inert
   provenance — deliberately not a drift check; adding one would be a second
   staleness condition, out of bounds for this skill (see design #744
@@ -778,7 +793,7 @@ executable — no test in this suite reaches the network or a real account).
 | 1 | `clean-worktree` | The working tree is clean over the declared clone paths — `git status --porcelain`, so an untracked file counts and an ignored one does not. Not a repository, or no commits, refuses too. | `generate-job`, `submit` | Every offending path, and `git add`/`git commit`/`git restore` as the remedy |
 | 2 | `pin-is-head` | The pin is HEAD, or nothing changed between the pin and HEAD under the declared clone paths. `unknown` refuses as firmly as `drift`. | `generate-job`, `submit` | The changed clone paths, the pin and HEAD, and git's own message |
 | 3 | `declared-paths-exist` | Every declared clone path exists at the pin — `git cat-file -e <pin>:<path>`, asked of the pin and never of the working tree. `sparse-checkout` accepts a path the tree does not contain and fetches nothing for it, silently. | `generate-job`, `submit` | Every absent path, and that the remedy is committing them and pinning the commit that carries them |
-| 4 | `declared-notebook-reachable` | Every notebook the run block declares (`run.notebook`, `run.smoke.notebook`) is covered by a declared clone path AND exists at the pin — `git cat-file -e <pin>:<notebook>`. Nothing imports a notebook, so the import cross-check has no representative for it and `sparse-checkout` reports nothing for a path its patterns do not cover. A job declaring no notebook passes through untouched. | `generate-job`, `submit` | Every notebook no clone path covers, every notebook absent at the pin, and the remedy for each |
+| 4 | `declared-notebook-reachable` | Every notebook the run block declares (`run.notebook`, `run.smoke.notebook`) is covered by a declared clone path (generation adds an uncovered notebook as its own clone path) AND exists at the pin — `git cat-file -e <pin>:<notebook>`. Nothing imports a notebook, so the import cross-check has no representative for it and `sparse-checkout` reports nothing for a path its patterns do not cover. A job declaring no notebook passes through untouched. | `generate-job`, `submit` | Every notebook no clone path covers, every notebook absent at the pin, and the remedy for each |
 | 5 | `pin-published` | The declared remote can serve the pin — `git fetch --dry-run --depth 1` from a scratch repository. Credentialless that probe is anonymous; with `--repo-credential` it authenticates through the staged askpass material (see the Colab environment block) and an SSH-shaped `--repo-url` refuses by name. `generate-job` refuses any SSH `--repo-url` before this probe, credential or not. | `generate-job`, `submit` | The commit, the remote URL, the missing push addressed to `--repo-ref`, and git's own message |
 
   **Why the `clean-worktree` condition exists, and why it is `status` and not `diff`.**
@@ -1152,6 +1167,21 @@ executable — no test in this suite reaches the network or a real account).
   `unresolvedImports` instead of guessing, converting a silence into a
   recorded, reportable decision. `--accept-unresolved` never bypasses a
   `computedNotDeclared` refusal — only `unresolved`.
+
+  **The kit's notebook bootstrap cell is recognised, nothing looser.** A
+  notebook code cell byte-identical to `assets/notebook_repo_root.py`
+  (exact text match against the shipped asset, never a heuristic) is
+  blanked to the same number of empty lines before the notebook is
+  parsed, so its `.git`/`HEAD`/loose and packed ref reads — the kit's own
+  proof of the pinned commit — never become `unresolvedReads`, and every
+  other cell keeps its line numbers. After that cell, the one
+  `sys.path.insert(0, str(ROOT / "src"))` is not an uncertain import:
+  `src/` is the clone's own source root. It stays uncertain when it sits
+  before the cell, when anything in the notebook rebinds `ROOT`, or when
+  the cell was edited by a single byte. Any other `sys.path` mutation and
+  any other uncertain read is flagged exactly as before, so a kit notebook
+  generates without `--accept-unresolved`/`--accept-unresolved-reads`
+  while every other notebook still needs them.
 
   **Undeclared-read detection (Unit 1, same-file).** The field incident this
   exists to catch: a job declared its imports correctly and still failed,

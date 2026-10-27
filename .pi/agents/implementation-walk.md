@@ -67,6 +67,10 @@ Mechanics of a rehearsal, learned the expensive way:
 - After any commit that changes what a worker clones, run
   `generate-job --regenerate` so the job is re-pinned, then publish both. The
   consent token is minted per pin: a re-pinned job needs a fresh one.
+- Pass the notebook a job runs as `--run-notebook` and do not declare its
+  folder as a `--clone-path`: `generate-job` clones that notebook on its own,
+  while a declared `Notebooks/` folder makes every notebook in it part of the
+  pin, so re-running an unrelated notebook stales the job.
 - Wait with `poll`, which only reads the state. `fetch` is for a run that has
   finished.
 - The smoke must write `shard.json` into its working directory with what
