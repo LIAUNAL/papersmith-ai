@@ -180,9 +180,31 @@ class EnvironmentTests(_Env):
         os.utime(exe, (stamp, stamp))
         local_env.local_environment(self.root)
         self.assertEqual(len(self.calls()), 2)
+        # Past the TTL the cached answer is served at once and one background
+        # probe replaces it.
         with mock.patch.object(local_env.time, "monotonic", return_value=time.monotonic() + 400):
-            local_env.local_environment(self.root)
+            [row] = local_env.local_environment(self.root)["targets"]
+            self.assertEqual(row["python"], "3.11.9")
+            deadline = time.time() + 5
+            while len(self.calls()) < 3 and time.time() < deadline:
+                time.sleep(0.05)
         self.assertEqual(len(self.calls()), 3)
+
+    def test_an_expired_probe_never_blocks_the_request(self) -> None:
+        target = self.target()
+        exe = _fake_python(target / ".venv/bin/python",
+                           {"python": "3.11.9", "installed": {}, "device": None}, self.log)
+        local_env.local_environment(self.root)
+        stamp = exe.stat().st_mtime
+        # The interpreter turns slow, under the same identity (same mtime).
+        _fake_python(exe, None, self.log, sleep=1)
+        os.utime(exe, (stamp, stamp))
+        with mock.patch.object(local_env.time, "monotonic", return_value=time.monotonic() + 400):
+            started = time.monotonic()
+            [row] = local_env.local_environment(self.root)["targets"]
+            elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(row["python"], "3.11.9")
 
     def test_only_the_fixed_inline_script_runs_isolated_outside_the_target(self) -> None:
         target = self.target()

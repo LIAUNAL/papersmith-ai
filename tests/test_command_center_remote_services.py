@@ -15,6 +15,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -193,6 +194,40 @@ class RowTests(_Env):
 
 
 @unittest.skipUnless(NODE, "node is required to run the panel renderer")
+class VersionCacheTests(unittest.TestCase):
+    """A CLI's version is probed once; past its TTL the old answer is served
+    at once while one background run replaces it."""
+
+    def setUp(self) -> None:
+        remote_services.clear_cache()
+        self.addCleanup(remote_services.clear_cache)
+
+    def test_an_expired_version_is_served_while_it_refreshes(self) -> None:
+        calls: list[str] = []
+
+        def run(executable: str) -> str:
+            calls.append(executable)
+            if len(calls) > 1:
+                time.sleep(0.5)
+            return f"v{len(calls)}"
+
+        with mock.patch.object(remote_services, "_run_version", side_effect=run):
+            self.assertEqual(remote_services._cli_version("kaggle"), "v1")
+            self.assertEqual(remote_services._cli_version("kaggle"), "v1")
+            self.assertEqual(len(calls), 1)
+            later = time.monotonic() + remote_services.VERSION_TTL + 10
+            with mock.patch.object(remote_services.time, "monotonic", return_value=later):
+                started = time.perf_counter()
+                self.assertEqual(remote_services._cli_version("kaggle"), "v1")
+                self.assertEqual(remote_services._cli_version("kaggle"), "v1")
+                self.assertLess(time.perf_counter() - started, 0.3)
+                deadline = time.time() + 5
+                while remote_services._cli_version("kaggle") != "v2" and time.time() < deadline:
+                    time.sleep(0.05)
+            self.assertEqual(remote_services._cli_version("kaggle"), "v2")
+            self.assertEqual(len(calls), 2)
+
+
 class RenderTests(_Env):
     def render(self, view: dict) -> str:
         script = (
