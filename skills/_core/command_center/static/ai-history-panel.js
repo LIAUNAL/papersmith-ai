@@ -4,7 +4,10 @@
  * phase its gate, colour (red: not run yet, orange: errors, rework or user
  * iterations, green: passed directly) and a timeline of decisions, revisions
  * and chat turns. The diagram draws the phases in order, each followed by its
- * gate; clicking a phase (or Enter on it) shows its summarised history.
+ * gate; clicking a phase (or Enter on it) shows its summarised history and
+ * the phase's artifacts. Every artifact path is a link: text files open in the
+ * Artefactos viewer, anything else (PDF, images) in a new tab through
+ * /api/artifact, which serves only files inside the workspace.
  * Every value is escaped before insertion.
  *
  * Public surface (window): refreshAiHistoryPanel(), AiHistoryPanel.render(view).
@@ -32,6 +35,13 @@
   const PER_ROW = 4;
   const BOX_W = 190, BOX_H = 64, GATE = 26, GAP_X = 120, GAP_Y = 64, PAD = 16;
   const clip = (v, n) => (String(v ?? '').length > n ? `${String(v).slice(0, n - 1)}…` : String(v ?? ''));
+
+  // Extensions the Artefactos viewer renders as text; the rest open raw.
+  const VIEWER_EXT = /\.(md|markdown|txt|json|jsonl|tex|bib|ya?ml|toml|py|ts|js|mjs|csv|tsv|log|ini|cfg|sh|r|ipynb)$/i;
+  const rawUrl = (path) => `/api/artifact?file=${encodeURIComponent(path)}`;
+  const fileLink = (path, text) => `<a class="aih-file" href="${esc(rawUrl(path))}" target="_blank" rel="noopener"`
+    + ` data-artifact="${esc(path)}" title="Abrir ${esc(path)}">${esc(text ?? path)}</a>`;
+  const kb = (bytes) => `${(Math.max(0, Number(bytes) || 0) / 1024).toFixed(1)} KB`;
 
   let lastView = { phases: [] };
   let selected = null;
@@ -132,14 +142,40 @@
         + `<span class="aih-ev__kind">${esc(KIND_LABELS[e.kind] || e.kind)}</span>`
         + `<span class="aih-ev__when">${stamp(e.ts)} · ${esc(e.actor || e.source)}</span>`
         + `<div class="aih-ev__text">${esc(e.summary)}</div>`
-        + (e.ref ? `<code class="aih-ev__ref">${esc(e.ref)}</code>` : '')
+        + (e.path ? `<div class="aih-ev__ref">📄 ${fileLink(e.path)}${e.ref && e.ref !== e.path ? ` <code>${esc(e.ref.slice(e.path.length))}</code>` : ''}</div>`
+          : e.ref ? `<code class="aih-ev__ref">${esc(e.ref)}</code>` : '')
         + '</li>').join('') + '</ol>'
       : '<p class="aih-hint">Sin interacciones registradas para esta fase.</p>';
     return `<div class="aih-detail__head"><strong>${esc(phase.name || phase.label)}</strong>`
       + ` <span class="badge aih-badge--${esc(phase.color)}">${esc(COLOR_LABELS[phase.color])}</span></div>`
       + `<p class="aih-detail__meta">Compuerta <code>${esc(phase.gate)}</code> · Agente: ${esc(phase.agent || '—')}</p>`
       + `<p class="aih-detail__meta">${list(phase.reasons).map(esc).join(' · ')}</p>`
-      + `<div class="aih-chips">${chips}</div>${shown}${items}`;
+      + `<div class="aih-chips">${chips}</div>${artifacts(phase)}`
+      + `<h4 class="aih-section">Interacciones</h4>${shown}${items}`;
+  }
+
+  function artifacts(phase) {
+    const files = list(phase.artifacts);
+    if (!files.length) {
+      return '<h4 class="aih-section">Artefactos de la fase</h4><p class="aih-hint">Sin artefactos en disco todavía.</p>';
+    }
+    return `<h4 class="aih-section">Artefactos de la fase (${files.length})</h4><ul class="aih-files">`
+      + files.map((a) => `<li>📄 ${fileLink(a.path)} <span class="aih-ev__when">${esc(a.label)} · ${kb(a.size)}`
+        + ` · ${a.mtime ? new Date(a.mtime).toLocaleString() : ''}</span></li>`).join('')
+      + '</ul>';
+  }
+
+  // A text artifact opens in the Artefactos viewer; modified clicks and
+  // binary files keep the link's own behaviour (a new tab).
+  function openArtifact(ev) {
+    const link = ev.target.closest('a[data-artifact]');
+    if (!link) return;
+    const path = link.getAttribute('data-artifact');
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
+    if (!VIEWER_EXT.test(path) || typeof window.loadArtifact !== 'function') return;
+    ev.preventDefault();
+    window.navigateTab?.('artifacts');
+    window.loadArtifact(path);
   }
 
   function legend() {
@@ -172,6 +208,7 @@
     const current = phases.find((p) => p.stage_id === selected) || null;
     host.innerHTML = legend() + `<div class="aih-diagram">${diagram(phases)}</div>`
       + `<div class="aih-detail" aria-live="polite">${detail(current)}</div>` + sourcesNote(lastView);
+    host.querySelector('.aih-detail')?.addEventListener('click', openArtifact);
     host.querySelectorAll('.aih-box').forEach((box) => {
       const pick = () => {
         selected = box.getAttribute('data-stage');

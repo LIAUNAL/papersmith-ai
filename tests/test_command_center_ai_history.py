@@ -86,6 +86,39 @@ class AiHistoryTests(unittest.TestCase):
         self.assertEqual(phases["proposal"]["color"], "orange")
         self.assertEqual(phases["proposal"]["counts"]["revisions"], 2)
 
+    def test_events_and_phase_artifacts_carry_openable_paths(self) -> None:
+        (self.root / "proposals").mkdir()
+        for n in (1, 2):
+            (self.root / "proposals" / f"research-concept-x-r{n:02d}.md").write_text("x", encoding="utf-8")
+        (self.root / "proposals" / ".hidden.md").write_text("x", encoding="utf-8")
+        (self.root / "proposals" / "x.sky.json").write_text("{}", encoding="utf-8")
+        phase = self._build([_fase("proposal", "PASS", 4, "G-PROP")])["proposal"]
+        self.assertEqual({e["path"] for e in phase["events"] if e["kind"] == "revision"},
+                         {"proposals/research-concept-x-r01.md", "proposals/research-concept-x-r02.md"})
+        self.assertEqual(sorted(a["path"] for a in phase["artifacts"]),
+                         ["proposals/research-concept-x-r01.md", "proposals/research-concept-x-r02.md",
+                          "proposals/x.sky.json"])
+        self.assertEqual({a["label"] for a in phase["artifacts"]},
+                         {"Revisiones de propuesta", "Cielo de la propuesta"})
+
+    def test_a_matched_directory_lists_its_files(self) -> None:
+        impl = self.root / "implementations" / "Model"
+        impl.mkdir(parents=True)
+        (impl / "train.py").write_text("x", encoding="utf-8")
+        phase = self._build([_fase("poc_experiments", "ACTIVE", 5, "G-EXP-POC")])["poc_experiments"]
+        self.assertEqual([a["path"] for a in phase["artifacts"]], ["implementations/Model/train.py"])
+
+    def test_only_files_inside_the_workspace_get_a_path(self) -> None:
+        (self.root / "paper").mkdir()
+        (self.root / "paper" / "main.tex").write_text("x", encoding="utf-8")
+        (self.root.parent / "secret.txt").write_text("x", encoding="utf-8")
+        resolve = ai_history._workspace_file
+        root = self.root.resolve()
+        self.assertEqual(resolve(root, "paper/main.tex#funding"), "paper/main.tex")
+        for ref in ("../secret.txt", "paper", "claude-code:abcd1234", "nope.md", None, ""):
+            with self.subTest(ref=ref):
+                self.assertIsNone(resolve(root, ref))
+
     def test_missing_transcripts_never_fail(self) -> None:
         view = ai_history.build_ai_history(
             self.root, [_fase("harness", "PASS", 1, "G-HARNESS")],
