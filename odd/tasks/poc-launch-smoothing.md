@@ -16,7 +16,7 @@ User's list (approved items 1-5, quoted from the assistant's proposal the user a
 ## Tasks
 
 - T-A (S1, S5) delegated writer, worktree `poc-launch-smoothing-a` — pending
-- T-B (S2, S3) delegated writer, worktree `poc-launch-smoothing-b` — pending
+- T-B (S2, S3) delegated writer, worktree `poc-launch-smoothing-b` — done in branch (33a5cf1b, 59c1fa78); seal case for `launch-plan` pending (outside T-B surface)
 - T-C (S4) delegated writer, worktree `poc-launch-smoothing-c` — pending
 - T-D integration: merge A/B/C, full suites, CHANGELOG, release 0.28.0 — pending
 
@@ -27,3 +27,4 @@ Route evidence: Writer trigger (a) parallelism — three units with disjoint edi
 - L1 (2026-10-26, user): "sí, avísame cuando terminen y corre e5_report. luego mira que deberias ajustar en papersmith para que futuros proyectos en prueba de concpeto corran y se configuran sin errores y de manera efiicente"
 - L2 (2026-10-26, user): "sí, implementa del 1 al 5 y saca la release"
 - L3: Field evidence from QMLEEG E5: clone path `QMLEEG-DRU/Notebooks` staled by a `poc_report` re-run (submit refused: "these declared clone paths differ ... QMLEEG-DRU/Notebooks/poc_report.ipynb"); `offer` published only `run-step` until `@rehearsal e5_run_end_to_end` was added; `gate` refused `POSITION_UNBACKED` (items 1-3) and `GATE_PROPOSAL_UNKNOWN` twice (no proposal; proposal staled by re-pin); generate-job refused "sys.path mutation is uncertain" and 12 uncertain reads incl. the kit bootstrap's `.git` reads; the target needed a hand-written shard.json writer and a device fix (zero_state on CPU).
+- L4 (T-B evidence): RED `tests/test_launch_plan.py` 15 failed/2 passed before the change (no `cmd_launch_plan`, rehearsal appended after the run step, no `launchLadder`); GREEN 15 passed. Implementation suites: failing set identical to baseline (`ProbeReportedFactsRosterTests::test_the_toy_targets_left_nothing_behind`, `SharedExperimentConventionTests::test_both_languages_load_the_same_convention`). New `COMMANDS` entry needs a seal case: `tests/seal/cases.json` + `tests/seal/digests.json` (or `tests/seal/unsealed.json` and `EXPECTED_UNSEALED` in `tests/test_implementation_seal.py`); until then `SealMembershipTests::test_the_case_roster_covers_the_command_roster_exactly` and `AgreeRegistrationZ10MutationTests` fail.
