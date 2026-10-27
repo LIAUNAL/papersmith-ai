@@ -24016,7 +24016,10 @@ class CommandRosterTests(unittest.TestCase):
     #: named explicitly rather than left as a silent gap in this table.
     DOCUMENTED_ELSEWHERE = frozenset(
         {"env", "name", "plan", "apply", "admit", "handoff", "compose",
-         "probe", "verify"})
+         "probe", "verify",
+         # Read-only, and rostered in the second table with its worked
+         # reference in `usage.md` (S3, `poc-launch-smoothing`).
+         "launch-plan"})
 
     def command_rows(self):
         tables = markdown_table_rows(
@@ -24080,7 +24083,7 @@ class CommandRosterClosureTests(unittest.TestCase):
     dispatch table fails until it has a row, and a row no command backs fails
     too.
 
-    `test_the_roster_derivation_finds_the_measured_twenty_one` is the guard on
+    `test_the_roster_derivation_finds_the_measured_twenty_two` is the guard on
     the scraper rather than on the roster, for the reason
     `GatingRefusalRosterTests` states about its own count: a walk that silently
     matches nothing makes the second direction pass over an empty set, and a
@@ -24120,12 +24123,12 @@ class CommandRosterClosureTests(unittest.TestCase):
                 for header in (self.WRITE_TABLE_HEADER, self.REST_TABLE_HEADER)
                 for row in self._table(header)]
 
-    def test_the_roster_derivation_finds_the_measured_twenty_one(self):
+    def test_the_roster_derivation_finds_the_measured_twenty_two(self):
         """Sanity on the walk, not on the roster. A command added to or removed
         from the CLI should move this number; a broken header, a renamed column
         or a table that stopped parsing should not be able to leave it green."""
         rostered = self.rostered_commands()
-        self.assertEqual(len(rostered), 21)
+        self.assertEqual(len(rostered), 22)
         self.assertEqual(
             sorted(rostered), sorted(set(rostered)),
             "a command is rostered twice; two rows for one command is two "
@@ -29531,10 +29534,12 @@ class OfferCommandTests(unittest.TestCase):
         self.assertIn("import impl_availability", source)
         sites = self._availability_call_sites(source)
         self.assertEqual(
-            sites["launch_available"], {"cmd_gate", "_offer_launch_action"},
+            sites["launch_available"],
+            {"cmd_gate", "_offer_launch_action", "cmd_launch_plan"},
             "cmd_gate and cmd_offer (through _offer_launch_action) must "
-            "each call the shared rule exactly once, and no other function "
-            "may call it")
+            "each call the shared rule exactly once, and launch-plan -- "
+            "which predicts their verdict -- must read the same one; no "
+            "other function may call it")
 
     def test_close_calls_the_shared_honesty_rule_directly(self):
         """`cmd_close` is the third caller (D2): it calls `impl_availability.
