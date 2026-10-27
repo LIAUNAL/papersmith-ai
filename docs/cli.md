@@ -291,7 +291,7 @@ python3 skills/proposal-implementation/scripts/implementation_cli.py materialize
 ```
 
 Direct: `walk`, `materialize`, `adopt`, `position`, `discuss`, `propose`,
-`gate`, `offer`, `close`, `step`, `settle`, `defect` (and `agree` in
+`gate`, `offer`, `launch-plan`, `close`, `step`, `settle`, `defect` (and `agree` in
 `experimental-implementation`, with its own `implementation_cli.py`). Asking the
 bridge for one of them (except `materialize`, the alias above) refuses and names
 this route. If you set `IMPLEMENTATION_DOMAIN_PROFILE` by hand, it must be an

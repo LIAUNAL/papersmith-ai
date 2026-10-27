@@ -13329,8 +13329,8 @@ def _steps_running_job(declared_steps: dict, job: str) -> set[str]:
     Two links, and only two: a step `__steps__` declares with `placement:
     remote` and `job: <job>`, or a step whose id is the job's own name --
     the fallback a repository that names its run step after its job folder
-    already relies on (QMLEEG E5's `@step e5_run_end_to_end` beside the
-    `e5_run_end_to_end` job folder). Nothing else ties a step to a job, and
+    already relies on (an `@step <job>` item beside the `<job>` job
+    folder). Nothing else ties a step to a job, and
     this guesses no third link.
     """
     linked = {job}
@@ -13839,7 +13839,7 @@ def cmd_position(args: argparse.Namespace) -> dict:
         # A rehearsal the ladder lacks goes immediately BEFORE the item that
         # runs its job remotely, not at the end: `launch_available` refuses
         # a launch while any item before the rehearsal is open, so appended
-        # after the run step it could never be reached (QMLEEG E5). Existing
+        # after the run step it could never be reached. Existing
         # items keep their text and order; only the ordinals after the
         # insertion move. With no such item it is appended, as before.
         declared_steps = resolve_steps_declaration(target, name)
@@ -17745,11 +17745,11 @@ LAUNCH_PLAN_ACTS = ("propose", "offer", "gate", "submit")
 
 def _proposal_blocker(events: list, job: str, campaign: dict) -> str | None:
     """The `GATE_PROPOSAL_*` code `gate` would raise for `job` against the
-    newest proposal current for `campaign`, or `None` when that proposal
-    stands. Asks `_verify_gate_proposal` itself, over the digest a token
+    newest `propose` record current for `campaign`, or `None` when that
+    record stands. Asks `_verify_gate_proposal` itself, over the digest a token
     minted now would bind (`_proposal_digest`), so the rule is the gate's
-    and not a copy. A proposal that names `job` but is no longer current
-    reads `GATE_PROPOSAL_STALE` rather than `_UNKNOWN`: both send the
+    and not a copy. A `propose` record that names `job` but is no longer
+    current reads `GATE_PROPOSAL_STALE` rather than `_UNKNOWN`: both send the
     reader to `propose`, and the narrower one says why."""
     digest = _proposal_digest(events, campaign)
     if digest is None and any(
@@ -17768,7 +17768,7 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
     exact next command (S3, `poc-launch-smoothing`). Read-only: appends no
     ledger event, mints no token and writes no file.
 
-    The four acts, in order: `propose` (a current campaign proposal naming
+    The four acts, in order: `propose` (a current campaign record naming
     the job), `offer` (an unconsumed authorization token for the launch's
     current binding), `gate` (a `gate` record `submit` will accept) and
     `submit`. Each carries `status` -- `done`, `blocked` (it would refuse
@@ -17778,7 +17778,7 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
     Every verdict is the engine's own: `offer`'s is
     `impl_availability.launch_available` over the position `gate` reads
     (`_launch_position_state`), the token lookup is `_find_authorization`
-    over `_authorization_binding`, the proposal check is
+    over `_authorization_binding`, the `propose` check is
     `_verify_gate_proposal`, the election is `_job_remote_necessity`, the
     gate record is `remote_cli._verify_launch_authorization` and the
     diagram check is `remote_cli._verify_diagrams_validated` -- the same
@@ -17832,10 +17832,10 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
         job=job, shards_declared=evidence["shardsArrived"] is not None,
         levels=evidence["levels"], attained_level=position["attainedLevel"])
 
-    # propose -- `next` only once the launch itself is available: a proposal
+    # propose -- `next` only once the launch itself is available: a record
     # freezes the campaign's pin, and the work that clears `NOT_READY` (a
     # re-generated job, a fresh rehearsal) is what moves that pin, staling a
-    # proposal made too early (`GATE_PROPOSAL_STALE`, QMLEEG E5).
+    # `propose` made too early (`GATE_PROPOSAL_STALE`), as a field launch found.
     proposal_code = None if gate_recorded else _proposal_blocker(events, job, campaign)
     propose = {"act": "propose",
                "status": ("done" if proposal_code is None

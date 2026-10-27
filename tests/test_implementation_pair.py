@@ -256,14 +256,15 @@ class SealCorpusUntouchedByPairCorpusTests(unittest.TestCase):
         pair_case_ids = {case["id"] for case in _load_cases()}
         self.assertEqual(pair_case_ids & set(seal_digests), set())
 
-    def test_the_seal_digests_file_still_has_exactly_twenty_nine_case_entries(self):
-        """30 raw keys: the sealed cases plus the reserved
-        `__corpus_fingerprint__` entry (`tests/seal/corpus.py`)."""
+    def test_the_seal_digests_file_still_has_exactly_thirty_case_entries(self):
+        """31 raw keys: the sealed cases plus the reserved
+        `__corpus_fingerprint__` entry (`tests/seal/corpus.py`). Thirty since
+        `launch-plan` joined the roster with its own case."""
         seal_digests = json.loads(SEAL_DIGESTS_PATH.read_text(encoding="utf-8"))
         case_entries = {
             key: value for key, value in seal_digests.items()
             if key != "__corpus_fingerprint__"}
-        self.assertEqual(len(case_entries), 29)
+        self.assertEqual(len(case_entries), 30)
 
 
 class AuthorizationBindingKeysPresenceBranchTests(unittest.TestCase):
