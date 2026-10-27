@@ -2520,6 +2520,17 @@ class IncompleteFetchAdapter(FakeAdapter):
         return ADAPTER.Fetched(path=into, complete=False, files=())
 
 
+class EmptyIncompleteFetchAdapter(FakeAdapter):
+    """`fetch()` creates its destination and reports `complete=False` with
+    nothing downloaded -- what the Colab adapter does while the run is still
+    going, before the worker has written any manifest.
+    """
+
+    def fetch(self, submission_id: str, into: Path) -> "ADAPTER.Fetched":
+        into.mkdir(parents=True, exist_ok=True)
+        return ADAPTER.Fetched(path=into, complete=False, files=())
+
+
 class ScriptedListActiveAdapter(FakeAdapter):
     """A `FakeAdapter` whose `list_active()` answers with a fixed,
     test-controlled set of ids, independent of anything `submit()`/
@@ -3141,6 +3152,37 @@ class FetchTests(unittest.TestCase):
             self.assertIn(str(partial_dest), str(ctx.exception))
             self.assertFalse(dest.exists())
             self.assertFalse((partial_dest / "result.txt").exists())
+
+    def test_an_incomplete_fetch_that_downloaded_nothing_leaves_no_partial(self) -> None:
+        """Asking too early is ordinary: the run is still going. An EMPTY
+        `.partial/` holds no paid-for bytes, so it is removed instead of
+        blocking every later fetch of the same submission.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest = self._pending_fetch_fixture(tmp)
+
+            result = REMOTE_CLI.cmd_fetch(
+                target=target,
+                entrypoint=notebook,
+                submission_id="s1",
+                dest=dest,
+                adapter=EmptyIncompleteFetchAdapter(worker_id="w1", capacity=2),
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertFalse(result["complete"])
+            self.assertIsNone(result["path"])
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists())
+
+            retried = REMOTE_CLI.cmd_fetch(
+                target=target,
+                entrypoint=notebook,
+                submission_id="s1",
+                dest=dest,
+                adapter=FakeAdapter(worker_id="w1", capacity=2),
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertTrue(retried["complete"])
+            self.assertTrue(dest.exists())
 
     def test_force_neither_clears_a_leftover_partial_nor_deletes_the_destination(
         self,

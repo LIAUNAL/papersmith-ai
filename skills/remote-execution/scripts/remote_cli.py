@@ -1756,10 +1756,17 @@ def cmd_fetch(
         # `pending`, which is the one state a retry can safely start from.
         # The existing `final_dest` (when `--force` was given) is
         # untouched — the removal above deliberately did not run.
+        # An EMPTY partial holds no bytes anybody paid for -- the run was
+        # simply still going -- so it is removed rather than left to refuse
+        # every later fetch. `rmdir` cannot remove one that holds anything.
+        kept = partial_dest
+        if partial_dest.is_dir() and not any(partial_dest.iterdir()):
+            partial_dest.rmdir()
+            kept = None
         return {
             "verdict": verdict,
             "complete": False,
-            "path": partial_dest,
+            "path": kept,
             "event": None,
             "staleness": staleness,
             "arbitration": arbitration,
