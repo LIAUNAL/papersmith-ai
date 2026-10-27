@@ -526,6 +526,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                allowed_hosts: frozenset[str] | None = None,
                enable_terminal: bool = False) -> FastAPI:
     root_path = Path(root).expanduser().resolve()
+    # The release this process loaded its code under; an upgrade on disk does
+    # not reach a running server, so the panel compares the two and says so.
+    started_version = _framework_version(root_path)
     bus = EventBus()
     revision = {"value": 0}
     health_cache: dict[str, Any] = {"at": 0.0, "value": None}
@@ -1497,8 +1500,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     def api_experiments() -> JSONResponse:
         # The experiments tab: protocol, products, convergence, figures,
         # tables, significance and remote runs (read-only, bounded, contained).
-        return JSONResponse(experiments_view.get_experiments_view(root_path),
-                            headers=dict(_PAPER_HEADERS))
+        view = experiments_view.get_experiments_view(root_path)
+        workspace_version = _framework_version(root_path)
+        view["dashboard"] = {"startedVersion": started_version,
+                             "workspaceVersion": workspace_version,
+                             "stale": workspace_version != started_version}
+        return JSONResponse(view, headers=dict(_PAPER_HEADERS))
 
     @app.post("/api/experiments/diagrams/validate")
     async def api_validate_diagram(request: Request) -> JSONResponse:
@@ -2455,7 +2462,15 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     if static_dir is not None:
         from fastapi.staticfiles import StaticFiles
 
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="dashboard")
+        class _RevalidatedStaticFiles(StaticFiles):
+            # `no-cache` makes the browser revalidate each load (a 304 when
+            # unchanged), so a reload after an upgrade never runs an old panel.
+            async def get_response(self, path, scope):
+                response = await super().get_response(path, scope)
+                response.headers["Cache-Control"] = "no-cache"
+                return response
+
+        app.mount("/", _RevalidatedStaticFiles(directory=str(static_dir), html=True), name="dashboard")
     else:
         @app.get("/", response_class=HTMLResponse)
         def placeholder() -> str:

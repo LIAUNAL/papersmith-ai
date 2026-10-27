@@ -169,6 +169,43 @@ class DiagramValidationRouteTests(unittest.TestCase):
         self.assertFalse((self.ws.poc / "diagrams" / "poc.validated.json").exists())
 
 
+class DashboardFreshnessTests(unittest.TestCase):
+    """A dashboard started before an upgrade keeps the old server code in memory."""
+
+    def setUp(self) -> None:
+        self.ws = DiagramWorkspace(self)
+        _write(self.ws.root / ".papersmith" / "version", "0.1.0\n")
+        self.app = server.create_app(self.ws.root, history_store=None)
+
+    def experiments(self) -> dict:
+        route = next(r.endpoint for r in self.app.routes
+                     if getattr(r, "path", None) == "/api/experiments")
+        return json.loads(bytes(route().body))
+
+    def test_the_view_says_which_release_the_server_started_with(self) -> None:
+        self.assertEqual(self.experiments()["dashboard"],
+                         {"startedVersion": "0.1.0", "workspaceVersion": "0.1.0", "stale": False})
+
+    def test_an_upgrade_after_start_marks_the_server_stale(self) -> None:
+        _write(self.ws.root / ".papersmith" / "version", "0.2.0\n")
+        self.assertEqual(self.experiments()["dashboard"],
+                         {"startedVersion": "0.1.0", "workspaceVersion": "0.2.0", "stale": True})
+
+    def test_the_page_and_its_scripts_are_revalidated_on_every_load(self) -> None:
+        from starlette.testclient import TestClient
+
+        if server.resolve_static_dir(self.ws.root) is None:
+            self.skipTest("no shipped dashboard build in this checkout")
+        app = server.create_app(self.ws.root, history_store=None,
+                                allowed_hosts=frozenset({"testserver"}))
+        client = TestClient(app)
+        for path in ("/", "/experiments-panel.js"):
+            with self.subTest(path=path):
+                response = client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers.get("cache-control"), "no-cache")
+
+
 @unittest.skipUnless(shutil.which("node"), "node is required to run the panel renderer")
 class DiagramRenderTests(unittest.TestCase):
     def render(self, view: dict) -> str:
@@ -207,6 +244,29 @@ class DiagramRenderTests(unittest.TestCase):
         view = experiments_view.get_experiments_view(ws.root)
         view["products"][0]["diagrams"][0]["command"] = "<img src=x onerror=1>"
         self.assertNotIn("<img src=x", self.render(view))
+
+    def test_a_diagram_awaiting_validation_is_announced_at_the_top(self) -> None:
+        ws = DiagramWorkspace(self)
+        view = experiments_view.get_experiments_view(ws.root)
+        out = self.render(view)
+        self.assertIn("exp-attention", out)
+        self.assertLess(out.index("exp-attention"), out.index("Datasets (toy y completos)"))
+        self.assertIn('href="#exp-diagrams-repo-PocModel"', out)
+        self.assertIn('id="exp-diagrams-repo-PocModel"', out)
+        for product in view["products"]:
+            for diagram in product["diagrams"]:
+                diagram["validation"] = "validated"
+                diagram["png"] = diagram["png"] or "x.png"
+        self.assertNotIn("exp-attention", self.render(view))
+
+    def test_a_server_older_than_the_workspace_asks_to_be_restarted(self) -> None:
+        out = self.render({"dashboard": {"startedVersion": "0.1.0", "workspaceVersion": "0.2.0",
+                                         "stale": True}})
+        self.assertIn("exp-attention", out)
+        self.assertIn("0.1.0", out)
+        self.assertIn("0.2.0", out)
+        self.assertIn("Reinicia", out)
+        self.assertNotIn("Reinicia", self.render({"dashboard": {"stale": False}}))
 
 
 if __name__ == "__main__":

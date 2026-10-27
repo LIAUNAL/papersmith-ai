@@ -21,6 +21,9 @@ while an approved kind's diagram reads anything but `validated`, and `render`
 drops the record, so a diagram drawn again is validated again. The panel's
 **Generar diagrama** / **Regenerar diagrama** buttons run `derive` and `render`
 in the dashboard's CLI assistant; this skill is the same step from an agent.
+Every diagram not yet validated is also listed at the top of the tab, under
+**Antes de lanzar**, linked to its product; the same notice asks for a server
+restart when the dashboard started under an older release than the workspace's.
 
 ## Usage
 

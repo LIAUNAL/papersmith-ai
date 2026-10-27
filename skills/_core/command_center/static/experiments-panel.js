@@ -252,6 +252,36 @@
     validated: ['VALIDADO', 'badge--ok'],
   };
 
+  function diagramAnchor(p) {
+    return esc(`exp-diagrams-${p.repo || ''}-${p.name || ''}`);
+  }
+
+  // What blocks a launch, above the setup sections: a server still running
+  // the code of an older release, and every diagram not validated yet.
+  function attention(v) {
+    const notes = [];
+    const dash = v.dashboard || {};
+    if (dash.stale) {
+      notes.push(`<p>Este tablero arrancó con papersmith ${esc(dash.startedVersion || '?')} y el workspace ya está en
+        ${esc(dash.workspaceVersion || '?')}. Reinicia el servidor del tablero (<code>smith ui</code>) y recarga la página:
+        hasta entonces algunas secciones y botones de esta pestaña no aparecen o no responden.</p>`);
+    }
+    const open = [];
+    (v.products || []).forEach((p) => (p.diagrams || []).forEach((d) => {
+      const state = d.png ? (d.validation || 'pending') : 'absent';
+      if (state === 'validated') return;
+      const [label] = DIAGRAM_STATES[state] || DIAGRAM_STATES.pending;
+      open.push(`<li><a href="#${diagramAnchor(p)}">${esc(p.name || '')}: ${esc(DIAGRAM_TITLES[d.kind] || d.kind)}</a>
+        <span class="badge badge--warn">${esc(label)}</span></li>`);
+    }));
+    if (open.length) {
+      notes.push(`<p>Nada de estos productos se lanza (ensayo incluido) hasta validar sus diagramas:</p><ul>${open.join('')}</ul>`);
+    }
+    return notes.length
+      ? `<section class="panel exp-attention" role="status"><h3 class="panel__title">Antes de lanzar</h3>${notes.join('')}</section>`
+      : '';
+  }
+
   function diagrams(p) {
     const list = p.diagrams || [];
     if (!list.length) return '';
@@ -275,7 +305,7 @@
       return `<div class="exp-diagram"><div class="exp-file">${esc(title)}
         <span class="badge ${tone}">${esc(label)}</span></div>${body}</div>`;
     }).join('');
-    return `<h4 class="exp-h4">Diagramas para verificar</h4>${items}`;
+    return `<h4 class="exp-h4" id="${diagramAnchor(p)}">Diagramas para verificar</h4>${items}`;
   }
 
   async function validateDiagram(button) {
@@ -718,6 +748,7 @@ kaggle kernels output &lt;user/slug&gt; -p &lt;dest&gt;</code></pre>
     const full = products.filter((p) => p.kind === 'full');
     const other = products.filter((p) => p.kind !== 'poc' && p.kind !== 'full');
     return [
+      attention(v),
       mcpActivation(v.remote_mcp),
       colabActivation(v.remote_colab),
       remoteServices(v.remote_services),
