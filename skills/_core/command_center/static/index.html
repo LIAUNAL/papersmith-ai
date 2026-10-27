@@ -21,6 +21,7 @@
   <script src="./experiments-panel.js?v=0.29.0"></script>
   <script src="./agents-panel.js?v=0.20.0"></script>
   <script src="./doctor-panel.js?v=0.26.0"></script>
+  <script src="./ai-history-panel.js?v=0.28.2"></script>
   <script src="./phase-console.js?v=0.19.1"></script>
   <script src="./phase-run.js?v=0.21.2"></script>
   <style>
@@ -2615,6 +2616,52 @@
     .agents-empty { color: var(--text-dim); }
     .agents-warnings { color: var(--warn); font-size: 0.78rem; margin: 0.5rem 0 0; }
     /* Smith Doctor: one health table grouped by area. */
+    /* Historia con IA pane (ai-history-panel.js) */
+    .aih-legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+    .aih-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .aih-dot { width: 0.8rem; height: 0.8rem; border-radius: 3px; display: inline-block; border: 2px solid; }
+    .aih-dot--gate { transform: rotate(45deg); border-radius: 1px; border-color: var(--text-muted); }
+    .aih-dot.aih--green { background: var(--ok-dim); border-color: var(--ok); }
+    .aih-dot.aih--orange { background: var(--warn-dim); border-color: var(--warn); }
+    .aih-dot.aih--red { background: var(--bad-dim); border-color: var(--bad); }
+    .aih-diagram { overflow-x: auto; }
+    .aih-svg { width: 100%; min-width: 640px; height: auto; font-family: var(--font-sans); }
+    .aih-edge { stroke: var(--border); stroke-width: 1.5; }
+    .aih-arrow { fill: var(--border); }
+    .aih-box { cursor: pointer; }
+    .aih-box rect { fill: var(--surface-2); stroke-width: 2; }
+    .aih-box:hover rect, .aih-box:focus rect { fill: var(--surface-hover); }
+    .aih-box:focus { outline: none; }
+    .aih-box--selected rect { stroke-width: 3.5; }
+    .aih-box.aih--green rect, .aih-gate.aih--green polygon { stroke: var(--ok); }
+    .aih-box.aih--orange rect, .aih-gate.aih--orange polygon { stroke: var(--warn); }
+    .aih-box.aih--red rect, .aih-gate.aih--red polygon { stroke: var(--bad); }
+    .aih-gate.aih--green polygon { fill: var(--ok-dim); }
+    .aih-gate.aih--orange polygon { fill: var(--warn-dim); }
+    .aih-gate.aih--red polygon { fill: var(--bad-dim); }
+    .aih-gate polygon { stroke-width: 2; }
+    .aih-box__id { fill: var(--text-muted); font-size: 11px; font-weight: 600; }
+    .aih-box__label { fill: var(--text); font-size: 13px; font-weight: 600; }
+    .aih-box__meta { fill: var(--text-dim); font-size: 10px; }
+    .aih-gate__label { fill: var(--text-muted); font-size: 9px; text-anchor: middle; font-family: var(--font-mono); }
+    .aih-gate__label--side { text-anchor: start; }
+    .aih-detail { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); }
+    .aih-detail__head { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .aih-detail__meta { color: var(--text-muted); font-size: 0.82rem; margin: 0.35rem 0; }
+    .aih-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.4rem 0; }
+    .aih-badge--green { background: var(--ok-dim); color: var(--ok); }
+    .aih-badge--orange { background: var(--warn-dim); color: var(--warn); }
+    .aih-badge--red { background: var(--bad-dim); color: var(--bad); }
+    .aih-timeline { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 26rem; overflow-y: auto; }
+    .aih-ev { border-left: 3px solid var(--border); padding: 0.3rem 0.6rem; margin-bottom: 0.4rem; }
+    .aih-ev--command { border-left-color: var(--accent); }
+    .aih-ev--user_message { border-left-color: var(--warn); }
+    .aih-ev--error, .aih-ev--errored { border-left-color: var(--bad); }
+    .aih-ev__kind { font-weight: 600; font-size: 0.78rem; margin-right: 0.5rem; }
+    .aih-ev__when { color: var(--text-dim); font-size: 0.72rem; }
+    .aih-ev__text { font-size: 0.85rem; word-break: break-word; }
+    .aih-ev__ref { font-size: 0.7rem; color: var(--text-dim); }
+    .aih-hint { color: var(--text-muted); font-size: 0.82rem; }
     .doctor-summary { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
     .doctor-group th { background: var(--surface-2); color: var(--text); cursor: default; text-transform: uppercase;
       font-size: 0.72rem; letter-spacing: 0.04em; }
@@ -2668,6 +2715,7 @@
     <button class="tab-nav__btn" onclick="navigateTab('atlas')">Atlas de Grafos</button>
     <button class="tab-nav__btn" onclick="navigateTab('preview')">Previsualización PDF</button>
     <button class="tab-nav__btn" onclick="navigateTab('artifacts')">Artefactos</button>
+    <button class="tab-nav__btn" onclick="navigateTab('historia')">Historia con IA</button>
     <button class="tab-nav__btn" onclick="navigateTab('telemetria')">Telemetría y Costos</button>
     <button class="tab-nav__btn" onclick="navigateTab('doctor')">Smith Doctor</button>
   </nav>
@@ -2951,6 +2999,17 @@
     </div>
 
     <!-- TAB 5: TELEMETRÍA -->
+    <!-- HISTORIA CON IA: fases, compuertas e interacciones (GET /api/ai-history, ai-history-panel.js) -->
+    <div id="pane-historia" class="tab-pane">
+      <div class="panel">
+        <div class="panel__header">
+          <div class="panel__title">Historia con IA: fases, compuertas e interacciones</div>
+          <span class="panel__meta">Clic en una fase para ver su historial</span>
+        </div>
+        <div id="aiHistoryPanel">Cargando historia…</div>
+      </div>
+    </div>
+
     <div id="pane-telemetria" class="tab-pane">
       <div class="metrics-grid">
         <div class="metric-card">
@@ -3585,6 +3644,9 @@
       }
       if (tabId === 'doctor') {
         window.refreshDoctorPanel?.();
+      }
+      if (tabId === 'historia') {
+        window.refreshAiHistoryPanel?.();
       }
       if (tabId === 'modelo') {
         refreshModelData();
@@ -6290,7 +6352,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'sections', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();
