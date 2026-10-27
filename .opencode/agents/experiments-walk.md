@@ -107,6 +107,17 @@ reasons and every checklist item still unmet. The verdict is never launch
 authorization: placement stays with `distribute` and the launch with the
 operator.
 
+## What the launch still needs
+
+Run `launch-plan --job <job>` (with `--worker <account>`) before
+`generate-job` and again before `gate`. It writes nothing and lists, in order,
+what `propose`, `offer`, `gate` and `submit` would refuse now and the exact
+next command: a missing `@rehearsal <job>` item (clear it with `position
+--reconcile`, which inserts it before the remote step), ticked items nothing
+measured, a rehearsal not yet passed at the pin, a missing or stale proposal,
+an unvalidated diagram. `verify` reports the same ladder gaps under
+`launchLadder`. Report what it lists; do not discover it one refusal at a time.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which
