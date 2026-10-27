@@ -1721,6 +1721,18 @@ GPUs "is heavily restricted", premium GPUs come with a paid plan "subject
 to availability", and the types "vary over time". The adapter maps only
 `sm_75 → T4`, `sm_80 → A100`, `sm_90 → H100` (`COLAB_ACCELERATOR_VARIANTS`).
 
+**A Colab job asks for a GPU by default.** The adapter registers its own
+default accelerator, `cuda` with `sm_75` (`COLAB_ACCELERATOR_KIND`,
+`COLAB_ACCELERATOR_ARCHITECTURES`), the same way the Kaggle adapter does, so
+`generate-job` with no `--accelerator-*` flags writes that block and `submit`
+passes `--gpu T4`. Before this, a from-zero Colab job carried no block, got no
+`--gpu`, and ran on a CPU runtime without a word. Because the block is
+declared, the VM-side `check_accelerator()` refuses a runtime that arrives
+without CUDA (its arch list is empty), so the smoke fails and `readiness` stays
+`false` instead of counting a CPU rehearsal as ready. Pass
+`--accelerator-kind cuda --accelerator-architecture sm_80` (or `sm_90`) to ask
+a paid account for an A100 (or H100).
+
 Sessions are expensive and idle-reclaimed, so release is part of the flow,
 not housekeeping: `fetch` stops a session only AFTER the manifest has
 landed AND the run is terminal; the adapter spawns the CLI's own keep-alive

@@ -11187,7 +11187,7 @@ class DefaultAcceleratorProvisioningTests(unittest.TestCase):
         "sm_70", "sm_75", "sm_80", "sm_86", "sm_90", "sm_100", "sm_120",
     )
 
-    def test_kaggle_default_is_covered_by_the_observed_service_arch_list(self) -> None:
+    def test_service_defaults_are_covered_by_the_observed_service_arch_list(self) -> None:
         """The seam the registration test above cannot see.
 
         `check_accelerator`'s second assertion reads a declaration as "the
@@ -11199,9 +11199,10 @@ class DefaultAcceleratorProvisioningTests(unittest.TestCase):
         otherwise have run on, and no test that reads the constant back
         can tell.
         """
-        _, architectures = ADAPTER.resolve_default_accelerator("kaggle")()
         uncovered = [
-            arch for arch in architectures
+            (service, arch)
+            for service in ("kaggle", "colab")
+            for arch in ADAPTER.resolve_default_accelerator(service)()[1]
             if arch not in self.OBSERVED_SERVICE_ARCH_LIST
         ]
         self.assertEqual(
@@ -15146,9 +15147,30 @@ class StalenessTests(unittest.TestCase):
             # than forwarded from the parent, so it is the one key here
             # that is not an allowlist entry.
             self.assertEqual(
-                set(recorded_env) - {"GIT_TERMINAL_PROMPT"} - set(JOBFOLDER.GIT_ENV_ALLOWLIST),
+                set(recorded_env) - set(JOBFOLDER.GIT_FIXED_ENV) - set(JOBFOLDER.GIT_ENV_ALLOWLIST),
                 set(),
             )
+
+    def test_run_git_ignores_a_system_credential_helper(self) -> None:
+        """Dropping `HOME` drops `~/.gitconfig`, not the system config. A
+        system `credential.helper` (Homebrew's git ships `osxkeychain`)
+        still ran inside the probe, and with no `HOME` it waited on the
+        macOS keychain until the 240 s budget expired -- a published
+        commit refused as unconfirmable. The helper is reset to empty, so
+        only the probe's own askpass, or nothing, answers a prompt.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            system = Path(tmp) / "system.gitconfig"
+            system.write_text("[credential]\n\thelper = leak-me-not\n", encoding="utf-8")
+            result = JOBFOLDER._run_git(
+                ["config", "--get-all", "credential.helper"],
+                cwd=tmp,
+                extra_env={"GIT_CONFIG_SYSTEM": str(system)},
+            )
+            self.assertEqual(result.stdout.splitlines(), ["leak-me-not", ""])
+            result = JOBFOLDER._run_git(["config", "--get", "credential.helper"], cwd=tmp,
+                                        extra_env={"GIT_CONFIG_SYSTEM": str(system)})
+            self.assertEqual(result.stdout.strip(), "")
 
     def test_run_git_non_zero_exit_is_a_refusal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -22285,8 +22307,10 @@ class ColabAdapterSeamTests(unittest.TestCase):
         self.assertIsInstance(COLAB.ColabAdapter(), ADAPTER.Adapter)
 
     def test_colab_is_registered_under_its_own_name_and_silent_elsewhere(self) -> None:
-        """Registration only — and the silences D6 and D13 require: no
-        metadata assembler, no accelerator default. The declared-capacity
+        """Registration only — and the silence D6 requires: no metadata
+        assembler. The accelerator default is NOT silent: a job generated
+        with no accelerator flags must still ask Colab for a GPU, exactly
+        as every Kaggle push does, or it runs on CPU without a word. The declared-capacity
         reporter is NOT silent (S5/SD21): the engine's launch-proposal
         publisher reads that registry to compose a `launch` action, and a
         miss there left every colab gate chain unmintable — its answer is
@@ -22295,8 +22319,23 @@ class ColabAdapterSeamTests(unittest.TestCase):
         self.assertIs(ADAPTER.resolve("colab"), COLAB.ColabAdapter)
         with self.assertRaises(KeyError):
             ADAPTER.resolve_metadata("colab")
-        self.assertIsNone(ADAPTER.resolve_default_accelerator("colab"))
         self.assertIsNotNone(ADAPTER.resolve_declared_capacity("colab"))
+
+    def test_colab_registers_a_gpu_default_that_maps_to_a_variant(self) -> None:
+        """A from-zero Colab job asks for a GPU: the registered default is
+        one `cuda` architecture the variant table maps to `--gpu`, so
+        `submit` requests that machine and the VM-side gate refuses a CPU
+        runtime instead of running on it.
+        """
+        provider = ADAPTER.resolve_default_accelerator("colab")
+        self.assertIsNotNone(provider, "adapters/colab.py must register a default")
+        kind, architectures = provider()
+        self.assertEqual(kind, "cuda")
+        self.assertEqual(tuple(architectures), COLAB.COLAB_ACCELERATOR_ARCHITECTURES)
+        self.assertEqual(len(architectures), 1)
+        variant = COLAB.ColabAdapter()._accelerator_variant(
+            {"kind": kind, "architectures": list(architectures)})
+        self.assertEqual(variant, "T4")
 
     def test_colab_declared_capacity_is_the_static_worker_figure(self) -> None:
         """The declared-capacity channel (S5/SD21) answers the same static

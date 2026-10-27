@@ -2214,6 +2214,22 @@ REPO_CREDENTIAL_ASKPASS_SCRIPT = """#!/bin/sh
 printf '%s' "$PSMITH_REPO_CREDENTIAL"
 """
 
+# What `_run_git()` sets itself on every call, never forwarded from this
+# process. `GIT_TERMINAL_PROMPT=0` closes git's own prompt. The three
+# `GIT_CONFIG_*` entries reset `credential.helper` to empty: dropping `HOME`
+# drops `~/.gitconfig`, but not the SYSTEM config, and Homebrew's git ships
+# one naming `osxkeychain`. Measured 2026-10-26: with no `HOME` that helper
+# waited on the macOS keychain until the probe's whole 240 s budget expired,
+# so a published commit refused as unconfirmable. With the helper reset,
+# only the probe's own askpass (or nothing) answers a credential prompt --
+# which is what "nothing here decides WHO the probe is" already required.
+GIT_FIXED_ENV = {
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "credential.helper",
+    "GIT_CONFIG_VALUE_0": "",
+}
+
 # `pin-published`'s own budget (Finding 4 case A; Decision 13a) --
 # deliberately a SEPARATE constant from `GIT_TIMEOUT_SECONDS` above, never
 # the same one reused. That local budget times two nearly-instant,
@@ -2322,7 +2338,7 @@ def _run_git(
     """
     argv = ["git", *args]
     env = {name: os.environ[name] for name in GIT_ENV_ALLOWLIST if name in os.environ}
-    env["GIT_TERMINAL_PROMPT"] = "0"
+    env.update(GIT_FIXED_ENV)
     if extra_env:
         env.update(extra_env)
     try:

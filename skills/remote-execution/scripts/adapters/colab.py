@@ -245,6 +245,24 @@ PROBE_PACKAGES = ("nbclient", "nbformat", "jupyter_client")
 # remains the authority on whether that machine can run the build.
 COLAB_ACCELERATOR_VARIANTS = {"sm_75": "T4", "sm_80": "A100", "sm_90": "H100"}
 
+# The accelerator a job generated with no `--accelerator-*` flags declares,
+# registered below exactly as `adapters/kaggle.py` registers its own. Without
+# it a from-zero Colab job carried no `accelerator` block, `colab new` got no
+# `--gpu`, and the run landed on a CPU runtime without a word. One
+# architecture, for the reason Kaggle's comment gives: the VM-side gate reads
+# a declaration as "the installed build must cover every architecture named
+# here". `sm_75` (T4) because every tier, free included, can be handed one;
+# a job that wants an A100 or H100 says so with the override flags.
+COLAB_ACCELERATOR_KIND = "cuda"
+COLAB_ACCELERATOR_ARCHITECTURES = ("sm_75",)
+
+
+def _default_accelerator() -> tuple[str, tuple[str, ...]]:
+    """`ADAPTER.register_default_accelerator("colab", ...)`'s provider: called
+    by `jobfolder.generate_job()` only when the caller declared neither half
+    of the accelerator pair, so a Colab job asks for a GPU by default."""
+    return COLAB_ACCELERATOR_KIND, COLAB_ACCELERATOR_ARCHITECTURES
+
 # The two job-folder names this adapter knows: `run-config.json` beside
 # the entrypoint is what makes a submission shaped like this backend's
 # protocol at all, and `runner.ipynb` is the entrypoint's own fixed name
@@ -1737,3 +1755,4 @@ def _declared_capacity() -> tuple[int, int] | None:
 
 ADAPTER.register("colab", ColabAdapter)
 ADAPTER.register_declared_capacity("colab", _declared_capacity)
+ADAPTER.register_default_accelerator("colab", _default_accelerator)
