@@ -72,10 +72,15 @@
     "exit": 0,
     "sha256": "caacf0640d00bfbc974fcb11de2428a531c746a876ac3f8977b6ca5145944fd5"
   },
-  "materialize": {
-    "bytes": 570,
+  "launch-plan": {
+    "bytes": 2098,
     "exit": 0,
-    "sha256": "7b95e34d7aeab8aac8e91ae2198ef625dbdd7844df9bf694a8f64fd10485deb7"
+    "sha256": "5d3dfdf0956c1d016651d7893197f7a12f618622ae4c26e913b3f7db2ed356eb"
+  },
+  "materialize": {
+    "bytes": 640,
+    "exit": 0,
+    "sha256": "33cc3927dc36bc0f173df55b6fdc8e2424e27c1c3d60ec6cdc0612ee0e214a65"
   },
   "name": {
     "bytes": 84,
@@ -93,14 +98,14 @@
     "sha256": "21a8836263f062872926b2d31dc17a0ec98eec1414284a94cfff4846c8cde5f4"
   },
   "plan-a": {
-    "bytes": 814,
+    "bytes": 884,
     "exit": 0,
-    "sha256": "5d17a4b1bb40c55b8026a2f376bd2c30e036503acb33fa6ee9c482319984c173"
+    "sha256": "67504c74ddbd391e0b23323814baa860bbd8fd47d69332a109f218c186b9b92b"
   },
   "plan-b": {
-    "bytes": 814,
+    "bytes": 884,
     "exit": 0,
-    "sha256": "5d17a4b1bb40c55b8026a2f376bd2c30e036503acb33fa6ee9c482319984c173"
+    "sha256": "67504c74ddbd391e0b23323814baa860bbd8fd47d69332a109f218c186b9b92b"
   },
   "position-e0": {
     "bytes": 2740,
@@ -128,19 +133,19 @@
     "sha256": "4813d04fbd2d68c22b5a6ccde9a577adea3c509c3837ba1c017a49ac009ace4e"
   },
   "verify-a": {
-    "bytes": 19081,
+    "bytes": 19303,
     "exit": 0,
-    "sha256": "72ecafd743202a0ffef4fcc7397c4a0457dfd85fcdb33d9d040bfda50b39d371"
+    "sha256": "e506bb58fc925a29f043454485265acec84dd84360af9210e12a8b8b4fc3e020"
   },
   "verify-b": {
-    "bytes": 19081,
+    "bytes": 19303,
     "exit": 0,
-    "sha256": "72ecafd743202a0ffef4fcc7397c4a0457dfd85fcdb33d9d040bfda50b39d371"
+    "sha256": "e506bb58fc925a29f043454485265acec84dd84360af9210e12a8b8b4fc3e020"
   },
   "verify-t": {
-    "bytes": 12989,
+    "bytes": 13211,
     "exit": 0,
-    "sha256": "880f9933f3ab813f3e1fdcc3aab50eefe59a6ffa1748a88d07823b4f45b6bfbe"
+    "sha256": "ddac8e786cb65e5f5fe335a46ac3953cd7e71fd23e1d1ff6b8b6f5558ed08f83"
   },
   "walk": {
     "bytes": 813,

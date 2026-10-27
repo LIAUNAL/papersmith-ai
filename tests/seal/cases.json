@@ -344,6 +344,24 @@
   ]
  },
  {
+  "id": "launch-plan",
+  "command": "launch-plan",
+  "fixture": "A",
+  "proposals": true,
+  "argv": [
+   "--target",
+   "<TARGET>",
+   "--name",
+   "Seal",
+   "--revision",
+   "seal-2.md",
+   "--job",
+   "job-1",
+   "--worker",
+   "w1"
+  ]
+ },
+ {
   "id": "close-e1",
   "command": "close",
   "fixture": "A",
