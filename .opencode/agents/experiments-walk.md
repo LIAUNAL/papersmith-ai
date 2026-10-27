@@ -76,7 +76,10 @@ Mechanics of a rehearsal, learned the expensive way:
   while a declared `Notebooks/` folder makes every notebook in it part of the
   pin, so re-running an unrelated notebook stales the job.
 - Wait with `poll`, which only reads the state. `fetch` is for a run that has
-  finished.
+  finished, and it is due the moment `poll` says `complete`: a finished Colab
+  session sits idle until the service reclaims it, and its results live only
+  on that machine. Put the `fetch` in the same loop as the `poll`; a run fetched
+  hours later can come back `session not found`, and the quota is spent again.
 - The smoke must write `shard.json` into its working directory with what
   proves the run (commit, device), and the job must name those paths with
   `--smoke-required-evidence`; `generate-job` warns when it names none.

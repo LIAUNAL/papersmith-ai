@@ -1786,6 +1786,12 @@ session is simply gone, and the operator's own `colab stop -s <name>` is
 the manual exit. When you are done with a session, stop it — an abandoned
 one burns the account's capacity until the service reclaims it.
 
+**Fetch as soon as the run is terminal.** The keep-alive holds a session
+through the run, not after it: once the executor exits, the session idles
+and the service reclaims it, taking every result with it (`poll` then
+answers `unknown`, `session not found`). Whoever waits on a Colab run fetches
+in the same loop that sees `complete`, never later.
+
 **Never read, copy or print `~/.config/colab-cli/sessions.json`.** It
 carries a live per-session access token beside each session record
 (measured in spike S0), which makes it credential-grade: every session fact
