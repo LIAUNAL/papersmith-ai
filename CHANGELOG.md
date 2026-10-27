@@ -11,6 +11,19 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.30.2
+
+### Changed
+
+- The Historia con IA and Experimentos tabs no longer block on load.
+  Historia con IA reads each chat session incrementally: a visit parses only
+  the lines appended since the last one and skips lines that hold no turn
+  before parsing them (0.37 s to 0.01 s per visit on a workspace with a
+  39 MB session). Experimentos serves its interpreter and CLI probes from
+  cache past their 5-minute TTL while one background run refreshes them,
+  instead of waiting ~3.5 s for four serial probes, and `smith ui` fills both
+  caches in the background at start.
+
 ## 0.30.1
 
 ### Changed
