@@ -11,6 +11,18 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.28.1
+
+### Fixed
+
+- A ladder item `@step <step>` whose step runs remotely (declared
+  `placement: "remote"` with a `job`, or named after a job folder) is now
+  measured from the main remote-execution ledger: `position` ticks it once a
+  `fetch` has returned a current result for that job, at the job's current pin
+  as recorded by the runner's own `bootstrap.json`. A pending or errored
+  submission, a smoke-only record or a result from an older pin leaves it
+  unmeasured, with the reason. Local `@step` items are unchanged.
+
 ## 0.28.0
 
 ### Added
