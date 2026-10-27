@@ -1832,7 +1832,16 @@ class JobExecutionFieldsSharedReaderTests(unittest.TestCase):
             self._calls_the_shared_reader("remote_execution_jobs_state"))
 
     def test_cmd_gate_calls_the_shared_reader(self):
-        self.assertTrue(self._calls_the_shared_reader("cmd_gate"))
+        """Through `_job_remote_necessity`, which `gate` and `launch-plan`
+        share, so the election one refuses is the one the other predicts."""
+        self.assertTrue(self._calls_the_shared_reader("_job_remote_necessity"))
+        source = ENGINE_DIR.joinpath("implementation_engine.py").read_text(
+            encoding="utf-8")
+        gate = next(node for node in ast.walk(ast.parse(source))
+                    if isinstance(node, ast.FunctionDef) and node.name == "cmd_gate")
+        self.assertTrue(any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "_job_remote_necessity" for node in ast.walk(gate)))
 
 
 class DeadGatingRefusalJustificationTests(unittest.TestCase):

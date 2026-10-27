@@ -207,6 +207,16 @@ written at all; approving the map from the protocol's declared steps to
 runnable commands; publishing the commit a worker would clone; authorizing a
 launch, which is hours of somebody's quota.
 
+Before generating a job and again before `gate`, run this skill's own
+`launch-plan --target <repo> --name <Name> --revision <revision> --job <job>
+[--worker <account>]`. It is the shared engine's command, so it reads this
+skill's own holder (`Experimental_AGREED.md`) and writes nothing: it lists
+`propose`, `offer`, `gate` and `submit` in order, each with what it would
+refuse now and the exact next command, and `verify` reports the same ladder
+gaps under `launchLadder`. `proposal-implementation`'s `references/usage.md`
+(*`launch-plan` — what is still missing before a job launches*) documents its
+output.
+
 This north declares no stage nothing measures, and no `entrances` at all --
 declaring an entrance nothing produces would be a claim with no producer, the
 same reasoning `experimental-deliberation`'s own profile records for itself.
