@@ -10,6 +10,15 @@
  * renderArtifactDoc (web view, with a raw source toggle), PDFs and images
  * embedded, HTML as its source. A modified click (Cmd/Ctrl) keeps the link's
  * new tab. Files come from /api/artifact, which serves only workspace files.
+ *
+ * Decisions: every phase also carries its operator rounds (an operator turn
+ * and what answered it), each classified as success, rework, iteration or
+ * pending. A strip above the diagram totals them and lists the phases still
+ * waiting on a decision; the selected phase draws them as a decision graph
+ * (a chain of rounds, with a loop back over every round that needed rework).
+ * Clicking a round highlights its events in the timeline, and the timeline
+ * shows only the main interactions (operator turns, the replies that answer
+ * them, errors) unless the operator asks for everything.
  * Every value is escaped before insertion.
  *
  * Public surface (window): refreshAiHistoryPanel(), AiHistoryPanel.render(view).
@@ -34,6 +43,12 @@
     declaration: 'Declaración', fact_resolved: 'Hecho resuelto', fact_declined: 'Hecho rechazado',
   };
 
+  const OUTCOME_LABELS = {
+    success: 'Exitosa', rework: 'Con reproceso', iteration: 'Iteración', pending: 'Por definir',
+  };
+  const OUTCOME_GLYPHS = { success: '✓', rework: '↺', iteration: '⋯', pending: '?' };
+  const OUTCOMES = Object.keys(OUTCOME_LABELS);
+
   const PER_ROW = 4;
   const BOX_W = 190, BOX_H = 64, GATE = 26, GAP_X = 120, GAP_Y = 64, PAD = 16;
   const clip = (v, n) => (String(v ?? '').length > n ? `${String(v).slice(0, n - 1)}…` : String(v ?? ''));
@@ -51,6 +66,8 @@
 
   let lastView = { phases: [] };
   let selected = null;
+  let selectedRound = null;
+  let mainOnly = true;
 
   function layout(n) {
     const slot = BOX_W + GAP_X;
@@ -116,13 +133,82 @@
         + `<text x="${p.x + 10}" y="${p.y + 20}" class="aih-box__id">${esc(phase.id)}</text>`
         + `<text x="${p.x + 10}" y="${p.y + 38}" class="aih-box__label">${esc(clip(phase.label, 22))}</text>`
         + `<title>${esc(phase.name || phase.label)}</title>`
-        + `<text x="${p.x + 10}" y="${p.y + 55}" class="aih-box__meta">${events} evento(s) · ${esc(phase.status)}</text>`
+        + `<text x="${p.x + 10}" y="${p.y + 55}" class="aih-box__meta">${events} ev · ${summaryGlyphs(phase.decision_summary)}${esc(phase.status)}</text>`
         + '</g>');
     });
     return `<svg class="aih-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Fases y compuertas del flujo">`
       + '<defs><marker id="aihArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
       + '<path d="M0,0 L10,5 L0,10 z" class="aih-arrow"/></marker></defs>'
       + parts.join('') + '</svg>';
+  }
+
+  function summaryGlyphs(summary) {
+    const s = summary || {};
+    const parts = OUTCOMES.filter((o) => Number(s[o]) > 0).map((o) => `${OUTCOME_GLYPHS[o]}${Number(s[o])}`);
+    return parts.length ? `${parts.join(' ')} · ` : '';
+  }
+
+  // The rounds of one phase as a chain; a round that needed rework gets a
+  // loop from the round after it back over it.
+  const R = 15, STEP = 74, DG_PAD = 22;
+  function decisionGraph(phase) {
+    const rounds = list(phase.rounds);
+    if (!rounds.length) return '<p class="aih-hint">Sin rondas con el operador en esta fase.</p>';
+    const cx = (i) => DG_PAD + R + i * STEP;
+    const cy = DG_PAD + 30;
+    const width = DG_PAD * 2 + R * 2 + (rounds.length - 1) * STEP;
+    const parts = [];
+    rounds.forEach((r, i) => {
+      if (i + 1 < rounds.length) {
+        parts.push(`<line class="aih-edge" x1="${cx(i) + R}" y1="${cy}" x2="${cx(i + 1) - R - 2}" y2="${cy}" marker-end="url(#aihArrow2)"/>`);
+      }
+      if (r.outcome === 'rework' && i + 1 < rounds.length) {
+        const x1 = cx(i + 1), x0 = cx(i);
+        parts.push(`<path class="aih-dg-loop" d="M${x1},${cy - R} C${x1},${cy - R - 28} ${x0},${cy - R - 28} ${x0},${cy - R - 2}"`
+          + ' marker-end="url(#aihArrow2)"><title>Reproceso</title></path>');
+      }
+    });
+    rounds.forEach((r, i) => {
+      const on = selectedRound === r.n ? ' aih-dg-node--selected' : '';
+      parts.push(`<g class="aih-dg-node aih-dg--${esc(r.outcome)}${on}" data-round="${esc(r.n)}" role="button" tabindex="0"`
+        + ` aria-label="Ronda ${esc(r.n)}: ${esc(OUTCOME_LABELS[r.outcome] || r.outcome)}">`
+        + `<title>R${esc(r.n)} · ${esc(OUTCOME_LABELS[r.outcome] || r.outcome)}: ${esc(r.prompt)}</title>`
+        + (r.kind === 'decision'
+          ? `<rect x="${cx(i) - R}" y="${cy - R}" width="${R * 2}" height="${R * 2}" rx="4"/>`
+          : `<circle cx="${cx(i)}" cy="${cy}" r="${R}"/>`)
+        + `<text x="${cx(i)}" y="${cy + 4}" class="aih-dg-glyph">${esc(OUTCOME_GLYPHS[r.outcome] || '')}</text>`
+        + `<text x="${cx(i)}" y="${cy + R + 14}" class="aih-dg-label">R${esc(r.n)}</text></g>`);
+    });
+    const more = (Number(phase.total_rounds) || 0) > rounds.length
+      ? `<p class="aih-hint">Se muestran las ${rounds.length} rondas más recientes de ${esc(phase.total_rounds)}.</p>` : '';
+    return `${more}<div class="aih-dgraph-wrap"><svg class="aih-dgraph" width="${width}" height="${cy + R + 24}"`
+      + ` viewBox="0 0 ${width} ${cy + R + 24}" role="group" aria-label="Grafo de decisiones de la fase">`
+      + '<defs><marker id="aihArrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+      + '<path d="M0,0 L10,5 L0,10 z" class="aih-arrow"/></marker></defs>'
+      + parts.join('') + '</svg></div>';
+  }
+
+  function roundCard(phase) {
+    const r = list(phase.rounds).find((x) => x.n === selectedRound);
+    if (!r) return '<p class="aih-hint">Haz clic en una ronda para resaltar sus interacciones. Círculo: ronda de chat; cuadrado: decisión persistida.</p>';
+    const decision = r.kind === 'decision';
+    return `<div class="aih-round aih-round--${esc(r.outcome)}">`
+      + `<div><strong>Ronda ${esc(r.n)}</strong> <span class="badge aih-dgbadge--${esc(r.outcome)}">`
+      + `${esc(OUTCOME_GLYPHS[r.outcome] || '')} ${esc(OUTCOME_LABELS[r.outcome] || r.outcome)}</span>`
+      + ` <span class="aih-ev__when">${stamp(r.ts)} · ${esc(r.reason)}</span></div>`
+      + `<div class="aih-round__turn"><span class="aih-ev__kind">${decision ? 'Decisión' : 'Operador'}</span>${esc(r.prompt)}</div>`
+      + `<div class="aih-round__turn"><span class="aih-ev__kind">${decision ? 'Resultado' : 'IA'}</span>`
+      + `${r.reply ? esc(r.reply) : '<em>sin respuesta registrada</em>'}</div>`
+      + '</div>';
+  }
+
+  function decisionStrip(view) {
+    const totals = view.decision_summary || {};
+    const chips = OUTCOMES.map((o) => `<span class="badge aih-dgbadge--${o}">${OUTCOME_GLYPHS[o]} ${esc(OUTCOME_LABELS[o])}: ${Number(totals[o]) || 0}</span>`).join(' ');
+    const pending = list(view.pending).map((p) => `<button type="button" class="btn aih-pending" data-stage="${esc(p.stage_id)}"`
+      + ` data-round="${esc(p.round)}" title="${esc(p.prompt)}">${esc(p.id)} · R${esc(p.round)}</button>`).join(' ');
+    return `<div class="aih-strip"><span class="aih-strip__title">Decisiones con la IA</span> ${chips}`
+      + (pending ? ` <span class="aih-strip__title">Por definir:</span> ${pending}` : '') + '</div>';
   }
 
   function stamp(ts) {
@@ -140,11 +226,17 @@
       ['Comandos', c.commands], ['Iteraciones', c.user_messages], ['Decisiones', c.decisions],
       ['Revisiones', c.revisions], ['Errores', c.errors],
     ].map(([k, v]) => `<span class="badge">${esc(k)}: ${Number(v) || 0}</span>`).join(' ');
-    const events = list(phase.events).slice().reverse();
-    const shown = events.length < (Number(phase.total_events) || 0)
-      ? `<p class="aih-hint">Se muestran los ${events.length} eventos más recientes de ${esc(phase.total_events)}.</p>` : '';
+    const all = list(phase.events).slice().reverse();
+    const events = mainOnly ? all.filter((e) => e.key) : all;
+    const shown = all.length < (Number(phase.total_events) || 0)
+      ? `<p class="aih-hint">Se muestran los ${all.length} eventos más recientes de ${esc(phase.total_events)}.</p>` : '';
+    const toggle = `<label class="aih-toggle"><input type="checkbox" data-main-only${mainOnly ? ' checked' : ''}>`
+      + ` Solo interacciones principales (${all.filter((e) => e.key).length} de ${all.length})</label>`;
     const items = events.length
-      ? '<ol class="aih-timeline">' + events.map((e) => `<li class="aih-ev aih-ev--${esc(e.kind)}">`
+      ? '<ol class="aih-timeline">' + events.map((e) => `<li class="aih-ev aih-ev--${esc(e.kind)}`
+        + `${e.key ? ' aih-ev--key' : ''}${selectedRound !== null && e.round === selectedRound ? ' aih-ev--hl' : ''}"`
+        + ` data-ev-round="${esc(e.round ?? '')}">`
+        + (e.round ? `<span class="aih-ev__round" data-round="${esc(e.round)}" title="Ronda ${esc(e.round)}">R${esc(e.round)}</span>` : '')
         + `<span class="aih-ev__kind">${esc(KIND_LABELS[e.kind] || e.kind)}</span>`
         + `<span class="aih-ev__when">${stamp(e.ts)} · ${esc(e.actor || e.source)}</span>`
         + `<div class="aih-ev__text">${esc(e.summary)}</div>`
@@ -156,8 +248,11 @@
       + ` <span class="badge aih-badge--${esc(phase.color)}">${esc(COLOR_LABELS[phase.color])}</span></div>`
       + `<p class="aih-detail__meta">Compuerta <code>${esc(phase.gate)}</code> · Agente: ${esc(phase.agent || '—')}</p>`
       + `<p class="aih-detail__meta">${list(phase.reasons).map(esc).join(' · ')}</p>`
-      + `<div class="aih-chips">${chips}</div>${artifacts(phase)}`
-      + `<h4 class="aih-section">Interacciones</h4>${shown}${items}`;
+      + `<div class="aih-chips">${chips}</div>`
+      + `<h4 class="aih-section">Grafo de decisiones (${list(phase.rounds).length} ronda(s))</h4>`
+      + `<div class="aih-chips">${summaryGlyphs(phase.decision_summary).replace(/ · $/, '') || '—'}</div>`
+      + `${decisionGraph(phase)}${roundCard(phase)}${artifacts(phase)}`
+      + `<h4 class="aih-section">Interacciones</h4>${toggle}${shown}${items}`;
   }
 
   function artifacts(phase) {
@@ -299,7 +394,9 @@
   function legend() {
     return '<div class="aih-legend">' + ['green', 'orange', 'red']
       .map((c) => `<span><i class="aih-dot aih--${c}"></i>${esc(COLOR_LABELS[c])}</span>`).join('')
-      + '<span><i class="aih-dot aih-dot--gate"></i>Compuerta</span></div>';
+      + '<span><i class="aih-dot aih-dot--gate"></i>Compuerta</span>'
+      + OUTCOMES.map((o) => `<span><b class="aih-dg-key aih-dg--${o}">${OUTCOME_GLYPHS[o]}</b>${esc(OUTCOME_LABELS[o])}</span>`).join('')
+      + '</div>';
   }
 
   function sourcesNote(view) {
@@ -324,20 +421,46 @@
       return;
     }
     const current = phases.find((p) => p.stage_id === selected) || null;
-    host.innerHTML = legend() + `<div class="aih-diagram">${diagram(phases)}</div>`
+    host.innerHTML = legend() + decisionStrip(lastView) + `<div class="aih-diagram">${diagram(phases)}</div>`
       + `<div class="aih-detail" aria-live="polite">${detail(current)}</div>` + sourcesNote(lastView);
-    host.querySelector('.aih-detail')?.addEventListener('click', openArtifact);
+    const detailEl = host.querySelector('.aih-detail');
+    detailEl?.addEventListener('click', (ev) => {
+      const round = ev.target.closest('[data-round]');
+      if (round) { pickRound(Number(round.getAttribute('data-round'))); return; }
+      openArtifact(ev);
+    });
+    detailEl?.addEventListener('change', (ev) => {
+      if (ev.target.matches('[data-main-only]')) { mainOnly = ev.target.checked; render(lastView); }
+    });
+    detailEl?.querySelectorAll('.aih-dg-node').forEach((node) => node.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pickRound(Number(node.getAttribute('data-round'))); }
+    }));
+    const pick = (stage, round = null) => {
+      if (selected !== stage) selectedRound = null;
+      selected = stage;
+      if (round !== null) selectedRound = round;
+      render(lastView);
+      host.querySelector(round !== null ? '.aih-round' : '.aih-detail')
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    host.querySelectorAll('.aih-pending').forEach((btn) => btn.addEventListener('click',
+      () => pick(btn.getAttribute('data-stage'), Number(btn.getAttribute('data-round')))));
     host.querySelectorAll('.aih-box').forEach((box) => {
-      const pick = () => {
-        selected = box.getAttribute('data-stage');
-        render(lastView);
-        host.querySelector('.aih-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      };
-      box.addEventListener('click', pick);
+      box.addEventListener('click', () => pick(box.getAttribute('data-stage')));
       box.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); }
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(box.getAttribute('data-stage')); }
       });
     });
+  }
+
+  // Selecting a round (again to clear it) highlights its events; the first
+  // one scrolls into view, the rest stay where the timeline puts them.
+  function pickRound(n) {
+    selectedRound = selectedRound === n ? null : n;
+    render(lastView);
+    const host = document.getElementById('aiHistoryPanel');
+    host?.querySelector('.aih-ev--hl')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    host?.querySelector(`.aih-dg-node[data-round="${selectedRound}"]`)?.focus({ preventScroll: true });
   }
 
   async function refresh() {

@@ -70,6 +70,78 @@ class AiHistoryTests(unittest.TestCase):
         kinds = [e["kind"] for e in phases["plausibility"]["events"]]
         self.assertEqual(kinds, ["command", "agent_reply"])
 
+    def test_operator_rounds_form_a_decision_graph(self) -> None:
+        (self.chats / "s.jsonl").write_text("\n".join([
+            _line("user", "/proposal-deliberation idea", "2026-10-03T10:00:00Z"),
+            _line("user", "<task-notification><task-id>a1</task-id><status>completed</status></task-notification>",
+                  "2026-10-03T10:00:30Z"),
+            _line("assistant", [{"type": "text", "text": "Revisión r01 lista."}], "2026-10-03T10:01:00Z"),
+            _line("user", "corrige la ecuación 3, está mal", "2026-10-03T10:02:00Z"),
+            _line("assistant", [{"type": "text", "text": "Corregida."}], "2026-10-03T10:03:00Z"),
+            _line("user", "ahora añade la hipótesis H2", "2026-10-03T10:04:00Z"),
+            _line("assistant", [{"type": "text", "text": "Añadida."}], "2026-10-03T10:05:00Z"),
+            _line("user", "aprobado", "2026-10-03T10:06:00Z"),
+            _line("user", "/paper-writing intro", "2026-10-03T11:00:00Z"),
+            _line("user", [{"type": "tool_result", "is_error": True, "content": "boom"}],
+                  "2026-10-03T11:01:00Z"),
+            _line("user", "reintenta la intro", "2026-10-03T11:02:00Z"),
+            _line("assistant", [{"type": "text", "text": "Intro escrita."}], "2026-10-03T11:03:00Z"),
+        ]), encoding="utf-8")
+        view = ai_history.build_ai_history(
+            self.root, [_fase("proposal", "PASS", 4, "G-PROP"), _fase("writing", "ACTIVE", 8, "G-WRITING")],
+            sessions={"claude-code": self.chats, "pi": None, "opencode": None})
+        proposal, writing = view["phases"]
+
+        rounds = proposal["rounds"]
+        self.assertEqual([r["outcome"] for r in rounds], ["rework", "iteration", "success"])
+        self.assertEqual([r["prompt"] for r in rounds],
+                         ["/proposal-deliberation idea", "corrige la ecuación 3, está mal",
+                          "ahora añade la hipótesis H2"])
+        self.assertEqual([r["reply"] for r in rounds], ["Revisión r01 lista.", "Corregida.", "Añadida."])
+        self.assertIn("aprobó", rounds[2]["reason"])
+        self.assertEqual(proposal["decision_summary"],
+                         {"success": 1, "rework": 1, "iteration": 1, "pending": 0})
+        # Each round names its events, and every operator turn and the reply
+        # that answers it are the phase's main interactions.
+        by_id = {e["id"]: e for e in proposal["events"]}
+        self.assertEqual([by_id[i]["kind"] for i in rounds[0]["events"]], ["command", "agent_reply"])
+        self.assertEqual({e["round"] for e in proposal["events"]}, {1, 2, 3})
+        self.assertTrue(all(e["key"] for e in proposal["events"]))
+
+        self.assertEqual([r["outcome"] for r in writing["rounds"]], ["rework", "pending"])
+        self.assertIn("error", writing["rounds"][0]["reason"].lower())
+        self.assertEqual(view["decision_summary"],
+                         {"success": 1, "rework": 2, "iteration": 1, "pending": 1})
+        self.assertEqual(view["pending"], [{"stage_id": "writing", "id": "Fase 8", "round": 2,
+                                            "prompt": "reintenta la intro"}])
+
+    def test_persisted_decisions_open_their_own_rounds(self) -> None:
+        def ev(kind: str, ts, summary: str, source: str = "experiment") -> dict:
+            return {"ts": ts, "source": source, "kind": kind, "summary": summary, "ref": ""}
+        events = [
+            ev("revision_receipt", "2026-10-04T09:00:00Z", "Created initial revision r01"),
+            ev("submitted", "2026-10-04T10:00:00Z", "Submitted run.py to kaggle", "remote-execution"),
+            ev("errored", "2026-10-04T10:05:00Z", "Errored: OOM", "remote-execution"),
+            ev("submitted", "2026-10-04T11:00:00Z", "Submitted run.py to kaggle", "remote-execution"),
+            ev("returned", "2026-10-04T12:00:00Z", "Returned s2", "remote-execution"),
+            ev("revision_receipt", None, "Revision r01 -> r02 (tighten), 3 patches"),
+            ev("revision", None, "Revisión r02 de la propuesta", "revisions"),
+        ]
+        rounds = ai_history.decision_rounds("ACTIVE", events)
+        self.assertEqual([(r["kind"], r["outcome"]) for r in rounds],
+                         [("decision", "iteration"), ("decision", "rework"),
+                          ("decision", "iteration"), ("decision", "pending")])
+        self.assertEqual(rounds[2]["reply"], "Returned s2")
+        self.assertTrue(events[4]["key"])
+        self.assertIsNone(events[-1]["round"])
+
+    def test_decision_graph_is_drawn_and_filters_main_interactions(self) -> None:
+        panel = (REPO / "skills" / "_core" / "command_center" / "static" / "ai-history-panel.js").read_text(encoding="utf-8")
+        self.assertIn('class="aih-dgraph', panel)
+        self.assertIn("Solo interacciones principales", panel)
+        self.assertIn("aih-ev--hl", panel)
+        self.assertIn(".aih-round {", PAGE)
+
     def test_paper_writing_mark_goes_to_declarations(self) -> None:
         (self.chats / "s.jsonl").write_text(
             _line("user", "/paper-writing mark funding none", "2026-10-02T09:00:00Z"), encoding="utf-8")

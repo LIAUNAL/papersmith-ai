@@ -2685,6 +2685,40 @@
     .aih-modal__image { display: flex; justify-content: center; }
     .aih-modal__image img { max-width: 100%; height: auto; border-radius: var(--radius); background: #fff; }
     body.aih-modal-open { overflow: hidden; }
+    .aih-strip { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin: 0.25rem 0 0.6rem; font-size: 0.8rem; }
+    .aih-strip__title { color: var(--text-muted); font-weight: 600; }
+    .aih-pending { padding: 0.15rem 0.5rem; font-size: 0.75rem; border-color: var(--bad); color: var(--bad); }
+    .aih-dg-key { display: inline-flex; width: 1.1rem; height: 1.1rem; border-radius: 50%; align-items: center; justify-content: center;
+      font-size: 0.7rem; border: 2px solid; }
+    .aih-dgbadge--success, .aih-dg-key.aih-dg--success { background: var(--ok-dim); color: var(--ok); border-color: var(--ok); }
+    .aih-dgbadge--rework, .aih-dg-key.aih-dg--rework { background: var(--warn-dim); color: var(--warn); border-color: var(--warn); }
+    .aih-dgbadge--iteration, .aih-dg-key.aih-dg--iteration { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+    .aih-dgbadge--pending, .aih-dg-key.aih-dg--pending { background: var(--bad-dim); color: var(--bad); border-color: var(--bad); }
+    .aih-dgraph-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
+    .aih-dgraph { display: block; font-family: var(--font-sans); }
+    .aih-dg-node { cursor: pointer; }
+    .aih-dg-node:focus { outline: none; }
+    .aih-dg-node circle, .aih-dg-node rect { stroke-width: 2; fill: var(--surface-2); }
+    .aih-dg-node:hover :is(circle, rect), .aih-dg-node:focus :is(circle, rect) { fill: var(--surface-hover); }
+    .aih-dg-node--selected :is(circle, rect) { stroke-width: 4; }
+    .aih-dg-node.aih-dg--success :is(circle, rect) { stroke: var(--ok); fill: var(--ok-dim); }
+    .aih-dg-node.aih-dg--rework :is(circle, rect) { stroke: var(--warn); fill: var(--warn-dim); }
+    .aih-dg-node.aih-dg--iteration :is(circle, rect) { stroke: var(--accent); fill: var(--accent-dim); }
+    .aih-dg-node.aih-dg--pending :is(circle, rect) { stroke: var(--bad); fill: var(--bad-dim); stroke-dasharray: 4 3; }
+    .aih-dg-glyph { fill: var(--text); font-size: 12px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+    .aih-dg-label { fill: var(--text-muted); font-size: 10px; text-anchor: middle; font-family: var(--font-mono); }
+    .aih-dg-loop { fill: none; stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .aih-round { margin: 0.5rem 0; padding: 0.5rem 0.7rem; border-left: 4px solid var(--border); border-radius: var(--radius); background: var(--surface-2); font-size: 0.85rem; }
+    .aih-round--success { border-left-color: var(--ok); }
+    .aih-round--rework { border-left-color: var(--warn); }
+    .aih-round--iteration { border-left-color: var(--accent); }
+    .aih-round--pending { border-left-color: var(--bad); }
+    .aih-round__turn { margin-top: 0.3rem; word-break: break-word; }
+    .aih-toggle { display: inline-flex; gap: 0.35rem; align-items: center; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; }
+    .aih-ev--key { background: var(--surface-2); }
+    .aih-ev--hl { background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent); }
+    .aih-ev__round { font-family: var(--font-mono); font-size: 0.7rem; padding: 0 0.3rem; margin-right: 0.4rem; border-radius: 3px;
+      border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; }
     .doctor-summary { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
     .doctor-group th { background: var(--surface-2); color: var(--text); cursor: default; text-transform: uppercase;
       font-size: 0.72rem; letter-spacing: 0.04em; }

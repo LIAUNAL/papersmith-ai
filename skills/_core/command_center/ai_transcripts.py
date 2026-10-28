@@ -57,6 +57,12 @@ TEXT_MAX = 240
 
 HARNESSES = ("claude-code", "pi", "opencode", "antigravity")
 
+#: user turns the harness writes on the operator's behalf (reminders, the
+#: notice of a finished background task, a command's echoed output): never
+#: an operator turn.
+HARNESS_PREFIXES = ("<system-reminder>", "<task-notification>", "<local-command-caveat>",
+                    "<persisted-output>", "<bash-notification>")
+
 Turn = tuple["str | None", str, str]
 #: ``(ts, role, text, command)``: what :func:`attribute` needs of a turn, with
 #: the text already clipped and the command (``(skill, args)``) already parsed.
@@ -123,7 +129,7 @@ def compact(ts: Any, role: str, text: str) -> Compact | None:
     if role == "error":
         return (ts, role, "", None)
     if (not text.strip() or "<local-command-stdout>" in text
-            or text.lstrip().startswith("<system-reminder>")):
+            or text.lstrip().startswith(HARNESS_PREFIXES)):
         return None
     command = command_of(text)
     if command is not None:
