@@ -89,13 +89,16 @@ Run with any Python 3.10+ (stdlib-only):
 from __future__ import annotations
 
 import ast
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -189,6 +192,26 @@ REQUIRED_RUN_CONFIG_FIELDS = (
 # whatever `main` points at on the day it runs. A pin that moves,
 # recorded as if it were immutable, with every downstream check agreeing.
 COMMIT_PATTERN = re.compile(r"\A(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+
+# The code bundle (`generate-job --code-bundle`): the declared clone paths
+# at the pin, taken with `git archive` from the COMMIT (never the working
+# tree), gzipped with a fixed mtime so the same pin always yields the same
+# bytes, written beside `run-config.json` and recorded there as
+# `codeBundle: {file, format, sha256, bytes}`. A backend whose runner cannot
+# authenticate a clone of a private repository ships those bytes inside
+# the job it pushes, and the runner unpacks them instead of cloning; no
+# repository credential is read, needed or carried. Only a backend whose
+# adapter class declares `CODE_BUNDLE_MAX_BYTES` accepts one, and that
+# number bounds the compressed size.
+CODE_BUNDLE_FILENAME = "code-bundle.tar.gz"
+CODE_BUNDLE_FORMAT = "tar.gz"
+CODE_BUNDLE_SHA256_PATTERN = re.compile(r"\A[0-9a-f]{64}\Z")
+# Refusal codes, printed first in the message (SKILL.md "Refusal codes").
+CODE_BUNDLE_NOT_CARRIED = "CODE_BUNDLE_NOT_CARRIED"
+CODE_BUNDLE_TOO_LARGE = "CODE_BUNDLE_TOO_LARGE"
+CODE_BUNDLE_UNSAFE_ENTRY = "CODE_BUNDLE_UNSAFE_ENTRY"
+CODE_BUNDLE_MISMATCH = "CODE_BUNDLE_MISMATCH"
+CODE_BUNDLE_WITH_REPO_CREDENTIAL = "CODE_BUNDLE_WITH_REPO_CREDENTIAL"
 
 
 def resolve_target(target: str | Path) -> Path:
@@ -1668,6 +1691,180 @@ def validate_run_config(run_config: Mapping[str, object]) -> None:
         if not isinstance(carry_paths, list):
             raise JobFolderError("run-config.json's carryPaths must be a list of carry paths")
         validate_carry_paths(carry_paths)
+    if "codeBundle" in run_config:
+        validate_code_bundle_block(run_config["codeBundle"])
+
+
+def validate_code_bundle_block(block: object) -> Mapping[str, object]:
+    """The `codeBundle` block's shape, re-checked on every read like the
+    commit's: the file is the one fixed name beside `run-config.json`
+    (never a path a hand-edited config could point elsewhere), the format
+    is the one this generator writes, the sha256 is a full lowercase digest
+    and the size a non-negative integer."""
+    if not isinstance(block, Mapping):
+        raise JobFolderError("run-config.json's codeBundle must be an object")
+    if block.get("file") != CODE_BUNDLE_FILENAME:
+        raise JobFolderError(
+            f"run-config.json's codeBundle.file must be {CODE_BUNDLE_FILENAME!r}, "
+            f"got {block.get('file')!r}"
+        )
+    if block.get("format") != CODE_BUNDLE_FORMAT:
+        raise JobFolderError(
+            f"run-config.json's codeBundle.format must be {CODE_BUNDLE_FORMAT!r}, "
+            f"got {block.get('format')!r}"
+        )
+    sha = block.get("sha256")
+    if not isinstance(sha, str) or not CODE_BUNDLE_SHA256_PATTERN.match(sha):
+        raise JobFolderError(
+            "run-config.json's codeBundle.sha256 must be a lowercase 64-hex digest"
+        )
+    size = block.get("bytes")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise JobFolderError(
+            "run-config.json's codeBundle.bytes must be a non-negative integer"
+        )
+    return block
+
+
+def code_bundle_limit(service: str) -> int | None:
+    """The backend's `CODE_BUNDLE_MAX_BYTES`, or `None` when it carries no
+    bundle (or no adapter is registered under `service` at all). Read off
+    the adapter CLASS, the same capability pattern as the other optional
+    class attributes: nothing here names a backend."""
+    try:
+        adapter_cls = ADAPTER.resolve(service)
+    except KeyError:
+        return None
+    limit = getattr(adapter_cls, "CODE_BUNDLE_MAX_BYTES", None)
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        return None
+    return limit
+
+
+def _covered_by_clone_paths(name: str, clone_paths: Sequence[str]) -> bool:
+    return any(name == path or name.startswith(path.rstrip("/") + "/")
+               for path in clone_paths)
+
+
+def _is_clone_path_ancestor(name: str, clone_paths: Sequence[str]) -> bool:
+    stripped = name.rstrip("/")
+    return any(path.startswith(stripped + "/") for path in clone_paths)
+
+
+def unsafe_bundle_entry(member: tarfile.TarInfo, clone_paths: Sequence[str]) -> str | None:
+    """Why one archive entry may not travel in a code bundle, or `None`.
+
+    Only regular files and directories; never a link (symbolic or hard),
+    device or FIFO, because unpacking one can point outside the clone. A
+    name is relative, has no `..` component, and lies under a declared
+    clone path (a directory may also be one of their ancestors). The
+    runner (`assets/runner_bootstrap.py`) applies the same rule again,
+    in its own copy, before it unpacks anything.
+    """
+    name = member.name
+    parts = name.split("/")
+    if not name or name.startswith("/") or ".." in parts:
+        return f"{name!r} is absolute or escapes the clone with '..'"
+    if ".git" in parts:
+        return f"{name!r} lies inside a .git directory"
+    if not (member.isfile() or member.isdir()):
+        return f"{name!r} is a link or special file, not a regular file or directory"
+    if member.isdir() and _is_clone_path_ancestor(name, clone_paths):
+        return None
+    if not _covered_by_clone_paths(name.rstrip("/"), clone_paths):
+        return f"{name!r} lies outside the declared clone paths"
+    return None
+
+
+def build_code_bundle(target: Path, commit: str, clone_paths: Sequence[str]) -> bytes:
+    """The bundle's bytes: `git archive` of the declared clone paths at
+    `commit`, every entry checked by `unsafe_bundle_entry()`, gzipped with
+    mtime 0 so regeneration at the same pin is byte-identical.
+
+    `git archive` reads the commit's tree, so an untracked or ignored file
+    in the working tree (a token file, say) never enters it. It does honor
+    the commit's own `.gitattributes` `export-ignore`/`export-subst`, so a
+    target that declares those under a clone path ships what they say.
+    """
+    tar_bytes = _run_git(
+        ["archive", "--format=tar", commit, "--", *clone_paths],
+        cwd=target, text=False,
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as archive:
+        for member in archive.getmembers():
+            why = unsafe_bundle_entry(member, clone_paths)
+            if why is not None:
+                raise JobFolderError(
+                    f"{CODE_BUNDLE_UNSAFE_ENTRY}: generation refuses the code "
+                    f"bundle at {commit}: {why}"
+                )
+    return gzip.compress(tar_bytes, mtime=0)
+
+
+def _bundle_contents(gz_bytes: bytes) -> dict[str, str]:
+    """`{name: sha256}` of every regular file in a tar.gz — the bundle's
+    CODE, independent of tar headers and gzip framing, so a bundle rebuilt
+    by a different git or zlib version compares equal when its files do."""
+    contents: dict[str, str] = {}
+    with tarfile.open(fileobj=io.BytesIO(gz_bytes), mode="r:gz") as archive:
+        for member in archive.getmembers():
+            if member.isfile():
+                data = archive.extractfile(member).read()
+                contents[member.name] = hashlib.sha256(data).hexdigest()
+    return contents
+
+
+def verify_code_bundle(
+    job_dir: Path,
+    run_config: Mapping[str, object],
+    *,
+    target: Path | None = None,
+) -> None:
+    """Refuse a job folder whose bundle file is absent or does not hash to
+    the recorded `codeBundle.sha256` — at `submit`, before any quota. With
+    `target`, the bundle is also rebuilt from the pin and its files compared
+    with the recorded bundle's (`_bundle_contents()`), so a bundle that is
+    not the pin's code — a hand-edited job folder with its sha re-recorded —
+    refuses too, naming the files that differ. Silent for a job that
+    declares no bundle."""
+    block = run_config.get("codeBundle")
+    if block is None:
+        return
+    validate_code_bundle_block(block)
+    path = Path(job_dir) / CODE_BUNDLE_FILENAME
+    if not path.is_file():
+        raise JobFolderError(
+            f"{CODE_BUNDLE_MISMATCH}: {path} is absent, but run-config.json "
+            "declares a code bundle; regenerate the job folder"
+        )
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != block["sha256"]:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_MISMATCH}: {path} hashes to {actual}, but "
+            f"run-config.json records {block['sha256']}; regenerate the job folder"
+        )
+    if target is None:
+        return
+    clone_paths = validate_clone_paths(run_config["clonePaths"], Path(target))
+    try:
+        recorded = _bundle_contents(path.read_bytes())
+    except (tarfile.TarError, OSError, EOFError) as exc:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_MISMATCH}: {path} is not a readable tar.gz: {exc}"
+        ) from exc
+    expected = _bundle_contents(
+        build_code_bundle(Path(target), str(run_config["commit"]), clone_paths)
+    )
+    differing = sorted(
+        name for name in set(recorded) | set(expected)
+        if recorded.get(name) != expected.get(name)
+    )
+    if differing:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_MISMATCH}: {path} is not the code of the pin "
+            f"{run_config['commit']}; these files differ: {differing}. "
+            "Regenerate the job folder."
+        )
 
 
 def _asset_sha256(path: Path) -> str:
@@ -1708,6 +1905,7 @@ def build_run_config(
     environment_index_url: str | None = None,
     local_budget_seconds: int | None = None,
     carry_paths: Sequence[str] | None = None,
+    code_bundle: Mapping[str, object] | None = None,
 ) -> dict:
     """Assemble `run-config.json`'s exact shape from target-supplied values.
 
@@ -1897,6 +2095,8 @@ def build_run_config(
         run_config["localBudget"] = {"seconds": local_budget_seconds}
     if carry_paths:
         run_config["carryPaths"] = list(validate_carry_paths(carry_paths))
+    if code_bundle is not None:
+        run_config["codeBundle"] = dict(code_bundle)
     if has_environment_install:
         install_block: dict = {"requirements": list(environment_requirements)}
         if environment_index_url:
@@ -1991,6 +2191,7 @@ def generate_job(
     local_budget_seconds: int | None = None,
     repo_credential_path: str | Path | None = None,
     carry_paths: Sequence[str] | None = None,
+    code_bundle: bool = False,
 ) -> Path:
     """Generate one job folder, atomically, refusing to overwrite an
     existing one unless `regenerate=True`.
@@ -2079,6 +2280,17 @@ def generate_job(
     token at exactly one expression. Omitted (every pre-S3 caller), every
     condition behaves exactly as before.
 
+    `code_bundle` (`--code-bundle`), when true, ships the declared clone
+    paths inside the job instead of having the runner clone them: only a
+    backend whose adapter declares `CODE_BUNDLE_MAX_BYTES` accepts it
+    (`CODE_BUNDLE_NOT_CARRIED` otherwise, before any git call). The pin is
+    then never asked of the remote — no published-tip default, no
+    `pin-published` probe, the private remote being the reason for the
+    bundle — while every local condition still runs. The bundle is built by
+    `build_code_bundle()` from the pin and refused `CODE_BUNDLE_TOO_LARGE`,
+    naming both sizes, when it would not fit the backend's limit. False
+    (the default), generation is exactly as before.
+
     `service` is validated against BOTH registries together (the
     union-of-registries rule): a service known to either registry is
     legal. An adapter that registers no metadata assembler — a backend
@@ -2087,6 +2299,16 @@ def generate_job(
     invented for it. A name unknown to both registries refuses here, by
     name, before anything is written.
     """
+    # Before anything is read or written: the credential's only consumer is
+    # the `pin-published` probe, which a bundled job skips, so accepting both
+    # would ignore the credential in silence.
+    if code_bundle and repo_credential_path is not None:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_WITH_REPO_CREDENTIAL}: --code-bundle and "
+            "--repo-credential were both given. A bundled job's runner never "
+            "clones, so a repository credential has nothing to authenticate; "
+            "drop --repo-credential (or drop --code-bundle to clone with it)."
+        )
     resolved_target = resolve_target(target)
     destination = resolve_destination(resolved_target, service, job_name)
     # Before the pin is resolved: resolution may already call git with it.
@@ -2123,11 +2345,33 @@ def generate_job(
             where="generation's smoke block",
         )
 
+    bundle_limit: int | None = None
+    if code_bundle:
+        try:
+            ADAPTER.resolve(service)
+        except KeyError:
+            raise JobFolderError(
+                f"generation refuses: --code-bundle was given, but no adapter is "
+                f"registered under {service!r}; register the service's own module "
+                "under scripts/adapters/ before generating a job for it"
+            ) from None
+        bundle_limit = code_bundle_limit(service)
+        if bundle_limit is None:
+            raise JobFolderError(
+                f"{CODE_BUNDLE_NOT_CARRIED}: --code-bundle was given, but the "
+                f"{service!r} backend does not declare CODE_BUNDLE_MAX_BYTES, so "
+                "it cannot ship a code bundle with its job; omit --code-bundle "
+                "(the runner then clones the declared remote)"
+            )
+
     entry_modules = [name for name in (run_module, smoke_module) if name]
     entry_notebooks = [nb for nb in (run_notebook, smoke_notebook) if nb]
     clone_paths = with_entry_notebooks(clone_paths, entry_notebooks)
 
-    commit = _resolve_pin(resolved_target, commit, repo_url=repo_url,
+    # A bundled job never asks the remote anything: the published-tip
+    # default is skipped (HEAD stands), like the `pin-published` probe.
+    commit = _resolve_pin(resolved_target, commit,
+                          repo_url=None if code_bundle else repo_url,
                           repo_ref=repo_ref, clone_paths=clone_paths)
     verify_pin_preconditions(
         target=resolved_target,
@@ -2141,6 +2385,7 @@ def generate_job(
         # credential-conditional behavior `submit`'s gate does; `None`
         # (every pre-S3 caller) is byte-identical to today.
         repo_credential_path=repo_credential_path,
+        code_bundle=code_bundle,
     )
 
     clone_resolution = resolve_clone_paths(
@@ -2183,6 +2428,26 @@ def generate_job(
             "which never waives this refusal): "
             f"{clone_resolution['unresolvedReads']}"
         )
+
+    bundle_bytes: bytes | None = None
+    bundle_block: dict | None = None
+    if code_bundle:
+        bundle_bytes = build_code_bundle(
+            resolved_target, commit, validate_clone_paths(clone_paths, resolved_target)
+        )
+        if len(bundle_bytes) > bundle_limit:
+            raise JobFolderError(
+                f"{CODE_BUNDLE_TOO_LARGE}: the code bundle of {list(clone_paths)} "
+                f"at {commit} is {len(bundle_bytes)} bytes compressed; the "
+                f"{service!r} backend carries at most {bundle_limit} bytes "
+                "(CODE_BUNDLE_MAX_BYTES). Declare fewer or smaller clone paths."
+            )
+        bundle_block = {
+            "file": CODE_BUNDLE_FILENAME,
+            "format": CODE_BUNDLE_FORMAT,
+            "sha256": hashlib.sha256(bundle_bytes).hexdigest(),
+            "bytes": len(bundle_bytes),
+        }
 
     resolved_bootstrap = Path(bootstrap_asset) if bootstrap_asset else DEFAULT_BOOTSTRAP_ASSET
     resolved_invoke = Path(invoke_asset) if invoke_asset else DEFAULT_INVOKE_ASSET
@@ -2230,6 +2495,7 @@ def generate_job(
         environment_index_url=environment_index_url,
         local_budget_seconds=local_budget_seconds,
         carry_paths=carry_paths,
+        code_bundle=bundle_block,
     )
     notebook = build_notebook(resolved_bootstrap, resolved_invoke)
 
@@ -2283,6 +2549,8 @@ def generate_job(
         if metadata_file is not None:
             metadata_name, metadata_text = metadata_file
             (partial / metadata_name).write_text(metadata_text, encoding="utf-8")
+        if bundle_bytes is not None:
+            (partial / CODE_BUNDLE_FILENAME).write_bytes(bundle_bytes)
     except BaseException:
         _rmtree(partial)
         raise
@@ -2463,6 +2731,7 @@ def _run_git(
     cwd: str | Path,
     timeout: float = GIT_TIMEOUT_SECONDS,
     extra_env: Mapping[str, str] | None = None,
+    text: bool = True,
 ) -> subprocess.CompletedProcess:
     """The single composition point for every git invocation this module
     makes. `shell=False` with a list argv means a value carrying shell
@@ -2517,7 +2786,7 @@ def _run_git(
             env=env,
             stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            text=text,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
@@ -2525,8 +2794,9 @@ def _run_git(
     except OSError as exc:
         raise JobFolderError(f"could not run git: {exc}") from exc
     if result.returncode != 0:
+        stderr = result.stderr if text else result.stderr.decode("utf-8", "replace")
         raise JobFolderError(
-            f"git {' '.join(args)} exited {result.returncode}: {result.stderr.strip()}"
+            f"git {' '.join(args)} exited {result.returncode}: {stderr.strip()}"
         )
     return result
 
@@ -3462,6 +3732,7 @@ def verify_pin_preconditions(
     decision: str,
     notebooks: Sequence[str] = (),
     repo_credential_path: str | Path | None = None,
+    code_bundle: bool = False,
 ) -> None:
     """The one home for every condition a pin must satisfy before anything
     irreversible happens, and the ONLY thing either decision point calls.
@@ -3507,6 +3778,14 @@ def verify_pin_preconditions(
     ignores it unless it is `_refuse_unpublished_pin`), so the credential
     travels on the same path as every other input and there is exactly
     one place (`_verify_commit_reachable`) that interprets it.
+
+    `code_bundle` (true for a job that ships its code as a bundle) skips
+    exactly one condition, `pin-published`: the runner never clones, so
+    whether the remote can serve the pin is not a question the job asks,
+    and for a private remote an anonymous probe could only refuse. Every
+    LOCAL condition still runs, in order, so the pin must still exist
+    locally, be HEAD (or unchanged from it under the clone paths) and be
+    clean. No credential is read on this path.
     """
     validate_commit_shape(commit, source=f"{decision}")
     resolved_target = resolve_target(target)
@@ -3515,6 +3794,8 @@ def verify_pin_preconditions(
         validate_notebook_path(notebook, where=decision) for notebook in notebooks
     )
     for condition in PIN_CONDITIONS:
+        if code_bundle and condition == "pin-published":
+            continue
         _PIN_CONDITION_CHECKS[condition](
             target=resolved_target,
             commit=commit,

@@ -68,7 +68,9 @@ own `selftest`, not by a version stated here and enforced nowhere:
 """
 from __future__ import annotations
 
+import base64
 import csv
+import hashlib
 import importlib.util
 import io
 import json
@@ -525,6 +527,23 @@ CARRY_ALTERNATE_SUFFIX = "-carry"
 # puts it there; see `_run_config_cell()` below.
 RUN_CONFIG_FILENAME = "run-config.json"
 
+# The code bundle (`generate-job --code-bundle`), duplicated by name for the
+# same reason as `RUN_CONFIG_FILENAME`: this module does not import
+# `jobfolder.py`. A kernel has no way to be handed a repository credential,
+# so a private repository's pinned code travels INSIDE the pushed notebook:
+# `submit()` stages one more cell that writes the bundle's bytes (base64)
+# beside `run-config.json`, and `runner_bootstrap.py` unpacks it instead of
+# cloning.
+CODE_BUNDLE_FILENAME = "code-bundle.tar.gz"
+
+# The bound on a bundle's COMPRESSED bytes this adapter will carry. The
+# service documents no size limit for a pushed notebook's source (searched
+# 2026-10-28: neither the API's own documentation nor its release notes
+# state one), so this is a conservative choice, not a published number:
+# 768 KiB of gzip becomes ~1 MiB of base64 in the cell, a few times the
+# 236,855 bytes the target that motivated this measured at its pin.
+KAGGLE_CODE_BUNDLE_MAX_BYTES = 768 * 1024
+
 # The seam's own five-value vocabulary a raw Kaggle status is translated
 # into — never passed through. Anything Kaggle reports that is not a key
 # here (a cancellation state, a future addition to Kaggle's own vocabulary,
@@ -751,6 +770,56 @@ def _run_config_notebook_cell(run_config_text: str) -> dict:
     }
 
 
+def _code_bundle_cell(bundle: bytes) -> dict:
+    """One cell that writes the code bundle's bytes to `code-bundle.tar.gz`
+    in the kernel's working directory — relative, for the same reason as
+    the run-config cell. Base64 inside a `repr`'d literal keeps arbitrary
+    bytes one safe Python string."""
+    encoded = base64.b64encode(bundle).decode("ascii")
+    source = (
+        "import base64\nfrom pathlib import Path\n\n"
+        f"Path({CODE_BUNDLE_FILENAME!r}).write_bytes(base64.b64decode({encoded!r}))\n"
+    )
+    return {
+        "cell_type": "code",
+        "metadata": {},
+        "execution_count": None,
+        "outputs": [],
+        "source": source.splitlines(keepends=True),
+    }
+
+
+def _read_declared_code_bundle(job_dir: Path, run_config_text: str) -> bytes | None:
+    """The bundle bytes a job folder's `run-config.json` declares, checked
+    against its recorded sha256 before anything is pushed; `None` for a job
+    that declares none. Refuses an absent or mismatched file: a push without
+    the code would only fail inside the kernel, after quota was spent."""
+    try:
+        block = json.loads(run_config_text).get("codeBundle")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if block is None:
+        return None
+    path = job_dir / CODE_BUNDLE_FILENAME
+    if not isinstance(block, Mapping) or block.get("file") != CODE_BUNDLE_FILENAME:
+        raise KaggleAdapterError(
+            f"run-config.json's codeBundle does not name {CODE_BUNDLE_FILENAME!r}: "
+            "refusing to push"
+        )
+    if not path.is_file():
+        raise KaggleAdapterError(
+            f"CODE_BUNDLE_MISMATCH: {path} is absent but run-config.json "
+            "declares a code bundle: refusing to push a kernel with no code"
+        )
+    bundle = path.read_bytes()
+    if hashlib.sha256(bundle).hexdigest() != block.get("sha256"):
+        raise KaggleAdapterError(
+            f"CODE_BUNDLE_MISMATCH: {path} does not hash to run-config.json's "
+            "codeBundle.sha256: refusing to push"
+        )
+    return bundle
+
+
 def _stage_run_config_cell(notebook_path: Path, run_config_text: str) -> None:
     """Prepend the injected cell to the notebook at `notebook_path` — a
     file inside the STAGED copy `submit()` builds, never the job folder's
@@ -794,6 +863,12 @@ class KaggleAdapter(ADAPTER.Adapter):
     # what keeps this module's own `workers()` and `credentials.py`'s
     # `materialize()` pointed at the exact same script.
     CREDENTIAL_CLI = DEFAULT_ACCOUNTS_CLI
+
+    # The optional seam capability (`adapter.py`): this backend ships a
+    # code bundle inside the pushed notebook, up to this many compressed
+    # bytes. See `KAGGLE_CODE_BUNDLE_MAX_BYTES` for where the number comes
+    # from.
+    CODE_BUNDLE_MAX_BYTES = KAGGLE_CODE_BUNDLE_MAX_BYTES
 
     @classmethod
     def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
@@ -1259,10 +1334,18 @@ class KaggleAdapter(ADAPTER.Adapter):
                     merged = json.loads(run_config_text)
                     merged.update(dict(job.run_config))
                     run_config_text = json.dumps(merged)
+                bundle = _read_declared_code_bundle(
+                    job.entrypoint.parent, run_config_text
+                )
                 _stage_run_config_cell(
                     staging_path / job.entrypoint.name,
                     run_config_text,
                 )
+                if bundle is not None:
+                    staged = staging_path / job.entrypoint.name
+                    notebook = json.loads(staged.read_text(encoding="utf-8"))
+                    notebook["cells"].insert(0, _code_bundle_cell(bundle))
+                    staged.write_text(json.dumps(notebook, indent=1), encoding="utf-8")
 
             self._push(staging_path, handle)
 

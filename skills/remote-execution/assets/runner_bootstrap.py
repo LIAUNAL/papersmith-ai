@@ -13,7 +13,10 @@ never baked in at generation time. Ten responsibilities, in order:
    beside this cell (`git-askpass.sh`, S3), every clone call carries
    `GIT_ASKPASS` pointing at it, a non-`https://` `repo.url` refuses
    before the first git call, and both material files are deleted in a
-   `finally` immediately after the clone attempt
+   `finally` immediately after the clone attempt. When `run-config.json`
+   declares a `codeBundle`, the job carried its pinned code with it:
+   `unpack_code_bundle()` verifies the bundle's sha256 and unpacks it
+   into the same clone directory instead, with no git call at all
 3. `sys.path.insert(0, <clone>/src)`
 4. install the declared build: `sys.executable -m pip install`, list
    argv, against `run-config.json`'s additive `environment.install`
@@ -74,11 +77,13 @@ Run with any Python 3.10+ (stdlib-only):
 """
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -125,6 +130,13 @@ GIT_TIMEOUT_SECONDS = 120.0
 # targets accepts the token as the username with any password.
 REPO_CREDENTIAL_ASKPASS_FILENAME = "git-askpass.sh"
 REPO_CREDENTIAL_TOKEN_FILENAME = "git-askpass-token"
+
+# The code bundle a job may carry instead of cloning (`generate-job
+# --code-bundle`): staged beside `run-config.json` under this one name and
+# recorded there as `codeBundle: {file, format, sha256, bytes}`. The name
+# is duplicated by convention in the generator and the backend that ships
+# it, never shared by import, for the same reason as the names above.
+CODE_BUNDLE_FILENAME = "code-bundle.tar.gz"
 
 
 def _config_path(base_dir: str | Path | None) -> Path:
@@ -311,6 +323,130 @@ def clone_repo(
                         f"{material}: {exc}"
                     )
     return clone_dir
+
+
+def _bundle_entry_refusal(member: tarfile.TarInfo, clone_paths: Sequence[str]) -> str | None:
+    """Why one archive entry may not be unpacked, or `None`: only regular
+    files and directories, relative names with no `..`, under a declared
+    clone path (a directory may also be one of their ancestors). The same
+    rule the generator applied, held again here because this cell unpacks
+    whatever bytes it was actually handed."""
+    name = member.name
+    parts = name.split("/")
+    if not name or name.startswith("/") or ".." in parts:
+        return f"{name!r} is absolute or escapes the clone with '..'"
+    if ".git" in parts:
+        return f"{name!r} lies inside a .git directory"
+    if not (member.isfile() or member.isdir()):
+        return f"{name!r} is a link or special file"
+    stripped = name.rstrip("/")
+    under = any(stripped == path or stripped.startswith(path.rstrip("/") + "/")
+                for path in clone_paths)
+    ancestor = member.isdir() and any(
+        path.startswith(stripped + "/") for path in clone_paths)
+    if not (under or ancestor):
+        return f"{name!r} lies outside the declared clone paths"
+    return None
+
+
+def unpack_code_bundle(
+    run_config: Mapping[str, Any], base_dir: str | Path, clone_dir: str | Path
+) -> Path:
+    """Unpack the job's own code bundle into `clone_dir` — responsibility
+    2's other form, for a job that carried its pinned code instead of
+    cloning it. The bundle's sha256 is checked against `codeBundle.sha256`
+    BEFORE a byte is unpacked (`CODE_BUNDLE_MISMATCH` otherwise), and every
+    entry is checked before any is written (`CODE_BUNDLE_UNSAFE_ENTRY`):
+    nothing absolute, nothing with `..`, no link or special file, nothing
+    outside the declared clone paths, nothing inside a `.git` directory,
+    and nothing that resolves outside `clone_dir`. Files are written one by
+    one from their own bytes, never through `extractall`. No git call, no
+    network, no credential.
+
+    After a verified unpack it writes `<clone>/.git/HEAD` holding the pinned
+    commit and nothing else: the shape of the detached checkout a clone
+    leaves, so a notebook's own repository-root cell
+    (`notebook_repo_root.py`), which reads that file to prove the root is
+    at `FORGE_CLONE_COMMIT`, resolves a bundled clone exactly as it
+    resolves a cloned one — and still refuses one at any other commit.
+    """
+    block = run_config.get("codeBundle")
+    if not isinstance(block, Mapping) or block.get("file") != CODE_BUNDLE_FILENAME:
+        raise BootstrapError(
+            f"CODE_BUNDLE_MISMATCH: run-config.json's codeBundle must name "
+            f"{CODE_BUNDLE_FILENAME!r}"
+        )
+    path = Path(base_dir) / CODE_BUNDLE_FILENAME
+    if not path.is_file():
+        raise BootstrapError(
+            f"CODE_BUNDLE_MISMATCH: {path} does not exist, but run-config.json "
+            "declares a code bundle"
+        )
+    data = path.read_bytes()
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != block.get("sha256"):
+        raise BootstrapError(
+            f"CODE_BUNDLE_MISMATCH: {path} hashes to {actual}, but "
+            f"run-config.json records {block.get('sha256')!r}; refusing to unpack"
+        )
+    clone_paths = list(run_config["clonePaths"])
+    commit = str(run_config.get("commit", ""))
+    if len(commit) not in (40, 64) or any(c not in "0123456789abcdef" for c in commit):
+        raise BootstrapError(
+            f"CODE_BUNDLE_MISMATCH: run-config.json's commit {commit!r} is not a "
+            "full lowercase object name; refusing to unpack"
+        )
+    clone_root = Path(clone_dir).resolve()
+    try:
+        archive = tarfile.open(path, mode="r:gz")
+    except (tarfile.TarError, OSError) as exc:
+        raise BootstrapError(f"CODE_BUNDLE_MISMATCH: {path} is not a tar.gz: {exc}") from exc
+    with archive:
+        members = archive.getmembers()
+        for member in members:
+            why = _bundle_entry_refusal(member, clone_paths)
+            if why is None:
+                destination = (clone_root / member.name).resolve()
+                if destination != clone_root and clone_root not in destination.parents:
+                    why = f"{member.name!r} resolves outside the clone directory"
+            if why is not None:
+                raise BootstrapError(f"CODE_BUNDLE_UNSAFE_ENTRY: {why}; refusing to unpack")
+        clone_root.mkdir(parents=True, exist_ok=True)
+        for member in members:
+            destination = clone_root / member.name
+            if member.isdir():
+                destination.mkdir(parents=True, exist_ok=True)
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise BootstrapError(f"CODE_BUNDLE_UNSAFE_ENTRY: {member.name!r} has no data")
+            destination.write_bytes(source.read())
+    git_dir = clone_root / ".git"
+    git_dir.mkdir(exist_ok=True)
+    (git_dir / "HEAD").write_text(commit + "\n", encoding="utf-8")
+    return Path(clone_dir)
+
+
+def materialize_code(run_config: Mapping[str, Any], base: Path) -> Path:
+    """The pinned code, in `<base>/clone`: unpacked from the job's own code
+    bundle when `run-config.json` declares one, cloned otherwise (with the
+    staged askpass when there is one). Either way `bootstrap.json` and the
+    run record the same `run-config.json` `commit`."""
+    if run_config.get("codeBundle") is not None:
+        return unpack_code_bundle(run_config, base, base / CLONE_DIRNAME)
+    # S3/D6: the credential material is discovered by NAME at the
+    # session-dir convention — `exec -f` has no argv/env channel, so
+    # nothing can be injected through a process environment. Inert on
+    # every credentialless run: a run-config with no staged askpass
+    # beside it passes `None` and behaves exactly as before this
+    # existed.
+    askpass = base / REPO_CREDENTIAL_ASKPASS_FILENAME
+    return clone_repo(
+        run_config,
+        base / CLONE_DIRNAME,
+        askpass=askpass if askpass.is_file() else None,
+    )
 
 
 def add_clone_to_path(clone_dir: str | Path) -> Path:
@@ -793,18 +929,7 @@ def bootstrap(
     base = Path(base_dir) if base_dir is not None else Path.cwd()
     try:
         run_config = load_run_config(base)
-        # S3/D6: the credential material is discovered by NAME at the
-        # session-dir convention — `exec -f` has no argv/env channel, so
-        # nothing can be injected through a process environment. Inert on
-        # every credentialless run: a run-config with no staged askpass
-        # beside it passes `None` and behaves exactly as before this
-        # existed.
-        askpass = base / REPO_CREDENTIAL_ASKPASS_FILENAME
-        clone_dir = clone_repo(
-            run_config,
-            base / CLONE_DIRNAME,
-            askpass=askpass if askpass.is_file() else None,
-        )
+        clone_dir = materialize_code(run_config, base)
         src_dir = add_clone_to_path(clone_dir)
         install_environment(run_config)
         modules = declared_modules(run_config)

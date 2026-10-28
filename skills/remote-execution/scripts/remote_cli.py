@@ -956,6 +956,14 @@ def _gate_job_folder_pin(
         # S3: the submit-time probe meets the same credential-conditional
         # behavior generation's does; `None` (no flag) is unchanged.
         repo_credential_path=repo_credential_path,
+        # A job that ships its code as a bundle never has the runner clone,
+        # so the one network condition (`pin-published`) is skipped and
+        # the bundle file itself is checked against its recorded sha256
+        # instead, still before anything is uploaded.
+        code_bundle="codeBundle" in run_config,
+    )
+    JOBFOLDER.verify_code_bundle(
+        job_folder.path, run_config, target=_target_for_job_dir(job_folder.path)
     )
 
 
@@ -3608,6 +3616,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "remaining, the earlier output is attached and these paths are "
         "restored before the entrypoint runs. Omitted, nothing is carried.",
     )
+    generate_job.add_argument(
+        "--code-bundle", dest="code_bundle", action="store_true", default=False,
+        help="ship the declared clone paths (and the run/smoke notebook) "
+        "inside the job instead of having the runner clone them: for a "
+        "private repository on a service with no way to give the runner a "
+        "repository credential. The paths are taken from the pinned commit "
+        "with git archive (never the working tree), gzipped into "
+        "code-bundle.tar.gz beside run-config.json, and recorded as "
+        "codeBundle {file, format, sha256, bytes}; the runner verifies the "
+        "sha256 and unpacks instead of cloning. The remote is never asked "
+        "(no reachability probe, no credential), every local pin condition "
+        "still applies. Only services whose adapter declares "
+        "CODE_BUNDLE_MAX_BYTES accept it (CODE_BUNDLE_NOT_CARRIED "
+        "otherwise), and a bundle over that limit refuses "
+        "CODE_BUNDLE_TOO_LARGE. Omitted, the job clones as before.",
+    )
 
     smoke = subparsers.add_parser(
         "smoke", help="smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict"
@@ -3667,7 +3691,9 @@ OBJECTIVE_FLOW = {
                         "clones",
          "behindWhen": "`generate-job` wrote the folder -- it proves the pin "
                        "against the remote before writing a byte, so a folder "
-                       "that exists is a pin that was published"},
+                       "that exists is a pin that was published, or, with "
+                       "`--code-bundle`, a pin whose code travels inside the "
+                       "job and is never cloned"},
         {"stage": "wire",
          "establishes": "that this worker, at this pin, carries current -- the "
                         "cheapest possible answer, paid in minutes rather than "
@@ -4002,6 +4028,13 @@ def main(argv: list[str] | None = None) -> int:
         # actually given, so the credentialless path keeps its existing
         # registry semantics exactly (a service known only to the metadata
         # registry still generates, as before).
+        if args.repo_credential is not None and args.code_bundle:
+            return _refused(JOBFOLDER.JobFolderError(
+                f"{JOBFOLDER.CODE_BUNDLE_WITH_REPO_CREDENTIAL}: --code-bundle and "
+                "--repo-credential were both given. A bundled job's runner never "
+                "clones, so a repository credential has nothing to authenticate; "
+                "drop --repo-credential (or drop --code-bundle to clone with it)."
+            ))
         if args.repo_credential is not None:
             try:
                 adapter_cls = ADAPTER.resolve(args.service)
@@ -4039,6 +4072,7 @@ def main(argv: list[str] | None = None) -> int:
                 environment_index_url=args.environment_index_url,
                 local_budget_seconds=args.local_budget_seconds,
                 carry_paths=args.carry_paths,
+                code_bundle=args.code_bundle,
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)
@@ -4069,6 +4103,8 @@ def main(argv: list[str] | None = None) -> int:
                         args.target, args.commit, job_folder.run_config["commit"]),
                     **({"warnings": warnings}
                        if (warnings := JOBFOLDER.smoke_warnings(job_folder.run_config)) else {}),
+                    **({"codeBundle": dict(job_folder.run_config["codeBundle"])}
+                       if "codeBundle" in job_folder.run_config else {}),
                 },
                 sort_keys=True,
                 # `default=str`: `staleness` is the exact sub-dict `status`
