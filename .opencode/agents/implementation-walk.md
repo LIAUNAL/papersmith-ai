@@ -132,8 +132,13 @@ account. After a cut session, run `fetch` (it keeps the partial result), then
 `remaining`, and send again only the units it lists. A checkpoint reaches the
 next session as follows: on a kernel service, the previous kernel's output
 attached to the next kernel through `kernel_sources` and read under its input
-root at `notebooks/<owner>/<slug>/` (checked on a live account on 2026-10-27;
-papersmith does not attach it for you yet); on Colab, uploaded into the new
+root at `notebooks/<owner>/<slug>/` (checked on a live account on 2026-10-27).
+papersmith attaches it automatically for the paths the job declares with
+`generate-job --carry-path`: `submit` places the continuation on the account
+that produced the checkpoint (`--no-carry` starts it fresh instead), and the
+runner restores those paths before the entrypoint and exports
+`FORGE_CARRY_IN`, so the target code is unchanged. On Colab nothing is carried
+automatically (`carry: unsupported`); upload the checkpoint into the new
 session. The details live in
 `skills/remote-execution/SKILL.md`, **Sessions, checkpoints and
 resume**, and `skills/remote-parallelism/SKILL.md`.
