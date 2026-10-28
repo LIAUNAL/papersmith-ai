@@ -2015,13 +2015,22 @@ nothing), or whose `errored` event names bytes kept under
    row reports `carry: unsupported`; upload the checkpoint into the new
    session yourself.
 
-A single send (no `--unit`) and the legacy shape carry nothing. A
-continuation on the same slot of the same account would reuse the earlier
-kernel's ref and name itself as its own source, which was never verified
-live; Kaggle pushes it to the alternate kernel `<slug>-carry` instead
-(`CARRY_ALTERNATE_SUFFIX`), which names the earlier one, and the next
-continuation comes back to `<slug>` -- two kernels taking turns, the shape
-the live check verified.
+A single send (no `--unit`) and the legacy shape carry nothing.
+
+**No push replaces an output a continuation reads.** `submit` hands every
+job of a job declaring carry paths -- every share of a campaign, a single
+send, a rehearsal -- `run_config["carryProtected"]`: the ref of every
+submission whose output a unit still waits to continue from, read from the
+main ledger whether or not this invocation sends that unit. Kaggle never
+pushes to a protected ref, nor to one the job itself carries from: the push
+goes to the first alternate kernel not protected, deterministically
+`<slug>-carry`, then `<slug>-carry-2`, ... (`CARRY_ALTERNATE_SUFFIX`,
+`kernel_ref()` in `adapters/kaggle.py`). So a fresh share never overwrites
+the kernel another share of its campaign mounts, two continuations never
+push each other's source, a later fresh-only campaign leaves a pending
+continuation's source intact, and a kernel never names itself in
+`kernel_sources` (never verified live). A carry path that names the product
+folder itself (`.`) is refused like one that escapes it.
 
 ## Ledger data location
 

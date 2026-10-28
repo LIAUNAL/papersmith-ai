@@ -29,9 +29,15 @@ number is `0`, breaking changes can still arrive without a major bump.
   fresh. The `submitted` event records `carriedFrom`, and each submission in
   `submit`'s output reports `carry` (`attached`, `unsupported`, `fresh`). A
   job that declares no carry paths behaves exactly as before.
-- A continuation on the same Kaggle slot is pushed to the alternate kernel
-  `<slug>-carry` (and the next one back to `<slug>`), so a kernel never names
-  itself as its own source; that case was never verified live.
+- No push replaces an output a continuation still reads. Every job of a job
+  declaring carry paths (each campaign share, a single send, a rehearsal)
+  is handed the refs pending continuations read from, and Kaggle pushes to
+  the first alternate kernel not among them (`<slug>-carry`,
+  `<slug>-carry-2`, ...) instead: a fresh share never overwrites the kernel
+  another share of its campaign mounts, two continuations never push each
+  other's source, a later campaign of fresh units leaves pending sources
+  intact, and a kernel never names itself as its own source. `--carry-path
+  .` is refused.
 - `distribute` and `submit` place a continuation unit on the worker that
   produced its checkpoint when that worker is in the pool (it waits
   `unplaced` when that worker is full). One whose worker is not in the pool

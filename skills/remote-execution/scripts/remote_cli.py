@@ -1228,6 +1228,35 @@ def _carry_source(adapter: "ADAPTER.Adapter", submission_id: str) -> dict | None
     return {"submissionId": submission_id, "ref": ref, "mount": mount}
 
 
+def _main_ledger_evidence(
+    target: Path, product: str, relative_entrypoint: "str | Path", digest: str,
+) -> dict[str, dict]:
+    """`_carry_evidence()` over the MAIN ledger, whatever ledger this
+    invocation records into: a rehearsal (`--smoke`) pushes the same kernel
+    a real run does, so it must avoid the refs real continuations read."""
+    return _carry_evidence(
+        target=target, product=product,
+        relative_entrypoint=str(relative_entrypoint), live_digest=digest,
+        ledger_lines=_read_ledger_lines(_main_ledger_path(target, product)),
+    )
+
+
+def _carry_protected(adapter: "ADAPTER.Adapter", evidence: Mapping[str, dict]) -> list[str]:
+    """Every ref some continuation still reads from: the `carry_source()`
+    ref of each submission that left a unit to be continued, whether or not
+    this campaign sends that unit (kernel-carry B1). Handed to every job as
+    `run_config["carryProtected"]` so no push -- a fresh share's, another
+    share's, a later fresh-only campaign's -- replaces an output a
+    continuation is about to read. Sorted, so a job is deterministic; empty
+    when nothing is pending or the backend carries nothing."""
+    refs: set[str] = set()
+    for submitted in evidence.values():
+        source = _carry_source(adapter, str(submitted.get("submissionId")))
+        if source is not None:
+            refs.add(source["ref"])
+    return sorted(refs)
+
+
 def _plan_share_carry(
     *,
     adapter: "ADAPTER.Adapter",
@@ -1566,6 +1595,10 @@ def cmd_submit(
             live_digest=digest,
             affinity=_carry_affinity(evidence, units) or None,
         )
+        protected = _carry_protected(adapter, {
+            **_main_ledger_evidence(target, resolved_product, relative_entrypoint, digest),
+            **evidence,
+        }) if carry_paths else []
 
         if not smoke and pin_commit is not None:
             _verify_campaign_readiness(
@@ -1632,6 +1665,8 @@ def cmd_submit(
                 planned = share_carry[(row.plan.worker, index)]
                 if planned and planned[0] == "attached":
                     run_config["carry"] = [dict(source) for source in planned[1]]
+                if protected:
+                    run_config["carryProtected"] = list(protected)
                 job = ADAPTER.Job(
                     entrypoint=resolved_entrypoint,
                     run_config=run_config,
@@ -1719,6 +1754,14 @@ def cmd_submit(
 
     run_config = {"mode": "smoke"} if smoke else {}
     run_config = {**run_config, **session_config}
+    # A single send carries nothing, but it must not push over an output a
+    # pending continuation still reads either (kernel-carry B1).
+    if _declared_carry_paths(resolved_entrypoint):
+        protected = _carry_protected(adapter, _main_ledger_evidence(
+            target, resolved_product, relative_entrypoint, digest,
+        ))
+        if protected:
+            run_config["carryProtected"] = protected
     job = ADAPTER.Job(entrypoint=resolved_entrypoint, run_config=run_config, worker=worker)
     submission = adapter.submit(job)
 

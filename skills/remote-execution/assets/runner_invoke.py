@@ -167,7 +167,7 @@ def _carry_relative(raw: Any) -> Path | None:
     if not isinstance(raw, str) or not raw.strip():
         return None
     candidate = Path(raw)
-    if candidate.is_absolute() or ".." in candidate.parts:
+    if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts:
         return None
     return candidate
 

@@ -561,6 +561,68 @@ def _kernel_slug(entrypoint: Path) -> str:
     return _slugify(entrypoint.stem)
 
 
+def kernel_ref(
+    *,
+    worker: str,
+    title: str | None,
+    entrypoint: Path,
+    run_config: Mapping[str, object],
+) -> tuple[str, str | None, list[str]]:
+    """The `<worker>/<slug>` ref a push goes to, the title that yields it,
+    and the earlier kernel refs it carries from -- `(ref, title, carried)`.
+
+    A campaign sends one job per granted slot (S1, parallel campaigns):
+    slot 2 and up of the same job on the same account is its OWN kernel
+    (`-slot-<n>`), or the second push would overwrite the first under one
+    ref; slot 1 keeps the ref it always had. The title carries the suffix
+    too, since the service derives a new kernel's slug from its title.
+
+    kernel-carry: a push never goes to a PROTECTED ref -- one this job
+    carries from (`run_config["carry"]`), or one any other share of the
+    same campaign carries from, or one pending continuation evidence still
+    points to (`run_config["carryProtected"]`, computed by `submit` over
+    the whole ledger). A new version of such a kernel may replace the very
+    output a continuation is about to read, and a kernel naming itself as
+    its own source was never verified live. The push then goes to the
+    first alternate not protected, deterministically: `<slug>-carry`,
+    `<slug>-carry-2`, `<slug>-carry-3`, ... A job with neither key keeps
+    exactly the ref it had before this existed.
+    """
+    slot = run_config.get("slot")
+    if isinstance(slot, int) and not isinstance(slot, bool) and slot > 1:
+        if title:
+            title = f"{title}-slot-{slot}"
+            slug = _slugify(title)
+        else:
+            slug = f"{_kernel_slug(entrypoint)}-slot-{slot}"
+    else:
+        slug = _slugify(title) if title else _kernel_slug(entrypoint)
+    carried = [
+        str(row["ref"]) for row in run_config.get("carry") or ()
+        if isinstance(row, Mapping) and row.get("ref")
+    ]
+    protected = set(carried) | {
+        str(ref) for ref in run_config.get("carryProtected") or () if ref
+    }
+    if f"{worker}/{slug}" in protected:
+        base_title, base_slug = title, slug
+        attempt = 1
+        while True:
+            suffix = (
+                CARRY_ALTERNATE_SUFFIX if attempt == 1
+                else f"{CARRY_ALTERNATE_SUFFIX}-{attempt}"
+            )
+            if base_title:
+                title = f"{base_title}{suffix}"
+                slug = _slugify(title)
+            else:
+                slug = f"{base_slug}{suffix}"
+            if f"{worker}/{slug}" not in protected:
+                break
+            attempt += 1
+    return f"{worker}/{slug}", title, carried
+
+
 def assemble_metadata(run_config: Mapping[str, object]) -> tuple[str, str]:
     """Build the `kernel-metadata.json` a generated job folder ships beside
     its runner notebook, so `kernels push -p <dir>` both accepts the push
@@ -1170,47 +1232,18 @@ class KaggleAdapter(ADAPTER.Adapter):
             # the former is this defect.
             template.setdefault("machine_shape", KAGGLE_MACHINE_SHAPE)
 
-            title = template.get("title")
-            # A campaign sends one job per granted slot (S1, parallel
-            # campaigns): slot 2 and up of the same job on the same account
-            # must be its OWN kernel, or the second push would overwrite the
-            # first under one ref. Slot 1 (no `slot` key) keeps the ref it
-            # always had. The title carries the suffix too, since the
-            # service derives a new kernel's slug from its title.
-            slot = job.run_config.get("slot")
-            if isinstance(slot, int) and not isinstance(slot, bool) and slot > 1:
-                if title:
-                    title = f"{title}-slot-{slot}"
-                    template["title"] = title
-                    slug = _slugify(title)
-                else:
-                    slug = f"{_kernel_slug(job.entrypoint)}-slot-{slot}"
-            else:
-                slug = _slugify(title) if title else _kernel_slug(job.entrypoint)
+            ref, title, carried = kernel_ref(
+                worker=job.worker, title=template.get("title"),
+                entrypoint=job.entrypoint, run_config=job.run_config,
+            )
+            if title:
+                template["title"] = title
+            template["id"] = ref
+            template["code_file"] = job.entrypoint.name
             # kernel-carry S2: a continuation names each earlier kernel whose
             # output it resumes from, so the service mounts that output
             # under `KERNEL_INPUT_ROOT`. Added only when `submit` handed a
             # `carry` list; a job without one is staged exactly as before.
-            carried = [
-                str(row["ref"]) for row in job.run_config.get("carry") or ()
-                if isinstance(row, Mapping) and row.get("ref")
-            ]
-            if f"{job.worker}/{slug}" in carried:
-                # A kernel naming ITSELF as its own source was never verified
-                # live, and a new version may replace the very output it
-                # would read. The continuation goes to the alternate kernel
-                # instead (`<slug>-carry`), which names the earlier one -- the
-                # two-kernel shape the live check did verify -- and the next
-                # continuation, carrying from the alternate, comes back here.
-                if title:
-                    title = f"{title}{CARRY_ALTERNATE_SUFFIX}"
-                    template["title"] = title
-                    slug = _slugify(title)
-                else:
-                    slug = f"{slug}{CARRY_ALTERNATE_SUFFIX}"
-            ref = f"{job.worker}/{slug}"
-            template["id"] = ref
-            template["code_file"] = job.entrypoint.name
             if carried:
                 sources = list(template.get("kernel_sources") or [])
                 sources.extend(ref_ for ref_ in carried if ref_ not in sources)

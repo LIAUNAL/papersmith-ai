@@ -282,6 +282,11 @@ def validate_carry_paths(carry_paths: Sequence[str]) -> tuple[str, ...]:
             raise JobFolderError(f"refusing absolute carry path {raw!r}")
         if ".." in candidate.parts:
             raise JobFolderError(f"refusing carry path {raw!r}: contains '..'")
+        if not candidate.parts:
+            raise JobFolderError(
+                f"refusing carry path {raw!r}: names the product folder itself, "
+                "not a path inside it"
+            )
         validated.append(candidate.as_posix())
     return tuple(validated)
 
