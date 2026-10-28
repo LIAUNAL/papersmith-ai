@@ -107,7 +107,7 @@
         }
       ],
       "requires_declarations": [],
-      "citations": "none",
+      "citations": "resolution",
       "after": [
         {
           "target": "introduction.block-2",
@@ -484,7 +484,7 @@ name, the component cannot be referred to again later.
 contribution introduces and what function it performs come from the formulation; the
 effect it is claimed to achieve comes from the measurement.
 
-**No citations.** From here to the end of the introduction, cite nothing.
+**One citation only, in 4a.** Paragraph 4a may cite the prior work the proposal extends, attached to it; from 4b to the end of the introduction, cite nothing.
 
 ## Block 5 — Evaluation of the proposal
 
@@ -580,7 +580,7 @@ the subject of a sentence.
   method of [N] combines*. It turns the argument into a catalogue of individual works
   instead of an account of families.
 - **Density:** one citation every one or two sentences in blocks 1 to 3; **no
-  citations from block 4 onward**.
+  citations from block 4 onward, except the prior work 4a extends**.
 - **Every assertion about the field carries a citation.** Assertions about the
   proposal itself carry none.
 - **Expand acronyms on first appearance**, the acronym alone thereafter — including
@@ -619,7 +619,7 @@ the subject of a sentence.
 - A property named differently in blocks 2, 4 and 5 — a synonym instead of the same
   words.
 - A figure, percentage, or value in block 5.
-- A citation anywhere from block 4 onward.
+- A citation anywhere from block 4 onward, other than 4a's citation of the prior work the proposal extends.
 - A citation placed anywhere but at the end of the sentence it supports.
 - A citation used as a noun phrase.
 - Block 6 missing, or naming sections that do not exist, or repeating one.
