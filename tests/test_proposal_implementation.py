@@ -16315,39 +16315,39 @@ class ForgeVocabularyDerivedGuardTests(unittest.TestCase):
             if status["state"] != "document-rooted":
                 continue
             seen_root = True
-            evidence_dir = status["path"]
-            # The FOLDER NAME is the forge's own architecture, never a paper's
-            # vocabulary, whenever this repository ships that folder: a slot whose
-            # `.gitkeep` git tracks arrives empty in every clone and is where the
-            # NEXT paper's evidence goes. Adding it here read a shipped slot as one
-            # paper's private word and reported the forge leaking a folder the forge
-            # itself defines -- and the repair a reader takes from that report is to
-            # replace a correct name with an invented one, which is what happened.
-            # `travelling_guidance_folders` reads the `.gitignore` line back from git
-            # (structure travels, content never does), shared with
-            # `tests/test_forge_scaffolding.py` so the two can never disagree.
-            #
-            # What goes INSIDE the folder stays guarded below: the ingested paper ids
-            # are the paper's own and are exactly what must not be borrowed.
-            # Two independent reasons a guidance folder's NAME is the forge's
-            # own: git ships the slot, OR the contract corpus declares a section
-            # by that id. The second was added when the section-citation-folder
-            # design landed: `guidance/<section-id>/` is created by the operator
-            # and carries no tracked `.gitkeep`, so deriving forge-ownership from
-            # git alone read `introduction` as one paper's private word and
-            # reported every forge file that legitimately names it as a leak.
-            # Measured: one created folder was enough to redden the guard.
-            shipped = (forge_vocabulary.travelling_guidance_folders(base)
-                       | forge_vocabulary.forge_section_ids(base))
-            if (evidence_dir.name not in shipped
-                    and len(evidence_dir.name) >= self.MINIMUM_WORD):
-                words.add(evidence_dir.name.lower())
-            guidance_dir = evidence_dir.parent
-            for paper in paper_guidance.ingested_papers(guidance_dir).get(
-                    evidence_dir.name, []):
-                paper_id = paper["folder"].lower()
-                if len(paper_id) >= self.MINIMUM_WORD:
-                    words.add(paper_id)
+            for evidence_dir in status["paths"]:
+                # The FOLDER NAME is the forge's own architecture, never a paper's
+                # vocabulary, whenever this repository ships that folder: a slot whose
+                # `.gitkeep` git tracks arrives empty in every clone and is where the
+                # NEXT paper's evidence goes. Adding it here read a shipped slot as one
+                # paper's private word and reported the forge leaking a folder the forge
+                # itself defines -- and the repair a reader takes from that report is to
+                # replace a correct name with an invented one, which is what happened.
+                # `travelling_guidance_folders` reads the `.gitignore` line back from git
+                # (structure travels, content never does), shared with
+                # `tests/test_forge_scaffolding.py` so the two can never disagree.
+                #
+                # What goes INSIDE the folder stays guarded below: the ingested paper ids
+                # are the paper's own and are exactly what must not be borrowed.
+                # Two independent reasons a guidance folder's NAME is the forge's
+                # own: git ships the slot, OR the contract corpus declares a section
+                # by that id. The second was added when the section-citation-folder
+                # design landed: `guidance/<section-id>/` is created by the operator
+                # and carries no tracked `.gitkeep`, so deriving forge-ownership from
+                # git alone read `introduction` as one paper's private word and
+                # reported every forge file that legitimately names it as a leak.
+                # Measured: one created folder was enough to redden the guard.
+                shipped = (forge_vocabulary.travelling_guidance_folders(base)
+                           | forge_vocabulary.forge_section_ids(base))
+                if (evidence_dir.name not in shipped
+                        and len(evidence_dir.name) >= self.MINIMUM_WORD):
+                    words.add(evidence_dir.name.lower())
+                guidance_dir = evidence_dir.parent
+                for paper in paper_guidance.ingested_papers(guidance_dir).get(
+                        evidence_dir.name, []):
+                    paper_id = paper["folder"].lower()
+                    if len(paper_id) >= self.MINIMUM_WORD:
+                        words.add(paper_id)
 
         return words, seen_root
 
@@ -16977,6 +16977,21 @@ class ForgeVocabularyDerivedGuardTests(unittest.TestCase):
         paper.mkdir()
         (paper / "finch-cascade-9.md").write_text("# 1. Something\n", encoding="utf-8")
         return base
+
+    def test_product_vocabulary_includes_every_evidence_root(self):
+        base = self.scratch_paper_product_root()
+        evidence = base / "guidance" / "other-citation-vault"
+        paper = evidence / "second-fixture-paper"
+        paper.mkdir(parents=True)
+        (evidence / ".paper-writing.json").write_text(
+            json.dumps({"class": "evidence"}), encoding="utf-8")
+        (paper / "second-fixture-paper.md").write_text("# Evidence\n", encoding="utf-8")
+
+        words, seen = self.paper_product_root_words(base)
+
+        self.assertTrue(seen)
+        self.assertEqual(words, {"borealis-survey", "citation-vault", "finch-cascade-9",
+                                 "other-citation-vault", "second-fixture-paper"})
 
     def test_a_live_lineage_and_evidence_paper_are_derived_as_product_root_vocabulary(self):
         """Task U3d's own reachability proof: a `proposals/` lineage and a

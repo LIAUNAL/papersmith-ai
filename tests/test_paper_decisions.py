@@ -3953,18 +3953,18 @@ class DeclareClassTests(unittest.TestCase):
         self.assertIn("reference-material", ctx.exception.detail)
         self.assertFalse(self._marker_path("prior-papers").exists())
 
-    def test_classing_a_second_evidence_folder_refuses_ambiguous_before_the_write(self) -> None:
+    def test_classing_a_second_evidence_folder_preserves_both_markers(self) -> None:
         self._mkfolder("first-evidence")
         self._mkfolder("second-evidence")
         paper_guidance.declare_class(self.guidance_dir, "first-evidence", "evidence")
+        before = self._marker_path("first-evidence").read_bytes()
 
-        with self.assertRaises(Refused) as ctx:
-            paper_guidance.declare_class(self.guidance_dir, "second-evidence", "evidence")
+        paper_guidance.declare_class(self.guidance_dir, "second-evidence", "evidence")
 
-        self.assertEqual(ctx.exception.code, "EVIDENCE_ROOT_AMBIGUOUS")
-        self.assertIn("first-evidence", ctx.exception.detail)
-        self.assertIn("second-evidence", ctx.exception.detail)
-        self.assertFalse(self._marker_path("second-evidence").exists())
+        self.assertEqual(paper_guidance.read_registry(self.guidance_dir), {
+            "first-evidence": "evidence", "second-evidence": "evidence",
+        })
+        self.assertEqual(self._marker_path("first-evidence").read_bytes(), before)
 
     def test_declare_class_never_produces_a_marker_its_own_reader_refuses(self) -> None:
         self._mkfolder("prior-papers")
@@ -4040,37 +4040,6 @@ class DeclareClassTests(unittest.TestCase):
         )
         _assert_guard_failed_under_mutation(self, proc)
 
-    def test_mutation_the_evidence_ambiguity_check_is_reachable(self) -> None:
-        """tasks.md 3.12: deleting the pre-write uniqueness check must fail
-        BOTH this test's own refusal assertion AND its assertion that the
-        second folder's marker was never written -- proving the test
-        checks the write-order, not merely the refusal code."""
-        self._mkfolder("first-evidence")
-        self._mkfolder("second-evidence")
-        paper_guidance.declare_class(self.guidance_dir, "first-evidence", "evidence")
-        proc = _run_against_mutant(
-            '    if value == "evidence":\n'
-            "        other = None\n"
-            "        for entry in sorted(guidance_dir.iterdir()):\n"
-            "            if not entry.is_dir() or entry.name == folder:\n"
-            "                continue\n"
-            '            if _classify(entry) == "evidence":\n'
-            "                other = entry.name\n"
-            "                break\n"
-            "        if other is not None:\n"
-            "            raise Refused(\n"
-            '                "EVIDENCE_ROOT_AMBIGUOUS",\n'
-            "                f\"{folder!r} would be classed 'evidence', but {other!r} already "
-            'is; "\n'
-            "                f\"re-mark {other!r} first if {folder!r} should hold the evidence "
-            'role",\n'
-            "            )",
-            "",
-            "tests.test_paper_decisions.DeclareClassTests"
-            ".test_classing_a_second_evidence_folder_refuses_ambiguous_before_the_write",
-            source_path=SKILL_SCRIPTS / "paper_guidance.py",
-        )
-        _assert_guard_failed_under_mutation(self, proc)
 
 
 class ReconcileObservationReportTests(unittest.TestCase):

@@ -208,13 +208,9 @@ def declare_class(
     enumerated the SAME way `read_registry` enumerates. Otherwise refuses
     `GUIDANCE_FOLDER_ABSENT`, naming every folder that is there. **Nothing
     creates the folder.** `value` must be in `CLASSES`, otherwise refuses
-    `UNKNOWN_GUIDANCE_CLASS` (reused verbatim). Classing a folder `evidence`
-    while some OTHER folder already carries it refuses
-    `EVIDENCE_ROOT_AMBIGUOUS` (reused verbatim from `_ingested_root_status`)
-    BEFORE the write, naming both folders and the exit -- re-mark the other
-    folder first. That ambiguity scan never classifies `folder` itself
-    (Decision E: re-recording must always succeed, even over a folder whose
-    OWN current marker is malformed or hand-edited). The candidate is
+    `UNKNOWN_GUIDANCE_CLASS` (reused verbatim). Multiple evidence folders
+    are allowed; ingested document identities remain unique across them.
+    The candidate is
     round-tripped through `_validate_class_obj` before `paper_marker.write`
     ever runs, so this verb can never produce a marker its own reader would
     refuse.
@@ -245,20 +241,6 @@ def declare_class(
             f"{value!r} is not one of the declared classes {CLASSES}",
         )
     marker_path = guidance_dir / folder / _MARKER_NAME
-    if value == "evidence":
-        other = None
-        for entry in sorted(guidance_dir.iterdir()):
-            if not entry.is_dir() or entry.name == folder:
-                continue
-            if _classify(entry) == "evidence":
-                other = entry.name
-                break
-        if other is not None:
-            raise Refused(
-                "EVIDENCE_ROOT_AMBIGUOUS",
-                f"{folder!r} would be classed 'evidence', but {other!r} already is; "
-                f"re-mark {other!r} first if {folder!r} should hold the evidence role",
-            )
     candidate = {"class": value}
     _validate_class_obj(candidate, marker_path)
     paper_marker.write(marker_path, candidate, sealed=sealed)

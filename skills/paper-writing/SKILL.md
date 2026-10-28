@@ -516,7 +516,10 @@ real, wired consequence: `style-reference` feeds the style channel
 memory`, GATES `validate --source-md` shut (`SOURCE_STYLE_REFERENCE`);
 `evidence` is the one class `validate --source-md` accepts
 (`SOURCE_NOT_EVIDENCE` otherwise) — classifying a folder is no longer a
-label with nothing reading it back.
+label with nothing reading it back. Multiple evidence folders coexist;
+ingested source-root status and bindings aggregate their documents, while
+style-reference folders remain excluded. Paper identities must be unique
+across evidence folders (`EVIDENCE_ROOT_AMBIGUOUS` otherwise).
 
 **`read_registry` and the actual ingested papers live at two different
 depths.** `read_registry` (above, driving `plan` and now `validate`)
@@ -583,7 +586,7 @@ this is one subject (a directory's own declaration), not two.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `mark revisions --root <name> --revision-prefix <prefix> --ordinal-digits <n> [--unsealed]` | Records `<root>/.paper-writing.json`'s `revisions` grammar, matched against `sorted(path.glob("*.md"))` at the moment of writing, sealed by default | `SOURCE_ROOT_UNDECLARABLE`, `MALFORMED_SOURCE_MARKER`, `SOURCE_DECLARATION_UNMATCHED` |
-| `mark class --folder <name> --class <value> [--guidance <dir>] [--unsealed]` | Records `guidance/<folder>/.paper-writing.json`'s `class` grammar, checked against the folders actually enumerated under `guidance/` at the moment of writing, sealed by default | `GUIDANCE_FOLDER_ABSENT`, `UNKNOWN_GUIDANCE_CLASS`, `EVIDENCE_ROOT_AMBIGUOUS`, `MALFORMED_GUIDANCE_MARKER` |
+| `mark class --folder <name> --class <value> [--guidance <dir>] [--unsealed]` | Records `guidance/<folder>/.paper-writing.json`'s `class` grammar, checked against the folders actually enumerated under `guidance/` at the moment of writing, sealed by default; multiple evidence folders are accepted | `GUIDANCE_FOLDER_ABSENT`, `UNKNOWN_GUIDANCE_CLASS`, `MALFORMED_GUIDANCE_MARKER` |
 
 **Neither verb creates the directory or folder it names, and no operator
 string is ever joined onto a path.** `--root` is matched against the
@@ -665,7 +668,7 @@ the rollback a command instead of a hand edit.
 | `mark revisions` refuses `SOURCE_DECLARATION_UNMATCHED` | The prefix/digit-width pair matches zero `*.md` files under the root right now — the refusal lists every file it saw; fix the prefix/width or check the root |
 | `validate --source-md` refuses `SOURCE_NOT_EVIDENCE` on a `guidance/` folder | Run `mark class --folder <name> --class evidence` (only if the folder truly holds evidence, never to silence the refusal) |
 | `mark class` refuses `GUIDANCE_FOLDER_ABSENT` | `--folder` names a folder that does not exist directly under `guidance/` — the refusal lists every folder that is there; `mark` never creates one |
-| `mark class` refuses `EVIDENCE_ROOT_AMBIGUOUS` | Another folder already carries the `evidence` class — re-mark that other folder first if this one should hold it instead |
+| A corpus-reading verb refuses `EVIDENCE_ROOT_AMBIGUOUS` | The same ingested paper id occurs under multiple evidence folders; make document identities unique before binding. Several evidence folders with distinct papers are accepted |
 | Either `mark` refuses `MALFORMED_SOURCE_MARKER` / `MALFORMED_GUIDANCE_MARKER` | The marker file on disk was hand-edited into an invalid shape — re-run `mark` with correct values; it always overwrites |
 | `read_revisions_marker`/`_classify` refuses `SOURCE_DECLARATION_HAND_EDITED` / `GUIDANCE_DECLARATION_HAND_EDITED` | A sealed marker's bytes were hand-edited after sealing — re-run `mark` for that root/folder; there is no `--adopt` |
 | About to revert past this capability | Run `mark ... --unsealed` once per already-sealed root/folder BEFORE reverting, or the older reader will refuse every sealed marker as malformed |
