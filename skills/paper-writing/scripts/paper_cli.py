@@ -1522,11 +1522,16 @@ def cmd_bib(args: argparse.Namespace) -> dict:
             paper_dir, args.cite_key, args.metadata_digest, guidance_dir=guidance_dir,
             resolver=args.resolver,
         )
-    records = paper_evidence.read_all_records(paper_dir)
-    result = paper_bib.build_refs_bib(paper_dir, records, guidance_dir=guidance_dir)
+    # The evidence store is append-only, so a citation dropped from the text
+    # keeps its records. The bibliography follows the text: only cited keys
+    # are written, each still required to carry sourced, ingested evidence.
     tex_path = paper_block.resolve_main_tex(paper_dir)
+    tex_bytes = tex_path.read_bytes()
+    cited = paper_bib.cited_keys(tex_bytes)
+    records = [r for r in paper_evidence.read_all_records(paper_dir) if r.get("cite_key") in cited]
+    result = paper_bib.build_refs_bib(paper_dir, records, guidance_dir=guidance_dir)
     reciprocal = paper_bib.check_reciprocal(
-        tex_path.read_bytes(), (paper_dir / "refs.bib").read_bytes(),
+        tex_bytes, (paper_dir / "refs.bib").read_bytes(),
     )
     return {**result, "reciprocal": reciprocal}
 
