@@ -159,14 +159,14 @@ existed.
 Every measurement this skill instruments lands inside its own product folder,
 under `Results/`, in the shape the command center's experiments panel reads.
 A measurement written anywhere else runs and is never shown. Paths are
-relative to the product folder `<Name>/`:
+relative to the product folder `<Name>/`. One folder per experiment (`Results/e1/`, `Results/e2/`, ...) is read the same way; at most 200 shown files are read per product, and files the panel never shows, such as per-run records under `Results/<experiment>/runs/`, do not count toward that limit:
 
 | Path | What it holds | Shape |
 | --- | --- | --- |
 | `Results/history*.{json,jsonl,csv}` | Convergence, per epoch or step | One record per epoch or step, carrying an `epoch` or `step` key and numeric series such as `loss`, `val_loss` or a metric; optional `seed`, `fold` and `model` columns let the panel draw mean ± sd across seeds and separate the curves. |
-| `Results/figures/**` | The experiment's figures | `png`, `svg`, `jpg` or `pdf` files. |
-| `Results/tables/**` | The experiment's tables | `csv`, `md` or `json` files. |
-| `Results/summary.json` | The run's headline numbers | One JSON object. |
+| `Results/figures/**`, or `Results/<experiment>/figures/**` | The experiment's figures | `png`, `svg`, `jpg` or `pdf` files, in a `figures` folder at any depth. |
+| `Results/tables/**`, or `Results/<experiment>/tables/**` | The experiment's tables | `csv`, `md` or `json` files, in a `tables` folder at any depth. |
+| `Results/summary.json`, or `Results/<experiment>/summary.json` | The run's headline numbers | One JSON object; a `summary.json` deeper than one experiment folder is not read. |
 | `Results/significance*.json` | The significance table | A JSON list of objects with the keys `comparison`, `test`, `statistic`, `p_value`, `p_adjusted`, `correction`, `effect_size`, `effect_size_name`, `ci_low`, `ci_high`, `n` and `alpha`. |
 
 The test, correction and effect size written there are the ones the bound
