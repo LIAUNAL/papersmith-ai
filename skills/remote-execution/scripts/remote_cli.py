@@ -191,6 +191,17 @@ class ReadinessError(AuthorizationError):
 
 CAMPAIGN_WORKERS_NOT_READY = "CAMPAIGN_WORKERS_NOT_READY"
 DUPLICATE_SUBMISSION_ID = "DUPLICATE_SUBMISSION_ID"
+# A campaign share whose `submitted` event (which now records the share's
+# units) would not fit one ledger line: refused BEFORE any submission, since
+# a submission the ledger cannot record is the one outcome it exists to
+# rule out.
+LEDGER_EVENT_TOO_LARGE = "LEDGER_EVENT_TOO_LARGE"
+
+# The longest submission id the size pre-check assumes a backend may answer
+# with: generous next to every id shape shipped today (`<owner>/<slug>`,
+# `colab:<owner>/psmith-...`), so the check never passes a share whose real
+# event would then fail to append.
+_SUBMISSION_ID_BUDGET_CHARS = 256
 
 
 class DiagramValidationError(RemoteCLIError):
@@ -229,6 +240,22 @@ QUARANTINE_DIRNAME = "quarantine"
 # same tree a shard reader enumerates, and nothing ever quarantined it.
 REHEARSAL_DIRNAME = "rehearsal"
 PARTIAL_SUFFIX = ".partial"
+
+# Where `fetch` KEEPS the bytes of a run that came back without a complete
+# result -- failed, timed out, reclaimed, or still running: under
+# `<product>/.remote-execution/partial/<submissionId>/<UTC stamp>/`, one
+# directory per fetch, never overwritten and never deleted by this CLI.
+# Outside `Results/shards/` for the same reason quarantine is: nothing that
+# enumerates results can reach an incomplete one by accident. The operator
+# (or a resume) reads it; `remaining --unit-field` counts the per-unit
+# records it holds.
+KEPT_PARTIAL_DIRNAME = "partial"
+
+# The run states after which an incomplete fetch is RECORDED, as an
+# `errored` event naming the kept bytes: the run is over, and it did not
+# produce a complete result. `unknown` is the seam's state for a session
+# the service no longer reports -- a reclaimed or vanished one.
+_UNFINISHED_TERMINAL_STATES = ("failed", "unknown")
 TOOLS_DIRNAME = "tools"
 RUN_CONFIG_FILENAME = "run-config.json"
 
@@ -1080,6 +1107,20 @@ def _relative_entrypoint(target: Path, resolved_entrypoint: Path, product: str) 
         return resolved_entrypoint.relative_to(target)
 
 
+def _declared_session_limit(adapter: "ADAPTER.Adapter") -> int | None:
+    """The adapter's declared continuous session limit, in seconds, or
+    `None` when it declares none. Only a positive integer counts: anything
+    else (an adapter predating the seam's default, a test double that is
+    not an `Adapter`) is read as undeclared, never coerced into a number."""
+    reader = getattr(adapter, "session_limit_seconds", None)
+    if not callable(reader):
+        return None
+    limit = reader()
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        return None
+    return limit
+
+
 def cmd_submit(
     *,
     target: str | Path,
@@ -1312,6 +1353,21 @@ def cmd_submit(
     )
     ledger_lines = _read_ledger_lines(ledger_path)
 
+    # S3 (session checkpoints): the backend's declared continuous session
+    # limit travels to the runner, which turns it into
+    # `FORGE_SESSION_DEADLINE`. It travels inside `run-config.json`, so only
+    # a job folder carries it: the legacy shape has no runner to read it
+    # (and a backend may refuse a non-empty run_config there). A backend
+    # that declares none (`None`) adds nothing, so the job is exactly what
+    # it was before this existed.
+    session_limit = _declared_session_limit(adapter)
+    session_config = (
+        {"sessionLimitSeconds": session_limit}
+        if session_limit is not None
+        and (resolved_entrypoint.parent / RUN_CONFIG_FILENAME).is_file()
+        else {}
+    )
+
     if units:
         distribution = PACKER.distribute(
             adapter=adapter,
@@ -1327,6 +1383,31 @@ def cmd_submit(
                 pin_commit=pin_commit,
             )
 
+        # Every share's `submitted` event must fit one ledger line, checked
+        # for ALL shares before the FIRST submission: a refusal halfway
+        # through would leave a campaign half launched.
+        for row in distribution.assignments:
+            for index, share in enumerate(PACKER.slot_shares(row)):
+                probe = LEDGER.submitted_event(
+                    entrypoint=str(relative_entrypoint),
+                    source_digest=digest,
+                    submission_id="x" * _SUBMISSION_ID_BUDGET_CHARS,
+                    worker=row.plan.worker,
+                    requested_capacity=row.plan.requested,
+                    granted_capacity=row.plan.granted,
+                    slot=index + 1 if index else None,
+                    units=share,
+                )
+                if LEDGER.event_bytes(probe) > LEDGER.MAX_EVENT_BYTES:
+                    raise RemoteCLIError(
+                        f"{LEDGER_EVENT_TOO_LARGE}: slot {index + 1} of worker "
+                        f"{row.plan.worker!r} carries {len(share)} units whose "
+                        "`submitted` event would exceed the ledger's "
+                        f"{LEDGER.MAX_EVENT_BYTES}-byte line; nothing was "
+                        "submitted. Send fewer units per campaign, or shorter "
+                        "unit names"
+                    )
+
         assignments: list[dict] = []
         seen_ids: dict[str, str] = {}
         for row in distribution.assignments:
@@ -1339,6 +1420,7 @@ def cmd_submit(
                 slot = index + 1
                 run_config = {"mode": "smoke"} if smoke else {}
                 run_config = dict(run_config)
+                run_config.update(session_config)
                 run_config["units"] = list(share)
                 if slot > 1:
                     run_config["slot"] = slot
@@ -1368,6 +1450,7 @@ def cmd_submit(
                     requested_capacity=row.plan.requested,
                     granted_capacity=row.plan.granted,
                     slot=slot if slot > 1 else None,
+                    units=share,
                 )
                 LEDGER.append(ledger_path, event)
                 submissions.append(
@@ -1420,6 +1503,7 @@ def cmd_submit(
         )
 
     run_config = {"mode": "smoke"} if smoke else {}
+    run_config = {**run_config, **session_config}
     job = ADAPTER.Job(entrypoint=resolved_entrypoint, run_config=run_config, worker=worker)
     submission = adapter.submit(job)
 
@@ -1508,6 +1592,91 @@ def cmd_status(
         **_render(state),
         "smoke": {"ledgerPath": smoke_ledger_path, **_render(smoke_state)},
         "staleness": _job_folder_staleness(Path(entrypoint).resolve()),
+    }
+
+
+def cmd_remaining(
+    *,
+    target: str | Path,
+    entrypoint: str | Path,
+    units: Sequence[str],
+    unit_field: str | None = None,
+    source_digest: Callable[[Path, str], str] | None = None,
+) -> dict:
+    """Which of the declared `units` still have no complete result -- the
+    list the next campaign sends, and only that list (S6).
+
+    Reads the main ledger only and asks no backend anything (no `adapter`
+    parameter, the same discipline `status` holds). Every campaign
+    `submitted` event records its own share (`units`), and each is paired
+    in append order with the terminal event that settled it
+    (`LEDGER.submission_outcomes()`), so a resubmission under an
+    identity-stable backend's reused id never erases what an earlier
+    submission under that id returned. Only a submission of THIS
+    entrypoint, at the CURRENT source digest, counts -- a result from a
+    moved source is quarantined by `fetch`, so it completes nothing.
+
+    - `complete`: a unit whose submission was settled `returned`; or, when
+      `unit_field` names the dotted field the target's per-unit records
+      carry, a unit a `runs.jsonl` record under that submission's artifact
+      (a returned result or bytes `fetch` kept from a run that did not
+      finish) declares done;
+    - `inFlight`: a unit whose submission has not been settled yet --
+      reported apart, never resent, since sending it again would run it
+      twice;
+    - `remaining`: every other declared unit, in the DECLARED order, which
+      is the order `distribute`'s consent token binds. Pass it back
+      unchanged (`unitArgs` is the same list as repeated `--unit` flags).
+    """
+    target = Path(target).resolve()
+    if not target.is_dir():
+        raise RemoteCLIError(
+            f"--target {target} does not resolve to an existing directory"
+        )
+    declared = [str(unit) for unit in units]
+    if not declared:
+        raise RemoteCLIError("remaining needs at least one --unit to check")
+
+    resolved_entrypoint = guard_entrypoint(target, Path(entrypoint))
+    product = product_for(target, resolved_entrypoint, command="remaining")
+    relative_entrypoint = str(_relative_entrypoint(target, resolved_entrypoint, product))
+    ledger_path = _main_ledger_path(target, product)
+    digest_fn = source_digest or _load_source_digest()
+    live = digest_fn(target, product)
+
+    complete: set[str] = set()
+    in_flight: set[str] = set()
+    for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(ledger_path)):
+        if str(submitted.get("entrypoint")) != relative_entrypoint:
+            continue
+        if submitted.get("sourceDigest") != live:
+            continue
+        share = [str(unit) for unit in submitted.get("units") or ()]
+        if terminal is None:
+            in_flight.update(share)
+            continue
+        if terminal.get("kind") == "returned":
+            complete.update(share)
+            continue
+        artifact = terminal.get("artifactPath")
+        if unit_field and artifact:
+            complete.update(
+                set(share) & SHARD_IO.unit_records(Path(artifact), unit_field)
+            )
+    # A unit some submission completed is complete even if a later one
+    # carrying it is still running.
+    in_flight -= complete
+
+    remaining = [unit for unit in declared if unit not in complete and unit not in in_flight]
+    return {
+        "ledgerPath": ledger_path,
+        "entrypoint": relative_entrypoint,
+        "declared": declared,
+        "complete": [unit for unit in declared if unit in complete],
+        "inFlight": [unit for unit in declared if unit in in_flight],
+        "remaining": remaining,
+        "unitArgs": [token for unit in remaining for token in ("--unit", unit)],
+        "unitField": unit_field,
     }
 
 
@@ -1724,12 +1893,16 @@ def cmd_fetch(
        point: its removal is step 6's, gated on this call returning a
        complete materialization.
     5. `Fetched.complete` is checked before anything else happens. `False`
-       means the backend itself considers the result unfinished — this
-       function returns without renaming and without appending anything,
-       leaving the ledger's own state exactly as `pending` as it already
-       was, which is what makes a retry safe. The `.partial/` directory
-       stays on disk and is returned as `path`, so the retry meets step
-       1's guard rather than silently merging into it. Only
+       means the backend itself considers the result unfinished, and it is
+       never renamed into `final_dest` nor recorded `returned` (S5,
+       session checkpoints). What came back is moved out of `.partial/` to
+       `partial/<submissionId>/<UTC stamp>/` and returned as `path` -- kept,
+       and no longer able to refuse a later fetch -- and `adapter.poll()`
+       decides what it is: a run still going leaves the ledger `pending`
+       (a retry is safe), while a run over without a complete result
+       (`failed`, or `unknown` after a reclaim) is recorded `errored` with
+       the kept path. An adapter that cannot reach the run at all is
+       handled the same way when an earlier fetch kept a snapshot. Only
        `complete=True` reaches the rename.
     6. `os.replace()` — an atomic rename on the same filesystem — moves the
        `.partial/` directory into its final name. This is the one line
@@ -1841,25 +2014,85 @@ def cmd_fetch(
     observed_concurrency = state.pending_for(submission["worker"])
     staleness = _job_folder_staleness(Path(entrypoint).resolve())
 
-    fetched = adapter.fetch(submission_id, partial_dest)
+    kept_root = target / product / LEDGER_DIRNAME / KEPT_PARTIAL_DIRNAME / submission_id
+    ledger_root = (target / product / LEDGER_DIRNAME).resolve()
+    if ledger_root not in kept_root.resolve().parents:
+        raise RemoteCLIError(
+            f"submission id {submission_id!r} does not resolve to a "
+            f"path under {ledger_root} -- refusing before any fetch"
+        )
+
+    try:
+        fetched = adapter.fetch(submission_id, partial_dest)
+    except ADAPTER.AdapterError as exc:
+        # S5: a backend that can no longer reach the run -- a reclaimed or
+        # vanished session -- is not the end of its bytes when an earlier
+        # fetch already kept a snapshot of them. Whatever this attempt left
+        # in `.partial/` is kept the same way, never left to refuse every
+        # later fetch. Recorded only when the run's own state says it is
+        # over without a complete result; otherwise the refusal stands.
+        kept = _keep_partial(partial_dest, kept_root)
+        run_state, detail = _run_state(adapter, submission_id)
+        latest = kept or _latest_kept(kept_root)
+        if run_state in _UNFINISHED_TERMINAL_STATES and latest is not None:
+            event = LEDGER.errored_event(
+                submission_id=submission_id,
+                reason=(
+                    f"fetch could not reach the run ({exc}); run state "
+                    f"{run_state} ({detail}); the last bytes fetched are kept "
+                    f"at {latest}"
+                ),
+                artifact_path=latest,
+                run_state=run_state,
+            )
+            LEDGER.append(ledger_path, event)
+            return {
+                "verdict": verdict,
+                "complete": False,
+                "path": latest,
+                "event": event,
+                "runState": run_state,
+                "staleness": staleness,
+                "arbitration": arbitration,
+            }
+        if kept is not None:
+            raise ADAPTER.AdapterError(
+                f"{exc} -- the bytes this attempt had already written are kept "
+                f"at {kept}"
+            ) from exc
+        raise
 
     if not fetched.complete:
-        # Not renamed, not recorded: the ledger's own state stays exactly
-        # `pending`, which is the one state a retry can safely start from.
-        # The existing `final_dest` (when `--force` was given) is
-        # untouched — the removal above deliberately did not run.
-        # An EMPTY partial holds no bytes anybody paid for -- the run was
-        # simply still going -- so it is removed rather than left to refuse
-        # every later fetch. `rmdir` cannot remove one that holds anything.
-        kept = partial_dest
-        if partial_dest.is_dir() and not any(partial_dest.iterdir()):
-            partial_dest.rmdir()
-            kept = None
+        # Never renamed into `final_dest` and never recorded `returned`.
+        # The existing `final_dest` (when `--force` was given) is untouched
+        # -- the removal below deliberately did not run. What the backend
+        # did hand back is KEPT (S5), moved out of `.partial/` so it can
+        # never refuse a later fetch, and the run's own state decides
+        # whether this is a snapshot of a run still going (nothing
+        # recorded: the ledger stays `pending`, the one state a retry can
+        # safely start from) or the end of a run that did not finish
+        # (recorded `errored`, naming the kept bytes). An EMPTY partial
+        # holds no bytes anybody paid for and is simply removed.
+        kept = _keep_partial(partial_dest, kept_root)
+        run_state, detail = _run_state(adapter, submission_id)
+        event = None
+        if run_state in _UNFINISHED_TERMINAL_STATES:
+            reason = f"run ended without a complete result: {run_state} ({detail})"
+            if kept is not None:
+                reason = f"{reason}; its output is kept at {kept}"
+            event = LEDGER.errored_event(
+                submission_id=submission_id,
+                reason=reason,
+                artifact_path=kept,
+                run_state=run_state,
+            )
+            LEDGER.append(ledger_path, event)
         return {
             "verdict": verdict,
             "complete": False,
             "path": kept,
-            "event": None,
+            "event": event,
+            "runState": run_state,
             "staleness": staleness,
             "arbitration": arbitration,
         }
@@ -1887,6 +2120,47 @@ def cmd_fetch(
         "staleness": staleness,
         "arbitration": arbitration,
     }
+
+
+def _keep_partial(partial_dest: Path, kept_root: Path) -> Path | None:
+    """Move a non-empty `.partial/` to a fresh directory under `kept_root`
+    and return it; remove an empty one and return `None`. Never overwrites
+    an earlier kept directory: each one may be the only copy of a
+    checkpoint already paid for."""
+    if not partial_dest.is_dir():
+        return None
+    if not any(partial_dest.iterdir()):
+        partial_dest.rmdir()
+        return None
+    kept_root.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    kept = kept_root / stamp
+    suffix = 2
+    while kept.exists():
+        kept = kept_root / f"{stamp}-{suffix}"
+        suffix += 1
+    os.replace(str(partial_dest), str(kept))
+    return kept
+
+
+def _latest_kept(kept_root: Path) -> Path | None:
+    """The most recently kept directory under `kept_root`, by name (the
+    names are sortable UTC stamps), or `None` when nothing was kept."""
+    if not kept_root.is_dir():
+        return None
+    kept = sorted(path for path in kept_root.iterdir() if path.is_dir())
+    return kept[-1] if kept else None
+
+
+def _run_state(adapter: "ADAPTER.Adapter", submission_id: str) -> tuple[str | None, str]:
+    """The run's own state, in the seam's vocabulary, for deciding what an
+    incomplete fetch means. A poll the backend refuses is `None` -- not
+    known, and never read as terminal: nothing is recorded on it."""
+    try:
+        status = adapter.poll(submission_id)
+    except ADAPTER.AdapterError as exc:
+        return None, f"poll refused: {exc}"
+    return status.state, status.detail
 
 
 def cmd_reconcile(
@@ -2708,6 +2982,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="override: use this directory instead of lazily materializing one by worker id",
     )
 
+    remaining = subparsers.add_parser(
+        "remaining",
+        help="report which declared units have no complete result yet, the "
+        "list the next campaign sends; asks no backend and records nothing",
+    )
+    remaining.add_argument("--target", required=True, type=Path)
+    remaining.add_argument("--entrypoint", required=True, type=Path)
+    remaining.add_argument(
+        "--unit", dest="units", action="append", required=True,
+        help="repeatable: one declared unit, exactly as `distribute`/`submit` "
+        "take it; the answer keeps this order",
+    )
+    remaining.add_argument(
+        "--unit-field", dest="unit_field", default=None,
+        help="optional: the dotted field of the target's runs.jsonl records "
+        "that names a unit (e.g. cell.unit); with it, the per-unit records "
+        "in a kept partial result count those units complete",
+    )
+
     poll = subparsers.add_parser(
         "poll", help="ask the adapter for one submission's status"
     )
@@ -2744,7 +3037,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="remove an already-materialized destination and re-fetch, "
         "instead of refusing; a leftover <dest>.partial/ from a fetch "
-        "that never finished is never cleared by this flag",
+        "that was killed is never cleared by this flag (an incomplete "
+        "result is kept under .remote-execution/partial/ instead and "
+        "leaves no .partial/ behind)",
     )
     fetch.add_argument(
         "--credential-dir", type=Path, default=None,
@@ -3162,6 +3457,19 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, sort_keys=True, default=str))
         return 0
 
+    if args.command == "remaining":
+        try:
+            result = cmd_remaining(
+                target=args.target,
+                entrypoint=args.entrypoint,
+                units=args.units,
+                unit_field=args.unit_field,
+            )
+        except (RemoteCLIError, LEDGER.LedgerError) as exc:
+            return _refused(exc)
+        print(json.dumps(result, sort_keys=True, default=str))
+        return 0
+
     if args.command == "distribute":
         try:
             _load_backend_module(args.backend)
@@ -3262,6 +3570,11 @@ def main(argv: list[str] | None = None) -> int:
                     "path": result["path"],
                     "event": result["event"],
                     "staleness": result["staleness"],
+                    **(
+                        {"runState": result["runState"]}
+                        if "runState" in result
+                        else {}
+                    ),
                 },
                 sort_keys=True,
                 default=str,

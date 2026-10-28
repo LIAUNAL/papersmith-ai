@@ -280,6 +280,17 @@ COLAB_ACCELERATOR_VARIANTS = {"sm_75": "T4", "sm_80": "A100", "sm_90": "H100"}
 COLAB_ACCELERATOR_KIND = "cuda"
 COLAB_ACCELERATOR_ARCHITECTURES = ("sm_75",)
 
+# The continuous run time one Colab Pro session may last: 24 hours, for
+# every accelerator. This is the service's PUBLISHED limit at the time of
+# writing (2026-10), not a measurement -- re-check it against Colab's own
+# documentation before planning around it. It is an upper bound, not a promise:
+# the service also reclaims a session it judges idle well before it, and a
+# free-tier session is shorter still (campaigns refuse the free tier
+# anyway, `TeamAccount.campaign_refusal`). A reclaimed VM takes its disk
+# with it, which is why the executor keeps a running manifest and why
+# `fetch` keeps every snapshot it has already brought back.
+COLAB_PRO_SESSION_LIMIT_SECONDS = 24 * 3600
+
 
 def _default_accelerator() -> tuple[str, tuple[str, ...]]:
     """`ADAPTER.register_default_accelerator("colab", ...)`'s provider: called
@@ -596,6 +607,11 @@ class ColabAdapter(ADAPTER.Adapter):
     # `--repo-credential` refuses there rather than authenticating a probe
     # whose runner still could not clone (S3/D6).
     REPO_CREDENTIAL_CARRIER = True
+
+    @classmethod
+    def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
+        """`COLAB_PRO_SESSION_LIMIT_SECONDS`, whatever the accelerator."""
+        return COLAB_PRO_SESSION_LIMIT_SECONDS
 
     def __init__(
         self,

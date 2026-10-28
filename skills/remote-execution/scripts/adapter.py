@@ -246,6 +246,21 @@ class Adapter(ABC):
     def list_active(self, worker: str) -> list[str]:
         """Report the submission ids the backend still considers active for `worker`."""
 
+    @classmethod
+    def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
+        """The service's continuous run limit for one session, in seconds.
+
+        Deliberately NOT abstract, and not a seventh operation: it asks the
+        service nothing. A backend answers from a constant it declares --
+        the limit the service published for that accelerator -- and
+        `machine_shape=None` means the accelerator that backend requests by
+        default. A classmethod so a planner can read it before any worker
+        or credential exists. This default, `None`, means "unknown": a
+        caller must then treat the session as unbounded by this skill's
+        knowledge, never invent a number (see "What this skill cannot see").
+        """
+        return None
+
 
 _REGISTRY: dict[str, type[Adapter]] = {}
 

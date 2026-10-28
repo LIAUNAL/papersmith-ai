@@ -1,6 +1,6 @@
 ---
 name: remote-execution
-description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `generate-job`, `smoke`, `record`, `readiness`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
+description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
 ---
 
 # Remote Execution
@@ -1497,7 +1497,7 @@ executable — no test in this suite reaches the network or a real account).
 
 ## The commands
 
-`remote_cli.py` accepts exactly nine top-level subcommands; this table is the
+`remote_cli.py` accepts exactly ten top-level subcommands; this table is the
 closed roster `skill-audit`'s `roster` move derives against, driving the CLI
 with a nonce it cannot accept and reading the accepted set out of its own
 refusal.
@@ -1507,8 +1507,9 @@ refusal.
 | `submit` | submit one notebook to a registered backend's worker |
 | `status` | report the fold for one product's ledger; resolves nothing |
 | `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares`; issues no work and records nothing |
+| `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
 | `poll` | ask the adapter for one submission's status |
-| `fetch` | materialize one submission's result, quarantining it when it is not current |
+| `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
 | `reconcile` | compare the ledger against the adapter's `list_active()` in both directions |
 | `generate-job` | generate a forge-owned job folder at `<target>/tools/<service>/<job-name>/` |
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
@@ -1524,6 +1525,7 @@ can branch on it without parsing prose.
 | `DIAGRAM_NOT_VALIDATED` | `submit` (every mode) | the product holds an approval whose experiment diagram the operator has not validated |
 | `CAMPAIGN_WORKERS_NOT_READY` | campaign `submit` (`--unit`, not `--smoke`) | a worker the distribution assigns units to has no passing rehearsal of its own at the current pin; the message names every such worker |
 | `DUPLICATE_SUBMISSION_ID` | campaign `submit` | the backend answered two slots of one campaign with the same submission id; the repeat is not recorded |
+| `LEDGER_EVENT_TOO_LARGE` | campaign `submit` | a slot's share of units would make its `submitted` event exceed the ledger's 4096-byte line; checked for every slot before the first submission, so nothing is sent |
 
 ## Smoke — a readiness gate, evidence-derived
 
@@ -1662,9 +1664,9 @@ convention:
 
 | event | fields |
 |---|---|
-| `submitted` | `ts`, `entrypoint`, `sourceDigest`, `submissionId`, `worker`, `requestedCapacity`, `grantedCapacity`, and `slot` only for a campaign's slot 2 and up on one worker |
+| `submitted` | `ts`, `entrypoint`, `sourceDigest`, `submissionId`, `worker`, `requestedCapacity`, `grantedCapacity`, `slot` only for a campaign's slot 2 and up on one worker, and `units` (that submission's share) only for a campaign submission |
 | `returned` | `ts`, `submissionId`, `artifactPath`, `observedConcurrency` |
-| `errored` | `ts`, `submissionId`, `reason` (truncated to 512 chars) |
+| `errored` | `ts`, `submissionId`, `reason` (truncated to 512 chars), and, when `fetch` recorded a run that ended without a complete result, `artifactPath` (where its bytes are kept, never a results tree) and `runState` (`failed` or `unknown`) |
 
 `entrypoint` is the field name for the thing executed remotely — not
 `notebook`. This schema and the adapter seam (`scripts/adapter.py`) both use
@@ -1839,6 +1841,16 @@ and the service reclaims it, taking every result with it (`poll` then
 answers `unknown`, `session not found`). Whoever waits on a Colab run fetches
 in the same loop that sees `complete`, never later.
 
+**The manifest is kept current during the run.** The executor rewrites
+`files.json` every `MANIFEST_REFRESH_SECONDS` (60 s) while the notebook
+executes, atomically (`files.json.tmp`, then a rename), so a fetch of a
+session still running, or one whose process died before `status.json`,
+downloads every file already written and reports it `complete=False`.
+Fetching periodically during a long run is what saves a reclaimed one:
+each such fetch keeps a snapshot under `partial/`, and a later fetch that
+finds the session gone records the last snapshot (see "Sessions,
+checkpoints and resume").
+
 **Never read, copy or print `~/.config/colab-cli/sessions.json`.** It
 carries a live per-session access token beside each session record
 (measured in spike S0), which makes it credential-grade: every session fact
@@ -1866,6 +1878,90 @@ A second backend brings its own answer to this section: nothing above the
 adapter seam knows a service exists, so nothing above it knows what a service
 needs.
 
+## Sessions, checkpoints and resume
+
+Every service stops a session after a continuous run time it publishes, and
+Colab also reclaims one it judges idle. Whatever the session had not written
+out by then is lost, together with the hours it cost. The rule for every
+agent that plans, builds or launches a remote run:
+
+1. **Every unit fits one session with margin, or checkpoints and resumes.**
+   A unit (a fold, a seed, a trial batch) whose upper-bound duration plus
+   setup does not fit comfortably inside the session limit is split (for
+   example one fold per unit) or written to checkpoint and resume from its
+   last checkpoint in a new session. Never plan a unit that only finishes
+   if the session is never interrupted.
+2. **Read `FORGE_SESSION_DEADLINE`.** Check it before starting each unit or
+   trial; when the next one may not finish before it, write the checkpoint
+   and the results so far, write a `partial` marker, and exit 0.
+3. **Fetch promptly.** Fetch as soon as a run is terminal, and periodically
+   during a long one, so a reclaimed session still leaves its last snapshot
+   on this side.
+4. **Resubmit only the remaining units.** `remaining` names them; pass its
+   list unchanged to `distribute` and then `submit`.
+
+**Declared limits.** Each adapter declares its service's limit through
+`Adapter.session_limit_seconds(machine_shape=None)` -- a classmethod, not a
+seventh abstract operation, whose default is `None` (unknown). Kaggle:
+`KAGGLE_SESSION_LIMIT_SECONDS`, 12 h for a GPU session. Colab:
+`COLAB_PRO_SESSION_LIMIT_SECONDS`, 24 h for a Pro session, with idle reclaim
+possibly much earlier. Both are the services' published limits at the time
+of writing and must be re-checked against their documentation before a plan
+leans on them.
+
+**The deadline.** For a job folder, `submit` copies the declared limit into
+the job's `run_config["sessionLimitSeconds"]` (nothing at all when the
+adapter declares none, so such a job is unchanged), and the runner
+(`assets/runner_invoke.py`) exports, to a callable and to a notebook kernel
+alike,
+
+    FORGE_SESSION_DEADLINE = session start + limit - max(10% of limit, 30 min)
+
+in epoch seconds (`SESSION_MARGIN_FRACTION`, `SESSION_MARGIN_MIN_SECONDS`).
+The margin covers the setup before the runner's cell, the checkpoint write
+and the upload of the outputs. A target uses it like this:
+
+```python
+import json, os, time
+from pathlib import Path
+
+deadline = float(os.environ.get("FORGE_SESSION_DEADLINE", "inf"))
+for unit in units_to_run:                      # skip the ones already done
+    if time.time() + estimated_seconds(unit) > deadline:
+        save_checkpoint()                      # what a new session resumes from
+        Path("partial.json").write_text(json.dumps({"partial": True, "next": unit}))
+        break                                  # exit 0: the outputs still come back
+    run_and_record(unit)                       # one runs.jsonl record per unit
+```
+
+**Honest states.** A fetch that comes back without a complete result never
+records `returned`. Its bytes are moved out of `.partial/` into
+`<target>/<Name>/.remote-execution/partial/<submissionId>/<UTC stamp>/` --
+kept, never overwritten, never deleted, and never offered a results path.
+The run's own state (`poll`) decides the rest: `failed` (a Kaggle `ERROR`,
+which includes a session that hit its limit) or `unknown` (a session the
+service no longer reports, as after a reclaim) appends an `errored` event
+naming the kept path (`artifactPath`, `runState`); a run still going appends
+nothing, and the ledger stays `pending`. When the backend cannot reach the
+run at all and an earlier fetch kept a snapshot, the snapshot is what gets
+recorded. Kaggle's `fetch` reads the session status before the output
+listing and reports `complete=False` for anything but `COMPLETE`. The
+ordinary incomplete path therefore never leaves a `.partial/` behind; one
+left by a killed fetch still refuses, naming the command that clears it.
+
+**Remaining units.** Every campaign `submitted` event records its share
+(`units`). `remaining --target <t> --entrypoint <e> --unit <u> ...` pairs
+each submission with the terminal event that settled it, in append order
+(so an id the service reused for a later resubmission never erases what an
+earlier one returned), and counts a unit complete when a submission at the
+current source digest carrying it was `returned`. With
+`--unit-field <dotted.path>` -- the field of the target's `runs.jsonl`
+records that names a unit -- the per-unit records inside a kept partial
+result count too. Units of a submission still unsettled are reported as
+`inFlight` and are not resent. `remaining` keeps the declared order, which is
+the order the consent token binds, so its list goes to `distribute` and
+`submit` unchanged (`unitArgs` spells it as `--unit` flags).
+
 ## Ledger data location
 
 Code is forge-owned and lives here, inside the skill. Data is target-owned:
@@ -1878,6 +1974,13 @@ checkout, alongside the repository whose submissions it records.
 `ledger.jsonl` lives in, product-scoped exactly like it, but a distinct
 file (see "Smoke" above for why that separation is load-bearing, not
 stylistic).
+
+## Kept partial results location
+
+`<target>/<Name>/.remote-execution/partial/<submissionId>/<UTC stamp>/` --
+what `fetch` brought back from a run without a complete result, one
+directory per fetch. Outside `Results/shards/` for the same reason as
+quarantine below.
 
 ## Quarantine location
 

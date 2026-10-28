@@ -104,3 +104,39 @@ def completeness(stamp: dict, required: list[str]) -> dict:
         if not present:
             missing.append(path)
     return {"complete": not missing, "missing": missing}
+
+
+def unit_records(root: Path, field: str) -> set[str]:
+    """The unit names `runs.jsonl` records under `root` declare complete.
+
+    Every `runs.jsonl` anywhere under `root` (a fetched result, or the bytes
+    `fetch` kept from a run that did not finish) is read, one JSON record
+    per line, and `field` -- a dot-separated path walked the same way
+    `completeness()` walks one -- is read off each record. A record where
+    the path does not resolve to a string is skipped, never guessed at, as
+    is a line that is not a JSON object: a run killed mid-write leaves a
+    torn last line, and the records before it still count. This names no
+    field of its own; the target declares which one carries its unit.
+    """
+    found: set[str] = set()
+    root = Path(root)
+    if not root.is_dir():
+        return found
+    for runs_path in sorted(root.rglob("runs.jsonl")):
+        if not runs_path.is_file():
+            continue
+        for line in runs_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                node = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for segment in field.split("."):
+                if not isinstance(node, dict) or segment not in node:
+                    node = None
+                    break
+                node = node[segment]
+            if isinstance(node, str):
+                found.add(node)
+    return found
