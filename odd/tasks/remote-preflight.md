@@ -23,7 +23,7 @@ Branch: `feat/remote-preflight` (from `origin/main` 5b7b447e, v0.35.0). Delivery
 ## Tasks
 
 - T1 (S1, S4 preflight doctrine; S5 for what it touches) delegated writer A -- done, RED/GREEN observed per check (commit 4926432d)
-- T2 (S2, S3, F1, F2, F3; S5 for what it touches) delegated writer B -- done, RED observed (31 of 33 new tests failing, then F3 3 failing) then GREEN (33/33); commit recorded in L14
+- T2 (S2, S3, F1, F2, F3; S5 for what it touches) delegated writer B -- done, RED observed (31 of 33 new tests failing, then F3 3 failing) then GREEN (33/33); commit 0b1ce596
 - T3 independent verifier (items 3, 5)
 
 ## Log
