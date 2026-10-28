@@ -66,6 +66,18 @@ refuses (`missing-input`) rather than assume one:
 | `--quota-hours` | one account's weekly GPU quota, operator-supplied or read from the remote service's official MCP accelerator-quota tool; record where with `--quota-source` and when with `--quota-date` |
 | `--setup-minutes` | per-session overhead measured by a rehearsal: clone, environment install, data mount |
 | `--axis` | the declared distribution axis; `arm` or `comparison` is refused |
+| `--account` | instead of the uniform limits: one account with its own limits, `<owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>]`, repeated once per account; `quota_hours` may be `unknown`, and a `colab` account carries its tier |
+| `--accounts-file` | the same accounts as a JSON list of `{owner, service, sessions, sessionHours, quotaHours, tier?, quotaSource?, quotaDate?}` |
+
+With `--account` or `--accounts-file`, each account brings its own concurrent
+sessions, session wall time and weekly quota, and the uniform flags
+(`--owners`, `--accounts`, `--sessions-per-account`, `--session-limit-hours`,
+`--quota-hours`, `--tiers`) are refused beside them. Owners are counted from
+the accounts: a second account of one owner on one service is left out, and a
+free-tier Colab account is excluded exactly as `--tiers` excludes it.
+`--service` then filters the accounts to the campaign's service. Without
+either flag, `assess` reads the uniform flags and prints exactly what it
+always printed.
 
 ## The worth-it rule
 
@@ -81,7 +93,7 @@ its first minute.
 
 | Verdict | When |
 |---|---|
-| `split-first` | a unit plus the setup exceeds one session's limit: split it along the declared axis (more units, never by arm) and assess again |
+| `split-first` | a unit plus the setup exceeds 80% of one session's limit (the session-fit margin): split it along the declared axis (more units, never by arm) and assess again, or declare its step resumable in a `schedule` plan |
 | `do-not-mix` | `--service` names more than one service and `--stamps-identical` is not declared: run the campaign on one service |
 | `parallelize` | more than one eligible owner, `speedup >= 1.5`, `savedMinutes >= 30`, and no account exceeds its quota |
 | `single-account` | anything else; every unmet condition is named in `reasons` |
@@ -89,6 +101,151 @@ its first minute.
 The thresholds travel in every output (`thresholds`), so a verdict is read
 against them rather than trusted. A campaign that exceeds the quota on every
 plan says so in `reasons`: it spans more than one quota week.
+
+Under per-account limits a unit only goes to an account whose session can
+hold it with its setup inside the margin, `split-first` reads the longest session among the
+eligible accounts, the single-account baseline is the eligible account that
+finishes the campaign soonest alone (`baselineAccount`), and each
+`perAccount` entry carries its own `owner`, `service`, `sessions`,
+`sessionLimitHours` and `quotaHours`. An account whose quota is `unknown` is
+reported `overQuota: null` and named in `reasons`: it is not checked, and it
+has to be recorded before the launch.
+
+## Every unit fits one session with margin, or resumes
+
+A service stops a session at its continuous-run limit, and a reclaimed or
+timed-out session loses every minute since the last thing it wrote. So the
+rule for every agent that plans, builds or walks a remote campaign:
+
+- **One unit, one session, with margin.** A unit's upper-bound duration plus
+  its setup must end inside **80%** of its account's session limit
+  (`SESSION_MARGIN_PERCENT`). The remaining 20% absorbs a slower node, a
+  queue, a late checkpoint and the result upload. `assess` reports such units
+  in `unitsOverSessionLimit` with the verdict `split-first`, and its reason
+  names the margin; `schedule` refuses the plan with
+  `unit-over-session-margin`, naming the step, the unit's duration, its setup
+  and the limit (`unit-over-session-limit` when the unit does not fit even the
+  whole session).
+- **A long unit is split** along the declared axis — by fold, seed or subject
+  block, never by arm — so each piece fits one session with margin, and the
+  campaign is assessed or scheduled again.
+- **Or it checkpoints and resumes.** A step whose units write a checkpoint and
+  resume from it declares `"resumable": true` with `"checkpointMinutes": <the
+  minutes of work between two checkpoints>`. `schedule` then plans each unit
+  as `ceil(unitMinutes / (80% of the session limit − setup))` chained sessions
+  on the **same account**, one after another, and each chained session pays
+  the setup again. The step reports `resumable`, `checkpointMinutes` and
+  `sessionsPerUnit` per service, its shares count every chained session, and
+  `reasons` names the chain. A checkpoint interval longer than one session's
+  usable work is refused with `unit-over-session-margin`: the session would
+  end before its first checkpoint. A resumable step whose units already fit
+  one session plans exactly as an undeclared one.
+
+The declaration is a promise about the target's code, not about this CLI: the
+unit really writes its checkpoint at least every `checkpointMinutes`, stops
+starting new work before the session's deadline, and resumes from the last
+checkpoint in the next session.
+
+## Planning a project's remote steps
+
+`assess` answers for one campaign. `schedule` answers for the project: given
+its remote steps, it puts each step on **one** service and its units on that
+service's accounts so the whole project ends as early as possible. It is
+read-only — no record, no job, no launch — and its plan is never launch
+authorization; each step still goes through its own `distribute`, rehearsal,
+`gate` and `submit` behind the operator's consent.
+
+The plan (`--plan plan.json`, schema 1):
+
+```json
+{"schema": 1,
+ "setupMinutes": <number or {service: number}, optional default>,
+ "steps": [{"id": "<step id>", "units": <int>, "services": ["<service>", ...],
+            "unitMinutes": {"<service>": <minutes>},
+            "timing": {"<service>": {"path": "Results/timing.json", "host": "<service>:<owner>", "stage": "poc" | "full"}},
+            "requires": ["<step id>", ...], "setupMinutes": <number or {service: number}>,
+            "stampsIdentical": false, "axis": "<seed | fold | subject block>",
+            "resumable": false, "checkpointMinutes": <minutes, only with "resumable": true>}],
+ "accounts": [{"owner": "<slug>", "service": "<service>", "sessions": <int>,
+               "sessionHours": <hours>, "quotaHours": <hours> | "unknown", "tier": "<colab tier>"}]}
+```
+
+- **Durations are per service and measured.** Each allowed service needs its
+  own per-unit duration, either explicit (`unitMinutes`) or from that
+  service's own host in a schema-1 timing record (`timing`): the stage's work
+  at the estimate's upper bound (+20%) divided over the step's units, setup
+  excluded. A timing host of another service, or an unmeasured one, is
+  refused: timing is never pooled across machines. A setup is required
+  (`setupMinutes`, per step or for the plan).
+- **One service per step.** Every step runs on one of its `services`; it runs
+  on several only when it declares `stampsIdentical`, and then `reasons` says
+  `verify --shards` still has to confirm them. Parallelism across services
+  therefore happens between steps, and within a step across the accounts of
+  its service.
+- **Session fit.** A unit goes only to a session whose limit holds it plus its
+  setup inside the 80% margin; past it the plan is refused unless the step
+  declares `resumable`, and then the unit is chained over sessions of one
+  account (see "Every unit fits one session with margin, or resumes").
+- **Dependencies.** A step starts only when every step it `requires` has
+  ended; an unknown step or a cycle is refused.
+- **Accounts.** From the plan, `--account` or `--accounts-file`, under the
+  team rule: one account per owner per service, free-tier Colab excluded.
+  Each account offers `sessions` concurrent slots, each opening a new session
+  (and paying the step's setup on its service) when it changes step or would
+  run past `sessionHours`.
+- **The search.** Every assignment of steps to services is simulated (step
+  by step above 4096 assignments): ready steps are taken earliest first, each
+  unit goes to the slot where it finishes earliest, ties to the lowest slot.
+  The plan kept has the smallest makespan, then the fewest accounts over
+  quota, then the fewest GPU hours — so the same plan always prints the same
+  output. `serialMinutes` is every step one after another on one session at a
+  time of its fastest eligible account; `speedup` is serial over makespan.
+- **Quota.** Each account's `gpuHours` (setups included) is checked against
+  its own weekly quota and an overrun is flagged (`overQuota`, `quotaOk`,
+  `reasons`); an `unknown` quota is reported unchecked, and a plan longer than
+  a week says it spans quota resets.
+
+The output: `{steps[{id, units, requires, services, allowedServices,
+unitMinutes, unitMinutesSource, setupMinutes, readyMinutes, startMinutes,
+endMinutes, durationMinutes, shares[{account, owner, service, units,
+slotsUsed, sessions}], resumable?, checkpointMinutes?, sessionsPerUnit?}],
+makespanMinutes, makespanHours, serialMinutes,
+serialHours, speedup, savedMinutes, quota[{account, owner, service, units,
+gpuHours, quotaHours, overQuota}], quotaOk, accounts, excludedAccounts,
+ignoredAccounts, search, doctrineChecks[{id, held, detail}], reasons,
+launchAuthorization: false}`. `doctrineChecks` names the rules the plan
+applied — `axis-not-arm`, `one-service-per-campaign`,
+`one-account-per-person`, `no-pooled-timing`, `launch-is-the-operator-s` —
+and `rehearse-each-account` with `held: null`: readiness is per worker and
+is checked at each step's gate, never here.
+
+**Worked example: one Colab Pro account and two Kaggle accounts.** One
+owner holds Colab Pro (one session, 24-hour sessions, quota `unknown`) and a
+Kaggle account; a teammate holds the second Kaggle account (each Kaggle
+account two sessions, 12-hour sessions, 30 hours a week). The project has a
+hyperparameter search `hpo_search` (25 units: 5 arms x 5 folds, 30 trials
+each) and three experiments `e1_run`, `e2_run`, `e3_run` (25 units each)
+that require it. Assumed durations, to be replaced by measured ones: a search
+unit takes 40 minutes on Colab and 60 on Kaggle, an experiment unit 20 and
+30, and a setup 8 and 10.
+
+```
+python3 skills/remote-parallelism/scripts/parallelism_cli.py schedule --plan plan.json
+```
+
+| Step | Service | Start → end (min) | Units per account |
+|---|---|---|---|
+| `hpo_search` | kaggle | 0 → 430 | kaggle:amalvarezme 13 (2 slots), kaggle:teammate 12 (2 slots) |
+| `e1_run` | colab | 430 → 938 | colab:amalvarezme 25 (1 slot) |
+| `e2_run` | kaggle | 430 → 650 | kaggle:amalvarezme 13, kaggle:teammate 12 |
+| `e3_run` | kaggle | 620 → 840 | kaggle:amalvarezme 13, kaggle:teammate 12 |
+
+Makespan 938 minutes (15.6 h) against 2532 serial (42.2 h): speed-up 2.7.
+Quota: kaggle:amalvarezme 27 of 30 hours, kaggle:teammate 25 of 30,
+colab:amalvarezme 8.47 hours against an unknown quota, which `reasons` asks to
+record before the launch. The search stays on one service because splitting
+it across Colab and Kaggle would mix accelerators inside one campaign; Colab
+works while Kaggle runs two experiments, and nothing is launched.
 
 ## The reproducibility checklist
 
@@ -228,8 +385,9 @@ python3 skills/remote-parallelism/scripts/parallelism_cli.py [--root <workspace>
 
 | Verb | What it does |
 |---|---|
-| `assess` | `--units N --unit-minutes M --owners N --sessions-per-account S --session-limit-hours H --quota-hours Q --setup-minutes O [--accounts A] [--service kaggle\|colab[,...]] [--tiers free,pro,...] [--stamps-identical] [--units-file units.json] [--axis <name>] [--quota-source <text>] [--quota-date YYYY-MM-DD] [--record <dir>]`: JSON `{inputs, thresholds, serialMinutes, singleAccountMinutes, parallelMinutes, speedup, savedMinutes, accountsUsed, recommendedAccounts, perAccount[{account, units, gpuHours, overQuota}], quotaOk, unitsOverSessionLimit, eligibleOwners, excludedOwners[{owner, tier}], verdict, reasons, unitSeeds?, reproducibilityChecklist, stampFields, launchAuthorization: false}`; each `perAccount` entry is one eligible owner's account. `--record <dir>` writes `<dir>/.remote-parallelism/assessment-<date>.json` (a second one the same day gets `-2`, never an overwrite); `<dir>` must resolve inside the workspace, through no symlink that leaves it |
+| `assess` | `--units N --unit-minutes M --owners N --sessions-per-account S --session-limit-hours H --quota-hours Q --setup-minutes O` or, with each account's own limits, `--units N --unit-minutes M --setup-minutes O --account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...` (or `--accounts-file accounts.json`), then `[--accounts A] [--service kaggle\|colab[,...]] [--tiers free,pro,...] [--stamps-identical] [--units-file units.json] [--axis <name>] [--quota-source <text>] [--quota-date YYYY-MM-DD] [--record <dir>]`: JSON `{inputs, thresholds, serialMinutes, singleAccountMinutes, parallelMinutes, speedup, savedMinutes, accountsUsed, recommendedAccounts, perAccount[{account, units, gpuHours, overQuota}], quotaOk, unitsOverSessionLimit, eligibleOwners, excludedOwners[{owner, tier}], verdict, reasons, unitSeeds?, reproducibilityChecklist, stampFields, launchAuthorization: false}`; each `perAccount` entry is one eligible owner's account. `--record <dir>` writes `<dir>/.remote-parallelism/assessment-<date>.json` (a second one the same day gets `-2`, never an overwrite); `<dir>` must resolve inside the workspace, through no symlink that leaves it |
 | `estimate` | `--timing <path to timing.json> [--stage poc\|full\|both] [--host <host>:<owner> ...] [--record <dir>] [--json]`: JSON `{estimates: {stage: {host: {seconds, low, high, formula, measurements, device, secondsPerUnit, perArm, setupSeconds} \| "unmeasured"}}, placement: {stage: {where: "local"\|"cloud"\|null, host, reason, pocBudget?: "within"\|"exceeds"\|"unmeasured"}}, placementRules, timing, range, unmeasuredMeans, launchAuthorization: false}`; `local` and every host the record measured are always reported, and each `--host` named adds a row (`unmeasured` when the record has no measurement of it). `--record <dir>` writes `<dir>/.remote-parallelism/estimate-<date>.json` under the same containment as `assess`, and then `--timing` too must resolve inside the workspace, through no symlink that leaves it |
+| `schedule` | `--plan <plan.json> [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json]`: places each remote step on one service and its units on that service's accounts, honouring `requires`, for the smallest makespan; JSON `{steps[{id, services, startMinutes, endMinutes, shares[...]}], makespanMinutes, serialMinutes, speedup, savedMinutes, quota[{account, gpuHours, quotaHours, overQuota}], quotaOk, excludedAccounts, search, doctrineChecks, reasons, launchAuthorization: false}` (see "Planning a project's remote steps"); read-only, writes nothing |
 | `checklist` | the reproducibility checklist as JSON |
 | `stamp-fields` | the shard stamp fields to declare `identicalAcrossShards` |
 
@@ -253,6 +411,13 @@ Success prints one JSON object on stdout. A refusal prints
 | `timing-invalid` | the timing record is not schema 1: wrong schema, a missing or unknown key, a non-positive duration, a unit other than `epoch`, a bad host or device, or `scales` without both stages |
 | `mixed-devices` | one host was timed on more than one device; timing is never pooled across machines |
 | `timing-outside-workspace` | with `--record`, `--timing` resolves outside the workspace |
+| `accounts-invalid` | an `--account` or accounts-file entry is malformed: a bad owner or service, non-positive sessions or hours, a quota that is neither positive nor `unknown`, a `colab` account without its tier, or a tier on another service |
+| `accounts-file-missing` | `--accounts-file` names no file |
+| `plan-missing` | `schedule --plan` names no file |
+| `plan-invalid` | the plan is not schema 1: an unknown key, a bad step, a `requires` naming an unknown step or forming a cycle, or a timing source on another service's host or unmeasured |
+| `no-eligible-account` | a step's services have no eligible account (free-tier Colab and second accounts of one owner never count) |
+| `unit-over-session-limit` | one unit plus its setup exceeds every eligible session: split it along the declared axis or declare the step resumable |
+| `unit-over-session-margin` | one unit plus its setup exceeds 80% of every eligible session's limit, or a resumable step's checkpoint interval exceeds one session's usable work: split it along the declared axis or declare (or tighten) its checkpoint |
 
 ## Compatibility
 
@@ -263,7 +428,10 @@ than one unit.
 
 ## Output Reporting
 
-For `estimate`, report each stage's range per host with its formula and
+For `schedule`, report each step's service, window and per-account units,
+the makespan against the serial one, every account's GPU hours against its
+quota (overruns and unknown quotas named), each doctrine check, and that the
+plan is never launch authorization. For `estimate`, report each stage's range per host with its formula and
 device, every host that reads `unmeasured`, and that the range is an estimate
 shown before the pilot or the launch, never authorization. For `assess`,
 report the verdict, the speed-up and saved minutes against their thresholds,

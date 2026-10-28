@@ -159,14 +159,14 @@ existed.
 Every measurement this skill instruments lands inside its own product folder,
 under `Results/`, in the shape the command center's experiments panel reads.
 A measurement written anywhere else runs and is never shown. Paths are
-relative to the product folder `<Name>/`:
+relative to the product folder `<Name>/`. One folder per experiment (`Results/e1/`, `Results/e2/`, ...) is read the same way; at most 200 shown files are read per product, and files the panel never shows, such as per-run records under `Results/<experiment>/runs/`, do not count toward that limit:
 
 | Path | What it holds | Shape |
 | --- | --- | --- |
 | `Results/history*.{json,jsonl,csv}` | Convergence, per epoch or step | One record per epoch or step, carrying an `epoch` or `step` key and numeric series such as `loss`, `val_loss` or a metric; optional `seed`, `fold` and `model` columns let the panel draw mean ± sd across seeds and separate the curves. |
-| `Results/figures/**` | The experiment's figures | `png`, `svg`, `jpg` or `pdf` files. |
-| `Results/tables/**` | The experiment's tables | `csv`, `md` or `json` files. |
-| `Results/summary.json` | The run's headline numbers | One JSON object. |
+| `Results/figures/**`, or `Results/<experiment>/figures/**` | The experiment's figures | `png`, `svg`, `jpg` or `pdf` files, in a `figures` folder at any depth. |
+| `Results/tables/**`, or `Results/<experiment>/tables/**` | The experiment's tables | `csv`, `md` or `json` files, in a `tables` folder at any depth. |
+| `Results/summary.json`, or `Results/<experiment>/summary.json` | The run's headline numbers | One JSON object; a `summary.json` deeper than one experiment folder is not read. |
 | `Results/significance*.json` | The significance table | A JSON list of objects with the keys `comparison`, `test`, `statistic`, `p_value`, `p_adjusted`, `correction`, `effect_size`, `effect_size_name`, `ci_low`, `ci_high`, `n` and `alpha`. |
 
 The test, correction and effect size written there are the ones the bound
@@ -213,7 +213,15 @@ Before generating a job and again before `gate`, run this skill's own
 skill's own holder (`Experimental_AGREED.md`) and writes nothing: it lists
 `propose`, `offer`, `gate` and `submit` in order, each with what it would
 refuse now and the exact next command, and `verify` reports the same ladder
-gaps under `launchLadder`. `proposal-implementation`'s `references/usage.md`
+gaps under `launchLadder`. Pass `--service <service>` when folders of
+the same job name sit under more than one service (a job is `(service, job)`;
+`JOB_SERVICE_AMBIGUOUS` otherwise). When several remote steps read only what is
+already produced -- typically arms placed on different services -- the plan and
+`walk` both list them under `concurrentLaunches.launchable`, each to be
+launched through its own `propose`/`offer`/`gate`, and name every step still
+`waiting` with what it `waitsOn`. A campaign `gate --unit` refuses `NOT_READY`
+until every worker its `propose` record names has its own passing rehearsal
+at the job's pin, and names the ones that do not. `proposal-implementation`'s `references/usage.md`
 (*`launch-plan` — what is still missing before a job launches*) documents its
 output.
 
@@ -280,6 +288,26 @@ over the timing probe's record.
 - **What it is.** A measurement-derived range (±20%, single-probe
   extrapolation), never a promise, and never authorization: the pilot and the
   launch stay the operator's to approve after reading it.
+
+## Every remote unit fits one session, or resumes
+
+A service stops a session after its continuous run limit, and whatever was not
+written out by then is lost with the hours it cost. So every remote unit fits
+one session within the 80% margin (`schedule` and `assess` refuse
+`unit-over-session-margin` otherwise), or its step is declared resumable from a
+checkpoint. The target reads `FORGE_SESSION_DEADLINE` (epoch seconds), writes
+its checkpoint and starts no new unit or trial past it, then exits cleanly.
+A unit that does not fit is split along the declared axis — fold, seed,
+subject block, never by arm — or resumed over chained sessions on the same
+account. After a cut session, run `fetch` (it keeps the partial result), then
+`remaining`, and send again only the units it lists. A checkpoint reaches the
+next session as follows: on a kernel service, the previous kernel's output
+attached to the next kernel through `kernel_sources` and read under its input
+root at `notebooks/<owner>/<slug>/` (checked on a live account on 2026-10-27;
+papersmith does not attach it for you yet); on Colab, uploaded into the new
+session. The details live in
+`skills/remote-execution/SKILL.md`, **Sessions, checkpoints and
+resume**, and `skills/remote-parallelism/SKILL.md`.
 
 ## The hyperparameter search step
 

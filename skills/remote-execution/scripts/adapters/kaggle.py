@@ -441,6 +441,19 @@ KAGGLE_ACCELERATOR_ARCHITECTURES = ("sm_75",)
 KAGGLE_MACHINE_SHAPES = {"NvidiaTeslaT4": "sm_75", "NvidiaTeslaP100": "sm_60"}
 KAGGLE_MACHINE_SHAPE = "NvidiaTeslaT4"
 
+# The continuous run time one Kaggle session may last, per accelerator:
+# 12 hours for a GPU session. This is the service's PUBLISHED limit at the
+# time of writing (2026-10), not a measurement and not a law -- re-check it
+# against Kaggle's own documentation before planning around it, and revise
+# this table when it changes. A session that reaches it is stopped by the
+# service, and nothing it had not already written to its output survives.
+# `KaggleAdapter.session_limit_seconds()` reads this table and nothing else;
+# a shape not listed here answers `None` (unknown), never a guess.
+KAGGLE_SESSION_LIMIT_SECONDS = {
+    "NvidiaTeslaT4": 12 * 3600,
+    "NvidiaTeslaP100": 12 * 3600,
+}
+
 
 def _default_accelerator() -> tuple[str, tuple[str, ...]]:
     """`ADAPTER.register_default_accelerator("kaggle", ...)`'s own
@@ -704,6 +717,14 @@ class KaggleAdapter(ADAPTER.Adapter):
     # what keeps this module's own `workers()` and `credentials.py`'s
     # `materialize()` pointed at the exact same script.
     CREDENTIAL_CLI = DEFAULT_ACCOUNTS_CLI
+
+    @classmethod
+    def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
+        """`KAGGLE_SESSION_LIMIT_SECONDS` for `machine_shape` -- the shape
+        every push requests (`KAGGLE_MACHINE_SHAPE`) when `None`; `None`
+        for a shape the table does not list."""
+        shape = KAGGLE_MACHINE_SHAPE if machine_shape is None else machine_shape
+        return KAGGLE_SESSION_LIMIT_SECONDS.get(shape)
 
     def __init__(
         self,
@@ -1124,7 +1145,22 @@ class KaggleAdapter(ADAPTER.Adapter):
             template.setdefault("machine_shape", KAGGLE_MACHINE_SHAPE)
 
             title = template.get("title")
-            slug = _slugify(title) if title else _kernel_slug(job.entrypoint)
+            # A campaign sends one job per granted slot (S1, parallel
+            # campaigns): slot 2 and up of the same job on the same account
+            # must be its OWN kernel, or the second push would overwrite the
+            # first under one ref. Slot 1 (no `slot` key) keeps the ref it
+            # always had. The title carries the suffix too, since the
+            # service derives a new kernel's slug from its title.
+            slot = job.run_config.get("slot")
+            if isinstance(slot, int) and not isinstance(slot, bool) and slot > 1:
+                if title:
+                    title = f"{title}-slot-{slot}"
+                    template["title"] = title
+                    slug = _slugify(title)
+                else:
+                    slug = f"{_kernel_slug(job.entrypoint)}-slot-{slot}"
+            else:
+                slug = _slugify(title) if title else _kernel_slug(job.entrypoint)
             ref = f"{job.worker}/{slug}"
             template["id"] = ref
             template["code_file"] = job.entrypoint.name
@@ -1248,9 +1284,27 @@ class KaggleAdapter(ADAPTER.Adapter):
         result = self._run(
             argv, env=self._env_for(handle), timeout=self._fetch_timeout
         )
-        self._parse_driver_result(result, action=f"fetch for {submission_id}")
+        payload = self._parse_driver_result(result, action=f"fetch for {submission_id}")
         files = tuple(sorted(p.name for p in into.iterdir() if p.is_file()))
-        return ADAPTER.Fetched(path=into, complete=True, files=files)
+        # The driver reports the session's own status beside the files it
+        # wrote, read BEFORE the output listing (`cmd_fetch`). Only a
+        # `complete` session is a complete result: a failed or timed-out
+        # run's output is downloaded all the same -- it may hold the only
+        # checkpoint a later session can resume from -- but it is reported
+        # `complete=False`, so the CLI never records it `returned`. A status
+        # the driver could not read (`None`) is unknown, never complete. A
+        # payload with no `status` key at all is a driver older than this
+        # rule, and keeps that driver's behaviour: complete.
+        complete = True
+        if "status" in payload:
+            raw_status = payload.get("status")
+            state = (
+                _KAGGLE_STATUS_TO_SEAM.get(raw_status.strip().lower(), "unknown")
+                if isinstance(raw_status, str)
+                else "unknown"
+            )
+            complete = state == "complete"
+        return ADAPTER.Fetched(path=into, complete=complete, files=files)
 
     def cancel(self, submission_id: str) -> None:
         """Refuse, explicitly.

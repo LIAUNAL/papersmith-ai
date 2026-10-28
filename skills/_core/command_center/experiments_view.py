@@ -9,7 +9,8 @@
   when it holds ``AGREED.md``, a full experiment when it holds
   ``Experimental_AGREED.md`` — with its convergence histories, figures,
   tables, significance tests, pinned artifacts and remote runs folded from
-  its ``.remote-execution/ledger.jsonl``, plus one row per hyperparameter
+  its ``.remote-execution/ledger.jsonl`` (also per worker: each worker's
+  lanes -- entrypoint and concurrent slot -- with state, units and service), plus one row per hyperparameter
   study the ``hyperparameter-search`` skill reported under
   ``Results/hpo/<study>/summary.json`` (schema 1) with its figures;
 * the ``datasets`` skill's registry (``datasets/registry.json``): per dataset
@@ -55,13 +56,15 @@ from typing import Any
 from .atlas import _locate
 from .state_extractor import credentials_store, inbox_directory
 from .terminal import colab_mcp_status, remote_mcp_status
-from .remote_services import remote_services
+from .remote_services import remote_services, service_of_worker
 from .local_env import local_environment
 from .run_options import parse_timing, run_options
 from .decisions import LEDGER_MAX_BYTES, MAX_LEDGER_LINES, _discover_ledgers, _read_bytes
 
 MAX_PRODUCTS = 50
 MAX_FILES_PER_PRODUCT = 200
+#: Bound on the files one product's walk visits, shown or not (run records count here only).
+MAX_SCANNED_FILES = 20000
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_POINTS = 500
 MAX_SERIES = 24
@@ -73,6 +76,9 @@ MAX_TABLE_COLS = 30
 MAX_SIGNIFICANCE_ROWS = 200
 MAX_PINNED = 30
 MAX_LATEST_RUNS = 10
+MAX_REMOTE_WORKERS = 24
+MAX_WORKER_LANES = 20
+MAX_LANE_UNITS = 50
 MAX_WARNINGS = 100
 MAX_DATASETS = 100
 MAX_SEARCHES = 20
@@ -562,23 +568,143 @@ def _fold_runs(root: Path, ledger: Path | None, reader: _Reader) -> dict[str, An
     return {"count": len(runs), "by_state": dict(sorted(by_state.items())), "latest": latest}
 
 
+def _ledger_text(root: Path, ledger: Path | None) -> str | None:
+    """The ledger's text read a second time, silently: ``_fold_runs`` already
+    reported anything unreadable or malformed about this same file."""
+    if ledger is None:
+        return None
+    status, resolved, _size, _mtime = _locate(root, ledger, LEDGER_MAX_BYTES)
+    if status != "ok" or resolved is None:
+        return None
+    data = _read_bytes(resolved, LEDGER_MAX_BYTES)
+    return None if data is None else data.decode("utf-8", errors="replace")
+
+
+def _slot_of(event: dict) -> int:
+    slot = event.get("slot")
+    return slot if isinstance(slot, int) and not isinstance(slot, bool) and slot >= 2 else 1
+
+
+def _units_of(event: dict) -> list[str] | None:
+    units = event.get("units")
+    if not isinstance(units, list):
+        return None
+    return [_clip(unit, 80) for unit in units[:MAX_LANE_UNITS]]
+
+
+def _fold_workers(root: Path, ledger: Path | None) -> list[dict[str, Any]]:
+    """Remote runs per worker (S6). One lane per ``(entrypoint, worker,
+    slot)`` -- the remote-execution ledger's own ``lane_key``: a slot of 2 or
+    more is its own lane, a later submission to a lane supersedes the earlier
+    one. Lanes are grouped under their worker; workers come most recently
+    updated first. Bounded by MAX_REMOTE_WORKERS and MAX_WORKER_LANES."""
+    text = _ledger_text(root, ledger)
+    if text is None:
+        return []
+    lanes: dict[tuple[str, str, int], dict[str, Any]] = {}
+    by_id: dict[str, tuple[str, str, int]] = {}
+    touched: list[str] = []
+    for line in text.splitlines()[:MAX_LEDGER_LINES]:
+        try:
+            event = json.loads(line) if line.strip() else None
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("kind")
+        sid = _clip(event.get("submissionId"), 120)
+        if kind == "submitted":
+            worker = _clip(event.get("worker"), 80)
+            entry = _clip(event.get("entrypoint"), 200) or sid or "?"
+            key = (entry, worker, _slot_of(event))
+            granted = event.get("grantedCapacity")
+            lanes[key] = {"entrypoint": entry, "slot": key[2], "state": "submitted", "submission_id": sid,
+                          "units": _units_of(event),
+                          "granted": granted if isinstance(granted, int) and not isinstance(granted, bool) else None,
+                          "ts": _clip(event.get("ts"), 40), "reason": ""}
+            if sid:
+                by_id[sid] = key
+        elif kind in ("returned", "errored"):
+            key = by_id.get(sid)
+            lane = lanes.get(key) if key else None
+            if lane is None or lane["submission_id"] != sid:
+                continue  # unknown, or a superseded submission of its lane
+            lane.update(state=kind, ts=_clip(event.get("ts"), 40),
+                        reason=_clip(event.get("reason"), 300) if kind == "errored" else "")
+            worker = key[1]
+        else:
+            continue
+        if worker in touched:
+            touched.remove(worker)
+        touched.append(worker)
+    workers: list[dict[str, Any]] = []
+    for worker in reversed(touched):
+        if len(workers) >= MAX_REMOTE_WORKERS:
+            break
+        own = [lanes[key] for key in sorted(k for k in lanes if k[1] == worker)]
+        by_state: dict[str, int] = {}
+        for lane in own:
+            by_state[lane["state"]] = by_state.get(lane["state"], 0) + 1
+        workers.append({"worker": worker, "service": service_of_worker(worker),
+                        "last_update": max((lane["ts"] for lane in own), default=""),
+                        "by_state": dict(sorted(by_state.items())), "lane_count": len(own),
+                        "lanes": own[:MAX_WORKER_LANES]})
+    return workers
+
+
 # --------------------------------------------------------------------------
 # products
 # --------------------------------------------------------------------------
-def _scan(folder: Path, cap: int, skip: tuple[str, ...] = ()) -> tuple[list[Path], bool]:
+def _scan(folder: Path, cap: int, skip: tuple[str, ...] = (), keep=None) -> tuple[list[Path], str | None]:
     """Files under ``folder`` without following directory symlinks; top-level
-    directories named in ``skip`` are read by their own reader instead."""
+    directories named in ``skip`` are read by their own reader instead.
+
+    ``keep(path)`` selects the files that count against ``cap``: files the
+    panel never shows (a campaign's run records) are walked past without using
+    it up. The walk itself stops after ``MAX_SCANNED_FILES`` files. The second
+    value names the bound that cut the scan, or is None.
+    """
     found: list[Path] = []
     if not folder.is_dir() or folder.is_symlink():
-        return found, False
+        return found, None
+    visited = 0
     for current, dirs, files in os.walk(folder, followlinks=False):
         top = Path(current) == folder
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not (top and d in skip))
         for name in sorted(files):
+            visited += 1
+            if visited > MAX_SCANNED_FILES:
+                return found, "visited"
+            path = Path(current) / name
+            if keep is not None and not keep(path):
+                continue
             if len(found) >= cap:
-                return found, True
-            found.append(Path(current) / name)
-    return found, False
+                return found, "kept"
+            found.append(path)
+    return found, None
+
+
+def _result_kind(results: Path, path: Path) -> str | None:
+    """What the panel shows a file under ``Results/`` as, or None.
+
+    A figure or a table sits in a ``figures`` or ``tables`` folder at any depth
+    (``Results/figures`` or ``Results/<experiment>/figures``); a summary is
+    ``Results/summary.json`` or ``Results/<experiment>/summary.json``.
+    """
+    parts = path.relative_to(results).parts
+    name, ext = path.name.lower(), path.suffix.lower()
+    folders = parts[:-1]
+    if len(parts) == 1 and name == "panel.json":
+        return "panel"
+    if name.startswith("history") and ext in HISTORY_EXTS:
+        return "history"
+    if name.startswith("significance") and ext == ".json":
+        return "significance"
+    if "figures" in folders and ext in FIGURE_EXTS:
+        return "figure"
+    if ("tables" in folders and ext in TABLE_EXTS) or (len(parts) <= 2 and name == "summary.json"):
+        return "table"
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -791,9 +917,12 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
     else:
         kind = "unknown"
     results = folder / "Results"
-    files, cut = _scan(results, MAX_FILES_PER_PRODUCT, skip=("hpo",))
-    if cut:
+    files, cut = _scan(results, MAX_FILES_PER_PRODUCT, skip=("hpo",),
+                       keep=lambda path: _result_kind(results, path) is not None)
+    if cut == "kept":
         reader.warn(f"{reader.label(results)}: only the first {MAX_FILES_PER_PRODUCT} files were scanned")
+    elif cut == "visited":
+        reader.warn(f"{reader.label(results)}: the scan stopped after {MAX_SCANNED_FILES} files were visited")
     convergence: list[dict[str, Any]] = []
     figures: list[str] = []
     tables: list[dict[str, Any]] = []
@@ -802,21 +931,20 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
     for path in files:
         if not reader.contained(path):
             continue  # A symlink leaving the workspace is ignored outright.
-        rel_parts = path.relative_to(results).parts
-        name, ext = path.name.lower(), path.suffix.lower()
-        if len(rel_parts) == 1 and name == "panel.json":
+        role = _result_kind(results, path)
+        if role == "panel":
             panel = path
-        elif name.startswith("history") and ext in HISTORY_EXTS:
+        elif role == "history":
             if len(convergence) < MAX_HISTORIES:
                 entry = _read_history(path, reader)
                 if entry:
                     convergence.append(entry)
-        elif name.startswith("significance") and ext == ".json":
+        elif role == "significance":
             significance.extend(_read_significance(path, reader))
-        elif rel_parts[0] == "figures" and ext in FIGURE_EXTS:
+        elif role == "figure":
             if len(figures) < MAX_FIGURES:
                 figures.append(_rel(root, path))
-        elif (rel_parts[0] == "tables" and ext in TABLE_EXTS) or (len(rel_parts) == 1 and name == "summary.json"):
+        elif role == "table":
             if len(tables) < MAX_TABLES:
                 table = _read_table(path, reader)
                 if table:
@@ -844,6 +972,7 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         "significance": significance[:MAX_SIGNIFICANCE_ROWS],
         "pinned": _pinned(root, folder, reader, panel),
         "runs": _fold_runs(root, ledger, reader),
+        "remote_workers": _fold_workers(root, ledger),
         "timing": timing,
         "hpo": hpo,
         "diagrams": _diagrams(root, repo, folder, reader),

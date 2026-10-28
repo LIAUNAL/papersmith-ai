@@ -42,7 +42,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable, Mapping, Sequence
 
 # A ledger event has no business being large: the fields are a path, a
 # 64-hex digest, an opaque id, a worker name and a timestamp — ~300 B
@@ -126,8 +126,25 @@ def submitted_event(
     requested_capacity: int,
     granted_capacity: int,
     ts: str | None = None,
+    slot: int | None = None,
+    units: Sequence[str] | None = None,
 ) -> dict:
     """Build a `submitted` event.
+
+    `units` is the share of a campaign's declared units THIS submission
+    carries (S6, session checkpoints), recorded so a later `remaining` read
+    can tell which units have a complete result and which must be sent
+    again. `None` -- a single send, which carries no unit list -- writes no
+    `units` field at all, so such an event is byte-identical to one written
+    before this field existed.
+
+    `slot` is the concurrent slot of `worker` this submission occupies when
+    one campaign sends several submissions of the same entrypoint to the
+    same worker (S1, parallel campaigns). Slot 1 -- and every submission
+    that is not one of several -- carries no `slot` field at all, so such
+    an event is byte-identical to one written before slots existed. A
+    `slot` of 2 or more puts the submission in its own lane of the fold
+    (`lane_key()`), so it neither supersedes nor is superseded by slot 1.
 
     `entrypoint` — not `notebook` — is the field name for the thing executed
     remotely. The dataclass and adapter seam that will carry this same value
@@ -135,7 +152,7 @@ def submitted_event(
     agree on one vocabulary for "the thing that runs", and neither one
     smuggles in a format opinion about it.
     """
-    return {
+    event: dict = {
         "kind": "submitted",
         "ts": ts or _now(),
         "entrypoint": str(entrypoint),
@@ -145,6 +162,34 @@ def submitted_event(
         "requestedCapacity": requested_capacity,
         "grantedCapacity": granted_capacity,
     }
+    if slot is not None and slot != 1:
+        event["slot"] = slot
+    if units is not None:
+        event["units"] = [str(unit) for unit in units]
+    return event
+
+
+SLOT_LANE_SEPARATOR = "#slot"
+
+
+def lane_key(submission: Mapping[str, object]) -> tuple[str, str]:
+    """The `(entrypoint, lane)` key a `submitted` event is folded under.
+
+    The lane is the worker itself for every event without a `slot` field
+    (and for slot 1): exactly the `(entrypoint, worker)` key every reader
+    already indexes. A submission in slot `n >= 2` of a worker gets the
+    lane `<worker>#slot<n>`: two concurrent submissions of one entrypoint
+    to one worker are two independent "latest" facts, never one superseding
+    the other -- the same reason `latest` was keyed by worker at all.
+    `pending_for()` counts a worker's lanes by the event's own `worker`
+    field, never by parsing this key.
+    """
+    entrypoint = str(submission["entrypoint"])
+    worker = str(submission["worker"])
+    slot = submission.get("slot")
+    if slot is None or slot == 1:
+        return (entrypoint, worker)
+    return (entrypoint, f"{worker}{SLOT_LANE_SEPARATOR}{slot}")
 
 
 def returned_event(
@@ -164,14 +209,42 @@ def returned_event(
     }
 
 
-def errored_event(*, submission_id: str, reason: str, ts: str | None = None) -> dict:
-    """Build an `errored` event, with `reason` truncated to 512 chars."""
-    return {
+def errored_event(
+    *,
+    submission_id: str,
+    reason: str,
+    ts: str | None = None,
+    artifact_path: str | Path | None = None,
+    run_state: str | None = None,
+) -> dict:
+    """Build an `errored` event, with `reason` truncated to 512 chars.
+
+    `artifact_path`/`run_state` are set by `fetch` when a run ended without
+    a complete result (failed, timed out, or reclaimed: `run_state` is the
+    seam's own state for it) but left bytes behind: the path where those
+    bytes are KEPT, never a merge destination. Absent, the event is
+    byte-identical to one written before either field existed. An
+    `errored` event with an `artifactPath` settles its submission exactly
+    as any other `errored` event does -- it is never `returned`.
+    """
+    event = {
         "kind": "errored",
         "ts": ts or _now(),
         "submissionId": submission_id,
         "reason": reason[:MAX_REASON_CHARS],
     }
+    if artifact_path is not None:
+        event["artifactPath"] = str(artifact_path)
+    if run_state is not None:
+        event["runState"] = run_state
+    return event
+
+
+def event_bytes(event: Mapping[str, object]) -> int:
+    """The size `append()` would write for `event`, newline included -- what
+    `MAX_EVENT_BYTES` is compared against. Exposed so a caller can refuse an
+    event before doing the irreversible thing it would record."""
+    return len((json.dumps(event, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def append(path: str | Path, event: Mapping[str, object]) -> None:
@@ -304,13 +377,15 @@ class LedgerState:
         submission, and an older, superseded submission from this same
         worker can never be double-counted either: it stopped being what
         this `(entrypoint, worker)` pair's state answers for the moment a
-        newer submission from the SAME worker superseded it.
+        newer submission from the SAME worker superseded it. A worker's
+        slot lanes (`lane_key()`) each count once: two concurrent slots of
+        one campaign are two submissions in flight on that worker.
         """
         return sum(
             1
-            for (entrypoint, submission_worker), submission in self.latest.items()
-            if submission_worker == worker
-            and self.entrypoints[(entrypoint, submission_worker)].state == "pending"
+            for key, submission in self.latest.items()
+            if submission.get("worker") == worker
+            and self.entrypoints[key].state == "pending"
         )
 
 
@@ -402,7 +477,7 @@ def fold(lines: Iterable[str], live_digest: str | Callable[[], str]) -> LedgerSt
             # are five independent "latest" facts, one per worker, not one
             # fact where the fourth and fifth submissions read as
             # superseding the first three.
-            latest_key = (event["entrypoint"], event["worker"])
+            latest_key = lane_key(event)
             latest[latest_key] = event
             latest_position[latest_key] = position
         elif kind in _TERMINAL_KINDS:
@@ -447,7 +522,7 @@ def fold(lines: Iterable[str], live_digest: str | Callable[[], str]) -> LedgerSt
             # currency_verdict already said "current" leaves a digest-moved
             # verdict (the OTHER, backend-independent half) untouched — this
             # is an additional check, not a replacement for that one.
-            key = (submission["entrypoint"], submission["worker"])
+            key = lane_key(submission)
             if position < latest_position[key]:
                 verdict = "fromStaleSubmission"
         verdicts[event["submissionId"]] = verdict
@@ -486,6 +561,54 @@ def fold(lines: Iterable[str], live_digest: str | Callable[[], str]) -> LedgerSt
         verdicts=verdicts,
         unreadable_lines=unreadable_lines,
     )
+
+
+# The pseudo-terminal `submission_outcomes()` pairs with a submission that a
+# later one under the same id replaced before it settled. Never written to a
+# ledger; it exists only in that function's answer.
+SUPERSEDED = "superseded"
+
+
+def submission_outcomes(lines: Iterable[str]) -> list[tuple[dict, dict | None]]:
+    """Every `submitted` event in append order, paired with the terminal
+    event that settled THAT submission, or `None` while none has.
+
+    A terminal event settles the most recent `submitted` event carrying its
+    `submissionId` that precedes it in append order. This is the pairing
+    `fold()`'s `by_id` cannot give: an identity-stable backend reuses one
+    id for every resubmission to the same lane, and `by_id` keeps only the
+    last, so the units an EARLIER submission under that id returned would
+    be lost to a reader that resolved through it. A submission replaced
+    under its id before anything settled it is paired with
+    `{"kind": SUPERSEDED}`. Unreadable lines are skipped, exactly as
+    `fold()` skips them.
+    """
+    pairs: list[list] = []
+    open_by_id: dict[str, int] = {}
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("kind")
+        submission_id = event.get("submissionId")
+        if kind == "submitted":
+            previous = open_by_id.get(submission_id)
+            if previous is not None:
+                # Resubmitted under the same id before anything settled the
+                # earlier one: the service overwrote it in place, so it will
+                # never settle. Marked, never left looking in flight.
+                pairs[previous][1] = {"kind": SUPERSEDED, "submissionId": submission_id}
+            open_by_id[submission_id] = len(pairs)
+            pairs.append([event, None])
+        elif kind in _TERMINAL_KINDS and submission_id in open_by_id:
+            pairs[open_by_id.pop(submission_id)][1] = event
+    return [(submitted, terminal) for submitted, terminal in pairs]
 
 
 def currency_verdict(
@@ -555,7 +678,7 @@ def currency_verdict(
     `submission` always comes from `by_id`) is treated as superseded rather
     than current — this rule fails closed, not open.
     """
-    latest_for_key = latest.get((submission["entrypoint"], submission["worker"]))
+    latest_for_key = latest.get(lane_key(submission))
     superseded = (
         latest_for_key is None
         or latest_for_key["submissionId"] != submission["submissionId"]

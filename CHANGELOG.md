@@ -11,6 +11,109 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.31.0
+
+### Added
+
+- Parallel campaigns over several accounts. A campaign `submit` now sends one
+  job per concurrent slot a worker was granted (a Kaggle account runs two at
+  once), each with its round-robin share of the units, its own submission id
+  and its own ledger lane; on Kaggle, slot 2 and later get their own kernel
+  (`-slot-<n>`). A worker granted one slot submits exactly as before. If the
+  backend answers two slots of one campaign with the same submission id,
+  `submit` refuses `DUPLICATE_SUBMISSION_ID` before recording the repeat.
+- A campaign `submit` refuses `CAMPAIGN_WORKERS_NOT_READY`, and `gate --unit`
+  refuses `NOT_READY`, unless every worker the campaign will use has its own
+  passing rehearsal at the current pin. The refusal names the workers that
+  still need one: rehearse on each of them first.
+- `walk` and `launch-plan` report `concurrentLaunches`: every remote step whose
+  inputs are already produced is `launchable`, so steps placed on different
+  services (for example one arm on Colab, another on Kaggle) can be launched
+  at the same time, each through its own `propose`/`offer`/`gate`. Steps that
+  read another step's product are listed as `waiting`, with what they wait on.
+  With a single launchable step the output is unchanged.
+- `remote-parallelism assess` takes each account's own limits with `--account
+  <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>]`
+  (repeatable) or `--accounts-file <json>`, instead of one set of values for all
+  accounts. An account with an `unknown` quota is reported, not checked. The
+  uniform flags print exactly what they printed before.
+- New read-only `remote-parallelism schedule` verb: given the project's remote
+  steps (`--plan plan.json`), it puts each step on one service and its units on
+  that service's accounts so the project ends as early as possible, respects
+  step dependencies and the doctrine (one service per campaign, split along
+  seeds/folds/subjects, never by arm), and reports the makespan against the
+  serial one and the quota used per account. It never launches anything.
+- The Experimentos panel shows remote runs per worker for each product: worker,
+  service (from the worker id: `colab` or `colab:<owner>` is Colab, a bare
+  username is Kaggle), each lane (entrypoint and slot) with its state, units
+  when the ledger records them (otherwise the granted capacity), submission id
+  and last update. Slots of one worker are grouped under it; at most 24 workers
+  and 20 lanes per worker are listed. The existing "Últimas ejecuciones" list is
+  unchanged.
+- Each remote backend now declares how long one of its sessions may run
+  continuously (Kaggle GPU: 12 hours; Colab Pro: 24 hours), so you no longer
+  have to type the limit yourself. `submit` writes it into the job folder.
+- The runner passes `FORGE_SESSION_DEADLINE` (epoch seconds: session start plus
+  the limit, minus a safety margin) to your code. Read it, save a checkpoint,
+  and stop starting new folds, seeds or trials before it, so the session ends
+  as a normal completion and its output is kept.
+- Colab keeps its list of written files up to date while the run is going, so
+  you can `fetch` in the middle of a long run. If the session is later killed
+  or reclaimed, what survives is what an earlier fetch already brought back.
+- `submit` records which units each campaign submission carries
+  (`submitted.units`). The new read-only `remaining` verb lists which declared
+  units have no complete result yet, so the next campaign sends only those.
+- A campaign `submit` refuses `LEDGER_EVENT_TOO_LARGE`, before sending
+  anything, when a slot's units would not fit in one ledger line.
+- `remote-parallelism schedule` and `assess` check that each unit fits one
+  session with a margin: a unit whose duration plus setup is over 80% of the
+  account's session limit is refused (`unit-over-session-margin`, or
+  `split-first` in `assess`). Split it along seeds, folds or subjects, or
+  declare the step `resumable` with a `checkpointMinutes` interval; a resumable
+  unit is then planned over chained sessions on the same account, paying the
+  setup in each one.
+- The walk and build agents, and the `proposal-implementation` and
+  `experimental-implementation` skills, now state the rule: every remote unit
+  fits one session or checkpoints and resumes; after a cut session, `fetch`,
+  then `remaining`, and resend only what is left. On Kaggle a checkpoint can be
+  carried to the next session as the previous kernel's output
+  (`kernel_sources`, read at `/kaggle/input/notebooks/<owner>/<slug>/`);
+  papersmith does not attach it automatically yet. On Colab, upload it.
+
+### Changed
+
+- A job is identified by its service and its name. Two job folders with the
+  same name under different services no longer shadow each other in the job
+  lookup, the readiness map or the flow. When a name is ambiguous, `gate` and
+  `launch-plan` refuse `JOB_SERVICE_AMBIGUOUS`: pass `--service <service>`,
+  the service the step declares.
+
+### Fixed
+
+- `fetch` no longer records a failed, timed-out or reclaimed run as
+  `returned`. It records it as `errored`, with `runState` (`failed` or
+  `unknown`) and `artifactPath`, and keeps whatever came back under
+  `.remote-execution/partial/` instead of a results tree, so the partial
+  result can still be read and later fetches are not blocked. On Kaggle, only a
+  `COMPLETE` kernel counts as a complete result.
+- Readiness is per worker. `readiness` used to read only the latest rehearsal
+  of a job, whatever account ran it, so rehearsing a second account made the
+  first one not ready: two accounts could never be ready at the same time.
+  Each worker is now judged by its own latest rehearsal.
+- The implementation `probe` now reads each job folder's own readiness, so a
+  job whose rehearsal passed is reported as `launch`. Before, it was never
+  reported as `launch` and kept asking for a rehearsal that was already done.
+
+- The experiments panel now shows figures and tables kept in one folder per
+  experiment: a file in a `figures` or `tables` folder at any depth under
+  `Results/` (for example `Results/e1/figures/`), and `Results/<experiment>/summary.json`.
+  Only `Results/figures/`, `Results/tables/` and `Results/summary.json` were read
+  before, so a product with `Results/e1/`, `Results/e2/` ... showed none of them.
+- Run records the panel never shows (for example `Results/<experiment>/runs/*.json`)
+  no longer use up the 200-file limit per product, which used to stop the scan
+  before a campaign's figures were reached. The walk itself is bounded separately
+  and warns when it stops.
+
 ## 0.30.3
 
 ### Changed
@@ -20,6 +123,7 @@ number is `0`, breaking changes can still arrive without a major bump.
   order; an expired report is served while one background rebuild replaces
   it (re-measuring still rebuilds in line); and `smith ui` prepares the
   report at startup, so the first visit is immediate.
+
 
 ## 0.30.2
 

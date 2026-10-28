@@ -1454,7 +1454,7 @@ class RemoteExecutionMinInterpreterTests(unittest.TestCase):
         self.assertEqual(
             sorted(payload["code"]),
             ["distribute", "fetch", "generate-job", "poll", "readiness",
-             "reconcile", "smoke", "status", "submit"])
+             "reconcile", "remaining", "smoke", "status", "submit"])
 
     def test_smoke_subcommands_derives_without_phantom_or_unregistered(self):
         result, payload = roster_json(self.SMOKE_SUBS_SPEC, self.REMOTE_EXECUTION)

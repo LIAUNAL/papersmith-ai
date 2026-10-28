@@ -34750,6 +34750,9 @@ _ENGLISH_COUNTS = {
     # #67: `POSITION_SESSION_INVALID`, one invocation-defect code -- 58 -> 59, 130 -> 131, measured by running the derivation.
     59: "Fifty-nine",
     131: "One hundred and thirty-one",
+    # parallel campaigns: `JOB_SERVICE_AMBIGUOUS` (gate/launch-plan --service), one invocation-defect code -- 59 -> 60, 131 -> 132, measured by running the derivation.
+    60: "Sixty",
+    132: "One hundred and thirty-two",
 }
 
 
@@ -35172,7 +35175,7 @@ class GatingRefusalRosterTests(unittest.TestCase):
         `impl_position.require_session_token` at the top of `cmd_position`
         -- measured here at exactly +1.
         """
-        self.assertEqual(len(reachable_refusal_codes()), 131)
+        self.assertEqual(len(reachable_refusal_codes()), 132)
 
     def test_agree_joins_gating_commands_unconditionally_never_this_profiles_own_commands(self):
         """`the-agreement-nothing-computes` (Slice D, design.md D9, tasks.md

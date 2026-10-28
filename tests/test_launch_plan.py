@@ -443,5 +443,339 @@ class LaunchPlanTests(_Fixture):
                 self.assertIn("--job", proc.stdout)
 
 
+
+# --- parallel campaigns (odd/tasks/parallel-campaigns.md, T2: S2, S3, S4) ---
+
+
+class _ParallelFixture(_Fixture):
+    """Two services, several workers: the shapes S2-S4 are about."""
+
+    def _write_smoke(self, box, *, job_name="job1", commit, worker, result="pass",
+                     **extra):
+        smoke_path = box / "Method" / ".remote-execution" / "smoke.jsonl"
+        smoke_path.parent.mkdir(parents=True, exist_ok=True)
+        event = {"kind": "smokeResult", "ts": "2026-10-27T00:00:00Z",
+                 "jobName": job_name, "result": result, "commit": commit,
+                 "worker": worker, "missing": [], **extra}
+        with smoke_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+
+    def _register(self, *services):
+        rcli = impl._load_remote_execution_cli()
+        for service in services:
+            rcli.ADAPTER.register_declared_capacity(service, lambda: (1, 1))
+
+    def _offer(self, box, proposals, units=None):
+        with unittest.mock.patch.dict(
+                os.environ, {"IMPLEMENTATION_PROPOSALS": str(proposals)}):
+            return impl.cmd_offer(argparse.Namespace(
+                target=str(box), name="Method", revision=REVISION,
+                session="s1", answer="yes", units=units))
+
+    def _gate(self, box, proposals, **over):
+        args = {"target": str(box), "name": "Method", "revision": REVISION,
+                "session": "s1", "job": "job1", "worker": None, "units": None,
+                "justification": "Rehearsals passed; launching.",
+                "authorization": None, "elected": ["job1"], **over}
+        with unittest.mock.patch.dict(
+                os.environ, {"IMPLEMENTATION_PROPOSALS": str(proposals)}):
+            return impl.cmd_gate(argparse.Namespace(**args))
+
+
+class CampaignGateNeedsEveryWorkerRehearsedTests(_ParallelFixture):
+    """S2 (engine side): a campaign gate refuses unless every worker the
+    campaign proposal names has its own passing rehearsal at the pin."""
+
+    def _campaign(self, box, commit, workers):
+        self._write_job_folder(box, commit)
+        self._write_agreed(box, [(" ", "Rehearse.", "rehearsal", "job1")])
+        impl.cmd_propose(argparse.Namespace(
+            target=str(box), name="Method", session="s1", jobs=["job1"],
+            workers=list(workers), depends_on=None,
+            rationale="Spread over two accounts."))
+        proposals = self._proposals()
+        self._register("svc")
+        offered = self._offer(box, proposals, units=["u0", "u1"])
+        token = next(a for a in offered["actions"]
+                     if a["id"] == "launch")["binding"]["authorization"]
+        return proposals, token
+
+    def test_a_worker_without_its_own_rehearsal_is_named_in_the_refusal(self):
+        box, commit = self._box()
+        self._write_smoke(box, commit=commit, worker="w1")
+        proposals, token = self._campaign(box, commit, ["w1", "w2", "w3"])
+        with self.assertRaises(impl.Refused) as raised:
+            self._gate(box, proposals, units=["u0", "u1"], authorization=token)
+        self.assertEqual(raised.exception.code, "NOT_READY")
+        self.assertIn("'w2'", str(raised.exception))
+        self.assertIn("'w3'", str(raised.exception))
+        self.assertNotIn("'w1'", str(raised.exception))
+        events = (box / "Method" / ".implementation" / "position.jsonl").read_text(
+            encoding="utf-8")
+        self.assertNotIn('"kind": "gate"', events)
+
+    def test_a_rehearsal_at_another_pin_does_not_count_for_that_worker(self):
+        box, commit = self._box()
+        self._write_smoke(box, commit="0" * 40, worker="w2")
+        self._write_smoke(box, commit=commit, worker="w1")
+        proposals, token = self._campaign(box, commit, ["w1", "w2"])
+        with self.assertRaises(impl.Refused) as raised:
+            self._gate(box, proposals, units=["u0", "u1"], authorization=token)
+        self.assertEqual(raised.exception.code, "NOT_READY")
+        self.assertIn("'w2'", str(raised.exception))
+
+    def test_every_worker_rehearsed_records_the_campaign(self):
+        """Readiness is per worker: w1's pass is not erased by w2's later one."""
+        box, commit = self._box()
+        self._write_smoke(box, commit=commit, worker="w1")
+        self._write_smoke(box, commit=commit, worker="w2")
+        proposals, token = self._campaign(box, commit, ["w1", "w2"])
+        result = self._gate(box, proposals, units=["u0", "u1"], authorization=token)
+        self.assertEqual(result["status"], "recorded")
+        self.assertIsNone(result["worker"])
+        self.assertEqual(result["units"], ["u0", "u1"])
+
+    def test_a_single_send_gate_still_reads_the_job_s_readiness_as_before(self):
+        """Previous behaviour of `gate --worker`: one account, unchanged."""
+        box, commit = self._box()
+        self._write_job_folder(box, commit)
+        self._write_smoke(box, commit=commit, worker="w1")
+        self._write_agreed(box, [(" ", "Rehearse.", "rehearsal", "job1")])
+        self._propose(box)
+        proposals = self._proposals()
+        self._register("svc")
+        token = next(a for a in self._offer(box, proposals)["actions"]
+                     if a["id"] == "launch")["binding"]["authorization"]
+        result = self._gate(box, proposals, worker="w1", authorization=token)
+        self.assertEqual(result["status"], "recorded")
+        self.assertEqual(result["worker"], "w1")
+
+
+class JobsAreIdentifiedByServiceAndJobTests(_ParallelFixture):
+    """S3: two folders named `job1` under two services never shadow each
+    other; the step's (or the caller's) service selects the folder."""
+
+    def _two_services(self, box, commit):
+        self._write_job_folder(box, commit, service="svc-a")
+        self._write_job_folder(box, commit, service="svc-b")
+
+    def test_the_named_service_selects_the_folder(self):
+        box, commit = self._box()
+        self._two_services(box, commit)
+        rcli = impl._load_remote_execution_cli()
+        for service in ("svc-a", "svc-b"):
+            job_dir, run_config = impl._job_folder_named(box, rcli, "job1", service)
+            self.assertEqual(job_dir.parent.name, service)
+            self.assertEqual(run_config["service"], service)
+
+    def test_an_unnamed_service_over_two_folders_is_refused_not_guessed(self):
+        box, commit = self._box()
+        self._two_services(box, commit)
+        rcli = impl._load_remote_execution_cli()
+        with self.assertRaises(impl.Refused) as raised:
+            impl._job_folder_named(box, rcli, "job1")
+        self.assertEqual(raised.exception.code, "JOB_SERVICE_AMBIGUOUS")
+        self.assertIn("--service", str(raised.exception))
+        self.assertNotIn("svc-a", str(raised.exception))
+
+    def test_one_folder_per_job_name_resolves_as_before(self):
+        box, commit = self._box()
+        self._write_job_folder(box, commit)
+        rcli = impl._load_remote_execution_cli()
+        job_dir, _ = impl._job_folder_named(box, rcli, "job1")
+        self.assertEqual(job_dir, box / "tools" / "svc" / "job1")
+        self.assertEqual(impl._job_folder_named(box, rcli, "nope"), (None, None))
+
+    def test_readiness_is_per_folder_and_the_published_map_names_no_service(self):
+        box, commit = self._box()
+        self._two_services(box, commit)
+        self._write_smoke(box, commit=commit, worker="w1", service="svc-a")
+        state = impl._job_folder_states(box)
+        ready = {(row["service"], row["job"]): row["smokeReady"] for row in state}
+        self.assertEqual(ready, {("svc-a", "job1"): True, ("svc-b", "job1"): False})
+        published = impl.remote_execution_jobs_state(box)
+        # Ready only when every folder carrying the name is.
+        self.assertEqual(published["smokeReady"], {"job1": False})
+        self.assertNotIn("svc-a", json.dumps(published))
+
+    def test_a_rehearsal_naming_no_service_reads_as_before(self):
+        box, commit = self._box()
+        self._write_job_folder(box, commit)
+        self._write_smoke(box, commit=commit, worker="w1")
+        self.assertEqual(impl.remote_execution_jobs_state(box)["smokeReady"],
+                         {"job1": True})
+
+    def test_flow_acts_route_each_step_to_its_own_service_s_folder(self):
+        rows = [{"step": "a", "walk": "notWalked", "advances": 1},
+                {"step": "b", "walk": "notWalked", "advances": 2}]
+        steps = {"a": {"placement": "remote", "job": "job1", "service": "svc-a"},
+                 "b": {"placement": "remote", "job": "job1", "service": "svc-b"}}
+        jobs = [{"job": "job1", "service": "svc-a", "smokeReady": True},
+                {"job": "job1", "service": "svc-b", "smokeReady": False}]
+        acts = impl.flow_acts(rows, steps, jobs)
+        self.assertEqual([a["act"] for a in acts],
+                         [impl.ACT_LAUNCH, impl.ACT_REHEARSE])
+        only_a = impl.flow_acts(rows, steps, jobs[:1])
+        self.assertEqual(only_a[1]["act"], impl.ACT_GENERATE_JOB)
+
+    def test_launch_plan_reads_the_named_service_s_folder(self):
+        box, commit = self._box()
+        self._two_services(box, commit)
+        self._write_smoke(box, commit=commit, worker="w1", service="svc-a")
+        self._write_agreed(box, [(" ", "Rehearse.", "rehearsal", "job1")])
+        self._register("svc-a", "svc-b")
+        proposals = self._proposals()
+        plans = {}
+        for service in ("svc-a", "svc-b"):
+            args = argparse.Namespace(
+                command="launch-plan", target=str(box), name="Method",
+                revision=REVISION, job="job1", worker="w1", session=None,
+                service=service)
+            with unittest.mock.patch.dict(
+                    os.environ, {"IMPLEMENTATION_PROPOSALS": str(proposals)}):
+                plans[service] = self._acts(impl.cmd_launch_plan(args))
+        self.assertEqual(plans["svc-b"]["offer"]["code"], "NOT_READY")
+        self.assertNotEqual(plans["svc-a"]["offer"]["code"], "NOT_READY")
+
+    def test_launch_plan_and_gate_take_service_on_both_hosts(self):
+        for cli in (CLI, EXPERIMENTS_CLI):
+            for command in ("launch-plan", "gate"):
+                with self.subTest(cli=cli.parent.parent.name, command=command):
+                    proc = self.run_cli(command, "--help", cli=cli)
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertIn("--service", proc.stdout)
+
+
+class IndependentRemoteStepsLaunchTogetherTests(unittest.TestCase):
+    """S4: the walk reports every remote step whose reads are already
+    produced, so independent ones launch concurrently -- each through its
+    own propose/offer/gate -- and names what a waiting one waits for."""
+
+    STEPS = {
+        "prep": {"placement": "local", "reads": [], "produces": ["Results/prep"]},
+        "arm_a": {"placement": "remote", "job": "job-a", "service": "svc-a",
+                  "reads": ["Results/prep"], "produces": ["Results/arm_a"]},
+        "arm_b": {"placement": "remote", "job": "job-b", "service": "svc-b",
+                  "reads": [], "produces": ["Results/arm_b"]},
+        "compare": {"placement": "remote", "job": "job-c", "service": "svc-a",
+                    "reads": ["Results/arm_a/scores", "Results/arm_b"],
+                    "produces": ["Results/compare"]},
+    }
+
+    def _acts(self, *names, act=None):
+        return [{"step": n, "placement": "remote", "act": act or impl.ACT_LAUNCH,
+                 "job": self.STEPS[n].get("job"), "needs": None} for n in names]
+
+    def test_independent_launches_are_all_reported_with_the_waiting_one(self):
+        acts = self._acts("arm_a", "arm_b", "compare")
+        plan = impl.walk_plan(acts, self.STEPS)
+        self.assertEqual(plan["stopsAt"]["step"], "arm_a")
+        self.assertEqual(plan["performs"], [])
+        concurrent = plan["concurrentLaunches"]
+        self.assertEqual([a["step"] for a in concurrent["launchable"]],
+                         ["arm_a", "arm_b"])
+        self.assertEqual([a["job"] for a in concurrent["launchable"]],
+                         ["job-a", "job-b"])
+        self.assertEqual(concurrent["waiting"],
+                         [{"step": "compare", "job": "job-c",
+                           "act": impl.ACT_LAUNCH,
+                           "waitsOn": ["arm_a", "arm_b"]}])
+
+    def test_a_step_the_walk_performs_first_satisfies_what_reads_it(self):
+        acts = [{"step": "prep", "placement": "local", "act": impl.ACT_RUN_LOCAL,
+                 "needs": None}, *self._acts("arm_a", "arm_b")]
+        plan = impl.walk_plan(acts, self.STEPS)
+        self.assertEqual([a["step"] for a in plan["performs"]], ["prep"])
+        self.assertEqual(
+            [a["step"] for a in plan["concurrentLaunches"]["launchable"]],
+            ["arm_a", "arm_b"])
+
+    def test_a_step_reading_an_unperformed_producer_waits_on_it(self):
+        acts = [{"step": "prep", "placement": "local", "act": impl.ACT_BLOCKED,
+                 "needs": "x"}, *self._acts("arm_a", "arm_b"),
+                *self._acts("compare", act=impl.ACT_REHEARSE)]
+        plan = impl.walk_plan(acts, self.STEPS)
+        self.assertEqual(plan["stopsAt"]["step"], "prep")
+        # One launchable step: the serial result, with nothing added.
+        self.assertNotIn("concurrentLaunches", plan)
+
+    def test_undeclared_reads_wait_on_every_earlier_owed_step(self):
+        steps = {**self.STEPS, "arm_b": {k: v for k, v in self.STEPS["arm_b"].items()
+                                         if k != "reads"}}
+        plan = impl.walk_plan(self._acts("arm_a", "arm_b", "compare"), steps)
+        self.assertNotIn("concurrentLaunches", plan)
+
+    def test_steps_already_done_are_not_waited_on(self):
+        # `arm_a` and `arm_b` are reached, so they owe no act at all.
+        plan = impl.walk_plan(self._acts("compare"), self.STEPS)
+        self.assertEqual(plan, {"performs": [], "stopsAt": plan["stopsAt"]})
+        self.assertEqual(plan["stopsAt"]["step"], "compare")
+
+    def test_without_steps_the_walk_plan_is_exactly_the_serial_one(self):
+        acts = self._acts("arm_a", "arm_b")
+        self.assertEqual(impl.walk_plan(acts),
+                         {"performs": [], "stopsAt": acts[0]})
+
+    def test_the_walk_reports_the_concurrent_launches_and_launches_nothing(self):
+        acts = self._acts("arm_a", "arm_b")
+        with tempfile.TemporaryDirectory() as raw, \
+                unittest.mock.patch.object(impl, "cmd_probe",
+                                           return_value={"flowActs": acts}), \
+                unittest.mock.patch.object(impl, "resolve_steps_declaration",
+                                           return_value=self.STEPS), \
+                unittest.mock.patch.object(impl, "_require_no_open_defect"), \
+                unittest.mock.patch.object(impl, "resolve_target",
+                                           return_value=Path(raw)), \
+                unittest.mock.patch.object(impl.subprocess, "run") as ran:
+            result = impl.cmd_walk(argparse.Namespace(
+                target=raw, name="Method", revision=None, session="s1",
+                commit_template=None))
+        ran.assert_not_called()
+        self.assertEqual(result["performed"], [])
+        self.assertEqual(result["stoppedAt"]["step"], "arm_a")
+        self.assertEqual(
+            [a["step"] for a in result["concurrentLaunches"]["launchable"]],
+            ["arm_a", "arm_b"])
+
+
+class LaunchPlanReportsConcurrentLaunchesTests(_ParallelFixture):
+    """S4 through `launch-plan`: the job's own acts, plus every other remote
+    step launchable beside it."""
+
+    def test_two_ready_remote_steps_on_two_services_are_reported_together(self):
+        steps = {
+            "arm_a": {"module": "Method.steps", "function": "a", "advances": 1,
+                      "reads": [], "produces": ["Results/a"],
+                      "placement": "remote", "job": "job1", "service": "svc-a"},
+            "arm_b": {"module": "Method.steps", "function": "b", "advances": 2,
+                      "reads": [], "produces": ["Results/b"],
+                      "placement": "remote", "job": "job2", "service": "svc-b"},
+        }
+        box, commit = self._box(steps=steps)
+        self._write_job_folder(box, commit, service="svc-a", job_name="job1")
+        self._write_job_folder(box, commit, service="svc-b", job_name="job2")
+        self._write_smoke(box, job_name="job1", commit=commit, worker="w1")
+        self._write_smoke(box, job_name="job2", commit=commit, worker="w2")
+        self._write_agreed(box, [(" ", "Rehearse a.", "rehearsal", "job1"),
+                                 (" ", "Rehearse b.", "rehearsal", "job2")])
+        self._register("svc-a", "svc-b")
+        result = self._launch_plan(box, self._proposals())
+        self.assertEqual([a["act"] for a in result["acts"]],
+                         ["propose", "offer", "gate", "submit"])
+        concurrent = result["concurrentLaunches"]
+        self.assertEqual([a["job"] for a in concurrent["launchable"]],
+                         ["job1", "job2"])
+        self.assertEqual(concurrent["waiting"], [])
+        self.assertNotIn("svc-a", json.dumps(result))
+
+    def test_one_remote_step_adds_nothing_to_the_plan(self):
+        box, commit = self._box()
+        self._write_job_folder(box, commit)
+        self._write_smoke_pass(box, commit=commit)
+        self._write_agreed(box, [(" ", "Rehearse.", "rehearsal", "job1")])
+        self.assertNotIn("concurrentLaunches",
+                         self._launch_plan(box, self._proposals()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -409,6 +409,27 @@ def _round_robin_sequence(plans: list[Plan]) -> list[str]:
     return sequence
 
 
+def slot_shares(assignment: Assignment) -> tuple[tuple[str, ...], ...]:
+    """Split one worker's assigned units into one share per concurrent slot
+    it was granted: `k = min(granted, len(units))` shares, share `j` holding
+    `units[j::k]` -- round-robin by slot, in the order `distribute()` handed
+    them out. Each share becomes its OWN submission (S1, parallel
+    campaigns): a worker granted two slots runs two jobs side by side
+    instead of one job running every unit in sequence.
+
+    A worker granted one slot gets exactly one share holding every unit it
+    was given -- today's one-job-per-worker shape, unchanged. No units (the
+    "had room, didn't need it" case) is no share at all: capacity with
+    nothing to spend never becomes a fabricated job. Pure: reads nothing
+    but the `Assignment` it is handed.
+    """
+    units = tuple(assignment.units)
+    if not units:
+        return ()
+    slots = max(1, min(assignment.plan.granted, len(units)))
+    return tuple(units[index::slots] for index in range(slots))
+
+
 def distribute(
     *,
     adapter: "ADAPTER.Adapter",

@@ -602,6 +602,18 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
     """
     worker, slug = submission_id.split("/", 1)
 
+    # The session's status is read FIRST, before the output listing: an
+    # output read while the run is still going can be a previous version's,
+    # and only a status of `COMPLETE` read before the files makes them this
+    # run's finished result. A lookup that fails for any reason is reported
+    # as `None` (unknown) rather than failing the fetch: the files of a
+    # failed or interrupted run are exactly what a resume needs, and the
+    # adapter treats an unknown status as incomplete, never as complete.
+    try:
+        status = cmd_poll(client, submission_id)["status"]
+    except Exception:  # noqa: BLE001 - an unknown status is reported, not raised
+        status = None
+
     def list_page(token: str):
         request = ApiListKernelSessionOutputRequest()
         request.user_name = worker
@@ -673,7 +685,7 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
         budget -= _fetch_file(session, url, destination, budget)
         written.append(name)
 
-    return {"files": sorted(written)}
+    return {"files": sorted(written), "status": status}
 
 
 def _print_result(payload: dict) -> None:
