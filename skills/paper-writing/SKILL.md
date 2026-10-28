@@ -107,7 +107,7 @@ in favor of an incoming body. The only exit from a hand-edited block is
 Each stretch this skill delegates is defined in full by its own agent file:
 `.claude/agents/contract-auditor.md`, `.claude/agents/diagram-author.md`,
 `.claude/agents/figure-auditor.md`, `.claude/agents/insumos-observer.md`,
-`.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
+`.claude/agents/paper-reviewer.md`, `.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
 `.claude/agents/style-sampler.md`. When an agent cannot be spawned — the
 harness has no sub-agent mechanism, the agent is not registered in this
 session, or the spawn itself fails — perform the stretch inline: read that
@@ -119,7 +119,7 @@ workaround. Say in the reply that the stretch ran inline and why the agent
 could not be spawned.
 
 An auditor run inline (`contract-auditor`, `section-grounding-auditor`,
-`figure-auditor`) is not independent of the session that drafted what it
+`figure-auditor`, `paper-reviewer`) is not independent of the session that drafted what it
 judges. The verbs still reconcile its account against the real bytes, but say
 in the reply that the audit was not separated from the draft.
 
@@ -1550,6 +1550,21 @@ agent would have enforced (`figure-auditor` cannot write to disk) becomes
 the orchestrator's own discipline to hold, not a structural guarantee —
 treat any action that would have needed a scoped-out tool as a stop, not a
 workaround.
+
+**Reviewing the whole paper as a NeurIPS reviewer delegates to the `paper-reviewer` agent.**
+Once every section is written and `paper/main.tex` compiles, it fills the
+NeurIPS 2026 main-track review form — summary, contribution type, strengths
+and weaknesses, the four 1-4 ratings, questions, limitations, overall,
+confidence, ethics and formatting — and backs pertinence, novelty and
+coherence with quotes from the paper, the accepted proposal, the experiments'
+results and the SOTA pool. It never edits the paper and never claims a lack of
+novelty without naming the reference that holds the idea.
+
+**Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
+exists and no section under `sections/` is empty, and note whether
+`paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
+judge an unfinished paper or novelty without a pool cannot tell a weak paper
+from a missing input.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,
