@@ -100,8 +100,11 @@ skill refuses when its input is missing.
      (`Experimental_AGREED.md`), `/experiment-diagrams poc` and then
      `/experiment-diagrams experiments` (or the Experimentos tab's
      "Generar diagrama") draw each one as a TikZ figure. The operator
-     validates each one in that tab ("Validar diagrama"); `submit` refuses
-     `DIAGRAM_NOT_VALIDATED` until then, and drawing it again asks again.
+     validates each one in that tab ("Validar diagrama") or by approving it
+     explicitly in the conversation, which the agent then records with
+     `diagram_cli.py validate` (the operator's words verbatim and the hash
+     of the PNG shown); `submit` refuses `DIAGRAM_NOT_VALIDATED` until then,
+     and drawing it again asks again.
    - **Remote runs**: one account per person and service
      (`smith team add … --attest`), `/kaggle-accounts validate`, then
      `/remote-execution`: generate-job → submit --smoke → fetch --smoke /
