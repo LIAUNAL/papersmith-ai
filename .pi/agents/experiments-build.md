@@ -77,6 +77,26 @@ every field `stamp-fields` prints written into each shard's stamp. Report the
 verdict and every checklist item still unmet. The verdict is never launch
 authorization.
 
+## Every remote unit fits one session, or resumes
+
+A service stops a session after its continuous run limit, and whatever was not
+written out by then is lost with the hours it cost. So every remote unit fits
+one session within the 80% margin (`schedule` and `assess` refuse
+`unit-over-session-margin` otherwise), or its step is declared resumable from a
+checkpoint. The target reads `FORGE_SESSION_DEADLINE` (epoch seconds), writes
+its checkpoint and starts no new unit or trial past it, then exits cleanly.
+A unit that does not fit is split along the declared axis — fold, seed,
+subject block, never by arm — or resumed over chained sessions on the same
+account. After a cut session, run `fetch` (it keeps the partial result), then
+`remaining`, and send again only the units it lists. A checkpoint reaches the
+next session as follows: on a kernel service, the previous kernel's output
+attached to the next kernel through `kernel_sources` and read under its input
+root at `notebooks/<owner>/<slug>/` (checked on a live account on 2026-10-27;
+papersmith does not attach it for you yet); on Colab, uploaded into the new
+session. The details live in
+`skills/remote-execution/SKILL.md`, **Sessions, checkpoints and
+resume**, and `skills/remote-parallelism/SKILL.md`.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which

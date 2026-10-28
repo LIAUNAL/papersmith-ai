@@ -16,9 +16,9 @@ Branch: `feat/session-checkpoints` (from `feat/parallel-campaigns` e7d1ae83). De
 
 ## Tasks
 
-- T1 (S1, S3, S4, S5, S6, S7 remote-execution doctrine) delegated writer, worktree `session-checkpoints-a` — pending
-- T2 (S2, S7 remote-parallelism doctrine) delegated writer, worktree `session-checkpoints-b` — pending
-- T3 (S7 agents and implementation skills) parent at integration — pending
+- T1 (S1, S3, S4, S5, S6, S7 remote-execution doctrine) delegated writer, worktree `session-checkpoints-a` — done, commit 4f3e4366
+- T2 (S2, S7 remote-parallelism doctrine) delegated writer, worktree `session-checkpoints-b` — done, commit 4f4f4759
+- T3 (S7 agents and implementation skills, integration fixes, CHANGELOG) delegated writer at integration — done, commit see L4
 - T4 live Kaggle verification of attaching a previous kernel's output (phase 2 prerequisite; authorized) — parent — done (L3)
 - T5 integration with parallel campaigns, full suite vs baseline, independent verifier — pending
 
@@ -27,3 +27,4 @@ Branch: `feat/session-checkpoints` (from `feat/parallel-campaigns` e7d1ae83). De
 - L1 (2026-10-27, user): see S0.
 - L2: exploration: no adapter declares a session limit; assess's unitsOverSessionLimit is advisory; runner passes FORGE_CLONE_ROOT/COMMIT/RUN_MODE/RUN_UNITS only; Colab files.json/status.json written at run end (executor.py:242-270) so a reclaimed session returns nothing; Kaggle fetch always complete=True so failed/timeout is recorded returned; submitted_event has no units; Kaggle metadata passthrough refuses dataset/kernel sources (kaggle_driver.py:168-212); Colab has a generic _upload (colab.py:1212).
 - L3 (2026-10-27): live verification on Kaggle account amalvarezme with kaggle CLI 2.2.5, two private CPU script kernels: psmith-carry-test-a wrote /kaggle/working/ckpt/state.json; psmith-carry-test-b declared `kernel_sources: ["amalvarezme/psmith-carry-test-a"]` and read it at `/kaggle/input/notebooks/amalvarezme/psmith-carry-test-a/ckpt/state.json` (note the `notebooks/<owner>/<slug>/` prefix). Both COMPLETE. So a finished kernel's output can be carried into the next kernel of the same account. Not verified: whether output survives a kernel killed by the session limit (hence S3: exit cleanly before the limit so the output is saved as a normal completion); carrying across two owners' private kernels (plan chained sessions on the same account). The two test kernels remain private on the account (the CLI has no delete).
+- L4 (2026-10-27): T3: the walk/build agents and the proposal-/experimental-implementation skills gained the section "Every remote unit fits one session, or resumes"; the remote-execution seam table gained a `remaining` row and the skill-audit roster pin gained `remaining`; projections regenerated. The carry-over sentence names no service ("a kernel service", input root `notebooks/<owner>/<slug>/`) because doctrine files refuse the word `kaggle` (DoctrineVocabularyLeakTests, ReportFirstSectionProseTests). Domain-lock pins unchanged (they scan engine files only). CHANGELOG Unreleased: S1-S7 entries.

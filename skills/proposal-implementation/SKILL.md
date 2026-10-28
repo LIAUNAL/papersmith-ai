@@ -726,6 +726,26 @@ over the timing probe's record.
   extrapolation), never a promise, and never authorization: the pilot and the
   launch stay the operator's to approve after reading it.
 
+## Every remote unit fits one session, or resumes
+
+A service stops a session after its continuous run limit, and whatever was not
+written out by then is lost with the hours it cost. So every remote unit fits
+one session within the 80% margin (`schedule` and `assess` refuse
+`unit-over-session-margin` otherwise), or its step is declared resumable from a
+checkpoint. The target reads `FORGE_SESSION_DEADLINE` (epoch seconds), writes
+its checkpoint and starts no new unit or trial past it, then exits cleanly.
+A unit that does not fit is split along the declared axis — fold, seed,
+subject block, never by arm — or resumed over chained sessions on the same
+account. After a cut session, run `fetch` (it keeps the partial result), then
+`remaining`, and send again only the units it lists. A checkpoint reaches the
+next session as follows: on a kernel service, the previous kernel's output
+attached to the next kernel through `kernel_sources` and read under its input
+root at `notebooks/<owner>/<slug>/` (checked on a live account on 2026-10-27;
+papersmith does not attach it for you yet); on Colab, uploaded into the new
+session. The details live in
+`skills/remote-execution/SKILL.md`, **Sessions, checkpoints and
+resume**, and `skills/remote-parallelism/SKILL.md`.
+
 ## Where to start: the repository is the memory
 
 **Every invocation begins the same way — look at `src/` before asking anything.**
@@ -1789,6 +1809,7 @@ belongs here is which reported state routes to which one:
 | `generate-job` | No job folder for the campaign about to be offered — `remoteExecution.jobs` empty, or naming none that matches | `--job-name`, `--product`, `--repo-ref`, `--repo-url`, `--service`, `--target` | the `remote-execution` skill |
 | `generate-job` | A job folder exists and its declared pin no longer matches what the clone paths hold — `staleness` reports `drift`: regenerate (`--regenerate`) rather than offer a run against a repository that has moved | `--job-name`, `--product`, `--repo-ref`, `--repo-url`, `--service`, `--target` | the `remote-execution` skill |
 | `distribute` | A campaign whose units outnumber what one account can hold at once: it reports which account each unit would go to and which ones do not fit, and sends nothing | `--backend`, `--entrypoint`, `--target`, `--unit` | the `remote-execution` skill |
+| `remaining` | A campaign whose session was cut, or that came back with only part of its units: it reports which declared units have no complete result yet, the only ones the next campaign sends; it asks no backend and records nothing | `--entrypoint`, `--target`, `--unit` | the `remote-execution` skill |
 | `smoke record` | `smokeReady: false` for a job that has rehearsed and whose verdict was never written down | `--from-artifact`, `--job-dir`, `--worker` | the `remote-execution` skill |
 | `readiness` | `smokeReady` itself: it is the function `probe` calls to compute that fact, and asking it directly is how you see the reason | `--job-dir`, `--worker` | the `remote-execution` skill |
 

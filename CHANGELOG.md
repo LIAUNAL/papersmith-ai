@@ -50,6 +50,35 @@ number is `0`, breaking changes can still arrive without a major bump.
   and last update. Slots of one worker are grouped under it; at most 24 workers
   and 20 lanes per worker are listed. The existing "Últimas ejecuciones" list is
   unchanged.
+- Each remote backend now declares how long one of its sessions may run
+  continuously (Kaggle GPU: 12 hours; Colab Pro: 24 hours), so you no longer
+  have to type the limit yourself. `submit` writes it into the job folder.
+- The runner passes `FORGE_SESSION_DEADLINE` (epoch seconds: session start plus
+  the limit, minus a safety margin) to your code. Read it, save a checkpoint,
+  and stop starting new folds, seeds or trials before it, so the session ends
+  as a normal completion and its output is kept.
+- Colab keeps its list of written files up to date while the run is going, so
+  a session that is killed or reclaimed still returns the files it had already
+  written, and `fetch` brings them back.
+- `submit` records which units each campaign submission carries
+  (`submitted.units`). The new read-only `remaining` verb lists which declared
+  units have no complete result yet, so the next campaign sends only those.
+- A campaign `submit` refuses `LEDGER_EVENT_TOO_LARGE`, before sending
+  anything, when a slot's units would not fit in one ledger line.
+- `remote-parallelism schedule` and `assess` check that each unit fits one
+  session with a margin: a unit whose duration plus setup is over 80% of the
+  account's session limit is refused (`unit-over-session-margin`, or
+  `split-first` in `assess`). Split it along seeds, folds or subjects, or
+  declare the step `resumable` with a `checkpointMinutes` interval; a resumable
+  unit is then planned over chained sessions on the same account, paying the
+  setup in each one.
+- The walk and build agents, and the `proposal-implementation` and
+  `experimental-implementation` skills, now state the rule: every remote unit
+  fits one session or checkpoints and resumes; after a cut session, `fetch`,
+  then `remaining`, and resend only what is left. On Kaggle a checkpoint can be
+  carried to the next session as the previous kernel's output
+  (`kernel_sources`, read at `/kaggle/input/notebooks/<owner>/<slug>/`);
+  papersmith does not attach it automatically yet. On Colab, upload it.
 
 ### Changed
 
@@ -61,6 +90,12 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ### Fixed
 
+- `fetch` no longer records a failed, timed-out or reclaimed run as
+  `returned`. It records it as `errored`, with `runState` (`failed` or
+  `unknown`) and `artifactPath`, and keeps whatever came back under
+  `.remote-execution/partial/` instead of a results tree, so the partial
+  result can still be read and later fetches are not blocked. On Kaggle, only a
+  `COMPLETE` kernel counts as a complete result.
 - Readiness is per worker. `readiness` used to read only the latest rehearsal
   of a job, whatever account ran it, so rehearsing a second account made the
   first one not ready: two accounts could never be ready at the same time.
