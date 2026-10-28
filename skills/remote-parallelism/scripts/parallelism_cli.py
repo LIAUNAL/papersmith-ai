@@ -55,13 +55,14 @@ OBJECTIVE_FLOW = {
     ],
 }
 
-VERBS = ("assess", "estimate", "checklist", "stamp-fields")
+VERBS = ("assess", "schedule", "estimate", "checklist", "stamp-fields")
 
 ERROR_CODES = (
     "missing-input", "bad-argument", "units-file-missing", "units-file-invalid",
     "duplicate-unit", "units-mismatch", "axis-is-comparison",
     "record-outside-workspace", "record-missing", "timing-missing", "timing-invalid",
-    "mixed-devices", "timing-outside-workspace",
+    "mixed-devices", "timing-outside-workspace", "accounts-invalid", "accounts-file-missing",
+    "plan-missing", "plan-invalid", "no-eligible-account", "unit-over-session-limit",
 )
 
 #: The verdict's thresholds. Stated in every output so the verdict can be read
@@ -224,23 +225,36 @@ def load_units(root: Path, name: str, default_minutes: float | None) -> list[dic
 
 
 def schedule(units: list[dict], slots: int, limit: float, setup: float) -> list[dict]:
-    """Greedy longest-first packing onto `slots` concurrent sessions in a row.
+    """Greedy longest-first packing onto `slots` concurrent sessions in a row."""
+    return pack(units, [limit] * slots, setup)
+
+
+def pack(units: list[dict], limits: list[float], setup: float) -> list[dict]:
+    """Greedy longest-first packing onto one concurrent session per entry of
+    `limits`, each with its own wall-time limit.
 
     Each slot runs sessions back to back; a session pays `setup` once and may
-    not run past `limit`. A unit goes to the slot where it finishes earliest,
-    ties to the lowest slot, so the output is a pure function of the inputs.
+    not run past its slot's limit, and a slot whose limit cannot hold the unit
+    plus the setup never takes it. A unit goes to the slot where it finishes
+    earliest, ties to the lowest slot, so the output is a pure function of the
+    inputs.
     """
-    state = [{"finish": 0.0, "used": None, "units": 0, "busy": 0.0} for _ in range(slots)]
+    state = [{"finish": 0.0, "used": None, "units": 0, "busy": 0.0, "limit": limit} for limit in limits]
     order = sorted(units, key=lambda unit: (-unit["minutes"], unit["id"]))
     for unit in order:
         best, best_finish, best_new = 0, None, False
         for index, slot in enumerate(state):
-            if slot["used"] is not None and slot["used"] + unit["minutes"] <= limit:
+            if setup + unit["minutes"] > slot["limit"]:
+                continue
+            if slot["used"] is not None and slot["used"] + unit["minutes"] <= slot["limit"]:
                 finish, new = slot["finish"] + unit["minutes"], False
             else:
                 finish, new = slot["finish"] + setup + unit["minutes"], True
             if best_finish is None or finish < best_finish:
                 best, best_finish, best_new = index, finish, new
+        if best_finish is None:
+            raise Refusal("unit-over-session-limit", f"unit {unit['id']!r} fits no account's session: "
+                                                     "split it along the declared axis")
         slot = state[best]
         cost = unit["minutes"] + (setup if best_new else 0.0)
         slot["used"] = (setup + unit["minutes"]) if best_new else slot["used"] + unit["minutes"]
@@ -263,6 +277,8 @@ def per_account(state: list[dict], sessions: int, quota_hours: float) -> list[di
 
 
 def cmd_assess(args, root: Path, today: str) -> dict:
+    if args.account or args.accounts_file is not None:
+        return assess_per_account(args, root, today)
     required = {"--unit-minutes": args.unit_minutes, "--owners": args.owners,
                 "--sessions-per-account": args.sessions_per_account,
                 "--session-limit-hours": args.session_limit_hours,
@@ -630,6 +646,663 @@ def team_policy(args, owners: int) -> tuple[list[str], list[str] | None, list[di
     return services, tiers, excluded
 
 
+# ------------------------------------------------------------- per-service accounts
+OWNER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SERVICE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+UNKNOWN_QUOTA = ("unknown", "?")
+ACCOUNT_KEYS = {"owner", "service", "sessions", "sessionHours", "quotaHours", "tier", "quotaSource", "quotaDate"}
+#: The uniform limit flags `--account` / `--accounts-file` replace.
+UNIFORM_LIMIT_FLAGS = (("--owners", "owners"), ("--accounts", "accounts"),
+                       ("--sessions-per-account", "sessions_per_account"),
+                       ("--session-limit-hours", "session_limit_hours"),
+                       ("--quota-hours", "quota_hours"), ("--tiers", "tiers"))
+#: One quota week, in minutes: a plan longer than this spans more than one.
+QUOTA_WEEK_MINUTES = 7 * 24 * 60
+#: Above this many service assignments the search goes step by step.
+EXHAUSTIVE_LIMIT = 4096
+
+
+def account_entry(where: str, owner, service, sessions, hours, quota, tier, extra: dict | None = None) -> dict:
+    """One account with its own limits, or an `accounts-invalid` refusal."""
+    def bad(message: str):
+        raise Refusal("accounts-invalid", f"{where}: {message}")
+
+    if not isinstance(owner, str) or not OWNER_PATTERN.match(owner):
+        bad(f"owner must be a team slug, got {owner!r}")
+    if not isinstance(service, str) or not SERVICE_PATTERN.match(service):
+        bad(f"service must be a lower-case service name, got {service!r}")
+    if not is_count(sessions):
+        bad(f"sessions must be a positive whole number, got {sessions!r}")
+    if not is_number(hours) or hours <= 0:
+        bad(f"session hours must be a positive number, got {hours!r}")
+    if quota is None or (isinstance(quota, str) and quota.strip().lower() in UNKNOWN_QUOTA):
+        quota = None
+    elif not is_number(quota) or quota <= 0:
+        bad(f"quota hours must be a positive number or unknown, got {quota!r}")
+    if service == COLAB_SERVICE:
+        if tier not in COLAB_TIERS:
+            bad(f"a {COLAB_SERVICE} account needs its compute tier ({', '.join(COLAB_TIERS)}), never guessed; "
+                f"got {tier!r}")
+    elif tier is not None:
+        bad(f"a tier describes a {COLAB_SERVICE} account, not {service}")
+    entry = {"owner": owner, "service": service, "sessions": sessions, "sessionHours": float(hours),
+             "quotaHours": None if quota is None else float(quota), "tier": tier}
+    for key in ("quotaSource", "quotaDate"):
+        if extra and extra.get(key) is not None:
+            entry[key] = extra[key]
+    return entry
+
+
+def parse_account_flag(raw: str) -> dict:
+    """`<owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>]`."""
+    parts = raw.split(":")
+    if len(parts) not in (5, 6):
+        raise Refusal("accounts-invalid", f"--account {raw!r}: <owner>:<service>:<sessions>:"
+                                          "<session_hours>:<quota_hours>[:<tier>]")
+
+    def number(text: str, kind):
+        try:
+            value = kind(text)
+        except ValueError:
+            return text
+        return value if math.isfinite(value) else text
+
+    owner, service, sessions, hours, quota = parts[:5]
+    tier = parts[5].strip().lower() if len(parts) == 6 else None
+    quota_value = quota if quota.strip().lower() in UNKNOWN_QUOTA else number(quota, float)
+    return account_entry(f"--account {raw!r}", owner, service.strip().lower(), number(sessions, int),
+                         number(hours, float), quota_value, tier)
+
+
+def load_accounts(root: Path, flags: list[str] | None, name: str | None,
+                  fallback: list | None = None) -> list[dict]:
+    """The accounts from repeated `--account`, an accounts file, or a plan."""
+    if flags and name:
+        raise Refusal("bad-argument", "give --account or --accounts-file, not both")
+    if flags:
+        return [parse_account_flag(raw) for raw in flags]
+    if name:
+        path = Path(name)
+        path = path if path.is_absolute() else root / path
+        if not path.is_file():
+            raise Refusal("accounts-file-missing", f"{name} does not exist")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise Refusal("accounts-invalid", f"{name} is not JSON: {exc}")
+        if isinstance(data, dict) and set(data) == {"accounts"}:
+            data = data["accounts"]
+        source = name
+    else:
+        data, source = fallback, "the plan's accounts"
+    if data is None:
+        raise Refusal("missing-input", "accounts are required, never guessed: --account, --accounts-file "
+                                       "or the plan's accounts")
+    if not isinstance(data, list) or not data:
+        raise Refusal("accounts-invalid", f"{source} must be a non-empty list of accounts")
+    entries = []
+    for index, item in enumerate(data):
+        where = f"{source}[{index}]"
+        if not isinstance(item, dict):
+            raise Refusal("accounts-invalid", f"{where} must be an object")
+        unknown = sorted(set(item) - ACCOUNT_KEYS)
+        if unknown:
+            raise Refusal("accounts-invalid", f"{where} has unknown key(s) {', '.join(unknown)}")
+        tier = item.get("tier")
+        entries.append(account_entry(where, item.get("owner"), item.get("service"), item.get("sessions"),
+                                     item.get("sessionHours"), item.get("quotaHours"),
+                                     tier.strip().lower() if isinstance(tier, str) else tier, item))
+    return entries
+
+
+def account_pool(entries: list[dict], services: list[str] | None = None) -> dict:
+    """The eligible accounts under the team rule: one per owner per service, and
+    only paid compute on Colab. `services` filters the entries when given."""
+    eligible, excluded, ignored, seen = [], [], [], set()
+    for entry in entries:
+        if services is not None and entry["service"] not in services:
+            continue
+        label = f"{entry['service']}:{entry['owner']}"
+        if (entry["owner"], entry["service"]) in seen:
+            ignored.append(label)
+            continue
+        seen.add((entry["owner"], entry["service"]))
+        if entry["service"] == COLAB_SERVICE and entry["tier"] not in PAID_COLAB_TIERS:
+            excluded.append({"account": label, "owner": entry["owner"], "tier": entry["tier"]})
+            continue
+        eligible.append(dict(entry, label=label))
+    in_use = services if services is not None else list(dict.fromkeys(e["service"] for e in entries))
+    return {"eligible": eligible, "excluded": excluded, "ignored": ignored, "services": in_use}
+
+
+def pool_reasons(pool: dict) -> list[str]:
+    reasons = []
+    if pool["ignored"]:
+        reasons.append(f"{', '.join(pool['ignored'])}: a second account of one owner on one service never "
+                       "adds parallelism (one account per person per service), so it is left out")
+    if pool["excluded"]:
+        reasons.append(f"{len(pool['excluded'])} free-tier Colab owner(s) excluded from the split: {COLAB_FAQ_REASON}")
+    return reasons
+
+
+def parse_services(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    services = []
+    for name in (part.strip().lower() for part in raw.split(",")):
+        if not name or not SERVICE_PATTERN.match(name):
+            raise Refusal("bad-argument", f"--service {raw!r}: a comma list of service names")
+        if name not in services:
+            services.append(name)
+    return services
+
+
+def assess_per_account(args, root: Path, today: str) -> dict:
+    """`assess` with each account's own sessions, session wall time and quota."""
+    given = [flag for flag, attr in UNIFORM_LIMIT_FLAGS if getattr(args, attr) is not None]
+    if given:
+        raise Refusal("bad-argument", "--account and --accounts-file carry each account's own limits; drop "
+                                      + ", ".join(given))
+    required = {"--setup-minutes": args.setup_minutes}
+    if args.units is None and args.units_file is None:
+        required = {"--units or --units-file": None, **required}
+    if args.units_file is None:
+        required["--unit-minutes"] = args.unit_minutes
+    missing = [flag for flag, value in required.items() if value is None]
+    if missing:
+        raise Refusal("missing-input", "measured inputs are required, never guessed; missing: " + ", ".join(missing))
+    if args.axis is not None and args.axis.strip().lower() in COMPARISON_AXES:
+        raise Refusal("axis-is-comparison", f"--axis {args.axis!r}: a split may run along a seed, fold or subject block, never by arm or comparison")
+    unit_minutes = positive("--unit-minutes", args.unit_minutes) if args.unit_minutes is not None else None
+    setup = positive("--setup-minutes", args.setup_minutes, allow_zero=True)
+    count = positive("--units", args.units, int) if args.units is not None else None
+    entries = load_accounts(root, args.account, args.accounts_file)
+    pool = account_pool(entries, parse_services(args.service))
+    services, eligible = pool["services"], pool["eligible"]
+
+    from_file = args.units_file is not None
+    if from_file:
+        units = load_units(root, args.units_file, unit_minutes)
+        if count is not None and count != len(units):
+            raise Refusal("units-mismatch", f"--units {count} but {args.units_file} lists {len(units)} units")
+    else:
+        units = [{"id": f"unit-{index:04d}", "minutes": float(unit_minutes)} for index in range(1, count + 1)]
+
+    inputs = {"units": len(units), "unitMinutes": num(unit_minutes) if unit_minutes is not None else None,
+              "unitsFile": args.units_file, "perServiceLimits": True,
+              "accountLimits": [{key: value for key, value in entry.items() if key != "label"} for entry in entries],
+              "owners": len({entry["owner"] for entry in eligible}), "accounts": len(entries),
+              "service": services, "stampsIdentical": bool(args.stamps_identical),
+              "quotaSource": args.quota_source, "quotaDate": args.quota_date,
+              "setupMinutes": num(setup), "axis": args.axis}
+    result = {
+        "inputs": inputs,
+        "thresholds": {"minSpeedup": MIN_SPEEDUP, "minSavedMinutes": MIN_SAVED_MINUTES,
+                       "noAccountOverQuota": True},
+        "serialMinutes": None, "singleAccountMinutes": None, "parallelMinutes": None,
+        "speedup": None, "savedMinutes": None, "accountsUsed": None,
+        "recommendedAccounts": None, "perAccount": [], "quotaOk": None,
+        "unitsOverSessionLimit": [],
+        "eligibleOwners": len(eligible),
+        "excludedOwners": [{"owner": item["owner"], "tier": item["tier"]} for item in pool["excluded"]],
+    }
+    longest = max((entry["sessionHours"] * 60 for entry in eligible), default=None)
+    over = [unit["id"] for unit in units if longest is not None and unit["minutes"] + setup > longest]
+    reasons = pool_reasons(pool)
+    mixed = len(services) > 1
+    if mixed and args.stamps_identical:
+        reasons.append(f"services {', '.join(services)} are mixed under declared identical stamps "
+                       "(accelerator model, CUDA, torch): verify --shards must confirm them before any merge")
+    if mixed and not args.stamps_identical:
+        result["verdict"] = "do-not-mix"
+        reasons.append(f"services {', '.join(services)} would be mixed in one campaign: shards on different "
+                       "services run on different accelerators and software, so mixing is refused unless "
+                       "their environment stamps are declared identical (--stamps-identical); run the "
+                       "campaign on one service (--service filters the accounts)")
+    elif over:
+        result["unitsOverSessionLimit"] = over
+        result["verdict"] = "split-first"
+        reasons.append(f"{len(over)} unit(s) need more than the longest session's {num(longest)} minutes "
+                       f"including the {num(setup)}-minute setup: split them along the declared axis "
+                       "(more seeds, folds or subject blocks per unit, never by arm) and assess again")
+    elif not eligible:
+        result["verdict"] = "single-account"
+        result["recommendedAccounts"] = 1
+        reasons.append("no owner may be a worker of a split campaign; run on one account, in one session")
+    else:
+        biggest = max(unit["minutes"] for unit in units)
+        baseline, single_state = None, None
+        for entry in eligible:
+            limit = entry["sessionHours"] * 60
+            if biggest + setup > limit:
+                continue
+            state = pack(units, [limit] * entry["sessions"], setup)
+            if single_state is None or max(s["finish"] for s in state) < max(s["finish"] for s in single_state):
+                baseline, single_state = entry, state
+        serial = max(slot["finish"] for slot in pack(units, [baseline["sessionHours"] * 60], setup))
+        single = max(slot["finish"] for slot in single_state)
+        limits = [entry["sessionHours"] * 60 for entry in eligible for _ in range(entry["sessions"])]
+        state = pack(units, limits, setup)
+        parallel = max(slot["finish"] for slot in state)
+        spread, cursor = [], 0
+        for index, entry in enumerate(eligible, start=1):
+            group = state[cursor:cursor + entry["sessions"]]
+            cursor += entry["sessions"]
+            hours = sum(slot["busy"] for slot in group) / 60
+            quota = entry["quotaHours"]
+            spread.append({"account": index, "owner": entry["owner"], "service": entry["service"],
+                           "sessions": entry["sessions"], "sessionLimitHours": num(entry["sessionHours"]),
+                           "quotaHours": None if quota is None else num(quota),
+                           "units": sum(slot["units"] for slot in group), "gpuHours": num(hours),
+                           "overQuota": None if quota is None else hours > quota})
+        quota_ok = not any(account["overQuota"] for account in spread)
+        speedup = single / parallel
+        saved = single - parallel
+        used = sum(1 for account in spread if account["units"])
+        result.update({"serialMinutes": num(serial), "singleAccountMinutes": num(single),
+                       "parallelMinutes": num(parallel), "speedup": num(speedup),
+                       "savedMinutes": num(saved), "accountsUsed": used,
+                       "baselineAccount": baseline["label"], "perAccount": spread, "quotaOk": quota_ok})
+        if len(eligible) == 1:
+            reasons.append("one owner's account is available, so there is nothing to spread over")
+        if speedup < MIN_SPEEDUP:
+            reasons.append(f"speed-up {num(speedup)} is below the {MIN_SPEEDUP} threshold")
+        if saved < MIN_SAVED_MINUTES:
+            reasons.append(f"{num(saved)} saved minutes are below the {MIN_SAVED_MINUTES}-minute threshold")
+        for account in spread:
+            if account["overQuota"]:
+                reasons.append(f"{account['service']}:{account['owner']} would spend {account['gpuHours']} GPU "
+                               f"hours, over its {account['quotaHours']}-hour weekly quota; reduce the units "
+                               "or wait for the quota to reset")
+            elif account["overQuota"] is None and account["units"]:
+                reasons.append(f"{account['service']}:{account['owner']} has an unknown weekly quota: not "
+                               "checked; record it (--quota-source, --quota-date) before the launch")
+        baseline_hours = sum(slot["busy"] for slot in single_state) / 60
+        if baseline["quotaHours"] is not None and baseline_hours > baseline["quotaHours"]:
+            reasons.append(f"one account alone ({baseline['label']}) would spend {num(baseline_hours)} GPU hours, "
+                           f"over its {num(baseline['quotaHours'])}-hour weekly quota")
+        go = len(eligible) > 1 and speedup >= MIN_SPEEDUP and saved >= MIN_SAVED_MINUTES and quota_ok
+        result["verdict"] = "parallelize" if go else "single-account"
+        result["recommendedAccounts"] = used if go else 1
+        if go:
+            reasons.insert(0, f"speed-up {num(speedup)} >= {MIN_SPEEDUP}, {num(saved)} saved minutes "
+                              f">= {MIN_SAVED_MINUTES}, and no account exceeds its quota: "
+                              f"parallelize over {used} accounts once the checklist holds")
+    result["reasons"] = reasons
+    if from_file:
+        result["unitSeeds"] = {unit["id"]: unit_seed(unit["id"]) for unit in sorted(units, key=lambda u: u["id"])}
+    result["reproducibilityChecklist"] = [dict(item) for item in CHECKLIST]
+    result["stampFields"] = list(STAMP_FIELDS)
+    result["launchAuthorization"] = False
+    if args.record is not None:
+        result["recorded"] = record(root, args.record, result, today)
+    return result
+
+
+# ------------------------------------------------------------- schedule
+PLAN_KEYS = {"schema", "steps", "accounts", "setupMinutes"}
+STEP_KEYS = {"id", "units", "unitMinutes", "timing", "services", "requires", "setupMinutes",
+             "stampsIdentical", "axis"}
+
+
+def per_service(where: str, value, services: list[str], allow_zero: bool) -> dict:
+    """A number for every service, or a {service: number} map."""
+    def check(name: str, item):
+        if not is_number(item) or item < 0 or (item == 0 and not allow_zero):
+            raise Refusal("plan-invalid", f"{where}{name} must be a {'non-negative' if allow_zero else 'positive'} "
+                                          f"number, got {item!r}")
+        return float(item)
+
+    if isinstance(value, dict):
+        return {svc: check(f".{svc}", item) for svc, item in value.items()}
+    return {svc: check("", value) for svc in services}
+
+
+def timing_unit_minutes(root: Path, where: str, service: str, spec, units: int) -> tuple[float, str]:
+    """A step's per-unit minutes on one service from that service's own timing
+    record: the stage's work at the estimate's upper bound, over the step's units."""
+    if not isinstance(spec, dict) or set(spec) != {"path", "host", "stage"}:
+        raise Refusal("plan-invalid", f"{where}: timing.{service} holds exactly path, host and stage")
+    host, stage = spec["host"], spec["stage"]
+    if not isinstance(host, str) or not HOST_PATTERN.match(host) or host.split(":")[0] != service:
+        raise Refusal("plan-invalid", f"{where}: timing.{service}.host must be {service}:<owner>, the service's "
+                                      f"own host; got {host!r} (timing is never pooled across machines)")
+    if stage not in STAGES:
+        raise Refusal("plan-invalid", f"{where}: timing.{service}.stage must be one of {', '.join(STAGES)}")
+    if not isinstance(spec["path"], str):
+        raise Refusal("plan-invalid", f"{where}: timing.{service}.path must be a path")
+    path = Path(spec["path"])
+    data = load_timing(path if path.is_absolute() else root / path, spec["path"])
+    items = [item for item in data["measurements"] if item["host"] == host]
+    if not items:
+        raise Refusal("plan-invalid", f"{where}: {spec['path']} has no measurement on {host} ({UNMEASURED}); "
+                                      "a remote host is never estimated from another host's timings")
+    devices = sorted({item["device"] for item in items})
+    if len(devices) > 1:
+        raise Refusal("mixed-devices", f"host {host} was timed on {', '.join(devices)}: timing is never "
+                                       "pooled across machines; keep one device per host in the record")
+    estimate = host_estimate(items, data["scales"][stage])
+    scale = data["scales"][stage]
+    work = estimate["secondsPerUnit"] * scale["epochs"] * scale["folds"] * scale["seeds"] * scale["arms"]
+    minutes = work * (1 + ESTIMATE_RANGE) / units / 60
+    return minutes, (f"{spec['path']} {host} {stage}: upper bound of {num(work)} s of work "
+                     f"(+{int(ESTIMATE_RANGE * 100)}%) over {units} units")
+
+
+def load_plan(root: Path, name: str) -> dict:
+    path = Path(name)
+    path = path if path.is_absolute() else root / path
+    if not path.is_file():
+        raise Refusal("plan-missing", f"{name} does not exist")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise Refusal("plan-invalid", f"{name} is not JSON: {exc}")
+    if not isinstance(data, dict):
+        raise Refusal("plan-invalid", f"{name} must be a JSON object")
+    unknown = sorted(set(data) - PLAN_KEYS)
+    if unknown:
+        raise Refusal("plan-invalid", f"{name}: unknown key(s) {', '.join(unknown)}")
+    if data.get("schema") != 1 or isinstance(data.get("schema"), bool):
+        raise Refusal("plan-invalid", f"{name}: schema must be 1, got {data.get('schema')!r}")
+    if not isinstance(data.get("steps"), list) or not data["steps"]:
+        raise Refusal("plan-invalid", f"{name}: steps must be a non-empty list")
+    default_setup = data.get("setupMinutes")
+    steps, ids = [], set()
+    for index, item in enumerate(data["steps"]):
+        where = f"{name}: steps[{index}]"
+        if not isinstance(item, dict):
+            raise Refusal("plan-invalid", f"{where} must be an object")
+        extra = sorted(set(item) - STEP_KEYS)
+        if extra:
+            raise Refusal("plan-invalid", f"{where} has unknown key(s) {', '.join(extra)}")
+        sid = item.get("id")
+        if not isinstance(sid, str) or not sid.strip():
+            raise Refusal("plan-invalid", f"{where}.id must be a non-empty step id")
+        if sid in ids:
+            raise Refusal("plan-invalid", f"{where}: step {sid!r} appears twice")
+        ids.add(sid)
+        where = f"{name}: step {sid!r}"
+        axis = item.get("axis")
+        if axis is not None and (not isinstance(axis, str) or axis.strip().lower() in COMPARISON_AXES):
+            raise Refusal("axis-is-comparison", f"{where}: axis {axis!r}: a campaign's units run along a seed, "
+                                                "fold or subject block, never by arm or comparison")
+        if not is_count(item.get("units")):
+            raise Refusal("plan-invalid", f"{where}.units must be a positive whole number")
+        services = item.get("services")
+        if (not isinstance(services, list) or not services or len(set(services)) != len(services)
+                or not all(isinstance(s, str) and SERVICE_PATTERN.match(s) for s in services)):
+            raise Refusal("plan-invalid", f"{where}.services must be a non-empty list of distinct service names")
+        requires = item.get("requires", [])
+        if not isinstance(requires, list) or not all(isinstance(r, str) for r in requires):
+            raise Refusal("plan-invalid", f"{where}.requires must be a list of step ids")
+        stamps = item.get("stampsIdentical", False)
+        if not isinstance(stamps, bool):
+            raise Refusal("plan-invalid", f"{where}.stampsIdentical must be true or false")
+        explicit = item.get("unitMinutes") or {}
+        timing = item.get("timing") or {}
+        if not isinstance(explicit, dict) or not isinstance(timing, dict):
+            raise Refusal("plan-invalid", f"{where}: unitMinutes and timing map a service to its duration")
+        minutes, sources = {}, {}
+        for svc in services:
+            if svc in explicit and svc in timing:
+                raise Refusal("plan-invalid", f"{where}: {svc} has both unitMinutes and timing; give one")
+            if svc in explicit:
+                minutes[svc] = per_service(f"{where}.unitMinutes", {svc: explicit[svc]}, services, False)[svc]
+                sources[svc] = "explicit"
+            elif svc in timing:
+                minutes[svc], sources[svc] = timing_unit_minutes(root, where, svc, timing[svc], item["units"])
+            else:
+                raise Refusal("missing-input", f"{where}: no per-unit duration on {svc}, never guessed: give "
+                                               "unitMinutes or a timing record measured on that service")
+        setup = item.get("setupMinutes", default_setup)
+        if setup is None:
+            raise Refusal("missing-input", f"{where}: setupMinutes is required (a rehearsal's measured setup), "
+                                           "per step or for the plan")
+        setups = per_service(f"{where}.setupMinutes", setup, services, True)
+        missing = [svc for svc in services if svc not in setups]
+        if missing:
+            raise Refusal("missing-input", f"{where}: no setupMinutes on {', '.join(missing)}")
+        steps.append({"id": sid, "units": item["units"], "services": list(services), "requires": list(requires),
+                      "stampsIdentical": stamps, "axis": axis, "minutes": minutes, "sources": sources,
+                      "setup": {svc: setups[svc] for svc in services}})
+    for entry in steps:
+        unknown = [r for r in entry["requires"] if r not in ids or r == entry["id"]]
+        if unknown:
+            raise Refusal("plan-invalid", f"{name}: step {entry['id']!r} requires unknown step(s) {', '.join(unknown)}")
+    order, done = [], set()
+    while len(order) < len(steps):
+        ready = [s for s in steps if s["id"] not in done and all(r in done for r in s["requires"])]
+        if not ready:
+            raise Refusal("plan-invalid", f"{name}: the steps' requires form a cycle")
+        order.append(ready[0]["id"])
+        done.add(ready[0]["id"])
+    return {"steps": steps, "accounts": data.get("accounts")}
+
+
+def step_options(entry: dict, slots: list[dict]) -> list[tuple[str, ...]]:
+    """The services one step may run on: each allowed service alone, or every
+    usable one together only when the step declares identical stamps."""
+    usable, present = [], False
+    for svc in entry["services"]:
+        mine = [slot for slot in slots if slot["service"] == svc]
+        present = present or bool(mine)
+        if any(entry["minutes"][svc] + entry["setup"][svc] <= slot["limit"] for slot in mine):
+            usable.append(svc)
+    if not present:
+        raise Refusal("no-eligible-account", f"step {entry['id']!r}: no eligible account on "
+                                             f"{', '.join(entry['services'])} (free-tier Colab owners never "
+                                             "join a split, and one account per person per service counts)")
+    if not usable:
+        raise Refusal("unit-over-session-limit", f"step {entry['id']!r}: one unit plus its setup exceeds every "
+                                                 "eligible account's session limit: split it along the declared "
+                                                 "axis (never by arm) and schedule again")
+    options = [(svc,) for svc in usable]
+    if entry["stampsIdentical"] and len(usable) > 1:
+        options.append(tuple(usable))
+    return options
+
+
+def simulate(steps: list[dict], assignment: dict, slots: list[dict]) -> dict:
+    """List scheduling of the assigned steps: a step becomes ready when the
+    steps it requires end, and each of its units goes to the slot of its
+    services where it finishes earliest (ties to the lowest slot). A slot that
+    changes step, or would run past its limit, opens a new session and pays
+    that service's setup."""
+    state = [{"free": 0.0, "step": None, "used": 0.0, "busy": 0.0} for _ in slots]
+    timeline, remaining = {}, [s for s in steps if s["id"] in assignment]
+    while remaining:
+        candidates = [(max((timeline[r]["end"] for r in s["requires"]), default=0.0), index, s)
+                      for index, s in enumerate(remaining) if all(r in timeline for r in s["requires"])]
+        ready, index, entry = min(candidates, key=lambda c: (c[0], c[1]))
+        remaining.pop(index)
+        services = assignment[entry["id"]]
+        start, end, shares = None, ready, {}
+        for _ in range(entry["units"]):
+            best = None
+            for position, slot in enumerate(slots):
+                svc = slot["service"]
+                if svc not in services:
+                    continue
+                minutes, setup = entry["minutes"][svc], entry["setup"][svc]
+                if minutes + setup > slot["limit"]:
+                    continue
+                current = state[position]
+                begin = max(current["free"], ready)
+                same = current["step"] == entry["id"] and current["used"] + minutes <= slot["limit"]
+                finish = begin + minutes + (0.0 if same else setup)
+                if best is None or finish < best[0]:
+                    best = (finish, position, begin, same, minutes, setup)
+            finish, position, begin, same, minutes, setup = best
+            current = state[position]
+            current["used"] = current["used"] + minutes if same else setup + minutes
+            current["busy"] += minutes + (0.0 if same else setup)
+            current["free"], current["step"] = finish, entry["id"]
+            start = begin if start is None else min(start, begin)
+            end = max(end, finish)
+            share = shares.setdefault(slots[position]["account"], {"units": 0, "slots": set(), "sessions": 0})
+            share["units"] += 1
+            share["slots"].add(position)
+            share["sessions"] += 0 if same else 1
+        timeline[entry["id"]] = {"start": start, "end": end, "ready": ready, "shares": shares}
+    busy: dict[int, float] = {}
+    for position, slot in enumerate(slots):
+        busy[slot["account"]] = busy.get(slot["account"], 0.0) + state[position]["busy"]
+    makespan = max((item["end"] for item in timeline.values()), default=0.0)
+    return {"timeline": timeline, "busy": busy, "makespan": makespan}
+
+
+def serial_minutes(entry: dict, accounts: list[dict]) -> float:
+    """One step on one session at a time of its fastest eligible account."""
+    best = None
+    for account in accounts:
+        svc = account["service"]
+        if svc not in entry["services"]:
+            continue
+        limit, minutes, setup = account["sessionHours"] * 60, entry["minutes"][svc], entry["setup"][svc]
+        if minutes + setup > limit:
+            continue
+        per_session = int((limit - setup) // minutes)
+        sessions = math.ceil(entry["units"] / per_session)
+        total = entry["units"] * minutes + sessions * setup
+        best = total if best is None else min(best, total)
+    return best
+
+
+def cmd_schedule(args, root: Path, today: str) -> dict:
+    if args.plan is None:
+        raise Refusal("missing-input", "--plan is required: the project's remote steps, their units, per-unit "
+                                       "durations per service, dependencies and allowed services")
+    plan = load_plan(root, args.plan)
+    entries = load_accounts(root, args.account, args.accounts_file, plan["accounts"])
+    pool = account_pool(entries)
+    accounts = pool["eligible"]
+    slots = [{"account": index, "service": entry["service"], "limit": entry["sessionHours"] * 60}
+             for index, entry in enumerate(accounts) for _ in range(entry["sessions"])]
+    steps = plan["steps"]
+    options = {entry["id"]: step_options(entry, slots) for entry in steps}
+    combos = 1
+    for entry in steps:
+        combos *= len(options[entry["id"]])
+
+    def quota_over(busy: dict) -> int:
+        return sum(1 for index, entry in enumerate(accounts)
+                   if entry["quotaHours"] is not None and busy.get(index, 0.0) / 60 > entry["quotaHours"])
+
+    def score(sim: dict, picks: tuple) -> tuple:
+        return (round(sim["makespan"], 6), quota_over(sim["busy"]), round(sum(sim["busy"].values()), 6), picks)
+
+    best, evaluated = None, 0
+    if combos <= EXHAUSTIVE_LIMIT:
+        mode = "exhaustive"
+        for picks in _product([range(len(options[e["id"]])) for e in steps]):
+            assignment = {e["id"]: options[e["id"]][pick] for e, pick in zip(steps, picks)}
+            sim = simulate(steps, assignment, slots)
+            evaluated += 1
+            key = score(sim, picks)
+            if best is None or key < best[0]:
+                best = (key, assignment, sim)
+    else:
+        mode = "greedy"
+        assignment, picks = {}, ()
+        for entry in steps:
+            choice = None
+            for pick, option in enumerate(options[entry["id"]]):
+                trial = dict(assignment, **{entry["id"]: option})
+                sim = simulate(steps, trial, slots)
+                evaluated += 1
+                key = score(sim, picks + (pick,))
+                if choice is None or key < choice[0]:
+                    choice = (key, pick, option, sim)
+            assignment[entry["id"]] = choice[2]
+            picks += (choice[1],)
+            best = (choice[0], assignment, choice[3])
+    _, assignment, sim = best
+
+    reasons = pool_reasons(pool)
+    report_steps, multi = [], []
+    for entry in steps:
+        chosen = list(assignment[entry["id"]])
+        if len(chosen) > 1:
+            multi.append(entry["id"])
+        line = sim["timeline"][entry["id"]]
+        shares = []
+        for index in sorted(line["shares"]):
+            share = line["shares"][index]
+            shares.append({"account": accounts[index]["label"], "owner": accounts[index]["owner"],
+                           "service": accounts[index]["service"], "units": share["units"],
+                           "slotsUsed": len(share["slots"]), "sessions": share["sessions"]})
+        report_steps.append({
+            "id": entry["id"], "units": entry["units"], "requires": entry["requires"], "services": chosen,
+            "allowedServices": entry["services"],
+            "unitMinutes": {svc: num(entry["minutes"][svc]) for svc in chosen},
+            "unitMinutesSource": {svc: entry["sources"][svc] for svc in chosen},
+            "setupMinutes": {svc: num(entry["setup"][svc]) for svc in chosen},
+            "readyMinutes": num(line["ready"]), "startMinutes": num(line["start"]),
+            "endMinutes": num(line["end"]), "durationMinutes": num(line["end"] - line["start"]),
+            "shares": shares})
+    for step_id in multi:
+        reasons.append(f"step {step_id!r} runs on {', '.join(assignment[step_id])} under declared identical stamps "
+                       "(accelerator model, CUDA, torch): verify --shards must confirm them before any merge")
+    quota, units_per = [], {}
+    for line in sim["timeline"].values():
+        for index, share in line["shares"].items():
+            units_per[index] = units_per.get(index, 0) + share["units"]
+    for index, entry in enumerate(accounts):
+        hours = sim["busy"].get(index, 0.0) / 60
+        limit = entry["quotaHours"]
+        over = None if limit is None else hours > limit
+        quota.append({"account": entry["label"], "owner": entry["owner"], "service": entry["service"],
+                      "units": units_per.get(index, 0), "gpuHours": num(hours),
+                      "quotaHours": None if limit is None else num(limit), "overQuota": over,
+                      "quotaSource": entry.get("quotaSource"), "quotaDate": entry.get("quotaDate")})
+        if over:
+            reasons.append(f"{entry['label']} would spend {num(hours)} GPU hours, over its {num(limit)}-hour weekly "
+                           "quota: reduce the units, add an owner's account or wait for the quota to reset")
+        elif over is None and units_per.get(index):
+            reasons.append(f"{entry['label']} has an unknown weekly quota: not checked; record it before the launch")
+    serial = sum(serial_minutes(entry, accounts) for entry in steps)
+    makespan = sim["makespan"]
+    if makespan > QUOTA_WEEK_MINUTES:
+        reasons.append(f"the plan runs {num(makespan / 60)} hours, more than one quota week: quotas reset during it")
+    used = [entry["label"] for index, entry in enumerate(accounts) if units_per.get(index)]
+    checks = [
+        {"id": "axis-not-arm", "held": True,
+         "detail": "every step's units run along its declared axis; a step whose axis is an arm or a comparison is refused"},
+        {"id": "one-service-per-campaign", "held": True,
+         "detail": ("every step runs on one service" if not multi else
+                    f"every step runs on one service except {', '.join(multi)}, under declared identical stamps")},
+        {"id": "one-account-per-person", "held": True,
+         "detail": (f"{len(accounts)} eligible account(s), one per owner per service; "
+                    f"left out: {', '.join(pool['ignored']) or 'none'}; free-tier Colab excluded: "
+                    f"{', '.join(item['account'] for item in pool['excluded']) or 'none'}")},
+        {"id": "no-pooled-timing", "held": True,
+         "detail": "each service's per-unit duration is its own (explicit or its own host's timing record); none is pooled or scaled from another"},
+        {"id": "rehearse-each-account", "held": None,
+         "detail": "not checkable here: every account the plan uses needs its own passing rehearsal before its "
+                   f"campaign's gate: {', '.join(used)}"},
+        {"id": "launch-is-the-operator-s", "held": True,
+         "detail": "this plan is never launch authorization: placement stays with distribute and each step's launch with its own gate and the operator's consent"},
+    ]
+    return {"plan": args.plan, "accounts": [entry["label"] for entry in accounts],
+            "excludedAccounts": [{"account": item["account"], "tier": item["tier"]} for item in pool["excluded"]],
+            "ignoredAccounts": pool["ignored"], "steps": report_steps,
+            "makespanMinutes": num(makespan), "makespanHours": num(makespan / 60),
+            "serialMinutes": num(serial), "serialHours": num(serial / 60),
+            "speedup": num(serial / makespan) if makespan else None, "savedMinutes": num(serial - makespan),
+            "quota": quota, "quotaOk": not any(item["overQuota"] for item in quota),
+            "search": {"mode": mode, "assignmentsEvaluated": evaluated, "objective":
+                       "minimal makespan, then fewest accounts over quota, then fewest GPU hours"},
+            "doctrineChecks": checks, "reasons": reasons, "launchAuthorization": False}
+
+
+def _product(ranges: list) -> list[tuple]:
+    combos = [()]
+    for values in ranges:
+        combos = [combo + (value,) for combo in combos for value in values]
+    return combos
+
+
 def cmd_checklist(args, root: Path, today: str) -> dict:
     return {"checklist": [dict(item) for item in CHECKLIST]}
 
@@ -649,7 +1322,15 @@ def build_parser() -> argparse.ArgumentParser:
         assess.add_argument(flag, default=None)
     assess.add_argument("--stamps-identical", action="store_true",
                         help="the shards of a mixed-service campaign declare identical environment stamps")
+    assess.add_argument("--account", action="append", default=None,
+                        help="<owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>], repeated")
+    assess.add_argument("--accounts-file", default=None, help="a JSON list of accounts with their own limits")
     assess.set_defaults(func=cmd_assess)
+    plan = verbs.add_parser("schedule", help="place remote steps on services and units on accounts, read-only")
+    plan.add_argument("--plan", default=None)
+    plan.add_argument("--account", action="append", default=None)
+    plan.add_argument("--accounts-file", default=None)
+    plan.set_defaults(func=cmd_schedule)
     estimate = verbs.add_parser("estimate", help="processing-time range per stage and host from a timing probe")
     estimate.add_argument("--timing", default=None)
     estimate.add_argument("--stage", default=None)
