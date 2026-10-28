@@ -18,7 +18,7 @@ Branch: `feat/session-checkpoints` (from `feat/parallel-campaigns` e7d1ae83). De
 
 - T1 (S1, S3, S4, S5, S6, S7 remote-execution doctrine) delegated writer, worktree `session-checkpoints-a` — done, commit 4f3e4366
 - T2 (S2, S7 remote-parallelism doctrine) delegated writer, worktree `session-checkpoints-b` — done, commit 4f4f4759
-- T3 (S7 agents and implementation skills, integration fixes, CHANGELOG) delegated writer at integration — done, commit see L4
+- T3 (S7 agents and implementation skills, integration fixes, CHANGELOG) delegated writer at integration — done, commit b50002d2
 - T4 live Kaggle verification of attaching a previous kernel's output (phase 2 prerequisite; authorized) — parent — done (L3)
 - T5 integration with parallel campaigns, full suite vs baseline, independent verifier — pending
 
