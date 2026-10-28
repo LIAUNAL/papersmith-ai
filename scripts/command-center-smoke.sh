@@ -19,17 +19,47 @@
 #      held.
 #
 # Hermetic apart from the local HTTP socket: no network, no npm.
+#
+# Interpreter: the first candidate that can import the server's runtime
+# dependencies (fastapi, uvicorn), in this order: the canonical test runtime
+# `.micromamba/envs/papersmith/bin/python` (the env `smith env` provisions and
+# `npm run test:py` runs), the workspace `.venv/bin/python`, then `python3` and
+# `python` on PATH. A candidate that exists but lacks those dependencies is
+# skipped, never used; when none qualifies the smoke fails before starting
+# anything and names every candidate it rejected. `--which-python` prints the
+# selected interpreter and exits without running the smoke.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+fail() {
+  echo "command-center smoke: FAIL (check $1): $2" >&2
+  exit 1
+}
+
 # The repository's own environments first: the micromamba env `smith env`
 # provisions, then a plain venv, and only then whatever python is on PATH.
-PY="$ROOT/.micromamba/envs/papersmith/bin/python"
-if [[ ! -x "$PY" ]]; then
-  PY="$ROOT/.venv/bin/python"
-fi
-if [[ ! -x "$PY" ]]; then
-  PY="$(command -v python3 || command -v python)"
+select_python() {
+  local candidate
+  for candidate in "$ROOT/.micromamba/envs/papersmith/bin/python" "$ROOT/.venv/bin/python" \
+      "$(command -v python3 || true)" "$(command -v python || true)"; do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    if "$candidate" -c 'import fastapi, uvicorn' >/dev/null 2>&1; then
+      PY="$candidate"
+      return 0
+    fi
+    REJECTED="$REJECTED $candidate"
+  done
+  return 1
+}
+
+PY=""
+REJECTED=""
+select_python \
+  || fail runtime "no interpreter can import fastapi and uvicorn; rejected:${REJECTED:- none found}"
+if [[ "${1:-}" == "--which-python" ]]; then
+  printf '%s\n' "$PY"
+  exit 0
 fi
 HOST="127.0.0.1"
 PREFERRED_PORT="${COMMAND_CENTER_PORT:-9876}"
@@ -57,11 +87,6 @@ cleanup() {
   exit "$rc"
 }
 trap cleanup EXIT INT TERM
-
-fail() {
-  echo "command-center smoke: FAIL (check $1): $2" >&2
-  exit 1
-}
 
 # Pick a free port at or after the preferred one, so a busy 9876 on a dev
 # machine does not fail the smoke.
