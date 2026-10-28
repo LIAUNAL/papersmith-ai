@@ -165,6 +165,8 @@ AGENT_STAGES = {
     "redactor": "writing",
     "contract-auditor": "writing",
     "style-sampler": "writing",
+    # Reviews the compiled paper against the NeurIPS review form.
+    "paper-reviewer": "audit",
     "diagram-author": "figures",
     "figure-auditor": "figures",
     "section-grounding-auditor": "figures",

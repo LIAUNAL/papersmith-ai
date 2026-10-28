@@ -2093,6 +2093,7 @@ nothing was asserted without a run having checked it.
 | `.claude/agents/insumos-observer.md` | Reads the paper's **four declared sources** — `proposals/`, `experiments/`, the target repo's code and what its runs returned — and reports, for each observable fact, whether it is satisfied and **with what evidence**. `Read`, `Glob`, `Grep`. **It never decides a value and never runs `declare`**: its report is what a person reads before running `declare`. The report is passed by file and `observe` validates it against the schema — an agent's own account is never trusted. |
 | `.claude/agents/style-sampler.md` | Resolves the equivalent block, **whole**, from every `guidance/` folder the record classifies as `style-reference`, and returns it **verbatim, never trimmed**. `Read`, `Glob`, `Grep`. What it returns is the only material against which a later overlap test can compare a styled draft: if it trimmed, the test would compare against something no one wrote. |
 | `.claude/agents/figure-auditor.md` | Audits TikZ diagrams against their section's prose and the declared manifest; runs `figure audit` and reports the structured verdict. |
+| `.claude/agents/paper-reviewer.md` | Reviews the compiled paper with the NeurIPS 2026 review form and reports each rating with quoted evidence. |
 
 **The safeguards.**
 

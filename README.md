@@ -465,7 +465,7 @@ my-paper/
 │   ├── manifest.json            #   hashes of everything the framework generated
 │   ├── runs_ledger.jsonl        #   every dispatched run, in order
 │   └── version                  #   framework version that created it
-├── .claude/agents/              # the twenty-four subagents (single source of truth)
+├── .claude/agents/              # the twenty-five subagents (single source of truth)
 ├── skills/                      # the kit copy: the skills + _core
 │   └── _core/                   #   the two shared engines (deliberation, implementation)
 ├── sections/                    # the ten section contracts (they travel WITH content, like skills/)
@@ -687,7 +687,7 @@ repo-only).
 
 ## The agents
 
-A workspace ships **twenty-four subagents** in `.claude/agents/`. They are short
+A workspace ships **twenty-five subagents** in `.claude/agents/`. They are short
 bursts of work that a harness launches (for example, with the Task tool) on
 request, not replacements for the CLI. The shape is always the
 same — **one burst between two operator gates**: the agent decides
@@ -714,6 +714,7 @@ to establish it. The operator opens and closes the gates.
 | `style-sampler` | Resolves the equivalent block, complete, in each style folder of `guidance/` and returns it verbatim, never trimmed. It is the only material an overlap check can compare. | `paper-writing` |
 | `diagram-author` | Writes a standalone TikZ diagram (`<id>.tex` + `<id>.diagram.json`) and compiles it in its own loop, up to the repair budget. It never draws a chart from measured numbers — that is the `place` verb. | `paper-writing` |
 | `figure-auditor` | Compares the components declared in the manifest against the section's prose and the pipeline steps; reports a structured verdict. | `paper-writing` |
+| `paper-reviewer` | Reviews the compiled paper with the NeurIPS 2026 review form; grounds pertinence, novelty and coherence in quoted evidence. | `paper-writing` |
 | `section-grounding-auditor` | Reads a block's own bound source section, verbatim, and judges each subject sentence against it: `supported` — with the quoted span that carries it —, `unsupported` or `undecidable`. No code path invokes it, and `write` re-derives both sides independently rather than trusting its account. | `paper-writing` |
 | `insumos-observer` | Reads the paper's four declared input sources —`proposals/`, `experiments/`, the destination repo's code and its own run outputs— and reports, for each observable fact, whether it holds and with what evidence. It never decides a value nor runs `declare`. | `paper-writing` |
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
@@ -726,7 +727,7 @@ Three rules that order everything else:
 - **The source of truth is `.claude/agents/`.** Each harness's routing docs
   (`CLAUDE.md`, `.pi/APPEND_SYSTEM.md`, `OPENCODE.md`,
   `.agents/AGENTS.md`) list
-  all twenty-four, and they are generated: an agent is changed
+  all twenty-five, and they are generated: an agent is changed
   there, not in the projection.
 - **Each agent declares the skill it loads** (`skills/<name>/SKILL.md`), and that
   binding is verified: an agent that points at a skill the workspace does not
