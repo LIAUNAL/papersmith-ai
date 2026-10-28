@@ -1485,8 +1485,11 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not fresh and cached is not None:
             if (time.monotonic() - doctor_cache["at"] >= DOCTOR_TTL_SECONDS
                     and doctor_refresh.acquire(blocking=False)):
-                threading.Thread(target=refresh_doctor, name="doctor-refresh",
-                                 daemon=True).start()
+                try:
+                    threading.Thread(target=refresh_doctor, name="doctor-refresh",
+                                     daemon=True).start()
+                except RuntimeError:  # no thread to release it; the next visit retries
+                    doctor_refresh.release()
             return JSONResponse(cached)
         with doctor_lock:
             if not fresh and doctor_cache["value"] is not None:
