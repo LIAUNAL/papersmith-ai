@@ -862,11 +862,16 @@ def _diagrams(root: Path, repo: str, folder: Path, reader: _Reader) -> list[dict
                    f"--name {shlex.quote(folder.name)} --kind {kind}"
                    f"{' --force' if files['png'] else ''} && "
                    f"python3 {DIAGRAM_CLI} render --spec {shlex.quote(spec)}")
+        validation = diagram_cli().validation_state(folder, kind) if files["png"] else "absent"
+        provenance = (diagram_cli().validation_provenance(folder, kind)
+                      if validation == "validated" else None)
         out.append({"kind": kind, "approved": True, "marker": marker, "png": files["png"],
                     "pdf": files["pdf"], "command": command,
                     "slash": f"/experiment-diagrams {kind}",
-                    "validation": (diagram_cli().validation_state(folder, kind)
-                                   if files["png"] else "absent")})
+                    "validation": validation,
+                    # `chat` (the operator approved it in an agent conversation)
+                    # or `dashboard` ("Validar diagrama"); `None` until validated.
+                    "validatedVia": provenance["via"] if provenance else None})
     return out
 
 

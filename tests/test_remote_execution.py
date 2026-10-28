@@ -9605,6 +9605,24 @@ class ConsentGateTests(unittest.TestCase):
             with self.assertRaises(REMOTE_CLI.ConsentError):
                 self._submit(target, notebook, smoke=True)
 
+    def test_chat_validated_diagrams_pass_on_to_the_consent_gate(self) -> None:
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            product = target / "FEM-TOLLA"
+            for kind, marker in (("poc", "AGREED.md"), ("experiments", "Experimental_AGREED.md")):
+                png = self._diagram(product, kind, marker=marker, validated=False)
+                (png.parent / f"{kind}.json").write_text("{}\n", encoding="utf-8")
+                proc = subprocess.run(
+                    [sys.executable, str(REPOSITORY_ROOT / "skills/experiment-diagrams/scripts/diagram_cli.py"),
+                     "validate", "--target", str(target), "--name", "FEM-TOLLA", "--kind", kind,
+                     "--png-sha256", hashlib.sha256(png.read_bytes()).hexdigest()[:12],
+                     "--operator-statement", "aprobados. ponlos como validados y lanza"],
+                    capture_output=True, text=True, check=False)
+                self.assertEqual(proc.returncode, 0, proc.stdout)
+            with self.assertRaises(REMOTE_CLI.ConsentError):
+                self._submit(target, notebook, smoke=True)
+
     def test_a_product_without_approval_markers_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook = self._target_and_notebook(tmp)

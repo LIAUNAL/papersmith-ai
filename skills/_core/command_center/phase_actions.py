@@ -176,7 +176,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
             _prompt("/experiment-diagrams", "Diagramas de la PoC y de los experimentos", [
                 "Al aprobar la PoC (AGREED.md) dibuja el diagrama poc; al aprobar los experimentos completos (Experimental_AGREED.md), el diagrama experiments.",
                 "Cada uno es una figura TikZ (PDF y PNG) en <producto>/diagrams/; también se genera con el botón \"Generar diagrama\" de la pestaña Experimentos.",
-                "Valídalo tú en la pestaña Experimentos (\"Validar diagrama\"): submit se niega con DIAGRAM_NOT_VALIDATED hasta entonces, y redibujarlo pide validarlo de nuevo.",
+                "Valídalo tú en la pestaña Experimentos (\"Validar diagrama\") o apruébalo explícitamente en el chat con el agente, que corre validate con tus palabras: submit se niega con DIAGRAM_NOT_VALIDATED hasta entonces, y redibujarlo pide validarlo de nuevo.",
             ], "Ej.: poc para el producto implementations/mi-poc/Modelo.", optional=True),
             _prompt("/remote-parallelism", "Decidir si repartir entre cuentas", [
                 "Primero estimate --timing <objetivo>/<Nombre>/Results/timing.json: el rango por etapa y host (±20%).",

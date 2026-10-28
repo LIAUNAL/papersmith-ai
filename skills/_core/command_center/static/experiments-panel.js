@@ -278,6 +278,13 @@
     validated: ['VALIDADO', 'badge--ok'],
   };
 
+  // How a validated diagram was validated: in an agent conversation (the
+  // experiment-diagrams `validate` verb) or with this tab's button.
+  const DIAGRAM_VIA = {
+    chat: 'validado por chat',
+    dashboard: 'validado en el tablero',
+  };
+
   function diagramAnchor(p) {
     return esc(`exp-diagrams-${p.repo || ''}-${p.name || ''}`);
   }
@@ -328,8 +335,10 @@
         : `<p class="exp-intro">Aprobado en ${esc(d.marker || '')}; el diagrama aún no existe. El agente lo dibuja con
             <code>${esc(d.slash || '')}</code>, o genera un borrador aquí y revísalo.</p>
            <div class="exp-chips">${cliButton(d.command || '', 'Generar diagrama')}</div>`;
+      const via = state === 'validated' && d.validatedVia
+        ? ` <small class="exp-muted">${esc(DIAGRAM_VIA[d.validatedVia] || `validado (${d.validatedVia})`)}</small>` : '';
       return `<div class="exp-diagram"><div class="exp-file">${esc(title)}
-        <span class="badge ${tone}">${esc(label)}</span></div>${body}</div>`;
+        <span class="badge ${tone}">${esc(label)}</span>${via}</div>${body}</div>`;
     }).join('');
     return `<h4 class="exp-h4" id="${diagramAnchor(p)}">Diagramas para verificar</h4>${items}`;
   }

@@ -8,6 +8,7 @@ rasterizer is skipped when the machine lacks them (CI may have no TeX).
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -343,13 +344,143 @@ class DiagramCliTests(unittest.TestCase):
         self.assertFalse((self.ws.product / "diagrams" / "poc.validated.json").exists())
         self.assertEqual(self._validation(), "absent")
 
-    def test_no_cli_command_validates_a_diagram(self) -> None:
-        self._drawn()
-        code, payload = run_cli("validate", "--target", str(self.ws.target), "--name", "Sample",
-                                "--kind", "poc")
-        self.assertNotEqual(code, 0)
-        self.assertEqual(payload["error"], "USAGE")
+    # -- validation from the agent chat (`validate`) -------------------------------
+
+    STATEMENT = "aprobados. ponlos como validados y lanza"
+
+    def _drawn_with_spec(self, kind: str = "poc") -> tuple[Path, str]:
+        png = self._drawn(kind)
+        (png.parent / f"{kind}.json").write_text("{}\n", encoding="utf-8")
+        return png, hashlib.sha256(png.read_bytes()).hexdigest()
+
+    def _validate(self, *extra: str, kind: str = "poc", sha: str | None = None,
+                  statement: str | None = None) -> tuple[int, dict]:
+        args = ["validate", "--target", str(self.ws.target), "--name", "Sample", "--kind", kind]
+        if sha is not None:
+            args += ["--png-sha256", sha]
+        if statement is not None:
+            args += ["--operator-statement", statement]
+        return run_cli(*args, *extra)
+
+    def _record(self, kind: str = "poc") -> Path:
+        return self.ws.product / "diagrams" / f"{kind}.validated.json"
+
+    def test_validate_records_the_operators_chat_approval_of_the_png_it_saw(self) -> None:
+        _, sha = self._drawn_with_spec()
+        code, payload = self._validate(sha=sha, statement=self.STATEMENT)
+        self.assertEqual(code, 0, payload)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["validation"], "validated")
+        record = json.loads(self._record().read_text(encoding="utf-8"))
+        self.assertEqual(record["kind"], "poc")
+        self.assertEqual(record["png_sha256"], sha)
+        self.assertEqual(record["via"], "chat")
+        self.assertEqual(record["statement"], self.STATEMENT)
+        self.assertRegex(record["validated_at"], r"^\d{4}-\d\d-\d\dT")
+        self.assertEqual(payload["record"], record)
+        self.assertEqual(self._validation(), "validated")
+
+    def test_validate_accepts_a_prefix_of_at_least_twelve_hex_characters(self) -> None:
+        _, sha = self._drawn_with_spec()
+        code, payload = self._validate(sha=sha[:12].upper(), statement=self.STATEMENT)
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(json.loads(self._record().read_text())["png_sha256"], sha)
+
+    def test_validate_refuses_and_writes_nothing(self) -> None:
+        _, sha = self._drawn_with_spec()
+        wrong = ("0" if sha[0] != "0" else "1") + sha[1:]
+        cases = {
+            "PNG_HASH_MISMATCH": dict(sha=wrong, statement=self.STATEMENT),
+            "PNG_HASH_INVALID": dict(sha=sha[:11], statement=self.STATEMENT),
+            "PNG_HASH_INVALID ": dict(sha="z" * 64, statement=self.STATEMENT),
+            "STATEMENT_EMPTY": dict(sha=sha, statement="   "),
+            "USAGE": dict(sha=sha),
+            "USAGE ": dict(statement=self.STATEMENT),
+        }
+        for expected, kwargs in cases.items():
+            with self.subTest(expected=expected):
+                code, payload = self._validate(**kwargs)
+                self.assertEqual(code, 2, payload)
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["error"], expected.strip())
+                self.assertFalse(self._record().exists())
         self.assertEqual(self._validation(), "pending")
+
+    def test_validate_refuses_a_kind_whose_approval_is_absent(self) -> None:
+        png, sha = self._drawn_with_spec("experiments")
+        (self.ws.product / "Experimental_AGREED.md").unlink()
+        code, payload = self._validate(kind="experiments", sha=sha, statement=self.STATEMENT)
+        self.assertEqual((code, payload["error"]), (2, "APPROVAL_ABSENT"))
+        self.assertFalse(self._record("experiments").exists())
+
+    def test_validate_refuses_a_missing_png_or_spec(self) -> None:
+        png, sha = self._drawn_with_spec()
+        (png.parent / "poc.json").unlink()
+        code, payload = self._validate(sha=sha, statement=self.STATEMENT)
+        self.assertEqual((code, payload["error"]), (2, "SPEC_ABSENT"))
+        self.assertFalse(self._record().exists())
+        (png.parent / "poc.json").write_text("{}\n", encoding="utf-8")
+        png.unlink()
+        code, payload = self._validate(sha=sha, statement=self.STATEMENT)
+        self.assertEqual((code, payload["error"]), (2, "DIAGRAM_ABSENT"))
+        self.assertFalse(self._record().exists())
+
+    def test_validate_refuses_a_diagrams_folder_linked_outside_the_product(self) -> None:
+        self.ws.approve("poc")
+        outside = self.ws.root / "elsewhere"
+        outside.mkdir()
+        (outside / "poc.png").write_bytes(b"\x89PNG planted")
+        (outside / "poc.json").write_text("{}\n", encoding="utf-8")
+        os.symlink(outside, self.ws.product / "diagrams")
+        sha = hashlib.sha256(b"\x89PNG planted").hexdigest()
+        code, payload = self._validate(sha=sha, statement=self.STATEMENT)
+        self.assertEqual((code, payload["error"]), (2, "DIAGRAMS_OUTSIDE_PRODUCT"))
+        self.assertFalse((outside / "poc.validated.json").exists())
+
+    def test_validate_refuses_an_absent_product(self) -> None:
+        code, payload = run_cli("validate", "--target", str(self.ws.target), "--name", "Nobody",
+                                "--kind", "poc", "--png-sha256", "a" * 64,
+                                "--operator-statement", self.STATEMENT)
+        self.assertEqual((code, payload["error"]), (2, "PRODUCT_ABSENT"))
+
+    def test_status_reports_how_a_diagram_was_validated(self) -> None:
+        _, sha = self._drawn_with_spec()
+        code, payload = run_cli("status", "--target", str(self.ws.target), "--name", "Sample")
+        self.assertIsNone(payload["kinds"]["poc"]["provenance"])
+        self._validate(sha=sha, statement=self.STATEMENT)
+        code, payload = run_cli("status", "--target", str(self.ws.target), "--name", "Sample")
+        self.assertEqual(code, 0, payload)
+        entry = payload["kinds"]["poc"]
+        self.assertEqual(entry["validation"], "validated")
+        self.assertEqual(entry["provenance"]["via"], "chat")
+        self.assertEqual(entry["provenance"]["statement"], self.STATEMENT)
+        self.assertTrue(entry["provenance"]["validatedAt"])
+
+    def test_status_reports_a_dashboard_record_as_validated_in_the_dashboard(self) -> None:
+        self._drawn()
+        _load_cli().write_validation(self.ws.product, "poc")
+        code, payload = run_cli("status", "--target", str(self.ws.target), "--name", "Sample")
+        entry = payload["kinds"]["poc"]
+        self.assertEqual(entry["validation"], "validated")
+        self.assertEqual(entry["provenance"]["via"], "dashboard")
+        self.assertIsNone(entry["provenance"]["statement"])
+
+    def test_the_dashboard_record_keeps_its_shape(self) -> None:
+        self._drawn()
+        record = _load_cli().write_validation(self.ws.product, "poc")
+        self.assertEqual(set(record), {"kind", "png_sha256", "validated_at"})
+
+    def test_render_drops_a_chat_validation_too(self) -> None:
+        _, sha = self._drawn_with_spec()
+        self.assertEqual(self._validate(sha=sha, statement=self.STATEMENT)[0], 0)
+        run_cli("derive", "--target", str(self.ws.target), "--name", "Sample", "--kind", "poc", "--force")
+        cli = _load_cli()
+        with mock.patch.dict(os.environ, {"PATH": ""}), \
+                mock.patch.object(cli, "TEX_FALLBACK_DIRS", ()), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = cli.main(["render", "--spec", str(self.ws.product / "diagrams" / "poc.json")])
+        self.assertNotEqual(code, 0)
+        self.assertFalse(self._record().exists())
 
     def test_status_refuses_an_absent_product(self) -> None:
         code, payload = run_cli("status", "--target", str(self.ws.target), "--name", "Nobody")

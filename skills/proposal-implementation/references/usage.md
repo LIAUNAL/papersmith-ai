@@ -2570,7 +2570,9 @@ the act itself reaches, read through the same functions:
   `--elect <job>` when the job classifies `optional` (`elect: true`); `done`
   once a `gate` record `submit` accepts for `--worker` exists at the pin.
 - `submit` carries `DIAGRAM_NOT_VALIDATED` while an approved experiment
-  diagram is not validated in the dashboard, and its command names the
+  diagram is not validated, either with the dashboard's "Validar diagrama"
+  or by the operator's explicit approval in the conversation recorded with
+  `diagram_cli.py validate`, and its command names the
   consent token for `--worker` and `--backend <service>` (this engine never
   prints a service name).
 

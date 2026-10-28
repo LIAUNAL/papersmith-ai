@@ -11,6 +11,30 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- An experiment diagram can be validated from the conversation with an agent,
+  not only with the dashboard's "Validar diagrama":
+  `diagram_cli.py validate --target <repo> --name <Name> --kind poc|experiments
+  --png-sha256 <hex> --operator-statement "<the operator's words>"` writes the
+  same `<Name>/diagrams/<kind>.validated.json` the button writes, plus
+  `"via": "chat"` and the operator's statement verbatim, so `submit`'s
+  `DIAGRAM_NOT_VALIDATED` check reads it unchanged. The hash (full, or a prefix
+  of at least 12 hex characters) must match the current PNG; a mismatch, an
+  invalid hash, an empty statement, a missing PNG or spec, an absent approval
+  marker or a `diagrams/` folder leaving the product refuses
+  (`PNG_HASH_MISMATCH`, `PNG_HASH_INVALID`, `STATEMENT_EMPTY`, `DIAGRAM_ABSENT`,
+  `SPEC_ABSENT`, `APPROVAL_ABSENT`, `DIAGRAMS_OUTSIDE_PRODUCT`) and writes
+  nothing. An agent runs it only after the operator explicitly approves that
+  diagram in the current conversation, never on its own initiative. `render`
+  still drops the record, whichever way it was validated.
+- `diagram_cli.py status` reports each validated diagram's `provenance`
+  (`via` `chat` or `dashboard`, the time, the statement), and the Experimentos
+  panel says "validado por chat" or "validado en el tablero" beside it. The
+  dashboard's record keeps its shape.
+
 ## 0.33.0
 
 ### Added
