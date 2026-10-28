@@ -1913,7 +1913,10 @@ session with margin, or checkpoints and resumes**; long units are split (for
 example by fold) or checkpointed. For a job folder, the runner exports
 `FORGE_SESSION_DEADLINE` (session start + limit − max(10 %, 30 min), in epoch
 seconds): the target checks it before each unit or trial, and when the next
-one may not finish, writes its checkpoint and a `partial` marker and exits 0.
+one may not finish, writes its checkpoint and a `partial.json` naming the units
+it did not finish (`{"remaining": [...]}`; without that list, none counts as
+finished) and exits 0. `remaining` keeps those units, and every unit of a
+quarantined result, in its list.
 Fetch promptly —a Colab session keeps its file manifest current during the
 run, so each fetch saves a snapshot— and resubmit only the units `remaining`
 names.

@@ -25939,6 +25939,122 @@ class RemainingUnitsTests(unittest.TestCase):
             printed = json.loads(buffer.getvalue())
             self.assertEqual(printed["remaining"], ["u0", "u1"])
 
+    def _fetch_through(self, target, notebook, adapter, submission_id, dest) -> dict:
+        return REMOTE_CLI.cmd_fetch(
+            target=target, entrypoint=notebook, submission_id=submission_id,
+            dest=dest, adapter=adapter, source_digest=lambda t, n: "d" * 64,
+        )
+
+    def _returned_with(self, tmp, target, units, files: dict) -> None:
+        """One submission whose share is `units`, settled `returned` with an
+        artifact holding `files` (name -> text)."""
+        ledger_path = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                       / REMOTE_CLI.LEDGER_FILENAME)
+        LEDGER.append(ledger_path, LEDGER.submitted_event(
+            entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+            submission_id="s1", worker="w1", requested_capacity=1,
+            granted_capacity=1, units=list(units)))
+        artifact = Path(tmp) / "artifact"
+        artifact.mkdir()
+        for name, text in files.items():
+            (artifact / name).write_text(text, encoding="utf-8")
+        LEDGER.append(ledger_path, LEDGER.returned_event(
+            submission_id="s1", artifact_path=str(artifact), observed_concurrency=1))
+
+    def test_a_run_stopped_at_the_deadline_leaves_its_unit_remaining(self) -> None:
+        # The verifier's scenario: the target checkpointed, wrote
+        # partial.json and exited 0, so the fetch is complete and `returned`.
+        class StoppedAtDeadline(FakeAdapter):
+            def fetch(self, submission_id, into):
+                into.mkdir(parents=True, exist_ok=True)
+                (into / "partial.json").write_text(
+                    json.dumps({"partial": True, "next": "u0"}), encoding="utf-8")
+                (into / "ckpt.pt").write_text("state", encoding="utf-8")
+                (into / "runs.jsonl").write_text("", encoding="utf-8")
+                return ADAPTER.Fetched(path=into, complete=True,
+                                       files=("ckpt.pt", "partial.json", "runs.jsonl"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = StoppedAtDeadline(worker_id="w1", capacity=1)
+            result = self._campaign(target, notebook, adapter, ("u0",))
+            fetched = self._fetch_through(
+                target, notebook, adapter, result["assignments"][0]["submissionId"],
+                Path(tmp) / "out")
+            self.assertEqual(fetched["event"]["kind"], "returned")
+            for unit_field in (None, "cell.unit"):
+                report = self._remaining(target, notebook, ("u0",), unit_field=unit_field)
+                self.assertEqual(report["complete"], [])
+                self.assertEqual(report["remaining"], ["u0"])
+
+    def test_units_a_partial_marker_lists_stay_remaining(self) -> None:
+        units = ("u0", "u1", "u2")
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            self._returned_with(tmp, target, units, {
+                "partial.json": json.dumps({"remaining": ["u1", "u2"]}),
+                "runs.jsonl": '{"cell": {"unit": "u0"}}\n',
+            })
+            for unit_field in (None, "cell.unit"):
+                report = self._remaining(target, notebook, units, unit_field=unit_field)
+                self.assertEqual(report["complete"], ["u0"])
+                self.assertEqual(report["remaining"], ["u1", "u2"])
+
+    def test_per_unit_records_decide_over_a_partial_marker_with_unit_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            self._returned_with(tmp, target, ("u0", "u1"), {
+                "partial.json": json.dumps({"partial": True}),
+                "runs.jsonl": '{"cell": {"unit": "u0"}}\n',
+            })
+            without = self._remaining(target, notebook, ("u0", "u1"))
+            self.assertEqual(without["remaining"], ["u0", "u1"])
+            report = self._remaining(target, notebook, ("u0", "u1"), unit_field="cell.unit")
+            self.assertEqual(report["complete"], ["u0"])
+            self.assertEqual(report["remaining"], ["u1"])
+
+    def test_a_partial_marker_without_a_list_leaves_the_whole_share_remaining(self) -> None:
+        for marker in (json.dumps({"partial": True, "next": "u0"}), "{torn"):
+            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as tmp:
+                target, notebook = self._target_and_notebook(tmp)
+                self._returned_with(tmp, target, ("u0", "u1"),
+                                    {"partial.json": marker})
+                report = self._remaining(target, notebook, ("u0", "u1"))
+                self.assertEqual(report["complete"], [])
+                self.assertEqual(report["remaining"], ["u0", "u1"])
+
+    def test_a_returned_result_without_a_partial_marker_still_completes_its_share(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            self._returned_with(tmp, target, ("u0", "u1"), {"result.txt": "ok"})
+            report = self._remaining(target, notebook, ("u0", "u1"))
+            self.assertEqual(report["complete"], ["u0", "u1"])
+            self.assertEqual(report["remaining"], [])
+
+    def test_a_quarantined_returned_result_does_not_count(self) -> None:
+        # The verifier's scenario: a second campaign on the same lane makes
+        # the first submission's result stale, so `fetch` quarantines it.
+        units = ("u0", "u1", "u2")
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = FakeAdapter(worker_id="w1", capacity=1)
+            first = self._campaign(target, notebook, adapter, ("u0", "u1"))
+            before = self._remaining(target, notebook, units)
+            self.assertEqual(before["inFlight"], ["u0"])
+            second = self._campaign(target, notebook, adapter, tuple(before["remaining"]))
+            stale = self._fetch_through(
+                target, notebook, adapter, first["assignments"][0]["submissionId"],
+                Path(tmp) / "d1")
+            self.assertEqual(stale["verdict"], "fromStaleSubmission")
+            self.assertIn(REMOTE_CLI.QUARANTINE_DIRNAME, Path(stale["path"]).parts)
+            current = self._fetch_through(
+                target, notebook, adapter, second["assignments"][0]["submissionId"],
+                Path(tmp) / "d2")
+            self.assertEqual(current["verdict"], "current")
+            report = self._remaining(target, notebook, units)
+            self.assertEqual(report["complete"], ["u1"])
+            self.assertEqual(report["remaining"], ["u0", "u2"])
+
     def test_a_share_too_large_for_one_ledger_line_refuses_before_any_submit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook = self._target_and_notebook(tmp)

@@ -140,3 +140,39 @@ def unit_records(root: Path, field: str) -> set[str]:
             if isinstance(node, str):
                 found.add(node)
     return found
+
+
+#: The marker a target writes in its working directory when it stops before
+#: finishing its share (at `FORGE_SESSION_DEADLINE`, for one): a JSON object
+#: whose `remaining` list names the units it did NOT finish.
+PARTIAL_MARKER = "partial.json"
+
+
+def partial_marker(root: Path) -> tuple[bool, frozenset[str] | None]:
+    """Whether a result under `root` says its run stopped early, and which
+    units it left unfinished.
+
+    Returns `(False, None)` when no `partial.json` exists anywhere under
+    `root`. Otherwise `(True, units)`, where `units` is the union of every
+    marker's `remaining` list of strings -- or `None`, meaning "none of the
+    share is finished", as soon as one marker is unreadable, is not a JSON
+    object, or carries no such list. A marker is never read as finishing
+    more than it says.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        return (False, None)
+    markers = [path for path in sorted(root.rglob(PARTIAL_MARKER)) if path.is_file()]
+    if not markers:
+        return (False, None)
+    listed: set[str] = set()
+    for marker in markers:
+        try:
+            node = json.loads(marker.read_text(encoding="utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            return (True, None)
+        units = node.get("remaining") if isinstance(node, dict) else None
+        if not isinstance(units, list) or not all(isinstance(u, str) for u in units):
+            return (True, None)
+        listed.update(units)
+    return (True, frozenset(listed))

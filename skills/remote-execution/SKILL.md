@@ -1893,7 +1893,10 @@ agent that plans, builds or launches a remote run:
    if the session is never interrupted.
 2. **Read `FORGE_SESSION_DEADLINE`.** Check it before starting each unit or
    trial; when the next one may not finish before it, write the checkpoint
-   and the results so far, write a `partial` marker, and exit 0.
+   and the results so far, write `partial.json` in the working directory
+   naming the units it did not finish (`{"remaining": ["u3", ...]}`), and
+   exit 0. A `partial.json` without that list means none of the share's
+   units is finished.
 3. **Fetch promptly.** Fetch as soon as a run is terminal, and periodically
    during a long one, so a reclaimed session still leaves its last snapshot
    on this side.
@@ -1926,10 +1929,11 @@ import json, os, time
 from pathlib import Path
 
 deadline = float(os.environ.get("FORGE_SESSION_DEADLINE", "inf"))
-for unit in units_to_run:                      # skip the ones already done
+for index, unit in enumerate(units_to_run):    # skip the ones already done
     if time.time() + estimated_seconds(unit) > deadline:
         save_checkpoint()                      # what a new session resumes from
-        Path("partial.json").write_text(json.dumps({"partial": True, "next": unit}))
+        unfinished = units_to_run[index:]      # this unit and every one after it
+        Path("partial.json").write_text(json.dumps({"remaining": unfinished}))
         break                                  # exit 0: the outputs still come back
     run_and_record(unit)                       # one runs.jsonl record per unit
 ```
@@ -1954,10 +1958,16 @@ left by a killed fetch still refuses, naming the command that clears it.
 each submission with the terminal event that settled it, in append order
 (so an id the service reused for a later resubmission never erases what an
 earlier one returned), and counts a unit complete when a submission at the
-current source digest carrying it was `returned`. With
+current source digest carrying it was `returned` -- with two exceptions. A
+result `fetch` sent to `.remote-execution/quarantine/` (a
+`fromStaleSubmission` verdict) completes nothing. A returned result holding
+a `partial.json` (the run stopped early and exited 0) completes only the
+units of its share that the marker's `remaining` list does not name; a
+marker without that list, or one that does not parse, completes none. With
 `--unit-field <dotted.path>` -- the field of the target's `runs.jsonl`
 records that names a unit -- the per-unit records inside a kept partial
-result count too. Units of a submission still unsettled are reported as
+result, or inside a returned one with a `partial.json`, count too: a unit
+with its own record is complete even when a marker lists it. Units of a submission still unsettled are reported as
 `inFlight` and are not resent. `remaining` keeps the declared order, which is
 the order the consent token binds, so its list goes to `distribute` and
 `submit` unchanged (`unitArgs` spells it as `--unit` flags).

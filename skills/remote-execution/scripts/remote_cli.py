@@ -1616,7 +1616,10 @@ def cmd_remaining(
     entrypoint, at the CURRENT source digest, counts -- a result from a
     moved source is quarantined by `fetch`, so it completes nothing.
 
-    - `complete`: a unit whose submission was settled `returned`; or, when
+    - `complete`: a unit whose submission was settled `returned`, unless
+      the result went to quarantine (it then completes nothing) or carries
+      a `partial.json` (the units its `remaining` list names, or the whole
+      share when it lists none, stay remaining); or, when
       `unit_field` names the dotted field the target's per-unit records
       carry, a unit a `runs.jsonl` record under that submission's artifact
       (a returned result or bytes `fetch` kept from a run that did not
@@ -1644,6 +1647,7 @@ def cmd_remaining(
     digest_fn = source_digest or _load_source_digest()
     live = digest_fn(target, product)
 
+    quarantine = (target / product / LEDGER_DIRNAME / QUARANTINE_DIRNAME).resolve()
     complete: set[str] = set()
     in_flight: set[str] = set()
     for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(ledger_path)):
@@ -1655,10 +1659,21 @@ def cmd_remaining(
         if terminal is None:
             in_flight.update(share)
             continue
-        if terminal.get("kind") == "returned":
-            complete.update(share)
-            continue
         artifact = terminal.get("artifactPath")
+        if terminal.get("kind") == "returned":
+            # A result `fetch` judged not current went to quarantine: it
+            # completes nothing, whatever it holds.
+            if artifact and Path(artifact).resolve().is_relative_to(quarantine):
+                continue
+            # A run that stopped early (at the deadline, say) exits 0 and is
+            # `returned`, but its partial.json names what it did not finish.
+            stopped, unfinished = (
+                SHARD_IO.partial_marker(Path(artifact)) if artifact else (False, None)
+            )
+            if not stopped:
+                complete.update(share)
+            elif unfinished is not None:
+                complete.update(set(share) - unfinished)
         if unit_field and artifact:
             complete.update(
                 set(share) & SHARD_IO.unit_records(Path(artifact), unit_field)

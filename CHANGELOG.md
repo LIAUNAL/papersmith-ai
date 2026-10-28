@@ -58,8 +58,8 @@ number is `0`, breaking changes can still arrive without a major bump.
   and stop starting new folds, seeds or trials before it, so the session ends
   as a normal completion and its output is kept.
 - Colab keeps its list of written files up to date while the run is going, so
-  a session that is killed or reclaimed still returns the files it had already
-  written, and `fetch` brings them back.
+  you can `fetch` in the middle of a long run. If the session is later killed
+  or reclaimed, what survives is what an earlier fetch already brought back.
 - `submit` records which units each campaign submission carries
   (`submitted.units`). The new read-only `remaining` verb lists which declared
   units have no complete result yet, so the next campaign sends only those.
