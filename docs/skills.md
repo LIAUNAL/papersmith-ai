@@ -1832,8 +1832,9 @@ the launch**, which is hours of somebody's quota.
 | `generate-job` | Builds the job folder: run configuration, executor notebook and the service metadata file. It is built in a partial directory and renamed atomically when it finishes — **a half-written folder cannot exist**. | Once, before the first submission. |
 | `submit` | The complete submission path, in fixed order: path guard → resolve the product → fresh digest of the source → capacity clamp → real submission → **and only then** record it in the ledger. Recording last means that something which never went out is never recorded. `--smoke` marks the run as a rehearsal and sends it to the rehearsal record. With `--unit` (a campaign) it sends **one submission per granted slot** —a Kaggle account granted two slots runs two jobs side by side, each with its share of the units, its own id and its own ledger line— and it refuses `CAMPAIGN_WORKERS_NOT_READY`, naming them, unless every worker given units has its own passing rehearsal at the current pin. | Every time work is submitted. |
 | `status` | Folds the record and shows the state per entrypoint: pending, returned, errored, quarantined, in flight for too long. **It accepts no adapter**: it is structurally incapable of resolving anything, it only reports. | When the current position has to be known. |
+| `remaining` | Reports which declared units still have no complete result —`complete`, `inFlight` and `remaining`, in the declared order— from the record alone: each campaign submission records its own share of units, and each is paired with the event that settled it. With `--unit-field`, the per-unit records inside a kept partial result count too. Its list goes to `distribute` and `submit` unchanged. **It accepts no adapter.** | After a campaign ends, before sending anything again. |
 | `poll` | Asks about one submission and **re-validates** that the returned state is inside the seam's five-value vocabulary. A defence against an adapter that misbehaves. | While waiting. |
-| `fetch` | Brings the result back. It evaluates currency **before** writing anything; if the result no longer corresponds to the current code, it is redirected to quarantine. It materializes in a partial directory, verifies that it is complete, renames, and only then records the return. | When the run has finished. |
+| `fetch` | Brings the result back. It evaluates currency **before** writing anything; if the result no longer corresponds to the current code, it is redirected to quarantine. It materializes in a partial directory, verifies that it is complete, renames, and only then records the return. A result that comes back incomplete is **never recorded as returned**: its bytes are kept under `.remote-execution/partial/<id>/<stamp>/`, and when the run is over without finishing (failed, timed out, or a reclaimed session) it is recorded `errored` naming that kept path. A run still going records nothing, and no partial directory is left to block the next fetch. | When the run has finished. |
 | `reconcile` | Compares what the service says it has against what the record believes, in both directions. It reports orphans; it never adopts them or cancels them on its own. | When something does not add up. A human always runs it. |
 | `smoke record` | Records a rehearsal's verdict, and that verdict comes from **the evidence of the artifact brought back**, not from somebody saying that it worked. | After the rehearsal is brought back. |
 | `readiness` | Reports —it never submits— whether a job is ready for its full run. It binds that worker's own last rehearsal to three things: that it passed, the same commit, the same worker — a rehearsal on another account never revokes it. **It reads no clock**: a rehearsal expires because the commit or the worker changed, never because time passed. | Before spending a large run. |
@@ -1876,6 +1877,7 @@ two because the cap is two" with "asks for exactly two".
 <destination>/<Product>/.remote-execution/
 ├── ledger.jsonl              the main record
 ├── smoke.jsonl               the rehearsals: a physically separate file
+├── partial/<id>/<stamp>/     incomplete results, kept and never merged
 └── quarantine/<id>/          results that arrived no longer current
 <destination>/tools/<service>/<job>/
 ├── run-config.json           what is run, with which arguments, at which commit
@@ -1902,6 +1904,19 @@ pending**.
 - **Only the adapters name a service.** `scripts/adapters/kaggle.py` and
   `scripts/adapters/colab.py` are the only authorized places; there are guards at
   source-code level that verify that the rest of the skill is blind to the backend.
+
+**Sessions, checkpoints and resume.** Every service stops a session after a
+continuous run time it publishes (Kaggle: 12 h for a GPU session; Colab Pro:
+24 h, with idle reclaim possibly earlier), and each adapter declares that
+limit (`session_limit_seconds`). The rule for agents: **every unit fits one
+session with margin, or checkpoints and resumes**; long units are split (for
+example by fold) or checkpointed. For a job folder, the runner exports
+`FORGE_SESSION_DEADLINE` (session start + limit − max(10 %, 30 min), in epoch
+seconds): the target checks it before each unit or trial, and when the next
+one may not finish, writes its checkpoint and a `partial` marker and exits 0.
+Fetch promptly —a Colab session keeps its file manifest current during the
+run, so each fetch saves a snapshot— and resubmit only the units `remaining`
+names.
 
 **Known limitations.**
 

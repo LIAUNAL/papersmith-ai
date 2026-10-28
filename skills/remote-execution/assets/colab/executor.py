@@ -10,7 +10,10 @@ lets the forge suite execute it without a VM). It reads the uploaded
 - `runner.executed.ipynb` — the executed notebook, written on the failure
   path too, because a notebook that died halfway is the only record of
   where it died (`runner_invoke.py`'s own doctrine, applied one level up);
-- `files.json` — the manifest `fetch()` downloads: the runner's
+- `files.json` — the manifest `fetch()` downloads, kept current DURING
+  the run too (every `MANIFEST_REFRESH_SECONDS`, written atomically), so
+  a session killed or reclaimed before `status.json` still lists what it
+  had already written, and `fetch()` returns it as incomplete: the runner's
   working-directory capture (every regular file under this directory,
   minus the protocol's own names and minus `clone/.git`). Never a
   candidate scan, and never the pinned clone's VCS metadata: this is the
@@ -39,6 +42,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,6 +50,9 @@ CONFIG_FILENAME = "run-config.json"
 NOTEBOOK_FILENAME = "runner.ipynb"
 EXECUTED_NOTEBOOK_FILENAME = "runner.executed.ipynb"
 FILES_FILENAME = "files.json"
+# The manifest is written here first and renamed over `files.json`, so a
+# reader never sees a half-written list.
+FILES_TMP_FILENAME = "files.json.tmp"
 STATUS_FILENAME = "status.json"
 STDOUT_LOG_FILENAME = "stdout.log"
 LAUNCH_FILENAME = "launch.json"
@@ -86,9 +93,16 @@ PROTOCOL_FILENAMES = frozenset(
         NOTEBOOK_FILENAME,
         STATUS_FILENAME,
         FILES_FILENAME,
+        FILES_TMP_FILENAME,
         STDOUT_LOG_FILENAME,
     }
 )
+
+# How often the running manifest is rewritten while the notebook executes.
+# A session the service stops (its continuous limit, or an idle reclaim)
+# returns at most this much less than it wrote; the cost is one directory
+# walk per interval.
+MANIFEST_REFRESH_SECONDS = 60
 
 # This executor's OWN ceiling for one notebook execution — deliberately
 # not the CLI's helper budget (`--timeout`'s 600 s class is for short
@@ -190,6 +204,26 @@ def manifest_entries(base: Path) -> list[str]:
     return sorted(entries)
 
 
+def write_manifest(base: Path) -> None:
+    """Write `files.json` atomically: the list goes to `FILES_TMP_FILENAME`
+    and is renamed over the manifest, so a poll or fetch reading it mid-run
+    reads either the previous list or the new one, never half of one."""
+    tmp = base / FILES_TMP_FILENAME
+    _write_json(tmp, manifest_entries(base))
+    os.replace(tmp, base / FILES_FILENAME)
+
+
+def _refresh_manifest(base: Path, stop: threading.Event) -> None:
+    """The running manifest: rewritten every `MANIFEST_REFRESH_SECONDS`
+    until `stop` is set. A failed refresh is skipped, never fatal -- the
+    final manifest after the run is the one `run()` checks."""
+    while not stop.wait(MANIFEST_REFRESH_SECONDS):
+        try:
+            write_manifest(base)
+        except Exception:  # noqa: BLE001 - the run must not die of a refresh
+            continue
+
+
 def _ensure_askpass_mode(base: Path) -> None:
     """S3/D6: re-establish the askpass script's executable bit before the
     notebook runs.
@@ -242,12 +276,20 @@ def run(base: Path) -> int:
     """
     errors: list[str] = []
     exit_code = 0
+    stop = threading.Event()
+    refresher = threading.Thread(
+        target=_refresh_manifest, args=(base, stop), daemon=True
+    )
+    refresher.start()
     try:
         _ensure_askpass_mode(base)
         execute_notebook(base)
     except BaseException as exc:  # noqa: BLE001 - the signal must survive any failure
         exit_code = 1
         errors.append(f"{type(exc).__name__}: {exc}")
+    finally:
+        stop.set()
+        refresher.join()
 
     # S3/D6's deletion point: after the attempt, before the manifest. The
     # manifest walk below runs AFTER this so a successful deletion is
@@ -255,7 +297,7 @@ def run(base: Path) -> int:
     _remove_credential_material(base, errors)
 
     try:
-        _write_json(base / FILES_FILENAME, manifest_entries(base))
+        write_manifest(base)
     except BaseException as exc:  # noqa: BLE001 - status.json must still land
         errors.append(f"manifest: {type(exc).__name__}: {exc}")
 

@@ -40,6 +40,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import unittest.mock
 import uuid
@@ -2519,6 +2520,10 @@ class IncompleteFetchAdapter(FakeAdapter):
         (into / "still-running.bin").write_text("not done yet", encoding="utf-8")
         return ADAPTER.Fetched(path=into, complete=False, files=())
 
+    def poll(self, submission_id: str) -> "ADAPTER.Status":
+        # The run is still going: what `fetch` brought back is a snapshot.
+        return ADAPTER.Status(state="running", detail="fake backend")
+
 
 class EmptyIncompleteFetchAdapter(FakeAdapter):
     """`fetch()` creates its destination and reports `complete=False` with
@@ -2529,6 +2534,9 @@ class EmptyIncompleteFetchAdapter(FakeAdapter):
     def fetch(self, submission_id: str, into: Path) -> "ADAPTER.Fetched":
         into.mkdir(parents=True, exist_ok=True)
         return ADAPTER.Fetched(path=into, complete=False, files=())
+
+    def poll(self, submission_id: str) -> "ADAPTER.Status":
+        return ADAPTER.Status(state="running", detail="fake backend")
 
 
 class ScriptedListActiveAdapter(FakeAdapter):
@@ -2908,6 +2916,9 @@ class FetchTests(unittest.TestCase):
             self.assertIsNone(result["event"])
             self.assertEqual(ledger_path.read_text(encoding="utf-8"), lines_before)
             self.assertFalse(dest.exists())
+            # S5: the snapshot is kept, outside every results tree.
+            self.assertTrue((Path(result["path"]) / "still-running.bin").is_file())
+            self.assertIn(REMOTE_CLI.KEPT_PARTIAL_DIRNAME, Path(result["path"]).parts)
 
     def test_refetch_refuses_cleanly_naming_the_existing_path(self) -> None:
         """A second `cmd_fetch()` for a submission already materialized at
@@ -3115,14 +3126,15 @@ class FetchTests(unittest.TestCase):
             self.assertIn("remove it by hand", message)
             self.assertIn(f"rm -rf {partial_dest}", message)
 
-    def test_retry_after_incomplete_fetch_refuses_on_the_partial_it_was_handed_back(
+    def test_retry_after_incomplete_fetch_is_not_blocked_and_merges_nothing(
         self,
     ) -> None:
-        """A `.partial/` is not only a crash artifact: `complete=False`
-        deliberately leaves one on disk and returns its path, which is the
-        one shape of leftover that occurs during entirely normal operation.
-        That retry must meet the same guard -- otherwise the commonest path
-        into this function is the one that merges.
+        """S5 (session checkpoints) replaced this test's predecessor, which
+        pinned that `complete=False` left a `.partial/` behind and every
+        retry refused on it. The snapshot is now moved to its own kept
+        directory, so the retry neither refuses nor merges: the complete
+        result lands alone, and the snapshot's bytes stay where they were
+        kept.
         """
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook, ledger_path, dest = self._pending_fetch_fixture(tmp)
@@ -3136,22 +3148,21 @@ class FetchTests(unittest.TestCase):
                 source_digest=lambda t, n: "d" * 64,
             )
             self.assertFalse(result["complete"])
-            partial_dest = result["path"]
-            self.assertTrue(partial_dest.exists())
+            kept = Path(result["path"])
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists())
 
-            with self.assertRaises(REMOTE_CLI.RemoteCLIError) as ctx:
-                REMOTE_CLI.cmd_fetch(
-                    target=target,
-                    entrypoint=notebook,
-                    submission_id="s1",
-                    dest=dest,
-                    adapter=FakeAdapter(worker_id="w1", capacity=2),
-                    source_digest=lambda t, n: "d" * 64,
-                )
-
-            self.assertIn(str(partial_dest), str(ctx.exception))
-            self.assertFalse(dest.exists())
-            self.assertFalse((partial_dest / "result.txt").exists())
+            retried = REMOTE_CLI.cmd_fetch(
+                target=target,
+                entrypoint=notebook,
+                submission_id="s1",
+                dest=dest,
+                adapter=FakeAdapter(worker_id="w1", capacity=2),
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertTrue(retried["complete"])
+            self.assertTrue((dest / "result.txt").exists())
+            self.assertFalse((dest / "still-running.bin").exists())
+            self.assertTrue((kept / "still-running.bin").is_file())
 
     def test_an_incomplete_fetch_that_downloaded_nothing_leaves_no_partial(self) -> None:
         """Asking too early is ordinary: the run is still going. An EMPTY
@@ -3307,8 +3318,8 @@ class FetchTests(unittest.TestCase):
                 "an incomplete force-fetch must leave the existing artifact intact",
             )
             self.assertEqual(ledger_path.read_text(encoding="utf-8"), lines_before)
-            self.assertTrue((partial_dest / "still-running.bin").is_file())
-            shutil.rmtree(partial_dest)
+            self.assertTrue((Path(result["path"]) / "still-running.bin").is_file())
+            self.assertFalse(partial_dest.exists())
 
             # Case 3: a complete materialization still replaces the
             # destination, including removing bytes a merge would leave.
@@ -4091,6 +4102,7 @@ def _write_fake_driver(
     poll_failure_message: str | None = None,
     fetch_files: dict[str, str] | None = None,
     sleep_seconds: float = 0.0,
+    fetch_status: str | None = None,
 ) -> Path:
     """A minimal stand-in for `kaggle_driver.py`'s `submit`, `poll` and
     `fetch` operations — never imports `kagglesdk`, never reaches a
@@ -4139,7 +4151,10 @@ def _write_fake_driver(
         f"    fetch_payload = {fetch_payload!r}",
         "    for name, content in fetch_payload.items():",
         "        (into_dir / name).write_text(content, encoding='utf-8')",
-        "    print(json.dumps({'ok': True, 'files': sorted(fetch_payload.keys())}))",
+        "    fetch_result = {'ok': True, 'files': sorted(fetch_payload.keys())}",
+        f"    if {fetch_status!r} is not None:",
+        f"        fetch_result['status'] = {fetch_status!r}",
+        "    print(json.dumps(fetch_result))",
         "    sys.exit(0)",
         "staging_dir = Path(sys.argv[2])",
     ]
@@ -7545,7 +7560,7 @@ class PollFetchDriverTests(unittest.TestCase):
             [(kaggle_url, "a.csv"), (storage_url, "b.bin")],
         )
 
-        self.assertEqual(self.outcome, {"files": ["a.csv", "b.bin"]})
+        self.assertEqual(self.outcome["files"], ["a.csv", "b.bin"])
         by_url = {call.url: call for call in recorder.calls}
         rpc = [call for call in recorder.calls if call.url not in (kaggle_url, storage_url)]
         self.assertTrue(rpc, "the listing RPC was never reached")
@@ -7568,7 +7583,7 @@ class PollFetchDriverTests(unittest.TestCase):
             [(start, "a.csv")],
         )
 
-        self.assertEqual(self.outcome, {"files": ["a.csv"]})
+        self.assertEqual(self.outcome["files"], ["a.csv"])
         hops = [call for call in recorder.calls if call.url in (start, storage, back)]
         self.assertEqual([hop.url for hop in hops], [start, storage, back])
         self.assertEqual(hops[0].headers.get("Authorization"), f"Bearer {FIXTURE_TOKEN}")
@@ -7625,7 +7640,7 @@ class PollFetchDriverTests(unittest.TestCase):
             [(start, "a")],
         )
 
-        self.assertEqual(self.outcome, {"files": ["a"]})
+        self.assertEqual(self.outcome["files"], ["a"])
         self.assertEqual((into / "a").read_bytes(), b"done")
 
     def test_a_broken_download_keeps_the_earlier_copy_and_leaves_no_partial(self) -> None:
@@ -23003,6 +23018,7 @@ import shutil
 import subprocess
 import sys
 import time
+import types
 from pathlib import Path
 
 STATE = Path(__STATE__)
@@ -25322,6 +25338,615 @@ class CampaignReadinessTests(unittest.TestCase):
                 adapter=adapter, source_digest=lambda t, n: "d" * 64, consent=token,
             )
             self.assertEqual(result["submission"].worker, "w1")
+
+
+
+# ---------------------------------------------------------------------------
+# Session limits, checkpoints and resume (odd/tasks/session-checkpoints.md,
+# T1: S1, S3, S4, S5, S6, S7).
+# ---------------------------------------------------------------------------
+
+
+class _SessionLimitAdapter(FakeAdapter):
+    """A FakeAdapter whose backend declares a continuous session limit."""
+
+    LIMIT = 3600
+
+    @classmethod
+    def session_limit_seconds(cls, machine_shape=None):
+        return cls.LIMIT
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.jobs: list = []
+
+    def submit(self, job):
+        self.jobs.append(job)
+        return super().submit(job)
+
+
+class _ScriptedFetchAdapter(FakeAdapter):
+    """`fetch()` writes `files` and reports `complete`; `poll()` answers
+    `state`; `fetch_raises` makes `fetch()` raise an `AdapterError` after
+    writing (a reclaimed session the backend cannot reach any more)."""
+
+    def __init__(self, *, files=None, complete=False, state="failed",
+                 fetch_raises=False, poll_raises=False) -> None:
+        super().__init__(worker_id="w1", capacity=2)
+        self._files = dict(files or {})
+        self._complete = complete
+        self._state = state
+        self._fetch_raises = fetch_raises
+        self._poll_raises = poll_raises
+        self.poll_calls = 0
+
+    def poll(self, submission_id):
+        self.poll_calls += 1
+        if self._poll_raises:
+            raise ADAPTER.AdapterError("service unreachable (test double)")
+        return ADAPTER.Status(state=self._state, detail=f"{self._state} (test double)")
+
+    def fetch(self, submission_id, into):
+        into.mkdir(parents=True, exist_ok=True)
+        for name, content in self._files.items():
+            (into / name).parent.mkdir(parents=True, exist_ok=True)
+            (into / name).write_text(content, encoding="utf-8")
+        if self._fetch_raises:
+            raise ADAPTER.AdapterError("session not found (test double)")
+        return ADAPTER.Fetched(
+            path=into, complete=self._complete, files=tuple(sorted(self._files))
+        )
+
+
+def _ledger_events(path: Path) -> list[dict]:
+    return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+
+
+class SessionLimitDeclarationTests(unittest.TestCase):
+    """S1: each adapter declares its continuous session limit; the seam's
+    default is None (unknown) and adds no seventh abstract operation."""
+
+    def test_the_seam_default_is_unknown_and_not_abstract(self) -> None:
+        self.assertIsNone(ADAPTER.Adapter.session_limit_seconds())
+        self.assertIsNone(FakeAdapter().session_limit_seconds("anything"))
+        self.assertNotIn("session_limit_seconds", ADAPTER.Adapter.__abstractmethods__)
+
+    def test_kaggle_declares_a_twelve_hour_gpu_session(self) -> None:
+        self.assertEqual(KAGGLE.KAGGLE_SESSION_LIMIT_SECONDS["NvidiaTeslaT4"], 12 * 3600)
+        self.assertEqual(KAGGLE.KaggleAdapter.session_limit_seconds(), 12 * 3600)
+        self.assertEqual(
+            KAGGLE.KaggleAdapter.session_limit_seconds("NvidiaTeslaP100"), 12 * 3600
+        )
+        self.assertIsNone(KAGGLE.KaggleAdapter.session_limit_seconds("NoSuchShape"))
+
+    def test_colab_declares_the_pro_twenty_four_hour_session(self) -> None:
+        self.assertEqual(COLAB.COLAB_PRO_SESSION_LIMIT_SECONDS, 24 * 3600)
+        self.assertEqual(COLAB.ColabAdapter.session_limit_seconds(), 24 * 3600)
+
+
+class SessionDeadlineTests(unittest.TestCase):
+    """S3: `submit` carries the adapter's limit in `run_config`, and the
+    runner turns it into `FORGE_SESSION_DEADLINE` for the target."""
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "verify_pin_preconditions", return_value=None
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _job_folder(self, tmp: str) -> tuple[Path, Path]:
+        target = Path(tmp) / "repo"
+        (target / "FEM-TOLLA").mkdir(parents=True)
+        job_dir = _make_job_folder(target, "kaggle", "search-a")
+        notebook = job_dir / "runner.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        _write_job_folder_run_config(job_dir)
+        return target, notebook
+
+    def _rehearsal_campaign(self, target, notebook, adapter, units):
+        token = REMOTE_CLI.cmd_distribute(
+            target=target, entrypoint=notebook, adapter=adapter, units=units,
+            source_digest=lambda t, n: "d" * 64,
+        )["consentToken"]
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, requested=1, adapter=adapter,
+            source_digest=lambda t, n: "d" * 64, units=units, consent=token,
+            smoke=True,
+        )
+
+    def test_submit_fills_the_session_limit_from_the_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+
+            class _Limited(MultiWorkerFakeAdapter):
+                @classmethod
+                def session_limit_seconds(cls, machine_shape=None):
+                    return 3600
+
+            adapter = _Limited(workers=[("w1", 1)])
+            self._rehearsal_campaign(target, notebook, adapter, ("u0",))
+            (job,) = adapter.jobs
+            self.assertEqual(
+                dict(job.run_config),
+                {"mode": "smoke", "sessionLimitSeconds": 3600, "units": ["u0"]},
+            )
+
+    def test_submit_without_a_session_limit_leaves_the_run_config_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            self._rehearsal_campaign(target, notebook, adapter, ("u0",))
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {"mode": "smoke", "units": ["u0"]})
+
+    def test_the_legacy_shape_never_carries_a_session_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            notebook = _make_product(target, "FEM-TOLLA") / "a.ipynb"
+            notebook.write_text("{}", encoding="utf-8")
+            adapter = _SessionLimitAdapter(worker_id="w1", capacity=2)
+            token = _mint_launch_consent(
+                target=target, entrypoint=notebook, adapter=adapter,
+                source_digest=lambda t, n: "d" * 64, worker="w1",
+            )
+            REMOTE_CLI.cmd_submit(
+                target=target, entrypoint=notebook, worker="w1", requested=1,
+                adapter=adapter, source_digest=lambda t, n: "d" * 64, consent=token,
+            )
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {})
+
+    def test_the_deadline_is_start_plus_limit_minus_the_larger_margin(self) -> None:
+        self.assertEqual(RUNNER_INVOKE.SESSION_DEADLINE_ENV, "FORGE_SESSION_DEADLINE")
+        # 10% of 12 h (4320 s) is larger than 30 min.
+        self.assertEqual(
+            RUNNER_INVOKE.session_deadline(43200, started=1000.0), 1000 + 43200 - 4320
+        )
+        # 10% of 1 h (360 s) is smaller than 30 min, so 30 min is taken.
+        self.assertEqual(RUNNER_INVOKE.session_deadline(3600, started=0.0), 1800)
+        for bad in (0, -5, True, "3600", 1.5):
+            with self.assertRaises(RUNNER_INVOKE.InvokeError):
+                RUNNER_INVOKE.session_deadline(bad, started=0.0)
+
+    def test_invoke_exports_the_deadline_to_a_callable_and_restores_it(self) -> None:
+        seen: dict = {}
+        module = types.ModuleType("deadline_probe_module")
+        module.run = lambda: seen.update(dict(os.environ))
+        before = time.time()
+        with unittest.mock.patch.dict(sys.modules, {"deadline_probe_module": module}):
+            RUNNER_INVOKE.invoke(
+                {"sessionLimitSeconds": 43200,
+                 "run": {"module": "deadline_probe_module", "function": "run"}},
+            )
+        after = time.time()
+        deadline = int(seen[RUNNER_INVOKE.SESSION_DEADLINE_ENV])
+        self.assertGreaterEqual(deadline, int(before + 43200 - 4320) - 1)
+        self.assertLessEqual(deadline, int(after + 43200 - 4320) + 1)
+        self.assertNotIn(RUNNER_INVOKE.SESSION_DEADLINE_ENV, os.environ)
+
+    def test_invoke_without_a_limit_exports_no_deadline(self) -> None:
+        seen: dict = {}
+        module = types.ModuleType("deadline_absent_module")
+        module.run = lambda: seen.update(dict(os.environ))
+        with unittest.mock.patch.dict(sys.modules, {"deadline_absent_module": module}):
+            RUNNER_INVOKE.invoke(
+                {"run": {"module": "deadline_absent_module", "function": "run"}},
+            )
+        self.assertNotIn(RUNNER_INVOKE.SESSION_DEADLINE_ENV, seen)
+
+    def test_the_kernel_environment_carries_the_deadline_when_given(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp) / RUNNER_INVOKE.CLONE_DIRNAME
+            clone.mkdir()
+            composed = RUNNER_INVOKE.kernel_environment(
+                clone, "a" * 40, session_deadline=1234567890)
+        self.assertEqual(composed[RUNNER_INVOKE.SESSION_DEADLINE_ENV], "1234567890")
+
+    def test_the_skill_documents_the_deadline_and_the_session_rule(self) -> None:
+        text = (REPOSITORY_ROOT / "skills/remote-execution/SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("FORGE_SESSION_DEADLINE", text)
+        self.assertIn("## Sessions, checkpoints and resume", text)
+        self.assertIn("resubmit only the remaining units", text.lower())
+
+
+class ColabRunningManifestTests(unittest.TestCase):
+    """S4: the Colab executor keeps `files.json` current DURING the run, so a
+    session killed or reclaimed before `status.json` still lists what it
+    already wrote."""
+
+    def _base(self, tmp: str) -> Path:
+        base = Path(tmp) / "session"
+        base.mkdir(parents=True)
+        (base / COLAB_EXECUTOR.NOTEBOOK_FILENAME).write_text("{}", encoding="utf-8")
+        return base
+
+    def test_the_manifest_is_refreshed_while_the_notebook_still_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            observed: dict = {}
+
+            def execute(_base: Path) -> None:
+                (_base / "out").mkdir()
+                (_base / "out" / "fold-0.json").write_text("{}", encoding="utf-8")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    manifest = _base / COLAB_EXECUTOR.FILES_FILENAME
+                    if manifest.is_file():
+                        listed = json.loads(manifest.read_text(encoding="utf-8"))
+                        if "out/fold-0.json" in listed:
+                            observed["listed"] = listed
+                            observed["status_absent"] = not (
+                                _base / COLAB_EXECUTOR.STATUS_FILENAME).exists()
+                            return
+                    time.sleep(0.02)
+
+            with unittest.mock.patch.object(
+                COLAB_EXECUTOR, "MANIFEST_REFRESH_SECONDS", 0.05
+            ), unittest.mock.patch.object(COLAB_EXECUTOR, "execute_notebook", execute):
+                exit_code = COLAB_EXECUTOR.run(base)
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("out/fold-0.json", observed.get("listed", []),
+                          "the running manifest never listed a file written mid-run")
+            self.assertTrue(observed["status_absent"])
+            final = json.loads((base / COLAB_EXECUTOR.FILES_FILENAME).read_text(
+                encoding="utf-8"))
+            self.assertIn("out/fold-0.json", final)
+
+    def test_the_running_manifest_is_written_atomically_and_never_lists_itself(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            (base / "result.txt").write_text("x", encoding="utf-8")
+            COLAB_EXECUTOR.write_manifest(base)
+            listed = json.loads((base / COLAB_EXECUTOR.FILES_FILENAME).read_text(
+                encoding="utf-8"))
+            self.assertEqual(listed, ["result.txt"])
+            self.assertFalse((base / COLAB_EXECUTOR.FILES_TMP_FILENAME).exists())
+            self.assertIn(COLAB_EXECUTOR.FILES_TMP_FILENAME, COLAB_EXECUTOR.PROTOCOL_FILENAMES)
+
+
+class HonestFetchStateTests(unittest.TestCase):
+    """S5: a failed, timed-out or reclaimed run is never recorded
+    `returned`; its bytes are kept and recorded, and no leftover `.partial/`
+    of the ordinary incomplete path blocks a later fetch."""
+
+    def _fixture(self, tmp: str):
+        target = Path(tmp) / "repo"
+        notebook = _make_product(target, "FEM-TOLLA") / "a.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        ledger_path = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                       / REMOTE_CLI.LEDGER_FILENAME)
+        _append_pending_submission(
+            ledger_path, entrypoint="Notebooks/a.ipynb", submission_id="s1",
+            worker="w1", source_digest="d" * 64,
+        )
+        dest = target.resolve() / "FEM-TOLLA" / "Results" / "shards" / "a"
+        kept_root = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                     / REMOTE_CLI.KEPT_PARTIAL_DIRNAME / "s1")
+        return target, notebook, ledger_path, dest, kept_root
+
+    def _fetch(self, target, notebook, dest, adapter):
+        return REMOTE_CLI.cmd_fetch(
+            target=target, entrypoint=notebook, submission_id="s1", dest=dest,
+            adapter=adapter, source_digest=lambda t, n: "d" * 64,
+        )
+
+    def test_a_failed_run_is_recorded_errored_with_its_bytes_kept(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest, kept_root = self._fixture(tmp)
+            adapter = _ScriptedFetchAdapter(
+                files={"runs.jsonl": '{"unit": "u0"}\n', "log.txt": "boom"},
+                complete=False, state="failed",
+            )
+            result = self._fetch(target, notebook, dest, adapter)
+
+            self.assertFalse(result["complete"])
+            self.assertEqual(result["runState"], "failed")
+            kept = Path(result["path"])
+            self.assertEqual(kept.parent, kept_root)
+            self.assertEqual((kept / "log.txt").read_text(encoding="utf-8"), "boom")
+            self.assertFalse(dest.exists())
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists())
+
+            events = _ledger_events(ledger_path)
+            self.assertNotIn("returned", [event["kind"] for event in events])
+            last = events[-1]
+            self.assertEqual(last["kind"], "errored")
+            self.assertEqual(last["submissionId"], "s1")
+            self.assertEqual(last["artifactPath"], str(kept))
+            self.assertEqual(last["runState"], "failed")
+            self.assertIn("failed", last["reason"])
+            state = LEDGER.fold(ledger_path.read_text(encoding="utf-8").splitlines(),
+                                live_digest="d" * 64)
+            self.assertEqual(state.entrypoints[("Notebooks/a.ipynb", "w1")].state, "errored")
+            self.assertEqual(result["event"], last)
+
+    def test_a_reclaimed_session_with_unknown_state_is_recorded_errored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest, kept_root = self._fixture(tmp)
+            adapter = _ScriptedFetchAdapter(
+                files={"partial.json": "{}"}, complete=False, state="unknown")
+            result = self._fetch(target, notebook, dest, adapter)
+            self.assertEqual(_ledger_events(ledger_path)[-1]["kind"], "errored")
+            self.assertEqual(_ledger_events(ledger_path)[-1]["runState"], "unknown")
+            self.assertTrue((Path(result["path"]) / "partial.json").is_file())
+
+    def test_a_still_running_snapshot_is_kept_unrecorded_and_blocks_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest, kept_root = self._fixture(tmp)
+            lines_before = ledger_path.read_text(encoding="utf-8")
+            snapshot = self._fetch(target, notebook, dest, _ScriptedFetchAdapter(
+                files={"fold-0.json": "{}"}, complete=False, state="running"))
+
+            self.assertFalse(snapshot["complete"])
+            self.assertIsNone(snapshot["event"])
+            self.assertEqual(snapshot["runState"], "running")
+            self.assertEqual(Path(snapshot["path"]).parent, kept_root)
+            self.assertEqual(ledger_path.read_text(encoding="utf-8"), lines_before)
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists())
+
+            finished = self._fetch(target, notebook, dest, FakeAdapter(worker_id="w1"))
+            self.assertTrue(finished["complete"])
+            self.assertEqual(_ledger_events(ledger_path)[-1]["kind"], "returned")
+            self.assertTrue((Path(snapshot["path"]) / "fold-0.json").is_file(),
+                            "an earlier snapshot is kept, never deleted")
+
+    def test_a_reclaimed_session_that_left_a_snapshot_returns_it_as_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest, kept_root = self._fixture(tmp)
+            snapshot = self._fetch(target, notebook, dest, _ScriptedFetchAdapter(
+                files={"fold-0.json": "{}"}, complete=False, state="running"))
+
+            gone = _ScriptedFetchAdapter(fetch_raises=True, state="unknown")
+            result = self._fetch(target, notebook, dest, gone)
+
+            self.assertFalse(result["complete"])
+            self.assertEqual(Path(result["path"]), Path(snapshot["path"]))
+            last = _ledger_events(ledger_path)[-1]
+            self.assertEqual(last["kind"], "errored")
+            self.assertEqual(last["artifactPath"], str(snapshot["path"]))
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists())
+
+    def test_a_gone_session_with_nothing_kept_still_refuses_as_before(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest, kept_root = self._fixture(tmp)
+            lines_before = ledger_path.read_text(encoding="utf-8")
+            with self.assertRaises(ADAPTER.AdapterError):
+                self._fetch(target, notebook, dest,
+                            _ScriptedFetchAdapter(fetch_raises=True, state="unknown"))
+            self.assertEqual(ledger_path.read_text(encoding="utf-8"), lines_before)
+            self.assertFalse(dest.with_name(dest.name + REMOTE_CLI.PARTIAL_SUFFIX).exists(),
+                             "an empty partial left by a refused fetch blocks nothing")
+
+    def test_a_successful_fetch_never_polls_and_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path, dest, kept_root = self._fixture(tmp)
+            adapter = _ScriptedFetchAdapter(files={"result.txt": "ok"}, complete=True,
+                                            state="complete")
+            result = self._fetch(target, notebook, dest, adapter)
+            self.assertTrue(result["complete"])
+            self.assertEqual(adapter.poll_calls, 0)
+            last = _ledger_events(ledger_path)[-1]
+            self.assertEqual(sorted(last), sorted(
+                ["kind", "ts", "submissionId", "artifactPath", "observedConcurrency"]))
+            self.assertFalse(kept_root.exists())
+
+    def test_kaggle_reports_a_failed_run_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            driver = _write_fake_driver(tmp_path / "driver", fetch_status="ERROR")
+            token_path = _write_fake_token(tmp_path / "creds")
+            handle = KAGGLE.CredentialHandle(worker_id="acct-1", token_path=token_path)
+            adapter = KAGGLE.KaggleAdapter(credentials={"acct-1": handle},
+                                           driver_script=driver)
+            fetched = adapter.fetch("acct-1/kernel-1", tmp_path / "out")
+            self.assertFalse(fetched.complete)
+            self.assertEqual(fetched.files, ("result.txt",))
+
+    def test_kaggle_reports_a_complete_run_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            driver = _write_fake_driver(tmp_path / "driver", fetch_status="COMPLETE")
+            token_path = _write_fake_token(tmp_path / "creds")
+            handle = KAGGLE.CredentialHandle(worker_id="acct-1", token_path=token_path)
+            adapter = KAGGLE.KaggleAdapter(credentials={"acct-1": handle},
+                                           driver_script=driver)
+            self.assertTrue(adapter.fetch("acct-1/kernel-1", tmp_path / "out").complete)
+
+    def test_the_driver_fetch_reports_the_session_status_beside_its_files(self) -> None:
+        driver = _load_kaggle_driver_module()
+
+        class _Client:
+            def __init__(self):
+                self._client = SimpleNamespace(_session=_session_answering(
+                    lambda request: _streamed(b"x")))
+
+            def list_kernel_session_output(self, request):
+                return SimpleNamespace(files=[], log="")
+
+            def get_kernel_session_status(self, request):
+                return SimpleNamespace(status=SimpleNamespace(name="ERROR"),
+                                       failure_message="out of time")
+
+        class _NoStatusClient(_Client):
+            get_kernel_session_status = None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = driver.cmd_fetch(_Client(), "acct-1/kernel-1", Path(tmp) / "a")
+            self.assertEqual(payload["status"], "ERROR")
+            self.assertEqual(payload["files"], [])
+            unknown = driver.cmd_fetch(_NoStatusClient(), "acct-1/kernel-1",
+                                       Path(tmp) / "b")
+            self.assertIn("status", unknown)
+            self.assertIsNone(unknown["status"])
+
+
+class RemainingUnitsTests(unittest.TestCase):
+    """S6: each campaign submission records its units, `remaining` reports
+    which declared units have no complete returned result, and its list is
+    accepted unchanged by `distribute`/`submit`."""
+
+    UNITS = ("u0", "u1")
+
+    def _target_and_notebook(self, tmp: str) -> tuple[Path, Path]:
+        target = Path(tmp) / "repo"
+        notebook = _make_product(target, "FEM-TOLLA") / "a.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        return target, notebook
+
+    def _campaign(self, target, notebook, adapter, units) -> dict:
+        token = REMOTE_CLI.cmd_distribute(
+            target=target, entrypoint=notebook, adapter=adapter, units=units,
+            source_digest=lambda t, n: "d" * 64,
+        )["consentToken"]
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, requested=1, adapter=adapter,
+            source_digest=lambda t, n: "d" * 64, units=units, consent=token,
+        )
+
+    def _remaining(self, target, notebook, units, **kwargs) -> dict:
+        return REMOTE_CLI.cmd_remaining(
+            target=target, entrypoint=notebook, units=units,
+            source_digest=lambda t, n: "d" * 64, **kwargs,
+        )
+
+    def _settle_slot1_returned_slot2_errored(self, result: dict) -> None:
+        ledger_path = Path(result["ledgerPath"])
+        slot1, slot2 = result["assignments"][0]["submissions"]
+        LEDGER.append(ledger_path, LEDGER.returned_event(
+            submission_id=slot1["submissionId"], artifact_path="r1",
+            observed_concurrency=2))
+        LEDGER.append(ledger_path, LEDGER.errored_event(
+            submission_id=slot2["submissionId"], reason="run failed"))
+
+    def test_each_campaign_submission_records_its_own_share(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            result = self._campaign(target, notebook, adapter, self.UNITS)
+            events = _ledger_events(result["ledgerPath"])
+            self.assertEqual([event["units"] for event in events], [["u0"], ["u1"]])
+
+    def test_a_single_send_records_no_units_field(self) -> None:
+        event = LEDGER.submitted_event(
+            entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+            submission_id="s1", worker="w1", requested_capacity=1, granted_capacity=1,
+        )
+        self.assertNotIn("units", event)
+
+    def test_remaining_reports_units_without_a_complete_returned_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            result = self._campaign(target, notebook, adapter, self.UNITS)
+
+            report = self._remaining(target, notebook, self.UNITS)
+            self.assertEqual(report["inFlight"], ["u0", "u1"])
+            self.assertEqual(report["remaining"], [])
+
+            self._settle_slot1_returned_slot2_errored(result)
+            report = self._remaining(target, notebook, self.UNITS)
+            self.assertEqual(report["complete"], ["u0"])
+            self.assertEqual(report["inFlight"], [])
+            self.assertEqual(report["remaining"], ["u1"])
+            self.assertEqual(report["unitArgs"], ["--unit", "u1"])
+
+    def test_a_resubmission_under_the_same_id_keeps_earlier_units_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            first = self._campaign(target, notebook, adapter, ("u0",))
+            ledger_path = Path(first["ledgerPath"])
+            sid = first["assignments"][0]["submissionId"]
+            LEDGER.append(ledger_path, LEDGER.returned_event(
+                submission_id=sid, artifact_path="r", observed_concurrency=1))
+            # An identity-stable backend answers the next campaign with the
+            # same id; that one fails.
+            second = self._campaign(target, notebook, adapter, ("u1",))
+            self.assertEqual(second["assignments"][0]["submissionId"], sid)
+            LEDGER.append(ledger_path, LEDGER.errored_event(
+                submission_id=sid, reason="timed out"))
+            report = self._remaining(target, notebook, ("u0", "u1"))
+            self.assertEqual(report["complete"], ["u0"])
+            self.assertEqual(report["remaining"], ["u1"])
+
+    def test_per_unit_records_in_a_kept_partial_count_as_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            ledger_path = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                           / REMOTE_CLI.LEDGER_FILENAME)
+            LEDGER.append(ledger_path, LEDGER.submitted_event(
+                entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+                submission_id="s1", worker="w1", requested_capacity=1,
+                granted_capacity=1, units=["u0", "u1", "u2"]))
+            kept = Path(tmp) / "kept"
+            (kept / "shard-a").mkdir(parents=True)
+            (kept / "shard-a" / "shard.json").write_text("{}", encoding="utf-8")
+            (kept / "shard-a" / "runs.jsonl").write_text(
+                '{"cell": {"unit": "u0"}}\n{"cell": {"unit": "u2"}}\n{"torn', encoding="utf-8")
+            LEDGER.append(ledger_path, LEDGER.errored_event(
+                submission_id="s1", reason="session ended", artifact_path=str(kept),
+                run_state="unknown"))
+
+            without = self._remaining(target, notebook, ("u0", "u1", "u2"))
+            self.assertEqual(without["remaining"], ["u0", "u1", "u2"])
+            report = self._remaining(target, notebook, ("u0", "u1", "u2"),
+                                     unit_field="cell.unit")
+            self.assertEqual(report["complete"], ["u0", "u2"])
+            self.assertEqual(report["remaining"], ["u1"])
+
+    def test_a_result_from_a_moved_source_does_not_count(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            result = self._campaign(target, notebook, adapter, ("u0",))
+            LEDGER.append(Path(result["ledgerPath"]), LEDGER.returned_event(
+                submission_id=result["assignments"][0]["submissionId"],
+                artifact_path=str(target / "r"), observed_concurrency=1))
+            report = REMOTE_CLI.cmd_remaining(
+                target=target, entrypoint=notebook, units=("u0",),
+                source_digest=lambda t, n: "e" * 64)
+            self.assertEqual(report["remaining"], ["u0"])
+
+    def test_the_remaining_list_is_accepted_unchanged_by_distribute_and_submit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            first = self._campaign(target, notebook, adapter, self.UNITS)
+            self._settle_slot1_returned_slot2_errored(first)
+
+            remaining = self._remaining(target, notebook, self.UNITS)["remaining"]
+            adapter.jobs.clear()
+            self._campaign(target, notebook, adapter, remaining)
+            sent = sorted(unit for job in adapter.jobs for unit in job.run_config["units"])
+            self.assertEqual(sent, ["u1"])
+
+    def test_remaining_is_a_cli_verb_that_prints_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            buffer = io.StringIO()
+            with unittest.mock.patch.object(
+                REMOTE_CLI, "_load_source_digest", return_value=lambda t, n: "d" * 64
+            ), contextlib.redirect_stdout(buffer):
+                code = REMOTE_CLI.main([
+                    "remaining", "--target", str(target), "--entrypoint", str(notebook),
+                    "--unit", "u0", "--unit", "u1",
+                ])
+            self.assertEqual(code, 0)
+            printed = json.loads(buffer.getvalue())
+            self.assertEqual(printed["remaining"], ["u0", "u1"])
+
+    def test_a_share_too_large_for_one_ledger_line_refuses_before_any_submit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            with self.assertRaises(REMOTE_CLI.RemoteCLIError) as ctx:
+                self._campaign(target, notebook, adapter, ("u" * 4000,))
+            self.assertIn(REMOTE_CLI.LEDGER_EVENT_TOO_LARGE, str(ctx.exception))
+            self.assertEqual(adapter.submit_calls, [])
 
 
 if __name__ == "__main__":

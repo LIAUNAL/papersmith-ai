@@ -44,6 +44,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -123,6 +124,42 @@ CLONE_COMMIT_ENV = "FORGE_CLONE_COMMIT"
 MODE_ENV = "FORGE_RUN_MODE"
 UNITS_ENV = "FORGE_RUN_UNITS"
 
+# The session deadline handed to the target, in epoch seconds: the moment
+# by which it must have stopped starting new units or trials, written a
+# checkpoint, and exited cleanly. `submit` copies the backend's declared
+# continuous session limit into `run_config["sessionLimitSeconds"]`
+# (`Adapter.session_limit_seconds()`); this cell turns it into
+#
+#     deadline = session start + limit - max(10% of limit, 30 min)
+#
+# where "session start" is the moment this cell composes the environment.
+# The margin covers what ran before it (cell 0's clone and install), the
+# checkpoint write itself, and the upload of the outputs. A run_config with
+# no `sessionLimitSeconds` exports no deadline at all, exactly as before
+# this name existed -- an unknown limit is never turned into a number.
+SESSION_DEADLINE_ENV = "FORGE_SESSION_DEADLINE"
+SESSION_LIMIT_KEY = "sessionLimitSeconds"
+SESSION_MARGIN_FRACTION = 0.10
+SESSION_MARGIN_MIN_SECONDS = 1800
+
+
+def session_deadline(limit_seconds: Any, *, started: float) -> int:
+    """`started + limit - max(limit * SESSION_MARGIN_FRACTION,
+    SESSION_MARGIN_MIN_SECONDS)`, as whole epoch seconds.
+
+    A limit that is not a positive integer is refused, not ignored: it is
+    written by `submit` from a backend's declared constant, so anything
+    else is a defect, and a deadline silently dropped is hours of compute
+    a session limit can still take away.
+    """
+    if isinstance(limit_seconds, bool) or not isinstance(limit_seconds, int) or limit_seconds <= 0:
+        raise InvokeError(
+            f"run-config.json's {SESSION_LIMIT_KEY!r} must be a positive integer "
+            f"number of seconds, got {limit_seconds!r}"
+        )
+    margin = max(limit_seconds * SESSION_MARGIN_FRACTION, SESSION_MARGIN_MIN_SECONDS)
+    return int(started + limit_seconds - margin)
+
 
 def kernel_python_path(clone_root: str | Path, existing: str | None) -> str:
     """`PYTHONPATH` for the kernel a notebook executes in — the clone's own
@@ -147,7 +184,11 @@ def kernel_python_path(clone_root: str | Path, existing: str | None) -> str:
     return clone_src
 
 
-def submission_environment(mode: Any = None, units: list[str] | None = None) -> dict:
+def submission_environment(
+    mode: Any = None,
+    units: list[str] | None = None,
+    session_deadline: int | None = None,
+) -> dict:
     """Compose `FORGE_RUN_MODE` and `FORGE_RUN_UNITS` — the two
     per-submission facts described beside `MODE_ENV`/`UNITS_ENV` above —
     on their own, apart from `kernel_environment()`.
@@ -172,12 +213,18 @@ def submission_environment(mode: Any = None, units: list[str] | None = None) -> 
     no `FORGE_RUN_UNITS` key either. A DECLARED empty list still sets it,
     to the JSON text `"[]"`, because only a present key can tell a reader
     that zero units is what was decided, rather than what is missing.
+
+    Absent `session_deadline` (`None`, no declared session limit): no
+    `FORGE_SESSION_DEADLINE` key either; present, it is the epoch-seconds
+    integer `session_deadline()` computed.
     """
     result: dict[str, str] = {}
     if mode is not None:
         result[MODE_ENV] = str(mode)
     if units is not None:
         result[UNITS_ENV] = json.dumps(list(units))
+    if session_deadline is not None:
+        result[SESSION_DEADLINE_ENV] = str(int(session_deadline))
     return result
 
 
@@ -188,6 +235,7 @@ def kernel_environment(
     *,
     mode: Any = None,
     units: list[str] | None = None,
+    session_deadline: int | None = None,
 ) -> dict:
     """Everything the kernel receives from this cell, composed in one place.
 
@@ -223,7 +271,7 @@ def kernel_environment(
         CLONE_ROOT_ENV: str(Path(clone_root).resolve()),
         CLONE_COMMIT_ENV: str(commit),
     }
-    composed.update(submission_environment(mode, units))
+    composed.update(submission_environment(mode, units, session_deadline))
     return composed
 
 
@@ -343,6 +391,7 @@ def execute_notebook(
     commit: Any = None,
     mode: Any = None,
     units: list[str] | None = None,
+    session_deadline: int | None = None,
     client_factory: Callable[..., Any] = _default_notebook_client,
 ) -> dict:
     """Execute the declared notebook — the notebook half of cell 1.
@@ -441,7 +490,8 @@ def execute_notebook(
         ) from exc
 
     handoff = kernel_environment(clone_root, commit, os.environ,
-                                 mode=mode, units=units)
+                                 mode=mode, units=units,
+                                 session_deadline=session_deadline)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:
@@ -517,14 +567,18 @@ def invoke(
     block = select_block(run_config)
     mode = run_config.get("mode")
     units = run_config.get("units")
+    deadline = None
+    if run_config.get(SESSION_LIMIT_KEY) is not None:
+        deadline = session_deadline(run_config[SESSION_LIMIT_KEY], started=time.time())
     if block_kind(block) == "notebook":
         return execute_notebook(block, base_dir,
                                 commit=run_config.get("commit"),
                                 mode=mode, units=units,
+                                session_deadline=deadline,
                                 client_factory=client_factory)
     func = resolve_callable(block, import_module=import_module)
     kwargs = dict(block.get("kwargs") or {})
-    handoff = submission_environment(mode, units)
+    handoff = submission_environment(mode, units, deadline)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:
