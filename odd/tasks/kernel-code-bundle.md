@@ -15,7 +15,7 @@ Branch: `feat/kernel-code-bundle` (from `origin/main` 07320802, v0.32.0). Delive
 
 ## Tasks
 
-- T1 (S1-S6) delegated writer (reason: long-session backstop of the parent) — done (S1-S6 covered; commit: see L3)
+- T1 (S1-S6) delegated writer (reason: long-session backstop of the parent) — done (S1-S6 covered; commit be6bc3a9)
 - T2 independent verifier (high risk: delivery/security, items 2 and 5) — pending
 - T3 release 0.33.0 (parent) — pending
 
