@@ -11,6 +11,26 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- A job can carry a private repository's pinned code instead of cloning it:
+  `generate-job --code-bundle` archives the declared clone paths (and the
+  run/smoke notebook) at the pinned commit with `git archive`, never the
+  working tree, writes `code-bundle.tar.gz` beside `run-config.json` and
+  records `codeBundle {file, format, sha256, bytes}`. Only a service whose
+  adapter declares the optional capability `CODE_BUNDLE_MAX_BYTES` accepts
+  it; the Kaggle adapter does (786,432 compressed bytes, a conservative bound
+  because the service documents no notebook source limit) and pushes the
+  bytes inside the private notebook. The remote is never probed and no
+  credential is read; every local pin condition still applies. `submit` and
+  the runner both verify the sha256, and the runner unpacks instead of
+  cloning, refusing absolute, `..`, link and out-of-clone-path entries. New
+  refusal codes: `CODE_BUNDLE_NOT_CARRIED`, `CODE_BUNDLE_TOO_LARGE`,
+  `CODE_BUNDLE_UNSAFE_ENTRY`, `CODE_BUNDLE_MISMATCH`. Without the flag a job
+  is generated, pushed and run exactly as before.
+
 ## 0.32.0
 
 ### Added

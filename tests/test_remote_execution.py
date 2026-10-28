@@ -26719,9 +26719,10 @@ class KernelCarryTests(unittest.TestCase):
             self.assertNotIn("kaggle", text.lower(), agent)
             self.assertNotIn("does not attach it for you yet", text, agent)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        # The newest section, whether still `## Unreleased` or already released.
-        newest = changelog.split("\n## ", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("--carry-path", newest)
+        # The release that shipped the carry, pinned by its own heading so a
+        # later release (or a later `## Unreleased`) does not move it.
+        shipped = changelog.split("\n## 0.32.0\n", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("--carry-path", shipped)
 
 
 if __name__ == "__main__":

@@ -825,7 +825,7 @@ executable — no test in this suite reaches the network or a real account).
 | 2 | `pin-is-head` | The pin is HEAD, or nothing changed between the pin and HEAD under the declared clone paths. `unknown` refuses as firmly as `drift`. | `generate-job`, `submit` | The changed clone paths, the pin and HEAD, and git's own message |
 | 3 | `declared-paths-exist` | Every declared clone path exists at the pin — `git cat-file -e <pin>:<path>`, asked of the pin and never of the working tree. `sparse-checkout` accepts a path the tree does not contain and fetches nothing for it, silently. | `generate-job`, `submit` | Every absent path, and that the remedy is committing them and pinning the commit that carries them |
 | 4 | `declared-notebook-reachable` | Every notebook the run block declares (`run.notebook`, `run.smoke.notebook`) is covered by a declared clone path (generation adds an uncovered notebook as its own clone path) AND exists at the pin — `git cat-file -e <pin>:<notebook>`. Nothing imports a notebook, so the import cross-check has no representative for it and `sparse-checkout` reports nothing for a path its patterns do not cover. A job declaring no notebook passes through untouched. | `generate-job`, `submit` | Every notebook no clone path covers, every notebook absent at the pin, and the remedy for each |
-| 5 | `pin-published` | The declared remote can serve the pin — `git fetch --dry-run --depth 1` from a scratch repository. Credentialless that probe is anonymous; with `--repo-credential` it authenticates through the staged askpass material (see the Colab environment block) and an SSH-shaped `--repo-url` refuses by name. `generate-job` refuses any SSH `--repo-url` before this probe, credential or not. | `generate-job`, `submit` | The commit, the remote URL, the missing push addressed to `--repo-ref`, and git's own message |
+| 5 | `pin-published` | The declared remote can serve the pin — `git fetch --dry-run --depth 1` from a scratch repository. Credentialless that probe is anonymous; with `--repo-credential` it authenticates through the staged askpass material (see the Colab environment block) and an SSH-shaped `--repo-url` refuses by name. `generate-job` refuses any SSH `--repo-url` before this probe, credential or not. Skipped, and only this condition, for a job that carries a code bundle (`--code-bundle`): its runner never clones. | `generate-job`, `submit` | The commit, the remote URL, the missing push addressed to `--repo-ref`, and git's own message |
 
   **Why the `clean-worktree` condition exists, and why it is `status` and not `diff`.**
   `resolve_clone_paths()` walks the WORKING TREE. Without this condition
@@ -1526,6 +1526,10 @@ can branch on it without parsing prose.
 | `CAMPAIGN_WORKERS_NOT_READY` | campaign `submit` (`--unit`, not `--smoke`) | a worker the distribution assigns units to has no passing rehearsal of its own at the current pin; the message names every such worker |
 | `DUPLICATE_SUBMISSION_ID` | campaign `submit` | the backend answered two slots of one campaign with the same submission id; the repeat is not recorded |
 | `LEDGER_EVENT_TOO_LARGE` | campaign `submit` | a slot's share of units would make its `submitted` event exceed the ledger's 4096-byte line; checked for every slot before the first submission, so nothing is sent |
+| `CODE_BUNDLE_NOT_CARRIED` | `generate-job --code-bundle` | the service's adapter does not declare `CODE_BUNDLE_MAX_BYTES`, so it cannot ship a code bundle; refused before any git call |
+| `CODE_BUNDLE_TOO_LARGE` | `generate-job --code-bundle` | the compressed bundle exceeds the service's `CODE_BUNDLE_MAX_BYTES`; the message names both sizes and nothing is written |
+| `CODE_BUNDLE_UNSAFE_ENTRY` | `generate-job --code-bundle`, the runner | an archive entry is absolute, carries `..`, is a link or special file, or lies outside the declared clone paths |
+| `CODE_BUNDLE_MISMATCH` | `submit`, the backend's push, the runner | the job folder's `code-bundle.tar.gz` is absent or does not hash to `codeBundle.sha256`; nothing is pushed or unpacked |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Smoke — a readiness gate, evidence-derived
@@ -1874,6 +1878,33 @@ user, password or token before `@` (a bare SSH login such as
 `git@host:o/r.git` excepted) is refused before any git call or write, and
 a job folder whose `run-config.json` carries one is refused on every read,
 without the refusal echoing the URL.
+
+**Private repositories without a credential: `generate-job --code-bundle`.**
+A service whose runner cannot be handed a repository credential at all ships
+the code instead: its adapter class declares the optional capability
+`CODE_BUNDLE_MAX_BYTES` (the Kaggle adapter does, 786,432 bytes — a
+conservative bound, since the service documents no size limit for a pushed
+notebook's source; 768 KiB of gzip is about 1 MiB of base64 in the cell).
+With `--code-bundle`, generation takes the declared clone paths (plus the
+run/smoke notebook) from the pinned COMMIT with `git archive` — never the
+working tree, so an untracked or ignored file such as a token never enters
+it — gzips them with a fixed mtime (the same pin always yields the same
+bytes), writes `code-bundle.tar.gz` beside `run-config.json` and records
+`codeBundle: {file, format, sha256, bytes}` there. The remote is never asked:
+no published-tip default and no `pin-published` probe, while every local
+condition (clean worktree, pin is HEAD, declared paths exist) still refuses
+as always; no credential is read. `submit` checks the file against the
+recorded sha256 before anything is uploaded, the backend writes its bytes
+into the pushed notebook, and the runner verifies the sha256 again and
+unpacks into the same clone directory instead of cloning, refusing an entry
+that is absolute, carries `..`, is a link or special file, or lies outside
+the declared clone paths. `bootstrap.json` and the run record the same pinned
+`commit` as a cloned job, so smoke and readiness verdicts read identically,
+and the job goes stale exactly when a cloned one would (a clone path changed
+after the pin). Without `--code-bundle` nothing changes. A bundle honors the
+commit's own `.gitattributes` `export-ignore`/`export-subst` under a clone
+path. Refusals: `CODE_BUNDLE_NOT_CARRIED`, `CODE_BUNDLE_TOO_LARGE`,
+`CODE_BUNDLE_UNSAFE_ENTRY`, `CODE_BUNDLE_MISMATCH` (see "Refusal codes").
 
 A second backend brings its own answer to this section: nothing above the
 adapter seam knows a service exists, so nothing above it knows what a service

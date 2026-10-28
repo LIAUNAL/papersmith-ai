@@ -222,6 +222,15 @@ class Adapter(ABC):
     subclass could quietly ignore.
     """
 
+    # Optional capability, deliberately NOT a seventh operation: the most
+    # bytes of compressed code bundle (`generate-job --code-bundle`) this
+    # backend can carry inside the job it pushes. A backend whose runner
+    # cannot authenticate a clone of a private repository declares an int
+    # here and ships the bundle's bytes with the job; `None` (this
+    # default) means the backend carries no bundle, and generation refuses
+    # `--code-bundle` for it by code (`CODE_BUNDLE_NOT_CARRIED`).
+    CODE_BUNDLE_MAX_BYTES: int | None = None
+
     @abstractmethod
     def workers(self) -> list[Worker]:
         """Report the workers this backend currently exposes, and each cap."""
