@@ -93,7 +93,7 @@ its first minute.
 
 | Verdict | When |
 |---|---|
-| `split-first` | a unit plus the setup exceeds one session's limit: split it along the declared axis (more units, never by arm) and assess again |
+| `split-first` | a unit plus the setup exceeds 80% of one session's limit (the session-fit margin): split it along the declared axis (more units, never by arm) and assess again, or declare its step resumable in a `schedule` plan |
 | `do-not-mix` | `--service` names more than one service and `--stamps-identical` is not declared: run the campaign on one service |
 | `parallelize` | more than one eligible owner, `speedup >= 1.5`, `savedMinutes >= 30`, and no account exceeds its quota |
 | `single-account` | anything else; every unmet condition is named in `reasons` |
@@ -103,13 +103,48 @@ against them rather than trusted. A campaign that exceeds the quota on every
 plan says so in `reasons`: it spans more than one quota week.
 
 Under per-account limits a unit only goes to an account whose session can
-hold it with its setup, `split-first` reads the longest session among the
+hold it with its setup inside the margin, `split-first` reads the longest session among the
 eligible accounts, the single-account baseline is the eligible account that
 finishes the campaign soonest alone (`baselineAccount`), and each
 `perAccount` entry carries its own `owner`, `service`, `sessions`,
 `sessionLimitHours` and `quotaHours`. An account whose quota is `unknown` is
 reported `overQuota: null` and named in `reasons`: it is not checked, and it
 has to be recorded before the launch.
+
+## Every unit fits one session with margin, or resumes
+
+A service stops a session at its continuous-run limit, and a reclaimed or
+timed-out session loses every minute since the last thing it wrote. So the
+rule for every agent that plans, builds or walks a remote campaign:
+
+- **One unit, one session, with margin.** A unit's upper-bound duration plus
+  its setup must end inside **80%** of its account's session limit
+  (`SESSION_MARGIN_PERCENT`). The remaining 20% absorbs a slower node, a
+  queue, a late checkpoint and the result upload. `assess` reports such units
+  in `unitsOverSessionLimit` with the verdict `split-first`, and its reason
+  names the margin; `schedule` refuses the plan with
+  `unit-over-session-margin`, naming the step, the unit's duration, its setup
+  and the limit (`unit-over-session-limit` when the unit does not fit even the
+  whole session).
+- **A long unit is split** along the declared axis — by fold, seed or subject
+  block, never by arm — so each piece fits one session with margin, and the
+  campaign is assessed or scheduled again.
+- **Or it checkpoints and resumes.** A step whose units write a checkpoint and
+  resume from it declares `"resumable": true` with `"checkpointMinutes": <the
+  minutes of work between two checkpoints>`. `schedule` then plans each unit
+  as `ceil(unitMinutes / (80% of the session limit − setup))` chained sessions
+  on the **same account**, one after another, and each chained session pays
+  the setup again. The step reports `resumable`, `checkpointMinutes` and
+  `sessionsPerUnit` per service, its shares count every chained session, and
+  `reasons` names the chain. A checkpoint interval longer than one session's
+  usable work is refused with `unit-over-session-margin`: the session would
+  end before its first checkpoint. A resumable step whose units already fit
+  one session plans exactly as an undeclared one.
+
+The declaration is a promise about the target's code, not about this CLI: the
+unit really writes its checkpoint at least every `checkpointMinutes`, stops
+starting new work before the session's deadline, and resumes from the last
+checkpoint in the next session.
 
 ## Planning a project's remote steps
 
@@ -129,7 +164,8 @@ The plan (`--plan plan.json`, schema 1):
             "unitMinutes": {"<service>": <minutes>},
             "timing": {"<service>": {"path": "Results/timing.json", "host": "<service>:<owner>", "stage": "poc" | "full"}},
             "requires": ["<step id>", ...], "setupMinutes": <number or {service: number}>,
-            "stampsIdentical": false, "axis": "<seed | fold | subject block>"}],
+            "stampsIdentical": false, "axis": "<seed | fold | subject block>",
+            "resumable": false, "checkpointMinutes": <minutes, only with "resumable": true>}],
  "accounts": [{"owner": "<slug>", "service": "<service>", "sessions": <int>,
                "sessionHours": <hours>, "quotaHours": <hours> | "unknown", "tier": "<colab tier>"}]}
 ```
@@ -146,6 +182,10 @@ The plan (`--plan plan.json`, schema 1):
   `verify --shards` still has to confirm them. Parallelism across services
   therefore happens between steps, and within a step across the accounts of
   its service.
+- **Session fit.** A unit goes only to a session whose limit holds it plus its
+  setup inside the 80% margin; past it the plan is refused unless the step
+  declares `resumable`, and then the unit is chained over sessions of one
+  account (see "Every unit fits one session with margin, or resumes").
 - **Dependencies.** A step starts only when every step it `requires` has
   ended; an unknown step or a cycle is refused.
 - **Accounts.** From the plan, `--account` or `--accounts-file`, under the
@@ -168,7 +208,8 @@ The plan (`--plan plan.json`, schema 1):
 The output: `{steps[{id, units, requires, services, allowedServices,
 unitMinutes, unitMinutesSource, setupMinutes, readyMinutes, startMinutes,
 endMinutes, durationMinutes, shares[{account, owner, service, units,
-slotsUsed, sessions}]}], makespanMinutes, makespanHours, serialMinutes,
+slotsUsed, sessions}], resumable?, checkpointMinutes?, sessionsPerUnit?}],
+makespanMinutes, makespanHours, serialMinutes,
 serialHours, speedup, savedMinutes, quota[{account, owner, service, units,
 gpuHours, quotaHours, overQuota}], quotaOk, accounts, excludedAccounts,
 ignoredAccounts, search, doctrineChecks[{id, held, detail}], reasons,
@@ -375,7 +416,8 @@ Success prints one JSON object on stdout. A refusal prints
 | `plan-missing` | `schedule --plan` names no file |
 | `plan-invalid` | the plan is not schema 1: an unknown key, a bad step, a `requires` naming an unknown step or forming a cycle, or a timing source on another service's host or unmeasured |
 | `no-eligible-account` | a step's services have no eligible account (free-tier Colab and second accounts of one owner never count) |
-| `unit-over-session-limit` | one unit plus its setup exceeds every eligible session: split it along the declared axis |
+| `unit-over-session-limit` | one unit plus its setup exceeds every eligible session: split it along the declared axis or declare the step resumable |
+| `unit-over-session-margin` | one unit plus its setup exceeds 80% of every eligible session's limit, or a resumable step's checkpoint interval exceeds one session's usable work: split it along the declared axis or declare (or tighten) its checkpoint |
 
 ## Compatibility
 

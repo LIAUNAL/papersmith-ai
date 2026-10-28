@@ -63,12 +63,29 @@ ERROR_CODES = (
     "record-outside-workspace", "record-missing", "timing-missing", "timing-invalid",
     "mixed-devices", "timing-outside-workspace", "accounts-invalid", "accounts-file-missing",
     "plan-missing", "plan-invalid", "no-eligible-account", "unit-over-session-limit",
+    "unit-over-session-margin",
 )
 
 #: The verdict's thresholds. Stated in every output so the verdict can be read
 #: against them rather than trusted.
 MIN_SPEEDUP = 1.5
 MIN_SAVED_MINUTES = 30
+
+#: The session-fit margin: one unit plus its setup must end inside this share of
+#: its account's session limit, so a slow node, a queue or a late checkpoint
+#: never meets the service's continuous-run limit. A unit past it is split
+#: along the declared axis (by fold, for instance) or declared resumable from a
+#: checkpoint and chained over several sessions on the same account.
+SESSION_MARGIN_PERCENT = 80
+
+
+def usable_session(limit: float) -> float:
+    """The minutes of one session a plan may fill: SESSION_MARGIN_PERCENT of its limit."""
+    return limit * SESSION_MARGIN_PERCENT / 100
+
+
+def margin_text(limit: float) -> str:
+    return f"{SESSION_MARGIN_PERCENT}% of the {num(limit)}-minute session limit ({num(usable_session(limit))} minutes)"
 
 #: Colab compute tiers. Only paid compute may be a worker of a split campaign:
 #: the Colab FAQ disallows, on free runtimes without compute units, "running
@@ -234,8 +251,9 @@ def pack(units: list[dict], limits: list[float], setup: float) -> list[dict]:
     `limits`, each with its own wall-time limit.
 
     Each slot runs sessions back to back; a session pays `setup` once and may
-    not run past its slot's limit, and a slot whose limit cannot hold the unit
-    plus the setup never takes it. A unit goes to the slot where it finishes
+    not run past its slot's limit, and a slot whose usable session (the
+    SESSION_MARGIN_PERCENT share of its limit) cannot hold the unit plus the
+    setup never takes it. A unit goes to the slot where it finishes
     earliest, ties to the lowest slot, so the output is a pure function of the
     inputs.
     """
@@ -244,7 +262,7 @@ def pack(units: list[dict], limits: list[float], setup: float) -> list[dict]:
     for unit in order:
         best, best_finish, best_new = 0, None, False
         for index, slot in enumerate(state):
-            if setup + unit["minutes"] > slot["limit"]:
+            if setup + unit["minutes"] > usable_session(slot["limit"]):
                 continue
             if slot["used"] is not None and slot["used"] + unit["minutes"] <= slot["limit"]:
                 finish, new = slot["finish"] + unit["minutes"], False
@@ -333,7 +351,7 @@ def cmd_assess(args, root: Path, today: str) -> dict:
         "unitsOverSessionLimit": [],
         "eligibleOwners": accounts, "excludedOwners": excluded,
     }
-    over = [unit["id"] for unit in units if unit["minutes"] + setup > limit]
+    over = [unit["id"] for unit in units if unit["minutes"] + setup > usable_session(limit)]
     reasons = []
     if held > owners:
         reasons.append(f"{held} accounts are held by {owners} owner(s): accounts beyond one per owner "
@@ -353,9 +371,10 @@ def cmd_assess(args, root: Path, today: str) -> dict:
     elif over:
         result["unitsOverSessionLimit"] = over
         result["verdict"] = "split-first"
-        reasons.append(f"{len(over)} unit(s) need more than one session's {num(limit)} minutes "
+        reasons.append(f"{len(over)} unit(s) need more than {margin_text(limit)} "
                        f"including the {num(setup)}-minute setup: split them along the declared axis "
-                       "(more seeds, folds or subject blocks per unit, never by arm) and assess again")
+                       "(more seeds, folds or subject blocks per unit, never by arm) and assess again, "
+                       "or declare the step resumable from a checkpoint in a schedule plan")
     elif accounts == 0:
         result["verdict"] = "single-account"
         result["recommendedAccounts"] = 1
@@ -847,7 +866,8 @@ def assess_per_account(args, root: Path, today: str) -> dict:
         "excludedOwners": [{"owner": item["owner"], "tier": item["tier"]} for item in pool["excluded"]],
     }
     longest = max((entry["sessionHours"] * 60 for entry in eligible), default=None)
-    over = [unit["id"] for unit in units if longest is not None and unit["minutes"] + setup > longest]
+    over = [unit["id"] for unit in units
+            if longest is not None and unit["minutes"] + setup > usable_session(longest)]
     reasons = pool_reasons(pool)
     mixed = len(services) > 1
     if mixed and args.stamps_identical:
@@ -862,9 +882,10 @@ def assess_per_account(args, root: Path, today: str) -> dict:
     elif over:
         result["unitsOverSessionLimit"] = over
         result["verdict"] = "split-first"
-        reasons.append(f"{len(over)} unit(s) need more than the longest session's {num(longest)} minutes "
-                       f"including the {num(setup)}-minute setup: split them along the declared axis "
-                       "(more seeds, folds or subject blocks per unit, never by arm) and assess again")
+        reasons.append(f"{len(over)} unit(s) need more than {margin_text(longest)} of the longest "
+                       f"session, including the {num(setup)}-minute setup: split them along the declared axis "
+                       "(more seeds, folds or subject blocks per unit, never by arm) and assess again, "
+                       "or declare the step resumable from a checkpoint in a schedule plan")
     elif not eligible:
         result["verdict"] = "single-account"
         result["recommendedAccounts"] = 1
@@ -874,7 +895,7 @@ def assess_per_account(args, root: Path, today: str) -> dict:
         baseline, single_state = None, None
         for entry in eligible:
             limit = entry["sessionHours"] * 60
-            if biggest + setup > limit:
+            if biggest + setup > usable_session(limit):
                 continue
             state = pack(units, [limit] * entry["sessions"], setup)
             if single_state is None or max(s["finish"] for s in state) < max(s["finish"] for s in single_state):
@@ -942,7 +963,7 @@ def assess_per_account(args, root: Path, today: str) -> dict:
 # ------------------------------------------------------------- schedule
 PLAN_KEYS = {"schema", "steps", "accounts", "setupMinutes"}
 STEP_KEYS = {"id", "units", "unitMinutes", "timing", "services", "requires", "setupMinutes",
-             "stampsIdentical", "axis"}
+             "stampsIdentical", "axis", "resumable", "checkpointMinutes"}
 
 
 def per_service(where: str, value, services: list[str], allow_zero: bool) -> dict:
@@ -1039,6 +1060,17 @@ def load_plan(root: Path, name: str) -> dict:
         stamps = item.get("stampsIdentical", False)
         if not isinstance(stamps, bool):
             raise Refusal("plan-invalid", f"{where}.stampsIdentical must be true or false")
+        resumable = item.get("resumable", False)
+        if not isinstance(resumable, bool):
+            raise Refusal("plan-invalid", f"{where}.resumable must be true or false")
+        checkpoint = item.get("checkpointMinutes")
+        if resumable and checkpoint is None:
+            raise Refusal("plan-invalid", f"{where}: a resumable step declares checkpointMinutes, the minutes "
+                                          "of work between two checkpoints its units write and resume from")
+        if not resumable and checkpoint is not None:
+            raise Refusal("plan-invalid", f"{where}: checkpointMinutes is declared only with \"resumable\": true")
+        if checkpoint is not None and (not is_number(checkpoint) or checkpoint <= 0):
+            raise Refusal("plan-invalid", f"{where}.checkpointMinutes must be a positive number, got {checkpoint!r}")
         explicit = item.get("unitMinutes") or {}
         timing = item.get("timing") or {}
         if not isinstance(explicit, dict) or not isinstance(timing, dict):
@@ -1065,7 +1097,8 @@ def load_plan(root: Path, name: str) -> dict:
             raise Refusal("missing-input", f"{where}: no setupMinutes on {', '.join(missing)}")
         steps.append({"id": sid, "units": item["units"], "services": list(services), "requires": list(requires),
                       "stampsIdentical": stamps, "axis": axis, "minutes": minutes, "sources": sources,
-                      "setup": {svc: setups[svc] for svc in services}})
+                      "setup": {svc: setups[svc] for svc in services}, "resumable": resumable,
+                      "checkpoint": None if checkpoint is None else float(checkpoint)})
     for entry in steps:
         unknown = [r for r in entry["requires"] if r not in ids or r == entry["id"]]
         if unknown:
@@ -1080,6 +1113,50 @@ def load_plan(root: Path, name: str) -> dict:
     return {"steps": steps, "accounts": data.get("accounts")}
 
 
+def unit_sessions(entry: dict, svc: str, limit: float) -> int | None:
+    """How many sessions of `limit` minutes one of the step's units needs on
+    `svc`: 1 when the unit plus its setup ends inside the usable session, the
+    chained sessions ceil(minutes / (usable session - setup)) when the step is
+    resumable from a checkpoint that lands inside one session's work, and None
+    when the unit cannot be planned on such a session."""
+    minutes, setup, usable = entry["minutes"][svc], entry["setup"][svc], usable_session(limit)
+    if minutes + setup <= usable:
+        return 1
+    work = usable - setup
+    if not entry["resumable"] or work <= 0 or entry["checkpoint"] > work:
+        return None
+    return math.ceil(minutes / work)
+
+
+def margin_refusal(entry: dict, slots: list[dict]) -> Refusal:
+    """The step's units fit no eligible session with the margin."""
+    parts, beyond = [], True
+    for svc in entry["services"]:
+        limits = [slot["limit"] for slot in slots if slot["service"] == svc]
+        if not limits:
+            continue
+        longest = max(limits)
+        minutes, setup = entry["minutes"][svc], entry["setup"][svc]
+        beyond = beyond and minutes + setup > longest
+        parts.append(f"on {svc} one unit takes {num(minutes)} minutes plus a {num(setup)}-minute setup "
+                     f"against {margin_text(longest)}")
+    detail = "; ".join(parts)
+    if entry["resumable"]:
+        return Refusal("unit-over-session-margin", f"step {entry['id']!r} is resumable, but its checkpoint every "
+                                                   f"{num(entry['checkpoint'])} minutes never lands inside one "
+                                                   f"session's usable work ({detail}): checkpoint more often or "
+                                                   "split the unit along the declared axis and schedule again")
+    advice = ("split it along the declared axis (by fold, seed or subject block, never by arm) or declare the "
+              "step resumable from a checkpoint (\"resumable\": true, \"checkpointMinutes\": <minutes>) "
+              "and schedule again")
+    if beyond:
+        return Refusal("unit-over-session-limit", f"step {entry['id']!r}: one unit plus its setup exceeds every "
+                                                  f"eligible account's session limit ({detail}): {advice}")
+    return Refusal("unit-over-session-margin", f"step {entry['id']!r}: one unit plus its setup exceeds "
+                                               f"{SESSION_MARGIN_PERCENT}% of every eligible account's session "
+                                               f"limit ({detail}), so it is not plannable as one session: {advice}")
+
+
 def step_options(entry: dict, slots: list[dict]) -> list[tuple[str, ...]]:
     """The services one step may run on: each allowed service alone, or every
     usable one together only when the step declares identical stamps."""
@@ -1087,16 +1164,14 @@ def step_options(entry: dict, slots: list[dict]) -> list[tuple[str, ...]]:
     for svc in entry["services"]:
         mine = [slot for slot in slots if slot["service"] == svc]
         present = present or bool(mine)
-        if any(entry["minutes"][svc] + entry["setup"][svc] <= slot["limit"] for slot in mine):
+        if any(unit_sessions(entry, svc, slot["limit"]) is not None for slot in mine):
             usable.append(svc)
     if not present:
         raise Refusal("no-eligible-account", f"step {entry['id']!r}: no eligible account on "
                                              f"{', '.join(entry['services'])} (free-tier Colab owners never "
                                              "join a split, and one account per person per service counts)")
     if not usable:
-        raise Refusal("unit-over-session-limit", f"step {entry['id']!r}: one unit plus its setup exceeds every "
-                                                 "eligible account's session limit: split it along the declared "
-                                                 "axis (never by arm) and schedule again")
+        raise margin_refusal(entry, slots)
     options = [(svc,) for svc in usable]
     if entry["stampsIdentical"] and len(usable) > 1:
         options.append(tuple(usable))
@@ -1125,25 +1200,29 @@ def simulate(steps: list[dict], assignment: dict, slots: list[dict]) -> dict:
                 if svc not in services:
                     continue
                 minutes, setup = entry["minutes"][svc], entry["setup"][svc]
-                if minutes + setup > slot["limit"]:
+                chain = unit_sessions(entry, svc, slot["limit"])
+                if chain is None:
                     continue
                 current = state[position]
                 begin = max(current["free"], ready)
-                same = current["step"] == entry["id"] and current["used"] + minutes <= slot["limit"]
-                finish = begin + minutes + (0.0 if same else setup)
+                same = (chain == 1 and current["step"] == entry["id"]
+                        and current["used"] + minutes <= slot["limit"])
+                finish = begin + minutes + (0.0 if same else setup * chain)
                 if best is None or finish < best[0]:
-                    best = (finish, position, begin, same, minutes, setup)
-            finish, position, begin, same, minutes, setup = best
+                    best = (finish, position, begin, same, minutes, setup, chain)
+            finish, position, begin, same, minutes, setup, chain = best
             current = state[position]
-            current["used"] = current["used"] + minutes if same else setup + minutes
-            current["busy"] += minutes + (0.0 if same else setup)
+            # A chained unit fills its last session: the next unit opens a new one.
+            current["used"] = (current["used"] + minutes if same else
+                               setup + minutes if chain == 1 else slots[position]["limit"])
+            current["busy"] += minutes + (0.0 if same else setup * chain)
             current["free"], current["step"] = finish, entry["id"]
             start = begin if start is None else min(start, begin)
             end = max(end, finish)
             share = shares.setdefault(slots[position]["account"], {"units": 0, "slots": set(), "sessions": 0})
             share["units"] += 1
             share["slots"].add(position)
-            share["sessions"] += 0 if same else 1
+            share["sessions"] += 0 if same else chain
         timeline[entry["id"]] = {"start": start, "end": end, "ready": ready, "shares": shares}
     busy: dict[int, float] = {}
     for position, slot in enumerate(slots):
@@ -1160,11 +1239,15 @@ def serial_minutes(entry: dict, accounts: list[dict]) -> float:
         if svc not in entry["services"]:
             continue
         limit, minutes, setup = account["sessionHours"] * 60, entry["minutes"][svc], entry["setup"][svc]
-        if minutes + setup > limit:
+        chain = unit_sessions(entry, svc, limit)
+        if chain is None:
             continue
-        per_session = int((limit - setup) // minutes)
-        sessions = math.ceil(entry["units"] / per_session)
-        total = entry["units"] * minutes + sessions * setup
+        if chain == 1:
+            per_session = int((limit - setup) // minutes)
+            sessions = math.ceil(entry["units"] / per_session)
+            total = entry["units"] * minutes + sessions * setup
+        else:
+            total = entry["units"] * (minutes + chain * setup)
         best = total if best is None else min(best, total)
     return best
 
@@ -1241,6 +1324,18 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
             "readyMinutes": num(line["ready"]), "startMinutes": num(line["start"]),
             "endMinutes": num(line["end"]), "durationMinutes": num(line["end"] - line["start"]),
             "shares": shares})
+        if entry["resumable"]:
+            limits = {svc: max(a["sessionHours"] * 60 for a in accounts if a["service"] == svc) for svc in chosen}
+            chains = {svc: unit_sessions(entry, svc, limits[svc]) for svc in chosen}
+            report_steps[-1].update({"resumable": True, "checkpointMinutes": num(entry["checkpoint"]),
+                                     "sessionsPerUnit": chains})
+            for svc in chosen:
+                if chains[svc] and chains[svc] > 1:
+                    reasons.append(f"step {entry['id']!r}: each {num(entry['minutes'][svc])}-minute unit on {svc} "
+                                   f"exceeds {margin_text(limits[svc])} and runs {chains[svc]} chained sessions "
+                                   f"on the same account, resuming from its checkpoint every "
+                                   f"{num(entry['checkpoint'])} minutes; each session pays the "
+                                   f"{num(entry['setup'][svc])}-minute setup")
     for step_id in multi:
         reasons.append(f"step {step_id!r} runs on {', '.join(assignment[step_id])} under declared identical stamps "
                        "(accelerator model, CUDA, torch): verify --shards must confirm them before any merge")

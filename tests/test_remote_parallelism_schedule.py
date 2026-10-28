@@ -311,5 +311,108 @@ class ScheduleTests(Base):
         self.refused(self.schedule([step("a", 2, {"svc": 5}, setup=None)], accounts), "missing-input")
 
 
+
+# ------------------------------------------------------------- session margin
+class SessionMarginTests(Base):
+    """A unit fits one session only with its setup inside 80% of the session
+    limit; past that it is split or declared resumable from a checkpoint."""
+
+    def schedule(self, steps, accounts) -> Run:
+        path = self.root / "plan.json"
+        path.write_text(json.dumps({"schema": 1, "steps": steps, "accounts": accounts}), encoding="utf-8")
+        return self.run_cli("schedule", "--plan", str(path))
+
+    def test_schedule_refuses_a_unit_over_80_percent_of_the_session(self) -> None:
+        # A 10-hour session leaves 480 usable minutes; 475 + 10 of setup is 485.
+        run = self.schedule([step("e1_run", 2, {"svc": 475})], [account("ana", "svc", 1, 10, 100)])
+        self.refused(run, "unit-over-session-margin")
+        message = run.error["message"]
+        for fragment in ("'e1_run'", "475", "600", "80%", "split", "resumable"):
+            self.assertIn(fragment, message, fragment)
+
+    def test_a_unit_inside_the_margin_plans_in_one_session(self) -> None:
+        # 470 + 10 of setup is exactly the 480 usable minutes.
+        run = self.schedule([step("e1_run", 2, {"svc": 470})], [account("ana", "svc", 1, 10, 100)])
+        self.assertEqual(run.code, 0, run.err)
+        item = run.json["steps"][0]
+        self.assertEqual(item["shares"][0]["sessions"], 2)
+        self.assertEqual(run.json["makespanMinutes"], 960)
+        self.assertNotIn("resumable", item)
+
+    def test_a_resumable_unit_is_chained_over_sessions_on_one_account(self) -> None:
+        # 480 usable minutes less a 10-minute setup leave 470 of work per session:
+        # a 1000-minute unit takes ceil(1000 / 470) = 3 sessions and 3 setups.
+        resumable = step("e1_run", 2, {"svc": 1000}, resumable=True, checkpointMinutes=30)
+        run = self.schedule([resumable], [account("ana", "svc", 1, 10, 100), account("ben", "other", 1, 10, 100)])
+        self.assertEqual(run.code, 0, run.err)
+        item = run.json["steps"][0]
+        self.assertTrue(item["resumable"])
+        self.assertEqual(item["checkpointMinutes"], 30)
+        self.assertEqual(item["sessionsPerUnit"], {"svc": 3})
+        self.assertEqual(item["shares"], [{"account": "svc:ana", "owner": "ana", "service": "svc",
+                                           "units": 2, "slotsUsed": 1, "sessions": 6}])
+        self.assertEqual(run.json["makespanMinutes"], 2060)
+        self.assertEqual(run.json["serialMinutes"], 2060)
+        self.assertEqual(run.json["quota"][0]["gpuHours"], 34.33)
+        self.assertTrue(any("3 chained sessions" in r and "80%" in r for r in run.json["reasons"]))
+
+    def test_a_resumable_declaration_needs_a_checkpoint_that_fits_a_session(self) -> None:
+        accounts = [account("ana", "svc", 1, 10, 100)]
+        self.refused(self.schedule([step("a", 1, {"svc": 1000}, resumable=True)], accounts), "plan-invalid")
+        self.refused(self.schedule([step("a", 1, {"svc": 1000}, resumable="yes", checkpointMinutes=30)],
+                                   accounts), "plan-invalid")
+        self.refused(self.schedule([step("a", 1, {"svc": 100}, checkpointMinutes=30)], accounts), "plan-invalid")
+        # A checkpoint every 500 minutes never lands inside 470 minutes of work.
+        self.refused(self.schedule([step("a", 1, {"svc": 1000}, resumable=True, checkpointMinutes=500)],
+                                   accounts), "unit-over-session-margin")
+
+    def test_a_resumable_step_whose_units_fit_plans_as_before(self) -> None:
+        accounts = [account("ana", "svc", 2, 12, 30)]
+        plain = self.schedule([step("s", 4, {"svc": 60}, setup=0)], accounts).json
+        declared = self.schedule([step("s", 4, {"svc": 60}, setup=0, resumable=True, checkpointMinutes=15)],
+                                 accounts).json
+        for key in ("makespanMinutes", "serialMinutes", "quota", "speedup"):
+            self.assertEqual(declared[key], plain[key], key)
+        self.assertEqual(declared["steps"][0]["shares"], plain["steps"][0]["shares"])
+        self.assertEqual(declared["steps"][0]["sessionsPerUnit"], {"svc": 1})
+
+    def test_assess_reads_split_first_at_80_percent(self) -> None:
+        # 12-hour sessions: 576 usable minutes; 570 + 10 = 580 is over, 560 + 10 is not.
+        base = ["assess", "--units", "4", "--owners", "2", "--sessions-per-account", "1",
+                "--session-limit-hours", "12", "--quota-hours", "100", "--setup-minutes", "10"]
+        over = self.run_cli(*base, "--unit-minutes", "570")
+        self.assertEqual(over.code, 0, over.err)
+        self.assertEqual(over.json["verdict"], "split-first")
+        self.assertEqual(len(over.json["unitsOverSessionLimit"]), 4)
+        self.assertTrue(any("80%" in r and "576" in r and "resumable" in r for r in over.json["reasons"]))
+        inside = self.run_cli(*base, "--unit-minutes", "560")
+        self.assertNotEqual(inside.json["verdict"], "split-first")
+        self.assertEqual(inside.json["unitsOverSessionLimit"], [])
+        self.assertEqual(set(inside.json), UNIFORM_KEYS)
+
+    def test_per_account_assess_reads_the_margin_of_the_longest_session(self) -> None:
+        argv = ["assess", "--units", "2", "--setup-minutes", "10",
+                "--account", "ana:svc:1:12:100", "--account", "ben:svc:1:6:100"]
+        over = self.run_cli(*argv, "--unit-minutes", "570")
+        self.assertEqual(over.json["verdict"], "split-first")
+        self.assertTrue(any("80%" in r for r in over.json["reasons"]))
+        inside = self.run_cli(*argv, "--unit-minutes", "560")
+        self.assertNotEqual(inside.json["verdict"], "split-first")
+        # The 6-hour account cannot hold a 560-minute unit with its margin.
+        self.assertEqual([a["units"] for a in inside.json["perAccount"]], [2, 0])
+
+
+    def test_the_skill_states_the_session_rule_for_agents(self) -> None:
+        heading = "## Every unit fits one session with margin, or resumes"
+        doc = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn(heading, doc)
+        section = " ".join(doc.split(heading, 1)[1].split("\n## ", 1)[0].split())
+        self.assertEqual(CLI.SESSION_MARGIN_PERCENT, 80)
+        for fragment in ("**80%**", "split", "by fold", "`\"resumable\": true`", "`\"checkpointMinutes\":",
+                         "chained sessions", "**same account**", "pays the setup again",
+                         "`unit-over-session-margin`", "`split-first`"):
+            self.assertIn(fragment, section, fragment)
+
+
 if __name__ == "__main__":
     unittest.main()
