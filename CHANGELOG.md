@@ -11,6 +11,16 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.30.3
+
+### Changed
+
+- The Smith Doctor tab no longer waits on serial probes. The wiring check
+  runs the skills' front-door `--help` probes concurrently, keeping their
+  order; an expired report is served while one background rebuild replaces
+  it (re-measuring still rebuilds in line); and `smith ui` prepares the
+  report at startup, so the first visit is immediate.
+
 ## 0.30.2
 
 ### Changed
