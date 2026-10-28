@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """diagram_cli: the deterministic half of `experiment-diagrams`.
 
-Three subcommands, each printing exactly one JSON object on stdout:
+Four subcommands, each printing exactly one JSON object on stdout:
 
     derive --target <repo> --name <Name> --kind poc|experiments
     render --spec <path/to/diagrams/<kind>.json>
     status --target <repo> --name <Name>
+    validate --target <repo> --name <Name> --kind poc|experiments
+             --png-sha256 <hex> --operator-statement "<the operator's words>"
 
 `--target` is the cloned repository under `implementations/<repo>/` (a path,
 or the bare `<repo>` name resolved under the forge's own `implementations/`);
@@ -14,8 +16,10 @@ implementation engine uses. Every file this script writes lands inside
 `<target>/<Name>/diagrams/`.
 
 A refusal prints `{"ok": false, "error": <CODE>, "message": ...}` and exits
-non-zero. Codes: `APPROVAL_ABSENT`, `PRODUCT_ABSENT`, `SPEC_INVALID`,
-`TEX_TOOLCHAIN_ABSENT`, `TEX_COMPILE_FAILED`, `RASTER_TOOLCHAIN_ABSENT`.
+non-zero. Codes: `APPROVAL_ABSENT`, `PRODUCT_ABSENT`, `DIAGRAMS_OUTSIDE_PRODUCT`,
+`SPEC_INVALID`, `TEX_TOOLCHAIN_ABSENT`, `TEX_COMPILE_FAILED`,
+`RASTER_TOOLCHAIN_ABSENT`, and for `validate`: `SPEC_ABSENT`, `DIAGRAM_ABSENT`,
+`PNG_HASH_INVALID`, `PNG_HASH_MISMATCH`, `STATEMENT_EMPTY`.
 
 Standard library only. TeX runs with shell escape disabled; every process is
 spawned from an argument list, never a shell string.
@@ -107,14 +111,19 @@ def diagram_paths(product: Path, kind: str) -> dict[str, Path]:
 
 # -- operator validation ----------------------------------------------------------
 #
-# The operator validates a drawn diagram with the dashboard's "Validar diagrama"
-# button, which calls `write_validation`; no subcommand here writes it. The
-# record holds the PNG's fingerprint, so a diagram drawn again reads `stale`
-# until the operator looks at it again. `remote-execution submit` reads
-# `validation_state` and refuses a launch until every approved kind reads
-# `validated`.
+# The operator validates a drawn diagram in one of two ways, both recording the
+# same file: the dashboard's "Validar diagrama" button (`write_validation` with
+# no provenance, the record shape it has always written) or an explicit
+# approval in the conversation with an agent, which runs `validate` with the
+# operator's words verbatim and the SHA-256 of the PNG it showed
+# (`via: "chat"`). The record holds the PNG's fingerprint, so a diagram drawn
+# again reads `stale` until the operator looks at it again; `render` deletes
+# it. `remote-execution submit` reads `validation_state` and refuses a launch
+# until every approved kind reads `validated`, whichever way it was validated.
 
 VALIDATION_STATES = ("absent", "pending", "validated", "stale")
+#: The shortest `--png-sha256` prefix `validate` accepts.
+MIN_HASH_PREFIX = 12
 
 
 def validation_path(product: Path, kind: str) -> Path:
@@ -125,23 +134,45 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _read_record(product: Path, kind: str) -> dict | None:
+    try:
+        record = json.loads(validation_path(product, kind).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) and record.get("kind") == kind else None
+
+
 def validation_state(product: Path, kind: str) -> str:
     """`absent` (no PNG drawn), `pending` (drawn, not validated), `validated`,
     or `stale` (validated, then drawn again)."""
     png = product / "diagrams" / f"{kind}.png"
     if png.is_symlink() or not png.is_file():
         return "absent"
-    try:
-        record = json.loads(validation_path(product, kind).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return "pending"
-    if not isinstance(record, dict) or record.get("kind") != kind:
+    record = _read_record(product, kind)
+    if record is None:
         return "pending"
     return "validated" if record.get("png_sha256") == _sha256(png) else "stale"
 
 
-def write_validation(product: Path, kind: str) -> dict:
-    """Record that the operator validated the PNG drawn now (dashboard only)."""
+def validation_provenance(product: Path, kind: str) -> dict | None:
+    """How a `validated` diagram was validated: `via` (`chat`, or `dashboard`
+    for a record the dashboard wrote, which carries no `via`), the time, and
+    the operator's statement (`None` from the dashboard). `None` unless the
+    diagram reads `validated`."""
+    if validation_state(product, kind) != "validated":
+        return None
+    record = _read_record(product, kind) or {}
+    via = record.get("via")
+    statement = record.get("statement")
+    return {"via": via if isinstance(via, str) and via else "dashboard",
+            "validatedAt": record.get("validated_at"),
+            "statement": statement if isinstance(statement, str) else None}
+
+
+def write_validation(product: Path, kind: str, *, via: str | None = None,
+                     statement: str | None = None) -> dict:
+    """Record that the operator validated the PNG drawn now. The dashboard
+    calls it bare; `validate` passes `via="chat"` and the operator's words."""
     if kind not in KINDS:
         raise Refusal("USAGE", f"kind must be one of {KINDS}, not {kind!r}")
     png = diagram_paths(product, kind)["png"]
@@ -149,13 +180,16 @@ def write_validation(product: Path, kind: str) -> dict:
         raise Refusal("DIAGRAM_ABSENT", f"diagrams/{png.name} has not been drawn yet")
     record = {"kind": kind, "png_sha256": _sha256(png),
               "validated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    if via is not None:
+        record["via"] = via
+        record["statement"] = statement
     # A temporary file renamed over the record replaces a link planted there
     # instead of writing through it to wherever it points.
     target = validation_path(product, kind)
     handle, temporary = tempfile.mkstemp(prefix=f".{kind}.validated.", dir=target.parent)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, indent=2) + "\n")
+            stream.write(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
         os.replace(temporary, target)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
@@ -704,13 +738,54 @@ def cmd_status(args) -> dict:
     for kind in KINDS:
         paths = diagram_paths(product, kind)
         entry = {"approved": (product / MARKERS[kind]).is_file(), "marker": MARKERS[kind],
-                 "validation": validation_state(product, kind)}
+                 "validation": validation_state(product, kind),
+                 "provenance": validation_provenance(product, kind)}
         for ext, key in (("json", "spec"), ("tex", "tex"), ("pdf", "pdf"), ("png", "png")):
             entry[key] = paths[ext].is_file()
         entry["paths"] = {key: str(paths[ext]) for ext, key in
                           (("json", "spec"), ("tex", "tex"), ("pdf", "pdf"), ("png", "png"))}
         kinds[kind] = entry
     return {"ok": True, "product": str(product), "kinds": kinds}
+
+
+def cmd_validate(args) -> dict:
+    """The operator approved this diagram in the conversation: record it.
+
+    Run only after the operator explicitly approved this kind's diagram in the
+    current conversation, with their words verbatim and the hash of the PNG
+    the agent showed them. Every refusal writes nothing."""
+    product = resolve_product(args.target, args.name)
+    paths = diagram_paths(product, args.kind)
+    if not (product / MARKERS[args.kind]).is_file():
+        raise Refusal("APPROVAL_ABSENT",
+                      f"{MARKERS[args.kind]} is missing in {product}; there is no approved "
+                      f"{args.kind} diagram to validate")
+    statement = args.operator_statement
+    if not statement.strip():
+        raise Refusal("STATEMENT_EMPTY",
+                      "--operator-statement must carry the operator's own words, verbatim")
+    wanted = args.png_sha256.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{%d,64}" % MIN_HASH_PREFIX, wanted):
+        raise Refusal("PNG_HASH_INVALID",
+                      f"--png-sha256 must be the PNG's SHA-256 in hex, or a prefix of at least "
+                      f"{MIN_HASH_PREFIX} hex characters")
+    if paths["json"].is_symlink() or not paths["json"].is_file():
+        raise Refusal("SPEC_ABSENT", f"diagrams/{paths['json'].name} does not exist; draw the "
+                      "diagram first (derive, render)")
+    if paths["png"].is_symlink() or not paths["png"].is_file():
+        raise Refusal("DIAGRAM_ABSENT", f"diagrams/{paths['png'].name} has not been drawn yet")
+    actual = _sha256(paths["png"])
+    if not actual.startswith(wanted):
+        raise Refusal("PNG_HASH_MISMATCH",
+                      f"diagrams/{paths['png'].name} is not the image the operator approved; "
+                      "show the operator the current PNG and ask again")
+    record = write_validation(product, args.kind, via="chat", statement=statement)
+    if record["png_sha256"] != actual:  # drawn again between the check and the write
+        validation_path(product, args.kind).unlink(missing_ok=True)
+        raise Refusal("PNG_HASH_MISMATCH",
+                      f"diagrams/{paths['png'].name} changed while it was being validated")
+    return {"ok": True, "kind": args.kind, "validation": "validated",
+            "record": record, "path": str(validation_path(product, args.kind))}
 
 
 class _Parser(argparse.ArgumentParser):
@@ -731,13 +806,26 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="which diagrams and approvals exist for a product")
     status.add_argument("--target", required=True)
     status.add_argument("--name", required=True)
+    validate = sub.add_parser(
+        "validate",
+        help="record the operator's approval of a drawn diagram given in the agent chat "
+             "(only after the operator explicitly approved it; never on the agent's own initiative)")
+    validate.add_argument("--target", required=True)
+    validate.add_argument("--name", required=True)
+    validate.add_argument("--kind", required=True, choices=KINDS)
+    validate.add_argument("--png-sha256", required=True,
+                          help=f"SHA-256 of the PNG the operator saw: full hex or a prefix of at "
+                               f"least {MIN_HASH_PREFIX} characters")
+    validate.add_argument("--operator-statement", required=True,
+                          help="the operator's approval, verbatim")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
-        result = {"derive": cmd_derive, "render": cmd_render, "status": cmd_status}[args.command](args)
+        result = {"derive": cmd_derive, "render": cmd_render, "status": cmd_status,
+                  "validate": cmd_validate}[args.command](args)
     except Refusal as refusal:
         print(json.dumps({"ok": False, "error": refusal.code, "message": refusal.message, **refusal.extra},
                          ensure_ascii=False))

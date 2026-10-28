@@ -50,6 +50,24 @@ class DiagramWorkspace:
         os.symlink(self.outside / "experiments.png", self.full / "diagrams" / "experiments.png")
 
 
+DIAGRAM_CLI_SCRIPT = REPO / "skills" / "experiment-diagrams" / "scripts" / "diagram_cli.py"
+
+
+def _chat_validate(product: Path, kind: str) -> dict:
+    """Validate through the public CLI verb, the agent-chat route."""
+    import hashlib
+    import sys
+    diagrams = product / "diagrams"
+    _write(diagrams / f"{kind}.json", "{}\n")
+    sha = hashlib.sha256((diagrams / f"{kind}.png").read_bytes()).hexdigest()
+    proc = subprocess.run([sys.executable, str(DIAGRAM_CLI_SCRIPT), "validate",
+                           "--target", str(product.parent), "--name", product.name, "--kind", kind,
+                           "--png-sha256", sha, "--operator-statement", "aprobado"],
+                          capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads(proc.stdout)
+
+
 class DiagramViewTests(unittest.TestCase):
     def setUp(self) -> None:
         self.ws = DiagramWorkspace(self)
@@ -80,6 +98,13 @@ class DiagramViewTests(unittest.TestCase):
     def test_each_diagram_carries_its_validation_state(self) -> None:
         self.assertEqual(self.products["PocModel"]["diagrams"][0]["validation"], "pending")
         self.assertEqual(self.products["FullModel"]["diagrams"][0]["validation"], "absent")
+
+    def test_a_chat_validated_diagram_reads_validated_and_says_how(self) -> None:
+        _chat_validate(self.ws.poc, "poc")
+        view = experiments_view.get_experiments_view(self.ws.root)
+        entry = next(p for p in view["products"] if p["name"] == "PocModel")["diagrams"][0]
+        self.assertEqual(entry["validation"], "validated")
+        self.assertEqual(entry["validatedVia"], "chat")
 
     def test_a_missing_diagram_offers_the_command_that_draws_it_again_with_force(self) -> None:
         drawn = self.products["PocModel"]["diagrams"][0]
@@ -128,7 +153,11 @@ class DiagramValidationRouteTests(unittest.TestCase):
         record = json.loads((self.ws.poc / "diagrams" / "poc.validated.json").read_text())
         self.assertEqual(record["kind"], "poc")
         self.assertEqual(len(record["png_sha256"]), 64)
+        self.assertNotIn("via", record)
         self.assertEqual(self.state("PocModel"), "validated")
+        view = experiments_view.get_experiments_view(self.ws.root)
+        entry = next(p for p in view["products"] if p["name"] == "PocModel")["diagrams"][0]
+        self.assertEqual(entry["validatedVia"], "dashboard")
 
     def test_a_record_planted_as_a_link_is_replaced_never_written_through(self) -> None:
         victim = self.ws.outside / "victim.txt"
@@ -238,6 +267,23 @@ class DiagramRenderTests(unittest.TestCase):
         out = self.render(view)
         self.assertIn("VALIDADO", out)
         self.assertIn("Regenerar diagrama", out)
+
+    def test_the_panel_says_a_diagram_was_validated_by_chat(self) -> None:
+        ws = DiagramWorkspace(self)
+        _chat_validate(ws.poc, "poc")
+        view = experiments_view.get_experiments_view(ws.root)
+        out = self.render(view)
+        self.assertIn("VALIDADO", out)
+        self.assertIn("validado por chat", out)
+        self.assertNotIn("data-diagram-validate", out)
+        self.assertNotIn('href="#exp-diagrams-repo-PocModel"', out)
+
+    def test_the_panel_says_a_diagram_was_validated_in_the_dashboard(self) -> None:
+        ws = DiagramWorkspace(self)
+        experiments_view.diagram_cli().write_validation(ws.poc, "poc")
+        out = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn("validado en el tablero", out)
+        self.assertNotIn("validado por chat", out)
 
     def test_diagram_fields_are_escaped(self) -> None:
         ws = DiagramWorkspace(self)

@@ -1539,8 +1539,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.post("/api/experiments/diagrams/validate")
     async def api_validate_diagram(request: Request) -> JSONResponse:
-        # The operator's "Validar diagrama" button, the only writer of the
-        # record `remote-execution submit` reads before a launch. Unlike the
+        # The operator's "Validar diagrama" button, one of the two writers of
+        # the record `remote-execution submit` reads before a launch (the other
+        # is `diagram_cli.py validate`, run by an agent on the operator's
+        # explicit approval in the conversation). Unlike the
         # other actions, a request without an Origin header (curl, an agent's
         # shell) is refused too: the browser always sends one on a POST.
         if not request.headers.get("origin") or not origin_is_same(request):

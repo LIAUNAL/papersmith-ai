@@ -212,9 +212,11 @@ _SUBMISSION_ID_BUDGET_CHARS = 256
 class DiagramValidationError(RemoteCLIError):
     """ANY `submit` (rehearsal or full) refused because the product holds an
     approval (`AGREED.md`, `Experimental_AGREED.md`) whose experiment diagram
-    the operator has not validated in the dashboard ("Validar diagrama"), or
-    validated and then drew again. The record is written only by that button
-    (`skills/experiment-diagrams/scripts/diagram_cli.py`, `write_validation`)."""
+    the operator has not validated -- in the dashboard ("Validar diagrama") or
+    by approving it explicitly in the agent chat (`diagram_cli.py validate`) --
+    or validated and then drew again. Both routes write the one record this
+    reads (`skills/experiment-diagrams/scripts/diagram_cli.py`,
+    `write_validation`)."""
 
 
 class ConsentError(RemoteCLIError):
@@ -2766,8 +2768,10 @@ def _verify_diagrams_validated(product_dir: Path) -> None:
     if open_items:
         raise DiagramValidationError(
             "DIAGRAM_NOT_VALIDATED: nothing of this product is launched until the operator "
-            "validates its experiment diagrams in the dashboard (Experimentos tab, "
-            f"\"Validar diagrama\"); open: {', '.join(open_items)}. Draw a missing one with "
+            "validates its experiment diagrams, in the dashboard (Experimentos tab, "
+            "\"Validar diagrama\") or by approving each one explicitly in the agent chat "
+            "(`diagram_cli.py validate`, run only on that approval); "
+            f"open: {', '.join(open_items)}. Draw a missing one with "
             "`/experiment-diagrams <poc|experiments>` or the panel's \"Generar diagrama\".")
 
 

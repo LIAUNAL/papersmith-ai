@@ -311,8 +311,9 @@ Three modules exist so far, each service-blind and stdlib-only:
     `AGREED.md` (proof of concept) or `Experimental_AGREED.md` (full
     experiments), `submit` — `--smoke` included — refuses
     `DIAGRAM_NOT_VALIDATED` until the operator has validated that kind's
-    experiment diagram in the dashboard's Experimentos tab ("Validar
-    diagrama"), naming each open kind and its state (`absent`, `pending`,
+    experiment diagram -- in the dashboard's Experimentos tab ("Validar
+    diagrama") or by approving it explicitly in the agent chat, which runs
+    `experiment-diagrams validate` with the operator's words -- naming each open kind and its state (`absent`, `pending`,
     `stale`). It runs before the consent gate, so a refusal costs nothing. A
     product with neither marker is not gated. See `skills/experiment-diagrams`.
   - **Consent gate, every launch** (Finding 3; Decisions 4, 5 — corrected

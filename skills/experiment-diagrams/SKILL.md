@@ -1,6 +1,6 @@
 ---
 name: experiment-diagrams
-description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`). Never runs an experiment, never edits the approval, never validates a diagram: the operator does, in the dashboard."
+description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`) and how it was validated, `validate` records the operator's approval given in the agent chat. Never runs an experiment, never edits the approval, never validates a diagram on its own initiative: the operator does, in the dashboard or by approving it explicitly in the conversation."
 ---
 
 # Experiment diagrams
@@ -14,11 +14,19 @@ Two figures per product folder, each drawn when its approval lands:
 
 The command center's Experimentos panel shows each PNG beside its product so
 the operator can check that the figure says what was agreed, and validate it
-there with **Validar diagrama**. That button is the only writer of
-`<Name>/diagrams/<kind>.validated.json`, which holds the PNG's SHA-256:
-`remote-execution submit` (rehearsal included) refuses `DIAGRAM_NOT_VALIDATED`
-while an approved kind's diagram reads anything but `validated`, and `render`
-drops the record, so a diagram drawn again is validated again. The panel's
+there with **Validar diagrama**. The operator can also validate it in the
+conversation with an agent (Claude Code, OpenCode, Pi or the dashboard's CLI
+assistant): the agent shows the PNG, the operator approves that diagram
+explicitly, and the agent runs `validate` with the operator's words verbatim
+and the PNG's SHA-256. Both routes write the same
+`<Name>/diagrams/<kind>.validated.json`, which holds the PNG's SHA-256
+(`validate` adds `"via": "chat"` and the `statement`; a record without `via`
+came from the dashboard): `remote-execution submit` (rehearsal included)
+refuses `DIAGRAM_NOT_VALIDATED` while an approved kind's diagram reads anything
+but `validated`, and `render` drops the record, so a diagram drawn again is
+validated again, whichever way it was validated before. The panel says how
+each validated diagram was validated ("validado por chat", "validado en el
+tablero"). The panel's
 **Generar diagrama** / **Regenerar diagrama** buttons run `derive` and `render`
 in the dashboard's CLI assistant; this skill is the same step from an agent.
 Every diagram not yet validated is also listed at the top of the tab, under
@@ -31,7 +39,32 @@ restart when the dashboard started under an older release than the workspace's.
 python skills/experiment-diagrams/scripts/diagram_cli.py derive --target implementations/<repo> --name <Name> --kind poc|experiments [--force]
 python skills/experiment-diagrams/scripts/diagram_cli.py render --spec implementations/<repo>/<Name>/diagrams/<kind>.json
 python skills/experiment-diagrams/scripts/diagram_cli.py status --target implementations/<repo> --name <Name>
+python skills/experiment-diagrams/scripts/diagram_cli.py validate --target implementations/<repo> --name <Name> --kind poc|experiments --png-sha256 <hex> --operator-statement "<the operator's words, verbatim>"
 ```
+
+`status` reports, per kind, `validation` and `provenance`: `null` unless the
+diagram reads `validated`, otherwise `{"via": "chat"|"dashboard",
+"validatedAt": ..., "statement": ...}` (`statement` is `null` for the
+dashboard).
+
+## Validating from the conversation
+
+Run `validate` only after the operator explicitly approves **that** diagram
+(`poc` or `experiments`, of that product) in the current conversation:
+
+1. Show the operator the current `diagrams/<kind>.png` (read the image) and
+   compute its SHA-256 (`shasum -a 256` / `sha256sum`) at that moment.
+2. Wait for the operator's explicit approval of that diagram. Silence, an
+   approval of something else (the protocol, a launch, another diagram) or
+   your own judgement that it looks right is not an approval.
+3. Run `validate` with `--png-sha256` set to the hash of the PNG you showed
+   (the full hex, or a prefix of at least 12 characters) and
+   `--operator-statement` set to the operator's words, verbatim.
+
+It refuses, writing nothing, when the hash does not match the current PNG
+(the diagram was drawn again after you showed it: show the new one and ask
+again), when the statement is empty, when the PNG or spec is missing, or when
+the kind's approval marker is absent. Never validate on your own initiative.
 
 `$ARGUMENTS` names the kind (`poc` or `experiments`) and, when more than one
 product exists, the product (`<repo>/<Name>`). `--target` accepts the clone's
@@ -53,6 +86,12 @@ Every command prints one JSON object. Refusals carry `"ok": false`, an
 | `TEX_TOOLCHAIN_ABSENT` | no `latexmk`, `pdflatex` or `lualatex` on PATH or in the usual TeX folders | install TeX Live / MacTeX; the `.tex` is already written |
 | `TEX_COMPILE_FAILED` | TeX ran and failed; the message carries the log tail | usually an unusual character in a label |
 | `RASTER_TOOLCHAIN_ABSENT` | none of `pdftoppm`, `pdftocairo`, `gs`, `sips` produced a PNG | install poppler-utils or Ghostscript; the `.pdf` is kept |
+| `SPEC_ABSENT` | `validate`: `diagrams/<kind>.json` does not exist | draw the diagram first (`derive`, `render`) |
+| `DIAGRAM_ABSENT` | `validate`: `diagrams/<kind>.png` has not been drawn | run `render` |
+| `PNG_HASH_INVALID` | `validate`: `--png-sha256` is not hex or shorter than 12 characters | pass the SHA-256 of the PNG you showed |
+| `PNG_HASH_MISMATCH` | `validate`: the current PNG is not the one the operator saw | show the current PNG and ask the operator again |
+| `STATEMENT_EMPTY` | `validate`: `--operator-statement` is blank | pass the operator's approval, verbatim |
+| `USAGE` | a required option is missing or a value is not accepted | fix the command line |
 
 The toolchain is found through `PATH` first and then the folders TeX
 distributions use on macOS (`/Library/TeX/texbin`), Linux and WSL
@@ -140,6 +179,9 @@ template or asset of Sivia is copied here, and the TikZ library in
   `<Name>/diagrams/`.
 - `derive` keeps an existing spec (the Designer's edits) unless `--force` is
   passed.
-- It never validates a diagram and offers no command that does: validation is
-  the operator's act in the dashboard, and an agent never writes
-  `<kind>.validated.json` by hand.
+- It never validates a diagram on its own initiative. Validation is the
+  operator's act: the dashboard's **Validar diagrama**, or `validate`, which an
+  agent runs only after the operator explicitly approves that diagram in the
+  current conversation, passing the operator's words verbatim and the hash of
+  the PNG it showed -- never inferred from silence or from an approval of
+  something else. An agent never writes `<kind>.validated.json` by hand.
