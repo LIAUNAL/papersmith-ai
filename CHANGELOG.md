@@ -11,6 +11,37 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.36.0
+
+### Added
+
+- Historia con IA shows a decision graph. Each phase is split into rounds: an
+  operator turn (the phase command or a follow-up) and what answered it, or a
+  persisted decision (a deliberation edit, a transition, a fact, a remote
+  submission) when no chat round holds it. Every round is classified as
+  success (the operator approved it, or it closed a passed phase), rework (an
+  error or declined fact, a relaunched command or submission, or a next turn
+  asking to correct it), iteration or pending (the open end of a phase that
+  has not passed). A strip above the diagram totals them and links the rounds
+  still to be decided; each phase box shows its counts; the selected phase
+  draws its rounds as a chain with a loop over every rework, and clicking a
+  round shows the operator turn against the reply and highlights its events.
+  The timeline shows only the main interactions (operator turns, the replies
+  that answer them, errors) unless asked for everything. `/api/ai-history`
+  adds `rounds`, `total_rounds` and `decision_summary` per phase and
+  `decision_summary` and `pending` to the view.
+- The `paper-reviewer` agent reviews the compiled paper (`paper-writing`,
+  stretch verify) and, in an advisory proposal mode, a proposal revision
+  before acceptance: it fills the NeurIPS 2026 main-track review form and
+  grounds pertinence, novelty and coherence in quoted evidence from the paper,
+  proposal, results and SOTA pool.
+
+### Fixed
+
+- Historia con IA no longer counts harness-injected user turns (background
+  task notifications, command caveats, persisted output) as operator
+  iterations.
+
 ## 0.35.0
 
 ### Added
