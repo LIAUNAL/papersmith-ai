@@ -231,6 +231,19 @@ class Adapter(ABC):
     # `--code-bundle` for it by code (`CODE_BUNDLE_NOT_CARRIED`).
     CODE_BUNDLE_MAX_BYTES: int | None = None
 
+    # Optional capability, deliberately NOT a seventh operation either
+    # (kernel-input-datasets S2): the directory inside a job under which
+    # this backend mounts, read-only, the public datasets the job declares
+    # (`generate-job --input-dataset`, `run_config["inputDatasets"]`) and
+    # which this backend attaches to the push itself. `submit` hands it to
+    # the job as `run_config["inputRoot"]`, the runner searches it for each
+    # ref's slug and exports what it found in `FORGE_INPUT_DATASETS`, and
+    # `submit` reports `inputs: attached`. `None` (this default) means the
+    # backend attaches no inputs: `submit` reports `inputs: unsupported`
+    # and the runner exports every ref mapped to null, so the target
+    # downloads the data itself.
+    INPUT_DATASETS_ROOT: str | None = None
+
     @abstractmethod
     def workers(self) -> list[Worker]:
         """Report the workers this backend currently exposes, and each cap."""

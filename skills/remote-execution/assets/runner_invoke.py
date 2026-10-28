@@ -223,6 +223,104 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
             print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r}", flush=True)
     return os.pathsep.join(present) if present else None
 
+# The public datasets a job reads (kernel-input-datasets S3). `generate-job
+# --input-dataset` declares them in `run_config["inputDatasets"]` as
+# `<owner>/<slug>`; `submit` adds `run_config["inputRoot"]` only for a
+# backend that attaches them to the push. Before the entrypoint runs,
+# `discover_input_datasets()` searches that root for each ref's slug -- the
+# sub-path below the root is the service's, never hard-coded here -- and
+# `FORGE_INPUT_DATASETS` carries a JSON object mapping every declared ref to
+# the directory found, or to null when the backend attached nothing or no
+# directory was found, so the target downloads that dataset itself. A job
+# declaring no inputs exports nothing and prints nothing.
+INPUT_DATASETS_ENV = "FORGE_INPUT_DATASETS"
+INPUT_DATASETS_KEY = "inputDatasets"
+INPUT_ROOT_KEY = "inputRoot"
+INPUT_LOG_PREFIX = "[inputs]"
+# How many directory levels below the root the search descends, and how
+# many directories it opens at most: enough for `<root>/<slug>`,
+# `<root>/<owner>/<slug>` and `<root>/<kind>/<owner>/<slug>`, without
+# walking the contents of a large dataset.
+INPUT_SEARCH_DEPTH = 4
+INPUT_SEARCH_MAX_DIRS = 20000
+
+
+def _input_ref_parts(raw: Any) -> tuple[str, str] | None:
+    """`(owner, slug)` for a well-formed `<owner>/<slug>` ref, else `None`."""
+    if not isinstance(raw, str):
+        return None
+    owner, sep, slug = raw.partition("/")
+    if not sep or not owner or not slug or "/" in slug:
+        return None
+    for part in (owner, slug):
+        if part.startswith(".") or not all(ch.isalnum() or ch in "-_" for ch in part):
+            return None
+    return owner, slug
+
+
+def _find_input_mount(root: Path, owner: str, slug: str) -> Path | None:
+    """The directory named `slug` under `root`, at most
+    `INPUT_SEARCH_DEPTH` levels down: one whose parent is named `owner`
+    first, then the shallowest, then the first in sorted order. `None`
+    when there is none. Never descends into a match."""
+    candidates: list[tuple[int, int, str]] = []
+    frontier = [root]
+    opened = 0
+    for depth in range(1, INPUT_SEARCH_DEPTH + 1):
+        following: list[Path] = []
+        for directory in frontier:
+            if opened >= INPUT_SEARCH_MAX_DIRS:
+                break
+            opened += 1
+            try:
+                children = sorted(child for child in directory.iterdir() if child.is_dir())
+            except OSError:
+                continue
+            for child in children:
+                if child.name == slug:
+                    owned = 0 if child.parent.name == owner else 1
+                    candidates.append((owned, depth, str(child)))
+                else:
+                    following.append(child)
+        frontier = following
+        if not frontier:
+            break
+    if not candidates:
+        return None
+    return Path(min(candidates)[2])
+
+
+def discover_input_datasets(run_config: Mapping[str, Any]) -> str | None:
+    """The `FORGE_INPUT_DATASETS` value for this job, or `None` when it
+    declares no input datasets (nothing is exported, nothing printed).
+
+    Never raises: a malformed ref is logged and left out, an absent root
+    or an unfound slug maps the ref to null and is logged, so the target
+    falls back to downloading."""
+    refs = run_config.get(INPUT_DATASETS_KEY)
+    if not isinstance(refs, list) or not refs:
+        return None
+    root_text = run_config.get(INPUT_ROOT_KEY)
+    root = Path(root_text) if isinstance(root_text, str) and root_text else None
+    found: dict[str, str | None] = {}
+    for raw in refs:
+        parts = _input_ref_parts(raw)
+        if parts is None:
+            print(f"{INPUT_LOG_PREFIX} skipped input dataset {raw!r}: not "
+                  "<owner>/<slug>", flush=True)
+            continue
+        mount = _find_input_mount(root, *parts) if root is not None and root.is_dir() else None
+        if mount is not None:
+            found[raw] = str(mount)
+            print(f"{INPUT_LOG_PREFIX} {raw} is mounted at {mount}", flush=True)
+        else:
+            found[raw] = None
+            reason = ("the service attached no inputs" if root is None
+                      else f"no directory named {parts[1]!r} under {root}")
+            print(f"{INPUT_LOG_PREFIX} {raw} not attached ({reason}); the "
+                  "target downloads it", flush=True)
+    return json.dumps(found, sort_keys=True)
+
 
 def session_deadline(limit_seconds: Any, *, started: float) -> int:
     """`started + limit - max(limit * SESSION_MARGIN_FRACTION,
@@ -270,6 +368,7 @@ def submission_environment(
     units: list[str] | None = None,
     session_deadline: int | None = None,
     carry_in: str | None = None,
+    input_datasets: str | None = None,
 ) -> dict:
     """Compose `FORGE_RUN_MODE` and `FORGE_RUN_UNITS` — the two
     per-submission facts described beside `MODE_ENV`/`UNITS_ENV` above —
@@ -309,6 +408,8 @@ def submission_environment(
         result[SESSION_DEADLINE_ENV] = str(int(session_deadline))
     if carry_in:
         result[CARRY_IN_ENV] = str(carry_in)
+    if input_datasets:
+        result[INPUT_DATASETS_ENV] = str(input_datasets)
     return result
 
 
@@ -321,6 +422,7 @@ def kernel_environment(
     units: list[str] | None = None,
     session_deadline: int | None = None,
     carry_in: str | None = None,
+    input_datasets: str | None = None,
 ) -> dict:
     """Everything the kernel receives from this cell, composed in one place.
 
@@ -356,7 +458,8 @@ def kernel_environment(
         CLONE_ROOT_ENV: str(Path(clone_root).resolve()),
         CLONE_COMMIT_ENV: str(commit),
     }
-    composed.update(submission_environment(mode, units, session_deadline, carry_in))
+    composed.update(submission_environment(mode, units, session_deadline, carry_in,
+                                           input_datasets))
     return composed
 
 
@@ -478,6 +581,7 @@ def execute_notebook(
     units: list[str] | None = None,
     session_deadline: int | None = None,
     carry_in: str | None = None,
+    input_datasets: str | None = None,
     client_factory: Callable[..., Any] = _default_notebook_client,
 ) -> dict:
     """Execute the declared notebook — the notebook half of cell 1.
@@ -578,7 +682,8 @@ def execute_notebook(
     handoff = kernel_environment(clone_root, commit, os.environ,
                                  mode=mode, units=units,
                                  session_deadline=session_deadline,
-                                 carry_in=carry_in)
+                                 carry_in=carry_in,
+                                 input_datasets=input_datasets)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:
@@ -661,16 +766,19 @@ def invoke(
     # Restored before the entrypoint, whichever shape it is, so the target
     # resumes from checkpoints already on disk (kernel-carry S3).
     carry_in = restore_carry(run_config, base_dir)
+    # Where the declared input datasets are mounted (kernel-input-datasets S3).
+    input_datasets = discover_input_datasets(run_config)
     if kind == "notebook":
         return execute_notebook(block, base_dir,
                                 commit=run_config.get("commit"),
                                 mode=mode, units=units,
                                 session_deadline=deadline,
                                 carry_in=carry_in,
+                                input_datasets=input_datasets,
                                 client_factory=client_factory)
     func = resolve_callable(block, import_module=import_module)
     kwargs = dict(block.get("kwargs") or {})
-    handoff = submission_environment(mode, units, deadline, carry_in)
+    handoff = submission_environment(mode, units, deadline, carry_in, input_datasets)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:

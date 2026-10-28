@@ -26743,5 +26743,375 @@ class KernelCarryTests(unittest.TestCase):
         self.assertIn("--carry-path", shipped)
 
 
+
+class _InputAttachingAdapter(MultiWorkerFakeAdapter):
+    """A MultiWorkerFakeAdapter whose backend attaches declared input
+    datasets to the push (the optional `INPUT_DATASETS_ROOT` capability)."""
+
+    INPUT_DATASETS_ROOT = "/mnt/inputs"
+
+
+class KernelInputDatasetTests(unittest.TestCase):
+    """kernel-input-datasets S1-S4: a job declares the public datasets it
+    reads; a kernel service attaches them to the push and the runner tells
+    the target where they are mounted."""
+
+    ENTRYPOINT = "tools/kaggle/search-a/runner.ipynb"
+    DIGEST = "d" * 64
+    REFS = ["danizo/eeg-dataset-for-adhd", "owner_2/other-set"]
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "verify_pin_preconditions", return_value=None
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    # -- S1: declared inputs --------------------------------------------------
+
+    def _generate(self, tmp: str, **overrides) -> Path:
+        target = Path(tmp) / "repo"
+        harness = target / "src" / "FEM_TOLLA_Benchmark" / "harness.py"
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        harness.write_text("def campaign(*args, **kwargs):\n    pass\n", encoding="utf-8")
+        bootstrap = Path(tmp) / "fixture_bootstrap.py"
+        invoke = Path(tmp) / "fixture_invoke.py"
+        bootstrap.write_text("print('cell-0')\n", encoding="utf-8")
+        invoke.write_text("print('cell-1')\n", encoding="utf-8")
+        ADAPTER.register_metadata(
+            "inputs-fake", lambda run_config: ("fake-metadata.json", "{}"))
+        kwargs = dict(
+            target=target, service="inputs-fake", job_name="search-a",
+            product="FEM-TOLLA", commit="a" * 40,
+            repo_url="https://example.invalid/repo.git", repo_ref="main",
+            clone_paths=["src/FEM_TOLLA_Benchmark"],
+            run_module="FEM_TOLLA_Benchmark.harness", run_function="campaign",
+            bootstrap_asset=bootstrap, invoke_asset=invoke,
+        )
+        kwargs.update(overrides)
+        return JOBFOLDER.generate_job(**kwargs)
+
+    def test_generate_job_records_declared_input_datasets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = self._generate(tmp, input_datasets=list(self.REFS))
+            run_config = json.loads(
+                (destination / "run-config.json").read_text(encoding="utf-8"))
+            self.assertEqual(run_config["inputDatasets"], self.REFS)
+            JOBFOLDER.validate_run_config(run_config)
+
+    def test_generate_job_refuses_a_malformed_input_dataset(self) -> None:
+        bad_values = ("", "no-slash", "/slug", "owner/", "a/b/c", "../x",
+                      "owner/slug:1", "owner/sl ug", "owner/.hidden")
+        for bad in bad_values:
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+                    self._generate(tmp, input_datasets=[bad])
+                self.assertIn("input dataset", str(caught.exception))
+                self.assertFalse((Path(tmp) / "repo" / "tools").exists(),
+                                 "nothing is written on a refusal")
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+                self._generate(tmp, input_datasets=["o/s", "o/s"])
+            self.assertIn("more than once", str(caught.exception))
+
+    def test_a_malformed_input_dataset_refuses_on_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = self._generate(tmp)
+            run_config = json.loads(
+                (destination / "run-config.json").read_text(encoding="utf-8"))
+        for bad in (["owner"], "owner/slug", [3]):
+            with self.subTest(bad=bad):
+                with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+                    JOBFOLDER.validate_run_config({**run_config, "inputDatasets": bad})
+                self.assertIn("input dataset", str(caught.exception).lower())
+
+    def test_generate_job_without_inputs_writes_no_inputs_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            plain = self._generate(tmp)
+            run_config_text = (plain / "run-config.json").read_text(encoding="utf-8")
+        self.assertNotIn("inputDatasets", json.loads(run_config_text))
+        with tempfile.TemporaryDirectory() as tmp:
+            empty = self._generate(tmp, input_datasets=[])
+            self.assertEqual(
+                (empty / "run-config.json").read_text(encoding="utf-8"),
+                run_config_text, "an empty declaration is byte-identical to none")
+
+    def test_generate_job_parser_declares_a_repeatable_input_dataset(self) -> None:
+        parser = REMOTE_CLI._build_parser()
+        base = [
+            "generate-job", "--target", "/tmp/x", "--service", "svc",
+            "--job-name", "job", "--product", "P", "--commit", "a" * 40,
+            "--repo-url", "https://example.invalid/r.git", "--repo-ref", "main",
+            "--run-module", "m", "--run-function", "f",
+        ]
+        self.assertIsNone(parser.parse_args(base).input_datasets)
+        args = parser.parse_args(base + ["--input-dataset", self.REFS[0],
+                                         "--input-dataset", self.REFS[1]])
+        self.assertEqual(args.input_datasets, self.REFS)
+        help_text = parser._subparsers._group_actions[0].choices["generate-job"].format_help()
+        self.assertIn("--input-dataset", help_text)
+        self.assertIn("FORGE_INPUT_DATASETS", " ".join(help_text.split()))
+
+    def test_the_cli_refuses_a_malformed_input_dataset_with_exit_code(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            target.mkdir()
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+                code = REMOTE_CLI.main([
+                    "generate-job", "--target", str(target), "--service", "kaggle",
+                    "--job-name", "job", "--product", "P", "--commit", "a" * 40,
+                    "--repo-url", "https://example.invalid/r.git", "--repo-ref", "main",
+                    "--run-module", "m", "--run-function", "f",
+                    "--input-dataset", "not-a-ref",
+                ])
+            self.assertNotEqual(code, 0)
+            self.assertIn("input dataset", stderr.getvalue())
+            self.assertFalse((target / "tools").exists())
+
+    # -- S2 / S3: submit -------------------------------------------------------
+
+    def _job_folder(self, tmp: str, *, inputs=None):
+        target = Path(tmp) / "repo"
+        (target / "FEM-TOLLA").mkdir(parents=True)
+        job_dir = _make_job_folder(target, "kaggle", "search-a")
+        notebook = job_dir / "runner.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        overrides = {"inputDatasets": inputs} if inputs is not None else {}
+        _write_job_folder_run_config(job_dir, **overrides)
+        return target, notebook
+
+    def _campaign(self, target, notebook, adapter, units):
+        token = REMOTE_CLI.cmd_distribute(
+            target=target, entrypoint=notebook, adapter=adapter, units=units,
+            source_digest=lambda t, n: self.DIGEST,
+        )["consentToken"]
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, requested=1, adapter=adapter,
+            source_digest=lambda t, n: self.DIGEST, units=units, consent=token,
+            smoke=True,
+        )
+
+    def _single(self, target, notebook, adapter):
+        token = _mint_launch_consent(
+            target=target, entrypoint=notebook, adapter=adapter,
+            source_digest=lambda t, n: self.DIGEST, worker="w1",
+        )
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, worker="w1", requested=1,
+            adapter=adapter, source_digest=lambda t, n: self.DIGEST,
+            consent=token, smoke=True,
+        )
+
+    def test_a_capable_service_is_handed_the_input_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, inputs=list(self.REFS))
+            adapter = _InputAttachingAdapter(workers=[("w1", 1)])
+            result = self._campaign(target, notebook, adapter, ("u0",))
+            (job,) = adapter.jobs
+            self.assertEqual(job.run_config["inputRoot"], "/mnt/inputs")
+            self.assertEqual(result["inputs"], "attached")
+
+            single = self._single(target, notebook, _InputAttachingAdapter(workers=[("w1", 1)]))
+            self.assertEqual(single["inputs"], "attached")
+
+    def test_a_service_without_inputs_reports_unsupported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, inputs=list(self.REFS))
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            result = self._campaign(target, notebook, adapter, ("u0",))
+            (job,) = adapter.jobs
+            self.assertNotIn("inputRoot", job.run_config)
+            self.assertEqual(result["inputs"], "unsupported")
+
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            single = self._single(target, notebook, adapter)
+            self.assertEqual(single["inputs"], "unsupported")
+            (job,) = adapter.jobs
+            self.assertNotIn("inputRoot", job.run_config)
+
+    def test_submit_refuses_a_hand_edited_malformed_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, inputs=["not-a-ref"])
+            adapter = _InputAttachingAdapter(workers=[("w1", 1)])
+            with self.assertRaises((REMOTE_CLI.RemoteCLIError, JOBFOLDER.JobFolderError)) as caught:
+                self._single(target, notebook, adapter)
+            self.assertIn("input dataset", str(caught.exception))
+            self.assertEqual(adapter.jobs, [], "nothing was submitted")
+
+    def test_a_job_without_inputs_submits_exactly_as_before(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = _InputAttachingAdapter(workers=[("w1", 1)])
+            result = self._campaign(target, notebook, adapter, ("u0",))
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {"mode": "smoke", "units": ["u0"]})
+            self.assertNotIn("inputs", result)
+
+            adapter = _InputAttachingAdapter(workers=[("w1", 1)])
+            single = self._single(target, notebook, adapter)
+            self.assertNotIn("inputs", single)
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {"mode": "smoke"})
+
+    def test_the_seam_capability_is_optional_and_adds_no_abstract_method(self) -> None:
+        self.assertEqual(len(ADAPTER.Adapter.__abstractmethods__), 6)
+        self.assertIsNone(ADAPTER.Adapter.INPUT_DATASETS_ROOT)
+        self.assertEqual(KAGGLE.KaggleAdapter.INPUT_DATASETS_ROOT, "/kaggle/input")
+        self.assertNotIn("INPUT_DATASETS_ROOT", vars(COLAB.ColabAdapter))
+        self.assertIsNone(COLAB.ColabAdapter.INPUT_DATASETS_ROOT)
+
+    # -- S2: the kernel service attaches the datasets --------------------------
+
+    def _kaggle_push(self, tmp: str, *, file_config: dict | None, run_config: dict) -> dict:
+        tmp_path = Path(tmp)
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        entrypoint = job_dir / "runner.ipynb"
+        entrypoint.write_text(json.dumps(
+            {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}),
+            encoding="utf-8")
+        (job_dir / "kernel-metadata.json").write_text(
+            json.dumps({"id": "", "title": "papersmith-search-a", "code_file": ""}),
+            encoding="utf-8",
+        )
+        if file_config is not None:
+            (job_dir / "run-config.json").write_text(json.dumps(file_config), encoding="utf-8")
+        captured = tmp_path / "captured.json"
+        driver = _write_fake_driver(tmp_path / "driver", capture_metadata_to=captured)
+        token_path = _write_fake_token(tmp_path / "creds")
+        handle = KAGGLE.CredentialHandle(worker_id="w1", token_path=token_path)
+        adapter = KAGGLE.KaggleAdapter(credentials={"w1": handle}, driver_script=driver)
+        adapter.submit(ADAPTER.Job(entrypoint=entrypoint, run_config=run_config,
+                                   worker="w1"))
+        return json.loads(captured.read_text(encoding="utf-8"))
+
+    def test_the_kernel_push_lists_the_declared_datasets_as_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(
+                tmp, file_config={"commit": "a" * 40, "inputDatasets": list(self.REFS)},
+                run_config={"units": ["u0"], "inputRoot": "/kaggle/input"})
+        self.assertEqual(pushed["dataset_sources"], self.REFS)
+        self.assertNotIn("kernel_sources", pushed)
+
+    def test_a_kernel_push_without_inputs_names_no_dataset(self) -> None:
+        for file_config in (None, {"commit": "a" * 40}):
+            with self.subTest(file_config=file_config), tempfile.TemporaryDirectory() as tmp:
+                pushed = self._kaggle_push(tmp, file_config=file_config,
+                                           run_config={"units": ["u0"]})
+                self.assertNotIn("dataset_sources", pushed)
+                self.assertEqual(pushed["id"], "w1/papersmith-search-a")
+
+    def test_the_driver_maps_dataset_sources_onto_the_request(self) -> None:
+        driver = _load_kaggle_driver_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = _write_driver_staging_dir(Path(tmp))
+            metadata_path = staging / driver._KERNEL_METADATA_FILENAME
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["dataset_sources"] = list(self.REFS)
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            request = driver._save_kernel_request_from_staging(staging)
+        self.assertEqual(list(request.dataset_data_sources), self.REFS)
+
+    def test_the_driver_without_dataset_sources_sets_none(self) -> None:
+        driver = _load_kaggle_driver_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = _write_driver_staging_dir(Path(tmp))
+            request = driver._save_kernel_request_from_staging(staging)
+        self.assertFalse(request.dataset_data_sources)
+
+    # -- S3: mount discovery in the runner -------------------------------------
+
+    def _invoke_with(self, base: Path, run_config: dict) -> tuple[dict, str]:
+        seen: dict = {}
+        module = types.ModuleType("inputs_probe_module")
+        module.run = lambda: seen.update(dict(os.environ))
+        buffer = io.StringIO()
+        with unittest.mock.patch.dict(sys.modules, {"inputs_probe_module": module}), \
+                contextlib.redirect_stdout(buffer):
+            RUNNER_INVOKE.invoke(
+                {**run_config, "run": {"module": "inputs_probe_module", "function": "run"}},
+                base_dir=base,
+            )
+        return seen, buffer.getvalue()
+
+    def test_the_runner_discovers_each_mount_under_the_input_root(self) -> None:
+        self.assertEqual(RUNNER_INVOKE.INPUT_DATASETS_ENV, "FORGE_INPUT_DATASETS")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "input"
+            mounted = root / "datasets" / "danizo" / "eeg-dataset-for-adhd"
+            mounted.mkdir(parents=True)
+            (mounted / "data.csv").write_text("x", encoding="utf-8")
+            # A decoy of the same slug under another owner loses to the
+            # owner's own directory.
+            (root / "notebooks" / "someone" / "eeg-dataset-for-adhd").mkdir(parents=True)
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, log = self._invoke_with(base, {
+                "inputDatasets": list(self.REFS), "inputRoot": str(root)})
+            exported = json.loads(seen[RUNNER_INVOKE.INPUT_DATASETS_ENV])
+            self.assertEqual(exported, {
+                "danizo/eeg-dataset-for-adhd": str(mounted),
+                "owner_2/other-set": None,
+            })
+            self.assertIn("owner_2/other-set", log)
+        self.assertNotIn(RUNNER_INVOKE.INPUT_DATASETS_ENV, os.environ)
+
+    def test_the_runner_finds_a_mount_named_by_its_slug_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "input"
+            (root / "eeg-dataset-for-adhd").mkdir(parents=True)
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, _log = self._invoke_with(base, {
+                "inputDatasets": ["danizo/eeg-dataset-for-adhd"], "inputRoot": str(root)})
+            self.assertEqual(json.loads(seen[RUNNER_INVOKE.INPUT_DATASETS_ENV]),
+                             {"danizo/eeg-dataset-for-adhd": str(root / "eeg-dataset-for-adhd")})
+
+    def test_a_service_that_attached_nothing_exports_every_ref_as_null(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, log = self._invoke_with(base, {"inputDatasets": list(self.REFS)})
+            self.assertEqual(json.loads(seen[RUNNER_INVOKE.INPUT_DATASETS_ENV]),
+                             {ref: None for ref in self.REFS})
+            self.assertIn("not attached", log)
+
+    def test_a_run_config_without_inputs_exports_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, log = self._invoke_with(base, {"inputRoot": str(Path(tmp))})
+            self.assertNotIn(RUNNER_INVOKE.INPUT_DATASETS_ENV, seen)
+            self.assertEqual(log, "")
+
+    def test_the_kernel_environment_carries_the_inputs_when_given(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp) / RUNNER_INVOKE.CLONE_DIRNAME
+            clone.mkdir()
+            composed = RUNNER_INVOKE.kernel_environment(
+                clone, "a" * 40, {}, input_datasets='{"o/s": null}')
+            self.assertEqual(composed[RUNNER_INVOKE.INPUT_DATASETS_ENV], '{"o/s": null}')
+            plain = RUNNER_INVOKE.kernel_environment(clone, "a" * 40, {})
+            self.assertNotIn(RUNNER_INVOKE.INPUT_DATASETS_ENV, plain)
+
+    # -- S4: docs --------------------------------------------------------------
+
+    def test_the_docs_describe_job_inputs(self) -> None:
+        skill = SKILL_MD.read_text(encoding="utf-8")
+        for needle in ("--input-dataset", "inputDatasets", "FORGE_INPUT_DATASETS",
+                       "inputs: unsupported", "inputs: attached", "INPUT_DATASETS_ROOT"):
+            self.assertIn(needle, skill)
+        for agent in ("experiments-walk", "experiments-build",
+                      "implementation-walk", "implementation-build"):
+            text = (REPOSITORY_ROOT / ".claude/agents" / f"{agent}.md").read_text(
+                encoding="utf-8")
+            self.assertIn("--input-dataset", text, agent)
+            self.assertNotIn("kaggle", text.lower(), agent)
+        changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn("--input-dataset", changelog)
+        self.assertIn("FORGE_INPUT_DATASETS", changelog)
+
+
 if __name__ == "__main__":
     unittest.main()

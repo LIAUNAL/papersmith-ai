@@ -507,6 +507,17 @@ KERNEL_METADATA_FILENAME = "kernel-metadata.json"
 # across two owners' private kernels was not (kernel-carry S4).
 KERNEL_INPUT_ROOT = "/kaggle/input/notebooks"
 
+# The root under which a kernel finds the public datasets its metadata names
+# in `dataset_sources` (kernel-input-datasets S2-S3), read-only. The exact
+# sub-path below it is NOT hard-coded: the runner searches this root for
+# each ref's slug, because the live-verified kernel output above appeared
+# under a `notebooks/<owner>/<slug>/` segment nobody predicted, and a
+# dataset's own segment is not verified live here. A pushed kernel is a
+# non-interactive session: it cannot attach a dataset at run time (the
+# service refused `New Datasets cannot be attached in non-interactive
+# sessions`), so the datasets must be named in the push itself.
+DATASET_INPUT_ROOT = "/kaggle/input"
+
 # The suffix of the alternate kernel a continuation is pushed to when the
 # kernel it carries from has the ref it would otherwise reuse (see
 # `KaggleAdapter.submit()`): `<slug>` and `<slug>-carry` take turns.
@@ -640,6 +651,28 @@ def kernel_ref(
                 break
             attempt += 1
     return f"{worker}/{slug}", title, carried
+
+
+def _declared_input_datasets(job: "ADAPTER.Job") -> list[str]:
+    """The `inputDatasets` refs a job declares: the job folder's own
+    `run-config.json` (`generate-job --input-dataset`, validated by
+    `submit` before this is reached), overridden by the submission's
+    `run_config` when it names the key. `[]` when neither does, or when
+    there is no readable job folder (the legacy shape attaches nothing)."""
+    declared: object = None
+    run_config_path = job.entrypoint.parent / RUN_CONFIG_FILENAME
+    if run_config_path.is_file():
+        try:
+            parsed = json.loads(run_config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, Mapping):
+            declared = parsed.get("inputDatasets")
+    if "inputDatasets" in job.run_config:
+        declared = job.run_config["inputDatasets"]
+    if not isinstance(declared, (list, tuple)):
+        return []
+    return [str(ref) for ref in declared if isinstance(ref, str) and ref]
 
 
 def assemble_metadata(run_config: Mapping[str, object]) -> tuple[str, str]:
@@ -869,6 +902,11 @@ class KaggleAdapter(ADAPTER.Adapter):
     # bytes. See `KAGGLE_CODE_BUNDLE_MAX_BYTES` for where the number comes
     # from.
     CODE_BUNDLE_MAX_BYTES = KAGGLE_CODE_BUNDLE_MAX_BYTES
+
+    # kernel-input-datasets S2: this adapter attaches a job's declared
+    # `inputDatasets` to the push as the metadata's `dataset_sources`, and
+    # the kernel finds them mounted under this root.
+    INPUT_DATASETS_ROOT = DATASET_INPUT_ROOT
 
     @classmethod
     def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
@@ -1323,6 +1361,15 @@ class KaggleAdapter(ADAPTER.Adapter):
                 sources = list(template.get("kernel_sources") or [])
                 sources.extend(ref_ for ref_ in carried if ref_ not in sources)
                 template["kernel_sources"] = sources
+            # kernel-input-datasets S2: the public datasets the job folder
+            # declares are named in the push, so the non-interactive kernel
+            # gets them mounted read-only under `DATASET_INPUT_ROOT`. A job
+            # declaring none is staged exactly as before.
+            declared_inputs = _declared_input_datasets(job)
+            if declared_inputs:
+                datasets = list(template.get("dataset_sources") or [])
+                datasets.extend(ref_ for ref_ in declared_inputs if ref_ not in datasets)
+                template["dataset_sources"] = datasets
             (staging_path / KERNEL_METADATA_FILENAME).write_text(
                 json.dumps(template), encoding="utf-8"
             )

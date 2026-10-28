@@ -314,6 +314,45 @@ def validate_carry_paths(carry_paths: Sequence[str]) -> tuple[str, ...]:
     return tuple(validated)
 
 
+# One part of a public dataset reference `<owner>/<slug>` (kernel-input-
+# datasets S1): a letter or digit, then letters, digits, `-` or `_`. No dot,
+# no space, no version suffix, so a ref can never name a path outside the
+# service's input root nor smuggle a version the service would read
+# differently.
+_INPUT_DATASET_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}")
+
+
+def validate_input_datasets(input_datasets: object) -> tuple[str, ...]:
+    """The public datasets a job reads (`generate-job --input-dataset`),
+    each `<owner>/<slug>` exactly once (kernel-input-datasets S1). A
+    service that attaches inputs to the push mounts them read-only; the
+    runner exports where in `FORGE_INPUT_DATASETS`. Checked at generation
+    and on every read of `run-config.json`, so a hand-edited ref refuses
+    before any submission. An empty sequence is valid and means none.
+    """
+    if not isinstance(input_datasets, (list, tuple)):
+        raise JobFolderError(
+            "run-config.json's inputDatasets must be a list of input dataset "
+            "refs (<owner>/<slug>)"
+        )
+    validated: list[str] = []
+    for raw in input_datasets:
+        parts = raw.split("/") if isinstance(raw, str) else []
+        if len(parts) != 2 or not all(
+            _INPUT_DATASET_PART.fullmatch(part) for part in parts
+        ):
+            raise JobFolderError(
+                f"refusing input dataset {raw!r}: must be <owner>/<slug>, each "
+                "part letters, digits, '-' or '_'"
+            )
+        if raw in validated:
+            raise JobFolderError(
+                f"refusing input dataset {raw!r}: declared more than once"
+            )
+        validated.append(raw)
+    return tuple(validated)
+
+
 def with_entry_notebooks(
     clone_paths: Sequence[str], notebooks: Sequence[str]
 ) -> list[str]:
@@ -1691,6 +1730,8 @@ def validate_run_config(run_config: Mapping[str, object]) -> None:
         if not isinstance(carry_paths, list):
             raise JobFolderError("run-config.json's carryPaths must be a list of carry paths")
         validate_carry_paths(carry_paths)
+    if "inputDatasets" in run_config:
+        validate_input_datasets(run_config["inputDatasets"])
     if "codeBundle" in run_config:
         validate_code_bundle_block(run_config["codeBundle"])
 
@@ -1906,6 +1947,7 @@ def build_run_config(
     local_budget_seconds: int | None = None,
     carry_paths: Sequence[str] | None = None,
     code_bundle: Mapping[str, object] | None = None,
+    input_datasets: Sequence[str] | None = None,
 ) -> dict:
     """Assemble `run-config.json`'s exact shape from target-supplied values.
 
@@ -2095,6 +2137,8 @@ def build_run_config(
         run_config["localBudget"] = {"seconds": local_budget_seconds}
     if carry_paths:
         run_config["carryPaths"] = list(validate_carry_paths(carry_paths))
+    if input_datasets:
+        run_config["inputDatasets"] = list(validate_input_datasets(input_datasets))
     if code_bundle is not None:
         run_config["codeBundle"] = dict(code_bundle)
     if has_environment_install:
@@ -2192,6 +2236,7 @@ def generate_job(
     repo_credential_path: str | Path | None = None,
     carry_paths: Sequence[str] | None = None,
     code_bundle: bool = False,
+    input_datasets: Sequence[str] | None = None,
 ) -> Path:
     """Generate one job folder, atomically, refusing to overwrite an
     existing one unless `regenerate=True`.
@@ -2272,6 +2317,13 @@ def generate_job(
     (`validate_carry_paths()`). Omitted or empty, no `carryPaths` key is
     written and `submit` carries nothing for this job, exactly as before.
 
+    `input_datasets` (kernel-input-datasets S1), when given, is recorded
+    as `inputDatasets`: the public `<owner>/<slug>` datasets the job reads
+    (`validate_input_datasets()`, checked before anything is written). A
+    service that attaches inputs mounts them in the push; the runner
+    exports their mounts in `FORGE_INPUT_DATASETS`. Omitted or empty, no
+    `inputDatasets` key is written, exactly as before.
+
     `repo_credential_path` (S3) is forwarded verbatim into that same
     condition set, where only the network-reaching `pin-published` probe
     ever reads it: with a path, generation's reachability check
@@ -2309,6 +2361,8 @@ def generate_job(
             "clones, so a repository credential has nothing to authenticate; "
             "drop --repo-credential (or drop --code-bundle to clone with it)."
         )
+    if input_datasets:
+        validate_input_datasets(input_datasets)
     resolved_target = resolve_target(target)
     destination = resolve_destination(resolved_target, service, job_name)
     # Before the pin is resolved: resolution may already call git with it.
@@ -2496,6 +2550,7 @@ def generate_job(
         local_budget_seconds=local_budget_seconds,
         carry_paths=carry_paths,
         code_bundle=bundle_block,
+        input_datasets=input_datasets,
     )
     notebook = build_notebook(resolved_bootstrap, resolved_invoke)
 

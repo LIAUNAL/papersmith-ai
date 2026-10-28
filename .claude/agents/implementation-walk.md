@@ -135,6 +135,17 @@ session. The details live in
 `.claude/skills/remote-execution/SKILL.md`, **Sessions, checkpoints and
 resume**, and `.claude/skills/remote-parallelism/SKILL.md`.
 
+A job that reads a public dataset declares it with `generate-job
+--input-dataset <owner>/<slug>` (repeatable). A pushed kernel is a
+non-interactive session and cannot attach a dataset at run time, so on a
+kernel service `submit` names the declared datasets in the push and reports
+`inputs: attached`; a service that attaches none reports `inputs:
+unsupported`. Either way the runner exports `FORGE_INPUT_DATASETS` before the
+entrypoint, a JSON object mapping each ref to its mounted directory or to
+null: the target reads the mounted directory when there is one and downloads
+the dataset only when the value is null. The details live in
+`.claude/skills/remote-execution/SKILL.md`, **Job inputs**.
+
 ## What the launch still needs
 
 Run `launch-plan --job <job>` (with `--worker <account>`) before

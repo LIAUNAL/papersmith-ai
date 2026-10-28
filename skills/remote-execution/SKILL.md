@@ -2083,6 +2083,51 @@ pending, no `carryProtected` key is written and the job is byte-identical
 to before; when something is, that key is the only addition. The legacy
 shape (no job folder) is unchanged.
 
+## Job inputs
+
+A job that reads a public dataset declares it with `generate-job
+--input-dataset <owner>/<slug>` (repeatable), recorded as `inputDatasets` in
+`run-config.json`. Each ref is exactly `<owner>/<slug>`, each part letters,
+digits, `-` or `_`, and appears once; a malformed or repeated ref refuses at
+generation, before anything is written, and on every read of
+`run-config.json` (`validate_input_datasets()` in `scripts/jobfolder.py`), so
+a hand-edited one refuses at `submit` before anything is sent. A job that
+declares none is byte-identical to before: no `inputDatasets` key, nothing
+added at submit, nothing exported.
+
+A pushed kernel is a non-interactive session: it cannot attach a dataset at
+run time (Kaggle refused `kagglehub.dataset_download(...)` inside one with
+`New Datasets cannot be attached in non-interactive sessions`), so the
+dataset must be named in the push itself.
+
+1. **Optional capability, not a seventh operation.** A backend that attaches
+   declared inputs to the push sets `Adapter.INPUT_DATASETS_ROOT` to the
+   directory its jobs find them mounted under, read-only; the ABC keeps its
+   six abstract operations. `submit` (single send, campaign and rehearsal
+   alike) hands that root to the job as `run_config["inputRoot"]` and reports
+   `inputs: attached` (the single-send output's `inputs` key, the campaign
+   output's top-level `inputs`). A backend that leaves it `None` (Colab)
+   reports `inputs: unsupported` and adds nothing.
+2. **Kaggle names them in the push.** `adapters/kaggle.py` adds each
+   declared ref to the pushed `kernel-metadata.json`'s `dataset_sources`
+   (`INPUT_DATASETS_ROOT = "/kaggle/input"`), and `adapters/kaggle_driver.py`
+   maps that key through its closed metadata table onto the save-kernel
+   request's `dataset_data_sources` (kagglesdk 0.1.37), as it maps
+   `kernel_sources` onto `kernel_data_sources`.
+3. **The runner says where they are.** Before the callable or notebook
+   starts, `discover_input_datasets()` in `assets/runner_invoke.py` searches
+   `inputRoot` (at most four levels down, never inside a match) for a
+   directory named after each ref's slug, preferring one whose parent is
+   named after its owner -- the sub-path below the root is the service's and
+   is never hard-coded, since the carried kernel output appeared under a
+   `notebooks/<owner>/<slug>/` segment nobody predicted. It exports
+   `FORGE_INPUT_DATASETS`: a JSON object mapping every declared ref to the
+   directory found, or to `null` when the backend attached nothing or no
+   directory was found. Each ref is one `[inputs]` line in the run log; it
+   is never fatal. The target reads the mounted directory when there is
+   one and falls back to downloading the dataset only when the value is
+   `null`.
+
 ## Ledger data location
 
 Code is forge-owned and lives here, inside the skill. Data is target-owned:
