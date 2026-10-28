@@ -717,6 +717,40 @@ cached resolved metadata — never appended, never hand-typed:
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from every block's cached, resolved AND ingested evidence records; checks both `\cite{}`/entry directions | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY`, `ENTRY_WITHOUT_CITE` |
+| `bib refresh --cite-key <key> --metadata-digest <digest> [--resolver <r>] [--guidance <dir>]` | Relinks the record `bib build` reads for `<key>` to fresher cached metadata of the same work: appends one copy changing only `resolver` and `metadata_digest` | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED` |
+
+**`bib refresh` relinks metadata; it never judges support.** After a
+re-`resolve` caches better metadata (a year, a venue) for a DOI or arXiv id
+already cited, `bib refresh` points the citation at it without re-quoting
+the source:
+
+```bash
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py bib refresh \
+  --cite-key smith2024 --metadata-digest <digest printed by resolve>
+```
+
+It selects the same last-write-wins record `bib build` reads, and appends a
+copy to that record's own block store whose claim, quote, span, verdict,
+round, block and identifier are byte-identical; only `resolver` (taken from
+the new cache; `--resolver`, when given, must equal it) and
+`metadata_digest` change. Prior lines are never edited and no
+`.papersmith-evidence.json` manifest is written. Because nothing is
+re-judged, the source's `guidance/` class is not re-checked — that is the
+point for a source judged before its folder became `style-reference` — while
+`validate` still refuses any NEW quote from such a folder. Every check runs
+before the one write. It refuses `ENTRY_UNSOURCED` when no record carries
+the key, when either the current or the new cache is missing or not filed
+under its own digest, when `--resolver` disagrees, when the record and both
+caches do not name the same work, or when the record does not end the last
+store holding the key (an appended copy would not supersede it); and
+`ENTRY_NOT_INGESTED` when the record has no located `holds`/`does-not-hold`
+span or its `source_md` is no longer an ingested paper. "The same work" is
+one normalized identifier: a DOI compares without its `https://doi.org/` or
+`doi:` prefix and case-insensitively; an arXiv id compares without its
+`arXiv:` prefix, `arxiv.org/abs|pdf/` URL or `.pdf` suffix but WITH its
+version, so `2401.00001v2` never matches `2401.00001`, and a DOI never
+matches an arXiv id. Refreshing to the digest already recorded writes
+nothing and reports `"refreshed": false`.
 
 A hand-typed entry (no `resolver`/`metadata_digest` provenance) refuses
 `ENTRY_UNSOURCED` before a single byte of `refs.bib` is rewritten — checked

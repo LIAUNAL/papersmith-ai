@@ -10,8 +10,8 @@ Runner: existing repository micromamba Python/pytest, `npm run test:all`, `npm r
 
 ## Tasks
 - T1 [S2-S4] delegated, done: port remaining smoke-runtime readiness behavior from `5d81d086`, retaining upstream priority; Risk: item 5 (runtime selection); commit: this unit (identity recorded in next log update). RED: 6 failed; GREEN: 7 passed; independent verify PASS.
-- T2 [S2-S4] delegated, in_progress: port same-work bibliography metadata refresh from `26d22274`, retaining upstream citation-command vocabulary; commit: pending.
-- T3 [S2-S4] delegated, pending: port vocabulary/privacy guard repair from `83427a6a`, preserving upstream tests; Risk: item 2 (privacy test guards); commit: pending.
+- T2 [S2-S4] delegated, done: port same-work bibliography metadata refresh from `26d22274`, retaining upstream citation-command vocabulary; commit: this unit. RED 11 failed/3 passed; GREEN focused 211 passed/12 subtests and writing 681 passed/1 skipped/57 subtests; parent spot 5 passed/9 subtests.
+- T3 [S2-S4] delegated, in_progress: port vocabulary/privacy guard repair from `83427a6a`, preserving upstream tests; Risk: item 2 (privacy test guards); commit: pending.
 - T4 [S2-S4] delegated, pending: port multi-folder citation evidence from `adeb1e79` excluding `.pi/settings.json`, with dependent all-root vocabulary scan `506c8c00`; commit: pending.
 - T5 [S2-S4] delegated, pending: port cited-only bibliography `d42620b8`, preserving upstream expanded citation parsing; commit: pending.
 - T6 [S2-S4] delegated, pending: port introduction 4a prior-work citation allowance `96681cf0`, including translated contract and provenance; commit: pending.
