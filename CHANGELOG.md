@@ -13,7 +13,61 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+### Added
+
+- Parallel campaigns over several accounts. A campaign `submit` now sends one
+  job per concurrent slot a worker was granted (a Kaggle account runs two at
+  once), each with its round-robin share of the units, its own submission id
+  and its own ledger lane; on Kaggle, slot 2 and later get their own kernel
+  (`-slot-<n>`). A worker granted one slot submits exactly as before. If the
+  backend answers two slots of one campaign with the same submission id,
+  `submit` refuses `DUPLICATE_SUBMISSION_ID` before recording the repeat.
+- A campaign `submit` refuses `CAMPAIGN_WORKERS_NOT_READY`, and `gate --unit`
+  refuses `NOT_READY`, unless every worker the campaign will use has its own
+  passing rehearsal at the current pin. The refusal names the workers that
+  still need one: rehearse on each of them first.
+- `walk` and `launch-plan` report `concurrentLaunches`: every remote step whose
+  inputs are already produced is `launchable`, so steps placed on different
+  services (for example one arm on Colab, another on Kaggle) can be launched
+  at the same time, each through its own `propose`/`offer`/`gate`. Steps that
+  read another step's product are listed as `waiting`, with what they wait on.
+  With a single launchable step the output is unchanged.
+- `remote-parallelism assess` takes each account's own limits with `--account
+  <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>]`
+  (repeatable) or `--accounts-file <json>`, instead of one set of values for all
+  accounts. An account with an `unknown` quota is reported, not checked. The
+  uniform flags print exactly what they printed before.
+- New read-only `remote-parallelism schedule` verb: given the project's remote
+  steps (`--plan plan.json`), it puts each step on one service and its units on
+  that service's accounts so the project ends as early as possible, respects
+  step dependencies and the doctrine (one service per campaign, split along
+  seeds/folds/subjects, never by arm), and reports the makespan against the
+  serial one and the quota used per account. It never launches anything.
+- The Experimentos panel shows remote runs per worker for each product: worker,
+  service (from the worker id: `colab` or `colab:<owner>` is Colab, a bare
+  username is Kaggle), each lane (entrypoint and slot) with its state, units
+  when the ledger records them (otherwise the granted capacity), submission id
+  and last update. Slots of one worker are grouped under it; at most 24 workers
+  and 20 lanes per worker are listed. The existing "Últimas ejecuciones" list is
+  unchanged.
+
+### Changed
+
+- A job is identified by its service and its name. Two job folders with the
+  same name under different services no longer shadow each other in the job
+  lookup, the readiness map or the flow. When a name is ambiguous, `gate` and
+  `launch-plan` refuse `JOB_SERVICE_AMBIGUOUS`: pass `--service <service>`,
+  the service the step declares.
+
 ### Fixed
+
+- Readiness is per worker. `readiness` used to read only the latest rehearsal
+  of a job, whatever account ran it, so rehearsing a second account made the
+  first one not ready: two accounts could never be ready at the same time.
+  Each worker is now judged by its own latest rehearsal.
+- The implementation `probe` now reads each job folder's own readiness, so a
+  job whose rehearsal passed is reported as `launch`. Before, it was never
+  reported as `launch` and kept asking for a rehearsal that was already done.
 
 - The experiments panel now shows figures and tables kept in one folder per
   experiment: a file in a `figures` or `tables` folder at any depth under
