@@ -213,7 +213,15 @@ Before generating a job and again before `gate`, run this skill's own
 skill's own holder (`Experimental_AGREED.md`) and writes nothing: it lists
 `propose`, `offer`, `gate` and `submit` in order, each with what it would
 refuse now and the exact next command, and `verify` reports the same ladder
-gaps under `launchLadder`. `proposal-implementation`'s `references/usage.md`
+gaps under `launchLadder`. Pass `--service <service>` when folders of
+the same job name sit under more than one service (a job is `(service, job)`;
+`JOB_SERVICE_AMBIGUOUS` otherwise). When several remote steps read only what is
+already produced -- typically arms placed on different services -- the plan and
+`walk` both list them under `concurrentLaunches.launchable`, each to be
+launched through its own `propose`/`offer`/`gate`, and name every step still
+`waiting` with what it `waitsOn`. A campaign `gate --unit` refuses `NOT_READY`
+until every worker its `propose` record names has its own passing rehearsal
+at the job's pin, and names the ones that do not. `proposal-implementation`'s `references/usage.md`
 (*`launch-plan` — what is still missing before a job launches*) documents its
 output.
 

@@ -595,6 +595,12 @@ def build_denylist(profiles: list[dict[str, Any]]) -> dict[str, str]:
 #: backlog #80: the four copies of the failed-mutation rollback
 #: (`reset --hard` + `clean -fd`, each with `check=False`) collapse into
 #: `_roll_back_to_head`. One SHRANK, deliberately: `check` 168->162.
+#: `parallel-campaigns` (T2: S2-S4): `propose --worker`'s help no longer
+#: calls the list "Recorded write-only history" -- `gate --unit` now reads
+#: it -- and `cmd_walk` names the `__steps__` mapping it reads once
+#: `declared` (two bare `steps` gone). Three SHRANK, deliberately:
+#: `recorded` 82->81, `steps` 139->137, `write` 154->153. Every new
+#: comment was worded to move nothing else.
 M5_PINNED_RESIDUE: dict[str, int] = {
     "actually": 83, "admissible": 3, "after": 96, "against": 198,
     "agreed": 16, "answered": 97, "answers": 108, "approved": 48,
@@ -607,11 +613,11 @@ M5_PINNED_RESIDUE: dict[str, int] = {
     "local": 39, "longer": 55, "makes": 48, "materialized": 12,
     "measured": 145, "measurement": 43, "module": 199, "notebooks": 110,
     "object": 33, "pilot": 124, "place": 58, "produces": 51,
-    "rather": 386, "recorded": 82, "remedy": 60, "remote": 83,
+    "rather": 386, "recorded": 81, "remedy": 60, "remote": 83,
     "reported": 150, "resolves": 34, "ruled": 9, "runnable": 15,
     "scaffolded": 12, "sitting": 9, "small": 8, "something": 77,
-    "steps": 139, "sweep": 11, "validated": 10, "value": 247, "whose": 161,
-    "write": 154, "wrong": 52
+    "steps": 137, "sweep": 11, "validated": 10, "value": 247, "whose": 161,
+    "write": 153, "wrong": 52
 }
 #: Unit 6b (Part B, the transitions): thirteen pins grew from the new
 #: engine prose alone (`_comparison_reuses_acid_test_question`,

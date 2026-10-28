@@ -2483,7 +2483,12 @@ shard lands (no `distribution.shardsRoot` declared, `gate` itself carries no
 `--shards` flag to override with) — a different fact from `POSITION_UNBACKED`:
 this tick was never told where to look, rather than looked-at and found
 silent — `NOT_READY` when no passing
-rehearsal is on file for this job at its current pin, `SEQUENCE_NOT_REACHED`
+rehearsal is on file for this job at its current pin (and, for a campaign
+`--unit`, when any worker the bound `propose` record names has no passing
+rehearsal of its own at that pin — the refusal names each one, because a
+rehearsal binds to the worker it ran on and a campaign spreads over all of
+them), `JOB_SERVICE_AMBIGUOUS` when folders of `--job`'s name sit under more
+than one service and no `--service <service>` selects one, `SEQUENCE_NOT_REACHED`
 when an earlier item in the sequence is still open — a launch that would skip
 a rung is refused rather than authorized around it —
 `GATE_WORKER_UNIT_CONFLICT`/`GATE_WORKER_REQUIRED` when `--worker` and
@@ -2571,6 +2576,29 @@ the act itself reaches, read through the same functions:
 
 When the ladder still owes the launch something, the object also carries
 `launchLadder`, the same key `verify` reports.
+
+A job is identified by `(service, job)`. When folders of the same job name sit
+under two services, pass `--service <service>` — the `service` the step
+declares — and the plan reads that folder and its own rehearsal; without it the
+call refuses `JOB_SERVICE_AMBIGUOUS` rather than letting the first folder
+shadow the other. One folder per job name needs no `--service`, exactly as
+before. The printed `gate` command then carries `--service <service>`, a
+placeholder like `submit`'s `--backend`.
+
+**Concurrent launches.** When more than one remote step can launch at once,
+the object also carries `concurrentLaunches` — the same key `walk` returns:
+
+- `launchable`: each `{step, job}` whose act is `launch` and whose `reads` are
+  all produced by steps already done (or that reads nothing, `reads: []`).
+  These are independent — in particular steps placed on different services —
+  and may go out at the same time, **each through its own** `launch-plan
+  --job <job>`, `propose`, `offer` and `gate`.
+- `waiting`: each remote step whose `reads` come from a step not yet done,
+  with the producing step(s) named in `waitsOn`. A step declaring no `reads`
+  key at all waits on every owed step ahead of it — undeclared is read as
+  dependent, never as independent.
+
+With one launchable step the key is absent and the plan is the serial one.
 
 ## `close` — the finishing precondition
 
@@ -2673,7 +2701,14 @@ disk but the history.
 
 It stops, rather than refusing, and says where: at a `launch`, at a `blocked`
 step nobody routed, or at the first act that refused -- returning `performed`
-and `stoppedAt` so the answer is what it did and what is left. It stops
+and `stoppedAt` so the answer is what it did and what is left. When more than
+one remote step is ready to launch at that point it also returns
+`concurrentLaunches` (`launchable`, `waiting` with `waitsOn`, and a `note`;
+see `launch-plan` above): a step whose `reads` are produced by steps already
+done, or by the local steps this walk just ran, does not wait for the launch
+`stoppedAt` names, so independent remote steps — on different services in
+particular — can be launched together, each through its own gate. The walk
+still launches none of them. It stops
 rather than skipping ahead because the flow is ordered: a step that cannot
 run is one whose output every later step reads.
 
@@ -2963,7 +2998,7 @@ them. Which refusals carry the extra key is itself the answer to a question:
 > the repository?
 
 **Yes — an invocation defect.** The detail already names the flag, the token or
-the mutual exclusion. Fifty-nine codes, and nothing is published beside them:
+the mutual exclusion. Sixty codes, and nothing is published beside them:
 `SETTLE_STDIN_CONFLICT`, `OFFER_ANSWER_NOT_A_TOKEN`, `MATERIALIZE_MODE_REQUIRED`,
 `NOT_A_GIT_REPO`, `GATE_ELECTION_REQUIRED` and the rest. Retype the call.
 
