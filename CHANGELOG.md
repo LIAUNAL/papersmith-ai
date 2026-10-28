@@ -11,6 +11,40 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- `remote_cli preflight --target <repo> --entrypoint <job>/runner.ipynb
+  [--worker <id>]...` checks a generated job locally before its first remote
+  rehearsal and never submits. It prints one `{check, status, evidence, fix}`
+  row per check (`pin`, `diagrams`, `interpreter`, `code-reachability`,
+  `inputs`, `local-rehearsal`, `account` per worker, `accelerator`,
+  `session-fit`) and exits non-zero on any `fail`. The local rehearsal
+  materializes the job's code with the runner's own functions (from the code
+  bundle when there is one, so only `.git/HEAD`) in a scratch directory outside
+  the target, runs the smoke through the runner's `invoke()` under the
+  target's `.venv` interpreter with the runner's environment and a time budget
+  (`--local-timeout`, `--local-smoke-kwargs` for a cheaper local scale), and
+  judges the `shard.json` it leaves with the same predicate `smoke record`
+  uses. Each check comes from a remote round the QMLEEG full experiments spent:
+  a diagram validated too late, a driver missing from the interpreter, a
+  private repository, an unattached dataset, a smoke that never stamped, a
+  stamp that read the commit with git on a bundled worker, an account without
+  its own rehearsal, the default accelerator instead of the planned one.
+- The adapters answer three optional preflight hooks (the ABC keeps six
+  operations): `interpreter_check` (Kaggle: the SDK driver's `selftest`;
+  Colab: the CLI on `PATH`), `account_check` (Kaggle: the accounts CLI's
+  `validate --account <username> --json`, new, which re-checks one stored
+  account and writes nothing; Colab: the owner's CLI token file exists) and
+  `accelerator_request` (the machine each push requests).
+- The scaffold's `remote_stamp.py` reads the commit from `FORGE_CLONE_COMMIT`
+  when `git rev-parse HEAD` fails, and ships `@stamped`, a smoke template that
+  writes `shard.json` from whatever the smoke returns.
+- The remote-execution skill gains **Before the first rehearsal**, the
+  preflight and each lesson as a rule; the walk and build agents and both
+  implementation skills run `preflight` before a rehearsal is run or offered.
+
 ## 0.36.0
 
 ### Added

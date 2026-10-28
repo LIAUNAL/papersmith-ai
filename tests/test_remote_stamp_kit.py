@@ -181,6 +181,68 @@ class WriteShardTests(ScaffoldedTarget):
         self.assertEqual(report.get("missing"), [], report)
 
 
+class CodeBundleWorkerTests(ScaffoldedTarget):
+    """remote-preflight S4/L7: a code-bundle worker holds only `.git/HEAD`,
+    so `git rev-parse` fails there and the stamp reads the commit the runner
+    exports instead; and the scaffold's smoke template stamps by itself."""
+
+    def setUp(self):
+        sys.path.insert(0, str(self.root / "src"))
+        self.addCleanup(sys.path.remove, str(self.root / "src"))
+        for name in [m for m in sys.modules if m.startswith(PACKAGE)]:
+            del sys.modules[name]
+        import importlib
+        self.stamp = importlib.import_module(f"{PACKAGE}.remote_stamp")
+        self.out = Path(tempfile.mkdtemp())
+        self.bundled = Path(tempfile.mkdtemp())
+        (self.bundled / ".git").mkdir()
+        (self.bundled / ".git" / "HEAD").write_text("f" * 40 + "\n", encoding="utf-8")
+        self.saved = {k: os.environ.pop(k, None) for k in ("FORGE_RUN_MODE", "FORGE_CLONE_COMMIT")}
+
+    def tearDown(self):
+        for key, value in self.saved.items():
+            os.environ.pop(key, None)
+            if value is not None:
+                os.environ[key] = value
+
+    def test_commit_falls_back_to_the_runner_commit_when_git_fails(self):
+        os.environ["FORGE_CLONE_COMMIT"] = "a" * 40
+        self.assertEqual(self.stamp.commit(self.bundled), "a" * 40)
+
+    def test_git_still_wins_where_it_answers(self):
+        os.environ["FORGE_CLONE_COMMIT"] = "a" * 40
+        self.assertEqual(self.stamp.commit(self.root), _git(self.root, "rev-parse", "HEAD"))
+
+    def test_no_git_and_no_runner_commit_is_none(self):
+        self.assertIsNone(self.stamp.commit(self.bundled))
+
+    def test_the_stamped_smoke_template_writes_shard_json(self):
+        @self.stamp.stamped
+        def smoke(scale=1):
+            return {"scale": scale}
+
+        os.environ["FORGE_RUN_MODE"] = "smoke"
+        before = Path.cwd()
+        os.chdir(self.out)
+        try:
+            self.assertEqual(smoke(scale=2), {"scale": 2})
+        finally:
+            os.chdir(before)
+        shard = json.loads((self.out / "shard.json").read_text(encoding="utf-8"))
+        self.assertEqual(shard["runs"], {"scale": 2})
+        self.assertEqual(shard["mode"], "smoke")
+
+    def test_the_stamped_template_writes_nothing_outside_the_runner(self):
+        smoke = self.stamp.stamped(lambda: {"x": 1})
+        before = Path.cwd()
+        os.chdir(self.out)
+        try:
+            smoke()
+        finally:
+            os.chdir(before)
+        self.assertFalse((self.out / "shard.json").exists())
+
+
 class DeviceGuardTests(ScaffoldedTarget):
     def setUp(self):
         try:

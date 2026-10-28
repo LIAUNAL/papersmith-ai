@@ -1163,6 +1163,81 @@ class KaggleAdapter(ADAPTER.Adapter):
             return None
         return _team_report(_account_names_on_disk(self._accounts_cli, self._run), team)
 
+    # -- preflight hooks (remote-preflight S1) -----------------------------
+    # Ordinary methods, never ABC operations: `remote_cli preflight` reads
+    # them with `getattr` and reports a service without them as `warn`.
+
+    def interpreter_check(self) -> dict:
+        """Whether the SDK driver `submit` shells out to is usable under THIS
+        interpreter: the driver's own `selftest`, which refuses an
+        unimportable SDK and one that cannot request the machine.
+        Asks the service nothing and reads no credential."""
+        try:
+            result = self._run([sys.executable, str(self._driver_script), "selftest"])
+        except KaggleAdapterError as exc:
+            return {"ok": False, "evidence": str(exc)}
+        lines = (result.stdout or "").strip().splitlines()
+        try:
+            payload = json.loads(lines[-1]) if lines else {}
+        except ValueError:
+            payload = {}
+        if result.returncode == 0 and payload.get("ok"):
+            return {"ok": True, "evidence": f"the SDK driver {self._driver_script.name} "
+                    "imports its pinned SDK and can request the machine"}
+        error = payload.get("error") or (result.stderr or "").strip() or "no output"
+        return {"ok": False, "evidence": f"the SDK driver's selftest refused: {error}",
+                "fix": f"`{sys.executable} -m pip install -r requirements.txt` for this "
+                       "interpreter, or run remote_cli under the workspace env interpreter"}
+
+    def account_check(self, worker: str) -> dict:
+        """Whether `worker` is one of this service's workers and its saved
+        credential still authenticates: the accounts CLI's own `validate`,
+        narrowed to that one account (`--account`), which takes in nothing
+        and writes nothing. This process never sees the key."""
+        try:
+            names = [w.id for w in self.workers()]
+        except KaggleAdapterError as exc:
+            return {"ok": False, "evidence": f"the accounts could not be listed: {exc}",
+                    "fix": f"run `{self._accounts_cli} list`"}
+        if worker not in names:
+            return {"ok": False,
+                    "evidence": f"{worker!r} is not a worker here (workers: "
+                                f"{', '.join(names) or 'none'})",
+                    "fix": "register the person's own account (`smith team add ... "
+                           "--attest`), then take its credential in with `/kaggle-accounts "
+                           "validate`"}
+        try:
+            result = self._run([sys.executable, str(self._accounts_cli), "validate",
+                                "--account", worker, "--json"])
+        except KaggleAdapterError as exc:
+            return {"ok": False, "evidence": str(exc), "fix": "retry when the service answers"}
+        try:
+            rows = json.loads(result.stdout or "{}").get("accounts") or []
+        except ValueError:
+            rows = []
+        row = next((r for r in rows if isinstance(r, dict) and r.get("username") == worker), {})
+        if row.get("ok"):
+            return {"ok": True, "evidence": f"{worker} authenticates against the service"}
+        detail = row.get("detail") or (result.stderr or "").strip() or "no verdict"
+        return {"ok": False, "evidence": f"{worker} does not authenticate: {detail}",
+                "fix": "replace its token with `/kaggle-accounts validate` (or remove it)"}
+
+    def accelerator_request(self, run_config: Mapping[str, object]) -> dict:
+        """The machine every push requests, and whether the job's declared
+        architectures are ones that machine has: the runner's accelerator
+        gate refuses a mismatch only after the session started."""
+        architecture = KAGGLE_MACHINE_SHAPES.get(KAGGLE_MACHINE_SHAPE)
+        declared = run_config.get("accelerator")
+        problem = None
+        if isinstance(declared, Mapping):
+            wanted = [str(a) for a in declared.get("architectures") or []]
+            if wanted and architecture not in wanted:
+                problem = (f"the job declares {', '.join(wanted)} and every push here "
+                           f"requests {KAGGLE_MACHINE_SHAPE} ({architecture}); the runner's "
+                           "accelerator gate would refuse it on arrival")
+        return {"name": KAGGLE_MACHINE_SHAPE, "architectures": [architecture] if architecture
+                else [], "problem": problem}
+
     def submit(self, job: "ADAPTER.Job") -> "ADAPTER.Submission":
         """Push a kernel version and report back the ref this adapter will
         recognize it by later.

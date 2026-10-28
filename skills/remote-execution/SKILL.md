@@ -1,6 +1,6 @@
 ---
 name: remote-execution
-description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
+description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`, `preflight`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
 ---
 
 # Remote Execution
@@ -1498,7 +1498,7 @@ executable — no test in this suite reaches the network or a real account).
 
 ## The commands
 
-`remote_cli.py` accepts exactly ten top-level subcommands; this table is the
+`remote_cli.py` accepts exactly eleven top-level subcommands; this table is the
 closed roster `skill-audit`'s `roster` move derives against, driving the CLI
 with a nonce it cannot accept and reading the accepted set out of its own
 refusal.
@@ -1515,6 +1515,7 @@ refusal.
 | `generate-job` | generate a forge-owned job folder at `<target>/tools/<service>/<job-name>/` |
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
 | `readiness` | state whether a job is ready for a full submission on a worker, from that worker's own latest rehearsal; reports only, issues no submission |
+| `preflight` | check a generated job locally before its first remote rehearsal, one `pass`/`warn`/`fail` row per check with its evidence and fix, including a local rehearsal of its smoke; exits non-zero on any `fail`, never submits |
 
 ## Refusal codes
 
@@ -1533,6 +1534,83 @@ can branch on it without parsing prose.
 | `CODE_BUNDLE_MISMATCH` | `submit`, the backend's push, the runner | the job folder's `code-bundle.tar.gz` is absent, does not hash to `codeBundle.sha256`, or (at `submit`) holds files that differ from the pin's; nothing is pushed or unpacked |
 | `CODE_BUNDLE_WITH_REPO_CREDENTIAL` | `generate-job` | `--code-bundle` and `--repo-credential` were both given; a bundled job never clones, so the credential would be ignored. Refused before anything is read or written |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
+
+## Before the first rehearsal
+
+Run `preflight` on every generated job before the operator is asked to
+authorize its first rehearsal, and again after any re-pin. It never submits;
+it reaches a service only through the existing read-only probes (the
+anonymous reachability probe `generate-job` already runs, the adapter's own
+interpreter and account probes) and reads no credential itself.
+
+```
+python3 scripts/remote_cli.py preflight --target <repo> \
+    --entrypoint <repo>/tools/<service>/<job-name>/runner.ipynb \
+    [--worker <id>]... [--expect-accelerator <name|sm_*>] \
+    [--timing <Results/timing.json>] [--stage poc|full] [--units N] \
+    [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
+    [--skip-rehearsal] [--keep-rehearsal <new dir>] [--repo-credential <token file>]
+```
+
+It prints one JSON object: `checks`, one row per check as
+`{check, status, evidence, fix}` (`status` is `pass`, `warn` or `fail`; an
+`account` row also carries `worker`, the rehearsal row `details` with its
+duration), and `summary` with the counts and `ok`. It exits 0 only when no
+row fails. Run it under the workspace env interpreter, the one `submit` uses.
+
+| Check | Fails (or warns) when | Fix it names |
+| --- | --- | --- |
+| `pin` | the job's clone paths moved since its pin (`staleness` not `fresh`) | commit, then `generate-job --regenerate` |
+| `diagrams` | an approval (`AGREED.md`, `Experimental_AGREED.md`) owes an experiment diagram that is not `validated`; `submit` would refuse `DIAGRAM_NOT_VALIDATED` | the dashboard's "Validar diagrama", or `diagram_cli.py validate` on the operator's explicit approval in the chat |
+| `interpreter` | the service's driver is not usable under the interpreter running this command | the workspace env interpreter, `<workspace>/.micromamba/envs/papersmith/bin/python`, when it exists |
+| `code-reachability` | the job carries no code bundle and the runner could not clone the pin anonymously (nor with `--repo-credential` on a service that carries one) | `--repo-credential` on a carrier; `generate-job --code-bundle --regenerate` on a service that ships bundles |
+| `inputs` | warns: a service that attaches inputs, a job declaring no `--input-dataset`, and a workspace `datasets/registry.json` naming a remote source | `generate-job --input-dataset <owner>/<slug> --regenerate` |
+| `local-rehearsal` | the job's smoke, run locally under runner conditions, raises, overruns `--local-timeout`, leaves no `shard.json`, or leaves one missing a `requiredEvidence` path | the target's smoke stamps (`remote_stamp.write_shard`, `@remote_stamp.stamped`); `--local-smoke-kwargs` for a cheaper local scale |
+| `account` | fails when the worker's account does not authenticate or is not signed in; warns when it has no passing rehearsal of its own at this pin | validate or sign in the account; `submit --smoke --worker <id>` once authorized |
+| `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given | regenerate with `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
+| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths; warns when unmeasured | more units, or `generate-job --carry-path` |
+
+The local rehearsal materializes the job's code with the runner's own
+functions in a fresh scratch directory outside the target: unpacked from
+`code-bundle.tar.gz` when the job carries one (so only `.git/HEAD`, never git
+history), sparse-cloned at the pin from the target otherwise. It runs the
+smoke block through the runner's own `invoke()` with `mode` `smoke`, under the
+target's `.venv` interpreter (`--interpreter` overrides it), with only `PATH`,
+`HOME`, the clone's `src` on `PYTHONPATH`, `FORGE_CLONE_ROOT`,
+`FORGE_CLONE_COMMIT` and what `invoke()` exports itself (`FORGE_RUN_MODE`,
+`FORGE_INPUT_DATASETS` with every declared input unattached,
+`FORGE_SESSION_DEADLINE`). The `shard.json` it leaves is judged by the same
+`shard_io.completeness()` `smoke record` uses. A failing rehearsal's scratch
+directory is kept and named; `--keep-rehearsal` keeps a passing one.
+
+Every rule below was learned from a remote round that a local check would
+have saved:
+
+1. Validate every approved experiment diagram before generating the jobs:
+   `submit --smoke` refuses `DIAGRAM_NOT_VALIDATED` only at launch.
+2. Run `remote_cli` under the workspace env interpreter. A system interpreter
+   without the pinned service driver refuses at `submit`.
+3. A private repository needs a way in: a repository credential on a service
+   that carries one, the code bundle on a service that ships bundles. A
+   bundled worker has only `.git/HEAD`.
+4. A job on a service whose non-interactive sessions cannot download a dataset
+   declares every public dataset it reads with `--input-dataset`; the target
+   still downloads when `FORGE_INPUT_DATASETS` maps it to null.
+5. The smoke writes `shard.json` into its working directory carrying every
+   `--smoke-required-evidence` path, including a smoke that only measures
+   timing.
+6. Read the commit with `git rev-parse HEAD`, falling back to
+   `FORGE_CLONE_COMMIT` when git cannot answer (a code-bundle worker); the
+   scaffold's `remote_stamp.py` does.
+7. Register each person's own account and take its credential in before any
+   rehearsal; every account needs its own rehearsal at the current pin.
+8. Name the accelerator the plan expects (`--expect-accelerator`) and generate
+   with `--accelerator-*` when it is not the service default.
+9. The workspace's `datasets/` folder is not in the target: a remote run
+   reaches its data through a declared input or a download the target checks
+   by sha256, never through a workspace path.
+10. Every fix after a rehearsal moves the pin, which means regenerated jobs and
+    re-minted consent tokens: fix what `preflight` reports first.
 
 ## Smoke — a readiness gate, evidence-derived
 

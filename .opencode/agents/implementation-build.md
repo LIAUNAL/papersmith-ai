@@ -104,6 +104,17 @@ null: the target reads the mounted directory when there is one and downloads
 the dataset only when the value is null. The details live in
 `skills/remote-execution/SKILL.md`, **Job inputs**.
 
+Before any rehearsal of a job -- its first, and the first after a re-pin --
+run `remote_cli preflight --target <repo> --entrypoint <job folder>/runner.ipynb`
+under the workspace env interpreter, with `--expect-accelerator` naming the
+plan's accelerator and one `--worker` per account the plan uses, and fix every
+`fail` row before a rehearsal is run or the operator is asked to authorize
+one. It never submits. Its local rehearsal runs the job's smoke from a scratch
+copy of the job's code, the way the worker materializes it, and checks the
+`shard.json` it leaves, which is where most remote rehearsals failed. The rules
+it encodes live in `skills/remote-execution/SKILL.md`, **Before the
+first rehearsal**.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which

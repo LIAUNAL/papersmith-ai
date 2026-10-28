@@ -865,11 +865,13 @@ date. Drift is Flow B's fourth step, not a reason to start over.
    `write_shard(summary, directory=None, *, device=None)` writes it only when
    `FORGE_RUN_MODE` is set (the runner exports it around the call it makes),
    into the working directory unless `directory` names another, carrying
-   `mode`, `evidence.commit` (the repository's `HEAD`), `evidence.sourcesDigest`
+   `mode`, `evidence.commit` (the repository's `HEAD`, or `FORGE_CLONE_COMMIT`
+   where git cannot answer: a code-bundle worker holds only `.git/HEAD`), `evidence.sourcesDigest`
    (the `report_digest.py` seal), `environment.device` (`{kind, name}`, from
    `device` or from `torch` when it is importable) and `runs` (the summary).
    Anywhere else it writes nothing and returns `None`. The target's smoke
-   callable calls it once its work is done; pair it with `generate-job
+   callable calls it once its work is done, or is decorated with `@stamped`,
+   the scaffold's smoke template, which stamps whatever the smoke returns; pair it with `generate-job
    --smoke-required-evidence evidence.commit --smoke-required-evidence
    environment.device.kind`, so the smoke records only when the stamp
    carries both. Like the seal, it proves nothing and owes no
@@ -1830,6 +1832,7 @@ belongs here is which reported state routes to which one:
 | `remaining` | A campaign whose session was cut, or that came back with only part of its units: it reports which declared units have no complete result yet, the only ones the next campaign sends; it asks no backend and records nothing | `--entrypoint`, `--target`, `--unit` | the `remote-execution` skill |
 | `smoke record` | `smokeReady: false` for a job that has rehearsed and whose verdict was never written down | `--from-artifact`, `--job-dir`, `--worker` | the `remote-execution` skill |
 | `readiness` | `smokeReady` itself: it is the function `probe` calls to compute that fact, and asking it directly is how you see the reason | `--job-dir`, `--worker` | the `remote-execution` skill |
+| `preflight` | A job folder exists and no rehearsal has been asked for yet, or the job was just re-pinned: it checks locally everything a first remote rehearsal used to find, and is run before the operator is asked to authorize one | `--entrypoint`, `--target` | the `remote-execution` skill |
 
 Column one is read by the suite against that CLI's own parser, so a subcommand
 added there fails the tests until this table says which state sends a reader to
@@ -3278,6 +3281,7 @@ with `smokeReady: false` sends you here, on the worker the campaign would use:
 
 | Step | Command | What it establishes |
 | --- | --- | --- |
+| Check it locally first | `remote_cli preflight` | everything a first remote rehearsal used to fail on is fixed: diagrams validated, the driver's interpreter, code reachability, declared inputs, the smoke run locally under runner conditions leaving a complete `shard.json`, each account, the accelerator, the session fit; every `fail` row is fixed before the rehearsal is run or offered |
 | Rehearse | `remote_cli submit --smoke` | the wire carries current on this worker, at this pinned commit |
 | Bring it back | `remote_cli fetch` | the shard the rehearsal wrote is on disk to be read |
 | Write the verdict down | `remote_cli smoke record` | the verdict is evidence-derived, never a human's assertion |

@@ -422,6 +422,56 @@ class ValidateTests(unittest.TestCase):
             self.run_validate(unreachable)
 
 
+class ValidateOneAccountTests(unittest.TestCase):
+    """`validate --account <username> --json` -- the read-only probe
+    `remote_cli preflight` runs per worker: it re-checks only the named
+    stored accounts, takes in nothing from the inbox and writes nothing."""
+
+    def _run(self, accounts: list[str], ok: set[str]) -> tuple[int, dict, list]:
+        store = {"version": 1, "accounts": [{"username": "diego", "key": "K1"},
+                                            {"username": "sofia", "key": "K2"}]}
+        checked: list[str] = []
+
+        def validate(username: str, key: str) -> None:
+            checked.append(username)
+            if username not in ok:
+                raise ACCOUNTS.CredentialError("Kaggle rejected it (HTTP 401)")
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("validate --account wrote or read the inbox")
+
+        buffer = io.StringIO()
+        with unittest.mock.patch.object(ACCOUNTS, "load_store", lambda: store), \
+                unittest.mock.patch.object(ACCOUNTS, "validate", validate), \
+                unittest.mock.patch.object(ACCOUNTS, "save_store", forbidden), \
+                unittest.mock.patch.object(ACCOUNTS, "inbox_files", forbidden), \
+                contextlib.redirect_stdout(buffer):
+            code = ACCOUNTS.cmd_validate(argparse.Namespace(
+                files=[], interactive=False, account=accounts, json=True))
+        return code, json.loads(buffer.getvalue()), checked
+
+    def test_only_the_named_account_is_checked_and_nothing_is_written(self) -> None:
+        code, payload, checked = self._run(["diego"], ok={"diego"})
+        self.assertEqual(code, 0)
+        self.assertEqual(checked, ["diego"])
+        self.assertEqual(payload, {"accounts": [{"username": "diego", "ok": True,
+                                                 "detail": "ok"}]})
+        self.assertNotIn("K1", json.dumps(payload))
+
+    def test_a_rejected_or_unstored_account_fails(self) -> None:
+        code, payload, _ = self._run(["sofia", "nobody"], ok=set())
+        self.assertEqual(code, 1)
+        rows = {row["username"]: row for row in payload["accounts"]}
+        self.assertFalse(rows["sofia"]["ok"])
+        self.assertIn("401", rows["sofia"]["detail"])
+        self.assertFalse(rows["nobody"]["ok"])
+        self.assertIn("not stored", rows["nobody"]["detail"])
+
+    def test_the_parser_accepts_account_and_json_on_validate(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"--account"', source)
+
+
 class DiscoverCommandTests(unittest.TestCase):
     def test_marks_which_found_accounts_are_already_stored(self) -> None:
         # The command reports over the store, which the parsing tests never
