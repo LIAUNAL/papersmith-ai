@@ -705,6 +705,27 @@ def cmd_fetch(client: "KernelsApiClient", submission_id: str, into: Path) -> dic
     return {"files": sorted(written), "status": status}
 
 
+# The workspace env interpreter, relative to the workspace root this file
+# ships inside (`<workspace>/skills/remote-execution/scripts/adapters/`):
+# the one the workspace setup installs the pinned SDK into, and the one
+# `remote_cli preflight`'s interpreter check recommends (remote-preflight F2).
+WORKSPACE_ENV_PYTHON = Path(".micromamba") / "envs" / "papersmith" / "bin" / "python"
+PINNED_SDK = "kagglesdk==0.1.37"
+
+
+def _sdk_remedy() -> str:
+    """The fix for an unusable SDK: run under the workspace env interpreter
+    when it exists and is not this one (it carries the pin), else install
+    the pin into the workspace env -- never `pip install --user` into
+    whichever interpreter happened to run this file."""
+    env_python = Path(__file__).resolve().parents[4] / WORKSPACE_ENV_PYTHON
+    if env_python.exists() and env_python.resolve() != Path(sys.executable).resolve():
+        return (f"run remote_cli under the workspace env interpreter, which carries the "
+                f"pinned SDK: `{env_python} skills/remote-execution/scripts/remote_cli.py ...`")
+    target = env_python if env_python.exists() else Path(sys.executable)
+    return f"install the pin into the workspace env: `{target} -m pip install {PINNED_SDK}`"
+
+
 def _print_result(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload))
     sys.stdout.write("\n")
@@ -719,10 +740,7 @@ def main(argv: list[str]) -> int:
         _print_result(
             {
                 "ok": False,
-                "error": (
-                    f"under {sys.executable}, {_UNUSABLE_SDK}; install it with "
-                    f"`{sys.executable} -m pip install --user kagglesdk==0.1.37`"
-                ),
+                "error": f"under {sys.executable}, {_UNUSABLE_SDK}; {_sdk_remedy()}",
             }
         )
         return EXIT_REFUSED

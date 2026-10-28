@@ -44,6 +44,39 @@ number is `0`, breaking changes can still arrive without a major bump.
 - The remote-execution skill gains **Before the first rehearsal**, the
   preflight and each lesson as a rule; the walk and build agents and both
   implementation skills run `preflight` before a rehearsal is run or offered.
+- `generate-job --dataset <slug>` (repeatable) declares a workspace dataset as
+  the job's input from `datasets/registry.json`: the published remote when it
+  is public, else the public dataset page its source names, recorded beside
+  the official preparation's sha256 values as `datasetChecks`, which the
+  runner exports as `FORGE_DATASET_CHECKS`. It uploads nothing: an
+  unpublished, private, unprepared or unlicensed dataset refuses
+  (`DATASET_NOT_PUBLISHED`, `DATASET_NOT_PUBLIC`, `DATASET_NOT_PREPARED`,
+  `DATASET_LICENSE_NOT_ALLOWED`) naming the `/datasets` verb that fixes it,
+  and one served by a host the service does not attach from refuses
+  `DATASET_HOST_NOT_ATTACHABLE` (the adapter's optional `INPUT_DATASETS_HOST`).
+- `remote_cli generate-jobs --target <repo> --product <Name>
+  [--from-schedule <schedule output>] [--dataset <slug>]...` generates every
+  remote step's job folder in one call from the product's `__steps__`: the
+  step's service (or the one a `schedule` output chose), its notebook or
+  callable, the clone paths the generator's own walk computes, a code bundle
+  when the pin is not anonymously reachable and the service carries bundles,
+  the target's pinned requirements minus the adapter's optional
+  `PROVIDED_REQUIREMENTS`, carry paths from the step's non-notebook
+  `produces`, and the `--dataset` inputs. It prints one row per job and the
+  single `preflight` command over all of them; `preflight --entrypoint` is now
+  repeatable (one entrypoint: the report is unchanged).
+
+### Fixed
+
+- A callable job's runner now exports `FORGE_CLONE_ROOT` and
+  `FORGE_CLONE_COMMIT` as a notebook job's does, so a callable smoke on a
+  code-bundle worker reads its commit.
+- The Kaggle driver's "kagglesdk is not importable" refusal names the
+  workspace env interpreter instead of suggesting `pip install --user` into
+  whichever interpreter ran it.
+- `preflight --workspace` now also decides which team registry and account
+  credentials the account check reads; a CLI run from another checkout
+  reported every registered account as "not a worker here".
 
 ## 0.36.0
 

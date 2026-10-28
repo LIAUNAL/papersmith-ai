@@ -908,6 +908,10 @@ class KaggleAdapter(ADAPTER.Adapter):
     # the kernel finds them mounted under this root.
     INPUT_DATASETS_ROOT = DATASET_INPUT_ROOT
 
+    # remote-preflight S2: the dataset host (the datasets skill's `hosts`
+    # module NAME) whose public datasets a push attaches.
+    INPUT_DATASETS_HOST = "kaggle"
+
     @classmethod
     def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
         """`KAGGLE_SESSION_LIMIT_SECONDS` for `machine_shape` -- the shape
@@ -939,8 +943,20 @@ class KaggleAdapter(ADAPTER.Adapter):
         fetch_timeout: float = KAGGLE_FETCH_TIMEOUT_SECONDS,
         driver_script: Path | str | None = None,
         team_registry: Path | str | None = None,
+        workspace: Path | str | None = None,
     ) -> None:
         self._credential_provider = self._normalize_credentials(credentials)
+        # `workspace` (remote-preflight F3): the workspace `preflight
+        # --workspace` names. Its team registry and its own copy of the
+        # accounts CLI -- whose saved credentials live beside that copy --
+        # are the ones read, so a CLI run from another checkout checks the
+        # accounts that workspace actually holds. Explicit paths still win.
+        if workspace is not None:
+            if team_registry is None:
+                team_registry = Path(workspace) / TEAM_REGISTRY_RELATIVE
+            if not accounts_cli:
+                accounts_cli = (Path(workspace) / "skills" / "kaggle-accounts" / "scripts"
+                                / "accounts_cli.py")
         # The registry's PATH, read lazily by `_team()`; `None` means the
         # module default, resolved at read time.
         self._team_registry = Path(team_registry) if team_registry is not None else None
@@ -1218,6 +1234,10 @@ class KaggleAdapter(ADAPTER.Adapter):
         row = next((r for r in rows if isinstance(r, dict) and r.get("username") == worker), {})
         if row.get("ok"):
             return {"ok": True, "evidence": f"{worker} authenticates against the service"}
+        if not rows and "--account" in (result.stderr or ""):
+            return {"ok": False, "evidence": f"{self._accounts_cli} predates the read-only "
+                    f"`validate --account`: {(result.stderr or '').strip()[-200:]}",
+                    "fix": "run `smith upgrade` in that workspace, then preflight again"}
         detail = row.get("detail") or (result.stderr or "").strip() or "no verdict"
         return {"ok": False, "evidence": f"{worker} does not authenticate: {detail}",
                 "fix": "replace its token with `/kaggle-accounts validate` (or remove it)"}

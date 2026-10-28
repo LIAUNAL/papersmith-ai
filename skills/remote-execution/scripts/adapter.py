@@ -244,6 +244,21 @@ class Adapter(ABC):
     # downloads the data itself.
     INPUT_DATASETS_ROOT: str | None = None
 
+    # Optional, and not an operation either (remote-preflight S2): the
+    # dataset host -- as the datasets skill's `hosts` package names it --
+    # whose public datasets this backend attaches. `generate-job --dataset`
+    # refuses `DATASET_HOST_NOT_ATTACHABLE` for a dataset another host
+    # serves. `None` (this default) means no host is named, so none is
+    # refused.
+    INPUT_DATASETS_HOST: str | None = None
+
+    # Optional, and not an operation either (remote-preflight S3): the
+    # distribution names this backend's worker image already provides.
+    # `generate-jobs` leaves them out of the requirements it derives from
+    # the target's pins. Empty (this default) means nothing is assumed
+    # provided, so every pin is installed.
+    PROVIDED_REQUIREMENTS: tuple[str, ...] = ()
+
     @abstractmethod
     def workers(self) -> list[Worker]:
         """Report the workers this backend currently exposes, and each cap."""

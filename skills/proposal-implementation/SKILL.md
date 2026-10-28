@@ -1832,6 +1832,7 @@ belongs here is which reported state routes to which one:
 | `remaining` | A campaign whose session was cut, or that came back with only part of its units: it reports which declared units have no complete result yet, the only ones the next campaign sends; it asks no backend and records nothing | `--entrypoint`, `--target`, `--unit` | the `remote-execution` skill |
 | `smoke record` | `smokeReady: false` for a job that has rehearsed and whose verdict was never written down | `--from-artifact`, `--job-dir`, `--worker` | the `remote-execution` skill |
 | `readiness` | `smokeReady` itself: it is the function `probe` calls to compute that fact, and asking it directly is how you see the reason | `--job-dir`, `--worker` | the `remote-execution` skill |
+| `generate-jobs` | The product declares several remote steps and none (or a stale set) has a job folder: it generates every remote step's job in one call from `__steps__` (and a `schedule` output) and prints the one `preflight` to run next | `--product`, `--target` | the `remote-execution` skill |
 | `preflight` | A job folder exists and no rehearsal has been asked for yet, or the job was just re-pinned: it checks locally everything a first remote rehearsal used to find, and is run before the operator is asked to authorize one | `--entrypoint`, `--target` | the `remote-execution` skill |
 
 Column one is read by the suite against that CLI's own parser, so a subcommand

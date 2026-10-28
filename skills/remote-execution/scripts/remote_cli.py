@@ -92,6 +92,10 @@ JOBFOLDER = _load_sibling("remote_execution_jobfolder", "jobfolder.py")
 # uses — never a second, independently written completeness check here.
 SHARD_IO = _load_sibling("remote_execution_shard_io", "shard_io.py")
 
+# What `generate-jobs` and `generate-job --dataset` derive from the target's
+# and the workspace's own declarations (remote-preflight S2, S3).
+JOB_PLAN = _load_sibling("remote_execution_job_plan", "job_plan.py")
+
 
 def _load_source_digest() -> Callable[[Path, str], str]:
     """Path-import `source_digest()` from proposal-implementation's digest kit.
@@ -3142,6 +3146,7 @@ def _construct_adapter(
     adapter_cls: type["ADAPTER.Adapter"],
     credentials_provider: Callable[[str], "ADAPTER.CredentialHandle"],
     repo_credential_path: str | Path | None = None,
+    workspace: str | Path | None = None,
 ) -> "ADAPTER.Adapter":
     """Construct a registered adapter, handing it a credential provider only
     when its own constructor is written to accept one — and, since S3, the
@@ -3180,6 +3185,12 @@ def _construct_adapter(
         "repo_credential_path" in parameters or accepts_var_keyword
     ):
         kwargs["repo_credential_path"] = repo_credential_path
+    # remote-preflight F3: the workspace whose team registry and account
+    # store the adapter reads, passed under the same introspection and only
+    # when a caller names one (`preflight --workspace`); omitted, every
+    # adapter keeps its own default, the workspace it ships inside.
+    if workspace is not None and ("workspace" in parameters or accepts_var_keyword):
+        kwargs["workspace"] = Path(workspace)
     return adapter_cls(**kwargs)
 
 
@@ -3694,7 +3705,9 @@ def cmd_preflight(
     _load_backend_module(service)
     try:
         adapter_cls = ADAPTER.resolve(service)
-        adapter = _construct_adapter(adapter_cls, _no_credentials)
+        adapter = _construct_adapter(
+            adapter_cls, _no_credentials,
+            workspace=workspace_root if workspace is not None else None)
     except KeyError as exc:
         rows.append(_preflight_row("service", "fail", f"no backend is registered as "
                                    f"{service!r}: {exc}", "run `smith upgrade`"))
@@ -3728,6 +3741,185 @@ def cmd_preflight(
         "checks": rows,
         "summary": {**counts, "ok": counts["fail"] == 0},
     }
+
+
+# ---------------------------------------------------------------------------
+# generate-jobs: every remote step's job, from what the target declares
+# ---------------------------------------------------------------------------
+
+def _workspace_python(workspace: Path) -> Path:
+    env_python = workspace / WORKSPACE_ENV_PYTHON
+    return env_python if env_python.exists() else Path(sys.executable)
+
+
+def cmd_generate_jobs(
+    *,
+    target: str | Path,
+    product: str,
+    from_schedule: str | Path | None = None,
+    repo_url: str | None = None,
+    repo_ref: str | None = None,
+    repo_credential: str | Path | None = None,
+    smoke_module: str | None = None,
+    smoke_function: str | None = None,
+    smoke_kwargs: Mapping | None = None,
+    smoke_required_evidence: Sequence[str] | None = None,
+    regenerate: bool = False,
+    datasets: Sequence[str] | None = None,
+    workspace: str | Path | None = None,
+) -> dict:
+    """One `generate-job` per remote step the product's `__steps__`
+    declares (remote-preflight S3), each derived rather than typed:
+
+    - service: the step's `service`, or the one(s) a `schedule` output chose
+      for it (one job per chosen service);
+    - job folder: the step's `job`; run: the step's notebook among its
+      `produces` (`Notebooks/...ipynb`), else its `module`/`function`;
+      clone paths: what the generator's own import/read walk computes for
+      those entries (plus the notebook itself);
+    - code bundle: when the pin is not anonymously reachable and the
+      service carries bundles (`CODE_BUNDLE_MAX_BYTES`);
+    - environment requirements: the target's pinned requirements minus the
+      adapter's `PROVIDED_REQUIREMENTS`;
+    - carry paths: the step's non-notebook `produces` roots;
+    - inputs: `--dataset` slugs, resolved as `generate-job --dataset` does.
+
+    Every job is attempted; one refusal is that job's row, never the end of
+    the others. Returns `{jobs, skipped, summary, next}` where `next` is the
+    one `preflight` command over every generated job.
+    """
+    resolved = JOBFOLDER.resolve_target(target)
+    steps = JOB_PLAN.declared_steps(resolved, product)
+    remote, skipped = JOB_PLAN.remote_steps(steps)
+    if not remote:
+        raise RemoteCLIError(
+            f"{product} declares no remote step in src/{product.replace('-', '_')}/__init__.py "
+            "(or config.py) __steps__: a step needs placement 'remote', a job and a service")
+    chosen = JOB_PLAN.schedule_services(Path(from_schedule)) if from_schedule else {}
+    unknown = sorted(set(chosen) - {name for name, _ in remote})
+    if unknown:
+        raise RemoteCLIError(
+            f"the schedule names {', '.join(unknown)}, which {product}'s __steps__ does not "
+            "declare as a remote step; schedule step ids must be __steps__ names")
+    origin, branch = JOB_PLAN.target_remote(resolved)
+    url, ref = repo_url or origin, repo_ref or branch
+    if not url or not ref:
+        raise RemoteCLIError("the target has no origin remote or current branch: pass "
+                             "--repo-url and --repo-ref")
+    commit = JOBFOLDER._resolve_pin(resolved, None)
+    pins = JOB_PLAN.pinned_requirements(resolved)
+    workspace_root = Path(workspace).resolve() if workspace is not None else DEFAULT_WORKSPACE
+    reachable: bool | None = None
+    rows: list[dict] = []
+    for step, entry in remote:
+        services = chosen.get(step) or ([entry["service"]] if isinstance(entry.get("service"), str)
+                                        and entry["service"].strip() else [])
+        job = entry.get("job") if isinstance(entry.get("job"), str) else None
+        for service in services or [None]:
+            row = {"step": step, "service": service, "job": job}
+            rows.append(row)
+            if not service or not job:
+                row.update(status="refused", error="the step declares no "
+                           + ("service" if not service else "job"))
+                continue
+            _load_backend_module(service)
+            try:
+                adapter_cls = ADAPTER.resolve(service)
+            except KeyError:
+                adapter_cls = None
+            bundle = False
+            if adapter_cls is not None and getattr(adapter_cls, "CODE_BUNDLE_MAX_BYTES", None):
+                if reachable is None:
+                    try:
+                        JOBFOLDER._verify_commit_reachable(commit, url, ref,
+                                                           decision="generate-jobs",
+                                                           target=resolved)
+                        reachable = True
+                    except (JOBFOLDER.JobFolderError, OSError):
+                        reachable = False
+                bundle = not reachable
+            credential = (Path(repo_credential) if repo_credential is not None and not bundle
+                          and adapter_cls is not None and _repo_credential_carrier(adapter_cls)
+                          else None)
+            notebook = JOB_PLAN.step_notebook(entry)
+            module, function = entry.get("module"), entry.get("function")
+            requirements = JOB_PLAN.without_provided(
+                pins, getattr(adapter_cls, "PROVIDED_REQUIREMENTS", ()) if adapter_cls else ())
+            carry = JOB_PLAN.carry_paths(entry)
+            entry_notebook = f"{product}/{notebook}" if notebook else None
+            try:
+                inputs, checks = _dataset_plan(adapter_cls, workspace, datasets, None)
+                # The clone paths the generator's own import/read walk
+                # computes for this step's entries: exactly what its
+                # `computedNotDeclared` check would otherwise refuse.
+                walk = JOBFOLDER.resolve_clone_paths(
+                    resolved, [m for m in ((None if notebook else module), smoke_module)
+                               if isinstance(m, str) and m],
+                    ["src"], [entry_notebook] if entry_notebook else [])
+                clone_paths = sorted(set(walk["computed"])
+                                     | set(walk["computedReadsNotDeclared"])) or ["src"]
+                destination = JOBFOLDER.generate_job(
+                    target=resolved, service=service, job_name=job, product=product,
+                    commit=commit, repo_url=url, repo_ref=ref,
+                    repo_credential_path=credential, clone_paths=clone_paths,
+                    run_module=None if notebook else module,
+                    run_function=None if notebook else function,
+                    run_notebook=entry_notebook,
+                    smoke_module=smoke_module, smoke_function=smoke_function,
+                    smoke_kwargs=smoke_kwargs, smoke_required_evidence=smoke_required_evidence,
+                    regenerate=regenerate, environment_requirements=requirements or None,
+                    carry_paths=carry or None, code_bundle=bundle,
+                    input_datasets=inputs, dataset_checks=checks)
+            except (JOBFOLDER.JobFolderError, JOB_PLAN.JobPlanError, ADAPTER.AdapterError,
+                    KeyError) as exc:
+                row.update(status="refused", error=str(exc))
+                continue
+            row.update(status="generated", jobFolder=str(destination), codeBundle=bundle,
+                       inputDatasets=list(inputs or []), carryPaths=carry,
+                       environmentRequirements=requirements)
+    generated = [row for row in rows if row["status"] == "generated"]
+    command = None
+    if generated:
+        command = (f"{_workspace_python(workspace_root)} {Path(__file__).resolve()} preflight "
+                   f"--target {resolved}"
+                   + (f" --workspace {workspace_root}" if workspace is not None else "")
+                   + "".join(f" --entrypoint {Path(row['jobFolder']) / 'runner.ipynb'}"
+                             for row in generated))
+    return {"target": str(resolved), "product": product, "commit": commit, "jobs": rows,
+            "skipped": skipped,
+            "summary": {"generated": len(generated), "refused": len(rows) - len(generated)},
+            "next": command}
+
+
+def _add_dataset_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--dataset", dest="datasets", action="append", default=None, metavar="SLUG",
+        help="repeatable: a workspace dataset (datasets/registry.json) the job reads. Its "
+        "public ref -- the published remote when public, else the public dataset page its "
+        "source names -- is declared as an input dataset, and the official preparation's "
+        "sha256 values are recorded as datasetChecks (the runner exports them as "
+        "FORGE_DATASET_CHECKS). Nothing is uploaded: an unpublished or private dataset "
+        "refuses (DATASET_NOT_PUBLISHED / DATASET_NOT_PUBLIC) naming `/datasets publish` "
+        "with the operator's consent")
+    command.add_argument(
+        "--workspace", type=Path, default=None,
+        help="override: the workspace whose datasets/registry.json --dataset reads "
+        "(default: the workspace this skill is installed in)")
+
+
+def _dataset_plan(adapter_cls, workspace: Path | None,
+                  slugs: Sequence[str] | None,
+                  explicit: Sequence[str] | None) -> tuple[list[str] | None, dict | None]:
+    """`(inputDatasets, datasetChecks)` for `--dataset` beside any explicit
+    `--input-dataset` refs (kept first, in their order)."""
+    if not slugs:
+        return (list(explicit) if explicit else None), None
+    root = Path(workspace).resolve() if workspace is not None else DEFAULT_WORKSPACE
+    host = getattr(adapter_cls, "INPUT_DATASETS_HOST", None) if adapter_cls else None
+    refs, checks = JOB_PLAN.dataset_inputs(root, slugs, host)
+    merged = list(explicit or [])
+    merged += [ref for ref in refs if ref not in merged]
+    return merged, checks
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -4135,6 +4327,41 @@ def _build_parser() -> argparse.ArgumentParser:
         "otherwise), and a bundle over that limit refuses "
         "CODE_BUNDLE_TOO_LARGE. Omitted, the job clones as before.",
     )
+    _add_dataset_arguments(generate_job)
+
+    generate_jobs = subparsers.add_parser(
+        "generate-jobs",
+        help="generate every remote step's job folder in one call, from the product's "
+        "declared __steps__ (and a `schedule` output), then name the one preflight to run",
+    )
+    generate_jobs.add_argument("--target", required=True, type=Path)
+    generate_jobs.add_argument(
+        "--product", required=True,
+        help="the product whose src/<Package>/__init__.py (or config.py) declares __steps__; "
+        "every step with placement 'remote' gets a job at tools/<service>/<job>/")
+    generate_jobs.add_argument(
+        "--from-schedule", dest="from_schedule", type=Path, default=None,
+        help="a remote-parallelism `schedule` output: a step it names runs on the service(s) "
+        "it chose (one job per service) instead of the step's declared service")
+    generate_jobs.add_argument(
+        "--repo-url", default=None,
+        help="the remote the runner clones (default: the target's origin)")
+    generate_jobs.add_argument(
+        "--repo-ref", default=None, help="the branch (default: the target's current branch)")
+    generate_jobs.add_argument(
+        "--repo-credential", dest="repo_credential", type=Path, default=None,
+        help="as for generate-job: a token file, used only for services declaring "
+        "REPO_CREDENTIAL_CARRIER")
+    generate_jobs.add_argument("--smoke-module", default=None)
+    generate_jobs.add_argument("--smoke-function", default=None)
+    generate_jobs.add_argument("--smoke-kwargs", default=None, help="a JSON object")
+    generate_jobs.add_argument(
+        "--smoke-required-evidence", dest="smoke_required_evidence", action="append",
+        default=[], help="repeatable, as for generate-job; applied to every job")
+    generate_jobs.add_argument(
+        "--regenerate", action="store_true",
+        help="replace existing job folders atomically instead of refusing")
+    _add_dataset_arguments(generate_jobs)
 
     smoke = subparsers.add_parser(
         "smoke", help="smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict"
@@ -4174,8 +4401,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     preflight.add_argument("--target", required=True, type=Path)
     preflight.add_argument(
-        "--entrypoint", required=True, type=Path,
-        help="the job folder's runner.ipynb (<target>/tools/<service>/<job-name>/runner.ipynb)",
+        "--entrypoint", dest="entrypoints", required=True, type=Path, action="append",
+        help="the job folder's runner.ipynb (<target>/tools/<service>/<job-name>/runner.ipynb). "
+        "Repeatable: with more than one, the report is {jobs: [one report per job], summary}",
     )
     preflight.add_argument(
         "--worker", dest="workers", action="append", default=None,
@@ -4609,6 +4837,15 @@ def main(argv: list[str] | None = None) -> int:
             if not _repo_credential_carrier(adapter_cls):
                 return _refused(_uncarried_repo_credential(args.service))
         try:
+            try:
+                dataset_cls = ADAPTER.resolve(args.service) if args.datasets else None
+            except KeyError:
+                dataset_cls = None
+            input_datasets, dataset_checks = _dataset_plan(
+                dataset_cls, args.workspace, args.datasets, args.input_datasets)
+        except JOB_PLAN.JobPlanError as exc:
+            return _refused(exc)
+        try:
             destination = JOBFOLDER.generate_job(
                 target=args.target,
                 service=args.service,
@@ -4639,7 +4876,8 @@ def main(argv: list[str] | None = None) -> int:
                 local_budget_seconds=args.local_budget_seconds,
                 carry_paths=args.carry_paths,
                 code_bundle=args.code_bundle,
-                input_datasets=args.input_datasets,
+                input_datasets=input_datasets,
+                dataset_checks=dataset_checks,
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)
@@ -4672,6 +4910,9 @@ def main(argv: list[str] | None = None) -> int:
                        if (warnings := JOBFOLDER.smoke_warnings(job_folder.run_config)) else {}),
                     **({"codeBundle": dict(job_folder.run_config["codeBundle"])}
                        if "codeBundle" in job_folder.run_config else {}),
+                    **({"inputDatasets": list(job_folder.run_config["inputDatasets"]),
+                        "datasetChecks": dict(job_folder.run_config["datasetChecks"])}
+                       if args.datasets else {}),
                 },
                 sort_keys=True,
                 # `default=str`: `staleness` is the exact sub-dict `status`
@@ -4714,23 +4955,53 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return 1
 
+    if args.command == "generate-jobs":
+        try:
+            smoke_kwargs = json.loads(args.smoke_kwargs) if args.smoke_kwargs else None
+            result = cmd_generate_jobs(
+                target=args.target, product=args.product, from_schedule=args.from_schedule,
+                repo_url=args.repo_url, repo_ref=args.repo_ref,
+                repo_credential=args.repo_credential, smoke_module=args.smoke_module,
+                smoke_function=args.smoke_function, smoke_kwargs=smoke_kwargs,
+                smoke_required_evidence=args.smoke_required_evidence or None,
+                regenerate=args.regenerate, datasets=args.datasets, workspace=args.workspace)
+        except json.JSONDecodeError as exc:
+            return _refused(f"--smoke-kwargs is not JSON: {exc}")
+        except (RemoteCLIError, JOB_PLAN.JobPlanError, JOBFOLDER.JobFolderError) as exc:
+            return _refused(exc)
+        print(json.dumps(result, sort_keys=True, default=str))
+        return 0 if result["summary"]["refused"] == 0 else 1
+
     if args.command == "preflight":
         try:
             smoke_kwargs = (json.loads(args.local_smoke_kwargs)
                             if args.local_smoke_kwargs is not None else None)
             if smoke_kwargs is not None and not isinstance(smoke_kwargs, dict):
                 raise RemoteCLIError("--local-smoke-kwargs must be a JSON object")
-            result = cmd_preflight(
-                target=args.target, entrypoint=args.entrypoint, workers=args.workers,
+            reports = [cmd_preflight(
+                target=args.target, entrypoint=entrypoint, workers=args.workers,
                 workspace=args.workspace, interpreter=args.interpreter,
                 expect_accelerator=args.expect_accelerator, timing=args.timing,
                 stage=args.stage, units=args.units, local_smoke_kwargs=smoke_kwargs,
                 local_timeout=args.local_timeout, skip_rehearsal=args.skip_rehearsal,
-                keep_rehearsal=args.keep_rehearsal, repo_credential=args.repo_credential)
+                keep_rehearsal=(args.keep_rehearsal if len(args.entrypoints) == 1
+                                or args.keep_rehearsal is None
+                                else args.keep_rehearsal / f"job-{index}"),
+                repo_credential=args.repo_credential)
+                for index, entrypoint in enumerate(args.entrypoints)]
         except json.JSONDecodeError as exc:
             return _refused(f"--local-smoke-kwargs is not JSON: {exc}")
         except (RemoteCLIError, JOBFOLDER.JobFolderError) as exc:
             return _refused(exc)
+        if len(reports) == 1:
+            result = reports[0]
+        else:
+            # One report per job, and one verdict over all of them: the
+            # `generate-jobs` follow-up is a single command (S3).
+            counts = {status: sum(r["summary"][status] for r in reports)
+                      for status in ("pass", "warn", "fail")}
+            result = {"jobs": reports,
+                      "summary": {**counts, "ok": all(r["summary"]["ok"] for r in reports)}}
         # The report is data on stdout either way; the exit status is the
         # verdict: 0 only when no row fails.
         print(json.dumps(result, sort_keys=True, default=str))

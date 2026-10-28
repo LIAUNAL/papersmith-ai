@@ -151,6 +151,15 @@ A notebook attaches the dataset as an input and finds it under
 `/kaggle/input/`; the exact sub-path can vary, so discover it with
 `os.walk('/kaggle/input')` rather than hard-coding it.
 
+A remote job declares a registry dataset as its input with `remote_cli
+generate-job --dataset <slug>` (or `generate-jobs --dataset <slug>`), which
+reads this registry through `job_input()` in `scripts/datasets_cli.py`: the
+published remote when it is public, else the public dataset page the source
+URL names on a host whose module declares `ref_from_url`, with the
+preparation's sha256 values recorded for the target to check. It uploads
+nothing; an unpublished or private dataset is refused naming `publish` with
+the operator's consent.
+
 ## Delegation
 
 | Stretch | Delegated to |

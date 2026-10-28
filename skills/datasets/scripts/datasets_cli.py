@@ -705,6 +705,84 @@ def cmd_prepare(args, root: Path, **_inject) -> dict:
     return result
 
 
+# ---------------------------------------------------------------- job input
+#: Why a dataset cannot be a remote job's declared input, as the codes
+#: `remote_cli generate-job --dataset` refuses with. Not this CLI's own
+#: refusal codes: no verb here refuses with them.
+JOB_INPUT_REFUSALS = ("DATASET_UNKNOWN", "DATASET_LICENSE_NOT_ALLOWED", "DATASET_NOT_PREPARED",
+                      "DATASET_NOT_PUBLIC", "DATASET_NOT_PUBLISHED")
+
+
+def job_input(root: Path, slug: str) -> dict:
+    """What a remote job declares to read ``slug`` (remote-preflight S2):
+    ``{"slug", "ref", "host", "source", "check"}``, or a :class:`Refusal`
+    whose code is one of :data:`JOB_INPUT_REFUSALS`. Reads the registry and
+    the preparation only; uploads nothing and asks no host anything.
+
+    The ref is the published remote when it is public (it carries the
+    official preparation), else the public dataset page the source URL
+    names on a host that declares ``ref_from_url``. A private remote or a
+    source no host recognizes refuses with the fix: publish with consent.
+    ``check`` holds the preparation's sha256 values -- the data file's (the
+    one ``prepare`` split) and ``splits.json``'s -- so the target can verify
+    what it reads."""
+    registry = load_registry(root)
+    try:
+        entry = find(registry, slug)
+    except Refusal as exc:
+        raise Refusal("DATASET_UNKNOWN", exc.message) from None
+    decision = (entry.get("license") or {}).get("decision")
+    if decision not in ("allowed", "overridden"):
+        raise Refusal("DATASET_LICENSE_NOT_ALLOWED",
+                      f"{slug}'s license decision is {decision or 'missing'}: run "
+                      f"`/datasets license --slug {slug} ...` before any job reads it")
+    preparation = entry.get("preparation") or {}
+    if not preparation.get("sha256"):
+        raise Refusal("DATASET_NOT_PREPARED",
+                      f"{slug} has no official preparation: run `/datasets prepare --slug {slug} "
+                      "--file <data> --label <column> --group <subject column>` first")
+    remote = entry.get("remote") or {}
+    source = entry.get("source") or {}
+    found = None
+    if remote.get("ref") and remote.get("visibility") == "public":
+        published = hosts.publisher()
+        found = (published[0] if published else None, remote["ref"], "published")
+    elif source.get("kind") not in (None, "", "synthetic") and source.get("url"):
+        parsed = hosts.ref_from_url(source["url"])
+        if parsed:
+            found = (parsed[0], parsed[1], "origin")
+    if found is None:
+        publish = (f"`/datasets publish --slug {slug} --owner <account> --public --consent {slug} "
+                   f"--consent-public {slug}`, typed by the operator")
+        if remote.get("ref"):
+            raise Refusal("DATASET_NOT_PUBLIC",
+                          f"{slug} is published as {remote['ref']} but "
+                          f"{remote.get('visibility') or 'not public'}, and its source names no "
+                          "public dataset page a worker can attach: make it public on the "
+                          "host's settings page (publish never changes visibility), or "
+                          "publish a public copy with the operator's consent: " + publish)
+        raise Refusal("DATASET_NOT_PUBLISHED",
+                      f"{slug} is not published and its source "
+                      f"({source.get('url') or source.get('kind') or 'none'}) names no public "
+                      "dataset page a worker can attach. Publish it with the operator's "
+                      "consent: " + publish + "; nothing is uploaded without it")
+    host, ref, origin = found
+    splits = root / preparation["splits"] if preparation.get("splits") else None
+    prepared_file = (entry.get("files") or [""])[0]
+    if splits is not None and splits.is_file():
+        try:
+            prepared_file = json.loads(splits.read_text(encoding="utf-8")).get("file") or prepared_file
+        except (OSError, ValueError, AttributeError):
+            pass
+    check = {"slug": entry["slug"], "source": origin,
+             "preparationVersion": preparation.get("version"),
+             "file": Path(prepared_file).name or None,
+             "sha256": preparation["sha256"]}
+    if splits is not None and splits.is_file():
+        check["splitsSha256"] = sha256(splits)
+    return {"slug": entry["slug"], "ref": ref, "host": host, "source": origin, "check": check}
+
+
 # ------------------------------------------------------------------- publish
 def default_runner(argv: list[str]) -> tuple[int, str, str]:
     completed = subprocess.run(argv, capture_output=True, text=True, check=False)

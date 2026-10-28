@@ -633,11 +633,17 @@ class ColabAdapter(ADAPTER.Adapter):
         assets_dir: Path | None = None,
         repo_credential_path: str | Path | None = None,
         team_registry: str | Path | None = None,
+        workspace: str | Path | None = None,
     ) -> None:
         self._colab_executable = colab_executable
         # The registry's PATH; read lazily (and once) by `_team()`, so a
         # constructor never fails over a file no operation has needed yet.
         # `None` means the module default, resolved at read time.
+        # `workspace` (remote-preflight F3): the workspace `preflight
+        # --workspace` names, whose team registry is the one read; an
+        # explicit `team_registry` still wins.
+        if team_registry is None and workspace is not None:
+            team_registry = Path(workspace) / TEAM_REGISTRY_RELATIVE
         self._team_registry = Path(team_registry) if team_registry is not None else None
         self._team_cache: tuple[TeamAccount, ...] | None = None
         self._team_loaded = False

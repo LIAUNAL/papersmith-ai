@@ -1,6 +1,6 @@
 ---
 name: remote-execution
-description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`, `preflight`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
+description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`, `preflight`, `generate-jobs`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
 ---
 
 # Remote Execution
@@ -1055,6 +1055,11 @@ executable — no test in this suite reaches the network or a real account).
     `FORGE_CLONE_COMMIT` (the pinned commit). The names are forge-owned
     and deliberately generic — this is the contract between a runner and
     the notebook it starts, never a name borrowed from one repository.
+    A CALLABLE job is handed the same two names (remote-preflight F1),
+    applied to the runner's own environment around the call and restored
+    after it, whenever its run-config carries the pin, so a callable smoke
+    on a code-bundle worker reads its commit from `FORGE_CLONE_COMMIT`
+    exactly as a notebook does.
     `assets/notebook_repo_root.py` is the reading side: the FIRST code
     cell of every notebook a job may run, owned here and copied byte for
     byte into `proposal-implementation`'s kit, where a forge test binds
@@ -1498,7 +1503,7 @@ executable — no test in this suite reaches the network or a real account).
 
 ## The commands
 
-`remote_cli.py` accepts exactly eleven top-level subcommands; this table is the
+`remote_cli.py` accepts exactly twelve top-level subcommands; this table is the
 closed roster `skill-audit`'s `roster` move derives against, driving the CLI
 with a nonce it cannot accept and reading the accepted set out of its own
 refusal.
@@ -1513,6 +1518,7 @@ refusal.
 | `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
 | `reconcile` | compare the ledger against the adapter's `list_active()` in both directions |
 | `generate-job` | generate a forge-owned job folder at `<target>/tools/<service>/<job-name>/` |
+| `generate-jobs` | generate every remote step's job folder in one call from the product's declared `__steps__` (and a `schedule` output), deriving service, run, clone paths, code bundle, requirements, carry paths and `--dataset` inputs; prints one row per job and the single `preflight` command to run next |
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
 | `readiness` | state whether a job is ready for a full submission on a worker, from that worker's own latest rehearsal; reports only, issues no submission |
 | `preflight` | check a generated job locally before its first remote rehearsal, one `pass`/`warn`/`fail` row per check with its evidence and fix, including a local rehearsal of its smoke; exits non-zero on any `fail`, never submits |
@@ -1533,6 +1539,12 @@ can branch on it without parsing prose.
 | `CODE_BUNDLE_UNSAFE_ENTRY` | `generate-job --code-bundle`, the runner | an archive entry is absolute, carries `..`, is a link or special file, or lies outside the declared clone paths |
 | `CODE_BUNDLE_MISMATCH` | `submit`, the backend's push, the runner | the job folder's `code-bundle.tar.gz` is absent, does not hash to `codeBundle.sha256`, or (at `submit`) holds files that differ from the pin's; nothing is pushed or unpacked |
 | `CODE_BUNDLE_WITH_REPO_CREDENTIAL` | `generate-job` | `--code-bundle` and `--repo-credential` were both given; a bundled job never clones, so the credential would be ignored. Refused before anything is read or written |
+| `DATASET_UNKNOWN` | `generate-job --dataset`, `generate-jobs --dataset` | the slug is not in the workspace's `datasets/registry.json` |
+| `DATASET_LICENSE_NOT_ALLOWED` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset's license decision is missing or refused; run `/datasets license` first |
+| `DATASET_NOT_PREPARED` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset has no official preparation (`/datasets prepare`), so there is no sha256 to record |
+| `DATASET_NOT_PUBLIC` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset is published privately and its source names no public dataset page; the fix names `/datasets publish ... --public` with the operator's consent. Nothing is uploaded |
+| `DATASET_NOT_PUBLISHED` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset is not published and its source names no public dataset page a worker can attach; the fix names `/datasets publish` with the operator's consent. Nothing is uploaded |
+| `DATASET_HOST_NOT_ATTACHABLE` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset resolves to a host other than the one the service's adapter attaches from (`INPUT_DATASETS_HOST`) |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Before the first rehearsal
@@ -1551,6 +1563,14 @@ python3 scripts/remote_cli.py preflight --target <repo> \
     [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
     [--skip-rehearsal] [--keep-rehearsal <new dir>] [--repo-credential <token file>]
 ```
+
+`--entrypoint` is repeatable: given more than one (the command
+`generate-jobs` prints), it prints `{jobs: [one report per job], summary}`
+with the summed counts and one `ok`; given one, the report below, unchanged.
+`--workspace` names the workspace whose env interpreter, dataset registry,
+team registry and account credentials are checked (default: the workspace
+this skill is installed in), so a CLI run from another checkout checks the
+accounts that workspace actually holds.
 
 It prints one JSON object: `checks`, one row per check as
 `{check, status, evidence, fix}` (`status` is `pass`, `warn` or `fail`; an
@@ -1589,7 +1609,9 @@ have saved:
 1. Validate every approved experiment diagram before generating the jobs:
    `submit --smoke` refuses `DIAGRAM_NOT_VALIDATED` only at launch.
 2. Run `remote_cli` under the workspace env interpreter. A system interpreter
-   without the pinned service driver refuses at `submit`.
+   without the pinned service driver refuses at `submit`, and the driver's
+   refusal names that interpreter (never a `pip install --user` into
+   whichever one ran it).
 3. A private repository needs a way in: a repository credential on a service
    that carries one, the code bundle on a service that ships bundles. A
    bundled worker has only `.git/HEAD`.
@@ -1608,7 +1630,12 @@ have saved:
    with `--accelerator-*` when it is not the service default.
 9. The workspace's `datasets/` folder is not in the target: a remote run
    reaches its data through a declared input or a download the target checks
-   by sha256, never through a workspace path.
+   by sha256, never through a workspace path. `generate-job --dataset <slug>`
+   declares it from the registry and records the preparation's sha256 values
+   (`FORGE_DATASET_CHECKS`).
+11. Several remote steps: `generate-jobs` writes every job in one call (code
+    bundle, requirements, carry paths and inputs derived), then run the one
+    `preflight` it prints.
 10. Every fix after a rehearsal moves the pin, which means regenerated jobs and
     re-minted consent tokens: fix what `preflight` reports first.
 
@@ -2161,7 +2188,70 @@ pending, no `carryProtected` key is written and the job is byte-identical
 to before; when something is, that key is the only addition. The legacy
 shape (no job folder) is unchanged.
 
+## Every job at once
+
+`generate-jobs` generates one job folder per remote step a product declares,
+in one call, deriving each from what the target and the workspace already say
+(remote-preflight S3). The single `generate-job` is unchanged.
+
+```
+python3 scripts/remote_cli.py generate-jobs --target <repo> --product <Name> \
+    [--from-schedule <schedule output.json>] [--dataset <slug>]... \
+    [--smoke-module M --smoke-function F] [--smoke-kwargs '<json>'] \
+    [--smoke-required-evidence <path>]... [--repo-url URL] [--repo-ref REF] \
+    [--repo-credential <token file>] [--regenerate] [--workspace <dir>]
+```
+
+- **Steps**: every `__steps__` entry (`src/<Package>/__init__.py`, else
+  `config.py`, read with `ast`) with `placement: "remote"`; other steps are
+  listed under `skipped`.
+- **Service and job folder**: the step's `service` and `job`. With
+  `--from-schedule` (a remote-parallelism `schedule` OUTPUT), a step it names
+  runs on the service(s) it chose, one job per service; a schedule naming an
+  undeclared step refuses, and the schedule's input plan is refused naming
+  `schedule --plan`.
+- **Run and clone paths**: the step's notebook among its `produces`
+  (`Notebooks/...ipynb`) as `--run-notebook`, else its `module`/`function`;
+  clone paths are the ones the generator's own import/read walk computes for
+  those entries. The smoke options apply to every job.
+- **Code bundle**: when the pin is not anonymously reachable and the service's
+  adapter declares `CODE_BUNDLE_MAX_BYTES`. On a repository-credential
+  carrier, `--repo-credential` is passed instead.
+- **Environment requirements**: the target's `requirements.txt` (or
+  `pyproject.toml` `[project].dependencies`), minus the distributions the
+  adapter's optional `PROVIDED_REQUIREMENTS` says its image provides (none
+  declared: every pin is installed).
+- **Carry paths**: the step's `produces` roots that are not notebooks.
+- **Inputs**: `--dataset`, as for `generate-job` below.
+
+It prints `{jobs, skipped, summary, next}`: one row per job (`step`,
+`service`, `job`, `status` `generated` or `refused` with its `error`, and for a
+generated one `jobFolder`, `codeBundle`, `inputDatasets`, `carryPaths`,
+`environmentRequirements`), and `next`, the one `preflight` command over every
+generated job. One refused job never stops the others; the exit status is 0
+only when none was refused.
+
 ## Job inputs
+
+### From the workspace registry
+
+`generate-job --dataset <slug>` (repeatable; also on `generate-jobs`) resolves
+the slug in the workspace's `datasets/registry.json` (`--workspace` overrides
+which workspace) through the datasets skill's own `job_input()`. Its ref is
+the published remote when that is public, else the public dataset page its
+source URL names on a dataset host that recognizes it. The ref is declared as
+an input dataset (after any explicit `--input-dataset`), and the official
+preparation's sha256 values -- the prepared data file's and `splits.json`'s --
+are recorded as `datasetChecks` in `run-config.json`. The runner exports them
+as `FORGE_DATASET_CHECKS` (a JSON object keyed by ref), so the target verifies
+the data it reads is the data the preparation was made from. Nothing is
+uploaded: an unpublished or private dataset refuses `DATASET_NOT_PUBLISHED` /
+`DATASET_NOT_PUBLIC` naming `/datasets publish` with the operator's consent,
+an unprepared one `DATASET_NOT_PREPARED`, and one served by a host the
+service does not attach from (`Adapter.INPUT_DATASETS_HOST`)
+`DATASET_HOST_NOT_ATTACHABLE`. Without `--dataset`, nothing changes.
+
+### Declared by ref
 
 A job that reads a public dataset declares it with `generate-job
 --input-dataset <owner>/<slug>` (repeatable), recorded as `inputDatasets` in
