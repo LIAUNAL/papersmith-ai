@@ -2032,6 +2032,17 @@ continuation's source intact, and a kernel never names itself in
 `kernel_sources` (never verified live). A carry path that names the product
 folder itself (`.`) is refused like one that escapes it.
 
+**No push replaces a kernel still running.** The protected set also holds
+the ref of every submission of the same entrypoint that is still in flight
+(submitted, never settled) in the main ledger -- and in `smoke.jsonl` for a
+rehearsal -- at any source digest, for every job folder, including one that
+declares no carry paths. A second campaign started while the first still
+runs therefore goes to `<slug>-carry` (or the next free alternate) instead
+of re-pushing the running kernel. When nothing is in flight and nothing is
+pending, no `carryProtected` key is written and the job is byte-identical
+to before; when something is, that key is the only addition. The legacy
+shape (no job folder) is unchanged.
+
 ## Ledger data location
 
 Code is forge-owned and lives here, inside the skill. Data is target-owned:

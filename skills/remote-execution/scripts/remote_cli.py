@@ -1257,6 +1257,69 @@ def _carry_protected(adapter: "ADAPTER.Adapter", evidence: Mapping[str, dict]) -
     return sorted(refs)
 
 
+def _in_flight_refs(
+    adapter: "ADAPTER.Adapter",
+    *,
+    target: Path,
+    product: str,
+    relative_entrypoint: "str | Path",
+    smoke: bool,
+) -> set[str]:
+    """The `carry_source()` refs of every submission of this entrypoint
+    that is still in flight -- submitted, never settled -- in the main
+    ledger, and in the rehearsal ledger too when this invocation is a
+    rehearsal. A new push to one of them would replace a kernel that is
+    still running, so they join the protected set whether or not the job
+    declares carry paths. Any source digest counts: a kernel pushed from an
+    older source is still running. A backend whose `carry_source` is the
+    seam's default contributes nothing here."""
+    paths = [_main_ledger_path(target, product)]
+    if smoke:
+        paths.append(_smoke_ledger_path(target, product))
+    refs: set[str] = set()
+    for path in paths:
+        for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(path)):
+            if terminal is not None:
+                continue
+            if str(submitted.get("entrypoint")) != str(relative_entrypoint):
+                continue
+            source = _carry_source(adapter, str(submitted.get("submissionId")))
+            if source is not None:
+                refs.add(source["ref"])
+    return refs
+
+
+def _protected_refs(
+    adapter: "ADAPTER.Adapter",
+    *,
+    target: Path,
+    product: str,
+    resolved_entrypoint: Path,
+    relative_entrypoint: "str | Path",
+    digest: str,
+    smoke: bool,
+    evidence: Mapping[str, dict] | None = None,
+) -> list[str]:
+    """`run_config["carryProtected"]` for a job folder: the refs a push
+    must avoid. Refs pending continuations read from (only for a job
+    declaring carry paths) and refs of submissions still in flight (every
+    job folder). Empty -- and then no key is written at all, so the job is
+    byte-identical to before -- when neither exists, or for the legacy
+    shape, which has no job folder to carry the key."""
+    if not (resolved_entrypoint.parent / RUN_CONFIG_FILENAME).is_file():
+        return []
+    refs = _in_flight_refs(
+        adapter, target=target, product=product,
+        relative_entrypoint=relative_entrypoint, smoke=smoke,
+    )
+    if _declared_carry_paths(resolved_entrypoint):
+        refs.update(_carry_protected(adapter, {
+            **_main_ledger_evidence(target, product, relative_entrypoint, digest),
+            **(evidence or {}),
+        }))
+    return sorted(refs)
+
+
 def _plan_share_carry(
     *,
     adapter: "ADAPTER.Adapter",
@@ -1595,10 +1658,12 @@ def cmd_submit(
             live_digest=digest,
             affinity=_carry_affinity(evidence, units) or None,
         )
-        protected = _carry_protected(adapter, {
-            **_main_ledger_evidence(target, resolved_product, relative_entrypoint, digest),
-            **evidence,
-        }) if carry_paths else []
+        protected = _protected_refs(
+            adapter, target=target, product=resolved_product,
+            resolved_entrypoint=resolved_entrypoint,
+            relative_entrypoint=relative_entrypoint, digest=digest, smoke=smoke,
+            evidence=evidence,
+        )
 
         if not smoke and pin_commit is not None:
             _verify_campaign_readiness(
@@ -1755,13 +1820,14 @@ def cmd_submit(
     run_config = {"mode": "smoke"} if smoke else {}
     run_config = {**run_config, **session_config}
     # A single send carries nothing, but it must not push over an output a
-    # pending continuation still reads either (kernel-carry B1).
-    if _declared_carry_paths(resolved_entrypoint):
-        protected = _carry_protected(adapter, _main_ledger_evidence(
-            target, resolved_product, relative_entrypoint, digest,
-        ))
-        if protected:
-            run_config["carryProtected"] = protected
+    # pending continuation still reads, nor over a kernel still running.
+    protected = _protected_refs(
+        adapter, target=target, product=resolved_product,
+        resolved_entrypoint=resolved_entrypoint,
+        relative_entrypoint=relative_entrypoint, digest=digest, smoke=smoke,
+    )
+    if protected:
+        run_config["carryProtected"] = protected
     job = ADAPTER.Job(entrypoint=resolved_entrypoint, run_config=run_config, worker=worker)
     submission = adapter.submit(job)
 

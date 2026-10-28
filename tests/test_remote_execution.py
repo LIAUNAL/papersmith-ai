@@ -26396,6 +26396,58 @@ class KernelCarryTests(unittest.TestCase):
             (row,) = adapter.pushed
             self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
 
+    def _running(self, target, *, sid, worker, units):
+        """An earlier submission still in flight: submitted, never settled."""
+        LEDGER.append(self._ledger(target), LEDGER.submitted_event(
+            entrypoint=self.ENTRYPOINT, source_digest=self.DIGEST,
+            submission_id=sid, worker=worker, requested_capacity=1,
+            granted_capacity=1, units=list(units)))
+
+    def test_a_campaign_never_pushes_over_a_running_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            self._running(target, sid="w1/papersmith-search-a-carry", worker="w1",
+                          units=("u1",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 2)])
+
+            self._submit(target, notebook, adapter, ("u2",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry-2")
+            (job,) = adapter.jobs
+            self.assertEqual(job.run_config["carryProtected"],
+                             ["w1/papersmith-search-a", "w1/papersmith-search-a-carry"])
+
+    def test_a_job_without_carry_paths_never_pushes_over_a_running_kernel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, carry_paths=())
+            self._running(target, sid="w1/papersmith-search-a", worker="w1", units=("u0",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 2)])
+
+            self._submit(target, notebook, adapter, ("u1",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {
+                "units": ["u1"], "carryProtected": ["w1/papersmith-search-a"]})
+
+    def test_a_job_without_carry_paths_and_nothing_running_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, carry_paths=())
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u0",), remaining=("u0",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 1)])
+
+            self._submit(target, notebook, adapter, ("u1",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a")
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {"units": ["u1"]})
+
     def test_a_share_carrying_from_two_kernels_pushes_a_third(self) -> None:
         """A share whose carry rows name its own ref and its alternate never
         lists its own ref as a source (a campaign share holds one unit per

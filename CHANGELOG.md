@@ -38,6 +38,14 @@ number is `0`, breaking changes can still arrive without a major bump.
   other's source, a later campaign of fresh units leaves pending sources
   intact, and a kernel never names itself as its own source. `--carry-path
   .` is refused.
+- No push replaces a kernel that is still running. The refs of submissions
+  of the same entrypoint that are submitted but not yet settled are
+  protected too, for every job folder, including one that declares no carry
+  paths: a second campaign started while the first runs pushes to
+  `<slug>-carry` (or the next free alternate) instead of a new version of
+  the running kernel. This changes such a job only when something is in
+  flight, and then only by the `carryProtected` key in its run config; with
+  nothing in flight it is byte-identical to before.
 - `distribute` and `submit` place a continuation unit on the worker that
   produced its checkpoint when that worker is in the pool (it waits
   `unplaced` when that worker is full). One whose worker is not in the pool
