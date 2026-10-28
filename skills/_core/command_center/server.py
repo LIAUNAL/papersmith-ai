@@ -1444,27 +1444,57 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     doctor_cache: dict[str, Any] = {"at": 0.0, "value": None}
     doctor_lock = threading.Lock()
+    doctor_refresh = threading.Lock()  # held while one background rebuild runs
+
+    def build_doctor(fresh: bool) -> dict[str, Any]:
+        # The rows `smith doctor --json` prints, built by the same function
+        # from this process's wiring health and phases. Caller holds doctor_lock.
+        # Lock order: doctor_lock -> health_lock (measure_health).
+        wiring = measure_health(force=fresh)
+        try:
+            phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
+            phases_error = None
+        except Exception as exc:  # noqa: BLE001 - one area degrades, not the report
+            phases, phases_error = None, f"/api/status failed: {type(exc).__name__}: {exc}"
+        value = doctor_view.get_doctor_view(root_path, wiring=wiring, phases=phases,
+                                            phases_error=phases_error)
+        doctor_cache["value"], doctor_cache["at"] = value, time.monotonic()
+        return value
+
+    def refresh_doctor() -> None:
+        try:
+            with doctor_lock:
+                build_doctor(False)
+        except Exception:  # noqa: BLE001 - the expired report stays served
+            _log.exception("doctor: background refresh failed")
+        finally:
+            doctor_refresh.release()
+
+    def warm_doctor() -> None:
+        with doctor_lock:
+            if doctor_cache["value"] is None:
+                build_doctor(False)
+
+    app.state.warm_doctor = warm_doctor
 
     @app.get("/api/doctor")
     def api_doctor(fresh: bool = False) -> JSONResponse:
-        # The Smith Doctor tab: the rows `smith doctor --json` prints, built by
-        # the same function from this process's wiring health and phases.
-        # Lock order: doctor_lock -> health_lock (measure_health).
+        # The Smith Doctor tab. An expired report is served as is while one
+        # background rebuild replaces it; `fresh` always rebuilds in line.
+        cached = doctor_cache["value"]
+        if not fresh and cached is not None:
+            if (time.monotonic() - doctor_cache["at"] >= DOCTOR_TTL_SECONDS
+                    and doctor_refresh.acquire(blocking=False)):
+                try:
+                    threading.Thread(target=refresh_doctor, name="doctor-refresh",
+                                     daemon=True).start()
+                except RuntimeError:  # no thread to release it; the next visit retries
+                    doctor_refresh.release()
+            return JSONResponse(cached)
         with doctor_lock:
-            cached = doctor_cache["value"]
-            if (not fresh and cached is not None
-                    and time.monotonic() - doctor_cache["at"] < DOCTOR_TTL_SECONDS):
-                return JSONResponse(cached)
-            wiring = measure_health(force=fresh)
-            try:
-                phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
-                phases_error = None
-            except Exception as exc:  # noqa: BLE001 - one area degrades, not the report
-                phases, phases_error = None, f"/api/status failed: {type(exc).__name__}: {exc}"
-            value = doctor_view.get_doctor_view(root_path, wiring=wiring, phases=phases,
-                                                phases_error=phases_error)
-            doctor_cache["value"], doctor_cache["at"] = value, time.monotonic()
-            return JSONResponse(value)
+            if not fresh and doctor_cache["value"] is not None:
+                return JSONResponse(doctor_cache["value"])
+            return JSONResponse(build_doctor(fresh))
 
     @app.post("/api/health/run-wiring-smoke")
     def api_run_wiring_smoke(request: Request) -> JSONResponse:
@@ -2713,12 +2743,13 @@ def open_browser(url: str) -> None:
     _print_url(url)
 
 
-def warm_caches(root: Path) -> None:
+def warm_caches(root: Path, *extra: Callable[[], Any]) -> None:
     """Fill the slow caches before the first visit: the experiments tab's
-    interpreter and CLI probes and the chat sessions Historia con IA reads.
-    Runs off the request path; a failure only means the first visit pays."""
+    interpreter and CLI probes, the chat sessions Historia con IA reads and
+    ``extra`` (``main`` passes the Smith Doctor report). Runs off the request
+    path; a failure only means the first visit pays."""
     for warm in (lambda: experiments_view.get_experiments_view(root),
-                 lambda: ai_transcripts.read_all(root)):
+                 lambda: ai_transcripts.read_all(root), *extra):
         try:
             warm()
         except Exception:  # noqa: BLE001 - warming is best effort
@@ -2752,7 +2783,7 @@ def main(argv: list[str] | None = None) -> int:
         # the cookie. Printed so --no-browser users can open it themselves.
         url = f"{url}api/terminal/login?token={app.state.terminal.token}"
         print(f"support terminal enabled; dashboard login URL: {url}", flush=True)
-    threading.Thread(target=warm_caches, args=(root,), name="warm-caches", daemon=True).start()
+    threading.Thread(target=warm_caches, args=(root, app.state.warm_doctor), name="warm-caches", daemon=True).start()
     if not args.no_browser:
         threading.Timer(1.0, open_browser, args=(url,)).start()
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)

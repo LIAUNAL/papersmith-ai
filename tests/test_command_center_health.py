@@ -294,3 +294,23 @@ class WiringInspectorTests(unittest.TestCase):
         assert set(core) == {
             name for name, _ in health_inspector.front_door_skills(repository)
         }
+
+
+class CliEntrypointConcurrencyTests(unittest.TestCase):
+    def test_front_doors_are_probed_concurrently_in_roster_order(self) -> None:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        root = Path(holder.name).resolve()
+        names = ["alpha", "beta", "gamma", "delta"]
+        for name in names:
+            scripts = root / "skills" / name / "scripts"
+            scripts.mkdir(parents=True)
+            (scripts / f"{name}_cli.py").write_text(
+                "import time\ntime.sleep(0.6)\nprint('usage')\n", encoding="utf-8")
+        import time
+        started = time.monotonic()
+        rows = health_inspector.cli_entrypoints(root)
+        elapsed = time.monotonic() - started
+        self.assertEqual([row["skill"] for row in rows], sorted(names))
+        self.assertTrue(all(row["state"] == "WIRED" for row in rows))
+        self.assertLess(elapsed, 0.6 * len(names) * 0.75)
