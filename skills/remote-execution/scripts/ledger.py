@@ -126,8 +126,17 @@ def submitted_event(
     requested_capacity: int,
     granted_capacity: int,
     ts: str | None = None,
+    slot: int | None = None,
 ) -> dict:
     """Build a `submitted` event.
+
+    `slot` is the concurrent slot of `worker` this submission occupies when
+    one campaign sends several submissions of the same entrypoint to the
+    same worker (S1, parallel campaigns). Slot 1 -- and every submission
+    that is not one of several -- carries no `slot` field at all, so such
+    an event is byte-identical to one written before slots existed. A
+    `slot` of 2 or more puts the submission in its own lane of the fold
+    (`lane_key()`), so it neither supersedes nor is superseded by slot 1.
 
     `entrypoint` — not `notebook` — is the field name for the thing executed
     remotely. The dataclass and adapter seam that will carry this same value
@@ -135,7 +144,7 @@ def submitted_event(
     agree on one vocabulary for "the thing that runs", and neither one
     smuggles in a format opinion about it.
     """
-    return {
+    event: dict = {
         "kind": "submitted",
         "ts": ts or _now(),
         "entrypoint": str(entrypoint),
@@ -145,6 +154,32 @@ def submitted_event(
         "requestedCapacity": requested_capacity,
         "grantedCapacity": granted_capacity,
     }
+    if slot is not None and slot != 1:
+        event["slot"] = slot
+    return event
+
+
+SLOT_LANE_SEPARATOR = "#slot"
+
+
+def lane_key(submission: Mapping[str, object]) -> tuple[str, str]:
+    """The `(entrypoint, lane)` key a `submitted` event is folded under.
+
+    The lane is the worker itself for every event without a `slot` field
+    (and for slot 1): exactly the `(entrypoint, worker)` key every reader
+    already indexes. A submission in slot `n >= 2` of a worker gets the
+    lane `<worker>#slot<n>`: two concurrent submissions of one entrypoint
+    to one worker are two independent "latest" facts, never one superseding
+    the other -- the same reason `latest` was keyed by worker at all.
+    `pending_for()` counts a worker's lanes by the event's own `worker`
+    field, never by parsing this key.
+    """
+    entrypoint = str(submission["entrypoint"])
+    worker = str(submission["worker"])
+    slot = submission.get("slot")
+    if slot is None or slot == 1:
+        return (entrypoint, worker)
+    return (entrypoint, f"{worker}{SLOT_LANE_SEPARATOR}{slot}")
 
 
 def returned_event(
@@ -304,13 +339,15 @@ class LedgerState:
         submission, and an older, superseded submission from this same
         worker can never be double-counted either: it stopped being what
         this `(entrypoint, worker)` pair's state answers for the moment a
-        newer submission from the SAME worker superseded it.
+        newer submission from the SAME worker superseded it. A worker's
+        slot lanes (`lane_key()`) each count once: two concurrent slots of
+        one campaign are two submissions in flight on that worker.
         """
         return sum(
             1
-            for (entrypoint, submission_worker), submission in self.latest.items()
-            if submission_worker == worker
-            and self.entrypoints[(entrypoint, submission_worker)].state == "pending"
+            for key, submission in self.latest.items()
+            if submission.get("worker") == worker
+            and self.entrypoints[key].state == "pending"
         )
 
 
@@ -402,7 +439,7 @@ def fold(lines: Iterable[str], live_digest: str | Callable[[], str]) -> LedgerSt
             # are five independent "latest" facts, one per worker, not one
             # fact where the fourth and fifth submissions read as
             # superseding the first three.
-            latest_key = (event["entrypoint"], event["worker"])
+            latest_key = lane_key(event)
             latest[latest_key] = event
             latest_position[latest_key] = position
         elif kind in _TERMINAL_KINDS:
@@ -447,7 +484,7 @@ def fold(lines: Iterable[str], live_digest: str | Callable[[], str]) -> LedgerSt
             # currency_verdict already said "current" leaves a digest-moved
             # verdict (the OTHER, backend-independent half) untouched — this
             # is an additional check, not a replacement for that one.
-            key = (submission["entrypoint"], submission["worker"])
+            key = lane_key(submission)
             if position < latest_position[key]:
                 verdict = "fromStaleSubmission"
         verdicts[event["submissionId"]] = verdict
@@ -555,7 +592,7 @@ def currency_verdict(
     `submission` always comes from `by_id`) is treated as superseded rather
     than current — this rule fails closed, not open.
     """
-    latest_for_key = latest.get((submission["entrypoint"], submission["worker"]))
+    latest_for_key = latest.get(lane_key(submission))
     superseded = (
         latest_for_key is None
         or latest_for_key["submissionId"] != submission["submissionId"]

@@ -173,6 +173,26 @@ class AuthorizationError(RemoteCLIError):
     """
 
 
+class ReadinessError(AuthorizationError):
+    """A non-rehearsal CAMPAIGN `submit` refused `CAMPAIGN_WORKERS_NOT_READY`
+    (S2, parallel campaigns): the distribution assigns units to at least one
+    worker with no passing rehearsal of its own at the job's current pin.
+    Readiness is per worker (`rehearse-each-account`): a campaign `gate`
+    record binds pin, entrypoint and units, never workers, so the accounts
+    a campaign actually spends are checked here, once `packer.distribute()`
+    has named them and before any `adapter.submit()`. `workers` holds the
+    workers that still need a rehearsal, in distribution order.
+    """
+
+    def __init__(self, message: str, workers: Sequence[str]) -> None:
+        super().__init__(message)
+        self.workers = tuple(workers)
+
+
+CAMPAIGN_WORKERS_NOT_READY = "CAMPAIGN_WORKERS_NOT_READY"
+DUPLICATE_SUBMISSION_ID = "DUPLICATE_SUBMISSION_ID"
+
+
 class DiagramValidationError(RemoteCLIError):
     """ANY `submit` (rehearsal or full) refused because the product holds an
     approval (`AGREED.md`, `Experimental_AGREED.md`) whose experiment diagram
@@ -795,6 +815,44 @@ def _verify_launch_authorization(
     )
 
 
+def _verify_campaign_readiness(
+    *, job_dir: Path, workers: Sequence[str], pin_commit: str
+) -> None:
+    """Refuse `CAMPAIGN_WORKERS_NOT_READY` unless every worker the
+    distribution assigns units to reads ready on `cmd_readiness()` (its own
+    passing rehearsal at the job's current pin). S2, parallel campaigns:
+    the campaign `gate` record binds pin, entrypoint and units but no
+    worker, so which accounts a campaign spends is only known once
+    `packer.distribute()` ran -- this is checked right then, before the
+    first `adapter.submit()`, and names every worker that still needs a
+    rehearsal rather than the first. A single send keeps its own check
+    (the `gate` record names its worker); a rehearsal (`--smoke`) and the
+    legacy no-job-folder shape are exempt, as they are from the gate.
+    """
+    not_ready: list[str] = []
+    reasons: list[str] = []
+    for worker in workers:
+        if worker in not_ready:
+            continue
+        verdict = cmd_readiness(job_dir=job_dir, worker=worker)
+        if not verdict["ready"]:
+            not_ready.append(worker)
+            reasons.append(f"{worker!r}: {verdict['reason']}")
+    if not not_ready:
+        return
+    names = ", ".join(repr(worker) for worker in not_ready)
+    raise ReadinessError(
+        f"{CAMPAIGN_WORKERS_NOT_READY}: submit refuses: this campaign assigns "
+        f"units to {len(not_ready)} worker(s) with no passing rehearsal of "
+        f"their own at pin {pin_commit!r}: {names}. Readiness is per worker: "
+        "rehearse each one (`submit --smoke --worker <worker> ...`, `fetch "
+        "--smoke`, `smoke record --worker <worker>`), confirm `readiness "
+        "--worker <worker>` reads ready, then re-run this exact submit. "
+        "Nothing was submitted. Details -- " + "; ".join(reasons),
+        not_ready,
+    )
+
+
 def _gate_job_folder_pin(
     resolved_entrypoint: Path, *, repo_credential_path: str | Path | None = None
 ) -> None:
@@ -1262,30 +1320,62 @@ def cmd_submit(
             live_digest=digest,
         )
 
+        if not smoke and pin_commit is not None:
+            _verify_campaign_readiness(
+                job_dir=resolved_entrypoint.parent,
+                workers=[row.plan.worker for row in distribution.assignments if row.units],
+                pin_commit=pin_commit,
+            )
+
         assignments: list[dict] = []
+        seen_ids: dict[str, str] = {}
         for row in distribution.assignments:
-            submission_id = None
-            if row.units:
+            submissions: list[dict] = []
+            for index, share in enumerate(PACKER.slot_shares(row)):
+                # Slot 1 is shaped exactly as a one-slot worker's single job
+                # always was; only slots 2..k name themselves, so the
+                # adapter can give each its own remote identity and the
+                # ledger its own lane.
+                slot = index + 1
                 run_config = {"mode": "smoke"} if smoke else {}
                 run_config = dict(run_config)
-                run_config["units"] = list(row.units)
+                run_config["units"] = list(share)
+                if slot > 1:
+                    run_config["slot"] = slot
                 job = ADAPTER.Job(
                     entrypoint=resolved_entrypoint,
                     run_config=run_config,
                     worker=row.plan.worker,
                 )
                 submission = adapter.submit(job)
-                submission_id = submission.id
+                if submission.id in seen_ids:
+                    raise RemoteCLIError(
+                        f"{DUPLICATE_SUBMISSION_ID}: the backend answered slot "
+                        f"{slot} of worker {row.plan.worker!r} with submission id "
+                        f"{submission.id!r}, already returned for "
+                        f"{seen_ids[submission.id]} of this same campaign -- two "
+                        "concurrent jobs cannot share one remote identity. It is "
+                        "not recorded; the submissions recorded before it stand. "
+                        "Run `reconcile` for this worker before submitting again"
+                    )
+                seen_ids[submission.id] = f"slot {slot} of worker {row.plan.worker!r}"
 
                 event = LEDGER.submitted_event(
                     entrypoint=str(relative_entrypoint),
                     source_digest=digest,
-                    submission_id=submission_id,
+                    submission_id=submission.id,
                     worker=row.plan.worker,
                     requested_capacity=row.plan.requested,
                     granted_capacity=row.plan.granted,
+                    slot=slot if slot > 1 else None,
                 )
                 LEDGER.append(ledger_path, event)
+                submissions.append(
+                    {"slot": slot, "units": list(share), "submissionId": submission.id}
+                )
+            # `submissionId` keeps naming slot 1's submission (the only one
+            # a one-slot worker has); `submissions` lists every slot's.
+            submission_id = submissions[0]["submissionId"] if submissions else None
 
             assignments.append(
                 {
@@ -1297,6 +1387,7 @@ def cmd_submit(
                     "inFlightSource": row.plan.in_flight_source,
                     "units": list(row.units),
                     "submissionId": submission_id,
+                    "submissions": submissions,
                 }
             )
 
@@ -1510,6 +1601,7 @@ def cmd_distribute(
                 "granted": row.plan.granted,
                 "inFlightSource": row.plan.in_flight_source,
                 "units": list(row.units),
+                "shares": [list(share) for share in PACKER.slot_shares(row)],
             }
             for row in result.assignments
         ],
@@ -1907,11 +1999,14 @@ def cmd_reconcile(
         # is what keeps this reconcile call scoped to only THIS worker's
         # own state, never another worker's resubmission of the same
         # entrypoint.
+        # Filtered on the event's own `worker` field, never the key's
+        # second half: a worker's slot lanes (`LEDGER.lane_key()`) are
+        # keyed `<worker>#slot<n>`, and every one of them is this worker's.
         return {
             submission["submissionId"]
-            for (entrypoint, submission_worker), submission in folded.latest.items()
-            if submission_worker == worker
-            and folded.entrypoints[(entrypoint, submission_worker)].state == "pending"
+            for key, submission in folded.latest.items()
+            if submission.get("worker") == worker
+            and folded.entrypoints[key].state == "pending"
         }
 
     # Computed before the remote call so the degraded return below can
@@ -2243,7 +2338,9 @@ def cmd_smoke_record(
     }
 
 
-def latest_smoke_event(smoke_ledger_path: Path, job_name: str) -> dict | None:
+def latest_smoke_event(
+    smoke_ledger_path: Path, job_name: str, worker: str | None = None
+) -> dict | None:
     """The latest `smokeResult` line for `job_name` in `smoke_ledger_path`,
     by append order — last line wins, the same last-write-wins rule
     `ledger.fold()` already applies to its own log. `None` when the smoke
@@ -2254,6 +2351,11 @@ def latest_smoke_event(smoke_ledger_path: Path, job_name: str) -> dict | None:
     — can find the SAME latest record `cmd_readiness()` itself binds
     against, rather than writing a second "walk `smoke.jsonl` for the
     newest match" loop that could quietly drift from this one.
+
+    `worker`, when given, narrows the walk to that worker's own records
+    (readiness is per worker: one account's later rehearsal never revokes
+    another's). Omitted, it is the job's latest record on any worker, as
+    before.
     """
     if not smoke_ledger_path.exists():
         return None
@@ -2270,6 +2372,7 @@ def latest_smoke_event(smoke_ledger_path: Path, job_name: str) -> dict | None:
             isinstance(event, dict)
             and event.get("kind") == SMOKE_RESULT_KIND
             and event.get("jobName") == job_name
+            and (worker is None or event.get("worker") == worker)
         ):
             latest = event
     return latest
@@ -2284,10 +2387,13 @@ def cmd_readiness(*, job_dir: str | Path, worker: str) -> dict:
     `cmd_probe`, a later task's territory this function does not touch.)
 
     Binds three facts on ONE record — the latest smoke record for this
-    job, by append order in `smoke.jsonl` (last line wins, same rule
-    `ledger.fold()` already applies to its own log): `result == "pass"`,
-    `commit` equal to the job's OWN currently-pinned commit, `worker`
-    equal to the worker asked about. No clock: nothing here reads or
+    job ON THIS WORKER, by append order in `smoke.jsonl` (last line wins,
+    same rule `ledger.fold()` already applies to its own log): `result ==
+    "pass"`, `commit` equal to the job's OWN currently-pinned commit,
+    `worker` equal to the worker asked about. Per worker (S2, parallel
+    campaigns; `rehearse-each-account`): a later rehearsal on ANOTHER
+    worker never revokes this one's -- otherwise two accounts could never
+    both be ready for the same campaign. No clock: nothing here reads or
     compares a timestamp. A record's usefulness expires the moment the
     job re-pins to a different commit or the worker changes — never after
     elapsed time.
@@ -2299,12 +2405,14 @@ def cmd_readiness(*, job_dir: str | Path, worker: str) -> dict:
     target = _target_for_job_dir(resolved_job_dir)
     smoke_ledger_path = _smoke_ledger_path(target, run_config["product"])
 
-    latest = latest_smoke_event(smoke_ledger_path, run_config["jobName"])
+    latest = latest_smoke_event(
+        smoke_ledger_path, run_config["jobName"], worker=worker
+    )
 
     if latest is None:
         return {
             "ready": False,
-            "reason": "no smoke record on file for this job",
+            "reason": f"no smoke record on file for this job on worker {worker!r}",
             "latestSmokeRecord": None,
             "staleness": dict(job_folder.staleness),
         }
