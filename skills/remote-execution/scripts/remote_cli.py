@@ -962,7 +962,9 @@ def _gate_job_folder_pin(
         # instead, still before anything is uploaded.
         code_bundle="codeBundle" in run_config,
     )
-    JOBFOLDER.verify_code_bundle(job_folder.path, run_config)
+    JOBFOLDER.verify_code_bundle(
+        job_folder.path, run_config, target=_target_for_job_dir(job_folder.path)
+    )
 
 
 def guard_entrypoint(target: Path, entrypoint: Path) -> Path:
@@ -3689,7 +3691,9 @@ OBJECTIVE_FLOW = {
                         "clones",
          "behindWhen": "`generate-job` wrote the folder -- it proves the pin "
                        "against the remote before writing a byte, so a folder "
-                       "that exists is a pin that was published"},
+                       "that exists is a pin that was published, or, with "
+                       "`--code-bundle`, a pin whose code travels inside the "
+                       "job and is never cloned"},
         {"stage": "wire",
          "establishes": "that this worker, at this pin, carries current -- the "
                         "cheapest possible answer, paid in minutes rather than "
@@ -4024,6 +4028,13 @@ def main(argv: list[str] | None = None) -> int:
         # actually given, so the credentialless path keeps its existing
         # registry semantics exactly (a service known only to the metadata
         # registry still generates, as before).
+        if args.repo_credential is not None and args.code_bundle:
+            return _refused(JOBFOLDER.JobFolderError(
+                f"{JOBFOLDER.CODE_BUNDLE_WITH_REPO_CREDENTIAL}: --code-bundle and "
+                "--repo-credential were both given. A bundled job's runner never "
+                "clones, so a repository credential has nothing to authenticate; "
+                "drop --repo-credential (or drop --code-bundle to clone with it)."
+            ))
         if args.repo_credential is not None:
             try:
                 adapter_cls = ADAPTER.resolve(args.service)

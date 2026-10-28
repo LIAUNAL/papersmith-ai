@@ -335,6 +335,8 @@ def _bundle_entry_refusal(member: tarfile.TarInfo, clone_paths: Sequence[str]) -
     parts = name.split("/")
     if not name or name.startswith("/") or ".." in parts:
         return f"{name!r} is absolute or escapes the clone with '..'"
+    if ".git" in parts:
+        return f"{name!r} lies inside a .git directory"
     if not (member.isfile() or member.isdir()):
         return f"{name!r} is a link or special file"
     stripped = name.rstrip("/")
@@ -356,9 +358,17 @@ def unpack_code_bundle(
     BEFORE a byte is unpacked (`CODE_BUNDLE_MISMATCH` otherwise), and every
     entry is checked before any is written (`CODE_BUNDLE_UNSAFE_ENTRY`):
     nothing absolute, nothing with `..`, no link or special file, nothing
-    outside the declared clone paths, and nothing that resolves outside
-    `clone_dir`. Files are written one by one from their own bytes, never
-    through `extractall`. No git call, no network, no credential.
+    outside the declared clone paths, nothing inside a `.git` directory,
+    and nothing that resolves outside `clone_dir`. Files are written one by
+    one from their own bytes, never through `extractall`. No git call, no
+    network, no credential.
+
+    After a verified unpack it writes `<clone>/.git/HEAD` holding the pinned
+    commit and nothing else: the shape of the detached checkout a clone
+    leaves, so a notebook's own repository-root cell
+    (`notebook_repo_root.py`), which reads that file to prove the root is
+    at `FORGE_CLONE_COMMIT`, resolves a bundled clone exactly as it
+    resolves a cloned one — and still refuses one at any other commit.
     """
     block = run_config.get("codeBundle")
     if not isinstance(block, Mapping) or block.get("file") != CODE_BUNDLE_FILENAME:
@@ -380,6 +390,12 @@ def unpack_code_bundle(
             f"run-config.json records {block.get('sha256')!r}; refusing to unpack"
         )
     clone_paths = list(run_config["clonePaths"])
+    commit = str(run_config.get("commit", ""))
+    if len(commit) not in (40, 64) or any(c not in "0123456789abcdef" for c in commit):
+        raise BootstrapError(
+            f"CODE_BUNDLE_MISMATCH: run-config.json's commit {commit!r} is not a "
+            "full lowercase object name; refusing to unpack"
+        )
     clone_root = Path(clone_dir).resolve()
     try:
         archive = tarfile.open(path, mode="r:gz")
@@ -406,6 +422,9 @@ def unpack_code_bundle(
             if source is None:
                 raise BootstrapError(f"CODE_BUNDLE_UNSAFE_ENTRY: {member.name!r} has no data")
             destination.write_bytes(source.read())
+    git_dir = clone_root / ".git"
+    git_dir.mkdir(exist_ok=True)
+    (git_dir / "HEAD").write_text(commit + "\n", encoding="utf-8")
     return Path(clone_dir)
 
 

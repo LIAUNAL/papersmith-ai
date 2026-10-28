@@ -26,9 +26,13 @@ number is `0`, breaking changes can still arrive without a major bump.
   bytes inside the private notebook. The remote is never probed and no
   credential is read; every local pin condition still applies. `submit` and
   the runner both verify the sha256, and the runner unpacks instead of
-  cloning, refusing absolute, `..`, link and out-of-clone-path entries. New
+  cloning, refusing absolute, `..`, `.git`, link and out-of-clone-path
+  entries, then writes `.git/HEAD` with the pinned commit so a notebook's
+  repository-root cell resolves the bundled clone as it does a cloned one.
+  `submit` also rebuilds the bundle from the pin and compares its files. New
   refusal codes: `CODE_BUNDLE_NOT_CARRIED`, `CODE_BUNDLE_TOO_LARGE`,
-  `CODE_BUNDLE_UNSAFE_ENTRY`, `CODE_BUNDLE_MISMATCH`. Without the flag a job
+  `CODE_BUNDLE_UNSAFE_ENTRY`, `CODE_BUNDLE_MISMATCH`,
+  `CODE_BUNDLE_WITH_REPO_CREDENTIAL` (`--code-bundle` with `--repo-credential`). Without the flag a job
   is generated, pushed and run exactly as before.
 
 ## 0.32.0

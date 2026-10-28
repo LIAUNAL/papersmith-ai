@@ -211,6 +211,7 @@ CODE_BUNDLE_NOT_CARRIED = "CODE_BUNDLE_NOT_CARRIED"
 CODE_BUNDLE_TOO_LARGE = "CODE_BUNDLE_TOO_LARGE"
 CODE_BUNDLE_UNSAFE_ENTRY = "CODE_BUNDLE_UNSAFE_ENTRY"
 CODE_BUNDLE_MISMATCH = "CODE_BUNDLE_MISMATCH"
+CODE_BUNDLE_WITH_REPO_CREDENTIAL = "CODE_BUNDLE_WITH_REPO_CREDENTIAL"
 
 
 def resolve_target(target: str | Path) -> Path:
@@ -1764,6 +1765,8 @@ def unsafe_bundle_entry(member: tarfile.TarInfo, clone_paths: Sequence[str]) -> 
     parts = name.split("/")
     if not name or name.startswith("/") or ".." in parts:
         return f"{name!r} is absolute or escapes the clone with '..'"
+    if ".git" in parts:
+        return f"{name!r} lies inside a .git directory"
     if not (member.isfile() or member.isdir()):
         return f"{name!r} is a link or special file, not a regular file or directory"
     if member.isdir() and _is_clone_path_ancestor(name, clone_paths):
@@ -1798,10 +1801,32 @@ def build_code_bundle(target: Path, commit: str, clone_paths: Sequence[str]) -> 
     return gzip.compress(tar_bytes, mtime=0)
 
 
-def verify_code_bundle(job_dir: Path, run_config: Mapping[str, object]) -> None:
+def _bundle_contents(gz_bytes: bytes) -> dict[str, str]:
+    """`{name: sha256}` of every regular file in a tar.gz — the bundle's
+    CODE, independent of tar headers and gzip framing, so a bundle rebuilt
+    by a different git or zlib version compares equal when its files do."""
+    contents: dict[str, str] = {}
+    with tarfile.open(fileobj=io.BytesIO(gz_bytes), mode="r:gz") as archive:
+        for member in archive.getmembers():
+            if member.isfile():
+                data = archive.extractfile(member).read()
+                contents[member.name] = hashlib.sha256(data).hexdigest()
+    return contents
+
+
+def verify_code_bundle(
+    job_dir: Path,
+    run_config: Mapping[str, object],
+    *,
+    target: Path | None = None,
+) -> None:
     """Refuse a job folder whose bundle file is absent or does not hash to
-    the recorded `codeBundle.sha256` — at `submit`, before any quota. Silent
-    for a job that declares no bundle."""
+    the recorded `codeBundle.sha256` — at `submit`, before any quota. With
+    `target`, the bundle is also rebuilt from the pin and its files compared
+    with the recorded bundle's (`_bundle_contents()`), so a bundle that is
+    not the pin's code — a hand-edited job folder with its sha re-recorded —
+    refuses too, naming the files that differ. Silent for a job that
+    declares no bundle."""
     block = run_config.get("codeBundle")
     if block is None:
         return
@@ -1817,6 +1842,28 @@ def verify_code_bundle(job_dir: Path, run_config: Mapping[str, object]) -> None:
         raise JobFolderError(
             f"{CODE_BUNDLE_MISMATCH}: {path} hashes to {actual}, but "
             f"run-config.json records {block['sha256']}; regenerate the job folder"
+        )
+    if target is None:
+        return
+    clone_paths = validate_clone_paths(run_config["clonePaths"], Path(target))
+    try:
+        recorded = _bundle_contents(path.read_bytes())
+    except (tarfile.TarError, OSError, EOFError) as exc:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_MISMATCH}: {path} is not a readable tar.gz: {exc}"
+        ) from exc
+    expected = _bundle_contents(
+        build_code_bundle(Path(target), str(run_config["commit"]), clone_paths)
+    )
+    differing = sorted(
+        name for name in set(recorded) | set(expected)
+        if recorded.get(name) != expected.get(name)
+    )
+    if differing:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_MISMATCH}: {path} is not the code of the pin "
+            f"{run_config['commit']}; these files differ: {differing}. "
+            "Regenerate the job folder."
         )
 
 
@@ -2252,6 +2299,16 @@ def generate_job(
     invented for it. A name unknown to both registries refuses here, by
     name, before anything is written.
     """
+    # Before anything is read or written: the credential's only consumer is
+    # the `pin-published` probe, which a bundled job skips, so accepting both
+    # would ignore the credential in silence.
+    if code_bundle and repo_credential_path is not None:
+        raise JobFolderError(
+            f"{CODE_BUNDLE_WITH_REPO_CREDENTIAL}: --code-bundle and "
+            "--repo-credential were both given. A bundled job's runner never "
+            "clones, so a repository credential has nothing to authenticate; "
+            "drop --repo-credential (or drop --code-bundle to clone with it)."
+        )
     resolved_target = resolve_target(target)
     destination = resolve_destination(resolved_target, service, job_name)
     # Before the pin is resolved: resolution may already call git with it.
@@ -2290,6 +2347,14 @@ def generate_job(
 
     bundle_limit: int | None = None
     if code_bundle:
+        try:
+            ADAPTER.resolve(service)
+        except KeyError:
+            raise JobFolderError(
+                f"generation refuses: --code-bundle was given, but no adapter is "
+                f"registered under {service!r}; register the service's own module "
+                "under scripts/adapters/ before generating a job for it"
+            ) from None
         bundle_limit = code_bundle_limit(service)
         if bundle_limit is None:
             raise JobFolderError(

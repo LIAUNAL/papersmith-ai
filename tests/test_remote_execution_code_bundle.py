@@ -346,6 +346,157 @@ class GenerateCodeBundleTests(unittest.TestCase):
                 JOBFOLDER.read(job_dir)
 
 
+class CorrectionBatchTests(unittest.TestCase):
+    """B1/B2 and the advisories from the independent verification."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "_verify_commit_reachable", side_effect=_unreachable
+        )
+        self.probe = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _notebook_target(self) -> tuple[Path, str]:
+        """A target whose run notebook's first cell is the kit's own
+        repository-root cell, byte for byte, like the QMLEEG notebooks."""
+        target, _ = _init_target(self.root)
+        kit_cell = (ASSETS / "notebook_repo_root.py").read_text(encoding="utf-8")
+        notebook = {
+            "cells": [
+                {"cell_type": "code", "metadata": {}, "execution_count": None,
+                 "outputs": [], "source": kit_cell.splitlines(keepends=True)},
+                {"cell_type": "code", "metadata": {}, "execution_count": None,
+                 "outputs": [], "source": ["import sys\n",
+                                           "sys.path.insert(0, str(ROOT / 'src'))\n",
+                                           "import pkg.mod\n"]},
+            ],
+            "metadata": {"kernelspec": {"display_name": "Python 3",
+                                        "language": "python", "name": "python3"}},
+            "nbformat": 4, "nbformat_minor": 5,
+        }
+        nb_dir = target / "Proj" / "Notebooks"
+        nb_dir.mkdir(parents=True)
+        (nb_dir / "run.ipynb").write_text(json.dumps(notebook), encoding="utf-8")
+        _git(target, "add", "-A")
+        _git(target, "commit", "-q", "-m", "notebook")
+        return target, _git(target, "rev-parse", "HEAD")
+
+    def test_b1_the_kit_root_cell_resolves_the_pin_after_a_bundled_unpack(self) -> None:
+        target, commit = self._notebook_target()
+        job_dir = _generate(
+            target, service="kaggle", commit=commit, code_bundle=True,
+            run_module=None, run_function=None,
+            run_notebook="Proj/Notebooks/run.ipynb",
+        )
+        kernel = self.root / "kernel"
+        kernel.mkdir()
+        (kernel / "code-bundle.tar.gz").write_bytes(
+            (job_dir / "code-bundle.tar.gz").read_bytes())
+        run_config = json.loads((job_dir / "run-config.json").read_text(encoding="utf-8"))
+        with unittest.mock.patch.object(
+            RUNNER_BOOTSTRAP, "_run_git", side_effect=AssertionError("no git")
+        ):
+            clone = RUNNER_BOOTSTRAP.materialize_code(run_config, kernel)
+
+        cell = json.loads(
+            (clone / "Proj" / "Notebooks" / "run.ipynb").read_text(encoding="utf-8")
+        )["cells"][0]
+        namespace = {"__name__": "kit_cell_under_test"}
+        environ = {"FORGE_CLONE_ROOT": str(clone), "FORGE_CLONE_COMMIT": commit}
+        with unittest.mock.patch.dict(os.environ, environ):
+            exec(compile("".join(cell["source"]), "<kit-cell>", "exec"), namespace)
+        self.assertEqual(Path(namespace["ROOT"]), clone)
+        # The cell's own refusal for a checkout at another commit still holds.
+        with self.assertRaises(RuntimeError):
+            namespace["resolve_repository_root"](
+                environ={"FORGE_CLONE_ROOT": str(clone), "FORGE_CLONE_COMMIT": "b" * 40})
+
+    def test_b1_a_bundle_entry_inside_a_dot_git_directory_refuses(self) -> None:
+        info, data = _file("src/fixturepkg/.git/HEAD", b"c" * 40)
+        base = self.root / "work"
+        base.mkdir()
+        bundle = _tar_gz([(info, data)])
+        (base / "code-bundle.tar.gz").write_bytes(bundle)
+        run_config = {
+            "clonePaths": ["src/fixturepkg"], "commit": "a" * 40,
+            "codeBundle": {"file": "code-bundle.tar.gz", "format": "tar.gz",
+                           "sha256": hashlib.sha256(bundle).hexdigest(),
+                           "bytes": len(bundle)},
+        }
+        with self.assertRaises(RUNNER_BOOTSTRAP.BootstrapError) as caught:
+            RUNNER_BOOTSTRAP.unpack_code_bundle(run_config, base, base / "clone")
+        self.assertIn("CODE_BUNDLE_UNSAFE_ENTRY", str(caught.exception))
+
+    def test_b2_a_repo_credential_with_a_code_bundle_refuses_before_anything(self) -> None:
+        target, commit = _init_target(self.root)
+        credential = self.root / "cred"
+        credential.write_text(SECRET, encoding="utf-8")
+        with unittest.mock.patch.object(
+            JOBFOLDER, "_run_git", side_effect=AssertionError("no git call")
+        ):
+            with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+                _generate(target, commit=commit, code_bundle=True,
+                          repo_credential_path=credential)
+        message = str(caught.exception)
+        self.assertTrue(message.startswith("CODE_BUNDLE_WITH_REPO_CREDENTIAL"), message)
+        self.assertNotIn(SECRET, message)
+        self.assertFalse((target / "tools").exists())
+
+    def test_b2_the_cli_refuses_the_combination_by_the_same_code(self) -> None:
+        target, commit = _init_target(self.root)
+        credential = self.root / "cred"
+        credential.write_text(SECRET, encoding="utf-8")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = REMOTE_CLI.main([
+                "generate-job", "--target", str(target), "--service", "kaggle",
+                "--job-name", "job-a", "--product", "P",
+                "--repo-url", "https://example.invalid/private.git", "--repo-ref", "main",
+                "--clone-path", "src/pkg", "--run-module", "pkg.mod",
+                "--run-function", "run", "--code-bundle",
+                "--repo-credential", str(credential),
+            ])
+        self.assertEqual(code, 1)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("CODE_BUNDLE_WITH_REPO_CREDENTIAL", err.getvalue())
+        self.assertNotIn(SECRET, err.getvalue())
+        self.assertFalse((target / "tools").exists())
+
+    def test_a_code_bundle_for_an_unknown_service_names_the_unknown_service(self) -> None:
+        target, commit = _init_target(self.root)
+        with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+            _generate(target, service="no-such-service", commit=commit, code_bundle=True)
+        self.assertNotIn("CODE_BUNDLE_NOT_CARRIED", str(caught.exception))
+        self.assertIn("no-such-service", str(caught.exception))
+
+    def test_the_submit_gate_refuses_a_bundle_that_is_not_the_pins_code(self) -> None:
+        target, commit = _init_target(self.root)
+        job_dir = _generate(target, commit=commit, code_bundle=True)
+        _git(target, "add", "-A")
+        _git(target, "commit", "-q", "-m", "job folder")
+        # A hand-made bundle with different content, its sha re-recorded.
+        forged = _tar_gz([_file("src/pkg/mod.py", b"def run(**kw):\n    return 666\n"),
+                          _file("src/pkg/__init__.py", b"")])
+        (job_dir / "code-bundle.tar.gz").write_bytes(forged)
+        config_path = job_dir / "run-config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["codeBundle"].update(sha256=hashlib.sha256(forged).hexdigest(),
+                                    bytes=len(forged))
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        _git(target, "add", "-A")
+        _git(target, "commit", "-q", "-m", "forged")
+        with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+            REMOTE_CLI._gate_job_folder_pin(job_dir / "runner.ipynb")
+        self.assertTrue(str(caught.exception).startswith("CODE_BUNDLE_MISMATCH"))
+        self.assertIn("src/pkg/mod.py", str(caught.exception))
+
+    def test_the_objective_names_the_bundle_route(self) -> None:
+        self.assertIn("--code-bundle", json.dumps(REMOTE_CLI.OBJECTIVE_FLOW))
+
+
 class GenerateJobCliCodeBundleTests(unittest.TestCase):
     """`generate-job --code-bundle` through the real front door, against the
     real shipped backend that declares the capability."""

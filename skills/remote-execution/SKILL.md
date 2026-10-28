@@ -1529,7 +1529,8 @@ can branch on it without parsing prose.
 | `CODE_BUNDLE_NOT_CARRIED` | `generate-job --code-bundle` | the service's adapter does not declare `CODE_BUNDLE_MAX_BYTES`, so it cannot ship a code bundle; refused before any git call |
 | `CODE_BUNDLE_TOO_LARGE` | `generate-job --code-bundle` | the compressed bundle exceeds the service's `CODE_BUNDLE_MAX_BYTES`; the message names both sizes and nothing is written |
 | `CODE_BUNDLE_UNSAFE_ENTRY` | `generate-job --code-bundle`, the runner | an archive entry is absolute, carries `..`, is a link or special file, or lies outside the declared clone paths |
-| `CODE_BUNDLE_MISMATCH` | `submit`, the backend's push, the runner | the job folder's `code-bundle.tar.gz` is absent or does not hash to `codeBundle.sha256`; nothing is pushed or unpacked |
+| `CODE_BUNDLE_MISMATCH` | `submit`, the backend's push, the runner | the job folder's `code-bundle.tar.gz` is absent, does not hash to `codeBundle.sha256`, or (at `submit`) holds files that differ from the pin's; nothing is pushed or unpacked |
+| `CODE_BUNDLE_WITH_REPO_CREDENTIAL` | `generate-job` | `--code-bundle` and `--repo-credential` were both given; a bundled job never clones, so the credential would be ignored. Refused before anything is read or written |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Smoke — a readiness gate, evidence-derived
@@ -1893,18 +1894,25 @@ bytes), writes `code-bundle.tar.gz` beside `run-config.json` and records
 `codeBundle: {file, format, sha256, bytes}` there. The remote is never asked:
 no published-tip default and no `pin-published` probe, while every local
 condition (clean worktree, pin is HEAD, declared paths exist) still refuses
-as always; no credential is read. `submit` checks the file against the
-recorded sha256 before anything is uploaded, the backend writes its bytes
-into the pushed notebook, and the runner verifies the sha256 again and
-unpacks into the same clone directory instead of cloning, refusing an entry
-that is absolute, carries `..`, is a link or special file, or lies outside
-the declared clone paths. `bootstrap.json` and the run record the same pinned
-`commit` as a cloned job, so smoke and readiness verdicts read identically,
+as always; no credential is read, and `--repo-credential` together with
+`--code-bundle` refuses `CODE_BUNDLE_WITH_REPO_CREDENTIAL` before anything is
+read or written. `submit` checks the file against the recorded sha256 and
+rebuilds the bundle from the pin, comparing their files, before anything is
+uploaded; the backend writes its bytes into the pushed notebook, and the
+runner verifies the sha256 again and unpacks into the same clone directory
+instead of cloning, refusing an entry that is absolute, carries `..`, lies
+inside a `.git` directory, is a link or special file, or lies outside the
+declared clone paths. It then writes `<clone>/.git/HEAD` holding the pinned
+commit, the shape a detached clone leaves, so a notebook's repository-root
+cell proves the root at `FORGE_CLONE_COMMIT` exactly as for a clone (and
+still refuses any other commit). `bootstrap.json` and the run record the same
+pinned `commit` as a cloned job, so smoke and readiness verdicts read identically,
 and the job goes stale exactly when a cloned one would (a clone path changed
 after the pin). Without `--code-bundle` nothing changes. A bundle honors the
 commit's own `.gitattributes` `export-ignore`/`export-subst` under a clone
 path. Refusals: `CODE_BUNDLE_NOT_CARRIED`, `CODE_BUNDLE_TOO_LARGE`,
-`CODE_BUNDLE_UNSAFE_ENTRY`, `CODE_BUNDLE_MISMATCH` (see "Refusal codes").
+`CODE_BUNDLE_UNSAFE_ENTRY`, `CODE_BUNDLE_MISMATCH`,
+`CODE_BUNDLE_WITH_REPO_CREDENTIAL` (see "Refusal codes").
 
 A second backend brings its own answer to this section: nothing above the
 adapter seam knows a service exists, so nothing above it knows what a service
