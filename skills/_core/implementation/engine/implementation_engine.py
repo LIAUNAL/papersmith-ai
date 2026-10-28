@@ -4149,8 +4149,14 @@ def cmd_probe(args) -> dict:
         target / name, declaration_status=resolved["status"],
         digest=source_digest(target, package_name(name)))
     # Computed once and reused for the `remoteExecution` merge below, rather
-    # than called twice for the same answer.
-    jobs = remote_execution_jobs_state(target)
+    # than called twice for the same answer. The per-folder entries stay in
+    # this function: `flow_acts` reads each step's `(service, job)` off them
+    # (S3), and only the published reduction is returned.
+    job_states: list[dict] = []
+    jobs = remote_execution_jobs_state(target, folders=job_states)
+    flow_jobs = [{"job": state["job"], "service": state["service"],
+                  "smokeReady": bool(state["smokeReady"])}
+                 for state in job_states]
     # `probe` takes no `--shards` of its own, but a target that declared
     # `distribution.shardsRoot` still gets a real shard answer here --
     # `_resolve_shard_evidence` is the identical fallback
@@ -4679,8 +4685,12 @@ def cmd_probe(args) -> dict:
         # next was performed by hand. Reports and issues nothing: running any
         # of these acts is the caller's, and every guard each one carries
         # stays where it is. See `flow_acts`.
+        # `flow_jobs`, never the published rows: those carry no
+        # `smokeReady` and no service, so a ready job read as one still
+        # owing its rehearsal and two services' folders of one name shadowed
+        # each other.
         "flowActs": flow_acts(
-            walk["steps"], probe_steps, jobs.get("jobs") or [],
+            walk["steps"], probe_steps, flow_jobs,
             # The rung the operator's own position header aims at, never the
             # top of the ladder: `position --target-level` is the knob that
             # says which phase this pass is walking toward, and it carries its
@@ -4695,7 +4705,7 @@ def cmd_probe(args) -> dict:
         # and would read as finished, which is the one way this ladder can
         # tell a session it arrived when it did not. See `flow_destination`.
         "flowDestination": flow_destination(
-            walk["steps"], probe_steps, jobs.get("jobs") or [],
+            walk["steps"], probe_steps, flow_jobs,
             walk.get("levels") or []),
         # What went out to a remote worker (the ledger), plus what job
         # folders exist right now (the filesystem), plus — purely additive,
@@ -11075,7 +11085,8 @@ def _job_execution_fields(run_config: dict) -> dict:
             "localBudget": run_config.get("localBudget")}
 
 
-def remote_execution_jobs_state(target: Path) -> dict:
+def remote_execution_jobs_state(target: Path,
+                                folders: list | None = None) -> dict:
     """`probe`'s own job-folder fact (design #744 section 9): what job
     folders exist on disk right now, reported alongside
     `remote_execution_state()`'s ledger-derived fields under the same
@@ -11143,22 +11154,32 @@ def remote_execution_jobs_state(target: Path) -> dict:
     runs through T11's own function, not a second copy of it. The worker
     itself is never reported: `smokeReady` is keyed by job name (already
     exposed via `jobs` above), never by worker.
+
+    **Per folder, kept inside this file** (`parallel-campaigns` S3).
+    `folders`, when given, receives one entry per discovered job folder,
+    identified by `(service, job)`: `{"service", "job", "dir", "runConfig",
+    "row", "smokeReady"}`, where `row` is the published `jobs` row and
+    `smokeReady` is `None` for a folder with a `run-config.json` that could
+    not be read. Two folders with the same job name under two services are two
+    entries there; until now every consumer looked a job up by name alone and
+    the first sorted folder shadowed the other. The payload returned here
+    stays keyed by job name and never by service: a name is `smokeReady`
+    only when EVERY folder carrying it is, so a `True` read off one
+    service's rehearsal never stands for the other's.
     """
     if not REMOTE_EXECUTION_CLI_SCRIPT.is_file():
         return {"jobs": [], "services": 0, "smokeReady": {}}
-
     target = Path(target).resolve()
     rcli = _load_remote_execution_cli()
-    job_dirs = _discovered_job_folders(target, rcli)
-    services = len({job_dir.parent.name for job_dir in job_dirs})
-
-    jobs: list[dict] = []
-    smoke_ready: dict[str, bool] = {}
-    for job_dir in job_dirs:
+    states: list[dict] = []
+    for job_dir in _discovered_job_folders(target, rcli):
+        service = job_dir.parent.name
         try:
             job_folder = rcli.JOBFOLDER.read(job_dir)
         except rcli.JOBFOLDER.JobFolderError as exc:
-            jobs.append({
+            states.append({"service": service, "job": job_dir.name,
+                           "dir": job_dir, "runConfig": None, "smokeReady": None,
+                           "row": {
                 "job": job_dir.name,
                 "product": None,
                 "staleness": {"status": "unreadable", "reason": str(exc)},
@@ -11171,7 +11192,7 @@ def remote_execution_jobs_state(target: Path) -> dict:
                 # could read declares nothing knowable, which is what `None`
                 # says here -- and `staleness` beside it already says why.
                 "notebook": None,
-            })
+            }})
             continue
 
         run_config = job_folder.run_config
@@ -11182,7 +11203,7 @@ def remote_execution_jobs_state(target: Path) -> dict:
         # second `JOBFOLDER.read()`. Both are additive, optional blocks
         # `jobfolder.build_run_config()` writes only when the target
         # declared them; absent here, exactly as they are absent there.
-        jobs.append({
+        row = {
             "job": job_name,
             "product": product,
             "staleness": dict(job_folder.staleness),
@@ -11201,21 +11222,106 @@ def remote_execution_jobs_state(target: Path) -> dict:
             # the thing a campaign sends. Nothing in the other skill is
             # reached, read differently, or changed by this.
             "notebook": _run_block_notebook(run_config),
-        })
+        }
+        states.append({"service": service, "job": job_name, "dir": job_dir,
+                       "runConfig": run_config, "row": row,
+                       "smokeReady": _folder_smoke_ready(
+                           target, rcli, job_dir, run_config)})
+    smoke_ready: dict[str, bool] = {}
+    for state in states:
+        if state["smokeReady"] is not None:
+            smoke_ready[state["job"]] = (smoke_ready.get(state["job"], True)
+                                         and state["smokeReady"])
+    if folders is not None:
+        folders.extend(states)
+    return {"jobs": [state["row"] for state in states],
+            "services": len({state["service"] for state in states}),
+            "smokeReady": smoke_ready}
 
-        if not isinstance(product, str) or not product:
-            smoke_ready[job_name] = False
-            continue
-        smoke_ledger_path = target / product / rcli.LEDGER_DIRNAME / rcli.SMOKE_LEDGER_FILENAME
-        latest = rcli.latest_smoke_event(smoke_ledger_path, job_name)
-        worker = latest.get("worker") if latest else None
-        if not isinstance(worker, str) or not worker:
-            smoke_ready[job_name] = False
-            continue
-        readiness = rcli.cmd_readiness(job_dir=job_dir, worker=worker)
-        smoke_ready[job_name] = bool(readiness["ready"])
 
-    return {"jobs": jobs, "services": services, "smokeReady": smoke_ready}
+def _job_folder_states(target: Path) -> list[dict]:
+    """`remote_execution_jobs_state()`'s per-folder entries, `(service, job)`
+    each -- see its `folders` parameter."""
+    folders: list[dict] = []
+    remote_execution_jobs_state(target, folders=folders)
+    return folders
+
+
+def _smoke_events_for_folder(target: Path, rcli, job_dir: Path,
+                             run_config: dict) -> list[dict] | None:
+    """Every `smokeResult` event for this folder, in append order, or `None`
+    when its `run-config.json` names no product to find a smoke ledger under.
+
+    Matched by `jobName`, as `remote_cli.latest_smoke_event()` matches, and
+    additionally by `service` WHEN the event carries one: an event naming a
+    different service belongs to the other folder of the same name (S3). An
+    event naming no service -- every one written so far -- is matched by name
+    alone, which is exactly today's reading.
+    """
+    product = run_config.get("product")
+    if not isinstance(product, str) or not product:
+        return None
+    path = target / product / rcli.LEDGER_DIRNAME / rcli.SMOKE_LEDGER_FILENAME
+    if not path.is_file():
+        return []
+    job_name = run_config.get("jobName", job_dir.name)
+    service = job_dir.parent.name
+    events: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(line) if line.strip() else None
+        except json.JSONDecodeError:
+            continue
+        if (isinstance(event, dict)
+                and event.get("kind") == rcli.SMOKE_RESULT_KIND
+                and event.get("jobName") == job_name
+                and event.get("service", service) == service):
+            events.append(event)
+    return events
+
+
+def _folder_smoke_ready(target: Path, rcli, job_dir: Path, run_config: dict) -> bool:
+    """`smokeReady` for one job folder: its latest rehearsal passed at its pin.
+
+    Routed through `remote_cli.cmd_readiness()` whenever that function reads
+    the same latest record this folder does -- the worker taken from the
+    record itself, so the worker clause is tautological and the pass/commit
+    comparison is T11's own. Only when a smoke event names a service (so the
+    job-name-only lookup could land on the other folder's record) is the
+    comparison made here, over the record that belongs to THIS folder.
+    """
+    events = _smoke_events_for_folder(target, rcli, job_dir, run_config)
+    if not events:
+        return False
+    latest = events[-1]
+    worker = latest.get("worker")
+    if not isinstance(worker, str) or not worker:
+        return False
+    if all("service" not in event for event in events):
+        return bool(rcli.cmd_readiness(job_dir=job_dir, worker=worker)["ready"])
+    return (latest.get("result") == "pass"
+            and latest.get("commit") == run_config.get("commit"))
+
+
+def _workers_without_rehearsal(target: Path, rcli, job_dir: Path,
+                               run_config: dict, workers: list[str]) -> list[str]:
+    """The workers in `workers`, in order, with no passing rehearsal of their
+    own on this folder's current pin (`parallel-campaigns` S2).
+
+    Per worker, the latest record THAT worker wrote decides -- never the
+    latest record overall, which is all `smokeReady` reads and which a second
+    account's rehearsal overwrites. A pass on one account says nothing about
+    another (`rehearse-each-account`), so a campaign spread over several needs
+    one on each.
+    """
+    latest: dict[str, dict] = {}
+    for event in _smoke_events_for_folder(target, rcli, job_dir, run_config) or []:
+        if isinstance(event.get("worker"), str):
+            latest[event["worker"]] = event
+    pin = run_config.get("commit")
+    return [worker for worker in workers
+            if not (worker in latest and latest[worker].get("result") == "pass"
+                    and latest[worker].get("commit") == pin)]
 
 
 def _now_iso8601() -> str:
@@ -11928,16 +12034,24 @@ def _remote_step_witnesses(target: Path, name: str) -> dict:
     relative = f"{name}/.remote-execution/ledger.jsonl"
     witnesses = {}
     for step, job in links.items():
-        verdict, reason = _remote_job_result(target, rcli, state, returned, job, relative)
+        # The step's own declared `service` selects the folder (S3): two
+        # folders carrying one job name under two services are two jobs.
+        verdict, reason = _remote_job_result(
+            target, rcli, state, returned, job, relative,
+            _step_service(declared.get(step)))
         witnesses[step] = {"job": job, "verdict": verdict, "reason": reason}
     return witnesses
 
 
 def _remote_job_result(target: Path, rcli, state, returned: dict, job: str,
-                       ledger: str) -> tuple[bool | None, str | None]:
+                       ledger: str, service: str | None = None
+                       ) -> tuple[bool | None, str | None]:
     """`(True, None)` when `job`'s result came back current, else
     `(None, why)` -- `_remote_step_witnesses`' rule, for one job."""
-    job_dir, run_config = _job_folder_named(target, rcli, job)
+    try:
+        job_dir, run_config = _job_folder_named(target, rcli, job, service)
+    except Refused as exc:
+        return None, exc.detail
     if job_dir is None:
         return None, (f"no job folder under tools/ declares job {job!r}; generate "
                       "it, submit it and fetch its result")
@@ -12573,7 +12687,6 @@ def flow_acts(rows: list[dict], steps: dict, jobs: list[dict],
     before the walk ever reaches it.
     """
     levels = list(levels or [])
-    by_name = {job.get("job"): job for job in jobs if isinstance(job, dict)}
     acts = []
     # By the ORDER THE FLOW DECLARES, never the order the rows arrive in.
     # `_walk_report` sorts its rows by step name because it is a report and a
@@ -12628,7 +12741,7 @@ def flow_acts(rows: list[dict], steps: dict, jobs: list[dict],
                                   "elsewhere, nor to the service that folder "
                                   "lives under"})
             continue
-        job = by_name.get(job_name)
+        job = _job_row(jobs, job_name, service)
         needs = None
         if job is None:
             act = ACT_GENERATE_JOB
@@ -12644,6 +12757,23 @@ def flow_acts(rows: list[dict], steps: dict, jobs: list[dict],
         acts.append({"step": row["step"], "placement": placement,
                      "act": act, "job": job_name, "needs": needs})
     return acts
+
+
+def _job_row(jobs: list[dict], job: str, service: str | None) -> dict | None:
+    """The `jobs` row a step's `(service, job)` names, or `None`.
+
+    Rows built inside this file carry the folder's `service`
+    (`_job_folder_states`), and then the step's own declared `service`
+    selects among them (`parallel-campaigns` S3): a folder of the same name
+    under another service is another job, never this step's. A row carrying
+    no `service` -- the published `jobs` shape, which reduces services to a
+    count -- is matched by name alone, the last one winning, as it always
+    was.
+    """
+    rows = [row for row in jobs if isinstance(row, dict) and row.get("job") == job]
+    if any("service" in row for row in rows):
+        rows = [row for row in rows if row.get("service") == service]
+    return rows[-1] if rows else None
 
 
 def flow_destination(rows: list[dict], steps: dict, jobs: list[dict],
@@ -12747,7 +12877,7 @@ def generate_job_argv(target: Path, name: str, step: str, entry: dict,
     return argv
 
 
-def walk_plan(acts: list[dict]) -> dict:
+def walk_plan(acts: list[dict], declared: dict | None = None) -> dict:
     """What a walk would perform, in order, and the act it stops at.
 
     Pure, and it performs nothing: it decides. The caller executes, so every
@@ -12759,19 +12889,106 @@ def walk_plan(acts: list[dict]) -> dict:
     run the rest against material that was never produced. A `blocked` step
     stops the walk for the same reason a `launch` does -- one because nobody
     routed it, the other because somebody has to approve it.
+
+    **Given the `__steps__` entries, it also reports what can launch at once**
+    (`parallel-campaigns` S4) as `concurrentLaunches`: see
+    `concurrent_launches`. The key is present only when more than one launch
+    is ready together; with one, the result is the serial one, byte for byte.
+    Nothing is launched either way -- the walk still stops at `stopsAt`.
     """
     performs: list[dict] = []
+    stops_at = None
     for act in acts:
         if act["act"] in WALK_STOPS_AT:
-            return {"performs": performs, "stopsAt": act}
+            stops_at = act
+            break
         if act["act"] not in WALK_PERFORMS:
-            return {"performs": performs,
-                    "stopsAt": {**act, "needs": (
-                        f"{act['act']!r} is classified in neither "
-                        "WALK_PERFORMS nor WALK_STOPS_AT, so nothing here "
-                        "knows whether a walk may take it")}}
+            stops_at = {**act, "needs": (
+                f"{act['act']!r} is classified in neither "
+                "WALK_PERFORMS nor WALK_STOPS_AT, so nothing here "
+                "knows whether a walk may take it")}
+            break
         performs.append(act)
-    return {"performs": performs, "stopsAt": None}
+    plan = {"performs": performs, "stopsAt": stops_at}
+    if declared is not None:
+        concurrent = concurrent_launches(acts, declared,
+                                         performed={a["step"] for a in performs})
+        if len(concurrent["launchable"]) > 1:
+            plan["concurrentLaunches"] = concurrent
+    return plan
+
+
+#: What a launchable step still owes, said once next to the list of them:
+#: each is its own campaign, so each passes its own gate.
+CONCURRENT_LAUNCHES_NOTE = (
+    "every step in `launchable` reads only what is already produced, so they "
+    "may be launched at the same time -- each through its own `launch-plan "
+    "--job <job>`, `propose`, `offer` and `gate`, on the service its step "
+    "declares. Nothing here launches any of them; a step in `waiting` goes "
+    "out once every step in its `waitsOn` has been done.")
+
+
+def _step_reads(entry) -> list[str] | None:
+    """A step's declared `reads`, product-relative, or `None` when it declares
+    none at all. `[]` is an answer (nothing upstream); an absent key is not,
+    and reads as depending on every step ahead of it."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("reads"), list):
+        return None
+    return [root for root in entry["reads"] if isinstance(root, str) and root.strip()]
+
+
+def _roots_overlap(read: str, produced: str) -> bool:
+    """Whether a read root and a produced root name the same tree: equal, or
+    one sits inside the other."""
+    read, produced = read.strip("/"), produced.strip("/")
+    return (read == produced or read.startswith(produced + "/")
+            or produced.startswith(read + "/"))
+
+
+def concurrent_launches(acts: list[dict], declared: dict,
+                        performed: set[str] | frozenset = frozenset()) -> dict:
+    """Every `launch` act with its inputs already produced, and every step
+    off this machine still waiting on one not done (`parallel-campaigns` S4).
+
+    A step is DONE when it owes no act (its rung already reaches the one
+    walked toward, so `flow_acts` dropped it) or when this walk performs it
+    first (`performed`). A worker-placed step waits on every owed, unperformed
+    step with declared outputs overlapping one of its `reads` -- the same
+    link a rehearsal reads to refuse a notebook with inputs not there yet. A step declaring no `reads` key at all has no link to read,
+    so it waits on every owed step ahead of it in the flow's order: the serial
+    reading, never a guess that it is independent.
+
+    `launchable` lists `launch` acts with nothing to wait for, in flow order;
+    `waiting` lists worker-placed ones (any act), each naming what it waits on.
+    Pure: nothing is launched, and no service is named -- each entry carries
+    its step and its job, and the step's own entry says where it runs.
+    """
+    owed = [act["step"] for act in acts]
+    pending = [step for step in owed if step not in performed]
+    launchable: list[dict] = []
+    waiting: list[dict] = []
+    for index, act in enumerate(acts):
+        if act.get("placement") != PLACEMENT_REMOTE:
+            continue
+        reads = _step_reads(declared.get(act["step"]))
+        if reads is None:
+            waits_on = [step for step in owed[:index] if step in pending]
+        else:
+            waits_on = [
+                step for step in pending
+                if step != act["step"] and any(
+                    _roots_overlap(read, produced)
+                    for read in reads
+                    for produced in _produces_roots(
+                        declared.get(step) if isinstance(declared.get(step), dict)
+                        else {}))]
+        if waits_on:
+            waiting.append({"step": act["step"], "job": act.get("job"),
+                            "act": act["act"], "waitsOn": waits_on})
+        elif act["act"] == ACT_LAUNCH:
+            launchable.append({"step": act["step"], "job": act.get("job")})
+    return {"launchable": launchable, "waiting": waiting,
+            "note": CONCURRENT_LAUNCHES_NOTE}
 
 
 def undeclared_placement_state(steps: dict) -> list[dict]:
@@ -16901,6 +17118,7 @@ def _verify_gate_proposal(events: list, job: str, record: dict, campaign: dict) 
             "disk -- the pin moved, or a job folder was added or removed, "
             "since `propose` last ran. Publish a fresh proposal with "
             "`propose`.")
+    return candidate
 
 
 def _verify_optional_election(job: str, necessity: str, elected: list | None) -> None:
@@ -17041,17 +17259,37 @@ def _launch_position_state(target: Path, name: str, evidence: dict,
     return position
 
 
-def _job_folder_named(target: Path, rcli, job: str):
+def _job_folder_named(target: Path, rcli, job: str, service: str | None = None):
     """`(job_dir, run_config)` for the discovered job folder whose own
-    `jobName` (or folder name) is `job`, or `(None, None)`."""
+    `jobName` (or folder name) is `job`, or `(None, None)`.
+
+    A job folder is identified by `(service, job)` (`parallel-campaigns` S3):
+    `service`, when given, is the `tools/<service>/` directory the folder must
+    sit under -- the step's own declared `service`, or the caller's
+    `--service`. Without it, one folder carrying the name is found exactly as
+    it always was, and two or more under different services refuse
+    `JOB_SERVICE_AMBIGUOUS`, never letting the first sorted one shadow the
+    rest. The refusal counts the folders and names no service: a service
+    is read here to walk a directory, never returned.
+    """
+    matches = []
     for candidate in _discovered_job_folders(target, rcli):
+        if service is not None and candidate.parent.name != service:
+            continue
         try:
             candidate_config = rcli.JOBFOLDER.read(candidate).run_config
         except rcli.JOBFOLDER.JobFolderError:
             continue
         if candidate_config.get("jobName", candidate.name) == job:
-            return candidate, candidate_config
-    return None, None
+            matches.append((candidate, candidate_config))
+    if len(matches) > 1:
+        raise Refused(
+            "JOB_SERVICE_AMBIGUOUS",
+            f"{len(matches)} job folders under different services are named "
+            f"{job!r}, so the job alone does not say which one this call "
+            "is about; pass --service <service> (the `service` the step "
+            "declares) to select one.")
+    return matches[0] if matches else (None, None)
 
 
 def cmd_gate(args: argparse.Namespace) -> dict:
@@ -17173,10 +17411,25 @@ def cmd_gate(args: argparse.Namespace) -> dict:
     # The fold itself lives in `_launch_position_state`, shared with
     # `launch-plan`, so the two read the identical position.
     smoke_ready = evidence["smokeReady"]
+    # The folder is `(service, job)` (S3): `--service` selects among folders
+    # of one name under several services, and its OWN readiness is the one
+    # read -- never the published by-name answer, which is `True` only when
+    # every folder of the name is. One folder per name reads exactly what it
+    # always did.
+    # Loaded only where the skill is installed: without it there is no job
+    # folder to find, and the readiness refusal below is the honest answer --
+    # exactly as it was until this lookup moved ahead of it.
+    rcli = (_load_remote_execution_cli()
+            if REMOTE_EXECUTION_CLI_SCRIPT.is_file() else None)
+    job_dir, run_config = (_job_folder_named(
+        target, rcli, args.job, getattr(args, "service", None))
+        if rcli is not None else (None, None))
+    ready = (_folder_smoke_ready(target, rcli, job_dir, run_config)
+             if job_dir is not None else smoke_ready.get(args.job))
     verdict = impl_availability.launch_available(
         status=position["status"], unbacked=position["unbacked"],
         disagreements=_launch_disagreements(position),
-        sequence=position["sequence"], ready=smoke_ready.get(args.job),
+        sequence=position["sequence"], ready=ready,
         job=args.job, shards_declared=evidence["shardsArrived"] is not None,
         levels=evidence["levels"], attained_level=position["attainedLevel"])
     if not verdict["available"]:
@@ -17286,8 +17539,7 @@ def cmd_gate(args: argparse.Namespace) -> dict:
             "ladder's own floor for attainment; run `position` again once "
             f"the evidence reaches {facts['requiredLevel']!r}.")
 
-    rcli = _load_remote_execution_cli()
-    job_dir, run_config = _job_folder_named(target, rcli, args.job)
+    rcli = rcli or _load_remote_execution_cli()
     if job_dir is None:
         # `smoke_ready.get(args.job) is True` above already requires this job
         # to have been discovered and read successfully -- reaching here
@@ -17355,7 +17607,29 @@ def cmd_gate(args: argparse.Namespace) -> dict:
     }
     record = _verify_gate_authorization(events, args.authorization, gate_binding)
 
-    _verify_gate_proposal(events, args.job, record, campaign)
+    campaign_record = _verify_gate_proposal(events, args.job, record, campaign)
+
+    if args.units:
+        # Readiness per worker (`parallel-campaigns` S2, doctrine
+        # `rehearse-each-account`): a campaign spreads its units over the
+        # workers its `propose` record names, and a pass on one account says nothing
+        # about another. `ready` above is the job's latest rehearsal, whoever
+        # ran it; this is every intended worker's own.
+        workers = list(campaign_record.get("workers") or [])
+        missing = (_workers_without_rehearsal(
+            target, rcli, job_dir, run_config, workers) if workers else [])
+        if not workers or missing:
+            raise Refused(
+                "NOT_READY",
+                f"job {args.job!r} is a campaign over the {len(workers)} "
+                "worker(s) its `propose` record names, and "
+                + (f"worker(s) {', '.join(repr(w) for w in missing)} have no "
+                   "passing rehearsal of their own at the job's current pin"
+                   if workers else "that record names no worker at all")
+                + " -- a rehearsal binds to the worker it ran on, so each "
+                "account a campaign uses must rehearse for it to be "
+                "authorized. Rehearse on each one named, record its verdict "
+                "with `smoke record`, then gate again.")
 
     # The classification this job's own facts decide (design D3,
     # `the-pilot-decides-the-remote-strategy`), computed the same
@@ -17454,11 +17728,16 @@ def _offer_launch_action(target, name, args, rcli, position, evidence, job_dir):
         return None
     job_name = run_config.get("jobName", job_dir.name)
 
+    # This folder's own readiness (S3): with one folder per job name it is
+    # exactly `evidence["smokeReady"][job_name]`; with a second folder of the
+    # same name under another service, that by-name answer is the two
+    # folders' conjunction and would withhold this one's launch for the
+    # other's missing rehearsal.
     verdict = impl_availability.launch_available(
         status=position["status"], unbacked=position["unbacked"],
         disagreements=_launch_disagreements(position),
         sequence=position["sequence"],
-        ready=evidence["smokeReady"].get(job_name), job=job_name,
+        ready=_folder_smoke_ready(target, rcli, job_dir, run_config), job=job_name,
         shards_declared=evidence["shardsArrived"] is not None,
         levels=evidence["levels"], attained_level=position["attainedLevel"])
     if not verdict["available"]:
@@ -17928,7 +18207,8 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
     position = _launch_position_state(target, name, evidence, args.revision, source)
     rcli = _load_remote_execution_cli()
     campaign = _campaign_identity(target, rcli)
-    job_dir, run_config = _job_folder_named(target, rcli, job)
+    service = getattr(args, "service", None)
+    job_dir, run_config = _job_folder_named(target, rcli, job, service)
     commit = (run_config or {}).get("commit")
     entrypoint = (str((job_dir / rcli.JOBFOLDER.RUNNER_FILENAME).relative_to(target))
                   if job_dir is not None else None)
@@ -17949,7 +18229,9 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
     verdict = impl_availability.launch_available(
         status=position["status"], unbacked=position["unbacked"],
         disagreements=_launch_disagreements(position),
-        sequence=position["sequence"], ready=evidence["smokeReady"].get(job),
+        sequence=position["sequence"],
+        ready=(_folder_smoke_ready(target, rcli, job_dir, run_config)
+               if job_dir is not None else evidence["smokeReady"].get(job)),
         job=job, shards_declared=evidence["shardsArrived"] is not None,
         levels=evidence["levels"], attained_level=position["attainedLevel"])
 
@@ -18019,7 +18301,9 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
                     "gate", *target_args, "--revision", str(args.revision),
                     "--session", session, "--job", job, "--worker", worker_flag,
                     "--justification", "-", "--authorization", token,
-                    *(("--elect", job) if optional else ()))}
+                    *(("--elect", job) if optional else ()),
+                    # `<service>`, never the name itself: see `submit` below.
+                    *(("--service", "<service>") if service else ()))}
     else:
         gate = {"act": "gate", "status": "pending", "code": None, "command": None}
 
@@ -18048,6 +18332,7 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
 
     acts = [propose, offer, gate, submit]
     upcoming = next((a for a in acts if a["status"] in ("blocked", "next")), None)
+    concurrent = _concurrent_launches_state(target, name, args.revision)
     return {
         "command": "launch-plan", "target": str(target), "name": name, "job": job,
         "revision": args.revision, "revisionSha256": revision_sha256,
@@ -18056,7 +18341,28 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
             "act": upcoming["act"], "status": upcoming["status"],
             "code": upcoming["code"], "command": upcoming["command"]},
         **({"launchLadder": ladder} if ladder else {}),
+        **({"concurrentLaunches": concurrent} if concurrent else {}),
     }
+
+
+def _concurrent_launches_state(target: Path, name: str,
+                               revision: str | None) -> dict | None:
+    """`walk_plan`'s `concurrentLaunches` for this target, read through
+    `probe` exactly as `walk` reads it, or `None` (S4).
+
+    `None` when one step at most is launchable -- the serial answer, where
+    the job's own acts already say everything -- and when `probe` itself
+    refuses: this is a report next to the plan, never a reason for the plan
+    to refuse.
+    """
+    try:
+        probe = cmd_probe(argparse.Namespace(
+            target=str(target), name=name, revision=revision))
+    except Refused:
+        return None
+    return walk_plan(probe.get("flowActs") or [],
+                     resolve_steps_declaration(target, name)
+                     ).get("concurrentLaunches")
 
 
 def _declared_flow(target: Path, name: str, evidence: dict) -> list[str]:
@@ -20875,6 +21181,9 @@ GATING_REFUSALS: dict[str, str] = {
     # --- gate --------------------------------------------------------------
     "GATE_WORKER_UNIT_CONFLICT": INVOCATION_DEFECT,
     "GATE_WORKER_REQUIRED": INVOCATION_DEFECT,
+    # Folders of one job name under several services (S3, parallel
+    # campaigns): `--service` selects one, so the invocation alone clears it.
+    "JOB_SERVICE_AMBIGUOUS": INVOCATION_DEFECT,
     "EMPTY_JUSTIFICATION": INVOCATION_DEFECT,
     # No token exists to pass: one is minted by a prior `offer` publish, which
     # is an act on the ledger. The arguable one -- the detail does name a flag
@@ -22094,7 +22403,13 @@ def cmd_walk(args: argparse.Namespace) -> dict:
 
     probe = cmd_probe(argparse.Namespace(
         target=str(target), name=args.name, revision=args.revision))
-    plan = walk_plan(probe["flowActs"])
+    # `__steps__` is read once, here: `walk_plan` reads each entry's
+    # `reads` and outputs to report every launch ready at once (S4), and the
+    # `generate-job` argv below reads the same entries.
+    declared = resolve_steps_declaration(target, name)
+    plan = walk_plan(probe["flowActs"], declared)
+    concurrent = ({"concurrentLaunches": plan["concurrentLaunches"]}
+                  if "concurrentLaunches" in plan else {})
 
     performed: list[dict] = []
     for act in plan["performs"]:
@@ -22107,8 +22422,7 @@ def cmd_walk(args: argparse.Namespace) -> dict:
             # name, and this skill's own rule is that a service is read to
             # walk a directory and reduced to a count before anything is
             # returned. Executing one is not returning one.
-            steps = resolve_steps_declaration(target, name)
-            entry = steps.get(act["step"]) or {}
+            entry = declared.get(act["step"]) or {}
             notebooks = _step_notebook_roots(entry)
             argv = generate_job_argv(
                 target, name, act["step"], entry,
@@ -22136,7 +22450,8 @@ def cmd_walk(args: argparse.Namespace) -> dict:
             "performed": performed, "stoppedAt": plan["stopsAt"],
             "reason": None if plan["stopsAt"] is None else
                       plan["stopsAt"].get("needs")
-                      or "a launch is the operator's to authorize"}
+                      or "a launch is the operator's to authorize",
+            **concurrent}
 
 
 #: The subject `walk` commits a step's product under, unless the operator
@@ -22400,9 +22715,10 @@ def main(argv: list[str] | None = None) -> int:
                                 "argv-declared")
             p.add_argument("--worker", dest="workers", action="append", required=True,
                            help="repeatable, at least one: an intended "
-                                "worker account for this campaign. Recorded "
-                                "write-only history, like `offer`'s own "
-                                "`answer`; read by nobody in this change")
+                                "worker account for this campaign. `gate "
+                                "--unit` reads it: every worker named here "
+                                "needs its own passing rehearsal at the "
+                                "job's pin for the campaign to be gated")
             p.add_argument("--depends-on", dest="depends_on", action="append",
                            default=None,
                            help="repeatable, optional: one dependency edge "
@@ -22423,13 +22739,23 @@ def main(argv: list[str] | None = None) -> int:
                                 "campaign instead, and refused together with "
                                 "--unit -- a campaign has no single named "
                                 "account")
+            p.add_argument("--service", default=None,
+                           help="the service holding the job folder --job names, "
+                                "when folders of that job name sit under more "
+                                "than one service (the `service` the step "
+                                "declares); refused JOB_SERVICE_AMBIGUOUS "
+                                "without it in that case. One folder per job "
+                                "name needs none")
             p.add_argument("--unit", dest="units", action="append", default=None,
                            help="repeatable: authorize a CAMPAIGN launch "
                                 "instead of a single-send one, binding the "
                                 "exact ordered unit list a later `submit "
                                 "--unit ...` will carry -- the same "
                                 "derivation remote_cli's own consent token "
-                                "uses. Mutually exclusive with --worker")
+                                "uses. Mutually exclusive with --worker. "
+                                "Refused NOT_READY unless every worker the "
+                                "`propose` record names has its own passing "
+                                "rehearsal at the job's current pin")
             p.add_argument("--justification", required=True,
                            help="the launch justification text, or - to read "
                                 "stdin; refused if it is blank")
@@ -22469,6 +22795,13 @@ def main(argv: list[str] | None = None) -> int:
                                 "the printed gate/submit commands and used to "
                                 "find a `gate` record `submit` would accept. "
                                 "Omitted, the commands carry `<account>`")
+            p.add_argument("--service", default=None,
+                           help="the service holding the job folder this plans, "
+                                "when folders of the same job name sit under "
+                                "more than one service (the `service` the "
+                                "step declares); refused JOB_SERVICE_AMBIGUOUS "
+                                "without it in that case. One folder per job "
+                                "name needs none")
             p.add_argument("--session", default=None,
                            help="identity to print into the commands it lists; "
                                 "nothing is stamped anywhere. Omitted, the "
