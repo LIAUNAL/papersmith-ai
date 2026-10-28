@@ -15,7 +15,7 @@ Branch: `feat/kernel-carry` (from `origin/main` 6e741b20, v0.31.0). Delivery: on
 
 ## Tasks
 
-- T1 (S1-S6) delegated writer (reason: parallel with the parent's QMLEEG walk in another repository) — done, commits listed in L3
+- T1 (S1-S6) delegated writer (reason: parallel with the parent's QMLEEG walk in another repository) — done, commits 6294737c (feat), b002b9cb (docs agents)
 - T2 independent verifier (high risk: submit/ledger contract, item 3) — pending
 
 ## Log
