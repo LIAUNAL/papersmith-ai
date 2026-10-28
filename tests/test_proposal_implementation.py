@@ -15930,6 +15930,22 @@ FORGE_LEXICON: dict[str, str] = {
                "flow ends on, named by the skill long before any target",
     "wiring": "the forge's own vocabulary for how a benchmark reaches prior "
               "work, checked by this skill and shipped in its kit",
+    # The six below were admitted on 2026-10-24, when module basenames stopped
+    # splitting (`names_in`): two compounds the forge itself ships under the
+    # same name, and four single-word modules whose every forge hit was
+    # measured as the forge's own use, none a mention of the target's module.
+    "report_digest": "the forge's own kit module `nb/report_digest.py`, which "
+                     "every scaffolded repository receives under this name",
+    "shard_io": "the forge's own `remote-execution/scripts/shard_io.py`, the "
+                "module job folders carry to judge shard completeness",
+    "bounds": "the forge's own declaration id `keyword-bounds` in the section "
+              "contracts, and ordinary English for node and array bounds",
+    "schedules": "ordinary English verb in the command center's lock-order "
+                 "commentary, where publishing schedules work onto the loop",
+    "comparators": "the `ast.Compare.comparators` attribute the forge's own "
+                   "implementation engine reads when it inspects a comparison",
+    "toy": "ordinary English adjective for the forge's own minimal fixture "
+           "shapes, and a case-blind match on minified `toY` coordinates",
 }
 
 #: Rule A's allowlist. A worked report example may draw its module names from
@@ -16104,15 +16120,35 @@ class ForgeVocabularyDerivedGuardTests(unittest.TestCase):
         neighbours are the tooling's placeholders, not names a repository
         chose for its science, and deriving a denylist from them would object
         to the forge for words the forge and git wrote there.
+
+        **A multi-word basename contributes its compound, never its parts**
+        -- the reading `paper_product_root_words` already measured for
+        lineages, carried down to module and notebook names. A target's
+        directory and package name are its identity and still split below;
+        a module or notebook inside it is a description its author composed
+        from ordinary words, and what identifies it is the composition.
+        Measured on 2026-10-24 when a target grew new modules: splitting
+        them put eleven everyday words on the denylist (`two`, `run`,
+        `phase`, `sample`, `device`...) and reported 277 forge files, none
+        of them naming a module. Splitting was also weaker where it
+        mattered: `\\b` never fires inside `lantern_ledger`, so a part
+        could not catch the basename copied verbatim, and the compound
+        does. A single-word basename is its own compound and stays exactly
+        as it was.
         """
         if not directory.is_dir():
             return set()
         entries = [entry for entry in sorted(directory.iterdir())
                    if not entry.name.startswith(".")]
         ignored = repository_ignored(entries, directory)
-        return {word for entry in entries if entry not in ignored
-                for word in self.split(entry.stem if entry.is_file()
-                                       else entry.name)}
+        words = set()
+        for entry in entries:
+            if entry in ignored:
+                continue
+            name = entry.stem if entry.is_file() else entry.name
+            parts = self.split(name)
+            words.update(parts if len(parts) <= 1 else [name.lower()])
+        return words
 
     def target_words(self, root=None):
         """Every word the targets on disk own, and the targets they came from.

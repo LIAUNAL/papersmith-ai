@@ -8,6 +8,7 @@ dashboard that shows only its own data or neutral empty states.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -22,8 +23,62 @@ REPO = Path(__file__).resolve().parents[1]
 #: case-insensitively against every text file the kit ships.
 OLD_PROJECT_MARKERS = (
     "moneeg", "ads1299", "tm4c", "tdah", "efecto berger", "parias", "minciencias",
-    "eje cafetero", "qmleeg", "/users/andresalvarez",
+    "eje cafetero", "qmleeg",
 )
+
+#: An absolute path into one person's home directory -- macOS `/Users/<name>`,
+#: Linux `/home/<name>`, Windows `C:\Users\<name>` -- names whoever wrote it.
+#: This replaces one such path once spelled out above as a literal marker,
+#: which put a real person's name into the very guard meant to keep it out.
+#: Placeholders (`/Users/<you>`, `/home/$USER`), `~` paths, relative paths
+#: and URL paths (`https://host/users/42`) are not a home and stay admitted.
+#: It must START an absolute path: not continue a relative one (`docs/users`,
+#: `~/users`) or a URL's own path (`https://host/users`, `host//users`). Three
+#: prefixes do start one -- `file://`, a `key:` (`path:/home/...`) and a
+#: one-letter flag glued to its value (`-v/Users/...:/w`).
+PERSONAL_HOME_PATH = re.compile(
+    r"(?:(?<![\w.~/-])|(?<=file://)|(?<=-[a-z])(?<![\w-]-[a-z]))"
+    r"(?:/users/|/home/|[a-z]:[\\/]+users[\\/]+)"
+    r"[^\s/\\\"'`<>()\[\]{}$%]+",
+    re.IGNORECASE)
+
+
+def old_project_hits(text: str) -> list[str]:
+    """What `text` carries of an older project, case-insensitively."""
+    lowered = text.lower()
+    hits = [m for m in OLD_PROJECT_MARKERS if m in lowered]
+    if PERSONAL_HOME_PATH.search(text):
+        # Named by kind, never by the path itself: the report must not
+        # repeat the identity it caught.
+        hits.append("absolute personal home path")
+    return hits
+
+
+class OldProjectDetectorTests(unittest.TestCase):
+    """The detector both scans below share, over invented text only."""
+
+    def test_no_home_path_is_spelled_as_a_literal_marker(self) -> None:
+        self.assertEqual(
+            [m for m in OLD_PROJECT_MARKERS if PERSONAL_HOME_PATH.search(m)], [])
+
+    def test_an_absolute_personal_home_path_is_caught(self) -> None:
+        for text in ("see /Users/Quillon/Proyectos/x", "cwd=/home/quillon/work",
+                     'root "/Users/zed.ortega/"', r"C:\Users\Quillon\paper",
+                     "path: c:/users/quillon/paper", "file:///Users/Quillon/x",
+                     "path:/home/quillon/x", "-v/Users/Quillon:/w"):
+            self.assertNotEqual(old_project_hits(text), [], text)
+
+    def test_relative_paths_placeholders_and_prose_are_accepted(self) -> None:
+        for text in ("./users/list.md", "~/Proyectos/paper", "/Users/<you>/paper",
+                     "/home/$USER/paper", "https://api.example.org/users/42",
+                     "users/home settings", "a list of users at home",
+                     "~/users/x", "https://host//users/42",
+                     "docs/users/list.md", "re-v/users/x"):
+            self.assertEqual(old_project_hits(text), [], text)
+
+    def test_the_named_markers_are_still_caught(self) -> None:
+        self.assertEqual(old_project_hits("built on the ADS1299 front end"),
+                         ["ads1299"])
 
 
 class KitTests(unittest.TestCase):
@@ -32,10 +87,10 @@ class KitTests(unittest.TestCase):
         for rel in sorted(walk_kit_files(REPO)):
             path = REPO / rel
             try:
-                text = path.read_text(encoding="utf-8").lower()
+                text = path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):
                 continue
-            hits.extend(f"{rel}: {m}" for m in OLD_PROJECT_MARKERS if m in text)
+            hits.extend(f"{rel}: {m}" for m in old_project_hits(text))
         self.assertEqual(hits, [])
 
 
@@ -68,8 +123,7 @@ class FreshWorkspaceTests(unittest.TestCase):
                   for path in ("/api/model", "/api/model/math", "/api/atlas/novelty",
                                "/api/atlas/novelty/view", "/api/atlas/candidates/view")}
         for path, body in bodies.items():
-            for marker in OLD_PROJECT_MARKERS:
-                self.assertNotIn(marker, body.lower(), f"{path} shows {marker!r}")
+            self.assertEqual(old_project_hits(body), [], f"{path} shows them")
         self.assertEqual(json.loads(bodies["/api/model/math"])["source"], "none")
         self.assertIn("Fresh Paper", bodies["/api/model"])
 
