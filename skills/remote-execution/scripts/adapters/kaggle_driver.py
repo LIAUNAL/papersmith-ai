@@ -257,6 +257,14 @@ def _save_kernel_request_from_staging(staging_dir: Path) -> "ApiSaveKernelReques
         if key in metadata:
             setattr(request, key, metadata.pop(key))
 
+    # kernel-carry S2: the metadata's `kernel_sources` (the earlier kernels
+    # whose output a continuation resumes from) is the request's
+    # `kernel_data_sources` -- the same mapping the `kaggle kernels push`
+    # CLI makes, and the one the live carry check (2026-10-27) exercised.
+    kernel_sources = metadata.pop("kernel_sources", None)
+    if kernel_sources:
+        request.kernel_data_sources = [str(ref) for ref in kernel_sources]
+
     if metadata:
         raise DriverError(
             f"{metadata_path} carries key(s) {sorted(metadata)} this driver "

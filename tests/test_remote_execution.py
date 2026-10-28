@@ -11351,6 +11351,56 @@ class DefaultAcceleratorProvisioningTests(unittest.TestCase):
                 },
             )
 
+    def test_generate_job_records_declared_carry_paths(self) -> None:
+        """kernel-carry S1: the paths a continuation needs, verbatim."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            destination = self._generate(
+                tmp, target, service=self.FAKE_SERVICE_NO_DEFAULT,
+                carry_paths=["Results/e1/runs", "Results/checkpoints", "hpo/studies"],
+            )
+            run_config = json.loads(
+                (destination / "run-config.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                run_config["carryPaths"],
+                ["Results/e1/runs", "Results/checkpoints", "hpo/studies"],
+            )
+
+    def test_generate_job_refuses_a_carry_path_outside_the_product(self) -> None:
+        for bad in ("/abs/ckpt", "../escape", "", ".", "./"):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "repo"
+                with self.assertRaises(JOBFOLDER.JobFolderError) as caught:
+                    self._generate(
+                        tmp, target, service=self.FAKE_SERVICE_NO_DEFAULT,
+                        carry_paths=[bad],
+                    )
+                self.assertIn("carry path", str(caught.exception))
+
+    def test_generate_job_without_carry_paths_writes_no_carry_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "repo"
+            destination = self._generate(tmp, target, service=self.FAKE_SERVICE_NO_DEFAULT)
+            run_config = json.loads(
+                (destination / "run-config.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn("carryPaths", run_config)
+
+    def test_generate_job_parser_declares_a_repeatable_carry_path(self) -> None:
+        parser = REMOTE_CLI._build_parser()
+        base = [
+            "generate-job", "--target", "/tmp/x", "--service", "svc",
+            "--job-name", "job", "--product", "P", "--commit", "a" * 40,
+            "--repo-url", "https://example.invalid/r.git", "--repo-ref", "main",
+            "--run-module", "m", "--run-function", "f",
+        ]
+        self.assertIsNone(parser.parse_args(base).carry_paths)
+        args = parser.parse_args(
+            base + ["--carry-path", "Results/checkpoints", "--carry-path", "hpo/studies"]
+        )
+        self.assertEqual(args.carry_paths, ["Results/checkpoints", "hpo/studies"])
+
     # -- CLI wiring: --accelerator-*/--environment-* flags -----------------
 
     def test_generate_job_parser_declares_accelerator_and_environment_flags(self) -> None:
@@ -26063,6 +26113,614 @@ class RemainingUnitsTests(unittest.TestCase):
                 self._campaign(target, notebook, adapter, ("u" * 4000,))
             self.assertIn(REMOTE_CLI.LEDGER_EVENT_TOO_LARGE, str(ctx.exception))
             self.assertEqual(adapter.submit_calls, [])
+
+
+
+class _CarryingAdapter(MultiWorkerFakeAdapter):
+    """A MultiWorkerFakeAdapter whose backend mounts an earlier submission's
+    output in the next job (the optional `carry_source` capability)."""
+
+    def carry_source(self, submission_id):
+        return {"ref": submission_id, "mount": f"/mnt/in/{submission_id}"}
+
+
+class _KernelNamingAdapter(_CarryingAdapter):
+    """A carrying adapter that names each pushed kernel with the Kaggle
+    adapter's own ref rule (`KAGGLE.kernel_ref()`), so a campaign's pushed
+    refs can be checked against the refs it carries from."""
+
+    TITLE = "papersmith-search-a"
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.pushed: list[dict] = []
+
+    def submit(self, job):
+        self.submit_calls.append(job.worker)
+        self.jobs.append(job)
+        ref, _title, sources = KAGGLE.kernel_ref(
+            worker=job.worker, title=self.TITLE, entrypoint=job.entrypoint,
+            run_config=job.run_config,
+        )
+        self.pushed.append({"slot": job.run_config.get("slot", 1),
+                            "units": list(job.run_config.get("units") or ()),
+                            "ref": ref, "sources": sources})
+        return ADAPTER.Submission(id=ref, worker=job.worker)
+
+
+class KernelCarryTests(unittest.TestCase):
+    """kernel-carry S1-S6: a continuation unit gets the earlier submission's
+    output attached and restored automatically, for declared carry paths."""
+
+    ENTRYPOINT = "tools/kaggle/search-a/runner.ipynb"
+    DIGEST = "d" * 64
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "verify_pin_preconditions", return_value=None
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _job_folder(self, tmp: str, *, carry_paths=("Results/checkpoints",)):
+        target = Path(tmp) / "repo"
+        (target / "FEM-TOLLA").mkdir(parents=True)
+        job_dir = _make_job_folder(target, "kaggle", "search-a")
+        notebook = job_dir / "runner.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        overrides = {"carryPaths": list(carry_paths)} if carry_paths else {}
+        _write_job_folder_run_config(job_dir, **overrides)
+        return target, notebook
+
+    def _ledger(self, target: Path) -> Path:
+        return REMOTE_CLI._main_ledger_path(target.resolve(), "FEM-TOLLA")
+
+    def _stopped_early(self, tmp, target, *, sid, worker, units, remaining):
+        """An earlier submission settled `returned` whose partial.json lists
+        `remaining` as unfinished."""
+        ledger = self._ledger(target)
+        LEDGER.append(ledger, LEDGER.submitted_event(
+            entrypoint=self.ENTRYPOINT, source_digest=self.DIGEST,
+            submission_id=sid, worker=worker, requested_capacity=1,
+            granted_capacity=1, units=list(units)))
+        artifact = Path(tmp) / f"artifact-{sid.replace('/', '-')}"
+        artifact.mkdir()
+        (artifact / "partial.json").write_text(
+            json.dumps({"remaining": list(remaining)}), encoding="utf-8")
+        LEDGER.append(ledger, LEDGER.returned_event(
+            submission_id=sid, artifact_path=str(artifact), observed_concurrency=1))
+
+    def _kept_partial(self, target, *, sid, worker, units):
+        """An earlier submission recorded `errored` naming bytes `fetch` kept."""
+        ledger = self._ledger(target)
+        LEDGER.append(ledger, LEDGER.submitted_event(
+            entrypoint=self.ENTRYPOINT, source_digest=self.DIGEST,
+            submission_id=sid, worker=worker, requested_capacity=1,
+            granted_capacity=1, units=list(units)))
+        kept = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                / REMOTE_CLI.KEPT_PARTIAL_DIRNAME / sid / "20261028T000000Z")
+        kept.mkdir(parents=True)
+        (kept / "ckpt.pt").write_text("state", encoding="utf-8")
+        LEDGER.append(ledger, LEDGER.errored_event(
+            submission_id=sid, reason="session ended", artifact_path=str(kept),
+            run_state="unknown"))
+
+    def _distribute(self, target, notebook, adapter, units):
+        return REMOTE_CLI.cmd_distribute(
+            target=target, entrypoint=notebook, adapter=adapter, units=units,
+            source_digest=lambda t, n: self.DIGEST,
+        )
+
+    def _submit(self, target, notebook, adapter, units, **kwargs):
+        token = self._distribute(target, notebook, adapter, units)["consentToken"]
+        _mint_launch_authorization(
+            target=target, product="FEM-TOLLA", pin_commit="a" * 40,
+            relative_entrypoint=self.ENTRYPOINT, worker=None, units=units,
+        )
+        for worker in adapter.workers():
+            _mint_rehearsal(target=target, worker=worker.id)
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, requested=1, adapter=adapter,
+            source_digest=lambda t, n: self.DIGEST, units=units, consent=token,
+            **kwargs,
+        )
+
+    def _submitted_events(self, target) -> list[dict]:
+        return [event for event in _ledger_events(self._ledger(target))
+                if event["kind"] == "submitted"]
+
+    # -- S2: automatic attach on continuation ------------------------------
+
+    def test_a_continuation_unit_carries_the_earlier_submission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/kernel-1", worker="w1",
+                                units=("u0", "u1"), remaining=("u1",))
+            adapter = _CarryingAdapter(workers=[("w1", 1)])
+
+            result = self._submit(target, notebook, adapter, ("u1",))
+
+            (job,) = adapter.jobs
+            self.assertEqual(job.run_config["carry"], [
+                {"submissionId": "w1/kernel-1", "ref": "w1/kernel-1",
+                 "mount": "/mnt/in/w1/kernel-1"},
+            ])
+            (submission,) = result["assignments"][0]["submissions"]
+            self.assertEqual(submission["carry"], "attached")
+            self.assertEqual(submission["carriedFrom"], [
+                {"submissionId": "w1/kernel-1", "ref": "w1/kernel-1"}])
+            latest = self._submitted_events(target)[-1]
+            self.assertEqual(latest["carriedFrom"], [
+                {"submissionId": "w1/kernel-1", "ref": "w1/kernel-1"}])
+
+    def test_a_kept_partial_is_carry_evidence_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._kept_partial(target, sid="w1/kernel-1", worker="w1", units=("u0",))
+            adapter = _CarryingAdapter(workers=[("w1", 1)])
+
+            self._submit(target, notebook, adapter, ("u0",))
+
+            (job,) = adapter.jobs
+            self.assertEqual([row["submissionId"] for row in job.run_config["carry"]],
+                             ["w1/kernel-1"])
+
+    def test_a_unit_without_continuation_evidence_carries_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/kernel-1", worker="w1",
+                                units=("u0", "u1"), remaining=("u1",))
+            adapter = _CarryingAdapter(workers=[("w1", 2)])
+
+            result = self._submit(target, notebook, adapter, ("u2",))
+
+            (job,) = adapter.jobs
+            self.assertNotIn("carry", job.run_config)
+            (submission,) = result["assignments"][0]["submissions"]
+            self.assertNotIn("carry", submission)
+            self.assertNotIn("carriedFrom", self._submitted_events(target)[-1])
+
+    def test_a_job_declaring_no_carry_paths_behaves_as_before(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, carry_paths=())
+            self._stopped_early(tmp, target, sid="w2/kernel-1", worker="w2",
+                                units=("u0", "u1"), remaining=("u1",))
+            adapter = _CarryingAdapter(workers=[("w1", 1), ("w2", 1)])
+
+            report = self._distribute(target, notebook, adapter, ("u1", "u2"))
+            self.assertEqual(
+                {row["worker"]: row["units"] for row in report["assignments"]},
+                {"w1": ["u1"], "w2": ["u2"]},
+                "round-robin placement is unchanged with no carry paths",
+            )
+            result = self._submit(target, notebook, adapter, ("u1", "u2"))
+
+            self.assertEqual(sorted(dict(job.run_config).keys() - {"units"}
+                                    for job in adapter.jobs), [set(), set()])
+            for row in result["assignments"]:
+                for submission in row["submissions"]:
+                    self.assertEqual(set(submission), {"slot", "units", "submissionId"})
+            for event in self._submitted_events(target):
+                self.assertNotIn("carriedFrom", event)
+
+    # -- B1: no share pushes a ref any share carries from, or that pending
+    # continuation evidence still points to ----------------------------------
+
+    def _assert_no_push_over_a_source(self, adapter, protected=()) -> None:
+        carried = {ref for row in adapter.pushed for ref in row["sources"]}
+        guarded = carried | set(protected)
+        for row in adapter.pushed:
+            self.assertNotIn(row["ref"], guarded, adapter.pushed)
+            self.assertNotIn(row["ref"], row["sources"], adapter.pushed)
+
+    def test_a_fresh_share_never_pushes_the_kernel_another_share_carries_from(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 2)])
+
+            self._submit(target, notebook, adapter, ("u0", "u1"))
+
+            by_units = {tuple(row["units"]): row for row in adapter.pushed}
+            self.assertEqual(by_units[("u1",)]["sources"], ["w1/papersmith-search-a"])
+            self.assertEqual(by_units[("u0",)]["sources"], [])
+            self._assert_no_push_over_a_source(adapter)
+
+    def test_two_continuations_never_push_each_others_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("a",), remaining=("a",))
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a-slot-2",
+                                worker="w1", units=("b",), remaining=("b",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 2)])
+
+            self._submit(target, notebook, adapter, ("b", "a"))
+
+            by_units = {tuple(row["units"]): row for row in adapter.pushed}
+            self.assertEqual(by_units[("a",)]["sources"], ["w1/papersmith-search-a"])
+            self.assertEqual(by_units[("b",)]["sources"], ["w1/papersmith-search-a-slot-2"])
+            self._assert_no_push_over_a_source(adapter)
+
+    def test_a_fresh_only_campaign_never_pushes_over_pending_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 1)])
+
+            self._submit(target, notebook, adapter, ("u2",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["sources"], [])
+            self._assert_no_push_over_a_source(adapter, protected=("w1/papersmith-search-a",))
+            # u1's carry source is still intact for the campaign that sends it.
+            report = REMOTE_CLI.cmd_remaining(
+                target=target, entrypoint=notebook, units=("u1",),
+                source_digest=lambda t, n: self.DIGEST)
+            self.assertEqual(report["remaining"], ["u1"])
+
+    def test_a_rehearsal_never_pushes_over_pending_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 1)])
+            token = self._distribute(target, notebook, adapter, ("u2",))["consentToken"]
+            REMOTE_CLI.cmd_submit(
+                target=target, entrypoint=notebook, requested=1, adapter=adapter,
+                source_digest=lambda t, n: self.DIGEST, units=("u2",), consent=token,
+                smoke=True,
+            )
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
+
+    def test_a_single_send_never_pushes_over_pending_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 1)])
+            token = _mint_launch_consent(
+                target=target, entrypoint=notebook, adapter=adapter,
+                source_digest=lambda t, n: self.DIGEST, worker="w1",
+            )
+            REMOTE_CLI.cmd_submit(
+                target=target, entrypoint=notebook, worker="w1", requested=1,
+                adapter=adapter, source_digest=lambda t, n: self.DIGEST,
+                consent=token, smoke=True,
+            )
+            (job,) = adapter.jobs
+            self.assertEqual(job.run_config["carryProtected"], ["w1/papersmith-search-a"])
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
+
+    def _running(self, target, *, sid, worker, units):
+        """An earlier submission still in flight: submitted, never settled."""
+        LEDGER.append(self._ledger(target), LEDGER.submitted_event(
+            entrypoint=self.ENTRYPOINT, source_digest=self.DIGEST,
+            submission_id=sid, worker=worker, requested_capacity=1,
+            granted_capacity=1, units=list(units)))
+
+    def test_a_campaign_never_pushes_over_a_running_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            self._running(target, sid="w1/papersmith-search-a-carry", worker="w1",
+                          units=("u1",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 2)])
+
+            self._submit(target, notebook, adapter, ("u2",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry-2")
+            (job,) = adapter.jobs
+            self.assertEqual(job.run_config["carryProtected"],
+                             ["w1/papersmith-search-a", "w1/papersmith-search-a-carry"])
+
+    def test_a_job_without_carry_paths_never_pushes_over_a_running_kernel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, carry_paths=())
+            self._running(target, sid="w1/papersmith-search-a", worker="w1", units=("u0",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 2)])
+
+            self._submit(target, notebook, adapter, ("u1",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {
+                "units": ["u1"], "carryProtected": ["w1/papersmith-search-a"]})
+
+    def test_a_job_without_carry_paths_and_nothing_running_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, carry_paths=())
+            self._stopped_early(tmp, target, sid="w1/papersmith-search-a", worker="w1",
+                                units=("u0",), remaining=("u0",))
+            adapter = _KernelNamingAdapter(workers=[("w1", 1)])
+
+            self._submit(target, notebook, adapter, ("u1",))
+
+            (row,) = adapter.pushed
+            self.assertEqual(row["ref"], "w1/papersmith-search-a")
+            (job,) = adapter.jobs
+            self.assertEqual(dict(job.run_config), {"units": ["u1"]})
+
+    def test_a_share_carrying_from_two_kernels_pushes_a_third(self) -> None:
+        """A share whose carry rows name its own ref and its alternate never
+        lists its own ref as a source (a campaign share holds one unit per
+        slot today, so this is held at the push itself)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(tmp, {"units": ["u0"], "carry": [
+                {"submissionId": "w1/papersmith-search-a",
+                 "ref": "w1/papersmith-search-a", "mount": "/a"},
+                {"submissionId": "w1/papersmith-search-a-carry",
+                 "ref": "w1/papersmith-search-a-carry", "mount": "/b"}]})
+        self.assertEqual(pushed["id"], "w1/papersmith-search-a-carry-2")
+        self.assertEqual(pushed["kernel_sources"],
+                         ["w1/papersmith-search-a", "w1/papersmith-search-a-carry"])
+
+    def test_the_kernel_push_avoids_a_protected_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(tmp, {"units": ["u0"], "carryProtected": [
+                "w1/papersmith-search-a", "w1/papersmith-search-a-carry"]})
+        self.assertEqual(pushed["id"], "w1/papersmith-search-a-carry-2")
+        self.assertEqual(pushed["title"], "papersmith-search-a-carry-2")
+        self.assertNotIn("kernel_sources", pushed)
+
+    # -- S4: same account only ---------------------------------------------
+
+    def test_a_continuation_from_another_worker_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w2/kernel-1", worker="w2",
+                                units=("u0",), remaining=("u0",))
+            adapter = _CarryingAdapter(workers=[("w1", 1)])
+            before = self._ledger(target).read_bytes()
+
+            with self.assertRaises(REMOTE_CLI.RemoteCLIError) as caught:
+                self._submit(target, notebook, adapter, ("u0",))
+
+            message = str(caught.exception)
+            self.assertTrue(message.startswith(REMOTE_CLI.CARRY_WORKER_MISMATCH), message)
+            self.assertIn("'w2'", message)
+            self.assertIn("--no-carry", message)
+            self.assertEqual(adapter.submit_calls, [], "no quota spent on refusal")
+            self.assertEqual(self._ledger(target).read_bytes(), before)
+
+    def test_no_carry_starts_the_continuation_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w2/kernel-1", worker="w2",
+                                units=("u0",), remaining=("u0",))
+            adapter = _CarryingAdapter(workers=[("w1", 1)])
+
+            result = self._submit(target, notebook, adapter, ("u0",), no_carry=True)
+
+            (job,) = adapter.jobs
+            self.assertNotIn("carry", job.run_config)
+            (submission,) = result["assignments"][0]["submissions"]
+            self.assertEqual(submission["carry"], "fresh")
+            self.assertNotIn("carriedFrom", self._submitted_events(target)[-1])
+
+    def test_distribute_places_a_continuation_on_the_worker_that_produced_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w2/kernel-1", worker="w2",
+                                units=("u0", "u1"), remaining=("u1",))
+            adapter = _CarryingAdapter(workers=[("w1", 1), ("w2", 1)])
+
+            report = self._distribute(target, notebook, adapter, ("u1", "u2"))
+            self.assertEqual(
+                {row["worker"]: row["units"] for row in report["assignments"]},
+                {"w1": ["u2"], "w2": ["u1"]},
+            )
+            result = self._submit(target, notebook, adapter, ("u1", "u2"))
+            jobs = {job.worker: job for job in adapter.jobs}
+            self.assertEqual(jobs["w2"].run_config["units"], ["u1"])
+            self.assertEqual(jobs["w2"].run_config["carry"][0]["ref"], "w2/kernel-1")
+            self.assertNotIn("carry", jobs["w1"].run_config)
+            self.assertEqual(result["unplaced"], [])
+
+    def test_a_continuation_whose_worker_is_full_waits_unplaced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w2/kernel-1", worker="w2",
+                                units=("u0", "u1"), remaining=("u0", "u1"))
+            adapter = _CarryingAdapter(workers=[("w1", 2), ("w2", 1)])
+
+            report = self._distribute(target, notebook, adapter, ("u0", "u1"))
+            self.assertEqual(
+                {row["worker"]: row["units"] for row in report["assignments"]},
+                {"w1": [], "w2": ["u0"]},
+            )
+            self.assertEqual(report["unplaced"], ["u1"])
+
+    # -- S5: services without kernel inputs ----------------------------------
+
+    def test_a_service_without_carry_reports_unsupported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/kernel-1", worker="w1",
+                                units=("u0",), remaining=("u0",))
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+
+            result = self._submit(target, notebook, adapter, ("u0",))
+
+            (job,) = adapter.jobs
+            self.assertNotIn("carry", job.run_config)
+            (submission,) = result["assignments"][0]["submissions"]
+            self.assertEqual(submission["carry"], "unsupported")
+            self.assertNotIn("carriedFrom", self._submitted_events(target)[-1])
+
+    def test_the_seam_default_carries_nothing_and_adds_no_abstract_method(self) -> None:
+        self.assertEqual(len(ADAPTER.Adapter.__abstractmethods__), 6)
+        self.assertNotIn("carry_source", ADAPTER.Adapter.__abstractmethods__)
+        self.assertIsNone(MultiWorkerFakeAdapter(workers=[("w1", 1)]).carry_source("w1/x"))
+        self.assertNotIn("carry_source", vars(COLAB.ColabAdapter))
+
+    # -- S2: the kernel service attaches the earlier kernel ------------------
+
+    def _kaggle_push(self, tmp: str, run_config: dict) -> dict:
+        tmp_path = Path(tmp)
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        entrypoint = job_dir / "runner.ipynb"
+        entrypoint.write_text("{}", encoding="utf-8")
+        (job_dir / "kernel-metadata.json").write_text(
+            json.dumps({"id": "", "title": "papersmith-search-a", "code_file": ""}),
+            encoding="utf-8",
+        )
+        captured = tmp_path / "captured.json"
+        driver = _write_fake_driver(tmp_path / "driver", capture_metadata_to=captured)
+        token_path = _write_fake_token(tmp_path / "creds")
+        handle = KAGGLE.CredentialHandle(worker_id="w1", token_path=token_path)
+        adapter = KAGGLE.KaggleAdapter(credentials={"w1": handle}, driver_script=driver)
+        adapter.submit(ADAPTER.Job(entrypoint=entrypoint, run_config=run_config,
+                                   worker="w1"))
+        return json.loads(captured.read_text(encoding="utf-8"))
+
+    def test_the_kernel_adapter_names_the_earlier_kernel_and_its_mount(self) -> None:
+        adapter = KAGGLE.KaggleAdapter(credentials={})
+        self.assertEqual(adapter.carry_source("w1/papersmith-search-a"), {
+            "ref": "w1/papersmith-search-a",
+            "mount": "/kaggle/input/notebooks/w1/papersmith-search-a",
+        })
+
+    def test_the_kernel_push_lists_the_carried_kernel_as_a_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(tmp, {"units": ["u1"], "carry": [
+                {"submissionId": "w1/papersmith-search-a-slot-2",
+                 "ref": "w1/papersmith-search-a-slot-2", "mount": "/x"}]})
+        self.assertEqual(pushed["kernel_sources"], ["w1/papersmith-search-a-slot-2"])
+
+    def test_a_continuation_of_the_same_kernel_pushes_its_alternate(self) -> None:
+        """A kernel naming itself as its own source is unverified; the
+        continuation goes to the alternate kernel, which names the earlier
+        one -- the two-kernel shape the live check verified -- and the next
+        continuation alternates back."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(tmp, {"units": ["u1"], "carry": [
+                {"submissionId": "w1/papersmith-search-a",
+                 "ref": "w1/papersmith-search-a", "mount": "/x"}]})
+        self.assertEqual(pushed["id"], "w1/papersmith-search-a-carry")
+        self.assertEqual(pushed["title"], "papersmith-search-a-carry")
+        self.assertEqual(pushed["kernel_sources"], ["w1/papersmith-search-a"])
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(tmp, {"units": ["u1"], "carry": [
+                {"submissionId": "w1/papersmith-search-a-carry",
+                 "ref": "w1/papersmith-search-a-carry", "mount": "/x"}]})
+        self.assertEqual(pushed["id"], "w1/papersmith-search-a")
+        self.assertEqual(pushed["kernel_sources"], ["w1/papersmith-search-a-carry"])
+
+    def test_a_kernel_push_without_carry_names_no_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pushed = self._kaggle_push(tmp, {"units": ["u1"]})
+        self.assertNotIn("kernel_sources", pushed)
+        self.assertEqual(pushed["id"], "w1/papersmith-search-a")
+
+    def test_the_driver_maps_kernel_sources_onto_the_request(self) -> None:
+        driver = _load_kaggle_driver_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = _write_driver_staging_dir(Path(tmp))
+            metadata_path = staging / driver._KERNEL_METADATA_FILENAME
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["kernel_sources"] = ["w1/papersmith-search-a"]
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            request = driver._save_kernel_request_from_staging(staging)
+        self.assertEqual(list(request.kernel_data_sources), ["w1/papersmith-search-a"])
+
+    # -- S3: restore before the entrypoint -----------------------------------
+
+    def _invoke_with(self, base: Path, run_config: dict) -> tuple[dict, str]:
+        seen: dict = {}
+        module = types.ModuleType("carry_probe_module")
+
+        def run():
+            seen["env"] = dict(os.environ)
+            ckpt = base / "Results" / "checkpoints" / "ckpt.pt"
+            seen["ckpt"] = ckpt.read_text(encoding="utf-8") if ckpt.is_file() else None
+
+        module.run = run
+        buffer = io.StringIO()
+        with unittest.mock.patch.dict(sys.modules, {"carry_probe_module": module}), \
+                contextlib.redirect_stdout(buffer):
+            RUNNER_INVOKE.invoke(
+                {**run_config, "run": {"module": "carry_probe_module", "function": "run"}},
+                base_dir=base,
+            )
+        return seen, buffer.getvalue()
+
+    def test_the_runner_restores_declared_paths_before_the_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mount = Path(tmp) / "mount"
+            (mount / "Results" / "checkpoints").mkdir(parents=True)
+            (mount / "Results" / "checkpoints" / "ckpt.pt").write_text("epoch-7", encoding="utf-8")
+            (mount / "other.txt").write_text("not declared", encoding="utf-8")
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, log = self._invoke_with(base, {
+                "carryPaths": ["Results/checkpoints", "hpo/studies"],
+                "carry": [{"submissionId": "s", "ref": "w1/k", "mount": str(mount)}],
+            })
+            self.assertEqual(seen["ckpt"], "epoch-7")
+            self.assertEqual(seen["env"][RUNNER_INVOKE.CARRY_IN_ENV], str(mount))
+            self.assertFalse((base / "other.txt").exists(), "only declared paths")
+            self.assertIn("hpo/studies", log)
+            self.assertIn("missing", log)
+        self.assertEqual(RUNNER_INVOKE.CARRY_IN_ENV, "FORGE_CARRY_IN")
+        self.assertNotIn(RUNNER_INVOKE.CARRY_IN_ENV, os.environ)
+
+    def test_a_missing_mount_is_logged_and_the_unit_starts_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, log = self._invoke_with(base, {
+                "carryPaths": ["Results/checkpoints"],
+                "carry": [{"submissionId": "s", "ref": "w1/k",
+                           "mount": str(Path(tmp) / "absent")}],
+            })
+            self.assertIsNone(seen["ckpt"])
+            self.assertNotIn(RUNNER_INVOKE.CARRY_IN_ENV, seen["env"])
+            self.assertIn("absent", log)
+            self.assertIn("starts fresh", log)
+
+    def test_a_run_config_without_carry_restores_and_exports_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "work"
+            base.mkdir()
+            seen, log = self._invoke_with(base, {"carryPaths": ["Results/checkpoints"]})
+            self.assertNotIn(RUNNER_INVOKE.CARRY_IN_ENV, seen["env"])
+            self.assertEqual(log, "")
+            self.assertEqual(sorted(p.name for p in base.iterdir()), [])
+
+    # -- S1 / S6: CLI and docs ---------------------------------------------
+
+    def test_submit_parser_declares_no_carry(self) -> None:
+        parser = REMOTE_CLI._build_parser()
+        base = ["submit", "--backend", "kaggle", "--target", "/tmp/x",
+                "--entrypoint", "/tmp/x/a.ipynb"]
+        self.assertFalse(parser.parse_args(base).no_carry)
+        self.assertTrue(parser.parse_args(base + ["--no-carry"]).no_carry)
+
+    def test_the_docs_describe_the_automatic_carry(self) -> None:
+        skill = (REPOSITORY_ROOT / "skills/remote-execution/SKILL.md").read_text(
+            encoding="utf-8")
+        for needle in ("--carry-path", "--no-carry", "FORGE_CARRY_IN",
+                       "CARRY_WORKER_MISMATCH", "carry: unsupported", "carriedFrom"):
+            self.assertIn(needle, skill)
+        for agent in ("experiments-walk", "experiments-build",
+                      "implementation-walk", "implementation-build"):
+            text = (REPOSITORY_ROOT / ".claude/agents" / f"{agent}.md").read_text(
+                encoding="utf-8")
+            self.assertIn("attaches it automatically", text, agent)
+            self.assertNotIn("kaggle", text.lower(), agent)
+            self.assertNotIn("does not attach it for you yet", text, agent)
+        changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("--carry-path", unreleased)
 
 
 if __name__ == "__main__":

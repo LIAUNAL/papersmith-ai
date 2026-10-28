@@ -1526,6 +1526,7 @@ can branch on it without parsing prose.
 | `CAMPAIGN_WORKERS_NOT_READY` | campaign `submit` (`--unit`, not `--smoke`) | a worker the distribution assigns units to has no passing rehearsal of its own at the current pin; the message names every such worker |
 | `DUPLICATE_SUBMISSION_ID` | campaign `submit` | the backend answered two slots of one campaign with the same submission id; the repeat is not recorded |
 | `LEDGER_EVENT_TOO_LARGE` | campaign `submit` | a slot's share of units would make its `submitted` event exceed the ledger's 4096-byte line; checked for every slot before the first submission, so nothing is sent |
+| `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Smoke — a readiness gate, evidence-derived
 
@@ -1664,7 +1665,7 @@ convention:
 
 | event | fields |
 |---|---|
-| `submitted` | `ts`, `entrypoint`, `sourceDigest`, `submissionId`, `worker`, `requestedCapacity`, `grantedCapacity`, `slot` only for a campaign's slot 2 and up on one worker, and `units` (that submission's share) only for a campaign submission |
+| `submitted` | `ts`, `entrypoint`, `sourceDigest`, `submissionId`, `worker`, `requestedCapacity`, `grantedCapacity`, `slot` only for a campaign's slot 2 and up on one worker, `units` (that submission's share) only for a campaign submission, and `carriedFrom` (`[{"submissionId", "ref"}]`, the earlier submissions whose output it was handed) only for a continuation that carried one |
 | `returned` | `ts`, `submissionId`, `artifactPath`, `observedConcurrency` |
 | `errored` | `ts`, `submissionId`, `reason` (truncated to 512 chars), and, when `fetch` recorded a run that ended without a complete result, `artifactPath` (where its bytes are kept, never a results tree) and `runState` (`failed` or `unknown`) |
 
@@ -1971,6 +1972,76 @@ with its own record is complete even when a marker lists it. Units of a submissi
 `inFlight` and are not resent. `remaining` keeps the declared order, which is
 the order the consent token binds, so its list goes to `distribute` and
 `submit` unchanged (`unitArgs` spells it as `--unit` flags).
+
+**Carry-over, automatic for declared paths.** A job declares what a
+continuation needs with `generate-job --carry-path <path>` (repeatable;
+relative to the product folder, e.g. `Results/e1/runs`,
+`Results/checkpoints`, `hpo/studies`), recorded as `carryPaths` in
+`run-config.json`. A job that declares none behaves exactly as before. For
+one that does, a campaign `submit` finds, for each unit it sends, the
+earlier submission of the same entrypoint that left it to be continued --
+the evidence `remaining` reads: a settled submission at the current source
+digest whose returned result holds a `partial.json` listing it (or listing
+nothing), or whose `errored` event names bytes kept under
+`.remote-execution/partial/`. Then:
+
+1. **Same account only.** `distribute` (and `submit`, which distributes the
+   same way) places such a unit on the worker that produced its earlier
+   output when that worker is in the pool; when that worker has no place
+   left the unit stays `unplaced` for a later campaign. A unit whose worker
+   is not in the pool refuses `CARRY_WORKER_MISMATCH`, naming that worker;
+   `submit --no-carry` starts it fresh instead (`carry: fresh`). Carrying a
+   private kernel's output across two accounts was never verified.
+2. **Automatic attach.** The share's job gets `run_config["carry"]`, one
+   `{"submissionId", "ref", "mount"}` row per earlier submission, from the
+   adapter's optional `carry_source(submission_id)` (not a seventh abstract
+   operation). Kaggle answers the submission id itself as the kernel ref
+   and adds it to the pushed `kernel-metadata.json`'s `kernel_sources`, so
+   the earlier kernel's output is mounted at
+   `/kaggle/input/notebooks/<owner>/<slug>/` (verified on a live account on
+   2026-10-27). The `submitted` event records `carriedFrom`, and the
+   submission's row in `submit`'s output reports `carry: attached` with the
+   same `carriedFrom`.
+3. **Restore before the entrypoint.** The runner (`restore_carry()` in
+   `assets/runner_invoke.py`) copies each declared carry path from each
+   mount into its working directory -- the folder whose files come back --
+   before the callable or notebook starts, so the target resumes from the
+   checkpoints already on disk with no code of its own, and exports the
+   present mounts as `FORGE_CARRY_IN` (joined with `os.pathsep`). A missing
+   mount or path is one `[carry]` line in the run log, and the unit starts
+   fresh; it is never fatal.
+4. **Services without kernel inputs say so.** A backend whose `carry_source`
+   is the seam's default (Colab) carries nothing automatically, and the
+   row reports `carry: unsupported`; upload the checkpoint into the new
+   session yourself.
+
+A single send (no `--unit`) and the legacy shape carry nothing.
+
+**No push replaces an output a continuation reads.** `submit` hands every
+job of a job declaring carry paths -- every share of a campaign, a single
+send, a rehearsal -- `run_config["carryProtected"]`: the ref of every
+submission whose output a unit still waits to continue from, read from the
+main ledger whether or not this invocation sends that unit. Kaggle never
+pushes to a protected ref, nor to one the job itself carries from: the push
+goes to the first alternate kernel not protected, deterministically
+`<slug>-carry`, then `<slug>-carry-2`, ... (`CARRY_ALTERNATE_SUFFIX`,
+`kernel_ref()` in `adapters/kaggle.py`). So a fresh share never overwrites
+the kernel another share of its campaign mounts, two continuations never
+push each other's source, a later fresh-only campaign leaves a pending
+continuation's source intact, and a kernel never names itself in
+`kernel_sources` (never verified live). A carry path that names the product
+folder itself (`.`) is refused like one that escapes it.
+
+**No push replaces a kernel still running.** The protected set also holds
+the ref of every submission of the same entrypoint that is still in flight
+(submitted, never settled) in the main ledger -- and in `smoke.jsonl` for a
+rehearsal -- at any source digest, for every job folder, including one that
+declares no carry paths. A second campaign started while the first still
+runs therefore goes to `<slug>-carry` (or the next free alternate) instead
+of re-pushing the running kernel. When nothing is in flight and nothing is
+pending, no `carryProtected` key is written and the job is byte-identical
+to before; when something is, that key is the only addition. The legacy
+shape (no job folder) is unchanged.
 
 ## Ledger data location
 

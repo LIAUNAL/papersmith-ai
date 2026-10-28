@@ -11,6 +11,49 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- A continuation now carries the previous session's output automatically. A
+  job declares the paths a continuation needs with `generate-job
+  --carry-path <path>` (repeatable, relative to the product folder, e.g.
+  `Results/checkpoints`, `hpo/studies`), recorded as `carryPaths`. When a
+  campaign `submit` sends units an earlier submission left remaining (its
+  `partial.json` lists them, or `fetch` kept its partial output), the
+  continuation goes to the account that produced them and, on Kaggle, the
+  earlier kernel is added to the pushed metadata's `kernel_sources`, with no
+  hand-written entry. The runner copies the declared paths from the mounted
+  output into its working directory before the entrypoint runs and exports
+  `FORGE_CARRY_IN`; a missing mount or path is logged and the unit starts
+  fresh. The `submitted` event records `carriedFrom`, and each submission in
+  `submit`'s output reports `carry` (`attached`, `unsupported`, `fresh`). A
+  job that declares no carry paths behaves exactly as before.
+- No push replaces an output a continuation still reads. Every job of a job
+  declaring carry paths (each campaign share, a single send, a rehearsal)
+  is handed the refs pending continuations read from, and Kaggle pushes to
+  the first alternate kernel not among them (`<slug>-carry`,
+  `<slug>-carry-2`, ...) instead: a fresh share never overwrites the kernel
+  another share of its campaign mounts, two continuations never push each
+  other's source, a later campaign of fresh units leaves pending sources
+  intact, and a kernel never names itself as its own source. `--carry-path
+  .` is refused.
+- No push replaces a kernel that is still running. The refs of submissions
+  of the same entrypoint that are submitted but not yet settled are
+  protected too, for every job folder, including one that declares no carry
+  paths: a second campaign started while the first runs pushes to
+  `<slug>-carry` (or the next free alternate) instead of a new version of
+  the running kernel. This changes such a job only when something is in
+  flight, and then only by the `carryProtected` key in its run config; with
+  nothing in flight it is byte-identical to before.
+- `distribute` and `submit` place a continuation unit on the worker that
+  produced its checkpoint when that worker is in the pool (it waits
+  `unplaced` when that worker is full). One whose worker is not in the pool
+  refuses `CARRY_WORKER_MISMATCH`, naming the worker; `submit --no-carry`
+  starts such units fresh instead.
+- On Colab, which has no kernel inputs, nothing is carried automatically and
+  `submit` reports `carry: unsupported` for the continuation.
+
 ## 0.31.0
 
 ### Added
