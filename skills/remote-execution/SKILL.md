@@ -158,7 +158,12 @@ Three modules exist so far, each service-blind and stdlib-only:
   the currency rule that tells a fresh result from a stale one.
   `submitted_event(...)`, `returned_event(...)`, `errored_event(...)` build
   the three event kinds this ledger records, with the field names and
-  truncation rules this schema fixes (see below).
+  truncation rules this schema fixes (see below). The fold keys each
+  submission by `lane_key()`: `(entrypoint, worker)`, or `(entrypoint,
+  "<worker>#slot<n>")` for a campaign's slot `n >= 2` on that worker, so
+  two concurrent slots of one campaign are two independent "latest" facts
+  that neither supersede nor quarantine each other. `pending_for(worker)`
+  counts every lane whose event names that worker.
 - `scripts/adapter.py` — the `Adapter` ABC every backend-specific module
   must satisfy in full (exactly six operations), the frozen data shapes
   that cross the seam (`Worker`, `Job`, `Submission`, `Status`, `Fetched`),
@@ -276,16 +281,28 @@ Three modules exist so far, each service-blind and stdlib-only:
     entirely — the guarantee is EVERY healthy account, never the first
     one. `cmd_distribute`'s own read-only report used to be the only
     consumer of that spread; `submit --unit` is the write path that
-    actually issues it. One `adapter.submit()` and one ledger event per
-    `packer.Distribution` assignment — never one per unit, since a
-    worker's whole assigned unit list travels inside that ONE job's opaque
-    `run_config["units"]`. An assignment a healthy account was granted but
+    actually issues it. **One `adapter.submit()` and one ledger event per
+    granted slot** (S1, parallel campaigns): `packer.slot_shares()` splits
+    each assignment's units round-robin into `min(granted, len(units))`
+    shares, and each share is its own job (`run_config["units"]` = that
+    share), its own submission id and its own `submitted` event — a worker
+    granted two slots (Kaggle's cap) runs two jobs side by side instead of
+    one job running its units in sequence. Slot 1 is shaped exactly as a
+    one-slot worker's single job always was; slots `n >= 2` add
+    `run_config["slot"] = n` (the adapter gives each its own remote
+    identity — Kaggle suffixes the kernel title/slug `-slot-<n>`) and a
+    `slot` field on the event (its own ledger lane). `poll`, `fetch`,
+    `status` and `reconcile` work per submission id unchanged. A backend
+    that answers two slots with the same id is refused
+    `DUPLICATE_SUBMISSION_ID` before the repeat is recorded. A worker
+    granted one slot behaves exactly as before. An assignment a healthy account was granted but
     had no units left to receive (`packer.Assignment`'s own documented
     "had room, didn't need it" case) submits nothing and reports
     `submissionId: null` — capacity with nothing to spend is never turned
     into a fabricated job. The result mirrors `packer.Distribution` field
-    for field: `assignments[]` (worker, its whole `Plan`, its units, its
-    submission id), `unplaced[]` (units that did not fit, by identity),
+    for field: `assignments[]` (worker, its whole `Plan`, its units,
+    `submissionId` — slot 1's — and `submissions[]`, one `{slot, units,
+    submissionId}` per slot), `unplaced[]` (units that did not fit, by identity),
     and `skipped[]` (`worker -> Skip.reason`, unprefixed) — an excluded
     account is always named with its reason, never silently dropped.
     Single-unit `submit` (no `--unit` at all) is untouched: today's
@@ -427,6 +444,20 @@ Three modules exist so far, each service-blind and stdlib-only:
     campaign `submit` invocation's own binding always is (`cmd_submit`'s
     own `--worker`/`--unit` mutual exclusivity, mirrored by `cmd_gate`'s
     own refusal on the same conflict).
+
+    **Readiness per assigned worker, campaign only** (S2, parallel
+    campaigns): because a campaign `gate` record binds no worker, a
+    non-rehearsal campaign `submit` checks, once `packer.distribute()` has
+    named the accounts and before the first `adapter.submit()`, that every
+    worker assigned units reads ready on `readiness` (its own passing
+    rehearsal at the job's current pin). Otherwise it refuses
+    `CAMPAIGN_WORKERS_NOT_READY`, naming every worker that still needs a
+    rehearsal; nothing is submitted. A worker granted capacity but no
+    units needs none. The consent token is unchanged (pin, entrypoint,
+    ordered units — never workers): readiness is a recorded fact checked
+    here, not something the token could bind. A single send keeps its
+    current check (its `gate` record names its worker); `--smoke` and the
+    legacy no-job-folder shape are exempt, as they are from the gate.
 
     Fail-closed for everything else, on purpose: a job-folder product with
     no `.implementation/position.jsonl` at all refuses exactly like one
@@ -1475,13 +1506,24 @@ refusal.
 | --- | --- |
 | `submit` | submit one notebook to a registered backend's worker |
 | `status` | report the fold for one product's ledger; resolves nothing |
-| `distribute` | report how opaque work units would spread across every healthy worker account right now; issues no work and records nothing |
+| `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares`; issues no work and records nothing |
 | `poll` | ask the adapter for one submission's status |
 | `fetch` | materialize one submission's result, quarantining it when it is not current |
 | `reconcile` | compare the ledger against the adapter's `list_active()` in both directions |
 | `generate-job` | generate a forge-owned job folder at `<target>/tools/<service>/<job-name>/` |
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
-| `readiness` | state whether a job is ready for a full submission on a worker; reports only, issues no submission |
+| `readiness` | state whether a job is ready for a full submission on a worker, from that worker's own latest rehearsal; reports only, issues no submission |
+
+## Refusal codes
+
+Refusals that carry a stable code print it first in the message, so a caller
+can branch on it without parsing prose.
+
+| Code | Raised by | Meaning |
+| --- | --- | --- |
+| `DIAGRAM_NOT_VALIDATED` | `submit` (every mode) | the product holds an approval whose experiment diagram the operator has not validated |
+| `CAMPAIGN_WORKERS_NOT_READY` | campaign `submit` (`--unit`, not `--smoke`) | a worker the distribution assigns units to has no passing rehearsal of its own at the current pin; the message names every such worker |
+| `DUPLICATE_SUBMISSION_ID` | campaign `submit` | the backend answered two slots of one campaign with the same submission id; the repeat is not recorded |
 
 ## Smoke — a readiness gate, evidence-derived
 
@@ -1547,9 +1589,14 @@ smoke must write.
 on that worker — issues no submission, offers no menu, the same
 "reports and resolves nothing" discipline `status` already holds
 structurally (no `adapter` parameter in either signature). It binds three
-facts on the LATEST `smokeResult` record for this job (append order, last
-line wins): `result == "pass"`, `commit` equal to the job's CURRENT
-pinned commit, `worker` equal to the worker asked about. Nothing here
+facts on the LATEST `smokeResult` record for this job ON THIS WORKER
+(append order, last line wins): `result == "pass"`, `commit` equal to the
+job's CURRENT pinned commit, `worker` equal to the worker asked about.
+Readiness is per worker: a later rehearsal on another account never
+revokes this one's, so several accounts can be ready for one campaign at
+once — which campaign `submit` requires (`CAMPAIGN_WORKERS_NOT_READY`).
+`latest_smoke_event(path, job)` without a worker still returns the job's
+latest record on any worker. Nothing here
 reads a timestamp — a record's usefulness expires the moment the job
 re-pins to a different commit or the worker changes, never after elapsed
 time.
@@ -1615,7 +1662,7 @@ convention:
 
 | event | fields |
 |---|---|
-| `submitted` | `ts`, `entrypoint`, `sourceDigest`, `submissionId`, `worker`, `requestedCapacity`, `grantedCapacity` |
+| `submitted` | `ts`, `entrypoint`, `sourceDigest`, `submissionId`, `worker`, `requestedCapacity`, `grantedCapacity`, and `slot` only for a campaign's slot 2 and up on one worker |
 | `returned` | `ts`, `submissionId`, `artifactPath`, `observedConcurrency` |
 | `errored` | `ts`, `submissionId`, `reason` (truncated to 512 chars) |
 

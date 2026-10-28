@@ -7815,6 +7815,11 @@ class MultiWorkerFakeAdapter(ADAPTER.Adapter):
         self._forbid_submit = forbid_submit
         self._active = active
         self.submit_calls: list[str] = []
+        self.jobs: list = []
+        # A backend that ignores `run_config["slot"]` (identity-stable per
+        # worker) is what `ignore_slot` simulates; by default each slot
+        # mints its own id, slot 1 keeping the id it always had.
+        self.ignore_slot = False
 
     def workers(self) -> list:
         return list(self._workers)
@@ -7827,7 +7832,9 @@ class MultiWorkerFakeAdapter(ADAPTER.Adapter):
                 "have been"
             )
         self.submit_calls.append(job.worker)
-        return ADAPTER.Submission(id=f"{job.worker}/kernel-1", worker=job.worker)
+        self.jobs.append(job)
+        slot = 1 if self.ignore_slot else job.run_config.get("slot", 1)
+        return ADAPTER.Submission(id=f"{job.worker}/kernel-{slot}", worker=job.worker)
 
     def poll(self, submission_id: str) -> "ADAPTER.Status":
         return ADAPTER.Status(state="complete", detail="fake backend")
@@ -9208,7 +9215,8 @@ class CampaignSubmitTests(unittest.TestCase):
             self.assertIn("assignments", result)
             submitted_workers = {row["worker"] for row in result["assignments"]}
             self.assertEqual(submitted_workers, {"w1", "w2"})
-            self.assertEqual(sorted(adapter.submit_calls), ["w1", "w2"])
+            # Two slots granted on each worker: one submission per slot (S1).
+            self.assertEqual(sorted(adapter.submit_calls), ["w1", "w1", "w2", "w2"])
 
     def test_campaign_result_reports_assignments_unplaced_skipped_from_distribution(
         self,
@@ -9806,7 +9814,8 @@ class ConsentGateTests(unittest.TestCase):
             )
 
             self.assertIn("assignments", result)
-            self.assertEqual(sorted(adapter.submit_calls), ["w1", "w2"])
+            # Two slots granted on each worker: one submission per slot (S1).
+            self.assertEqual(sorted(adapter.submit_calls), ["w1", "w1", "w2", "w2"])
 
     def test_a_forged_token_refuses_and_spends_no_quota(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -10386,6 +10395,9 @@ class AuthorizationGateTests(unittest.TestCase):
                 relative_entrypoint="tools/kaggle/search-a/runner.ipynb",
                 worker=None, units=units,
             )
+            # S2: every worker the campaign spends needs its own rehearsal.
+            _mint_rehearsal(target=target, worker="w1")
+            _mint_rehearsal(target=target, worker="w2")
 
             result = REMOTE_CLI.cmd_submit(
                 target=target, entrypoint=notebook, requested=1,
@@ -24903,6 +24915,413 @@ class ColabExecutorAssetTests(unittest.TestCase):
             timeout = client_cls.call_args.kwargs.get("timeout")
             self.assertNotIsInstance(timeout, bool)
             self.assertIs(type(timeout), int)
+
+
+
+
+def _mint_rehearsal(
+    *,
+    target: Path,
+    product: str = "FEM-TOLLA",
+    job_name: str = "search-a",
+    commit: str = "a" * 40,
+    worker: str,
+    result: str = "pass",
+) -> None:
+    """Append a `smokeResult`-shaped line straight into `smoke.jsonl` -- the
+    record `smoke record` writes after a real rehearsal. The fixtures that
+    call this test `submit`'s own READING of per-worker readiness, never the
+    rehearsal's evidence derivation (`cmd_smoke_record`'s own tests)."""
+    smoke_path = REMOTE_CLI._smoke_ledger_path(Path(target).resolve(), product)
+    smoke_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "kind": REMOTE_CLI.SMOKE_RESULT_KIND, "ts": "2020-01-01T00:00:00+00:00",
+        "jobName": job_name, "result": result, "commit": commit,
+        "worker": worker, "missing": [],
+    }
+    with smoke_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event))
+        handle.write("\n")
+
+
+class SlotSubmissionTests(unittest.TestCase):
+    """S1 (parallel campaigns): a worker granted k concurrent slots receives
+    up to k submissions in one campaign, each with its own round-robin share
+    of that worker's units, its own submission id and its own ledger
+    `submitted` event -- instead of one job running all its units in
+    sequence. A worker granted one slot behaves exactly as before."""
+
+    def _target_and_notebook(self, tmp: str) -> tuple[Path, Path]:
+        target = Path(tmp) / "repo"
+        notebooks = _make_product(target, "FEM-TOLLA")
+        notebook = notebooks / "a.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        return target, notebook
+
+    def _campaign(self, target: Path, notebook: Path, adapter, units) -> dict:
+        token = REMOTE_CLI.cmd_distribute(
+            target=target, entrypoint=notebook, adapter=adapter, units=units,
+            source_digest=lambda t, n: "d" * 64,
+        )["consentToken"]
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, requested=1, adapter=adapter,
+            source_digest=lambda t, n: "d" * 64, units=units, consent=token,
+        )
+
+    def _submitted_events(self, result: dict) -> list[dict]:
+        lines = Path(result["ledgerPath"]).read_text(encoding="utf-8").splitlines()
+        return [json.loads(line) for line in lines if line.strip()]
+
+    def test_two_slots_give_two_submissions_with_disjoint_shares_covering_all_units(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            units = ("u0", "u1")
+
+            result = self._campaign(target, notebook, adapter, units)
+
+            self.assertEqual(adapter.submit_calls, ["w1", "w1"])
+            shares = [list(job.run_config["units"]) for job in adapter.jobs]
+            self.assertEqual(shares, [["u0"], ["u1"]])
+            flat = [unit for share in shares for unit in share]
+            self.assertEqual(sorted(flat), sorted(units), "every unit placed once")
+            self.assertEqual(len(flat), len(set(flat)), "shares are disjoint")
+
+            (row,) = result["assignments"]
+            self.assertEqual(
+                [entry["units"] for entry in row["submissions"]], [["u0"], ["u1"]]
+            )
+            self.assertEqual([entry["slot"] for entry in row["submissions"]], [1, 2])
+            ids = [entry["submissionId"] for entry in row["submissions"]]
+            self.assertEqual(len(set(ids)), 2, f"two distinct submission ids: {ids}")
+
+            events = self._submitted_events(result)
+            self.assertEqual([event["kind"] for event in events], ["submitted"] * 2)
+            self.assertEqual([event["submissionId"] for event in events], ids)
+
+    def test_shares_are_round_robin_by_slot(self) -> None:
+        plan = PACKER.Plan(
+            worker="w1", requested=5, cap=2, in_flight=0, granted=2,
+            in_flight_source="list_active",
+        )
+        assignment = PACKER.Assignment(plan=plan, units=("u0", "u1", "u2", "u3", "u4"))
+        self.assertEqual(
+            PACKER.slot_shares(assignment),
+            (("u0", "u2", "u4"), ("u1", "u3")),
+        )
+        self.assertEqual(
+            PACKER.slot_shares(PACKER.Assignment(plan=plan, units=())), ()
+        )
+
+    def test_one_slot_worker_behaves_exactly_as_before(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            # w1 is granted one slot; w2 has two slots but only one unit
+            # reaches it -- both must submit one job shaped as before.
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1), ("w2", 2)])
+            units = ("u0", "u1")
+
+            result = self._campaign(target, notebook, adapter, units)
+
+            self.assertEqual(adapter.submit_calls, ["w1", "w2"])
+            self.assertEqual(
+                [dict(job.run_config) for job in adapter.jobs],
+                [{"units": ["u0"]}, {"units": ["u1"]}],
+            )
+            for row in result["assignments"]:
+                self.assertEqual(row["submissionId"], f"{row['worker']}/kernel-1")
+                self.assertEqual(len(row["submissions"]), 1)
+            for event in self._submitted_events(result):
+                self.assertNotIn("slot", event)
+
+    def test_each_slot_submission_polls_fetches_and_settles_on_its_own(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            result = self._campaign(target, notebook, adapter, ("u0", "u1"))
+            ids = [
+                entry["submissionId"] for entry in result["assignments"][0]["submissions"]
+            ]
+
+            lines = Path(result["ledgerPath"]).read_text(encoding="utf-8").splitlines()
+            state = LEDGER.fold(lines, "d" * 64)
+            self.assertEqual(state.pending_for("w1"), 2, "both slots are in flight")
+
+            for submission_id in ids:
+                status = REMOTE_CLI.cmd_poll(submission_id=submission_id, adapter=adapter)
+                self.assertEqual(status.state, "complete")
+
+            dests = []
+            for index, submission_id in enumerate(ids):
+                dest = Path(tmp) / f"shard-{index}"
+                fetched = REMOTE_CLI.cmd_fetch(
+                    target=target, entrypoint=notebook, submission_id=submission_id,
+                    dest=dest, adapter=adapter, source_digest=lambda t, n: "d" * 64,
+                )
+                dests.append(fetched)
+                self.assertTrue(dest.is_dir(), "a current slot result is never quarantined")
+
+            lines = Path(result["ledgerPath"]).read_text(encoding="utf-8").splitlines()
+            state = LEDGER.fold(lines, "d" * 64)
+            self.assertEqual(state.pending_for("w1"), 0)
+            self.assertEqual(state.verdicts, {ids[0]: "current", ids[1]: "current"})
+            self.assertEqual(state.from_stale_submission, ())
+            settled = sorted(entry.state for entry in state.entrypoints.values())
+            self.assertEqual(settled, ["returned", "returned"])
+
+            reconciled = REMOTE_CLI.cmd_reconcile(
+                target=target, entrypoint=notebook, worker="w1", adapter=adapter,
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertEqual(list(reconciled["orphanLocal"]), [])
+
+    def test_reconcile_sees_every_pending_slot_of_a_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            result = self._campaign(target, notebook, adapter, ("u0", "u1"))
+            ids = [
+                entry["submissionId"] for entry in result["assignments"][0]["submissions"]
+            ]
+            # The service lists neither: both slots are local orphans.
+            reconciled = REMOTE_CLI.cmd_reconcile(
+                target=target, entrypoint=notebook, worker="w1", adapter=adapter,
+                source_digest=lambda t, n: "d" * 64,
+            )
+            self.assertEqual(sorted(reconciled["orphanLocal"]), sorted(ids))
+
+    def test_a_later_campaign_supersedes_each_slot_of_the_earlier_one(self) -> None:
+        """Each slot is its own lane: a later two-slot campaign on the same
+        worker supersedes slot 1 with slot 1 and slot 2 with slot 2, so the
+        earlier results read stale, never current."""
+        lines = [
+            json.dumps(LEDGER.submitted_event(
+                entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+                submission_id=sid, worker="w1", requested_capacity=2,
+                granted_capacity=2, slot=slot,
+            ))
+            for sid, slot in (("old-1", None), ("old-2", 2), ("new-1", None), ("new-2", 2))
+        ]
+        lines += [
+            json.dumps(LEDGER.returned_event(
+                submission_id=sid, artifact_path=f"x/{sid}", observed_concurrency=1,
+            ))
+            for sid in ("old-1", "old-2")
+        ]
+        state = LEDGER.fold(lines, "d" * 64)
+        self.assertEqual(state.verdicts["old-1"], "fromStaleSubmission")
+        self.assertEqual(state.verdicts["old-2"], "fromStaleSubmission")
+        self.assertEqual(state.pending_for("w1"), 2)
+
+    def test_status_renders_each_slot_of_a_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            self._campaign(target, notebook, adapter, ("u0", "u1"))
+            status = REMOTE_CLI.cmd_status(
+                target=target, entrypoint=notebook, source_digest=lambda t, n: "d" * 64,
+            )
+            (lanes,) = status["entrypoints"].values()
+            self.assertEqual(sorted(lanes), ["w1", "w1#slot2"])
+
+    def test_distribute_reports_each_workers_slot_shares(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2), ("w2", 1)])
+            report = REMOTE_CLI.cmd_distribute(
+                target=target, entrypoint=notebook, adapter=adapter,
+                units=("u0", "u1", "u2"), source_digest=lambda t, n: "d" * 64,
+            )
+            shares = {row["worker"]: row["shares"] for row in report["assignments"]}
+            self.assertEqual(shares, {"w1": [["u0"], ["u2"]], "w2": [["u1"]]})
+
+    def test_a_repeated_submission_id_within_one_campaign_refuses(self) -> None:
+        """An adapter that ignores the slot would overwrite slot 1's job with
+        slot 2's under one id; that is refused by name, never recorded as
+        two submissions sharing one id."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._target_and_notebook(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
+            adapter.ignore_slot = True
+            with self.assertRaises(REMOTE_CLI.RemoteCLIError) as caught:
+                self._campaign(target, notebook, adapter, ("u0", "u1"))
+            self.assertIn("DUPLICATE_SUBMISSION_ID", str(caught.exception))
+            ledger = target / "FEM-TOLLA" / ".remote-execution" / "ledger.jsonl"
+            events = [json.loads(line) for line in ledger.read_text().splitlines()]
+            self.assertEqual(len(events), 1, "only the first, distinct id is recorded")
+
+    def test_kaggle_slot_two_pushes_its_own_kernel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            job_dir = tmp_path / "job"
+            job_dir.mkdir()
+            entrypoint = job_dir / "runner.ipynb"
+            entrypoint.write_text("{}", encoding="utf-8")
+            (job_dir / "kernel-metadata.json").write_text(
+                json.dumps({"id": "", "title": "papersmith-search-a", "code_file": ""}),
+                encoding="utf-8",
+            )
+            captured = tmp_path / "captured.json"
+            driver = _write_fake_driver(tmp_path / "driver", capture_metadata_to=captured)
+            token_path = _write_fake_token(tmp_path / "creds")
+            handle = KAGGLE.CredentialHandle(worker_id="w1", token_path=token_path)
+            adapter = KAGGLE.KaggleAdapter(credentials={"w1": handle}, driver_script=driver)
+
+            first = adapter.submit(ADAPTER.Job(
+                entrypoint=entrypoint, run_config={"units": ["u0"]}, worker="w1",
+            ))
+            second = adapter.submit(ADAPTER.Job(
+                entrypoint=entrypoint, run_config={"units": ["u1"], "slot": 2},
+                worker="w1",
+            ))
+            pushed = json.loads(captured.read_text(encoding="utf-8"))
+
+            self.assertEqual(first.id, "w1/papersmith-search-a")
+            self.assertEqual(second.id, "w1/papersmith-search-a-slot-2")
+            self.assertEqual(pushed["id"], second.id)
+            self.assertEqual(pushed["title"], "papersmith-search-a-slot-2")
+
+
+class CampaignReadinessTests(unittest.TestCase):
+    """S2 (parallel campaigns, remote-execution side): a campaign `submit`
+    refuses `CAMPAIGN_WORKERS_NOT_READY` unless every worker the
+    distribution assigns units to has its own passing rehearsal at the
+    current pin, naming every worker that still needs one. Checked after
+    the distribution is known and before any `adapter.submit()`."""
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(
+            JOBFOLDER, "verify_pin_preconditions", return_value=None
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _job_folder(self, tmp: str) -> tuple[Path, Path]:
+        target = Path(tmp) / "repo"
+        (target / "FEM-TOLLA").mkdir(parents=True)
+        job_dir = _make_job_folder(target, "kaggle", "search-a")
+        notebook = job_dir / "runner.ipynb"
+        notebook.write_text("{}", encoding="utf-8")
+        _write_job_folder_run_config(job_dir)
+        return target, notebook
+
+    def _submit(self, target: Path, notebook: Path, adapter, units, *, smoke=False):
+        token = REMOTE_CLI.cmd_distribute(
+            target=target, entrypoint=notebook, adapter=adapter, units=units,
+            source_digest=lambda t, n: "d" * 64,
+        )["consentToken"]
+        if not smoke:
+            _mint_launch_authorization(
+                target=target, product="FEM-TOLLA", pin_commit="a" * 40,
+                relative_entrypoint="tools/kaggle/search-a/runner.ipynb",
+                worker=None, units=units,
+            )
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, requested=1, adapter=adapter,
+            source_digest=lambda t, n: "d" * 64, units=units, consent=token,
+            smoke=smoke,
+        )
+
+    def test_refuses_when_one_assigned_worker_has_no_passing_rehearsal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1), ("w2", 1)])
+            _mint_rehearsal(target=target, worker="w1")
+
+            with self.assertRaises(REMOTE_CLI.ReadinessError) as caught:
+                self._submit(target, notebook, adapter, ("u0", "u1"))
+
+            message = str(caught.exception)
+            self.assertTrue(message.startswith("CAMPAIGN_WORKERS_NOT_READY"), message)
+            self.assertIn("'w2'", message)
+            self.assertEqual(caught.exception.workers, ("w2",))
+            self.assertEqual(adapter.submit_calls, [], "no quota spent on refusal")
+
+    def test_the_refusal_names_every_worker_that_still_needs_a_rehearsal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1), ("w2", 1), ("w3", 1)])
+            _mint_rehearsal(target=target, worker="w2")
+            _mint_rehearsal(target=target, worker="w3", commit="b" * 40)
+
+            with self.assertRaises(REMOTE_CLI.ReadinessError) as caught:
+                self._submit(target, notebook, adapter, ("u0", "u1", "u2"))
+
+            self.assertEqual(caught.exception.workers, ("w1", "w3"))
+            message = str(caught.exception)
+            self.assertIn("'w1'", message)
+            self.assertIn("'w3'", message)
+            self.assertIn("--smoke", message)
+
+    def test_passes_when_every_assigned_worker_has_its_own_rehearsal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1), ("w2", 1)])
+            _mint_rehearsal(target=target, worker="w1")
+            _mint_rehearsal(target=target, worker="w2")
+
+            result = self._submit(target, notebook, adapter, ("u0", "u1"))
+
+            self.assertEqual(sorted(adapter.submit_calls), ["w1", "w2"])
+            self.assertTrue(all(row["submissionId"] for row in result["assignments"]))
+
+    def test_a_worker_given_no_units_needs_no_rehearsal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1), ("w2", 1)])
+            _mint_rehearsal(target=target, worker="w1")
+
+            self._submit(target, notebook, adapter, ("u0",))
+
+            self.assertEqual(adapter.submit_calls, ["w1"])
+
+    def test_a_rehearsal_campaign_is_not_held_to_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1), ("w2", 1)])
+
+            self._submit(target, notebook, adapter, ("u0", "u1"), smoke=True)
+
+            self.assertEqual(sorted(adapter.submit_calls), ["w1", "w2"])
+
+    def test_readiness_is_per_worker_so_two_rehearsed_workers_are_both_ready(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            _mint_rehearsal(target=target, worker="w1")
+            _mint_rehearsal(target=target, worker="w2")
+            job_dir = notebook.parent
+
+            self.assertTrue(REMOTE_CLI.cmd_readiness(job_dir=job_dir, worker="w1")["ready"])
+            self.assertTrue(REMOTE_CLI.cmd_readiness(job_dir=job_dir, worker="w2")["ready"])
+            not_rehearsed = REMOTE_CLI.cmd_readiness(job_dir=job_dir, worker="w3")
+            self.assertFalse(not_rehearsed["ready"])
+            self.assertIn("no smoke record", not_rehearsed["reason"])
+            self.assertIn("'w3'", not_rehearsed["reason"])
+
+    def test_a_single_send_to_a_named_worker_keeps_its_current_check(self) -> None:
+        """Single-send submit is authorized by its gate record alone, as
+        before; this precondition never runs for it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = MultiWorkerFakeAdapter(workers=[("w1", 1)])
+            token = _mint_launch_consent(
+                target=target, entrypoint=notebook, adapter=adapter,
+                source_digest=lambda t, n: "d" * 64, worker="w1",
+            )
+            _mint_launch_authorization(
+                target=target, product="FEM-TOLLA", pin_commit="a" * 40,
+                relative_entrypoint="tools/kaggle/search-a/runner.ipynb",
+                worker="w1",
+            )
+            result = REMOTE_CLI.cmd_submit(
+                target=target, entrypoint=notebook, worker="w1", requested=1,
+                adapter=adapter, source_digest=lambda t, n: "d" * 64, consent=token,
+            )
+            self.assertEqual(result["submission"].worker, "w1")
 
 
 if __name__ == "__main__":

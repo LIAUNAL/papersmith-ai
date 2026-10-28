@@ -1124,7 +1124,22 @@ class KaggleAdapter(ADAPTER.Adapter):
             template.setdefault("machine_shape", KAGGLE_MACHINE_SHAPE)
 
             title = template.get("title")
-            slug = _slugify(title) if title else _kernel_slug(job.entrypoint)
+            # A campaign sends one job per granted slot (S1, parallel
+            # campaigns): slot 2 and up of the same job on the same account
+            # must be its OWN kernel, or the second push would overwrite the
+            # first under one ref. Slot 1 (no `slot` key) keeps the ref it
+            # always had. The title carries the suffix too, since the
+            # service derives a new kernel's slug from its title.
+            slot = job.run_config.get("slot")
+            if isinstance(slot, int) and not isinstance(slot, bool) and slot > 1:
+                if title:
+                    title = f"{title}-slot-{slot}"
+                    template["title"] = title
+                    slug = _slugify(title)
+                else:
+                    slug = f"{_kernel_slug(job.entrypoint)}-slot-{slot}"
+            else:
+                slug = _slugify(title) if title else _kernel_slug(job.entrypoint)
             ref = f"{job.worker}/{slug}"
             template["id"] = ref
             template["code_file"] = job.entrypoint.name
