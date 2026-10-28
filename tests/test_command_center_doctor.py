@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -57,6 +58,36 @@ class DoctorRouteTests(unittest.TestCase):
         second = json.loads(bytes(route().body))
         self.assertEqual(first["summary"]["generated_at"], second["summary"]["generated_at"])
 
+
+    def test_an_expired_report_is_served_while_one_refresh_runs(self) -> None:
+        calls = []
+
+        def build(*_args, **_kwargs):
+            calls.append(None)
+            return {"summary": {"n": len(calls)}, "rows": []}
+
+        with mock.patch.object(server.doctor_view, "get_doctor_view", side_effect=build), \
+                mock.patch.object(server, "DOCTOR_TTL_SECONDS", 0.0):
+            app = server.create_app(self.workspace, history_store=None)
+            route = _routes(app)["/api/doctor"]
+            self.assertEqual(json.loads(bytes(route().body))["summary"]["n"], 1)
+            self.assertEqual(json.loads(bytes(route().body))["summary"]["n"], 1)
+            deadline = time.monotonic() + 10
+            while len(calls) < 2 and time.monotonic() < deadline:
+                time.sleep(0.02)
+            time.sleep(0.05)
+            self.assertEqual(json.loads(bytes(route().body))["summary"]["n"], 2)
+            self.assertEqual(json.loads(bytes(route(fresh=True).body))["summary"]["n"], len(calls))
+
+    def test_startup_warming_fills_the_doctor_report(self) -> None:
+        app = server.create_app(self.workspace, history_store=None)
+        with mock.patch.object(server.experiments_view, "get_experiments_view"), \
+                mock.patch.object(server.ai_transcripts, "read_all"):
+            server.warm_caches(self.workspace, app.state.warm_doctor)
+        with mock.patch.object(server.doctor_view, "get_doctor_view",
+                               side_effect=AssertionError("not cached")):
+            payload = json.loads(bytes(_routes(app)["/api/doctor"]().body))
+        self.assertIn("rows", payload)
 
 class DoctorTabTests(unittest.TestCase):
     def test_the_tab_comes_right_after_telemetria(self) -> None:

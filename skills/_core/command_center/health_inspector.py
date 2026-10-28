@@ -26,6 +26,7 @@ import json
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -400,24 +401,34 @@ def skill_manifests(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
+#: Front doors probed at once; each probe is one short-lived interpreter.
+CLI_PROBE_WORKERS = 8
+
+
+def _probe_front_door(root: Path, name: str, relative: str) -> dict[str, Any]:
+    script = root / "skills" / name / relative
+    if not script.is_file():
+        return {"skill": name, "path": f"skills/{name}/{relative}",
+                "state": "MISSING", "exit_code": None, "detail": "script absent"}
+    code, output = _run([sys.executable, str(script), "--help"], root)
+    state = "WIRED" if code == 0 else "TOOL_MISSING"
+    return {
+        "skill": name,
+        "path": f"skills/{name}/{relative}",
+        "state": state,
+        "exit_code": code,
+        "detail": output.splitlines()[0] if code and output else "ok",
+    }
+
+
 def cli_entrypoints(root: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for name, relative in front_door_skills(root):
-        script = root / "skills" / name / relative
-        if not script.is_file():
-            rows.append({"skill": name, "path": f"skills/{name}/{relative}",
-                         "state": "MISSING", "exit_code": None, "detail": "script absent"})
-            continue
-        code, output = _run([sys.executable, str(script), "--help"], root)
-        state = "WIRED" if code == 0 else "TOOL_MISSING"
-        rows.append({
-            "skill": name,
-            "path": f"skills/{name}/{relative}",
-            "state": state,
-            "exit_code": code,
-            "detail": output.splitlines()[0] if code and output else "ok",
-        })
-    return rows
+    # Each `--help` mostly waits on interpreter start-up, so the probes run
+    # concurrently; map() keeps the roster order.
+    roster = front_door_skills(root)
+    if not roster:
+        return []
+    with ThreadPoolExecutor(max_workers=min(CLI_PROBE_WORKERS, len(roster))) as pool:
+        return list(pool.map(lambda entry: _probe_front_door(root, *entry), roster))
 
 
 # --------------------------------------------------------------------------
