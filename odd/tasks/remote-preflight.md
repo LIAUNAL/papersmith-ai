@@ -22,7 +22,7 @@ Branch: `feat/remote-preflight` (from `origin/main` 5b7b447e, v0.35.0). Delivery
 
 ## Tasks
 
-- T1 (S1, S4 preflight doctrine; S5 for what it touches) delegated writer A -- done, RED/GREEN observed per check (commit: see L12)
+- T1 (S1, S4 preflight doctrine; S5 for what it touches) delegated writer A -- done, RED/GREEN observed per check (commit 4926432d)
 - T2 (S2, S3) delegated writer B, after T1 (shared files in remote_cli)
 - T3 independent verifier (items 3, 5)
 
