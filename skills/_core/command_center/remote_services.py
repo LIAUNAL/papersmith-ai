@@ -277,6 +277,27 @@ def launch_evidence(root: Path | str) -> dict[str, int]:
         return {"jobs": 0, "smokes": 0, "rehearsals_passed": 0, "launched": 0}
 
 
+#: Worker ids carry their service: a Colab team worker is ``colab:<owner>``
+#: and the legacy single Colab worker is ``colab``; a Kaggle worker is its
+#: bare username. A ``<service>:`` prefix always names the service.
+_KAGGLE_SERVICE = "kaggle"
+_UNPREFIXED_SERVICES = (COLAB_CLI_NAME,)
+
+
+def service_of_worker(worker: str) -> str:
+    """The remote service a ledger worker id belongs to, from its prefix:
+    ``<service>:<owner>`` names ``<service>``, a bare known service name is
+    that service, and any other bare id is a Kaggle username. Empty for an
+    empty id."""
+    worker = str(worker or "")
+    if not worker:
+        return ""
+    prefix, sep, _owner = worker.partition(":")
+    if sep:
+        return prefix[:MAX_TEXT]
+    return worker if worker in _UNPREFIXED_SERVICES else _KAGGLE_SERVICE
+
+
 def _quota_row() -> dict[str, Any]:
     return _row("quota", "Cuota GPU semanal", "Horas de GPU disponibles esta semana.",
                 "unverified", "No se consulta en cada sondeo (requiere red).",

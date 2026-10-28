@@ -235,6 +235,32 @@
     return `${chips}<details class="exp-runs"><summary>Últimas ejecuciones (${esc(r.count)})</summary><ul>${latest}</ul></details>`;
   }
 
+  // Remote runs per worker (S6): each worker's lanes -- entrypoint and
+  // concurrent slot -- folded from the ledger, slots grouped under their worker.
+  function remoteWorkers(product) {
+    const workers = product.remote_workers || [];
+    if (!workers.length) return '';
+    const body = workers.map((w) => {
+      const lanes = w.lanes || [];
+      const more = (w.lane_count || 0) > lanes.length
+        ? `<tr><td colspan="6"><small class="exp-muted">… ${esc(w.lane_count - lanes.length)} carril(es) más</small></td></tr>` : '';
+      return lanes.map((lane, index) => {
+        const [cls, label] = STATE_LABEL[lane.state] || ['', lane.state];
+        const units = Array.isArray(lane.units) ? esc(lane.units.join(', '))
+          : `<span class="exp-muted">${lane.granted != null ? `capacidad ${esc(lane.granted)}` : '—'}</span>`;
+        const head = index === 0
+          ? `<td rowspan="${lanes.length}"><strong>${esc(w.worker)}</strong><br><small>${esc(w.service || '—')}</small></td>` : '';
+        return `<tr>${head}<td><code>${esc(lane.entrypoint)}</code> <small>slot ${esc(lane.slot)}</small></td>
+          <td><span class="badge ${cls}">${esc(label)}</span>${lane.reason ? `<div class="exp-reason">${esc(lane.reason)}</div>` : ''}</td>
+          <td><small>${units}</small></td><td><code>${esc(lane.submission_id)}</code></td><td><small>${esc(lane.ts)}</small></td></tr>`;
+      }).join('') + more;
+    }).join('');
+    return `<details class="exp-runs exp-workers"><summary>Ejecuciones remotas por worker (${esc(workers.length)})</summary>
+      <div class="table-responsive"><table class="table exp-table">
+      <thead><tr><th>Worker / servicio</th><th>Entrypoint / slot</th><th>Estado</th><th>Unidades</th><th>Envío</th><th>Última actualización</th></tr></thead>
+      <tbody>${body}</tbody></table></div></details>`;
+  }
+
   // ------------------------------------------------------------ diagrams
   // One figure per approval, drawn by skills/experiment-diagrams: the proof of
   // concept first, then the full experiments. The operator verifies each one here.
@@ -339,6 +365,7 @@
         <div><strong>${esc(p.name)}</strong> <small class="exp-muted">${esc(p.path)}</small></div>
         <div class="exp-chips">${runs(p)}</div>
       </header>
+      ${remoteWorkers(p)}
       ${diagrams(p)}
       ${pinned.length ? `<h4 class="exp-h4">Artefactos aprobados en deliberación</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}
       <h4 class="exp-h4">Convergencia</h4>${convergence(p)}
