@@ -1159,6 +1159,45 @@ def _declared_carry_paths(resolved_entrypoint: Path) -> tuple[str, ...]:
     return JOBFOLDER.validate_carry_paths(declared)
 
 
+def _declared_input_datasets(resolved_entrypoint: Path) -> tuple[str, ...]:
+    """The public datasets the job folder beside `resolved_entrypoint`
+    declares in its `run-config.json` (`generate-job --input-dataset`), or
+    `()` when it declares none or is not a job folder (the legacy shape
+    attaches nothing). Read with the generator's own validator, so a
+    hand-edited ref refuses here, before anything is submitted
+    (kernel-input-datasets S1)."""
+    config_path = resolved_entrypoint.parent / RUN_CONFIG_FILENAME
+    if not config_path.is_file():
+        return ()
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(config, dict) or "inputDatasets" not in config:
+        return ()
+    try:
+        return JOBFOLDER.validate_input_datasets(config["inputDatasets"])
+    except JOBFOLDER.JobFolderError as exc:
+        raise RemoteCLIError(f"{config_path}: {exc}") from None
+
+
+def _input_plan(
+    adapter: "ADAPTER.Adapter", resolved_entrypoint: Path
+) -> tuple[str | None, dict]:
+    """What `submit` does with a job's declared input datasets
+    (kernel-input-datasets S2, S3): `(None, {})` for a job declaring none
+    -- it is submitted exactly as before -- else `("attached", {"inputRoot":
+    <root>})` for a backend declaring `INPUT_DATASETS_ROOT`, which attaches
+    the datasets to the push, or `("unsupported", {})` for one that does
+    not, whose runner then exports every ref mapped to null."""
+    if not _declared_input_datasets(resolved_entrypoint):
+        return None, {}
+    root = getattr(adapter, "INPUT_DATASETS_ROOT", None)
+    if isinstance(root, str) and root:
+        return "attached", {"inputRoot": root}
+    return "unsupported", {}
+
+
 def _carry_evidence(
     *,
     target: Path,
@@ -1649,6 +1688,9 @@ def cmd_submit(
         and (resolved_entrypoint.parent / RUN_CONFIG_FILENAME).is_file()
         else {}
     )
+    # kernel-input-datasets S2-S3: a job declaring input datasets is told
+    # where a capable backend mounts them; one declaring none is unchanged.
+    inputs_status, inputs_config = _input_plan(adapter, resolved_entrypoint)
 
     if units:
         carry_paths = _declared_carry_paths(resolved_entrypoint)
@@ -1734,6 +1776,7 @@ def cmd_submit(
                 run_config = {"mode": "smoke"} if smoke else {}
                 run_config = dict(run_config)
                 run_config.update(session_config)
+                run_config.update(inputs_config)
                 run_config["units"] = list(share)
                 if slot > 1:
                     run_config["slot"] = slot
@@ -1799,7 +1842,7 @@ def cmd_submit(
                 }
             )
 
-        return {
+        campaign = {
             "assignments": assignments,
             "unplaced": list(distribution.unplaced),
             "skipped": [
@@ -1809,6 +1852,9 @@ def cmd_submit(
             "staleness": _job_folder_staleness(resolved_entrypoint),
             "smoke": smoke,
         }
+        if inputs_status is not None:
+            campaign["inputs"] = inputs_status
+        return campaign
 
     if worker is None:
         plan = PACKER.select(
@@ -1828,7 +1874,7 @@ def cmd_submit(
         )
 
     run_config = {"mode": "smoke"} if smoke else {}
-    run_config = {**run_config, **session_config}
+    run_config = {**run_config, **session_config, **inputs_config}
     # A single send carries nothing, but it must not push over an output a
     # pending continuation still reads, nor over a kernel still running.
     protected = _protected_refs(
@@ -1851,7 +1897,7 @@ def cmd_submit(
     )
     LEDGER.append(ledger_path, event)
 
-    return {
+    single = {
         "plan": plan,
         "submission": submission,
         "event": event,
@@ -1859,6 +1905,9 @@ def cmd_submit(
         "staleness": _job_folder_staleness(resolved_entrypoint),
         "smoke": smoke,
     }
+    if inputs_status is not None:
+        single["inputs"] = inputs_status
+    return single
 
 
 def cmd_status(
@@ -3621,6 +3670,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "restored before the entrypoint runs. Omitted, nothing is carried.",
     )
     generate_job.add_argument(
+        "--input-dataset", dest="input_datasets", action="append", default=None,
+        metavar="OWNER/SLUG",
+        help="repeatable: a public dataset this job reads, as <owner>/<slug>, "
+        "recorded as inputDatasets. A service that attaches inputs mounts it "
+        "read-only in the push (submit reports inputs: attached); one that "
+        "does not reports inputs: unsupported. Either way the runner exports "
+        "FORGE_INPUT_DATASETS before the entrypoint: a JSON object mapping "
+        "each ref to its mounted directory, or to null when it was not "
+        "attached, so the target downloads it instead. Omitted, nothing is "
+        "attached.",
+    )
+    generate_job.add_argument(
         "--code-bundle", dest="code_bundle", action="store_true", default=False,
         help="ship the declared clone paths (and the run/smoke notebook) "
         "inside the job instead of having the runner clone them: for a "
@@ -3822,20 +3883,18 @@ def main(argv: list[str] | None = None) -> int:
         # rather than one named `Path` key, because naming keys one at a
         # time is what left a nested one unreachable; naming none makes the
         # next one harmless.
-        print(
-            json.dumps(
-                {
-                    "submissionId": result["submission"].id,
-                    "worker": result["submission"].worker,
-                    "granted": result["plan"].granted,
-                    "ledgerPath": result["ledgerPath"],
-                    "staleness": result["staleness"],
-                    "smoke": result["smoke"],
-                },
-                sort_keys=True,
-                default=str,
-            )
-        )
+        rendered = {
+            "submissionId": result["submission"].id,
+            "worker": result["submission"].worker,
+            "granted": result["plan"].granted,
+            "ledgerPath": result["ledgerPath"],
+            "staleness": result["staleness"],
+            "smoke": result["smoke"],
+        }
+        # A seventh key only for a job declaring input datasets.
+        if "inputs" in result:
+            rendered["inputs"] = result["inputs"]
+        print(json.dumps(rendered, sort_keys=True, default=str))
         return 0
 
     if args.command == "status":
@@ -4077,6 +4136,7 @@ def main(argv: list[str] | None = None) -> int:
                 local_budget_seconds=args.local_budget_seconds,
                 carry_paths=args.carry_paths,
                 code_bundle=args.code_bundle,
+                input_datasets=args.input_datasets,
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)

@@ -265,6 +265,15 @@ def _save_kernel_request_from_staging(staging_dir: Path) -> "ApiSaveKernelReques
     if kernel_sources:
         request.kernel_data_sources = [str(ref) for ref in kernel_sources]
 
+    # kernel-input-datasets S2: the metadata's `dataset_sources` (the public
+    # `<owner>/<slug>` datasets a job declares) is the request's
+    # `dataset_data_sources` in kagglesdk 0.1.37 -- the same mapping the
+    # `kaggle kernels push` CLI makes. A pushed kernel is non-interactive
+    # and cannot attach a dataset at run time, so it must travel here.
+    dataset_sources = metadata.pop("dataset_sources", None)
+    if dataset_sources:
+        request.dataset_data_sources = [str(ref) for ref in dataset_sources]
+
     if metadata:
         raise DriverError(
             f"{metadata_path} carries key(s) {sorted(metadata)} this driver "

@@ -11,6 +11,28 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- A remote job can declare the public datasets it reads:
+  `generate-job --input-dataset <owner>/<slug>` (repeatable) records
+  `inputDatasets` in `run-config.json`; a malformed or repeated ref refuses at
+  generation and on every read, so a hand-edited one refuses at `submit`
+  before anything is sent. A pushed Kaggle kernel is non-interactive and
+  cannot attach a dataset at run time (`New Datasets cannot be attached in
+  non-interactive sessions`), so the Kaggle adapter now names the declared
+  datasets in the pushed `kernel-metadata.json`'s `dataset_sources`, which the
+  driver maps onto the save-kernel request's `dataset_data_sources`. The
+  capability is the optional `Adapter.INPUT_DATASETS_ROOT` (the ABC keeps six
+  operations): `submit` hands that root to the job as `inputRoot` and reports
+  `inputs: attached`; a service without it (Colab) reports `inputs:
+  unsupported`. Before the entrypoint, the runner searches the input root for
+  each ref's slug and exports `FORGE_INPUT_DATASETS`, a JSON object mapping
+  each ref to its mounted directory, or to `null` when it was not attached, so
+  the target downloads it instead. A job declaring no inputs is byte-identical
+  to before.
+
 ## 0.34.0
 
 ### Added

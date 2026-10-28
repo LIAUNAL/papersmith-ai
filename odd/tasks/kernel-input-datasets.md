@@ -1,0 +1,22 @@
+# Attach declared input datasets to kernel-service jobs
+
+Objective: a job declares the public datasets it reads; on a kernel service (the Kaggle adapter) they are attached in the pushed kernel metadata so a non-interactive kernel can read them, and every service tells the target where they are mounted.
+Branch: `feat/kernel-input-datasets` (from `origin/main` e6a8c42a, v0.34.0). Delivery: release after verification, on the operator's word. Tests: `~/Documents/papers_smith/papersmith-ai/.micromamba/envs/papersmith/bin/python -m pytest -q -n 6`; `npm test`.
+
+## Specs
+
+- S0. Operator decision (2026-10-28), verbatim: "sí, sigue con la recomendación y genera los jobs", where the recommendation was that each job reads the public source dataset and derives the prepared file inside the job, with "una opción de `generate-job` que adjunte un dataset público de Kaggle como entrada, para los pasos de Kaggle".
+- S1. Declared inputs. `generate-job --input-dataset <owner>/<slug>` (repeatable) records `inputDatasets` in `run-config.json`; malformed refs refuse at generation and on every read. A job declaring none is byte-identical to today.
+- S2. Kernel attach. An adapter capability (optional, the ABC stays at six abstract methods) maps declared inputs into the push; the Kaggle adapter writes them to the kernel metadata's dataset sources (map through the driver's closed metadata table as `kernel_sources` was), so the kernel gets them mounted read-only.
+- S3. Mount discovery. The runner exports `FORGE_INPUT_DATASETS` (JSON object: ref -> mounted directory, or null when the service did not attach it) before the entrypoint runs, discovering the actual mount under the service's input root (do not hard-code the sub-path: search the input root for the ref's slug, as the live-verified kernel output mounted under `notebooks/<owner>/<slug>/`). Services without the capability (Colab) report `inputs: unsupported` at submit for a job with inputs and export the refs mapped to null, so the target falls back to downloading.
+- S4. Docs: remote-execution SKILL.md (job inputs), help, CHANGELOG `## Unreleased`; doctrine files must not name the service.
+
+## Tasks
+
+- T1 (S1-S4) delegated writer (reason: long-session backstop of the parent) — done, commit bd21aaaa
+- T2 independent verifier (item 3: CLI/config contract, item 5 delivery) — pending
+
+## Log
+
+- L1 (2026-10-28): live failure on Kaggle account amalvarezme, rehearsal `amalvarezme/papersmith-hpo-search` at pin 6320298: `kagglehub.dataset_download("danizo/eeg-dataset-for-adhd")` inside the kernel raised `BackendError: POST failed with: {"errors":["New Datasets cannot be attached in non-interactive sessions. Found no versions attached for Dataset [danizo/eeg-dataset-for-adhd]."]}`. A pushed (non-interactive) kernel must declare its datasets in its metadata.
+- L2 (2026-10-28): T1 done in bd21aaaa. S1: `generate-job --input-dataset <owner>/<slug>` (repeatable, argparse dest `input_datasets`) -> `inputDatasets`; `JOBFOLDER.validate_input_datasets()` refuses malformed/repeated refs before any write and in `validate_run_config()`; `submit` re-reads them (`_declared_input_datasets`) and refuses before sending. S2: optional `Adapter.INPUT_DATASETS_ROOT` (default `None`, ABC still six abstract methods); Kaggle sets `/kaggle/input` and adds the refs to `kernel-metadata.json` `dataset_sources`; the driver maps it to kagglesdk 0.1.37 `ApiSaveKernelRequest.dataset_data_sources`. S3: `submit` adds `run_config["inputRoot"]` and reports `inputs: attached` (single-send output key and campaign top-level key) or `inputs: unsupported` (Colab, no key added); the runner's `discover_input_datasets()` searches `inputRoot` up to 4 levels for the slug (owner-parent match first, then shallowest) and exports `FORGE_INPUT_DATASETS` as JSON ref -> dir or null; nothing exported without declared inputs. S4: remote-execution SKILL.md **Job inputs**, `--input-dataset` help, four walk/build agents and the two implementation SKILL.md files (service-neutral), CHANGELOG `## Unreleased`; projections synced. RED observed (29 failed) before GREEN. Verification: focused 1410 passed; full 10 failed = known env (5 forge_gate, cli_paper_e2e, 2 skill_audit) + `test_command_center_doctor::test_api_doctor_returns_the_same_rows_as_the_cli` and `test_mcp_tools::test_read_only_tools_all_answer_without_error`, both failing identically at the baseline (stash check); npm test 834 pass. Live attach of a dataset mount path not verified (no network). Next: T2 verifier.
