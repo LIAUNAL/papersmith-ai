@@ -142,6 +142,104 @@ def _assess(status: str, events: list[dict[str, Any]]) -> tuple[str, list[str], 
     return "red", ["Falta por ejecutar" if status != "ACTIVE" else "En curso, sin cerrar"], counts
 
 
+MAX_PHASE_ROUNDS = 40
+OUTCOMES = ("success", "rework", "iteration", "pending")
+OPERATOR_KINDS = frozenset({"command", "user_message"})
+#: persisted decisions that open a round of their own when no operator turn
+#: holds them (a deliberation edit, a fact, a remote submission).
+DECISION_KINDS = frozenset({"revision_receipt", "lifecycle_transition", "declaration",
+                            "fact_resolved", "fact_declined", "submitted"})
+
+_CORRECTION_RE = re.compile(
+    r"\b(corrig|correg|arregl|mal\b|error|equivoc|fall|no funciona|rehac|rehaz|reintent|"
+    r"otra vez|de nuevo|vuelve a|cambia|revierte|fix|wrong|redo|retry|again|broken|revert)",
+    re.I)
+_APPROVAL_RE = re.compile(
+    r"^\s*(aprob|acept|ok\b|okay|listo|perfecto|de acuerdo|s[ií]\b|dale\b|bien\b|correcto|"
+    r"approve|accept|lgtm|looks good|yes\b)", re.I)
+APPROVAL_MAX = 80
+
+
+def _is_approval(event: dict[str, Any]) -> bool:
+    text = str(event.get("summary") or "")
+    return (event.get("kind") == "user_message" and len(text) <= APPROVAL_MAX
+            and bool(_APPROVAL_RE.search(text)) and not _CORRECTION_RE.search(text))
+
+
+def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Split a phase's sorted ``events`` into operator rounds and classify them.
+
+    A round opens with an operator turn (the phase command or a follow-up
+    message) and holds what follows until the next one; a short approval
+    ("aprobado", "ok", "lgtm") closes the round before it instead of opening
+    one. A persisted decision (:data:`DECISION_KINDS`) opens a ``decision``
+    round when no operator round is open, or always when it has no timestamp
+    (it cannot be placed inside one); its reply is the last event that joined
+    it. Each event gets an ``id``, its ``round`` and ``key`` (an operator turn
+    or decision, the reply that answers it, or an error: the phase's main
+    interactions).
+
+    Outcome: ``rework`` when the round shows an error or a declined fact, or
+    the next round asks to correct or redo it or relaunches the phase command
+    (or the same remote submission); ``success`` when the
+    operator approved it or it is the last round of a passed phase;
+    ``pending`` when it is the last round of a phase that has not passed;
+    ``iteration`` otherwise (the operator kept refining)."""
+    rounds: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        event["id"] = f"e{index}"
+        event["key"] = False
+        event["round"] = None
+        kind = event.get("kind")
+        opens = kind in OPERATOR_KINDS and not (rounds and _is_approval(event))
+        decides = kind in DECISION_KINDS and (
+            not rounds or rounds[-1]["kind"] == "decision" or not event.get("ts"))
+        if opens or decides:
+            rounds.append({"n": len(rounds) + 1, "ts": event.get("ts"),
+                           "kind": kind if opens else "decision", "opener": kind,
+                           "prompt": event.get("summary", ""), "reply": "", "errors": 0,
+                           "approved": False, "events": []})
+        elif not rounds or (event.get("source") != "chats" and not event.get("ts")):
+            continue
+        current = rounds[-1]
+        event["round"] = current["n"]
+        current["events"].append(event["id"])
+        if opens or decides or kind in OPERATOR_KINDS:
+            event["key"] = True
+            current["approved"] = current["approved"] or _is_approval(event)
+        elif kind == "agent_reply" or current["kind"] == "decision":
+            current["reply"] = event.get("summary", "")
+            current["reply_event"] = event
+        if _is_error(event) or kind == "fact_declined":
+            event["key"] = True
+            current["errors"] += 1
+    for current in rounds:
+        if "reply_event" in current:
+            current.pop("reply_event")["key"] = True
+    for i, current in enumerate(rounds):
+        nxt = rounds[i + 1] if i + 1 < len(rounds) else None
+        if current["errors"]:
+            outcome, reason = "rework", f"{current['errors']} error(es) o rechazo(s) durante la iteración"
+        elif nxt and nxt["kind"] == "command":
+            outcome, reason = "rework", "Se relanzó el comando de la fase"
+        elif nxt and current["opener"] == nxt["opener"] == "submitted":
+            outcome, reason = "rework", "Se relanzó la ejecución remota"
+        elif nxt and _CORRECTION_RE.search(nxt["prompt"]):
+            outcome, reason = "rework", "El operador pidió corregir o rehacer"
+        elif current["approved"]:
+            outcome, reason = "success", "El operador la aprobó"
+        elif nxt:
+            outcome, reason = "iteration", ("La decisión siguió refinándose" if current["kind"] == "decision"
+                                            else "El operador continuó refinando")
+        elif status == "PASS":
+            outcome, reason = "success", "La fase pasó su compuerta"
+        else:
+            outcome, reason = "pending", "Falta por definir: la fase no ha cerrado"
+        current.update(outcome=outcome, reason=reason)
+        del current["approved"], current["opener"]
+    return rounds
+
+
 def _sort_key(event: dict[str, Any]) -> tuple[int, str]:
     return (0, event["ts"]) if event.get("ts") else (1, "")
 
@@ -174,10 +272,20 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
         by_stage.setdefault(stage, []).extend(items)
 
     phases = []
+    totals = dict.fromkeys(OUTCOMES, 0)
+    pending = []
     for fase in fases or []:
         stage = fase.get("stage_id", "")
         status = str(fase.get("status") or "PENDING")
         events = sorted(by_stage.get(stage, []), key=_sort_key)
+        rounds = decision_rounds(status, events)
+        summary = dict.fromkeys(OUTCOMES, 0)
+        for item in rounds:
+            summary[item["outcome"]] += 1
+            totals[item["outcome"]] += 1
+        if rounds and rounds[-1]["outcome"] == "pending":
+            pending.append({"stage_id": stage, "id": fase.get("id"), "round": rounds[-1]["n"],
+                            "prompt": rounds[-1]["prompt"]})
         for event in events[-MAX_PHASE_EVENTS:]:
             path = _workspace_file(root, event.get("ref"))
             if path:
@@ -190,9 +298,10 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
             "name": fase.get("name"), "gate": fase.get("gate"), "status": status,
             "agent": fase.get("agent"), "color": colour, "reasons": reasons, "counts": counts,
             "total_events": len(events), "events": events[-MAX_PHASE_EVENTS:],
-            "artifacts": artifacts,
+            "artifacts": artifacts, "rounds": rounds[-MAX_PHASE_ROUNDS:],
+            "total_rounds": len(rounds), "decision_summary": summary,
         })
-    return {"phases": phases, "sources": sources,
+    return {"phases": phases, "sources": sources, "decision_summary": totals, "pending": pending,
             "note": ("Resumen de solo lectura: decisiones persistidas, revisiones y "
                      "sesiones de chat (Claude Code, Pi, OpenCode) de este espacio de trabajo.")}
 
