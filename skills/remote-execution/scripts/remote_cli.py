@@ -46,7 +46,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 
 def _load_sibling(module_name: str, filename: str):
@@ -196,6 +196,11 @@ DUPLICATE_SUBMISSION_ID = "DUPLICATE_SUBMISSION_ID"
 # a submission the ledger cannot record is the one outcome it exists to
 # rule out.
 LEDGER_EVENT_TOO_LARGE = "LEDGER_EVENT_TOO_LARGE"
+# A continuation unit whose earlier output was produced on a worker other
+# than the one this campaign places it on (kernel-carry S4): a private job's
+# output is only verified to carry within its own account, so the campaign
+# is refused before any submission. `--no-carry` starts such units fresh.
+CARRY_WORKER_MISMATCH = "CARRY_WORKER_MISMATCH"
 
 # The longest submission id the size pre-check assumes a backend may answer
 # with: generous next to every id shape shipped today (`<owner>/<slug>`,
@@ -1121,6 +1126,163 @@ def _declared_session_limit(adapter: "ADAPTER.Adapter") -> int | None:
     return limit
 
 
+def _declared_carry_paths(resolved_entrypoint: Path) -> tuple[str, ...]:
+    """The carry paths the job folder beside `resolved_entrypoint` declares
+    in its `run-config.json` (`generate-job --carry-path`), or `()` when it
+    declares none or is not a job folder at all (the legacy shape carries
+    nothing). Read with the generator's own validator, so a hand-edited
+    path that escapes the product folder refuses here too."""
+    config_path = resolved_entrypoint.parent / RUN_CONFIG_FILENAME
+    if not config_path.is_file():
+        return ()
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ()
+    declared = config.get("carryPaths") if isinstance(config, dict) else None
+    if not declared:
+        return ()
+    if not isinstance(declared, list):
+        raise RemoteCLIError(
+            f"{config_path}'s carryPaths must be a list of carry paths"
+        )
+    return JOBFOLDER.validate_carry_paths(declared)
+
+
+def _carry_evidence(
+    *,
+    target: Path,
+    product: str,
+    relative_entrypoint: str,
+    live_digest: str,
+    ledger_lines: Sequence[str],
+) -> dict[str, dict]:
+    """Which units an earlier submission of this entrypoint left to be
+    continued, and by which submission (kernel-carry S2) -- unit -> that
+    submission's `submitted` event.
+
+    The same evidence `remaining` reads, and only that: a settled
+    submission at the CURRENT source digest whose `returned` result was
+    not quarantined and carries a `partial.json` (the units it lists, or
+    its whole share when it lists none), or whose `errored` event names
+    bytes `fetch` kept under `.remote-execution/partial/` (its whole
+    share). The LATEST settled submission carrying a unit decides: one
+    that finished it, or that left nothing behind, clears what an earlier
+    one left. A submission still in flight decides nothing.
+    """
+    product_root = (target / product / LEDGER_DIRNAME).resolve()
+    quarantine = product_root / QUARANTINE_DIRNAME
+    kept_root = product_root / KEPT_PARTIAL_DIRNAME
+    evidence: dict[str, dict] = {}
+    for submitted, terminal in LEDGER.submission_outcomes(ledger_lines):
+        if str(submitted.get("entrypoint")) != relative_entrypoint:
+            continue
+        if submitted.get("sourceDigest") != live_digest:
+            continue
+        if terminal is None:
+            continue
+        share = [str(unit) for unit in submitted.get("units") or ()]
+        artifact = terminal.get("artifactPath")
+        resolved = Path(artifact).resolve() if artifact else None
+        left: set[str] = set()
+        if terminal.get("kind") == "returned" and resolved is not None:
+            if not resolved.is_relative_to(quarantine):
+                stopped, unfinished = SHARD_IO.partial_marker(resolved)
+                if stopped:
+                    left = set(share) if unfinished is None else set(share) & unfinished
+        elif terminal.get("kind") == "errored" and resolved is not None:
+            if resolved.is_relative_to(kept_root) and resolved.is_dir():
+                left = set(share)
+        for unit in share:
+            if unit in left:
+                evidence[unit] = submitted
+            else:
+                evidence.pop(unit, None)
+    return evidence
+
+
+def _carry_affinity(evidence: Mapping[str, dict], units: Sequence[str]) -> dict[str, str]:
+    """unit -> the worker whose earlier output it continues from, for the
+    units of this campaign that have continuation evidence."""
+    return {
+        str(unit): str(evidence[str(unit)].get("worker"))
+        for unit in units
+        if str(unit) in evidence
+    }
+
+
+def _carry_source(adapter: "ADAPTER.Adapter", submission_id: str) -> dict | None:
+    """The adapter's `carry_source()` answer, validated, or `None` when the
+    backend carries nothing (an adapter predating the seam's default, a
+    test double that is not an `Adapter`, or an answer that is not the
+    `{"ref", "mount"}` pair of strings)."""
+    reader = getattr(adapter, "carry_source", None)
+    if not callable(reader):
+        return None
+    answer = reader(submission_id)
+    if not isinstance(answer, Mapping):
+        return None
+    ref, mount = answer.get("ref"), answer.get("mount")
+    if not isinstance(ref, str) or not ref or not isinstance(mount, str) or not mount:
+        return None
+    return {"submissionId": submission_id, "ref": ref, "mount": mount}
+
+
+def _plan_share_carry(
+    *,
+    adapter: "ADAPTER.Adapter",
+    evidence: Mapping[str, dict],
+    worker: str,
+    share: Sequence[str],
+    no_carry: bool,
+) -> tuple[str, list[dict]] | None:
+    """What one campaign share carries: `None` when no unit of it continues
+    an earlier submission, else `(status, sources)` with `status` one of
+    `attached` (sources are `{"submissionId", "ref", "mount"}` rows),
+    `unsupported` (the backend cannot mount an earlier output; nothing is
+    carried) or `fresh` (`--no-carry`). A source produced on another worker
+    refuses `CARRY_WORKER_MISMATCH` (kernel-carry S4)."""
+    earlier: list[dict] = []
+    seen: set[str] = set()
+    for unit in share:
+        submitted = evidence.get(str(unit))
+        if submitted is None:
+            continue
+        submission_id = str(submitted.get("submissionId"))
+        if submission_id in seen:
+            continue
+        seen.add(submission_id)
+        earlier.append(submitted)
+    if not earlier:
+        return None
+    if no_carry:
+        return ("fresh", [])
+    sources: list[dict] = []
+    for submitted in earlier:
+        source = _carry_source(adapter, str(submitted.get("submissionId")))
+        if source is None:
+            return ("unsupported", [])
+        sources.append(source)
+    for submitted in earlier:
+        produced_on = str(submitted.get("worker"))
+        if produced_on != worker:
+            continued = [
+                str(unit) for unit in share
+                if evidence.get(str(unit)) is submitted
+            ]
+            raise RemoteCLIError(
+                f"{CARRY_WORKER_MISMATCH}: unit(s) {continued} continue from "
+                f"submission {submitted.get('submissionId')!r}, whose output "
+                f"was produced on worker {produced_on!r}, but this campaign "
+                f"places them on worker {worker!r}; an earlier output is only "
+                "carried within the account that produced it. Nothing was "
+                f"submitted. Include worker {produced_on!r} in the pool "
+                "(distribute places continuations there), or pass --no-carry "
+                "to start these units fresh"
+            )
+    return ("attached", sources)
+
+
 def cmd_submit(
     *,
     target: str | Path,
@@ -1134,9 +1296,27 @@ def cmd_submit(
     units: Sequence[str] | None = None,
     consent: str | None = None,
     repo_credential_path: str | Path | None = None,
+    no_carry: bool = False,
 ) -> dict:
     """Guard, resolve a product, plan, submit, and record — the whole submit
     path, in this order.
+
+    Carry (kernel-carry S2-S5), campaign mode only, and only for a job
+    folder whose `run-config.json` declares `carryPaths`: a unit an
+    earlier submission of this entrypoint left to be continued
+    (`_carry_evidence()`, the evidence `remaining` reads) is placed on the
+    worker that produced it (`packer.distribute(affinity=...)`), and its
+    share's job is handed `run_config["carry"]` -- the earlier
+    submission's `{"submissionId", "ref", "mount"}` from the adapter's
+    `carry_source()` -- so the backend attaches the earlier output and the
+    runner restores the declared paths before the entrypoint. The
+    `submitted` event records `carriedFrom`, and each `submissions[]` row
+    reports `carry`: `attached`, `unsupported` (a backend that mounts no
+    earlier output; nothing is carried) or `fresh` (`no_carry`, the
+    `--no-carry` flag). A continuation produced on another worker refuses
+    `CARRY_WORKER_MISMATCH` before any submission. A job declaring no
+    carry paths, a single send and the legacy shape behave exactly as
+    before: no affinity, no `carry` key, no `carriedFrom`.
 
     `units` is `submit --unit`'s own campaign switch (Finding 2; Decisions
     6, 7) — repeatable, the exact same flag `cmd_distribute` already
@@ -1369,11 +1549,22 @@ def cmd_submit(
     )
 
     if units:
+        carry_paths = _declared_carry_paths(resolved_entrypoint)
+        evidence = (
+            _carry_evidence(
+                target=target, product=resolved_product,
+                relative_entrypoint=str(relative_entrypoint),
+                live_digest=digest, ledger_lines=ledger_lines,
+            )
+            if carry_paths
+            else {}
+        )
         distribution = PACKER.distribute(
             adapter=adapter,
             units=units,
             ledger_lines=ledger_lines,
             live_digest=digest,
+            affinity=_carry_affinity(evidence, units) or None,
         )
 
         if not smoke and pin_commit is not None:
@@ -1383,11 +1574,24 @@ def cmd_submit(
                 pin_commit=pin_commit,
             )
 
+        # What each share carries, decided for ALL shares before the FIRST
+        # submission, for the same reason as the size check below: a
+        # `CARRY_WORKER_MISMATCH` halfway through would leave a campaign
+        # half launched.
+        share_carry: dict[tuple[str, int], tuple[str, list[dict]] | None] = {}
+        for row in distribution.assignments:
+            for index, share in enumerate(PACKER.slot_shares(row)):
+                share_carry[(row.plan.worker, index)] = _plan_share_carry(
+                    adapter=adapter, evidence=evidence, worker=row.plan.worker,
+                    share=share, no_carry=no_carry,
+                )
+
         # Every share's `submitted` event must fit one ledger line, checked
         # for ALL shares before the FIRST submission: a refusal halfway
         # through would leave a campaign half launched.
         for row in distribution.assignments:
             for index, share in enumerate(PACKER.slot_shares(row)):
+                planned = share_carry[(row.plan.worker, index)]
                 probe = LEDGER.submitted_event(
                     entrypoint=str(relative_entrypoint),
                     source_digest=digest,
@@ -1397,6 +1601,7 @@ def cmd_submit(
                     granted_capacity=row.plan.granted,
                     slot=index + 1 if index else None,
                     units=share,
+                    carried_from=planned[1] if planned else None,
                 )
                 if LEDGER.event_bytes(probe) > LEDGER.MAX_EVENT_BYTES:
                     raise RemoteCLIError(
@@ -1424,6 +1629,9 @@ def cmd_submit(
                 run_config["units"] = list(share)
                 if slot > 1:
                     run_config["slot"] = slot
+                planned = share_carry[(row.plan.worker, index)]
+                if planned and planned[0] == "attached":
+                    run_config["carry"] = [dict(source) for source in planned[1]]
                 job = ADAPTER.Job(
                     entrypoint=resolved_entrypoint,
                     run_config=run_config,
@@ -1451,11 +1659,18 @@ def cmd_submit(
                     granted_capacity=row.plan.granted,
                     slot=slot if slot > 1 else None,
                     units=share,
+                    carried_from=planned[1] if planned else None,
                 )
                 LEDGER.append(ledger_path, event)
-                submissions.append(
-                    {"slot": slot, "units": list(share), "submissionId": submission.id}
-                )
+                entry = {"slot": slot, "units": list(share), "submissionId": submission.id}
+                if planned:
+                    entry["carry"] = planned[0]
+                    if planned[1]:
+                        entry["carriedFrom"] = [
+                            {"submissionId": source["submissionId"], "ref": source["ref"]}
+                            for source in planned[1]
+                        ]
+                submissions.append(entry)
             # `submissionId` keeps naming slot 1's submission (the only one
             # a one-slot worker has); `submissions` lists every slot's.
             submission_id = submissions[0]["submissionId"] if submissions else None
@@ -1761,8 +1976,21 @@ def cmd_distribute(
     digest_fn = source_digest or _load_source_digest()
     live = digest_fn(target, product)
 
+    # kernel-carry S4: a continuation is placed on the worker that produced
+    # its earlier output -- the same affinity the launch applies, so the
+    # preview and the launch agree. A job declaring no carry paths has none.
+    evidence = (
+        _carry_evidence(
+            target=target, product=product,
+            relative_entrypoint=str(relative_entrypoint),
+            live_digest=live, ledger_lines=ledger_lines,
+        )
+        if _declared_carry_paths(resolved_entrypoint)
+        else {}
+    )
     result = PACKER.distribute(
         adapter=adapter, units=units, ledger_lines=ledger_lines, live_digest=live,
+        affinity=_carry_affinity(evidence, units) or None,
     )
 
     consent_token = campaign_consent_token(
@@ -2966,6 +3194,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "https:// remotes are admissible. Omitted, every probe stays "
         "anonymous, exactly as before.",
     )
+    submit.add_argument(
+        "--no-carry", dest="no_carry", action="store_true",
+        help="campaign mode, for a job declaring --carry-path: start units "
+        "an earlier submission left to be continued fresh instead of "
+        "attaching that submission's output. Without it a continuation is "
+        "carried automatically (carry: attached), reported carry: "
+        "unsupported on a backend that cannot mount an earlier output, and "
+        "refused CARRY_WORKER_MISMATCH when it was produced on another "
+        "worker.",
+    )
 
     status = subparsers.add_parser(
         "status", help="report the fold for one product's ledger; resolves nothing"
@@ -3252,6 +3490,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "localBudget block is written; that silence is never read as a "
         "budget of zero.",
     )
+    generate_job.add_argument(
+        "--carry-path", dest="carry_paths", action="append", default=None,
+        help="repeatable: a path, relative to the product folder, whose "
+        "contents a continuation of this job needs from the session before "
+        "it (checkpoints, per-unit records, studies), recorded as "
+        "carryPaths. When submit sends units an earlier submission left "
+        "remaining, the earlier output is attached and these paths are "
+        "restored before the entrypoint runs. Omitted, nothing is carried.",
+    )
 
     smoke = subparsers.add_parser(
         "smoke", help="smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict"
@@ -3413,6 +3660,7 @@ def main(argv: list[str] | None = None) -> int:
                 units=args.units,
                 consent=args.consent,
                 repo_credential_path=args.repo_credential,
+                no_carry=args.no_carry,
             )
         except (RemoteCLIError, PACKER.PackerError, LEDGER.LedgerError,
                 ADAPTER.AdapterError, JOBFOLDER.JobFolderError) as exc:
@@ -3681,6 +3929,7 @@ def main(argv: list[str] | None = None) -> int:
                 environment_requirements=args.environment_requirements,
                 environment_index_url=args.environment_index_url,
                 local_budget_seconds=args.local_budget_seconds,
+                carry_paths=args.carry_paths,
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)

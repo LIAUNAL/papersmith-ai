@@ -128,8 +128,16 @@ def submitted_event(
     ts: str | None = None,
     slot: int | None = None,
     units: Sequence[str] | None = None,
+    carried_from: Sequence[Mapping[str, str]] | None = None,
 ) -> dict:
     """Build a `submitted` event.
+
+    `carried_from` (kernel-carry S2) names the earlier submissions whose
+    output this one was handed as an input, each as `{"submissionId",
+    "ref"}`: the continuation's own record of where its checkpoints came
+    from. `None` or empty writes no `carriedFrom` field at all, so every
+    submission that carries nothing is byte-identical to one written
+    before this field existed.
 
     `units` is the share of a campaign's declared units THIS submission
     carries (S6, session checkpoints), recorded so a later `remaining` read
@@ -166,6 +174,11 @@ def submitted_event(
         event["slot"] = slot
     if units is not None:
         event["units"] = [str(unit) for unit in units]
+    if carried_from:
+        event["carriedFrom"] = [
+            {"submissionId": str(row["submissionId"]), "ref": str(row["ref"])}
+            for row in carried_from
+        ]
     return event
 
 

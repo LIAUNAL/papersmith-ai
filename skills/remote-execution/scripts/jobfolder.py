@@ -263,6 +263,29 @@ def validate_clone_paths(
     return tuple(validated)
 
 
+def validate_carry_paths(carry_paths: Sequence[str]) -> tuple[str, ...]:
+    """The paths, relative to the product folder, whose contents a
+    continuation of this job needs carried from the session before it
+    (kernel-carry S1): checkpoints, per-unit records, studies. Each must be
+    a non-empty relative path with no `..`, the same structural rule
+    `validate_clone_paths()` holds, because the runner copies each one
+    into its own working directory and a path that escapes it would write
+    somewhere nothing fetches. An empty sequence is valid and means the
+    job declares none.
+    """
+    validated = []
+    for raw in carry_paths:
+        if not isinstance(raw, str) or not raw.strip():
+            raise JobFolderError(f"refusing carry path {raw!r}: must be a non-empty string")
+        candidate = Path(raw)
+        if candidate.is_absolute():
+            raise JobFolderError(f"refusing absolute carry path {raw!r}")
+        if ".." in candidate.parts:
+            raise JobFolderError(f"refusing carry path {raw!r}: contains '..'")
+        validated.append(candidate.as_posix())
+    return tuple(validated)
+
+
 def with_entry_notebooks(
     clone_paths: Sequence[str], notebooks: Sequence[str]
 ) -> list[str]:
@@ -1635,6 +1658,11 @@ def validate_run_config(run_config: Mapping[str, object]) -> None:
         run_block_kind(
             run_block["smoke"], where="run-config.json's 'run.smoke' block"
         )
+    carry_paths = run_config.get("carryPaths")
+    if carry_paths is not None:
+        if not isinstance(carry_paths, list):
+            raise JobFolderError("run-config.json's carryPaths must be a list of carry paths")
+        validate_carry_paths(carry_paths)
 
 
 def _asset_sha256(path: Path) -> str:
@@ -1674,6 +1702,7 @@ def build_run_config(
     environment_requirements: Sequence[str] | None = None,
     environment_index_url: str | None = None,
     local_budget_seconds: int | None = None,
+    carry_paths: Sequence[str] | None = None,
 ) -> dict:
     """Assemble `run-config.json`'s exact shape from target-supplied values.
 
@@ -1861,6 +1890,8 @@ def build_run_config(
         }
     if local_budget_seconds is not None:
         run_config["localBudget"] = {"seconds": local_budget_seconds}
+    if carry_paths:
+        run_config["carryPaths"] = list(validate_carry_paths(carry_paths))
     if has_environment_install:
         install_block: dict = {"requirements": list(environment_requirements)}
         if environment_index_url:
@@ -1954,6 +1985,7 @@ def generate_job(
     environment_index_url: str | None = None,
     local_budget_seconds: int | None = None,
     repo_credential_path: str | Path | None = None,
+    carry_paths: Sequence[str] | None = None,
 ) -> Path:
     """Generate one job folder, atomically, refusing to overwrite an
     existing one unless `regenerate=True`.
@@ -2027,6 +2059,12 @@ def generate_job(
     service-registered fallback and no forge-invented value. Omitted, no
     `localBudget` block is written at all — see `build_run_config()`'s
     own docstring for why that silence must never become a `0`.
+
+    `carry_paths` (kernel-carry S1), when given, is recorded as
+    `carryPaths`: the paths, relative to the product folder, a
+    continuation of this job restores from the session before it
+    (`validate_carry_paths()`). Omitted or empty, no `carryPaths` key is
+    written and `submit` carries nothing for this job, exactly as before.
 
     `repo_credential_path` (S3) is forwarded verbatim into that same
     condition set, where only the network-reaching `pin-published` probe
@@ -2186,6 +2224,7 @@ def generate_job(
         environment_requirements=environment_requirements,
         environment_index_url=environment_index_url,
         local_budget_seconds=local_budget_seconds,
+        carry_paths=carry_paths,
     )
     notebook = build_notebook(resolved_bootstrap, resolved_invoke)
 

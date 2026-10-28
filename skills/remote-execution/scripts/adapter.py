@@ -261,6 +261,23 @@ class Adapter(ABC):
         """
         return None
 
+    def carry_source(self, submission_id: str) -> Mapping[str, str] | None:
+        """How a later job of this backend reads an earlier submission's
+        output, or `None` when this backend cannot mount one (kernel-carry
+        S2, S5).
+
+        Deliberately NOT abstract, and not a seventh operation: it asks the
+        service nothing. A backend whose jobs can name another job's output
+        as an input answers `{"ref": <the input reference it pushes>,
+        "mount": <the directory that output appears under inside the
+        job>}`; `submit` hands both to the next job in
+        `run_config["carry"]` and the runner restores the job's declared
+        carry paths from `mount`. This default, `None`, means the backend
+        carries nothing automatically, and `submit` reports
+        `carry: unsupported` rather than dropping the continuation silently.
+        """
+        return None
+
 
 _REGISTRY: dict[str, type[Adapter]] = {}
 

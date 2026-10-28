@@ -44,6 +44,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -142,6 +143,86 @@ SESSION_LIMIT_KEY = "sessionLimitSeconds"
 SESSION_MARGIN_FRACTION = 0.10
 SESSION_MARGIN_MIN_SECONDS = 1800
 
+# The carry-over of a continuation (kernel-carry S3). `generate-job
+# --carry-path` declares, in `run_config["carryPaths"]`, the paths relative
+# to the product folder whose contents a continuation needs; `submit` adds
+# `run_config["carry"]`, one `{"submissionId", "ref", "mount"}` row per
+# earlier submission whose output the backend mounted for this job. Before
+# the entrypoint runs, `restore_carry()` copies each declared path from each
+# mount into this cell's working directory -- the folder whose files come
+# back as the result -- so the target finds its checkpoints where it wrote
+# them and needs no code of its own to resume. `FORGE_CARRY_IN` names the
+# mounts that were present (joined with `os.pathsep`), for a target that
+# wants to read the earlier output directly. A missing mount or path is
+# written to the run log and the unit starts fresh; it is never fatal.
+CARRY_IN_ENV = "FORGE_CARRY_IN"
+CARRY_PATHS_KEY = "carryPaths"
+CARRY_KEY = "carry"
+CARRY_LOG_PREFIX = "[carry]"
+
+
+def _carry_relative(raw: Any) -> Path | None:
+    """A declared carry path as a safe relative `Path`, or `None` when it
+    is not one (absolute, `..`, empty, not a string)."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    candidate = Path(raw)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    return candidate
+
+
+def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = None) -> str | None:
+    """Copy each declared carry path from each mounted earlier output into
+    the working directory, and return the `FORGE_CARRY_IN` value (`None`
+    when nothing was mounted, or when this job carries nothing).
+
+    Never raises for a missing mount, a missing path or a malformed row:
+    each is printed as one `[carry]` line to the run log and skipped, so
+    the unit starts fresh from whatever is not there. A run_config with no
+    `carry` rows prints nothing and copies nothing -- the job runs exactly
+    as it did before this existed.
+    """
+    rows = run_config.get(CARRY_KEY) or []
+    if not isinstance(rows, list) or not rows:
+        return None
+    declared = run_config.get(CARRY_PATHS_KEY) or []
+    if not isinstance(declared, list):
+        declared = []
+    base = Path(base_dir) if base_dir is not None else Path.cwd()
+    present: list[str] = []
+    for row in rows:
+        mount_text = row.get("mount") if isinstance(row, Mapping) else None
+        ref = row.get("ref") if isinstance(row, Mapping) else None
+        if not isinstance(mount_text, str) or not mount_text:
+            print(f"{CARRY_LOG_PREFIX} skipped a carry row with no mount: {row!r}", flush=True)
+            continue
+        mount = Path(mount_text)
+        if not mount.is_dir():
+            print(f"{CARRY_LOG_PREFIX} mount {mount} of {ref!r} is absent; "
+                  "the unit starts fresh", flush=True)
+            continue
+        present.append(str(mount))
+        for raw in declared:
+            relative = _carry_relative(raw)
+            if relative is None:
+                print(f"{CARRY_LOG_PREFIX} skipped carry path {raw!r}: not a "
+                      "relative path inside the product folder", flush=True)
+                continue
+            source = mount / relative
+            destination = base / relative
+            if source.is_dir():
+                shutil.copytree(source, destination, dirs_exist_ok=True)
+            elif source.is_file():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+            else:
+                print(f"{CARRY_LOG_PREFIX} {raw} is missing from {mount}; it starts "
+                      "fresh", flush=True)
+                continue
+            print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r}", flush=True)
+    return os.pathsep.join(present) if present else None
+
 
 def session_deadline(limit_seconds: Any, *, started: float) -> int:
     """`started + limit - max(limit * SESSION_MARGIN_FRACTION,
@@ -188,6 +269,7 @@ def submission_environment(
     mode: Any = None,
     units: list[str] | None = None,
     session_deadline: int | None = None,
+    carry_in: str | None = None,
 ) -> dict:
     """Compose `FORGE_RUN_MODE` and `FORGE_RUN_UNITS` — the two
     per-submission facts described beside `MODE_ENV`/`UNITS_ENV` above —
@@ -225,6 +307,8 @@ def submission_environment(
         result[UNITS_ENV] = json.dumps(list(units))
     if session_deadline is not None:
         result[SESSION_DEADLINE_ENV] = str(int(session_deadline))
+    if carry_in:
+        result[CARRY_IN_ENV] = str(carry_in)
     return result
 
 
@@ -236,6 +320,7 @@ def kernel_environment(
     mode: Any = None,
     units: list[str] | None = None,
     session_deadline: int | None = None,
+    carry_in: str | None = None,
 ) -> dict:
     """Everything the kernel receives from this cell, composed in one place.
 
@@ -271,7 +356,7 @@ def kernel_environment(
         CLONE_ROOT_ENV: str(Path(clone_root).resolve()),
         CLONE_COMMIT_ENV: str(commit),
     }
-    composed.update(submission_environment(mode, units, session_deadline))
+    composed.update(submission_environment(mode, units, session_deadline, carry_in))
     return composed
 
 
@@ -392,6 +477,7 @@ def execute_notebook(
     mode: Any = None,
     units: list[str] | None = None,
     session_deadline: int | None = None,
+    carry_in: str | None = None,
     client_factory: Callable[..., Any] = _default_notebook_client,
 ) -> dict:
     """Execute the declared notebook — the notebook half of cell 1.
@@ -491,7 +577,8 @@ def execute_notebook(
 
     handoff = kernel_environment(clone_root, commit, os.environ,
                                  mode=mode, units=units,
-                                 session_deadline=session_deadline)
+                                 session_deadline=session_deadline,
+                                 carry_in=carry_in)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:
@@ -570,15 +657,20 @@ def invoke(
     deadline = None
     if run_config.get(SESSION_LIMIT_KEY) is not None:
         deadline = session_deadline(run_config[SESSION_LIMIT_KEY], started=time.time())
-    if block_kind(block) == "notebook":
+    kind = block_kind(block)
+    # Restored before the entrypoint, whichever shape it is, so the target
+    # resumes from checkpoints already on disk (kernel-carry S3).
+    carry_in = restore_carry(run_config, base_dir)
+    if kind == "notebook":
         return execute_notebook(block, base_dir,
                                 commit=run_config.get("commit"),
                                 mode=mode, units=units,
                                 session_deadline=deadline,
+                                carry_in=carry_in,
                                 client_factory=client_factory)
     func = resolve_callable(block, import_module=import_module)
     kwargs = dict(block.get("kwargs") or {})
-    handoff = submission_environment(mode, units, deadline)
+    handoff = submission_environment(mode, units, deadline, carry_in)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:

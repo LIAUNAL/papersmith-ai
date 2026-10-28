@@ -495,6 +495,21 @@ REQUEST_GPU = True
 # push it; see `KaggleAdapter.submit()`'s refusal below.
 KERNEL_METADATA_FILENAME = "kernel-metadata.json"
 
+# Where a kernel that names another kernel in its metadata's
+# `kernel_sources` finds that kernel's output: `<root>/<owner>/<slug>/`.
+# LIVE-VERIFIED (2026-10-27, on one account): a kernel
+# pushed with `kernel_sources: ["<owner>/psmith-carry-test-a"]` read the
+# source kernel's `/kaggle/working/ckpt/state.json` at
+# `/kaggle/input/notebooks/<owner>/psmith-carry-test-a/ckpt/state.json` --
+# note the `notebooks/` segment. Verified within one account only; carrying
+# across two owners' private kernels was not (kernel-carry S4).
+KERNEL_INPUT_ROOT = "/kaggle/input/notebooks"
+
+# The suffix of the alternate kernel a continuation is pushed to when the
+# kernel it carries from has the ref it would otherwise reuse (see
+# `KaggleAdapter.submit()`): `<slug>` and `<slug>-carry` take turns.
+CARRY_ALTERNATE_SUFFIX = "-carry"
+
 # `jobfolder.py`'s own `RUN_CONFIG_FILENAME` constant, duplicated here
 # rather than imported: this module never imports `jobfolder.py` (the
 # dependency runs the other way — `jobfolder.py` reaches this module only
@@ -725,6 +740,17 @@ class KaggleAdapter(ADAPTER.Adapter):
         for a shape the table does not list."""
         shape = KAGGLE_MACHINE_SHAPE if machine_shape is None else machine_shape
         return KAGGLE_SESSION_LIMIT_SECONDS.get(shape)
+
+    def carry_source(self, submission_id: str) -> dict[str, str] | None:
+        """kernel-carry S2: an earlier submission's id IS its kernel ref
+        (`<worker>/<slug>`, see `submit()`), so a later kernel names it in
+        `kernel_sources` and reads its output under `KERNEL_INPUT_ROOT`.
+        Asks the service nothing. `None` for an id without the one `/`
+        this adapter's own ids always carry."""
+        owner, _, slug = str(submission_id).partition("/")
+        if not owner or not slug:
+            return None
+        return {"ref": submission_id, "mount": f"{KERNEL_INPUT_ROOT}/{submission_id}"}
 
     def __init__(
         self,
@@ -1161,9 +1187,34 @@ class KaggleAdapter(ADAPTER.Adapter):
                     slug = f"{_kernel_slug(job.entrypoint)}-slot-{slot}"
             else:
                 slug = _slugify(title) if title else _kernel_slug(job.entrypoint)
+            # kernel-carry S2: a continuation names each earlier kernel whose
+            # output it resumes from, so the service mounts that output
+            # under `KERNEL_INPUT_ROOT`. Added only when `submit` handed a
+            # `carry` list; a job without one is staged exactly as before.
+            carried = [
+                str(row["ref"]) for row in job.run_config.get("carry") or ()
+                if isinstance(row, Mapping) and row.get("ref")
+            ]
+            if f"{job.worker}/{slug}" in carried:
+                # A kernel naming ITSELF as its own source was never verified
+                # live, and a new version may replace the very output it
+                # would read. The continuation goes to the alternate kernel
+                # instead (`<slug>-carry`), which names the earlier one -- the
+                # two-kernel shape the live check did verify -- and the next
+                # continuation, carrying from the alternate, comes back here.
+                if title:
+                    title = f"{title}{CARRY_ALTERNATE_SUFFIX}"
+                    template["title"] = title
+                    slug = _slugify(title)
+                else:
+                    slug = f"{slug}{CARRY_ALTERNATE_SUFFIX}"
             ref = f"{job.worker}/{slug}"
             template["id"] = ref
             template["code_file"] = job.entrypoint.name
+            if carried:
+                sources = list(template.get("kernel_sources") or [])
+                sources.extend(ref_ for ref_ in carried if ref_ not in sources)
+                template["kernel_sources"] = sources
             (staging_path / KERNEL_METADATA_FILENAME).write_text(
                 json.dumps(template), encoding="utf-8"
             )
