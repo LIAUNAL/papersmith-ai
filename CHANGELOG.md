@@ -11,6 +11,26 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Changed
+
+- `proposal-implementation`'s twelve `### nextStep: "…"` sections moved,
+  verbatim, into `skills/proposal-implementation/references/next-step-<nextStep>.md`,
+  and each one left a `Stage reference:` line in `SKILL.md` where it stood.
+  `SKILL.md` drops from 308,488 to 258,251 bytes; the largest load for one
+  stage, `SKILL.md` plus `next-step-validate.md`, is 268,098 bytes. No rule
+  was reworded: put back in place, the references give the old `SKILL.md`
+  plus one new `## References` bullet. `implementation-build`,
+  `implementation-walk` and `paper-replicator` now read `SKILL.md`, then only
+  the reference for the `nextStep` that `probe` reports.
+- `math-tutor`, `insumos-observer` and `style-sampler`, the three agents that
+  only read and hold no gate, now carry `model: sonnet` and run on it in
+  Claude Code. Every other agent still runs on the session's model. The Pi
+  agent projection now drops a source's `model:` line. The OpenCode and
+  Antigravity projections already wrote no model, so those three harnesses
+  run every agent on the session's model.
+
 ## 0.37.0
 
 ### Added

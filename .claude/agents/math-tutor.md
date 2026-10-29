@@ -2,6 +2,7 @@
 name: math-tutor
 description: "One turn of the Socratic math tutor: begins with the reader's message and any hand-written images they attached in the dashboard's math panel, ends at one structured turn — the image read back as LaTeX and parts, one hint, one question, and an assessment of understanding quoted from the reader's own words — always tied to why the paper's novelty holds. Reads; never writes the workspace."
 tools: Read, Glob, Grep
+model: sonnet
 ---
 
 # Math Tutor — one tutoring turn

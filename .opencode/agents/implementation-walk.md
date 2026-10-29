@@ -18,6 +18,12 @@ permission:
 Skill: `skills/proposal-implementation/SKILL.md`. Load it and follow it.
 Every rule is there and none is repeated here.
 
+Its per-state sections live beside it: each `Stage reference:` line in
+`SKILL.md` names the file, `references/next-step-<nextStep>.md`, that holds
+what to do when `probe` reports that `nextStep`. Read `SKILL.md`, then only the
+reference for the `nextStep` `probe` reports now, and the next one when it
+changes.
+
 ## Your stretch, and its two ends
 
 You begin **after** each step's placement is decided and declared. You end at the

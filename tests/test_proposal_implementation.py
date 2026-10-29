@@ -283,6 +283,13 @@ def returned_keys(source: Path, function: str) -> list[str]:
     return key_sets[0]
 
 
+# Imported below `returned_keys`, not with the others above: the engine's
+# `position_state` docstring cites that function's stated limitation by line
+# number in this file, and a test holds the citation to the real lines.
+from skill_text import (  # noqa: E402  (path set above)
+    STAGE_REFERENCE_RE, skill_text, stage_references)
+
+
 def declared_assets(cell):
     """The kit assets a `Written from` cell names.
 
@@ -500,7 +507,7 @@ class NameRefusalRosterTests(unittest.TestCase):
     ROW_MARKER = "| `name` |"
 
     def name_row(self) -> str:
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         row = next((line for line in text.splitlines()
                     if line.startswith(self.ROW_MARKER)), None)
         self.assertIsNotNone(row, "SKILL.md carries no `name` row to read a roster from")
@@ -684,7 +691,7 @@ class ProbeStateTests(unittest.TestCase):
         # summary at a path nobody opens. So: the contract says where the record goes,
         # and the harness the skill ships has to name that same place.
         root = Path(impl.SKILL_ROOT)
-        self.assertIn(impl.PROBE_RESULTS, (root / "SKILL.md").read_text(encoding="utf-8"),
+        self.assertIn(impl.PROBE_RESULTS, skill_text(root / "SKILL.md"),
                       "the contract must name the file the probe opens")
         harness = (root / "assets/kit/nb" / impl.BENCHMARK_MODULE).read_text(
             encoding="utf-8")
@@ -5162,7 +5169,7 @@ class DoctrineAmendmentTests(unittest.TestCase):
     SKILL_MD = CLI.parent.parent / "SKILL.md"
 
     def test_amendment_preserves_sentence_and_revokes_launcher_clause(self):
-        text = self.SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(self.SKILL_MD)
         self.assertIn(
             "No service is named here, and none should be.", text,
             "the sentence governing what the RECORD names must survive verbatim")
@@ -9050,7 +9057,7 @@ class NextStepSectionCoverageTests(unittest.TestCase):
 
     @classmethod
     def headings(cls):
-        text = cls.SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(cls.SKILL_MD)
         return set(cls.HEADING_RE.findall(text))
 
     def test_every_value_the_cli_can_return_is_accounted_for(self):
@@ -9080,7 +9087,7 @@ class NextStepSectionCoverageTests(unittest.TestCase):
         have its own heading or be one of the four deliberately left unheaded
         (`NO_SECTION`); anything else is a dangling reference — the exact shape
         of the defect this change fixes."""
-        text = self.SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(self.SKILL_MD)
         found_headings = self.headings()
         dangling = []
         for value in self.all_next_steps():
@@ -9089,6 +9096,56 @@ class NextStepSectionCoverageTests(unittest.TestCase):
             if mentioned and value not in found_headings and value not in self.NO_SECTION:
                 dangling.append(value)
         self.assertEqual(dangling, [], f"referenced but never defined: {dangling}")
+
+
+class StageReferenceSplitTests(unittest.TestCase):
+    """Each prescriptive `nextStep` section lives in its own reference file.
+
+    Every agent that binds this skill loads `SKILL.md` whole, so a section only
+    one `probe` state needs is paid for at every other state. The twelve
+    `### nextStep: "..."` sections therefore sit in
+    `references/next-step-<value>.md`, moved verbatim, and `SKILL.md` keeps one
+    `Stage reference:` line where each one stood. `skill_text` puts them back in
+    place, which is what every doctrine pin in this suite reads.
+    """
+
+    SKILL_MD = CLI.parent.parent / "SKILL.md"
+
+    def prescriptive(self):
+        return (NextStepSectionCoverageTests.all_next_steps()
+                - NextStepSectionCoverageTests.NO_SECTION)
+
+    def test_skill_md_points_at_one_reference_per_prescriptive_next_step(self):
+        pointed = dict(stage_references(self.SKILL_MD))
+        self.assertEqual(sorted(pointed), sorted(self.prescriptive()))
+        for step, reference in pointed.items():
+            with self.subTest(step=step):
+                self.assertEqual(reference.name, f"next-step-{step}.md")
+                self.assertTrue(reference.is_file(), reference)
+
+    def test_skill_md_itself_carries_no_next_step_section(self):
+        raw = self.SKILL_MD.read_text(encoding="utf-8")
+        self.assertEqual(NextStepSectionCoverageTests.HEADING_RE.findall(raw), [])
+
+    def test_each_reference_is_exactly_its_own_section(self):
+        """One heading per file, the one its pointer names, and no file left
+        unpointed: an orphan reference is doctrine no agent is sent to."""
+        pointed = {reference: step for step, reference in stage_references(self.SKILL_MD)}
+        on_disk = set((self.SKILL_MD.parent / "references").glob("next-step-*.md"))
+        self.assertEqual(on_disk, set(pointed))
+        for reference, step in pointed.items():
+            with self.subTest(reference=reference.name):
+                text = reference.read_text(encoding="utf-8")
+                headings = re.findall(r"^#{1,3} .*$", text, re.MULTILINE)
+                self.assertEqual(len(headings), 1, headings)
+                self.assertTrue(headings[0].startswith(f'### `nextStep: "{step}"`'),
+                                headings[0])
+
+    def test_the_expanded_doctrine_defines_each_section_once(self):
+        text = skill_text(self.SKILL_MD)
+        self.assertIsNone(STAGE_REFERENCE_RE.search(text))
+        found = NextStepSectionCoverageTests.HEADING_RE.findall(text)
+        self.assertEqual(sorted(found), sorted(self.prescriptive()))
 
 
 class ForgeVocabularyDefinitionTests(unittest.TestCase):
@@ -9441,7 +9498,7 @@ class ReportFirstSectionProseTests(unittest.TestCase):
         return text.lower()
 
     def section_text(self):
-        text = self.SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(self.SKILL_MD)
         match = self.SECTION_RE.search(text)
         self.assertIsNotNone(match, "the report-first section itself is missing")
         return match.group(0).lower()
@@ -10825,7 +10882,7 @@ class SearchDeclarationShapeTests(unittest.TestCase):
         stayed in both places long enough for a target to adopt it.
         """
         body: list[str] = []
-        for raw in path.read_text(encoding="utf-8").splitlines():
+        for raw in skill_text(path).splitlines():
             line = raw.strip().lstrip("#").strip()
             if body:
                 body.append(line)
@@ -10967,7 +11024,7 @@ class ScaffoldInstructionsAgreementTests(unittest.TestCase):
     gap_class = staticmethod(gap_path)
 
     def documented_gaps(self):
-        lines = self.SKILL_MD.read_text(encoding="utf-8").splitlines()
+        lines = skill_text(self.SKILL_MD).splitlines()
         stripped = [line.strip() for line in lines]
         self.assertIn(self.TABLE_HEADER, stripped,
                       "step 5 carries no gap → template table")
@@ -11444,7 +11501,7 @@ class DerivedScaffoldCountSweepTests(unittest.TestCase):
     def test_no_doctrine_file_states_the_old_scaffold_or_kit_destination_counts(self):
         offenders = []
         for path in self.DOCTRINE_FILES:
-            for line in path.read_text(encoding="utf-8").splitlines():
+            for line in skill_text(path).splitlines():
                 lowered = line.lower()
                 if not any(re.search(rf"\b{context}", lowered)
                           for context in self.CONTEXT_WORDS):
@@ -11950,7 +12007,7 @@ class OwnedRepositoryCellTests(unittest.TestCase):
         is the failure this forge keeps finding, and a filename is exactly
         the kind of fact a document goes on stating after the code moved.
         """
-        doctrine = SKILL_MD.read_text(encoding="utf-8")
+        doctrine = skill_text(SKILL_MD)
         self.assertIn(OWNED_REPOSITORY_CELL.name, doctrine)
         self.assertIn("remote-execution", doctrine,
                       "and say which skill owns it, since it is not this one")
@@ -12341,7 +12398,7 @@ class StageTwoInstructionsTests(unittest.TestCase):
 
     def tables(self):
         return markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), STAGE_TWO_HEADER)
+            skill_text(SKILL_MD), STAGE_TWO_HEADER)
 
     def test_both_stage_two_placements_are_stated_as_a_parseable_table(self):
         """Reachable red: step 9 carried no table at all, and the copy step
@@ -12460,13 +12517,13 @@ class KitAssetRegisterTests(unittest.TestCase):
         computed tail — so it is read as `scaffold_gaps` reports it and compared
         by what it names.
         """
-        tables = markdown_table_rows(SKILL_MD.read_text(encoding="utf-8"),
+        tables = markdown_table_rows(skill_text(SKILL_MD),
                                      STAGE_ONE_HEADER)
         self.assertEqual(len(tables), 1, "step 5 carries no gap table")
         return {row[0].strip("`"): declared_assets(row[1]) for row in tables[0]}
 
     def stage_two(self):
-        tables = markdown_table_rows(SKILL_MD.read_text(encoding="utf-8"),
+        tables = markdown_table_rows(skill_text(SKILL_MD),
                                      STAGE_TWO_HEADER)
         self.assertEqual(len(tables), 2, "SKILL.md states stage 2 in %d tables"
                          % len(tables))
@@ -12603,7 +12660,7 @@ class KitAssetRegisterTests(unittest.TestCase):
         """`wiring.py` is written from the object → module map, not copied, so
         it has no asset and must not be reported as a missing one. Pinned so the
         walk's direction survives somebody's tidy-up."""
-        self.assertIn("wiring.py", SKILL_MD.read_text(encoding="utf-8"))
+        self.assertIn("wiring.py", skill_text(SKILL_MD))
         self.assertEqual(
             [asset for asset in kit_assets() if asset.endswith("wiring.py")], [])
         self.assertNotIn("assets/kit/nb/wiring.py", self.registered_assets())
@@ -12926,7 +12983,7 @@ class HarnessPlacementTests(unittest.TestCase):
         """
         COPY_STEP_ROOTS = ("assets/kit/nb/", "assets/kit/src_benchmark/")
         staged = []
-        for table in markdown_table_rows(SKILL_MD.read_text(encoding="utf-8"),
+        for table in markdown_table_rows(skill_text(SKILL_MD),
                                          STAGE_TWO_HEADER):
             assets = [declared_assets(row[1]) for row in table]
             if assets and all(len(a) == 1 and a[0].startswith(COPY_STEP_ROOTS)
@@ -13618,7 +13675,7 @@ class DecisionGateDocumentationTests(unittest.TestCase):
         shift the parse.
         """
         lines = [line.strip() for line
-                 in self.SKILL_MD.read_text(encoding="utf-8").splitlines()]
+                 in skill_text(self.SKILL_MD).splitlines()]
         self.assertIn(self.GATES_HEADING, lines,
                       "the skill carries no Decision Gates section")
 
@@ -13748,7 +13805,7 @@ class PremiseContractAgreementTests(unittest.TestCase):
         """
         opener = "__implementation__ = {"
         body = []
-        for line in self.SKILL_MD.read_text(encoding="utf-8").splitlines():
+        for line in skill_text(self.SKILL_MD).splitlines():
             if not body and line.strip() != opener:
                 continue
             body.append(line)
@@ -14075,7 +14132,7 @@ class MaterializeScriptStaysTestOnlyTests(unittest.TestCase):
         Located by the table rather than by its own wording, so rewording the
         step does not silently move this test off the paragraph it holds.
         """
-        lines = SKILL_MD.read_text(encoding="utf-8").splitlines()
+        lines = skill_text(SKILL_MD).splitlines()
         anchors = [index for index, line in enumerate(lines)
                    if line.strip() == STAGE_ONE_HEADER]
         self.assertEqual(len(anchors), 1,
@@ -14228,7 +14285,7 @@ class MaterializeScriptStaysTestOnlyTests(unittest.TestCase):
         suite's scratch ones. Continuing to forbid that name coincidence
         would be pinning a fact about a string, not about behaviour.
         """
-        invoked = self.RUN_RE.findall(SKILL_MD.read_text(encoding="utf-8"))
+        invoked = self.RUN_RE.findall(skill_text(SKILL_MD))
         self.assertTrue(
             invoked,
             "doctrine tells the agent to run nothing at all, so this scan "
@@ -15904,7 +15961,7 @@ class RehearsalAuthorityTests(unittest.TestCase):
     """
 
     def rehearsal_paragraph(self) -> str:
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         marker = "### The rehearsal is the agent's to run"
         self.assertIn(marker, text,
                       "no section says whose job the rehearsal is, so an agent "
@@ -15926,7 +15983,7 @@ class RehearsalAuthorityTests(unittest.TestCase):
         """
         paragraph = self.rehearsal_paragraph()
         self.assertRegex(paragraph, r"campaign")
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         self.assertIn("never sends one itself", text,
                       "the campaign's own refusal was removed along with the "
                       "rehearsal's permission")
@@ -15936,7 +15993,7 @@ class RehearsalAuthorityTests(unittest.TestCase):
         permitting the rehearsal is not the same as branching on the fact, and
         the fact still cannot tell `not ready` from `not applicable`.
         """
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         row = [line for line in text.splitlines()
                if line.startswith("| `smokeReady` |")]
         self.assertEqual(len(row), 1, "no smokeReady row to hold")
@@ -17136,7 +17193,7 @@ class DeclarationBlockRosterTests(unittest.TestCase):
 
     def flow_steps(self):
         """Flow A's numbered steps, as {number: the whole step's text}."""
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         start = text.index(self.FLOW_HEADING)
         end = text.index("\n## ", start + len(self.FLOW_HEADING))
         steps: dict[int, list[str]] = {}
@@ -17152,7 +17209,7 @@ class DeclarationBlockRosterTests(unittest.TestCase):
 
     def block_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.BLOCK_TABLE_HEADER)
+            skill_text(SKILL_MD), self.BLOCK_TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "the declaration's blocks are stated in no parseable table, so "
@@ -17208,7 +17265,7 @@ class DeclarationBlockRosterTests(unittest.TestCase):
         """If any of the three stopped claiming it, this repair would be
         answering a question nobody asks any more — so the claims are pinned
         beside the step that now honours them."""
-        skill = SKILL_MD.read_text(encoding="utf-8")
+        skill = skill_text(SKILL_MD)
         self.assertIn(
             "**`revision` and `premises` are asked by this flow, never invented.**",
             skill)
@@ -17262,7 +17319,7 @@ class FiveBenchmarkBlocksTests(unittest.TestCase):
     def test_the_doctrine_names_five_blocks_not_seven(self):
         """The prose that counted the blocks has to count five now, or the
         doctrine is the one place still telling a reader the old number."""
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         self.assertIn("its five blocks", text)
         self.assertNotIn("its seven blocks", text)
         self.assertIn("all five top-level blocks", text)
@@ -17395,7 +17452,7 @@ class VerifyStatusRosterTests(unittest.TestCase):
 
     def status_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.STATUS_TABLE_HEADER)
+            skill_text(SKILL_MD), self.STATUS_TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "`verify`'s statuses are stated in no parseable table, so the "
@@ -17422,7 +17479,7 @@ class VerifyStatusRosterTests(unittest.TestCase):
         `test_the_roster_states_the_counts_it_actually_holds` -- the number
         stays in the prose, because a reader deserves to be told how big the
         surface is, and re-counting is this suite's work."""
-        skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+        skill = " ".join(skill_text(SKILL_MD).split())
         spelled = _english_count(len(self.status_rows())).lower()
         self.assertIn(f"There are {spelled} of them", skill)
 
@@ -17472,7 +17529,7 @@ class VerifyStatusRosterTests(unittest.TestCase):
         gate/publication points prove a decision reached the record, never
         that the operator authored it -- must appear in `SKILL.md`,
         unsoftened."""
-        skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+        skill = " ".join(skill_text(SKILL_MD).split())
         self.assertIn("never that the operator authored it", skill)
         self.assertIn("An agent can open a question and answer it itself, "
                       "and nothing downstream can tell", skill)
@@ -17548,7 +17605,7 @@ class ProbeReportedFactsRosterTests(unittest.TestCase):
 
     def fact_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.FACT_TABLE_HEADER)
+            skill_text(SKILL_MD), self.FACT_TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "`probe`'s reported facts are stated in no parseable table, so "
@@ -17557,7 +17614,7 @@ class ProbeReportedFactsRosterTests(unittest.TestCase):
 
     def job_fact_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.JOB_FACT_TABLE_HEADER)
+            skill_text(SKILL_MD), self.JOB_FACT_TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "the job-folder facts folded into `remoteExecution` are stated in "
@@ -17602,7 +17659,7 @@ class ProbeReportedFactsRosterTests(unittest.TestCase):
         skill says what to do about a state, so that is where both belong.
         """
         rows = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.GATES_TABLE_HEADER)
+            skill_text(SKILL_MD), self.GATES_TABLE_HEADER)
         self.assertEqual(len(rows), 1, "the Decision Gates table moved")
         situations = "\n".join(row[0] for row in rows[0])
         self.assertIn("smokeReady", situations,
@@ -18333,7 +18390,7 @@ class JobNotebookPilotJoinTests(unittest.TestCase):
         """A fact reported beside an offer to run is only read if something
         tells the reader to read it."""
         rows = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"),
+            skill_text(SKILL_MD),
             ProbeReportedFactsRosterTests.GATES_TABLE_HEADER)
         self.assertEqual(len(rows), 1, "the Decision Gates table moved")
         situations = "\n".join(row[0] for row in rows[0])
@@ -18679,7 +18736,7 @@ class ReportedStateExitTests(unittest.TestCase):
         the KEY, because `resolve` is what a reader looks for in the JSON.
         """
         rows = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"),
+            skill_text(SKILL_MD),
             ProbeReportedFactsRosterTests.GATES_TABLE_HEADER)
         self.assertEqual(len(rows), 1, "the Decision Gates table moved")
         table = "\n".join(f"{row[0]} {row[1]}" for row in rows[0])
@@ -19005,7 +19062,7 @@ class RemoteExecutionCommandRosterTests(unittest.TestCase):
 
     def table_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.TABLE_HEADER)
+            skill_text(SKILL_MD), self.TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "the remote-execution subcommands are stated in no parseable "
@@ -19039,7 +19096,7 @@ class RemoteExecutionCommandRosterTests(unittest.TestCase):
         described as manual work. It is a subcommand, and it is named where
         the state is reported and again in the table a reader consults about
         what to do."""
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         section = text[text.index('### `nextStep: "poll-first"`'):]
         section = section[:section.index("\n### ", 1)]
         self.assertIn("`remote_cli reconcile`", section,
@@ -19056,7 +19113,7 @@ class RemoteExecutionCommandRosterTests(unittest.TestCase):
         """The layout section argues at length that `tools/` has to exist and
         never said what puts anything in it. One command does, and it writes
         one exact shape."""
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         section = text[text.index("**And `tools/` exists for the same reason"):]
         section = section[:section.index("\n## ", 1)]
         self.assertIn("`remote_cli generate-job`", section)
@@ -19123,7 +19180,7 @@ class GuidingTableFlagsTests(unittest.TestCase):
 
     def table_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.TABLE_HEADER)
+            skill_text(SKILL_MD), self.TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "the remote-execution seam table is stated in no parseable "
@@ -19388,7 +19445,7 @@ class ShardRefusalCrossJoinTests(unittest.TestCase):
         to name the producer — and has to say plainly that refusing is where
         this skill stops, because the alternative reading is that a forge which
         refuses will eventually average."""
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         section = text[text.index("**Shards agree on what they said had to agree"):]
         section = section[:section.index("\n- **", 1)]
         self.assertIn("`verify --shards <dir>`", section)
@@ -19935,7 +19992,7 @@ class KitWorkedExampleResolvesTests(unittest.TestCase):
         """Every worked `entry.module` example the skill publishes, by source."""
         found = {}
         for document in (SKILL_MD, KIT / "src_benchmark" / "__init__.py"):
-            text = document.read_text(encoding="utf-8")
+            text = skill_text(document)
             matches = self.ENTRY_EXAMPLE_RE.findall(text)
             self.assertTrue(matches, f"{document} publishes no worked entry example")
             found[document] = matches
@@ -24024,7 +24081,7 @@ class CommandRosterTests(unittest.TestCase):
 
     def command_rows(self):
         tables = markdown_table_rows(
-            SKILL_MD.read_text(encoding="utf-8"), self.COMMAND_TABLE_HEADER)
+            skill_text(SKILL_MD), self.COMMAND_TABLE_HEADER)
         self.assertEqual(
             len(tables), 1,
             "the command roster is stated in no parseable table, so nothing "
@@ -24098,7 +24155,7 @@ class CommandRosterClosureTests(unittest.TestCase):
     REST_TABLE_HEADER = "| Command | What it does | Where its detail lives |"
 
     def _table(self, header):
-        skill = SKILL_MD.read_text(encoding="utf-8")
+        skill = skill_text(SKILL_MD)
         tables = markdown_table_rows(skill, header)
         self.assertEqual(
             len(tables), 1,
@@ -24157,7 +24214,7 @@ class CommandRosterClosureTests(unittest.TestCase):
         reading it. The counts stay in the prose -- a reader deserves to be
         told how big the surface is -- and every one of them is derived here,
         so re-counting is this suite's work rather than a reviewer's."""
-        skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+        skill = " ".join(skill_text(SKILL_MD).split())
         write_rows = len(self._table(self.WRITE_TABLE_HEADER))
         rest_rows = len(self._table(self.REST_TABLE_HEADER))
         self.assertEqual(write_rows + rest_rows, len(impl.COMMANDS))
@@ -27193,7 +27250,7 @@ class SettleFiveModesClassStatedOnceTests(unittest.TestCase):
     """
 
     def skill_text(self):
-        return SKILL_MD.read_text(encoding="utf-8")
+        return skill_text(SKILL_MD)
 
     def test_the_five_modes_are_named_together(self):
         text = " ".join(self.skill_text().split())
@@ -32374,7 +32431,7 @@ class UndeclaredOptionalDeclarationTests(unittest.TestCase):
         Derived from `SEARCH_OPTIONAL`/`DISTRIBUTION_OPTIONAL` rather than
         proof-read, so adding a key here goes red until both documents name
         it."""
-        skill = SKILL_MD.read_text(encoding="utf-8")
+        skill = skill_text(SKILL_MD)
         usage = USAGE_MD.read_text(encoding="utf-8")
         for section, roster in (("search", impl.SEARCH_OPTIONAL),
                                 ("distribution", impl.DISTRIBUTION_OPTIONAL)):
@@ -32718,7 +32775,7 @@ class UndeclaredBlockingDeclarationTests(unittest.TestCase):
         told it exists -- `toDiscuss`'s and `undeclaredOptional`'s own
         documentation doctrine, one key over."""
         self.assertIn("`undeclaredBlocking`",
-                      SKILL_MD.read_text(encoding="utf-8"))
+                      skill_text(SKILL_MD))
         usage = USAGE_MD.read_text(encoding="utf-8")
         section = usage[usage.index("## Reading `verify`"):]
         section = section[:section.index("\n## ", 1)]
@@ -33696,12 +33753,12 @@ class StepWitnessDoctrineTests(unittest.TestCase):
     """
 
     def test_the_doctrine_paragraph_is_present_verbatim(self):
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         self.assertIn(
             "The smoke proves the pipe. The pilot proves the science.", text)
 
     def test_the_doctrine_names_the_reasoning_behind_it(self):
-        skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+        skill = " ".join(skill_text(SKILL_MD).split())
         self.assertIn(
             "the service accepted the submission, the kernel ran, the "
             "shard came down carrying the agreed fields", skill)
@@ -33897,11 +33954,11 @@ class UnbackedPositionSurfaceTests(unittest.TestCase):
         """A refusal a reader meets for the first time in a terminal is a
         refusal nobody designed for -- both codes now that the two are
         told apart."""
-        skill_text = SKILL_MD.read_text(encoding="utf-8")
+        doctrine = skill_text(SKILL_MD)
         usage_text = USAGE_MD.read_text(encoding="utf-8")
-        self.assertIn("POSITION_UNBACKED", skill_text)
+        self.assertIn("POSITION_UNBACKED", doctrine)
         self.assertIn("POSITION_UNBACKED", usage_text)
-        self.assertIn("POSITION_SHARDS_UNDECLARED", skill_text)
+        self.assertIn("POSITION_SHARDS_UNDECLARED", doctrine)
         self.assertIn("POSITION_SHARDS_UNDECLARED", usage_text)
 
     def test_the_toy_targets_left_nothing_behind(self):
@@ -34166,7 +34223,7 @@ class UnbackedPositionExitPublicationTests(unittest.TestCase):
     def test_the_doctrine_names_the_exit_it_now_publishes(self):
         """A published act a reader meets for the first time in a terminal is
         an act nobody designed for."""
-        skill = SKILL_MD.read_text(encoding="utf-8")
+        skill = skill_text(SKILL_MD)
         usage = USAGE_MD.read_text(encoding="utf-8")
         self.assertIn("`position.unbacked`", skill)
         self.assertIn("--sequence - --replace", skill)
@@ -34363,7 +34420,7 @@ class NotebookInterpreterTests(unittest.TestCase):
         about, so the mechanism above is the real repair -- but a reader about
         to type the command still has to be told, in the section that states
         the rule the command breaks."""
-        text = SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(SKILL_MD)
         section = text[text.index("## Non-negotiable isolation"):]
         section = section[:section.index("\n## ", 1)]
         self.assertIn('PATH="$PWD/.venv/bin:$PATH"', section,
@@ -35267,7 +35324,7 @@ class GatingRefusalRosterTests(unittest.TestCase):
         counts = {kind: sum(1 for value in impl.GATING_REFUSALS.values()
                             if value == kind)
                   for kind in (impl.INVOCATION_DEFECT, impl.WORK_STATE)}
-        skill = " ".join(SKILL_MD.read_text(encoding="utf-8").split())
+        skill = " ".join(skill_text(SKILL_MD).split())
         # `the-agreement-nothing-computes` (D3): the gating-command count
         # is now READ off `GATING_COMMANDS` rather than hardcoded as
         # "nine" -- `agree` joined it unconditionally (design.md D9), so a
@@ -38161,7 +38218,7 @@ class UndeclaredProducesReportTests(unittest.TestCase):
         """Reported, never demanded: `verify`'s exit status is byte-identical
         whether every step names its roots or none does."""
         rows = {row[0].strip("`"): row[2] for row in
-                markdown_table_rows(SKILL_MD.read_text(encoding="utf-8"),
+                markdown_table_rows(skill_text(SKILL_MD),
                                     "| Status | What it reports | Gates? |")[0]}
         self.assertIn("undeclaredProduces", rows)
         self.assertIn("never", rows["undeclaredProduces"].lower())
@@ -38329,7 +38386,7 @@ class UndeclaredStepNotebookReportTests(unittest.TestCase):
         its own library and render elsewhere, and a refusal would corner an
         operator whose layout is exactly what they meant."""
         rows = {row[0].strip("`"): row[2] for row in
-                markdown_table_rows(SKILL_MD.read_text(encoding="utf-8"),
+                markdown_table_rows(skill_text(SKILL_MD),
                                     "| Status | What it reports | Gates? |")[0]}
         self.assertIn("undeclaredStepNotebooks", rows)
         self.assertIn("never", rows["undeclaredStepNotebooks"].lower())
@@ -38578,7 +38635,7 @@ class FlowWalkReportTests(unittest.TestCase):
 
     def test_the_walk_never_gates_probe(self):
         rows = {row[0].strip("`"): row[2] for row in
-                markdown_table_rows(SKILL_MD.read_text(encoding="utf-8"),
+                markdown_table_rows(skill_text(SKILL_MD),
                                     "| Fact | What it reports | Gates? |")[0]}
         self.assertIn("walk", rows)
         self.assertIn("never", rows["walk"].lower())
@@ -38789,7 +38846,7 @@ class ObjectiveFlowTests(unittest.TestCase):
         """Held equal to the code, the discipline the command roster and the
         status tables already carry: doctrine that drifts from the data is
         doctrine nobody can trust."""
-        skill = SKILL_MD.read_text(encoding="utf-8")
+        skill = skill_text(SKILL_MD)
         # Scoped to the section's own table, never to the whole document: the
         # first version of this asserted each stage name appeared ANYWHERE in
         # SKILL.md, and words like `rehearsal` appear all over the doctrine —

@@ -2,6 +2,7 @@
 name: style-sampler
 description: "Resolves the equivalent block, whole, from each guidance/ folder the registry classes style-reference — and returns it verbatim, never excerpted. What you return becomes R, the only material any later overlap check may compare a styled draft against."
 tools: Read, Glob, Grep
+model: sonnet
 stretch: write
 ---
 

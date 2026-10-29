@@ -480,6 +480,45 @@ class GeneratorsTests(unittest.TestCase):
             "read", "find", "grep", "write", "edit", "bash", "fetch_content",
         ]
 
+    def test_a_model_line_stays_in_the_claude_projection(self) -> None:
+        """`.claude/agents` is copied, not rendered, so a source's `model:` line
+        is already the Claude projection. No other harness here has a cited
+        per-agent model mechanism, so each translator writes no model at all,
+        whether the source names one or omits it."""
+        named = ("---\nname: light\ndescription: d\ntools: Read, Glob, Grep\n"
+                 "model: sonnet\n---\nbody\n")
+        omitted = "---\nname: inherit\ndescription: d\ntools: Read, Glob, Grep\n---\nbody\n"
+        for translate in (_translate_agent_for_pi, _translate_agent_for_opencode,
+                          _translate_agent_for_antigravity):
+            for source in (named, omitted):
+                with self.subTest(translator=translate.__name__, source=source):
+                    entry, reason, _ = translate(source)
+                    assert reason is None and entry is not None
+                    head = entry["text"].split("\n---\n")[0].removeprefix("---\n")
+                    meta = yaml.safe_load(head)
+                    assert "model" not in meta and "tier" not in meta, head
+                    assert entry["text"].endswith("---\nbody\n")
+
+    def test_the_pi_translator_drops_only_a_top_level_model_line(self) -> None:
+        """A nested key that happens to be called `model` belongs to its parent
+        mapping and survives; only the agent's own top-level `model:` goes."""
+        source = ("---\nname: nested\ndescription: d\ntools: Read\nmodel: sonnet\n"
+                  "metadata:\n  model: kept\n---\nbody\n")
+        entry, reason, _ = _translate_agent_for_pi(source)
+        assert reason is None and entry is not None
+        meta = yaml.safe_load(entry["text"].split("\n---\n")[0].removeprefix("---\n"))
+        assert "model" not in meta
+        assert meta["metadata"] == {"model": "kept"}
+
+    def test_the_claude_projection_carries_the_source_model_line_verbatim(self) -> None:
+        workspace = _workspace(self.new_tmp())
+        for name, expected in (("math-tutor", ["model: sonnet"]), ("sota-scout", [])):
+            with self.subTest(agent=name):
+                header = (workspace / ".claude" / "agents" / f"{name}.md").read_text(
+                    encoding="utf-8").split("---\n", 2)[1]
+                assert [line for line in header.splitlines()
+                        if line.startswith("model:")] == expected
+
     def test_pi_agent_projection_skips_malformed_definitions(self) -> None:
         workspace = _workspace(self.new_tmp())
         (workspace / ".claude" / "agents" / "broken.md").write_text("no frontmatter\n", encoding="utf-8")
