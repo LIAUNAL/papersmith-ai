@@ -4,13 +4,15 @@ hands every change of decision to `/experimental-deliberation`."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from skills._core.command_center import experiments_tutor, tutor
+from skills._core.command_center import experiments_tutor, server, tutor
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "experiments-tutor" / "SKILL.md"
@@ -313,6 +315,88 @@ class ExperimentsTurnTests(_Root):
             self.assertNotIn(word, argv[argv.index("--tools") + 1])
         self.assertEqual(profile.folder, (".papersmith", "experiments-tutor"))
 
+
+SAME = {"Host": "127.0.0.1:8080", "Origin": "http://127.0.0.1:8080",
+        "Sec-Fetch-Site": "same-origin", "Content-Type": "application/json",
+        "X-Papersmith-Terminal": "1"}
+
+
+class _Request:
+    def __init__(self, headers=None, body=None, cookies=None) -> None:
+        self.headers = {k.lower(): v for k, v in (headers or {}).items()}
+        self._body = body
+        self.cookies = dict(cookies or {})
+
+    async def json(self):
+        return self._body
+
+
+def _route(app, path: str, method: str):
+    for route in app.routes:
+        if getattr(route, "path", None) == path and method in (getattr(route, "methods", None) or ()):
+            return route.endpoint
+    raise AssertionError(f"no {method} {path}")
+
+
+def _call(endpoint, *args):
+    result = endpoint(*args)
+    return asyncio.run(result) if asyncio.iscoroutine(result) else result
+
+
+class ExperimentsRouteTests(_Root):
+    BASE = "/api/terminal/tutor/experiments"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.app = server.create_app(self.root, history_store=None, enable_terminal=True)
+        self.cookie = {server.TERMINAL_COOKIE: self.app.state.terminal.token}
+        self.calls = []
+        original = tutor.run_agent
+        self.addCleanup(setattr, tutor, "run_agent", original)
+        tutor.run_agent = lambda *args, **kw: self.calls.append(kw) or (dict(TURN), "fake")
+
+    def req(self, body=None, headers=SAME, cookie=True):
+        return _Request(headers, body, self.cookie if cookie else None)
+
+    def test_every_route_requires_the_secret_and_same_origin(self) -> None:
+        body = {"message": "hi", "mode": "ask", "area": "general"}
+        for path, method in (("/thread", "GET"), ("/thread", "DELETE"), ("/turn", "POST")):
+            endpoint = _route(self.app, self.BASE + path, method)
+            with self.subTest(path=path, method=method):
+                self.assertEqual(_call(endpoint, self.req(body, cookie=False)).status_code, 403)
+                self.assertEqual(_call(endpoint, self.req(body, {**SAME, "Origin": "http://evil.example"}))
+                                 .status_code, 403)
+        self.assertEqual(self.calls, [])
+
+    def test_a_turn_runs_through_the_route_with_the_experiments_schema(self) -> None:
+        turn = _route(self.app, self.BASE + "/turn", "POST")
+        response = _call(turn, self.req({"message": "help", "mode": "explain", "area": "ablation"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(bytes(response.body))["decision_area"], "validation")
+        self.assertIs(self.calls[0]["schema"], experiments_tutor.TURN_SCHEMA)
+        self.assertEqual(self.calls[0]["tools"], ("Read", "Glob", "Grep"))
+        thread = _call(_route(self.app, self.BASE + "/thread", "GET"), self.req())
+        self.assertEqual(len(json.loads(bytes(thread.body))["turns"]), 2)
+        self.assertEqual(tutor.load_thread(self.root)["turns"], [])
+        reset = _call(_route(self.app, self.BASE + "/thread", "DELETE"), self.req({}))
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(tutor.load_thread(self.root, experiments_tutor.PROFILE)["turns"], [])
+
+    def test_an_invalid_turn_is_422_and_a_timeout_is_504(self) -> None:
+        turn = _route(self.app, self.BASE + "/turn", "POST")
+        self.assertEqual(_call(turn, self.req({"message": "hi", "mode": "ask", "area": "nope"})).status_code, 422)
+        self.assertEqual(_call(turn, self.req(None)).status_code, 422)
+
+        def slow(*args, **kw):
+            raise subprocess.TimeoutExpired("claude", 300)
+
+        tutor.run_agent = slow
+        self.assertEqual(_call(turn, self.req({"message": "hi", "mode": "ask", "area": "general"})).status_code, 504)
+
+    def test_the_tutor_is_off_when_the_terminal_is(self) -> None:
+        app = server.create_app(self.root, history_store=None)
+        response = _call(_route(app, self.BASE + "/thread", "GET"), self.req())
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":
