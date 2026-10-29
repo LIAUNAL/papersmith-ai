@@ -170,8 +170,8 @@ def rehearse(
     `fail`. `completeness(stamp, required)` is `shard_io.completeness`,
     handed in so this module and `smoke record` hold one predicate.
     `keep`, when given, is where the scratch directory is left (it must not
-    exist yet); otherwise a passing rehearsal's directory is removed and a
-    failing one's is kept for reading.
+    exist yet); otherwise the scratch directory is removed, passing or
+    failing -- the row's evidence carries what a failure left behind.
     """
     required = list(((run_config.get("run") or {}).get("smoke") or {})
                     .get("requiredEvidence") or [])
@@ -193,11 +193,12 @@ def rehearse(
     details: dict[str, Any] = {"scratch": str(scratch), "interpreter": str(interpreter)}
 
     def finish(status: str, evidence: str, fix: str) -> dict:
-        details["kept"] = keep is not None or status != "pass"
+        details["kept"] = keep is not None
         if not details["kept"]:
             shutil.rmtree(scratch, ignore_errors=True)
-        elif keep is None:
-            evidence = f"{evidence}; the scratch session is kept at {session}"
+            if status != "pass":
+                evidence = (f"{evidence}; rerun with --keep-rehearsal <new dir> to read "
+                            "the scratch session")
         return {"status": status, "evidence": evidence, "fix": fix, "details": details}
 
     try:

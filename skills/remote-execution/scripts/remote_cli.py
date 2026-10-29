@@ -3491,8 +3491,9 @@ def _preflight_inputs(adapter_cls: type["ADAPTER.Adapter"], run_config: Mapping,
             "inputs", "warn", "the job declares no --input-dataset, and on this service a "
             "non-interactive session cannot download a dataset it was not attached; the "
             f"workspace registry names a remote source: {'; '.join(sources)}",
-            "if the target reads it, regenerate with `generate-job ... --input-dataset "
-            "<owner>/<slug> --regenerate`")
+            "if the target reads it, regenerate with `generate-job ... --dataset <slug> "
+            "--regenerate` (the registry entry, with its preparation's sha256) or "
+            "`generate-job ... --input-dataset <owner>/<slug> --regenerate`")
     return _preflight_row("inputs", "pass", "the job declares no input dataset"
                           + ("" if attaches else " and this service attaches none"))
 
@@ -3767,6 +3768,9 @@ def cmd_generate_jobs(
     regenerate: bool = False,
     datasets: Sequence[str] | None = None,
     workspace: str | Path | None = None,
+    accept_unresolved: bool = False,
+    accept_unresolved_reads: bool = False,
+    accept_produced_reads: bool = False,
 ) -> dict:
     """One `generate-job` per remote step the product's `__steps__`
     declares (remote-preflight S3), each derived rather than typed:
@@ -3867,7 +3871,10 @@ def cmd_generate_jobs(
                     run_notebook=entry_notebook,
                     smoke_module=smoke_module, smoke_function=smoke_function,
                     smoke_kwargs=smoke_kwargs, smoke_required_evidence=smoke_required_evidence,
-                    regenerate=regenerate, environment_requirements=requirements or None,
+                    regenerate=regenerate, accept_unresolved=accept_unresolved,
+                    accept_unresolved_reads=accept_unresolved_reads,
+                    accept_produced_reads=accept_produced_reads,
+                    environment_requirements=requirements or None,
                     carry_paths=carry or None, code_bundle=bundle,
                     input_datasets=inputs, dataset_checks=checks)
             except (JOBFOLDER.JobFolderError, JOB_PLAN.JobPlanError, ADAPTER.AdapterError,
@@ -4361,6 +4368,10 @@ def _build_parser() -> argparse.ArgumentParser:
     generate_jobs.add_argument(
         "--regenerate", action="store_true",
         help="replace existing job folders atomically instead of refusing")
+    for flag in ("--accept-unresolved", "--accept-unresolved-reads", "--accept-produced-reads"):
+        generate_jobs.add_argument(
+            flag, action="store_true",
+            help=f"as for generate-job's {flag}; applied to every job")
     _add_dataset_arguments(generate_jobs)
 
     smoke = subparsers.add_parser(
@@ -4836,6 +4847,11 @@ def main(argv: list[str] | None = None) -> int:
                 return _refused(exc)
             if not _repo_credential_carrier(adapter_cls):
                 return _refused(_uncarried_repo_credential(args.service))
+        if args.workspace is not None and not args.datasets:
+            return _refused(RemoteCLIError(
+                "WORKSPACE_WITHOUT_DATASET: --workspace only chooses whose "
+                "datasets/registry.json --dataset reads; give --dataset <slug>, or drop "
+                "--workspace"))
         try:
             try:
                 dataset_cls = ADAPTER.resolve(args.service) if args.datasets else None
@@ -4964,7 +4980,10 @@ def main(argv: list[str] | None = None) -> int:
                 repo_credential=args.repo_credential, smoke_module=args.smoke_module,
                 smoke_function=args.smoke_function, smoke_kwargs=smoke_kwargs,
                 smoke_required_evidence=args.smoke_required_evidence or None,
-                regenerate=args.regenerate, datasets=args.datasets, workspace=args.workspace)
+                regenerate=args.regenerate, datasets=args.datasets, workspace=args.workspace,
+                accept_unresolved=args.accept_unresolved,
+                accept_unresolved_reads=args.accept_unresolved_reads,
+                accept_produced_reads=args.accept_produced_reads)
         except json.JSONDecodeError as exc:
             return _refused(f"--smoke-kwargs is not JSON: {exc}")
         except (RemoteCLIError, JOB_PLAN.JobPlanError, JOBFOLDER.JobFolderError) as exc:

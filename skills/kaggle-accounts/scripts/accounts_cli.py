@@ -642,6 +642,13 @@ def cmd_validate(args: argparse.Namespace) -> int:
     """
     if args.interactive and args.files:
         raise UsageError("--interactive takes no file arguments")
+    if getattr(args, "json", False) and not getattr(args, "account", None):
+        # Refused before anything is read: `--json` is defined only for the
+        # read-only `--account` probe, and a caller that asked for JSON and
+        # got the human report (exit 0) would read it as a verdict.
+        raise UsageError("JSON_NEEDS_ACCOUNT: --json is only defined with --account "
+                         "<username>; run `validate --account <username> --json`, or "
+                         "`validate` without --json for the human report")
     if getattr(args, "account", None):
         if args.interactive or args.files:
             raise UsageError("--account re-checks stored accounts only; it takes no file "
@@ -959,7 +966,8 @@ def main() -> int:
              "nothing (the read-only probe remote-execution's preflight runs)",
     )
     p_validate.add_argument("--json", action="store_true",
-                            help="machine-readable verdicts (with --account)")
+                            help="machine-readable verdicts; only with --account "
+                                 "(refused JSON_NEEDS_ACCOUNT otherwise)")
     p_validate.set_defaults(func=cmd_validate)
 
     p_remove = sub.add_parser("remove", help="delete stored accounts by username")

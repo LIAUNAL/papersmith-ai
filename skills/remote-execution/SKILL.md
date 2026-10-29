@@ -1539,6 +1539,7 @@ can branch on it without parsing prose.
 | `CODE_BUNDLE_UNSAFE_ENTRY` | `generate-job --code-bundle`, the runner | an archive entry is absolute, carries `..`, is a link or special file, or lies outside the declared clone paths |
 | `CODE_BUNDLE_MISMATCH` | `submit`, the backend's push, the runner | the job folder's `code-bundle.tar.gz` is absent, does not hash to `codeBundle.sha256`, or (at `submit`) holds files that differ from the pin's; nothing is pushed or unpacked |
 | `CODE_BUNDLE_WITH_REPO_CREDENTIAL` | `generate-job` | `--code-bundle` and `--repo-credential` were both given; a bundled job never clones, so the credential would be ignored. Refused before anything is read or written |
+| `WORKSPACE_WITHOUT_DATASET` | `generate-job --workspace` | `--workspace` was given without `--dataset`; it only chooses which registry `--dataset` reads, so alone it would change nothing |
 | `DATASET_UNKNOWN` | `generate-job --dataset`, `generate-jobs --dataset` | the slug is not in the workspace's `datasets/registry.json` |
 | `DATASET_LICENSE_NOT_ALLOWED` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset's license decision is missing or refused; run `/datasets license` first |
 | `DATASET_NOT_PREPARED` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset has no official preparation (`/datasets prepare`), so there is no sha256 to record |
@@ -1584,7 +1585,7 @@ row fails. Run it under the workspace env interpreter, the one `submit` uses.
 | `diagrams` | an approval (`AGREED.md`, `Experimental_AGREED.md`) owes an experiment diagram that is not `validated`; `submit` would refuse `DIAGRAM_NOT_VALIDATED` | the dashboard's "Validar diagrama", or `diagram_cli.py validate` on the operator's explicit approval in the chat |
 | `interpreter` | the service's driver is not usable under the interpreter running this command | the workspace env interpreter, `<workspace>/.micromamba/envs/papersmith/bin/python`, when it exists |
 | `code-reachability` | the job carries no code bundle and the runner could not clone the pin anonymously (nor with `--repo-credential` on a service that carries one) | `--repo-credential` on a carrier; `generate-job --code-bundle --regenerate` on a service that ships bundles |
-| `inputs` | warns: a service that attaches inputs, a job declaring no `--input-dataset`, and a workspace `datasets/registry.json` naming a remote source | `generate-job --input-dataset <owner>/<slug> --regenerate` |
+| `inputs` | warns: a service that attaches inputs, a job declaring no `--input-dataset`, and a workspace `datasets/registry.json` naming a remote source | `generate-job --dataset <slug> --regenerate`, or `--input-dataset <owner>/<slug>` |
 | `local-rehearsal` | the job's smoke, run locally under runner conditions, raises, overruns `--local-timeout`, leaves no `shard.json`, or leaves one missing a `requiredEvidence` path | the target's smoke stamps (`remote_stamp.write_shard`, `@remote_stamp.stamped`); `--local-smoke-kwargs` for a cheaper local scale |
 | `account` | fails when the worker's account does not authenticate or is not signed in; warns when it has no passing rehearsal of its own at this pin | validate or sign in the account; `submit --smoke --worker <id>` once authorized |
 | `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given | regenerate with `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
@@ -1600,8 +1601,9 @@ target's `.venv` interpreter (`--interpreter` overrides it), with only `PATH`,
 `FORGE_CLONE_COMMIT` and what `invoke()` exports itself (`FORGE_RUN_MODE`,
 `FORGE_INPUT_DATASETS` with every declared input unattached,
 `FORGE_SESSION_DEADLINE`). The `shard.json` it leaves is judged by the same
-`shard_io.completeness()` `smoke record` uses. A failing rehearsal's scratch
-directory is kept and named; `--keep-rehearsal` keeps a passing one.
+`shard_io.completeness()` `smoke record` uses. The scratch directory is
+removed afterwards, passing or failing; `--keep-rehearsal <new dir>` keeps it
+there to read.
 
 Every rule below was learned from a remote round that a local check would
 have saved:
@@ -2199,8 +2201,12 @@ python3 scripts/remote_cli.py generate-jobs --target <repo> --product <Name> \
     [--from-schedule <schedule output.json>] [--dataset <slug>]... \
     [--smoke-module M --smoke-function F] [--smoke-kwargs '<json>'] \
     [--smoke-required-evidence <path>]... [--repo-url URL] [--repo-ref REF] \
-    [--repo-credential <token file>] [--regenerate] [--workspace <dir>]
+    [--repo-credential <token file>] [--regenerate] [--workspace <dir>] \
+    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads]
 ```
+
+The three `--accept-*` flags mean what they mean for `generate-job`, applied to
+every job, so a refusal relayed in a job's row names a flag this command takes.
 
 - **Steps**: every `__steps__` entry (`src/<Package>/__init__.py`, else
   `config.py`, read with `ast`) with `placement: "remote"`; other steps are

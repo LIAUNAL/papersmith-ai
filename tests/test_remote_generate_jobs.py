@@ -25,7 +25,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from tests.test_remote_preflight import (  # noqa: E402
+from tests.remote_fakes import (  # noqa: E402
     ADAPTER,
     JOBFOLDER,
     PLAIN,
@@ -89,13 +89,14 @@ class _Case(PreflightCase):
                              "sha256": PREP_SHA} if prepared else None),
         }
 
-    def generate_job(self, *extra: str, service: str = SERVICE) -> tuple[int, dict, str]:
+    def generate_job(self, *extra: str, service: str = SERVICE,
+                     workspace: bool = True) -> tuple[int, dict, str]:
         return _cli(["generate-job", "--target", str(self.target), "--service", service,
                      "--job-name", "job-a", "--product", "P",
                      "--repo-url", "https://example.invalid/private.git", "--repo-ref", "main",
                      "--clone-path", "src/pkg", "--run-module", "pkg.mod",
                      "--run-function", "run", "--code-bundle",
-                     "--workspace", str(self.workspace), *extra])
+                     *(["--workspace", str(self.workspace)] if workspace else []), *extra])
 
 
 # ---------------------------------------------------------------- S2: datasets
@@ -175,12 +176,18 @@ class DatasetInputTests(_Case):
             self.assertEqual(argv[0], "git", argv)
 
     def test_without_dataset_generate_job_is_unchanged(self) -> None:
-        code, payload, err = self.generate_job()
+        code, payload, err = self.generate_job(workspace=False)
         self.assertEqual(code, 0, err)
         config = json.loads((Path(payload["jobFolder"]) / "run-config.json").read_text())
         self.assertNotIn("inputDatasets", config)
         self.assertNotIn("datasetChecks", config)
         self.assertNotIn("inputDatasets", payload)
+
+    def test_workspace_without_dataset_is_refused(self) -> None:
+        code, _, err = self.generate_job()  # passes --workspace, no --dataset
+        self.assertEqual(code, 1)
+        self.assertIn("WORKSPACE_WITHOUT_DATASET", err)
+        self.assertFalse((self.target / "tools" / SERVICE / "job-a").exists())
 
     def test_the_explicit_input_dataset_flag_still_works_beside_dataset(self) -> None:
         self.registry(self.entry(
@@ -371,6 +378,33 @@ class GenerateJobsTests(_Case):
         self.assertEqual(code, 1)
         self.assertIn("no remote step", err)
 
+    def test_generate_jobs_accepts_the_flags_the_generator_names(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            REMOTE_CLI.main(["generate-jobs", "--help"])
+        for flag in ("--accept-unresolved", "--accept-unresolved-reads",
+                     "--accept-produced-reads"):
+            self.assertIn(flag, out.getvalue())
+
+    def test_an_unresolved_read_is_accepted_through_generate_jobs(self) -> None:
+        (self.target / "src" / "pkg" / "reader.py").write_text(
+            "def run():\n    return open(compute_path()).read()\n", encoding="utf-8")
+        (self.target / "src" / "P" / "__init__.py").write_text(
+            "__steps__ = {'r': {'module': 'pkg.reader', 'function': 'run', "
+            "'placement': 'remote', 'job': 'r', 'service': %r}}\n" % SERVICE,
+            encoding="utf-8")
+        _git(self.target, "add", "-A")
+        _git(self.target, "commit", "-qm", "reader")
+        code, payload, _ = _cli(["generate-jobs", "--target", str(self.target),
+                                 "--product", "P"])
+        refused = payload["jobs"][0]
+        self.assertEqual(refused["status"], "refused")
+        self.assertIn("--accept-unresolved-reads", refused["error"])
+        code, payload, err = _cli(["generate-jobs", "--target", str(self.target),
+                                   "--product", "P", "--accept-unresolved-reads"])
+        self.assertEqual(code, 0, (payload, err))
+        self.assertEqual(payload["jobs"][0]["status"], "generated")
+
     def test_generate_jobs_is_a_top_level_subcommand(self) -> None:
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
@@ -457,7 +491,7 @@ class WorkspaceAccountsTests(unittest.TestCase):
         box = tempfile.TemporaryDirectory()
         self.addCleanup(box.cleanup)
         self.workspace = Path(box.name)
-        from tests.test_remote_preflight_adapters import COLAB, FAKE_ACCOUNTS, KAGGLE
+        from tests.remote_fakes import COLAB, FAKE_ACCOUNTS, KAGGLE
         self.kaggle, self.colab = KAGGLE, COLAB
         scripts = self.workspace / "skills" / "kaggle-accounts" / "scripts"
         scripts.mkdir(parents=True)

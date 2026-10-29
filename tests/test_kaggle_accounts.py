@@ -467,6 +467,22 @@ class ValidateOneAccountTests(unittest.TestCase):
         self.assertFalse(rows["nobody"]["ok"])
         self.assertIn("not stored", rows["nobody"]["detail"])
 
+    def test_json_without_account_is_refused_before_anything_is_read(self) -> None:
+        """`--json` is only defined with `--account`; without it the command
+        used to run the interactive-format validate and exit 0."""
+        def forbidden(*args, **kwargs):
+            raise AssertionError("validate --json read the store or the inbox")
+
+        out, err = io.StringIO(), io.StringIO()
+        with unittest.mock.patch.object(ACCOUNTS, "load_store", forbidden), \
+                unittest.mock.patch.object(ACCOUNTS, "inbox_files", forbidden), \
+                unittest.mock.patch.object(sys, "argv", ["accounts_cli.py", "validate", "--json"]), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = ACCOUNTS.main()
+        self.assertNotEqual(code, 0)
+        self.assertIn("JSON_NEEDS_ACCOUNT", err.getvalue())
+        self.assertEqual(out.getvalue(), "")
+
     def test_the_parser_accepts_account_and_json_on_validate(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('"--account"', source)

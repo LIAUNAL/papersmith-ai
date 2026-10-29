@@ -127,7 +127,9 @@ python3 skills/kaggle-accounts/scripts/accounts_cli.py <command>
 - `validate --account <username> [--json]` — re-check only that stored account
   (repeatable) and print a verdict per account, never a key. It takes in nothing
   and writes nothing, so it is the read-only probe `remote_cli preflight` runs
-  per worker; it still asks the service, so it needs the network.
+  per worker; it still asks the service, so it needs the network. `--json`
+  without `--account` is refused (`JSON_NEEDS_ACCOUNT`, exit 2) before anything
+  is read.
 - `remove <username>…` — delete stored accounts, and the token file each one materialized.
 - `list [--json]` — stored accounts, never their keys.
 - `discover [--json]` — credential files lying around and the accounts in each.
