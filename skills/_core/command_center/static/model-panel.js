@@ -12,6 +12,8 @@
 (function () {
   'use strict';
 
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
@@ -25,13 +27,13 @@
 
   function pillars(spec) {
     const list = ((spec.novelty || {}).pillars || []).filter((p) => p && (p.name || p.summary));
-    if (!list.length) return empty('Los pilares de la novedad aparecen cuando la propuesta se delibera (proposals/).');
+    if (!list.length) return empty(t('modelPanel.noPillars'));
     return list.map((p, i) => {
       const c = colour(p.color, '#38bdf8');
       return `<div class="model-pillar-card" style="--tone: ${c}; border-top: 3px solid ${c};">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="badge tone-ink" style="font-weight: 700;">${esc(p.badge || 'PILAR')}</span>
-          <span class="tone-ink" style="font-size: 0.75rem; font-weight: 700;">PILAR ${i + 1}</span>
+          <span class="badge tone-ink" style="font-weight: 700;">${esc(p.badge || t('modelPanel.pillar'))}</span>
+          <span class="tone-ink" style="font-size: 0.75rem; font-weight: 700;">${esc(t('modelPanel.pillarN', { n: i + 1 }))}</span>
         </div>
         <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text);">${rich(p.name)}</h3>
         <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;">${rich(p.summary)} ${rich(p.details)}</p>
@@ -41,7 +43,7 @@
 
   function hypotheses(spec) {
     const list = ((spec.novelty || {}).hypotheses || []).filter((h) => h && (h.title || h.statement));
-    if (!list.length) return empty('Hipótesis pendientes de deliberación (proposals/ y experiments/).');
+    if (!list.length) return empty(t('modelPanel.noHypotheses'));
     return list.map((h) => `<div class="model-hypothesis-card">
         <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
           <strong>${esc(h.id || '')} ${rich(h.title || '')}</strong>
@@ -55,10 +57,10 @@
   function layers(spec) {
     const source = spec.concept_map || spec.conceptual_map || {};
     const list = (source.layers || []).filter(Boolean);
-    if (!list.length) return empty('El mapa conceptual se construye durante la deliberación de la propuesta.');
+    if (!list.length) return empty(t('modelPanel.noLayers'));
     return list.map((layer, i) => {
       const c = colour(layer.color, '#38bdf8');
-      const name = layer.name || layer.layer || `Capa ${i + 1}`;
+      const name = layer.name || layer.layer || t('modelPanel.layerN', { n: i + 1 });
       const nodes = (layer.nodes || []).map((n) => `<div class="concept-node" title="${esc(n.desc)}">
           <strong>${rich(n.name)}</strong>${n.desc ? `<span>${rich(n.desc)}</span>` : ''}</div>`).join('');
       return `<div class="concept-layer-card" style="--tone: ${c}; border-left: 4px solid ${c};">

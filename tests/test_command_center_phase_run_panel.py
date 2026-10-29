@@ -15,11 +15,15 @@ from pathlib import Path
 from skills._core.command_center import server
 
 SCRIPT = Path(server.__file__).resolve().parent / "static" / "phase-run.js"
+STATIC = Path(server.__file__).resolve().parent / "static"
+I18N_JS = STATIC / "i18n.js"
+EN_JS = STATIC / "i18n" / "en.js"
+ES_JS = STATIC / "i18n" / "es.js"
 
 HARNESS = r"""
 const fs = require('fs');
 const cfg = JSON.parse(fs.readFileSync(0, 'utf8'));
-const store = {};
+const store = { 'papersmith-lang': 'es' };
 const els = {};
 const calls = [];
 function el(id) {
@@ -37,6 +41,7 @@ global.document = {
 };
 let session = 's1';
 global.window = {
+  localStorage: global.localStorage,
   smithTerminalActivity: () => ({ agent: 'claude', sessionId: session, lastOutputAt: Date.now() }),
   smithTerminalInterrupt: async () => { calls.push('interrupt'); if (cfg.interruptFails) throw new Error('HTTP 403'); return true; },
   openCliConsole: () => calls.push('terminal'),
@@ -51,6 +56,9 @@ function click(attr, value) {
   target.dataset[key] = value;
   clickHandler({ target });
 }
+eval(fs.readFileSync(process.argv[2], 'utf8'));
+eval(fs.readFileSync(process.argv[3], 'utf8'));
+eval(fs.readFileSync(process.argv[4], 'utf8'));
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 const phase = { stage_id: 'plausibility', id: 'Fase 2', name: 'Plausibilidad', status: 'PENDING', unlocked: true,
   evidence: [{ label: 'Atlas', path: 'sota-pool/atlas.json', count: 0, mtime: 0 }] };
@@ -85,7 +93,7 @@ click('data-run-terminal', '1');
 
 
 def run(**cfg) -> dict:
-    done = subprocess.run(["node", "-e", HARNESS, str(SCRIPT)], input=json.dumps(cfg),
+    done = subprocess.run(["node", "-e", HARNESS, str(SCRIPT), str(EN_JS), str(ES_JS), str(I18N_JS)], input=json.dumps(cfg),
                           capture_output=True, text=True, cwd=tempfile.gettempdir(),
                           timeout=60, check=True)
     return json.loads(done.stdout)

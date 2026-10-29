@@ -20,7 +20,7 @@ arm, the mean is the mean of each arm's own mean (an arm probed twice does not
 weigh double); otherwise it is the plain mean of all of them. ``setupSeconds_h``
 is the mean of the measurements that state one, 0 when none does. The result
 is reported as a ±20% range, never as a point claim. A host without its own
-measurement reads "sin medir": a remote host is never estimated from local
+measurement reads "unmeasured": a remote host is never estimated from local
 timings scaled by a guessed factor. Never raises.
 
 A schema 2 record (``remote-parallelism``'s timing probe) names a candidate
@@ -43,11 +43,11 @@ from typing import Any
 from .remote_services import HOST_LABELS, RUN_HOSTS, remote_host_readiness
 
 STAGES = ("poc", "full")
-STAGE_LABELS = {"poc": "Prueba de concepto", "full": "Experimento completo"}
+STAGE_LABELS = {"poc": "Proof of concept", "full": "Full experiment"}
 SCALE_KEYS = ("arms", "folds", "seeds", "epochs")
 RANGE = 0.20
 NOTE = "±20%, single-probe extrapolation"
-UNMEASURED = "sin medir"
+UNMEASURED = "unmeasured"
 #: Placement rules, read on the estimate's upper bound (the same ones
 #: `remote-parallelism estimate` states): a stage over this many seconds locally
 #: runs on a cloud host, and a proof of concept fits this budget where it runs.
@@ -59,11 +59,11 @@ MAX_REASON = 400
 MAX_PLAN_ROWS = 40
 SETTING_KEYS = ("threads", "batchSize", "numWorkers", "pinMemory", "prefetch", "dtype", "dataSource")
 HOST_INFO_KEYS = ("cpuCount", "ramGB", "mps", "cuda")
-PLAN_HINT = ("Sin plan registrado: corre /remote-parallelism plan --timing <Nombre>/Results/timing.json "
-             "--record <Nombre> para comparar CPU y GPU, local y nube, con las cuentas del equipo.")
-EMPTY_HINT = ("Sin Results/timing.json: corre antes del piloto la sonda de tiempo corta (una época de un fold "
-              "por brazo) que describe /remote-parallelism en «Estimate before you scale»; escribe "
-              "<objetivo>/<Nombre>/Results/timing.json con sus mediciones y las escalas poc y full del protocolo.")
+PLAN_HINT = ("No plan recorded: run /remote-parallelism plan --timing <Name>/Results/timing.json "
+             "--record <Name> to compare CPU and GPU, local and cloud, with the team's accounts.")
+EMPTY_HINT = ("No Results/timing.json: before the pilot, run the short timing probe (one epoch of one fold "
+              "per arm) that /remote-parallelism describes in «Estimate before you scale»; it writes "
+              "<target>/<Name>/Results/timing.json with its measurements and the protocol's poc and full scales.")
 
 
 def _number(value: Any) -> float | None:
@@ -208,8 +208,7 @@ def _unit_for(seconds: float) -> tuple[float, str, int]:
 
 
 def _amount(seconds: float, div: float, decimals: int) -> str:
-    # Spanish UI: decimal comma.
-    return f"{seconds / div:.{decimals}f}".replace(".", ",")
+    return f"{seconds / div:.{decimals}f}"
 
 
 def duration_label(seconds: float) -> str:
@@ -260,29 +259,29 @@ def _candidate_rows(stage: str, timing: dict[str, Any] | None, plan: dict[str, A
         total = sum(m["loadSeconds"] + m["computeSeconds"] for m in load)
         device = best[0].get("device") or "—"
         rows.append({"stage": stage, "candidate": name, "host": best[0]["host"], "family": best[0]["family"],
-                     "device": device, "kind": "cpu" if device == "cpu" else "acelerador",
+                     "device": device, "kind": "cpu" if device == "cpu" else "accelerator",
                      "processes": best[0].get("processes") or (int(name.rsplit("-", 1)[1])
                                                                if name.startswith("local-cpu-") else 1),
                      "settings": best[0].get("settings") or {},
                      "load_share": round(sum(m["loadSeconds"] for m in load) / total, 2) if load and total else None,
-                     "status": "medido", "estimate": estimate,
+                     "status": "measured", "estimate": estimate,
                      "estimate_label": f"{range_label(estimate['low'], estimate['high'])} ±20%" if estimate
                      else UNMEASURED,
-                     "reason": f"{len(items)} medición(es) propia(s)",
-                     "plan": "recomendado" if name == pick else lost.get(name, "")})
+                     "reason": f"{len(items)} own measurement(s)",
+                     "plan": "recommended" if name == pick else lost.get(name, "")})
     names = set(measured)
     unmeasured: list[tuple[str, str]] = [(i["candidate"], i["reason"]) for i in stage_plan.get("unmeasured") or []
                                          if i.get("candidate")]
     local_info = ((timing or {}).get("hosts") or {}).get("local") or {}
     if not any(n == "local" or n.startswith("local-cpu-") for n in names):
-        unmeasured.append(("local-cpu-1", "Corre la sonda de tiempo con el intérprete del objetivo."))
+        unmeasured.append(("local-cpu-1", "Run the timing probe with the target's interpreter."))
     for name, key in (("local-mps", "mps"), ("local-cuda", "cuda")):
         if local_info.get(key):
-            unmeasured.append((name, "El equipo lo tiene: mídelo con la sonda de tiempo antes de elegirlo."))
+            unmeasured.append((name, "This machine has it: measure it with the timing probe before choosing it."))
     families = {m["family"] for items in measured.values() for m in items}
     for family in RUN_HOSTS:
         if family != "local" and family not in families:
-            unmeasured.append((family, "Sin medición en este servicio: un ensayo con la sonda la añade."))
+            unmeasured.append((family, "No measurement on this service: a rehearsal with the probe adds one."))
     seen = set(names)
     for name, reason in unmeasured:
         if name in seen:
@@ -312,18 +311,18 @@ def _local_readiness(local: Any) -> dict[str, Any]:
     ready = [t for t in targets if t.get("state") == "ready"]
     if ready:
         names = ", ".join(str(t.get("repo")) for t in ready[:6])
-        return {"available": True, "reason": f".venv listo con sus librerías: {names}."}
+        return {"available": True, "reason": f".venv ready with its libraries: {names}."}
     present = [t for t in targets if t.get("present")]
     if present:
         missing = sorted({str(n) for t in present for n in t.get("missing") or []})
         if missing:
-            return {"available": False, "reason": f"Faltan librerías en el .venv: {', '.join(missing[:12])}."}
-        return {"available": False, "reason": "Librerías del .venv sin verificar."}
+            return {"available": False, "reason": f"Libraries missing in the .venv: {', '.join(missing[:12])}."}
+        return {"available": False, "reason": "The .venv libraries are unverified."}
     if not targets and workspace.get("present"):
-        return {"available": True, "reason": "Sin objetivo todavía: corre con el entorno micromamba del workspace."}
+        return {"available": True, "reason": "No target yet: runs with the workspace micromamba environment."}
     if targets:
-        return {"available": False, "reason": "Ningún objetivo tiene .venv: la implementación lo crea."}
-    return {"available": False, "reason": "Sin entorno micromamba ni .venv de un objetivo."}
+        return {"available": False, "reason": "No target has a .venv: the implementation creates it."}
+    return {"available": False, "reason": "No micromamba environment and no target .venv."}
 
 
 def _row(stage: str, host: str, readiness: dict[str, Any], timing: dict[str, Any] | None) -> dict[str, Any]:
@@ -362,8 +361,8 @@ def _recommend(stage: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
             advice["poc_budget"] = "within"
         else:
             advice["poc_budget"] = "exceeds"
-            advice["text"] += (" Excede el presupuesto de 5 h de la prueba de concepto: reduce el diseño "
-                               "(sujetos, épocas, folds, semillas o brazos) antes de correrla.")
+            advice["text"] += (" Exceeds the proof of concept's 5 h budget: shrink the design "
+                               "(subjects, epochs, folds, seeds or arms) before running it.")
     return advice
 
 
@@ -373,33 +372,33 @@ def _place(stage: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     remote = [r for r in available if r["host"] != "local"]
     measured = sorted((r for r in remote if r["estimate"]), key=lambda r: r["estimate"]["high"])
     unmeasured_remote = [r["host_label"] for r in remote if not r["estimate"]]
-    rehearse = (f" Los hosts remotos ({', '.join(unmeasured_remote)}) necesitan antes un ensayo con "
-                "medición de tiempo." if unmeasured_remote else "")
+    rehearse = (f" The remote hosts ({', '.join(unmeasured_remote)}) need a rehearsal with a time "
+                "measurement first." if unmeasured_remote else "")
     if local and local["estimate"]:
         if local["estimate"]["high"] <= LOCAL_LIMIT:
-            return {"host": "local", "text": f"Local: estimación {local['estimate_label']}, dentro de 20 min."}
-        over = f"Local tardaría más de 20 min ({local['estimate_label']}): corre en la nube."
+            return {"host": "local", "text": f"Local: estimate {local['estimate_label']}, within 20 min."}
+        over = f"Local would take more than 20 min ({local['estimate_label']}): run in the cloud."
         if measured:
             best = measured[0]
-            confirm = (" Antes de la campaña, un ensayo en ese host confirma su tiempo." if stage == "full" else "")
-            return {"host": best["host"], "text": f"{over} {best['host_label']}: el más rápido medido "
+            confirm = (" Before the campaign, a rehearsal on that host confirms its time." if stage == "full" else "")
+            return {"host": best["host"], "text": f"{over} {best['host_label']}: the fastest measured "
                                                   f"({best['estimate_label']}).{confirm}"}
         if remote:
-            return {"host": remote[0]["host"], "text": f"{over} Corre antes la sonda de tiempo en "
-                                                       f"{remote[0]['host_label']} para estimarla."}
-        return {"host": None, "text": f"{over} Ningún host en la nube disponible: activa un servicio remoto."}
+            return {"host": remote[0]["host"], "text": f"{over} Run the timing probe on "
+                                                       f"{remote[0]['host_label']} first to estimate it."}
+        return {"host": None, "text": f"{over} No cloud host available: activate a remote service."}
     if local:
-        return {"host": "local", "text": "Local disponible pero sin medir: corre primero la sonda de tiempo "
+        return {"host": "local", "text": "Local available but unmeasured: run the timing probe first "
                                          "(Results/timing.json)." + rehearse}
     if measured:
         best = measured[0]
         return {"host": best["host"],
-                "text": f"{best['host_label']}: el más rápido medido y disponible ({best['estimate_label']})."}
+                "text": f"{best['host_label']}: the fastest measured and available ({best['estimate_label']})."}
     if available:
         best = available[0]
-        return {"host": best["host"], "text": f"{best['host_label']} disponible pero sin medir: corre un ensayo "
-                                              "con medición de tiempo antes de la corrida."}
-    return {"host": None, "text": "Ningún host disponible: prepara el .venv local o activa un servicio remoto."}
+        return {"host": best["host"], "text": f"{best['host_label']} available but unmeasured: run a rehearsal "
+                                              "with a time measurement before the run."}
+    return {"host": None, "text": "No host available: prepare the local .venv or activate a remote service."}
 
 
 def run_options(root: Path | str, view: Any) -> dict[str, Any]:
@@ -432,7 +431,7 @@ def run_options(root: Path | str, view: Any) -> dict[str, Any]:
         try:
             local = _local_readiness(view.get("local_environment"))
         except Exception:  # noqa: BLE001
-            local = {"available": False, "reason": "No se pudo leer el entorno local."}
+            local = {"available": False, "reason": "Could not read the local environment."}
         stage_rows = []
         for host in RUN_HOSTS:
             readiness = local if host == "local" else remote.get(host, {"available": False, "reason": "—"})

@@ -29,7 +29,7 @@ def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
         yaml_file = root / "papersmith.yaml"
         title = ""
         topic = ""
-        authors_str = "Sin autor asignado"
+        authors_str = "No author assigned"
         venue = "unspecified"
         if yaml_file.is_file():
             try:
@@ -50,55 +50,55 @@ def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
             "title": project_title,
             "target_journal": venue,
             "authors": authors_str,
-            "trl": "Fase Inicial (Pendiente de deliberación)",
+            "trl": "Initial Phase (Pending deliberation)",
             "executive_summary": (
-                f"Modelo conceptual y formal para el proyecto {project_title}. "
-                "La arquitectura conceptual, el modelo matemático y el plan de prueba de concepto "
-                "se formalizan durante la Fase 4 (Deliberación de Propuesta en proposals/) y la "
-                "Fase 5 (Deliberación Experimental en experiments/)."
+                f"Conceptual and formal model for the {project_title} project. "
+                "The conceptual architecture, the mathematical model and the proof-of-concept plan "
+                "are formalized during Phase 4 (Proposal Deliberation in proposals/) and "
+                "Phase 5 (Experimental Deliberation in experiments/)."
             ),
             "novelty": {
-                "problem_statement": f"Planteamiento del problema y brecha técnica para {project_title} en proceso de deliberación.",
+                "problem_statement": f"Problem statement and technical gap for {project_title}, under deliberation.",
                 "pillars": [
                     {
                         "id": "pillar-1",
-                        "name": "Pilar 1: Innovación Metodológica / Teórica",
+                        "name": "Pillar 1: Methodological / Theoretical Innovation",
                         "badge": "CONCEPTUAL",
                         "color": "#38bdf8",
-                        "summary": f"Contribución principal de {project_title}.",
-                        "details": "Pendiente de formalización durante deliberación de propuesta (proposals/)."
+                        "summary": f"Main contribution of {project_title}.",
+                        "details": "Pending formalization during the proposal deliberation (proposals/)."
                     },
                     {
                         "id": "pillar-2",
-                        "name": "Pilar 2: Arquitectura del Sistema",
-                        "badge": "ARQUITECTURA",
+                        "name": "Pillar 2: System Architecture",
+                        "badge": "ARCHITECTURE",
                         "color": "#10b981",
-                        "summary": "Diseño y estructura técnica del sistema.",
-                        "details": "Pendiente de andamiaje y verificación empírica."
+                        "summary": "Design and technical structure of the system.",
+                        "details": "Pending scaffolding and empirical verification."
                     },
                     {
                         "id": "pillar-3",
-                        "name": "Pilar 3: Validación Empírica & Contrastes",
-                        "badge": "METROLOGÍA",
+                        "name": "Pillar 3: Empirical Validation & Contrasts",
+                        "badge": "METROLOGY",
                         "color": "#f59e0b",
-                        "summary": "Protocolos de prueba y métricas de rendimiento.",
-                        "details": "Pendiente de ejecución de experimentos (experiments/)."
+                        "summary": "Test protocols and performance metrics.",
+                        "details": "Pending the run of the experiments (experiments/)."
                     }
                 ]
             },
             "conceptual_map": {
                 "layers": [
-                    {"layer": "Capa 1: Insumos & Datos", "desc": "Datos crudos, referencias bibliográficas e instrumentación."},
-                    {"layer": "Capa 2: Preprocesamiento & Feature Extraction", "desc": "Acondicionamiento y representaciones latentes."},
-                    {"layer": "Capa 3: Núcleo Algorítmico", "desc": "Modelos teóricos, matemáticos o de aprendizaje automático."},
-                    {"layer": "Capa 4: Inferencia & Métricas", "desc": "Evaluación cuantitativa y funciones de costo."},
-                    {"layer": "Capa 5: Síntesis & Manuscrito", "desc": "Redacción técnica y compilación PDF."}
+                    {"layer": "Layer 1: Inputs & Data", "desc": "Raw data, bibliographic references and instrumentation."},
+                    {"layer": "Layer 2: Preprocessing & Feature Extraction", "desc": "Conditioning and hidden representations."},
+                    {"layer": "Layer 3: Algorithmic Core", "desc": "Theoretical, mathematical or machine-learning models."},
+                    {"layer": "Layer 4: Inference & Metrics", "desc": "Quantitative evaluation and cost functions."},
+                    {"layer": "Layer 5: Synthesis & Manuscript", "desc": "Technical writing and PDF compilation."}
                 ]
             },
             "mathematical_model": {
                 "domains": [
-                    {"name": "Espacio de Entrada", "symbol": "X", "definition": "Dominio de observaciones y datos de entrada."},
-                    {"name": "Espacio de Salida", "symbol": "Y", "definition": "Dominio de predicción o transducción."}
+                    {"name": "Input Space", "symbol": "X", "definition": "Domain of the observations and input data."},
+                    {"name": "Output Space", "symbol": "Y", "definition": "Domain of prediction or transduction."}
                 ],
                 "equations": [],
                 "optimization_problems": []

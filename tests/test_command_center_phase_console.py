@@ -14,6 +14,9 @@ from skills._core.command_center import phase_actions, server
 
 STATIC = Path(server.__file__).resolve().parent / "static"
 PAGE = (STATIC / "index.html").read_text(encoding="utf-8")
+I18N_JS = STATIC / "i18n.js"
+EN_JS = STATIC / "i18n" / "en.js"
+ES_JS = STATIC / "i18n" / "es.js"
 
 # A minimal DOM: the drawer's inputs and hints, a click dispatcher, and spies
 # for sendToCli / navigateTab / filterModelView / closeDrawer.
@@ -27,7 +30,10 @@ let sendResult;
 const options = [];
 let agents = { current: 'herdr', live: false, agents: [] };
 let refusal = '';
+const store = { 'papersmith-lang': 'es' };
+global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
 global.window = {
+  localStorage: global.localStorage,
   smithTerminalActivity: () => ({ refusal }),
   smithTerminalAgents: async () => agents,
   sendToCli: (t, r, o) => { calls.push(['send', t, r, o && o.kind]); options.push(o); return sendResult; },
@@ -40,11 +46,18 @@ global.document = {
   querySelectorAll: () => [],
   addEventListener: (type, fn) => { listeners[type] = fn; },
 };
+eval(fs.readFileSync(process.argv[2], 'utf8'));
+eval(fs.readFileSync(process.argv[3], 'utf8'));
+eval(fs.readFileSync(process.argv[4], 'utf8'));
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+global.localStorage = {
+  getItem: (k) => (k === 'papersmith-lang' ? 'es' : (input.remembered ?? null)),
+  setItem: () => {}
+};
+global.window.localStorage = global.localStorage;
 sendResult = input.sendResult;
 if (input.agents) agents = input.agents;
-if (input.remembered) global.localStorage = { getItem: () => input.remembered, setItem() {} };
 refusal = input.refusal || '';
 if (input.override) el('phaseOverride').checked = true;
 (async () => {
@@ -66,7 +79,7 @@ console.log(JSON.stringify({ html, calls, options, select: el('phaseAgent0').inn
 
 
 def run(phase: dict, steps: list[dict], override: bool = False, **extra) -> dict:
-    out = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phase-console.js")],
+    out = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phase-console.js"), str(EN_JS), str(ES_JS), str(I18N_JS)],
                          input=json.dumps({"phase": phase, "steps": steps, "override": override, **extra}),
                          capture_output=True, text=True, cwd=tempfile.gettempdir(), check=True)
     return json.loads(out.stdout)
@@ -80,7 +93,7 @@ def phase(stage: str) -> dict:
 class PhaseConsoleTests(unittest.TestCase):
     def test_plausibility_shows_its_rules_and_refuses_a_one_sentence_idea(self) -> None:
         result = run(phase("plausibility"), [{"i": 0, "type": "Una sola idea."}])
-        self.assertIn("dos oraciones", result["html"])
+        self.assertTrue("two sentences" in result["html"] or "dos oraciones" in result["html"])
         self.assertIn('id="phaseInput0"', result["html"])
         self.assertEqual(result["calls"], [])
         self.assertIn("al menos 2 oraciones", result["hints"]["phaseHint0"])
@@ -175,7 +188,7 @@ class PhaseConsoleTests(unittest.TestCase):
         result = run(phase("harness"), [{"i": 0}])
         self.assertEqual(result["calls"], [["send", "smith status .", True, "shell"]])
         result = run(phase("ingestion"), [{"i": 1}])
-        self.assertEqual(result["calls"], [["send", "smith ingest <ruta-o-url> .", False, "shell"]])
+        self.assertEqual(result["calls"], [["send", "smith ingest <path-or-url> .", False, "shell"]])
 
     def test_the_concept_map_redirect_opens_its_section(self) -> None:
         result = run(phase("proposal"), [{"i": 1}])
@@ -219,7 +232,7 @@ class PageWiringTests(unittest.TestCase):
 
     def test_slash_commands_switch_the_terminal_to_an_agent(self) -> None:
         script = (STATIC / "cli-console.js").read_text(encoding="utf-8")
-        self.assertIn("const SLASH_AGENTS = ['herdr', 'claude', 'opencode', 'pi'];", script)
+        self.assertIn("const SLASH_AGENTS = ['herdr', 'claude', 'opencode', 'pi', 'antigravity'];", script)
         self.assertIn("async function sendToCli(text, run, options)", script)
         # A startup question (folder trust) is never answered by the command's Enter.
         self.assertIn("const STARTUP_QUESTIONS = /trust this folder|Do you trust|Enter to confirm/i;", script)

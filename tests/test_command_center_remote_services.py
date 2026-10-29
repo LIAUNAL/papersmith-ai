@@ -230,8 +230,16 @@ class VersionCacheTests(unittest.TestCase):
 
 class RenderTests(_Env):
     def render(self, view: dict) -> str:
+        i18n_js = SCRIPT_PATH.parent / "i18n.js"
+        en_js = SCRIPT_PATH.parent / "i18n" / "en.js"
+        es_js = SCRIPT_PATH.parent / "i18n" / "es.js"
         script = (
-            "const fs=require('fs');global.window={};global.document={addEventListener(){}};"
+            "const fs=require('fs');"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},querySelectorAll:()=>[]};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(SCRIPT_PATH))},'utf8'));"
             "console.log(window.ExperimentsPanel.render(JSON.parse(fs.readFileSync(0,'utf8'))));"
         )

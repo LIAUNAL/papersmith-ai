@@ -82,9 +82,16 @@ class ModelPanelTests(unittest.TestCase):
         for element in ("modelPillarGrid", "modelHypothesisGrid", "modelConceptLayers"):
             self.assertIn(f'id="{element}"', page)
         self.assertIn("if (window.renderModelModules) window.renderModelModules(data);", page)
+        i18n_js = self.STATIC / "i18n.js"
+        en_js = self.STATIC / "i18n" / "en.js"
+        es_js = self.STATIC / "i18n" / "es.js"
         script = (
-            "const fs=require('fs');const els={};global.window={};"
-            "global.document={getElementById:(id)=>els[id]||(els[id]={innerHTML:'',textContent:'',className:''})};"
+            "const fs=require('fs');const els={};"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},querySelectorAll:()=>[],getElementById:(id)=>els[id]||(els[id]={innerHTML:'',textContent:'',className:''})};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(self.STATIC / 'model-panel.js'))},'utf8'));"
             "window.renderModelModules(JSON.parse(fs.readFileSync(0,'utf8')));"
             "console.log(JSON.stringify(els));"

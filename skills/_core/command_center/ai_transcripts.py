@@ -14,7 +14,8 @@ Stores (read-only, bounded; a missing store is ``absent``, never an error):
 * ``opencode``: ``$XDG_DATA_HOME`` or ``~/.local/share``, then
   ``opencode/opencode.db`` (SQLite, opened read-only), sessions whose
   ``directory`` is the workspace.
-* ``antigravity``: no readable store; reported as ``unsupported``.
+* ``antigravity``: ``~/.gemini/antigravity-cli/conversation_summaries.db`` and
+  ``brain/<id>/.system_generated/logs/transcript.jsonl``.
 
 When the slug directory is missing (a renamed or long path), the Claude Code
 and Pi readers fall back to the session whose recorded ``cwd`` is the
@@ -153,21 +154,21 @@ def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
     for ts, role, text, command in turns:
         if role == "assistant":
             if stage is not None:
-                reply = _event(ts, "agent_reply", text, ref, "agente")
+                reply = _event(ts, "agent_reply", text, ref, "agent")
             continue
         if role == "error":
             if stage is not None:
                 events.setdefault(stage, []).append(
-                    _event(ts, "error", "Una herramienta falló durante la fase", ref, "herramienta"))
+                    _event(ts, "error", "A tool failed during the phase", ref, "tool"))
             continue
         target = stage_for(*command, skills) if command else None
         flush()
         if target is not None:
             stage = target
             events.setdefault(stage, []).append(
-                _event(ts, "command", _clip(f"/{command[0]} {command[1]}".strip()), ref, "operador"))
+                _event(ts, "command", _clip(f"/{command[0]} {command[1]}".strip()), ref, "operator"))
         elif stage is not None and command is None:
-            events.setdefault(stage, []).append(_event(ts, "user_message", text, ref, "operador"))
+            events.setdefault(stage, []).append(_event(ts, "user_message", text, ref, "operator"))
     flush()
 
 
@@ -248,6 +249,13 @@ def opencode_db() -> Path:
     if override:
         return Path(override).expanduser()
     return _env_dir("XDG_DATA_HOME", Path.home() / ".local" / "share") / "opencode" / "opencode.db"
+
+
+def antigravity_db() -> Path:
+    override = os.environ.get("PAPERSMITH_ANTIGRAVITY_SESSIONS")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".gemini" / "antigravity-cli" / "conversation_summaries.db"
 
 
 # --- per-harness turn readers ----------------------------------------------
@@ -399,6 +407,83 @@ def _opencode_turns(rows: Iterable[tuple[str, str, Any]]) -> Iterator[Turn]:
                 yield ts, role, str(part["text"])
 
 
+_antigravity_cache: dict[tuple[str, str], tuple[str, list[Compact]]] = {}
+
+
+def antigravity_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[Compact]]], str]:
+    """``[(session id, turns)]`` of the workspace's Antigravity sessions."""
+    if not db.is_file():
+        return [], "absent"
+    uri = "file:" + db.resolve().as_posix() + "?mode=ro"
+    connection = sqlite3.connect(uri, uri=True, timeout=2)
+    brain_dir = db.parent / "brain"
+    try:
+        rows = connection.execute(
+            "SELECT conversation_id, workspace_uris, datetime(last_modified_time) "
+            "FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT ?",
+            (MAX_SESSIONS,)).fetchall()
+        out = []
+        for session_id, uris_raw, updated in rows:
+            try:
+                uris = json.loads(uris_raw)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(uris, list):
+                continue
+            matches = False
+            for u in uris:
+                clean = u.removeprefix("file://").rstrip("/\\")
+                if clean in roots or any(clean.startswith(r) or r.startswith(clean) for r in roots):
+                    matches = True
+                    break
+            if not matches:
+                continue
+
+            key = (str(db), session_id)
+            with _cache_lock:
+                cached = _antigravity_cache.get(key)
+            if cached is not None and cached[0] == updated:
+                out.append((session_id, cached[1]))
+                continue
+
+            tpath = brain_dir / session_id / ".system_generated" / "logs" / "transcript.jsonl"
+            if not tpath.is_file():
+                continue
+            try:
+                lines = tpath.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            turns = [t for t in (compact(*turn) for turn in _antigravity_turns(lines)) if t is not None]
+            with _cache_lock:
+                _antigravity_cache[key] = (updated, turns)
+            out.append((session_id, turns))
+        return out, "ok" if out else "absent"
+    finally:
+        connection.close()
+
+
+def _antigravity_turns(lines: Iterable[str]) -> Iterator[Turn]:
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        ts = d.get("created_at")
+        if d.get("status") == "ERROR":
+            yield ts, "error", ""
+        elif d.get("source") == "USER_EXPLICIT" and d.get("type") == "USER_INPUT":
+            c = d.get("content", "")
+            if "<USER_REQUEST>" in c:
+                c = c.split("<USER_REQUEST>")[1].split("</USER_REQUEST>")[0].strip()
+            yield ts, "user", str(c)
+        elif d.get("source") == "MODEL" and d.get("type") == "PLANNER_RESPONSE" and d.get("content"):
+            yield ts, "assistant", str(d["content"])
+
+
 # --- the combined read -----------------------------------------------------
 
 def _read_files(directory: Path | None, harness: str,
@@ -425,7 +510,7 @@ def _read_files(directory: Path | None, harness: str,
             del _file_cache[key]
     info: dict[str, Any] = {"status": "ok" if read else "absent", "sessions": read}
     if skipped:
-        info["detail"] = f"{skipped} sesión(es) omitida(s): muy grandes o ilegibles"
+        info["detail"] = f"{skipped} session(s) skipped: too large or unreadable"
     return info
 
 
@@ -466,8 +551,17 @@ def read_all(root: Path, locations: dict[str, Path | None] | None = None,
         return {"status": state, "sessions": len(sessions)}
 
     guarded("opencode", opencode)
-    status["antigravity"] = {"status": "unsupported", "sessions": 0,
-                             "detail": "Antigravity no deja un historial de chat legible en disco"}
+
+    def antigravity() -> dict[str, Any]:
+        db = overrides["antigravity"] if "antigravity" in overrides else antigravity_db()
+        if db is None or not db.is_file():
+            return {"status": "absent", "sessions": 0}
+        sessions, state = antigravity_sessions(db, roots)
+        for session_id, turns in sessions:
+            attribute(turns, f"antigravity:{session_id[-8:]}", skills, events)
+        return {"status": state, "sessions": len(sessions)}
+
+    guarded("antigravity", antigravity)
     return events, status
 
 
@@ -476,6 +570,7 @@ def clear_cache() -> None:
     with _cache_lock:
         _file_cache.clear()
         _opencode_cache.clear()
+        _antigravity_cache.clear()
 
 
 __all__ = ["HARNESSES", "attribute", "clear_cache", "command_of", "compact", "read_all",

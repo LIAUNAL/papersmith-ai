@@ -1,4 +1,4 @@
-"""The "Historia con IA" pane: what happened in each phase, with whom.
+"""The "AI History" pane: what happened in each phase, with whom.
 
 ``build_ai_history(root, fases)`` answers, per dashboard phase (the ``fases``
 list of ``/api/status``): its gate, a colour and a short timeline of the
@@ -105,8 +105,8 @@ def _revision_events(root: Path) -> list[dict[str, Any]]:
         found = _REVISION_RE.search(name)
         if found:
             out.append({"ts": None, "source": "revisions", "kind": "revision",
-                        "summary": f"Revisión r{found.group(1)} de la propuesta",
-                        "ref": f"proposals/{name}", "actor": "agente"})
+                        "summary": f"Proposal revision r{found.group(1)}",
+                        "ref": f"proposals/{name}", "actor": "agent"})
     return out
 
 
@@ -126,20 +126,20 @@ def _assess(status: str, events: list[dict[str, Any]]) -> tuple[str, list[str], 
     }
     reasons = []
     if counts["errors"]:
-        reasons.append(f"{counts['errors']} error(es) registrados")
+        reasons.append(f"{counts['errors']} error(s) recorded")
     if counts["revisions"] > 1:
-        reasons.append(f"{counts['revisions']} revisiones (refactorización)")
+        reasons.append(f"{counts['revisions']} revisions (refactoring)")
     if counts["edits"] > 1:
-        reasons.append(f"{counts['edits']} ediciones deliberadas")
+        reasons.append(f"{counts['edits']} deliberated edits")
     if counts["commands"] > 1:
-        reasons.append(f"{counts['commands']} invocaciones del comando de la fase")
+        reasons.append(f"{counts['commands']} invocations of the phase command")
     if counts["user_messages"]:
-        reasons.append(f"{counts['user_messages']} iteración(es) con el operador")
+        reasons.append(f"{counts['user_messages']} iteration(s) with the operator")
     if reasons:
         return "orange", reasons, counts
     if status == "PASS":
-        return "green", ["Pasó de forma directa"], counts
-    return "red", ["Falta por ejecutar" if status != "ACTIVE" else "En curso, sin cerrar"], counts
+        return "green", ["Passed directly"], counts
+    return "red", ["Still to run" if status != "ACTIVE" else "In progress, not closed"], counts
 
 
 MAX_PHASE_ROUNDS = 40
@@ -155,7 +155,7 @@ _CORRECTION_RE = re.compile(
     r"otra vez|de nuevo|vuelve a|cambia|revierte|fix|wrong|redo|retry|again|broken|revert)",
     re.I)
 _APPROVAL_RE = re.compile(
-    r"^\s*(aprob|acept|ok\b|okay|listo|perfecto|de acuerdo|s[ií]\b|dale\b|bien\b|correcto|"
+    r"^\s*(aprob|acept|ok\b|okay|listo|perfecto|de acuerdo|s[i\u00ed]\b|dale\b|bien\b|correcto|"
     r"approve|accept|lgtm|looks good|yes\b)", re.I)
 APPROVAL_MAX = 80
 
@@ -219,22 +219,22 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
     for i, current in enumerate(rounds):
         nxt = rounds[i + 1] if i + 1 < len(rounds) else None
         if current["errors"]:
-            outcome, reason = "rework", f"{current['errors']} error(es) o rechazo(s) durante la iteración"
+            outcome, reason = "rework", f"{current['errors']} error(s) or rejection(s) during the iteration"
         elif nxt and nxt["kind"] == "command":
-            outcome, reason = "rework", "Se relanzó el comando de la fase"
+            outcome, reason = "rework", "The phase command was run again"
         elif nxt and current["opener"] == nxt["opener"] == "submitted":
-            outcome, reason = "rework", "Se relanzó la ejecución remota"
+            outcome, reason = "rework", "The remote run was launched again"
         elif nxt and _CORRECTION_RE.search(nxt["prompt"]):
-            outcome, reason = "rework", "El operador pidió corregir o rehacer"
+            outcome, reason = "rework", "The operator asked to fix or redo it"
         elif current["approved"]:
-            outcome, reason = "success", "El operador la aprobó"
+            outcome, reason = "success", "The operator approved it"
         elif nxt:
-            outcome, reason = "iteration", ("La decisión siguió refinándose" if current["kind"] == "decision"
-                                            else "El operador continuó refinando")
+            outcome, reason = "iteration", ("The decision kept being refined" if current["kind"] == "decision"
+                                            else "The operator kept refining")
         elif status == "PASS":
-            outcome, reason = "success", "La fase pasó su compuerta"
+            outcome, reason = "success", "The phase passed its gate"
         else:
-            outcome, reason = "pending", "Falta por definir: la fase no ha cerrado"
+            outcome, reason = "pending", "To be decided: the phase has not closed"
         current.update(outcome=outcome, reason=reason)
         del current["approved"], current["opener"]
     return rounds
@@ -259,7 +259,7 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
             stage = SOURCE_STAGES.get(event.get("source"))
             if stage:
                 by_stage.setdefault(stage, []).append(
-                    {**event, "summary": _clip(event.get("summary")), "actor": "agente"})
+                    {**event, "summary": _clip(event.get("summary")), "actor": "agent"})
     except Exception as exc:  # noqa: BLE001 - one broken source never fails the pane
         sources["decisions"] = {"status": "unreadable", "detail": type(exc).__name__}
 
@@ -302,8 +302,8 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
             "total_rounds": len(rounds), "decision_summary": summary,
         })
     return {"phases": phases, "sources": sources, "decision_summary": totals, "pending": pending,
-            "note": ("Resumen de solo lectura: decisiones persistidas, revisiones y "
-                     "sesiones de chat (Claude Code, Pi, OpenCode) de este espacio de trabajo.")}
+            "note": ("Read-only summary: persisted decisions, revisions and chat sessions "
+                     "(Claude Code, Pi, OpenCode) of this workspace.")}
 
 
 __all__ = ["build_ai_history"]

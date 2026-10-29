@@ -9,7 +9,7 @@
  * per service with its state and activating action), the local environment
  * (workspace micromamba env, each target .venv with its libraries and device),
  * the run options (per stage and host: availability, ±20% estimate from
- * Results/timing.json or "sin medir", reason and recommendation), plus a remote-accounts
+ * Results/timing.json or "unmeasured", reason and recommendation), plus a remote-accounts
  * readiness hint, the hyperparameter studies per product (Results/hpo/<study>/
  * summary.json: best parameters, importance bars, contour/importance/history
  * figures), the team table (one account per person and service) and the
@@ -22,6 +22,10 @@
 (function () {
   'use strict';
 
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
+  // A label by machine value; an unknown value shows as itself.
+  const labelOf = (prefix, value) => (window.i18n && window.i18n.has(`${prefix}.${value}`) ? t(`${prefix}.${value}`) : String(value ?? ''));
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
@@ -79,7 +83,7 @@
     const legend = series.map((s, i) => `<span class="exp-legend__item"><i style="background:${PALETTE[i % PALETTE.length]}"></i>${esc(s.label)}</span>`).join('');
     const canLog = series.some((s) => isLossLike(s.name));
     const toggle = canLog
-      ? `<button type="button" class="btn exp-log-toggle" data-exp-log="${esc(id)}" aria-pressed="${useLog}">${useLog ? 'Escala lineal' : 'Escala log'}</button>`
+      ? `<button type="button" class="btn exp-log-toggle" data-exp-log="${esc(id)}" aria-pressed="${useLog}">${esc(useLog ? t('exp.linearScale') : t('exp.logScale'))}</button>`
       : '';
     return `<figure class="exp-chart">
       <figcaption><strong>${esc(title)}</strong>${toggle}</figcaption>
@@ -96,8 +100,7 @@
   function convergence(product) {
     const histories = product.convergence || [];
     if (!histories.length) {
-      return empty('Sin curvas de convergencia todavía: las produce Results/history*.json|jsonl|csv '
-        + '(o Results/shards/*/history*) con una columna epoch o step y métricas numéricas (loss, val_loss, acc…).');
+      return empty(t('exp.noConvergence'));
     }
     return histories.map((h, hi) => {
       const families = new Map();
@@ -129,7 +132,7 @@
     const body = rows.map((r) => `<tr>${headers.map((_, i) => {
       const cell = r[i];
       return cell === '' || cell === undefined
-        ? `<td class="exp-pending">${opts.pending ? 'pendiente' : ''}</td>`
+        ? `<td class="exp-pending">${opts.pending ? esc(t('exp.pendingCell')) : ''}</td>`
         : `<td>${esc(cell)}</td>`;
     }).join('')}</tr>`).join('');
     return `<div class="table-responsive"><table class="table exp-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
@@ -138,14 +141,14 @@
   function tables(product) {
     const list = product.tables || [];
     if (!list.length) return '';
-    return `<h4 class="exp-h4">Tablas</h4>` + list.map((t) => `<div class="exp-file">${esc(t.path)}</div>${table(t.headers || [], t.rows || [])}`).join('');
+    return `<h4 class="exp-h4">${esc(t('exp.tables'))}</h4>` + list.map((tab) => `<div class="exp-file">${esc(tab.path)}</div>${table(tab.headers || [], tab.rows || [])}`).join('');
   }
 
   function significance(product) {
     const rows = product.significance || [];
     if (!rows.length) {
-      return `<h4 class="exp-h4">Significancia estadística</h4>`
-        + empty('Sin pruebas todavía: las produce Results/significance*.json (comparison, test, statistic, p_value, p_adjusted, correction, effect_size, ci_low, ci_high, n, alpha).');
+      return `<h4 class="exp-h4">${esc(t('exp.significance'))}</h4>`
+        + empty(t('exp.noSignificance'));
     }
     const body = rows.map((r) => {
       const alpha = Number.isFinite(Number(r.alpha)) && r.alpha !== null ? Number(r.alpha) : 0.05;
@@ -160,16 +163,15 @@
         <td>${effect}</td><td>${ci}</td><td>${fmt(r.n, 0)}</td>
         <td>${sig ? `<span class="badge badge--ok">p &lt; ${fmt(alpha)}</span>` : `<span class="badge">n.s.</span>`}</td></tr>`;
     }).join('');
-    return `<h4 class="exp-h4">Significancia estadística</h4><div class="table-responsive"><table class="table exp-table">
-      <thead><tr><th>Prueba</th><th>Comparación</th><th>Estadístico</th><th>p</th><th>p ajustado</th><th>Tamaño del efecto</th><th>IC</th><th>n</th><th></th></tr></thead>
+    return `<h4 class="exp-h4">${esc(t('exp.significance'))}</h4><div class="table-responsive"><table class="table exp-table">
+      <thead><tr><th>${esc(t('exp.sig.test'))}</th><th>${esc(t('exp.sig.comparison'))}</th><th>${esc(t('exp.sig.statistic'))}</th><th>p</th><th>${esc(t('exp.sig.pAdjusted'))}</th><th>${esc(t('exp.sig.effect'))}</th><th>${esc(t('exp.sig.ci'))}</th><th>n</th><th></th></tr></thead>
       <tbody>${body}</tbody></table></div>`;
   }
 
   // ------------------------------------------------- hyperparameter search
   const EVALUATOR_LABEL = { fanova: 'fANOVA', 'ped-anova': 'PED-ANOVA', 'mean-decrease-impurity': 'Mean Decrease Impurity' };
-  const DIRECTION_LABEL = { maximize: 'maximizar', minimize: 'minimizar' };
-  const HPO_FIGURE_LABEL = { contour: 'Contornos', importance: 'Importancia', history: 'Historia de la optimización' };
-  const evaluatorName = (name) => EVALUATOR_LABEL[name] || name || 'evaluador sin declarar';
+  const HPO_FIGURES = ['contour', 'importance', 'history'];
+  const evaluatorName = (name) => EVALUATOR_LABEL[name] || name || t('exp.hpo.noEvaluator');
 
   function importanceBars(imp) {
     const entries = Object.entries((imp && imp.values) || {})
@@ -181,17 +183,18 @@
       return `<div class="exp-hpo-bar"><span class="exp-hpo-bar__name">${esc(name)}</span>
         <span class="exp-hpo-bar__track"><i style="width:${width}%"></i></span><span class="exp-hpo-bar__value">${fmt(v)}</span></div>`;
     }).join('');
-    return `<div class="exp-hpo-importance"><div class="exp-file">Importancia (${esc(evaluatorName(imp.evaluator))})</div>${rows}</div>`;
+    return `<div class="exp-hpo-importance"><div class="exp-file">${esc(t('exp.hpo.importanceOf', { evaluator: evaluatorName(imp.evaluator) }))}</div>${rows}</div>`;
   }
 
   function hpoFigures(h) {
     const figures = h.figures || {};
     const notes = h.notes || [];
-    const cells = Object.keys(HPO_FIGURE_LABEL).map((key) => {
+    const cells = HPO_FIGURES.map((key) => {
       const path = figures[key];
-      if (path) return `<div class="exp-hpo-figure"><div class="exp-file">${esc(HPO_FIGURE_LABEL[key])}</div>${artifact(path)}</div>`;
-      const note = notes.find((n) => String(n).toLowerCase().includes(key)) || 'sin figura';
-      return `<div class="exp-hpo-figure"><div class="exp-file">${esc(HPO_FIGURE_LABEL[key])}</div>${empty(note)}</div>`;
+      const title = t(`exp.hpo.figure.${key}`);
+      if (path) return `<div class="exp-hpo-figure"><div class="exp-file">${esc(title)}</div>${artifact(path)}</div>`;
+      const note = notes.find((n) => String(n).toLowerCase().includes(key)) || t('exp.hpo.noFigure');
+      return `<div class="exp-hpo-figure"><div class="exp-file">${esc(title)}</div>${empty(note)}</div>`;
     }).join('');
     const extra = notes.length ? `<ul class="exp-hpo-notes">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : '';
     return `<div class="exp-gallery exp-hpo-gallery">${cells}</div>${extra}`;
@@ -204,35 +207,36 @@
       const obj = h.objective || {};
       const params = Object.entries(h.bestParams || {}).map(([k, v]) => `<code>${esc(k)}=${esc(typeof v === 'number' ? fmt(v, 6) : v)}</code>`).join(' ') || '—';
       const best = h.bestValue === null || h.bestValue === undefined ? '—'
-        : `${fmt(h.bestValue, 4)} <small>${esc(obj.metric || '')}${obj.direction ? ` · ${esc(DIRECTION_LABEL[obj.direction] || obj.direction)}` : ''}</small>`;
+        : `${fmt(h.bestValue, 4)} <small>${esc(obj.metric || '')}${obj.direction ? ` · ${esc(labelOf('exp.hpo.direction', obj.direction))}` : ''}</small>`;
       return `<tr><td><code>${esc(h.study)}</code></td><td>${esc(h.arm || '—')}</td><td>${esc(h.fold ?? '—')}</td>
-        <td>${esc(h.complete ?? '—')} / ${esc(h.pruned ?? '—')}${h.failed ? ` <small>(${esc(h.failed)} fallidos)</small>` : ''}${h.nTrials ? ` <small>de ${esc(h.nTrials)}</small>` : ''}</td>
+        <td>${esc(h.complete ?? '—')} / ${esc(h.pruned ?? '—')}${h.failed ? ` <small>${esc(t('exp.hpo.failed', { n: h.failed }))}</small>` : ''}${h.nTrials ? ` <small>${esc(t('exp.hpo.ofTrials', { n: h.nTrials }))}</small>` : ''}</td>
         <td>${best}</td><td>${params}</td></tr>`;
     }).join('');
     const details = list.map((h) => `<details class="exp-hpo-study"><summary><code>${esc(h.study)}</code> · ${esc(h.file)}</summary>
       ${importanceBars(h.importance)}${h.importanceCheck ? importanceBars(h.importanceCheck) : ''}
       ${hpoFigures(h)}</details>`).join('');
-    return `<h4 class="exp-h4">Búsqueda de hiperparámetros (Optuna)</h4>
+    return `<h4 class="exp-h4">${esc(t('exp.hpo.title'))}</h4>
       <div class="table-responsive"><table class="table exp-table">
-      <thead><tr><th>Estudio</th><th>Brazo</th><th>Fold</th><th>Trials completos / podados</th><th>Mejor valor</th><th>Mejores parámetros</th></tr></thead>
+      <thead><tr><th>${esc(t('exp.hpo.study'))}</th><th>${esc(t('exp.hpo.arm'))}</th><th>Fold</th><th>${esc(t('exp.hpo.trials'))}</th><th>${esc(t('exp.hpo.best'))}</th><th>${esc(t('exp.hpo.bestParams'))}</th></tr></thead>
       <tbody>${body}</tbody></table></div>${details}`;
   }
 
-  const STATE_LABEL = { submitted: ['badge--info', 'enviado'], returned: ['badge--ok', 'retornado'], errored: ['badge--bad', 'con error'] };
+  const STATE_CLASS = { submitted: 'badge--info', returned: 'badge--ok', errored: 'badge--bad' };
+  const stateBadge = (state) => [STATE_CLASS[state] || '', labelOf('exp.runState', state)];
   function runs(product) {
     const r = product.runs || {};
-    if (!r.count) return '<span class="badge">sin ejecuciones remotas</span>';
+    if (!r.count) return `<span class="badge">${esc(t('exp.noRemoteRuns'))}</span>`;
     const chips = Object.entries(r.by_state || {}).map(([state, n]) => {
-      const [cls, label] = STATE_LABEL[state] || ['', state];
+      const [cls, label] = stateBadge(state);
       return `<span class="badge ${cls}">${esc(label)}: ${esc(n)}</span>`;
     }).join(' ');
     const latest = (r.latest || []).map((e) => {
-      const [cls, label] = STATE_LABEL[e.state] || ['', e.state];
+      const [cls, label] = stateBadge(e.state);
       return `<li><span class="badge ${cls}">${esc(label)}</span> <code>${esc(e.entrypoint)}</code>
         ${e.worker ? `· ${esc(e.worker)}` : ''} ${e.ts ? `· <small>${esc(e.ts)}</small>` : ''}
         ${e.reason ? `<div class="exp-reason">${esc(e.reason)}</div>` : ''}</li>`;
     }).join('');
-    return `${chips}<details class="exp-runs"><summary>Últimas ejecuciones (${esc(r.count)})</summary><ul>${latest}</ul></details>`;
+    return `${chips}<details class="exp-runs"><summary>${esc(t('exp.latestRuns', { n: r.count }))}</summary><ul>${latest}</ul></details>`;
   }
 
   // Remote runs per worker (S6): each worker's lanes -- entrypoint and
@@ -243,11 +247,11 @@
     const body = workers.map((w) => {
       const lanes = w.lanes || [];
       const more = (w.lane_count || 0) > lanes.length
-        ? `<tr><td colspan="6"><small class="exp-muted">… ${esc(w.lane_count - lanes.length)} carril(es) más</small></td></tr>` : '';
+        ? `<tr><td colspan="6"><small class="exp-muted">${esc(t('exp.moreLanes', { n: w.lane_count - lanes.length }))}</small></td></tr>` : '';
       return lanes.map((lane, index) => {
-        const [cls, label] = STATE_LABEL[lane.state] || ['', lane.state];
+        const [cls, label] = stateBadge(lane.state);
         const units = Array.isArray(lane.units) ? esc(lane.units.join(', '))
-          : `<span class="exp-muted">${lane.granted != null ? `capacidad ${esc(lane.granted)}` : '—'}</span>`;
+          : `<span class="exp-muted">${lane.granted != null ? esc(t('exp.capacity', { n: lane.granted })) : '—'}</span>`;
         const head = index === 0
           ? `<td rowspan="${lanes.length}"><strong>${esc(w.worker)}</strong><br><small>${esc(w.service || '—')}</small></td>` : '';
         return `<tr>${head}<td><code>${esc(lane.entrypoint)}</code> <small>slot ${esc(lane.slot)}</small></td>
@@ -255,9 +259,9 @@
           <td><small>${units}</small></td><td><code>${esc(lane.submission_id)}</code></td><td><small>${esc(lane.ts)}</small></td></tr>`;
       }).join('') + more;
     }).join('');
-    return `<details class="exp-runs exp-workers"><summary>Ejecuciones remotas por worker (${esc(workers.length)})</summary>
+    return `<details class="exp-runs exp-workers"><summary>${esc(t('exp.workers', { n: workers.length }))}</summary>
       <div class="table-responsive"><table class="table exp-table">
-      <thead><tr><th>Worker / servicio</th><th>Entrypoint / slot</th><th>Estado</th><th>Unidades</th><th>Envío</th><th>Última actualización</th></tr></thead>
+      <thead><tr><th>${esc(t('exp.workers.worker'))}</th><th>Entrypoint / slot</th><th>${esc(t('exp.col.state'))}</th><th>${esc(t('exp.workers.units'))}</th><th>${esc(t('exp.workers.submission'))}</th><th>${esc(t('exp.workers.updated'))}</th></tr></thead>
       <tbody>${body}</tbody></table></div></details>`;
   }
 
@@ -265,24 +269,24 @@
   // One figure per approval, drawn by skills/experiment-diagrams: the proof of
   // concept first, then the full experiments. The operator verifies each one here.
   const DIAGRAM_TITLES = {
-    poc: 'Diagrama de la prueba de concepto',
-    experiments: 'Diagrama de los experimentos completos',
+    poc: 'exp.diagram.title.poc',
+    experiments: 'exp.diagram.title.experiments',
   };
 
   // validation: absent (not drawn), pending, validated, stale (drawn again
   // after it was validated). Nothing is launched until each one is validated.
   const DIAGRAM_STATES = {
-    absent: ['PENDIENTE', 'badge--warn'],
-    pending: ['POR VERIFICAR', 'badge--warn'],
-    stale: ['CAMBIÓ: VERIFICAR DE NUEVO', 'badge--warn'],
-    validated: ['VALIDADO', 'badge--ok'],
+    absent: ['exp.diagram.state.absent', 'badge--warn'],
+    pending: ['exp.diagram.state.pending', 'badge--warn'],
+    stale: ['exp.diagram.state.stale', 'badge--warn'],
+    validated: ['exp.diagram.state.validated', 'badge--ok'],
   };
 
   // How a validated diagram was validated: in an agent conversation (the
   // experiment-diagrams `validate` verb) or with this tab's button.
   const DIAGRAM_VIA = {
-    chat: 'validado por chat',
-    dashboard: 'validado en el tablero',
+    chat: 'exp.diagram.via.chat',
+    dashboard: 'exp.diagram.via.dashboard',
   };
 
   function diagramAnchor(p) {
@@ -295,23 +299,21 @@
     const notes = [];
     const dash = v.dashboard || {};
     if (dash.stale) {
-      notes.push(`<p>Este tablero arrancó con papersmith ${esc(dash.startedVersion || '?')} y el workspace ya está en
-        ${esc(dash.workspaceVersion || '?')}. Reinicia el servidor del tablero (<code>smith ui</code>) y recarga la página:
-        hasta entonces algunas secciones y botones de esta pestaña no aparecen o no responden.</p>`);
+      notes.push(`<p>${t('exp.staleServerHtml', { started: esc(dash.startedVersion || '?'), workspace: esc(dash.workspaceVersion || '?') })}</p>`);
     }
     const open = [];
     (v.products || []).forEach((p) => (p.diagrams || []).forEach((d) => {
       const state = d.png ? (d.validation || 'pending') : 'absent';
       if (state === 'validated') return;
       const [label] = DIAGRAM_STATES[state] || DIAGRAM_STATES.pending;
-      open.push(`<li><a href="#${diagramAnchor(p)}">${esc(p.name || '')}: ${esc(DIAGRAM_TITLES[d.kind] || d.kind)}</a>
-        <span class="badge badge--warn">${esc(label)}</span></li>`);
+      open.push(`<li><a href="#${diagramAnchor(p)}">${esc(p.name || '')}: ${esc(DIAGRAM_TITLES[d.kind] ? t(DIAGRAM_TITLES[d.kind]) : d.kind)}</a>
+        <span class="badge badge--warn">${esc(t(label))}</span></li>`);
     }));
     if (open.length) {
-      notes.push(`<p>Nada de estos productos se lanza (ensayo incluido) hasta validar sus diagramas:</p><ul>${open.join('')}</ul>`);
+      notes.push(`<p>${esc(t('exp.nothingLaunches'))}</p><ul>${open.join('')}</ul>`);
     }
     return notes.length
-      ? `<section class="panel exp-attention" role="status"><h3 class="panel__title">Antes de lanzar</h3>${notes.join('')}</section>`
+      ? `<section class="panel exp-attention" role="status"><h3 class="panel__title">${esc(t('exp.beforeLaunch'))}</h3>${notes.join('')}</section>`
       : '';
   }
 
@@ -319,28 +321,25 @@
     const list = p.diagrams || [];
     if (!list.length) return '';
     const items = list.map((d) => {
-      const title = DIAGRAM_TITLES[d.kind] || d.kind;
+      const title = DIAGRAM_TITLES[d.kind] ? t(DIAGRAM_TITLES[d.kind]) : d.kind;
       const files = [d.png, d.pdf].filter(Boolean);
       const state = d.png ? (d.validation || 'pending') : 'absent';
       const [label, tone] = DIAGRAM_STATES[state] || DIAGRAM_STATES.pending;
       const validate = state === 'pending' || state === 'stale'
         ? `<button type="button" class="btn" data-diagram-validate="${esc(d.kind)}" data-diagram-repo="${esc(p.repo || '')}"
-            data-diagram-name="${esc(p.name || '')}">Validar diagrama</button>` : '';
+            data-diagram-name="${esc(p.name || '')}">${esc(t('exp.diagram.validate'))}</button>` : '';
       const body = d.png
         ? `<div class="exp-gallery">${files.map(artifact).join('')}</div>
-           <p class="exp-intro">Revísalo antes de lanzar: <code>submit</code> se niega mientras no esté validado.
-            Si no refleja lo aprobado en ${esc(d.marker || '')}, pide al agente que lo corrija con
-            <code>${esc(d.slash || '')}</code> o regenéralo aquí.</p>
-           <div class="exp-chips">${validate}${cliButton(d.command || '', 'Regenerar diagrama')}</div>`
-        : `<p class="exp-intro">Aprobado en ${esc(d.marker || '')}; el diagrama aún no existe. El agente lo dibuja con
-            <code>${esc(d.slash || '')}</code>, o genera un borrador aquí y revísalo.</p>
-           <div class="exp-chips">${cliButton(d.command || '', 'Generar diagrama')}</div>`;
+           <p class="exp-intro">${t('exp.diagram.reviewHtml', { marker: esc(d.marker || ''), slash: `<code>${esc(d.slash || '')}</code>` })}</p>
+           <div class="exp-chips">${validate}${cliButton(d.command || '', t('exp.diagram.regenerate'))}</div>`
+        : `<p class="exp-intro">${t('exp.diagram.missingHtml', { marker: esc(d.marker || ''), slash: `<code>${esc(d.slash || '')}</code>` })}</p>
+           <div class="exp-chips">${cliButton(d.command || '', t('exp.diagram.generate'))}</div>`;
       const via = state === 'validated' && d.validatedVia
-        ? ` <small class="exp-muted">${esc(DIAGRAM_VIA[d.validatedVia] || `validado (${d.validatedVia})`)}</small>` : '';
+        ? ` <small class="exp-muted">${esc(DIAGRAM_VIA[d.validatedVia] ? t(DIAGRAM_VIA[d.validatedVia]) : t('exp.diagram.via.other', { via: d.validatedVia }))}</small>` : '';
       return `<div class="exp-diagram"><div class="exp-file">${esc(title)}
-        <span class="badge ${tone}">${esc(label)}</span>${via}</div>${body}</div>`;
+        <span class="badge ${tone}">${esc(t(label))}</span>${via}</div>${body}</div>`;
     }).join('');
-    return `<h4 class="exp-h4" id="${diagramAnchor(p)}">Diagramas para verificar</h4>${items}`;
+    return `<h4 class="exp-h4" id="${diagramAnchor(p)}">${esc(t('exp.diagram.toVerify'))}</h4>${items}`;
   }
 
   async function validateDiagram(button) {
@@ -359,7 +358,7 @@
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
     } catch (err) {
       button.disabled = false;
-      button.textContent = `No se pudo validar: ${err.message}`;
+      button.textContent = t('exp.diagram.validateFailed', { error: err.message });
       return;
     }
     refreshExperimentsPanel();
@@ -376,19 +375,19 @@
       </header>
       ${remoteWorkers(p)}
       ${diagrams(p)}
-      ${pinned.length ? `<h4 class="exp-h4">Artefactos aprobados en deliberación</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}
-      <h4 class="exp-h4">Convergencia</h4>${convergence(p)}
-      ${figures.length ? `<h4 class="exp-h4">Figuras</h4><div class="exp-gallery">${figures.map(artifact).join('')}</div>` : ''}
+      ${pinned.length ? `<h4 class="exp-h4">${esc(t('exp.pinned'))}</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}
+      <h4 class="exp-h4">${esc(t('exp.convergence'))}</h4>${convergence(p)}
+      ${figures.length ? `<h4 class="exp-h4">${esc(t('exp.figures'))}</h4><div class="exp-gallery">${figures.map(artifact).join('')}</div>` : ''}
       ${hpo(p)}
       ${tables(p)}
       ${significance(p)}
-      ${warnings.length ? `<details class="exp-warnings"><summary>${esc(warnings.length)} aviso(s) de lectura</summary><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
+      ${warnings.length ? `<details class="exp-warnings"><summary>${esc(t('exp.readWarnings', { n: warnings.length }))}</summary><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
     </article>`;
   }
 
   function group(title, intro, list, emptyText) {
     return `<section class="panel exp-section">
-      <div class="panel__header"><div class="panel__title">${esc(title)}</div><span class="panel__meta">${esc(list.length)} producto(s)</span></div>
+      <div class="panel__header"><div class="panel__title">${esc(title)}</div><span class="panel__meta">${esc(t('exp.products', { n: list.length }))}</span></div>
       <p class="exp-intro">${esc(intro)}</p>
       ${list.length ? list.map(product).join('') : empty(emptyText)}
     </section>`;
@@ -397,25 +396,25 @@
   // ---------------------------------------------------------------- protocol
   function protocol(proto) {
     if (!proto) {
-      return `<section class="panel exp-section"><div class="panel__header"><div class="panel__title">Protocolo experimental</div></div>
-        ${empty('Sin protocolo todavía: /experimental-deliberation escribe experiments/experiments-<slug>-vNN.md.')}</section>`;
+      return `<section class="panel exp-section"><div class="panel__header"><div class="panel__title">${esc(t('exp.protocol'))}</div></div>
+        ${empty(t('exp.noProtocol'))}</section>`;
     }
     const exps = (proto.experiments || []).map((e) => {
-      const reports = (e.expected_reports || []).map((r) => `<div class="exp-file">${esc(r.title)} <span class="badge badge--warn">PENDIENTE</span></div>${table(r.headers || [], r.rows || [], { pending: true })}`).join('')
-        || empty('Este experimento no declara un reporte esperado.');
+      const reports = (e.expected_reports || []).map((r) => `<div class="exp-file">${esc(r.title)} <span class="badge badge--warn">${esc(t('exp.diagram.state.absent'))}</span></div>${table(r.headers || [], r.rows || [], { pending: true })}`).join('')
+        || empty(t('exp.noReport'));
       return `<details class="exp-protocol-item">
         <summary><strong>${esc(e.id)}</strong> ${esc(e.title)} ${e.priority ? `<span class="badge badge--info">${esc(e.priority)}</span>` : ''}</summary>
-        ${e.hypothesis ? `<p><strong>Hipótesis:</strong> ${esc(e.hypothesis)}</p>` : ''}
-        ${e.success_criterion ? `<p><strong>Criterio de éxito:</strong> ${esc(e.success_criterion)}</p>` : ''}
-        ${e.cost ? `<p><strong>Costo estimado:</strong> ${esc(e.cost)}</p>` : ''}
+        ${e.hypothesis ? `<p><strong>${esc(t('exp.hypothesis'))}</strong> ${esc(e.hypothesis)}</p>` : ''}
+        ${e.success_criterion ? `<p><strong>${esc(t('exp.successCriterion'))}</strong> ${esc(e.success_criterion)}</p>` : ''}
+        ${e.cost ? `<p><strong>${esc(t('exp.estimatedCost'))}</strong> ${esc(e.cost)}</p>` : ''}
         ${reports}
       </details>`;
     }).join('');
     return `<section class="panel exp-section">
-      <div class="panel__header"><div class="panel__title">Protocolo experimental</div><span class="panel__meta">${esc(proto.file)} · v${esc(String(proto.revision).padStart(2, '0'))}</span></div>
-      ${proto.validation_scheme ? `<p class="exp-intro"><strong>Esquema de validación:</strong> ${esc(proto.validation_scheme)}</p>` : ''}
-      <p class="exp-intro">Reportes esperados aprobados en deliberación: se llenan cuando la implementación experimental escribe sus resultados.</p>
-      ${exps || empty('El protocolo no declara experimentos [exp:…].')}
+      <div class="panel__header"><div class="panel__title">${esc(t('exp.protocol'))}</div><span class="panel__meta">${esc(proto.file)} · v${esc(String(proto.revision).padStart(2, '0'))}</span></div>
+      ${proto.validation_scheme ? `<p class="exp-intro"><strong>${esc(t('exp.validationScheme'))}</strong> ${esc(proto.validation_scheme)}</p>` : ''}
+      <p class="exp-intro">${esc(t('exp.expectedReports'))}</p>
+      ${exps || empty(t('exp.noExperiments'))}
     </section>`;
   }
 
@@ -435,28 +434,27 @@
     const env = st.environment || {};
     const envVar = st.env || 'KAGGLE_API_TOKEN';
     const tokenPath = env.token_path || st.token_path || '~/.kaggle/access_token';
-    const sysLabel = { macos: 'macOS', linux: 'Linux', wsl: 'Windows (WSL)', windows: 'Windows' }[env.system] || 'desconocido';
+    const sysLabel = { macos: 'macOS', linux: 'Linux', wsl: 'Windows (WSL)', windows: 'Windows' }[env.system] || t('exp.unknownSystem');
     const badge = st.activated
-      ? `<span class="badge badge--ok">activo (${st.source === 'env' ? `variable ${esc(st.env || 'KAGGLE_API_TOKEN')}` : 'token guardado'})</span>`
-      : `<span class="badge badge--warn">${st.problem === 'insecure' ? 'token con permisos inseguros' : 'sin activar'}</span>`;
-    const registered = (st.registered || []).length
-      ? `registrado en ${(st.registered || []).map((f) => `<code>${esc(f)}</code>`).join(', ')}`
-      : 'no registrado en este proyecto: ejecuta <code>smith upgrade</code>';
+      ? `<span class="badge badge--ok">${esc(st.source === 'env' ? t('exp.mcp.activeEnv', { env: st.env || 'KAGGLE_API_TOKEN' }) : t('exp.mcp.activeSaved'))}</span>`
+      : `<span class="badge badge--warn">${esc(st.problem === 'insecure' ? t('exp.mcp.insecure') : t('exp.mcp.inactive'))}</span>`;
+    const files = (st.registered || []).map((f) => `<code>${esc(f)}</code>`).join(', ');
+    const registered = (st.registered || []).length ? t('exp.mcp.registeredIn', { files }) : t('exp.mcp.notRegisteredHtml');
     return `<section class="panel exp-mcp" id="expMcpActivation">
-      <h3 class="panel__title">Activar Kaggle por MCP</h3>
-      <p class="exp-intro">Estado: ${badge} · servidor <code>kaggle</code> ${registered}.</p>
-      ${env.system ? `<p class="exp-intro">Entorno detectado: <strong>${esc(sysLabel)}</strong> · shell <code>${esc(env.shell || 'sh')}</code>${env.user ? ` · usuario <code>${esc(env.user)}</code>` : ''}.</p>` : ''}
+      <h3 class="panel__title">${esc(t('exp.mcp.title'))}</h3>
+      <p class="exp-intro">${t('exp.mcp.stateHtml', { badge, registered })}</p>
+      ${env.system ? `<p class="exp-intro">${t('exp.envDetectedHtml', { system: esc(sysLabel), shell: esc(env.shell || 'sh') })}${env.user ? ` · ${t('exp.envUserHtml', { user: esc(env.user) })}` : ''}.</p>` : ''}
       ${env.note ? `<p class="exp-intro"><span class="badge badge--warn">${esc(sysLabel)}</span> ${esc(env.note)}</p>` : ''}
       <ol>
-        <li>Crea un token en <a href="${esc(st.token_page || 'https://www.kaggle.com/settings')}" target="_blank" rel="noopener">kaggle.com/settings</a> → pestaña <em>Account</em> → sección <em>API</em> → <em>Generate New Token</em> (empieza por <code>KGAT_</code>).</li>
-        <li>Pulsa <strong>Activar</strong>: abre el asistente CLI smith del tablero y ejecuta <code>${esc(activate)}</code>. Pega el token en la terminal (la entrada queda oculta); smith lo verifica contra Kaggle y lo guarda solo para tu usuario en <code>${esc(tokenPath)}</code>${env.system === 'windows' ? '' : ' (permisos 0600)'}, el mismo archivo que usan la CLI y el SDK oficiales de Kaggle, nunca dentro del proyecto. Si ya tenías otro token ahí, añade <code>--replace</code>.</li>
-        <li>Abre una sesión nueva de Claude, OpenCode o Pi desde el asistente: el tablero le pasa <code>${esc(envVar)}</code> y el MCP <code>kaggle</code> queda autenticado. Fuera del tablero, en tu shell: <code>${esc(env.export_command || `export ${envVar}="$(cat ~/.kaggle/access_token)"`)}</code>; para que quede en cada sesión nueva, añade esa línea a <code>${esc(env.profile_file || '~/.profile')}</code>.</li>
-        <li>Comprueba con <code>${esc(check)} --verify</code> (lee tu cuota semanal de GPU); <code>smith mcp kaggle deactivate</code> borra el token.</li>
+        <li>${t('exp.mcp.step1Html', { page: esc(st.token_page || 'https://www.kaggle.com/settings') })}</li>
+        <li>${t('exp.mcp.step2Html', { command: `<code>${esc(activate)}</code>`, path: `<code>${esc(tokenPath)}</code>`, perms: env.system === 'windows' ? '' : t('exp.mcp.perms') })}</li>
+        <li>${t('exp.mcp.step3Html', { env: `<code>${esc(envVar)}</code>`, export: `<code>${esc(env.export_command || `export ${envVar}="$(cat ~/.kaggle/access_token)"`)}</code>`, profile: `<code>${esc(env.profile_file || '~/.profile')}</code>` })}</li>
+        <li>${t('exp.mcp.step4Html', { command: `<code>${esc(check)} --verify</code>` })}</li>
       </ol>
       <div class="exp-mcp__actions">
-        ${cliButton(activate, 'Activar en el asistente CLI')}
-        ${cliButton(`${check} --verify`, 'Verificar')}
-        <button type="button" class="btn" data-exp-refresh="1">Recargar estado</button>
+        ${cliButton(activate, t('exp.mcp.activate'))}
+        ${cliButton(`${check} --verify`, t('exp.mcp.verify'))}
+        <button type="button" class="btn" data-exp-refresh="1">${esc(t('exp.reloadState'))}</button>
       </div>
     </section>`;
   }
@@ -464,53 +462,50 @@
   // ---------------------------------------------------------- Colab
   // experiments_view's `remote_colab`: the commands are server constants; the
   // templates keep their placeholders literal and are typed, never run.
-  const COLAB_ENV_NOTE = {
-    windows: 'En Windows nativo el asistente CLI del tablero no está disponible: ejecuta estos comandos en PowerShell.',
-    wsl: 'En WSL instala la CLI y ejecuta smith dentro de la distribución; si el consentimiento OAuth no abre el navegador, copia la URL en el navegador de Windows.',
-  };
+  const COLAB_ENV_NOTE = { windows: 'exp.colab.note.windows', wsl: 'exp.colab.note.wsl' };
 
   function colabActivation(state) {
     if (!state || !state.commands) return '';
     const c = state.commands;
     const env = state.environment || {};
-    const sysLabel = { macos: 'macOS', linux: 'Linux', wsl: 'Windows (WSL)', windows: 'Windows' }[env.system] || 'desconocido';
+    const sysLabel = { macos: 'macOS', linux: 'Linux', wsl: 'Windows (WSL)', windows: 'Windows' }[env.system] || t('exp.unknownSystem');
     const shellLabel = env.shell === 'powershell' ? 'PowerShell' : (env.shell || 'sh');
-    const tiers = (state.paid_tiers || []).map((t) => `<code>${esc(t)}</code>`).join(', ');
+    const tiers = (state.paid_tiers || []).map((tier) => `<code>${esc(tier)}</code>`).join(', ');
     const faq = esc(state.faq || 'https://research.google.com/colaboratory/faq.html');
     const registered = (state.registered || []).length
-      ? `<span class="badge badge--ok">registrado</span> en ${(state.registered || []).map((f) => `<code>${esc(f)}</code>`).join(', ')}`
-      : '<span class="badge badge--warn">no registrado</span> en este proyecto: ejecuta <code>smith upgrade</code>';
-    const note = COLAB_ENV_NOTE[env.system];
+      ? t('exp.colab.registeredHtml', { files: (state.registered || []).map((f) => `<code>${esc(f)}</code>`).join(', ') })
+      : t('exp.colab.notRegisteredHtml');
+    const note = COLAB_ENV_NOTE[env.system] ? t(COLAB_ENV_NOTE[env.system]) : '';
     return `<section class="panel exp-mcp" id="expColabActivation">
-      <h3 class="panel__title">Conectar Google Colab (CLI y MCP)</h3>
-      <p class="exp-intro">MCP oficial <code>${esc(state.server || 'colab')}</code>: ${registered}.</p>
-      ${env.system ? `<p class="exp-intro">Entorno detectado: <strong>${esc(sysLabel)}</strong> · shell <code>${esc(shellLabel)}</code>.</p>` : ''}
+      <h3 class="panel__title">${esc(t('exp.colab.title'))}</h3>
+      <p class="exp-intro">${t('exp.colab.officialHtml', { server: esc(state.server || 'colab'), registered })}</p>
+      ${env.system ? `<p class="exp-intro">${t('exp.envDetectedHtml', { system: esc(sysLabel), shell: esc(shellLabel) })}.</p>` : ''}
       ${note ? `<p class="exp-intro"><span class="badge badge--warn">${esc(sysLabel)}</span> ${esc(note)}</p>` : ''}
       <ol>
-        <li>Instala la CLI oficial de Colab con la versión fijada: <code>${esc(c.install)}</code>.</li>
-        <li>Cada persona del equipo registra su propia cuenta: <code>${esc(c.team_add)}</code>. Reemplaza <code>&lt;slug&gt;</code>, <code>&lt;Nombre&gt;</code> y <code>&lt;tier&gt;</code> (<code>free</code>, ${tiers}) en la terminal: el botón escribe el comando sin ejecutarlo.</li>
-        <li>Cada persona inicia sesión con su cuenta en el asistente CLI: <code>${esc(c.login)}</code>. El estado de la CLI queda en <code>~/.config/papersmith/colab/&lt;slug&gt;/</code> (permisos 0700); papersmith nunca lee ni copia esos archivos.</li>
-        <li>Comprueba con <code>${esc(c.status)}</code>; <code>${esc(c.team_list)}</code> muestra el equipo.</li>
-        <li>El MCP oficial de Colab es para trabajo interactivo: necesita un cuaderno de Colab abierto en el navegador, al que se conecta el agente (Claude, OpenCode o Pi). Las ejecuciones sin interfaz van por la CLI y <code>/remote-execution</code>.</li>
+        <li>${t('exp.colab.step1Html', { command: `<code>${esc(c.install)}</code>` })}</li>
+        <li>${t('exp.colab.step2Html', { command: `<code>${esc(c.team_add)}</code>`, tiers })}</li>
+        <li>${t('exp.colab.step3Html', { command: `<code>${esc(c.login)}</code>` })}</li>
+        <li>${t('exp.colab.step4Html', { status: `<code>${esc(c.status)}</code>`, list: `<code>${esc(c.team_list)}</code>` })}</li>
+        <li>${t('exp.colab.step5Html')}</li>
       </ol>
-      <h4 class="exp-h4">Regla del equipo</h4>
+      <h4 class="exp-h4">${esc(t('exp.colab.teamRule'))}</h4>
       <ul>
-        <li>Una cuenta por persona y servicio. La <a href="${faq}" target="_blank" rel="noopener">FAQ de Colab</a> no permite "using multiple accounts to work around access or resource usage restrictions" y, en entornos gratuitos sin unidades de cómputo, "running distributed computing workers".</li>
-        <li>Por eso las campañas en Colab corren solo en niveles de pago (${tiers}); una cuenta <code>free</code> sirve para la prueba de concepto interactiva en una sesión, nunca como worker de una campaña repartida.</li>
-        <li>El paralelismo cuenta personas distintas, no cuentas.</li>
+        <li>${t('exp.colab.rule1Html', { faq })}</li>
+        <li>${t('exp.colab.rule2Html', { tiers })}</li>
+        <li>${esc(t('exp.colab.rule3'))}</li>
       </ul>
-      <h4 class="exp-h4">GPU por nivel</h4>
+      <h4 class="exp-h4">${esc(t('exp.colab.gpuByTier'))}</h4>
       <ul>
-        <li>Gratuito: una GPU básica, sujeta a disponibilidad.</li>
-        <li>De pago (Pro, Pay-As-You-Go, Enterprise): L4, A100 o H100 según las unidades de cómputo, con <code>--gpu</code> en la CLI.</li>
+        <li>${esc(t('exp.colab.gpuFree'))}</li>
+        <li>${t('exp.colab.gpuPaidHtml')}</li>
       </ul>
       <div class="exp-mcp__actions">
-        ${cliButton(c.install, 'Instalar la CLI')}
-        ${cliButton(c.team_add, 'Registrar persona (editar)', false)}
-        ${cliButton(c.login, 'Iniciar sesión (editar)', false)}
-        ${cliButton(c.status, 'Comprobar')}
-        ${cliButton(c.team_list, 'Ver equipo')}
-        <button type="button" class="btn" data-exp-refresh="1">Recargar estado</button>
+        ${cliButton(c.install, t('exp.colab.install'))}
+        ${cliButton(c.team_add, t('exp.colab.addPerson'), false)}
+        ${cliButton(c.login, t('exp.colab.login'), false)}
+        ${cliButton(c.status, t('exp.colab.check'))}
+        ${cliButton(c.team_list, t('exp.colab.team'))}
+        <button type="button" class="btn" data-exp-refresh="1">${esc(t('exp.reloadState'))}</button>
       </div>
     </section>`;
   }
@@ -519,8 +514,8 @@
   // One offline row per service (experiments_view's `remote_services`). The
   // action is a server-side constant, run in the CLI assistant like the MCP box.
   const SERVICE_STATE = {
-    active: ['badge--ok', 'activo'], inactive: ['badge--warn', 'inactivo'],
-    missing: ['badge--warn', 'no instalado'], unverified: ['badge--info', 'sin verificar'],
+    active: ['badge--ok', 'exp.service.active'], inactive: ['badge--warn', 'exp.service.inactive'],
+    missing: ['badge--warn', 'exp.service.missing'], unverified: ['badge--info', 'exp.service.unverified'],
   };
 
   function remoteServices(state) {
@@ -528,20 +523,20 @@
     if (!rows.length) return '';
     const body = rows.map((row) => {
       const [cls, stateLabel] = SERVICE_STATE[row.state] || SERVICE_STATE.unverified;
-      const label = row.badge || stateLabel;
+      const label = row.badge || t(stateLabel);
       const action = row.action && row.action.command
-        ? cliButton(row.action.command, row.action.label || 'Ejecutar')
+        ? cliButton(row.action.command, row.action.label || t('exp.run'))
         : '<span class="exp-muted">—</span>';
       return `<tr><td><strong>${esc(row.service)}</strong></td><td>${esc(row.purpose)}</td>`
         + `<td><span class="badge ${esc(cls)}">${esc(label)}</span>${row.detail ? ` <small>${esc(row.detail)}</small>` : ''}</td>`
         + `<td>${action}</td></tr>`;
     }).join('');
     return `<section class="panel exp-services" id="expRemoteServices">
-      <h3 class="panel__title">Servicios remotos (Kaggle y Colab)</h3>
+      <h3 class="panel__title">${esc(t('exp.services.title'))}</h3>
       ${state.note ? `<p class="exp-intro">${esc(state.note)}</p>` : ''}
-      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>Servicio</th><th>Para qué</th><th>Estado</th><th>Acción</th></tr></thead>
+      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>${esc(t('exp.services.service'))}</th><th>${esc(t('exp.services.purpose'))}</th><th>${esc(t('exp.col.state'))}</th><th>${esc(t('exp.services.action'))}</th></tr></thead>
       <tbody>${body}</tbody></table></div>
-      <div class="exp-mcp__actions"><button type="button" class="btn" data-exp-refresh="1">Recargar estado</button></div>
+      <div class="exp-mcp__actions"><button type="button" class="btn" data-exp-refresh="1">${esc(t('exp.reloadState'))}</button></div>
     </section>`;
   }
 
@@ -549,8 +544,8 @@
   // experiments_view's `local_environment`: the workspace micromamba env and
   // each target's .venv, its declared libraries (installed or missing) and device.
   const ENV_STATE = {
-    ready: ['badge--ok', 'listo'], incomplete: ['badge--warn', 'faltan librerías'],
-    missing: ['badge--warn', 'no instalado'], unverified: ['badge--info', 'sin verificar'],
+    ready: ['badge--ok', 'exp.env.ready'], incomplete: ['badge--warn', 'exp.env.incomplete'],
+    missing: ['badge--warn', 'exp.service.missing'], unverified: ['badge--info', 'exp.service.unverified'],
   };
 
   function localEnvironment(state) {
@@ -559,36 +554,36 @@
     const targets = Array.isArray(state.targets) ? state.targets : [];
     const envBadge = (st) => {
       const [cls, label] = ENV_STATE[st] || ENV_STATE.unverified;
-      return `<span class="badge ${esc(cls)}">${esc(label)}</span>`;
+      return `<span class="badge ${esc(cls)}">${esc(t(label))}</span>`;
     };
     const rows = [];
     if (ws) {
-      const mm = ws.micromamba ? `<small>micromamba en <code>${esc(ws.micromamba)}</code></small>` : '<small>micromamba no encontrado en el PATH</small>';
-      rows.push(`<tr><td><strong>${esc(ws.label || 'Entorno micromamba del workspace')}</strong><br><code>${esc(ws.path)}</code></td>`
+      const mm = ws.micromamba ? `<small>${t('exp.env.micromambaAtHtml', { path: esc(ws.micromamba) })}</small>` : `<small>${esc(t('exp.env.noMicromamba'))}</small>`;
+      rows.push(`<tr><td><strong>${esc(ws.label || t('exp.env.workspace'))}</strong><br><code>${esc(ws.path)}</code></td>`
         + `<td>${esc(ws.python || '—')}</td><td>${envBadge(ws.state)} ${ws.detail ? `<small>${esc(ws.detail)}</small>` : ''}</td>`
         + `<td>${mm}</td><td><span class="exp-muted">—</span></td></tr>`);
     }
-    targets.forEach((t) => {
-      const libs = (t.libraries || []).map((lib) => (lib.version
+    targets.forEach((target) => {
+      const libs = (target.libraries || []).map((lib) => (lib.version
         ? `<span class="badge badge--ok">${esc(lib.name)} ${esc(lib.version)}</span>`
-        : `<span class="badge badge--warn">${esc(lib.name)}: falta</span>`)).join(' ')
-        || (t.required && t.required.length ? `<small>${esc(t.required.join(', '))}</small>` : '<span class="exp-muted">sin librerías declaradas</span>');
-      rows.push(`<tr><td><strong>${esc(t.repo)}</strong><br><code>${esc(t.path)}</code></td>`
-        + `<td>${esc(t.python || '—')}</td><td>${envBadge(t.state)} ${t.detail ? `<small>${esc(t.detail)}</small>` : ''}</td>`
-        + `<td>${libs}</td><td>${esc(t.device || '—')}</td></tr>`);
+        : `<span class="badge badge--warn">${esc(t('exp.env.libMissing', { name: lib.name }))}</span>`)).join(' ')
+        || (target.required && target.required.length ? `<small>${esc(target.required.join(', '))}</small>` : `<span class="exp-muted">${esc(t('exp.env.noLibs'))}</span>`);
+      rows.push(`<tr><td><strong>${esc(target.repo)}</strong><br><code>${esc(target.path)}</code></td>`
+        + `<td>${esc(target.python || '—')}</td><td>${envBadge(target.state)} ${target.detail ? `<small>${esc(target.detail)}</small>` : ''}</td>`
+        + `<td>${libs}</td><td>${esc(target.device || '—')}</td></tr>`);
     });
     const body = rows.length ? rows.join('') : '';
     return `<section class="panel exp-local" id="expLocalEnv">
-      <h3 class="panel__title">Entorno local</h3>
-      <p class="exp-intro">El entorno micromamba del workspace y el <code>.venv</code> de cada objetivo en <code>implementations/</code>: librerías de <code>pyproject.toml</code> y <code>requirements*.txt</code>, instaladas o faltantes, y el dispositivo que ve torch.${state.note ? ` ${esc(state.note)}` : ''}</p>
-      ${body ? `<div class="table-responsive"><table class="table exp-table"><thead><tr><th>Entorno</th><th>Python</th><th>Estado</th><th>Librerías</th><th>Dispositivo</th></tr></thead>
-      <tbody>${body}</tbody></table></div>` : empty('Sin entornos locales: python scripts/setup_env.py crea el entorno micromamba del workspace.')}
+      <h3 class="panel__title">${esc(t('exp.env.title'))}</h3>
+      <p class="exp-intro">${t('exp.env.introHtml')}${state.note ? ` ${esc(state.note)}` : ''}</p>
+      ${body ? `<div class="table-responsive"><table class="table exp-table"><thead><tr><th>${esc(t('exp.env.col.env'))}</th><th>Python</th><th>${esc(t('exp.col.state'))}</th><th>${esc(t('exp.env.col.libs'))}</th><th>${esc(t('exp.env.col.device'))}</th></tr></thead>
+      <tbody>${body}</tbody></table></div>` : empty(t('exp.env.none'))}
     </section>`;
   }
 
   // ------------------------------------------------------------ run options
   // experiments_view's `run_options`: one row per stage and host, the estimate
-  // from that host's own Results/timing.json measurements (±20%) or "sin medir".
+  // from that host's own Results/timing.json measurements (±20%) or "unmeasured".
   function runOptions(state) {
     if (!state) return '';
     const rows = Array.isArray(state.rows) ? state.rows : [];
@@ -599,28 +594,28 @@
       const list = rows.filter((r) => r.stage === stage);
       const rec = recs[stage] || {};
       return list.map((r, i) => {
-        const avail = r.available ? '<span class="badge badge--ok">sí</span>' : '<span class="badge badge--warn">no</span>';
+        const avail = r.available ? `<span class="badge badge--ok">${esc(t('common.yes'))}</span>` : `<span class="badge badge--warn">${esc(t('common.no'))}</span>`;
         const est = r.estimate
-          ? `${esc(r.estimate_label)}<br><small>${esc(r.estimate.measurements)} medición(es)${(r.estimate.devices || []).length ? ` · ${esc(r.estimate.devices.join(', '))}` : ''}</small>`
-          : `<span class="badge badge--info">${esc(r.estimate_label || 'sin medir')}</span>`;
+          ? `${esc(r.estimate_label)}<br><small>${esc(t('exp.runs.measurements', { n: r.estimate.measurements }))}${(r.estimate.devices || []).length ? ` · ${esc(r.estimate.devices.join(', '))}` : ''}</small>`
+          : `<span class="badge badge--info">${esc(r.estimate_label || t('exp.unmeasured'))}</span>`;
         const recCell = i === 0
-          ? `<td rowspan="${list.length}">${rec.poc_budget === 'exceeds' ? '<span class="badge badge--warn">excede 5 h</span> ' : ''}${rec.host ? `<strong>${esc((list.find((x) => x.host === rec.host) || {}).host_label || rec.host)}</strong> ` : ''}<small>${esc(rec.text || '—')}</small></td>`
+          ? `<td rowspan="${list.length}">${rec.poc_budget === 'exceeds' ? `<span class="badge badge--warn">${esc(t('exp.runs.exceeds5h'))}</span> ` : ''}${rec.host ? `<strong>${esc((list.find((x) => x.host === rec.host) || {}).host_label || rec.host)}</strong> ` : ''}<small>${esc(rec.text || '—')}</small></td>`
           : '';
         const stageCell = i === 0 ? `<td rowspan="${list.length}"><strong>${esc(r.stage_label || r.stage)}</strong></td>` : '';
         return `<tr>${stageCell}<td>${esc(r.host_label || r.host)}</td><td>${avail}</td><td>${est}</td><td><small>${esc(r.reason)}</small></td>${recCell}</tr>`;
       }).join('');
     }).join('');
-    const hint = state.empty ? `<p class="exp-intro"><span class="badge badge--warn">sin medir</span> ${esc(state.empty_hint || 'Sin Results/timing.json: corre la sonda de tiempo de /remote-parallelism («Estimate before you scale»).')}</p>` : '';
+    const hint = state.empty ? `<p class="exp-intro"><span class="badge badge--warn">${esc(t('exp.unmeasured'))}</span> ${esc(state.empty_hint || t('exp.runs.emptyHint'))}</p>` : '';
     const sources = (state.sources || []).length
-      ? `<p class="exp-intro">Mediciones: ${(state.sources || []).map((f) => `<a href="${artifactUrl(f)}" target="_blank" rel="noopener"><code>${esc(f)}</code></a>`).join(', ')}</p>`
+      ? `<p class="exp-intro">${esc(t('exp.runs.sources'))} ${(state.sources || []).map((f) => `<a href="${artifactUrl(f)}" target="_blank" rel="noopener"><code>${esc(f)}</code></a>`).join(', ')}</p>`
       : '';
     const candidates = runCandidates(state, stages.length ? stages : ['poc', 'full'], rows);
     return `<section class="panel exp-run-options" id="expRunOptions">
-      <h3 class="panel__title">Opciones de corrida</h3>
-      <p class="exp-intro">Por etapa y host: disponibilidad, estimación (rango ${esc(state.note || '±20%, single-probe extrapolation')}) desde las mediciones propias de cada host, y una recomendación. Un host sin medición propia se lee "sin medir"; nunca se escala desde la medición local.</p>
-      <p class="exp-intro">Reglas: una etapa que en local tardaría más de ${esc(Math.round((state.local_limit_seconds || 1200) / 60))} min corre en la nube (Colab o Kaggle), y la prueba de concepto cabe en ${esc(Math.round((state.poc_budget_seconds || 18000) / 3600))} h donde corre; ambas leen el extremo alto del rango.</p>
+      <h3 class="panel__title">${esc(t('exp.runs.title'))}</h3>
+      <p class="exp-intro">${esc(t('exp.runs.intro', { note: state.note || '±20%, single-probe extrapolation' }))}</p>
+      <p class="exp-intro">${esc(t('exp.runs.rules', { min: Math.round((state.local_limit_seconds || 1200) / 60), hours: Math.round((state.poc_budget_seconds || 18000) / 3600) }))}</p>
       ${hint}${sources}
-      ${body ? `<div class="table-responsive"><table class="table exp-table"><thead><tr><th>Etapa</th><th>Host</th><th>Disponible</th><th>Estimación</th><th>Motivo</th><th>Recomendación</th></tr></thead>
+      ${body ? `<div class="table-responsive"><table class="table exp-table"><thead><tr><th>${esc(t('exp.runs.stage'))}</th><th>Host</th><th>${esc(t('exp.runs.available'))}</th><th>${esc(t('exp.runs.estimate'))}</th><th>${esc(t('exp.runs.reason'))}</th><th>${esc(t('exp.runs.recommendation'))}</th></tr></thead>
       <tbody>${body}</tbody></table></div>` : ''}
       ${candidates}
     </section>`;
@@ -638,24 +633,24 @@
     const pickLines = stages.map((stage) => {
       const pick = picks[stage];
       if (!pick) return '';
-      const where = pick.processes > 1 ? ` · ${esc(pick.processes)} procesos` : '';
-      const accounts = (pick.accounts || []).length ? ` · cuentas ${esc(pick.accounts.join(', '))}` : '';
+      const where = pick.processes > 1 ? ` · ${esc(t('exp.cand.processes', { n: pick.processes }))}` : '';
+      const accounts = (pick.accounts || []).length ? ` · ${esc(t('exp.cand.accounts', { list: pick.accounts.join(', ') }))}` : '';
       return `<p class="exp-intro"><strong>${esc(stageLabel(stage))}</strong> · Plan: <strong>${esc(pick.option)}</strong> (${esc(pick.device || '—')}${where}${accounts}), ${esc(pick.label || '—')}${settings(pick.settings) ? ` · ${settings(pick.settings)}` : ''}<br><small>${esc(pick.reason || '')}</small></p>`;
     }).join('');
     const body = stages.map((stage) => list.filter((c) => c.stage === stage).map((c, i, all) => {
-      const status = c.status === 'medido'
-        ? '<span class="badge badge--ok">medido</span>'
-        : `<span class="badge badge--info">${esc(c.status || 'sin medir')}</span>`;
-      const plan = c.plan === 'recomendado' ? '<span class="badge badge--ok">recomendado</span>' : `<small>${esc(c.plan || '')}</small>`;
-      const detail = [c.processes ? `${esc(c.processes)} proceso(s)` : '', settings(c.settings),
-        c.load_share != null ? `carga ${esc(Math.round(c.load_share * 100))}%` : ''].filter(Boolean).join(' · ');
+      const status = c.status === 'measured'
+        ? `<span class="badge badge--ok">${esc(labelOf('exp.cand.status', c.status))}</span>`
+        : `<span class="badge badge--info">${esc(labelOf('exp.cand.status', c.status || 'unmeasured'))}</span>`;
+      const plan = c.plan === 'recommended' ? `<span class="badge badge--ok">${esc(labelOf('exp.cand.plan', c.plan))}</span>` : `<small>${esc(c.plan || '')}</small>`;
+      const detail = [c.processes ? esc(t('exp.cand.processCount', { n: c.processes })) : '', settings(c.settings),
+        c.load_share != null ? esc(t('exp.cand.load', { pct: Math.round(c.load_share * 100) })) : ''].filter(Boolean).join(' · ');
       const stageCell = i === 0 ? `<td rowspan="${all.length}"><strong>${esc(stageLabel(stage))}</strong></td>` : '';
-      return `<tr>${stageCell}<td><code>${esc(c.candidate)}</code></td><td>${esc(c.device || '—')}</td><td>${status}</td><td>${esc(c.estimate_label || 'sin medir')}</td><td><small>${detail || '—'}</small></td><td><small>${esc(c.reason || '')}</small></td><td>${plan}</td></tr>`;
+      return `<tr>${stageCell}<td><code>${esc(c.candidate)}</code></td><td>${esc(c.device || '—')}</td><td>${status}</td><td>${esc(c.estimate_label || t('exp.unmeasured'))}</td><td><small>${detail || '—'}</small></td><td><small>${esc(c.reason || '')}</small></td><td>${plan}</td></tr>`;
     }).join('')).join('');
-    return `<h4 class="exp-h4">Candidatos</h4>
-      <p class="exp-intro">Cada forma de correr la etapa (CPU local con N procesos, acelerador local, cada cuenta y su máquina, CPU remota) con su medición propia. La estimación por candidato es trabajo en serie; <code>/remote-parallelism plan</code> suma procesos, cuentas y preparación, y una GPU solo gana si se midió más rápida.</p>
-      ${anyPick ? pickLines : `<p class="exp-intro"><span class="badge badge--warn">sin plan</span> ${esc(state.plan_hint || 'Sin plan registrado.')}</p>`}
-      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>Etapa</th><th>Candidato</th><th>Dispositivo</th><th>Estado</th><th>Estimación (serie)</th><th>Ajustes</th><th>Motivo</th><th>Plan</th></tr></thead>
+    return `<h4 class="exp-h4">${esc(t('exp.cand.title'))}</h4>
+      <p class="exp-intro">${t('exp.cand.introHtml')}</p>
+      ${anyPick ? pickLines : `<p class="exp-intro"><span class="badge badge--warn">${esc(t('exp.cand.noPlan'))}</span> ${esc(state.plan_hint || t('exp.cand.noPlanRecorded'))}</p>`}
+      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>${esc(t('exp.runs.stage'))}</th><th>${esc(t('exp.cand.candidate'))}</th><th>${esc(t('exp.env.col.device'))}</th><th>${esc(t('exp.col.state'))}</th><th>${esc(t('exp.cand.estimate'))}</th><th>${esc(t('exp.cand.settings'))}</th><th>${esc(t('exp.runs.reason'))}</th><th>Plan</th></tr></thead>
       <tbody>${body}</tbody></table></div>`;
   }
 
@@ -666,148 +661,87 @@
   function team(state) {
     if (!state) return '';
     const members = Array.isArray(state.members) ? state.members : [];
-    const title = '<h3 class="panel__title">Equipo (una cuenta por persona y servicio)</h3>';
-    const intro = `<p class="exp-intro">Leído de <code>${esc(state.file || '.papersmith/team.json')}</code>: cada persona opera su propia cuenta de cada servicio. Solo se muestran presencias, nunca credenciales.</p>`;
+    const title = `<h3 class="panel__title">${esc(t('exp.team.title'))}</h3>`;
+    const intro = `<p class="exp-intro">${t('exp.team.introHtml', { file: esc(state.file || '.papersmith/team.json') })}</p>`;
     if (state.problem) {
       return `<section class="panel exp-team" id="expTeam">${title}${intro}`
-        + `<p class="exp-intro"><span class="badge badge--warn">no se pudo leer</span> revisa el archivo con <code>smith team list</code>.</p></section>`;
+        + `<p class="exp-intro">${t('exp.team.unreadableHtml')}</p></section>`;
     }
     if (!members.length) {
       return `<section class="panel exp-team" id="expTeam">${title}${intro}`
-        + empty(`Sin miembros: cada persona se registra con ${state.add_command || 'smith team add'}`) + '</section>';
+        + empty(t('exp.team.noMembers', { command: state.add_command || 'smith team add' })) + '</section>';
     }
     const rows = members.map((m) => {
       const kaggle = m.kaggle_username
-        ? `<code>${esc(m.kaggle_username)}</code> ${m.kaggle_validated ? '<span class="badge badge--ok">validada</span>' : '<span class="badge badge--warn">sin validar</span>'}`
+        ? `<code>${esc(m.kaggle_username)}</code> ${m.kaggle_validated ? `<span class="badge badge--ok">${esc(t('exp.team.validated'))}</span>` : `<span class="badge badge--warn">${esc(t('exp.team.notValidated'))}</span>`}`
         : '<span class="exp-muted">—</span>';
       const colab = m.colab_tier
-        ? `<span class="badge ${esc(TEAM_TIER[m.colab_tier] || 'badge--warn')}">${esc(m.colab_tier)}</span> ${m.colab_config_present ? '<small>sesión configurada</small>' : '<small>sin iniciar sesión</small>'}`
+        ? `<span class="badge ${esc(TEAM_TIER[m.colab_tier] || 'badge--warn')}">${esc(m.colab_tier)}</span> ${m.colab_config_present ? `<small>${esc(t('exp.team.sessionSet'))}</small>` : `<small>${esc(t('exp.team.notSignedIn'))}</small>`}`
         : '<span class="exp-muted">—</span>';
       const names = { kaggle: 'Kaggle', colab: 'Colab' };
       const eligible = (m.eligible || []).length
         ? (m.eligible || []).map((s) => `<span class="badge badge--ok">${esc(names[s] || s)}</span>`).join(' ')
-        : '<span class="badge">no</span>';
+        : `<span class="badge">${esc(t('common.no'))}</span>`;
       return `<tr><td><code>${esc(m.owner)}</code></td><td>${esc(m.display_name || '')}</td><td>${kaggle}</td><td>${colab}</td><td>${eligible}</td></tr>`;
     }).join('');
-    const skipped = state.skipped ? `<p class="exp-intro"><span class="badge badge--warn">${esc(state.skipped)} entrada(s) ignorada(s)</span> (propietario inválido o repetido).</p>` : '';
+    const skipped = state.skipped ? `<p class="exp-intro"><span class="badge badge--warn">${esc(t('exp.team.skipped', { n: state.skipped }))}</span> ${esc(t('exp.team.skippedWhy'))}</p>` : '';
     return `<section class="panel exp-team" id="expTeam">${title}${intro}${skipped}
-      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>Propietario</th><th>Nombre</th><th>Kaggle</th><th>Colab</th><th>Elegible para campañas repartidas</th></tr></thead>
+      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>${esc(t('exp.team.owner'))}</th><th>${esc(t('exp.team.name'))}</th><th>Kaggle</th><th>Colab</th><th>${esc(t('exp.team.eligible'))}</th></tr></thead>
       <tbody>${rows}</tbody></table></div></section>`;
   }
 
   // ---------------------------------------------------------------- help
   function help(accounts) {
     const k = accounts || {};
-    const status = `<p class="exp-intro">Estado local: almacén de cuentas Kaggle
-      ${k.accounts_store_present ? '<span class="badge badge--ok">presente</span>' : '<span class="badge badge--warn">ausente</span>'}
-      · credenciales en <code>${esc(k.inbox || 'kaggle-inbox')}/</code>: <strong>${esc(k.inbox_count ?? 0)}</strong></p>`;
+    const status = `<p class="exp-intro">${esc(t('exp.help.localState'))}
+      ${k.accounts_store_present ? `<span class="badge badge--ok">${esc(t('exp.help.present'))}</span>` : `<span class="badge badge--warn">${esc(t('exp.help.absent'))}</span>`}
+      · ${t('exp.help.inboxHtml', { inbox: esc(k.inbox || 'kaggle-inbox'), n: esc(k.inbox_count ?? 0) })}</p>`;
     return `<details class="panel exp-help">
-      <summary class="panel__title">Ayuda: lanzar y monitorear en Kaggle (CLI o MCP) y Colab, o correr en local</summary>
+      <summary class="panel__title">${esc(t('exp.help.title'))}</summary>
       ${status}
-      <h4 class="exp-h4">1. Flujo: prueba de concepto vs. experimentos completos</h4>
-      <ol>
-        <li><code>/experimental-deliberation</code> publica el protocolo (<code>experiments/experiments-&lt;slug&gt;-vNN.md</code>).</li>
-        <li><code>/datasets synth</code> crea el toy set sembrado; <code>/datasets search|license|qc|prepare</code> deja el dataset oficial.</li>
-        <li>Réplica de los métodos de comparación (<code>/proposal-implementation</code> → <code>paper-replicator</code>): primero el código publicado, auditado; si no existe, reimplementación (<code>REPLICATION.md</code>).</li>
-        <li><code>/proposal-implementation</code> construye la <strong>prueba de concepto</strong> (carpeta con <code>AGREED.md</code>).</li>
-        <li>Sonda de tiempo corta (una época de un fold por brazo) en <code>Results/timing.json</code>, antes del piloto y otra vez antes de la corrida completa: la tabla <em>Opciones de corrida</em> estima cada etapa por host (±20%); <code>/remote-parallelism estimate</code> y luego <code>assess --owners &lt;propietarios distintos&gt;</code> deciden si repartir. Con la sonda por candidatos (<code>timing_probe.py</code>: CPU con N procesos, acelerador, lote, workers del cargador), <code>/remote-parallelism plan</code> elige dónde y cómo correr: local o nube, CPU o GPU, nunca la GPU por defecto.</li>
-        <li>Opcional, solo si la deliberación lo estimó conveniente: búsqueda de hiperparámetros con Optuna (<code>/hyperparameter-search plan|report|status</code>), anidada dentro de los sujetos de entrenamiento de cada fold externo, con el mismo presupuesto de trials para cada brazo y baseline y el evaluador de importancia declarado; sus contornos e importancias aparecen en cada producto.</li>
-        <li><code>/experimental-implementation</code> construye los <strong>experimentos completos</strong> del protocolo (carpeta con <code>Experimental_AGREED.md</code>).</li>
-        <li><code>experiments-reviewer</code> revisa el código (calidad, optimización, uso de GPU, pruebas estadísticas) antes de cualquier ensayo; su informe va al operador.</li>
-        <li><strong>Local</strong>: corre directo con el <code>.venv</code> del objetivo o el entorno micromamba del workspace (tabla <em>Entorno local</em>); no necesita ensayo ni ledger.</li>
-        <li><strong>Remoto</strong>: cada persona se registra con <code>smith team add --owner &lt;slug&gt; --name "&lt;nombre&gt;" --kaggle-username &lt;usuario&gt; --attest</code>; <code>/kaggle-accounts validate</code> comprueba que su cuenta autentica.</li>
-        <li><code>/remote-execution</code>, con la forma exacta <code>python skills/remote-execution/scripts/remote_cli.py &lt;verbo&gt;</code>:
-          <code>generate-job</code> → <code>submit --smoke</code> → <code>fetch --smoke</code> y <code>smoke record</code> → <code>readiness</code> → <code>gate</code> (operador, <code>implementation_cli gate</code>) → <code>submit</code> → <code>status</code> / <code>poll</code> → <code>fetch</code>.</li>
-        <li>Solo el operador autoriza un lanzamiento: ningún agente ejecuta <code>gate</code> ni <code>submit</code> por su cuenta.</li>
-      </ol>
-      <h4 class="exp-h4">Cuentas y credenciales</h4>
-      <ul>
-        <li>Regla de Kaggle: una cuenta por persona. Kaggle staff: "the one account per person applies to all Kaggle site use, not just competitions" (<a href="https://www.kaggle.com/discussions/general/192527" target="_blank" rel="noopener">https://www.kaggle.com/discussions/general/192527</a>). Un segundo correo no hace una segunda persona: solo las cuentas que <code>.papersmith/team.json</code> asigna a un propietario son workers, una por persona.</li>
-        <li>Workers (<code>/remote-execution</code>): usan el almacén de <code>/kaggle-accounts</code>; deja un <code>kaggle.json</code> o un archivo con una línea <code>usuario token</code> por cuenta en <code>kaggle-inbox/</code> y valida.</li>
-        <li>MCP y CLI oficial: leen el token <code>KGAT_…</code> de tu cuenta en <code>~/.kaggle/access_token</code>, que escribe <code>smith mcp kaggle activate</code>; no es una credencial de worker.</li>
-      </ul>
-      <h4 class="exp-h4">2. GPU</h4>
-      <ul>
-        <li>El adaptador Kaggle de papersmith ya empuja con <code>enable_gpu: true</code> y <code>machine_shape: "NvidiaTeslaT4"</code> (una sola GPU); un <code>enable_gpu</code> solo puede caer en una P100 y fallar.</li>
-        <li>Verifica en el log del job: <code>import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))</code>.</li>
-        <li>Límites: los de sesión y la cuota semanal de GPU son los que Kaggle muestra en la configuración de la cuenta o en <code>get_accelerator_quota</code>; léelos ahí en vez de suponer un número. En papersmith.yaml, <code>compute_targets.kaggle-gpu-pool.max_timeout_hours</code> es un tope local que declaras, no el límite de Kaggle.</li>
-      </ul>
-      <h4 class="exp-h4">3. Alternativa: Kaggle CLI directo</h4>
-      <pre><code>kaggle kernels push -p &lt;dir&gt;          # kernel-metadata.json con "enable_gpu": true
-kaggle kernels status &lt;user/slug&gt;
-kaggle kernels output &lt;user/slug&gt; -p &lt;dest&gt;</code></pre>
-      <p class="exp-intro">El CLI directo no escribe el ledger: el panel no verá esas corridas.</p>
-      <h4 class="exp-h4">4. MCP</h4>
-      <ul>
-        <li>papersmith registra el servidor MCP oficial de Kaggle (<code>https://www.kaggle.com/mcp</code>) como <code>kaggle</code> en <code>.mcp.json</code>, <code>opencode.json</code>, <code>.pi/mcp.json</code> y <code>.agents/mcp_config.json</code> al hacer <code>smith init</code> o <code>smith upgrade</code>.</li>
-        <li>Las herramientas públicas (<code>search_datasets</code>, <code>search_notebooks</code>) responden sin token. Las de cuenta piden un token <code>KGAT_…</code> (Kaggle → Settings → API): actívalo con <code>smith mcp kaggle activate</code> desde el asistente CLI (recuadro <em>Activar Kaggle por MCP</em>, que muestra el comando exacto para tu sistema y tu shell); nunca lo escribas en un archivo del proyecto.</li>
-        <li>Lanzar con GPU: <code>save_notebook</code> con <code>enableGpuNullable: true</code> y <code>machineShapeNullable: "NvidiaTeslaT4"</code>; monitorear con <code>get_notebook_session_status</code>, <code>list_notebook_session_output</code> y <code>download_notebook_output</code>; cuota semanal con <code>get_accelerator_quota</code>; cancelar con <code>cancel_notebook_session</code>.</li>
-        <li>Úsalo para pruebas de concepto rápidas y para monitorear; solo el operador autoriza un lanzamiento.</li>
-        <li>Para lanzar, prefiere la ruta CLI de papersmith: registra el ledger (<code>.remote-execution/ledger.jsonl</code>) que este panel lee.</li>
-      </ul>
-      <h4 class="exp-h4">5. Optimización</h4>
-      <ul>
-        <li>Simuladores pequeños: suelen correr más rápido en CPU o en lotes vectorizados con diferenciación automática que paso a paso; mide antes de mover algo a GPU.</li>
-        <li>GPU para la parte clásica (backbone, capas densas); usa precisión mixta allí.</li>
-        <li>Reparte shards entre cuentas con <code>distribute</code>.</li>
-        <li>Cachea épocas preprocesadas en <code>Data/</code>; fija semillas.</li>
-      </ul>
-      <h4 class="exp-h4">6. Google Colab (CLI o MCP)</h4>
-      <ul>
-        <li>Sin interfaz: el backend Colab de <code>/remote-execution</code> usa la CLI oficial <code>colab</code> con los mismos verbos (<code>generate-job</code> → <code>submit --smoke</code> → <code>fetch --smoke</code> y <code>smoke record</code> → <code>readiness</code> → <code>gate</code> (operador, <code>implementation_cli gate</code>) → <code>submit</code> → <code>status</code> / <code>poll</code> → <code>fetch</code>); un worker por persona del equipo, cada una tras <code>smith colab login --owner &lt;slug&gt;</code>.</li>
-        <li>Interactivo: el MCP oficial de Colab maneja un cuaderno abierto en el navegador; sirve para explorar y para la prueba de concepto, y no escribe el ledger que lee este panel.</li>
-        <li>Regla del equipo: una cuenta por persona y servicio; las campañas repartidas en Colab solo con niveles de pago (pro, payg, enterprise); una cuenta gratuita nunca es worker de una campaña.</li>
-        <li>Reproducibilidad: No mezcles shards de Kaggle y Colab en una misma campaña salvo que los sellos de entorno de cada shard sean idénticos (modelo de acelerador, CUDA, torch); por defecto, no se mezclan.</li>
-      </ul>
-      <h4 class="exp-h4">7. Qué prueba estadística reportar</h4>
-      <ul>
-        <li>2 modelos en validación cruzada: t-test de remuestreo corregido (Nadeau–Bengio) o 5x2cv.</li>
-        <li>≥ 3 modelos: Friedman + post-hoc Nemenyi o Holm.</li>
-        <li>Un único conjunto de prueba: McNemar (aciertos) o DeLong (AUC).</li>
-        <li>Corrige comparaciones múltiples con Holm; reporta tamaño del efecto e IC.</li>
-        <li>Wilcoxon necesita n ≥ 6 pares para poder alcanzar p &lt; 0.05.</li>
-      </ul>
+      ${t('exp.help.bodyHtml')}
     </details>`;
   }
 
   // ---------------------------------------------------------------- datasets
   const DATASET_LICENSE = {
-    allowed: ['badge--ok', 'permitida'], overridden: ['badge--warn', 'aceptada por el operador'],
-    refused: ['badge--warn', 'rechazada'],
+    allowed: ['badge--ok', 'exp.ds.license.allowed'], overridden: ['badge--warn', 'exp.ds.license.overridden'],
+    refused: ['badge--warn', 'exp.ds.license.refused'],
   };
-  const DATASET_QC = { pass: ['badge--ok', 'QC ok'], warn: ['badge--warn', 'QC con avisos'], fail: ['badge--warn', 'QC falla'] };
+  const DATASET_QC = { pass: ['badge--ok', 'exp.ds.qc.pass'], warn: ['badge--warn', 'exp.ds.qc.warn'], fail: ['badge--warn', 'exp.ds.qc.fail'] };
+  // pair: [badge class, catalogue key]; fallback: a catalogue key too.
   const badge = (pair, fallback) => {
-    const [cls, label] = pair || ['badge--info', fallback];
-    return `<span class="badge ${esc(cls)}">${esc(label)}</span>`;
+    const [cls, key] = pair || ['badge--info', fallback];
+    return `<span class="badge ${esc(cls)}">${esc(t(key))}</span>`;
   };
 
   function datasets(state) {
     const d = state || {};
     const items = Array.isArray(d.items) ? d.items : [];
-    const intro = '<p class="exp-intro">Registro de <code>datasets/registry.json</code> (skill <code>/datasets</code>): el conjunto toy para la prueba de concepto y los datasets completos con su licencia, control de calidad, preparación oficial y estado remoto.</p>';
+    const intro = `<p class="exp-intro">${t('exp.ds.introHtml')}</p>`;
     if (!items.length) {
-      return `<section class="panel exp-datasets"><h3 class="panel__title">Datasets (toy y completos)</h3>${intro}`
-        + empty('Sin datasets registrados: /datasets synth crea el conjunto toy con semilla; /datasets search busca datasets reales y deja datasets/search-<fecha>.json.')
+      return `<section class="panel exp-datasets"><h3 class="panel__title">${esc(t('exp.ds.title'))}</h3>${intro}`
+        + empty(t('exp.ds.none'))
         + '</section>';
     }
     const rows = items.map((item) => {
       const remote = item.remote_ref
-        ? `<code>${esc(item.remote_ref)}</code> ${badge(item.visibility === 'public' ? ['badge--warn', 'público'] : ['badge--ok', 'privado'])}${item.remote_version != null ? ` <small>v${esc(item.remote_version)}</small>` : ''}`
-        : '<span class="badge badge--info">sin publicar</span>';
+        ? `<code>${esc(item.remote_ref)}</code> ${badge(item.visibility === 'public' ? ['badge--warn', 'exp.ds.public'] : ['badge--ok', 'exp.ds.private'])}${item.remote_version != null ? ` <small>v${esc(item.remote_version)}</small>` : ''}`
+        : `<span class="badge badge--info">${esc(t('exp.ds.unpublished'))}</span>`;
       const prep = item.prepared
-        ? `<span class="badge badge--ok">preparado${item.preparation_version != null ? ` v${esc(item.preparation_version)}` : ''}</span>`
-        : '<span class="badge badge--info">sin preparar</span>';
+        ? `<span class="badge badge--ok">${esc(t('exp.ds.prepared'))}${item.preparation_version != null ? ` v${esc(item.preparation_version)}` : ''}</span>`
+        : `<span class="badge badge--info">${esc(t('exp.ds.unprepared'))}</span>`;
       return `<tr><td><code>${esc(item.slug)}</code></td>`
-        + `<td>${badge(item.role === 'toy' ? ['badge--info', 'toy'] : ['badge--info', 'completo'])}</td>`
+        + `<td>${badge(item.role === 'toy' ? ['badge--info', 'exp.ds.toy'] : ['badge--info', 'exp.ds.full'])}</td>`
         + `<td>${esc(item.title)}</td>`
-        + `<td>${badge(DATASET_LICENSE[item.license], 'sin licencia')}${item.host_license ? ` <small>${esc(item.host_license)}</small>` : ''}</td>`
-        + `<td>${badge(DATASET_QC[item.qc], 'sin QC')}</td><td>${prep}</td><td>${remote}</td></tr>`;
+        + `<td>${badge(DATASET_LICENSE[item.license], 'exp.ds.noLicense')}${item.host_license ? ` <small>${esc(item.host_license)}</small>` : ''}</td>`
+        + `<td>${badge(DATASET_QC[item.qc], 'exp.ds.noQc')}</td><td>${prep}</td><td>${remote}</td></tr>`;
     }).join('');
     const searches = (d.searches || []).length
-      ? `<p class="exp-intro">Búsquedas: ${(d.searches || []).map((f) => `<a href="${artifactUrl(f)}" target="_blank" rel="noopener"><code>${esc(f)}</code></a>`).join(', ')}</p>`
+      ? `<p class="exp-intro">${esc(t('exp.ds.searches'))} ${(d.searches || []).map((f) => `<a href="${artifactUrl(f)}" target="_blank" rel="noopener"><code>${esc(f)}</code></a>`).join(', ')}</p>`
       : '';
-    return `<section class="panel exp-datasets"><h3 class="panel__title">Datasets (toy y completos)</h3>${intro}
-      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>Slug</th><th>Rol</th><th>Título</th><th>Licencia</th><th>QC</th><th>Preparación</th><th>Remoto</th></tr></thead>
+    return `<section class="panel exp-datasets"><h3 class="panel__title">${esc(t('exp.ds.title'))}</h3>${intro}
+      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>Slug</th><th>${esc(t('exp.ds.role'))}</th><th>${esc(t('exp.ds.titleCol'))}</th><th>${esc(t('exp.ds.license'))}</th><th>QC</th><th>${esc(t('exp.ds.preparation'))}</th><th>${esc(t('exp.ds.remote'))}</th></tr></thead>
       <tbody>${rows}</tbody></table></div>${searches}</section>`;
   }
 
@@ -828,11 +762,9 @@ kaggle kernels output &lt;user/slug&gt; -p &lt;dest&gt;</code></pre>
       team(v.remote_services && v.remote_services.team),
       help(v.remote_accounts),
       datasets(v.datasets),
-      group('Prueba de concepto', 'Productos de /proposal-implementation (AGREED.md): convergencia, figuras y tablas principales.',
-        poc, 'Sin pruebas de concepto: /proposal-implementation crea implementations/<repo>/<Nombre>/ con AGREED.md; sus curvas salen de Results/history*.json|csv.'),
-      group('Experimentos completos', 'Productos de /experimental-implementation (Experimental_AGREED.md): convergencia, tablas, figuras y significancia.',
-        full, 'Sin experimentos completos: /experimental-implementation crea la carpeta con Experimental_AGREED.md; sus curvas salen de Results/history*.json|csv.'),
-      other.length ? group('Sin clasificar', 'Carpetas con Results/ pero sin AGREED.md ni Experimental_AGREED.md.', other, '') : '',
+      group(t('exp.group.poc'), t('exp.group.pocIntro'), poc, t('exp.group.pocEmpty')),
+      group(t('exp.group.full'), t('exp.group.fullIntro'), full, t('exp.group.fullEmpty')),
+      other.length ? group(t('exp.group.other'), t('exp.group.otherIntro'), other, '') : '',
       protocol(v.protocol),
     ].join('');
   }
@@ -852,7 +784,7 @@ kaggle kernels output &lt;user/slug&gt; -p &lt;dest&gt;</code></pre>
       lastView = await response.json();
       paint();
     } catch (err) {
-      host.innerHTML = empty(`No se pudo leer /api/experiments: ${err.message}`);
+      host.innerHTML = empty(t('exp.readFailed', { error: err.message }));
     }
   }
 
@@ -879,6 +811,11 @@ kaggle kernels output &lt;user/slug&gt; -p &lt;dest&gt;</code></pre>
       if (logCharts.has(id)) logCharts.delete(id); else logCharts.add(id);
       paint();
     });
+  }
+
+  // Server labels come back in the chosen language: fetch again once drawn.
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('languagechange', () => { if (lastView) refreshExperimentsPanel(); });
   }
 
   window.refreshExperimentsPanel = refreshExperimentsPanel;

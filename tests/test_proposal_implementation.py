@@ -9275,6 +9275,15 @@ FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
                   "MCP server and the `kaggle-accounts` skill; the service is "
                   "the box's subject, not a loan from any research project",
     },
+    "_core/command_center/static/i18n/en.js": {
+        "kaggle": "the dashboard's English i18n catalogue translates the experiments panel help strings and status badges",
+    },
+    "_core/command_center/static/i18n/es.js": {
+        "kaggle": "the dashboard's Spanish i18n catalogue translates the experiments panel help strings and status badges",
+    },
+    "_core/command_center/static/i18n/server-es.json": {
+        "kaggle": "the dashboard's server translation catalogue for Spanish display labels",
+    },
     "_core/command_center/terminal.py": {
         "kaggle": "the CLI assistant's quick commands include `smith mcp kaggle "
                   "activate|status`, and its sessions receive the token that "

@@ -1,10 +1,10 @@
-"""The agents table of the Flujo Archify pane.
+"""The agents table of the Archify Flow pane.
 
 ``get_agents_view(root)`` reads every ``.claude/agents/*.md`` of the workspace
 and answers, per agent: its name, its role (the description's first sentence)
 and full description, the skill it is bound to (the first ``skills/<x>/SKILL.md``
 its body names), its stretch, its tools, its tramo (``AGENT_STAGES``), the
-dashboard phase(s) it acts in as ``"Fase N — <label>"`` and the harness
+dashboard phase(s) it acts in as ``"Phase N — <label>"`` and the harness
 projections that carry it. Bounded and contained: it never raises; whatever it
 cannot read becomes a line in ``warnings``.
 """
@@ -53,7 +53,7 @@ _SENTENCE_RE = re.compile(r"^(.+?[.!?])(?=\s|$)", re.S)
 
 def _phase_label(stage: str) -> str:
     number = phase_actions.STAGES.index(stage) + 1
-    return f"Fase {number} — {phase_actions.PHASE_LABELS.get(stage, stage)}"
+    return f"Phase {number} — {phase_actions.PHASE_LABELS.get(stage, stage)}"
 
 
 def _phases(name: str, tramo: str | None) -> list[str]:

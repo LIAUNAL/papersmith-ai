@@ -1,7 +1,7 @@
 /* Phase console: what a pipeline phase card lets the operator do.
  *
  * Each phase in GET /api/status carries `actions` (phase_actions.py):
- *   prompt   — a text box guided by the stage's rules; "Ejecutar" types
+ *   prompt   — a text box guided by the stage's rules; "Run" types
  *              `/<skill> <text>` into an agent of the support terminal;
  *   command  — a real `smith` command, run in the terminal's shell;
  *   redirect — opens the dashboard panel that owns the work.
@@ -13,6 +13,13 @@
 (function () {
   'use strict';
 
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
+  // Phase ids are the stable "Fase N"; this is how a person reads one.
+  const phaseName = (id) => {
+    const match = /^Fase (\d+)$/.exec(String(id || ''));
+    return match ? t('phases.number', { n: match[1] }) : String(id || '');
+  };
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
@@ -33,7 +40,7 @@
 
   function promptCard(a, i) {
     const guide = (a.guide || []).map((g) => `<li>${esc(g)}</li>`).join('');
-    const need = a.min_sentences ? ` · mínimo ${a.min_sentences} oraciones` : (a.optional ? ' · texto opcional' : '');
+    const need = a.min_sentences ? t('phaseConsole.minSentences', { n: a.min_sentences }) : (a.optional ? t('phaseConsole.optionalText') : '');
     return `<div class="phase-action phase-action--prompt">
         <div class="phase-action__head">
           <strong>${esc(a.label)}</strong>
@@ -44,13 +51,13 @@
           placeholder="${esc(a.placeholder)}" aria-label="${esc(a.label)}"></textarea>
         <div class="phase-action__error" id="phaseError${i}" role="alert" hidden></div>
         <div class="phase-action__agent">
-          <label>Agente <select id="phaseAgent${i}" data-phase-agent="${i}" aria-label="Agente que ejecuta la fase"></select></label>
-          <label title="Cierra la sesión abierta y empieza otra"><input type="checkbox" id="phaseFresh${i}" data-phase-agent="${i}"> Nueva sesión</label>
+          <label>${esc(t('phaseConsole.agent'))} <select id="phaseAgent${i}" data-phase-agent="${i}" aria-label="${esc(t('phaseConsole.agentLabel'))}"></select></label>
+          <label title="${esc(t('phaseConsole.freshTitle'))}"><input type="checkbox" id="phaseFresh${i}" data-phase-agent="${i}"> ${esc(t('phaseConsole.fresh'))}</label>
           <span class="phase-action__note" id="phaseAgentNote${i}"></span>
         </div>
         <div class="phase-action__foot">
-          <span class="phase-action__hint" id="phaseHint${i}">Se envía al agente de la terminal${esc(need)}</span>
-          <button class="btn btn--primary btn--sm" data-phase-action="${i}">▶ Ejecutar</button>
+          <span class="phase-action__hint" id="phaseHint${i}">${esc(t('phaseConsole.sentToAgent'))}${esc(need)}</span>
+          <button class="btn btn--primary btn--sm" data-phase-action="${i}">${esc(t('phaseConsole.run'))}</button>
         </div>
       </div>`;
   }
@@ -81,10 +88,10 @@
     if (!select || !note) return;
     const fresh = document.getElementById(`phaseFresh${i}`)?.checked;
     const same = agentInfo.live && select.value === agentInfo.current;
-    note.textContent = !select.value ? 'No hay herdr, claude, opencode ni pi instalados.'
-      : same && !fresh ? `Continúa en la sesión abierta de ${label(select.value)} (no se abre otra).`
-        : agentInfo.live ? `Cerrará la sesión de ${label(agentInfo.current)} y abrirá ${fresh && same ? 'una nueva' : label(select.value)}.`
-          : `Abrirá una sesión de ${label(select.value)} en la terminal.`;
+    note.textContent = !select.value ? t('phaseConsole.noAgents')
+      : same && !fresh ? t('phaseConsole.continues', { agent: label(select.value) })
+        : agentInfo.live ? t('phaseConsole.replaces', { current: label(agentInfo.current), next: fresh && same ? t('phaseConsole.aNewOne') : label(select.value) })
+          : t('phaseConsole.opens', { agent: label(select.value) });
   }
 
   // Re-read the terminal's agent and session (they can change from the
@@ -116,7 +123,7 @@
         <p class="phase-action__desc">${esc(a.desc)}</p>
         <div class="phase-action__foot">
           <code class="phase-action__cmd">$ ${esc(a.command)}</code>
-          <button class="btn btn--sm" data-phase-action="${i}">▶ Ejecutar en shell</button>
+          <button class="btn btn--sm" data-phase-action="${i}">${esc(t('phaseConsole.runInShell'))}</button>
         </div>
       </div>`;
   }
@@ -133,16 +140,16 @@
     if (!current.length) return '';
     const locked = phase && phase.unlocked === false;
     const lock = locked ? `<div class="phase-lock">
-        <strong>🔒 Bloqueada: requiere ${esc(phase.blocked_by)}</strong>
-        <span>Se habilita cuando ${esc(phase.blocked_by)} quede verificada. Cada skill se niega si le falta su entrada, así que puedes adelantarla bajo tu responsabilidad.</span>
-        <label><input type="checkbox" id="phaseOverride"> Ejecutar sin el requisito</label>
+        <strong>${esc(t('phaseConsole.locked', { phase: phaseName(phase.blocked_by) }))}</strong>
+        <span>${esc(t('phaseConsole.lockedWhy', { phase: phaseName(phase.blocked_by) }))}</span>
+        <label><input type="checkbox" id="phaseOverride"> ${esc(t('phaseConsole.override'))}</label>
       </div>` : '';
     const cards = current.map((a, i) => (
       a.kind === 'prompt' ? promptCard(a, i) : a.kind === 'command' ? commandCard(a, i) : redirectCard(a, i)
     )).join('');
     setTimeout(fillAgents, 0);
     return `<div class="phase-actions">
-        <h4 class="phase-actions__title">⚙️ Ejecutar esta fase</h4>
+        <h4 class="phase-actions__title">${esc(t('phaseConsole.title'))}</h4>
         ${lock}
         ${cards}
       </div>`;
@@ -170,7 +177,7 @@
   function blocked(i) {
     if (!currentPhase || currentPhase.unlocked !== false) return false;
     if (document.getElementById('phaseOverride')?.checked) return false;
-    if (i !== null) showError(i, `Bloqueada: primero verifica ${currentPhase.blocked_by}, o marca «Ejecutar sin el requisito».`);
+    if (i !== null) showError(i, t('phaseConsole.blockedError', { phase: phaseName(currentPhase.blocked_by) }));
     return true;
   }
 
@@ -187,10 +194,10 @@
     } else if (sent === false && i !== undefined && i !== null) {
       const why = (window.smithTerminalActivity?.() || {}).refusal || '';
       showError(i, why === 'trust'
-        ? 'El agente pregunta si confías en esta carpeta. En la terminal (abajo a la derecha) elige «Yes, I trust this folder» y pulsa Ejecutar de nuevo.'
+        ? t('phaseConsole.trust')
         : why === 'question'
-          ? 'El agente espera una confirmación en la terminal (abajo a la derecha): respóndela y pulsa Ejecutar de nuevo.'
-          : `No se pudo enviar a la terminal${why ? `: ${why}` : ''}. Revisa la ventana del CLI (abajo a la derecha).`);
+          ? t('phaseConsole.question')
+          : (why ? t('phaseConsole.sendFailedWhy', { why }) : t('phaseConsole.sendFailed')));
     }
     return sent;
   }
@@ -203,15 +210,15 @@
     const fail = (msg) => { showError(i, msg); input?.focus(); };
     clearError(i);
     if (blocked(i)) return;
-    if (!text && !a.optional) return fail('Escribe lo que pide la guía antes de ejecutar.');
+    if (!text && !a.optional) return fail(t('phaseConsole.writeFirst'));
     if (a.min_sentences && phaseSentenceCount(text) < a.min_sentences) {
-      return fail(`La guía pide la idea en al menos ${a.min_sentences} oraciones (el problema y lo que propones); amplíala un poco.`);
+      return fail(t('phaseConsole.needSentences', { n: a.min_sentences }));
     }
     const command = [a.slash, `${a.prefix || ''}${text}`.trim()].filter(Boolean).join(' ');
     const agent = document.getElementById(`phaseAgent${i}`)?.value || undefined;
     const fresh = Boolean(document.getElementById(`phaseFresh${i}`)?.checked);
     if (agent) remember(agent);
-    if (hint) { hint.textContent = `Enviando a la terminal: ${command.slice(0, 80)}${command.length > 80 ? '…' : ''}`; hint.classList.remove('is-error'); }
+    if (hint) { hint.textContent = t('phaseConsole.sending', { command: `${command.slice(0, 80)}${command.length > 80 ? '…' : ''}` }); hint.classList.remove('is-error'); }
     send(command, true, 'slash', i, { agent, fresh });
   }
 

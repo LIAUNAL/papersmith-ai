@@ -17,7 +17,7 @@ script directory or cwd on ``sys.path``) from a neutral working directory
 outside the workspace, with a short timeout. Nothing the target ships is run
 or imported other than what that script imports from the interpreter's own
 installed packages (``importlib.metadata`` and, for the device, ``torch``). A
-probe that fails, times out or prints garbage becomes "sin verificar", never
+probe that fails, times out or prints garbage becomes "unverified", never
 an exception. Results are cached per process for ``CACHE_TTL`` seconds, keyed
 by the interpreter path, its mtime and the names asked, so a reinstalled venv
 is probed again. No network.
@@ -49,7 +49,7 @@ MAX_REQUIREMENT_FILES = 10
 MAX_FILE_BYTES = 256 * 1024
 MAX_OUTPUT_BYTES = 256 * 1024
 MAX_TEXT = 120
-UNVERIFIED = "sin verificar"
+UNVERIFIED = "unverified"
 
 #: The one script any interpreter is asked to run. argv[1] is a JSON list of
 #: distribution names; argv[2] is "1" when the device should be read.
@@ -228,17 +228,17 @@ def _interpreter(root: Path, rel: Path) -> tuple[Path, bool]:
 
 def _workspace(root: Path) -> dict[str, Any]:
     python, present = _interpreter(root, WORKSPACE_PYTHON)
-    row: dict[str, Any] = {"label": "Entorno micromamba del workspace", "path": WORKSPACE_PYTHON.as_posix(),
+    row: dict[str, Any] = {"label": "Workspace micromamba environment", "path": WORKSPACE_PYTHON.as_posix(),
                            "present": present, "python": None, "state": "missing",
                            "micromamba": find_executable(MICROMAMBA)}
     if not present:
-        row["detail"] = "Sin entorno: python scripts/setup_env.py lo crea con micromamba."
+        row["detail"] = "No environment: python scripts/setup_env.py creates it with micromamba."
         return row
     answer = _probe(python, [], False)
     if answer is None:
-        row.update(state="unverified", detail=f"Intérprete presente; versión {UNVERIFIED}.")
+        row.update(state="unverified", detail=f"Interpreter present; version {UNVERIFIED}.")
     else:
-        row.update(state="ready", python=_text(answer.get("python")), detail="Intérprete presente.")
+        row.update(state="ready", python=_text(answer.get("python")), detail="Interpreter present.")
     return row
 
 
@@ -251,12 +251,12 @@ def _target(root: Path, folder: Path) -> dict[str, Any]:
                            "python": None, "state": "missing", "required": names,
                            "sources": declared["sources"], "libraries": [], "missing": [], "device": None}
     if not present:
-        row["detail"] = "Sin .venv: la implementación lo crea en su primera pasada."
+        row["detail"] = "No .venv: the implementation creates it on its first pass."
         return row
     answer = _probe(python, names, "torch" in names)
     if answer is None:
         row.update(state="unverified", device=UNVERIFIED,
-                   detail=f"Intérprete presente; librerías {UNVERIFIED} (el sondeo falló o excedió "
+                   detail=f"Interpreter present; libraries {UNVERIFIED} (the probe failed or exceeded "
                           f"{PROBE_TIMEOUT:g} s).")
         return row
     installed = answer.get("installed") if isinstance(answer.get("installed"), dict) else {}
@@ -264,8 +264,8 @@ def _target(root: Path, folder: Path) -> dict[str, Any]:
     missing = [lib["name"] for lib in libraries if lib["version"] is None]
     row.update(python=_text(answer.get("python")), libraries=libraries, missing=missing,
                device=_device(answer.get("device")), state="incomplete" if missing else "ready")
-    row["detail"] = (f"Faltan {len(missing)} librería(s): {', '.join(missing[:12])}." if missing
-                     else f"{len(names)} librería(s) declarada(s) instalada(s).")
+    row["detail"] = (f"{len(missing)} library(ies) missing: {', '.join(missing[:12])}." if missing
+                     else f"{len(names)} declared library(ies) installed.")
     return row
 
 
@@ -286,9 +286,9 @@ def local_environment(root: Path | str) -> dict[str, Any]:
     try:
         workspace = _workspace(root)
     except Exception:  # noqa: BLE001 - a failing probe is a row, never an error
-        workspace = {"label": "Entorno micromamba del workspace", "path": WORKSPACE_PYTHON.as_posix(),
+        workspace = {"label": "Workspace micromamba environment", "path": WORKSPACE_PYTHON.as_posix(),
                      "present": False, "python": None, "state": "unverified", "micromamba": None,
-                     "detail": "No se pudo sondear."}
+                     "detail": "Could not be probed."}
     targets: list[dict[str, Any]] = []
     for folder in _targets(root):
         try:
@@ -296,7 +296,7 @@ def local_environment(root: Path | str) -> dict[str, Any]:
         except Exception:  # noqa: BLE001
             targets.append({"repo": folder.name, "path": "", "present": False, "python": None,
                             "state": "unverified", "required": [], "sources": [], "libraries": [],
-                            "missing": [], "device": UNVERIFIED, "detail": "No se pudo sondear."})
-    note = (f"Sondeo local sin red: un subproceso por intérprete (tiempo máximo {PROBE_TIMEOUT:g} s), "
-            f"en caché por {CACHE_TTL / 60:g} minutos o hasta que cambie el intérprete.")
+                            "missing": [], "device": UNVERIFIED, "detail": "Could not be probed."})
+    note = (f"Offline local probe: one subprocess per interpreter (at most {PROBE_TIMEOUT:g} s), "
+            f"cached for {CACHE_TTL / 60:g} minutes or until the interpreter changes.")
     return {"workspace": workspace, "targets": targets, "note": note}

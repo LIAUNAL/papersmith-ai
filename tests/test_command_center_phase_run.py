@@ -14,19 +14,25 @@ from skills._core.command_center import server
 
 STATIC = Path(server.__file__).resolve().parent / "static"
 PAGE = (STATIC / "index.html").read_text(encoding="utf-8")
+I18N_JS = STATIC / "i18n.js"
+EN_JS = STATIC / "i18n" / "en.js"
+ES_JS = STATIC / "i18n" / "es.js"
 
 HARNESS = r"""
 const fs = require('fs');
 const cfg = JSON.parse(fs.readFileSync(0, 'utf8'));
-const store = {};
+const store = { 'papersmith-lang': 'es' };
 const els = {};
 function el(id) { return els[id] || (els[id] = { id, dataset: {}, innerHTML: '', textContent: '', classList: { add() {}, remove() {} }, setAttribute() {}, querySelectorAll: () => [] }); }
 global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
 let made = 0;
 global.document = { getElementById: (id) => els[id] || null, addEventListener() {}, createElement: () => el('made' + (made++)), body: { appendChild(n) { els[n.id] = n; } } };
 let lastOut = Date.now();
-global.window = { smithTerminalActivity: () => ({ agent: 'claude', lastOutputAt: lastOut }) };
+global.window = { localStorage: global.localStorage, smithTerminalActivity: () => ({ agent: 'claude', lastOutputAt: lastOut }) };
 const phase = (stage, id, status, unlocked, evidence) => ({ stage_id: stage, id, name: id + ' name', status, unlocked, evidence });
+eval(fs.readFileSync(process.argv[2], 'utf8'));
+eval(fs.readFileSync(process.argv[3], 'utf8'));
+eval(fs.readFileSync(process.argv[4], 'utf8'));
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 const out = {};
 const before = { fases: [
@@ -94,7 +100,7 @@ process.exit(0);
 class PhaseRunTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        done = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phase-run.js")],
+        done = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phase-run.js"), str(EN_JS), str(ES_JS), str(I18N_JS)],
                               input=json.dumps({"idea": "<img src=x onerror=alert(1)>"}),
                               capture_output=True, text=True, cwd=tempfile.gettempdir(), timeout=60, check=True)
         cls.out = json.loads(done.stdout)
@@ -140,7 +146,7 @@ class PhaseRunTests(unittest.TestCase):
 
 STOPPED_HARNESS = r"""
 const fs = require('fs');
-const store = { 'smith_phase_runs@local': JSON.stringify({ plausibility: {
+const store = { 'papersmith-lang': 'es', 'smith_phase_runs@local': JSON.stringify({ plausibility: {
   stage: 'plausibility', phaseId: 'Fase 2', command: '/plausibility x', startedAt: 1, lastChangeAt: 1,
   startStatus: 'ACTIVE', status: 'ACTIVE', stoppedAt: 2, verifiedAt: 0, expiredAt: 0,
   baseline: {}, changed: [], unlocked: [], unlockedBefore: [] } }) };
@@ -149,7 +155,10 @@ function el(id) { return els[id] || (els[id] = { id, dataset: {}, innerHTML: '',
 global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
 let made = 0;
 global.document = { getElementById: (id) => els[id] || null, addEventListener() {}, createElement: () => el('made' + (made++)), body: { appendChild(n) { els[n.id] = n; } } };
-global.window = { smithTerminalActivity: () => ({ agent: 'claude', lastOutputAt: Date.now() }) };
+global.window = { localStorage: global.localStorage, smithTerminalActivity: () => ({ agent: 'claude', lastOutputAt: Date.now() }) };
+eval(fs.readFileSync(process.argv[2], 'utf8'));
+eval(fs.readFileSync(process.argv[3], 'utf8'));
+eval(fs.readFileSync(process.argv[4], 'utf8'));
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 const out = { before: window.phaseRuns.cardBadge('plausibility') };
 window.phaseRuns.onStatus({ fases: [{ stage_id: 'plausibility', id: 'Fase 2', name: 'Fase 2 name', status: 'PASS', unlocked: true, evidence: [] }] });
@@ -162,14 +171,14 @@ process.exit(0);
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class StoppedRunReconciliationTests(unittest.TestCase):
     def test_a_stopped_run_whose_phase_passed_reads_verified(self) -> None:
-        done = subprocess.run(["node", "-e", STOPPED_HARNESS, str(STATIC / "phase-run.js")],
+        done = subprocess.run(["node", "-e", STOPPED_HARNESS, str(STATIC / "phase-run.js"), str(EN_JS), str(ES_JS), str(I18N_JS)],
                               capture_output=True, text=True, cwd=tempfile.gettempdir(), timeout=60, check=True)
         out = json.loads(done.stdout)
         self.assertIn("detenida", out["before"])
         self.assertIn("verificada", out["after"])
 
     def test_an_expired_run_whose_phase_passed_reads_verified(self) -> None:
-        done = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phase-run.js")],
+        done = subprocess.run(["node", "-e", HARNESS, str(STATIC / "phase-run.js"), str(EN_JS), str(ES_JS), str(I18N_JS)],
                               input=json.dumps({"idea": "x"}), capture_output=True, text=True,
                               cwd=tempfile.gettempdir(), timeout=60, check=True)
         self.assertIn("verificada", json.loads(done.stdout)["expiredReconciled"])
@@ -181,7 +190,7 @@ class PageWiringTests(unittest.TestCase):
         self.assertIn("if (window.phaseRuns) window.phaseRuns.onStatus(data);", PAGE)
         self.assertIn('<div id="phaseRunTracker" data-stage=', PAGE)
         self.assertIn("artifacts: (data.artifacts || []).map(a => `${a.rel_path}:${a.size_kb}`),", PAGE)
-        self.assertIn("🔒 Requiere ${escapeHtml(p.blocked_by)}", PAGE)
+        self.assertTrue("🔒 Requiere ${escapeHtml(p.blocked_by)}" in PAGE or "pipeline.requires" in PAGE)
 
 
 if __name__ == "__main__":

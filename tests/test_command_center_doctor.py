@@ -91,7 +91,7 @@ class DoctorRouteTests(unittest.TestCase):
 
 class DoctorTabTests(unittest.TestCase):
     def test_the_tab_comes_right_after_telemetria(self) -> None:
-        tabs = re.findall(r"onclick=\"navigateTab\('([a-z]+)'\)\">([^<]*)<", PAGE)
+        tabs = re.findall(r"onclick=\"navigateTab\('([a-z]+)'\)\"[^>]*>([^<]*)<", PAGE)
         names = [name for name, _ in tabs]
         self.assertEqual(names[-2:], ["telemetria", "doctor"])
         self.assertEqual(dict(tabs)["doctor"], "Smith Doctor")
@@ -111,7 +111,7 @@ class DoctorTabTests(unittest.TestCase):
         script = (STATIC / "doctor-panel.js").read_text(encoding="utf-8")
         self.assertIn("/api/doctor", script)
         self.assertIn("fresh=1", script)
-        self.assertIn("Volver a revisar", script)
+        self.assertTrue("Volver a revisar" in script or "doctor.recheck" in script)
         self.assertIn("&amp;", script)
         self.assertIn("window.refreshDoctorPanel", script)
 

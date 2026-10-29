@@ -1,4 +1,4 @@
-/* Smith CLI assistant ("CLI de apoyo") for the Paper Command Center.
+/* Smith CLI assistant (the "support CLI") for the Paper Command Center.
  *
  * A floating xterm.js window, opened from the bottom-right FAB, bound to one
  * PTY session on the backend (skills/_core/command_center/terminal.py): herdr
@@ -16,6 +16,8 @@
 (function () {
   'use strict';
 
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
   const HEADERS = { 'Content-Type': 'application/json', 'X-Papersmith-Terminal': '1' };
   const AGENT_KEY = 'smith_terminal_agent';
   const INPUT_FLUSH_MS = 6;
@@ -41,6 +43,7 @@
     refusal: '',       // why the last sendToCli did not send, for the caller
     quietUntil: 0,     // replayed output before this does not count as activity
     resuming: null,    // the reattach attempt started on load
+    said: null,        // the last status as { key, vars, tone }, redrawn on a language switch
   };
 
   const $ = (id) => document.getElementById(id);
@@ -87,6 +90,12 @@
     if (badge) badge.dataset.tone = tone || 'off';
   }
 
+  // A status from the catalogue, remembered so a language switch redraws it.
+  function say(key, vars, tone) {
+    state.said = { key, vars, tone };
+    setStatus(t(key, vars), tone);
+  }
+
   function agentLabel(id) {
     const agent = ((state.info && state.info.agents) || []).find((a) => a.id === id);
     return agent ? agent.label : id;
@@ -113,7 +122,7 @@
       for (const agent of state.info.agents || []) {
         const opt = document.createElement('option');
         opt.value = agent.id;
-        opt.textContent = agent.available ? agent.label : `${agent.label} (no instalado)`;
+        opt.textContent = agent.available ? agent.label : t('cli.notInstalled', { agent: agent.label });
         opt.disabled = !agent.available;
         opt.title = agent.desc || '';
         select.appendChild(opt);
@@ -122,9 +131,9 @@
     }
     renderQuick();
     if (!state.info.enabled) {
-      setStatus('Terminal deshabilitada (solo se ofrece en 127.0.0.1)', 'bad');
+      say('cli.disabled', null, 'bad');
     } else if (!state.info.authorized) {
-      setStatus('Abre el tablero desde el enlace de acceso que imprime smith ui', 'bad');
+      say('cli.openFromLink', null, 'bad');
     } else {
       loadTools();
     }
@@ -145,8 +154,8 @@
       btn.textContent = `🖥️ ${name}`;
       btn.disabled = !state.tools.ready;
       btn.title = state.tools.ready
-        ? `Abrir herdr en ${name} sobre este proyecto`
-        : `Falta: ${(state.tools.missing || []).join(', ')} (brew install --cask ghostty · brew install herdr)`;
+        ? t('cli.openHerdrIn', { terminal: name })
+        : t('cli.missingTools', { missing: (state.tools.missing || []).join(', ') });
     }
     renderFooter();
   }
@@ -156,7 +165,11 @@
     if (!select || !state.info) return;
     const quick = state.info.quick || {};
     const items = state.agent === 'shell' ? (quick.shell || []) : (quick.agent || []);
-    select.innerHTML = '<option value="">Comandos smith…</option>';
+    select.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('cli.quickPlaceholder');
+    select.appendChild(placeholder);
     for (const cmd of items) {
       const opt = document.createElement('option');
       opt.value = cmd;
@@ -202,7 +215,7 @@
   function ensureTerm() {
     if (state.term) return state.term;
     if (!window.Terminal) {
-      setStatus('xterm.js no está disponible', 'bad');
+      say('cli.noXterm', null, 'bad');
       return null;
     }
     const term = new window.Terminal({
@@ -259,18 +272,18 @@
       if (state.sessionId === sessionId) {
         state.sessionId = null;
         state.exited = true;
-        state.term.write('\r\n\x1b[90m[Smith] Sesión finalizada — pulsa ⟳ para abrir otra\x1b[0m\r\n');
-        setStatus('Sesión finalizada', 'off');
+        state.term.write(`\r\n\x1b[90m[Smith] ${t('cli.sessionEndedLine')}\x1b[0m\r\n`);
+        say('cli.sessionEnded', null, 'off');
       }
     });
-    source.onerror = () => { if (state.sessionId === sessionId) setStatus('Reconectando…', 'warn'); };
+    source.onerror = () => { if (state.sessionId === sessionId) say('cli.reconnecting', null, 'warn'); };
     source.onopen = () => {
       if (opened || replay) {
         state.term.reset();
         state.quietUntil = Date.now() + REPLAY_QUIET_MS;
       }
       opened = true;
-      setStatus(`Conectado · ${agentLabel(state.agent)}`, 'ok');
+      say('cli.connected', { agent: agentLabel(state.agent) }, 'ok');
     };
     state.source = source;
   }
@@ -307,12 +320,12 @@
     if (state.starting) return state.starting;
     state.starting = (async () => {
       const info = await loadInfo();
-      if (!info.enabled) throw new Error('terminal deshabilitada');
-      if (!info.authorized) throw new Error('sin acceso: usa el enlace de acceso de smith ui');
+      if (!info.enabled) throw new Error(t('cli.errDisabled'));
+      if (!info.authorized) throw new Error(t('cli.errNoAccess'));
       const term = ensureTerm();
-      if (!term) throw new Error('xterm.js no disponible');
+      if (!term) throw new Error(t('cli.errNoXterm'));
       refit(false);
-      setStatus(`Abriendo ${agentLabel(state.agent)}…`, 'warn');
+      say('cli.opening', { agent: agentLabel(state.agent) }, 'warn');
       state.startedAt = Date.now();
       state.lastOutputAt = 0;
       const created = await api('/api/terminal/sessions', 'POST', {
@@ -328,7 +341,7 @@
     try {
       return await state.starting;
     } catch (err) {
-      setStatus(`No se pudo abrir: ${err.message}`, 'bad');
+      say('cli.openFailed', { error: err.message }, 'bad');
       throw err;
     } finally {
       state.starting = null;
@@ -343,7 +356,7 @@
     if (sid) {
       try { await api(`/api/terminal/sessions/${sid}`, 'DELETE', {}); } catch (_) { /* gone */ }
     }
-    setStatus('Sin sesión', 'off');
+    say('cli.noSession', null, 'off');
   }
 
   async function restart() {
@@ -417,9 +430,9 @@
   async function launchExternal() {
     try {
       const result = await api('/api/terminal/launch-external', 'POST', {});
-      setStatus(`herdr abierto en ${result.terminal}`, 'ok');
+      say('cli.herdrOpened', { terminal: result.terminal }, 'ok');
     } catch (err) {
-      setStatus(`No se pudo abrir la terminal externa: ${err.message}`, 'bad');
+      say('cli.externalFailed', { error: err.message }, 'bad');
     }
   }
 
@@ -427,7 +440,7 @@
   // workspace mirrors the agent pane, so a phase runs in the herdr session by
   // default and only falls to a new claude/opencode/pi session without herdr.
   // The plain shell is not one of them.
-  const SLASH_AGENTS = ['herdr', 'claude', 'opencode', 'pi'];
+  const SLASH_AGENTS = ['herdr', 'claude', 'opencode', 'pi', 'antigravity'];
   // Agents with a `!command` shell escape, so a shell phase can run inside
   // their open session instead of closing it.
   const SHELL_ESCAPE_AGENTS = ['claude', 'opencode', 'pi'];
@@ -452,20 +465,20 @@
     }
     if (kind === 'slash') {
       if (opts.agent && !(SLASH_AGENTS.includes(opts.agent) && available.includes(opts.agent))) {
-        throw new Error(`el agente ${agentLabel(opts.agent)} no está instalado`);
+        throw new Error(t('cli.errAgentMissing', { agent: agentLabel(opts.agent) }));
       }
       if (opts.agent) wanted = opts.agent;
       else if (!(SLASH_AGENTS.includes(state.agent) && available.includes(state.agent))) {
         wanted = SLASH_AGENTS.find((id) => available.includes(id)) || null;
       }
-      if (!wanted) throw new Error('no hay un agente (herdr, claude, opencode, pi) instalado');
+      if (!wanted) throw new Error(t('cli.errNoAgent'));
     }
     const restart = wanted !== state.agent || (opts.fresh && live);
     if (!restart) return { switched: false, prefix: '' };
     if (live && !window.confirm(wanted === state.agent
-      ? `Esto cierra la sesión actual de ${agentLabel(state.agent)} y abre una nueva. ¿Continuar?`
-      : `Esto cierra la sesión de ${agentLabel(state.agent)} y abre ${agentLabel(wanted)}. ¿Continuar?`)) {
-      throw new Error(`se mantuvo la sesión de ${agentLabel(state.agent)}`);
+      ? t('cli.confirmFresh', { agent: agentLabel(state.agent) })
+      : t('cli.confirmSwitch', { agent: agentLabel(state.agent), next: agentLabel(wanted) }))) {
+      throw new Error(t('cli.errKept', { agent: agentLabel(state.agent) }));
     }
     state.agent = wanted;
     if (kind === 'slash') saveAgent(wanted);
@@ -534,7 +547,7 @@
       state.refusal = '';
       if (kind === 'slash' && STARTUP_QUESTIONS.test(screenText())) {
         state.refusal = /trust/i.test(screenText()) ? 'trust' : 'question';
-        setStatus('El agente espera una confirmación: respóndela en la terminal y vuelve a pulsar Ejecutar', 'warn');
+        say('cli.awaitingConfirmation', null, 'warn');
         state.term.focus();
         return false;
       }
@@ -549,12 +562,12 @@
     } catch (err) {
       state.refusal = err.message;
       if (!isOpen()) openCliConsole();
-      setStatus(`No se pudo enviar: ${err.message}`, 'bad');
+      say('cli.sendFailed', { error: err.message }, 'bad');
       return false;
     }
   }
 
-  // "Detener proceso": interrupts the agent's turn (Esc) or the shell's command
+  // "Stop process": interrupts the agent's turn (Esc) or the shell's command
   // (Ctrl-C). The session stays open for the next phase. Resolves false when
   // there is no session; rejects when the key could not be delivered.
   async function interrupt() {
@@ -609,8 +622,16 @@
         fetch(`/api/terminal/sessions/${state.sessionId}`, { method: 'DELETE', headers: HEADERS, body: '{}', keepalive: true });
       }
     });
-    setStatus('Sin sesión', 'off');
+    say('cli.noSession', null, 'off');
     state.resuming = resume().finally(() => { state.resuming = null; });
+  });
+
+  // Agent descriptions come from the server in the chosen language: read them
+  // again, and redraw the status line.
+  document.addEventListener('languagechange', () => {
+    state.info = null;
+    if (state.said) setStatus(t(state.said.key, state.said.vars), state.said.tone);
+    loadInfo().catch(() => {});
   });
 
   window.toggleSmithTerminal = toggleSmithTerminal;

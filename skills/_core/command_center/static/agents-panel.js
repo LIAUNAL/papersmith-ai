@@ -1,4 +1,4 @@
-/* Agents table of the Flujo Archify pane.
+/* Agents table of the Archify Flow pane.
  *
  * GET /api/agents answers agents_view.get_agents_view(root): every agent of
  * the workspace's .claude/agents/ with its role, bound skill, stretch, tools,
@@ -11,23 +11,25 @@
 (function () {
   'use strict';
 
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
   const list = (v) => (Array.isArray(v) ? v : []);
   const phaseNumber = (a) => {
-    const m = /Fase (\d+)/.exec(list(a.phases)[0] || '');
+    const m = /(?:Phase|Fase) (\d+)/.exec(list(a.phases)[0] || '');
     return m ? Number(m[1]) : 99;
   };
 
   const COLUMNS = [
-    { key: 'name', label: 'Agente', value: (a) => a.name },
-    { key: 'role', label: 'Rol', value: (a) => a.role },
-    { key: 'skill', label: 'Skill', value: (a) => a.skill },
-    { key: 'stretch', label: 'Etapa (stretch)', value: (a) => a.stretch },
-    { key: 'tools', label: 'Herramientas', value: (a) => list(a.tools).join(', ') },
-    { key: 'phases', label: 'Fase(s)', value: (a) => list(a.phases).join(' · '), sort: phaseNumber },
-    { key: 'harnesses', label: 'Harness', value: (a) => list(a.harnesses).join(' ') },
+    { key: 'name', label: () => t('agents.col.name'), value: (a) => a.name },
+    { key: 'role', label: () => t('agents.col.role'), value: (a) => a.role },
+    { key: 'skill', label: () => 'Skill', value: (a) => a.skill },
+    { key: 'stretch', label: () => t('agents.col.stretch'), value: (a) => a.stretch },
+    { key: 'tools', label: () => t('agents.col.tools'), value: (a) => list(a.tools).join(', ') },
+    { key: 'phases', label: () => t('agents.col.phases'), value: (a) => list(a.phases).join(' · '), sort: phaseNumber },
+    { key: 'harnesses', label: () => 'Harness', value: (a) => list(a.harnesses).join(' ') },
   ];
 
   let lastView = { agents: [], warnings: [] };
@@ -54,7 +56,7 @@
     if (col.key === 'role') {
       return `<td class="agents-role" title="${esc(agent.description)}">${esc(agent.role)}`
         + (agent.description && agent.description !== agent.role
-          ? `<details><summary>Descripción completa</summary><p>${esc(agent.description)}</p></details>` : '')
+          ? `<details><summary>${esc(t('agents.fullDescription'))}</summary><p>${esc(agent.description)}</p></details>` : '')
         + '</td>';
     }
     if (col.key === 'name') return `<td><code>${esc(agent.name)}</code></td>`;
@@ -73,16 +75,16 @@
     const shown = rows(lastView);
     const head = COLUMNS.map((c) => {
       const mark = c.key === sortKey ? (sortDir > 0 ? ' ▲' : ' ▼') : '';
-      return `<th data-sort="${esc(c.key)}" role="button" tabindex="0">${esc(c.label)}${mark}</th>`;
+      return `<th data-sort="${esc(c.key)}" role="button" tabindex="0">${esc(c.label())}${mark}</th>`;
     }).join('');
     const body = shown.length
       ? shown.map((a) => `<tr>${COLUMNS.map((c) => cell(a, c)).join('')}</tr>`).join('')
-      : `<tr><td colspan="${COLUMNS.length}" class="agents-empty">Ningún agente coincide.</td></tr>`;
+      : `<tr><td colspan="${COLUMNS.length}" class="agents-empty">${esc(t('agents.noMatch'))}</td></tr>`;
     const warnings = list(lastView.warnings).length
       ? `<ul class="agents-warnings">${list(lastView.warnings).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '';
     host.innerHTML = `<div class="agents-toolbar">`
-      + `<input type="search" id="agentsFilter" placeholder="Filtrar por agente, rol, skill, fase…" value="${esc(filter)}">`
-      + `<span class="panel__meta">${shown.length} de ${list(lastView.agents).length} agentes</span></div>`
+      + `<input type="search" id="agentsFilter" placeholder="${esc(t('agents.filter'))}" value="${esc(filter)}">`
+      + `<span class="panel__meta">${esc(t('agents.count', { n: shown.length, total: list(lastView.agents).length }))}</span></div>`
       + `<div class="agents-table-wrap"><table class="agents-table"><thead><tr>${head}</tr></thead>`
       + `<tbody>${body}</tbody></table></div>${warnings}`;
     bind(host);
@@ -117,11 +119,13 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       render(await response.json());
     } catch (err) {
-      render({ agents: [], warnings: [`No se pudo leer /api/agents: ${err.message || err}`] });
+      render({ agents: [], warnings: [t('agents.readFailed', { error: err.message || err })] });
     }
   }
 
   window.AgentsPanel = { render };
   window.refreshAgentsPanel = refreshAgentsPanel;
   document.addEventListener('DOMContentLoaded', () => { refreshAgentsPanel(); });
+  // Phase labels come from the server in the chosen language: fetch again.
+  document.addEventListener('languagechange', () => { refreshAgentsPanel(); });
 })();
