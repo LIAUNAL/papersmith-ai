@@ -14,6 +14,11 @@ key ever lives in the dashboard:
 
 The agent never writes; this module is the only writer, and only of the
 reader's uploads and the thread.
+
+The machinery is shared through a ``Profile`` (thread folder, doctrine files,
+context builder, turn schema, modes, tools, lock): ``MATH`` is this panel's,
+and the default of every function here, so its routes and turns are unchanged;
+``experiments_tutor`` declares the experiments panel's.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ import re
 import subprocess
 import threading
 import time
+from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
@@ -91,8 +98,26 @@ class TutorError(Exception):
     """A request the tutor refuses, or an agent answer it cannot use."""
 
 
-def folder(root: Path) -> Path:
-    return Path(root).joinpath(*FOLDER)
+@dataclass(frozen=True)
+class Profile:
+    """One tutor: where its thread lives, which doctrine answers, what context
+    grounds a turn, the turn's shape, and the lock that serializes its turns."""
+
+    name: str
+    folder: tuple[str, ...]
+    doctrine: tuple[str, ...]
+    fallback: str
+    headless: str
+    schema: dict[str, Any]
+    modes: tuple[str, ...]
+    context: Callable[[Path], Any]
+    valid: Callable[[Any], dict[str, Any]]
+    tools: tuple[str, ...] = ("Read",)
+    lock: Any = field(default_factory=threading.Lock, compare=False, repr=False)
+
+
+def folder(root: Path, profile: Profile | None = None) -> Path:
+    return Path(root).joinpath(*(profile or MATH).folder)
 
 
 # --------------------------------------------------------------------------
@@ -155,13 +180,13 @@ def image_type(path: Path) -> str:
 # --------------------------------------------------------------------------
 # thread
 # --------------------------------------------------------------------------
-def _thread_file(root: Path) -> Path:
-    return folder(root) / "thread.json"
+def _thread_file(root: Path, profile: Profile | None = None) -> Path:
+    return folder(root, profile) / "thread.json"
 
 
-def load_thread(root: Path) -> dict[str, Any]:
+def load_thread(root: Path, profile: Profile | None = None) -> dict[str, Any]:
     try:
-        data = json.loads(_thread_file(root).read_text(encoding="utf-8"))
+        data = json.loads(_thread_file(root, profile).read_text(encoding="utf-8"))
         if isinstance(data, dict) and isinstance(data.get("turns"), list):
             return data
     except (OSError, ValueError):
@@ -169,8 +194,8 @@ def load_thread(root: Path) -> dict[str, Any]:
     return {"turns": []}
 
 
-def _save_thread(root: Path, thread: dict[str, Any]) -> None:
-    path = _thread_file(root)
+def _save_thread(root: Path, thread: dict[str, Any], profile: Profile | None = None) -> None:
+    path = _thread_file(root, profile)
     path.parent.mkdir(parents=True, exist_ok=True)
     thread["turns"] = thread["turns"][-MAX_TURNS:]
     tmp = path.with_suffix(".tmp")
@@ -178,34 +203,38 @@ def _save_thread(root: Path, thread: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def reset_thread(root: Path) -> None:
+def reset_thread(root: Path, profile: Profile | None = None) -> None:
+    profile = profile or MATH
     # Under the turn lock, so a reset during a running turn is not undone by it.
-    with _lock:
-        _save_thread(root, {"turns": []})
+    with profile.lock:
+        _save_thread(root, {"turns": []}, profile)
 
 
 # --------------------------------------------------------------------------
 # prompt
 # --------------------------------------------------------------------------
-def system_prompt(root: Path) -> str:
+def system_prompt(root: Path, profile: Profile | None = None) -> str:
+    profile = profile or MATH
     parts = []
-    for rel in (".claude/agents/math-tutor.md", "skills/math-tutor/SKILL.md"):
+    for rel in profile.doctrine:
         try:
             parts.append(Path(root, rel).read_text(encoding="utf-8"))
         except OSError:
             continue
-    doctrine = "\n\n---\n\n".join(parts) if parts else _FALLBACK_DOCTRINE
-    return (doctrine + "\n\n---\n\nYou are running headless inside the dashboard's math panel "
-            "as the Socratic tutor. Answer with exactly one JSON object in the turn shape; "
-            "every formula is KaTeX-compatible LaTeX.")
+    doctrine = "\n\n---\n\n".join(parts) if parts else profile.fallback
+    return doctrine + "\n\n---\n\n" + profile.headless
+
+
+def _paper(root: Path) -> dict[str, Any]:
+    view = math_view.build(root)
+    return {"source": view["source"], "lema": view["lema"], "novelty": view["novelty"],
+            "equations": [{k: e[k] for k in ("tag", "heading", "latex", "connection")}
+                          for e in view["equations"][:12]]}
 
 
 def build_prompt(root: Path, message: str, image_rels: list[str], mode: str,
                  thread: dict[str, Any]) -> str:
-    view = math_view.build(root)
-    paper = {"source": view["source"], "lema": view["lema"], "novelty": view["novelty"],
-             "equations": [{k: e[k] for k in ("tag", "heading", "latex", "connection")}
-                           for e in view["equations"][:12]]}
+    paper = MATH.context(root)
     history = []
     for turn in thread["turns"][-HISTORY_IN_PROMPT:]:
         if turn.get("role") == "reader":
@@ -229,11 +258,13 @@ def build_prompt(root: Path, message: str, image_rels: list[str], mode: str,
 # --------------------------------------------------------------------------
 # agent runners
 # --------------------------------------------------------------------------
-def claude_argv(claude: str, system: str, prompt: str) -> list[str]:
+def claude_argv(claude: str, system: str, prompt: str, schema: dict[str, Any] | None = None,
+                tools: tuple[str, ...] = ("Read",)) -> list[str]:
+    allowed = ",".join(tools)
     return [claude, "-p", "--output-format", "json", "--no-session-persistence",
             "--strict-mcp-config", "--setting-sources", "local",
-            "--tools", "Read", "--allowedTools", "Read",
-            "--system-prompt", system, "--json-schema", json.dumps(TURN_SCHEMA), prompt]
+            "--tools", allowed, "--allowedTools", allowed,
+            "--system-prompt", system, "--json-schema", json.dumps(schema or TURN_SCHEMA), prompt]
 
 
 def extract_turn(text: str) -> dict[str, Any] | None:
@@ -249,18 +280,21 @@ def extract_turn(text: str) -> dict[str, Any] | None:
     return None
 
 
-def run_agent(root: Path, system: str, prompt: str, images: list[Path]) -> tuple[dict[str, Any], str]:
+def run_agent(root: Path, system: str, prompt: str, images: list[Path],
+              schema: dict[str, Any] | None = None,
+              tools: tuple[str, ...] = ("Read",)) -> tuple[dict[str, Any], str]:
     try:
-        return _run_agent(root, system, prompt, images)
+        return _run_agent(root, system, prompt, images, schema, tools)
     except OSError as error:
         raise TutorError(f"could not start the agent CLI: {error}") from error
 
 
-def _run_agent(root: Path, system: str, prompt: str, images: list[Path]) -> tuple[dict[str, Any], str]:
+def _run_agent(root: Path, system: str, prompt: str, images: list[Path],
+               schema: dict[str, Any] | None, tools: tuple[str, ...]) -> tuple[dict[str, Any], str]:
     claude = find_executable("claude")
     if claude:
         # stdin closed: `claude -p` appends whatever it can read there to the prompt.
-        done = subprocess.run(claude_argv(claude, system, prompt), cwd=str(root),
+        done = subprocess.run(claude_argv(claude, system, prompt, schema, tools), cwd=str(root),
                               env=session_env("claude", root), capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, timeout=TIMEOUT_SECONDS, check=False)
         try:
@@ -318,19 +352,45 @@ def run_turn(root: Path, message: Any, image_ids: Any, mode: Any, *,
     stems = [path.stem for path in paths]
     rels = [path.relative_to(root).as_posix() for path in paths]
     message = message.strip()[:MAX_MESSAGE]
-    with _lock:
-        thread = load_thread(root)
-        prompt = build_prompt(root, message, rels, mode, thread)
-        answer, agent = (runner or run_agent)(root, system_prompt(root), prompt, paths)
-        turn = _valid(answer)
+    return converse(MATH, root, {"mode": mode, "message": message, "images": stems},
+                    lambda thread: build_prompt(root, message, rels, mode, thread), paths, runner)
+
+
+def converse(profile: Profile, root: Path, record: dict[str, Any],
+             prompt_for: Callable[[dict[str, Any]], str], images: list[Path],
+             runner: Callable[..., tuple[Any, str]] | None = None) -> dict[str, Any]:
+    """One turn of ``profile``'s tutor under its lock: the prompt is built from
+    the thread as it stands, the answer validated, and only then are the
+    reader's ``record`` and the tutor's turn appended to the thread."""
+    with profile.lock:
+        thread = load_thread(root, profile)
+        prompt = prompt_for(thread)
+        run = runner or partial(run_agent, schema=profile.schema, tools=profile.tools)
+        answer, agent = run(root, system_prompt(root, profile), prompt, images)
+        turn = profile.valid(answer)
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        thread["turns"].append({"role": "reader", "at": now, "mode": mode, "message": message,
-                                "images": stems})
+        thread["turns"].append({"role": "reader", "at": now, **record})
         thread["turns"].append({"role": "tutor", "at": now, "agent": agent, **turn})
-        _save_thread(root, thread)
+        _save_thread(root, thread, profile)
     return {**turn, "agent": agent, "at": now}
+
+
+MATH = Profile(
+    name="math",
+    folder=FOLDER,
+    doctrine=(".claude/agents/math-tutor.md", "skills/math-tutor/SKILL.md"),
+    fallback=_FALLBACK_DOCTRINE,
+    headless=("You are running headless inside the dashboard's math panel "
+              "as the Socratic tutor. Answer with exactly one JSON object in the turn shape; "
+              "every formula is KaTeX-compatible LaTeX."),
+    schema=TURN_SCHEMA,
+    modes=MODES,
+    context=_paper,
+    valid=_valid,
+    lock=_lock,
+)
 
 
 __all__ = ["TutorError", "save_image", "image_path", "image_type", "load_thread",
            "reset_thread", "run_turn", "run_agent", "extract_turn", "claude_argv",
-           "TURN_SCHEMA", "MODES"]
+           "TURN_SCHEMA", "MODES", "Profile", "MATH", "converse"]
