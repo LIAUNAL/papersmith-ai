@@ -4008,6 +4008,12 @@ def cmd_generate_jobs(
     accept_unresolved: bool = False,
     accept_unresolved_reads: bool = False,
     accept_produced_reads: bool = False,
+    smoke_kwargs_for: Mapping[str, object] | None = None,
+    carry_paths_for: Mapping[str, Sequence[str]] | None = None,
+    input_datasets: Sequence[str] | None = None,
+    input_datasets_for: Mapping[str, Sequence[str]] | None = None,
+    only: Sequence[str] | None = None,
+    skip: Sequence[str] | None = None,
 ) -> dict:
     """One `generate-job` per remote step the product's `__steps__`
     declares (remote-preflight S3), each derived rather than typed:
@@ -4022,8 +4028,16 @@ def cmd_generate_jobs(
       service carries bundles (`CODE_BUNDLE_MAX_BYTES`);
     - environment requirements: the target's pinned requirements minus the
       adapter's `PROVIDED_REQUIREMENTS`;
-    - carry paths: the step's non-notebook `produces` roots;
-    - inputs: `--dataset` slugs, resolved as `generate-job --dataset` does.
+    - smoke: the step's own `smoke` fields, else the command's smoke
+      options; `smoke_kwargs_for[step]` wins over both for its kwargs;
+    - carry paths: the step's non-notebook `produces` roots, then its
+      `carry`, then `carry_paths_for[step]`;
+    - inputs: `input_datasets` on every job whose service attaches inputs,
+      then `input_datasets_for[step]`, then `--dataset` slugs, resolved as
+      `generate-job --dataset` does;
+    - selection: `only`/`skip` narrow the remote steps; a step name that is
+      not a remote step, or a per-step value for a step left out, refuses
+      before anything is written.
 
     Every job is attempted; one refusal is that job's row, never the end of
     the others. Returns `{jobs, skipped, summary, next}` where `next` is the
@@ -4036,6 +4050,16 @@ def cmd_generate_jobs(
         raise RemoteCLIError(
             f"{product} declares no remote step in src/{product.replace('-', '_')}/__init__.py "
             "(or config.py) __steps__: a step needs placement 'remote', a job and a service")
+    smoke_kwargs_for, carry_paths_for = dict(smoke_kwargs_for or {}), dict(carry_paths_for or {})
+    input_datasets_for = dict(input_datasets_for or {})
+    remote, skipped = JOB_PLAN.select_steps(
+        steps, remote, skipped, only=list(only or ()), skip=list(skip or ()),
+        named={"--smoke-kwargs-for": list(smoke_kwargs_for),
+               "--carry-path-for": list(carry_paths_for),
+               "--input-dataset-for": list(input_datasets_for)})
+    for step, value in smoke_kwargs_for.items():
+        if not isinstance(value, dict):
+            raise RemoteCLIError(f"--smoke-kwargs-for {step} must be a JSON object")
     chosen = JOB_PLAN.schedule_services(Path(from_schedule)) if from_schedule else {}
     unknown = sorted(set(chosen) - {name for name, _ in remote})
     if unknown:
@@ -4088,13 +4112,23 @@ def cmd_generate_jobs(
                 pins, getattr(adapter_cls, "PROVIDED_REQUIREMENTS", ()) if adapter_cls else ())
             carry = JOB_PLAN.carry_paths(entry)
             entry_notebook = f"{product}/{notebook}" if notebook else None
+            attaches = bool(getattr(adapter_cls, "INPUT_DATASETS_ROOT", None))
+            explicit = list(dict.fromkeys([*((input_datasets or ()) if attaches else ()),
+                                           *input_datasets_for.get(step, ())]))
             try:
-                inputs, checks = _dataset_plan(adapter_cls, workspace, datasets, None)
+                own = JOB_PLAN.step_smoke(step, entry)
+                job_smoke_module = own.get("module", smoke_module)
+                job_smoke_kwargs = smoke_kwargs_for.get(step, own.get("kwargs", smoke_kwargs))
+                job_evidence = own.get("requiredEvidence", smoke_required_evidence)
+                carry = list(dict.fromkeys([*carry, *JOB_PLAN.step_carry(step, entry),
+                                            *carry_paths_for.get(step, ())]))
+                inputs, checks = _dataset_plan(adapter_cls, workspace, datasets,
+                                               explicit or None)
                 # The clone paths the generator's own import/read walk
                 # computes for this step's entries: exactly what its
                 # `computedNotDeclared` check would otherwise refuse.
                 walk = JOBFOLDER.resolve_clone_paths(
-                    resolved, [m for m in ((None if notebook else module), smoke_module)
+                    resolved, [m for m in ((None if notebook else module), job_smoke_module)
                                if isinstance(m, str) and m],
                     ["src"], [entry_notebook] if entry_notebook else [])
                 clone_paths = sorted(set(walk["computed"])
@@ -4106,8 +4140,9 @@ def cmd_generate_jobs(
                     run_module=None if notebook else module,
                     run_function=None if notebook else function,
                     run_notebook=entry_notebook,
-                    smoke_module=smoke_module, smoke_function=smoke_function,
-                    smoke_kwargs=smoke_kwargs, smoke_required_evidence=smoke_required_evidence,
+                    smoke_module=job_smoke_module,
+                    smoke_function=own.get("function", smoke_function),
+                    smoke_kwargs=job_smoke_kwargs, smoke_required_evidence=job_evidence or None,
                     regenerate=regenerate, accept_unresolved=accept_unresolved,
                     accept_unresolved_reads=accept_unresolved_reads,
                     accept_produced_reads=accept_produced_reads,
@@ -4600,10 +4635,42 @@ def _build_parser() -> argparse.ArgumentParser:
         "REPO_CREDENTIAL_CARRIER")
     generate_jobs.add_argument("--smoke-module", default=None)
     generate_jobs.add_argument("--smoke-function", default=None)
-    generate_jobs.add_argument("--smoke-kwargs", default=None, help="a JSON object")
+    generate_jobs.add_argument(
+        "--smoke-kwargs", default=None,
+        help="a JSON object, for every job whose step declares no smoke kwargs of its own "
+        "(a step's `smoke` may declare module, function, kwargs and requiredEvidence)")
+    generate_jobs.add_argument(
+        "--smoke-kwargs-for", dest="smoke_kwargs_for", action="append", nargs=2,
+        default=[], metavar=("STEP", "JSON"),
+        help="repeatable: that step's smoke kwargs, a JSON object; wins over the step's "
+        "own declaration and over --smoke-kwargs")
     generate_jobs.add_argument(
         "--smoke-required-evidence", dest="smoke_required_evidence", action="append",
-        default=[], help="repeatable, as for generate-job; applied to every job")
+        default=[], help="repeatable, as for generate-job; applied to every job whose step "
+        "declares no requiredEvidence of its own")
+    generate_jobs.add_argument(
+        "--carry-path-for", dest="carry_path_for", action="append", nargs=2, default=[],
+        metavar=("STEP", "PATH"),
+        help="repeatable: one more carry path for that step's job, after its non-notebook "
+        "`produces` roots and its own `carry`; validated as generate-job's --carry-path")
+    generate_jobs.add_argument(
+        "--input-dataset", dest="input_datasets", action="append", default=None,
+        metavar="OWNER/SLUG",
+        help="repeatable: a public dataset declared on every job whose service attaches "
+        "inputs, recorded as generate-job's --input-dataset records it (no datasetChecks)")
+    generate_jobs.add_argument(
+        "--input-dataset-for", dest="input_dataset_for", action="append", nargs=2,
+        default=[], metavar=("STEP", "OWNER/SLUG"),
+        help="repeatable: a public dataset declared on that step's job, whatever its service")
+    generate_jobs.add_argument(
+        "--only", action="append", default=[], metavar="STEP",
+        help="repeatable: generate only these remote steps; the others are listed under "
+        "skipped")
+    generate_jobs.add_argument(
+        "--skip", action="append", default=[], metavar="STEP",
+        help="repeatable: leave this remote step's job alone (a finished one, say); listed "
+        "under skipped. A step name --only, --skip or a --*-for flag gives that is not a "
+        "remote step refuses STEP_UNKNOWN before anything is written")
     generate_jobs.add_argument(
         "--regenerate", action="store_true",
         help="replace existing job folders atomically instead of refusing")
@@ -5232,6 +5299,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.command == "generate-jobs":
+        smoke_kwargs_for: dict = {}
+        for step, value in args.smoke_kwargs_for:
+            if step in smoke_kwargs_for:
+                return _refused(f"--smoke-kwargs-for {step} was given twice")
+            try:
+                smoke_kwargs_for[step] = json.loads(value)
+            except json.JSONDecodeError as exc:
+                return _refused(f"--smoke-kwargs-for {step} is not JSON: {exc}")
+        carry_path_for: dict = {}
+        for step, path in args.carry_path_for:
+            carry_path_for.setdefault(step, []).append(path)
+        input_dataset_for: dict = {}
+        for step, ref in args.input_dataset_for:
+            input_dataset_for.setdefault(step, []).append(ref)
         try:
             smoke_kwargs = json.loads(args.smoke_kwargs) if args.smoke_kwargs else None
             result = cmd_generate_jobs(
@@ -5243,7 +5324,10 @@ def main(argv: list[str] | None = None) -> int:
                 regenerate=args.regenerate, datasets=args.datasets, workspace=args.workspace,
                 accept_unresolved=args.accept_unresolved,
                 accept_unresolved_reads=args.accept_unresolved_reads,
-                accept_produced_reads=args.accept_produced_reads)
+                accept_produced_reads=args.accept_produced_reads,
+                smoke_kwargs_for=smoke_kwargs_for, carry_paths_for=carry_path_for,
+                input_datasets=args.input_datasets, input_datasets_for=input_dataset_for,
+                only=args.only, skip=args.skip)
         except json.JSONDecodeError as exc:
             return _refused(f"--smoke-kwargs is not JSON: {exc}")
         except (RemoteCLIError, JOB_PLAN.JobPlanError, JOBFOLDER.JobFolderError) as exc:

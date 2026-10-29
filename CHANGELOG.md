@@ -42,6 +42,26 @@ number is `0`, breaking changes can still arrive without a major bump.
   paying the setup again, instead of dropping the candidate as `split-first`;
   the option reports `resumable`, `checkpointMinutes` and `sessionsPerUnit`.
 
+- `remote_cli generate-jobs` now expresses what a real campaign's jobs
+  need, so none has to be regenerated one by one with `generate-job`. A
+  remote `__steps__` entry may declare its own `smoke` (`module`,
+  `function`, `kwargs`, `requiredEvidence`) and the `carry` paths it needs
+  beyond its `produces`. On the command line, `--smoke-kwargs-for <step>
+  '<json>'` wins over the step's kwargs and over `--smoke-kwargs`,
+  `--carry-path-for <step> <path>` adds a carry path, `--input-dataset
+  <owner/slug>` declares a public input on every job whose service attaches
+  inputs and `--input-dataset-for <step> <owner/slug>` on one job (no
+  `datasetChecks` unless `--dataset` is also given). `--only <step>` and
+  `--skip <step>` choose the steps, so a finished job is left alone; what
+  they leave out is listed under `skipped` with its reason. A step name that
+  is not a remote step refuses `STEP_UNKNOWN`, and `--only`/`--skip` naming
+  the same step, a per-step value for a step left out, or a selection that
+  leaves nothing refuses `STEP_SELECTION_CONFLICT`, both before anything is
+  written; a malformed `smoke` or `carry` declaration refuses its own job
+  `STEP_DECLARATION_MALFORMED`. Every job is byte-identical to what
+  `generate-job` writes with the equivalent flags, and a call without the
+  new options writes what 0.38.0 wrote.
+
 ### Changed
 
 - `schedule` and `plan` spend each account's weekly quota (`quotaHours`) as

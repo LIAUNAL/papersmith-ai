@@ -30,6 +30,13 @@ STEPS_DECLARATION = "__steps__"
 PLACEMENT_REMOTE = "remote"
 NOTEBOOKS_ROOT = "Notebooks"
 
+#: Two keys only this reader uses (the engine ignores them): a remote step's
+#: own smoke, `{module, function, kwargs, requiredEvidence}` each optional,
+#: and the carry paths it needs beyond its `produces`.
+SMOKE_KEY = "smoke"
+CARRY_KEY = "carry"
+SMOKE_FIELDS = ("module", "function", "kwargs", "requiredEvidence")
+
 
 # ------------------------------------------------------------------ steps
 def _read_literal(path: Path, name: str):
@@ -92,6 +99,44 @@ def carry_paths(entry: Mapping) -> list[str]:
     return [root for root in produces(entry) if root.split("/")[0] != NOTEBOOKS_ROOT]
 
 
+def _malformed(step: str, key: str, shape: str) -> JobPlanError:
+    return JobPlanError(f"STEP_DECLARATION_MALFORMED: step {step!r} declares {key!r}, "
+                        f"which must be {shape}")
+
+
+def step_smoke(step: str, entry: Mapping) -> dict:
+    """The smoke fields the step declares for its own job (absent ones are
+    left out, so the command's own smoke options fill them)."""
+    smoke = entry.get(SMOKE_KEY)
+    if smoke is None:
+        return {}
+    shape = ("an object with optional module, function (strings), kwargs (an object) "
+             "and requiredEvidence (a list of strings)")
+    if not isinstance(smoke, dict) or set(smoke) - set(SMOKE_FIELDS):
+        raise _malformed(step, SMOKE_KEY, shape)
+    for key in ("module", "function"):
+        if key in smoke and not (isinstance(smoke[key], str) and smoke[key].strip()):
+            raise _malformed(step, SMOKE_KEY, shape)
+    if "kwargs" in smoke and not isinstance(smoke["kwargs"], dict):
+        raise _malformed(step, SMOKE_KEY, shape)
+    evidence = smoke.get("requiredEvidence")
+    if evidence is not None and not (isinstance(evidence, list)
+                                     and all(isinstance(e, str) for e in evidence)):
+        raise _malformed(step, SMOKE_KEY, shape)
+    return dict(smoke)
+
+
+def step_carry(step: str, entry: Mapping) -> list[str]:
+    """The carry paths the step declares beyond its `produces` (validated
+    later, by the generator, exactly as `--carry-path` is)."""
+    carry = entry.get(CARRY_KEY)
+    if carry is None:
+        return []
+    if not isinstance(carry, list) or not all(isinstance(path, str) for path in carry):
+        raise _malformed(step, CARRY_KEY, "a list of paths relative to the product folder")
+    return list(carry)
+
+
 def remote_steps(steps: Mapping) -> tuple[list[tuple[str, dict]], list[dict]]:
     """`([(step, entry), ...] remote, [{step, reason}, ...] skipped)`, in
     declaration order."""
@@ -105,6 +150,48 @@ def remote_steps(steps: Mapping) -> tuple[list[tuple[str, dict]], list[dict]]:
             skipped.append({"step": str(name), "reason": (
                 f"placement {placement!r}" if placement else "no placement declared")})
     return remote, skipped
+
+
+def select_steps(steps: Mapping, remote: Sequence[tuple[str, dict]],
+                 skipped: Sequence[dict], *, only: Sequence[str] = (),
+                 skip: Sequence[str] = (), named: Mapping[str, Sequence[str]] | None = None,
+                 ) -> tuple[list[tuple[str, dict]], list[dict]]:
+    """`remote` narrowed by `--only` and `--skip`, and `skipped` grown by
+    what they left out (declaration order), or a refusal before anything
+    is written. `named` maps each per-step flag to the steps it names:
+    every name must be a remote step, and one the selection keeps."""
+    names = [name for name, _ in remote]
+    given = [("--only", step) for step in only] + [("--skip", step) for step in skip]
+    given += [(flag, step) for flag, steps_named in (named or {}).items()
+              for step in steps_named]
+    for flag, step in given:
+        if step in names:
+            continue
+        entry = steps.get(step)
+        placement = entry.get("placement") if isinstance(entry, dict) else None
+        why = (f"is declared with placement {placement!r}" if placement else
+               "is declared with no placement") if step in steps else "is not declared"
+        raise JobPlanError(f"STEP_UNKNOWN: {flag} {step}: the step {why}; the remote steps "
+                           f"__steps__ declares are {', '.join(names)}")
+    both = sorted(set(only) & set(skip))
+    if both:
+        raise JobPlanError(f"STEP_SELECTION_CONFLICT: {', '.join(both)} named by both --only "
+                           "and --skip")
+    reasons = {name: "not named by --only" for name in names if only and name not in only}
+    reasons.update({name: "excluded by --skip" for name in skip})
+    for flag, step in given[len(only) + len(skip):]:
+        if step in reasons:
+            raise JobPlanError(f"STEP_SELECTION_CONFLICT: {flag} {step}: the step is "
+                               f"{reasons[step]}, so nothing would use the value")
+    kept = [(name, entry) for name, entry in remote if name not in reasons]
+    if not kept:
+        raise JobPlanError("STEP_SELECTION_CONFLICT: --only/--skip leave no remote step "
+                           "to generate")
+    if not reasons:
+        return kept, list(skipped)
+    by_name = {item["step"]: item for item in skipped}
+    by_name.update({name: {"step": name, "reason": reason} for name, reason in reasons.items()})
+    return kept, [by_name[str(name)] for name in steps if str(name) in by_name]
 
 
 # --------------------------------------------------------------- schedule
