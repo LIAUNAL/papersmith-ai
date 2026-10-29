@@ -22,6 +22,16 @@ is the mean of the measurements that state one, 0 when none does. The result
 is reported as a ±20% range, never as a point claim. A host without its own
 measurement reads "sin medir": a remote host is never estimated from local
 timings scaled by a guessed factor. Never raises.
+
+A schema 2 record (``remote-parallelism``'s timing probe) names a candidate
+per measurement -- ``local-cpu-<N>``, ``local-mps``, ``<host>:<owner>/<machine>``
+-- with its settings. Each candidate is estimated from its own rows at its
+fastest measured setting, each host family's row reads its fastest candidate
+(a CPU and an accelerator are never pooled), and ``candidates`` lists one row
+per candidate, measured or not. ``plan_picks`` is the latest recorded
+``plan``'s recommendation per stage (``<product>/.remote-parallelism/plan-*.json``),
+with its reason; the estimate per candidate is serial work, and only ``plan``
+counts processes and accounts.
 """
 
 from __future__ import annotations
@@ -45,6 +55,12 @@ LOCAL_LIMIT = 20 * 60
 POC_BUDGET = 5 * 60 * 60
 MAX_MEASUREMENTS = 500
 MAX_TEXT = 120
+MAX_REASON = 400
+MAX_PLAN_ROWS = 40
+SETTING_KEYS = ("threads", "batchSize", "numWorkers", "pinMemory", "prefetch", "dtype", "dataSource")
+HOST_INFO_KEYS = ("cpuCount", "ramGB", "mps", "cuda")
+PLAN_HINT = ("Sin plan registrado: corre /remote-parallelism plan --timing <Nombre>/Results/timing.json "
+             "--record <Nombre> para comparar CPU y GPU, local y nube, con las cuentas del equipo.")
 EMPTY_HINT = ("Sin Results/timing.json: corre antes del piloto la sonda de tiempo corta (una época de un fold "
               "por brazo) que describe /remote-parallelism en «Estimate before you scale»; escribe "
               "<objetivo>/<Nombre>/Results/timing.json con sus mediciones y las escalas poc y full del protocolo.")
@@ -63,7 +79,11 @@ def _text(value: Any) -> str | None:
 
 def parse_timing(data: Any) -> dict[str, Any] | None:
     """A ``timing.json`` document reduced to valid measurements and scales; None when unusable."""
-    if not isinstance(data, dict) or data.get("schema") != 1:
+    schema = data.get("schema") if isinstance(data, dict) else None
+    if isinstance(schema, bool) or schema not in (1, 2):
+        return None
+    v2 = schema == 2
+    if v2 and not isinstance(data.get("hosts"), dict):
         return None
     measurements: list[dict[str, Any]] = []
     raw = data.get("measurements") if isinstance(data.get("measurements"), list) else []
@@ -74,10 +94,21 @@ def parse_timing(data: Any) -> dict[str, Any] | None:
         if host is None or seconds is None or seconds <= 0:
             continue
         setup = _number(entry.get("setupSeconds"))
-        measurements.append({"host": host, "family": host.split(":", 1)[0], "arm": _text(entry.get("arm")),
-                             "device": _text(entry.get("device")), "measuredAt": _text(entry.get("measuredAt")),
-                             "secondsPerUnit": seconds,
-                             "setupSeconds": setup if setup is not None and setup >= 0 else None})
+        item = {"host": host, "family": host.split(":", 1)[0], "arm": _text(entry.get("arm")),
+                "device": _text(entry.get("device")), "measuredAt": _text(entry.get("measuredAt")),
+                "secondsPerUnit": seconds,
+                "setupSeconds": setup if setup is not None and setup >= 0 else None}
+        if v2:
+            processes = entry.get("processes")
+            item.update({
+                "candidate": _text(entry.get("candidate")) or host,
+                "processes": processes if isinstance(processes, int) and not isinstance(processes, bool)
+                and processes > 0 else None,
+                "settings": {key: entry[key] for key in SETTING_KEYS
+                             if isinstance(entry.get(key), (int, float, str, bool))},
+                "loadSeconds": _number(entry.get("loadSeconds")),
+                "computeSeconds": _number(entry.get("computeSeconds"))})
+        measurements.append(item)
     scales: dict[str, dict[str, int]] = {}
     raw_scales = data.get("scales") if isinstance(data.get("scales"), dict) else {}
     for stage in STAGES:
@@ -87,7 +118,68 @@ def parse_timing(data: Any) -> dict[str, Any] | None:
         values = {key: scale.get(key) for key in SCALE_KEYS}
         if all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in values.values()):
             scales[stage] = values
-    return {"measurements": measurements, "scales": scales}
+    result: dict[str, Any] = {"measurements": measurements, "scales": scales}
+    if v2:
+        hosts = {}
+        for name, info in list(data["hosts"].items())[:20]:
+            if isinstance(name, str) and isinstance(info, dict):
+                hosts[name[:MAX_TEXT]] = {key: info.get(key) for key in HOST_INFO_KEYS
+                                          if isinstance(info.get(key), (int, float, bool))}
+        result.update({"schema": 2, "hosts": hosts})
+    return result
+
+
+def _settings_key(m: dict[str, Any]) -> str:
+    return repr(sorted((m.get("settings") or {}).items()))
+
+
+def fastest_setting(measurements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A candidate's rows at its fastest measured setting; settings are never pooled."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for m in measurements:
+        groups.setdefault(_settings_key(m), []).append(m)
+    scale = {"arms": 1, "folds": 1, "seeds": 1, "epochs": 1}
+    return min(groups.values(), key=lambda rows: estimate_seconds(
+        [dict(m, setupSeconds=None) for m in rows], scale) or math.inf)
+
+
+def _by_candidate(measurements: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for m in measurements:
+        groups.setdefault(m.get("candidate") or m["host"], []).append(m)
+    return groups
+
+
+def parse_plan(data: Any) -> dict[str, Any] | None:
+    """A recorded ``plan`` output reduced to what the tab shows; None when unusable."""
+    plans = data.get("plans") if isinstance(data, dict) else None
+    if not isinstance(plans, dict):
+        return None
+
+    def reason(value: Any) -> str:
+        return value.strip()[:MAX_REASON] if isinstance(value, str) else ""
+
+    parsed: dict[str, Any] = {}
+    for stage in STAGES:
+        plan = plans.get(stage)
+        if not isinstance(plan, dict):
+            continue
+        rec = plan.get("recommended") if isinstance(plan.get("recommended"), dict) else None
+        span = (rec or {}).get("makespanSeconds") if isinstance((rec or {}).get("makespanSeconds"), dict) else {}
+        parsed[stage] = {
+            "recommended": None if rec is None else {
+                "option": _text(rec.get("option")), "device": _text(rec.get("device")),
+                "kind": _text(rec.get("kind")), "reason": reason(rec.get("reason")),
+                "processes": rec.get("processes") if isinstance(rec.get("processes"), int) else None,
+                "accounts": [a[:MAX_TEXT] for a in rec.get("accounts") or [] if isinstance(a, str)][:10],
+                "settings": {k: v for k, v in (rec.get("settings") or {}).items()
+                             if k in SETTING_KEYS and isinstance(v, (int, float, str, bool))},
+                "low": _number(span.get("low")), "high": _number(span.get("high"))},
+            "lost": [{"option": _text(i.get("option")), "reason": reason(i.get("reason"))}
+                     for i in plan.get("lost") or [] if isinstance(i, dict)][:MAX_PLAN_ROWS],
+            "unmeasured": [{"candidate": _text(i.get("candidate")), "reason": reason(i.get("measureWith"))}
+                           for i in plan.get("unmeasured") or [] if isinstance(i, dict)][:MAX_PLAN_ROWS]}
+    return {"plans": parsed, "recordedOn": _text(data.get("recordedOn"))}
 
 
 def estimate_seconds(measurements: list[dict[str, Any]], scale: dict[str, int]) -> float | None:
@@ -131,12 +223,86 @@ def range_label(low: float, high: float) -> str:
     return f"{_amount(low, div, decimals)} {name} – {_amount(high, div, decimals)} {name}"
 
 
-def _timing_for(stage: str, products: list[Any]) -> dict[str, Any] | None:
-    """The timing record for ``stage``: a product of that kind first, else any with that scale."""
+def _product_for(stage: str, products: list[Any]) -> dict[str, Any] | None:
+    """The product whose timing record serves ``stage``: one of that kind first, else any with that scale."""
     usable = [p for p in products if isinstance(p, dict) and isinstance(p.get("timing"), dict)
               and stage in (p["timing"].get("scales") or {})]
     usable.sort(key=lambda p: p.get("kind") != stage)
-    return usable[0]["timing"] if usable else None
+    return usable[0] if usable else None
+
+
+def _timing_for(stage: str, products: list[Any]) -> dict[str, Any] | None:
+    """The timing record for ``stage``: a product of that kind first, else any with that scale."""
+    product = _product_for(stage, products)
+    return product["timing"] if product else None
+
+
+def _estimate(rows: list[dict[str, Any]], scale: dict[str, int]) -> dict[str, Any] | None:
+    seconds = estimate_seconds(rows, scale)
+    if seconds is None:
+        return None
+    return {"seconds": round(seconds, 6), "low": round(seconds * (1 - RANGE), 6),
+            "high": round(seconds * (1 + RANGE), 6)}
+
+
+def _candidate_rows(stage: str, timing: dict[str, Any] | None, plan: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """One row per candidate for ``stage``: every measured one, then every unmeasured one."""
+    scale = (timing or {}).get("scales", {}).get(stage)
+    stage_plan = ((plan or {}).get("plans") or {}).get(stage) or {}
+    pick = (stage_plan.get("recommended") or {}).get("option")
+    lost = {item["option"]: item["reason"] for item in stage_plan.get("lost") or []}
+    rows: list[dict[str, Any]] = []
+    measured = _by_candidate((timing or {}).get("measurements") or [])
+    for name, items in sorted(measured.items()):
+        best = fastest_setting(items) if timing.get("schema") == 2 else items
+        estimate = _estimate(best, scale) if scale else None
+        load = [m for m in best if m.get("loadSeconds") is not None and m.get("computeSeconds") is not None]
+        total = sum(m["loadSeconds"] + m["computeSeconds"] for m in load)
+        device = best[0].get("device") or "—"
+        rows.append({"stage": stage, "candidate": name, "host": best[0]["host"], "family": best[0]["family"],
+                     "device": device, "kind": "cpu" if device == "cpu" else "acelerador",
+                     "processes": best[0].get("processes") or (int(name.rsplit("-", 1)[1])
+                                                               if name.startswith("local-cpu-") else 1),
+                     "settings": best[0].get("settings") or {},
+                     "load_share": round(sum(m["loadSeconds"] for m in load) / total, 2) if load and total else None,
+                     "status": "medido", "estimate": estimate,
+                     "estimate_label": f"{range_label(estimate['low'], estimate['high'])} ±20%" if estimate
+                     else UNMEASURED,
+                     "reason": f"{len(items)} medición(es) propia(s)",
+                     "plan": "recomendado" if name == pick else lost.get(name, "")})
+    names = set(measured)
+    unmeasured: list[tuple[str, str]] = [(i["candidate"], i["reason"]) for i in stage_plan.get("unmeasured") or []
+                                         if i.get("candidate")]
+    local_info = ((timing or {}).get("hosts") or {}).get("local") or {}
+    if not any(n == "local" or n.startswith("local-cpu-") for n in names):
+        unmeasured.append(("local-cpu-1", "Corre la sonda de tiempo con el intérprete del objetivo."))
+    for name, key in (("local-mps", "mps"), ("local-cuda", "cuda")):
+        if local_info.get(key):
+            unmeasured.append((name, "El equipo lo tiene: mídelo con la sonda de tiempo antes de elegirlo."))
+    families = {m["family"] for items in measured.values() for m in items}
+    for family in RUN_HOSTS:
+        if family != "local" and family not in families:
+            unmeasured.append((family, "Sin medición en este servicio: un ensayo con la sonda la añade."))
+    seen = set(names)
+    for name, reason in unmeasured:
+        if name in seen:
+            continue
+        seen.add(name)
+        rows.append({"stage": stage, "candidate": name, "host": name.split("/", 1)[0],
+                     "family": "local" if name.startswith("local") else name.split(":", 1)[0].split("/", 1)[0],
+                     "device": "—", "kind": "cpu" if name.endswith("cpu") or name.startswith("local-cpu") else "—",
+                     "processes": None, "settings": {}, "load_share": None, "status": UNMEASURED,
+                     "estimate": None, "estimate_label": UNMEASURED, "reason": reason, "plan": ""})
+    return rows
+
+
+def _plan_pick(stage: str, plan: dict[str, Any] | None) -> dict[str, Any] | None:
+    rec = ((((plan or {}).get("plans") or {}).get(stage)) or {}).get("recommended")
+    if not rec or not rec.get("option"):
+        return None
+    low, high = rec.get("low"), rec.get("high")
+    label = f"{range_label(low, high)} ±20%" if low is not None and high is not None else "—"
+    return dict(rec, label=label, source=(plan or {}).get("file"), recorded_on=(plan or {}).get("recordedOn"))
 
 
 def _local_readiness(local: Any) -> dict[str, Any]:
@@ -165,6 +331,12 @@ def _row(stage: str, host: str, readiness: dict[str, Any], timing: dict[str, Any
     label = UNMEASURED
     scale = (timing or {}).get("scales", {}).get(stage)
     own = [m for m in (timing or {}).get("measurements") or [] if m.get("family") == host]
+    candidate = None
+    if scale and own and timing.get("schema") == 2:
+        # Each candidate at its fastest setting; the family reads its fastest candidate.
+        best = min(((name, fastest_setting(rows)) for name, rows in sorted(_by_candidate(own).items())),
+                   key=lambda pair: estimate_seconds(pair[1], scale) or math.inf)
+        candidate, own = best
     if scale and own:
         seconds = estimate_seconds(own, scale)
         if seconds is not None:
@@ -172,6 +344,8 @@ def _row(stage: str, host: str, readiness: dict[str, Any], timing: dict[str, Any
             estimate = {"seconds": round(seconds, 6), "low": round(low, 6), "high": round(high, 6),
                         "measurements": len(own), "source": timing.get("file"),
                         "devices": sorted({m["device"] for m in own if m.get("device")})}
+            if candidate is not None:
+                estimate["candidate"] = candidate
             label = f"{range_label(low, high)} ±20%"
     return {"stage": stage, "stage_label": STAGE_LABELS[stage], "host": host,
             "host_label": HOST_LABELS.get(host, host), "available": bool(readiness.get("available")),
@@ -233,13 +407,22 @@ def run_options(root: Path | str, view: Any) -> dict[str, Any]:
     view = view if isinstance(view, dict) else {}
     products = view.get("products") if isinstance(view.get("products"), list) else []
     rows: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    picks: dict[str, dict[str, Any] | None] = {}
     recommendations: dict[str, dict[str, Any]] = {}
     sources: set[str] = set()
     for stage in STAGES:
         try:
-            timing = _timing_for(stage, products)
+            product = _product_for(stage, products)
         except Exception:  # noqa: BLE001
-            timing = None
+            product = None
+        timing = product["timing"] if product else None
+        plan = product.get("placement_plan") if product and isinstance(product.get("placement_plan"), dict) else None
+        try:
+            candidates.extend(_candidate_rows(stage, timing, plan))
+            picks[stage] = _plan_pick(stage, plan)
+        except Exception:  # noqa: BLE001
+            picks[stage] = None
         if timing and timing.get("file"):
             sources.add(str(timing["file"]))
         try:
@@ -260,6 +443,7 @@ def run_options(root: Path | str, view: Any) -> dict[str, Any]:
         rows.extend(stage_rows)
         recommendations[stage] = _recommend(stage, stage_rows)
     empty = not any(r["estimate"] for r in rows)
-    return {"rows": rows, "recommendations": recommendations, "note": NOTE, "sources": sorted(sources),
+    return {"rows": rows, "recommendations": recommendations, "candidates": candidates, "plan_picks": picks,
+            "plan_hint": PLAN_HINT, "note": NOTE, "sources": sorted(sources),
             "empty": empty, "empty_hint": EMPTY_HINT, "local_limit_seconds": LOCAL_LIMIT,
             "poc_budget_seconds": POC_BUDGET}
