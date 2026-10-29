@@ -23604,6 +23604,40 @@ class ColabSessionLifecycleTests(unittest.TestCase):
             self.assertIn("absent", str(ctx.exception))
             self.assertEqual(sim.invocations(), [])
 
+    def test_a_carry_path_with_no_parts_never_uploads_the_whole_fetched_output(self) -> None:
+        """F2: a hand-edited run-config declaring `.` (or `./`, `./.`) is
+        skipped exactly as the runner's `_carry_relative` skips it, so only
+        the real declared path is uploaded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(**self._fast_knobs())
+            folder = self._job_folder(tmp, config={
+                "schemaVersion": 1, "product": "P", "commit": "c" * 40,
+                "repo": {"url": "https://example.invalid/repo.git", "ref": "refs/heads/main"},
+                "clonePaths": ["src/pkg"],
+                "carryPaths": [".", "./", "./.", "Results/runs"],
+                "run": {"module": "pkg.harness", "function": "run", "kwargs": {}},
+            })
+            local = self._fetched(tmp)
+            before = self._tree(local)
+            adapter = self._adapter(sim)
+            row = {"submissionId": "s", "ref": "s", "upload": str(local)}
+            submission = self._submit(adapter, folder,
+                                      run_config={"units": ["u2"], "carry": [row]})
+            session = submission.id.split("/", 1)[1]
+            mount = sim.remote_root / f"{session}.carry" / "0"
+            self.assertEqual(self._tree(mount), {
+                "clone/P/Results/runs/u1.json": "done-u1",
+                "Results/runs/old.json": "working-layout",
+            })
+            carried = [entry for entry in sim.invocations()
+                       if entry[0] == "upload" and ".carry/" in entry[-1]]
+            self.assertEqual(len(carried), 2)
+            self.assertEqual(self._tree(local), before)
+            self.assertEqual(COLAB.ColabAdapter()._carry_plan(
+                {"carryPaths": [".", "./", "./."]},
+                [{"submissionId": "s", "ref": "s", "upload": str(local)}], "x")[2], [])
+
     def test_the_colab_adapter_declares_the_upload_capability(self) -> None:
         self.assertIs(COLAB.ColabAdapter.CARRY_UPLOAD, True)
         self.assertIs(ADAPTER.Adapter.CARRY_UPLOAD, False)
@@ -25992,8 +26026,11 @@ class RemainingUnitsTests(unittest.TestCase):
     def _settle_slot1_returned_slot2_errored(self, result: dict) -> None:
         ledger_path = Path(result["ledgerPath"])
         slot1, slot2 = result["assignments"][0]["submissions"]
+        # A returned result counts only while it is on disk (F8).
+        fetched = ledger_path.parents[2] / "r1"
+        fetched.mkdir()
         LEDGER.append(ledger_path, LEDGER.returned_event(
-            submission_id=slot1["submissionId"], artifact_path="r1",
+            submission_id=slot1["submissionId"], artifact_path=str(fetched),
             observed_concurrency=2))
         LEDGER.append(ledger_path, LEDGER.errored_event(
             submission_id=slot2["submissionId"], reason="run failed"))
@@ -26037,8 +26074,10 @@ class RemainingUnitsTests(unittest.TestCase):
             first = self._campaign(target, notebook, adapter, ("u0",))
             ledger_path = Path(first["ledgerPath"])
             sid = first["assignments"][0]["submissionId"]
+            (Path(tmp) / "r").mkdir()
             LEDGER.append(ledger_path, LEDGER.returned_event(
-                submission_id=sid, artifact_path="r", observed_concurrency=1))
+                submission_id=sid, artifact_path=str(Path(tmp) / "r"),
+                observed_concurrency=1))
             # An identity-stable backend answers the next campaign with the
             # same id; that one fails.
             second = self._campaign(target, notebook, adapter, ("u1",))
@@ -26086,6 +26125,97 @@ class RemainingUnitsTests(unittest.TestCase):
                 target=target, entrypoint=notebook, units=("u0",),
                 source_digest=lambda t, n: "e" * 64)
             self.assertEqual(report["remaining"], ["u0"])
+
+    # -- F8: a returned result no longer on disk is unknown, never complete --
+
+    @staticmethod
+    def _snapshot(root: Path) -> dict[str, bytes]:
+        return {p.relative_to(root).as_posix(): p.read_bytes()
+                for p in sorted(root.rglob("*")) if p.is_file()}
+
+    def _returned(self, tmp: str, artifact: Path, units=("u0", "u1")) -> tuple:
+        target, notebook = self._target_and_notebook(tmp)
+        ledger_path = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                       / REMOTE_CLI.LEDGER_FILENAME)
+        LEDGER.append(ledger_path, LEDGER.submitted_event(
+            entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+            submission_id="w1/k-1", worker="w1", requested_capacity=1,
+            granted_capacity=1, units=list(units)))
+        LEDGER.append(ledger_path, LEDGER.returned_event(
+            submission_id="w1/k-1", artifact_path=str(artifact), observed_concurrency=1))
+        return target, notebook, ledger_path
+
+    def test_a_returned_result_missing_from_disk_is_unknown_not_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gone = Path(tmp) / "results" / "k-1"
+            target, notebook, ledger_path = self._returned(tmp, gone)
+            before = self._snapshot(Path(tmp))
+            report = self._remaining(target, notebook, ("u0", "u1", "u2"))
+            self.assertEqual(report["complete"], [])
+            self.assertEqual(report["inFlight"], [])
+            self.assertEqual(report["unknown"], ["u0", "u1"])
+            self.assertEqual(report["remaining"], ["u0", "u1", "u2"])
+            self.assertEqual(report["unitArgs"],
+                             ["--unit", "u0", "--unit", "u1", "--unit", "u2"])
+            self.assertEqual(report["refetch"], [{
+                "submissionId": "w1/k-1",
+                "units": ["u0", "u1"],
+                "artifactPath": str(gone),
+                "reason": f"the returned result recorded at {gone} is not on disk, so "
+                          "whether u0, u1 finished is unknown; fetch it again before "
+                          "resending them",
+                "command": (f"remote_cli fetch --target {target.resolve()} --entrypoint "
+                            f"{notebook.resolve()} --submission-id w1/k-1 --dest {gone} "
+                            "--backend <backend>"),
+            }])
+            self.assertEqual(self._snapshot(Path(tmp)), before,
+                             "remaining writes nothing, the ledger included")
+            self.assertFalse(gone.exists())
+            # Never continuation evidence either.
+            self.assertEqual(REMOTE_CLI._carry_evidence(
+                target=target.resolve(), product="FEM-TOLLA",
+                relative_entrypoint="Notebooks/a.ipynb", live_digest="d" * 64,
+                ledger_lines=REMOTE_CLI._read_ledger_lines(ledger_path)), {})
+
+    def test_the_refetch_command_names_the_job_folders_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gone = Path(tmp) / "gone"
+            target, notebook, _ = self._returned(tmp, gone, units=("u0",))
+            (notebook.parent / "run-config.json").write_text(
+                json.dumps({"service": "kaggle"}), encoding="utf-8")
+            report = self._remaining(target, notebook, ("u0",))
+            self.assertTrue(report["refetch"][0]["command"].endswith(
+                f"--dest {gone} --backend kaggle"), report)
+
+    def test_a_present_returned_result_still_completes_its_share(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            present = Path(tmp) / "results" / "k-1"
+            present.mkdir(parents=True)
+            (present / "shard.json").write_text("{}", encoding="utf-8")
+            target, notebook, _ = self._returned(tmp, present)
+            report = self._remaining(target, notebook, ("u0", "u1", "u2"))
+            self.assertEqual(report["complete"], ["u0", "u1"])
+            self.assertEqual(report["unknown"], [])
+            self.assertEqual(report["refetch"], [])
+            self.assertEqual(report["remaining"], ["u2"])
+
+    def test_a_later_complete_result_settles_an_unknown_unit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook, ledger_path = self._returned(tmp, Path(tmp) / "gone")
+            present = Path(tmp) / "k-2"
+            present.mkdir()
+            LEDGER.append(ledger_path, LEDGER.submitted_event(
+                entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+                submission_id="w1/k-2", worker="w1", requested_capacity=1,
+                granted_capacity=1, units=["u0"]))
+            LEDGER.append(ledger_path, LEDGER.returned_event(
+                submission_id="w1/k-2", artifact_path=str(present),
+                observed_concurrency=1))
+            report = self._remaining(target, notebook, ("u0", "u1"))
+            self.assertEqual(report["complete"], ["u0"])
+            self.assertEqual(report["unknown"], ["u1"])
+            self.assertEqual(report["remaining"], ["u1"])
+            self.assertEqual(report["refetch"][0]["units"], ["u1"])
 
     def test_the_remaining_list_is_accepted_unchanged_by_distribute_and_submit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

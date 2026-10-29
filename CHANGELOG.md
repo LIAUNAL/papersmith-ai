@@ -79,6 +79,23 @@ number is `0`, breaking changes can still arrive without a major bump.
   `<path>` in the working directory, the layout older jobs use and still
   get. Nothing is moved between layouts, the mount is only read, and a job
   without carry paths generates the same `run-config.json` bytes as before.
+- `restore_carry()` never follows a symbolic link in the mount: a declared
+  path that is one (or sits under one) is skipped with a `[carry]` line, and
+  a link inside a carried tree is not copied, so a mount can no longer pull
+  a file from outside it into the session. Every file is written only where
+  its resolved destination stays inside the working directory, so a link
+  already in the clone can no longer carry a write out of it.
+- The Colab carry upload skips a declared path with no parts (`.`, `./`),
+  as the runner does, so a hand-edited `run-config.json` can no longer
+  upload the whole fetched output.
+- `session-fit` no longer reports a deadline rehearsal that ran without
+  ever stopping early (every unit finished before the deadline) as
+  skipped; it quotes that row's evidence.
+- `remaining` no longer counts the units of a returned result as complete
+  when its recorded `artifactPath` is gone from disk: they are `unknown`,
+  stay in `remaining`, and `refetch` names the exact `fetch` command per
+  submission; such a result is never continuation evidence. A present
+  result is read exactly as before.
 
 ## 0.38.0
 

@@ -2016,6 +2016,18 @@ def cmd_status(
     }
 
 
+def _job_service(entrypoint: Path) -> str | None:
+    """The `service` the job folder's `run-config.json` beside `entrypoint`
+    names, or `None` when there is none to read."""
+    try:
+        config = json.loads((entrypoint.parent / RUN_CONFIG_FILENAME)
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    service = config.get("service") if isinstance(config, dict) else None
+    return service if isinstance(service, str) and service.strip() else None
+
+
 def cmd_remaining(
     *,
     target: str | Path,
@@ -2048,6 +2060,11 @@ def cmd_remaining(
     - `inFlight`: a unit whose submission has not been settled yet --
       reported apart, never resent, since sending it again would run it
       twice;
+    - `unknown`: a unit whose `returned` result is recorded at a path that
+      is no longer a directory on disk, so whether it finished cannot be
+      read. It completes nothing and stays in `remaining`; `refetch` names,
+      per such submission, the `fetch` command that brings the result back
+      before its units are sent again;
     - `remaining`: every other declared unit, in the DECLARED order, which
       is the order `distribute`'s consent token binds. Pass it back
       unchanged (`unitArgs` is the same list as repeated `--unit` flags).
@@ -2071,6 +2088,7 @@ def cmd_remaining(
     quarantine = (target / product / LEDGER_DIRNAME / QUARANTINE_DIRNAME).resolve()
     complete: set[str] = set()
     in_flight: set[str] = set()
+    missing: list[tuple[dict, str, list[str]]] = []
     for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(ledger_path)):
         if str(submitted.get("entrypoint")) != relative_entrypoint:
             continue
@@ -2085,6 +2103,11 @@ def cmd_remaining(
             # A result `fetch` judged not current went to quarantine: it
             # completes nothing, whatever it holds.
             if artifact and Path(artifact).resolve().is_relative_to(quarantine):
+                continue
+            # A result deleted (or moved) since `fetch` recorded it cannot
+            # say what it finished: never read as complete.
+            if artifact and not Path(artifact).is_dir():
+                missing.append((submitted, str(artifact), share))
                 continue
             # A run that stopped early (at the deadline, say) exits 0 and is
             # `returned`, but its partial.json names what it did not finish.
@@ -2104,12 +2127,34 @@ def cmd_remaining(
     in_flight -= complete
 
     remaining = [unit for unit in declared if unit not in complete and unit not in in_flight]
+    refetch: list[dict] = []
+    unknown: set[str] = set()
+    service = _job_service(resolved_entrypoint) or "<backend>"
+    for submitted, artifact, share in missing:
+        units_left = [unit for unit in declared if unit in share and unit in remaining]
+        if not units_left:
+            continue
+        unknown.update(units_left)
+        submission_id = str(submitted.get("submissionId"))
+        refetch.append({
+            "submissionId": submission_id,
+            "units": units_left,
+            "artifactPath": artifact,
+            "reason": f"the returned result recorded at {artifact} is not on disk, so "
+                      f"whether {', '.join(units_left)} finished is unknown; fetch it again "
+                      "before resending them",
+            "command": f"remote_cli fetch --target {target} --entrypoint "
+                       f"{resolved_entrypoint} --submission-id {submission_id} --dest "
+                       f"{artifact} --backend {service}",
+        })
     return {
         "ledgerPath": ledger_path,
         "entrypoint": relative_entrypoint,
         "declared": declared,
         "complete": [unit for unit in declared if unit in complete],
         "inFlight": [unit for unit in declared if unit in in_flight],
+        "unknown": [unit for unit in declared if unit in unknown],
+        "refetch": refetch,
         "remaining": remaining,
         "unitArgs": [token for unit in remaining for token in ("--unit", unit)],
         "unitField": unit_field,
@@ -3675,7 +3720,8 @@ def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, serv
     """The `session-fit` row. A unit that spans sessions passes only when
     the job declares carry paths AND the deadline rehearsal (`deadline`,
     the `deadline-rehearsal` row) passed: it fails when that rehearsal
-    failed -- no marker, among others -- and warns when it was skipped."""
+    failed -- no marker, among others -- and warns when it warned, quoting
+    why: skipped, or run without ever stopping early."""
     if estimate is None:
         estimate = _session_fit_estimate(adapter, run_config, service, timing, stage, units,
                                          candidate)
@@ -3696,8 +3742,15 @@ def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, serv
             return _preflight_row("session-fit", "fail", f"{spans}, but the deadline rehearsal "
                                   f"failed: {deadline.get('evidence')}",
                                   deadline.get("fix") or "")
+        evidence = str((deadline or {}).get("evidence") or "")
+        if status == "warn" and not evidence.startswith("skipped:"):
+            return _preflight_row("session-fit", "warn", f"{spans}, but the deadline "
+                                  f"rehearsal did not exercise a stop: {evidence}",
+                                  deadline.get("fix") or "")
+        why = evidence.removeprefix("skipped:").strip()
         return _preflight_row("session-fit", "warn", f"{spans}, but the deadline rehearsal was "
-                              "skipped, so resuming from a checkpoint is unproven",
+                              f"skipped{f' ({why})' if why else ''}, so resuming from a "
+                              "checkpoint is unproven",
                               (deadline or {}).get("fix") or "rerun preflight with --unit <id> "
                               "for each unit and without --skip-rehearsal")
     return _preflight_row(

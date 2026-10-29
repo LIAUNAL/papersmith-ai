@@ -189,6 +189,93 @@ class CarryLayoutTests(unittest.TestCase):
                                  ["mount", "work"])
                 self.assertNotIn("clone/", log)
 
+    # -- F1: a symbolic link is never followed out of the mount or the clone --
+
+    def test_a_link_inside_a_carried_tree_is_never_followed(self) -> None:
+        """A file link and a directory link under a declared path in the
+        mount point outside it: both are skipped with a stated reason, the
+        regular files beside them are restored, and nothing outside the
+        working directory is read into it or written."""
+        with tempfile.TemporaryDirectory() as tmp:
+            outside = Path(tmp) / "outside"
+            _write(outside / "secret.txt", "secret")
+            _write(outside / "tree/deep.txt", "deep secret")
+            mount = Path(tmp) / "mount"
+            runs = mount / "clone" / PRODUCT / "Results/e2/runs"
+            _write(runs / "u1.json", "done-u1")
+            (runs / "leak.json").symlink_to(outside / "secret.txt")
+            (runs / "leakdir").symlink_to(outside / "tree", target_is_directory=True)
+            outside_before = _tree(outside)
+            base = Path(tmp) / "work"
+            base.mkdir()
+            _, log = self._invoke(base, self._config(mount), lambda seen: None)
+            self.assertEqual(_tree(base), {
+                f"clone/{PRODUCT}/Results/e2/runs/u1.json": "done-u1",
+            })
+            self.assertEqual([p for p in base.rglob("*") if p.is_symlink()], [])
+            self.assertEqual(_tree(outside), outside_before)
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()),
+                             ["mount", "outside", "work"])
+            self.assertEqual(log, (
+                f"[carry] skipped clone/{PRODUCT}/Results/e2/runs/leakdir from 'w1/k': "
+                "a symbolic link in the mount is never followed\n"
+                f"[carry] skipped clone/{PRODUCT}/Results/e2/runs/leak.json from 'w1/k': "
+                "a symbolic link in the mount is never followed\n"
+                f"[carry] restored Results/e2/runs from 'w1/k' into clone/{PRODUCT}/"
+                "Results/e2/runs\n"))
+
+    def test_a_declared_path_that_is_a_link_in_the_mount_is_skipped(self) -> None:
+        for linked in (f"clone/{PRODUCT}/Results/e2/runs", f"clone/{PRODUCT}/Results",
+                       "Results/e2/runs"):
+            with self.subTest(linked=linked), tempfile.TemporaryDirectory() as tmp:
+                outside = Path(tmp) / "outside"
+                _write(outside / "e2/runs/u1.json", "foreign")
+                _write(outside / "u1.json", "foreign")
+                outside_before = _tree(outside)
+                mount = Path(tmp) / "mount"
+                link = mount / linked
+                link.parent.mkdir(parents=True)
+                link.symlink_to(outside, target_is_directory=True)
+                base = Path(tmp) / "work"
+                base.mkdir()
+                _, log = self._invoke(base, self._config(mount), lambda seen: None)
+                self.assertEqual(_tree(base), {})
+                self.assertEqual(_tree(outside), outside_before)
+                self.assertEqual(log, (
+                    f"[carry] skipped carry path Results/e2/runs from 'w1/k': {linked} "
+                    "is a symbolic link in the mount; it is never followed\n"
+                    f"[carry] Results/e2/runs was not restored from {mount}; it starts "
+                    "fresh\n"))
+
+    def test_a_destination_link_in_the_clone_is_never_written_through(self) -> None:
+        """The working directory already holds a link where a carried path
+        lands (a cloned repository can): nothing is written through it."""
+        for linked in (f"clone/{PRODUCT}/Results/e2/runs", f"clone/{PRODUCT}/Results",
+                       f"clone/{PRODUCT}/Results/e2/runs/u1.json"):
+            with self.subTest(linked=linked), tempfile.TemporaryDirectory() as tmp:
+                outside = Path(tmp) / "outside"
+                outside.mkdir()
+                (outside / "u1.json").write_text("theirs", encoding="utf-8")
+                mount = Path(tmp) / "mount"
+                _write(mount / "clone" / PRODUCT / "Results/e2/runs/u1.json", "done-u1")
+                base = Path(tmp) / "work"
+                link = base / linked
+                link.parent.mkdir(parents=True)
+                link.symlink_to(outside / "u1.json" if linked.endswith(".json") else outside,
+                                target_is_directory=not linked.endswith(".json"))
+                _, log = self._invoke(base, self._config(mount), lambda seen: None)
+                self.assertEqual(_tree(outside), {"u1.json": "theirs"})
+                self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()),
+                                 ["mount", "outside", "work"])
+                # A linked directory refuses its whole tree; a linked file, itself.
+                refused = (f"clone/{PRODUCT}/Results/e2/runs/u1.json"
+                           if linked.endswith(".json") else f"clone/{PRODUCT}/Results/e2/runs")
+                self.assertEqual(log, (
+                    f"[carry] skipped {refused} from 'w1/k': its destination resolves "
+                    "outside the working directory\n"
+                    f"[carry] Results/e2/runs was not restored from {mount}; it starts "
+                    "fresh\n"))
+
     def test_session_two_reads_the_tree_session_one_wrote(self) -> None:
         """The whole chain through the runner: session 1 finishes `u1`,
         stops at its deadline leaving `partial.json`; its working directory
@@ -338,6 +425,9 @@ def smoke_chain(**kwargs):
         time.sleep(float(kwargs.get("unitSeconds", 0)))
         (runs / (unit + ".json")).write_text("done-" + unit, encoding="utf-8")
         ran.append(unit)
+    else:
+        if kwargs.get("markEmpty"):
+            Path("partial.json").write_text(json.dumps({"remaining": []}), encoding="utf-8")
     Path("ran.json").write_text(json.dumps({
         "units": units, "ran": ran, "seenDone": [u for u in units if u not in todo],
         "mode": os.environ.get("FORGE_RUN_MODE"),
@@ -498,7 +588,30 @@ class DeadlineRehearsalTriggerTests(DeadlineRehearsalCase):
         self.assertEqual(self.row(payload, "deadline-rehearsal")["status"], "warn")
         fit = self.row(payload, "session-fit")
         self.assertEqual(fit["status"], "warn")
-        self.assertIn("skipped", fit["evidence"])
+        self.assertIn("the deadline rehearsal was skipped (--skip-rehearsal), so resuming "
+                      "from a checkpoint is unproven", fit["evidence"])
+
+    def test_a_rehearsal_that_never_stopped_early_is_quoted_not_called_skipped(self) -> None:
+        """F3: session 1 finished every unit before its deadline, so the
+        row warns; `session-fit` quotes that evidence instead of saying the
+        rehearsal was skipped."""
+        self.timing(120.0)
+        job = self.chain_job(unitSeconds=0, markEmpty=True)
+        _, payload, _ = self.preflight(job, *UNIT_ARGS)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "warn", row)
+        evidence = ("session 1 finished every unit before its deadline and left an empty "
+                    "partial.json; stopping early was not exercised")
+        self.assertEqual(row["evidence"], evidence)
+        fit = self.row(payload, "session-fit")
+        self.assertEqual(fit["status"], "warn", fit)
+        self.assertNotIn("skipped", fit["evidence"])
+        self.assertTrue(fit["evidence"].endswith(
+            "declares carry paths (Results/runs), but the deadline rehearsal did not "
+            f"exercise a stop: {evidence}"), fit)
+        self.assertEqual(fit["fix"], row["fix"])
+        self.assertEqual(fit["fix"], "rehearse more units (--unit) or a slower "
+                                     "--local-smoke-kwargs")
 
     def test_without_unit_ids_the_rehearsal_is_skipped_naming_the_flag(self) -> None:
         self.timing(120.0)

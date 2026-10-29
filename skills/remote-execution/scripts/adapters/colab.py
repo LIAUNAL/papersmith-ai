@@ -1359,7 +1359,9 @@ class ColabAdapter(ADAPTER.Adapter):
         file under a declared carry path, in either layout the runner
         restores (`clone/<product>/<path>` and `<path>`), goes to
         `<root>/<session>.carry/<k>/` at the same relative path; nothing
-        else is uploaded, and nothing local is written. The runner row is
+        else is uploaded, and nothing local is written. A declared path the
+        runner's `_carry_relative` refuses (empty, `.`, absolute, `..`) is
+        skipped the same way, so no row uploads the whole fetched output. The runner row is
         the same row with `mount` in place of `upload`, so no local path
         reaches the session. A row that already names a `mount` passes
         through unchanged. Called before any CLI call: a source that is not
@@ -1369,7 +1371,7 @@ class ColabAdapter(ADAPTER.Adapter):
             return [], [], []
         declared = [
             PurePosixPath(raw) for raw in parsed_run_config.get("carryPaths") or []
-            if isinstance(raw, str) and raw
+            if isinstance(raw, str) and raw.strip() and PurePosixPath(raw).parts
             and not PurePosixPath(raw).is_absolute() and ".." not in PurePosixPath(raw).parts
         ]
         product = parsed_run_config.get("product")

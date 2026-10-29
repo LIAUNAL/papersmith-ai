@@ -1513,7 +1513,7 @@ refusal.
 | `submit` | submit one notebook to a registered backend's worker |
 | `status` | report the fold for one product's ledger; resolves nothing |
 | `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares`; issues no work and records nothing |
-| `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
+| `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `unknown` with its `refetch` commands, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
 | `poll` | ask the adapter for one submission's status |
 | `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
 | `reconcile` | compare the ledger against the adapter's `list_active()` in both directions |
@@ -1598,7 +1598,7 @@ row fails. Run it under the workspace env interpreter, the one `submit` uses.
 | `account` | fails when the worker's account does not authenticate or is not signed in; warns when it has no passing rehearsal of its own at this pin | validate or sign in the account; `submit --smoke --worker <id>` once authorized |
 | `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given, saying the GPU is a default, not a measured choice; passes a CPU-only job (`--accelerator-kind cpu`) and says so | compare candidates with `remote-parallelism plan`, then regenerate with `--accelerator-kind cpu` or `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
 | `deadline-rehearsal` | present only for a job that declares carry paths or whose unit or whole-session estimate exceeds the usable session. Fails when the job's smoke (or `--deadline-block run`), run locally under a deadline that has already arrived, overruns `--local-timeout`, raises, leaves no `partial.json`, leaves one whose ids are not among the `--unit` ids, leaves it inside a carry path, leaves none of its declared carry paths, or when the second session, handed only the remaining ids with those paths restored, does not finish them; warns when skipped (`--skip-rehearsal`, no `--unit`, or a failed local rehearsal) | read `FORGE_SESSION_DEADLINE` before each unit, epoch or trial, checkpoint into a carry path, write `partial.json` with the `FORGE_RUN_UNITS` ids and exit 0; `--unit <id>` per unit |
-| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths, or declares them and the deadline rehearsal failed; warns when the deadline rehearsal was skipped, and when unmeasured. Declared carry paths alone never pass a unit that spans sessions | more units, or `generate-job --carry-path` and a passing deadline rehearsal |
+| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths, or declares them and the deadline rehearsal failed; warns when the deadline rehearsal was skipped (quoting why), when it ran but never stopped early (quoting its evidence), and when unmeasured. Declared carry paths alone never pass a unit that spans sessions | more units, or `generate-job --carry-path` and a passing deadline rehearsal |
 
 The local rehearsal materializes the job's code with the runner's own
 functions in a fresh scratch directory outside the target: unpacked from
@@ -2220,7 +2220,13 @@ marker without that list, or one that does not parse, completes none. With
 `--unit-field <dotted.path>` -- the field of the target's `runs.jsonl`
 records that names a unit -- the per-unit records inside a kept partial
 result, or inside a returned one with a `partial.json`, count too: a unit
-with its own record is complete even when a marker lists it. Units of a submission still unsettled are reported as
+with its own record is complete even when a marker lists it. A returned
+result whose recorded `artifactPath` is no longer a directory on disk
+completes nothing: its units are reported as `unknown` and stay in
+`remaining`, and `refetch` names, per submission, the exact `remote_cli
+fetch ... --dest <artifactPath> --backend <service>` that brings it back
+(run it before resending them, or you pay for those hours again); it is
+never continuation evidence either. Units of a submission still unsettled are reported as
 `inFlight` and are not resent. `remaining` keeps the declared order, which is
 the order the consent token binds, so its list goes to `distribute` and
 `submit` unchanged (`unitArgs` spells it as `--unit` flags).
@@ -2269,7 +2275,14 @@ nothing), or whose `errored` event names bytes kept under
    into the working directory. Both are restored when both exist; nothing is moved between
    them, nothing outside a declared path is copied, and the mount is only
    read. `<product>` is `run-config.json`'s `product`, joined only when it
-   is one folder name. Each restore is one `[carry] restored <path> from
+   is one folder name. A symbolic link in the mount is never followed: a
+   declared path that is one, or sits under one, is skipped (`[carry]
+   skipped carry path <path> from <ref>: <link> is a symbolic link in the
+   mount; it is never followed`), and a link inside a carried tree is not
+   copied. A file is written only where its resolved destination stays
+   inside the working directory, so a link already in the clone never
+   carries a write out of it (`its destination resolves outside the working
+   directory`). Each restore is one `[carry] restored <path> from
    <ref> into <where>` line in the run log. The runner then exports the
    present mounts as `FORGE_CARRY_IN` (joined with `os.pathsep`). A missing
    mount or path is one `[carry]` line in the run log, and the unit starts
@@ -2289,7 +2302,9 @@ nothing), or whose `errored` event names bytes kept under
    `<root>/<session>.carry/<k>/` (beside the session directory, so the
    manifest never fetches carried inputs back), uploads every regular file
    under a declared carry path in either layout (`clone/<product>/<path>`
-   and `<path>`) and nothing else, and hands the runner the same row with
+   and `<path>`) and nothing else -- a declared path the runner would
+   refuse (empty, `.`, absolute, `..`) is skipped, so no row uploads the
+   whole fetched output -- and hands the runner the same row with
    `mount` in place of `upload`, which `restore_carry()` reads as above. A
    source that is not a directory refuses before any CLI call; a failed
    upload stops the session before the launch. A backend that can neither

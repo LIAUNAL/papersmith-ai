@@ -167,6 +167,11 @@ SESSION_MARGIN_MIN_SECONDS = 1800
 # Both are restored when both are present; nothing is moved from one layout
 # to the other, and nothing outside a declared path is copied. `<product>`
 # is `run_config["product"]`, joined only when it is one folder name.
+# A symbolic link in the mount is never followed: a declared path that is
+# (or sits under) one is skipped, and a link inside a carried tree is not
+# copied. Every file is written only where its resolved destination stays
+# inside the working directory, so a link already in the clone never
+# carries a write out of it. Each skip is one `[carry]` line.
 # `FORGE_CARRY_IN` names the
 # mounts that were present (joined with `os.pathsep`), for a target that
 # wants to read the earlier output directly. A missing mount or path is
@@ -200,12 +205,65 @@ def _carry_product(raw: Any) -> str | None:
     return raw
 
 
-def _copy_carried(source: Path, destination: Path) -> None:
-    if source.is_dir():
-        shutil.copytree(source, destination, dirs_exist_ok=True)
-    else:
+def _carry_link(mount: Path, relative: Path) -> Path | None:
+    """The first component of `mount / relative`, below `mount`, that is a
+    symbolic link (relative to `mount`), or `None`."""
+    current = mount
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return current.relative_to(mount)
+    return None
+
+
+def _copy_carried(source: Path, destination: Path, *, mount: Path, base: Path,
+                  ref: Any) -> tuple[int, int]:
+    """Copy the regular files of `source` (a file or a tree) to
+    `destination`, never following a symbolic link in the mount and never
+    writing where the resolved destination leaves `base`; returns
+    `(copied, skipped)`."""
+    inside = base.resolve()
+    copied = skipped = 0
+
+    def skip(path: Path, why: str) -> None:
+        nonlocal skipped
+        skipped += 1
+        print(f"{CARRY_LOG_PREFIX} skipped {path.relative_to(mount).as_posix()} from "
+              f"{ref!r}: {why}", flush=True)
+
+    def lands_inside(target: Path) -> bool:
+        return target.resolve().is_relative_to(inside)
+
+    if not source.is_dir():
+        if not lands_inside(destination):
+            skip(source, "its destination resolves outside the working directory")
+            return copied, skipped
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+        return 1, skipped
+    for root, dirnames, filenames in os.walk(source):
+        here = Path(root)
+        landing = destination / here.relative_to(source)
+        if not lands_inside(landing):
+            skip(here, "its destination resolves outside the working directory")
+            dirnames[:] = []
+            continue
+        landing.mkdir(parents=True, exist_ok=True)
+        for name in sorted(dirnames):
+            if (here / name).is_symlink():
+                skip(here / name, "a symbolic link in the mount is never followed")
+        dirnames[:] = sorted(name for name in dirnames if not (here / name).is_symlink())
+        for name in sorted(filenames):
+            item = here / name
+            if item.is_symlink():
+                skip(item, "a symbolic link in the mount is never followed")
+            elif item.is_file():
+                if not lands_inside(landing / name):
+                    skip(item, "its destination resolves outside the working directory")
+                    continue
+                shutil.copy2(item, landing / name)
+                copied += 1
+    return copied, skipped
 
 
 def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = None) -> str | None:
@@ -255,17 +313,31 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
                 print(f"{CARRY_LOG_PREFIX} skipped carry path {raw!r}: not a "
                       "relative path inside the product folder", flush=True)
                 continue
-            restored = False
+            restored = refused = False
             for prefix, label in layouts:
+                link = _carry_link(mount, prefix / relative)
+                if link is not None:
+                    refused = True
+                    print(f"{CARRY_LOG_PREFIX} skipped carry path {raw} from {ref!r}: "
+                          f"{link.as_posix()} is a symbolic link in the mount; it is "
+                          "never followed", flush=True)
+                    continue
                 source = mount / prefix / relative
                 if not (source.is_dir() or source.is_file()):
                     continue
-                _copy_carried(source, base / prefix / relative)
+                copied, skipped = _copy_carried(source, base / prefix / relative,
+                                                mount=mount, base=base, ref=ref)
+                if skipped and not copied:
+                    refused = True
+                    continue
                 restored = True
                 where = label + relative.as_posix() if prefix.parts else label
                 print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r} into {where}",
                       flush=True)
-            if not restored:
+            if not restored and refused:
+                print(f"{CARRY_LOG_PREFIX} {raw} was not restored from {mount}; it starts "
+                      "fresh", flush=True)
+            elif not restored:
                 print(f"{CARRY_LOG_PREFIX} {raw} is missing from {mount}; it starts "
                       "fresh", flush=True)
     return os.pathsep.join(present) if present else None
