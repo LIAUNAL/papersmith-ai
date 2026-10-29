@@ -89,6 +89,20 @@ def usable_session(limit: float) -> float:
 def margin_text(limit: float) -> str:
     return f"{SESSION_MARGIN_PERCENT}% of the {num(limit)}-minute session limit ({num(usable_session(limit))} minutes)"
 
+
+def session_capacity(unit: float, setup: float, limit: float) -> int:
+    """How many units of `unit` minutes one session of a slot's queue holds:
+    the most whose minutes, plus the session's `setup` paid once, end inside
+    the usable session of `limit` minutes. Never fewer than one: a unit over
+    the margin is a chain of sessions of its own (the session-chain rule)."""
+    return max(1, int((usable_session(limit) - setup) // unit))
+
+
+def queue_sessions(queue: list[str], per_session: int) -> list[list[str]]:
+    """A slot's queue, in order, cut into the chained sessions of at most
+    `per_session` units that run it on the same account."""
+    return [list(queue[start:start + per_session]) for start in range(0, len(queue), per_session)]
+
 #: Colab compute tiers. Only paid compute may be a worker of a split campaign:
 #: the Colab FAQ disallows, on free runtimes without compute units, "running
 #: distributed computing workers", and on any tier "using multiple accounts to

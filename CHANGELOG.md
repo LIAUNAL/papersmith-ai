@@ -11,6 +11,30 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Changed
+
+- Slot queues: `distribute` and campaign `submit` place every unit. Units
+  beyond the granted slots join per-slot queues (unit `i` takes place
+  `i mod places`, balanced by count, never on two slots), and each slot's
+  one job carries its whole queue in `FORGE_RUN_UNITS`. A continuation
+  whose worker has no free slot joins that worker's queue. Only a campaign
+  no worker grants a slot leaves units `unplaced`; before, everything past
+  the slots waited for a later campaign.
+- A queued campaign's report and `submit` result add `queues` (`{worker,
+  slot, units, sessions, chained}` per slot) and `sessionFit`. With a
+  timing record (`--timing`, default `<product>/Results/timing.json`, at
+  `--stage`) and a declared session limit, each queue is cut into the
+  chained sessions that run it on the same account, each fitting 80% of the
+  limit with the setup paid once; without one, `sessionFit` says
+  `measured: false` and why.
+- The consent token of a queued campaign binds its placement, and `submit`
+  refuses `PLACEMENT_NOT_CONSENTED` when the slots granted at launch differ
+  from the ones `distribute` showed, before anything is sent. A campaign
+  with no more units than slots reports, mints and records exactly what
+  0.39.0 did.
+
 ## 0.39.0
 
 ### Added

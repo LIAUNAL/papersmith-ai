@@ -29,7 +29,8 @@ room; it stops at the first healthy account, a one-account probe.
 `distribute()` walks every worker too, but never stops early: it reads
 `plan()` for each one, sums what every healthy account actually grants
 into one total, and spreads a caller's own opaque work units across that
-total round-robin. One worker's clamp — `select()`'s whole concern — is
+total round-robin -- every unit, the ones beyond the total joining per-slot
+queues (slot queues S1). One worker's clamp — `select()`'s whole concern — is
 one case among many `distribute()` reads the exact same way, never a
 special one it treats differently.
 
@@ -170,6 +171,8 @@ class Distribution:
     `unplaced` combined (conservation — nothing vanishes), and the set of
     workers named across `assignments` and `skipped` equals
     `adapter.workers()` exactly (no account disappears silently).
+    `unplaced` is non-empty only when no worker granted a single place:
+    units beyond `places` join the granted slots' queues instead.
     """
 
     units: tuple[str, ...]
@@ -415,7 +418,9 @@ def slot_shares(assignment: Assignment) -> tuple[tuple[str, ...], ...]:
     `units[j::k]` -- round-robin by slot, in the order `distribute()` handed
     them out. Each share becomes its OWN submission (S1, parallel
     campaigns): a worker granted two slots runs two jobs side by side
-    instead of one job running every unit in sequence.
+    instead of one job running every unit in sequence. A worker handed
+    more units than slots gets one queue per slot this same way, balanced
+    by count (slot queues S1): the slot's job runs its queue in order.
 
     A worker granted one slot gets exactly one share holding every unit it
     was given -- today's one-job-per-worker shape, unchanged. No units (the
@@ -458,6 +463,14 @@ def distribute(
     `len(units)` and letting the clamp do its job is what lets a small
     campaign still spread across several accounts with one open place each.
 
+    Every unit is placed (slot queues S1). The places are walked in the
+    round-robin order and unit `i` takes place `i mod places`: a campaign
+    with no more units than places gets one unit per place, exactly as
+    before, and the units beyond them join the places' queues in the same
+    order, so every slot's queue holds the same number of units, give or
+    take one. A unit is never handed to two places. Only a campaign that
+    no worker granted a place leaves units `unplaced`.
+
     `adapter.workers()` reporting no workers at all reuses `select()`'s own
     first refusal, unchanged — an adapter with nothing to distribute across
     is not this function's fact to soften into an empty result. Duplicate
@@ -482,13 +495,14 @@ def distribute(
     `affinity` (kernel-carry S4) maps a unit to the one worker it must run
     on -- a continuation whose earlier output can only be carried within
     the account that produced it. A pinned unit whose worker is among the
-    granted ones takes one of that worker's places first; when that worker
-    has no place left the unit stays `unplaced` (it waits for a later
-    campaign rather than starting on an account that cannot carry its
-    output). A pinned unit whose worker is not in the pool at all is placed
-    like any other, and `submit` decides about it. Every other unit fills
-    the remaining places in the same round-robin order as before. `None`
-    or an empty mapping is byte-identical to the placement without it.
+    granted ones takes that worker's shortest queue first; when every place
+    of that worker already holds a unit, the pinned unit joins one of their
+    queues rather than starting on an account that cannot carry its output.
+    A pinned unit whose worker is not in the pool at all is placed like any
+    other, and `submit` decides about it. Every other unit takes the
+    shortest queue, the earliest place in round-robin order on a tie -- the
+    placement without affinity. `None` or an empty mapping is
+    byte-identical to the placement without it.
     """
     if not isinstance(adapter, ADAPTER.Adapter):
         raise PackerError(
@@ -549,38 +563,36 @@ def distribute(
 
     places = sum(candidate.granted for candidate in granted_plans)
     sequence = _round_robin_sequence(granted_plans)
-    assigned_count = min(len(units), len(sequence))
 
     units_by_worker: dict[str, list[str]] = {candidate.worker: [] for candidate in granted_plans}
-    if not affinity:
-        for index in range(assigned_count):
-            units_by_worker[sequence[index]].append(units[index])
-        unplaced = units[assigned_count:]
+    if not sequence:
+        unplaced = units
+    elif not affinity:
+        for index, unit in enumerate(units):
+            units_by_worker[sequence[index % len(sequence)]].append(unit)
+        unplaced = ()
     else:
-        open_places = list(sequence)
+        # Each place's queue length; a unit takes the shortest queue of the
+        # places it may use, the earliest in round-robin order on a tie.
+        load = [0] * len(sequence)
         placed: dict[str, str] = {}
-        waiting: set[str] = set()
+
+        def take(allowed: list[int]) -> str:
+            position = min(allowed, key=lambda index: (load[index], index))
+            load[position] += 1
+            return sequence[position]
+
+        everywhere = list(range(len(sequence)))
         for unit in units:
             pinned = affinity.get(unit)
-            if pinned is None or pinned not in units_by_worker:
-                continue
-            if pinned in open_places:
-                open_places.remove(pinned)
-                placed[unit] = pinned
-            else:
-                waiting.add(unit)
-        free = iter(open_places)
+            if pinned is not None and pinned in units_by_worker:
+                placed[unit] = take([i for i, w in enumerate(sequence) if w == pinned])
         for unit in units:
-            if unit in placed or unit in waiting:
-                continue
-            worker_id = next(free, None)
-            if worker_id is None:
-                break
-            placed[unit] = worker_id
+            if unit not in placed:
+                placed[unit] = take(everywhere)
         for unit in units:
-            if unit in placed:
-                units_by_worker[placed[unit]].append(unit)
-        unplaced = tuple(unit for unit in units if unit not in placed)
+            units_by_worker[placed[unit]].append(unit)
+        unplaced = ()
 
     assignments = tuple(
         Assignment(plan=candidate, units=tuple(units_by_worker[candidate.worker]))

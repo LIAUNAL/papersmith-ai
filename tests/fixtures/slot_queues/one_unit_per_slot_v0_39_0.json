@@ -1,0 +1,384 @@
+{
+  "job-folder-with-timing-three-units": {
+    "distribute": {
+      "assigned": 3,
+      "assignments": [
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 3,
+          "shares": [
+            [
+              "f1"
+            ],
+            [
+              "f3"
+            ]
+          ],
+          "units": [
+            "f1",
+            "f3"
+          ],
+          "worker": "w1"
+        },
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 3,
+          "shares": [
+            [
+              "f2"
+            ]
+          ],
+          "units": [
+            "f2"
+          ],
+          "worker": "w2"
+        }
+      ],
+      "consentToken": "cadf5b138e03a0b276ed218e4af7971237fb387ed7b460a7e2f80914a757adfb",
+      "places": 4,
+      "skipped": [],
+      "units": 3,
+      "unplaced": []
+    },
+    "jobs": [
+      {
+        "runConfig": "{\"sessionLimitSeconds\": 43200, \"units\": [\"f1\"]}",
+        "worker": "w1"
+      },
+      {
+        "runConfig": "{\"sessionLimitSeconds\": 43200, \"units\": [\"f3\"], \"slot\": 2}",
+        "worker": "w1"
+      },
+      {
+        "runConfig": "{\"sessionLimitSeconds\": 43200, \"units\": [\"f2\"]}",
+        "worker": "w2"
+      }
+    ],
+    "ledger": [
+      "{\"entrypoint\": \"tools/svc/search-a/runner.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 3, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w1/kernel-1\", \"ts\": \"<ts>\", \"units\": [\"f1\"], \"worker\": \"w1\"}",
+      "{\"entrypoint\": \"tools/svc/search-a/runner.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 3, \"slot\": 2, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w1/kernel-2\", \"ts\": \"<ts>\", \"units\": [\"f3\"], \"worker\": \"w1\"}",
+      "{\"entrypoint\": \"tools/svc/search-a/runner.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 3, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w2/kernel-1\", \"ts\": \"<ts>\", \"units\": [\"f2\"], \"worker\": \"w2\"}"
+    ],
+    "submit": {
+      "assignments": [
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 3,
+          "submissionId": "w1/kernel-1",
+          "submissions": [
+            {
+              "slot": 1,
+              "submissionId": "w1/kernel-1",
+              "units": [
+                "f1"
+              ]
+            },
+            {
+              "slot": 2,
+              "submissionId": "w1/kernel-2",
+              "units": [
+                "f3"
+              ]
+            }
+          ],
+          "units": [
+            "f1",
+            "f3"
+          ],
+          "worker": "w1"
+        },
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 3,
+          "submissionId": "w2/kernel-1",
+          "submissions": [
+            {
+              "slot": 1,
+              "submissionId": "w2/kernel-1",
+              "units": [
+                "f2"
+              ]
+            }
+          ],
+          "units": [
+            "f2"
+          ],
+          "worker": "w2"
+        }
+      ],
+      "ledgerPath": "<tmp>/repo/FEM-TOLLA/.remote-execution/ledger.jsonl",
+      "skipped": [],
+      "smoke": false,
+      "staleness": {
+        "changedPaths": [],
+        "reason": "<tmp>/repo has no git history to check staleness against: git rev-parse HEAD exited 128: fatal: not a git repository (or any of the parent directories): .git",
+        "status": "unknown"
+      },
+      "unplaced": []
+    }
+  },
+  "legacy-2x2-four-units": {
+    "distribute": {
+      "assigned": 4,
+      "assignments": [
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 4,
+          "shares": [
+            [
+              "u0"
+            ],
+            [
+              "u2"
+            ]
+          ],
+          "units": [
+            "u0",
+            "u2"
+          ],
+          "worker": "w1"
+        },
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 4,
+          "shares": [
+            [
+              "u1"
+            ],
+            [
+              "u3"
+            ]
+          ],
+          "units": [
+            "u1",
+            "u3"
+          ],
+          "worker": "w2"
+        }
+      ],
+      "consentToken": "c8c528087d1fd9a9ba5df1f09788a23fe0283ccb2dc774d530839fa4e9ee189b",
+      "places": 4,
+      "skipped": [],
+      "units": 4,
+      "unplaced": []
+    },
+    "jobs": [
+      {
+        "runConfig": "{\"units\": [\"u0\"]}",
+        "worker": "w1"
+      },
+      {
+        "runConfig": "{\"units\": [\"u2\"], \"slot\": 2}",
+        "worker": "w1"
+      },
+      {
+        "runConfig": "{\"units\": [\"u1\"]}",
+        "worker": "w2"
+      },
+      {
+        "runConfig": "{\"units\": [\"u3\"], \"slot\": 2}",
+        "worker": "w2"
+      }
+    ],
+    "ledger": [
+      "{\"entrypoint\": \"Notebooks/a.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 4, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w1/kernel-1\", \"ts\": \"<ts>\", \"units\": [\"u0\"], \"worker\": \"w1\"}",
+      "{\"entrypoint\": \"Notebooks/a.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 4, \"slot\": 2, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w1/kernel-2\", \"ts\": \"<ts>\", \"units\": [\"u2\"], \"worker\": \"w1\"}",
+      "{\"entrypoint\": \"Notebooks/a.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 4, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w2/kernel-1\", \"ts\": \"<ts>\", \"units\": [\"u1\"], \"worker\": \"w2\"}",
+      "{\"entrypoint\": \"Notebooks/a.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 4, \"slot\": 2, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w2/kernel-2\", \"ts\": \"<ts>\", \"units\": [\"u3\"], \"worker\": \"w2\"}"
+    ],
+    "submit": {
+      "assignments": [
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 4,
+          "submissionId": "w1/kernel-1",
+          "submissions": [
+            {
+              "slot": 1,
+              "submissionId": "w1/kernel-1",
+              "units": [
+                "u0"
+              ]
+            },
+            {
+              "slot": 2,
+              "submissionId": "w1/kernel-2",
+              "units": [
+                "u2"
+              ]
+            }
+          ],
+          "units": [
+            "u0",
+            "u2"
+          ],
+          "worker": "w1"
+        },
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 4,
+          "submissionId": "w2/kernel-1",
+          "submissions": [
+            {
+              "slot": 1,
+              "submissionId": "w2/kernel-1",
+              "units": [
+                "u1"
+              ]
+            },
+            {
+              "slot": 2,
+              "submissionId": "w2/kernel-2",
+              "units": [
+                "u3"
+              ]
+            }
+          ],
+          "units": [
+            "u1",
+            "u3"
+          ],
+          "worker": "w2"
+        }
+      ],
+      "ledgerPath": "<tmp>/repo/FEM-TOLLA/.remote-execution/ledger.jsonl",
+      "skipped": [],
+      "smoke": false,
+      "staleness": null,
+      "unplaced": []
+    }
+  },
+  "legacy-ragged-two-units": {
+    "distribute": {
+      "assigned": 2,
+      "assignments": [
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 2,
+          "shares": [
+            [
+              "u0"
+            ]
+          ],
+          "units": [
+            "u0"
+          ],
+          "worker": "w1"
+        },
+        {
+          "cap": 1,
+          "granted": 1,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 2,
+          "shares": [
+            [
+              "u1"
+            ]
+          ],
+          "units": [
+            "u1"
+          ],
+          "worker": "w2"
+        }
+      ],
+      "consentToken": "0d1bf024ec784959fdce4c63f08ffb8612ed7b8518f4263f2c50bed1ddc08326",
+      "places": 3,
+      "skipped": [],
+      "units": 2,
+      "unplaced": []
+    },
+    "jobs": [
+      {
+        "runConfig": "{\"units\": [\"u0\"]}",
+        "worker": "w1"
+      },
+      {
+        "runConfig": "{\"units\": [\"u1\"]}",
+        "worker": "w2"
+      }
+    ],
+    "ledger": [
+      "{\"entrypoint\": \"Notebooks/a.ipynb\", \"grantedCapacity\": 2, \"kind\": \"submitted\", \"requestedCapacity\": 2, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w1/kernel-1\", \"ts\": \"<ts>\", \"units\": [\"u0\"], \"worker\": \"w1\"}",
+      "{\"entrypoint\": \"Notebooks/a.ipynb\", \"grantedCapacity\": 1, \"kind\": \"submitted\", \"requestedCapacity\": 2, \"sourceDigest\": \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\", \"submissionId\": \"w2/kernel-1\", \"ts\": \"<ts>\", \"units\": [\"u1\"], \"worker\": \"w2\"}"
+    ],
+    "submit": {
+      "assignments": [
+        {
+          "cap": 2,
+          "granted": 2,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 2,
+          "submissionId": "w1/kernel-1",
+          "submissions": [
+            {
+              "slot": 1,
+              "submissionId": "w1/kernel-1",
+              "units": [
+                "u0"
+              ]
+            }
+          ],
+          "units": [
+            "u0"
+          ],
+          "worker": "w1"
+        },
+        {
+          "cap": 1,
+          "granted": 1,
+          "inFlight": 0,
+          "inFlightSource": "list_active",
+          "requested": 2,
+          "submissionId": "w2/kernel-1",
+          "submissions": [
+            {
+              "slot": 1,
+              "submissionId": "w2/kernel-1",
+              "units": [
+                "u1"
+              ]
+            }
+          ],
+          "units": [
+            "u1"
+          ],
+          "worker": "w2"
+        }
+      ],
+      "ledgerPath": "<tmp>/repo/FEM-TOLLA/.remote-execution/ledger.jsonl",
+      "skipped": [],
+      "smoke": false,
+      "staleness": null,
+      "unplaced": []
+    }
+  }
+}

@@ -380,10 +380,10 @@ class RunConfigWithoutCarryTests(unittest.TestCase):
 
 
 
-def _newest_changelog_section(changelog: str) -> str:
-    """The newest release section: `## Unreleased` before a release is cut,
-    the version heading right after it."""
-    return changelog.split("\n## ", 1)[1].split("\n## ", 1)[0]
+def _shipped_changelog_section(changelog: str) -> str:
+    """The section of the release that shipped session chains, pinned by its
+    own heading so a later `## Unreleased` does not move it."""
+    return changelog.split("\n## 0.39.0\n", 1)[1].split("\n## ", 1)[0]
 
 
 class CarryLayoutDocTests(unittest.TestCase):
@@ -393,8 +393,8 @@ class CarryLayoutDocTests(unittest.TestCase):
         self.assertIn("clone/<product>/<path>", skill)
         self.assertIn("into the working directory", skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = _newest_changelog_section(changelog)
-        self.assertIn("clone/<product>/<path>", unreleased)
+        shipped = _shipped_changelog_section(changelog)
+        self.assertIn("clone/<product>/<path>", shipped)
 
 
 
@@ -665,9 +665,9 @@ class DeadlineRehearsalDocTests(unittest.TestCase):
                        "a target must write `partial.json` whatever that variable says"):
             self.assertIn(needle, skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = _newest_changelog_section(changelog)
+        shipped = _shipped_changelog_section(changelog)
         for needle in ("deadline-rehearsal", "carry: no-share", "session-fit"):
-            self.assertIn(needle, unreleased)
+            self.assertIn(needle, shipped)
 
 
 
@@ -683,8 +683,8 @@ class UploadedCarryDocTests(unittest.TestCase):
                        "Unverified:", "carry: unsupported"):
             self.assertIn(needle, skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = _newest_changelog_section(changelog)
-        self.assertIn("carry: uploaded", unreleased)
+        shipped = _shipped_changelog_section(changelog)
+        self.assertIn("carry: uploaded", shipped)
 
 
 if __name__ == "__main__":

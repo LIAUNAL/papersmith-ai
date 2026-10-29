@@ -205,6 +205,10 @@ LEDGER_EVENT_TOO_LARGE = "LEDGER_EVENT_TOO_LARGE"
 # output is only verified to carry within its own account, so the campaign
 # is refused before any submission. `--no-carry` starts such units fresh.
 CARRY_WORKER_MISMATCH = "CARRY_WORKER_MISMATCH"
+# A campaign whose slots queue more than one unit, submitted with a token
+# that did not approve this exact placement (slot queues S3): refused after
+# the read-only `packer.distribute()` and before any submission.
+PLACEMENT_NOT_CONSENTED = "PLACEMENT_NOT_CONSENTED"
 
 # Where `_carry_evidence()` notes, on its own copy of a `submitted` event,
 # the local directory that submission's output was fetched to. Never written
@@ -505,7 +509,7 @@ def _job_folder_commit(resolved_entrypoint: Path) -> str | None:
 
 def campaign_consent_token(
     *, pin_commit: str | None, relative_entrypoint: str | Path, units: Sequence[str],
-    worker: str | None = None,
+    worker: str | None = None, placement: Sequence[Mapping] | None = None,
 ) -> str:
     """The ONE digest both `distribute` (which prints it) and `submit`
     (which verifies it) compute — a second, independently written hash
@@ -538,6 +542,12 @@ def campaign_consent_token(
       so a campaign or auto-select derivation is byte-for-byte identical to
       before this parameter existed — this is what keeps
       `test_campaign_token_derivation_byte_identical_to_pre_change` true.
+    - `placement`, present ONLY for a campaign whose slots queue more than
+      one unit (slot queues S3): each slot's `{worker, slot, units}`, in
+      launch order (`_placement()`). One approval then covers which
+      account and slot runs which queue, and a launch whose live capacity
+      moved the queues no longer matches. A campaign with no more units
+      than slots passes `None` and keeps the v0.39.0 token.
 
     Deliberately NOT a `--yes` boolean and deliberately not looked up
     anywhere but the arguments handed to it: this function reads no
@@ -553,6 +563,11 @@ def campaign_consent_token(
     }
     if worker is not None:
         fields["worker"] = worker
+    if placement is not None:
+        fields["placement"] = [
+            {"worker": row["worker"], "slot": row["slot"], "units": list(row["units"])}
+            for row in placement
+        ]
     payload = json.dumps(fields, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -1145,6 +1160,70 @@ def _declared_session_limit(adapter: "ADAPTER.Adapter") -> int | None:
     return limit
 
 
+def _placement(distribution: "PACKER.Distribution") -> list[dict] | None:
+    """Each slot's queue as `{worker, slot, units}`, in launch order, when
+    some slot of `distribution` queues more than one unit (slot queues S1);
+    `None` when every slot runs one unit -- the campaign v0.39.0 launched,
+    whose report, token and records stay exactly what they were."""
+    rows = [
+        {"worker": row.plan.worker, "slot": index + 1, "units": list(share)}
+        for row in distribution.assignments
+        for index, share in enumerate(PACKER.slot_shares(row))
+    ]
+    return rows if any(len(row["units"]) > 1 for row in rows) else None
+
+
+def _placement_text(placement: Sequence[Mapping]) -> str:
+    return "; ".join(f"{row['worker']} slot {row['slot']}: {', '.join(row['units'])}"
+                     for row in placement)
+
+
+def _queue_fit(adapter: "ADAPTER.Adapter", resolved_entrypoint: Path, timing: Path,
+               stage: str, units: int) -> dict:
+    """How many queued units one session holds (slot queues S1), read with
+    preflight's own `session-fit` estimate: the stage's upper bound from the
+    timing record over `units` units, against the session margin, with the
+    record's setup paid once per session. `measured: False` and the reason
+    when the service declares no limit, no job folder names a service, or
+    the record is missing or unusable: the queues are then balanced by count
+    alone and their fit is unknown."""
+    service = _job_service(resolved_entrypoint)
+    try:
+        run_config = json.loads((resolved_entrypoint.parent / RUN_CONFIG_FILENAME)
+                                .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        run_config = None
+    if service is None or not isinstance(run_config, dict):
+        return {"measured": False, "reason": "no job folder names this entrypoint's service, "
+                "so no timing record of its host can be read"}
+    estimate = _session_fit_estimate(adapter, run_config, service, timing, stage, units)
+    if "row" in estimate:
+        return {"measured": False, "reason": estimate["row"]["evidence"]}
+    par = _parallelism_cli()
+    limit = _declared_session_limit(adapter) / 60
+    unit, setup = estimate["unitMinutes"], estimate["setupMinutes"]
+    return {
+        "measured": True, "stage": stage, "source": estimate["measured"],
+        "unitMinutes": par.num(unit), "setupMinutes": par.num(setup),
+        "limitMinutes": par.num(limit), "usableMinutes": par.num(estimate["usable"]),
+        "unitsPerSession": par.session_capacity(unit, setup, limit),
+        "unitOverMargin": unit + setup > estimate["usable"],
+    }
+
+
+def _queues(placement: Sequence[Mapping], fit: Mapping) -> list[dict]:
+    """`placement` with each queue's chained `sessions` on its own account
+    (`None` when its fit is unmeasured) and whether it spans more than one."""
+    par = _parallelism_cli()
+    rows = []
+    for row in placement:
+        sessions = (par.queue_sessions(row["units"], fit["unitsPerSession"])
+                    if fit["measured"] else None)
+        rows.append({**row, "sessions": sessions,
+                     "chained": None if sessions is None else len(sessions) > 1})
+    return rows
+
+
 #: What a single send of a job declaring carry paths reports (session-chains).
 NO_SHARE_CARRY_WARNING = (
     "this job declares carry paths but was sent without --unit, so no share was "
@@ -1470,9 +1549,25 @@ def cmd_submit(
     consent: str | None = None,
     repo_credential_path: str | Path | None = None,
     no_carry: bool = False,
+    timing: str | Path | None = None,
+    stage: str = "full",
 ) -> dict:
     """Guard, resolve a product, plan, submit, and record — the whole submit
     path, in this order.
+
+    Slot queues (S1-S3), campaign mode: `packer.distribute()` places every
+    unit, so a campaign with more units than slots sends one job per slot
+    holding that slot's whole queue (`run_config["units"]`, the runner's
+    `FORGE_RUN_UNITS`) and records it as the share of its `submitted`
+    event. Such a campaign launches only with the token `distribute`
+    printed for its placement (`campaign_consent_token(placement=...)`): a
+    token that is not this invocation's v0.39.0 token cannot be checked
+    before the placement exists, so it is checked right after the
+    read-only `distribute()` and before anything is sent, refusing
+    `PLACEMENT_NOT_CONSENTED` when the queues moved; the launch
+    authorization (`gate`) runs right after it. The result gains `queues`
+    and `sessionFit` exactly as `cmd_distribute` reports them. A campaign
+    with no more units than slots is checked and recorded as before.
 
     Carry (kernel-carry S2-S5), campaign mode only, and only for a job
     folder whose `run-config.json` declares `carryPaths`: a unit an
@@ -1680,21 +1775,26 @@ def cmd_submit(
         worker=worker,
     )
     _verify_diagrams_validated(target / resolved_product)
-    _verify_launch_consent(
-        consent=consent, expected_consent=expected_consent, units=units,
-        worker=worker,
-    )
+    # Slot queues S3: a campaign token that is not the v0.39.0 one may
+    # approve a queued placement, known only once `distribute()` ran; both
+    # checks below then wait for it, still before any submission.
+    placement_consent = bool(units) and consent is not None and consent != expected_consent
+    if not placement_consent:
+        _verify_launch_consent(
+            consent=consent, expected_consent=expected_consent, units=units,
+            worker=worker,
+        )
 
-    # A second, INDEPENDENT precondition (design §4.2) -- never folded into
-    # the consent check above, and never sharing its payload. Runs right
-    # after consent and before the digest walk, so a refusal here costs
-    # exactly as little as a consent refusal does: no digest, no plan, no
-    # adapter call, no ledger line.
-    _verify_launch_authorization(
-        smoke=smoke, target=target, product=resolved_product,
-        pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
-        units=units, worker=worker,
-    )
+        # A second, INDEPENDENT precondition (design §4.2) -- never folded
+        # into the consent check above, and never sharing its payload. Runs
+        # right after consent and before the digest walk, so a refusal here
+        # costs exactly as little as a consent refusal does: no digest, no
+        # plan, no adapter call, no ledger line.
+        _verify_launch_authorization(
+            smoke=smoke, target=target, product=resolved_product,
+            pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
+            units=units, worker=worker,
+        )
 
     digest_fn = source_digest or _load_source_digest()
     digest = digest_fn(target, resolved_product)
@@ -1742,6 +1842,29 @@ def cmd_submit(
             live_digest=digest,
             affinity=_carry_affinity(evidence, units) or None,
         )
+        placement = _placement(distribution)
+        if placement is not None and consent != campaign_consent_token(
+            pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
+            units=units, placement=placement,
+        ):
+            raise ConsentError(
+                f"{PLACEMENT_NOT_CONSENTED}: this campaign queues more than one "
+                "unit on a slot, and --consent does not approve this placement "
+                f"({_placement_text(placement)}): the slots granted right now "
+                "differ from the ones `distribute` showed, or the token approved "
+                "another campaign. Nothing was submitted. Run `distribute --unit "
+                "...` again, check its `queues`, and pass back the token it prints"
+            )
+        if placement_consent:
+            if placement is None:
+                _verify_launch_consent(
+                    consent=consent, expected_consent=expected_consent, units=units,
+                )
+            _verify_launch_authorization(
+                smoke=smoke, target=target, product=resolved_product,
+                pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
+                units=units, worker=worker,
+            )
         protected = _protected_refs(
             adapter, target=target, product=resolved_product,
             resolved_entrypoint=resolved_entrypoint,
@@ -1886,6 +2009,12 @@ def cmd_submit(
         }
         if inputs_status is not None:
             campaign["inputs"] = inputs_status
+        if placement is not None:
+            timing_path = (Path(timing) if timing is not None
+                           else target / resolved_product / "Results" / "timing.json")
+            fit = _queue_fit(adapter, resolved_entrypoint, timing_path, stage, len(units))
+            campaign["queues"] = _queues(placement, fit)
+            campaign["sessionFit"] = fit
         return campaign
 
     if worker is None:
@@ -2168,6 +2297,8 @@ def cmd_distribute(
     adapter: "ADAPTER.Adapter",
     units: Sequence[str],
     source_digest: Callable[[Path, str], str] | None = None,
+    timing: str | Path | None = None,
+    stage: str = "full",
 ) -> dict:
     """Report how `units` -- opaque identifiers this function never
     inspects beyond passing them through -- would spread across every
@@ -2211,6 +2342,13 @@ def cmd_distribute(
     This function still issues no work and records nothing: printing a
     token is no more a write than reporting `places` or `unplaced`
     already was.
+
+    When some slot queues more than one unit (slot queues S1, S3), two
+    keys join the report and the token binds the placement: `queues`, one
+    `{worker, slot, units, sessions, chained}` per slot, and `sessionFit`
+    (`_queue_fit()`), read from `timing` (default
+    `<target>/<product>/Results/timing.json`) at `stage`. A campaign with no
+    more units than slots reports exactly what v0.39.0 reported.
     """
     target = Path(target).resolve()
     if not target.is_dir():
@@ -2244,13 +2382,15 @@ def cmd_distribute(
         affinity=_carry_affinity(evidence, units) or None,
     )
 
+    placement = _placement(result)
     consent_token = campaign_consent_token(
         pin_commit=_job_folder_commit(resolved_entrypoint),
         relative_entrypoint=relative_entrypoint,
         units=units,
+        placement=placement,
     )
 
-    return {
+    report = {
         "units": len(result.units),
         "places": result.places,
         "assigned": len(result.units) - len(result.unplaced),
@@ -2271,6 +2411,13 @@ def cmd_distribute(
         "skipped": [{"worker": row.worker, "reason": row.reason} for row in result.skipped],
         "consentToken": consent_token,
     }
+    if placement is not None:
+        timing_path = (Path(timing) if timing is not None
+                       else target / product / "Results" / "timing.json")
+        fit = _queue_fit(adapter, resolved_entrypoint, timing_path, stage, len(units))
+        report["queues"] = _queues(placement, fit)
+        report["sessionFit"] = fit
+    return report
 
 
 def cmd_poll(*, submission_id: str, adapter: "ADAPTER.Adapter") -> "ADAPTER.Status":
@@ -3700,7 +3847,8 @@ def _session_fit_estimate(adapter: "ADAPTER.Adapter", run_config: Mapping, servi
     measured = (f"{read}{stage} upper bound {par.num(estimate['high'])} s over {units} unit(s) is "
                 f"{par.num(unit_minutes)} minutes per unit against {par.margin_text(limit_minutes)}")
     return {"measured": measured, "unitMinutes": unit_minutes,
-            "sessionMinutes": float(estimate["high"]) / 60, "usable": usable}
+            "sessionMinutes": float(estimate["high"]) / 60, "usable": usable,
+            "setupMinutes": float(estimate["setupSeconds"]) / 60}
 
 
 def _deadline_rehearsal_required(estimate: Mapping, run_config: Mapping) -> bool:
@@ -4204,6 +4352,20 @@ def _dataset_plan(adapter_cls, workspace: Path | None,
     return merged, checks
 
 
+def _add_queue_timing_arguments(command: argparse.ArgumentParser) -> None:
+    """`--timing` and `--stage`, read only when a campaign queues more than
+    one unit on a slot (slot queues S1)."""
+    command.add_argument(
+        "--timing", type=Path, default=None,
+        help="campaign mode, when units outnumber the granted slots: the timing record "
+        "each slot's queue is cut into sessions by, at 80%% of the session limit "
+        "(default <target>/<product>/Results/timing.json; without one the queues are "
+        "balanced by count and their fit is reported unmeasured)",
+    )
+    command.add_argument("--stage", default="full", choices=("poc", "full"),
+                         help="the timing record's scale the queues are estimated at")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="remote_cli",
@@ -4286,6 +4448,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "refused CARRY_WORKER_MISMATCH when it was produced on another "
         "worker.",
     )
+    _add_queue_timing_arguments(submit)
 
     status = subparsers.add_parser(
         "status", help="report the fold for one product's ledger; resolves nothing"
@@ -4316,6 +4479,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--credential-dir", type=Path, default=None,
         help="override: use this directory instead of lazily materializing one by worker id",
     )
+    _add_queue_timing_arguments(distribute)
 
     remaining = subparsers.add_parser(
         "remaining",
@@ -4929,6 +5093,8 @@ def main(argv: list[str] | None = None) -> int:
                 consent=args.consent,
                 repo_credential_path=args.repo_credential,
                 no_carry=args.no_carry,
+                timing=args.timing,
+                stage=args.stage,
             )
         except (RemoteCLIError, PACKER.PackerError, LEDGER.LedgerError,
                 ADAPTER.AdapterError, JOBFOLDER.JobFolderError) as exc:
@@ -5019,6 +5185,8 @@ def main(argv: list[str] | None = None) -> int:
                 entrypoint=args.entrypoint,
                 adapter=_construct_adapter(adapter_cls, provider),
                 units=args.units,
+                timing=args.timing,
+                stage=args.stage,
             )
         except (RemoteCLIError, PACKER.PackerError, LEDGER.LedgerError,
                 ADAPTER.AdapterError) as exc:
