@@ -663,7 +663,9 @@ def _translate_agent_for_pi(
 
     Returns ``({"name": ..., "text": ...}, None, notes)`` or ``(None,
     skip_reason, [])`` -- never raises. Front matter travels verbatim except
-    the `tools:` line, which is mapped through :data:`PI_TOOL_MAP`; the
+    the `tools:` line, which is mapped through :data:`PI_TOOL_MAP`, and the
+    `model:` line, which is dropped: it names a Claude model, and no Pi
+    per-agent model mechanism is cited here, so the agent inherits. The
     body travels verbatim except `.claude/skills/` references, which
     become harness-neutral `skills/` (a symlink in every workspace).
     """
@@ -673,7 +675,10 @@ def _translate_agent_for_pi(
     out_lines = []
     notes: list[str] = []
     for line in meta_lines:
-        if ":" in line and line.split(":", 1)[0].strip().lower() == "tools":
+        key = line.split(":", 1)[0].strip().lower() if ":" in line else None
+        if key == "model":
+            continue
+        if key == "tools":
             tools_yaml, tool_notes = _pi_tools_line(line.split(":", 1)[1])
             out_lines.append(tools_yaml)
             notes.extend(tool_notes)

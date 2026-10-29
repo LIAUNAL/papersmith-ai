@@ -41,6 +41,19 @@ SKILLS = ROOT / "skills"
 # seal below expects to check, rather than changing what it silently skips.
 NORTHLESS_SKILLS = {"skill-audit", "plausibility", "math-tutor"}
 
+# The agents that run on the lighter model. `.claude/agents` is copied into a
+# workspace, not rendered, so the `model:` line written in these sources IS the
+# Claude projection; every other harness's translator drops it. Pinned by name:
+# each one only reads (no tool below in `WRITE_TOOLS`) and holds no gate, and a
+# writer, a judge or a gate holder keeps the session's model.
+LIGHT_AGENTS = {"math-tutor", "insumos-observer", "style-sampler"}
+LIGHT_MODEL = "sonnet"
+WRITE_TOOLS = {"Write", "Edit", "Bash", "NotebookEdit"}
+
+# The projections of `.claude/agents` for the harnesses with no cited per-agent
+# model mechanism; `scripts/sync-repo-harness.py` writes them.
+PROJECTED_AGENT_DIRS = (".pi/agents", ".opencode/agents", ".agents/agents")
+
 # A single-line `arrival: "..."` or `stage: "..."` literal inside a
 # TypeScript `objective` block. Anchored to the whole line so a token that
 # merely CONTAINS the word `arrival` or `stage` elsewhere in the file (there
@@ -391,6 +404,33 @@ class AgentBindingTests(unittest.TestCase):
                     self.assertIn("references/next-step-<nextStep>.md", text)
                     self.assertIn("`Stage reference:`", text)
         self.assertTrue(bound, "no agent binds a skill with stage references")
+
+    def test_only_the_read_only_agents_name_a_model(self) -> None:
+        """Omitted is the default and means the session's model. The one value
+        an agent may name is the lighter one, and only a read-only agent may
+        name it."""
+        named = {}
+        for path in self.agents():
+            header = path.read_text(encoding="utf-8").split("---\n", 2)[1]
+            models = re.findall(r"^model:[ \t]*(.*?)[ \t]*$", header, re.MULTILINE)
+            if models:
+                named[path.stem] = models
+        self.assertEqual(named, {name: [LIGHT_MODEL] for name in LIGHT_AGENTS})
+        for name in sorted(LIGHT_AGENTS):
+            with self.subTest(agent=name):
+                tools = {tool.strip() for tool in
+                         frontmatter(AGENTS / f"{name}.md")["tools"].split(",")}
+                self.assertEqual(tools & WRITE_TOOLS, set())
+
+    def test_no_other_harness_projection_names_a_model(self) -> None:
+        for directory in PROJECTED_AGENT_DIRS:
+            projected = sorted((ROOT / directory).glob("*.md"))
+            self.assertTrue(projected, f"{directory} holds no agent")
+            for path in projected:
+                with self.subTest(agent=f"{directory}/{path.name}"):
+                    header = path.read_text(encoding="utf-8").split("---\n", 2)[1]
+                    self.assertIsNone(
+                        re.search(r"^(model|tier):", header, re.MULTILINE), header)
 
     def test_every_agent_states_its_tools(self) -> None:
         """An agent that declares none inherits everything, which is the
