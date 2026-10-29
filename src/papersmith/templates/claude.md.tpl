@@ -25,4 +25,6 @@ loads that skill's `SKILL.md` and passes your text through as `$ARGUMENTS`. The
 directory is a framework artifact: `smith audit --check-drift` reports drift
 and `smith upgrade` restores it, so do not edit it by hand.
 
+{{language_rule}}
+
 {{paper_flow}}

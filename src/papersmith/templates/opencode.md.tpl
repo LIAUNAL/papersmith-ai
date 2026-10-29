@@ -33,4 +33,6 @@ naming the matched surface — a command that names a service's push surface wit
 also invoking `remote_cli.py`, and it degrades loudly rather than silently
 allowing when the guard cannot be loaded. It is a tripwire, not a gate.
 
+{{language_rule}}
+
 {{paper_flow}}

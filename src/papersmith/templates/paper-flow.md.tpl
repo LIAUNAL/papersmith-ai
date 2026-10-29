@@ -81,7 +81,7 @@ skill refuses when its input is missing.
 9. **Figures**: `/figure-review <figure id>` checks a compiled
    `paper/Figures/<id>.pdf`.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:
-    Previsualización PDF).
+    the PDF preview tab).
 11. **Audit** (transversal): `smith audit .` and `/skill-audit <subject>`.
     Audits report; they never repair.
 

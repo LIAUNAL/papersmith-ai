@@ -293,7 +293,7 @@ class Capability:
 #: of skills and its workspace path is unverified, so no command files are
 #: generated; skills already work as `/<skill-name>`.
 CAPABILITY_NOTES = {
-    ("antigravity", "commands"): "vía skills (workflows deprecados)",
+    ("antigravity", "commands"): "via skills (workflows deprecated)",
 }
 
 
@@ -910,6 +910,8 @@ def _context_with_defaults(context: dict[str, Any]) -> dict[str, Any]:
     result.setdefault("agents", "- No specialized agents have been installed yet.")
     # One statement of the paper-construction flow, shared by every harness.
     result.setdefault("paper_flow", render_package_template("paper-flow.md.tpl", {}).strip())
+    # One statement of which language the agent replies in and which stays English.
+    result.setdefault("language_rule", render_package_template("language.md.tpl", {}).strip())
     return result
 
 
