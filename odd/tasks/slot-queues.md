@@ -16,7 +16,7 @@ Branch: `feat/slot-queues` (from `origin/main` 0ab5cecd, v0.39.0). Delivery: rel
 
 - T1 (S1-S3) queued placement in packer/distribute/submit + runner units + gate binding + tests -- done (2020e03e)
 - T2 (S4, S5, L2) schedule/plan agreement + docs; `distribute`/`submit` leave out units already done -- done (4d4982a4)
-- T2b (L3) `distribute`/`submit` leave out units in flight -- done (pending commit)
+- T2b (L3) `distribute`/`submit` leave out units in flight -- done (4721306a)
 - T3 independent verifier (items 3, 5: gate/consent binding, remote launches) -- pending
 
 ## Log
