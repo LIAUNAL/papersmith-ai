@@ -15,7 +15,7 @@ Branch: `feat/session-chains` (from `origin/main` 1392aed0, v0.38.0). Delivery: 
 
 ## Tasks
 
-- T1 (S2) runner carry layout fix + tests -- pending
+- T1 (S2) runner carry layout fix + tests -- done (L3)
 - T2 (S1) deadline rehearsal in preflight + session-fit honesty + tests -- pending
 - T3 (S3, S4) quota weeks and resumable chains in schedule/plan + tests -- pending
 - T4 (S5) Colab continuation -- pending
@@ -26,3 +26,4 @@ Branch: `feat/session-chains` (from `origin/main` 1392aed0, v0.38.0). Delivery: 
 
 - L1 (2026-10-29, audit): doctrine already covers session limits (`remote-parallelism/SKILL.md:114-147`, `remote-execution/SKILL.md:2060-2110`, implementation SKILLs ~751/~319, walk/build agents); `schedule` chains sessions (`parallelism_cli.py:1251-1260,1308-1338,1515-1518`); gaps: `assess` fixed-limit only (`:375-398`), `plan` drops over-margin candidates as `split-first` (`:1674-1683`), makespan ignores quota-reset waits (note only, `:856`), `session-fit` passes when any carry path is declared (`remote_cli.py:3624`), Colab carry unsupported and manual (`colab.py:298,618-620`, `SKILL.md:~2190`), `partial_marker` accepts only `partial.json` with a list of strings (`shard_io.py:148-180`).
 - L2 (2026-10-29, QMLEEG worker evidence): under the runner, targets bind `ROOT = $FORGE_CLONE_ROOT = <cwd>/clone` (`runner_invoke.py:656`) and write `<cwd>/clone/<product>/Results/...`, but `restore_carry` (`runner_invoke.py:175-220`) copies `mount/<carryPath>` to `<cwd>/<carryPath>`, a tree the target never reads, and the mounted earlier output holds the files at `clone/<product>/Results/...`; so a continuation starts fresh even with `partial.json`. Also `FORGE_RUN_MODE` is set only for smoke, and `remaining` intersects `partial.json` ids with `submitted.units` (`FORGE_RUN_UNITS`), so ids must equal the submitted unit strings. QMLEEG gets a target-side bridge meanwhile.
+- L3 (2026-10-28, T1): `restore_carry` restores each declared carry path in both layouts a mount can hold it, each in place: `clone/<product>/<path>` -> `<cwd>/clone/<product>/<path>` (product = `run_config["product"]`, joined only when it is one folder name) and `<path>` -> `<cwd>/<path>` (older jobs). No move between layouts; mount only read. RED: `tests/test_session_chains.py` session-2 chain saw `{u2}` instead of `{u1,u2}`; GREEN 9/9. Job without carry: `run-config.json` bytes pinned by a golden test.

@@ -11,6 +11,22 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Fixed
+
+- A continuation now resumes from the checkpoints its earlier session
+  wrote under the runner's clone. Targets bind their root to
+  `FORGE_CLONE_ROOT` and write `clone/<product>/<path>`, but the runner's
+  carry restore copied only `<path>` from the mounted earlier output into
+  the working directory, a tree the target never reads, so a continuation
+  started from scratch even with a `partial.json`. `restore_carry()` now
+  restores each declared carry path in both layouts it can sit in, each to
+  where it was written: `clone/<product>/<path>` under the clone root and
+  `<path>` in the working directory, the layout older jobs use and still
+  get. Nothing is moved between layouts, the mount is only read, and a job
+  without carry paths generates the same `run-config.json` bytes as before.
+
 ## 0.38.0
 
 ### Added

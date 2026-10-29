@@ -2182,9 +2182,21 @@ nothing), or whose `errored` event names bytes kept under
    same `carriedFrom`.
 3. **Restore before the entrypoint.** The runner (`restore_carry()` in
    `assets/runner_invoke.py`) copies each declared carry path from each
-   mount into its working directory -- the folder whose files come back --
-   before the callable or notebook starts, so the target resumes from the
-   checkpoints already on disk with no code of its own, and exports the
+   mount back to where the earlier session wrote it, before the callable or
+   notebook starts, so the target resumes from the checkpoints already on
+   disk with no code of its own. A mount mirrors the earlier session's
+   working directory (the folder whose files come back), and a declared
+   path is looked up there in two layouts, each restored in place: the
+   product layout `clone/<product>/<path>`, which is where a target that
+   binds its root to `FORGE_CLONE_ROOT` (`<cwd>/clone`) writes its product
+   folder, restored to `<cwd>/clone/<product>/<path>`; and the working
+   layout `<path>`, where a job writing relative to its working directory
+   (every job before the product layout) left it, restored
+   into the working directory. Both are restored when both exist; nothing is moved between
+   them, nothing outside a declared path is copied, and the mount is only
+   read. `<product>` is `run-config.json`'s `product`, joined only when it
+   is one folder name. Each restore is one `[carry] restored <path> from
+   <ref> into <where>` line in the run log. The runner then exports the
    present mounts as `FORGE_CARRY_IN` (joined with `os.pathsep`). A missing
    mount or path is one `[carry]` line in the run log, and the unit starts
    fresh; it is never fatal.

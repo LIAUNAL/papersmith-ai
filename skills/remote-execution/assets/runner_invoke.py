@@ -149,9 +149,25 @@ SESSION_MARGIN_MIN_SECONDS = 1800
 # `run_config["carry"]`, one `{"submissionId", "ref", "mount"}` row per
 # earlier submission whose output the backend mounted for this job. Before
 # the entrypoint runs, `restore_carry()` copies each declared path from each
-# mount into this cell's working directory -- the folder whose files come
-# back as the result -- so the target finds its checkpoints where it wrote
-# them and needs no code of its own to resume. `FORGE_CARRY_IN` names the
+# mount back to where the earlier session wrote it, so the target finds its
+# checkpoints where it wrote them and needs no code of its own to resume.
+#
+# A mount mirrors the earlier session's working directory -- the folder
+# whose files come back as the result -- and a declared path can sit in it
+# in two layouts, each restored to the same place it was written:
+#
+# - the PRODUCT layout, `clone/<product>/<path>`: a target that binds its
+#   repository root to `FORGE_CLONE_ROOT` (`<cwd>/clone`) writes its product
+#   folder there, so `Results/e2/runs` lives at
+#   `<cwd>/clone/<product>/Results/e2/runs`;
+# - the WORKING layout, `<path>`: a target (or a notebook) writing paths
+#   relative to its working directory, which is every job that predates the
+#   product layout.
+#
+# Both are restored when both are present; nothing is moved from one layout
+# to the other, and nothing outside a declared path is copied. `<product>`
+# is `run_config["product"]`, joined only when it is one folder name.
+# `FORGE_CARRY_IN` names the
 # mounts that were present (joined with `os.pathsep`), for a target that
 # wants to read the earlier output directly. A missing mount or path is
 # written to the run log and the unit starts fresh; it is never fatal.
@@ -159,6 +175,7 @@ CARRY_IN_ENV = "FORGE_CARRY_IN"
 CARRY_PATHS_KEY = "carryPaths"
 CARRY_KEY = "carry"
 CARRY_LOG_PREFIX = "[carry]"
+PRODUCT_KEY = "product"
 
 
 def _carry_relative(raw: Any) -> Path | None:
@@ -172,10 +189,31 @@ def _carry_relative(raw: Any) -> Path | None:
     return candidate
 
 
+def _carry_product(raw: Any) -> str | None:
+    """`run_config["product"]` when it is one plain folder name, else
+    `None`: the product layout is never joined from a value that could
+    name another directory."""
+    if not isinstance(raw, str) or not raw or raw in (".", ".."):
+        return None
+    if "/" in raw or "\\" in raw or os.sep in raw:
+        return None
+    return raw
+
+
+def _copy_carried(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
 def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = None) -> str | None:
-    """Copy each declared carry path from each mounted earlier output into
-    the working directory, and return the `FORGE_CARRY_IN` value (`None`
-    when nothing was mounted, or when this job carries nothing).
+    """Copy each declared carry path from each mounted earlier output back
+    to where the earlier session wrote it -- `clone/<product>/<path>` and
+    `<path>`, each when present (see `CARRY_PATHS_KEY` above) -- and return
+    the `FORGE_CARRY_IN` value (`None` when nothing was mounted, or when
+    this job carries nothing).
 
     Never raises for a missing mount, a missing path or a malformed row:
     each is printed as one `[carry]` line to the run log and skipped, so
@@ -190,6 +228,14 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
     if not isinstance(declared, list):
         declared = []
     base = Path(base_dir) if base_dir is not None else Path.cwd()
+    product = _carry_product(run_config.get(PRODUCT_KEY))
+    if product is None and PRODUCT_KEY in run_config:
+        print(f"{CARRY_LOG_PREFIX} product {run_config.get(PRODUCT_KEY)!r} is not one "
+              "folder name; only the working-directory layout is restored", flush=True)
+    layouts: list[tuple[Path, str]] = [(Path(), "the working directory")]
+    if product is not None:
+        product_root = Path(CLONE_DIRNAME) / product
+        layouts.insert(0, (product_root, product_root.as_posix() + "/"))
     present: list[str] = []
     for row in rows:
         mount_text = row.get("mount") if isinstance(row, Mapping) else None
@@ -209,18 +255,19 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
                 print(f"{CARRY_LOG_PREFIX} skipped carry path {raw!r}: not a "
                       "relative path inside the product folder", flush=True)
                 continue
-            source = mount / relative
-            destination = base / relative
-            if source.is_dir():
-                shutil.copytree(source, destination, dirs_exist_ok=True)
-            elif source.is_file():
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
-            else:
+            restored = False
+            for prefix, label in layouts:
+                source = mount / prefix / relative
+                if not (source.is_dir() or source.is_file()):
+                    continue
+                _copy_carried(source, base / prefix / relative)
+                restored = True
+                where = label + relative.as_posix() if prefix.parts else label
+                print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r} into {where}",
+                      flush=True)
+            if not restored:
                 print(f"{CARRY_LOG_PREFIX} {raw} is missing from {mount}; it starts "
                       "fresh", flush=True)
-                continue
-            print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r}", flush=True)
     return os.pathsep.join(present) if present else None
 
 # The public datasets a job reads (kernel-input-datasets S3). `generate-job

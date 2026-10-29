@@ -293,9 +293,10 @@ def validate_carry_paths(carry_paths: Sequence[str]) -> tuple[str, ...]:
     continuation of this job needs carried from the session before it
     (kernel-carry S1): checkpoints, per-unit records, studies. Each must be
     a non-empty relative path with no `..`, the same structural rule
-    `validate_clone_paths()` holds, because the runner copies each one
-    into its own working directory and a path that escapes it would write
-    somewhere nothing fetches. An empty sequence is valid and means the
+    `validate_clone_paths()` holds, because the runner restores each one
+    under its own working directory (`clone/<product>/<path>` and `<path>`,
+    `runner_invoke.restore_carry()`) and a path that escapes it would
+    write somewhere nothing fetches. An empty sequence is valid and means the
     job declares none.
     """
     validated = []
