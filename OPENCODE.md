@@ -105,6 +105,12 @@ skill refuses when its input is missing.
      `diagram_cli.py validate` (the operator's words verbatim and the hash
      of the PNG shown); `submit` refuses `DIAGRAM_NOT_VALIDATED` until then,
      and drawing it again asks again.
+   - **Experiments tutor**: in the Experimentos tab, `/experiments-tutor`
+     explains, questions and evaluates each design decision (architecture,
+     hyperparameters, ablations, significance tests, the toy set, training,
+     upper bounds, baselines and their implementation) from the protocol,
+     the approvals, the code and the results; it never invents a number, and
+     a change of decision goes back to `/experimental-deliberation`.
    - **Remote runs**: one account per person and service
      (`smith team add … --attest`), `/kaggle-accounts validate`, then
      `/remote-execution`: generate-job → submit --smoke → fetch --smoke /
