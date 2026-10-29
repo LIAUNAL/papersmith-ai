@@ -42,3 +42,12 @@ fastapi>=0.110        # HTTP routing + static mount for the command center API
 uvicorn>=0.27         # ASGI server the `smith ui` command launches
 watchfiles>=0.21      # debounced filesystem watching behind the SSE channel
 pydantic>=2.0         # response models for /api/state and /api/health/wiring
+
+# Deliberately NOT here. Optuna and matplotlib are TARGET-side dependencies:
+# `hyperparameter-search report` runs under the target's own `.venv`
+# interpreter (or `--python`) and refuses `optuna-missing` when that
+# interpreter cannot import them, so they are installed in the target's venv,
+# never in this one.
+# The Colab CLI (`google-colab-cli`, pinned 0.6.0 by `PINNED_VERSION` in
+# `src/papersmith/core/colab.py`) is a `uv tool` on `PATH`, installed with that
+# module's `INSTALL_COMMAND`, not a Python dependency of this environment.

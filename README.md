@@ -491,7 +491,9 @@ my-paper/
 Every research folder (`guidance/*/`, `proposals/`, `paper/`, `experiments/`,
 `implementations/`) arrives empty, with its own `.gitkeep`: the workspace's
 `.gitignore` applies the same rule this repository applies to itself —the
-folder is versioned, the content never is.
+folder is versioned, the content never is. The tutors' threads and the pages
+you upload to them (`.papersmith/math-tutor/`, `.papersmith/experiments-tutor/`)
+are ignored too: they are yours.
 
 ### `papersmith.yaml` — the configuration you will actually touch
 
@@ -808,8 +810,17 @@ contract lives in the `remote-execution` section of the
 [Anatomy](docs/skills.md#anatomy-of-each-skill).
 
 **Credentials and backends.** `remote-execution` supports several backends (`kaggle`, `colab`):
-- **Kaggle**: runs against the configured worker pool. Its credentials live in the `kaggle-accounts` store (`skills/kaggle-accounts/store/accounts.json`), never leave the disk and are never printed: `materialize` writes a worker's token to a text file and reports **where**, never **what**. `/kaggle-accounts` validates or removes accounts, and `smith target check kaggle` tests them from the side. A `papersmith accounts` subcommand does not exist yet (recorded follow-up): it is invoked as `python3 skills/kaggle-accounts/scripts/accounts_cli.py {list,discover,validate,remove,materialize}`.
+- **Kaggle**: runs against the configured worker pool. Its credentials live in the `kaggle-accounts` store (`skills/kaggle-accounts/store/accounts.json`), never leave the disk and are never printed: `materialize` writes a worker's token to a text file and reports **where**, never **what**. `/kaggle-accounts` validates or removes accounts, and `smith target check kaggle` tests them from the side. A `papersmith accounts` subcommand does not exist yet (recorded follow-up): it is invoked as `python3 skills/kaggle-accounts/scripts/accounts_cli.py {list,discover,validate,remove,materialize}`; `validate --account <username> --json` re-checks one stored account and writes nothing, which is how `preflight` checks each worker.
 - **Colab**: runs against sessions managed by `google-colab-cli` (`smith remote push --backend colab ...`). It is not a workspace target (it is not passed to `init --remote` or to `target check`), but a direct backend of `remote-execution`. It requires `google-colab-cli` on `PATH` and the token resolved in `~/.config/colab-cli/token.json`.
+
+**Jobs checked before they run.** `remote_cli.py generate-jobs` writes one job
+folder per remote step a product declares in `__steps__` (`generate-job
+--dataset <slug>` and `generate-jobs --dataset` declare a workspace dataset as
+the job's input, uploading nothing), and `remote_cli.py preflight` checks every
+generated job locally before its first remote rehearsal: pin, diagrams,
+interpreter, code reachability, inputs, a local rehearsal of the smoke, each
+account, the accelerator and session fit, one `pass`/`warn`/`fail` row each. It
+never submits.
 
 **Placement by measurement.** Before a proof of concept or a full experiment
 runs, `remote-parallelism`'s timing probe measures each candidate way to run
@@ -827,8 +838,17 @@ reset counted (`quotaWeeks`). `preflight --unit <id> ...` rehearses it locally
 before the first remote rehearsal: the job must stop at a deadline that has
 already arrived, leave `partial.json` and its checkpoints, and finish only the
 remaining units in a second session. `submit --unit` then carries the declared
-checkpoints to each continuation on the same account. The rule lives in
+checkpoints to each continuation on the same account (Kaggle mounts the earlier
+output; Colab uploads it into the new session). The rule lives in
 `remote-execution`'s "The session-chain rule".
+
+**Campaigns larger than the pool.** `distribute` and campaign `submit` place
+every unit: past the granted slots, units join per-slot queues that each job
+runs in order, cut into chained sessions on the same account when a timing
+record says so, and `schedule` and `plan` report the same `queues`. Units
+already returned complete (`done`) or still running (`inFlight`) are never
+placed again, so the campaign's full unit list can be passed every time, and
+`remaining` names the units still owed.
 
 **Real quota.** A real submission spends quota and GPU hours. The house rule is
 simple: everything that can be rehearsed with `--dry-run` and `--smoke` is

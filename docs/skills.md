@@ -23,7 +23,7 @@ verifies**. The agent proposes a change; the engine checks that the change broke
 nothing and refuses when it did. An agent can be wrong. A deterministic engine does
 not change its mind.
 
-**How they chain.** The twelve are not islands: each one receives something
+**How they chain.** The skills are not islands: each one receives something
 specific from another and hands something specific to the next. This is the map,
 and each skill explains its own seam in detail in its own section. The arrows state
 **what** crosses the seam rather than merely that a seam exists, and every label
@@ -92,7 +92,10 @@ the chain: it stands aside and looks at any of them, itself included.
 
 The map draws the eleven skills that take part in the flow. Skill 12,
 `upgrade-project`, is not a stage: it operates on the workspace the flow runs
-inside, and its own section below explains it.
+inside, and its own section below explains it. Sections 13 to 18 cover the
+skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
+`hyperparameter-search`, `remote-parallelism`, `math-tutor` and
+`experiments-tutor` — and each names its own seams.
 
 ---
 
@@ -1702,7 +1705,7 @@ partial deletion caused by a typo is worse than deleting nothing.
 | File | What it does and why it exists |
 |---------|---------------------------|
 | `SKILL.md` | The behavior contract: when to ask, what never to read, how to report. Without this, the agent would have no reason to ask before writing. |
-| `scripts/accounts_cli.py` | The entire implementation, with no external dependencies. Subcommands: `list`, `discover`, `validate`, `remove` and `materialize`. The first four are for a person; **`materialize` is for code**: it writes a worker's stored credential to a plain-text file and returns **where**, never **what**. That is the contract that lets `remote-execution` use a token without any skill reading or printing it. |
+| `scripts/accounts_cli.py` | The entire implementation, with no external dependencies. Subcommands: `list`, `discover`, `validate`, `remove` and `materialize`. The first four are for a person; **`materialize` is for code**: it writes a worker's stored credential to a plain-text file and returns **where**, never **what**. That is the contract that lets `remote-execution` use a token without any skill reading or printing it. `validate --account <username> [--json]` (repeatable) re-checks only that stored account, takes in nothing and writes nothing: it is the read-only probe `remote-execution`'s `preflight` runs per Kaggle worker. `--json` without `--account` is refused `JSON_NEEDS_ACCOUNT` (exit 2) before anything is read. |
 | `store/accounts.json` | The store. Permissions `0600`, atomic writes. |
 | `store/.gitignore` | Ignores **all** the contents of `store/` by rule, not by name — so it also covers the temporary file of an atomic write and any future file. It is committed so that the rule exists *before* the first credential is written. |
 | `store/workers/<username>/token` | Created only on the first handoff. It contains only the token, with no JSON wrapper: it is the shape the Kaggle client expects. |
@@ -1829,10 +1832,12 @@ the launch**, which is hours of somebody's quota.
 
 | Command | What it does | When it is used |
 |---------|----------|---------------|
-| `generate-job` | Builds the job folder: run configuration, executor notebook and the service metadata file. It is built in a partial directory and renamed atomically when it finishes — **a half-written folder cannot exist**. | Once, before the first submission. |
-| `submit` | The complete submission path, in fixed order: path guard → resolve the product → fresh digest of the source → capacity clamp → real submission → **and only then** record it in the ledger. Recording last means that something which never went out is never recorded. `--smoke` marks the run as a rehearsal and sends it to the rehearsal record. With `--unit` (a campaign) it sends **one submission per granted slot** —a Kaggle account granted two slots runs two jobs side by side, each with its share of the units, its own id and its own ledger line— and it refuses `CAMPAIGN_WORKERS_NOT_READY`, naming them, unless every worker given units has its own passing rehearsal at the current pin. | Every time work is submitted. |
+| `generate-job` | Builds the job folder: run configuration, executor notebook and the service metadata file. It is built in a partial directory and renamed atomically when it finishes — **a half-written folder cannot exist**. `--dataset <slug>` (repeatable) declares a workspace dataset from `datasets/registry.json` as the job's input, with the official preparation's sha256 values recorded as `datasetChecks`; it uploads nothing (see *Job inputs* below). | Once, before the first submission. |
+| `generate-jobs` | Generates every remote step's job folder in one call from the product's declared `__steps__`, each byte-identical to what `generate-job` writes with the equivalent flags, and prints one row per job plus the single `preflight` command to run next. One refused job never stops the others. | When a product declares several remote steps. |
+| `preflight` | Checks generated jobs **locally**, before their first remote rehearsal: one `pass`/`warn`/`fail` row per check, with its evidence and its fix, including a local rehearsal of the smoke and, for a chain, a deadline rehearsal. Exits non-zero on any `fail`; it **never submits**. | Before the operator is asked to authorize the first rehearsal, and again after any re-pin. |
+| `submit` | The complete submission path, in fixed order: path guard → resolve the product → fresh digest of the source → capacity clamp → real submission → **and only then** record it in the ledger. Recording last means that something which never went out is never recorded. `--smoke` marks the run as a rehearsal and sends it to the rehearsal record. With `--unit` (a campaign) it sends **one submission per granted slot** —a Kaggle account granted two slots runs two jobs side by side, each with its share of the units, its own id and its own ledger line— and it refuses `CAMPAIGN_WORKERS_NOT_READY`, naming them, unless every worker given units has its own passing rehearsal at the current pin. When units outnumber the granted slots, each slot's share is a **queue** its one job runs in order (see *Slot queues* below). | Every time work is submitted. |
 | `status` | Folds the record and shows the state per entrypoint: pending, returned, errored, quarantined, in flight for too long. **It accepts no adapter**: it is structurally incapable of resolving anything, it only reports. | When the current position has to be known. |
-| `remaining` | Reports which declared units still have no complete result —`complete`, `inFlight` and `remaining`, in the declared order— from the record alone: each campaign submission records its own share of units, and each is paired with the event that settled it. With `--unit-field`, the per-unit records inside a kept partial result count too. Its list goes to `distribute` and `submit` unchanged. **It accepts no adapter.** | After a campaign ends, before sending anything again. |
+| `remaining` | Reports which declared units still have no complete result —`complete`, `inFlight` and `remaining`, in the declared order— from the record alone: each campaign submission records its own share of units, and each is paired with the event that settled it. With `--unit-field`, the per-unit records inside a kept partial result count too. A unit whose returned result is no longer on disk is `unknown`: it stays in `remaining`, and `refetch` names, per submission, the exact `fetch` command that brings it back before anything is resent. Its list goes to `distribute` and `submit` unchanged. **It accepts no adapter.** | After a campaign ends, before sending anything again. |
 | `poll` | Asks about one submission and **re-validates** that the returned state is inside the seam's five-value vocabulary. A defence against an adapter that misbehaves. | While waiting. |
 | `fetch` | Brings the result back. It evaluates currency **before** writing anything; if the result no longer corresponds to the current code, it is redirected to quarantine. It materializes in a partial directory, verifies that it is complete, renames, and only then records the return. A result that comes back incomplete is **never recorded as returned**: its bytes are kept under `.remote-execution/partial/<id>/<stamp>/`, and when the run is over without finishing (failed, timed out, or a reclaimed session) it is recorded `errored` naming that kept path. A run still going records nothing, and no partial directory is left to block the next fetch. | When the run has finished. |
 | `reconcile` | Compares what the service says it has against what the record believes, in both directions. It reports orphans; it never adopts them or cancels them on its own. | When something does not add up. A human always runs it. |
@@ -1859,7 +1864,7 @@ two because the cap is two" with "asks for exactly two".
 
 | File | What it does and why it exists |
 |---------|---------------------------|
-| `scripts/adapter.py` | The seam: an abstract class with exactly six operations, the frozen shapes that cross it, and a name-to-class registry. Because of this, everything above is blind to which service is below. A new backend enters without touching anything else. |
+| `scripts/adapter.py` | The seam: an abstract class with exactly six abstract operations, the frozen shapes that cross it, and a name-to-class registry. Because of this, everything above is blind to which service is below. A new backend enters without touching anything else. Optional capabilities are **not** operations: the class attributes `CODE_BUNDLE_MAX_BYTES`, `INPUT_DATASETS_ROOT`, `INPUT_DATASETS_HOST`, `CARRY_UPLOAD` and `PROVIDED_REQUIREMENTS`, the methods `session_limit_seconds` and `carry_source`, and the three hooks `preflight` asks for when an adapter answers them — `interpreter_check`, `account_check` and `accelerator_request`. |
 | `scripts/ledger.py` | The record: the reliable write path and the fold that derives state, including currency. It is the module `proposal-implementation` imports. |
 | `scripts/packer.py` | The capacity clamp. The only place that combines what the repository knows with what the service knows. |
 | `scripts/remote_cli.py` | The front door. Also the path guard, which resolves symbolic links **before** checking containment and admits exactly two path shapes. |
@@ -1869,7 +1874,7 @@ two because the cap is two" with "asks for exactly two".
 | `scripts/adapters/kaggle.py`, `colab.py` | The service adapters authorized to name a backend. They invoke the corresponding official CLI (`kaggle` or `google-colab-cli`); they never import private packages or read secrets directly. |
 | `assets/runner_bootstrap.py` | Cell 0 of every generated notebook: it validates the configuration, clones the pinned commit, puts `src/` on the path and imports the declared modules, verifying that they resolve **inside the clone**. It runs on the remote machine, before any of the user's code. |
 | `assets/runner_invoke.py` | Cell 1: it chooses the normal block or the rehearsal one and calls the declared entrypoint. |
-| `distribute` | Spreads the declared units across the available workers and returns the distribution, with each worker's per-slot shares, **without submitting anything**. It is the answer to "how many pieces does this go into and who runs each one?", kept separate from `submit` on purpose: deciding the distribution and spending quota are two different acts. |
+| `distribute` | Spreads the declared units across the available workers and returns the distribution, with each worker's per-slot shares (and, when units outnumber the slots, each slot's `queues` and their `sessionFit`), the units already returned complete under `done` and those still running under `inFlight` (neither placed again), and the `consentToken` that launch needs, **without submitting anything**. It is the answer to "how many pieces does this go into and who runs each one?", kept separate from `submit` on purpose: deciding the distribution and spending quota are two different acts. |
 
 **What it writes to disk.**
 
@@ -1919,7 +1924,145 @@ finished) and exits 0. `remaining` keeps those units, and every unit of a
 quarantined result, in its list.
 Fetch promptly —a Colab session keeps its file manifest current during the
 run, so each fetch saves a snapshot— and resubmit only the units `remaining`
-names.
+names. The full rule, naming no service, is the skill's "The session-chain
+rule".
+
+**Continuations carry their checkpoints.** A job declares what a continuation
+needs with `generate-job --carry-path <path>` (repeatable, relative to the
+product folder). A campaign `submit` then places each unit left to be
+continued on the worker that produced its earlier output —a unit whose
+worker is not in the pool refuses `CARRY_WORKER_MISMATCH`, and `--no-carry`
+starts it fresh (`carry: fresh`)— and hands the job one carry row per earlier submission:
+
+- **Kaggle mounts** the earlier kernel's output as a kernel input
+  (`carry: attached`).
+- **Colab uploads** it. A backend that cannot mount an earlier output but can
+  put files into the session it starts declares `CARRY_UPLOAD`; the Colab
+  adapter uploads the declared carry paths from the directory `fetch` left
+  into `<root>/<session>.carry/<k>/` before the launch (`carry: uploaded`).
+  The ledger records only `submissionId` and `ref`, never the local path.
+- A backend that can do neither reports `carry: unsupported`.
+
+Before the entrypoint starts, the runner restores each declared path in both
+layouts it can sit in (`clone/<product>/<path>` and `<path>`), never follows a
+symbolic link in the mount, and exports `FORGE_CARRY_IN`. A single send (no
+`--unit`) of a job that declares carry paths is still sent, but reports
+`carry: no-share` and a `carryWarning`: it records no share, so if its session
+is cut `remaining` lists none of its units. Send a chain as `submit --unit
+<id>`.
+
+**Slot queues.** A campaign with more units than granted slots is launched
+whole: unit `i` joins slot `i mod slots` (slot 1 of every account before any
+slot 2), and each slot's one job carries its whole queue in
+`FORGE_RUN_UNITS`. `distribute` and `submit` add `queues` (`{worker, slot,
+units, sessions, minutes, chained}` per slot) and `sessionFit`: with a timing
+record (`--timing`, default `<product>/Results/timing.json`, at `--stage`) and
+a declared session limit, each queue is cut into the chained sessions that run
+it on the same account inside 80% of the limit, with the setup paid once per
+session; without one, `sessionFit` says `measured: false` and why. A unit
+whose share already returned complete is reported under `done`, and one still
+running under `inFlight`; neither is placed again, so the campaign's full unit
+list can be passed every time. Each share takes the lowest slot no in-flight
+submission of the same entrypoint holds on its worker, so two shares never
+share a ledger lane. Such a campaign's consent token has two parts,
+`<campaign>.<placement>`: the campaign part is checked before the digest and
+before any backend call, and the placement part (each slot's units, `done` and
+`inFlight`) right after the read-only distribution, before anything is sent —
+`PLACEMENT_NOT_CONSENTED` when capacity moved, a unit was launched or a result
+returned since `distribute`. A campaign with no more units than slots and
+nothing done or in flight behaves exactly as before.
+
+**Before the first rehearsal: `preflight`.** It checks every generated job
+locally and never submits; it reaches a service only through the read-only
+probes `generate-job` and the adapters already run.
+
+```
+python3 scripts/remote_cli.py preflight --target <repo> \
+    --entrypoint <repo>/tools/<service>/<job-name>/runner.ipynb \
+    [--worker <id>]... [--expect-accelerator <name|sm_*>] \
+    [--timing <Results/timing.json>] [--candidate <host>:<owner>/<machine>] \
+    [--stage poc|full] [--units N] [--unit <id>]... [--deadline-block smoke|run] \
+    [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
+    [--skip-rehearsal] [--keep-rehearsal <new dir>] [--interpreter <python>] \
+    [--repo-credential <token file>] [--workspace <workspace>]
+```
+
+`--entrypoint` is repeatable (the command `generate-jobs` prints); with more
+than one, the report is `{jobs, summary}`. `--workspace` decides whose env
+interpreter, dataset registry, team registry and account store are checked.
+
+| Check | Fails (or warns) when |
+|---|---|
+| `pin` | the job's clone paths moved since its pin |
+| `diagrams` | an approval owes an experiment diagram that is not `validated` (`submit` would refuse `DIAGRAM_NOT_VALIDATED`) |
+| `interpreter` | the service's driver is not usable under this interpreter (the adapter's `interpreter_check`) |
+| `code-reachability` | the job carries no code bundle and the runner could not clone the pin |
+| `inputs` | warns: the service attaches inputs, the job declares none, and the workspace registry names a remote source |
+| `local-rehearsal` | the smoke, run locally under runner conditions in a scratch directory outside the target, raises, overruns `--local-timeout`, or leaves no complete `shard.json` |
+| `account` | per worker: fails when the account does not authenticate (`account_check`), warns when it has no passing rehearsal of its own at this pin |
+| `accelerator` | the machine the job will request (`accelerator_request`) is not the one `--expect-accelerator` names; warns that a service default GPU is a default, not a measured choice |
+| `deadline-rehearsal` | only for a job that declares carry paths or overruns the usable session: run twice, the first session under a deadline that has already arrived must leave `partial.json` (ids among the `--unit` ids) and its carry paths, and the second, handed only the remaining ids, must finish them |
+| `session-fit` | one unit's upper-bound estimate (on a schema 2 timing record, the `--candidate` named or the slowest candidate on the job's kind of machine) exceeds the usable session and no passing deadline rehearsal covers it |
+
+**Every job at once: `generate-jobs`.**
+
+```
+python3 scripts/remote_cli.py generate-jobs --target <repo> --product <Name> \
+    [--from-schedule <schedule output.json>] [--dataset <slug>]... \
+    [--smoke-module M --smoke-function F] [--smoke-kwargs '<json>'] \
+    [--smoke-required-evidence <path>]... [--repo-url URL] [--repo-ref REF] \
+    [--repo-credential <token file>] [--regenerate] [--workspace <dir>] \
+    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads] \
+    [--smoke-kwargs-for <step> '<json>']... [--carry-path-for <step> <path>]... \
+    [--input-dataset <owner/slug>]... [--input-dataset-for <step> <owner/slug>]... \
+    [--only <step>]... [--skip <step>]...
+```
+
+It reads each `__steps__` entry with `placement: "remote"` (with `ast`, never
+running the target's code) and derives the service (or the one a
+`remote-parallelism schedule` output chose), the notebook or callable, the
+clone paths, a code bundle when the pin is not anonymously reachable, the
+target's pinned requirements minus the adapter's `PROVIDED_REQUIREMENTS`, and
+the carry paths. A step may declare its own `smoke` (`module`, `function`,
+`kwargs`, `requiredEvidence`) and `carry`; `--smoke-kwargs-for` wins over
+both for one step, `--carry-path-for` adds a carry path, `--input-dataset`
+declares a public input on every job whose service attaches inputs and
+`--input-dataset-for` on one job. `--only` and `--skip` choose the steps, so a
+finished job is left alone; what they leave out is listed under `skipped`. A
+call without these options writes what 0.38.0 wrote.
+
+**Job inputs: `--dataset`.** `generate-job --dataset <slug>` (also on
+`generate-jobs`) resolves the slug in the workspace's `datasets/registry.json`
+through the `datasets` skill: the published remote when it is public, else the
+public dataset page its source names. The ref is declared as an input dataset
+and the official preparation's sha256 values are recorded as `datasetChecks`,
+which the runner exports as `FORGE_DATASET_CHECKS` so the target verifies the
+data it reads. **Nothing is uploaded**: an unpublished or private dataset
+refuses, naming `/datasets publish` with the operator's consent. `--workspace`
+chooses whose registry `--dataset` reads.
+
+**The refusal codes.** A refusal that carries a stable code prints it first,
+so a caller branches on it without parsing prose. The skill's own table is the
+source of truth; these are the codes of the commands above.
+
+| Code | Raised by | Meaning |
+|---|---|---|
+| `WORKSPACE_WITHOUT_DATASET` | `generate-job --workspace` | `--workspace` without `--dataset`, which alone would change nothing |
+| `DATASET_UNKNOWN` | `generate-job`/`generate-jobs --dataset` | the slug is not in the workspace's `datasets/registry.json` |
+| `DATASET_LICENSE_NOT_ALLOWED` | same | the license decision is missing or refused: `/datasets license` first |
+| `DATASET_NOT_PREPARED` | same | no official preparation (`/datasets prepare`), so no sha256 to record |
+| `DATASET_NOT_PUBLIC` | same | published privately, and its source names no public page; the fix names `/datasets publish ... --public` with consent |
+| `DATASET_NOT_PUBLISHED` | same | not published, and its source names no public page a worker can attach |
+| `DATASET_HOST_NOT_ATTACHABLE` | same | served by a host other than the one the adapter attaches from (`INPUT_DATASETS_HOST`) |
+| `DATASETS_SKILL_MISSING` | same | the workspace has no `datasets` skill beside this one; the fix names `smith upgrade` |
+| `STEPS_UNREADABLE` | `generate-jobs` | the product's `__init__.py` or `config.py` does not parse, or its `__steps__` is not a literal |
+| `SCHEDULE_UNREADABLE` | `generate-jobs --from-schedule` | not readable JSON, no `steps` list, or a step without `id` or `services` |
+| `SCHEDULE_IS_A_PLAN` | `generate-jobs --from-schedule` | the file is the schedule's input plan; pass the output of `parallelism_cli.py schedule --plan <file>` instead |
+| `STEP_UNKNOWN` | `generate-jobs --only`, `--skip`, `--*-for` | the name is not a remote step the product declares; refused before anything is written |
+| `STEP_SELECTION_CONFLICT` | `generate-jobs --only`, `--skip` | one step under both, a `--*-for` value for a step left out, or a selection that leaves nothing |
+| `STEP_DECLARATION_MALFORMED` | `generate-jobs` (that job's row) | the step's `smoke` or `carry` declaration is malformed; only that job is refused |
+| `CARRY_WORKER_MISMATCH` | campaign `submit` | a continuation unit's earlier output was produced on another worker than the one it is placed on; the message names that worker and `--no-carry` |
+| `PLACEMENT_NOT_CONSENTED` | campaign `submit` | the token's placement part does not approve the placement at launch; run `distribute` again |
 
 **Known limitations.**
 
@@ -1980,8 +2123,6 @@ flowchart TD
     N --> AA["reconcile: record against service. A human runs it"]
     N --> AB["proposal-implementation folds this read-only"]
 ```
-
----
 
 ---
 
@@ -2481,3 +2622,300 @@ symlink, and a recorded version that did not advance. Exit codes are `0` success
 `1` a user error, `2` a source error, `4` a migration failure. An upgrade that
 printed a migration failure and exited 4 did not succeed, and a summary that calls
 it done is the outcome this skill must never produce.
+
+---
+
+### 13. `datasets` — data the experiments can stand on, and why it may be used
+
+**What it is for.** A proof of concept should never wait on a download, so a
+**seeded toy set** comes first and always. The real dataset comes second, and the
+questions that matter about it are not technical: may we use it, may we
+redistribute it, is it what it claims to be, and is the split the one the paper
+reports? Each answer is written to disk —`datasets/registry.json` and one folder
+per dataset— so a later session reads it instead of deciding it again.
+
+**What it receives and what it hands on.** It receives a research question or a
+paper. It hands both experiment stages one official subject-wise preparation
+(`datasets/<slug>/splits.json` and `PREPARATION.md`, tied to the source sha256),
+which neither stage re-splits in its own code, and it hands `remote-execution`
+the registry `generate-job --dataset <slug>` reads through `job_input()`.
+
+**What it needs first.** Python 3.10+ and the standard library: no virtual
+environment, no API key. The network is used only by `search` and `publish`;
+publishing needs the official `kaggle` client in the operator's environment,
+which reads its own token. This skill never reads, stores or prints it.
+
+**The stages it declares.** Read from `OBJECTIVE_FLOW` in
+`scripts/datasets_cli.py`, held equal to `SKILL.md` by a test.
+
+| Stage | What it establishes |
+|---|---|
+| `toy` | a seeded synthetic set exists, so the proof of concept never waits on real data |
+| `sourced` | candidate real datasets were searched for, each hit on disk with its URL and date |
+| `licensed` | the source license was read and mapped to a decision before any data moves |
+| `checked` | shape, gaps, balance and subject structure are measured in `qc.json` |
+| `prepared` | one versioned subject-wise split both experiment stages read |
+| `published` | the prepared set sits on the remote dataset host, private unless made public on consent |
+
+**Three stops are a person's, and the CLI enforces each one:** overriding a
+refused license (`--override "<reason>"`, recorded), consenting to an upload
+(`publish --consent <slug>`, per dataset), and consenting to make it public
+(`--public --consent-public <slug>`, a second token). An agent never types any
+of them on its own initiative.
+
+**The verbs.** `python3 skills/datasets/scripts/datasets_cli.py <verb>`:
+`synth` (a seeded toy CSV, or the `capacity` family of EEG replicates that tests
+what a classifier can represent), `search` (Kaggle, Hugging Face Hub, OpenNeuro
+and Zenodo, every hit recorded), `license`, `qc`, `prepare` (stratified group
+k-fold by subject; `--seeds` for repeated cross-validation), `publish` (a dry run
+without consent) and `status`. The `dataset-scout` agent runs the search and
+license stretch, and `dataset-curator` the rest.
+
+**What it never does.** It never publishes without the operator's consent token,
+never makes a dataset public on one token, never splits a subject across folds,
+and never decides on the operator's behalf whether a recording holds personal
+data: that check is the operator's responsibility.
+
+---
+
+### 14. `experiment-diagrams` — one figure per approval, validated by a person
+
+**What it is for.** An approval is a document; a reader checks it faster as a
+picture. When a product's proof of concept is approved (`AGREED.md`) and again
+when its full experiments are (`Experimental_AGREED.md`), this skill draws one
+TikZ diagram of each —`poc` and `experiments`— stating the experiment's single
+scientific claim along one reading spine, compiles it to PDF and PNG and reviews
+the picture against a fixed design discipline, grayscale included.
+
+**What it receives and what it hands on.** It reads whether the approval markers
+exist and the protocol they name; it never edits them. It hands the dashboard's
+Experimentos tab the PNG to validate, and it hands `remote-execution` the
+validation record `<Name>/diagrams/<kind>.validated.json`, which holds the PNG's
+SHA-256: `submit` (rehearsals included) refuses `DIAGRAM_NOT_VALIDATED` while an
+approved kind's diagram is not `validated`, and `preflight`'s `diagrams` row says
+so before any remote hour.
+
+**The verbs.** `derive` drafts the spec from the product's evidence, `render`
+writes `.tex`, `.pdf` and `.png` (and drops any earlier validation, so a diagram
+drawn again is validated again), `status` reports each kind as `absent`,
+`pending`, `validated` or `stale` and how it was validated, and `validate` records
+the operator's approval given in the conversation, with the operator's words
+verbatim and the hash of the PNG that was shown.
+
+**What it never does.** It never validates a diagram on its own initiative: the
+operator does, with **Validar diagrama** in the dashboard or by approving that
+diagram explicitly in the conversation. It never writes the approval markers,
+never runs an experiment, and never writes outside `<Name>/diagrams/`.
+
+---
+
+### 15. `hyperparameter-search` — a fair search, recorded so it can be read
+
+**What it is for.** A search for the settings an experiment leaves open, run so
+that the comparison it feeds stays fair and recorded so that a reader sees what
+the search found, not only the value it chose. It is not a default step: it runs
+only when the experimental deliberation judged it worthwhile and the protocol
+declares it.
+
+**What it receives and what it hands on.** It receives the protocol's declared
+search as `<Name>/hpo/plan.json` and, for the estimate, the timing probe's
+`Results/timing.json` (schema 1 or 2). It hands the dashboard, per arm and outer
+fold, `Results/hpo/<study>/summary.json` with importance, contour and
+optimization-history figures.
+
+**What it needs first.** The CLI is stdlib-only. The studies run with Optuna,
+which, with matplotlib, is installed in the **target's own venv** and nowhere
+else: `report` runs under that interpreter and refuses `optuna-missing` when it
+cannot import them.
+
+**The stages it declares.** Read from `OBJECTIVE_FLOW` in `scripts/hpo_cli.py`.
+
+| Stage | What it establishes |
+|---|---|
+| `planned` | `plan` accepts the plan: one trial budget for every arm, a seeded sampler, a search nested inside each outer fold, nothing the experiments test tuned, the importance evaluator named |
+| `searched` | one study per arm and outer fold, `<arm>-fold<k>`, ran into `<Name>/hpo/studies.db` |
+| `reported` | `report` wrote every study's summary and figures, and `status` read them back |
+
+**Two stops are a person's:** whether to search at all, which the deliberation
+decides, and the launch, which goes through `remote-execution` behind the
+operator's consent and gate like any full run.
+
+**The verbs.** `python3 skills/hyperparameter-search/scripts/hpo_cli.py`
+`plan` (validates the plan; with `--timing`, estimates its cost per host or, on a
+schema 2 record, per candidate), `report` and `status`.
+
+**What it never does.** It never launches a search, never tunes what the
+experiments test, and never reads importance or contours as a hypothesis test:
+they describe the search, and the experiments' own significance tests stay the
+only evidence.
+
+---
+
+### 16. `remote-parallelism` — where a stage runs, decided by measurement
+
+**What it is for.** Splitting a campaign over several remote accounts is not
+free: every session pays a setup, every account has a weekly quota and a session
+limit, and every extra machine is one more place the numerics can drift. This
+skill answers, with **measured** numbers and a stated threshold, whether a split
+is worth it, where a proof of concept or a full experiment should run —local or
+cloud, CPU or GPU, how many processes or accounts, which batch and loader
+settings— and how a project's remote steps line up.
+
+**What it receives and what it hands on.** It receives the target's
+`Results/timing.json`, written by its own timing probe, and the team's accounts
+(`smith team list`). It hands the operator a verdict or a plan, and it hands
+`remote-execution generate-jobs --from-schedule` a `schedule` output. It reuses
+`remote-execution`'s placement and launch gate and **never places, generates or
+launches anything**: a verdict here is never launch authorization.
+
+**What it needs first.** Python 3.10+ and the standard library: no network, no
+credentials. The timing probe, `scripts/timing_probe.py`, runs under the
+target's own interpreter.
+
+**The stages it declares.** Read from `OBJECTIVE_FLOW` in
+`scripts/parallelism_cli.py`.
+
+| Stage | What it establishes |
+|---|---|
+| `measured` | per-unit duration comes from a pilot, setup from a rehearsal, and the accounts' limits and quota are recorded with their date |
+| `assessed` | `assess` turned those measurements into a verdict with its threshold stated, recorded in the tree it concerns |
+| `planned` | every reproducibility checklist item holds for the split the verdict calls for |
+
+**Two stops are a person's:** the launch, and which owners take part —one
+account per person per service, each attested with `smith team add --attest`.
+
+**The verbs.** `python3 skills/remote-parallelism/scripts/parallelism_cli.py <verb>`:
+
+| Verb | What it answers |
+|---|---|
+| `assess` | is one campaign worth splitting? `split-first`, `do-not-mix`, `parallelize` (more than one eligible owner, a speed-up of at least 1.5, at least 30 saved minutes and no account over quota) or `single-account`, with every threshold in the output |
+| `estimate` | how long each stage (`poc`, `full`) takes per host, as a ±20% range from the timing probe; a stage over 20 local minutes runs on a cloud host, and a proof of concept fits 5 hours where it runs |
+| `plan` | where and how to run a stage: every measured candidate competes, and the pick is the smallest makespan upper bound, then the fewest accelerator hours, then the CPU, then local |
+| `schedule` | which service each remote step runs on and how its units spread over that service's accounts, honouring `requires`, for the smallest makespan |
+| `checklist`, `stamp-fields` | the reproducibility checklist and the shard stamp fields a split declares |
+
+**The timing probe.** One epoch per candidate and setting —batch size, loader
+workers, pin memory, prefetch, threads, dtype, raw or cached data— with
+`local-cpu-<N>` timed as N concurrent processes, each epoch split into load and
+compute time, and each candidate capped in time (300 s by default). It writes
+only `Results/timing.json` as **schema 2**: a `candidate` per measurement, its
+settings, `loadSeconds`/`computeSeconds`, and per-host `cpuCount`, `ramGB`,
+`mps`, `cuda`. Schema 1 records keep loading with unchanged outputs. A candidate
+of another host is refused before anything runs, and the probe never picks a
+device: a target reads it from the plan's measured recommendation.
+
+**A GPU is never the default.** An accelerator is recommended only when it beat
+a measured CPU option on makespan, and `reason` names that CPU. With no CPU
+measured, or every measured CPU faster, the stage reads `status:
+needs-measurement`, recommends nothing, shows the leader as `provisional` and
+lists the CPU candidates to measure under `measureFirst`, each with its probe
+command. Every candidate the record lacks is listed as `unmeasured`, never
+extrapolated from another host, and `representationAdvice` recommends a cached
+data form when waiting on data takes more than 40% of an epoch.
+
+**Sessions, quota weeks and queues.** A unit plus its setup must end inside 80%
+of a session's limit. `plan --resumable --checkpoint-minutes <minutes>` (and a
+resumable step in `schedule`) costs a longer unit as chained sessions on the
+same account, each paying the setup again. `schedule` and `plan` spend each
+account's weekly quota as they place units: a session that would overrun it
+waits for the next reset, and `quotaWeeks` and `quotaWaitMinutes`
+(`quotaWaitSeconds` in `plan`) report the wait. Both also report the **queues**
+`remote-execution distribute` launches —one `{account, slot, units, sessions,
+minutes}` per slot, in the launch's place order— and `queueMakespanMinutes`.
+
+**What it never does.** It never submits, generates a job or reads a
+credential, never pools timing across machines, and never splits a campaign by
+arm.
+
+**Diagram.**
+
+```mermaid
+flowchart TD
+    A["timing_probe.py under the target's interpreter"] --> B["Results/timing.json (schema 2)"]
+    B --> C["estimate: a range per stage and host"]
+    B --> D["plan: every measured candidate competes"]
+    D --> E{"Was a CPU measured and beaten?"}
+    E -- No --> F["needs-measurement: measureFirst lists the probes"]
+    E -- Yes --> G["recommended option, with its reason"]
+    B --> H["schedule: one service per step, queues per slot"]
+    H --> I["remote-execution generate-jobs --from-schedule"]
+    G --> J["the operator authorizes the launch"]
+    I --> J
+```
+
+---
+
+### 17. `math-tutor` — understanding the mathematics, checked
+
+**What it is for.** The dashboard's math panel shows a paper's equations; it does
+not make anyone understand them. This tutor works with the reader's own
+hand-written pages —a diagram, a derivation— and leads them, one question at a
+time, to where they can justify the paper's novelty with the mathematics.
+
+**What it receives and what it hands on.** It reads the equations and novelty
+card the panel shows (`GET /api/model/math`: the latest proposal revision's
+display blocks, or `.papersmith/model_spec.json`), the thread so far and the
+images attached to the turn. It hands back one structured turn: the image read
+back as LaTeX, a hint, one question, an assessment and the link to the novelty.
+
+**How it runs.** From the dashboard's *Mapa Conceptual & Modelo* tab, where each
+turn runs the `math-tutor` agent headless with read-only tools, or from any
+harness as `/math-tutor`. Each turn rates understanding on a fixed 0–4 scale
+(`reconoce`, `explica`, `deriva`, `justifica`) with evidence quoted from the
+reader. The thread and the uploaded pages live in `.papersmith/math-tutor/`,
+which the workspace's `.gitignore` ignores: they are the reader's own.
+
+**What it never does.** It never writes to the workspace, never invents the
+paper's mathematics when there is none, and never grades without evidence quoted
+from the reader's own words or drawing.
+
+---
+
+### 18. `experiments-tutor` — each experiment decision, questioned before a reviewer does
+
+**What it is for.** The Experimentos tab shows what was planned and what was
+measured; it does not say whether the plan holds. This tutor works through one
+decision at a time —network architecture, hyperparameters and their search,
+ablations, significance tests, the toy set's purpose, training strategies, upper
+bounds (*techos*), the methods compared and their implementation, validation and
+leakage, compute budget, reproducibility— until the operator can defend each
+choice.
+
+**What it receives and what it hands on.** Before it speaks it reads a
+size-capped digest of the experiments (`GET /api/experiments`: the latest
+protocol and, per product, its kind, significance rows, search summaries, table
+headers, timing, run counts and diagrams, plus the datasets registry) and the
+files that digest names: the protocol, each `AGREED.md` and
+`Experimental_AGREED.md`, and the target's `src/`. It hands back one turn: a
+hint, one question, an assessment of the design on a fixed 0–4 scale
+(`declarada`, `justificada`, `controlada`, `defendible`) with quoted evidence,
+the paths it read and the risks it sees. A change of decision comes back as a
+draft for `/experimental-deliberation`, which holds the gate; the dashboard's
+**Deliberar este cambio** types it into the CLI assistant without pressing Enter.
+
+**How it runs.** From the Experimentos tab, where each turn runs the
+`experiments-tutor` agent headless with only `Read`, `Glob` and `Grep`, or from
+any harness as `/experiments-tutor`. The thread lives in
+`.papersmith/experiments-tutor/`, which the workspace's `.gitignore` ignores.
+
+**The safeguards.** Numbers are measured, never supplied: with no result on
+disk the tutor says "nothing measured yet". It never reads a credential store,
+`.papersmith/team.json`, a `.remote-execution/` file or a token; in the
+dashboard the headless run also carries those places as `Read(...)` deny rules,
+so the CLI itself refuses the read.
+
+**What it never does.** It never edits the protocol, an approval, the code or a
+result, and never decides a change on the operator's behalf.
+
+**Diagram.**
+
+```mermaid
+flowchart TD
+    A["Operator: a decision area, a mode, a question"] --> B["Digest of the experiments, size-capped"]
+    B --> C["experiments-tutor agent: Read, Glob, Grep only"]
+    C --> D["One turn: hint, one question, assessment 0-4, evidence, risks"]
+    D --> E{"Should a decision change?"}
+    E -- No --> A
+    E -- Yes --> F["Draft for /experimental-deliberation"]
+    F --> G["The deliberation's gate: the operator decides"]
+```
