@@ -327,24 +327,28 @@ class SessionFitTests(PreflightCase):
         _, payload, _ = self.preflight(job, "--skip-rehearsal", "--units", "10")
         self.assertEqual(self.row(payload, "session-fit")["status"], "pass")
 
-    def test_carry_paths_admit_a_long_unit(self) -> None:
+    def test_carry_paths_alone_no_longer_pass_a_long_unit(self) -> None:
+        """session-chains S1: declared carry paths are not proof of resuming;
+        with the deadline rehearsal skipped the row warns."""
         self._timing(120.0)
         job = self.generate(carry_paths=["checkpoints"])
         _, payload, _ = self.preflight(job, "--skip-rehearsal")
         row = self.row(payload, "session-fit")
-        self.assertEqual(row["status"], "pass")
+        self.assertEqual(row["status"], "warn")
         self.assertIn("carry", row["evidence"])
+        self.assertIn("deadline rehearsal was skipped", row["evidence"])
+        self.assertEqual(self.row(payload, "deadline-rehearsal")["status"], "warn")
 
 
 class RehearsalScratchTests(PreflightCase):
     def test_a_failed_rehearsal_leaves_no_scratch_directory_behind(self) -> None:
-        import tempfile
-        before = set(Path(tempfile.gettempdir()).glob("psmith-preflight-*"))
         job = self.generate(smoke="smoke_silent")
         _, payload, _ = self.preflight(job)
         row = self.row(payload, "local-rehearsal")
         self.assertEqual(row["status"], "fail")
-        self.assertEqual(set(Path(tempfile.gettempdir()).glob("psmith-preflight-*")), before)
+        # Its own scratch, not a glob of the shared temporary directory, which
+        # tests running in parallel fill and empty under it.
+        self.assertFalse(Path(row["details"]["scratch"]).exists())
         self.assertFalse(row["details"]["kept"])
 
     def test_keep_rehearsal_keeps_a_failed_one(self) -> None:
@@ -380,10 +384,8 @@ class RehearsalScratchTests(PreflightCase):
         self.assertEqual(list(keep.iterdir()), [])
 
     def test_an_unexpected_error_fails_the_row_and_removes_the_scratch(self) -> None:
-        import tempfile
         local = REMOTE_CLI._load_sibling("remote_execution_local_rehearsal",
                                          "local_rehearsal.py")
-        before = set(Path(tempfile.gettempdir()).glob("psmith-preflight-*"))
         job = self.generate()
         with unittest.mock.patch.object(local, "materialize",
                                         side_effect=RuntimeError("boom")):
@@ -394,7 +396,7 @@ class RehearsalScratchTests(PreflightCase):
         self.assertIn("RuntimeError: boom", row["evidence"])
         self.assertIn("rerun preflight", row["fix"])
         self.assertFalse(row["details"]["kept"])
-        self.assertEqual(set(Path(tempfile.gettempdir()).glob("psmith-preflight-*")), before)
+        self.assertFalse(Path(row["details"]["scratch"]).exists())
 
     def test_an_unexpected_error_keeps_the_scratch_when_asked(self) -> None:
         local = REMOTE_CLI._load_sibling("remote_execution_local_rehearsal",

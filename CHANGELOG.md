@@ -11,6 +11,92 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- `preflight` rehearses a session chain before any remote hour is spent. For a
+  job that declares carry paths, or whose unit or whole-session estimate
+  exceeds the usable session, a new `deadline-rehearsal` row runs the job's
+  smoke (or `--deadline-block run`) twice through the runner's own `invoke()`
+  in a scratch directory outside the target: session 1 under a
+  `FORGE_SESSION_DEADLINE` that has already arrived, which must exit 0 and
+  leave a `partial.json` whose ids are among the `--unit` ids, outside every
+  carry path, plus at least one declared carry path; session 2, handed only
+  the remaining ids with those paths restored, must finish them. Each
+  session is bounded by `--local-timeout`. New flags: `--unit <id>`
+  (repeatable) and `--deadline-block smoke|run`.
+- A Colab continuation resumes from its earlier session's checkpoints
+  instead of starting fresh (`carry: uploaded`). A backend that cannot mount
+  an earlier output but uploads files into a session declares the optional
+  `Adapter.CARRY_UPLOAD`; `submit` hands it the local directory `fetch` left,
+  and the Colab adapter uploads the job's declared carry paths (both
+  layouts, nothing else) to `<root>/<session>.carry/<k>/` before the launch,
+  then gives the runner that `mount`. The ledger records only
+  `submissionId` and `ref`.
+- `submit` of a job that declares carry paths without `--unit` is still sent,
+  but reports `carry: no-share` and a `carryWarning`: no share is recorded,
+  so `remaining` would never list the units of a run cut at its limit.
+- `remote-parallelism plan --resumable --checkpoint-minutes <minutes>` costs a
+  unit over the session margin as a chain of sessions on one account, each
+  paying the setup again, instead of dropping the candidate as `split-first`;
+  the option reports `resumable`, `checkpointMinutes` and `sessionsPerUnit`.
+
+### Changed
+
+- `schedule` and `plan` spend each account's weekly quota (`quotaHours`) as
+  they place units: a session that would overrun it waits for the next
+  reset, another account with quota left takes the unit when that is
+  sooner, and a chained unit waits on its own account. The wait is in the
+  makespan; `quotaWeeks` and the per-account `quotaWeeks` and
+  `quotaWaitMinutes` (`quotaWaitSeconds` in `plan`) report it. A `plan`
+  option over its quota is now eligible with the wait included (it was
+  `over-quota`). The schema 1 `schedule` golden gains only these keys.
+- `session-fit` no longer passes a unit that spans sessions merely because
+  the job declares carry paths: it fails when the deadline rehearsal failed
+  (no `partial.json`, among others) and warns when it was skipped.
+- The session-chain rule is stated once, naming no service, in
+  `remote-execution` ("The session-chain rule"), `remote-parallelism`, both
+  implementation skills and the four walk/build agents: estimate against the
+  80% session margin, checkpoint every epoch or trial into a declared carry
+  path, stop at `FORGE_SESSION_DEADLINE` with `partial.json`
+  (`{"remaining": [<unit ids>]}`, strings equal to the `FORGE_RUN_UNITS` it
+  was sent, written whatever `FORGE_RUN_MODE` says, since that is set only for
+  a smoke), send a chain with `submit --unit`, rehearse the deadline before the
+  first remote rehearsal, and count quota weeks. The agents' old line saying
+  one service carries nothing automatically is gone.
+
+### Fixed
+
+- A continuation now resumes from the checkpoints its earlier session
+  wrote under the runner's clone. Targets bind their root to
+  `FORGE_CLONE_ROOT` and write `clone/<product>/<path>`, but the runner's
+  carry restore copied only `<path>` from the mounted earlier output into
+  the working directory, a tree the target never reads, so a continuation
+  started from scratch even with a `partial.json`. `restore_carry()` now
+  restores each declared carry path in both layouts it can sit in, each to
+  where it was written: `clone/<product>/<path>` under the clone root and
+  `<path>` in the working directory, the layout older jobs use and still
+  get. Nothing is moved between layouts, the mount is only read, and a job
+  without carry paths generates the same `run-config.json` bytes as before.
+- `restore_carry()` never follows a symbolic link in the mount: a declared
+  path that is one (or sits under one) is skipped with a `[carry]` line, and
+  a link inside a carried tree is not copied, so a mount can no longer pull
+  a file from outside it into the session. Every file is written only where
+  its resolved destination stays inside the working directory, so a link
+  already in the clone can no longer carry a write out of it.
+- The Colab carry upload skips a declared path with no parts (`.`, `./`),
+  as the runner does, so a hand-edited `run-config.json` can no longer
+  upload the whole fetched output.
+- `session-fit` no longer reports a deadline rehearsal that ran without
+  ever stopping early (every unit finished before the deadline) as
+  skipped; it quotes that row's evidence.
+- `remaining` no longer counts the units of a returned result as complete
+  when its recorded `artifactPath` is gone from disk: they are `unknown`,
+  stay in `remaining`, and `refetch` names the exact `fetch` command per
+  submission; such a result is never continuation evidence. A present
+  result is read exactly as before.
+
 ## 0.38.0
 
 ### Added

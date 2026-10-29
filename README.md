@@ -819,6 +819,17 @@ the fastest affordable one with its reason. A GPU is never the default: it is
 chosen only when measured faster, and `generate-job --accelerator-kind cpu`
 writes a CPU-only remote job when the plan says so.
 
+**Runs longer than one session.** A run whose estimate exceeds a service's
+continuous session is planned as a chain of sessions that checkpoint every
+epoch or trial and resume: `plan --resumable` and `schedule` cost the chain,
+with the setup paid again in every session and the wait for each weekly quota
+reset counted (`quotaWeeks`). `preflight --unit <id> ...` rehearses it locally
+before the first remote rehearsal: the job must stop at a deadline that has
+already arrived, leave `partial.json` and its checkpoints, and finish only the
+remaining units in a second session. `submit --unit` then carries the declared
+checkpoints to each continuation on the same account. The rule lives in
+`remote-execution`'s "The session-chain rule".
+
 **Real quota.** A real submission spends quota and GPU hours. The house rule is
 simple: everything that can be rehearsed with `--dry-run` and `--smoke` is
 rehearsed; what is left after that is a decision for the operator.

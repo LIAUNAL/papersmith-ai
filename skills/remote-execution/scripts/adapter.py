@@ -252,6 +252,17 @@ class Adapter(ABC):
     # refused.
     INPUT_DATASETS_HOST: str | None = None
 
+    # Optional, and not an operation either (session-chains S5): a backend
+    # whose jobs cannot mount an earlier submission's output
+    # (`carry_source()` answers `None`) but which uploads files from this
+    # machine into the session it starts. `True` makes `submit` hand a
+    # continuation `{"submissionId", "ref", "upload": <the local directory
+    # `fetch` left>}` rows in `run_config["carry"]`; the backend uploads the
+    # job's declared carry paths from there and rewrites each row to the
+    # `mount` the runner restores from. `False` (this default) leaves such
+    # a continuation `carry: unsupported`.
+    CARRY_UPLOAD: bool = False
+
     # Optional, and not an operation either (remote-preflight S3): the
     # distribution names this backend's worker image already provides.
     # `generate-jobs` leaves them out of the requirements it derives from
