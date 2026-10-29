@@ -149,9 +149,30 @@ SESSION_MARGIN_MIN_SECONDS = 1800
 # `run_config["carry"]`, one `{"submissionId", "ref", "mount"}` row per
 # earlier submission whose output the backend mounted for this job. Before
 # the entrypoint runs, `restore_carry()` copies each declared path from each
-# mount into this cell's working directory -- the folder whose files come
-# back as the result -- so the target finds its checkpoints where it wrote
-# them and needs no code of its own to resume. `FORGE_CARRY_IN` names the
+# mount back to where the earlier session wrote it, so the target finds its
+# checkpoints where it wrote them and needs no code of its own to resume.
+#
+# A mount mirrors the earlier session's working directory -- the folder
+# whose files come back as the result -- and a declared path can sit in it
+# in two layouts, each restored to the same place it was written:
+#
+# - the PRODUCT layout, `clone/<product>/<path>`: a target that binds its
+#   repository root to `FORGE_CLONE_ROOT` (`<cwd>/clone`) writes its product
+#   folder there, so `Results/e2/runs` lives at
+#   `<cwd>/clone/<product>/Results/e2/runs`;
+# - the WORKING layout, `<path>`: a target (or a notebook) writing paths
+#   relative to its working directory, which is every job that predates the
+#   product layout.
+#
+# Both are restored when both are present; nothing is moved from one layout
+# to the other, and nothing outside a declared path is copied. `<product>`
+# is `run_config["product"]`, joined only when it is one folder name.
+# A symbolic link in the mount is never followed: a declared path that is
+# (or sits under) one is skipped, and a link inside a carried tree is not
+# copied. Every file is written only where its resolved destination stays
+# inside the working directory, so a link already in the clone never
+# carries a write out of it. Each skip is one `[carry]` line.
+# `FORGE_CARRY_IN` names the
 # mounts that were present (joined with `os.pathsep`), for a target that
 # wants to read the earlier output directly. A missing mount or path is
 # written to the run log and the unit starts fresh; it is never fatal.
@@ -159,6 +180,7 @@ CARRY_IN_ENV = "FORGE_CARRY_IN"
 CARRY_PATHS_KEY = "carryPaths"
 CARRY_KEY = "carry"
 CARRY_LOG_PREFIX = "[carry]"
+PRODUCT_KEY = "product"
 
 
 def _carry_relative(raw: Any) -> Path | None:
@@ -172,10 +194,84 @@ def _carry_relative(raw: Any) -> Path | None:
     return candidate
 
 
+def _carry_product(raw: Any) -> str | None:
+    """`run_config["product"]` when it is one plain folder name, else
+    `None`: the product layout is never joined from a value that could
+    name another directory."""
+    if not isinstance(raw, str) or not raw or raw in (".", ".."):
+        return None
+    if "/" in raw or "\\" in raw or os.sep in raw:
+        return None
+    return raw
+
+
+def _carry_link(mount: Path, relative: Path) -> Path | None:
+    """The first component of `mount / relative`, below `mount`, that is a
+    symbolic link (relative to `mount`), or `None`."""
+    current = mount
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return current.relative_to(mount)
+    return None
+
+
+def _copy_carried(source: Path, destination: Path, *, mount: Path, base: Path,
+                  ref: Any) -> tuple[int, int]:
+    """Copy the regular files of `source` (a file or a tree) to
+    `destination`, never following a symbolic link in the mount and never
+    writing where the resolved destination leaves `base`; returns
+    `(copied, skipped)`."""
+    inside = base.resolve()
+    copied = skipped = 0
+
+    def skip(path: Path, why: str) -> None:
+        nonlocal skipped
+        skipped += 1
+        print(f"{CARRY_LOG_PREFIX} skipped {path.relative_to(mount).as_posix()} from "
+              f"{ref!r}: {why}", flush=True)
+
+    def lands_inside(target: Path) -> bool:
+        return target.resolve().is_relative_to(inside)
+
+    if not source.is_dir():
+        if not lands_inside(destination):
+            skip(source, "its destination resolves outside the working directory")
+            return copied, skipped
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        return 1, skipped
+    for root, dirnames, filenames in os.walk(source):
+        here = Path(root)
+        landing = destination / here.relative_to(source)
+        if not lands_inside(landing):
+            skip(here, "its destination resolves outside the working directory")
+            dirnames[:] = []
+            continue
+        landing.mkdir(parents=True, exist_ok=True)
+        for name in sorted(dirnames):
+            if (here / name).is_symlink():
+                skip(here / name, "a symbolic link in the mount is never followed")
+        dirnames[:] = sorted(name for name in dirnames if not (here / name).is_symlink())
+        for name in sorted(filenames):
+            item = here / name
+            if item.is_symlink():
+                skip(item, "a symbolic link in the mount is never followed")
+            elif item.is_file():
+                if not lands_inside(landing / name):
+                    skip(item, "its destination resolves outside the working directory")
+                    continue
+                shutil.copy2(item, landing / name)
+                copied += 1
+    return copied, skipped
+
+
 def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = None) -> str | None:
-    """Copy each declared carry path from each mounted earlier output into
-    the working directory, and return the `FORGE_CARRY_IN` value (`None`
-    when nothing was mounted, or when this job carries nothing).
+    """Copy each declared carry path from each mounted earlier output back
+    to where the earlier session wrote it -- `clone/<product>/<path>` and
+    `<path>`, each when present (see `CARRY_PATHS_KEY` above) -- and return
+    the `FORGE_CARRY_IN` value (`None` when nothing was mounted, or when
+    this job carries nothing).
 
     Never raises for a missing mount, a missing path or a malformed row:
     each is printed as one `[carry]` line to the run log and skipped, so
@@ -190,6 +286,14 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
     if not isinstance(declared, list):
         declared = []
     base = Path(base_dir) if base_dir is not None else Path.cwd()
+    product = _carry_product(run_config.get(PRODUCT_KEY))
+    if product is None and PRODUCT_KEY in run_config:
+        print(f"{CARRY_LOG_PREFIX} product {run_config.get(PRODUCT_KEY)!r} is not one "
+              "folder name; only the working-directory layout is restored", flush=True)
+    layouts: list[tuple[Path, str]] = [(Path(), "the working directory")]
+    if product is not None:
+        product_root = Path(CLONE_DIRNAME) / product
+        layouts.insert(0, (product_root, product_root.as_posix() + "/"))
     present: list[str] = []
     for row in rows:
         mount_text = row.get("mount") if isinstance(row, Mapping) else None
@@ -209,18 +313,33 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
                 print(f"{CARRY_LOG_PREFIX} skipped carry path {raw!r}: not a "
                       "relative path inside the product folder", flush=True)
                 continue
-            source = mount / relative
-            destination = base / relative
-            if source.is_dir():
-                shutil.copytree(source, destination, dirs_exist_ok=True)
-            elif source.is_file():
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
-            else:
+            restored = refused = False
+            for prefix, label in layouts:
+                link = _carry_link(mount, prefix / relative)
+                if link is not None:
+                    refused = True
+                    print(f"{CARRY_LOG_PREFIX} skipped carry path {raw} from {ref!r}: "
+                          f"{link.as_posix()} is a symbolic link in the mount; it is "
+                          "never followed", flush=True)
+                    continue
+                source = mount / prefix / relative
+                if not (source.is_dir() or source.is_file()):
+                    continue
+                copied, skipped = _copy_carried(source, base / prefix / relative,
+                                                mount=mount, base=base, ref=ref)
+                if skipped and not copied:
+                    refused = True
+                    continue
+                restored = True
+                where = label + relative.as_posix() if prefix.parts else label
+                print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r} into {where}",
+                      flush=True)
+            if not restored and refused:
+                print(f"{CARRY_LOG_PREFIX} {raw} was not restored from {mount}; it starts "
+                      "fresh", flush=True)
+            elif not restored:
                 print(f"{CARRY_LOG_PREFIX} {raw} is missing from {mount}; it starts "
                       "fresh", flush=True)
-                continue
-            print(f"{CARRY_LOG_PREFIX} restored {raw} from {ref!r}", flush=True)
     return os.pathsep.join(present) if present else None
 
 # The public datasets a job reads (kernel-input-datasets S3). `generate-job

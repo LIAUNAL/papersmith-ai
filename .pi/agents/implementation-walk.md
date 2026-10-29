@@ -135,27 +135,55 @@ operator.
 ## Every remote unit fits one session, or resumes
 
 A service stops a session after its continuous run limit, and whatever was not
-written out by then is lost with the hours it cost. So every remote unit fits
-one session within the 80% margin (`schedule` and `assess` refuse
-`unit-over-session-margin` otherwise), or its step is declared resumable from a
-checkpoint. The target reads `FORGE_SESSION_DEADLINE` (epoch seconds), writes
-its checkpoint and starts no new unit or trial past it, then exits cleanly.
-A unit that does not fit is split along the declared axis — fold, seed,
-subject block, never by arm — or resumed over chained sessions on the same
-account. After a cut session, run `fetch` (it keeps the partial result), then
-`remaining`, and send again only the units it lists. A checkpoint reaches the
-next session as follows: on a kernel service, the previous kernel's output
-attached to the next kernel through `kernel_sources` and read under its input
-root at `notebooks/<owner>/<slug>/` (checked on a live account on 2026-10-27).
-papersmith attaches it automatically for the paths the job declares with
-`generate-job --carry-path`: `submit` places the continuation on the account
-that produced the checkpoint (`--no-carry` starts it fresh instead), and the
-runner restores those paths before the entrypoint and exports
-`FORGE_CARRY_IN`, so the target code is unchanged. On Colab nothing is carried
-automatically (`carry: unsupported`); upload the checkpoint into the new
-session. The details live in
-`skills/remote-execution/SKILL.md`, **Sessions, checkpoints and
-resume**, and `skills/remote-parallelism/SKILL.md`.
+written out by then is lost with the hours it cost. The chain rule, for every
+remote run:
+
+1. **Estimate against the session margin.** Compare the stage's upper-bound
+   estimate (`estimate` and `plan` over `Results/timing.json`) with 80% of the
+   account's session limit, per unit and for the whole session. A unit that
+   fits is one session. One that does not is split along the declared axis —
+   fold, seed, subject block, never by arm — or declared resumable and planned
+   as a chain of sessions on the same account, each paying the setup again
+   (`"resumable": true` with `"checkpointMinutes"` in a `schedule` plan,
+   `plan --resumable --checkpoint-minutes`); `schedule` and `assess` refuse
+   `unit-over-session-margin` otherwise.
+2. **Checkpoint every epoch or trial** into a path the job declares with
+   `generate-job --carry-path` (relative to the product folder; under the
+   runner it lives at `clone/<product>/<path>` below `FORGE_CLONE_ROOT`).
+3. **Stop at the deadline.** Before each unit, epoch or trial the target reads
+   `FORGE_SESSION_DEADLINE` (epoch seconds). When the next one may not finish,
+   it writes its checkpoint, writes `partial.json` into its working directory
+   as `{"remaining": [<unit ids>]}` and exits 0. The ids are strings equal to
+   the units it was sent, read from `FORGE_RUN_UNITS`; an id that is not one of
+   them is never sent again. It writes the marker whatever `FORGE_RUN_MODE`
+   says: that variable is set only for a smoke.
+4. **Send a chain as a campaign**, `submit --unit <id>` per unit: a plain
+   `submit` records no share, so `remaining` would never list the units of a
+   session cut at its limit (`submit` reports `carry: no-share`).
+5. **Rehearse the deadline before the first remote rehearsal.** `preflight
+   --unit <id> ...` adds the `deadline-rehearsal` row: the job, run locally
+   under a deadline that has already arrived, must stop with a valid
+   `partial.json` and its carry paths, and a second local session handed only
+   the remaining ids must finish them. `session-fit` fails when that rehearsal
+   fails and warns when it was skipped; declared carry paths alone never pass.
+6. **Continue.** After a cut session, run `fetch` (it keeps the partial
+   result), then `remaining`, and send again only the units it lists.
+   papersmith attaches it automatically for the declared carry paths: `submit`
+   places the continuation on the account that produced the checkpoint,
+   mounts the earlier output where the service can (`carry: attached`) or
+   uploads it from the fetched result where the service takes files into a
+   session (`carry: uploaded`), and the runner restores those paths before the
+   entrypoint and exports `FORGE_CARRY_IN`, so the target code is unchanged.
+   `carry: unsupported` means the service can do neither: upload the
+   checkpoint into the new session yourself. `--no-carry` starts fresh.
+7. **Count quota weeks.** An account whose assigned hours exceed its weekly
+   quota waits for the reset: `schedule` and `plan` put the wait in the
+   makespan and report `quotaWeeks`, and a chain waits on its own account
+   rather than moving.
+
+The details live in `skills/remote-execution/SKILL.md`, **The
+session-chain rule** and **Sessions, checkpoints and resume**, and
+`skills/remote-parallelism/SKILL.md`.
 
 A job that reads a public dataset declares it with `generate-job
 --input-dataset <owner>/<slug>` (repeatable). A pushed kernel is a

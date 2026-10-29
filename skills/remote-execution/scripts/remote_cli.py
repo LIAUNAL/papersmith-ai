@@ -206,6 +206,11 @@ LEDGER_EVENT_TOO_LARGE = "LEDGER_EVENT_TOO_LARGE"
 # is refused before any submission. `--no-carry` starts such units fresh.
 CARRY_WORKER_MISMATCH = "CARRY_WORKER_MISMATCH"
 
+# Where `_carry_evidence()` notes, on its own copy of a `submitted` event,
+# the local directory that submission's output was fetched to. Never written
+# to the ledger: `carriedFrom` keeps only `submissionId` and `ref`.
+_CARRY_ARTIFACT_KEY = "_carryArtifact"
+
 # The longest submission id the size pre-check assumes a backend may answer
 # with: generous next to every id shape shipped today (`<owner>/<slug>`,
 # `colab:<owner>/psmith-...`), so the check never passes a share whose real
@@ -1140,6 +1145,14 @@ def _declared_session_limit(adapter: "ADAPTER.Adapter") -> int | None:
     return limit
 
 
+#: What a single send of a job declaring carry paths reports (session-chains).
+NO_SHARE_CARRY_WARNING = (
+    "this job declares carry paths but was sent without --unit, so no share was "
+    "recorded: if its session is cut at the limit, `remaining` lists none of its units "
+    "and no continuation carries its checkpoints. Send it as `submit --unit <id>` per "
+    "unit (the ids its partial.json names)")
+
+
 def _declared_carry_paths(resolved_entrypoint: Path) -> tuple[str, ...]:
     """The carry paths the job folder beside `resolved_entrypoint` declares
     in its `run-config.json` (`generate-job --carry-path`), or `()` when it
@@ -1246,6 +1259,10 @@ def _carry_evidence(
         elif terminal.get("kind") == "errored" and resolved is not None:
             if resolved.is_relative_to(kept_root) and resolved.is_dir():
                 left = set(share)
+        if left:
+            # One copy per submission, shared by its units, so a share can
+            # still tell two units of one earlier submission apart by identity.
+            submitted = {**submitted, _CARRY_ARTIFACT_KEY: str(resolved)}
         for unit in share:
             if unit in left:
                 evidence[unit] = submitted
@@ -1384,9 +1401,13 @@ def _plan_share_carry(
     """What one campaign share carries: `None` when no unit of it continues
     an earlier submission, else `(status, sources)` with `status` one of
     `attached` (sources are `{"submissionId", "ref", "mount"}` rows),
-    `unsupported` (the backend cannot mount an earlier output; nothing is
-    carried) or `fresh` (`--no-carry`). A source produced on another worker
-    refuses `CARRY_WORKER_MISMATCH` (kernel-carry S4)."""
+    `uploaded` (the backend uploads the earlier output from this machine,
+    `Adapter.CARRY_UPLOAD`: sources are `{"submissionId", "ref", "upload"}`
+    rows naming the local directory `fetch` left), `unsupported` (the
+    backend can do neither; nothing is carried) or `fresh` (`--no-carry`).
+    A source produced on another worker refuses `CARRY_WORKER_MISMATCH`
+    (kernel-carry S4). An upload source always exists: the evidence that
+    names it is read from inside it (`_carry_evidence()`)."""
     earlier: list[dict] = []
     seen: set[str] = set()
     for unit in share:
@@ -1403,8 +1424,15 @@ def _plan_share_carry(
     if no_carry:
         return ("fresh", [])
     sources: list[dict] = []
+    status = "attached"
+    uploads = getattr(adapter, "CARRY_UPLOAD", False) is True
     for submitted in earlier:
-        source = _carry_source(adapter, str(submitted.get("submissionId")))
+        submission_id = str(submitted.get("submissionId"))
+        source = _carry_source(adapter, submission_id)
+        if source is None and uploads:
+            status = "uploaded"
+            source = {"submissionId": submission_id, "ref": submission_id,
+                      "upload": str(submitted.get(_CARRY_ARTIFACT_KEY))}
         if source is None:
             return ("unsupported", [])
         sources.append(source)
@@ -1425,7 +1453,7 @@ def _plan_share_carry(
                 "(distribute places continuations there), or pass --no-carry "
                 "to start these units fresh"
             )
-    return ("attached", sources)
+    return (status, sources)
 
 
 def cmd_submit(
@@ -1785,7 +1813,7 @@ def cmd_submit(
                 if slot > 1:
                     run_config["slot"] = slot
                 planned = share_carry[(row.plan.worker, index)]
-                if planned and planned[0] == "attached":
+                if planned and planned[0] in ("attached", "uploaded"):
                     run_config["carry"] = [dict(source) for source in planned[1]]
                 if protected:
                     run_config["carryProtected"] = list(protected)
@@ -1911,6 +1939,12 @@ def cmd_submit(
     }
     if inputs_status is not None:
         single["inputs"] = inputs_status
+    # session-chains: a job declaring carry paths is a chain of sessions, and
+    # only a share (`--unit`) lets `remaining` and the carry evidence see a
+    # run cut at its limit. Sent as before, but said so.
+    if not smoke and _declared_carry_paths(resolved_entrypoint):
+        single["carry"] = "no-share"
+        single["carryWarning"] = NO_SHARE_CARRY_WARNING
     return single
 
 
@@ -1982,6 +2016,18 @@ def cmd_status(
     }
 
 
+def _job_service(entrypoint: Path) -> str | None:
+    """The `service` the job folder's `run-config.json` beside `entrypoint`
+    names, or `None` when there is none to read."""
+    try:
+        config = json.loads((entrypoint.parent / RUN_CONFIG_FILENAME)
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    service = config.get("service") if isinstance(config, dict) else None
+    return service if isinstance(service, str) and service.strip() else None
+
+
 def cmd_remaining(
     *,
     target: str | Path,
@@ -2014,6 +2060,11 @@ def cmd_remaining(
     - `inFlight`: a unit whose submission has not been settled yet --
       reported apart, never resent, since sending it again would run it
       twice;
+    - `unknown`: a unit whose `returned` result is recorded at a path that
+      is no longer a directory on disk, so whether it finished cannot be
+      read. It completes nothing and stays in `remaining`; `refetch` names,
+      per such submission, the `fetch` command that brings the result back
+      before its units are sent again;
     - `remaining`: every other declared unit, in the DECLARED order, which
       is the order `distribute`'s consent token binds. Pass it back
       unchanged (`unitArgs` is the same list as repeated `--unit` flags).
@@ -2037,6 +2088,7 @@ def cmd_remaining(
     quarantine = (target / product / LEDGER_DIRNAME / QUARANTINE_DIRNAME).resolve()
     complete: set[str] = set()
     in_flight: set[str] = set()
+    missing: list[tuple[dict, str, list[str]]] = []
     for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(ledger_path)):
         if str(submitted.get("entrypoint")) != relative_entrypoint:
             continue
@@ -2051,6 +2103,11 @@ def cmd_remaining(
             # A result `fetch` judged not current went to quarantine: it
             # completes nothing, whatever it holds.
             if artifact and Path(artifact).resolve().is_relative_to(quarantine):
+                continue
+            # A result deleted (or moved) since `fetch` recorded it cannot
+            # say what it finished: never read as complete.
+            if artifact and not Path(artifact).is_dir():
+                missing.append((submitted, str(artifact), share))
                 continue
             # A run that stopped early (at the deadline, say) exits 0 and is
             # `returned`, but its partial.json names what it did not finish.
@@ -2070,12 +2127,34 @@ def cmd_remaining(
     in_flight -= complete
 
     remaining = [unit for unit in declared if unit not in complete and unit not in in_flight]
+    refetch: list[dict] = []
+    unknown: set[str] = set()
+    service = _job_service(resolved_entrypoint) or "<backend>"
+    for submitted, artifact, share in missing:
+        units_left = [unit for unit in declared if unit in share and unit in remaining]
+        if not units_left:
+            continue
+        unknown.update(units_left)
+        submission_id = str(submitted.get("submissionId"))
+        refetch.append({
+            "submissionId": submission_id,
+            "units": units_left,
+            "artifactPath": artifact,
+            "reason": f"the returned result recorded at {artifact} is not on disk, so "
+                      f"whether {', '.join(units_left)} finished is unknown; fetch it again "
+                      "before resending them",
+            "command": f"remote_cli fetch --target {target} --entrypoint "
+                       f"{resolved_entrypoint} --submission-id {submission_id} --dest "
+                       f"{artifact} --backend {service}",
+        })
     return {
         "ledgerPath": ledger_path,
         "entrypoint": relative_entrypoint,
         "declared": declared,
         "complete": [unit for unit in declared if unit in complete],
         "inFlight": [unit for unit in declared if unit in in_flight],
+        "unknown": [unit for unit in declared if unit in unknown],
+        "refetch": refetch,
         "remaining": remaining,
         "unitArgs": [token for unit in remaining for token in ("--unit", unit)],
         "unitField": unit_field,
@@ -3576,54 +3655,104 @@ def _session_fit_rows(par, items: list[dict], run_config: Mapping, service: str,
     return par.best_setting(by_candidate[slowest])[0], slowest, None
 
 
-def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, service: str,
-                           timing: Path, stage: str, units: int,
-                           candidate: str | None = None) -> dict:
+def _session_fit_estimate(adapter: "ADAPTER.Adapter", run_config: Mapping, service: str,
+                          timing: Path, stage: str, units: int,
+                          candidate: str | None = None) -> dict:
+    """`{"row": <a session-fit row that ends the check early>}`, or the
+    measurement: `measured` (its text), `unitMinutes`, `sessionMinutes` (the
+    whole stage in one session) and `usable` (the margin's minutes)."""
     limit = _declared_session_limit(adapter)
     if limit is None:
-        return _preflight_row("session-fit", "warn", "this service declares no session limit",
-                              "")
+        return {"row": _preflight_row("session-fit", "warn",
+                                      "this service declares no session limit", "")}
     if not timing.is_file():
-        return _preflight_row(
+        return {"row": _preflight_row(
             "session-fit", "warn", f"unmeasured: no timing record at {timing}",
             "run the timing probe on this service, then `/remote-parallelism estimate` "
-            "(and pass --timing here when the record lives elsewhere)")
+            "(and pass --timing here when the record lives elsewhere)")}
     par = _parallelism_cli()
     try:
         data = par.load_timing(timing, str(timing))
     except par.Refusal as exc:
-        return _preflight_row("session-fit", "warn", f"{exc.code}: {exc.message}",
-                              "repair the timing record")
+        return {"row": _preflight_row("session-fit", "warn", f"{exc.code}: {exc.message}",
+                                      "repair the timing record")}
     items = [item for item in data["measurements"]
              if str(item.get("host", "")).split(":")[0] == service]
     read = ""
     if data["schema"] == 2 and items:
         items, read, refused = _session_fit_rows(par, items, run_config, service, candidate)
         if refused is not None:
-            return refused
+            return {"row": refused}
         read = f"{read}: "
     if not items:
-        return _preflight_row(
+        return {"row": _preflight_row(
             "session-fit", "warn", f"unmeasured on {service}: {timing} holds no measurement "
             "on this service's own host, and a remote host is never estimated from another's",
-            "run the timing probe on this service")
+            "run the timing probe on this service")}
     if len({item["device"] for item in items}) > 1:
-        return _preflight_row("session-fit", "warn", f"{service} was timed on several "
-                              "devices; timing is never pooled across machines",
-                              "keep one device per host in the record")
+        return {"row": _preflight_row("session-fit", "warn", f"{service} was timed on several "
+                                      "devices; timing is never pooled across machines",
+                                      "keep one device per host in the record")}
     estimate = par.host_estimate(items, data["scales"][stage])
     unit_minutes = float(estimate["high"]) / units / 60
     limit_minutes = limit / 60
     usable = par.usable_session(limit_minutes)
     measured = (f"{read}{stage} upper bound {par.num(estimate['high'])} s over {units} unit(s) is "
                 f"{par.num(unit_minutes)} minutes per unit against {par.margin_text(limit_minutes)}")
-    if unit_minutes <= usable:
+    return {"measured": measured, "unitMinutes": unit_minutes,
+            "sessionMinutes": float(estimate["high"]) / 60, "usable": usable}
+
+
+def _deadline_rehearsal_required(estimate: Mapping, run_config: Mapping) -> bool:
+    """S1: a job that declares carry paths, or whose unit or whole session
+    estimate exceeds the usable session, must show it stops at a deadline
+    and resumes."""
+    if run_config.get("carryPaths"):
+        return True
+    return "row" not in estimate and estimate["sessionMinutes"] > estimate["usable"]
+
+
+def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, service: str,
+                           timing: Path, stage: str, units: int,
+                           candidate: str | None = None, *,
+                           estimate: Mapping | None = None,
+                           deadline: Mapping | None = None) -> dict:
+    """The `session-fit` row. A unit that spans sessions passes only when
+    the job declares carry paths AND the deadline rehearsal (`deadline`,
+    the `deadline-rehearsal` row) passed: it fails when that rehearsal
+    failed -- no marker, among others -- and warns when it warned, quoting
+    why: skipped, or run without ever stopping early."""
+    if estimate is None:
+        estimate = _session_fit_estimate(adapter, run_config, service, timing, stage, units,
+                                         candidate)
+    if "row" in estimate:
+        return estimate["row"]
+    measured = estimate["measured"]
+    if estimate["unitMinutes"] <= estimate["usable"]:
         return _preflight_row("session-fit", "pass", f"{measured}: each unit fits one session")
     carry = list(run_config.get("carryPaths") or [])
     if carry:
-        return _preflight_row("session-fit", "pass", f"{measured}: a unit spans sessions and "
-                              f"the job declares carry paths ({', '.join(carry)}), so each "
-                              "continuation resumes from the last checkpoint")
+        spans = (f"{measured}: a unit spans sessions and the job declares carry paths "
+                 f"({', '.join(carry)})")
+        status = (deadline or {}).get("status")
+        if status == "pass":
+            return _preflight_row("session-fit", "pass", f"{spans}, and the deadline rehearsal "
+                                  "showed the target stop at its deadline and resume")
+        if status == "fail":
+            return _preflight_row("session-fit", "fail", f"{spans}, but the deadline rehearsal "
+                                  f"failed: {deadline.get('evidence')}",
+                                  deadline.get("fix") or "")
+        evidence = str((deadline or {}).get("evidence") or "")
+        if status == "warn" and not evidence.startswith("skipped:"):
+            return _preflight_row("session-fit", "warn", f"{spans}, but the deadline "
+                                  f"rehearsal did not exercise a stop: {evidence}",
+                                  deadline.get("fix") or "")
+        why = evidence.removeprefix("skipped:").strip()
+        return _preflight_row("session-fit", "warn", f"{spans}, but the deadline rehearsal was "
+                              f"skipped{f' ({why})' if why else ''}, so resuming from a "
+                              "checkpoint is unproven",
+                              (deadline or {}).get("fix") or "rerun preflight with --unit <id> "
+                              "for each unit and without --skip-rehearsal")
     return _preflight_row(
         "session-fit", "fail", f"{measured}: a unit does not fit one session",
         "split the work into more units (`--units`, `submit --unit`) along the declared axis, "
@@ -3705,6 +3834,51 @@ def _preflight_rehearsal(
                           result["fix"], details=result["details"])
 
 
+#: The `deadline-rehearsal` row's fix when it could not name the job's units.
+DEADLINE_UNITS_FIX = (
+    "rerun preflight with --unit <id> for each unit the job's `submit --unit` will send: "
+    "partial.json ids must equal those strings, and a submit without --unit records no "
+    "share, so `remaining` never lists the units of a run cut at its limit")
+
+
+def _preflight_deadline(
+    *, job_dir: Path, target: Path, run_config: Mapping, adapter: "ADAPTER.Adapter | None",
+    interpreter: Path | None, smoke_kwargs: Mapping | None, timeout: float,
+    keep: Path | None, skip: bool, unit_ids: Sequence[str] | None, block: str,
+    rehearsal: Mapping,
+) -> dict:
+    """The `deadline-rehearsal` row (session-chains S1): two local runner
+    sessions, the first under a deadline that has already arrived
+    (`local_rehearsal.deadline_rehearse`). Skipped -- a `warn` -- with
+    `--skip-rehearsal`, without `--unit`, or when the local rehearsal
+    itself failed."""
+    def skipped(why: str, fix: str) -> dict:
+        return _preflight_row("deadline-rehearsal", "warn", f"skipped: {why}", fix)
+
+    if skip:
+        return skipped("--skip-rehearsal", "run preflight with --unit <id> for each unit and "
+                       "without --skip-rehearsal before the first remote rehearsal")
+    if rehearsal.get("status") == "fail":
+        return skipped("the local rehearsal failed", "fix the local-rehearsal row first")
+    if not unit_ids:
+        return skipped("no --unit named the job's units", DEADLINE_UNITS_FIX)
+    local = _load_sibling("remote_execution_local_rehearsal", "local_rehearsal.py")
+    python = Path(interpreter) if interpreter is not None else local.target_interpreter(target)
+    try:
+        result = local.deadline_rehearse(
+            job_dir=job_dir, target=target, run_config=run_config, interpreter=python,
+            units=list(unit_ids), partial_marker=SHARD_IO.partial_marker, block=block,
+            smoke_kwargs=smoke_kwargs,
+            session_limit_seconds=_declared_session_limit(adapter) if adapter else None,
+            timeout=timeout,
+            keep=Path(keep) / local.DEADLINE_DIRNAME if keep is not None else None)
+    except local.RehearsalError as exc:
+        return _preflight_row("deadline-rehearsal", "fail", str(exc),
+                              exc.fix or "regenerate the job with a smoke block")
+    return _preflight_row("deadline-rehearsal", result["status"], result["evidence"],
+                          result["fix"], details=result["details"])
+
+
 def cmd_preflight(
     *,
     target: str | Path,
@@ -3722,6 +3896,8 @@ def cmd_preflight(
     skip_rehearsal: bool = False,
     keep_rehearsal: str | Path | None = None,
     repo_credential: str | Path | None = None,
+    unit_ids: Sequence[str] | None = None,
+    deadline_block: str = "smoke",
 ) -> dict:
     """Every check a first remote rehearsal used to fail on, run locally:
     one row per check, `{check, status, evidence, fix}`, `status` one of
@@ -3764,12 +3940,13 @@ def cmd_preflight(
             adapter_cls, run_config, resolved_target,
             Path(repo_credential) if repo_credential is not None else None))
         rows.append(_preflight_inputs(adapter_cls, run_config, workspace_root))
-    rows.append(_preflight_rehearsal(
+    rehearsal = _preflight_rehearsal(
         job_dir=job_dir, target=resolved_target, run_config=run_config, adapter=adapter,
         interpreter=Path(interpreter) if interpreter is not None else None,
         smoke_kwargs=local_smoke_kwargs, timeout=local_timeout,
         keep=Path(keep_rehearsal) if keep_rehearsal is not None else None,
-        skip=skip_rehearsal))
+        skip=skip_rehearsal)
+    rows.append(rehearsal)
     if adapter is not None:
         smoke_command = (f"remote_cli submit --smoke --target {resolved_target} "
                          f"--entrypoint {resolved} --backend {service}")
@@ -3777,8 +3954,22 @@ def cmd_preflight(
         rows.append(_preflight_accelerator(adapter, run_config, service, expect_accelerator))
         timing_path = (Path(timing) if timing is not None
                        else resolved_target / product / "Results" / "timing.json")
+        estimate = _session_fit_estimate(adapter, run_config, service, timing_path, stage,
+                                         units, candidate)
+        deadline = None
+        if _deadline_rehearsal_required(estimate, run_config):
+            deadline = _preflight_deadline(
+                job_dir=job_dir, target=resolved_target, run_config=run_config,
+                adapter=adapter,
+                interpreter=Path(interpreter) if interpreter is not None else None,
+                smoke_kwargs=local_smoke_kwargs, timeout=local_timeout,
+                keep=Path(keep_rehearsal) if keep_rehearsal is not None else None,
+                skip=skip_rehearsal, unit_ids=unit_ids, block=deadline_block,
+                rehearsal=rehearsal)
+            rows.append(deadline)
         rows.append(_preflight_session_fit(adapter, run_config, service, timing_path, stage,
-                                           units, candidate))
+                                           units, candidate, estimate=estimate,
+                                           deadline=deadline))
     counts = {status: sum(1 for row in rows if row["status"] == status)
               for status in ("pass", "warn", "fail")}
     return {
@@ -3817,6 +4008,12 @@ def cmd_generate_jobs(
     accept_unresolved: bool = False,
     accept_unresolved_reads: bool = False,
     accept_produced_reads: bool = False,
+    smoke_kwargs_for: Mapping[str, object] | None = None,
+    carry_paths_for: Mapping[str, Sequence[str]] | None = None,
+    input_datasets: Sequence[str] | None = None,
+    input_datasets_for: Mapping[str, Sequence[str]] | None = None,
+    only: Sequence[str] | None = None,
+    skip: Sequence[str] | None = None,
 ) -> dict:
     """One `generate-job` per remote step the product's `__steps__`
     declares (remote-preflight S3), each derived rather than typed:
@@ -3831,8 +4028,16 @@ def cmd_generate_jobs(
       service carries bundles (`CODE_BUNDLE_MAX_BYTES`);
     - environment requirements: the target's pinned requirements minus the
       adapter's `PROVIDED_REQUIREMENTS`;
-    - carry paths: the step's non-notebook `produces` roots;
-    - inputs: `--dataset` slugs, resolved as `generate-job --dataset` does.
+    - smoke: the step's own `smoke` fields, else the command's smoke
+      options; `smoke_kwargs_for[step]` wins over both for its kwargs;
+    - carry paths: the step's non-notebook `produces` roots, then its
+      `carry`, then `carry_paths_for[step]`;
+    - inputs: `input_datasets` on every job whose service attaches inputs,
+      then `input_datasets_for[step]`, then `--dataset` slugs, resolved as
+      `generate-job --dataset` does;
+    - selection: `only`/`skip` narrow the remote steps; a step name that is
+      not a remote step, or a per-step value for a step left out, refuses
+      before anything is written.
 
     Every job is attempted; one refusal is that job's row, never the end of
     the others. Returns `{jobs, skipped, summary, next}` where `next` is the
@@ -3845,8 +4050,21 @@ def cmd_generate_jobs(
         raise RemoteCLIError(
             f"{product} declares no remote step in src/{product.replace('-', '_')}/__init__.py "
             "(or config.py) __steps__: a step needs placement 'remote', a job and a service")
+    smoke_kwargs_for, carry_paths_for = dict(smoke_kwargs_for or {}), dict(carry_paths_for or {})
+    input_datasets_for = dict(input_datasets_for or {})
+    # Schedule ids are checked against every declared remote step, not only the
+    # selected ones: a schedule that names a step `--skip` left out is still valid.
+    declared_remote = {name for name, _ in remote}
+    remote, skipped = JOB_PLAN.select_steps(
+        steps, remote, skipped, only=list(only or ()), skip=list(skip or ()),
+        named={"--smoke-kwargs-for": list(smoke_kwargs_for),
+               "--carry-path-for": list(carry_paths_for),
+               "--input-dataset-for": list(input_datasets_for)})
+    for step, value in smoke_kwargs_for.items():
+        if not isinstance(value, dict):
+            raise RemoteCLIError(f"--smoke-kwargs-for {step} must be a JSON object")
     chosen = JOB_PLAN.schedule_services(Path(from_schedule)) if from_schedule else {}
-    unknown = sorted(set(chosen) - {name for name, _ in remote})
+    unknown = sorted(set(chosen) - declared_remote)
     if unknown:
         raise RemoteCLIError(
             f"the schedule names {', '.join(unknown)}, which {product}'s __steps__ does not "
@@ -3897,13 +4115,23 @@ def cmd_generate_jobs(
                 pins, getattr(adapter_cls, "PROVIDED_REQUIREMENTS", ()) if adapter_cls else ())
             carry = JOB_PLAN.carry_paths(entry)
             entry_notebook = f"{product}/{notebook}" if notebook else None
+            attaches = bool(getattr(adapter_cls, "INPUT_DATASETS_ROOT", None))
+            explicit = list(dict.fromkeys([*((input_datasets or ()) if attaches else ()),
+                                           *input_datasets_for.get(step, ())]))
             try:
-                inputs, checks = _dataset_plan(adapter_cls, workspace, datasets, None)
+                own = JOB_PLAN.step_smoke(step, entry)
+                job_smoke_module = own.get("module", smoke_module)
+                job_smoke_kwargs = smoke_kwargs_for.get(step, own.get("kwargs", smoke_kwargs))
+                job_evidence = own.get("requiredEvidence", smoke_required_evidence)
+                carry = list(dict.fromkeys([*carry, *JOB_PLAN.step_carry(step, entry),
+                                            *carry_paths_for.get(step, ())]))
+                inputs, checks = _dataset_plan(adapter_cls, workspace, datasets,
+                                               explicit or None)
                 # The clone paths the generator's own import/read walk
                 # computes for this step's entries: exactly what its
                 # `computedNotDeclared` check would otherwise refuse.
                 walk = JOBFOLDER.resolve_clone_paths(
-                    resolved, [m for m in ((None if notebook else module), smoke_module)
+                    resolved, [m for m in ((None if notebook else module), job_smoke_module)
                                if isinstance(m, str) and m],
                     ["src"], [entry_notebook] if entry_notebook else [])
                 clone_paths = sorted(set(walk["computed"])
@@ -3915,8 +4143,9 @@ def cmd_generate_jobs(
                     run_module=None if notebook else module,
                     run_function=None if notebook else function,
                     run_notebook=entry_notebook,
-                    smoke_module=smoke_module, smoke_function=smoke_function,
-                    smoke_kwargs=smoke_kwargs, smoke_required_evidence=smoke_required_evidence,
+                    smoke_module=job_smoke_module,
+                    smoke_function=own.get("function", smoke_function),
+                    smoke_kwargs=job_smoke_kwargs, smoke_required_evidence=job_evidence or None,
                     regenerate=regenerate, accept_unresolved=accept_unresolved,
                     accept_unresolved_reads=accept_unresolved_reads,
                     accept_produced_reads=accept_produced_reads,
@@ -4409,10 +4638,42 @@ def _build_parser() -> argparse.ArgumentParser:
         "REPO_CREDENTIAL_CARRIER")
     generate_jobs.add_argument("--smoke-module", default=None)
     generate_jobs.add_argument("--smoke-function", default=None)
-    generate_jobs.add_argument("--smoke-kwargs", default=None, help="a JSON object")
+    generate_jobs.add_argument(
+        "--smoke-kwargs", default=None,
+        help="a JSON object, for every job whose step declares no smoke kwargs of its own "
+        "(a step's `smoke` may declare module, function, kwargs and requiredEvidence)")
+    generate_jobs.add_argument(
+        "--smoke-kwargs-for", dest="smoke_kwargs_for", action="append", nargs=2,
+        default=[], metavar=("STEP", "JSON"),
+        help="repeatable: that step's smoke kwargs, a JSON object; wins over the step's "
+        "own declaration and over --smoke-kwargs")
     generate_jobs.add_argument(
         "--smoke-required-evidence", dest="smoke_required_evidence", action="append",
-        default=[], help="repeatable, as for generate-job; applied to every job")
+        default=[], help="repeatable, as for generate-job; applied to every job whose step "
+        "declares no requiredEvidence of its own")
+    generate_jobs.add_argument(
+        "--carry-path-for", dest="carry_path_for", action="append", nargs=2, default=[],
+        metavar=("STEP", "PATH"),
+        help="repeatable: one more carry path for that step's job, after its non-notebook "
+        "`produces` roots and its own `carry`; validated as generate-job's --carry-path")
+    generate_jobs.add_argument(
+        "--input-dataset", dest="input_datasets", action="append", default=None,
+        metavar="OWNER/SLUG",
+        help="repeatable: a public dataset declared on every job whose service attaches "
+        "inputs, recorded as generate-job's --input-dataset records it (no datasetChecks)")
+    generate_jobs.add_argument(
+        "--input-dataset-for", dest="input_dataset_for", action="append", nargs=2,
+        default=[], metavar=("STEP", "OWNER/SLUG"),
+        help="repeatable: a public dataset declared on that step's job, whatever its service")
+    generate_jobs.add_argument(
+        "--only", action="append", default=[], metavar="STEP",
+        help="repeatable: generate only these remote steps; the others are listed under "
+        "skipped")
+    generate_jobs.add_argument(
+        "--skip", action="append", default=[], metavar="STEP",
+        help="repeatable: leave this remote step's job alone (a finished one, say); listed "
+        "under skipped. A step name --only, --skip or a --*-for flag gives that is not a "
+        "remote step refuses STEP_UNKNOWN before anything is written")
     generate_jobs.add_argument(
         "--regenerate", action="store_true",
         help="replace existing job folders atomically instead of refusing")
@@ -4501,6 +4762,16 @@ def _build_parser() -> argparse.ArgumentParser:
     preflight.add_argument(
         "--units", type=int, default=1,
         help="how many units the stage's work is split into across sessions (default 1)",
+    )
+    preflight.add_argument(
+        "--unit", dest="unit_ids", action="append", default=None,
+        help="one unit id the job's `submit --unit` will send (repeatable): the deadline "
+        "rehearsal hands them to the target and checks partial.json against them",
+    )
+    preflight.add_argument(
+        "--deadline-block", dest="deadline_block", default="smoke", choices=("smoke", "run"),
+        help="which block the deadline rehearsal runs (default smoke: the one the local "
+        "rehearsal already showed runs here)",
     )
     preflight.add_argument(
         "--local-smoke-kwargs", dest="local_smoke_kwargs", default=None,
@@ -4691,6 +4962,10 @@ def main(argv: list[str] | None = None) -> int:
         # A seventh key only for a job declaring input datasets.
         if "inputs" in result:
             rendered["inputs"] = result["inputs"]
+        # And two more only for a job declaring carry paths sent without a share.
+        for key in ("carry", "carryWarning"):
+            if key in result:
+                rendered[key] = result[key]
         print(json.dumps(rendered, sort_keys=True, default=str))
         return 0
 
@@ -5027,6 +5302,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.command == "generate-jobs":
+        smoke_kwargs_for: dict = {}
+        for step, value in args.smoke_kwargs_for:
+            if step in smoke_kwargs_for:
+                return _refused(f"--smoke-kwargs-for {step} was given twice")
+            try:
+                smoke_kwargs_for[step] = json.loads(value)
+            except json.JSONDecodeError as exc:
+                return _refused(f"--smoke-kwargs-for {step} is not JSON: {exc}")
+        carry_path_for: dict = {}
+        for step, path in args.carry_path_for:
+            carry_path_for.setdefault(step, []).append(path)
+        input_dataset_for: dict = {}
+        for step, ref in args.input_dataset_for:
+            input_dataset_for.setdefault(step, []).append(ref)
         try:
             smoke_kwargs = json.loads(args.smoke_kwargs) if args.smoke_kwargs else None
             result = cmd_generate_jobs(
@@ -5038,7 +5327,10 @@ def main(argv: list[str] | None = None) -> int:
                 regenerate=args.regenerate, datasets=args.datasets, workspace=args.workspace,
                 accept_unresolved=args.accept_unresolved,
                 accept_unresolved_reads=args.accept_unresolved_reads,
-                accept_produced_reads=args.accept_produced_reads)
+                accept_produced_reads=args.accept_produced_reads,
+                smoke_kwargs_for=smoke_kwargs_for, carry_paths_for=carry_path_for,
+                input_datasets=args.input_datasets, input_datasets_for=input_dataset_for,
+                only=args.only, skip=args.skip)
         except json.JSONDecodeError as exc:
             return _refused(f"--smoke-kwargs is not JSON: {exc}")
         except (RemoteCLIError, JOB_PLAN.JobPlanError, JOBFOLDER.JobFolderError) as exc:
@@ -5061,7 +5353,8 @@ def main(argv: list[str] | None = None) -> int:
                 keep_rehearsal=(args.keep_rehearsal if len(args.entrypoints) == 1
                                 or args.keep_rehearsal is None
                                 else args.keep_rehearsal / f"job-{index}"),
-                repo_credential=args.repo_credential)
+                repo_credential=args.repo_credential, unit_ids=args.unit_ids,
+                deadline_block=args.deadline_block)
                 for index, entrypoint in enumerate(args.entrypoints)]
         except json.JSONDecodeError as exc:
             return _refused(f"--local-smoke-kwargs is not JSON: {exc}")

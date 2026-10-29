@@ -855,6 +855,45 @@ UNIFORM_LIMIT_FLAGS = (("--owners", "owners"), ("--accounts", "accounts"),
                        ("--quota-hours", "quota_hours"), ("--tiers", "tiers"))
 #: One quota week, in minutes: a plan longer than this spans more than one.
 QUOTA_WEEK_MINUTES = 7 * 24 * 60
+
+
+def quota_place(begin: float, costs: list[float], quota: float | None, spent: dict,
+                week: float) -> tuple[float, float, list[tuple[int, float]]]:
+    """Place one unit's sessions (`costs`, busy time each, in order) from
+    `begin` on an account whose weekly quota is `quota` (None: unknown,
+    never waited on) and which has already spent `spent[w]` in quota week
+    `w`. Quota weeks are counted from the start of the plan, each quota full
+    at the start; a session's whole cost counts against the week it starts
+    in. A session that would overrun what is left of its week starts at the
+    next reset instead, on the same account; one larger than a whole quota
+    starts at once (no reset makes it fit). Returns (finish, time waited,
+    [(week, cost)] charges); `spent` is not modified."""
+    clock, waited, charges, used = begin, 0.0, [], dict(spent)
+    for cost in costs:
+        current = int(clock // week)
+        if quota is not None and cost <= quota:
+            while used.get(current, 0.0) + cost > quota:
+                current += 1
+            start = max(clock, current * week)
+            waited += start - clock
+            clock = start
+        used[current] = used.get(current, 0.0) + cost
+        charges.append((current, cost))
+        clock += cost
+    return clock, waited, charges
+
+
+def chain_costs(minutes: float, setup: float, chain: int, work: float) -> list[float]:
+    """The busy time of each of a unit's `chain` sessions: each pays the
+    setup again and runs up to `work` of the unit, the last one the rest."""
+    if chain == 1:
+        return [setup + minutes]
+    costs, left = [], minutes
+    for _ in range(chain):
+        part = min(work, left) if left > 0 else 0.0
+        costs.append(setup + part)
+        left -= part
+    return costs
 #: Above this many service assignments the search goes step by step.
 EXHAUSTIVE_LIMIT = 4096
 
@@ -1366,12 +1405,18 @@ def step_options(entry: dict, slots: list[dict]) -> list[tuple[str, ...]]:
     return options
 
 
-def simulate(steps: list[dict], assignment: dict, slots: list[dict]) -> dict:
+def simulate(steps: list[dict], assignment: dict, slots: list[dict],
+             quotas: list[float | None] | None = None) -> dict:
     """List scheduling of the assigned steps: a step becomes ready when the
     steps it requires end, and each of its units goes to the slot of its
     services where it finishes earliest (ties to the lowest slot). A slot that
     changes step, or would run past its limit, opens a new session and pays
-    that service's setup."""
+    that service's setup. `quotas[account]` is that account's weekly quota in
+    minutes (None: unknown): a session that would overrun it waits for the
+    next reset (`quota_place`), and a chained unit waits on its own account."""
+    quotas = quotas or [None] * (max((slot["account"] for slot in slots), default=-1) + 1)
+    spent: dict[int, dict] = {index: {} for index in range(len(quotas))}
+    waited: dict[int, float] = {index: 0.0 for index in range(len(quotas))}
     state = [{"free": 0.0, "step": None, "used": 0.0, "busy": 0.0} for _ in slots]
     timeline, remaining = {}, [s for s in steps if s["id"] in assignment]
     while remaining:
@@ -1395,15 +1440,28 @@ def simulate(steps: list[dict], assignment: dict, slots: list[dict]) -> dict:
                 begin = max(current["free"], ready)
                 same = (chain == 1 and current["step"] == entry["id"]
                         and current["used"] + minutes <= slot["limit"])
-                finish = begin + minutes + (0.0 if same else setup * chain)
+                quota, account = quotas[slot["account"]], slot["account"]
+                work = usable_session(slot["limit"]) - setup
+                costs = [minutes] if same else chain_costs(minutes, setup, chain, work)
+                finish, wait, charges = quota_place(begin, costs, quota, spent[account],
+                                                    QUOTA_WEEK_MINUTES)
+                if same and wait:
+                    # Waiting for a reset ends the session: the next one pays the setup.
+                    same, costs = False, chain_costs(minutes, setup, chain, work)
+                    finish, wait, charges = quota_place(begin, costs, quota, spent[account],
+                                                        QUOTA_WEEK_MINUTES)
                 if best is None or finish < best[0]:
-                    best = (finish, position, begin, same, minutes, setup, chain)
-            finish, position, begin, same, minutes, setup, chain = best
+                    best = (finish, position, begin, same, minutes, setup, chain, costs, wait, charges)
+            finish, position, begin, same, minutes, setup, chain, costs, wait, charges = best
             current = state[position]
+            account = slots[position]["account"]
+            for week, cost in charges:
+                spent[account][week] = spent[account].get(week, 0.0) + cost
+            waited[account] += wait
             # A chained unit fills its last session: the next unit opens a new one.
             current["used"] = (current["used"] + minutes if same else
                                setup + minutes if chain == 1 else slots[position]["limit"])
-            current["busy"] += minutes + (0.0 if same else setup * chain)
+            current["busy"] += sum(costs)
             current["free"], current["step"] = finish, entry["id"]
             start = begin if start is None else min(start, begin)
             end = max(end, finish)
@@ -1416,7 +1474,10 @@ def simulate(steps: list[dict], assignment: dict, slots: list[dict]) -> dict:
     for position, slot in enumerate(slots):
         busy[slot["account"]] = busy.get(slot["account"], 0.0) + state[position]["busy"]
     makespan = max((item["end"] for item in timeline.values()), default=0.0)
-    return {"timeline": timeline, "busy": busy, "makespan": makespan}
+    weeks = {index: (None if quotas[index] is None else
+                     max(spent[index], default=-1) + 1) for index in spent}
+    return {"timeline": timeline, "busy": busy, "makespan": makespan, "quotaWeeks": weeks,
+            "quotaWait": waited}
 
 
 def serial_minutes(entry: dict, accounts: list[dict]) -> float:
@@ -1451,6 +1512,7 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
     slots = [{"account": index, "service": entry["service"], "limit": entry["sessionHours"] * 60}
              for index, entry in enumerate(accounts) for _ in range(entry["sessions"])]
     steps = plan["steps"]
+    quotas = [None if entry["quotaHours"] is None else entry["quotaHours"] * 60 for entry in accounts]
     options = {entry["id"]: step_options(entry, slots) for entry in steps}
     combos = 1
     for entry in steps:
@@ -1468,7 +1530,7 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
         mode = "exhaustive"
         for picks in _product([range(len(options[e["id"]])) for e in steps]):
             assignment = {e["id"]: options[e["id"]][pick] for e, pick in zip(steps, picks)}
-            sim = simulate(steps, assignment, slots)
+            sim = simulate(steps, assignment, slots, quotas)
             evaluated += 1
             key = score(sim, picks)
             if best is None or key < best[0]:
@@ -1480,7 +1542,7 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
             choice = None
             for pick, option in enumerate(options[entry["id"]]):
                 trial = dict(assignment, **{entry["id"]: option})
-                sim = simulate(steps, trial, slots)
+                sim = simulate(steps, trial, slots, quotas)
                 evaluated += 1
                 key = score(sim, picks + (pick,))
                 if choice is None or key < choice[0]:
@@ -1535,13 +1597,17 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
         hours = sim["busy"].get(index, 0.0) / 60
         limit = entry["quotaHours"]
         over = None if limit is None else hours > limit
+        weeks, wait = sim["quotaWeeks"][index], sim["quotaWait"][index]
         quota.append({"account": entry["label"], "owner": entry["owner"], "service": entry["service"],
                       "units": units_per.get(index, 0), "gpuHours": num(hours),
                       "quotaHours": None if limit is None else num(limit), "overQuota": over,
+                      "quotaWeeks": weeks, "quotaWaitMinutes": num(wait),
                       "quotaSource": entry.get("quotaSource"), "quotaDate": entry.get("quotaDate")})
         if over:
             reasons.append(f"{entry['label']} would spend {num(hours)} GPU hours, over its {num(limit)}-hour weekly "
-                           "quota: reduce the units, add an owner's account or wait for the quota to reset")
+                           f"quota: it spans {weeks} quota weeks and the schedule waits {num(wait)} minutes on "
+                           "it for the resets (in the makespan; each quota taken as full at the start and reset "
+                           "every 7 days from then); add an owner's account or reduce the units to avoid the wait")
         elif over is None and units_per.get(index):
             reasons.append(f"{entry['label']} has an unknown weekly quota: not checked; record it before the launch")
     serial = sum(serial_minutes(entry, accounts) for entry in steps)
@@ -1571,6 +1637,7 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
             "excludedAccounts": [{"account": item["account"], "tier": item["tier"]} for item in pool["excluded"]],
             "ignoredAccounts": pool["ignored"], "steps": report_steps,
             "makespanMinutes": num(makespan), "makespanHours": num(makespan / 60),
+            "quotaWeeks": max(1, math.ceil(makespan / QUOTA_WEEK_MINUTES)),
             "serialMinutes": num(serial), "serialHours": num(serial / 60),
             "speedup": num(serial / makespan) if makespan else None, "savedMinutes": num(serial - makespan),
             "quota": quota, "quotaOk": not any(item["overQuota"] for item in quota),
@@ -1604,26 +1671,51 @@ def candidate_kind(candidate: str) -> tuple[str, str | None, str | None]:
     return host, host.split(":", 1)[0], machine or None
 
 
-def pack_slots(count: int, slots: list[dict]) -> list[dict]:
+def pack_slots(count: int, slots: list[dict], quotas: dict | None = None) -> list[dict]:
     """Greedy packing of `count` equal units onto slots, each with its own unit
     seconds, setup and session limit (None locally). A slot pays its setup
-    when it opens a session; a remote session never runs past its limit."""
+    when it opens a session; a remote session never runs past its limit. A
+    slot with `chain` > 1 runs each unit as that many chained sessions on the
+    slot's own account, each paying the setup again and doing up to `work`
+    seconds. `quotas[account]` is the account's weekly quota in seconds:
+    a session that would overrun it waits for the next reset (`quota_place`)."""
+    quotas = quotas or {}
+    week = QUOTA_WEEK_MINUTES * 60
+    spent: dict[str, dict] = {}
+    waited: dict[str, float] = {}
     state = [dict(slot, finish=0.0, used=None, units=0, busy=0.0) for slot in slots]
     for _ in range(count):
         best = None
         for index, slot in enumerate(state):
-            unit, setup, limit = slot["unit"], slot["setup"], slot["limit"]
-            if slot["used"] is not None and (limit is None or slot["used"] + unit <= limit):
-                finish, new = slot["finish"] + unit, False
-            else:
-                finish, new = slot["finish"] + setup + unit, True
+            unit, setup, limit, chain = slot["unit"], slot["setup"], slot["limit"], slot.get("chain", 1)
+            account, quota = slot["account"], quotas.get(slot["account"])
+            same = (chain == 1 and slot["used"] is not None
+                    and (limit is None or slot["used"] + unit <= limit))
+            costs = [unit] if same else chain_costs(unit, setup, chain, slot.get("work", 0.0))
+            finish, wait, charges = quota_place(slot["finish"], costs, quota,
+                                                spent.get(account, {}), week)
+            if same and wait:
+                same, costs = False, chain_costs(unit, setup, chain, slot.get("work", 0.0))
+                finish, wait, charges = quota_place(slot["finish"], costs, quota,
+                                                    spent.get(account, {}), week)
             if best is None or finish < best[0]:
-                best = (finish, index, new)
-        finish, index, new = best
+                best = (finish, index, not same, costs, wait, charges)
+        finish, index, new, costs, wait, charges = best
         slot = state[index]
-        slot["used"] = (slot["setup"] + slot["unit"]) if new else slot["used"] + slot["unit"]
+        mine = spent.setdefault(slot["account"], {})
+        for when, cost in charges:
+            mine[when] = mine.get(when, 0.0) + cost
+        waited[slot["account"]] = waited.get(slot["account"], 0.0) + wait
+        # A chained unit fills its last session: the next unit opens a new one.
+        slot["used"] = (slot["used"] + slot["unit"] if not new else
+                        slot["setup"] + slot["unit"] if slot.get("chain", 1) == 1 else slot["limit"])
         slot["finish"], slot["units"] = finish, slot["units"] + 1
-        slot["busy"] += slot["unit"] + (slot["setup"] if new else 0.0)
+        slot["busy"] += sum(costs)
+    for slot in state:
+        quota = quotas.get(slot["account"])
+        slot["quotaWeeks"] = (None if quota is None
+                              else max(spent.get(slot["account"], {}), default=-1) + 1)
+        slot["quotaWait"] = waited.get(slot["account"], 0.0)
     return state
 
 
@@ -1632,7 +1724,8 @@ def seconds_range(seconds: float) -> dict:
             "high": num(seconds * (1 + ESTIMATE_RANGE))}
 
 
-def measured_option(candidate: str, items: list[dict], scale: dict, stage: str, accounts: dict) -> dict:
+def measured_option(candidate: str, items: list[dict], scale: dict, stage: str, accounts: dict,
+                    checkpoint: float | None = None) -> dict:
     """One candidate alone: its slots, makespan, accelerator hours and status."""
     rows, _ = best_setting(items)
     host, service, _ = candidate_kind(candidate)
@@ -1665,34 +1758,58 @@ def measured_option(candidate: str, items: list[dict], scale: dict, stage: str, 
                       reason=f"{host} is on a free tier: it runs a proof of concept in one session, never a full "
                              "campaign or a worker of a split")
         return option
-    return dict(option, **remote_makespan([(candidate, rows, account)], scale))
+    return dict(option, **remote_makespan([(candidate, rows, account)], scale, checkpoint))
 
 
-def remote_makespan(members: list[tuple[str, list[dict], dict]], scale: dict) -> dict:
-    """The makespan of a stage over one or more accounts, each with its own rows."""
-    slots, device = [], members[0][1][0]["device"]
+def remote_makespan(members: list[tuple[str, list[dict], dict]], scale: dict,
+                    checkpoint: float | None = None) -> dict:
+    """The makespan of a stage over one or more accounts, each with its own rows.
+    A unit over the session margin is `split-first`, unless `checkpoint` (the
+    seconds of work between two checkpoints of a resumable unit) lands inside
+    one session's usable work: then it is costed as a chain of sessions on
+    one account, each paying the setup again."""
+    slots, device, chains = [], members[0][1][0]["device"], []
     for candidate, rows, account in members:
         setups = [float(item["setupSeconds"]) for item in rows if "setupSeconds" in item]
         unit = per_unit_of(rows) * scale["arms"] * scale["epochs"]
         setup = sum(setups) / len(setups) if setups else 0.0
         limit = account["sessionHours"] * 3600
-        if unit * (1 + ESTIMATE_RANGE) + setup > usable_session(limit):
-            return {"status": "split-first", "makespanSeconds": None, "acceleratorHours": None, "perAccount": [],
-                    "reason": f"one unit on {candidate} ({num(unit * (1 + ESTIMATE_RANGE))} s at its upper bound) "
-                              f"plus its {num(setup)} s setup exceeds {margin_text(account['sessionHours'] * 60)}: "
-                              "split it along the declared axis or declare it resumable"}
+        high, work, chain = unit * (1 + ESTIMATE_RANGE), usable_session(limit) - setup, 1
+        if high + setup > usable_session(limit):
+            over = (f"one unit on {candidate} ({num(high)} s at its upper bound) plus its {num(setup)} s setup "
+                    f"exceeds {margin_text(account['sessionHours'] * 60)}")
+            if checkpoint is None:
+                why = (f"{over}: split it along the declared axis, or plan it as a resumable chain of sessions "
+                       "(--resumable --checkpoint-minutes <minutes between checkpoints>)")
+            elif work <= 0 or checkpoint > work:
+                why = (f"{over}, and its checkpoint every {num(checkpoint / 60)} minutes never lands inside one "
+                       f"session's {num(max(work, 0.0))} s of usable work: checkpoint more often or split it")
+            else:
+                why = None
+                chain = math.ceil(high / work)
+            if why is not None:
+                return {"status": "split-first", "makespanSeconds": None, "acceleratorHours": None,
+                        "perAccount": [], "reason": why}
+        chains.append(chain)
         processes = rows[0].get("processes", 1)
-        slots += [{"account": account["label"], "unit": unit, "setup": setup, "limit": limit}] * (
-            account["sessions"] * processes)
-    state = pack_slots(scale["folds"] * scale["seeds"], slots)
+        slots += [{"account": account["label"], "unit": unit, "setup": setup, "limit": limit,
+                   "chain": chain, "work": work}] * (account["sessions"] * processes)
+    accelerated = device != "cpu"
     quotas = {account["label"]: account["quotaHours"] for _, _, account in members}
+    weekly = {label: hours * 3600 for label, hours in quotas.items() if hours is not None and accelerated}
+    state = pack_slots(scale["folds"] * scale["seeds"], slots, weekly)
     result = finish_option(state, device, quotas)
-    over = [item["account"] for item in result["perAccount"] if item["overQuota"]]
+    over = [item for item in result["perAccount"] if item["overQuota"]]
     unknown = [item["account"] for item in result["perAccount"] if item["overQuota"] is None and item["units"]
-               and device != "cpu"]
+               and accelerated]
     result.update(status="eligible", reason="")
+    if max(chains) > 1:
+        result.update(resumable=True, checkpointMinutes=num(checkpoint / 60), sessionsPerUnit=max(chains))
     if over:
-        result.update(status="over-quota", reason=f"{', '.join(over)} would exceed its weekly quota")
+        result["quotaNote"] = "; ".join(
+            f"{item['account']} exceeds its weekly quota: it spans {item['quotaWeeks']} quota weeks and waits "
+            f"{item['quotaWaitSeconds']} s for the resets (in the makespan; each quota taken as full at the start "
+            "and reset every 7 days from then)" for item in over)
     elif unknown:
         result["quotaNote"] = f"{', '.join(unknown)}: unknown weekly quota, not checked; record it before the launch"
     return result
@@ -1702,7 +1819,9 @@ def finish_option(state: list[dict], device: str, quotas: dict) -> dict:
     accelerated = device != "cpu"
     by_account: dict[str, dict] = {}
     for slot in state:
-        entry = by_account.setdefault(slot["account"], {"account": slot["account"], "units": 0, "busy": 0.0})
+        entry = by_account.setdefault(slot["account"], {"account": slot["account"], "units": 0, "busy": 0.0,
+                                                        "weeks": slot.get("quotaWeeks"),
+                                                        "wait": slot.get("quotaWait", 0.0)})
         entry["units"] += slot["units"]
         entry["busy"] += slot["busy"]
     per = []
@@ -1711,14 +1830,17 @@ def finish_option(state: list[dict], device: str, quotas: dict) -> dict:
         quota = quotas.get(label)
         per.append({"account": label, "units": entry["units"], "acceleratorHours": num(hours),
                     "quotaHours": None if quota is None else num(quota),
-                    "overQuota": None if quota is None or not accelerated else hours > quota})
+                    "overQuota": None if quota is None or not accelerated else hours > quota,
+                    "quotaWeeks": entry["weeks"], "quotaWaitSeconds": num(entry["wait"])})
     makespan = max(slot["finish"] for slot in state)
     return {"makespanSeconds": seconds_range(makespan), "slots": len(state),
+            "quotaWeeks": max(1, math.ceil(makespan / (QUOTA_WEEK_MINUTES * 60))),
             "acceleratorHours": num(sum(item["acceleratorHours"] for item in per)),
             "perAccount": per}
 
 
-def split_options(by_candidate: dict, scale: dict, stage: str, accounts: dict, singles: dict) -> list[dict]:
+def split_options(by_candidate: dict, scale: dict, stage: str, accounts: dict, singles: dict,
+                  checkpoint: float | None = None) -> list[dict]:
     """One split per service and machine measured on two or more paid owners'
     own rows, kept only when it passes assess's worth-it thresholds."""
     groups: dict[tuple, list] = {}
@@ -1738,7 +1860,7 @@ def split_options(by_candidate: dict, scale: dict, stage: str, accounts: dict, s
         option = {"option": name, "kind": "split", "candidates": [m[0] for m in members],
                   "device": members[0][1][0]["device"], "settings": {}, "processes": 1,
                   "accounts": [m[2]["label"] for m in members]}
-        option.update(remote_makespan(members, scale))
+        option.update(remote_makespan(members, scale, checkpoint))
         fits = [singles[m[0]] for m in members if singles[m[0]]["status"] == "eligible"]
         if option["status"] == "eligible" and fits:
             single = min(fits, key=lambda item: item["makespanSeconds"]["high"])
@@ -1845,11 +1967,11 @@ def cpu_evidence(best: dict, cpu: dict, by_candidate: dict) -> str:
 
 
 def stage_plan(stage: str, data: dict, by_candidate: dict, accounts: dict, advice: list[dict],
-               first: list[dict]) -> dict:
+               first: list[dict], checkpoint: float | None = None) -> dict:
     scale = data["scales"][stage]
-    singles = {candidate: measured_option(candidate, items, scale, stage, accounts)
+    singles = {candidate: measured_option(candidate, items, scale, stage, accounts, checkpoint)
                for candidate, items in sorted(by_candidate.items())}
-    options = [*singles.values(), *split_options(by_candidate, scale, stage, accounts, singles)]
+    options = [*singles.values(), *split_options(by_candidate, scale, stage, accounts, singles, checkpoint)]
     eligible = [item for item in options if item["status"] == "eligible"]
 
     def key(item: dict) -> tuple:
@@ -1935,6 +2057,14 @@ def cmd_plan(args, root: Path, today: str) -> dict:
                 raise Refusal("bad-argument", f"--candidate {name!r}: local-cpu-<processes>, local-mps, "
                                               "local-cuda or <host>:<owner>/<machine>")
             asked.append(name)
+    checkpoint = None
+    if args.checkpoint_minutes is not None and not args.resumable:
+        raise Refusal("bad-argument", "--checkpoint-minutes is given only with --resumable")
+    if args.resumable:
+        if args.checkpoint_minutes is None:
+            raise Refusal("missing-input", "--resumable needs --checkpoint-minutes, the minutes of work between "
+                                           "two checkpoints a unit writes and resumes from")
+        checkpoint = positive("--checkpoint-minutes", args.checkpoint_minutes) * 60
     path, inside = resolved(root, args.timing)
     if args.record is not None and not inside:
         raise Refusal("timing-outside-workspace", f"--timing {args.timing} resolves outside the workspace {root}")
@@ -1955,7 +2085,7 @@ def cmd_plan(args, root: Path, today: str) -> dict:
     plans = {}
     first = measure_first(unmeasured, args.timing)
     for name in stages:
-        plans[name] = stage_plan(name, data, by_candidate, accounts, advice, first)
+        plans[name] = stage_plan(name, data, by_candidate, accounts, advice, first, checkpoint)
         plans[name]["unmeasured"] = unmeasured
     result = {"timing": args.timing, "plans": plans, "representationAdvice": advice,
               "dataSourceComparisons": comparisons,
@@ -1965,6 +2095,9 @@ def cmd_plan(args, root: Path, today: str) -> dict:
                         "bound": "high", "range": RANGE_NOTE, "loadShareThreshold": LOAD_SHARE_THRESHOLD,
                         "minSpeedup": MIN_SPEEDUP, "minSavedMinutes": MIN_SAVED_MINUTES,
                         "sessionMarginPercent": SESSION_MARGIN_PERCENT,
+                        "resumable": checkpoint is not None,
+                        "checkpointMinutes": None if checkpoint is None else num(checkpoint / 60),
+                        "quotaWeekMinutes": QUOTA_WEEK_MINUTES,
                         "makespan": ("the stage's units (" + UNIT_DEFINITION + ") packed onto the option's slots "
                                      "(processes locally, sessions x processes per account), each slot paying its "
                                      "setup once per session, from each candidate's own rows at its fastest "
@@ -2020,6 +2153,11 @@ def build_parser() -> argparse.ArgumentParser:
     placement_plan.add_argument("--accounts-file", default=None)
     placement_plan.add_argument("--candidate", action="append", default=None,
                                 help="a candidate the team has, listed as unmeasured when the record lacks it")
+    placement_plan.add_argument("--resumable", action="store_true",
+                                help="the units checkpoint and resume: a unit over the session margin is costed "
+                                     "as a chain of sessions on one account instead of split-first")
+    placement_plan.add_argument("--checkpoint-minutes", default=None,
+                                help="with --resumable: the minutes of work between two checkpoints")
     placement_plan.add_argument("--record", default=None)
     placement_plan.set_defaults(func=cmd_plan)
     verbs.add_parser("checklist", help="the reproducibility checklist").set_defaults(func=cmd_checklist)

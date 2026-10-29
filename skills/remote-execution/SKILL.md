@@ -1513,12 +1513,12 @@ refusal.
 | `submit` | submit one notebook to a registered backend's worker |
 | `status` | report the fold for one product's ledger; resolves nothing |
 | `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares`; issues no work and records nothing |
-| `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
+| `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `unknown` with its `refetch` commands, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
 | `poll` | ask the adapter for one submission's status |
 | `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
 | `reconcile` | compare the ledger against the adapter's `list_active()` in both directions |
 | `generate-job` | generate a forge-owned job folder at `<target>/tools/<service>/<job-name>/` |
-| `generate-jobs` | generate every remote step's job folder in one call from the product's declared `__steps__` (and a `schedule` output), deriving service, run, clone paths, code bundle, requirements, carry paths and `--dataset` inputs; prints one row per job and the single `preflight` command to run next |
+| `generate-jobs` | generate every remote step's job folder in one call from the product's declared `__steps__` (and a `schedule` output), deriving service, run, clone paths, code bundle, requirements, carry paths and `--dataset` inputs, with per-step smoke kwargs, carry paths and input datasets and an `--only`/`--skip` selection; prints one row per job and the single `preflight` command to run next |
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
 | `readiness` | state whether a job is ready for a full submission on a worker, from that worker's own latest rehearsal; reports only, issues no submission |
 | `preflight` | check a generated job locally before its first remote rehearsal, one `pass`/`warn`/`fail` row per check with its evidence and fix, including a local rehearsal of its smoke; exits non-zero on any `fail`, never submits |
@@ -1549,6 +1549,9 @@ can branch on it without parsing prose.
 | `DATASETS_SKILL_MISSING` | `generate-job --dataset`, `generate-jobs --dataset` | the workspace has no `skills/datasets/scripts/datasets_cli.py` beside this skill, so the registry cannot be resolved; the fix names `smith upgrade` |
 | `STEPS_UNREADABLE` | `generate-jobs` | the product's `src/<Package>/__init__.py` or `config.py` does not parse, or the `__steps__` it assigns is not a literal the reader can evaluate without running the target's code |
 | `SCHEDULE_UNREADABLE` | `generate-jobs --from-schedule` | the file is not readable JSON, holds no `steps` list, or a step has no `id` or names no `services` |
+| `STEP_UNKNOWN` | `generate-jobs --only`, `--skip`, `--smoke-kwargs-for`, `--carry-path-for`, `--input-dataset-for` | the step name is not a remote step the product's `__steps__` declares (undeclared, or declared with another placement); the message names the remote steps. Refused before anything is written |
+| `STEP_SELECTION_CONFLICT` | `generate-jobs --only`, `--skip` | one step is named by both `--only` and `--skip`, a `--*-for` flag names a step the selection leaves out, or the selection leaves no remote step. Refused before anything is written |
+| `STEP_DECLARATION_MALFORMED` | `generate-jobs` (that job's row) | the step's `smoke` is not an object of `module`, `function` (strings), `kwargs` (an object) and `requiredEvidence` (a list of strings), or its `carry` is not a list of paths; only that job is refused |
 | `SCHEDULE_IS_A_PLAN` | `generate-jobs --from-schedule` | the file is the schedule's input plan (it carries `schema` and no `makespanMinutes`), whose `services` are only the allowed ones; the fix names `parallelism_cli.py schedule --plan <file>` and passing its output instead |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
@@ -1567,7 +1570,7 @@ python3 scripts/remote_cli.py preflight --target <repo> \
     --entrypoint <repo>/tools/<service>/<job-name>/runner.ipynb \
     [--worker <id>]... [--expect-accelerator <name|sm_*>] \
     [--timing <Results/timing.json>] [--candidate <host>:<owner>/<machine>] \
-    [--stage poc|full] [--units N] \
+    [--stage poc|full] [--units N] [--unit <id>]... [--deadline-block smoke|run] \
     [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
     [--skip-rehearsal] [--keep-rehearsal <new dir>] [--interpreter <python>] \
     [--repo-credential <token file>] [--workspace <workspace>]
@@ -1597,7 +1600,8 @@ row fails. Run it under the workspace env interpreter, the one `submit` uses.
 | `local-rehearsal` | the job's smoke, run locally under runner conditions, raises, overruns `--local-timeout`, leaves no `shard.json`, or leaves one missing a `requiredEvidence` path | the target's smoke stamps (`remote_stamp.write_shard`, `@remote_stamp.stamped`); `--local-smoke-kwargs` for a cheaper local scale |
 | `account` | fails when the worker's account does not authenticate or is not signed in; warns when it has no passing rehearsal of its own at this pin | validate or sign in the account; `submit --smoke --worker <id>` once authorized |
 | `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given, saying the GPU is a default, not a measured choice; passes a CPU-only job (`--accelerator-kind cpu`) and says so | compare candidates with `remote-parallelism plan`, then regenerate with `--accelerator-kind cpu` or `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
-| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths; warns when unmeasured | more units, or `generate-job --carry-path` |
+| `deadline-rehearsal` | present only for a job that declares carry paths or whose unit or whole-session estimate exceeds the usable session. Fails when the job's smoke (or `--deadline-block run`), run locally under a deadline that has already arrived, overruns `--local-timeout`, raises, leaves no `partial.json`, leaves one whose ids are not among the `--unit` ids, leaves it inside a carry path, leaves none of its declared carry paths, or when the second session, handed only the remaining ids with those paths restored, does not finish them; warns when skipped (`--skip-rehearsal`, no `--unit`, or a failed local rehearsal) | read `FORGE_SESSION_DEADLINE` before each unit, epoch or trial, checkpoint into a carry path, write `partial.json` with the `FORGE_RUN_UNITS` ids and exit 0; `--unit <id>` per unit |
+| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths, or declares them and the deadline rehearsal failed; warns when the deadline rehearsal was skipped (quoting why), when it ran but never stopped early (quoting its evidence), and when unmeasured. Declared carry paths alone never pass a unit that spans sessions | more units, or `generate-job --carry-path` and a passing deadline rehearsal |
 
 The local rehearsal materializes the job's code with the runner's own
 functions in a fresh scratch directory outside the target: unpacked from
@@ -1616,6 +1620,32 @@ rehearsal is a `fail` row carrying the error, never a traceback.
 `--keep-rehearsal <new dir>` keeps the scratch directory there to read; the
 path must not exist yet and must lie outside the target, and either refusal
 happens before anything is written.
+
+**The deadline rehearsal** (`deadline_rehearse()` in
+`scripts/local_rehearsal.py`) proves, before any remote hour, that a chain of
+sessions resumes. It runs in its own scratch directory outside the target
+(`<--keep-rehearsal>/deadline/` when kept), with the same runner functions,
+interpreter and environment as the local rehearsal, two sessions in a row:
+
+1. Session 1 gets the `--unit` ids as `FORGE_RUN_UNITS` and a session limit
+   whose `FORGE_SESSION_DEADLINE`, by the runner's own formula, arrives one
+   second after the runner starts. It must exit 0, leave a `partial.json`
+   (`{"remaining": [<unit id strings>]}`, read by `shard_io.partial_marker`
+   exactly as `remaining` reads it) whose ids are among the `--unit` ids and
+   which lies outside every carry path, and leave at least one declared
+   carry path where `restore_carry()` looks (`clone/<product>/<path>` or
+   `<path>`).
+2. Session 2 gets only the remaining ids, a `carry` row whose mount is
+   session 1's directory (restored by the runner's own `restore_carry()`),
+   and the service's own limit; it must exit 0 and leave no `partial.json`.
+
+Each session has `--local-timeout` seconds. The rehearsal needs the unit ids
+the job's `submit --unit` will send, because a marker's ids must equal the
+submitted unit strings: `remaining` and the carry evidence intersect them
+with each `submitted` event's `units`, and a `submit` without `--unit`
+records no share at all, so a run cut at its limit is never listed as
+remaining. `FORGE_RUN_MODE` is set only for a smoke (`run_config["mode"]`),
+so a target must write `partial.json` whatever that variable says.
 
 The rehearsal is not a sandbox. It runs the target's smoke on this machine
 with the real `HOME`, so a smoke that downloads reaches the network and
@@ -1655,10 +1685,16 @@ have saved:
    declares it from the registry and records the preparation's sha256 values
    (`FORGE_DATASET_CHECKS`).
 10. Several remote steps: `generate-jobs` writes every job in one call (code
-    bundle, requirements, carry paths and inputs derived), then run the one
-    `preflight` it prints.
+    bundle, requirements, carry paths and inputs derived; per-step smoke
+    kwargs, carry paths and inputs, and `--skip` for a finished job), then
+    run the one `preflight` it prints.
 11. Every fix after a rehearsal moves the pin, which means regenerated jobs and
     re-minted consent tokens: fix what `preflight` reports first.
+12. A run longer than one session rehearses its deadline here first:
+    `preflight --unit <id> ...` with the job's own unit ids. A target that
+    ignores `FORGE_SESSION_DEADLINE`, writes no `partial.json`, writes ids that
+    are not its units, or checkpoints outside its carry paths loses the
+    session's hours remotely and is caught here in seconds.
 
 ## Smoke — a readiness gate, evidence-derived
 
@@ -1986,6 +2022,15 @@ and the service reclaims it, taking every result with it (`poll` then
 answers `unknown`, `session not found`). Whoever waits on a Colab run fetches
 in the same loop that sees `complete`, never later.
 
+What of this rule the code holds, and what it does not: releasing the session
+after completion is verified in code, since `fetch` stops it only after every
+manifest file is local and only when `status.json` exists
+(`test_colab_fetch_stops_session_only_after_terminal_status`, and the
+round-trip test's download-before-stop order). Unverified: nothing fetches on
+its own when a run turns terminal, so a prompt fetch rests on whoever polls,
+and the delay after which the service reclaims an idle session was never
+measured.
+
 **The manifest is kept current during the run.** The executor rewrites
 `files.json` every `MANIFEST_REFRESH_SECONDS` (60 s) while the notebook
 executes, atomically (`files.json.tmp`, then a rename), so a fetch of a
@@ -2057,30 +2102,63 @@ A second backend brings its own answer to this section: nothing above the
 adapter seam knows a service exists, so nothing above it knows what a service
 needs.
 
-## Sessions, checkpoints and resume
+## The session-chain rule
 
 Every service stops a session after a continuous run time it publishes, and
-Colab also reclaims one it judges idle. Whatever the session had not written
-out by then is lost, together with the hours it cost. The rule for every
-agent that plans, builds or launches a remote run:
+some also reclaim a session they judge idle. Whatever the session had not
+written out by then is lost, together with the hours it cost. A run longer
+than one session is therefore planned, checked and executed as a chain of
+sessions that checkpoint and resume. The rule, for every agent that plans,
+builds or launches a remote run:
 
-1. **Every unit fits one session with margin, or checkpoints and resumes.**
-   A unit (a fold, a seed, a trial batch) whose upper-bound duration plus
-   setup does not fit comfortably inside the session limit is split (for
-   example one fold per unit) or written to checkpoint and resume from its
-   last checkpoint in a new session. Never plan a unit that only finishes
-   if the session is never interrupted.
-2. **Read `FORGE_SESSION_DEADLINE`.** Check it before starting each unit or
-   trial; when the next one may not finish before it, write the checkpoint
-   and the results so far, write `partial.json` in the working directory
-   naming the units it did not finish (`{"remaining": ["u3", ...]}`), and
-   exit 0. A `partial.json` without that list means none of the share's
-   units is finished.
-3. **Fetch promptly.** Fetch as soon as a run is terminal, and periodically
-   during a long one, so a reclaimed session still leaves its last snapshot
-   on this side.
-4. **Resubmit only the remaining units.** `remaining` names them; pass its
-   list unchanged to `distribute` and then `submit`.
+1. **Estimate against the session margin.** Compare the stage's upper-bound
+   estimate (`remote-parallelism` `estimate` and `plan` over
+   `Results/timing.json`) with 80% of the account's session limit, per unit
+   and for the whole session. A unit (a fold, a seed, a trial batch) that
+   fits is one session. One that does not is split along the declared axis
+   (never by arm) or declared resumable and planned as a chain of sessions
+   on the same account, each paying the setup again (`plan --resumable
+   --checkpoint-minutes`, `"resumable": true` in a `schedule` plan). Never
+   plan a unit that only finishes if the session is never interrupted.
+2. **Checkpoint every epoch or trial** into a path the job declares with
+   `generate-job --carry-path`, relative to the product folder; under the
+   runner the target writes it at `clone/<product>/<path>` below
+   `FORGE_CLONE_ROOT`.
+3. **Stop at the deadline.** Read `FORGE_SESSION_DEADLINE` (epoch seconds)
+   before starting each unit, epoch or trial; when the next one may not
+   finish before it, write the checkpoint and the results so far, write
+   `partial.json` in the working directory as `{"remaining": [<unit ids>]}`
+   naming the units it did not finish, and exit 0. The ids are strings equal
+   to the units it was sent, read from `FORGE_RUN_UNITS`: `remaining` and
+   the carry evidence intersect them with the submitted share, so any other
+   id is dropped. A `partial.json` without that list means none of the
+   share's units is finished. Write the marker whatever `FORGE_RUN_MODE`
+   says: the runner sets that variable only for a smoke.
+4. **Send a chain as a campaign**, `submit --unit <id>` per unit. A plain
+   `submit` records no share, so a session cut at its limit is never listed
+   as remaining; `submit` reports `carry: no-share` and a `carryWarning`.
+5. **Rehearse the deadline before the first remote rehearsal.** `preflight
+   --unit <id> ...` runs the `deadline-rehearsal` row (see "Before the first rehearsal"):
+   locally, under a deadline that has already arrived, the job must stop with
+   a valid `partial.json` and its carry paths, and a second session handed
+   only the remaining ids, with those paths restored, must finish them.
+   `session-fit` fails when it fails and warns when it was skipped; declared
+   carry paths alone never pass a unit that spans sessions.
+6. **Fetch promptly, then resubmit only the remaining units.** Fetch as soon
+   as a run is terminal, and periodically during a long one, so a reclaimed
+   session still leaves its last snapshot on this side. `remaining` names the
+   units left; pass its list unchanged to `distribute` and then `submit`,
+   which carries the declared paths to the continuation on the same account
+   (`carry: attached`, `carry: uploaded`, or `carry: unsupported`; see
+   below).
+7. **Count quota weeks.** An account whose assigned hours exceed its weekly
+   quota waits for the reset: `remote-parallelism` `schedule` and `plan` put
+   the wait in the makespan and report `quotaWeeks`, and a chain waits on its
+   own account rather than moving to one that cannot read its checkpoints.
+
+## Sessions, checkpoints and resume
+
+How each part of the session-chain rule above is carried out.
 
 **Declared limits.** Each adapter declares its service's limit through
 `Adapter.session_limit_seconds(machine_shape=None)` -- a classmethod, not a
@@ -2146,7 +2224,13 @@ marker without that list, or one that does not parse, completes none. With
 `--unit-field <dotted.path>` -- the field of the target's `runs.jsonl`
 records that names a unit -- the per-unit records inside a kept partial
 result, or inside a returned one with a `partial.json`, count too: a unit
-with its own record is complete even when a marker lists it. Units of a submission still unsettled are reported as
+with its own record is complete even when a marker lists it. A returned
+result whose recorded `artifactPath` is no longer a directory on disk
+completes nothing: its units are reported as `unknown` and stay in
+`remaining`, and `refetch` names, per submission, the exact `remote_cli
+fetch ... --dest <artifactPath> --backend <service>` that brings it back
+(run it before resending them, or you pay for those hours again); it is
+never continuation evidence either. Units of a submission still unsettled are reported as
 `inFlight` and are not resent. `remaining` keeps the declared order, which is
 the order the consent token binds, so its list goes to `distribute` and
 `submit` unchanged (`unitArgs` spells it as `--unit` flags).
@@ -2182,18 +2266,60 @@ nothing), or whose `errored` event names bytes kept under
    same `carriedFrom`.
 3. **Restore before the entrypoint.** The runner (`restore_carry()` in
    `assets/runner_invoke.py`) copies each declared carry path from each
-   mount into its working directory -- the folder whose files come back --
-   before the callable or notebook starts, so the target resumes from the
-   checkpoints already on disk with no code of its own, and exports the
+   mount back to where the earlier session wrote it, before the callable or
+   notebook starts, so the target resumes from the checkpoints already on
+   disk with no code of its own. A mount mirrors the earlier session's
+   working directory (the folder whose files come back), and a declared
+   path is looked up there in two layouts, each restored in place: the
+   product layout `clone/<product>/<path>`, which is where a target that
+   binds its root to `FORGE_CLONE_ROOT` (`<cwd>/clone`) writes its product
+   folder, restored to `<cwd>/clone/<product>/<path>`; and the working
+   layout `<path>`, where a job writing relative to its working directory
+   (every job before the product layout) left it, restored
+   into the working directory. Both are restored when both exist; nothing is moved between
+   them, nothing outside a declared path is copied, and the mount is only
+   read. `<product>` is `run-config.json`'s `product`, joined only when it
+   is one folder name. A symbolic link in the mount is never followed: a
+   declared path that is one, or sits under one, is skipped (`[carry]
+   skipped carry path <path> from <ref>: <link> is a symbolic link in the
+   mount; it is never followed`), and a link inside a carried tree is not
+   copied. A file is written only where its resolved destination stays
+   inside the working directory, so a link already in the clone never
+   carries a write out of it (`its destination resolves outside the working
+   directory`). Each restore is one `[carry] restored <path> from
+   <ref> into <where>` line in the run log. The runner then exports the
    present mounts as `FORGE_CARRY_IN` (joined with `os.pathsep`). A missing
    mount or path is one `[carry]` line in the run log, and the unit starts
    fresh; it is never fatal.
-4. **Services without kernel inputs say so.** A backend whose `carry_source`
-   is the seam's default (Colab) carries nothing automatically, and the
-   row reports `carry: unsupported`; upload the checkpoint into the new
-   session yourself.
+4. **Services without kernel inputs upload the fetched output.** A backend
+   whose jobs cannot mount another job's output, but which can put local
+   files into the session it starts, declares the optional class attribute
+   `CARRY_UPLOAD` (not a seventh operation). Colab does: its CLI's `upload`
+   writes one local file into a running session (a contents-API `PUT`; the
+   parent directory must exist). For such a backend the share's job gets
+   one `{"submissionId", "ref", "upload"}` row per earlier submission,
+   `upload` naming the local directory `fetch` left (the returned result
+   holding the `partial.json`, or the kept bytes under
+   `.remote-execution/partial/`); the row reports `carry: uploaded` and
+   `carriedFrom` as above, and the ledger never records the local path.
+   Before the launch, the Colab adapter creates
+   `<root>/<session>.carry/<k>/` (beside the session directory, so the
+   manifest never fetches carried inputs back), uploads every regular file
+   under a declared carry path in either layout (`clone/<product>/<path>`
+   and `<path>`) and nothing else -- a declared path the runner would
+   refuse (empty, `.`, absolute, `..`) is skipped, so no row uploads the
+   whole fetched output -- and hands the runner the same row with
+   `mount` in place of `upload`, which `restore_carry()` reads as above. A
+   source that is not a directory refuses before any CLI call; a failed
+   upload stops the session before the launch. A backend that can neither
+   mount nor upload reports `carry: unsupported` and carries nothing;
+   upload the checkpoint into the new session yourself.
 
-A single send (no `--unit`) and the legacy shape carry nothing.
+A single send (no `--unit`) and the legacy shape carry nothing. A single
+send of a job that declares carry paths is still sent, but its output
+reports `carry: no-share` and a `carryWarning`: it records no share, so if
+its session is cut at the limit `remaining` lists none of its units and no
+continuation carries its checkpoints. Send a chain as `submit --unit <id>`.
 
 **No push replaces an output a continuation reads.** `submit` hands every
 job of a job declaring carry paths -- every share of a campaign, a single
@@ -2233,7 +2359,10 @@ python3 scripts/remote_cli.py generate-jobs --target <repo> --product <Name> \
     [--smoke-module M --smoke-function F] [--smoke-kwargs '<json>'] \
     [--smoke-required-evidence <path>]... [--repo-url URL] [--repo-ref REF] \
     [--repo-credential <token file>] [--regenerate] [--workspace <dir>] \
-    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads]
+    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads] \
+    [--smoke-kwargs-for <step> '<json>']... [--carry-path-for <step> <path>]... \
+    [--input-dataset <owner/slug>]... [--input-dataset-for <step> <owner/slug>]... \
+    [--only <step>]... [--skip <step>]...
 ```
 
 The three `--accept-*` flags mean what they mean for `generate-job`, applied to
@@ -2241,7 +2370,14 @@ every job, so a refusal relayed in a job's row names a flag this command takes.
 
 - **Steps**: every `__steps__` entry (`src/<Package>/__init__.py`, else
   `config.py`, read with `ast`) with `placement: "remote"`; other steps are
-  listed under `skipped`.
+  listed under `skipped`. `--only <step>` (repeatable) generates just those,
+  `--skip <step>` (repeatable) leaves that step's job alone (a finished one
+  is not regenerated by `--regenerate`), and each step they leave out is
+  listed under `skipped` (`not named by --only`, `excluded by --skip`). A
+  name `--only`, `--skip` or a `--*-for` flag gives that is not a remote
+  step refuses `STEP_UNKNOWN`; the same step under `--only` and `--skip`, a
+  `--*-for` value for a step left out, or a selection that leaves nothing
+  refuses `STEP_SELECTION_CONFLICT`. Both refuse before anything is written.
 - **Service and job folder**: the step's `service` and `job`. With
   `--from-schedule` (a remote-parallelism `schedule` OUTPUT), a step it names
   runs on the service(s) it chose, one job per service; a schedule naming an
@@ -2250,7 +2386,15 @@ every job, so a refusal relayed in a job's row names a flag this command takes.
 - **Run and clone paths**: the step's notebook among its `produces`
   (`Notebooks/...ipynb`) as `--run-notebook`, else its `module`/`function`;
   clone paths are the ones the generator's own import/read walk computes for
-  those entries. The smoke options apply to every job.
+  those entries.
+- **Smoke**: a step may declare its own `smoke`, an object of optional
+  `module`, `function`, `kwargs` and `requiredEvidence`; each field it
+  declares wins over the command's `--smoke-module`, `--smoke-function`,
+  `--smoke-kwargs` and `--smoke-required-evidence`, which fill the rest.
+  `--smoke-kwargs-for <step> '<json object>'` (repeatable, once per step)
+  wins over both for that step's kwargs, so a per-job value such as
+  `{"steps": ["e1"]}` needs no declaration. A malformed `smoke` refuses
+  that job `STEP_DECLARATION_MALFORMED`.
 - **Code bundle**: when the pin is not anonymously reachable and the service's
   adapter declares `CODE_BUNDLE_MAX_BYTES`. On a repository-credential
   carrier, `--repo-credential` is passed instead.
@@ -2258,8 +2402,20 @@ every job, so a refusal relayed in a job's row names a flag this command takes.
   `pyproject.toml` `[project].dependencies`), minus the distributions the
   adapter's optional `PROVIDED_REQUIREMENTS` says its image provides (none
   declared: every pin is installed).
-- **Carry paths**: the step's `produces` roots that are not notebooks.
-- **Inputs**: `--dataset`, as for `generate-job` below.
+- **Carry paths**: the step's `produces` roots that are not notebooks, then
+  the step's own `carry` list (paths relative to the product folder, such as
+  `Results/checkpoints`), then each `--carry-path-for <step> <path>`, each
+  once, validated exactly as `generate-job --carry-path` validates them.
+- **Inputs**: `--input-dataset <owner/slug>` (repeatable) on every job whose
+  service attaches inputs (its adapter declares `INPUT_DATASETS_ROOT`), then
+  `--input-dataset-for <step> <owner/slug>` on that step's job whatever its
+  service, each ref once and recorded as `generate-job --input-dataset`
+  records it (no `datasetChecks`); then `--dataset`, as for `generate-job`
+  below.
+
+Every job it writes is byte-identical to the one `generate-job` writes with
+the equivalent flags, and a call without these options writes what 0.38.0
+wrote.
 
 It prints `{jobs, skipped, summary, next}`: one row per job (`step`,
 `service`, `job`, `status` `generated` or `refused` with its `error`, and for a
