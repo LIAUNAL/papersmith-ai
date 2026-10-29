@@ -30,7 +30,7 @@
     {
       "key": "live-sync",
       "tier": 2,
-      "state": "open",
+      "state": "closed",
       "title": "State the server measures is not pushed to the dashboard",
       "fix": "Publish health_update whenever a measurement is taken; refetch /api/state on SSE reconnect.",
       "issues": [
@@ -40,7 +40,7 @@
         "100": "server.py:475-489 vs :514-515",
         "83": "ui/src/hooks/useWorkspaceEvents.ts:159,186-190"
       },
-      "proof": "fix/live-sync closes #100 (tests/test_command_center_health_broadcast.py); #83 open"
+      "proof": "PR #114 closed #100; #83 closed as superseded by command center SSE and PR #142"
     },
     {
       "key": "argv-boundaries",
@@ -108,15 +108,16 @@
     {
       "key": "file-url-paths",
       "tier": 3,
-      "state": "not-reproduced",
+      "state": "closed",
       "title": "A CLI converts its module URL by hand",
-      "fix": "Symptom not reproduced on macOS (jiti decodes the path); decide whether a source-level guard is worth it, and test on Windows.",
+      "fix": "Use fileURLToPath from node:url in cli.mjs.",
       "issues": [
         76
       ],
       "evidence": {
         "76": "skills/_core/deliberation/engine/cli.mjs:83"
-      }
+      },
+      "proof": "commit c01371c9 closes #76 using fileURLToPath"
     },
     {
       "key": "agent-cli-drift",
@@ -206,12 +207,13 @@
     {
       "key": "service-policy",
       "tier": 3,
-      "state": "needs-decision",
+      "state": "closed",
       "title": "Multi-account Kaggle scheduling vs service policy",
       "fix": "Record a policy review; the one-account-per-person attestation exists (core/team.py:39).",
       "issues": [
         77
-      ]
+      ],
+      "proof": "COLAB_ATTESTATION in core/team.py:39, PR #112 and test_no_personal_context_dependency.py closes #77"
     },
     {
       "key": "ingestion-device",
