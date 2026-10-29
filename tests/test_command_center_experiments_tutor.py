@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from skills._core.command_center import tutor
+from skills._core.command_center import experiments_tutor, tutor
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "experiments-tutor" / "SKILL.md"
@@ -122,6 +122,197 @@ class ProfileTests(_Root):
         self.assertEqual(tutor.MATH.tools, ("Read",))
         self.assertEqual(tutor.claude_argv("/bin/claude", "S", "P"),
                          tutor.claude_argv("/bin/claude", "S", "P", tutor.TURN_SCHEMA))
+
+
+TURN = {
+    "reply": "The scaler is fitted before the split (`src/demo/data.py`).",
+    "question": "Which subjects does the normalization see?",
+    "assessment": {"level": 2, "label": "justificada", "evidence": "the protocol says subject-wise",
+                   "gaps": ["normalization fitted on all subjects"]},
+    "next_step": "Read `src/demo/data.py` and find where the scaler is fitted.",
+    "decision_area": "validation",
+    "evidence": ["experiments/experiments-demo-v01.md"],
+    "risks": ["test subjects leak into training statistics"],
+    "deliberation_prompt": "In [exp:E1], fit the scaler inside each training fold.",
+}
+
+PROTOCOL = """# Experiments demo v01
+
+**Validation scheme:** leave-one-subject-out
+
+## Experiment [exp:E1] — Kernel versus EEGNet
+
+- **Hypothesis:** the fidelity kernel beats EEGNet
+- **Success criterion:** accuracy gain of at least 2 points
+
+### Expected Report: Accuracy per subject
+
+| subject | kernel | eegnet |
+|---|---|---|
+| s01 | | |
+"""
+
+SECRETS = ("SECRET-TEAM-123", "SECRET-LEDGER-456", "SECRET-WORKER-789", "SECRET-TOKEN-000",
+           "SECRET-STORE-111", "SECRET-ENV-222")
+
+
+def _write(root: Path, rel: str, text: str) -> Path:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _numbers(value) -> list:
+    if isinstance(value, bool) or value is None:
+        return []
+    if isinstance(value, (int, float)):
+        return [value]
+    if isinstance(value, dict):
+        return [n for v in value.values() for n in _numbers(v)]
+    if isinstance(value, list):
+        return [n for v in value for n in _numbers(v)]
+    return []
+
+
+class DigestTests(_Root):
+    def populate(self) -> None:
+        _write(self.root, "experiments/experiments-demo-v01.md", PROTOCOL)
+        poc = "implementations/demo/Poc"
+        _write(self.root, f"{poc}/AGREED.md", "# Agreed\n")
+        _write(self.root, "implementations/demo/src/demo/__init__.py", "")
+        _write(self.root, f"{poc}/Results/tables/accuracy.csv", "subject,kernel,eegnet\ns01,0.81,0.77\n")
+        _write(self.root, f"{poc}/Results/significance.json", json.dumps(
+            [{"comparison": "kernel vs eegnet", "test": "wilcoxon", "p_value": 0.031, "n": 9}]))
+        _write(self.root, f"{poc}/Results/timing.json", json.dumps(
+            {"schema": 1, "measurements": [{"host": "local:cpu", "unit": "epoch", "secondsPerUnit": 4.5}]}))
+        _write(self.root, "datasets/registry.json", json.dumps(
+            [{"slug": "toy-eeg", "role": "toy", "title": "Seeded toy set", "qc": {"status": "pass"}}]))
+
+    def test_a_fresh_workspace_has_nothing_measured_and_no_numbers(self) -> None:
+        digest = experiments_tutor.digest(self.root)
+        self.assertIs(digest["measured"], False)
+        self.assertIsNone(digest["protocol"])
+        self.assertEqual((digest["products"], digest["read"]), ([], []))
+        self.assertEqual(_numbers(digest), [])
+        prompt = experiments_tutor.build_prompt(self.root, "Is my toy set enough?", "ask", "toy-set",
+                                                {"turns": []})
+        self.assertIn("nothing measured yet", prompt)
+
+    def test_the_digest_carries_the_protocol_and_each_products_evidence(self) -> None:
+        self.populate()
+        digest = experiments_tutor.digest(self.root)
+        self.assertIs(digest["measured"], True)
+        self.assertEqual(digest["protocol"]["validation_scheme"], "leave-one-subject-out")
+        self.assertEqual(digest["protocol"]["experiments"][0]["id"], "E1")
+        self.assertEqual(digest["protocol"]["experiments"][0]["expected_reports"][0]["headers"],
+                         ["subject", "kernel", "eegnet"])
+        product = digest["products"][0]
+        self.assertEqual((product["repo"], product["name"], product["kind"]), ("demo", "Poc", "poc"))
+        self.assertEqual(product["significance"][0]["p_value"], 0.031)
+        self.assertEqual(product["tables"][0], {"path": "implementations/demo/Poc/Results/tables/accuracy.csv",
+                                                "headers": ["subject", "kernel", "eegnet"], "rows": 1})
+        self.assertEqual(product["timing"]["measurements"][0]["secondsPerUnit"], 4.5)
+        self.assertEqual(product["runs"], {"count": 0, "by_state": {}})
+        self.assertEqual(digest["datasets"]["items"][0]["slug"], "toy-eeg")
+        for path in ("experiments/experiments-demo-v01.md", "implementations/demo/Poc/AGREED.md",
+                     "implementations/demo/src/"):
+            self.assertIn(path, digest["read"])
+        self.assertNotIn("implementations/demo/Poc/Experimental_AGREED.md", digest["read"])
+
+    def test_the_digest_is_size_capped(self) -> None:
+        self.populate()
+        rows = [{"comparison": f"arm {i} vs baseline " + "x" * 150, "test": "wilcoxon", "p_value": 0.5}
+                for i in range(200)]
+        for repo in range(12):
+            for name in range(4):
+                folder = f"implementations/r{repo}/P{name}"
+                _write(self.root, f"{folder}/AGREED.md", "")
+                _write(self.root, f"{folder}/Results/significance.json", json.dumps(rows))
+        digest = experiments_tutor.digest(self.root)
+        self.assertLessEqual(len(json.dumps(digest, ensure_ascii=False)), experiments_tutor.MAX_DIGEST_CHARS)
+        self.assertIs(digest["truncated"], True)
+        self.assertIs(digest["measured"], True)
+
+    def test_the_digest_never_carries_credentials_or_remote_secrets(self) -> None:
+        self.populate()
+        poc = "implementations/demo/Poc"
+        _write(self.root, ".papersmith/team.json", json.dumps({"members": [{"token": SECRETS[0]}]}))
+        _write(self.root, f"{poc}/.remote-execution/ledger.jsonl", json.dumps(
+            {"kind": "submitted", "submissionId": "s1", "entrypoint": SECRETS[1], "worker": SECRETS[2]}) + "\n")
+        _write(self.root, f"{poc}/.remote-execution/token.json", json.dumps({"key": SECRETS[3]}))
+        _write(self.root, "skills/kaggle-accounts/scripts/accounts_cli.py",
+               'STORE_NAME = "store"\nSTORE_FILE = "accounts.json"\n')
+        _write(self.root, "skills/kaggle-accounts/store/accounts.json", json.dumps({"key": SECRETS[4]}))
+        _write(self.root, ".env", f"KAGGLE_KEY={SECRETS[5]}\n")
+        _write(self.root, f"{poc}/Results/tables/.remote-execution/leak.csv", f"k\n{SECRETS[3]}\n")
+        _write(self.root, f"{poc}/Results/tables/team.json", json.dumps([{"token": SECRETS[0]}]))
+        digest = experiments_tutor.digest(self.root)
+        self.assertEqual(digest["products"][0]["runs"], {"count": 1, "by_state": {"submitted": 1}})
+        prompt = experiments_tutor.build_prompt(self.root, "Check my runs", "ask", "compute", {"turns": []})
+        for text in (json.dumps(digest, ensure_ascii=False), prompt):
+            for secret in SECRETS + ("team.json", ".remote-execution", "accounts.json", ".env"):
+                self.assertNotIn(secret, text)
+
+
+class ExperimentsTurnTests(_Root):
+    def test_a_turn_records_the_operator_and_the_tutor(self) -> None:
+        seen = {}
+
+        def fake(root, system, prompt, images):
+            seen.update(system=system, prompt=prompt, images=images)
+            return dict(TURN), "fake"
+
+        turn = experiments_tutor.run_turn(self.root, "Is my split leak-free?", "evaluate", "validation",
+                                          runner=fake)
+        self.assertEqual((turn["decision_area"], turn["agent"]), ("validation", "fake"))
+        self.assertEqual(turn["deliberation_prompt"], TURN["deliberation_prompt"])
+        thread = json.loads((self.root / ".papersmith/experiments-tutor/thread.json").read_text())
+        self.assertEqual([t["role"] for t in thread["turns"]], ["reader", "tutor"])
+        self.assertEqual({k: thread["turns"][0][k] for k in ("mode", "area", "message")},
+                         {"mode": "evaluate", "area": "validation", "message": "Is my split leak-free?"})
+        self.assertEqual(tutor.load_thread(self.root)["turns"], [])
+        self.assertIn("mode: evaluate", seen["prompt"])
+        self.assertIn("decision area: validation", seen["prompt"])
+        self.assertIn("experiments tutor", seen["system"])
+        self.assertEqual(seen["images"], [])
+        experiments_tutor.run_turn(self.root, "And now?", "ask", "general", runner=fake)
+        self.assertIn("Which subjects does the normalization see?", seen["prompt"])
+
+    def test_bad_requests_and_malformed_answers_are_refused_not_recorded(self) -> None:
+        ok = lambda *a: (dict(TURN), "f")  # noqa: E731
+        for message, mode, area in (("hi", "grade-me", "general"), ("hi", "ask", "astrology"),
+                                    ("  ", "ask", "general"), (3, "ask", "general")):
+            with self.subTest(mode=mode, area=area), self.assertRaises(tutor.TutorError):
+                experiments_tutor.run_turn(self.root, message, mode, area, runner=ok)
+        for broken in ({**TURN, "decision_area": "astrology"}, {**TURN, "evidence": "a.md"},
+                       {**TURN, "risks": [3]}, {**TURN, "deliberation_prompt": None},
+                       {**TURN, "assessment": {**TURN["assessment"], "level": True}}, {"reply": "x"}):
+            with self.subTest(broken=broken), self.assertRaises(tutor.TutorError):
+                experiments_tutor.run_turn(self.root, "hi", "ask", "general",
+                                           runner=lambda *a, b=broken: (b, "f"))
+        self.assertEqual(tutor.load_thread(self.root, experiments_tutor.PROFILE)["turns"], [])
+
+    def test_the_label_follows_the_level(self) -> None:
+        answer = {**TURN, "assessment": {**TURN["assessment"], "level": 4, "label": "x"}}
+        turn = experiments_tutor.run_turn(self.root, "hi", "ask", "general", runner=lambda *a: (answer, "f"))
+        self.assertEqual(turn["assessment"]["label"], "defendible")
+
+    def test_the_schema_and_the_read_only_command(self) -> None:
+        schema = experiments_tutor.TURN_SCHEMA
+        self.assertEqual(schema["required"], ["reply", "question", "assessment", "next_step",
+                                              "decision_area", "evidence", "risks",
+                                              "deliberation_prompt"])
+        self.assertEqual(schema["properties"]["decision_area"]["enum"], list(AREAS) + ["general"])
+        self.assertEqual(experiments_tutor.AREAS, AREAS + ("general",))
+        self.assertEqual(experiments_tutor.PROFILE.modes, ("ask", "explain", "evaluate"))
+        profile = experiments_tutor.PROFILE
+        argv = tutor.claude_argv("/bin/claude", "S", "P", profile.schema, profile.tools)
+        self.assertEqual(argv[argv.index("--tools") + 1], "Read,Glob,Grep")
+        for word in ("Bash", "Write", "Edit"):
+            self.assertNotIn(word, argv[argv.index("--tools") + 1])
+        self.assertEqual(profile.folder, (".papersmith", "experiments-tutor"))
+
 
 
 if __name__ == "__main__":
