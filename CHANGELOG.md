@@ -20,8 +20,9 @@ number is `0`, breaking changes can still arrive without a major bump.
   projected to every harness). Pick a decision area — network architecture,
   hyperparameters and their search, ablation studies, statistical
   significance tests, the toy set's purpose, training strategies, upper
-  bounds (*techos*: oracle and reference results), the methods compared and their implementation, validation and leakage,
-  compute budget, reproducibility — and a mode; each turn reads the
+  bounds (*techos*: oracle and reference results), the methods compared and
+  their implementation, validation and leakage, compute budget,
+  reproducibility — and a mode; each turn reads the
   protocol, the approvals, the target's `src/` and the results, asks one
   question, rates the design 0–4 with quoted evidence, lists the paths read
   and the risks, and says "nothing measured yet" rather than supply a number.
