@@ -55,6 +55,16 @@ number is `0`, breaking changes can still arrive without a major bump.
 - `session-fit` no longer passes a unit that spans sessions merely because
   the job declares carry paths: it fails when the deadline rehearsal failed
   (no `partial.json`, among others) and warns when it was skipped.
+- The session-chain rule is stated once, naming no service, in
+  `remote-execution` ("The session-chain rule"), `remote-parallelism`, both
+  implementation skills and the four walk/build agents: estimate against the
+  80% session margin, checkpoint every epoch or trial into a declared carry
+  path, stop at `FORGE_SESSION_DEADLINE` with `partial.json`
+  (`{"remaining": [<unit ids>]}`, strings equal to the `FORGE_RUN_UNITS` it
+  was sent, written whatever `FORGE_RUN_MODE` says, since that is set only for
+  a smoke), send a chain with `submit --unit`, rehearse the deadline before the
+  first remote rehearsal, and count quota weeks. The agents' old line saying
+  one service carries nothing automatically is gone.
 
 ### Fixed
 

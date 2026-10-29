@@ -131,5 +131,47 @@ class PlacementPlanDoctrineTests(unittest.TestCase):
             self.assertIn(fragment, text, fragment)
 
 
+
+#: The chain rule's heading in both implementation skills and the four agents.
+CHAIN = "## Every remote unit fits one session, or resumes"
+
+
+class SessionChainDoctrineTests(unittest.TestCase):
+    """session-chains S6: the chain rule, stated once in each doctrine file
+    (both remote skills, both implementation skills, the four agents), with
+    every part of it, and naming no service."""
+
+    PLACES = {
+        SKILLS / "remote-execution" / "SKILL.md": "## The session-chain rule",
+        SKILLS / "remote-parallelism" / "SKILL.md": "## Every unit fits one session with margin, or resumes",
+        SKILLS / "proposal-implementation" / "SKILL.md": CHAIN,
+        SKILLS / "experimental-implementation" / "SKILL.md": CHAIN,
+        **{AGENTS / f"{agent}.md": CHAIN for agent in AGENT_BINDINGS},
+    }
+    FRAGMENTS = ("80%", "FORGE_SESSION_DEADLINE", "every epoch or trial", "--carry-path",
+                 '`{"remaining": [<unit ids>]}`', "FORGE_RUN_UNITS", "strings equal to the units",
+                 "FORGE_RUN_MODE", "submit --unit", "deadline-rehearsal",
+                 "before the first remote rehearsal", "quotaWeeks", "same account")
+
+    def section(self, path: Path, heading: str) -> str:
+        doc = path.read_text(encoding="utf-8")
+        self.assertEqual(doc.count(heading + "\n"), 1, f"{path}: {heading}")
+        return " ".join(doc.split(heading + "\n", 1)[1].split("\n## ", 1)[0].split())
+
+    def test_each_doctrine_states_the_whole_chain_rule_once(self) -> None:
+        for path, heading in self.PLACES.items():
+            text = self.section(path, heading)
+            for fragment in self.FRAGMENTS:
+                with self.subTest(path=path.name, fragment=fragment):
+                    self.assertIn(fragment, text)
+
+    def test_the_chain_rule_names_no_service(self) -> None:
+        for path, heading in self.PLACES.items():
+            text = self.section(path, heading).lower()
+            for word in ("kaggle", "colab"):
+                with self.subTest(path=path.name, word=word):
+                    self.assertNotIn(word, text)
+
+
 if __name__ == "__main__":
     unittest.main()

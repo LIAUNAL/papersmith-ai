@@ -146,6 +146,29 @@ unit really writes its checkpoint at least every `checkpointMinutes`, stops
 starting new work before the session's deadline, and resumes from the last
 checkpoint in the next session.
 
+What keeps that promise is the rest of the chain rule (stated in full in
+`remote-execution`, "The session-chain rule"), which a plan here assumes:
+
+- **Plan the chain.** `plan --resumable --checkpoint-minutes <minutes>` costs
+  a unit over the 80% margin as chained sessions on the same account, each
+  paying the setup again, instead of `split-first`; a job that declares carry
+  paths is planned this way.
+- **Checkpoint every epoch or trial** into a path the job declares with
+  `generate-job --carry-path`.
+- **Stop at the deadline.** The target reads `FORGE_SESSION_DEADLINE` before
+  each unit, epoch or trial, and when the next one may not finish it writes
+  its checkpoint and `partial.json` as `{"remaining": [<unit ids>]}`, then
+  exits 0. The ids are strings equal to the units it was sent, read from
+  `FORGE_RUN_UNITS`. The marker never depends on `FORGE_RUN_MODE`, which is
+  set only for a smoke.
+- **Send it as a campaign**, `submit --unit <id>` per unit, so a cut session
+  leaves its share for `remaining` to list.
+- **Rehearse the deadline before the first remote rehearsal**: `preflight
+  --unit <id> ...` and its `deadline-rehearsal` row.
+- **Count quota weeks.** An account whose assigned hours exceed its weekly
+  quota waits for the next reset, and a chain waits on its own account;
+  `schedule` and `plan` report `quotaWeeks` (see "Quota weeks" below).
+
 ## Planning a project's remote steps
 
 `assess` answers for one campaign. `schedule` answers for the project: given

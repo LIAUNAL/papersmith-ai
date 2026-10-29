@@ -1686,6 +1686,11 @@ have saved:
     `preflight` it prints.
 11. Every fix after a rehearsal moves the pin, which means regenerated jobs and
     re-minted consent tokens: fix what `preflight` reports first.
+12. A run longer than one session rehearses its deadline here first:
+    `preflight --unit <id> ...` with the job's own unit ids. A target that
+    ignores `FORGE_SESSION_DEADLINE`, writes no `partial.json`, writes ids that
+    are not its units, or checkpoints outside its carry paths loses the
+    session's hours remotely and is caught here in seconds.
 
 ## Smoke — a readiness gate, evidence-derived
 
@@ -2093,30 +2098,63 @@ A second backend brings its own answer to this section: nothing above the
 adapter seam knows a service exists, so nothing above it knows what a service
 needs.
 
-## Sessions, checkpoints and resume
+## The session-chain rule
 
 Every service stops a session after a continuous run time it publishes, and
-Colab also reclaims one it judges idle. Whatever the session had not written
-out by then is lost, together with the hours it cost. The rule for every
-agent that plans, builds or launches a remote run:
+some also reclaim a session they judge idle. Whatever the session had not
+written out by then is lost, together with the hours it cost. A run longer
+than one session is therefore planned, checked and executed as a chain of
+sessions that checkpoint and resume. The rule, for every agent that plans,
+builds or launches a remote run:
 
-1. **Every unit fits one session with margin, or checkpoints and resumes.**
-   A unit (a fold, a seed, a trial batch) whose upper-bound duration plus
-   setup does not fit comfortably inside the session limit is split (for
-   example one fold per unit) or written to checkpoint and resume from its
-   last checkpoint in a new session. Never plan a unit that only finishes
-   if the session is never interrupted.
-2. **Read `FORGE_SESSION_DEADLINE`.** Check it before starting each unit or
-   trial; when the next one may not finish before it, write the checkpoint
-   and the results so far, write `partial.json` in the working directory
-   naming the units it did not finish (`{"remaining": ["u3", ...]}`), and
-   exit 0. A `partial.json` without that list means none of the share's
-   units is finished.
-3. **Fetch promptly.** Fetch as soon as a run is terminal, and periodically
-   during a long one, so a reclaimed session still leaves its last snapshot
-   on this side.
-4. **Resubmit only the remaining units.** `remaining` names them; pass its
-   list unchanged to `distribute` and then `submit`.
+1. **Estimate against the session margin.** Compare the stage's upper-bound
+   estimate (`remote-parallelism` `estimate` and `plan` over
+   `Results/timing.json`) with 80% of the account's session limit, per unit
+   and for the whole session. A unit (a fold, a seed, a trial batch) that
+   fits is one session. One that does not is split along the declared axis
+   (never by arm) or declared resumable and planned as a chain of sessions
+   on the same account, each paying the setup again (`plan --resumable
+   --checkpoint-minutes`, `"resumable": true` in a `schedule` plan). Never
+   plan a unit that only finishes if the session is never interrupted.
+2. **Checkpoint every epoch or trial** into a path the job declares with
+   `generate-job --carry-path`, relative to the product folder; under the
+   runner the target writes it at `clone/<product>/<path>` below
+   `FORGE_CLONE_ROOT`.
+3. **Stop at the deadline.** Read `FORGE_SESSION_DEADLINE` (epoch seconds)
+   before starting each unit, epoch or trial; when the next one may not
+   finish before it, write the checkpoint and the results so far, write
+   `partial.json` in the working directory as `{"remaining": [<unit ids>]}`
+   naming the units it did not finish, and exit 0. The ids are strings equal
+   to the units it was sent, read from `FORGE_RUN_UNITS`: `remaining` and
+   the carry evidence intersect them with the submitted share, so any other
+   id is dropped. A `partial.json` without that list means none of the
+   share's units is finished. Write the marker whatever `FORGE_RUN_MODE`
+   says: the runner sets that variable only for a smoke.
+4. **Send a chain as a campaign**, `submit --unit <id>` per unit. A plain
+   `submit` records no share, so a session cut at its limit is never listed
+   as remaining; `submit` reports `carry: no-share` and a `carryWarning`.
+5. **Rehearse the deadline before the first remote rehearsal.** `preflight
+   --unit <id> ...` runs the `deadline-rehearsal` row (see "Before the first rehearsal"):
+   locally, under a deadline that has already arrived, the job must stop with
+   a valid `partial.json` and its carry paths, and a second session handed
+   only the remaining ids, with those paths restored, must finish them.
+   `session-fit` fails when it fails and warns when it was skipped; declared
+   carry paths alone never pass a unit that spans sessions.
+6. **Fetch promptly, then resubmit only the remaining units.** Fetch as soon
+   as a run is terminal, and periodically during a long one, so a reclaimed
+   session still leaves its last snapshot on this side. `remaining` names the
+   units left; pass its list unchanged to `distribute` and then `submit`,
+   which carries the declared paths to the continuation on the same account
+   (`carry: attached`, `carry: uploaded`, or `carry: unsupported`; see
+   below).
+7. **Count quota weeks.** An account whose assigned hours exceed its weekly
+   quota waits for the reset: `remote-parallelism` `schedule` and `plan` put
+   the wait in the makespan and report `quotaWeeks`, and a chain waits on its
+   own account rather than moving to one that cannot read its checkpoints.
+
+## Sessions, checkpoints and resume
+
+How each part of the session-chain rule above is carried out.
 
 **Declared limits.** Each adapter declares its service's limit through
 `Adapter.session_limit_seconds(machine_shape=None)` -- a classmethod, not a
