@@ -173,6 +173,25 @@ PLACEMENT_RULES = {"localLimitSeconds": LOCAL_LIMIT_SECONDS, "pocBudgetSeconds":
 TIMING_KEYS = {"schema", "measurements", "scales"}
 MEASUREMENT_REQUIRED = ("measuredAt", "host", "device", "arm", "unit", "secondsPerUnit", "unitsMeasured")
 MEASUREMENT_KEYS = set(MEASUREMENT_REQUIRED) | {"setupSeconds"}
+#: Schema 2 adds, per record, what each host is (`hosts`), and per measurement
+#: the candidate it ran as, its batch and loader settings, and the split of an
+#: epoch into time spent waiting on data and time spent computing. Schema 1
+#: records keep loading exactly as before.
+TIMING_SCHEMAS = (1, 2)
+TIMING_KEYS_V2 = TIMING_KEYS | {"hosts"}
+HOST_INFO_KEYS = ("cpuCount", "ramGB", "mps", "cuda")
+SETTING_KEYS = ("threads", "batchSize", "numWorkers", "pinMemory", "prefetch", "dtype", "dataSource")
+MEASUREMENT_KEYS_V2 = MEASUREMENT_KEYS | {"candidate", "processes", "loadSeconds", "computeSeconds",
+                                         *SETTING_KEYS}
+#: `local-cpu-<processes>`, `local-mps`, `local-cuda`, or `<host>:<owner>/<machine>`
+#: for a remote host, where a machine named `cpu` is a CPU-only session.
+CANDIDATE_PATTERN = re.compile(r"^(local-cpu-[1-9][0-9]*|local-mps|local-cuda|"
+                               r"[a-z0-9][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*)$")
+DTYPE_PATTERN = re.compile(r"^[a-z][a-z0-9]*$")
+DATA_SOURCES = ("raw", "cached")
+#: loadSeconds + computeSeconds may exceed secondsPerUnit by at most this share
+#: (clock granularity); past it the split does not describe the epoch it splits.
+LOAD_SPLIT_TOLERANCE = 0.05
 #: `local`, or `<host slug>:<owner slug>` for a remote host. The slug is never
 #: a fixed list: this CLI does not name the services a team rents.
 HOST_PATTERN = re.compile(r"^(local|[a-z0-9][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$")
@@ -484,11 +503,17 @@ def load_timing(path: Path, name: str) -> dict:
 
     if not isinstance(data, dict):
         bad("the record must be a JSON object")
-    unknown = sorted(set(data) - TIMING_KEYS)
+    schema = data.get("schema")
+    v2 = schema == 2 and not isinstance(schema, bool)
+    unknown = sorted(set(data) - (TIMING_KEYS_V2 if v2 else TIMING_KEYS))
     if unknown:
-        bad(f"unknown key(s) {', '.join(unknown)}; schema 1 holds schema, measurements and scales")
-    if data.get("schema") != 1 or isinstance(data.get("schema"), bool):
-        bad(f"schema must be 1, got {data.get('schema')!r}")
+        bad(f"unknown key(s) {', '.join(unknown)}; "
+            + ("schema 2 holds schema, hosts, measurements and scales" if v2 else
+               "schema 1 holds schema, measurements and scales"))
+    if isinstance(schema, bool) or schema not in TIMING_SCHEMAS:
+        bad(f"schema must be 1 or 2, got {schema!r}")
+    if v2:
+        check_hosts(data.get("hosts"), bad)
     measurements = data.get("measurements")
     if not isinstance(measurements, list) or not measurements:
         bad("measurements must be a non-empty list")
@@ -499,7 +524,7 @@ def load_timing(path: Path, name: str) -> dict:
         missing = [key for key in MEASUREMENT_REQUIRED if key not in item]
         if missing:
             bad(f"{where} is missing {', '.join(missing)}")
-        extra = sorted(set(item) - MEASUREMENT_KEYS)
+        extra = sorted(set(item) - (MEASUREMENT_KEYS_V2 if v2 else MEASUREMENT_KEYS))
         if extra:
             bad(f"{where} has unknown key(s) {', '.join(extra)}")
         stamp = item["measuredAt"]
@@ -523,6 +548,8 @@ def load_timing(path: Path, name: str) -> dict:
             bad(f"{where}.unitsMeasured must be a positive whole number, got {item['unitsMeasured']!r}")
         if "setupSeconds" in item and (not is_number(item["setupSeconds"]) or item["setupSeconds"] < 0):
             bad(f"{where}.setupSeconds must be a non-negative number, got {item['setupSeconds']!r}")
+        if v2:
+            check_candidate_row(where, item, bad)
     scales = data.get("scales")
     if not isinstance(scales, dict) or sorted(scales) != sorted(STAGES):
         bad("scales must hold exactly poc and full, copied from the approved protocol and the declared pilot")
@@ -534,6 +561,147 @@ def load_timing(path: Path, name: str) -> dict:
             if not is_count(scale[key]):
                 bad(f"scales.{stage}.{key} must be a positive whole number, got {scale[key]!r}")
     return data
+
+
+def check_hosts(hosts, bad) -> None:
+    """Schema 2's `hosts`: what each host is, keyed like a measurement's host."""
+    if not isinstance(hosts, dict):
+        bad("hosts must map each host (local or <host>:<owner>) to its cpuCount, ramGB, mps and cuda")
+    for host, info in hosts.items():
+        where = f"hosts[{host!r}]"
+        if not HOST_PATTERN.match(host):
+            bad(f"{where}: a host is local or <host>:<owner>")
+        if not isinstance(info, dict) or sorted(info) != sorted(HOST_INFO_KEYS):
+            bad(f"{where} must hold exactly {', '.join(HOST_INFO_KEYS)}")
+        if not is_count(info["cpuCount"]):
+            bad(f"{where}.cpuCount must be a positive whole number, got {info['cpuCount']!r}")
+        if info["ramGB"] is not None and (not is_number(info["ramGB"]) or info["ramGB"] <= 0):
+            bad(f"{where}.ramGB must be a positive number or null, got {info['ramGB']!r}")
+        for key in ("mps", "cuda"):
+            if not isinstance(info[key], bool):
+                bad(f"{where}.{key} must be true or false, got {info[key]!r}")
+
+
+def candidate_of(item: dict) -> str:
+    """The candidate a measurement ran as: its own, or its host on schema 1."""
+    return item.get("candidate") or item["host"]
+
+
+def check_candidate_row(where: str, item: dict, bad) -> None:
+    """A schema 2 measurement's candidate agrees with its host and device, and
+    its settings and load/compute split are well formed."""
+    host, device = item["host"], item["device"]
+    if "candidate" in item:
+        candidate = item["candidate"]
+        if not isinstance(candidate, str) or not CANDIDATE_PATTERN.match(candidate):
+            bad(f"{where}.candidate must be local-cpu-<processes>, local-mps, local-cuda or "
+                f"<host>:<owner>/<machine>, got {candidate!r}")
+        if candidate.startswith("local-"):
+            if host != "local":
+                bad(f"{where}: candidate {candidate} runs on local, not on {host}")
+            wanted = {"local-mps": "mps", "local-cuda": "cuda"}.get(candidate, "cpu")
+            if device.split(":", 1)[0] != wanted:
+                bad(f"{where}: candidate {candidate} computes on {wanted}, but the device recorded is {device}")
+            if candidate.startswith("local-cpu-") and "processes" in item \
+                    and item["processes"] != int(candidate.rsplit("-", 1)[1]):
+                bad(f"{where}: candidate {candidate} runs {candidate.rsplit('-', 1)[1]} process(es), "
+                    f"not {item['processes']!r}")
+        else:
+            owner_host, machine = candidate.split("/", 1)
+            if owner_host != host:
+                bad(f"{where}: candidate {candidate} runs on {owner_host}, not on {host}; a candidate is "
+                    "never measured on another host")
+            if (machine.lower() == "cpu") != (device == "cpu"):
+                bad(f"{where}: candidate {candidate} was measured on device {device}: a CPU-only machine "
+                    "records cpu and an accelerator machine records the accelerator that arrived")
+    for key in ("threads", "processes", "batchSize"):
+        if key in item and not is_count(item[key]):
+            bad(f"{where}.{key} must be a positive whole number, got {item[key]!r}")
+    for key in ("numWorkers", "prefetch"):
+        value = item.get(key)
+        if key in item and value is not None and (not isinstance(value, int) or isinstance(value, bool)
+                                                  or value < 0):
+            bad(f"{where}.{key} must be a non-negative whole number, got {value!r}")
+    if "pinMemory" in item and not isinstance(item["pinMemory"], bool):
+        bad(f"{where}.pinMemory must be true or false, got {item['pinMemory']!r}")
+    if "dtype" in item and (not isinstance(item["dtype"], str) or not DTYPE_PATTERN.match(item["dtype"])):
+        bad(f"{where}.dtype must be a dtype name such as float32, got {item['dtype']!r}")
+    if "dataSource" in item and item["dataSource"] not in DATA_SOURCES:
+        bad(f"{where}.dataSource must be one of {', '.join(DATA_SOURCES)}, got {item['dataSource']!r}")
+    for key in ("loadSeconds", "computeSeconds"):
+        if key in item and (not is_number(item[key]) or item[key] < 0):
+            bad(f"{where}.{key} must be a non-negative number, got {item[key]!r}")
+    split = item.get("loadSeconds", 0) + item.get("computeSeconds", 0)
+    if split > item["secondsPerUnit"] * (1 + LOAD_SPLIT_TOLERANCE):
+        bad(f"{where}: loadSeconds + computeSeconds ({num(split)} s) exceed the epoch's secondsPerUnit "
+            f"({num(item['secondsPerUnit'])} s)")
+
+
+def settings_of(item: dict) -> tuple:
+    return tuple(item.get(key) for key in SETTING_KEYS)
+
+
+def per_unit_of(items: list[dict]) -> float:
+    by_arm: dict[str, list[float]] = {}
+    for item in items:
+        by_arm.setdefault(item["arm"], []).append(float(item["secondsPerUnit"]))
+    return sum(sum(values) / len(values) for values in by_arm.values()) / len(by_arm)
+
+
+def best_setting(items: list[dict]) -> tuple[list[dict], int]:
+    """The rows of a candidate's fastest measured setting, and how many settings
+    it was measured under. Settings are never pooled: a sweep row is one try."""
+    groups: dict[tuple, list[dict]] = {}
+    for item in items:
+        groups.setdefault(settings_of(item), []).append(item)
+    best = min(groups.values(), key=per_unit_of)
+    return best, len(groups)
+
+
+def load_share(items: list[dict]) -> float | None:
+    """The share of an epoch spent waiting on data, over the rows that split it."""
+    split = [item for item in items if "loadSeconds" in item and "computeSeconds" in item]
+    total = sum(item["loadSeconds"] + item["computeSeconds"] for item in split)
+    return sum(item["loadSeconds"] for item in split) / total if split and total > 0 else None
+
+
+def candidate_estimate(items: list[dict], scale: dict) -> dict:
+    """A schema 2 candidate's estimate: the one formula over its fastest setting."""
+    rows, tried = best_setting(items)
+    estimate = host_estimate(rows, scale)
+    candidate = candidate_of(rows[0])
+    processes = (int(candidate.rsplit("-", 1)[1]) if candidate.startswith("local-cpu-")
+                 else rows[0].get("processes", 1))
+    share = load_share(rows)
+    estimate.update({"candidate": candidate, "processes": processes,
+                     "settings": {key: rows[0][key] for key in SETTING_KEYS if key in rows[0]},
+                     "settingsMeasured": tried, "loadShare": None if share is None else num(share)})
+    return estimate
+
+
+def item_host(estimate: dict) -> str:
+    candidate = estimate["candidate"]
+    return "local" if candidate.startswith("local-") else candidate.split("/", 1)[0]
+
+
+def measured_candidates(data: dict) -> tuple[dict[str, list[dict]], dict[str, list[dict]]]:
+    """The record's rows per host and per candidate, or a `mixed-devices`
+    refusal when one candidate was timed on two devices. On schema 1 the
+    candidate is the host, so the refusal reads as it always has."""
+    by_host: dict[str, list[dict]] = {}
+    by_candidate: dict[str, list[dict]] = {}
+    for item in data["measurements"]:
+        by_host.setdefault(item["host"], []).append(item)
+        by_candidate.setdefault(candidate_of(item), []).append(item)
+    for candidate, items in by_candidate.items():
+        devices = sorted({item["device"] for item in items})
+        if len(devices) > 1:
+            if data["schema"] == 1:
+                raise Refusal("mixed-devices", f"host {candidate} was timed on {', '.join(devices)}: timing is "
+                                               "never pooled across machines; keep one device per host in the record")
+            raise Refusal("mixed-devices", f"candidate {candidate} was timed on {', '.join(devices)}: timing is "
+                                           "never pooled across machines; keep one device per candidate")
+    return by_host, by_candidate
 
 
 def host_estimate(measurements: list[dict], scale: dict) -> dict:
@@ -612,24 +780,32 @@ def cmd_estimate(args, root: Path, today: str) -> dict:
         path = path if path.is_absolute() else root / path
     data = load_timing(path, args.timing)
 
-    by_host: dict[str, list[dict]] = {}
-    for item in data["measurements"]:
-        by_host.setdefault(item["host"], []).append(item)
-    for host, items in by_host.items():
-        devices = sorted({item["device"] for item in items})
-        if len(devices) > 1:
-            raise Refusal("mixed-devices", f"host {host} was timed on {', '.join(devices)}: timing is never "
-                                           "pooled across machines; keep one device per host in the record")
+    by_host, by_candidate = measured_candidates(data)
     hosts = ["local", *sorted(host for host in by_host if host != "local")]
     hosts += [host for host in asked if host not in hosts]
-    estimates = {
-        name: {host: host_estimate(by_host[host], data["scales"][name]) if host in by_host else UNMEASURED
-               for host in hosts}
-        for name in stages}
+    if data["schema"] == 1:
+        estimates = {
+            name: {host: host_estimate(by_host[host], data["scales"][name]) if host in by_host else UNMEASURED
+                   for host in hosts}
+            for name in stages}
+    else:
+        per_candidate = {name: {candidate: candidate_estimate(items, data["scales"][name])
+                                for candidate, items in sorted(by_candidate.items())} for name in stages}
+        estimates = {name: {host: min((item for item in per_candidate[name].values()
+                                       if item_host(item) == host),
+                                      key=lambda item: (item["high"], item["candidate"]), default=UNMEASURED)
+                            for host in hosts}
+                     for name in stages}
     result = {"estimates": estimates, "placement": {name: placement(name, estimates[name]) for name in stages},
               "placementRules": PLACEMENT_RULES, "timing": args.timing, "range": RANGE_NOTE,
               "unmeasuredMeans": "no measurement on that host; a remote host is never estimated from local timings",
               "launchAuthorization": False}
+    if data["schema"] == 2:
+        result["candidateEstimates"] = per_candidate
+        result["hostInfo"] = data["hosts"]
+        result["candidateNote"] = ("each candidate is estimated from its own rows at its fastest measured "
+                                   "setting; the estimate is serial work (processes and accounts are "
+                                   "counted by plan)")
     if args.record is not None:
         result["recorded"] = record(root, args.record, result, today, prefix="estimate")
     return result
@@ -982,8 +1158,10 @@ def per_service(where: str, value, services: list[str], allow_zero: bool) -> dic
 def timing_unit_minutes(root: Path, where: str, service: str, spec, units: int) -> tuple[float, str]:
     """A step's per-unit minutes on one service from that service's own timing
     record: the stage's work at the estimate's upper bound, over the step's units."""
-    if not isinstance(spec, dict) or set(spec) != {"path", "host", "stage"}:
-        raise Refusal("plan-invalid", f"{where}: timing.{service} holds exactly path, host and stage")
+    if not isinstance(spec, dict) or not {"path", "host", "stage"} <= set(spec) <= {"path", "host", "stage",
+                                                                                      "candidate"}:
+        raise Refusal("plan-invalid", f"{where}: timing.{service} holds path, host and stage, and a "
+                                      "candidate when its host holds several")
     host, stage = spec["host"], spec["stage"]
     if not isinstance(host, str) or not HOST_PATTERN.match(host) or host.split(":")[0] != service:
         raise Refusal("plan-invalid", f"{where}: timing.{service}.host must be {service}:<owner>, the service's "
@@ -995,13 +1173,21 @@ def timing_unit_minutes(root: Path, where: str, service: str, spec, units: int) 
     path = Path(spec["path"])
     data = load_timing(path if path.is_absolute() else root / path, spec["path"])
     items = [item for item in data["measurements"] if item["host"] == host]
+    if "candidate" in spec:
+        items = [item for item in items if candidate_of(item) == spec["candidate"]]
     if not items:
-        raise Refusal("plan-invalid", f"{where}: {spec['path']} has no measurement on {host} ({UNMEASURED}); "
+        raise Refusal("plan-invalid", f"{where}: {spec['path']} has no measurement on "
+                                      f"{spec.get('candidate', host)} ({UNMEASURED}); "
                                       "a remote host is never estimated from another host's timings")
+    candidates = sorted({candidate_of(item) for item in items})
+    if len(candidates) > 1:
+        raise Refusal("plan-invalid", f"{where}: {host} holds candidates {', '.join(candidates)}: name one as "
+                                      f"timing.{service}.candidate (timing is never pooled across machines)")
     devices = sorted({item["device"] for item in items})
     if len(devices) > 1:
         raise Refusal("mixed-devices", f"host {host} was timed on {', '.join(devices)}: timing is never "
                                        "pooled across machines; keep one device per host in the record")
+    items = best_setting(items)[0]
     estimate = host_estimate(items, data["scales"][stage])
     scale = data["scales"][stage]
     work = estimate["secondsPerUnit"] * scale["epochs"] * scale["folds"] * scale["seeds"] * scale["arms"]

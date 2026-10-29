@@ -162,7 +162,7 @@ The plan (`--plan plan.json`, schema 1):
  "setupMinutes": <number or {service: number}, optional default>,
  "steps": [{"id": "<step id>", "units": <int>, "services": ["<service>", ...],
             "unitMinutes": {"<service>": <minutes>},
-            "timing": {"<service>": {"path": "Results/timing.json", "host": "<service>:<owner>", "stage": "poc" | "full"}},
+            "timing": {"<service>": {"path": "Results/timing.json", "host": "<service>:<owner>", "stage": "poc" | "full", "candidate": "<optional>"}},
             "requires": ["<step id>", ...], "setupMinutes": <number or {service: number}>,
             "stampsIdentical": false, "axis": "<seed | fold | subject block>",
             "resumable": false, "checkpointMinutes": <minutes, only with "resumable": true>}],
@@ -175,7 +175,9 @@ The plan (`--plan plan.json`, schema 1):
   service's own host in a schema-1 timing record (`timing`): the stage's work
   at the estimate's upper bound (+20%) divided over the step's units, setup
   excluded. A timing host of another service, or an unmeasured one, is
-  refused: timing is never pooled across machines. A setup is required
+  refused: timing is never pooled across machines. On a schema 2 record a
+  host holding several candidates needs `candidate` named, and the
+  candidate's fastest measured setting is the one read. A setup is required
   (`setupMinutes`, per step or for the plan).
 - **One service per step.** Every step runs on one of its `services`; it runs
   on several only when it declares `stampsIdentical`, and then `reasons` says
@@ -339,6 +341,24 @@ product folder, declared among the step's produces roots:
 revision) for `full` and from the declared pilot for `poc`; nothing guesses
 it. A record with any other shape is refused (`timing-invalid`).
 
+**Schema 2: one row per candidate.** The kit's timing probe
+(`proposal-implementation/assets/kit/nb/timing_probe.py`) writes schema 2,
+and schema 1 records keep loading with unchanged outputs. Schema 2 adds
+`hosts` (`{"<host>": {"cpuCount", "ramGB", "mps", "cuda"}}`) and, per
+measurement, optional keys: `candidate` (`local-cpu-<processes>`,
+`local-mps`, `local-cuda` or `<host>:<owner>/<machine>`, where a machine
+named `cpu` is a CPU-only session), `threads`, `processes`, `batchSize`,
+`numWorkers`, `pinMemory`, `prefetch`, `dtype`, `dataSource` (`raw` or
+`cached`), and `loadSeconds` + `computeSeconds`, the epoch split into time
+spent waiting on data and time spent computing. A candidate must agree with
+its host and device: `local-cpu-*` records `cpu`, a remote `/cpu` machine
+records `cpu`, and an accelerator machine records the accelerator that
+arrived. `estimate` then adds `candidateEstimates: {stage: {candidate:
+{…, candidate, processes, settings, settingsMeasured, loadShare}}}`, each
+from the candidate's own rows at its fastest measured setting (settings are
+never pooled), and each host's row in `estimates` is its fastest candidate.
+The estimate stays serial work; `plan` counts processes and accounts.
+
 **The one formula.** For a stage `s` and a host `h` with measurements:
 
 ```
@@ -357,7 +377,9 @@ to `high`, ±20%, single-probe extrapolation — never a point claim.
 whose timing lands in the same record under its own `host` slug. Local timings
 are never multiplied by a guessed factor to stand in for a remote one, and one
 host timed on two devices is refused (`mixed-devices`), because timing never
-pools across machines.
+pools across machines. On schema 2 the refusal is keyed by candidate: one
+host may hold `local-cpu-4` and `local-mps` rows, and one candidate timed on
+two devices is refused.
 
 **Placement rules: twenty minutes, five hours.** Both read each estimate's
 upper bound (`high`), so a stage is placed by the conservative end of its
@@ -408,8 +430,8 @@ Success prints one JSON object on stdout. A refusal prints
 | `record-outside-workspace` | `--record` resolves outside the workspace, or its record folder is a link |
 | `record-missing` | `--record` is not an existing directory |
 | `timing-missing` | `--timing` names no file: run the timing probe first |
-| `timing-invalid` | the timing record is not schema 1: wrong schema, a missing or unknown key, a non-positive duration, a unit other than `epoch`, a bad host or device, or `scales` without both stages |
-| `mixed-devices` | one host was timed on more than one device; timing is never pooled across machines |
+| `timing-invalid` | the timing record is not schema 1 or 2: wrong schema, a schema 2 record without `hosts`, a candidate that disagrees with its host or device, a missing or unknown key, a non-positive duration, a unit other than `epoch`, a bad host or device, or `scales` without both stages |
+| `mixed-devices` | one host (schema 1) or one candidate (schema 2) was timed on more than one device; timing is never pooled across machines |
 | `timing-outside-workspace` | with `--record`, `--timing` resolves outside the workspace |
 | `accounts-invalid` | an `--account` or accounts-file entry is malformed: a bad owner or service, non-positive sessions or hours, a quota that is neither positive nor `unknown`, a `colab` account without its tier, or a tier on another service |
 | `accounts-file-missing` | `--accounts-file` names no file |
