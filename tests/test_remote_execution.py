@@ -8668,7 +8668,8 @@ class DistributionTests(unittest.TestCase):
         """Design's own worked example: ragged rows `w1(2), w2(1), w3(2)`
         over six units. Pins the LITERAL expected tuple, not merely
         repeat-equality -- a stable-but-wrong order would repeat exactly as
-        faithfully as a right one.
+        faithfully as a right one. The sixth unit, beyond the five places,
+        joins the first place's queue (slot queues S1).
         """
         adapter = MultiWorkerFakeAdapter(workers=[("w1", 2), ("w2", 1), ("w3", 2)])
         units = ("u_a", "u_b", "u_c", "u_d", "u_e", "u_f")
@@ -8677,11 +8678,14 @@ class DistributionTests(unittest.TestCase):
         )
 
         by_worker = {a.plan.worker: a.units for a in result.assignments}
-        self.assertEqual(by_worker["w1"], ("u_a", "u_d"))
+        self.assertEqual(by_worker["w1"], ("u_a", "u_d", "u_f"))
         self.assertEqual(by_worker["w2"], ("u_b",))
         self.assertEqual(by_worker["w3"], ("u_c", "u_e"))
-        self.assertEqual(result.unplaced, ("u_f",))
+        self.assertEqual(result.unplaced, ())
         self.assertEqual(result.places, 5)
+        self.assertEqual(
+            PACKER.slot_shares(result.assignments[0]), (("u_a", "u_f"), ("u_d",))
+        )
 
     def test_round_robin_is_deterministic_across_repeated_calls(self) -> None:
         """Same explicit expected tuple as the worked example above,
@@ -8690,7 +8694,7 @@ class DistributionTests(unittest.TestCase):
         satisfy.
         """
         units = ("u_a", "u_b", "u_c", "u_d", "u_e", "u_f")
-        expected = {"w1": ("u_a", "u_d"), "w2": ("u_b",), "w3": ("u_c", "u_e")}
+        expected = {"w1": ("u_a", "u_d", "u_f"), "w2": ("u_b",), "w3": ("u_c", "u_e")}
 
         for _ in range(2):
             adapter = MultiWorkerFakeAdapter(workers=[("w1", 2), ("w2", 1), ("w3", 2)])
@@ -8699,7 +8703,7 @@ class DistributionTests(unittest.TestCase):
             )
             by_worker = {a.plan.worker: a.units for a in result.assignments}
             self.assertEqual(by_worker, expected)
-            self.assertEqual(result.unplaced, ("u_f",))
+            self.assertEqual(result.unplaced, ())
 
     def test_small_campaign_spreads_instead_of_piling_on_one_account(self) -> None:
         """Doubles as the counterexample against pre-slicing
@@ -8723,10 +8727,11 @@ class DistributionTests(unittest.TestCase):
 
     # ---- remainder and invariants ----
 
-    def test_twelve_units_against_ten_places_reports_two_unplaced_by_identity(self) -> None:
+    def test_twelve_units_against_ten_places_queue_the_two_beyond_them(self) -> None:
         """An over-subscribed campaign: five workers at capacity two (ten
-        places) against twelve units. Ten are assigned; `unplaced` names
-        the exact two remaining identities, not merely a count of two.
+        places) against twelve units. All twelve are assigned (slot queues
+        S1): the two beyond the ten places join the first two places'
+        queues, by identity, and nothing is left `unplaced`.
         """
         adapter = MultiWorkerFakeAdapter(
             workers=[("w1", 2), ("w2", 2), ("w3", 2), ("w4", 2), ("w5", 2)],
@@ -8736,8 +8741,12 @@ class DistributionTests(unittest.TestCase):
             adapter=adapter, units=units, ledger_lines=[], live_digest="d",
         )
         assigned_units = {unit for a in result.assignments for unit in a.units}
-        self.assertEqual(len(assigned_units), 10)
-        self.assertEqual(result.unplaced, ("u10", "u11"))
+        self.assertEqual(len(assigned_units), 12)
+        self.assertEqual(result.unplaced, ())
+        by_worker = {a.plan.worker: a.units for a in result.assignments}
+        self.assertEqual(by_worker["w1"], ("u0", "u5", "u10"))
+        self.assertEqual(by_worker["w2"], ("u1", "u6", "u11"))
+        self.assertEqual(by_worker["w3"], ("u2", "u7"))
 
     def test_conservation_every_unit_appears_exactly_once(self) -> None:
         """`assignments` (unioned across workers) plus `unplaced` must
@@ -9057,7 +9066,7 @@ class DistributeCliTests(unittest.TestCase):
                 self.assertIn("cap", row)
                 self.assertIn("requested", row)
 
-    def test_cli_distribute_partial_is_still_exit_zero(self) -> None:
+    def test_cli_distribute_queues_units_beyond_the_places_exit_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook = self._target_and_notebook(tmp)
             adapter = MultiWorkerFakeAdapter(workers=[("w1", 2)])
@@ -9070,8 +9079,13 @@ class DistributeCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             payload = json.loads(printed)
             self.assertEqual(payload["places"], 2)
-            self.assertEqual(payload["assigned"], 2)
-            self.assertEqual(payload["unplaced"], ["u2"])
+            self.assertEqual(payload["assigned"], 3)
+            self.assertEqual(payload["unplaced"], [])
+            self.assertEqual(payload["assignments"][0]["shares"], [["u0", "u2"], ["u1"]])
+            self.assertEqual(
+                [(row["worker"], row["slot"], row["units"]) for row in payload["queues"]],
+                [("w1", 1, ["u0", "u2"]), ("w1", 2, ["u1"])],
+            )
 
     def test_cli_distribute_zero_places_with_units_is_exit_one_json_still_printed(
         self,
@@ -9243,8 +9257,9 @@ class CampaignSubmitTests(unittest.TestCase):
                 workers=[(w, 1) for w in worker_ids],
                 unauthorized=frozenset({"w5"}),
             )
-            # Four healthy accounts, cap 1 each: 4 places for 6 units, 2
-            # unplaced, the fifth (revoked) named in `skipped` with reason.
+            # Four healthy accounts, cap 1 each: 4 places for 6 units, the
+            # two beyond them queued on w1 and w2 (slot queues S1), the
+            # fifth (revoked) named in `skipped` with reason.
             units = tuple(f"u{i}" for i in range(6))
 
             # Phase 4 (Finding 3; Decisions 4, 5): same visible cast as
@@ -9264,7 +9279,11 @@ class CampaignSubmitTests(unittest.TestCase):
             self.assertEqual(len(result["assignments"]), 4)
             submitted_workers = {row["worker"] for row in result["assignments"]}
             self.assertEqual(submitted_workers, {"w1", "w2", "w3", "w4"})
-            self.assertEqual(len(result["unplaced"]), 2)
+            self.assertEqual(result["unplaced"], [])
+            self.assertEqual(
+                {row["worker"]: row["units"] for row in result["assignments"]},
+                {"w1": ["u0", "u4"], "w2": ["u1", "u5"], "w3": ["u2"], "w4": ["u3"]},
+            )
             self.assertEqual(len(result["skipped"]), 1)
             self.assertEqual(result["skipped"][0]["worker"], "w5")
             self.assertIn("unauthorized", result["skipped"][0]["reason"])
@@ -26338,16 +26357,23 @@ class RemainingUnitsTests(unittest.TestCase):
             self.assertEqual(report["remaining"], [])
 
     def test_a_quarantined_returned_result_does_not_count(self) -> None:
-        # The verifier's scenario: a second campaign on the same lane makes
-        # the first submission's result stale, so `fetch` quarantines it.
+        # The verifier's scenario, as a ledger 0.39.0 wrote it: a second
+        # share recorded in a running share's lane makes the first result
+        # stale, so `fetch` quarantines it. `submit` no longer records one
+        # (slot queues L4), so the two events are appended by hand.
         units = ("u0", "u1", "u2")
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook = self._target_and_notebook(tmp)
             adapter = FakeAdapter(worker_id="w1", capacity=1)
-            first = self._campaign(target, notebook, adapter, ("u0", "u1"))
-            before = self._remaining(target, notebook, units)
-            self.assertEqual(before["inFlight"], ["u0"])
-            second = self._campaign(target, notebook, adapter, tuple(before["remaining"]))
+            ledger_path = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                           / REMOTE_CLI.LEDGER_FILENAME)
+            for sid, share in (("s1", ["u0", "u1"]), ("s2", ["u2"])):
+                LEDGER.append(ledger_path, LEDGER.submitted_event(
+                    entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+                    submission_id=sid, worker="w1", requested_capacity=1,
+                    granted_capacity=1, units=share))
+            first = {"assignments": [{"submissionId": "s1"}]}
+            second = {"assignments": [{"submissionId": "s2"}]}
             stale = self._fetch_through(
                 target, notebook, adapter, first["assignments"][0]["submissionId"],
                 Path(tmp) / "d1")
@@ -26358,8 +26384,8 @@ class RemainingUnitsTests(unittest.TestCase):
                 Path(tmp) / "d2")
             self.assertEqual(current["verdict"], "current")
             report = self._remaining(target, notebook, units)
-            self.assertEqual(report["complete"], ["u1"])
-            self.assertEqual(report["remaining"], ["u0", "u2"])
+            self.assertEqual(report["complete"], ["u2"])
+            self.assertEqual(report["remaining"], ["u0", "u1"])
 
     def test_a_share_too_large_for_one_ledger_line_refuses_before_any_submit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -26721,8 +26747,11 @@ class KernelCarryTests(unittest.TestCase):
             self._submit(target, notebook, adapter, ("u2",))
 
             (row,) = adapter.pushed
-            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry-2")
+            # The running continuation holds slot 1: the share takes slot 2
+            # and its own kernel (slot queues L4), not an alternate of slot 1.
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-slot-2")
             (job,) = adapter.jobs
+            self.assertEqual(job.run_config["slot"], 2)
             self.assertEqual(job.run_config["carryProtected"],
                              ["w1/papersmith-search-a", "w1/papersmith-search-a-carry"])
 
@@ -26735,10 +26764,12 @@ class KernelCarryTests(unittest.TestCase):
             self._submit(target, notebook, adapter, ("u1",))
 
             (row,) = adapter.pushed
-            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
+            # The running kernel holds slot 1: the share takes slot 2 and its
+            # own kernel and ledger lane (slot queues L4).
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-slot-2")
             (job,) = adapter.jobs
             self.assertEqual(dict(job.run_config), {
-                "units": ["u1"], "carryProtected": ["w1/papersmith-search-a"]})
+                "units": ["u1"], "slot": 2, "carryProtected": ["w1/papersmith-search-a"]})
 
     def test_a_job_without_carry_paths_and_nothing_running_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -26830,7 +26861,7 @@ class KernelCarryTests(unittest.TestCase):
             self.assertNotIn("carry", jobs["w1"].run_config)
             self.assertEqual(result["unplaced"], [])
 
-    def test_a_continuation_whose_worker_is_full_waits_unplaced(self) -> None:
+    def test_a_continuation_whose_worker_is_full_joins_its_queue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook = self._job_folder(tmp)
             self._stopped_early(tmp, target, sid="w2/kernel-1", worker="w2",
@@ -26840,9 +26871,13 @@ class KernelCarryTests(unittest.TestCase):
             report = self._distribute(target, notebook, adapter, ("u0", "u1"))
             self.assertEqual(
                 {row["worker"]: row["units"] for row in report["assignments"]},
-                {"w1": [], "w2": ["u0"]},
+                {"w1": [], "w2": ["u0", "u1"]},
             )
-            self.assertEqual(report["unplaced"], ["u1"])
+            self.assertEqual(report["unplaced"], [])
+            self.assertEqual(
+                [(row["worker"], row["slot"], row["units"]) for row in report["queues"]],
+                [("w2", 1, ["u0", "u1"])],
+            )
 
     # -- S5: services without kernel inputs ----------------------------------
 

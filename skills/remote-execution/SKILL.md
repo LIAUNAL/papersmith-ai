@@ -205,8 +205,11 @@ Three modules exist so far, each service-blind and stdlib-only:
   two never drift onto two different health rules), sums whatever every
   healthy account actually grants into one `places` total, and spreads a
   caller's own work units across that total round-robin, ragged rows and
-  all — a unit left over when the total runs out is named in `unplaced`
-  by identity, never silently dropped or folded into a boolean. A `unit`
+  all. Every unit is placed: unit `i` takes place `i mod places`, so the
+  units beyond the total join the places' queues, balanced by count and
+  never handed to two places (slot queues). Only a campaign no worker
+  granted a single place names its units in `unplaced`, by identity,
+  never silently dropped or folded into a boolean. A `unit`
   is an opaque `str` end to end: `distribute()` inspects nothing about
   its contents, sorts nothing, splits nothing, and the CLI surface below
   never imposes a separator on one either — `--unit` is repeatable
@@ -307,6 +310,74 @@ Three modules exist so far, each service-blind and stdlib-only:
     account is always named with its reason, never silently dropped.
     Single-unit `submit` (no `--unit` at all) is untouched: today's
     `select()`/`plan()` path, byte-identical.
+  - **Slot queues.** A campaign with more units than granted slots is
+    launched whole, never left partly `unplaced`: each slot's share is a
+    queue, and its one job carries the whole queue in
+    `run_config["units"]` (`FORGE_RUN_UNITS`), which the target runs in
+    order. `distribute` and `submit` then add `queues` (one `{worker,
+    slot, units, sessions, minutes, chained}` per slot, in launch order)
+    and `sessionFit`. With a timing record (`--timing`, default
+    `<target>/<product>/Results/timing.json`, at `--stage`, default
+    `full`) and a declared session limit, `sessionFit` holds one unit's
+    work at the stage's upper bound over the campaign's units (the rows
+    `preflight`'s `session-fit` row reads, by `schedule`'s rule), the
+    record's setup paid once per session, the usable 80% of the limit,
+    `unitsPerSession` and `makespanMinutes`; each queue's `sessions` cuts
+    it, in order, into the chained sessions that run it on the
+    same account, and `minutes` is their busy time. `remote-parallelism`
+    `schedule` and `plan` report the same `queues` and makespan. The first
+    session's deadline stops the run with `partial.json`, and `remaining`
+    lists what the next session of that queue sends, as for any share. Without a record, `sessionFit` says
+    `measured: false` with the reason and `sessions` is `null`: the queues
+    are balanced by count and their fit is unknown. A unit over the session
+    margin is listed in each of the chained sessions it runs (`sessions`
+    `[["u0"], ["u0"], ["u0"]]` for a 180-minute unit against 72 minutes of
+    work per session, `chained: true`). The consent token of such a
+    campaign has two parts, `<campaign>.<placement>`. The campaign part is
+    the 0.39.0 token (pin, entrypoint, ordered units), and `submit` checks
+    it where 0.39.0 checked the whole token: before the digest and before
+    any backend call, so a forged token is refused `ConsentError` with no
+    live read at all, whatever shape the campaign takes. The launch
+    authorization (`gate`) runs next, also before any backend call. Only
+    the placement part (each slot's `{worker, slot, units}`, plus `done`
+    and `inFlight`) needs a live read: it is checked right after the
+    read-only distribution and before anything is sent, and `submit`
+    refuses `PLACEMENT_NOT_CONSENTED` when the slots granted at launch
+    differ from the ones `distribute` showed. A unit whose share
+    already returned complete -- one `remaining` lists under `complete` --
+    is never placed again: both commands report it under `done` and place
+    the rest, so the campaign's full unit list can be passed every time.
+    A unit whose share was submitted and has not returned -- one
+    `remaining` lists under `inFlight` -- is never placed again either:
+    both commands report it under `inFlight`, so no running unit is sent
+    twice. A unit whose returned result is no longer on disk (`unknown`)
+    stays placeable. The token then binds `done`, `inFlight` and the
+    placement of the rest, and a launch or a return after `distribute` ran
+    refuses the launch `PLACEMENT_NOT_CONSENTED`, naming the units left
+    out. The `gate` record still binds the unit list the invocation names.
+    A campaign with no more units than slots and nothing done or in flight
+    reports, mints and records exactly what 0.39.0 did.
+  - **Lanes of concurrent shares.** Each campaign share takes the lowest
+    slot that no in-flight submission of the same entrypoint holds on its
+    worker (in the main or the rehearsal ledger, at any source digest), and
+    records it (`run_config["slot"]`, the event's `slot`, `queues`). A
+    worker running one share in slot 1 therefore gets the next one in slot 2,
+    with its own ledger lane and, on a backend that names its remote object
+    by slot, its own `-slot-2` object. Before this, the new share took
+    slot 1 again: it shared the running share's lane, and when the running
+    share returned its genuine result was folded `fromStaleSubmission` and
+    quarantined. With nothing in flight the slots are 1..k, as before.
+    **Recovering a result quarantined by that collision** (ledgers written
+    by 0.39.0): there is no release command yet. The result is kept under
+    `.remote-execution/quarantine/`, never deleted. Treat it as complete
+    only when the evidence holds: its `submitted` event's `sourceDigest`
+    equals the live digest (`status`), the event's `units` are the units
+    the quarantined bytes report finishing (its `runs.jsonl` or
+    `partial.json`), and a later `submitted` event in the same lane, with
+    other units, was recorded while it was still in flight. Then leave
+    those units out of the next campaign's `--unit` list rather than
+    re-running them. `remaining` keeps listing them, because it never reads
+    a quarantined result.
   - **Diagram validation, every launch**: when the resolved product holds
     `AGREED.md` (proof of concept) or `Experimental_AGREED.md` (full
     experiments), `submit` — `--smoke` included — refuses
@@ -1512,7 +1583,7 @@ refusal.
 | --- | --- |
 | `submit` | submit one notebook to a registered backend's worker |
 | `status` | report the fold for one product's ledger; resolves nothing |
-| `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares`; issues no work and records nothing |
+| `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares` and, when units outnumber the slots, each slot's `queues` and their `sessionFit`, and the units already returned complete under `done` and still running under `inFlight` (neither placed again); issues no work and records nothing |
 | `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `unknown` with its `refetch` commands, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
 | `poll` | ask the adapter for one submission's status |
 | `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
@@ -1534,6 +1605,7 @@ can branch on it without parsing prose.
 | `CAMPAIGN_WORKERS_NOT_READY` | campaign `submit` (`--unit`, not `--smoke`) | a worker the distribution assigns units to has no passing rehearsal of its own at the current pin; the message names every such worker |
 | `DUPLICATE_SUBMISSION_ID` | campaign `submit` | the backend answered two slots of one campaign with the same submission id; the repeat is not recorded |
 | `LEDGER_EVENT_TOO_LARGE` | campaign `submit` | a slot's share of units would make its `submitted` event exceed the ledger's 4096-byte line; checked for every slot before the first submission, so nothing is sent |
+| `PLACEMENT_NOT_CONSENTED` | campaign `submit` (a slot queues more than one unit, or units are `done` or `inFlight`) | the token's campaign part matched, but its placement part does not approve this exact placement (each slot's queue and the units left out as done or in flight, named in the message): capacity moved, a unit was launched or a result returned since `distribute`, or the token approved another campaign. Checked after the read-only distribution, before anything is sent; the message names the placement and asks for a fresh `distribute` |
 | `CODE_BUNDLE_NOT_CARRIED` | `generate-job --code-bundle` | the service's adapter does not declare `CODE_BUNDLE_MAX_BYTES`, so it cannot ship a code bundle; refused before any git call |
 | `CODE_BUNDLE_TOO_LARGE` | `generate-job --code-bundle` | the compressed bundle exceeds the service's `CODE_BUNDLE_MAX_BYTES`; the message names both sizes and nothing is written |
 | `CODE_BUNDLE_UNSAFE_ENTRY` | `generate-job --code-bundle`, the runner | an archive entry is absolute, carries `..`, is a link or special file, or lies outside the declared clone paths |
@@ -2249,8 +2321,8 @@ nothing), or whose `errored` event names bytes kept under
 
 1. **Same account only.** `distribute` (and `submit`, which distributes the
    same way) places such a unit on the worker that produced its earlier
-   output when that worker is in the pool; when that worker has no place
-   left the unit stays `unplaced` for a later campaign. A unit whose worker
+   output when that worker is in the pool; when every place of that worker
+   is taken the unit joins one of its slots' queues. A unit whose worker
    is not in the pool refuses `CARRY_WORKER_MISMATCH`, naming that worker;
    `submit --no-carry` starts it fresh instead (`carry: fresh`). Carrying a
    private kernel's output across two accounts was never verified.

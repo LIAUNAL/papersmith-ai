@@ -11,6 +11,67 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.40.0
+
+### Changed
+
+- Slot queues: `distribute` and campaign `submit` place every unit. Units
+  beyond the granted slots join per-slot queues (unit `i` takes place
+  `i mod places`, balanced by count, never on two slots), and each slot's
+  one job carries its whole queue in `FORGE_RUN_UNITS`. A continuation
+  whose worker has no free slot joins that worker's queue. Only a campaign
+  no worker grants a slot leaves units `unplaced`; before, everything past
+  the slots waited for a later campaign.
+- A queued campaign's report and `submit` result add `queues` (`{worker,
+  slot, units, sessions, minutes, chained}` per slot) and `sessionFit`.
+  With a timing record (`--timing`, default `<product>/Results/timing.json`,
+  at `--stage`) and a declared session limit, each queue is cut into the
+  chained sessions that run it on the same account, each fitting 80% of the
+  limit with the setup paid once, and `sessionFit.makespanMinutes` is the
+  longest queue; without one, `sessionFit` says `measured: false` and why.
+- `schedule` and `plan` report the queues `distribute` launches: each step
+  (and each remote `plan` option) adds `queues` (`{account, slot, units,
+  sessions, minutes}`, units by index) and `queueMakespanMinutes`, from the
+  same place order and session cut. To agree with it, both now continue a
+  session only inside 80% of its limit (they filled the whole limit before)
+  and try slots in the launch's order, slot 1 of every account before any
+  slot 2. The schema 1 `schedule` golden gains only the two keys.
+- The consent token of a queued campaign binds its placement, and `submit`
+  refuses `PLACEMENT_NOT_CONSENTED` when the slots granted at launch differ
+  from the ones `distribute` showed, before anything is sent. A campaign
+  with no more units than slots reports, mints and records exactly what
+  0.39.0 did.
+
+### Fixed
+
+- `distribute` and campaign `submit` no longer place again a unit whose
+  share already returned complete (the units `remaining` calls `complete`):
+  they report it under `done` and place the rest, so passing a campaign's
+  full unit list again launches only what is left instead of re-running
+  finished units and leaving others unplaced. A unit whose share was
+  submitted and has not returned (the units `remaining` calls `inFlight`)
+  is never placed again either and is reported under `inFlight`, so no
+  running unit is sent twice. A unit whose result is no longer on disk
+  stays placeable. The token binds `done`, `inFlight` and the placement of
+  the rest; a launch or a return after `distribute` refuses the stale token
+  `PLACEMENT_NOT_CONSENTED`, naming the units left out.
+- A forged campaign token is refused before the digest and before any
+  backend call again, as in 0.39.0, whatever shape the campaign takes; the
+  launch authorization (`gate`) also runs before any backend call. A
+  queued campaign's token is now `<campaign>.<placement>`: the campaign
+  part is the 0.39.0 token and is checked first, and only the placement
+  part is checked after the read-only distribution. A failing backend no
+  longer turns a consent refusal into a backend error.
+- A campaign share takes the lowest slot no in-flight submission of the
+  same entrypoint holds on its worker. A worker running one share in slot 1
+  used to get the next share in slot 1 too, in the same ledger lane (and,
+  on Kaggle, the `-carry` kernel), so the running share's genuine result
+  was folded `fromStaleSubmission` and quarantined when it returned. The
+  skill documents how to recover a result 0.39.0 quarantined this way.
+- A unit over the session margin is reported as the chained sessions it
+  runs (`sessions` lists it once per session, `chained: true`), in
+  `distribute`, `submit`, `schedule` and `plan`, instead of as one session.
+
 ## 0.39.0
 
 ### Added

@@ -223,7 +223,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.39.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.40.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 
