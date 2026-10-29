@@ -1,0 +1,28 @@
+# Session chains: long runs survive continuous-session limits without losing compute hours
+
+Objective: a run longer than a service's continuous session (Kaggle 12 h, Colab Pro 24 h) is planned, checked and executed as a chain of sessions that checkpoint and resume, and smith verifies locally that the target really does so before any remote hour is spent.
+Branch: `feat/session-chains` (from `origin/main` 1392aed0, v0.38.0). Delivery: release after verification. Tests: `~/Documents/papers_smith/papersmith-ai/.micromamba/envs/papersmith/bin/python -m pytest -q -n 6`; `npm test`.
+
+## Specs
+
+- S0. The operator's request, verbatim (2026-10-29): "para 2 ten en cuenta las horas de computo continuas que permite kaggle y colab con las cuetnas provistas, si las corridas son mas largas, ajusta para correrlo por sesionse y guardar checkpoints para poder continuar en nueva corrida despus de hablitar una nueva sesion completa. revisa si esta revision esta en el flujo de smith, sino ajustalo para que se tenga presente y no perder horas de computo"
+- S1. Deadline rehearsal in `preflight`: for a job whose unit or session estimate exceeds the service's session margin (or that declares carry paths), the local rehearsal also runs the job's run (or smoke) under an already-near `FORGE_SESSION_DEADLINE` in the runner's layout and checks that the target stops cleanly, leaves a valid `partial.json` (`{"remaining": [unit id strings]}`, the exact `shard_io.partial_marker` contract) whose ids are a subset of the job's units, and leaves its declared carry paths where the next session's restore will find them; a second local session with those paths restored must run only the remaining ids. `session-fit` no longer passes merely because carry paths are declared: it reports `fail` when the deadline rehearsal shows no marker, and `warn` when it was skipped.
+- S2. Carry paths resolve where the target reads and writes them: the runner's carry restore (`assets/runner_invoke.py` `restore_carry`) and the outputs a continuation mounts must agree with the product-relative layout targets use under `FORGE_CLONE_ROOT` (`<cwd>/clone/<product>/<path>`), so a declared `Results/e2/runs` restored for session 2 is the same tree session 1 wrote; existing jobs keep working (document and test the resolution rule; no silent move of data).
+- S3. Quota-aware makespan: `schedule` and `plan` add the wait for the next weekly quota reset when an account's assigned hours exceed its quota (Kaggle 30 GPU h/week per account), and report the number of quota weeks; the campaign split across accounts respects that carry pins a chain to one account.
+- S4. `plan` costs a resumable chain (job declares carry paths or `--resumable` with `checkpointMinutes`) instead of dropping an over-margin candidate as `split-first`; each chained session pays setup again.
+- S5. Colab continuation: a Colab job that is cut by the session limit can continue in a new session with its fetched partial outputs, automated through the service CLI if it supports uploading files into a session; if it does not, `submit` of a Colab continuation refuses with the exact manual step instead of silently starting from epoch 0. The idle-reclaim rule (fetch promptly; release the session after completion) is verified in code or stated as unverified.
+- S6. Doctrine (remote-execution, remote-parallelism, both implementation SKILLs, walk/build agents) states the chain rule in one place each: estimate vs. session margin, checkpoint per epoch/trial, `partial.json` contract with string unit ids equal to the submitted units, `FORGE_RUN_UNITS`, deadline rehearsal before the first remote rehearsal, quota weeks. Docs, help, CHANGELOG `## Unreleased`; doctrine names no service.
+
+## Tasks
+
+- T1 (S2) runner carry layout fix + tests -- pending
+- T2 (S1) deadline rehearsal in preflight + session-fit honesty + tests -- pending
+- T3 (S3, S4) quota weeks and resumable chains in schedule/plan + tests -- pending
+- T4 (S5) Colab continuation -- pending
+- T5 (S6) doctrine, docs, CHANGELOG, projections -- pending
+- T6 independent verifier (items 1, 3, 5: carried data, runner/run-config contracts, remote delivery) -- pending
+
+## Log
+
+- L1 (2026-10-29, audit): doctrine already covers session limits (`remote-parallelism/SKILL.md:114-147`, `remote-execution/SKILL.md:2060-2110`, implementation SKILLs ~751/~319, walk/build agents); `schedule` chains sessions (`parallelism_cli.py:1251-1260,1308-1338,1515-1518`); gaps: `assess` fixed-limit only (`:375-398`), `plan` drops over-margin candidates as `split-first` (`:1674-1683`), makespan ignores quota-reset waits (note only, `:856`), `session-fit` passes when any carry path is declared (`remote_cli.py:3624`), Colab carry unsupported and manual (`colab.py:298,618-620`, `SKILL.md:~2190`), `partial_marker` accepts only `partial.json` with a list of strings (`shard_io.py:148-180`).
+- L2 (2026-10-29, QMLEEG worker evidence): under the runner, targets bind `ROOT = $FORGE_CLONE_ROOT = <cwd>/clone` (`runner_invoke.py:656`) and write `<cwd>/clone/<product>/Results/...`, but `restore_carry` (`runner_invoke.py:175-220`) copies `mount/<carryPath>` to `<cwd>/<carryPath>`, a tree the target never reads, and the mounted earlier output holds the files at `clone/<product>/Results/...`; so a continuation starts fresh even with `partial.json`. Also `FORGE_RUN_MODE` is set only for smoke, and `remaining` intersects `partial.json` ids with `submitted.units` (`FORGE_RUN_UNITS`), so ids must equal the submitted unit strings. QMLEEG gets a target-side bridge meanwhile.
