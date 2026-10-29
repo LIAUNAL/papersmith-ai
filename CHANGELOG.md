@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.37.0
 
 ### Added
 
@@ -85,6 +85,10 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ### Fixed
 
+- The dashboard UI build moves to Vite 6.4.5 (and undici 8.12.3) in
+  `ui/package-lock.json`, closing two high-severity `npm audit` advisories in
+  Vite's dev server (GHSA-9jrq-w75r-8gcw, GHSA-rq7h-c2jc-7f22) and its
+  `launch-editor` dependency.
 - A callable job's runner now exports `FORGE_CLONE_ROOT` and
   `FORGE_CLONE_COMMIT` as a notebook job's does, so a callable smoke on a
   code-bundle worker reads its commit.
