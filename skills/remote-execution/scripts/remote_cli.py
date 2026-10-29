@@ -510,6 +510,7 @@ def _job_folder_commit(resolved_entrypoint: Path) -> str | None:
 def campaign_consent_token(
     *, pin_commit: str | None, relative_entrypoint: str | Path, units: Sequence[str],
     worker: str | None = None, placement: Sequence[Mapping] | None = None,
+    done: Sequence[str] | None = None,
 ) -> str:
     """The ONE digest both `distribute` (which prints it) and `submit`
     (which verifies it) compute — a second, independently written hash
@@ -548,6 +549,11 @@ def campaign_consent_token(
       account and slot runs which queue, and a launch whose live capacity
       moved the queues no longer matches. A campaign with no more units
       than slots passes `None` and keeps the v0.39.0 token.
+    - `done`, present ONLY when some unit of `units` already returned
+      complete (slot queues L2): those units, which the launch leaves out,
+      always together with the `placement` of the rest. A result that
+      returns after the token was minted changes both, so the token stops
+      authorizing the launch.
 
     Deliberately NOT a `--yes` boolean and deliberately not looked up
     anywhere but the arguments handed to it: this function reads no
@@ -568,6 +574,8 @@ def campaign_consent_token(
             {"worker": row["worker"], "slot": row["slot"], "units": list(row["units"])}
             for row in placement
         ]
+    if done:
+        fields["done"] = list(done)
     payload = json.dumps(fields, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -1160,17 +1168,18 @@ def _declared_session_limit(adapter: "ADAPTER.Adapter") -> int | None:
     return limit
 
 
-def _placement(distribution: "PACKER.Distribution") -> list[dict] | None:
+def _placement(distribution: "PACKER.Distribution", *, force: bool = False) -> list[dict] | None:
     """Each slot's queue as `{worker, slot, units}`, in launch order, when
-    some slot of `distribution` queues more than one unit (slot queues S1);
-    `None` when every slot runs one unit -- the campaign v0.39.0 launched,
-    whose report, token and records stay exactly what they were."""
+    some slot of `distribution` queues more than one unit (slot queues S1)
+    or `force` (units were left out as done, L2); `None` otherwise -- the
+    campaign v0.39.0 launched, whose report, token and records stay exactly
+    what they were."""
     rows = [
         {"worker": row.plan.worker, "slot": index + 1, "units": list(share)}
         for row in distribution.assignments
         for index, share in enumerate(PACKER.slot_shares(row))
     ]
-    return rows if any(len(row["units"]) > 1 for row in rows) else None
+    return rows if force or any(len(row["units"]) > 1 for row in rows) else None
 
 
 def _placement_text(placement: Sequence[Mapping]) -> str:
@@ -1179,14 +1188,16 @@ def _placement_text(placement: Sequence[Mapping]) -> str:
 
 
 def _queue_fit(adapter: "ADAPTER.Adapter", resolved_entrypoint: Path, timing: Path,
-               stage: str, units: int) -> dict:
-    """How many queued units one session holds (slot queues S1), read with
-    preflight's own `session-fit` estimate: the stage's upper bound from the
-    timing record over `units` units, against the session margin, with the
-    record's setup paid once per session. `measured: False` and the reason
-    when the service declares no limit, no job folder names a service, or
-    the record is missing or unusable: the queues are then balanced by count
-    alone and their fit is unknown."""
+               stage: str, units: int) -> tuple[dict, tuple[float, float, float] | None]:
+    """How many queued units one session holds (slot queues S1), read from
+    the timing rows preflight's `session-fit` check reads, by `schedule`'s
+    rule: one unit's work at the stage's upper bound over `units` units, the
+    record's setup paid once per session, against the session margin.
+    `measured: False` and the reason when the service declares no limit, no
+    job folder names a service, or the record is missing or unusable: the
+    queues are then balanced by count alone and their fit is unknown.
+    Returns the reported fit and, when measured, the unrounded unit, setup
+    and limit minutes the queues are cut with."""
     service = _job_service(resolved_entrypoint)
     try:
         run_config = json.loads((resolved_entrypoint.parent / RUN_CONFIG_FILENAME)
@@ -1195,33 +1206,46 @@ def _queue_fit(adapter: "ADAPTER.Adapter", resolved_entrypoint: Path, timing: Pa
         run_config = None
     if service is None or not isinstance(run_config, dict):
         return {"measured": False, "reason": "no job folder names this entrypoint's service, "
-                "so no timing record of its host can be read"}
+                "so no timing record of its host can be read"}, None
     estimate = _session_fit_estimate(adapter, run_config, service, timing, stage, units)
     if "row" in estimate:
-        return {"measured": False, "reason": estimate["row"]["evidence"]}
+        return {"measured": False, "reason": estimate["row"]["evidence"]}, None
     par = _parallelism_cli()
     limit = _declared_session_limit(adapter) / 60
-    unit, setup = estimate["unitMinutes"], estimate["setupMinutes"]
+    unit, setup = estimate["workUnitMinutes"], estimate["setupMinutes"]
     return {
-        "measured": True, "stage": stage, "source": estimate["measured"],
+        "measured": True, "stage": stage,
+        "source": (f"{stage} upper bound of {par.num(unit)} minutes of work per unit over "
+                   f"{units} unit(s) and a {par.num(setup)}-minute setup per session, against "
+                   f"{par.margin_text(limit)}"),
         "unitMinutes": par.num(unit), "setupMinutes": par.num(setup),
         "limitMinutes": par.num(limit), "usableMinutes": par.num(estimate["usable"]),
         "unitsPerSession": par.session_capacity(unit, setup, limit),
         "unitOverMargin": unit + setup > estimate["usable"],
-    }
+    }, (unit, setup, limit)
 
 
-def _queues(placement: Sequence[Mapping], fit: Mapping) -> list[dict]:
-    """`placement` with each queue's chained `sessions` on its own account
-    (`None` when its fit is unmeasured) and whether it spans more than one."""
+def _queue_keys(adapter: "ADAPTER.Adapter", resolved_entrypoint: Path, timing: Path,
+                stage: str, placement: Sequence[Mapping], units: int) -> dict:
+    """`queues` and `sessionFit` for a queued campaign: `placement` with each
+    queue's chained `sessions` on its own account and their busy `minutes`
+    (`remote-parallelism`'s `queue_plan`, the cut `schedule` and `plan`
+    report), and the fit with its `makespanMinutes`; `None` for sessions and
+    minutes when the fit is unmeasured. `units` is the campaign's whole unit
+    count, done ones included: the stage's work is spread over all of them."""
     par = _parallelism_cli()
+    fit, measured = _queue_fit(adapter, resolved_entrypoint, timing, stage, units)
     rows = []
     for row in placement:
-        sessions = (par.queue_sessions(row["units"], fit["unitsPerSession"])
-                    if fit["measured"] else None)
-        rows.append({**row, "sessions": sessions,
+        sessions, minutes = None, None
+        if measured is not None:
+            sessions, minutes = par.queue_plan(row["units"], *measured)
+            minutes = par.num(minutes)
+        rows.append({**row, "sessions": sessions, "minutes": minutes,
                      "chained": None if sessions is None else len(sessions) > 1})
-    return rows
+    if fit["measured"]:
+        fit = {**fit, "makespanMinutes": max(row["minutes"] for row in rows)}
+    return {"queues": rows, "sessionFit": fit}
 
 
 #: What a single send of a job declaring carry paths reports (session-chains).
@@ -1825,6 +1849,11 @@ def cmd_submit(
     inputs_status, inputs_config = _input_plan(adapter, resolved_entrypoint)
 
     if units:
+        # Slot queues L2: units whose shares already returned complete are
+        # left out, read from the main ledger as `distribute` reads it, so the
+        # token it minted for this placement matches in every mode.
+        done = _done_units(target, resolved_product, relative_entrypoint, digest, units)
+        placeable = [unit for unit in units if unit not in done]
         carry_paths = _declared_carry_paths(resolved_entrypoint)
         evidence = (
             _carry_evidence(
@@ -1837,23 +1866,25 @@ def cmd_submit(
         )
         distribution = PACKER.distribute(
             adapter=adapter,
-            units=units,
+            units=placeable,
             ledger_lines=ledger_lines,
             live_digest=digest,
-            affinity=_carry_affinity(evidence, units) or None,
+            affinity=_carry_affinity(evidence, placeable) or None,
         )
-        placement = _placement(distribution)
+        placement = _placement(distribution, force=bool(done))
         if placement is not None and consent != campaign_consent_token(
             pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
-            units=units, placement=placement,
+            units=units, placement=placement, done=done,
         ):
+            left_out = f"; done, left out: {', '.join(done)}" if done else ""
             raise ConsentError(
-                f"{PLACEMENT_NOT_CONSENTED}: this campaign queues more than one "
-                "unit on a slot, and --consent does not approve this placement "
-                f"({_placement_text(placement)}): the slots granted right now "
-                "differ from the ones `distribute` showed, or the token approved "
-                "another campaign. Nothing was submitted. Run `distribute --unit "
-                "...` again, check its `queues`, and pass back the token it prints"
+                f"{PLACEMENT_NOT_CONSENTED}: --consent does not approve this "
+                f"campaign's placement ({_placement_text(placement)}{left_out}): "
+                "the slots granted right now, or the units already done, differ "
+                "from the ones `distribute` showed, or the token approved another "
+                "campaign. Nothing was submitted. Run `distribute --unit ...` "
+                "again, check its `queues` and `done`, and pass back the token it "
+                "prints"
             )
         if placement_consent:
             if placement is None:
@@ -2012,9 +2043,10 @@ def cmd_submit(
         if placement is not None:
             timing_path = (Path(timing) if timing is not None
                            else target / resolved_product / "Results" / "timing.json")
-            fit = _queue_fit(adapter, resolved_entrypoint, timing_path, stage, len(units))
-            campaign["queues"] = _queues(placement, fit)
-            campaign["sessionFit"] = fit
+            campaign.update(_queue_keys(adapter, resolved_entrypoint, timing_path, stage,
+                                        placement, len(units)))
+        if done:
+            campaign["done"] = done
         return campaign
 
     if worker is None:
@@ -2157,6 +2189,71 @@ def _job_service(entrypoint: Path) -> str | None:
     return service if isinstance(service, str) and service.strip() else None
 
 
+def _unit_outcomes(
+    *, target: Path, product: str, relative_entrypoint: str, live_digest: str,
+    unit_field: str | None = None,
+) -> tuple[set[str], set[str], list[tuple[dict, str, list[str]]]]:
+    """What the main ledger says of each unit of this entrypoint at the live
+    source digest: `(complete, in_flight, missing)`, the one reading
+    `remaining` reports and campaign placement excludes by (slot queues L2).
+    `missing` holds `(submitted, artifact, share)` for each `returned` result
+    no longer on disk, whose units complete nothing."""
+    quarantine = (target / product / LEDGER_DIRNAME / QUARANTINE_DIRNAME).resolve()
+    ledger_path = _main_ledger_path(target, product)
+    complete: set[str] = set()
+    in_flight: set[str] = set()
+    missing: list[tuple[dict, str, list[str]]] = []
+    for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(ledger_path)):
+        if str(submitted.get("entrypoint")) != relative_entrypoint:
+            continue
+        if submitted.get("sourceDigest") != live_digest:
+            continue
+        share = [str(unit) for unit in submitted.get("units") or ()]
+        if terminal is None:
+            in_flight.update(share)
+            continue
+        artifact = terminal.get("artifactPath")
+        if terminal.get("kind") == "returned":
+            # A result `fetch` judged not current went to quarantine: it
+            # completes nothing, whatever it holds.
+            if artifact and Path(artifact).resolve().is_relative_to(quarantine):
+                continue
+            # A result deleted (or moved) since `fetch` recorded it cannot
+            # say what it finished: never read as complete.
+            if artifact and not Path(artifact).is_dir():
+                missing.append((submitted, str(artifact), share))
+                continue
+            # A run that stopped early (at the deadline, say) exits 0 and is
+            # `returned`, but its partial.json names what it did not finish.
+            stopped, unfinished = (
+                SHARD_IO.partial_marker(Path(artifact)) if artifact else (False, None)
+            )
+            if not stopped:
+                complete.update(share)
+            elif unfinished is not None:
+                complete.update(set(share) - unfinished)
+        if unit_field and artifact:
+            complete.update(
+                set(share) & SHARD_IO.unit_records(Path(artifact), unit_field)
+            )
+    # A unit some submission completed is complete even if a later one
+    # carrying it is still running.
+    in_flight -= complete
+    return complete, in_flight, missing
+
+
+def _done_units(target: Path, product: str, relative_entrypoint: "str | Path",
+                live_digest: str, units: Sequence[str]) -> list[str]:
+    """The units of a campaign `remaining` calls complete, in the given
+    order: placement leaves them out (slot queues L2). A unit whose result
+    is no longer on disk is not among them, and stays placeable."""
+    complete, _, _ = _unit_outcomes(
+        target=target, product=product, relative_entrypoint=str(relative_entrypoint),
+        live_digest=live_digest,
+    )
+    return [unit for unit in units if str(unit) in complete]
+
+
 def cmd_remaining(
     *,
     target: str | Path,
@@ -2214,46 +2311,10 @@ def cmd_remaining(
     digest_fn = source_digest or _load_source_digest()
     live = digest_fn(target, product)
 
-    quarantine = (target / product / LEDGER_DIRNAME / QUARANTINE_DIRNAME).resolve()
-    complete: set[str] = set()
-    in_flight: set[str] = set()
-    missing: list[tuple[dict, str, list[str]]] = []
-    for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(ledger_path)):
-        if str(submitted.get("entrypoint")) != relative_entrypoint:
-            continue
-        if submitted.get("sourceDigest") != live:
-            continue
-        share = [str(unit) for unit in submitted.get("units") or ()]
-        if terminal is None:
-            in_flight.update(share)
-            continue
-        artifact = terminal.get("artifactPath")
-        if terminal.get("kind") == "returned":
-            # A result `fetch` judged not current went to quarantine: it
-            # completes nothing, whatever it holds.
-            if artifact and Path(artifact).resolve().is_relative_to(quarantine):
-                continue
-            # A result deleted (or moved) since `fetch` recorded it cannot
-            # say what it finished: never read as complete.
-            if artifact and not Path(artifact).is_dir():
-                missing.append((submitted, str(artifact), share))
-                continue
-            # A run that stopped early (at the deadline, say) exits 0 and is
-            # `returned`, but its partial.json names what it did not finish.
-            stopped, unfinished = (
-                SHARD_IO.partial_marker(Path(artifact)) if artifact else (False, None)
-            )
-            if not stopped:
-                complete.update(share)
-            elif unfinished is not None:
-                complete.update(set(share) - unfinished)
-        if unit_field and artifact:
-            complete.update(
-                set(share) & SHARD_IO.unit_records(Path(artifact), unit_field)
-            )
-    # A unit some submission completed is complete even if a later one
-    # carrying it is still running.
-    in_flight -= complete
+    complete, in_flight, missing = _unit_outcomes(
+        target=target, product=product, relative_entrypoint=relative_entrypoint,
+        live_digest=live, unit_field=unit_field,
+    )
 
     remaining = [unit for unit in declared if unit not in complete and unit not in in_flight]
     refetch: list[dict] = []
@@ -2365,6 +2426,11 @@ def cmd_distribute(
     digest_fn = source_digest or _load_source_digest()
     live = digest_fn(target, product)
 
+    # Slot queues L2: a unit whose share already returned complete is done,
+    # the units `remaining` would not list; the launch leaves it out alike.
+    done = _done_units(target, product, relative_entrypoint, live, units)
+    placeable = [unit for unit in units if unit not in done]
+
     # kernel-carry S4: a continuation is placed on the worker that produced
     # its earlier output -- the same affinity the launch applies, so the
     # preview and the launch agree. A job declaring no carry paths has none.
@@ -2378,20 +2444,21 @@ def cmd_distribute(
         else {}
     )
     result = PACKER.distribute(
-        adapter=adapter, units=units, ledger_lines=ledger_lines, live_digest=live,
-        affinity=_carry_affinity(evidence, units) or None,
+        adapter=adapter, units=placeable, ledger_lines=ledger_lines, live_digest=live,
+        affinity=_carry_affinity(evidence, placeable) or None,
     )
 
-    placement = _placement(result)
+    placement = _placement(result, force=bool(done))
     consent_token = campaign_consent_token(
         pin_commit=_job_folder_commit(resolved_entrypoint),
         relative_entrypoint=relative_entrypoint,
         units=units,
         placement=placement,
+        done=done,
     )
 
     report = {
-        "units": len(result.units),
+        "units": len(units),
         "places": result.places,
         "assigned": len(result.units) - len(result.unplaced),
         "unplaced": list(result.unplaced),
@@ -2414,9 +2481,10 @@ def cmd_distribute(
     if placement is not None:
         timing_path = (Path(timing) if timing is not None
                        else target / product / "Results" / "timing.json")
-        fit = _queue_fit(adapter, resolved_entrypoint, timing_path, stage, len(units))
-        report["queues"] = _queues(placement, fit)
-        report["sessionFit"] = fit
+        report.update(_queue_keys(adapter, resolved_entrypoint, timing_path, stage, placement,
+                                  len(units)))
+    if done:
+        report["done"] = done
     return report
 
 
@@ -3848,7 +3916,8 @@ def _session_fit_estimate(adapter: "ADAPTER.Adapter", run_config: Mapping, servi
                 f"{par.num(unit_minutes)} minutes per unit against {par.margin_text(limit_minutes)}")
     return {"measured": measured, "unitMinutes": unit_minutes,
             "sessionMinutes": float(estimate["high"]) / 60, "usable": usable,
-            "setupMinutes": float(estimate["setupSeconds"]) / 60}
+            "setupMinutes": float(estimate["setupSeconds"]) / 60,
+            "workUnitMinutes": par.upper_unit_seconds(estimate, data["scales"][stage], units) / 60}
 
 
 def _deadline_rehearsal_required(estimate: Mapping, run_config: Mapping) -> bool:
@@ -4413,8 +4482,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="repeatable: the exact same flag `distribute` declares. Switches "
         "`submit` into campaign mode -- `packer.distribute()` replaces "
         "`packer.select()`/`packer.plan()`, spreading across every healthy "
-        "account instead of stopping at the first one. Mutually exclusive "
-        "with --worker: campaign mode has no single named account to select.",
+        "account instead of stopping at the first one. A unit whose share "
+        "already returned complete is reported under `done` and not sent "
+        "again. Mutually exclusive with --worker: campaign mode has no "
+        "single named account to select.",
     )
     submit.add_argument(
         "--consent", default=None,
@@ -4470,7 +4541,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     distribute.add_argument(
         "--unit", dest="units", action="append", required=True,
-        help="repeatable: one opaque work-unit identifier. Never comma-separated -- "
+        help="repeatable: one opaque work-unit identifier; one whose share already "
+        "returned complete is reported under `done` and placed nowhere. Never "
+        "comma-separated -- "
         "a separator would impose structure on an identifier this command, like "
         "packer.distribute() underneath it, treats as opaque; a unit containing "
         "its own comma would otherwise be split.",
@@ -5197,7 +5270,7 @@ def main(argv: list[str] | None = None) -> int:
         # a future `cmd_distribute` field can nest a `Path` (a `staleness`
         # sub-dict, say) exactly the way `status` acquired one.
         print(json.dumps(result, sort_keys=True, default=str))
-        if result["places"] == 0 and result["units"] > 0:
+        if result["places"] == 0 and result["unplaced"]:
             return 1
         return 0
 

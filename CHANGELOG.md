@@ -23,17 +23,34 @@ number is `0`, breaking changes can still arrive without a major bump.
   no worker grants a slot leaves units `unplaced`; before, everything past
   the slots waited for a later campaign.
 - A queued campaign's report and `submit` result add `queues` (`{worker,
-  slot, units, sessions, chained}` per slot) and `sessionFit`. With a
-  timing record (`--timing`, default `<product>/Results/timing.json`, at
-  `--stage`) and a declared session limit, each queue is cut into the
+  slot, units, sessions, minutes, chained}` per slot) and `sessionFit`.
+  With a timing record (`--timing`, default `<product>/Results/timing.json`,
+  at `--stage`) and a declared session limit, each queue is cut into the
   chained sessions that run it on the same account, each fitting 80% of the
-  limit with the setup paid once; without one, `sessionFit` says
-  `measured: false` and why.
+  limit with the setup paid once, and `sessionFit.makespanMinutes` is the
+  longest queue; without one, `sessionFit` says `measured: false` and why.
+- `schedule` and `plan` report the queues `distribute` launches: each step
+  (and each remote `plan` option) adds `queues` (`{account, slot, units,
+  sessions, minutes}`, units by index) and `queueMakespanMinutes`, from the
+  same place order and session cut. To agree with it, both now continue a
+  session only inside 80% of its limit (they filled the whole limit before)
+  and try slots in the launch's order, slot 1 of every account before any
+  slot 2. The schema 1 `schedule` golden gains only the two keys.
 - The consent token of a queued campaign binds its placement, and `submit`
   refuses `PLACEMENT_NOT_CONSENTED` when the slots granted at launch differ
   from the ones `distribute` showed, before anything is sent. A campaign
   with no more units than slots reports, mints and records exactly what
   0.39.0 did.
+
+### Fixed
+
+- `distribute` and campaign `submit` no longer place again a unit whose
+  share already returned complete (the units `remaining` calls `complete`):
+  they report it under `done` and place the rest, so passing a campaign's
+  full unit list again launches only what is left instead of re-running
+  finished units and leaving others unplaced. A unit whose result is no
+  longer on disk stays placeable. The token binds `done` and the placement
+  of the rest.
 
 ## 0.39.0
 

@@ -79,8 +79,9 @@ class QueueAdapter(ADAPTER.Adapter):
 
 def _timing(folds: int) -> dict:
     """A schema 1 record on SERVICE: 450 s per epoch, 10 epochs, one arm, one
-    seed, a 300 s setup. Its full-stage upper bound over `folds` units is
-    1.2 x (450 x 10 + 300) s = 96 minutes per unit, and the setup is 5 minutes."""
+    seed, a 300 s setup. With `folds` units, one unit's work at the upper
+    bound is 1.2 x 450 x 10 s = 90 minutes, and the setup, paid once per
+    session, is 5 minutes: a session of 12 h (576 usable minutes) holds 6."""
     measurement = {"measuredAt": "2026-10-29T00:00:00Z", "host": f"{SERVICE}:alice",
                    "device": "cuda:T4", "arm": "a", "unit": "epoch",
                    "secondsPerUnit": 450, "unitsMeasured": 3, "setupSeconds": 300}
@@ -341,30 +342,34 @@ class QueuedCampaignTests(unittest.TestCase):
             fit = report["sessionFit"]
             self.assertTrue(fit["measured"])
             self.assertEqual((fit["unitMinutes"], fit["setupMinutes"], fit["usableMinutes"],
-                              fit["unitsPerSession"]), (96, 5, 576, 5))
+                              fit["unitsPerSession"]), (90, 5, 576, 6))
             self.assertEqual(_queues_of(report), TEN_QUEUES)
             for row in report["queues"]:
                 self.assertEqual(row["sessions"], [row["units"]], "one session holds it")
-                self.assertLessEqual(5 + 96 * len(row["units"]), 576)
+                self.assertLessEqual(5 + 90 * len(row["units"]), 576)
+                self.assertEqual(row["minutes"], 5 + 90 * len(row["units"]))
                 self.assertFalse(row["chained"])
             self.assertEqual(adapter.jobs, [])
 
     def test_a_queue_over_the_margin_is_chained_on_the_same_account(self) -> None:
-        units = tuple(f"f{index:02d}" for index in range(24))
+        units = tuple(f"f{index:02d}" for index in range(28))
         with tempfile.TemporaryDirectory() as tmp:
-            target, notebook = _job_folder(tmp, timing_folds=24)
+            target, notebook = _job_folder(tmp, timing_folds=28)
             _gate(target, units, ["w1", "w2"])
             adapter = QueueAdapter([("w1", 2), ("w2", 2)], limit=LIMIT_SECONDS)
 
             report = _distribute(target, notebook, adapter, units)
 
             self.assertEqual(report["unplaced"], [])
-            self.assertEqual(report["sessionFit"]["unitsPerSession"], 5)
+            self.assertEqual(report["sessionFit"]["unitsPerSession"], 6)
             queues = _queues_of(report)
-            self.assertEqual([len(queue) for queue in queues.values()], [6, 6, 6, 6])
+            self.assertEqual([len(queue) for queue in queues.values()], [7, 7, 7, 7])
             for row in report["queues"]:
-                self.assertEqual(row["sessions"], [row["units"][:5], row["units"][5:]])
+                self.assertEqual(row["sessions"], [row["units"][:6], row["units"][6:]])
                 self.assertTrue(row["chained"])
+                # Each chained session pays the setup again: 5 + 6 x 90, then 5 + 90.
+                self.assertEqual(row["minutes"], 640)
+            self.assertEqual(report["sessionFit"]["makespanMinutes"], 640)
             flat = [unit for queue in queues.values() for unit in queue]
             self.assertEqual(sorted(flat), sorted(units))
 
@@ -378,7 +383,7 @@ class QueuedCampaignTests(unittest.TestCase):
             self.assertEqual(_queues_of(result), queues)
             self.assertEqual(result["sessionFit"], report["sessionFit"])
             events = [json.loads(line) for line in _ledger_lines(target)]
-            self.assertEqual([len(event["units"]) for event in events], [6, 6, 6, 6])
+            self.assertEqual([len(event["units"]) for event in events], [7, 7, 7, 7])
 
     def test_an_explicit_timing_path_and_stage_are_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -426,7 +431,7 @@ class QueueCommandLineTests(unittest.TestCase):
 
             code, report = self._main(["distribute", *common], adapter)
             self.assertEqual(code, 0)
-            self.assertEqual(report["sessionFit"]["unitsPerSession"], 5)
+            self.assertEqual(report["sessionFit"]["unitsPerSession"], 6)
             self.assertIn("poc upper bound", report["sessionFit"]["source"])
             self.assertEqual(adapter.jobs, [])
 
@@ -501,6 +506,176 @@ class PlacementConsentTests(unittest.TestCase):
             self.assertEqual(_ledger_lines(target), [])
 
 
+#: The QMLEEG wave-2 shape (L2): ten ids, fold1 and fold2 already returned.
+WAVE = tuple(f"fold{fold}-{part}" for fold in range(1, 6) for part in ("a", "b"))
+RETURNED = WAVE[:4]
+
+
+def _returned(tmp: str, target: Path, notebook: Path, units, *, files=None,
+              missing: bool = False) -> None:
+    """Launch `units` as their own campaign and settle every share it sent
+    `returned`: with `files` written into each result, or recorded at a path
+    that is not on disk when `missing`."""
+    adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+    token = _distribute(target, notebook, adapter, units)["consentToken"]
+    _submit(target, notebook, adapter, units, token)
+    ledger = REMOTE_CLI._main_ledger_path(target.resolve(), PRODUCT)
+    for job in adapter.jobs:
+        sid = f"{job.worker}/kernel-{job.run_config.get('slot', 1)}"
+        artifact = Path(tmp) / "results" / sid.replace("/", "-")
+        if not missing:
+            artifact.mkdir(parents=True)
+            for name, text in (files or {}).items():
+                (artifact / name).write_text(text, encoding="utf-8")
+        LEDGER.append(ledger, LEDGER.returned_event(
+            submission_id=sid, artifact_path=str(artifact), observed_concurrency=1))
+
+
+class DoneUnitsTests(unittest.TestCase):
+    """L2: a campaign's full unit list never re-places a unit whose share
+    already returned complete -- the units `remaining` calls complete are
+    reported under `done` and placed nowhere."""
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(JOBFOLDER, "verify_pin_preconditions",
+                                             return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _placed(self, report: dict) -> list[str]:
+        return [unit for row in report["assignments"] for unit in row["units"]]
+
+    def test_distribute_excludes_the_returned_units_and_places_every_other(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            _returned(tmp, target, notebook, RETURNED)
+            before = _ledger_lines(target)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            self.assertEqual(report["done"], list(RETURNED))
+            self.assertEqual(report["units"], 10)
+            self.assertEqual(report["assigned"], 6)
+            self.assertEqual(report["unplaced"], [])
+            self.assertEqual(sorted(self._placed(report)), sorted(WAVE[4:]))
+            self.assertEqual(_queues_of(report), {
+                ("w1", 1): ["fold3-a", "fold5-a"], ("w1", 2): ["fold4-a"],
+                ("w2", 1): ["fold3-b", "fold5-b"], ("w2", 2): ["fold4-b"]})
+            remaining = REMOTE_CLI.cmd_remaining(target=target, entrypoint=notebook,
+                                                 units=WAVE, source_digest=lambda t, n: DIGEST)
+            self.assertEqual(remaining["complete"], report["done"])
+            self.assertEqual(remaining["remaining"], self._placed_in_order(report))
+            self.assertEqual(adapter.jobs, [])
+            self.assertEqual(_ledger_lines(target), before, "distribute records nothing")
+
+    def _placed_in_order(self, report: dict) -> list[str]:
+        placed = set(self._placed(report))
+        return [unit for unit in WAVE if unit in placed]
+
+    def test_the_token_binds_the_placement_after_the_exclusion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            _returned(tmp, target, notebook, ("u0", "u1"))
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            report = _distribute(target, notebook, adapter, ("u0", "u1", "u2", "u3"))
+
+            # Two units left on four places: one per slot, yet the token
+            # binds the placement and what was left out.
+            self.assertEqual(report["done"], ["u0", "u1"])
+            import hashlib
+            payload = {"entrypoint": "Notebooks/a.ipynb", "pin": None,
+                       "units": ["u0", "u1", "u2", "u3"], "done": ["u0", "u1"],
+                       "placement": [{"worker": "w1", "slot": 1, "units": ["u2"]},
+                                     {"worker": "w2", "slot": 1, "units": ["u3"]}]}
+            self.assertEqual(report["consentToken"], hashlib.sha256(
+                json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest())
+
+    def test_submit_with_the_full_list_sends_only_what_is_left(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            _returned(tmp, target, notebook, RETURNED)
+            before = len(_ledger_lines(target))
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            result = _submit(target, notebook, adapter, WAVE, report["consentToken"])
+
+            sent = [unit for job in adapter.jobs for unit in job.run_config["units"]]
+            self.assertEqual(sorted(sent), sorted(WAVE[4:]))
+            self.assertEqual(result["done"], list(RETURNED))
+            self.assertEqual(result["unplaced"], [])
+            self.assertEqual(result["queues"], report["queues"])
+            events = [json.loads(line) for line in _ledger_lines(target)[before:]]
+            self.assertEqual([event["kind"] for event in events], ["submitted"] * 4)
+            self.assertEqual(sorted(u for event in events for u in event["units"]),
+                             sorted(WAVE[4:]))
+
+    def test_a_token_minted_before_the_results_returned_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+            stale = _distribute(target, notebook, adapter, WAVE)["consentToken"]
+            _returned(tmp, target, notebook, RETURNED)
+            before = _ledger_lines(target)
+            launch = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            with self.assertRaises(REMOTE_CLI.ConsentError) as caught:
+                _submit(target, notebook, launch, WAVE, stale)
+
+            self.assertIn("PLACEMENT_NOT_CONSENTED", str(caught.exception))
+            self.assertEqual(launch.jobs, [])
+            self.assertEqual(_ledger_lines(target), before)
+
+    def test_a_result_no_longer_on_disk_stays_placeable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            _returned(tmp, target, notebook, RETURNED, missing=True)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            self.assertNotIn("done", report)
+            self.assertEqual(sorted(self._placed(report)), sorted(WAVE))
+            remaining = REMOTE_CLI.cmd_remaining(target=target, entrypoint=notebook,
+                                                 units=WAVE, source_digest=lambda t, n: DIGEST)
+            self.assertEqual(remaining["unknown"], list(RETURNED))
+
+    def test_a_unit_a_partial_result_left_is_placed_again(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            # Each share of the earlier campaign stopped early: everything it
+            # carried but fold1-a is left to do.
+            _returned(tmp, target, notebook, RETURNED, files={"partial.json": json.dumps(
+                {"remaining": ["fold1-b", "fold2-a", "fold2-b"]})})
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            self.assertEqual(report["done"], ["fold1-a"])
+            self.assertEqual(sorted(self._placed(report)), sorted(WAVE[1:]))
+
+    def test_a_job_folder_campaign_gated_for_the_full_list_launches_what_is_left(self) -> None:
+        """The `gate` record binds the list the invocation names: gated for
+        all ten, a full-list submit launches the eight not done."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _job_folder(tmp)
+            _gate(target, RETURNED, ["w1", "w2"])
+            with unittest.mock.patch.object(REMOTE_CLI, "_declared_session_limit",
+                                            return_value=None):
+                _returned(tmp, target, notebook, RETURNED)
+            _gate(target, WAVE, ["w1", "w2"])
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)], limit=LIMIT_SECONDS)
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            result = _submit(target, notebook, adapter, WAVE, report["consentToken"])
+
+            self.assertEqual(result["done"], list(RETURNED))
+            self.assertEqual(sorted(u for job in adapter.jobs for u in job.run_config["units"]),
+                             sorted(WAVE[4:]))
+
+
 class QueueRunnerAndRemainingTests(unittest.TestCase):
     """S2: a queue travels whole to the runner and `remaining` reads it per slot."""
 
@@ -539,6 +714,83 @@ class QueueRunnerAndRemainingTests(unittest.TestCase):
             self.assertEqual(report["unitArgs"], ["--unit", "u4", "--unit", "u8"])
 
 
+def _parallelism(argv: list[str]) -> dict:
+    """Run remote-parallelism's CLI (the module `remote_cli` reads its rules
+    from) and return its JSON."""
+    import contextlib
+    import io
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout):
+        code = REMOTE_CLI._parallelism_cli().run(argv)
+    assert code == 0, stdout.getvalue()
+    return json.loads(stdout.getvalue())
+
+
+class PlanningAgreementTests(unittest.TestCase):
+    """S4: `schedule` and `plan` report the queues and makespan `distribute`
+    launches: 28 units on two accounts of two slots each, 90 minutes per unit
+    at the upper bound, a 5-minute setup and 12-hour sessions."""
+
+    UNITS = tuple(f"f{index:02d}" for index in range(28))
+    ACCOUNTS = [("svc:alice", 2), ("svc:bob", 2)]
+
+    def _launched(self, tmp: str, accounts) -> dict:
+        target, notebook = _job_folder(tmp, timing_folds=28)
+        adapter = QueueAdapter(accounts, limit=LIMIT_SECONDS)
+        report = _distribute(target, notebook, adapter, self.UNITS)
+        self.assertEqual(report["unplaced"], [])
+        return report
+
+    @staticmethod
+    def _by_index(queues: list[dict], units) -> list[tuple]:
+        return [(row["account"], row["slot"], [units[i] for i in row["units"]],
+                 [[units[i] for i in session] for session in row["sessions"]], row["minutes"])
+                for row in queues]
+
+    def test_schedule_reports_the_queues_and_makespan_distribute_launches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            launched = self._launched(tmp, self.ACCOUNTS)
+            timing = Path(tmp) / "repo" / PRODUCT / "Results" / "timing.json"
+            plan = Path(tmp) / "plan.json"
+            plan.write_text(json.dumps({
+                "schema": 1, "setupMinutes": 5,
+                "steps": [{"id": "hpo", "units": 28, "services": [SERVICE], "axis": "fold",
+                           "timing": {SERVICE: {"path": str(timing), "host": f"{SERVICE}:alice",
+                                                "stage": "full"}}}],
+                "accounts": [{"owner": owner, "service": SERVICE, "sessions": 2, "sessionHours": 12,
+                              "quotaHours": None} for owner in ("alice", "bob")],
+            }), encoding="utf-8")
+
+            schedule = _parallelism(["--root", tmp, "schedule", "--plan", str(plan)])
+
+            (step,) = schedule["steps"]
+            self.assertEqual(self._by_index(step["queues"], self.UNITS),
+                             [(row["worker"], row["slot"], row["units"], row["sessions"],
+                               row["minutes"]) for row in launched["queues"]])
+            self.assertEqual(step["queueMakespanMinutes"], launched["sessionFit"]["makespanMinutes"])
+            self.assertEqual(schedule["makespanMinutes"], 640)
+            self.assertEqual(step["queueMakespanMinutes"], 640)
+            self.assertEqual([share["units"] for share in step["shares"]], [14, 14])
+
+    def test_plan_reports_the_queues_and_makespan_distribute_launches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            launched = self._launched(tmp, [("svc:alice", 2)])
+            timing = Path(tmp) / "repo" / PRODUCT / "Results" / "timing.json"
+
+            result = _parallelism(["--root", tmp, "plan", "--timing", str(timing), "--stage", "full",
+                                   "--account", f"alice:{SERVICE}:2:12:unknown"])
+
+            (option,) = [item for item in result["plans"]["full"]["options"]
+                         if item["option"] == f"{SERVICE}:alice"]
+            self.assertEqual(self._by_index(option["queues"], self.UNITS),
+                             [(row["worker"], row["slot"], row["units"], row["sessions"],
+                               row["minutes"]) for row in launched["queues"]])
+            self.assertEqual(option["queueMakespanMinutes"],
+                             launched["sessionFit"]["makespanMinutes"])
+            # 14 units per slot: three sessions of 6, 6 and 2 units.
+            self.assertEqual(option["queueMakespanMinutes"], 3 * 5 + 14 * 90)
+
+
 class SlotQueueDocTests(unittest.TestCase):
     """The skill and the changelog state slot queues, naming no service."""
 
@@ -548,15 +800,28 @@ class SlotQueueDocTests(unittest.TestCase):
         rule = skill.split("**Slot queues.**", 1)[1].split("\n  - ", 1)[0]
         for needle in ("FORGE_RUN_UNITS", "`queues`", "`sessionFit`", "--timing", "--stage",
                        "unitsPerSession", "PLACEMENT_NOT_CONSENTED", "same account",
-                       "`remaining`"):
+                       "`remaining`", "`done`", "`unknown`", "never placed again"):
             self.assertIn(needle, rule)
         for service in ("kaggle", "colab"):
             self.assertNotIn(service, rule.lower())
         self.assertIn("| `PLACEMENT_NOT_CONSENTED` | campaign `submit`", skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         unreleased = changelog.split("\n## Unreleased\n", 1)[1].split("\n## ", 1)[0]
-        for needle in ("Slot queues", "PLACEMENT_NOT_CONSENTED", "sessionFit", "unplaced"):
+        for needle in ("Slot queues", "PLACEMENT_NOT_CONSENTED", "sessionFit", "unplaced",
+                       "queueMakespanMinutes", "80% of its limit", "`done`"):
             self.assertIn(needle, unreleased)
+
+    def test_remote_parallelism_states_the_queues_the_launch_runs(self) -> None:
+        skill = (REPOSITORY_ROOT / "skills/remote-parallelism/SKILL.md").read_text(
+            encoding="utf-8")
+        rule = skill.split("**The queues the launch runs.**", 1)[1].split("\n\n", 1)[0]
+        for needle in ("i mod slots", "round-robin", "80% of the limit", "same account",
+                       "`queues`", "`queueMakespanMinutes`"):
+            self.assertIn(needle, rule)
+        for service in ("kaggle", "colab"):
+            self.assertNotIn(service, rule.lower())
+        self.assertIn("queues[{account, slot, units, sessions, minutes}]", skill)
+        self.assertIn("queueMakespanMinutes?}]", skill)
 
 
 class OneUnitPerSlotGoldenTests(unittest.TestCase):

@@ -244,10 +244,25 @@ The plan (`--plan plan.json`, schema 1):
   and `quotaWaitMinutes`; the plan reports `quotaWeeks`, the weeks its
   makespan spans.
 
+- **The queues the launch runs.** `remote-execution distribute` places a
+  step's units as queues, one per slot: unit `i` joins slot `i mod slots`,
+  slots in round-robin order (slot 1 of every account, in declared order,
+  before any slot 2). A session holds the units whose minutes, plus the
+  setup paid once, end inside 80% of the limit; the rest of the queue runs
+  as chained sessions on the same account. `schedule` places units by the
+  same order and the same margin, and each step reports `queues` (one
+  `{account, slot, units, sessions, minutes}` per slot, units by their
+  0-based index, in launch order) and `queueMakespanMinutes`: what
+  `distribute` launches for that step on the chosen services' accounts.
+  With alike slots and no quota wait it equals the step's own duration; a
+  quota wait or uneven session limits can make the simulation place a unit
+  elsewhere, and `queues` still says where the launch puts it.
+
 The output: `{steps[{id, units, requires, services, allowedServices,
 unitMinutes, unitMinutesSource, setupMinutes, readyMinutes, startMinutes,
 endMinutes, durationMinutes, shares[{account, owner, service, units,
-slotsUsed, sessions}], resumable?, checkpointMinutes?, sessionsPerUnit?}],
+slotsUsed, sessions}], queues[{account, slot, units, sessions, minutes}],
+queueMakespanMinutes, resumable?, checkpointMinutes?, sessionsPerUnit?}],
 makespanMinutes, makespanHours, quotaWeeks, serialMinutes,
 serialHours, speedup, savedMinutes, quota[{account, owner, service, units,
 gpuHours, quotaHours, overQuota, quotaWeeks, quotaWaitMinutes}], quotaOk, accounts, excludedAccounts,
@@ -486,6 +501,10 @@ default: every candidate competes on its own measurement.
   N processes; a remote candidate onto its account's sessions x processes,
   paying its setup once per session inside the 80% session margin), and one
   split per service and machine measured on two or more paid owners' own rows.
+  A remote option also reports `queues` (`{account, slot, units, sessions,
+  minutes}` per slot) and `queueMakespanMinutes`: the queues `distribute`
+  launches, in its place order, cut at each unit's upper bound with the
+  setup paid once per session (see "The queues the launch runs" above).
   A split is kept only when it clears `assess`'s thresholds (speed-up 1.5,
   30 saved minutes) over its best single account.
 - **Eligibility.** A local option whose makespan upper bound exceeds 20
@@ -553,8 +572,8 @@ python3 skills/remote-parallelism/scripts/parallelism_cli.py [--root <workspace>
 |---|---|
 | `assess` | `--units N --unit-minutes M --owners N --sessions-per-account S --session-limit-hours H --quota-hours Q --setup-minutes O` or, with each account's own limits, `--units N --unit-minutes M --setup-minutes O --account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...` (or `--accounts-file accounts.json`), then `[--accounts A] [--service kaggle\|colab[,...]] [--tiers free,pro,...] [--stamps-identical] [--units-file units.json] [--axis <name>] [--quota-source <text>] [--quota-date YYYY-MM-DD] [--record <dir>]`: JSON `{inputs, thresholds, serialMinutes, singleAccountMinutes, parallelMinutes, speedup, savedMinutes, accountsUsed, recommendedAccounts, perAccount[{account, units, gpuHours, overQuota}], quotaOk, unitsOverSessionLimit, eligibleOwners, excludedOwners[{owner, tier}], verdict, reasons, unitSeeds?, reproducibilityChecklist, stampFields, launchAuthorization: false}`; each `perAccount` entry is one eligible owner's account. `--record <dir>` writes `<dir>/.remote-parallelism/assessment-<date>.json` (a second one the same day gets `-2`, never an overwrite); `<dir>` must resolve inside the workspace, through no symlink that leaves it |
 | `estimate` | `--timing <path to timing.json> [--stage poc\|full\|both] [--host <host>:<owner> ...] [--record <dir>] [--json]`: JSON `{estimates: {stage: {host: {seconds, low, high, formula, measurements, device, secondsPerUnit, perArm, setupSeconds} \| "unmeasured"}}, placement: {stage: {where: "local"\|"cloud"\|null, host, reason, pocBudget?: "within"\|"exceeds"\|"unmeasured"}}, placementRules, timing, range, unmeasuredMeans, launchAuthorization: false}`; `local` and every host the record measured are always reported, and each `--host` named adds a row (`unmeasured` when the record has no measurement of it). `--record <dir>` writes `<dir>/.remote-parallelism/estimate-<date>.json` under the same containment as `assess`, and then `--timing` too must resolve inside the workspace, through no symlink that leaves it |
-| `schedule` | `--plan <plan.json> [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json]`: places each remote step on one service and its units on that service's accounts, honouring `requires`, for the smallest makespan; JSON `{steps[{id, services, startMinutes, endMinutes, shares[...]}], makespanMinutes, serialMinutes, speedup, savedMinutes, quota[{account, gpuHours, quotaHours, overQuota}], quotaOk, excludedAccounts, search, doctrineChecks, reasons, launchAuthorization: false}` (see "Planning a project's remote steps"); read-only, writes nothing |
-| `plan` | `--timing <path to timing.json> [--stage poc\|full\|both] [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json] [--candidate <candidate> ...] [--resumable --checkpoint-minutes <minutes>] [--record <dir>]`: JSON `{plans: {stage: {units, unit, options[{option, kind: "local"\|"remote"\|"split", candidates, device, settings, processes, accounts, slots, makespanSeconds{seconds, low, high}, quotaWeeks, acceleratorHours, perAccount[{account, units, acceleratorHours, quotaHours, overQuota, quotaWeeks, quotaWaitSeconds}], status, reason, quotaNote?, resumable?, checkpointMinutes?, sessionsPerUnit?}], status: "recommended"\|"needs-measurement"\|"no-eligible", recommended, provisional?, measureFirst[{candidate, measureWith, command}], reason, lost[{option, status, reason}], unmeasured[{candidate, measureWith}], pocBudget?}}, representationAdvice[{candidate, loadShare, threshold, advice, rewritesData: false}], dataSourceComparisons, accounts, excludedAccounts, rules, readOnly: true, launchAuthorization: false}` (see "Plan the placement before you run"); `--record <dir>` writes `<dir>/.remote-parallelism/plan-<date>.json` under the same containment as `estimate` |
+| `schedule` | `--plan <plan.json> [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json]`: places each remote step on one service and its units on that service's accounts, honouring `requires`, for the smallest makespan; JSON `{steps[{id, services, startMinutes, endMinutes, shares[...], queues[...], queueMakespanMinutes}], makespanMinutes, serialMinutes, speedup, savedMinutes, quota[{account, gpuHours, quotaHours, overQuota}], quotaOk, excludedAccounts, search, doctrineChecks, reasons, launchAuthorization: false}` (see "Planning a project's remote steps"); read-only, writes nothing |
+| `plan` | `--timing <path to timing.json> [--stage poc\|full\|both] [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json] [--candidate <candidate> ...] [--resumable --checkpoint-minutes <minutes>] [--record <dir>]`: JSON `{plans: {stage: {units, unit, options[{option, kind: "local"\|"remote"\|"split", candidates, device, settings, processes, accounts, slots, makespanSeconds{seconds, low, high}, quotaWeeks, acceleratorHours, perAccount[{account, units, acceleratorHours, quotaHours, overQuota, quotaWeeks, quotaWaitSeconds}], status, reason, quotaNote?, resumable?, checkpointMinutes?, sessionsPerUnit?, queues?, queueMakespanMinutes?}], status: "recommended"\|"needs-measurement"\|"no-eligible", recommended, provisional?, measureFirst[{candidate, measureWith, command}], reason, lost[{option, status, reason}], unmeasured[{candidate, measureWith}], pocBudget?}}, representationAdvice[{candidate, loadShare, threshold, advice, rewritesData: false}], dataSourceComparisons, accounts, excludedAccounts, rules, readOnly: true, launchAuthorization: false}` (see "Plan the placement before you run"); `--record <dir>` writes `<dir>/.remote-parallelism/plan-<date>.json` under the same containment as `estimate` |
 | `checklist` | the reproducibility checklist as JSON |
 | `stamp-fields` | the shard stamp fields to declare `identicalAcrossShards` |
 

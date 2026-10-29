@@ -103,6 +103,47 @@ def queue_sessions(queue: list[str], per_session: int) -> list[list[str]]:
     `per_session` units that run it on the same account."""
     return [list(queue[start:start + per_session]) for start in range(0, len(queue), per_session)]
 
+
+def queue_plan(queue: list, unit: float, setup: float, limit: float) -> tuple[list[list], float]:
+    """A slot's queue cut into its chained sessions, and their busy time:
+    each session pays the setup once and runs its units; a unit over the
+    margin runs alone as a chain of sessions, each paying the setup again
+    (`chain_costs`). Any one time unit, the same for all three numbers."""
+    sessions = queue_sessions(queue, session_capacity(unit, setup, limit))
+    work = usable_session(limit) - setup
+    if unit + setup > usable_session(limit) and work > 0:
+        chain = math.ceil(unit / work)
+        return sessions, sum(sum(chain_costs(unit, setup, chain, work)) for _ in queue)
+    return sessions, sum(setup + len(session) * unit for session in sessions)
+
+
+def round_robin_slots(accounts: list[tuple[object, int]]) -> list[tuple[object, int]]:
+    """`remote-execution distribute`'s place order: `(account, slot)` with
+    slot 1 of every account, in the declared order, before any slot 2."""
+    deepest = max((sessions for _, sessions in accounts), default=0)
+    return [(account, slot + 1) for slot in range(deepest)
+            for account, sessions in accounts if sessions > slot]
+
+
+def launch_queues(units: list, slots: list[dict]) -> list[dict]:
+    """The queues `distribute` launches, offline: unit `i` joins the queue of
+    `slots[i mod len(slots)]` (slots in `round_robin_slots` order, each with
+    its `account`, `slot`, `unit`, `setup` and `limit`), and each queue is
+    cut by `queue_plan`. A slot left without units is not a queue. Rows come
+    in launch order: each account's slots in turn, accounts as declared."""
+    queues: list[list] = [[] for _ in slots]
+    for index, item in enumerate(units):
+        queues[index % len(slots)].append(item)
+    accounts = list(dict.fromkeys(slot["account"] for slot in slots))
+    rows = []
+    for slot, queue in sorted(zip(slots, queues),
+                              key=lambda pair: (accounts.index(pair[0]["account"]), pair[0]["slot"])):
+        if queue:
+            sessions, busy = queue_plan(queue, slot["unit"], slot["setup"], slot["limit"])
+            rows.append({"account": slot["account"], "slot": slot["slot"], "units": queue,
+                         "sessions": sessions, "minutes": busy})
+    return rows
+
 #: Colab compute tiers. Only paid compute may be a worker of a split campaign:
 #: the Colab FAQ disallows, on free runtimes without compute units, "running
 #: distributed computing workers", and on any tier "using multiple accounts to
@@ -1246,9 +1287,17 @@ def timing_unit_minutes(root: Path, where: str, service: str, spec, units: int) 
     estimate = host_estimate(items, data["scales"][stage])
     scale = data["scales"][stage]
     work = estimate["secondsPerUnit"] * scale["epochs"] * scale["folds"] * scale["seeds"] * scale["arms"]
-    minutes = work * (1 + ESTIMATE_RANGE) / units / 60
+    minutes = upper_unit_seconds(estimate, scale, units) / 60
     return minutes, (f"{spec['path']} {host} {stage}: upper bound of {num(work)} s of work "
                      f"(+{int(ESTIMATE_RANGE * 100)}%) over {units} units")
+
+
+def upper_unit_seconds(estimate: dict, scale: dict, units: int) -> float:
+    """One of `units` units' work at the estimate's upper bound: the stage's
+    work, its setup left out (a session pays it once), over the units. The
+    rule `schedule` and `remote-execution distribute` cut queues with."""
+    work = estimate["secondsPerUnit"] * scale["epochs"] * scale["folds"] * scale["seeds"] * scale["arms"]
+    return work * (1 + ESTIMATE_RANGE) / units
 
 
 def load_plan(root: Path, name: str) -> dict:
@@ -1453,7 +1502,7 @@ def simulate(steps: list[dict], assignment: dict, slots: list[dict],
                 current = state[position]
                 begin = max(current["free"], ready)
                 same = (chain == 1 and current["step"] == entry["id"]
-                        and current["used"] + minutes <= slot["limit"])
+                        and current["used"] + minutes <= usable_session(slot["limit"]))
                 quota, account = quotas[slot["account"]], slot["account"]
                 work = usable_session(slot["limit"]) - setup
                 costs = [minutes] if same else chain_costs(minutes, setup, chain, work)
@@ -1523,8 +1572,11 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
     entries = load_accounts(root, args.account, args.accounts_file, plan["accounts"])
     pool = account_pool(entries)
     accounts = pool["eligible"]
-    slots = [{"account": index, "service": entry["service"], "limit": entry["sessionHours"] * 60}
-             for index, entry in enumerate(accounts) for _ in range(entry["sessions"])]
+    # In `distribute`'s place order, so a tie goes where the launch puts it.
+    slots = [{"account": index, "slot": slot, "service": accounts[index]["service"],
+              "limit": accounts[index]["sessionHours"] * 60}
+             for index, slot in round_robin_slots([(index, entry["sessions"])
+                                                   for index, entry in enumerate(accounts)])]
     steps = plan["steps"]
     quotas = [None if entry["quotaHours"] is None else entry["quotaHours"] * 60 for entry in accounts]
     options = {entry["id"]: step_options(entry, slots) for entry in steps}
@@ -1588,6 +1640,14 @@ def cmd_schedule(args, root: Path, today: str) -> dict:
             "readyMinutes": num(line["ready"]), "startMinutes": num(line["start"]),
             "endMinutes": num(line["end"]), "durationMinutes": num(line["end"] - line["start"]),
             "shares": shares})
+        # What `distribute` launches for this step on the chosen services' slots.
+        queues = launch_queues(list(range(entry["units"])), [
+            dict(slot, account=accounts[slot["account"]]["label"], unit=entry["minutes"][slot["service"]],
+                 setup=entry["setup"][slot["service"]])
+            for slot in slots if slot["service"] in chosen])
+        report_steps[-1].update({
+            "queues": [dict(row, minutes=num(row["minutes"])) for row in queues],
+            "queueMakespanMinutes": num(max(row["minutes"] for row in queues))})
         if entry["resumable"]:
             limits = {svc: max(a["sessionHours"] * 60 for a in accounts if a["service"] == svc) for svc in chosen}
             chains = {svc: unit_sessions(entry, svc, limits[svc]) for svc in chosen}
@@ -1704,7 +1764,7 @@ def pack_slots(count: int, slots: list[dict], quotas: dict | None = None) -> lis
             unit, setup, limit, chain = slot["unit"], slot["setup"], slot["limit"], slot.get("chain", 1)
             account, quota = slot["account"], quotas.get(slot["account"])
             same = (chain == 1 and slot["used"] is not None
-                    and (limit is None or slot["used"] + unit <= limit))
+                    and (limit is None or slot["used"] + unit <= usable_session(limit)))
             costs = [unit] if same else chain_costs(unit, setup, chain, slot.get("work", 0.0))
             finish, wait, charges = quota_place(slot["finish"], costs, quota,
                                                 spent.get(account, {}), week)
@@ -1782,7 +1842,7 @@ def remote_makespan(members: list[tuple[str, list[dict], dict]], scale: dict,
     seconds of work between two checkpoints of a resumable unit) lands inside
     one session's usable work: then it is costed as a chain of sessions on
     one account, each paying the setup again."""
-    slots, device, chains = [], members[0][1][0]["device"], []
+    slots, device, chains, launch = [], members[0][1][0]["device"], [], {}
     for candidate, rows, account in members:
         setups = [float(item["setupSeconds"]) for item in rows if "setupSeconds" in item]
         unit = per_unit_of(rows) * scale["arms"] * scale["epochs"]
@@ -1806,13 +1866,21 @@ def remote_makespan(members: list[tuple[str, list[dict], dict]], scale: dict,
                         "perAccount": [], "reason": why}
         chains.append(chain)
         processes = rows[0].get("processes", 1)
-        slots += [{"account": account["label"], "unit": unit, "setup": setup, "limit": limit,
-                   "chain": chain, "work": work}] * (account["sessions"] * processes)
+        launch[account["label"]] = ({"unit": unit, "setup": setup, "limit": limit, "chain": chain,
+                                     "work": work, "high": high}, account["sessions"] * processes)
+    # In `distribute`'s place order, so a tie goes where the launch puts it.
+    order = round_robin_slots([(label, count) for label, (_, count) in launch.items()])
+    slots = [dict(launch[label][0], account=label, slot=slot) for label, slot in order]
     accelerated = device != "cpu"
     quotas = {account["label"]: account["quotaHours"] for _, _, account in members}
     weekly = {label: hours * 3600 for label, hours in quotas.items() if hours is not None and accelerated}
     state = pack_slots(scale["folds"] * scale["seeds"], slots, weekly)
     result = finish_option(state, device, quotas)
+    # What `distribute` launches: the queues cut at each unit's upper bound.
+    queues = launch_queues(list(range(scale["folds"] * scale["seeds"])),
+                           [dict(slot, unit=slot["high"]) for slot in slots])
+    result["queues"] = [dict(row, minutes=num(row["minutes"] / 60)) for row in queues]
+    result["queueMakespanMinutes"] = num(max(row["minutes"] for row in queues) / 60)
     over = [item for item in result["perAccount"] if item["overQuota"]]
     unknown = [item["account"] for item in result["perAccount"] if item["overQuota"] is None and item["units"]
                and accelerated]
@@ -2147,7 +2215,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="<owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>], repeated")
     assess.add_argument("--accounts-file", default=None, help="a JSON list of accounts with their own limits")
     assess.set_defaults(func=cmd_assess)
-    plan = verbs.add_parser("schedule", help="place remote steps on services and units on accounts, read-only")
+    plan = verbs.add_parser("schedule", help="place remote steps on services and units on accounts, with the "
+                                              "queues distribute launches, read-only")
     plan.add_argument("--plan", default=None)
     plan.add_argument("--account", action="append", default=None)
     plan.add_argument("--accounts-file", default=None)
@@ -2160,7 +2229,7 @@ def build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--json", action="store_true", help="JSON output (the only output; accepted for symmetry)")
     estimate.set_defaults(func=cmd_estimate)
     placement_plan = verbs.add_parser("plan", help="the fastest affordable placement over every measured "
-                                                   "candidate, read-only")
+                                                   "candidate, with the queues distribute launches, read-only")
     placement_plan.add_argument("--timing", default=None)
     placement_plan.add_argument("--stage", default=None)
     placement_plan.add_argument("--account", action="append", default=None)
