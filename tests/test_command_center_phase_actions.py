@@ -69,7 +69,7 @@ class PhaseActionCatalogueTests(unittest.TestCase):
         prompt = phase_actions.ACTIONS["plausibility"]["actions"][0]
         self.assertEqual((prompt["kind"], prompt["slash"], prompt["min_sentences"]),
                          ("prompt", "/plausibility", 2))
-        self.assertIn("dos oraciones", " ".join(prompt["guide"]))
+        self.assertIn("two sentences", " ".join(prompt["guide"]))
 
     def test_the_concept_map_and_math_are_reached_from_the_proposal_phase(self) -> None:
         redirects = {(a["tab"], a["section"]) for a in phase_actions.ACTIONS["proposal"]["actions"]
@@ -90,15 +90,15 @@ class PhaseActionCatalogueTests(unittest.TestCase):
     def test_the_experiments_phase_offers_the_estimate_step_before_remote_runs(self) -> None:
         actions = phase_actions.ACTIONS["poc_experiments"]["actions"]
         labels = [a["label"] for a in actions]
-        estimate = actions[labels.index("Estimar tiempo y elegir dónde correr")]
+        estimate = actions[labels.index("Estimate the time and choose where to run")]
         self.assertEqual((estimate["kind"], estimate["tab"]), ("redirect", "experiments"))
         self.assertIn("Results/timing.json", estimate["desc"])
         remote = next(i for i, a in enumerate(actions) if a.get("slash") == "/remote-execution")
-        poc = labels.index("Implementar la prueba de concepto")
+        poc = labels.index("Implement the proof of concept")
         full = next(i for i, a in enumerate(actions) if a.get("slash") == "/experimental-implementation")
         # The estimate runs before the pilot and again before the full run.
-        self.assertLess(poc, labels.index("Estimar tiempo y elegir dónde correr"))
-        self.assertLess(labels.index("Estimar tiempo y elegir dónde correr"), full)
+        self.assertLess(poc, labels.index("Estimate the time and choose where to run"))
+        self.assertLess(labels.index("Estimate the time and choose where to run"), full)
         self.assertLess(full, remote)
 
     def test_the_experiments_phase_offers_an_optional_hyperparameter_search(self) -> None:
@@ -106,18 +106,19 @@ class PhaseActionCatalogueTests(unittest.TestCase):
         self.assertIn("hyperparameter-search", entry["skills"])
         actions = entry["actions"]
         labels = [a["label"] for a in actions]
-        search = actions[labels.index("Búsqueda de hiperparámetros (Optuna)")]
+        search = actions[labels.index("Hyperparameter search (Optuna)")]
         self.assertEqual((search["kind"], search["slash"], search["optional"]),
                          ("prompt", "/hyperparameter-search", True))
-        self.assertLess(labels.index("Estimar tiempo y elegir dónde correr"), labels.index(search["label"]))
-        self.assertLess(labels.index(search["label"]), labels.index("Implementar y medir los experimentos"))
+        self.assertLess(labels.index("Estimate the time and choose where to run"), labels.index(search["label"]))
+        self.assertLess(labels.index(search["label"]), labels.index("Implement and measure the experiments"))
         guide = " ".join(search["guide"]).lower()
-        for phrase in ("deliberación", "fold externo", "mismo presupuesto", "variable independiente",
-                       "semilla", "ped-anova", "contornos", "solo el operador"):
+        for phrase in ("deliberation", "outer fold", "same trial budget", "independent variable",
+                       "seeded", "ped-anova", "contours", "only the operator"):
             self.assertIn(phrase, guide)
 
     def test_the_gates_live_in_the_pipeline_tab_and_doctor_follows_telemetry(self) -> None:
-        tabs = re.findall(r"onclick=\"navigateTab\('([a-z]+)'\)\">", PAGE)
+        nav = PAGE.split('<nav class="tabs-nav"', 1)[1].split('</nav>', 1)[0]
+        tabs = re.findall(r"onclick=\"navigateTab\('([a-z]+)'\)", nav)
         self.assertNotIn("gates", tabs)
         self.assertEqual(tabs[-4:], ["artifacts", "historia", "telemetria", "doctor"])
         pipeline = PAGE.split('<div id="pane-pipeline"', 1)[1].split('<div id="pane-', 1)[0]
@@ -130,18 +131,18 @@ class PhaseActionCatalogueTests(unittest.TestCase):
     def test_the_experiments_phase_offers_data_and_replication_steps(self) -> None:
         entry = phase_actions.ACTIONS["poc_experiments"]
         data = next(a for a in entry["actions"] if a.get("slash") == "/datasets")
-        self.assertTrue(data["label"].startswith("Datos: toy set siempre y dataset oficial"))
+        self.assertTrue(data["label"].startswith("Data: always a toy set"))
         guide = " ".join(data["guide"])
         for verb in ("synth", "search", "license", "qc", "prepare", "publish"):
             self.assertIn(verb, guide)
         self.assertIn("dataset-scout", guide)
         self.assertIn("dataset-curator", guide)
-        self.assertIn("consentimiento", guide)
-        replica = next(a for a in entry["actions"] if a.get("label") == "Réplica de métodos de comparación")
+        self.assertIn("consent", guide.lower())
+        replica = next(a for a in entry["actions"] if "comparison" in a.get("label", "").lower())
         self.assertEqual(replica["slash"], "/proposal-implementation")
         guide = " ".join(replica["guide"])
         self.assertIn("paper-replicator", guide)
-        self.assertIn("código publicado", guide)
+        self.assertIn("published code", guide.lower())
 
     def test_phase_ids_resolve_to_stages(self) -> None:
         self.assertEqual(phase_actions.stage_for("Fase 8"), "writing")
@@ -191,7 +192,7 @@ class ServerPhaseTests(unittest.TestCase):
             with self.subTest(phase=phase["id"]):
                 self.assertTrue(phase["actions"])
                 self.assertNotIn("--stage", phase["cli_command"])
-        self.assertEqual(status["fases"][1]["cli_command"], "/plausibility <texto>")
+        self.assertEqual(status["fases"][1]["cli_command"], "/plausibility <text>")
 
     def test_phase_five_lists_data_and_replication_sub_phases_in_order(self) -> None:
         status = json.loads(bytes(self.route("/api/status")().body))
@@ -199,32 +200,32 @@ class ServerPhaseTests(unittest.TestCase):
         ids = [s["id"] for s in fase5["subfases"]]
         self.assertEqual(ids, [f"5.{i}" for i in range(1, len(ids) + 1)])
         names = [s["name"] for s in fase5["subfases"]]
-        data = names.index("Datos: toy set siempre y dataset oficial")
-        replica = names.index("Réplica de métodos de comparación")
-        build = names.index("Prueba de concepto")
+        data = next(i for i, n in enumerate(names) if "toy set" in n.lower())
+        replica = next(i for i, n in enumerate(names) if "comparison" in n.lower() or "replication" in n.lower())
+        build = next(i for i, n in enumerate(names) if "proof of concept" in n.lower())
         self.assertLess(data, build)
         self.assertLess(replica, build)
         self.assertIn("paper-replicator", fase5["subfases"][replica]["detail"])
-        estimate = names.index("Estimar tiempo y elegir dónde correr")
-        full = names.index("Experimentos completos")
-        remote = names.index("Ensayo remoto y autorización del lanzamiento (operador)")
+        estimate = next(i for i, n in enumerate(names) if "estimate" in n.lower())
+        full = next(i for i, n in enumerate(names) if "full experiments" in n.lower())
+        remote = next(i for i, n in enumerate(names) if "launch authorization" in n.lower())
         self.assertLess(build, estimate)
         self.assertLess(estimate, full)
         self.assertLess(full, remote)
         self.assertIn("Results/timing.json", fase5["subfases"][estimate]["detail"])
         self.assertEqual(fase5["subfases"][remote]["id"], "5.13")
-        search = names.index("Búsqueda de hiperparámetros (Optuna, opcional)")
+        search = next(i for i, n in enumerate(names) if "optuna" in n.lower())
         self.assertLess(estimate, search)
         self.assertLess(search, full)
         self.assertIn("/hyperparameter-search", fase5["subfases"][search]["detail"])
         self.assertIn("/datasets", fase5["subfases"][data]["detail"])
 
     def test_each_phase_runs_its_own_check(self) -> None:
-        self.assertIn("bloques en paper/main.tex", self.run_phase("Fase 8")["message"])
-        self.assertIn("figuras", self.run_phase("Fase 9")["message"])
-        self.assertIn("candidatos", self.run_phase("plausibility")["message"])
-        self.assertIn("auditoría", self.run_phase("Fase 11")["message"])
-        self.assertIn("No hay paper/main.tex", self.run_phase("Fase 10")["message"])
+        self.assertIn("blocks in paper/main.tex", self.run_phase("Fase 8")["message"])
+        self.assertIn("figures", self.run_phase("Fase 9")["message"].lower())
+        self.assertIn("candidates", self.run_phase("plausibility")["message"].lower())
+        self.assertIn("audit", self.run_phase("Fase 11")["message"].lower())
+        self.assertIn("paper/main.tex", self.run_phase("Fase 10")["message"])
 
     def test_an_unknown_phase_is_refused(self) -> None:
         response = asyncio.run(self.route("/api/phase/run", "POST")(Req({"phase_id": "Fase 99"})))

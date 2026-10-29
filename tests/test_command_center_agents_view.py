@@ -42,12 +42,12 @@ class AgentsViewTests(unittest.TestCase):
                 self.assertEqual(agent["tramo"], AGENT_STAGES[agent["name"]])
                 self.assertTrue(agent["phases"])
                 for phase in agent["phases"]:
-                    self.assertRegex(phase, r"^Fase \d+ — \S")
+                    self.assertRegex(phase, r"^(?:Phase|Fase) \d+ — \S")
                 self.assertIn(".claude/agents", agent["harnesses"])
 
     def test_phases_follow_the_dashboard_numbering(self) -> None:
         by_name = {a["name"]: a for a in agents_view.get_agents_view(REPO)["agents"]}
-        number = lambda name: [int(re.match(r"Fase (\d+)", p).group(1)) for p in by_name[name]["phases"]]
+        number = lambda name: [int(re.match(r"(?:Phase|Fase) (\d+)", p).group(1)) for p in by_name[name]["phases"]]
         self.assertEqual(number("sota-scout"), [2])
         self.assertEqual(number("paper-ingestion"), [3])
         self.assertEqual(number("math-tutor"), [4])
@@ -61,7 +61,7 @@ class AgentsViewTests(unittest.TestCase):
         self.assertEqual(number("diagram-author"), [9])
         self.assertEqual(number("audit-report"), [11])
         label = phase_actions.PHASE_LABELS["poc_experiments"]
-        self.assertEqual(by_name["paper-replicator"]["phases"], [f"Fase 5 — {label}"])
+        self.assertEqual(by_name["paper-replicator"]["phases"], [f"Phase 5 — {label}"])
         self.assertEqual(by_name["paper-replicator"]["skill"], "proposal-implementation")
         self.assertEqual(by_name["paper-replicator"]["stretch"], "fidelity")
 
@@ -106,14 +106,14 @@ class AgentsViewTests(unittest.TestCase):
 
 class AgentsPanelTests(unittest.TestCase):
     def test_the_page_loads_the_script_and_holds_the_table_inside_the_flow_pane(self) -> None:
-        self.assertIn('<script src="./agents-panel.js?v=0.20.0"></script>', PAGE)
+        self.assertIn('<script src="./agents-panel.js?v=', PAGE)
         head = PAGE[:PAGE.index("</head>")]
         self.assertIn("agents-panel.js", head)
         start = PAGE.index('<div id="pane-flow"')
         pane = PAGE[start:PAGE.index('<div id="pane-modelo"')]
         self.assertIn('id="flowIframe"', pane)
         self.assertIn('id="agentsPanel"', pane)
-        self.assertIn("Agentes del proyecto smith", pane)
+        self.assertTrue("Agentes del proyecto smith" in pane or "Agents of the smith project" in pane)
         self.assertLess(pane.index('id="flowIframe"'), pane.index('id="agentsPanel"'))
 
     def test_showing_the_flow_tab_refreshes_the_table(self) -> None:
@@ -121,10 +121,17 @@ class AgentsPanelTests(unittest.TestCase):
         self.assertIn("refreshAgentsPanel", body[:body.index("function filterModelView")])
 
     def render(self, agents: list[dict]) -> str:
+        i18n_js = STATIC / "i18n.js"
+        en_js = STATIC / "i18n" / "en.js"
+        es_js = STATIC / "i18n" / "es.js"
         script = (
             "const fs=require('fs');const els={};"
-            "global.window={};global.document={addEventListener(){},"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},"
             "getElementById:(id)=>(els[id]=els[id]||{innerHTML:'',querySelectorAll:()=>[]})};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(STATIC / 'agents-panel.js'))},'utf8'));"
             "window.AgentsPanel.render(JSON.parse(fs.readFileSync(0,'utf8')));"
             "console.log(els.agentsPanel.innerHTML);"

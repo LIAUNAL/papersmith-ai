@@ -16,6 +16,10 @@ from pathlib import Path
 from skills._core.command_center import server
 
 SCRIPT = Path(server.__file__).resolve().parent / "static" / "cli-console.js"
+STATIC = Path(server.__file__).resolve().parent / "static"
+I18N_JS = STATIC / "i18n.js"
+EN_JS = STATIC / "i18n" / "en.js"
+ES_JS = STATIC / "i18n" / "es.js"
 
 HARNESS = r"""
 const fs = require('fs');
@@ -32,9 +36,9 @@ function el(id) {
   }
   return els[id];
 }
-const store = { smith_terminal_agent: cfg.agent };
+const store = { smith_terminal_agent: cfg.agent, 'papersmith-lang': 'es' };
 global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
-global.document = { getElementById: el, addEventListener() {}, createElement: () => el('x' + Math.random()) };
+global.document = { getElementById: el, addEventListener() {}, createElement: () => el('x' + Math.random()), querySelectorAll: () => [] };
 global.ResizeObserver = class { observe() {} };
 let sessions = 0;
 global.fetch = async (path, opts = {}) => {
@@ -59,12 +63,16 @@ global.EventSource = class {
   close() {}
 };
 global.window = {
+  localStorage: global.localStorage,
   confirm: (msg) => { log.push(['confirm']); return cfg.confirm; },
   Terminal: class {
     constructor() { this.cols = 80; this.rows = 3; this.buffer = { active: { viewportY: 0, getLine: (y) => ({ translateToString: () => (cfg.screen || [])[y] || '' }) } }; }
     loadAddon() {} open() {} onData() {} onResize() {} write() {} reset() {} focus() {} clear() {}
   },
 };
+eval(fs.readFileSync(process.argv[2], 'utf8'));
+eval(fs.readFileSync(process.argv[3], 'utf8'));
+eval(fs.readFileSync(process.argv[4], 'utf8'));
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 (async () => {
   for (const s of cfg.sends) {
@@ -81,7 +89,7 @@ eval(fs.readFileSync(process.argv[1], 'utf8'));
 
 def run(**cfg) -> list:
     cfg.setdefault("confirm", True)
-    out = subprocess.run(["node", "-e", HARNESS, str(SCRIPT)], input=json.dumps(cfg),
+    out = subprocess.run(["node", "-e", HARNESS, str(SCRIPT), str(EN_JS), str(ES_JS), str(I18N_JS)], input=json.dumps(cfg),
                          capture_output=True, text=True, cwd=tempfile.gettempdir(), timeout=60, check=True)
     return json.loads(out.stdout)
 

@@ -250,4 +250,4 @@ class ReadmeCapabilityTableTests(unittest.TestCase):
 
         entry = HARNESS_CAPABILITIES["antigravity"]["commands"]
         self.assertFalse(entry.supported)
-        self.assertEqual(entry.note, "vía skills (workflows deprecados)")
+        self.assertEqual(entry.note, "via skills (workflows deprecated)")

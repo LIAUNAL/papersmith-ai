@@ -187,10 +187,22 @@ class DashboardTests(_Env):
 class PanelTests(unittest.TestCase):
     def render(self, state: dict) -> str:
         import subprocess
-        script = REPO / "skills" / "_core" / "command_center" / "static" / "experiments-panel.js"
-        code = ("global.window = {}; eval(require('fs').readFileSync(process.argv[1], 'utf8'));"
-                "process.stdout.write(window.ExperimentsPanel.render({remote_mcp: JSON.parse(process.argv[2])}));")
-        return subprocess.run(["node", "-e", code, str(script), json.dumps(state)],
+        static = REPO / "skills" / "_core" / "command_center" / "static"
+        script = static / "experiments-panel.js"
+        en_js = static / "i18n" / "en.js"
+        es_js = static / "i18n" / "es.js"
+        i18n_js = static / "i18n.js"
+        code = (
+            "const fs = require('fs');"
+            "global.window = {localStorage: {getItem: () => 'es', setItem: () => {}}};"
+            "global.document = {addEventListener() {}, querySelectorAll: () => []};"
+            "eval(fs.readFileSync(process.argv[3], 'utf8'));"
+            "eval(fs.readFileSync(process.argv[4], 'utf8'));"
+            "eval(fs.readFileSync(process.argv[5], 'utf8'));"
+            "eval(fs.readFileSync(process.argv[1], 'utf8'));"
+            "process.stdout.write(window.ExperimentsPanel.render({remote_mcp: JSON.parse(process.argv[2])}));"
+        )
+        return subprocess.run(["node", "-e", code, str(script), json.dumps(state), str(en_js), str(es_js), str(i18n_js)],
                               capture_output=True, text=True, check=True).stdout
 
     def test_the_panel_explains_activation_and_sends_it_to_the_cli_assistant(self) -> None:

@@ -20,4 +20,6 @@ Generated from `.claude/` by `papersmith` {{version}}.
 
 {{agents}}
 
+{{language_rule}}
+
 {{paper_flow}}

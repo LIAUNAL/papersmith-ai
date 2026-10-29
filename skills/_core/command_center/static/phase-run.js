@@ -1,18 +1,18 @@
-/* Phase run tracker: what happens after "Ejecutar" on a pipeline phase.
+/* Phase run tracker: what happens after "Run" on a pipeline phase.
  *
  * A run starts when a phase action is sent. From then on every status poll
  * (GET /api/status) is compared with the snapshot taken at the start:
- *   1. Comando enviado      — the command reached the support terminal;
- *   2. Agente trabajando    — the terminal printed output since the start;
- *   3. Artefactos           — the phase's evidence files appeared or changed;
- *   4. Etapa verificada     — the server's verdict for the phase is PASS;
- *   5. Siguiente etapa      — the phases the verdict unlocked.
+ *   1. Command sent         — the command reached the support terminal;
+ *   2. Agent working        — the terminal printed output since the start;
+ *   3. Artifacts            — the phase's evidence files appeared or changed;
+ *   4. Stage verified       — the server's verdict for the phase is PASS;
+ *   5. Next stages          — the phases the verdict unlocked.
  * The verdict is always the server's: this file never marks a phase done.
  * Runs survive a reload through localStorage when it is available.
  *
  * The bottom-left dock lists the followed runs on every tab; a click opens
  * the run's tracking panel in place, with the same checkpoints, the way to
- * the agent's terminal and "Detener proceso".
+ * the agent's terminal and "Stop process".
  *
  * Public surface (window.phaseRuns): start, onStatus, renderTracker,
  * cardBadge, isRunning, anyRunning, dismiss, justUnlocked, renderDock,
@@ -20,6 +20,14 @@
  */
 (function () {
   'use strict';
+
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
+  // Phase ids are the stable "Fase N"; this is how a person reads one.
+  const phaseName = (id) => {
+    const match = /^Fase (\d+)$/.exec(String(id || ''));
+    return match ? t('phases.number', { n: match[1] }) : String(id || '');
+  };
 
   // One store per dashboard server: two workspaces never share runs.
   const KEY = `smith_phase_runs@${(typeof location !== 'undefined' && location.host) || 'local'}`;
@@ -176,14 +184,14 @@
     const act = activity();
     if (sessionGone(run)) {
       return { state: 'warn', gone: true,
-        text: 'La sesión de terminal de esta fase ya no está abierta: el agente no sigue trabajando en ella.' };
+        text: t('run.sessionGone') };
     }
-    if (!act.lastOutputAt || act.lastOutputAt < run.startedAt) return { state: 'wait', text: 'Esperando salida del agente en la terminal…' };
+    if (!act.lastOutputAt || act.lastOutputAt < run.startedAt) return { state: 'wait', text: t('run.waitingOutput') };
     const ago = now() - act.lastOutputAt;
-    if (ago < 5000) return { state: 'run', text: `Trabajando (${esc(act.agent || 'agente')}): salida hace ${Math.round(ago / 1000)} s` };
-    if (ago < IDLE_MS) return { state: 'run', text: `Trabajando (${esc(act.agent || 'agente')}): última salida hace ${Math.round(ago / 1000)} s` };
+    if (ago < 5000) return { state: 'run', text: t('run.working', { agent: esc(act.agent || t('run.agent')), s: Math.round(ago / 1000) }) };
+    if (ago < IDLE_MS) return { state: 'run', text: t('run.workingLast', { agent: esc(act.agent || t('run.agent')), s: Math.round(ago / 1000) }) };
     return { state: 'warn', idle: true,
-      text: `Sin salida hace ${elapsed(ago)}: el agente terminó su turno o espera tu respuesta en la terminal (por ejemplo, aceptar el informe).` };
+      text: t('run.idle', { time: elapsed(ago) }) };
   }
 
   function step(state, title, body) {
@@ -199,7 +207,7 @@
     const panel = Boolean(options && options.panel);
     const verified = Boolean(run.verifiedAt);
     const stopped = !verified && Boolean(run.stoppedAt);
-    const term = stopped ? { state: 'warn', text: 'Se interrumpió el turno del agente; la sesión sigue abierta.' } : terminalWorking(run);
+    const term = stopped ? { state: 'warn', text: t('run.interrupted') } : terminalWorking(run);
     const quiet = !verified && !stopped && Boolean(run.expiredAt);
     const quietMin = Math.round(QUIET_MS / 60000);
     const evidence = (phase.evidence || []).map((e) => {
@@ -207,35 +215,35 @@
       return `<li class="${hit ? 'is-new' : ''}">${hit ? '✓' : '·'} ${esc(e.label)} <code>${esc(e.path)}</code>${e.count ? ` · ${e.count}` : ''}</li>`;
     }).join('');
     const unlocked = run.unlocked.length
-      ? run.unlocked.map((u) => `<strong>${esc(u.id)}</strong> ${esc(u.name)}`).join(', ')
-      : (verified ? 'No había etapas bloqueadas detrás de esta.' : 'Se habilita cuando la etapa quede verificada.');
+      ? run.unlocked.map((u) => `<strong>${esc(phaseName(u.id))}</strong> ${esc(u.name)}`).join(', ')
+      : (verified ? t('run.noneBlocked') : t('run.unlocksWhenVerified'));
     const head = verified
-      ? `<span class="badge badge--ok">✅ Etapa verificada en ${elapsed(run.verifiedAt - run.startedAt)}</span>`
-      : (stopped ? `<span class="badge badge--warn">⏹ Detenido por el operador a los ${elapsed(run.stoppedAt - run.startedAt)}</span>`
-        : (quiet ? '<span class="badge badge--warn">⏸ Sin cambios: seguimiento detenido</span>'
-          : `<span class="badge badge--info">⏳ En ejecución · ${elapsed(now() - run.startedAt)}</span>`));
+      ? `<span class="badge badge--ok">${esc(t('run.verifiedIn', { time: elapsed(run.verifiedAt - run.startedAt) }))}</span>`
+      : (stopped ? `<span class="badge badge--warn">${esc(t('run.stoppedAt', { time: elapsed(run.stoppedAt - run.startedAt) }))}</span>`
+        : (quiet ? `<span class="badge badge--warn">${esc(t('run.quiet'))}</span>`
+          : `<span class="badge badge--info">${esc(t('run.runningFor', { time: elapsed(now() - run.startedAt) }))}</span>`));
     const running = live(run);
     return `<div class="run-tracker${verified ? ' is-verified' : ''}" data-run-stage="${esc(run.stage)}">
         <div class="run-tracker__head">
-          <strong>${panel ? esc(String(run.name || '').startsWith(run.phaseId) ? run.name : `${run.phaseId} · ${run.name}`) : 'Seguimiento de la ejecución'}</strong>${head}
+          <strong>${panel ? esc(String(run.name || '').startsWith(run.phaseId) || String(run.name || '').startsWith(phaseName(run.phaseId)) ? run.name : `${phaseName(run.phaseId)} · ${run.name}`) : esc(t('run.tracking'))}</strong>${head}
         </div>
         <ol class="run-steps">
-          ${step('done', 'Comando enviado', `<code>${esc(run.command)}</code>`)}
-          ${step(verified ? 'done' : term.state, 'Agente trabajando',
-              verified && term.state === 'wait' ? 'La etapa se completó.' : term.text)}
-          ${step(run.changed.length ? 'done' : (verified ? 'done' : 'wait'), 'Artefactos de la etapa', `<ul class="run-evidence">${evidence}</ul>`)}
-          ${step(verified ? 'done' : (quiet || stopped ? 'warn' : 'wait'), 'Etapa verificada',
-              verified ? 'El servidor confirmó la evidencia en disco (PASS).'
-                : (stopped ? `Estado al detener: ${esc(run.status)}. Ejecuta la fase de nuevo para retomarla.`
-                  : (quiet ? `Sin cambios en ${quietMin} min: se dejó de seguir. Revisa la terminal.` : `Estado actual: ${esc(run.status)}. Se verifica en cada actualización.`)))}
-          ${step(run.unlocked.length ? 'done' : (verified ? 'done' : 'wait'), 'Etapas siguientes', unlocked)}
+          ${step('done', esc(t('run.step.sent')), `<code>${esc(run.command)}</code>`)}
+          ${step(verified ? 'done' : term.state, esc(t('run.step.working')),
+              verified && term.state === 'wait' ? esc(t('run.stageDone')) : term.text)}
+          ${step(run.changed.length ? 'done' : (verified ? 'done' : 'wait'), esc(t('run.step.artifacts')), `<ul class="run-evidence">${evidence}</ul>`)}
+          ${step(verified ? 'done' : (quiet || stopped ? 'warn' : 'wait'), esc(t('run.step.verified')),
+              esc(verified ? t('run.serverConfirmed')
+                : (stopped ? t('run.stoppedState', { status: run.status })
+                  : (quiet ? t('run.quietFor', { min: quietMin }) : t('run.currentState', { status: run.status })))))}
+          ${step(run.unlocked.length ? 'done' : (verified ? 'done' : 'wait'), esc(t('run.step.next')), unlocked)}
         </ol>
         <div class="run-tracker__foot">
-          ${running ? `<button class="btn btn--sm btn--danger" data-run-stop="${esc(run.stage)}" title="Interrumpe el turno del agente (Esc) sin cerrar la sesión">⏹ Detener proceso</button>` : ''}
-          <button class="btn btn--sm" data-run-terminal="1" title="Abre la terminal con la sesión del agente">🖥 Ver terminal del agente</button>
-          ${running ? '<button class="btn btn--sm" data-run-verify="1" title="Vuelve a leer la evidencia en disco">⟳ Verificar ahora</button>' : ''}
-          ${panel ? `<button class="btn btn--sm" data-run-pipeline="${esc(run.stage)}">Abrir en Pipeline</button>` : ''}
-          <button class="btn btn--sm" data-run-dismiss="${esc(run.stage)}">${verified ? 'Cerrar seguimiento' : 'Dejar de seguir'}</button>
+          ${running ? `<button class="btn btn--sm btn--danger" data-run-stop="${esc(run.stage)}" title="${esc(t('run.stopTitle'))}">${esc(t('run.stop'))}</button>` : ''}
+          <button class="btn btn--sm" data-run-terminal="1" title="${esc(t('run.terminalTitle'))}">${esc(t('run.terminal'))}</button>
+          ${running ? `<button class="btn btn--sm" data-run-verify="1" title="${esc(t('run.verifyTitle'))}">${esc(t('run.verify'))}</button>` : ''}
+          ${panel ? `<button class="btn btn--sm" data-run-pipeline="${esc(run.stage)}">${esc(t('run.openInPipeline'))}</button>` : ''}
+          <button class="btn btn--sm" data-run-dismiss="${esc(run.stage)}">${esc(verified ? t('run.closeTracking') : t('run.unfollow'))}</button>
         </div>
       </div>`;
   }
@@ -267,7 +275,7 @@
     if (!force && panel.matches && panel.matches(':hover')) return;
     const dock = document.getElementById('phaseRunDock');
     if (panel.style) panel.style.bottom = `${(dock && !dock.hidden ? dock.offsetHeight : 0) + 24}px`;
-    panel.innerHTML = `<button class="run-panel__close" data-run-panel-close="1" aria-label="Cerrar panel">✕</button>
+    panel.innerHTML = `<button class="run-panel__close" data-run-panel-close="1" aria-label="${esc(t('run.closePanel'))}">✕</button>
       ${renderTracker(phase, { panel: true })}`;
   }
 
@@ -279,7 +287,7 @@
       panel.id = 'phaseRunPanel';
       panel.className = 'run-panel';
       panel.setAttribute('role', 'dialog');
-      panel.setAttribute('aria-label', 'Seguimiento de la fase');
+      panel.setAttribute('aria-label', t('run.panelLabel'));
       document.body.appendChild(panel);
     }
     panel.dataset.stage = stage;
@@ -292,20 +300,20 @@
     if (panel) panel.hidden = true;
   }
 
-  // "Detener proceso": interrupts the agent's turn and stops following the
+  // "Stop process": interrupts the agent's turn and stops following the
   // run. The session stays open; the phase is run again to resume it.
   async function stop(stage) {
     const run = runs[stage];
     if (!live(run)) return false;
     if (typeof window.confirm === 'function'
-      && !window.confirm(`¿Detener ${run.phaseId}? Se interrumpe el turno del agente; la sesión de la terminal sigue abierta.`)) return false;
+      && !window.confirm(t('run.confirmStop', { phase: phaseName(run.phaseId) }))) return false;
     let sent = false;
     try {
       sent = typeof window.smithTerminalInterrupt === 'function' && !sessionGone(run)
         ? await window.smithTerminalInterrupt() : false;
     } catch (err) {
       // The agent may still be working: keep following the run.
-      toast(`⚠ ${run.phaseId}: no se pudo interrumpir al agente (${err.message}). Detenlo desde la terminal.`, 'warn');
+      toast(t('run.interruptFailed', { phase: phaseName(run.phaseId), error: err.message }), 'warn');
       return false;
     }
     run.stoppedAt = now();
@@ -313,8 +321,8 @@
     ensurePolling();
     refreshTracker(stage, true);
     renderDock();
-    toast(sent ? `⏹ ${run.phaseId} detenida: se interrumpió el agente.`
-      : `⏹ ${run.phaseId}: se dejó de seguir; no había una sesión que interrumpir.`, 'warn');
+    toast(sent ? t('run.stoppedToast', { phase: phaseName(run.phaseId) })
+      : t('run.unfollowedToast', { phase: phaseName(run.phaseId) }), 'warn');
     return true;
   }
 
@@ -336,13 +344,13 @@
     const times = {};
     const markup = (withTimes) => shown.map((r) => {
       const term = terminalWorking(r);
-      const state = r.verifiedAt ? '✅ verificada' : (r.stoppedAt ? '⏹ detenida'
-        : (term.gone ? '⚠ sin sesión' : (term.idle ? '⏸ esperando en la terminal' : '⏳ en ejecución')));
+      const state = esc(r.verifiedAt ? t('run.badge.verified') : (r.stoppedAt ? t('run.badge.stopped')
+        : (term.gone ? t('run.badge.noSession') : (term.idle ? t('run.badge.waiting') : t('run.badge.running')))));
       times[r.stage] = elapsed((r.verifiedAt || r.stoppedAt || now()) - r.startedAt);
       const steps = [true, r.verifiedAt || term.state !== 'wait', r.changed.length > 0 || r.verifiedAt, r.verifiedAt, r.verifiedAt]
         .map((on) => `<i class="${on ? 'on' : ''}"></i>`).join('');
-      return `<button class="run-dock__item${r.verifiedAt ? ' is-verified' : ''}" data-run-open="${esc(r.stage)}" title="Ver el avance de ${esc(r.phaseId)}">
-          <strong>${esc(r.phaseId)}</strong><span>${state} · <span data-run-time="${esc(r.stage)}">${withTimes ? times[r.stage] : ''}</span></span><span class="run-dock__steps">${steps}</span>
+      return `<button class="run-dock__item${r.verifiedAt ? ' is-verified' : ''}" data-run-open="${esc(r.stage)}" title="${esc(t('run.viewProgress', { phase: phaseName(r.phaseId) }))}">
+          <strong>${esc(phaseName(r.phaseId))}</strong><span>${state} · <span data-run-time="${esc(r.stage)}">${withTimes ? times[r.stage] : ''}</span></span><span class="run-dock__steps">${steps}</span>
         </button>`;
     }).join('');
     // The 1 s tick only moves the clocks: when nothing else changed, the
@@ -370,16 +378,16 @@
     if (run.idleNotified) return;
     run.idleNotified = true;
     save();
-    toast(`⏸ ${run.phaseId}: el agente dejó de escribir. Revisa la terminal (abajo a la derecha); puede estar esperando tu respuesta.`, 'warn');
+    toast(t('run.idleToast', { phase: phaseName(run.phaseId) }), 'warn');
   }
 
   function cardBadge(stage) {
     const run = runs[stage];
     if (!run) return '';
-    if (run.verifiedAt) return '<span class="badge badge--ok">✅ verificada</span>';
-    if (run.stoppedAt) return '<span class="badge badge--warn">⏹ detenida</span>';
-    if (run.expiredAt) return '<span class="badge badge--warn">⏸ sin cambios</span>';
-    return '<span class="badge badge--info run-pulse">⏳ en ejecución</span>';
+    if (run.verifiedAt) return `<span class="badge badge--ok">${esc(t('run.badge.verified'))}</span>`;
+    if (run.stoppedAt) return `<span class="badge badge--warn">${esc(t('run.badge.stopped'))}</span>`;
+    if (run.expiredAt) return `<span class="badge badge--warn">${esc(t('run.badge.unchanged'))}</span>`;
+    return `<span class="badge badge--info run-pulse">${esc(t('run.badge.running'))}</span>`;
   }
 
   function justUnlocked(stage) {
@@ -397,8 +405,9 @@
   }
 
   function announce(run) {
-    const names = run.unlocked.map((u) => u.id).join(', ');
-    toast(`✅ ${run.phaseId} verificada${names ? ` · habilitada: ${names}` : ''}`, 'ok');
+    const names = run.unlocked.map((u) => phaseName(u.id)).join(', ');
+    toast(names ? t('run.verifiedToastUnlocked', { phase: phaseName(run.phaseId), names })
+      : t('run.verifiedToast', { phase: phaseName(run.phaseId) }), 'ok');
   }
 
   function toast(text, tone) {
@@ -456,5 +465,12 @@
   ensurePolling();
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('DOMContentLoaded', renderDock);
+    // Redraw the dock and any open tracker in the new language.
+    document.addEventListener('languagechange', () => {
+      const dock = document.getElementById('phaseRunDock');
+      if (dock) dock.dataset.shape = '';
+      for (const run of Object.values(runs)) refreshTracker(run.stage, true);
+      renderDock();
+    });
   }
 })();

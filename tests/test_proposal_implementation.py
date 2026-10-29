@@ -1568,12 +1568,12 @@ _digest_spec.loader.exec_module(report_digest)
 
 
 class ReportDigestJoinTests(unittest.TestCase):
-    """Las dos mitades del sello, corridas sobre el mismo árbol.
+    """The two halves of the stamp, run over the same tree.
 
-    Una la escribe el destino y la otra la recomputa la verificación. Probar cada
-    una contra un fixture propio verificaría las dos mitades y nunca la unión, que
-    es lo único que el sello es: si dan números distintos, todo informe queda
-    marcado como reliquia y nadie sabe por qué.
+    The target writes one and the verification recomputes the other. Testing each
+    against its own fixture would verify both halves and never the join, which
+    is all the stamp is: if they give different numbers, every report ends up
+    marked as a relic and nobody knows why.
     """
 
     def build(self, root: Path) -> None:
@@ -1596,12 +1596,12 @@ class ReportDigestJoinTests(unittest.TestCase):
                              impl.source_digest(root, "Method"))
 
     def test_the_benchmark_package_is_inside_what_the_stamp_covers(self):
-        """El módulo que escribe las conclusiones cuenta como fuente del informe.
+        """The module that writes the conclusions counts as a source of the report.
 
-        Dejarlo afuera permitía corregir una conclusión y que el registro siguiera
-        afirmando la vieja con la verificación en verde. Rojo alcanzable: si el
-        digest ignorara el paquete del banco, este test no distinguiría los dos
-        árboles y fallaría.
+        Leaving it out let a conclusion be corrected while the record kept
+        asserting the old one with the verification green. Reachable red: if the
+        digest ignored the benchmark package, this test would not tell the two
+        trees apart and would fail.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1614,13 +1614,13 @@ class ReportDigestJoinTests(unittest.TestCase):
             self.assertNotEqual(report_digest.source_digest(root, "Method"), before)
 
     def test_prior_work_the_benchmark_imports_is_inside_what_the_stamp_covers(self):
-        """Mover lo que computa un brazo tiene que marcar rancio el informe.
+        """Changing what an arm computes has to mark the report stale.
 
-        El banco importa del trabajo previo — es lo que lo hace una comparación —
-        así que un cambio ahí cambia los números de esos brazos. Nombrando los
-        paquetes uno por uno esto quedaba afuera: los cuadernos seguían diciendo
-        `executed` sobre resultados viejos, y la sesión aparte que arregla el
-        trabajo previo y vuelve es justo la que lo dispara.
+        The benchmark imports from the prior work — that is what makes it a
+        comparison — so a change there changes those arms' numbers. Naming the
+        packages one by one left this out: the notebooks kept saying
+        `executed` over old results, and the separate session that fixes the
+        prior work and comes back is exactly the one that triggers it.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1635,11 +1635,11 @@ class ReportDigestJoinTests(unittest.TestCase):
             self.assertEqual(after, report_digest.source_digest(root, "Method"))
 
     def test_adding_a_test_does_not_mark_every_report_in_the_repository_stale(self):
-        """`tests/` no es de lo que depende un informe: ningún cuaderno lo importa.
+        """`tests/` is not something a report depends on: no notebook imports it.
 
-        Cubrirlo hacía que agregar cualquier prueba — incluso una sobre el
-        trabajo previo, que ningún cuaderno toca — pidiera re-ejecutar la campaña
-        entera para re-estampar un hash.
+        Covering it meant adding any test — even one about the prior work,
+        which no notebook touches — asked to re-run the whole campaign to
+        re-stamp a hash.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1651,24 +1651,24 @@ class ReportDigestJoinTests(unittest.TestCase):
             self.assertEqual(report_digest.source_digest(root, "Method"), before)
 
     def test_the_marker_is_the_one_the_verification_looks_for(self):
-        """Otra unión: el destino imprime un prefijo y la verificación lo busca."""
+        """Another join: the target prints a prefix and the verification looks for it."""
         self.assertEqual(report_digest.MARKER, impl.DIGEST_MARKER)
 
     def test_the_stamp_needs_no_context_from_the_notebook_that_prints_it(self):
-        """Cualquier cuaderno lo llama sin argumentos, incluso el que no comparte
-        el molde de los demás.
+        """Any notebook calls it without arguments, even one that does not share
+        the others' mould.
 
-        La primera versión los pedía, y el primer cuaderno que no definía las
-        mismas variables que el resto falló al estampar y quedó informado como
-        rancio — el sello dejaba afuera justo al que se salía del molde, que es el
-        que más falta hace vigilar.
+        The first version asked for them, and the first notebook that did not
+        define the same variables as the rest failed to stamp and was reported as
+        stale — the stamp left out exactly the one that broke the mould, which is
+        the one most in need of watching.
         """
         import inspect
 
         signature = inspect.signature(report_digest.stamp)
         for parameter in signature.parameters.values():
             self.assertIsNot(parameter.default, inspect.Parameter.empty,
-                             f"stamp() exige {parameter.name} a quien lo llame")
+                             f"stamp() requires {parameter.name} from its caller")
 
     def test_the_stamp_line_parses_the_way_the_verification_reads_it(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -1818,7 +1818,7 @@ class SuiteDigestTests(unittest.TestCase):
         self.assertIn("suite_digest", impl.source_digest.__doc__)
 
 
-# ------------------------------------------------------- el contrato de informe
+# ------------------------------------------------------- the report contract
 
 def _stream(text="salida\n"):
     return {"output_type": "stream", "name": "stdout", "text": [text]}
@@ -1829,13 +1829,13 @@ def _shown(mime, payload="x"):
 
 
 def _cell(kind, text, outputs=None, executed=True):
-    """Una celda, y para las de código lo que dejó al correr.
+    """A cell, and for code cells what it left behind when it ran.
 
-    El default de una celda de código es haber impreso algo, porque es lo que hace
-    un `print`. Una celda ejecutada con la lista de salidas vacía no es un fixture
-    neutro: es exactamente el defecto de haber computado una medición y no haberla
-    mostrado, y dejarlo como default haría que cada prueba de este archivo lo
-    disparara sin querer.
+    A code cell's default is to have printed something, because that is what a
+    `print` does. An executed cell with an empty output list is not a neutral
+    fixture: it is exactly the defect of having computed a measurement and not
+    shown it, and leaving it as the default would make every test in this file
+    trigger it unintentionally.
     """
     cell = {"cell_type": kind, "metadata": {}, "source": [text]}
     if kind == "code":
@@ -1845,15 +1845,15 @@ def _cell(kind, text, outputs=None, executed=True):
 
 
 class PriorWorkTests(unittest.TestCase):
-    """"El baseline se usa como está" era la regla más fuerte sin verificar.
+    """"The baseline is used as is" was the strongest unverified rule.
 
-    El trabajo previo vive bajo `src/` junto al método y su banco, y todos los
-    chequeos pasaban de largo. Se podía editar en cualquier sesión y la siguiente
-    abría un repositorio que no decía nada.
+    The prior work lives under `src/` next to the method and its benchmark, and
+    every check walked past it. It could be edited in any session and the next
+    one opened a repository that said nothing.
 
-    Lo que hace útil el aviso es la segunda pregunta. "Cambió" a secas queda rojo
-    para siempre en un repositorio que evoluciona y se deja de leer; "cambió esto,
-    que tus brazos importan" es accionable.
+    What makes the warning useful is the second question. A bare "changed" stays
+    red forever in a repository that evolves, and stops being read; "this
+    changed, and your arms import it" is actionable.
     """
 
     def build(self, root: Path) -> None:
@@ -1879,7 +1879,7 @@ class PriorWorkTests(unittest.TestCase):
         return impl.prior_work_state(root, "Method")
 
     def test_an_untouched_baseline_is_reported_as_present_and_clean(self):
-        """El hecho se informa aunque la respuesta sea que no pasó nada."""
+        """The fact is reported even when the answer is that nothing happened."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root)
@@ -1889,7 +1889,7 @@ class PriorWorkTests(unittest.TestCase):
             self.assertEqual(state["modified"], [])
 
     def test_a_change_the_benchmark_imports_is_reported_as_reaching_the_run(self):
-        """Mueve lo que computa un brazo: los resultados dejaron de valer."""
+        """It moves what an arm computes: the results stopped being valid."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root)
@@ -1900,11 +1900,11 @@ class PriorWorkTests(unittest.TestCase):
             self.assertEqual(state["reaching"], ["src/PriorWork/models.py"])
 
     def test_a_change_the_benchmark_never_imports_is_reported_without_alarm(self):
-        """Rojo alcanzable: si `reaching` ignorara los imports, esto sería `reaching`.
+        """Reachable red: if `reaching` ignored the imports, this would be `reaching`.
 
-        El loop de entrenamiento propio del trabajo previo no lo llama el banco.
-        Importa para los cuadernos del trabajo previo y no para esta comparación,
-        y confundir los dos casos es lo que vuelve el aviso ruido.
+        The prior work's own training loop is not called by the benchmark. It
+        matters for the prior work's notebooks and not for this comparison, and
+        confusing the two cases is what turns the warning into noise.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1917,11 +1917,12 @@ class PriorWorkTests(unittest.TestCase):
             self.assertEqual(state["reaching"], [])
 
     def test_a_module_the_ignore_rules_hide_is_still_seen_on_the_disk(self):
-        """El caso que obliga a enumerar desde el disco y no desde el índice.
+        """The case that forces enumerating from the disk and not from the index.
 
-        Git no dice nada de una ruta ignorada. Preguntándole a él *qué hay*, un
-        módulo de trabajo previo ignorado pero importado y ejecutado desaparece
-        del reporte y todo vuelve `clean` — con un brazo computando con él.
+        Git says nothing about an ignored path. Asking it *what is there*, a
+        prior-work module that is ignored but imported and executed disappears
+        from the report and everything comes back `clean` — with an arm
+        computing with it.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1936,30 +1937,30 @@ class PriorWorkTests(unittest.TestCase):
             self.assertIn("src/PriorWork/secret.py", state["modules"])
             self.assertIn("src/PriorWork/secret.py", state["imported"])
             self.assertEqual(state["untrackedImported"], ["src/PriorWork/secret.py"])
-            # Rojo alcanzable: preguntándole al índice esto sería `clean`.
+            # Reachable red: asking the index, this would be `clean`.
             self.assertEqual(state["status"], "reaching")
 
     def test_an_unreadable_record_is_unknown_and_never_clean(self):
-        """El silencio de git no puede leerse como "no cambió nada"."""
+        """Git's silence cannot be read as "nothing changed"."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             for relative in ("src/Method/kernels.py", "src/PriorWork/models.py"):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("X = 1\n", encoding="utf-8")
-            # Sin `git init`: no hay registro que consultar.
+            # No `git init`: there is no record to consult.
             state = self.state(root)
             self.assertEqual(state["recordStatus"], "unavailable")
             self.assertEqual(state["status"], "unknown")
             self.assertEqual(state["modules"], ["src/PriorWork/models.py"])
 
     def test_what_an_arm_imports_is_reported_without_anything_having_changed(self):
-        """`imported` es un hecho del árbol, no la consecuencia de un diff.
+        """`imported` is a fact of the tree, not the consequence of a diff.
 
-        El `__init__.py` del paquete cuenta: importar `PriorWork.models` lo
-        ejecuta, así que un cambio ahí alcanza al brazo igual que uno en el
-        módulo nombrado. El loop de entrenamiento propio del trabajo previo no,
-        y esa es la distinción entera.
+        The package's `__init__.py` counts: importing `PriorWork.models` runs
+        it, so a change there reaches the arm just like one in the named
+        module. The prior work's own training loop does not, and that is the
+        whole distinction.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1971,16 +1972,16 @@ class PriorWorkTests(unittest.TestCase):
             self.assertNotIn("src/PriorWork/training_loop.py", state["imported"])
 
     def test_the_stamp_moves_even_when_the_change_reaches_no_arm(self):
-        """El par que hay que declarar, no descubrir.
+        """The pair that has to be declared, not discovered.
 
-        El sello cubre `src/` entero a propósito: se computa dos veces, una en el
-        cuaderno y otra en la verificación, y cualquier regla más sutil que un
-        directorio es una regla en la que dos implementaciones se desincronizan —
-        y un sello cuyas mitades no coinciden no protege nada.
+        The stamp covers all of `src/` on purpose: it is computed twice, once in
+        the notebook and once in the verification, and any rule subtler than a
+        directory is a rule on which two implementations drift apart — and a
+        stamp whose halves do not match protects nothing.
 
-        Así que las dos cosas pasan juntas: ningún brazo cambió de número y el
-        informe queda obsoleto igual. Sin decirlo, alguien re-corre una campaña
-        por un comentario en trabajo previo que el banco nunca importa.
+        So both things happen together: no arm changed its number and the
+        report goes stale anyway. Without saying so, someone re-runs a campaign
+        over a comment in prior work the benchmark never imports.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -1992,7 +1993,7 @@ class PriorWorkTests(unittest.TestCase):
             self.assertNotEqual(impl.source_digest(root, "Method"), before)
 
     def test_a_repository_with_no_prior_work_reports_none_rather_than_clean(self):
-        """Sin baseline no hay nada que vigilar, y decir `clean` lo insinuaría."""
+        """Without a baseline there is nothing to watch, and saying `clean` would imply it."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             for relative in ("src/Method/kernels.py", "src/Method_Benchmark/__init__.py"):
@@ -2004,10 +2005,10 @@ class PriorWorkTests(unittest.TestCase):
 
 
 class ReportContractTests(unittest.TestCase):
-    """Los cinco chequeos estáticos del informe, cada uno con su rojo alcanzable.
+    """The report's five static checks, each with its reachable red.
 
-    Un chequeo que no puede fallar es el defecto que fue escrito para atrapar, así
-    que ninguno se da por bueno sin construir el árbol que lo dispara.
+    A check that cannot fail is the defect it was written to catch, so none is
+    taken as good without building the tree that triggers it.
     """
 
     DECLARATION = (
@@ -2055,7 +2056,7 @@ class ReportContractTests(unittest.TestCase):
 
     WELL_FORMED = [
         _cell("markdown", "Qué mide: la exactitud. Más alto es mejor."),
-        # La mitad calculada del encuadre: contra qué valor se compara lo de abajo.
+        # The computed half of the framing: what value the cell below is compared against.
         _cell("code", "print(tables.objective('accuracy'))"),
         _cell("code", "print(tables.render(runs, 'accuracy', reduction))\n"
                       "print(tables.conclusion(runs, 'accuracy', reduction))",
@@ -2068,55 +2069,57 @@ class ReportContractTests(unittest.TestCase):
             self.assertEqual(state[finding], [], f"{finding}: {state[finding]}")
 
     def test_a_section_that_never_says_what_value_it_seeks_is_caught(self):
-        """Una dirección no es un objetivo.
+        """A direction is not an objective.
 
-        «Más alto es mejor» dice para qué lado mirar y nada sobre dónde termina lo
-        bueno. Quien no conoce la métrica no aprende nada de eso: le falta el hito
-        contra el que se compara — un azar, una cota, un acuerdo entre corridas.
+        "Higher is better" says which way to look and nothing about where good
+        ends. Someone who does not know the metric learns nothing from it: they
+        lack the landmark it is compared against — chance, a bound, agreement
+        between runs.
         """
         cells = [_cell("markdown", "Qué mide: la exactitud. Más alto es mejor."),
                  _cell("code", "print(tables.render(runs, 'accuracy', reduction))\n"
                                "print(tables.conclusion(runs, 'accuracy', reduction))")]
         found = self.state(cells)["unaimed"]
         self.assertEqual(len(found), 1, found)
-        self.assertEqual(found[0]["reason"], "la sección no dice qué valor se busca")
+        self.assertEqual(found[0]["reason"], "the section does not say what number it aims for")
 
     def test_declaring_no_objective_at_all_is_the_reason_and_not_a_pass(self):
-        """La lección de `figures: []`, aplicada antes de repetirla.
+        """The lesson of `figures: []`, applied before repeating it.
 
-        Un hallazgo que solo puede dispararse cuando alguien escribió una clave
-        opcional se apaga justo en el paquete que nunca la escribió, y ahí el
-        informe sale limpio sin decir en ningún lado qué se busca. La ausencia de
-        la declaración es el motivo del hallazgo, no su excusa.
+        A finding that can only fire when someone wrote an optional key goes
+        dark exactly in the package that never wrote it, and there the report
+        comes out clean without saying anywhere what is sought. The absence of
+        the declaration is the reason for the finding, not its excuse.
         """
         silent = self.DECLARATION.replace(
             "        'objectiveEntry': 'tables.objective',\n", "")
         found = self.state(self.WELL_FORMED, silent)["unaimed"]
         self.assertEqual(len(found), 1, found)
-        self.assertEqual(found[0]["reason"], "el contrato no declara objectiveEntry")
+        self.assertEqual(found[0]["reason"], "the contract declares no objectiveEntry")
 
     def test_the_objective_is_computed_and_counts_as_framing(self):
-        """El valor que se busca no puede ir tipeado: envejece igual que una
-        medición tipeada, y el día que cambie una constante la frase va a seguir
-        nombrando el hito viejo. Va calculado, y por eso ocupa una celda de código
-        entre el párrafo y la tabla — que el chequeo tiene que leer como parte del
-        encuadre y no como trabajo ajeno."""
+        """The value sought cannot be typed in: it ages just like a typed
+        measurement, and the day a constant changes the sentence will keep
+        naming the old landmark. It is computed, and that is why it takes a code
+        cell between the paragraph and the table — which the check has to read
+        as part of the framing and not as unrelated work."""
         state = self.state(self.WELL_FORMED)
         self.assertEqual(state["unaimed"], [])
         self.assertEqual(state["unframed"], [])
         self.assertEqual(state["unconcluded"], [])
 
     def test_the_skill_never_asks_what_the_objective_says(self):
-        """El límite que impide que esto aprenda un campo.
+        """The limit that keeps this from learning a field.
 
-        Cualquier texto sirve: si la comprobación distinguiera un azar de una cota
-        habría aprendido de qué se trata el experimento, y se apagaría en el
-        próximo que mida otra cosa. Solo pregunta si la sección lo dice.
+        Any text will do: if the check told chance apart from a bound it would
+        have learned what the experiment is about, and it would go dark on the
+        next one that measures something else. It only asks whether the section
+        says it.
         """
-        for texto in ("hacia cero", "por encima del azar", "adentro de sus cotas"):
-            with self.subTest(texto=texto):
+        for text in ("hacia cero", "por encima del azar", "adentro de sus cotas"):
+            with self.subTest(text=text):
                 cells = [_cell("markdown", "Qué mide: la exactitud."),
-                         _cell("code", f"print(tables.objective({texto!r}))"),
+                         _cell("code", f"print(tables.objective({text!r}))"),
                          _cell("code", "print(tables.render(runs, 'accuracy', reduction))\n"
                                        "print(tables.conclusion(runs, 'accuracy', reduction))")]
                 self.assertEqual(self.state(cells)["unaimed"], [])
@@ -2128,9 +2131,9 @@ class ReportContractTests(unittest.TestCase):
         self.assertEqual([f["value"] for f in found], ["2,78"])
 
     def test_one_decimal_place_is_not_treated_as_a_measurement(self):
-        """Un entero o un decimal corto suele ser estructura — un número de sección,
-        una cantidad de paneles — y marcarlos entrenaría al lector a ignorar el
-        chequeo entero."""
+        """An integer or a short decimal is usually structure — a section number,
+        a count of panels — and flagging them would train the reader to ignore
+        the whole check."""
         cells = [_cell("markdown", "Son 3 paneles y la seccion 5.1."), *self.WELL_FORMED]
         self.assertEqual(self.state(cells)["proseNumbers"], [])
 
@@ -2152,14 +2155,14 @@ class ReportContractTests(unittest.TestCase):
         self.assertTrue(state["duplicated"])
 
     def test_the_same_renderer_called_twice_in_one_cell_is_caught(self):
-        """El hueco que dejaba pasar el caso más común de todos.
+        """The gap that let the most common case of all through.
 
-        La comprobación de arriba usa dos renderizadores DISTINTOS, y con eso el
-        conteo se hacía sobre el conjunto de llamadas. Dos tablas producidas por
-        la misma función colapsaban en una sola entrada y la celda salía limpia —
-        que es justo la forma que «una celda, una medición» viene a atajar, y la
-        que más aparece: dos lecturas hermanas impresas juntas porque se leen
-        juntas.
+        The check above uses two DIFFERENT renderers, and so the count was taken
+        over the set of calls. Two tables produced by the same function collapsed
+        into a single entry and the cell came out clean — which is exactly the
+        shape "one cell, one measurement" exists to stop, and the one that shows
+        up most: two sibling readings printed together because they are read
+        together.
         """
         cells = [_cell("markdown", "las dos distancias"),
                  _cell("code",
@@ -2167,27 +2170,27 @@ class ReportContractTests(unittest.TestCase):
                        "print(tables.render(runs, 'seconds', reduction))\n"
                        "print(tables.conclusion(runs, 'accuracy', reduction))")]
         found = self.state(cells)["duplicated"]
-        self.assertTrue(found, "una celda con dos tablas salió limpia")
-        self.assertTrue(any(f.get("reason") == "más de una medición en una celda"
+        self.assertTrue(found, "a cell with two tables came out clean")
+        self.assertTrue(any(f.get("reason") == "more than one reading in one cell"
                             for f in found), found)
 
     def test_one_renderer_called_once_is_not_a_duplicate(self):
-        """El verde tiene que seguir siendo alcanzable, o el conteo por
-        repeticiones convierte cualquier tabla en un hallazgo."""
+        """Green has to stay reachable, or counting repetitions turns any
+        table into a finding."""
         cells = [_cell("markdown", "Qué mide: la exactitud. Más alto es mejor."),
                  _cell("code", "print(tables.render(runs, 'accuracy', reduction))"),
                  _cell("code", "print(tables.conclusion(runs, 'accuracy', reduction))")]
         self.assertEqual(self.state(cells)["duplicated"], [])
 
     def test_a_complementary_pair_shares_one_framing_and_one_conclusion(self):
-        """Dos tablas que no se pueden concluir por separado.
+        """Two tables that cannot be concluded separately.
 
-        El numerador y el denominador de una razón son el caso claro: una
-        distancia que baja puede ser alineación o colapso, y solo el par lo
-        distingue. Ponerlas en una celda es el hallazgo de arriba; darle una
-        conclusión a cada una sería concluir sobre media lectura. Queda una sola
-        forma legítima — dos celdas bajo un encuadre, con una conclusión que lee
-        las dos — y el chequeo tiene que admitirla.
+        The numerator and denominator of a ratio are the clear case: a distance
+        that drops can be alignment or collapse, and only the pair tells them
+        apart. Putting them in one cell is the finding above; giving each its own
+        conclusion would conclude on half a reading. One legitimate shape is
+        left — two cells under one framing, with a conclusion that reads both —
+        and the check has to admit it.
         """
         cells = [_cell("markdown", "Las dos distancias, que se leen juntas."),
                  _cell("code", "print(tables.render(runs, 'accuracy', reduction))"),
@@ -2199,8 +2202,8 @@ class ReportContractTests(unittest.TestCase):
         self.assertEqual(state["duplicated"], [])
 
     def test_a_section_that_never_concludes_is_still_caught(self):
-        """La garantía no se aflojó: mirar la sección en vez de la celda de al lado
-        no puede convertir en verde a una sección que nunca concluye."""
+        """The guarantee was not loosened: looking at the section instead of the
+        neighbouring cell cannot turn green a section that never concludes."""
         cells = [_cell("markdown", "dos tablas y ninguna conclusión"),
                  _cell("code", "print(tables.render(runs, 'accuracy', reduction))"),
                  _cell("code", "print(tables.render(runs, 'seconds', reduction))"),
@@ -2227,9 +2230,9 @@ class ReportContractTests(unittest.TestCase):
         self.assertEqual(self.state(cells)["unconcluded"], [])
 
     def test_the_cell_that_writes_the_record_may_render_everything_again(self):
-        """El registro tiene que contener todo lo que el cuaderno mostró. Contarlo
-        como segunda lectura haría que el único archivo del que depende una sesión
-        posterior sea el defecto, y la forma de aprobar sería dejar de escribirlo."""
+        """The record has to hold everything the notebook showed. Counting it as
+        a second reading would make the only file a later session depends on
+        the defect, and the way to pass would be to stop writing it."""
         cells = [*self.WELL_FORMED,
                  _cell("markdown", "el registro"),
                  _cell("code", "(root / 'report.txt').write_text("
@@ -2237,7 +2240,7 @@ class ReportContractTests(unittest.TestCase):
         self.assertEqual(self.state(cells)["duplicated"], [])
 
     def test_without_a_declaration_nothing_is_reported_as_fine(self):
-        """No poder buscar algo no es lo mismo que no encontrarlo."""
+        """Being unable to look for something is not the same as not finding it."""
         state = self.state(self.WELL_FORMED, declaration="__benchmark__ = {}\n")
         self.assertEqual(state["status"], "undeclared")
 
@@ -2253,8 +2256,8 @@ class ReportContractTests(unittest.TestCase):
         self.assertEqual(state["status"], "absent")
 
     def test_an_unavailable_live_check_never_reports_ok(self):
-        """Sin intérprete del destino, dos de los chequeos no pudieron correr, y
-        decir `ok` informaría su ausencia como su respuesta."""
+        """Without the target's interpreter, two of the checks could not run, and
+        saying `ok` would report their absence as their answer."""
         state = self.state(self.WELL_FORMED)
         self.assertEqual(state["live"], "unavailable")
         self.assertEqual(state["status"], "incomplete")
@@ -2513,26 +2516,26 @@ class CouplingSurfacingTests(unittest.TestCase):
             (root / "src" / "Method_Benchmark").mkdir(parents=True)
             (root / "src" / "Method_Benchmark" / "__init__.py").write_text(
                 "", encoding="utf-8")
-            celda = lambda src: {"cell_type": "code", "source": [src],
-                                 "execution_count": None, "outputs": [],
-                                 "metadata": {}}
-            self._write_notebook(root, [celda("print('sin sello')")],
+            cell = lambda src: {"cell_type": "code", "source": [src],
+                                "execution_count": None, "outputs": [],
+                                "metadata": {}}
+            self._write_notebook(root, [cell("print('sin sello')")],
                                  notebook_name="Mudo.ipynb")
             self._write_notebook(
-                root, [celda("from Method_Benchmark import report_digest\n"
-                             "print(report_digest.stamp())")],
+                root, [cell("from Method_Benchmark import report_digest\n"
+                            "print(report_digest.stamp())")],
                 notebook_name="Sellado.ipynb")
             state = impl.notebooks_state(root, "Method", "Method")
 
-        por_nombre = {Path(r["notebook"]).name: r for r in state["reports"]}
-        self.assertIs(por_nombre["Sellado.ipynb"]["sealed"], True)
-        self.assertIs(por_nombre["Mudo.ipynb"]["sealed"], False)
-        # Y ninguno de los dos corrió: es exactamente el punto.
+        by_name = {Path(r["notebook"]).name: r for r in state["reports"]}
+        self.assertIs(by_name["Sellado.ipynb"]["sealed"], True)
+        self.assertIs(by_name["Mudo.ipynb"]["sealed"], False)
+        # And neither of them ran: that is exactly the point.
         self.assertEqual([r["status"] for r in state["reports"]],
                          ["stale", "stale"])
         self.assertEqual(
             [Path(n).name for n in state["unsealed"]], ["Mudo.ipynb"],
-            "un cuaderno que no puede sellar tiene que nombrarse sin haber corrido")
+            "a notebook that cannot seal has to be named without having run")
 
     def test_an_item_whose_notebook_cannot_seal_is_named_unmeasurable(self):
         """The refusal has to name the cause, not the symptom.
@@ -2551,23 +2554,23 @@ class CouplingSurfacingTests(unittest.TestCase):
             root = Path(raw)
             product = root / "Method"
             product.mkdir(parents=True)
-            cuerpo = ("- [ ] 1. Its notebook is current. `@notebook "
-                      "Notebooks/Mudo.ipynb`\n")
+            body = ("- [ ] 1. Its notebook is current. `@notebook "
+                    "Notebooks/Mudo.ipynb`\n")
             (product / "AGREED.md").write_text(
                 "<!-- position revision=r1.md sha256=" + "a" * 64 +
                 " derivedAt=2026-08-27T00:00:00Z session=s0 target=final -->\n"
-                + cuerpo + "<!-- /position -->\n", encoding="utf-8")
-            evidencia = {"notebooks": {"reports": [
+                + body + "<!-- /position -->\n", encoding="utf-8")
+            evidence = {"notebooks": {"reports": [
                 {"notebook": "Method/Notebooks/Mudo.ipynb", "status": "executed",
                  "sourcesMatch": None, "sealed": False}]}}
-            estado = impl.position_state(root, "Method", evidencia, None, None)
+            position = impl.position_state(root, "Method", evidence, None, None)
 
         self.assertEqual(
-            [(i["ordinal"], Path(i["notebook"]).name) for i in estado["unmeasurable"]],
+            [(i["ordinal"], Path(i["notebook"]).name) for i in position["unmeasurable"]],
             [(1, "Mudo.ipynb")],
-            "un ítem cuyo cuaderno no puede sellar tiene que decirse así")
-        # Y sigue sin tildarse: esto NO afloja la secuencia, sólo la explica.
-        self.assertFalse(estado["sequence"][0]["satisfied"])
+            "an item whose notebook cannot seal has to be named as such")
+        # And it stays unticked: this does NOT loosen the sequence, it only explains it.
+        self.assertFalse(position["sequence"][0]["satisfied"])
 
     def test_the_sequence_refusal_names_the_seal_instead_of_sending_you_to_rerun(self):
         """The message is the whole remedy here, because the state is invisible.
@@ -2589,13 +2592,13 @@ class CouplingSurfacingTests(unittest.TestCase):
                 "reason": "the notebook carries no seal cell",
                 "resolve": "add the kit's seal"}]}
 
-        # `noise-report` avanza el 5 y lo bloquea el 4: el bloqueante es
-        # estrictamente anterior, igual que `earlier_open` en el rechazo.
-        detalle = impl.sequence_block_detail(position, 5)
-        self.assertIn("Mudo.ipynb", detalle)
-        self.assertIn("seal", detalle)
+        # `noise-report` advances 5 and 4 blocks it: the blocker is strictly
+        # earlier, just like `earlier_open` in the refusal.
+        detail = impl.sequence_block_detail(position, 5)
+        self.assertIn("Mudo.ipynb", detail)
+        self.assertIn("seal", detail)
 
-        # Y un ítem que simplemente no corrió no inventa una causa.
+        # And an item that simply did not run invents no cause.
         position["unmeasurable"] = []
         self.assertEqual(impl.sequence_block_detail(position, 5), "")
 
@@ -2610,18 +2613,18 @@ class CouplingSurfacingTests(unittest.TestCase):
         Found by mutation: removing `+ sequence_block_detail(...)` from the
         refusal cost nothing until this existed.
         """
-        arbol = ast.parse(ENGINE.read_text(encoding="utf-8"))
-        sitios = [
-            nodo for nodo in ast.walk(arbol)
-            if isinstance(nodo, ast.Call)
-            and getattr(nodo.func, "id", "") == "Refused"
-            and nodo.args
-            and getattr(nodo.args[0], "value", None) == "STEP_SEQUENCE_NOT_REACHED"]
-        self.assertEqual(len(sitios), 1, "el rechazo se levanta en otro lugar")
-        fuente = ast.unparse(sitios[0])
-        self.assertIn("sequence_block_detail", fuente,
-                      "el rechazo no llama al detalle, así que vuelve a decir "
-                      "sólo que el ítem no está tildado")
+        tree = ast.parse(ENGINE.read_text(encoding="utf-8"))
+        sites = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", "") == "Refused"
+            and node.args
+            and getattr(node.args[0], "value", None) == "STEP_SEQUENCE_NOT_REACHED"]
+        self.assertEqual(len(sites), 1, "the refusal is raised somewhere else")
+        source = ast.unparse(sites[0])
+        self.assertIn("sequence_block_detail", source,
+                      "the refusal does not call the detail, so it says again "
+                      "only that the item is not ticked")
 
     def test_the_accepted_seal_spellings_come_from_the_kit_asset(self):
         """Derived, so the kit and the check cannot drift apart.
@@ -2724,14 +2727,14 @@ class CouplingNeverGatesTests(unittest.TestCase):
         self.assertFalse(json.loads(clean.stdout)["coupling"]["coupled"])
 
 
-# ------------------------------------- lo que una celda produjo, no lo que dice
+# ------------------------------------- what a cell produced, not what it says
 
 class AgreementsTests(unittest.TestCase):
-    """La regla de escribir los acuerdos existía en prosa y sin nada que la sostenga
-    — la misma forma que el defecto que describe.
+    """The rule of writing the agreements down existed in prose with nothing to
+    hold it — the same shape as the defect it describes.
 
-    Un acuerdo se toma en una compuerta, no vive en ningún archivo, y cuando se
-    escribe el código el único registro es una memoria que re-decide sola.
+    An agreement is taken at a gate, lives in no file, and when the code is
+    written the only record is a memory that re-decides on its own.
     """
 
     def write(self, root: Path, body: str) -> dict:
@@ -2756,7 +2759,7 @@ class AgreementsTests(unittest.TestCase):
             self.assertEqual(state["settled"], 1)
 
     def test_everything_ticked_settles(self):
-        """Rojo alcanzable: si no leyera la marca, esto seguiría `open`."""
+        """Reachable red: if it did not read the mark, this would stay `open`."""
         with tempfile.TemporaryDirectory() as raw:
             state = self.write(Path(raw), "- [x] uno\n- [X] dos\n")
             self.assertEqual(state["status"], "settled")
@@ -2764,14 +2767,14 @@ class AgreementsTests(unittest.TestCase):
             self.assertEqual(state["open"], [])
 
     def test_a_checklist_under_any_name_is_found(self):
-        """El caso que motivó esto, y que no probé la primera vez.
+        """The case that motivated this, and that I did not test the first time.
 
-        Un repositorio ya tenía su checklist bajo otro nombre, con 159 ítems
-        acordados a mano. Con el nombre fijo el chequeo reportaba `absent` encima
-        de ella e inventaba una segunda al lado. Eso no es un archivo faltante:
-        es una ausencia que nadie fue a buscar, vestida de hallazgo.
+        A repository already had its checklist under another name, with 159
+        items agreed by hand. With the fixed name the check reported `absent`
+        on top of it and invented a second one beside it. That is not a missing
+        file: it is an absence nobody went looking for, dressed up as a finding.
 
-        Rojo alcanzable: con `AGREEMENTS.md` fijo, esto da `absent`.
+        Reachable red: with `AGREEMENTS.md` fixed, this gives `absent`.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -2785,7 +2788,7 @@ class AgreementsTests(unittest.TestCase):
             self.assertEqual(state["settled"], 1)
 
     def test_every_checklist_in_the_product_folder_is_counted(self):
-        """Dos archivos con acuerdos son dos mitades de un contrato, no uno."""
+        """Two files with agreements are two halves of one contract, not one."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "Method").mkdir(parents=True, exist_ok=True)
@@ -2798,7 +2801,7 @@ class AgreementsTests(unittest.TestCase):
             self.assertEqual(state["open"], ["dos"])
 
     def test_a_markdown_file_with_no_items_is_a_document_and_not_a_checklist(self):
-        """Un README en la carpeta del producto no es un contrato incumplido."""
+        """A README in the product folder is not a broken contract."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "Method").mkdir(parents=True, exist_ok=True)
@@ -2809,13 +2812,13 @@ class AgreementsTests(unittest.TestCase):
             self.assertEqual(state["unparsed"], [])
 
     def test_prose_is_not_mistaken_for_a_malformed_agreement(self):
-        """Un párrafo en negrita no es una viñeta.
+        """A bold paragraph is not a bullet.
 
-        Probando solo el primer carácter, cada `**negrita**` se leía como un
-        acuerdo mal escrito. Un archivo que registra un acuerdo revertido lo
-        explica en prosa, y esa prosa es justo la que este archivo necesita
-        permitir — un chequeo que grita por markdown se deja de leer, que cuesta
-        más que el caso que vigilaba.
+        Testing only the first character, every `**bold**` read as a badly
+        written agreement. A file that records a reverted agreement explains it
+        in prose, and that prose is exactly what this file needs to allow — a
+        check that shouts at markdown stops being read, which costs more than
+        the case it was watching.
         """
         with tempfile.TemporaryDirectory() as raw:
             state = self.write(Path(raw), (
@@ -2829,10 +2832,11 @@ class AgreementsTests(unittest.TestCase):
             self.assertEqual(state["settled"], 1)
 
     def test_a_bullet_that_is_not_a_checklist_item_is_never_counted_as_settled(self):
-        """Un acuerdo escrito con el formato equivocado no es un acuerdo cumplido.
+        """An agreement written in the wrong format is not a fulfilled agreement.
 
-        Es la misma falla que el archivo previene, un nivel más abajo: quedaría
-        escrito, nadie lo contaría, y el reporte diría que no falta nada.
+        It is the same failure the file prevents, one level down: it would stay
+        written, nobody would count it, and the report would say nothing is
+        missing.
         """
         with tempfile.TemporaryDirectory() as raw:
             state = self.write(Path(raw), "- [x] uno\n- dos, sin casilla\n")
@@ -3852,11 +3856,12 @@ class AgreementWitnessThreeStateTests(unittest.TestCase):
 
 
 class SearchIsAnExperimentTests(unittest.TestCase):
-    """Una búsqueda es un experimento y se declara como tal.
+    """A search is an experiment and is declared as one.
 
-    Tres cosas que se vuelven invisibles hasta que alguien se choca con ellas:
-    escala propia, rol de material propio, y una regla de desempate escrita en vez
-    de heredada de `max`. Nada acá sabe qué se busca ni nombra herramienta alguna.
+    Three things that turn invisible until someone runs into them: its own
+    scale, its own role for the material, and a tie-break rule written down
+    instead of inherited from `max`. Nothing here knows what is sought or names
+    any tool.
     """
 
     COMPLETE = {
@@ -3868,7 +3873,7 @@ class SearchIsAnExperimentTests(unittest.TestCase):
     }
 
     def test_a_repository_that_searches_nothing_has_nothing_to_declare(self):
-        """Ausencia es un estado, no una falla: casi ningún repo busca algo."""
+        """Absence is a state, not a failure: almost no repo searches for anything."""
         state = impl.search_state({}, [])
         self.assertEqual(state["status"], "none")
         self.assertIn("undeclaredRecords", state["note"])
@@ -3898,11 +3903,11 @@ class SearchIsAnExperimentTests(unittest.TestCase):
             self.assertTrue(state["missing"][0]["reason"], field)
 
     def test_a_search_that_writes_a_record_has_to_name_it_among_the_records(self):
-        """La junta entre las dos declaraciones.
+        """The seam between the two declarations.
 
-        Una búsqueda que escribe un archivo y no lo nombra donde se nombran los
-        registros es un segundo experimento llegando sin contabilizar, que es
-        justamente para lo que existe `records`.
+        A search that writes a file and does not name it where the records are
+        named is a second experiment arriving unaccounted for, which is exactly
+        what `records` exists for.
         """
         state = impl.search_state({"search": self.COMPLETE}, ["Results/summary.json"])
         self.assertEqual(state["status"], "incomplete")
@@ -3914,15 +3919,15 @@ class SearchIsAnExperimentTests(unittest.TestCase):
         self.assertEqual(state["status"], "ok")
 
     def test_a_complete_declaration_passes(self):
-        """Rojo alcanzable: si no leyera la declaración, esto seguiría incompleto."""
+        """Reachable red: if it did not read the declaration, this would stay incomplete."""
         state = impl.search_state({"search": self.COMPLETE}, ["Results/undercuts.json"])
         self.assertEqual(state["status"], "ok")
         self.assertEqual(state["missing"], [])
         self.assertEqual(state["declared"]["role"], "valid")
 
     def test_the_declared_record_is_checked_against_the_disk(self):
-        """Comparar las dos declaraciones verifica que alguien escribió el mismo
-        texto dos veces, y no dice nada de dónde escribe la búsqueda."""
+        """Comparing the two declarations verifies that someone wrote the same
+        text twice, and says nothing about where the search writes."""
         with tempfile.TemporaryDirectory() as raw:
             product = Path(raw) / "Method"
             (product / "Results").mkdir(parents=True, exist_ok=True)
@@ -3938,11 +3943,11 @@ class SearchIsAnExperimentTests(unittest.TestCase):
             self.assertEqual(state["status"], "ok")
 
     def test_a_record_written_one_level_deeper_is_found_and_named(self):
-        """El caso que motivó esto, y que las dos declaraciones no podían ver.
+        """The case that motivated this, and that the two declarations could not see.
 
-        Una ruta con un directorio duplicado satisfacía las dos declaraciones y
-        dejaba el registro un nivel por debajo de donde nadie lo iba a buscar. Se
-        descubrió después de que la búsqueda ya hubiera escrito ahí.
+        A path with a duplicated directory satisfied both declarations and left
+        the record one level below where anyone would look for it. It was
+        discovered after the search had already written there.
         """
         with tempfile.TemporaryDirectory() as raw:
             product = Path(raw) / "Method"
@@ -3959,20 +3964,19 @@ class SearchIsAnExperimentTests(unittest.TestCase):
                              ["Results/Benchmark/Benchmark/undercuts.json"])
 
     def test_nothing_to_check_is_none_and_never_a_failure(self):
-        """Sin carpeta de producto no hay pregunta que hacerle al disco, y `False`
-        ahí sería inventar un hallazgo."""
+        """Without a product folder there is no question to ask the disk, and
+        `False` there would be inventing a finding."""
         state = impl.search_state({"search": self.COMPLETE},
                                   ["Results/undercuts.json"])
         self.assertIsNone(state["recordFound"])
         self.assertEqual(state["status"], "ok")
 
     def test_it_names_no_tool(self):
-        """La skill no recomienda con qué buscar: eso depende del problema.
+        """The skill does not recommend what to search with: that depends on the problem.
 
-        Un muestreo adaptativo entrega puntos desigualmente muestreados, y la
-        skill exige después el paisaje completo para sostener una afirmación de
-        escala. Recomendar la herramienta sería empujar una salida que contradice
-        sus propias reglas de reporte.
+        Adaptive sampling delivers unevenly sampled points, and the skill then
+        requires the full landscape to support a claim about scale. Recommending
+        the tool would push an output that contradicts its own reporting rules.
         """
         source = (impl.SEARCH_DECLARATION, impl.search_state.__doc__)
         for tool in ("optuna", "hyperopt", "ray", "skopt", "grid", "bayesian"):
@@ -4288,14 +4292,13 @@ class SearchRecordScaleNestedFieldShapedRecordTests(unittest.TestCase):
 
 
 class UndeclaredRecordsTests(unittest.TestCase):
-    """Lo que la corrida deja escrito donde viven sus registros, o está declarado
-    o se reporta.
+    """What the run leaves written where its records live is either declared or
+    reported.
 
-    Todos los demás chequeos solo pueden dispararse sobre algo que alguien
-    escribió, así que el repositorio corriendo un experimento que nadie contabilizó
-    es justamente aquel donde todos se quedan callados. Es la misma red que
-    `undeclaredDrawings` tiende sobre las figuras, tendida sobre lo que una
-    corrida escribe.
+    Every other check can only fire on something someone wrote, so the
+    repository running an experiment nobody accounted for is exactly the one
+    where all of them stay quiet. It is the same net `undeclaredDrawings`
+    spreads over the figures, spread over what a run writes.
     """
 
     def build(self, root: Path, declared: str) -> dict:
@@ -4331,10 +4334,11 @@ class UndeclaredRecordsTests(unittest.TestCase):
                              ["Results/Benchmark/undercuts.json"])
 
     def test_it_does_not_filter_by_format(self):
-        """Filtrar por `.json` daría un pase mudo a quien registre en otra cosa.
+        """Filtering by `.json` would give a silent pass to whoever records in
+        something else.
 
-        Rojo alcanzable: con un filtro de extensión, ninguno de estos tres
-        aparecería y el chequeo se quedaría callado justo donde hace falta.
+        Reachable red: with an extension filter, none of these three would
+        appear and the check would stay quiet exactly where it is needed.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -4345,8 +4349,8 @@ class UndeclaredRecordsTests(unittest.TestCase):
                               "Results/spectra.npz"])
 
     def test_declaring_a_directory_covers_it_and_shows_in_the_echo(self):
-        """Permitido, y visible: renunciar a la cuenta archivo por archivo es una
-        decisión que se ve, no un silencio."""
+        """Allowed, and visible: giving up the file-by-file count is a decision
+        that shows, not a silence."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.results(root, "figures/curve.pdf", "figures/grid.pdf",
@@ -4357,10 +4361,10 @@ class UndeclaredRecordsTests(unittest.TestCase):
             self.assertEqual(state["declared"]["records"], ["Results/figures"])
 
     def test_the_per_checkpoint_artefacts_of_models_are_never_reported(self):
-        """`Models/` guarda uno por checkpoint por diseño del layout.
+        """`Models/` keeps one per checkpoint by the layout's design.
 
-        Reportar sesenta manifiestos sería un hallazgo que nadie lee, en cualquier
-        repositorio — no solo en el que lo motivó.
+        Reporting sixty manifests would be a finding nobody reads, in any
+        repository — not only the one that motivated it.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -4373,7 +4377,7 @@ class UndeclaredRecordsTests(unittest.TestCase):
             self.assertEqual(state["undeclaredRecords"], [])
 
     def test_declaring_everything_leaves_nothing_to_report(self):
-        """Rojo alcanzable: si no leyera `records`, esto seguiría reportando."""
+        """Reachable red: if it did not read `records`, this would keep reporting."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.results(root, "summary.json", "Benchmark/spectrum.json")
@@ -5245,7 +5249,7 @@ class ToolsRootTests(unittest.TestCase):
                        if impl.read_declaration(f, "__provenance__") is None]
             self.assertEqual(missing, [])
             self.assertTrue((root / "tools/distribute.py").exists(),
-                            "el lanzador existe y aun asi nadie le pide procedencia")
+                            "the launcher exists and still nobody asks it for provenance")
 
 
 class ProseTests(unittest.TestCase):
@@ -5275,7 +5279,7 @@ class ProseTests(unittest.TestCase):
                              "research-concept-r16.md")
 
     def test_the_current_revision_in_prose_is_not_reported(self):
-        """Rojo alcanzable: reportarlas todas haría el hallazgo inútil."""
+        """Reachable red: reporting them all would make the finding useless."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root, **{
@@ -5286,7 +5290,7 @@ class ProseTests(unittest.TestCase):
                 impl.prose_state(root, "research-concept-r17.md")["staleRevisions"], [])
 
     def test_the_pattern_comes_from_the_revision_handed_in(self):
-        """Nada acá conoce una convención de nombres: se deriva del argumento."""
+        """Nothing here knows a naming convention: it is derived from the argument."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root, **{
@@ -5296,7 +5300,7 @@ class ProseTests(unittest.TestCase):
             self.assertEqual(state["staleRevisions"][0]["named"], "paper-v3.md")
 
     def test_a_symbol_named_in_prose_that_resolves_to_nothing(self):
-        """Lo que deja un rename: el párrafo sigue nombrando la constante vieja."""
+        """What a rename leaves behind: the paragraph still names the old constant."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root, **{
@@ -5318,8 +5322,8 @@ class ProseTests(unittest.TestCase):
             self.assertEqual(impl.prose_state(root, None)["unresolvedSymbols"], [])
 
     def test_a_filename_is_not_mistaken_for_a_symbol(self):
-        """Dotted y con guion bajo es exactamente lo que parece un archivo, y la
-        prosa nombra archivos todo el tiempo."""
+        """Dotted and with an underscore is exactly what looks like a file, and
+        prose names files all the time."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root, **{
@@ -5329,8 +5333,8 @@ class ProseTests(unittest.TestCase):
             self.assertEqual(impl.prose_state(root, None)["unresolvedSymbols"], [])
 
     def test_code_is_not_read_as_prose(self):
-        """Una revisión dentro de un literal es código y se chequea en otro lado;
-        reportarla acá sería ruido sobre algo que ya tiene su verificación."""
+        """A revision inside a literal is code and is checked elsewhere; reporting
+        it here would be noise about something that already has its verification."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             self.build(root, **{
@@ -5342,13 +5346,13 @@ class ProseTests(unittest.TestCase):
 
 
 class StaleFindingTests(unittest.TestCase):
-    """Un hallazgo del reporte se lee de lo que un cuaderno **emitió**.
+    """A report finding is read from what a notebook **emitted**.
 
-    Sobre un cuaderno obsoleto describe la corrida que pasó, no el código que hay
-    ahora. Las dos mitades ya se reportaban —el hallazgo y el estado del
-    cuaderno— en dos lugares distintos de la misma salida, y nadie las cruzaba.
-    Un lector que lo toma por defecto vivo va y arregla algo ya arreglado, o lo
-    arregla de una segunda manera.
+    On a stale notebook it describes the run that happened, not the code that is
+    there now. Both halves were already reported —the finding and the notebook's
+    state— in two different places of the same output, and nobody crossed them.
+    A reader who takes it for a live defect goes and fixes something already
+    fixed, or fixes it a second way.
     """
 
     DECLARATION = (
@@ -5409,54 +5413,54 @@ class StaleFindingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             state = self.build(Path(raw), digest_matches=False)
             found = state["restated"]
-            self.assertTrue(found, "el fixture tiene que producir el hallazgo")
+            self.assertTrue(found, "the fixture has to produce the finding")
             self.assertTrue(found[0]["fromStaleNotebook"])
 
     def test_a_finding_from_a_current_notebook_carries_no_flag(self):
-        """Rojo alcanzable: marcarlos todos haría la bandera inútil."""
+        """Reachable red: flagging them all would make the flag useless."""
         with tempfile.TemporaryDirectory() as raw:
             state = self.build(Path(raw), digest_matches=True)
             found = state["restated"]
-            self.assertTrue(found, "el fixture tiene que producir el hallazgo")
+            self.assertTrue(found, "the fixture has to produce the finding")
             self.assertNotIn("fromStaleNotebook", found[0])
 
     def test_a_notebook_too_stale_to_be_called_stale_sources_still_says_so(self):
-        """La escalera de estados es excluyente, y esta bandera leía un peldaño.
+        """The ladder of states is exclusive, and this flag read one rung.
 
-        Un cuaderno con celdas sin correr se llama `stale` y ahí se queda: nunca
-        llega a la comparación de digest, así que sus fuentes pueden diferir en
-        todo y el estado no cambia. Filtrar por `stale-sources` entonces pierde la
-        marca justo cuando el cuaderno está más desactualizado y no menos —
-        corrió a medias *y* contra otro código— que es la única dirección en la
-        que este error podía ser peligroso.
+        A notebook with unrun cells is called `stale` and stays there: it never
+        reaches the digest comparison, so its sources can differ in everything
+        and the state does not change. Filtering by `stale-sources` then loses
+        the mark exactly when the notebook is more out of date, not less —
+        half-run *and* against other code— which is the only direction in which
+        this error could be dangerous.
         """
         with tempfile.TemporaryDirectory() as raw:
             state = self.build(Path(raw), digest_matches=False, unexecuted=True)
             found = state["restated"]
-            self.assertTrue(found, "el fixture tiene que producir el hallazgo")
+            self.assertTrue(found, "the fixture has to produce the finding")
             self.assertTrue(found[0].get("fromStaleNotebook"))
 
     def test_a_finding_read_off_a_notebook_that_failed_says_so(self):
-        """Un cuaderno con un error corrió parte de sus celdas y abandonó el
-        resto, así que lo que emitió describe una corrida que no terminó."""
+        """A notebook with an error ran part of its cells and abandoned the rest,
+        so what it emitted describes a run that did not finish."""
         with tempfile.TemporaryDirectory() as raw:
             state = self.build(Path(raw), digest_matches=True, errored=True)
             found = state["restated"]
-            self.assertTrue(found, "el fixture tiene que producir el hallazgo")
+            self.assertTrue(found, "the fixture has to produce the finding")
             self.assertTrue(found[0].get("fromStaleNotebook"))
 
 
 class ComponentShareTests(unittest.TestCase):
-    """Un término bien implementado y multiplicado por algo minúsculo da una
-    columna de casi-ceros que se lee como resultado.
+    """A well-implemented term multiplied by something tiny gives a column of
+    near-zeros that reads as a result.
 
-    `contribution` sola — el numerador, sin denominador al lado — no distingue
-    "el término no comandó nada" de "el término fue escalado a nada", y las dos
-    imprimen chico. La regla existía en prosa y un repositorio entregó el
-    numerador solo con la verificación en verde.
+    `contribution` alone — the numerator, with no denominator beside it — does
+    not tell "the term drove nothing" from "the term was scaled to nothing", and
+    both print small. The rule existed in prose and a repository delivered the
+    numerator alone with the verification green.
 
-    Lo que se chequea es la declaración, nunca el significado: nada acá puede
-    aprender cómo se llama un término del objetivo de alguien.
+    What is checked is the declaration, never the meaning: nothing here can
+    learn what a term of someone's objective is called.
     """
 
     BASE = ("__benchmark__ = {\n"
@@ -5483,10 +5487,10 @@ class ComponentShareTests(unittest.TestCase):
             root = Path(raw)
             found = self.state(root, "", "{'accuracy': 'higher'}")["componentsWithoutShare"]
             self.assertEqual(len(found), 1)
-            self.assertIn("no declara `components`", found[0]["reason"])
+            self.assertIn("declares no `components`", found[0]["reason"])
 
     def test_more_than_one_term_and_no_share_is_the_gap_the_rule_is_about(self):
-        """Dos términos que se suman y ninguna forma de leer la parte de cada uno."""
+        """Two terms that add up and no way to read each one's share."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             found = self.state(
@@ -5498,7 +5502,7 @@ class ComponentShareTests(unittest.TestCase):
             self.assertEqual(found[0]["terms"], ["fit", "align"])
 
     def test_a_declared_term_the_record_never_carries_is_named(self):
-        """Declararlo y no registrarlo deja la parte sin poder computarse igual."""
+        """Declaring it and not recording it leaves the share uncomputable all the same."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             state = self.state(
@@ -5509,7 +5513,7 @@ class ComponentShareTests(unittest.TestCase):
             self.assertEqual(state["componentsNotRecorded"], ["align", "alignShare"])
 
     def test_terms_and_share_both_recorded_raise_nothing(self):
-        """Rojo alcanzable: si el chequeo no leyera `dimensions`, esto fallaría."""
+        """Reachable red: if the check did not read `dimensions`, this would fail."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             state = self.state(
@@ -5522,12 +5526,12 @@ class ComponentShareTests(unittest.TestCase):
 
 
 class CellOutputTests(unittest.TestCase):
-    """Los dos chequeos que leen la salida de una celda y no su código.
+    """The two checks that read a cell's output and not its code.
 
-    Todo lo demás en `report_state` se contesta desde las fuentes. Estos dos no:
-    una celda puede correr, no levantar nada, emitir una salida, y no haber
-    mostrado nada. `execution_count` dice que corrió y la lista de errores está
-    vacía, así que cualquier chequeo que lea solo esas dos la aprueba.
+    Everything else in `report_state` is answered from the sources. These two
+    are not: a cell can run, raise nothing, emit an output, and have shown
+    nothing. `execution_count` says it ran and the error list is empty, so any
+    check that reads only those two passes it.
     """
 
     DECLARATION = (
@@ -5568,9 +5572,9 @@ class CellOutputTests(unittest.TestCase):
                 _cell("code", "figures.curves(path)", outputs=outputs)]
 
     def test_a_figure_that_came_out_as_a_description_is_caught(self):
-        """El defecto real: `display(fig)` sin el formateador registrado emite
-        `<Figure size ...>` como texto. La celda corrió, no levantó nada, produjo
-        una salida — y le muestra al lector una línea de prosa donde va el dibujo.
+        """The real defect: `display(fig)` without the registered formatter emits
+        `<Figure size ...>` as text. The cell ran, raised nothing, produced an
+        output — and shows the reader a line of prose where the drawing goes.
         """
         found = self.state(self.drawing([_shown("text/plain", "<Figure size 640x480>")]))
         self.assertEqual(len(found["describedNotShown"]), 1, found["describedNotShown"])
@@ -5578,20 +5582,20 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(found["describedNotShown"][0]["emitted"], ["text/plain"])
 
     def test_a_figure_that_printed_its_filename_is_caught(self):
-        """Guardar y anunciar la ruta es la misma falla con otra ropa: la celda
-        informa un nombre de archivo donde debería haber un resultado."""
+        """Saving and announcing the path is the same failure in other clothes:
+        the cell reports a file name where a result should be."""
         found = self.state(self.drawing([_stream("escrita: curves.pdf\n")]))
         self.assertEqual(len(found["describedNotShown"]), 1)
-        self.assertEqual(found["describedNotShown"][0]["emitted"], ["texto"])
+        self.assertEqual(found["describedNotShown"][0]["emitted"], ["text"])
 
     def test_a_figure_that_actually_rendered_passes(self):
-        """El verde tiene que ser alcanzable, o el rojo de arriba no prueba nada."""
+        """Green has to be reachable, or the red above proves nothing."""
         self.assertEqual(self.state(self.drawing([_shown("image/png")]))["describedNotShown"], [])
 
     def test_any_image_mime_counts_as_shown(self):
-        """Nada acá puede saber en qué formato dibuja alguien. Un SVG es una
-        figura mostrada tanto como un PNG, y exigir uno sería aprender la cadena
-        de herramientas de un repositorio."""
+        """Nothing here can know what format someone draws in. An SVG is a shown
+        figure as much as a PNG, and requiring one would mean learning a
+        repository's toolchain."""
         for mime in ("image/png", "image/svg+xml", "image/jpeg"):
             with self.subTest(mime=mime):
                 self.assertEqual(
@@ -5610,8 +5614,8 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(self.state([self.FRAME, self.TABLE])["unrendered"], [])
 
     def test_the_cell_that_writes_the_record_may_show_nothing(self):
-        """Escribir el registro es su trabajo entero. Exigirle una salida visible
-        haría que la forma de aprobar sea imprimir el archivo."""
+        """Writing the record is its whole job. Requiring a visible output from it
+        would make the way to pass be printing the file."""
         cells = [self.FRAME, self.TABLE,
                  _cell("markdown", "el registro"),
                  _cell("code", "(root / 'r.txt').write_text("
@@ -5620,8 +5624,8 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(self.state(cells)["unrendered"], [])
 
     def test_an_unexecuted_cell_is_not_a_report_defect(self):
-        """Un cuaderno sin ejecutar ya es un hallazgo de `validation`. Repetirlo
-        acá como un defecto de informe por celda enterraría a los que sí lo son.
+        """An unexecuted notebook is already a `validation` finding. Repeating it
+        here as a per-cell report defect would bury the ones that are.
         """
         cells = [self.FRAME,
                  _cell("code", "print(tables.render(runs, 'accuracy', reduction))",
@@ -5633,9 +5637,9 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(state["describedNotShown"], [])
 
     def test_a_cell_that_raised_is_reported_once_and_not_twice(self):
-        """El error lo informa `notebook_execution`. Sin marcarlo, esta celda
-        también leería como una que no mostró nada, y un defecto saldría dos
-        veces con dos nombres distintos."""
+        """`notebook_execution` reports the error. Without flagging it, this cell
+        would also read as one that showed nothing, and one defect would come out
+        twice under two different names."""
         error = {"output_type": "error", "ename": "ValueError",
                  "evalue": "x", "traceback": []}
         state = self.state(self.drawing([error]))
@@ -5644,26 +5648,27 @@ class CellOutputTests(unittest.TestCase):
     SILENT = DECLARATION.replace("        'figures': ['figures.curves'],\n", "")
 
     def test_a_description_is_caught_with_no_declaration_at_all(self):
-        """El hallazgo del e2e sobre el repositorio real, convertido en prueba.
+        """The e2e finding on the real repository, turned into a test.
 
-        Ese paquete declaraba `renderers` y `conclusions` y ninguna llamada de
-        dibujo, así que la comprobación quedaba inerte justo en el repositorio
-        cuyo defecto la motivó. Una red que solo se activa cuando alguien escribió
-        una clave opcional no es una red. La forma de la salida alcanza: un
-        `text/plain` que es el repr de un objeto es una descripción-de-figura la
-        haya dibujado quien la haya dibujado, y ahí no se nombra ninguna librería.
+        That package declared `renderers` and `conclusions` and no drawing call,
+        so the check stayed inert exactly in the repository whose defect
+        motivated it. A net that only activates when someone wrote an optional
+        key is not a net. The shape of the output is enough: a `text/plain` that
+        is an object's repr is a figure-description whoever drew it, and no
+        library is named there.
         """
         state = self.state(self.drawing([_shown("text/plain", "<Figure size 640x480>")]),
                            self.SILENT)
         self.assertEqual(len(state["describedNotShown"]), 1, state["describedNotShown"])
         found = state["describedNotShown"][0]
-        self.assertEqual(found["drawing"], "<sin declarar>")
+        self.assertEqual(found["drawing"], "<undeclared>")
         self.assertEqual(found["description"], "<Figure size 640x480>")
         self.assertEqual(state["status"], "drift")
 
     def test_the_repr_of_any_object_reads_as_a_description(self):
-        """No hay una lista de librerías acá, y no puede haberla. Lo que delata al
-        defecto es que la celda mostró el repr de algo en vez de la cosa."""
+        """There is no list of libraries here, and there cannot be one. What gives
+        the defect away is that the cell showed the repr of something instead of
+        the thing."""
         for repr_text in ("<Figure size 640x480 with 6 Axes>",
                           "<matplotlib.axes._axes.Axes object at 0x10a3f>",
                           "[<Line2D object at 0x7fa1>]"):
@@ -5673,14 +5678,14 @@ class CellOutputTests(unittest.TestCase):
                 self.assertEqual(len(state["describedNotShown"]), 1, repr_text)
 
     def test_a_rich_rendering_carries_a_repr_beside_it_and_that_is_not_a_defect(self):
-        """El falso positivo que el e2e sacó a la luz, y que la suite no cubría.
+        """The false positive the e2e brought to light, which the suite did not cover.
 
-        Una salida rica guarda su repr de respaldo AL LADO: un Markdown mostrado
-        deja `<IPython.core.display.Markdown object>` en `text/plain` junto a su
-        `text/markdown`. Esa celda mostró lo que tenía que mostrar. Leer la celda
-        entera en vez de cada salida marcaba las once celdas de encabezado del
-        repositorio real como figuras que nunca se dibujaron — y once hallazgos
-        falsos entierran al verdadero, que es peor que no tener el hallazgo.
+        A rich output keeps its fallback repr ALONGSIDE: a shown Markdown leaves
+        `<IPython.core.display.Markdown object>` in `text/plain` next to its
+        `text/markdown`. That cell showed what it had to show. Reading the whole
+        cell instead of each output flagged the real repository's eleven heading
+        cells as figures that were never drawn — and eleven false findings bury
+        the true one, which is worse than not having the finding.
         """
         rich = {"output_type": "display_data",
                 "data": {"text/markdown": "## Qué mide",
@@ -5691,8 +5696,8 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(state["describedNotShown"], [])
 
     def test_ordinary_printed_output_is_not_a_description(self):
-        """El rojo de arriba no sirve de nada si una tabla impresa también lo
-        dispara: un informe que grita en cada celda se lee salteando."""
+        """The red above is worthless if a printed table also triggers it: a
+        report that shouts at every cell gets read by skipping."""
         for text in ("accuracy  0.81", "escrita: curves.pdf", "a < b > c"):
             with self.subTest(text=text):
                 state = self.state([self.FRAME, _cell("code", "print(resumen)",
@@ -5701,22 +5706,23 @@ class CellOutputTests(unittest.TestCase):
                 self.assertEqual(state["describedNotShown"], [], text)
 
     def test_a_picture_no_declared_call_could_have_drawn_is_a_finding(self):
-        """Lo que impide que las dos comprobaciones de arriba sean una cortesía.
-        Sin esto, un paquete que no declara `figures` es indistinguible de uno
-        cuyas figuras están todas bien — y el informe sale limpio."""
+        """What keeps the two checks above from being a courtesy. Without this, a
+        package that does not declare `figures` is indistinguishable from one
+        whose figures are all fine — and the report comes out clean."""
         state = self.state(self.drawing([_shown("image/png")]), self.SILENT)
         self.assertEqual(len(state["undeclaredDrawings"]), 1, state["undeclaredDrawings"])
         self.assertIn("figures.curves", state["undeclaredDrawings"][0]["calls"])
         self.assertEqual(state["status"], "drift")
 
     def test_a_declared_drawing_that_showed_its_picture_is_not_undeclared(self):
-        """El verde tiene que seguir siendo alcanzable declarando, o el hallazgo
-        de arriba no pide una declaración: pide que nadie dibuje."""
+        """Green has to stay reachable by declaring, or the finding above does not
+        ask for a declaration: it asks that nobody draw."""
         state = self.state(self.drawing([_shown("image/png")]))
         self.assertEqual(state["undeclaredDrawings"], [])
-        # No `ok`: sin intérprete del target la sonda `live` no corre y el estado
-        # queda `incomplete`, que es una limitación del banco y no del hallazgo.
-        # Lo que esta prueba defiende es que declarar y mostrar no produce deriva.
+        # Not `ok`: without the target's interpreter the `live` probe does not run
+        # and the state stays `incomplete`, which is a limitation of the bench and
+        # not of the finding. What this test defends is that declaring and showing
+        # produces no drift.
         self.assertNotEqual(state["status"], "drift")
 
     def _table_then_conclusion(self, table_out, conclusion_out):
@@ -5727,12 +5733,12 @@ class CellOutputTests(unittest.TestCase):
                       outputs=[_shown("text/plain", conclusion_out)])]
 
     def test_a_conclusion_that_restates_its_own_table_is_caught(self):
-        """Encontrado leyendo un informe real, no razonando sobre el código.
+        """Found by reading a real report, not by reasoning about the code.
 
-        `duplicated` compara un renderizado con otro y no puede ver este caso: la
-        segunda copia no es un renderizado, es una frase. Y el número no está en
-        ninguna de las dos fuentes — está en lo que las dos celdas emitieron, así
-        que solo se ve leyendo las salidas.
+        `duplicated` compares one rendering with another and cannot see this
+        case: the second copy is not a rendering, it is a sentence. And the
+        number is in neither source — it is in what both cells emitted, so it
+        only shows by reading the outputs.
         """
         state = self.state(self._table_then_conclusion(
             "A 0.81 · B 0.74 · C 0.69 · D 0.55",
@@ -5744,18 +5750,18 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(state["status"], "drift")
 
     def test_a_conclusion_may_name_the_value_it_rests_on(self):
-        """El verde tiene que quedar alcanzable, o el hallazgo no pide una
-        conclusión: pide una conclusión sin evidencia. Nombrar quién va adelante y
-        con cuánto es el trabajo de la conclusión, no una segunda tabla."""
+        """Green has to stay reachable, or the finding does not ask for a
+        conclusion: it asks for a conclusion without evidence. Naming who is ahead
+        and by how much is the conclusion's job, not a second table."""
         state = self.state(self._table_then_conclusion(
             "A 0.81 · B 0.74 · C 0.69 · D 0.55",
             "Mejor: **A** con 0.81; peor: D con 0.55."))
         self.assertEqual(state["restated"], [])
 
     def test_a_conclusion_is_never_matched_against_another_notebook_table(self):
-        """El emparejamiento se reinicia por cuaderno. Sin eso, la primera
-        conclusión de un cuaderno se compararía contra la última tabla del
-        anterior, y el hallazgo señalaría dos celdas que nunca se vieron."""
+        """The pairing restarts per notebook. Without that, a notebook's first
+        conclusion would be compared against the previous one's last table, and
+        the finding would point at two cells that never met."""
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "src/Method_Benchmark").mkdir(parents=True)
@@ -5777,15 +5783,15 @@ class CellOutputTests(unittest.TestCase):
         self.assertEqual(state["restated"], [])
 
     def test_the_echo_still_shows_the_key_when_nothing_was_declared(self):
-        """Declarar ninguna llamada no es lo mismo que no dibujar, y el eco lo
-        tiene que dejar ver en vez de callar."""
+        """Declaring no call is not the same as not drawing, and the echo has to
+        show it instead of keeping quiet."""
         state = self.state([self.FRAME, self.TABLE], self.SILENT)
         self.assertEqual(state["declared"]["figures"], [])
 
     def test_a_figure_defect_puts_the_whole_report_in_drift(self):
-        """Sin esto el hallazgo existiría y no frenaría nada: es el estado del
-        informe lo que hace que `probe` conteste `report-first` en vez de ofrecer
-        la campaña."""
+        """Without this the finding would exist and stop nothing: it is the
+        report's state that makes `probe` answer `report-first` instead of
+        offering the campaign."""
         state = self.state(self.drawing([_shown("text/plain", "<Figure ...>")]))
         self.assertEqual(state["status"], "drift")
 
@@ -5955,14 +5961,15 @@ class StatedNotShownTests(unittest.TestCase):
 
 
 class CellOutputEndToEndTests(unittest.TestCase):
-    """El chequeo, desde `argv` hasta el JSON que lee una persona.
+    """The check, from `argv` to the JSON a person reads.
 
-    Las pruebas de arriba llaman a `report_state` directo, así que verifican las
-    dos mitades y nunca la unión. Esta cruza la junta: arma un repositorio de
-    juguete, corre el CLI como proceso, y le pregunta a la herramienta qué ve.
+    The tests above call `report_state` directly, so they verify both halves and
+    never the join. This one crosses the seam: it builds a toy repository, runs
+    the CLI as a process, and asks the tool what it sees.
 
-    El objetivo vive bajo `implementations/` porque el guardia lo exige, con un
-    nombre que no puede chocar con nada, y se borra pase lo que pase.
+    The target lives under `implementations/` because the guard requires it,
+    with a name that cannot collide with anything, and it is deleted no matter
+    what.
     """
 
     DECLARATION = (
@@ -6019,7 +6026,7 @@ class CellOutputEndToEndTests(unittest.TestCase):
         self.assertEqual(leftover, [], leftover)
 
 
-# ------------------------------- la junta entre el método y el arnés que lo mide
+# ------------------------ the seam between the method and the harness that measures it
 
 def _module(revision, sections, equations, imports=""):
     return (f"{imports}"
@@ -6194,20 +6201,21 @@ class UndeclaredArmsTests(unittest.TestCase):
 
 
 class UnreachedMathematicsEndToEndTests(unittest.TestCase):
-    """El brazo declara que ejercita una sección y nunca llama a lo que la implementa.
+    """The arm declares that it exercises a section and never calls what implements it.
 
-    Es la única junta que ninguna otra comprobación cruzaba. `verify` leía la
-    procedencia del método y la declaración del banco como dos documentos separados,
-    y los dos pueden estar impecables mientras el brazo reimplementa la ecuación en
-    vez de llamarla: el módulo declara sus secciones, el brazo declara las mismas, y
-    nunca se encuentran.
+    It is the only seam no other check crossed. `verify` read the method's
+    provenance and the benchmark's declaration as two separate documents, and
+    both can be spotless while the arm reimplements the equation instead of
+    calling it: the module declares its sections, the arm declares the same
+    ones, and they never meet.
 
-    No es hipotético. Así corrió una campaña entera con un brazo calculando una forma
-    simplificada del término que declaraba, con todos los chequeos en verde.
+    It is not hypothetical. A whole campaign ran this way, with an arm computing
+    a simplified form of the term it declared, with every check green.
 
-    Los módulos del juguete se llaman por su ROL en la prueba y no por ninguna
-    matemática. El chequeo es estructural: no sabe qué es una sección ni qué implementa
-    un módulo, y un fixture con nombres de un método real sugeriría que sí.
+    The toy's modules are named by their ROLE in the test and not by any
+    mathematics. The check is structural: it does not know what a section is or
+    what a module implements, and a fixture with a real method's names would
+    suggest it does.
     """
 
     IMPLEMENTATION_DECLARATION = "__implementation__ = {'revision': 'r01.md'}\n"
@@ -6270,33 +6278,36 @@ class UnreachedMathematicsEndToEndTests(unittest.TestCase):
         self.assertEqual(unreached[0]["declaredBy"], ["floor", "full"])
 
     def test_the_defect_is_not_left_inside_a_headline_that_reads_ok(self):
-        """Un defecto que solo vive dentro de `benchmark` mientras `fidelity` dice
-        `ok` es exactamente el silencio que este chequeo viene a romper."""
+        """A defect that lives only inside `benchmark` while `fidelity` says `ok`
+        is exactly the silence this check exists to break."""
         fidelity = self.verify_with(self.WITHOUT)["fidelity"]
         self.assertEqual(fidelity["benchmark"]["status"], "unfaithful")
         self.assertEqual(fidelity["status"], "drift")
 
     def test_calling_it_clears_the_finding(self):
-        """El otro polo. Sin esto, un chequeo que siempre marca rojo no distingue
-        un arnés infiel de uno fiel, y aprobar sería imposible."""
+        """The other pole. Without this, a check that always flags red does not tell
+        an unfaithful harness from a faithful one, and passing would be impossible."""
         fidelity = self.verify_with(self.WITH)["fidelity"]
         self.assertEqual(fidelity["benchmark"]["unreachedModules"], [])
         self.assertEqual(fidelity["benchmark"]["status"], "ok")
         self.assertEqual(fidelity["status"], "ok")
 
     def test_a_module_reached_through_another_is_not_reported(self):
-        """`called` importa `reached_through`, así que el arnés la ejercita sin nombrarla.
-        Marcarla haría que el hallazgo se ignore en todo repositorio real."""
+        """`called` imports `reached_through`, so the harness exercises it without
+        naming it. Flagging it would make the finding ignored in every real
+        repository."""
         unreached = self.verify_with(self.WITHOUT)["fidelity"]["benchmark"]
         self.assertNotIn("src/Method/reached_through.py",
                          [u["module"] for u in unreached["unreachedModules"]])
 
     def test_mathematics_no_arm_claims_stays_silent(self):
-        """Un método puede cargar más de lo que una comparación ejercita. Exigir que
-        todo módulo se llame dispararía sobre eso y enseñaría a saltear el hallazgo.
+        """A method can carry more than a comparison exercises. Requiring every
+        module to be called would fire on that and teach people to skip the
+        finding.
 
-        Se mide sobre el caso que SÍ marca: con `WITH` la lista queda vacía por el
-        control y `unclaimed` pasaría aunque nada lo estuviera silenciando.
+        It is measured on the case that DOES flag: with `WITH` the list is empty
+        because of the control, and `unclaimed` would pass even if nothing were
+        silencing it.
         """
         unreached = self.verify_with(self.WITHOUT)["fidelity"]["benchmark"]
         reported = [u["module"] for u in unreached["unreachedModules"]]
@@ -6304,11 +6315,12 @@ class UnreachedMathematicsEndToEndTests(unittest.TestCase):
         self.assertIn("src/Method/never_called.py", reported)
 
     def probe_with(self, wiring):
-        """Un juguete que llega hasta donde se ofrece la corrida.
+        """A toy that gets as far as where the run is offered.
 
-        Hace falta lo mismo que en cualquier repositorio real para que la pregunta
-        exista: algo contra qué comparar, y un backend entrenable. Sin las dos cosas
-        `probe` contesta otra cosa mucho antes y la compuerta no se ejercita nunca.
+        It takes the same as in any real repository for the question to exist:
+        something to compare against, and a trainable backend. Without both,
+        `probe` answers something else much earlier and the gate is never
+        exercised.
         """
         box = FORGE / "implementations" / f"_e2e_unreached_probe_{os.getpid()}"
         try:
@@ -6337,16 +6349,16 @@ class UnreachedMathematicsEndToEndTests(unittest.TestCase):
             shutil.rmtree(box, ignore_errors=True)
 
     def test_the_run_is_not_offered_while_an_arm_does_not_call_what_it_declares(self):
-        """El hallazgo tiene que frenar la campaña, no solo figurar: cada número
-        vendría de un brazo que no computa lo que la tabla dice que computó."""
+        """The finding has to stop the campaign, not just appear: every number
+        would come from an arm that does not compute what the table says it did."""
         probe = self.probe_with(self.WITHOUT)
         self.assertEqual(probe["nextStep"], "wiring-first")
         self.assertEqual([u["module"] for u in probe["unreachedModules"]],
                          ["src/Method/never_called.py"])
 
     def test_the_offer_comes_back_once_the_arm_calls_it(self):
-        """El polo de control de la compuerta. Sin él, `wiring-first` podría estar
-        frenando por cualquier motivo y la prueba de arriba no lo notaría."""
+        """The control pole of the gate. Without it, `wiring-first` could be
+        stopping for any reason and the test above would not notice."""
         probe = self.probe_with(self.WITH)
         self.assertEqual(probe["unreachedModules"], [])
         self.assertNotEqual(probe["nextStep"], "wiring-first")
@@ -9263,6 +9275,15 @@ FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
                   "MCP server and the `kaggle-accounts` skill; the service is "
                   "the box's subject, not a loan from any research project",
     },
+    "_core/command_center/static/i18n/en.js": {
+        "kaggle": "the dashboard's English i18n catalogue translates the experiments panel help strings and status badges",
+    },
+    "_core/command_center/static/i18n/es.js": {
+        "kaggle": "the dashboard's Spanish i18n catalogue translates the experiments panel help strings and status badges",
+    },
+    "_core/command_center/static/i18n/server-es.json": {
+        "kaggle": "the dashboard's server translation catalogue for Spanish display labels",
+    },
     "_core/command_center/terminal.py": {
         "kaggle": "the CLI assistant's quick commands include `smith mcp kaggle "
                   "activate|status`, and its sessions receive the token that "
@@ -10028,19 +10049,19 @@ class MaterializeBenchmarkDeclarationTests(unittest.TestCase):
 
 
 class LatestRevisionDiscoveryTests(unittest.TestCase):
-    """El campo se llamaba `latestRevision` y era el eco del argumento.
+    """The field was called `latestRevision` and it was the argument's echo.
 
-    `verify` comparaba el banco contra la revisión que alguien escribiera en la
-    línea de comandos. Ese chequeo solo estaba armado si el que llamaba acertaba a
-    escribir la correcta: pasándole la revisión a la que el banco ya está atado, el
-    chequeo se da la razón a sí mismo por más que en `proposals/` haya aterrizado
-    algo más nuevo. Y sin argumento, `fidelity` contestaba `unknown` y ni lo
-    intentaba.
+    `verify` compared the benchmark against whatever revision someone wrote on
+    the command line. That check was only armed if the caller happened to write
+    the right one: handing it the revision the benchmark is already bound to,
+    the check agrees with itself however much something newer has landed in
+    `proposals/`. And without an argument, `fidelity` answered `unknown` and did
+    not even try.
 
-    Los nombres del fixture son neutros a propósito. El patrón de familia se deriva
-    de un nombre que llega como dato, nunca de una convención que este código
-    conozca, así que una forja cuyas revisiones se llamen `draft-N.md` está servida
-    por el mismo código — y eso es exactamente lo que se pinea acá.
+    The fixture's names are neutral on purpose. The family pattern is derived
+    from a name that arrives as data, never from a convention this code knows,
+    so a forge whose revisions are called `draft-N.md` is served by the same
+    code — and that is exactly what is pinned here.
     """
 
     def _proposals(self, *names):
@@ -10067,9 +10088,9 @@ class LatestRevisionDiscoveryTests(unittest.TestCase):
         self.assertEqual(impl.latest_revision("draft-1.md"), "draft-3.md")
 
     def test_ten_outranks_nine(self):
-        """El orden es sobre los dígitos como enteros. Sobre la cadena, `draft-9`
-        gana y el chequeo reporta la más nueva como más vieja: en silencio, y para
-        el lado que aprueba."""
+        """The ordering is over the digits as integers. Over the string, `draft-9`
+        wins and the check reports the newest as the oldest: silently, and on the
+        side that passes."""
         self._with_root(self._proposals("draft-9.md", "draft-10.md"))
         self.assertEqual(impl.latest_revision("draft-9.md"), "draft-10.md")
 
@@ -10132,11 +10153,11 @@ class NonRevisionSha256ScalarsAreDocumentCountInvariantTests(unittest.TestCase):
 
 
 class VerifyDiscoversTheNewestRevisionTests(unittest.TestCase):
-    """La costura, de punta a punta: el banco atado a una revisión vieja mientras
-    en `proposals/` ya vive una más nueva, y nadie pasa `--revision`.
+    """The seam, end to end: the benchmark bound to an old revision while a
+    newer one already lives in `proposals/`, and nobody passes `--revision`.
 
-    Antes esto contestaba `unknown` y `latestRevision: null`. El banco podía estar
-    atado a cualquier cosa y el flujo no tenía nada que decir.
+    Before, this answered `unknown` and `latestRevision: null`. The benchmark
+    could be bound to anything and the flow had nothing to say.
     """
 
     #: `revision` lives in `__implementation__` at the method's own package
@@ -10183,15 +10204,15 @@ class VerifyDiscoversTheNewestRevisionTests(unittest.TestCase):
         self.assertEqual(fidelity["benchmark"]["status"], "stale")
 
     def test_the_newest_being_the_bound_one_is_the_other_pole(self):
-        """Sin esto, un chequeo que siempre marca viejo no distingue un banco al
-        día de uno atrasado, y aprobar sería imposible."""
+        """Without this, a check that always flags stale does not tell an
+        up-to-date benchmark from a lagging one, and passing would be impossible."""
         fidelity = self.verify_in("draft-1.md")
         self.assertEqual(fidelity["latestRevision"], "draft-1.md")
         self.assertFalse(fidelity["benchmark"]["staleRevision"])
         self.assertEqual(fidelity["benchmark"]["status"], "ok")
 
     def test_an_explicit_argument_still_wins(self):
-        """Quien fija una revisión está contestando la pregunta, no haciéndola."""
+        """Whoever pins a revision is answering the question, not asking it."""
         fidelity = self.verify_in("draft-1.md", "draft-2.md", revision="draft-1.md")
         self.assertEqual(fidelity["latestRevision"], "draft-1.md")
         self.assertEqual(fidelity["revisionSource"], "argument")
@@ -14000,9 +14021,9 @@ class MaterializeScriptStaysTestOnlyTests(unittest.TestCase):
     """
 
     SCRIPTS = SKILL_ROOT / "scripts"
-    #: The diagrams live in the skill tour. README.es.md was retired into
-    #: README.md (2026-09-17), and the tour moved to docs/skills.md (#79), so
-    #: this guard follows the diagrams.
+    #: The diagrams live in the skill tour. The Spanish README was retired into
+    #: README.md (2026-09-17) and later removed, and the tour moved to
+    #: docs/skills.md (#79), so this guard follows the diagrams.
     README = FORGE / "docs" / "skills.md"
 
     MERMAID_RE = re.compile(r"^```mermaid\n(.*?)^```", re.DOTALL | re.MULTILINE)

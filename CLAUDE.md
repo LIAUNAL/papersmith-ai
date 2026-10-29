@@ -25,6 +25,14 @@ loads its `skills/<name>/SKILL.md` and takes your text as `$ARGUMENTS`. That
 directory is a derived artifact — regenerate it with the script (`--check` reports
 drift and exits non-zero) instead of editing it by hand.
 
+## Language
+
+Reply to the human in the language they write in (Spanish or English).
+Everything else stays English regardless of the conversation language: skills,
+agent definitions, delegations and messages between agents, tool inputs, and
+every generated artifact (code, comments, docs, commit messages, and paper
+internals unless the paper declares another language).
+
 ## Paper construction flow
 
 These are the eleven phases the command center (`smith ui`) shows under
@@ -108,7 +116,7 @@ skill refuses when its input is missing.
 9. **Figures**: `/figure-review <figure id>` checks a compiled
    `paper/Figures/<id>.pdf`.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:
-    Previsualización PDF).
+    the PDF preview tab).
 11. **Audit** (transversal): `smith audit .` and `/skill-audit <subject>`.
     Audits report; they never repair.
 

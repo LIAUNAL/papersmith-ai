@@ -955,7 +955,7 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: stay separate ids cited a cycle rationale ("block 2 depends on 4b, and
 #: 4a depends on block 2") the move itself falsifies -- block 2 now
 #: depends on `mm-proposal`, never on `block-4b` -- so the stale claim was
-#: corrected in place (MANTENIMIENTO pattern 3), never a meaning change to
+#: corrected in place (MAINTENANCE pattern 3), never a meaning change to
 #: any quote an entry depends on. `04` and `10` are untouched and keep
 #: their prior digest.
 #:
@@ -976,26 +976,26 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: mismatch is NOT re-captured here: it predates this change and
 #: belongs to an edit this author did not make.
 #:
-#: `04` y `08` re-capturados: los tres consumidores de `formulation` que
-#: quedaban -- `lim-proposal-items`, `abstract.slot-3`, `abstract.slot-4` --
-#: pasaron a requerir `contributions`, por la misma causa medida que movio
-#: a `introduction.block-4a`/`4b`: las cinco secciones reclamables de
-#: `research-concept-r21.md` ya estan repartidas enteras entre los dos
-#: bloques de Metodos, asi que `score_cut` no puede asentar ningun corte
-#: nuevo y `bind` refusaba `BINDING_UNARGUED` para siempre. La formulacion
-#: llega a ambas secciones ya transpuesta, por los bloques escritos de
-#: Metodos. En cada archivo: la fila de insumos externos ya falsa se quito,
-#: se autoro la frase que respalda la cita, y se agrego la arista mas su
-#: fila de `### Internal chain` (`04` estrena tabla; antes decia "None").
-#: `01` re-capturado ahora (R3-stale-section-digest): el guard SI estaba
-#: vivo -- rojo antes de este cambio -- sobre la prosa nueva en :281-291
-#: y :406-410; el digest viejo quedaba de una edicion sin commitear.
-#: `01`-`09` re-capturados (lia-writing-guide): cada contrato gano una
-#: seccion `## LIA house style` antes de `## Inputs` (o de
-#: `## Cross-cutting conventions` en `06` y `08`), medida sobre los diez
-#: articulos Q1 de metodo del grupo (2025-2026); `01` cambio la regla de
-#: numeracion de ecuaciones y `09` el rango del titulo a 10-13 palabras;
-#: `01` y `03` sumaron descalificadores de notacion y de reporte.
+#: `04` and `08` re-captured: the three remaining consumers of `formulation`
+#: -- `lim-proposal-items`, `abstract.slot-3`, `abstract.slot-4` -- moved to
+#: requiring `contributions`, for the same measured cause that moved
+#: `introduction.block-4a`/`4b`: the five claimable sections of
+#: `research-concept-r21.md` are already split whole between the two Methods
+#: blocks, so `score_cut` cannot settle any new cut and `bind` refused
+#: `BINDING_UNARGUED` forever. The formulation reaches both sections already
+#: transposed, through the written Methods blocks. In each file: the
+#: now-false external-inputs row was removed, the sentence backing the
+#: citation was authored, and the edge was added plus its `### Internal
+#: chain` row (`04` gets its first table; before it said "None").
+#: `01` re-captured now (R3-stale-section-digest): the guard WAS live -- red
+#: before this change -- over the new prose at :281-291 and :406-410; the
+#: old digest came from an uncommitted edit.
+#: `01`-`09` re-captured (lia-writing-guide): each contract gained a
+#: `## LIA house style` section before `## Inputs` (or before
+#: `## Cross-cutting conventions` in `06` and `08`), measured over the
+#: group's ten Q1 method articles (2025-2026); `01` changed the equation
+#: numbering rule and `09` the title range to 10-13 words; `01` and `03`
+#: added notation and reporting disqualifiers.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "4a4d5078955ba64d77e9b45b1f4d116bf072ac011069e2ad57e100d77927405e"[:64],
     "02-experimental-setup.md": "8974689bc11ce955e707b14502aeaf974be7d69959df28f82e9f016cca1d8ce5"[:64],

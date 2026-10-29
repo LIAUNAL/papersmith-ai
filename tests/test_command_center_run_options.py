@@ -119,7 +119,7 @@ class OptionTests(unittest.TestCase):
         options = run_options.run_options(Path("."), _view())
         colab = _row(options, "poc", REMOTE_B)
         self.assertIsNone(colab["estimate"])
-        self.assertEqual(colab["estimate_label"], "sin medir")
+        self.assertEqual(colab["estimate_label"], "unmeasured")
         options = run_options.run_options(Path("."), _view(timing=None))
         self.assertTrue(all(r["estimate"] is None for r in options["rows"]))
         self.assertTrue(options["empty"])
@@ -130,7 +130,7 @@ class OptionTests(unittest.TestCase):
         self.assertTrue(_row(options, "poc", REMOTE_A)["available"])
         self.assertTrue(_row(options, "poc", REMOTE_B)["available"])
         self.assertFalse(_row(options, "full", REMOTE_B)["available"])
-        self.assertIn("pago", _row(options, "full", REMOTE_B)["reason"])
+        self.assertIn("paid", _row(options, "full", REMOTE_B)["reason"].lower())
         paid = _services(members=[{"owner": "bo", "colab_tier": "pro", "colab_config_present": True}])
         self.assertTrue(_row(run_options.run_options(Path("."), _view(services=paid)), "full", REMOTE_B)["available"])
         unsigned = _services(members=[{"owner": "bo", "colab_tier": "pro", "colab_config_present": False}])
@@ -150,7 +150,7 @@ class OptionTests(unittest.TestCase):
         options = run_options.run_options(Path("."), _view())
         self.assertEqual(options["recommendations"]["poc"]["host"], "local")
         self.assertEqual(options["recommendations"]["full"]["host"], REMOTE_A)
-        self.assertIn("ensayo", options["recommendations"]["full"]["text"])
+        self.assertIn("rehearsal", options["recommendations"]["full"]["text"].lower())
         slow = json.loads(json.dumps(TIMING))
         for m in slow["measurements"]:
             if m["host"] == "local":
@@ -159,7 +159,7 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(options["recommendations"]["poc"]["host"], REMOTE_A)
         options = run_options.run_options(Path("."), _view(timing=None))
         self.assertEqual(options["recommendations"]["poc"]["host"], "local")
-        self.assertIn("sonda", options["recommendations"]["poc"]["text"])
+        self.assertIn("probe", options["recommendations"]["poc"]["text"].lower())
         nothing = _services(token="inactive", colab_cli="missing")
         options = run_options.run_options(Path("."), _view(timing=None, local=_local("missing", False),
                                                            services=nothing))
@@ -185,8 +185,8 @@ class OptionTests(unittest.TestCase):
         full = options["recommendations"]["full"]
         # local 4.5 x 100 x 5 x 5 x 2 = 22500 s: over 20 minutes, no cloud host measured
         self.assertIn(full["host"], (REMOTE_A, REMOTE_B))
-        self.assertIn("más de 20 min", full["text"])
-        self.assertIn("sonda", full["text"])
+        self.assertIn("more than 20 min", full["text"].lower())
+        self.assertIn("probe", full["text"].lower())
 
     def test_a_proof_of_concept_over_five_hours_asks_to_reduce_the_design(self) -> None:
         big = json.loads(json.dumps(TIMING))
@@ -197,7 +197,7 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(poc["host"], REMOTE_A)
         self.assertEqual(poc["poc_budget"], "exceeds")
         self.assertIn("5 h", poc["text"])
-        self.assertIn("reduce", poc["text"])
+        self.assertIn("shrink", poc["text"].lower())
         self.assertEqual(run_options.run_options(Path("."), _view())["recommendations"]["poc"]["poc_budget"],
                          "within")
 
@@ -235,8 +235,16 @@ class ViewWiringTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which("node"), "node is required to run the panel renderer")
 class RenderTests(unittest.TestCase):
     def render(self, view: dict) -> str:
+        i18n_js = SCRIPT_PATH.parent / "i18n.js"
+        en_js = SCRIPT_PATH.parent / "i18n" / "en.js"
+        es_js = SCRIPT_PATH.parent / "i18n" / "es.js"
         script = (
-            "const fs=require('fs');global.window={};global.document={addEventListener(){}};"
+            "const fs=require('fs');"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},querySelectorAll:()=>[]};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(SCRIPT_PATH))},'utf8'));"
             "console.log(window.ExperimentsPanel.render(JSON.parse(fs.readFileSync(0,'utf8'))));"
         )

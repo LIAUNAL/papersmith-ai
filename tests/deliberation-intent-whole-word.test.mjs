@@ -24,7 +24,7 @@ test('ambiguous wording without an explicit operation asks for clarification', (
   const intent = v2.resolveIntent('Revisa el borrador de la sección de resultados');
   assert.equal(intent.intent, 'AMBIGUOUS');
   assert.equal(intent.confidence, 0);
-  assert.deepEqual(intent.pendingQuestions, ['Indicá el fragmento o alcance exacto.']);
+  assert.deepEqual(intent.pendingQuestions, ['Name the exact fragment or scope.']);
 });
 
 test('explicit delete requests still resolve to DELETE, including infinitive forms', () => {

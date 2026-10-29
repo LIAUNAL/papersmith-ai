@@ -14,10 +14,14 @@ from pathlib import Path
 from skills._core.command_center import server
 
 SCRIPT = Path(server.__file__).resolve().parent / "static" / "phase-run.js"
+STATIC = Path(server.__file__).resolve().parent / "static"
+I18N_JS = STATIC / "i18n.js"
+EN_JS = STATIC / "i18n" / "en.js"
+ES_JS = STATIC / "i18n" / "es.js"
 
 HARNESS = r"""
 const fs = require('fs');
-const store = {};
+const store = { 'papersmith-lang': 'es' };
 const els = {};
 let builds = 0;
 const timeNodes = {};
@@ -40,7 +44,10 @@ global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { s
 let made = 0;
 global.document = { getElementById: (id) => els[id] || null, addEventListener() {},
   createElement: () => el('made' + (made++)), body: { appendChild(n) { els[n.id] = n; } } };
-global.window = { smithTerminalActivity: () => ({ agent: 'claude', sessionId: 's1', lastOutputAt: Date.now() }) };
+global.window = { localStorage: global.localStorage, smithTerminalActivity: () => ({ agent: 'claude', sessionId: 's1', lastOutputAt: Date.now() }) };
+eval(fs.readFileSync(process.argv[2], 'utf8'));
+eval(fs.readFileSync(process.argv[3], 'utf8'));
+eval(fs.readFileSync(process.argv[4], 'utf8'));
 eval(fs.readFileSync(process.argv[1], 'utf8'));
 const phase = { stage_id: 'plausibility', id: 'Fase 2', name: 'Plausibilidad', status: 'PENDING', unlocked: true,
   evidence: [{ label: 'Atlas', path: 'sota-pool/atlas.json', count: 0, mtime: 0 }] };
@@ -75,7 +82,7 @@ process.exit(0);
 class RunDockTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        done = subprocess.run(["node", "-e", HARNESS, str(SCRIPT)], capture_output=True, text=True,
+        done = subprocess.run(["node", "-e", HARNESS, str(SCRIPT), str(EN_JS), str(ES_JS), str(I18N_JS)], capture_output=True, text=True,
                               cwd=tempfile.gettempdir(), timeout=60, check=True)
         cls.out = json.loads(done.stdout)
 

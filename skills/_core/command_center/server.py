@@ -38,7 +38,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_history, ai_transcripts, atlas, atlas_build, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
-from . import doctor_view, toolchain
+from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -489,13 +489,13 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
                                  timeout=TEX_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             return {"ok": False, "outputs": [],
-                    "error": f"{argv[0]} no terminó en {TEX_TIMEOUT_SECONDS} s; compilación detenida."}, 504
+                    "error": f"{argv[0]} did not finish in {TEX_TIMEOUT_SECONDS} s; compilation stopped."}, 504
         first = first or res
     return {
         "ok": True,
-        "message": (f"paper/main.pdf compilado ({_pdf_page_count(root / 'paper' / 'main.pdf')} páginas)."
+        "message": (f"paper/main.pdf compiled ({_pdf_page_count(root / 'paper' / 'main.pdf')} pages)."
                     if first.returncode == 0 else
-                    f"pdflatex terminó con código {first.returncode}; revisa el registro."),
+                    f"pdflatex ended with code {first.returncode}; check the log."),
         "outputs": ["paper/main.pdf"],
         "log_tail": first.stdout[-300:] if first.stdout else "",
     }, 200
@@ -508,10 +508,10 @@ def _build_manuscript(root: Path) -> tuple[dict[str, Any], int]:
     if b_script.is_file():
         res = subprocess.run([sys.executable, str(b_script)], cwd=str(root), capture_output=True,
                              text=True, timeout=BUILD_TIMEOUT_SECONDS)
-        msg = (f"Transposición ejecutada: {_block_count(root)} bloques en paper/main.tex "
-               f"(build_manuscript.py terminó con código {res.returncode}).")
+        msg = (f"Transposition run: {_block_count(root)} blocks in paper/main.tex "
+               f"(build_manuscript.py ended with code {res.returncode}).")
     else:
-        msg = f"Redacción: {_block_count(root)} bloques en paper/main.tex."
+        msg = f"Writing: {_block_count(root)} blocks in paper/main.tex."
     return {"ok": True, "message": msg, "outputs": ["paper/main.tex"]}, 200
 
 
@@ -620,6 +620,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     app.state.watcher = watcher
     app.state.measure_health = measure_health
     app.state.history = store
+    # Display labels in English, or Spanish on `?lang=es` (see localize.py).
+    app.add_middleware(localize.LocalizeMiddleware)
     if allowed_hosts is not None:
         app.add_middleware(HostAllowListMiddleware, allowed_hosts=allowed_hosts)
     # One in-flight wiring-smoke run at a time: repeated or concurrent POSTs
@@ -637,14 +639,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         target_title = paper_meta.get("title") or state.get("title") or project_name
         topic = paper_meta.get("topic") or "unspecified"
         authors_raw = paper_meta.get("authors") or []
-        authors = ", ".join(a if isinstance(a, str) else a.get("name", "") for a in authors_raw) if authors_raw else "Sin autor asignado"
+        authors = ", ".join(a if isinstance(a, str) else a.get("name", "") for a in authors_raw) if authors_raw else "No author assigned"
 
         proposals_dir = root_path / "proposals"
         prop_files = sorted(
             [p.name for p in proposals_dir.glob("*.md") if p.is_file() and not p.name.startswith(".")],
             reverse=True
         ) if proposals_dir.is_dir() else []
-        active_prop = prop_files[0] if prop_files else "Sin propuesta activa"
+        active_prop = prop_files[0] if prop_files else "No active proposal"
         match = re.search(r"-(r\d+)\.md$", active_prop)
         active_run = match.group(1) if match else ("r00" if not prop_files else "r01")
 
@@ -713,37 +715,37 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         audit_file = root_path / ".papersmith" / "audit.json"
         has_audit = _audit_verdict(root_path) is True
 
-        # Fase 1
+        # Phase 1
         fase1_status = "PASS" if harness_ok else "PENDING"
-        # Fase 2
+        # Phase 2
         if sota_atlas:
-            fase2_status, fase2_prog, fase2_det = "PASS", 1.0, "Atlas SOTA 3D compilado en sota-pool/"
+            fase2_status, fase2_prog, fase2_det = "PASS", 1.0, "3D SOTA atlas compiled in sota-pool/"
         elif sota_cand:
-            fase2_status, fase2_prog, fase2_det = "ACTIVE", 0.5, "Candidatos SOTA descubiertos, pendiente atlas"
+            fase2_status, fase2_prog, fase2_det = "ACTIVE", 0.5, "SOTA candidates found, atlas pending"
         else:
-            fase2_status, fase2_prog, fase2_det = "PENDING", 0.0, "Sin artefactos en sota-pool/"
+            fase2_status, fase2_prog, fase2_det = "PENDING", 0.0, "No artifacts in sota-pool/"
 
-        # Fase 3
+        # Phase 3
         if guidance_refs and not guidance_loose_pdfs:
-            fase3_status, fase3_prog, fase3_det = "PASS", 1.0, f"{len(guidance_refs)} referencias ingeridas, cero PDFs sueltos"
+            fase3_status, fase3_prog, fase3_det = "PASS", 1.0, f"{len(guidance_refs)} references ingested, zero loose PDFs"
         elif guidance_loose_pdfs or guidance_refs:
-            fase3_status, fase3_prog, fase3_det = "ACTIVE", 0.5, f"{len(guidance_loose_pdfs)} PDFs pendientes de ingerir"
+            fase3_status, fase3_prog, fase3_det = "ACTIVE", 0.5, f"{len(guidance_loose_pdfs)} PDFs awaiting ingestion"
         else:
-            fase3_status, fase3_prog, fase3_det = "PENDING", 0.0, "Sin artículos de referencia en guidance/"
+            fase3_status, fase3_prog, fase3_det = "PENDING", 0.0, "No reference articles in guidance/"
 
-        # Fase 4
+        # Phase 4
         if has_deliberated_prop:
-            fase4_status, fase4_prog, fase4_det = "PASS", 1.0, f"Propuesta deliberada ({active_prop})"
+            fase4_status, fase4_prog, fase4_det = "PASS", 1.0, f"Proposal deliberated ({active_prop})"
         elif prop_files:
-            fase4_status, fase4_prog, fase4_det = "ACTIVE", 0.5, f"Borrador en curso ({prop_files[0]})"
+            fase4_status, fase4_prog, fase4_det = "ACTIVE", 0.5, f"Draft in progress ({prop_files[0]})"
         else:
-            fase4_status, fase4_prog, fase4_det = "PENDING", 0.0, "Sin propuesta en proposals/"
+            fase4_status, fase4_prog, fase4_det = "PENDING", 0.0, "No proposal in proposals/"
 
-        # Fase 5: a published protocol revision, a proof of concept with
+        # Phase 5: a published protocol revision, a proof of concept with
         # results and a full experiment with results; never a file name.
         p5_done = [p5["revisions"] > 0, p5["poc_results"] > 0, p5["full_results"] > 0]
-        fase5_det = (f"Protocolo publicado: {'sí' if p5_done[0] else 'no'} · PoC con Results/: {p5['poc_results']}"
-                     f" · experimentos completos con Results/: {p5['full_results']}")
+        fase5_det = (f"Protocol published: {'yes' if p5_done[0] else 'no'} · PoC with Results/: {p5['poc_results']}"
+                     f" · full experiments with Results/: {p5['full_results']}")
         if all(p5_done):
             fase5_status, fase5_prog = "PASS", 1.0
         elif any(p5_done) or p5["files"] or p5["poc"] or p5["full"]:
@@ -756,76 +758,76 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
         p5_protocol = _p5(p5["revisions"] > 0, p5["files"] > 0)
 
-        # Fase 6
+        # Phase 6
         if has_scaffold:
-            fase6_status, fase6_prog, fase6_det = "PASS", 1.0, "paper/main.tex y contratos de sección andamiados"
+            fase6_status, fase6_prog, fase6_det = "PASS", 1.0, "paper/main.tex and section contracts scaffolded"
         else:
-            fase6_status, fase6_prog, fase6_det = "PENDING", 0.0, "paper/main.tex pendiente de andamiaje"
+            fase6_status, fase6_prog, fase6_det = "PENDING", 0.0, "paper/main.tex awaiting scaffolding"
 
-        # Fase 7
+        # Phase 7
         if has_decl:
-            fase7_status, fase7_prog, fase7_det = "PASS", 1.0, "Declaraciones operativas fijadas en main.tex"
+            fase7_status, fase7_prog, fase7_det = "PASS", 1.0, "Operational declarations recorded in main.tex"
         else:
-            fase7_status, fase7_prog, fase7_det = "PENDING", 0.0, "Declaraciones pendientes de fijación"
+            fase7_status, fase7_prog, fase7_det = "PENDING", 0.0, "Declarations not yet recorded"
 
-        # Fase 8
+        # Phase 8
         if written_blocks >= total_blocks and total_blocks > 0:
             fase8_status, fase8_prog = "PASS", 1.0
         elif written_blocks > 0:
             fase8_status, fase8_prog = "ACTIVE", round(written_blocks / max(1, total_blocks), 3)
         else:
             fase8_status, fase8_prog = "PENDING", 0.0
-        fase8_det = f"{written_blocks}/{total_blocks} bloques canónicos redactados ({total_words} palabras)"
+        fase8_det = f"{written_blocks}/{total_blocks} canonical blocks written ({total_words} words)"
 
-        # Fase 9
+        # Phase 9
         if fig_count >= 1:
-            fase9_status, fase9_prog, fase9_det = "PASS", 1.0, f"{fig_count} figura(s) vectorial(es) en paper/Figures/"
+            fase9_status, fase9_prog, fase9_det = "PASS", 1.0, f"{fig_count} vector figure(s) in paper/Figures/"
         else:
-            fase9_status, fase9_prog, fase9_det = "PENDING", 0.0, "0 figuras en paper/Figures/"
+            fase9_status, fase9_prog, fase9_det = "PENDING", 0.0, "0 figures in paper/Figures/"
 
-        # Fase 10
+        # Phase 10
         if pdf_exists:
-            fase10_status, fase10_prog, fase10_det = "PASS", 1.0, f"Manuscrito PDF compilado ({pdf_pages} págs, {round(pdf_size / 1024, 1)} KB)"
+            fase10_status, fase10_prog, fase10_det = "PASS", 1.0, f"PDF manuscript compiled ({pdf_pages} pages, {round(pdf_size / 1024, 1)} KB)"
         else:
-            fase10_status, fase10_prog, fase10_det = "PENDING", 0.0, "paper/main.pdf pendiente de compilación"
+            fase10_status, fase10_prog, fase10_det = "PENDING", 0.0, "paper/main.pdf not compiled yet"
 
-        # Fase 11
+        # Phase 11
         if has_audit:
-            fase11_status, fase11_prog, fase11_det = "PASS", 1.0, "Auditoría transversal ejecutada y superada"
+            fase11_status, fase11_prog, fase11_det = "PASS", 1.0, "Cross-cutting audit run and passed"
         else:
             fase11_status, fase11_prog, fase11_det = "PENDING", 0.0, (
-                "La última auditoría falló: revisa .papersmith/audit.json"
-                if _audit_verdict(root_path) is False else "Auditoría transversal pendiente")
+                "The last audit failed: check .papersmith/audit.json"
+                if _audit_verdict(root_path) is False else "Cross-cutting audit pending")
 
         fases = [
             {
                 "id": "Fase 1",
                 "stage_id": "harness",
-                "name": "Fase 1: Configuración de Entorno & Harness",
+                "name": "Phase 1: Environment Setup & Harness",
                 "gate": "G-HARNESS",
                 "agent": "ecosystem-orchestrator",
-                "desc": "Estructura de workspace, proyecciones de harness (.claude, .opencode, .pi, .agents), entorno micromamba y validación de runtimes.",
+                "desc": "Workspace structure, harness projections (.claude, .opencode, .pi, .agents), the micromamba environment and runtime validation.",
                 "tools": ["read", "bash"],
                 "skills": ["harness-setup", "workspace-verifier"],
                 "cli_command": "smith init --harness-only",
                 "outputs": [".papersmith/", "papersmith.yaml", "pyproject.toml"],
                 "status": fase1_status,
                 "progress": 1.0 if fase1_status == "PASS" else 0.0,
-                "detail": "Proyecciones de harness operativas" if fase1_status == "PASS" else "Entorno pendiente de inicialización",
+                "detail": "Harness projections in place" if fase1_status == "PASS" else "Environment awaiting initialization",
                 "subfases": [
-                    {"id": "1.1", "name": "Workspace & Manifiesto", "status": fase1_status, "detail": "papersmith.yaml y estructura base versionada"},
-                    {"id": "1.2", "name": "Proyección de Agentes", "status": fase1_status, "detail": "Enlaces simbólicos a arneses operacionales"},
-                    {"id": "1.3", "name": "Aislamiento Micromamba", "status": fase1_status, "detail": "Python 3.12 y dependencias del entorno"},
-                    {"id": "1.4", "name": "Integridad de CLI", "status": fase1_status, "detail": "CLI papersmith verificado"}
+                    {"id": "1.1", "name": "Workspace & Manifest", "status": fase1_status, "detail": "papersmith.yaml and the versioned base structure"},
+                    {"id": "1.2", "name": "Agent Projection", "status": fase1_status, "detail": "Symbolic links to the operational harnesses"},
+                    {"id": "1.3", "name": "Micromamba Isolation", "status": fase1_status, "detail": "Python 3.12 and the environment's dependencies"},
+                    {"id": "1.4", "name": "CLI Integrity", "status": fase1_status, "detail": "papersmith CLI verified"}
                 ]
             },
             {
                 "id": "Fase 2",
                 "stage_id": "plausibility",
-                "name": "Fase 2: Plausibilidad & SOTA Atlas 3D",
+                "name": "Phase 2: Plausibility & 3D SOTA Atlas",
                 "gate": "G-SOTA",
                 "agent": "sota-scout & sota-grapher & novelty-screener",
-                "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual.",
+                "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation.",
                 "tools": ["read", "write", "mcp"],
                 "skills": ["sota-scout", "semantic-scholar", "pubmed-search"],
                 "cli_command": "smith run --stage plausibility",
@@ -834,19 +836,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase2_prog,
                 "detail": fase2_det,
                 "subfases": [
-                    {"id": "2.1", "name": "Discovery de Artículos SOTA", "status": fase2_status, "detail": "Búsqueda y filtrado de literatura Q1/Q2"},
-                    {"id": "2.2", "name": "Extracción de Metadatos & Familias", "status": fase2_status, "detail": "Clasificación taxonómica de candidatos"},
-                    {"id": "2.3", "name": "Embedding Espacial & Constelación 3D", "status": fase2_status, "detail": "Generación de atlas.json para visualización WebGL"},
-                    {"id": "2.4", "name": "Detección de Brecha de Novedad", "status": fase2_status, "detail": "Identificación de vacíos conceptuales y oportunidad"}
+                    {"id": "2.1", "name": "SOTA Article Discovery", "status": fase2_status, "detail": "Search and filtering of Q1/Q2 literature"},
+                    {"id": "2.2", "name": "Metadata & Family Extraction", "status": fase2_status, "detail": "Taxonomic classification of candidates"},
+                    {"id": "2.3", "name": "Spatial Embedding & 3D Constellation", "status": fase2_status, "detail": "Generation of atlas.json for the WebGL view"},
+                    {"id": "2.4", "name": "Novelty Gap Detection", "status": fase2_status, "detail": "Identification of conceptual voids and opportunity"}
                 ]
             },
             {
                 "id": "Fase 3",
                 "stage_id": "ingestion",
-                "name": "Fase 3: Ingestión de Referencias & Literatura",
+                "name": "Phase 3: Reference & Literature Ingestion",
                 "gate": "G-INGEST",
                 "agent": "paper-ingestion",
-                "desc": "Ingestión a Markdown de artículos de referencia, normalización BibTeX de bibliografía y extracción de insumos base.",
+                "desc": "Markdown ingestion of reference articles, BibTeX normalization of the bibliography and extraction of base inputs.",
                 "tools": ["read", "write", "marker"],
                 "skills": ["paper-ingestion", "pdf-extractor", "bibtex-parser"],
                 "cli_command": "smith ingest guidance/reference-papers/",
@@ -855,19 +857,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase3_prog,
                 "detail": fase3_det,
                 "subfases": [
-                    {"id": "3.1", "name": "Ingestión de Artículos Base", "status": fase3_status, "detail": "Conversión estructural de PDFs a Markdown limpio"},
-                    {"id": "3.2", "name": "Normalización BibTeX (refs.bib)", "status": fase3_status, "detail": "Citas verificadas y consolidadas"},
-                    {"id": "3.3", "name": "Extracción Vectorial de Figuras", "status": fase3_status, "detail": "Figuras y diagramas de referencia"},
-                    {"id": "3.4", "name": "Extracción de Hechos e Insumos", "status": fase3_status, "detail": "Extracción de parámetros para el manuscrito"}
+                    {"id": "3.1", "name": "Base Article Ingestion", "status": fase3_status, "detail": "Structural conversion of PDFs into clean Markdown"},
+                    {"id": "3.2", "name": "BibTeX Normalization (refs.bib)", "status": fase3_status, "detail": "Verified and consolidated citations"},
+                    {"id": "3.3", "name": "Vector Figure Extraction", "status": fase3_status, "detail": "Reference figures and diagrams"},
+                    {"id": "3.4", "name": "Fact & Input Extraction", "status": fase3_status, "detail": "Parameter extraction for the manuscript"}
                 ]
             },
             {
                 "id": "Fase 4",
                 "stage_id": "proposal",
-                "name": "Fase 4: Deliberación de Propuesta & Modelo Conceptual",
+                "name": "Phase 4: Proposal Deliberation & Conceptual Model",
                 "gate": "G-PROP",
                 "agent": "deliberation-publish & mathematical-tutor",
-                "desc": "Deliberación científica formal de la propuesta (rNN), definición de novedad, discusión del mapa conceptual y de la matemática con el tutor socrático.",
+                "desc": "Formal scientific deliberation of the proposal (rNN), novelty definition, and discussion of the concept map and the mathematics with the Socratic tutor.",
                 "tools": ["read", "write", "deliberate"],
                 "skills": ["proposal-deliberation", "peer-review-simulator"],
                 "cli_command": "smith deliberate proposals/",
@@ -876,21 +878,21 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase4_prog,
                 "detail": fase4_det,
                 "subfases": [
-                    {"id": "4.1", "name": "Stage bound: Delimitación & Locus", "status": fase4_status, "detail": "Definición del problema y anclaje de locus conceptual"},
-                    {"id": "4.2", "name": "Stage deliberated: Novedad & Consenso", "status": fase4_status, "detail": "Discusión de hipótesis y pilares de innovación"},
-                    {"id": "4.3", "name": "Stage composed: Modelo Matemático Básico", "status": fase4_status, "detail": "Formalización matemática y ecuaciones clave"},
-                    {"id": "4.4", "name": "Stage published: Publicación & Recibo Criptográfico", "status": fase4_status, "detail": "Revisión sellada con hash SHA-256"},
-                    {"id": "4.5", "name": "Discusión del mapa conceptual", "status": fase4_status, "detail": "Pilares, hipótesis y capas del concepto (pestaña Mapa Conceptual)"},
-                    {"id": "4.6", "name": "Matemática y tutor socrático", "status": fase4_status, "detail": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano (math-tutor)"}
+                    {"id": "4.1", "name": "Stage bound: Delimitation & Locus", "status": fase4_status, "detail": "Problem definition and anchoring of the conceptual locus"},
+                    {"id": "4.2", "name": "Stage deliberated: Novelty & Consensus", "status": fase4_status, "detail": "Discussion of hypotheses and innovation pillars"},
+                    {"id": "4.3", "name": "Stage composed: Basic Mathematical Model", "status": fase4_status, "detail": "Mathematical formalization and key equations"},
+                    {"id": "4.4", "name": "Stage published: Publication & Cryptographic Receipt", "status": fase4_status, "detail": "Revision sealed with a SHA-256 hash"},
+                    {"id": "4.5", "name": "Concept map discussion", "status": fase4_status, "detail": "Pillars, hypotheses and layers of the concept (Concept Map tab)"},
+                    {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": fase4_status, "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"}
                 ]
             },
             {
                 "id": "Fase 5",
                 "stage_id": "poc_experiments",
-                "name": f"Fase 5: {phase_actions.PHASE_LABELS['poc_experiments']}",
+                "name": f"Phase 5: {phase_actions.PHASE_LABELS['poc_experiments']}",
                 "gate": "G-EXP-POC",
                 "agent": phase_actions.ACTIONS["poc_experiments"]["agent"],
-                "desc": "Deliberación del protocolo experimental, toy set, réplica de los métodos de comparación, prueba de concepto, estimación de tiempo, búsqueda de hiperparámetros opcional, experimentos completos, revisión del código, ensayo remoto y lanzamiento autorizado por el operador, en local o en un servicio remoto (CLI o MCP).",
+                "desc": "Experimental protocol deliberation, toy set, replication of the comparison methods, proof of concept, time estimation, optional hyperparameter search, full experiments, code review, remote rehearsal and an operator-authorized launch, locally or on a remote service (CLI or MCP).",
                 "tools": ["read", "write", "validate"],
                 "skills": ["experimental-deliberation", "datasets", "proposal-implementation", "experimental-implementation"],
                 "cli_command": "/experimental-deliberation <texto>",
@@ -899,28 +901,28 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase5_prog,
                 "detail": fase5_det,
                 "subfases": [
-                    {"id": "5.1", "name": "Stage bound: Anclaje de Claims & Métricas", "status": p5_protocol, "detail": "Criterios de éxito y métricas cuantificables (pasa con la revisión publicada)"},
-                    {"id": "5.2", "name": "Stage validated: Baselines & SOTA", "status": p5_protocol, "detail": "experimental-validation contrasta protocolo, métricas y baselines con búsquedas fechadas"},
-                    {"id": "5.3", "name": "Stage deliberated: Diseño Metrológico & Protocolos", "status": p5_protocol, "detail": "Protocolos de ensayo y validación"},
-                    {"id": "5.4", "name": "Stage composed: Especificación de Experimentos", "status": p5_protocol, "detail": "Formalización de experimentos con instrumentación"},
-                    {"id": "5.5", "name": "Stage published: Aprobación de Gate", "status": p5_protocol, "detail": f"experimental-publish deja experiments/experiments-<slug>-vNN.md con el marcador de artefacto ({p5['revisions']} revisión(es) publicada(s))"},
-                    {"id": "5.6", "name": "Datos: toy set siempre y dataset oficial", "status": _p5(p5["toy"], p5["registry"]), "detail": "/datasets synth|search|license|qc|prepare|publish con dataset-scout y dataset-curator; pasa con un toy set en datasets/registry.json; publicación privada solo con consentimiento del operador"},
-                    {"id": "5.7", "name": "Réplica de métodos de comparación", "status": _p5(p5["replications"] > 0), "detail": f"/proposal-implementation → paper-replicator: primero el código publicado, adoptado y auditado; si no existe, reimplementación ({p5['replications']} REPLICATION.md)"},
-                    {"id": "5.8", "name": "Prueba de concepto", "status": _p5(p5["poc_results"] > 0, p5["poc"] > 0), "detail": f"/proposal-implementation (implementation-build): carpeta con AGREED.md y Results/ ({p5['poc_results']} de {p5['poc']})"},
-                    {"id": "5.9", "name": "Estimar tiempo y elegir dónde correr", "status": _p5(p5["timing"] > 0), "detail": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%) y lista las opciones local y remotas"},
-                    {"id": "5.10", "name": "Búsqueda de hiperparámetros (Optuna, opcional)", "status": _p5(p5["hpo"] > 0), "detail": f"Solo si la deliberación la estimó conveniente: /hyperparameter-search plan|report|status, anidada dentro de cada fold externo, mismo presupuesto por brazo, evaluador de importancia declarado; contornos e importancia en Results/hpo/ ({p5['hpo']} producto(s) con estudios)"},
-                    {"id": "5.11", "name": "Experimentos completos", "status": _p5(p5["full_results"] > 0, p5["full"] > 0), "detail": f"/experimental-implementation (experiments-build): carpeta con Experimental_AGREED.md y Results/ ({p5['full_results']} de {p5['full']})"},
-                    {"id": "5.12", "name": "Revisión del código (experiments-reviewer) antes del ensayo", "status": "PENDING", "detail": "Calidad del código, optimización, uso de GPU y pruebas estadísticas declaradas; el informe va al operador y no deja archivo, así que esta subfase no se verifica desde el disco"},
-                    {"id": "5.13", "name": "Ensayo remoto y autorización del lanzamiento (operador)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Solo para corridas remotas (local corre directo). /kaggle-accounts validate y smith team add --attest (una cuenta por persona y servicio); luego generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (operador) → submit → status / poll → fetch. Ensayos aprobados: {p5['rehearsals_passed']}; ledgers con envíos: {p5['launched']}"}
+                    {"id": "5.1", "name": "Stage bound: Anchoring Claims & Metrics", "status": p5_protocol, "detail": "Success criteria and quantifiable metrics (passes with the published revision)"},
+                    {"id": "5.2", "name": "Stage validated: Baselines & SOTA", "status": p5_protocol, "detail": "experimental-validation checks protocol, metrics and baselines against dated searches"},
+                    {"id": "5.3", "name": "Stage deliberated: Metrological Design & Protocols", "status": p5_protocol, "detail": "Test and validation protocols"},
+                    {"id": "5.4", "name": "Stage composed: Experiment Specification", "status": p5_protocol, "detail": "Formalization of experiments with instrumentation"},
+                    {"id": "5.5", "name": "Stage published: Gate Approval", "status": p5_protocol, "detail": f"experimental-publish leaves experiments/experiments-<slug>-vNN.md with the artifact marker ({p5['revisions']} published revision(s))"},
+                    {"id": "5.6", "name": "Data: always a toy set, plus the official dataset", "status": _p5(p5["toy"], p5["registry"]), "detail": "/datasets synth|search|license|qc|prepare|publish with dataset-scout and dataset-curator; passes with a toy set in datasets/registry.json; private publishing only with the operator's consent"},
+                    {"id": "5.7", "name": "Replication of comparison methods", "status": _p5(p5["replications"] > 0), "detail": f"/proposal-implementation → paper-replicator: the published code first, adopted and audited; when there is none, a reimplementation ({p5['replications']} REPLICATION.md)"},
+                    {"id": "5.8", "name": "Proof of concept", "status": _p5(p5["poc_results"] > 0, p5["poc"] > 0), "detail": f"/proposal-implementation (implementation-build): a folder with AGREED.md and Results/ ({p5['poc_results']} of {p5['poc']})"},
+                    {"id": "5.9", "name": "Estimate the time and choose where to run", "status": _p5(p5["timing"] > 0), "detail": "Before the pilot and again before the full run: a short timing probe (one epoch of one fold per arm) in Results/timing.json; the Experiments tab estimates the PoC and the full run (±20%) and lists the local and remote options"},
+                    {"id": "5.10", "name": "Hyperparameter search (Optuna, optional)", "status": _p5(p5["hpo"] > 0), "detail": f"Only when the deliberation judged it worthwhile: /hyperparameter-search plan|report|status, nested inside each outer fold, the same budget per arm, a declared importance evaluator; contours and importances in Results/hpo/ ({p5['hpo']} product(s) with studies)"},
+                    {"id": "5.11", "name": "Full experiments", "status": _p5(p5["full_results"] > 0, p5["full"] > 0), "detail": f"/experimental-implementation (experiments-build): a folder with Experimental_AGREED.md and Results/ ({p5['full_results']} of {p5['full']})"},
+                    {"id": "5.12", "name": "Code review (experiments-reviewer) before the rehearsal", "status": "PENDING", "detail": "Code quality, optimization, GPU use and declared statistical tests; the report goes to the operator and leaves no file, so this sub-phase is not verified from disk"},
+                    {"id": "5.13", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"}
                 ]
             },
             {
                 "id": "Fase 6",
                 "stage_id": "scaffolding",
-                "name": "Fase 6: Andamiaje de Manuscrito & Contratos",
+                "name": "Phase 6: Manuscript Scaffolding & Contracts",
                 "gate": "G-SCAFFOLD",
                 "agent": "contract-auditor",
-                "desc": "Andamiaje de paper/main.tex con bloques canónicos y contratos de sección bajo la clase tipográfica del journal.",
+                "desc": "Scaffolding of paper/main.tex with canonical blocks and section contracts under the journal's document class.",
                 "tools": ["read", "write"],
                 "skills": ["scaffold-generator", "latex-contract-indexer"],
                 "cli_command": "smith implement scaffold",
@@ -929,19 +931,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase6_prog,
                 "detail": fase6_det,
                 "subfases": [
-                    {"id": "6.1", "name": "Estructura de Secciones", "status": fase6_status, "detail": "Contratos canónicos en sections/*.md"},
-                    {"id": "6.2", "name": "Apertura de Bloques Canónicos", "status": fase6_status, "detail": "Marcadores y hashes SHA-256 integrados"},
-                    {"id": "6.3", "name": "Asignación de Roles Retóricos", "status": fase6_status, "detail": "Preguntas editoriales y acoplamiento de hechos"},
-                    {"id": "6.4", "name": "Configuración Tipográfica", "status": fase6_status, "detail": "Plantilla LaTeX del journal objetivo"}
+                    {"id": "6.1", "name": "Section Structure", "status": fase6_status, "detail": "Canonical contracts in sections/*.md"},
+                    {"id": "6.2", "name": "Opening of Canonical Blocks", "status": fase6_status, "detail": "Integrated markers and SHA-256 hashes"},
+                    {"id": "6.3", "name": "Rhetorical Role Assignment", "status": fase6_status, "detail": "Editorial questions and fact coupling"},
+                    {"id": "6.4", "name": "Typographic Setup", "status": fase6_status, "detail": "LaTeX template of the target journal"}
                 ]
             },
             {
                 "id": "Fase 7",
                 "stage_id": "declarations",
-                "name": "Fase 7: Declaraciones Operativas & Coautoría",
+                "name": "Phase 7: Operational Declarations & Co-authorship",
                 "gate": "G-DECLARATIONS",
                 "agent": "declarations-recorder",
-                "desc": "Fijación de declaraciones operativas: autoría CRediT, financiación, repositorio abierto y consideraciones éticas.",
+                "desc": "Recording of the operational declarations: CRediT authorship, funding, open repository and ethical considerations.",
                 "tools": ["read", "write"],
                 "skills": ["credit-taxonomy", "ethics-compliance"],
                 "cli_command": "smith implement declarations",
@@ -950,19 +952,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase7_prog,
                 "detail": fase7_det,
                 "subfases": [
-                    {"id": "7.1", "name": "Taxonomía CRediT de Coautoría", "status": fase7_status, "detail": "Roles autorales formalizados"},
-                    {"id": "7.2", "name": "Declaración Ética", "status": fase7_status, "detail": "Protocolos éticos e institucionales"},
-                    {"id": "7.3", "name": "Disponibilidad de Datos y Código", "status": fase7_status, "detail": "Repositorio y accesibilidad"},
-                    {"id": "7.4", "name": "Sellado en main.tex", "status": fase7_status, "detail": "Región declarations bloqueada con hash"}
+                    {"id": "7.1", "name": "CRediT Co-authorship Taxonomy", "status": fase7_status, "detail": "Formalized author roles"},
+                    {"id": "7.2", "name": "Ethics Statement", "status": fase7_status, "detail": "Ethical and institutional protocols"},
+                    {"id": "7.3", "name": "Data and Code Availability", "status": fase7_status, "detail": "Repository and accessibility"},
+                    {"id": "7.4", "name": "Sealing in main.tex", "status": fase7_status, "detail": "declarations region locked with a hash"}
                 ]
             },
             {
                 "id": "Fase 8",
                 "stage_id": "writing",
-                "name": "Fase 8: Redacción Técnica & Transposición",
+                "name": "Phase 8: Technical Writing & Transposition",
                 "gate": "G-WRITING",
                 "agent": "redactor & style-sampler & insumos-observer",
-                "desc": "Redacción técnica por oleadas de los bloques canónicos del manuscrito a partir de los datos experimentales.",
+                "desc": "Technical writing, in waves, of the manuscript's canonical blocks from the experimental data.",
                 "tools": ["read", "write", "substitute"],
                 "skills": ["technical-writing", "facts-coupler", "style-shield"],
                 "cli_command": "python3 scripts/build_manuscript.py",
@@ -972,19 +974,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "detail": fase8_det,
                 "manuscript_ref": {"pages": "1–10", "words": total_words},
                 "subfases": [
-                    {"id": "8.1", "name": "Wave 1: Título, Keywords & Abstract", "status": fase8_status, "detail": "Slots iniciales en pág. 1"},
-                    {"id": "8.2", "name": "Wave 2: Introducción & Hipótesis", "status": fase8_status, "detail": "Bloques de introducción y motivación"},
-                    {"id": "8.3", "name": "Wave 3: Related Work & SOTA", "status": fase8_status, "detail": "Estado del arte y tabla comparativa"},
-                    {"id": "8.4", "name": "Wave 4–9: Métodos, Resultados & Conclusiones", "status": fase8_status, "detail": "Bloques técnicos y experimentales"}
+                    {"id": "8.1", "name": "Wave 1: Title, Keywords & Abstract", "status": fase8_status, "detail": "Opening slots on p. 1"},
+                    {"id": "8.2", "name": "Wave 2: Introduction & Hypotheses", "status": fase8_status, "detail": "Introduction and motivation blocks"},
+                    {"id": "8.3", "name": "Wave 3: Related Work & SOTA", "status": fase8_status, "detail": "State of the art and comparison table"},
+                    {"id": "8.4", "name": "Wave 4–9: Methods, Results & Conclusions", "status": fase8_status, "detail": "Technical and experimental blocks"}
                 ]
             },
             {
                 "id": "Fase 9",
                 "stage_id": "figures",
-                "name": "Fase 9: Diagramas Técnicos & Grounding",
+                "name": "Phase 9: Technical Diagrams & Grounding",
                 "gate": "G-FIGURES",
                 "agent": "diagram-author & figure-auditor",
-                "desc": "Elaboración de diagramas de arquitectura, figuras vectoriales, esquemas y grounding con el texto.",
+                "desc": "Architecture diagrams, vector figures, schemes and grounding in the text.",
                 "tools": ["read", "write", "latexmk"],
                 "skills": ["vector-graphics", "sips-optimizer", "figure-grounding"],
                 "cli_command": "smith audit --figures",
@@ -993,19 +995,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase9_prog,
                 "detail": fase9_det,
                 "subfases": [
-                    {"id": "9.1", "name": "Diagramas de Arquitectura & Sistema", "status": fase9_status, "detail": "Figuras estructurales y topológicas"},
-                    {"id": "9.2", "name": "Curvas y Gráficas Experimentales", "status": fase9_status, "detail": "Rendimiento y contrastes empíricos"},
-                    {"id": "9.3", "name": "Esquemas Metodológicos", "status": fase9_status, "detail": "Flujos de procesamiento y transducción"},
-                    {"id": "9.4", "name": "Grounding de Figuras en Texto", "status": fase9_status, "detail": "Anclaje de referencias cruzadas"}
+                    {"id": "9.1", "name": "Architecture & System Diagrams", "status": fase9_status, "detail": "Structural and topological figures"},
+                    {"id": "9.2", "name": "Experimental Curves and Plots", "status": fase9_status, "detail": "Performance and empirical contrasts"},
+                    {"id": "9.3", "name": "Methodological Schemes", "status": fase9_status, "detail": "Processing and transduction flows"},
+                    {"id": "9.4", "name": "Figure Grounding in the Text", "status": fase9_status, "detail": "Anchoring of cross-references"}
                 ]
             },
             {
                 "id": "Fase 10",
                 "stage_id": "paper",
-                "name": "Fase 10: Compilación & Manuscrito PDF",
+                "name": "Phase 10: Compilation & PDF Manuscript",
                 "gate": "G-PDF",
                 "agent": "latex-compiler",
-                "desc": "Compilación del manuscrito LaTeX a PDF con maquetación editorial, verificación de referencias BibTeX y visor interactivo.",
+                "desc": "Compilation of the LaTeX manuscript to PDF with editorial layout, BibTeX reference checks and an interactive viewer.",
                 "tools": ["read", "bash"],
                 "skills": ["pdflatex-engine", "bibtex-linker", "pdfjs-viewer"],
                 "cli_command": "cd paper && pdflatex -interaction=nonstopmode main.tex && bibtex main && pdflatex main.tex",
@@ -1015,19 +1017,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "detail": fase10_det,
                 "manuscript_ref": {"pages": pdf_pages, "size_mb": round(pdf_size / (1024*1024), 2), "file": "paper/main.pdf"},
                 "subfases": [
-                    {"id": "10.1", "name": "Compilación pdfTeX", "status": fase10_status, "detail": "0 errores fatales en compilación"},
-                    {"id": "10.2", "name": "Vinculación BibTeX", "status": fase10_status, "detail": f"{bib_count} citas vinculadas sin huérfanas"},
-                    {"id": "10.3", "name": "Optimización Vectorial", "status": fase10_status, "detail": "Generación de PDF optimizado"},
-                    {"id": "10.4", "name": "Visor PDF Interactivo", "status": fase10_status, "detail": "Visor PDF.js con control de cambios"}
+                    {"id": "10.1", "name": "pdfTeX Compilation", "status": fase10_status, "detail": "0 fatal compilation errors"},
+                    {"id": "10.2", "name": "BibTeX Linking", "status": fase10_status, "detail": f"{bib_count} citations linked, none orphaned"},
+                    {"id": "10.3", "name": "Vector Optimization", "status": fase10_status, "detail": "Generation of an optimized PDF"},
+                    {"id": "10.4", "name": "Interactive PDF Viewer", "status": fase10_status, "detail": "PDF.js viewer with change control"}
                 ]
             },
             {
                 "id": "Fase 11",
                 "stage_id": "audit",
-                "name": "Fase 11: Auditoría Transversal & Gates",
+                "name": "Phase 11: Cross-cutting Audit & Gates",
                 "gate": "G-AUDIT",
                 "agent": "audit-report",
-                "desc": "Verificación estricta de las 4 compuertas del framework: readiness, acoplamiento de hechos, blindaje de estilo y figuras.",
+                "desc": "Strict verification of the framework's 4 gates: readiness, fact coupling, style shielding and figures.",
                 "tools": ["read", "bash"],
                 "skills": ["cross-auditor", "gate-checker", "hash-verifier"],
                 "cli_command": "smith audit",
@@ -1036,10 +1038,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "progress": fase11_prog,
                 "detail": fase11_det,
                 "subfases": [
-                    {"id": "11.1", "name": "Gate G1: Writing Readiness", "status": fase11_status, "detail": "Contratos canónicos validados"},
-                    {"id": "11.2", "name": "Gate G2: Coupling Verification", "status": fase11_status, "detail": "Hechos acoplados con fuentes de insumo"},
-                    {"id": "11.3", "name": "Gate G3: Style Shield", "status": fase11_status, "detail": "Blindaje retórico y de citas"},
-                    {"id": "11.4", "name": "Gate G4: Figure Grounding", "status": fase11_status, "detail": "Figuras ancladas con referencias en texto"}
+                    {"id": "11.1", "name": "Gate G1: Writing Readiness", "status": fase11_status, "detail": "Canonical contracts validated"},
+                    {"id": "11.2", "name": "Gate G2: Coupling Verification", "status": fase11_status, "detail": "Facts coupled with input sources"},
+                    {"id": "11.3", "name": "Gate G3: Style Shield", "status": fase11_status, "detail": "Rhetorical and citation shielding"},
+                    {"id": "11.4", "name": "Gate G4: Figure Grounding", "status": fase11_status, "detail": "Figures anchored with references in the text"}
                 ]
             }
         ]
@@ -1054,7 +1056,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             artifacts.append({
                 "rel_path": str(p.relative_to(root_path)),
                 "name": p.name,
-                "category": "Propuestas",
+                "category": "Proposals",
                 "size_kb": round(p.stat().st_size / 1024, 1)
             })
         if (root_path / "paper" / "main.tex").is_file():
@@ -1062,7 +1064,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             artifacts.append({
                 "rel_path": "paper/main.tex",
                 "name": "main.tex",
-                "category": "Manuscrito LaTeX",
+                "category": "LaTeX Manuscript",
                 "size_kb": round(tex.stat().st_size / 1024, 1)
             })
         guidance_guide = root_path / "guidance" / "paper-guide"
@@ -1071,7 +1073,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 artifacts.append({
                     "rel_path": str(gp.relative_to(root_path)),
                     "name": gp.name,
-                    "category": "Guía Científica",
+                    "category": "Scientific Guide",
                     "size_kb": round(gp.stat().st_size / 1024, 1)
                 })
         guidance_ref = root_path / "guidance" / "reference-papers"
@@ -1080,14 +1082,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 artifacts.append({
                     "rel_path": str(rp.relative_to(root_path)),
                     "name": rp.name,
-                    "category": "Referencia / Insumo",
+                    "category": "Reference / Input",
                     "size_kb": round(rp.stat().st_size / 1024, 1)
                 })
         if (root_path / "sota-pool" / "atlas.json").is_file():
             artifacts.append({
                 "rel_path": "sota-pool/atlas.json",
                 "name": "atlas.json (SOTA)",
-                "category": "Constelación SOTA",
+                "category": "SOTA Constellation",
                 "size_kb": round((root_path / "sota-pool" / "atlas.json").stat().st_size / 1024, 1)
             })
         experiments_dir = root_path / "experiments"
@@ -1096,7 +1098,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 artifacts.append({
                     "rel_path": f"experiments/{ep.name}",
                     "name": ep.name,
-                    "category": "Experimentos",
+                    "category": "Experiments",
                     "size_kb": round(ep.stat().st_size / 1024, 1)
                 })
         sections_dir = root_path / "sections"
@@ -1104,127 +1106,127 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             for sp in sorted(sections_dir.glob("*.md")):
                 artifacts.append({
                     "rel_path": f"sections/{sp.name}",
-                    "name": f"Reglas: {sp.name}",
-                    "category": "Reglas de Sección",
+                    "name": f"Rules: {sp.name}",
+                    "category": "Section Rules",
                     "size_kb": round(sp.stat().st_size / 1024, 1)
                 })
 
         SECTION_METADATA = {
             "09-title-and-keywords": {
                 "page": 1,
-                "principles": "Concisión técnica informativa sin acrónimos ambiguos. Identificar el sistema/modelo y dominio de aplicación.",
+                "principles": "Informative technical concision without ambiguous acronyms. Identify the system/model and the application domain.",
                 "blocks": [
-                    {"id": "title-and-keywords.title", "role": "Título Principal", "question": "¿Cuál es la contribución técnica y el dominio de aplicación del trabajo?"},
-                    {"id": "title-and-keywords.keywords", "role": "Palabras Clave Indexables", "question": "¿Cuáles son los términos y descriptores indexables del manuscrito?"}
+                    {"id": "title-and-keywords.title", "role": "Main Title", "question": "What is the work's technical contribution and application domain?"},
+                    {"id": "title-and-keywords.keywords", "role": "Indexable Keywords", "question": "What are the manuscript's indexable terms and descriptors?"}
                 ],
-                "cross_relations": "Proyecta los términos clave que se desarrollan en el Abstract y se formalizan en la Introducción."
+                "cross_relations": "Projects the key terms that the Abstract develops and the Introduction formalizes."
             },
             "08-abstract": {
                 "page": 1,
-                "principles": "Estructura canónica de slots: Contexto -> Brecha técnica -> Propuesta metodológica -> Arquitectura/Diseño -> Resultados experimentales -> Precisión/Rendimiento -> Impacto y reproducibilidad.",
+                "principles": "Canonical slot structure: Context -> Technical gap -> Methodological proposal -> Architecture/Design -> Experimental results -> Accuracy/Performance -> Impact and reproducibility.",
                 "blocks": [
-                    {"id": "abstract.slot-1", "role": "Contexto del Problema", "question": "¿Por qué es crucial este problema y cuál es el dominio de aplicación?"},
-                    {"id": "abstract.slot-2", "role": "Brecha Tecnológica / Científica", "question": "¿Qué deficiencias o limitaciones presentan las aproximaciones actuales?"},
-                    {"id": "abstract.slot-3", "role": "Propuesta Principal", "question": "¿Qué propone este trabajo para resolver dicha brecha?"},
-                    {"id": "abstract.slot-4", "role": "Arquitectura y Metodología", "question": "¿Qué componentes integran el sistema o modelo propuesto?"},
-                    {"id": "abstract.slot-5", "role": "Resultados Experimentales", "question": "¿Qué métricas de rendimiento y validación empírica se alcanzaron?"},
-                    {"id": "abstract.slot-6", "role": "Métrica Diferenciadora", "question": "¿Cuál es la precisión, latencia o ventaja empírica demostrada?"},
-                    {"id": "abstract.slot-7", "role": "Impacto y Reproducibilidad", "question": "¿Cómo transforma este avance el campo de investigación?"}
+                    {"id": "abstract.slot-1", "role": "Problem Context", "question": "Why does this problem matter and what is the application domain?"},
+                    {"id": "abstract.slot-2", "role": "Technological / Scientific Gap", "question": "What shortcomings or limitations do current approaches have?"},
+                    {"id": "abstract.slot-3", "role": "Main Proposal", "question": "What does this work propose to close that gap?"},
+                    {"id": "abstract.slot-4", "role": "Architecture and Methodology", "question": "What components make up the proposed system or model?"},
+                    {"id": "abstract.slot-5", "role": "Experimental Results", "question": "What performance metrics and empirical validation were reached?"},
+                    {"id": "abstract.slot-6", "role": "Differentiating Metric", "question": "What accuracy, latency or empirical advantage was shown?"},
+                    {"id": "abstract.slot-7", "role": "Impact and Reproducibility", "question": "How does this advance change the research field?"}
                 ],
-                "cross_relations": "Resume la totalidad del manuscrito; cada slot anticipa una sección del paper."
+                "cross_relations": "Summarizes the whole manuscript; every slot anticipates a section of the paper."
             },
             "06-introduction": {
                 "page": 1,
-                "principles": "Construcción de argumento secuencial: justificación del problema, mapa metodológico, cuello de botella actual, solución propuesta, hipótesis comprobables y contribuciones.",
+                "principles": "Sequential argument construction: problem justification, methodological map, current bottleneck, proposed solution, testable hypotheses and contributions.",
                 "blocks": [
-                    {"id": "introduction.block-1", "role": "Escenario y Motivación", "question": "¿Cuál es el contexto y la motivación fundamental del problema?"},
-                    {"id": "introduction.block-4a", "role": "Hoja de Ruta Metodológica", "question": "¿Cómo se estructuró la investigación y el marco de trabajo?"},
-                    {"id": "introduction.block-2", "role": "Cuello de Botella y Desafíos", "question": "¿Qué limitaciones técnicas o teóricas impiden resolver el problema hoy?"},
-                    {"id": "introduction.block-3", "role": "Solución Propuesta", "question": "¿Cómo aborda el sistema propuesto las limitaciones identificadas?"},
-                    {"id": "introduction.block-4b", "role": "Hipótesis Comprobables", "question": "¿Cuáles son las hipótesis que el estudio somete a prueba empírica?"},
-                    {"id": "introduction.block-5", "role": "Estructura del Manuscrito", "question": "¿Cómo está organizada la lectura de las siguientes secciones?"},
-                    {"id": "introduction.block-6", "role": "Contribuciones Clave", "question": "¿Cuáles son los aportes científicos y técnicos definitivos del artículo?"}
+                    {"id": "introduction.block-1", "role": "Setting and Motivation", "question": "What is the problem's context and fundamental motivation?"},
+                    {"id": "introduction.block-4a", "role": "Methodological Roadmap", "question": "How were the research and its framework structured?"},
+                    {"id": "introduction.block-2", "role": "Bottleneck and Challenges", "question": "What technical or theoretical limitations prevent solving the problem today?"},
+                    {"id": "introduction.block-3", "role": "Proposed Solution", "question": "How does the proposed system address the identified limitations?"},
+                    {"id": "introduction.block-4b", "role": "Testable Hypotheses", "question": "What hypotheses does the study put to an empirical test?"},
+                    {"id": "introduction.block-5", "role": "Manuscript Structure", "question": "How is the reading of the following sections organized?"},
+                    {"id": "introduction.block-6", "role": "Key Contributions", "question": "What are the article's definitive scientific and technical contributions?"}
                 ],
-                "cross_relations": "Las hipótesis planteadas se validan individualmente en Results y se sintetizan en Conclusions."
+                "cross_relations": "The stated hypotheses are validated one by one in Results and synthesized in Conclusions."
             },
             "05-related-work": {
                 "page": 3,
-                "principles": "Taxonomía comparativa rigurosa contra el estado del arte (SOTA). Tabla formal confrontando características clave, métricas y brechas.",
+                "principles": "Rigorous comparative taxonomy against the state of the art (SOTA). A formal table contrasting key features, metrics and gaps.",
                 "blocks": [
-                    {"id": "related-work.rw-preamble", "role": "Evolución y Panorama", "question": "¿Cómo ha evolucionado el área y qué vertientes principales existen?"},
-                    {"id": "related-work.rw-panorama", "role": "Aproximaciones Actuales y Limitaciones", "question": "¿Qué fortalezas y debilidades presentan los trabajos previos relevantes?"},
-                    {"id": "related-work.rw-problem-blocks", "role": "Impacto de las Brechas No Resueltas", "question": "¿De qué manera impactan las limitaciones existentes en el rendimiento global?"},
-                    {"id": "related-work.rw-closing", "role": "Posicionamiento de la Propuesta", "question": "¿Por qué la propuesta se sitúa en una posición diferencial respecto al SOTA?"},
-                    {"id": "related-work.rw-synthesis-artefact", "role": "Síntesis del Atlas SOTA", "question": "¿Cómo sustenta el análisis comparativo las decisiones metodológicas tomadas?"}
+                    {"id": "related-work.rw-preamble", "role": "Evolution and Landscape", "question": "How has the field evolved and what are its main strands?"},
+                    {"id": "related-work.rw-panorama", "role": "Current Approaches and Limitations", "question": "What strengths and weaknesses do the relevant prior works show?"},
+                    {"id": "related-work.rw-problem-blocks", "role": "Impact of the Unresolved Gaps", "question": "How do the existing limitations affect overall performance?"},
+                    {"id": "related-work.rw-closing", "role": "Positioning of the Proposal", "question": "Why does the proposal stand apart from the SOTA?"},
+                    {"id": "related-work.rw-synthesis-artefact", "role": "SOTA Atlas Synthesis", "question": "How does the comparative analysis support the methodological decisions taken?"}
                 ],
-                "cross_relations": "Establece el marco de referencia que justifica las decisiones de diseño y experimentación."
+                "cross_relations": "Sets the frame of reference that justifies the design and experimentation decisions."
             },
             "01-materials-and-methods": {
                 "page": 4,
-                "principles": "Descripción rigurosa y reproducible sin ambigüedades. Modelos formales, formulación matemática y arquitectura del sistema.",
+                "principles": "A rigorous, reproducible description without ambiguity. Formal models, mathematical formulation and system architecture.",
                 "blocks": [
-                    {"id": "materials-and-methods.mm-preamble", "role": "Visión Modular del Sistema", "question": "¿Cuáles son los módulos y componentes principales del sistema o modelo?"},
-                    {"id": "materials-and-methods.mm-borrowed-machinery", "role": "Fundamentos y Topología", "question": "¿Qué mecanismos o arquitecturas base se adoptan y cómo se conectan?"},
-                    {"id": "materials-and-methods.mm-proposal", "role": "Innovación Metodológica Específica", "question": "¿Cuál es la formulación matemática o diseño específico introducido?"}
+                    {"id": "materials-and-methods.mm-preamble", "role": "Modular View of the System", "question": "What are the main modules and components of the system or model?"},
+                    {"id": "materials-and-methods.mm-borrowed-machinery", "role": "Foundations and Topology", "question": "What base mechanisms or architectures are adopted and how do they connect?"},
+                    {"id": "materials-and-methods.mm-proposal", "role": "Specific Methodological Innovation", "question": "What specific mathematical formulation or design is introduced?"}
                 ],
-                "cross_relations": "Especifica la arquitectura y métodos cuyo rendimiento se evalúa en las secciones experimentales."
+                "cross_relations": "Specifies the architecture and methods whose performance the experimental sections evaluate."
             },
             "02-experimental-setup": {
                 "page": 5,
-                "principles": "Protocolos reproducibles de validación: configuración de banco/datasets, instrumental, métricas de evaluación y parámetros.",
+                "principles": "Reproducible validation protocols: bench/dataset setup, instrumentation, evaluation metrics and parameters.",
                 "blocks": [
-                    {"id": "experimental-setup.es-preamble", "role": "Estrategia Experimental", "question": "¿Cuál es la estrategia metodológica adoptada para validar la propuesta?"},
-                    {"id": "experimental-setup.es-dataset", "role": "Datasets o Fuentes de Señales", "question": "¿Qué fuentes de datos, instrumentos o entornos de prueba se utilizaron?"},
-                    {"id": "experimental-setup.es-assessment", "role": "Métricas de Evaluación", "question": "¿Cuáles son los criterios de éxito y métricas formales de desempeño?"},
-                    {"id": "experimental-setup.es-training-details", "role": "Parámetros y Protocolos", "question": "¿Cuáles son los hiperparámetros, tasas y protocolos de experimentación?"}
+                    {"id": "experimental-setup.es-preamble", "role": "Experimental Strategy", "question": "What methodological strategy validates the proposal?"},
+                    {"id": "experimental-setup.es-dataset", "role": "Datasets or Signal Sources", "question": "What data sources, instruments or test environments were used?"},
+                    {"id": "experimental-setup.es-assessment", "role": "Evaluation Metrics", "question": "What are the success criteria and formal performance metrics?"},
+                    {"id": "experimental-setup.es-training-details", "role": "Parameters and Protocols", "question": "What are the hyperparameters, rates and experimentation protocols?"}
                 ],
-                "cross_relations": "Fija las reglas y condiciones empíricas para evaluar las hipótesis planteadas en la Introducción."
+                "cross_relations": "Fixes the empirical rules and conditions to evaluate the hypotheses stated in the Introduction."
             },
             "03-results-and-discussion": {
                 "page": 6,
-                "principles": "Densidad de evidencia cuantitativa. Corroboración con gráficas, tablas de rendimiento y contraste con baselines.",
+                "principles": "Density of quantitative evidence. Corroboration with plots, performance tables and contrast with baselines.",
                 "blocks": [
-                    {"id": "results-and-discussion.rd-general-task", "role": "Validación de Hipótesis y Tarea Principal", "question": "¿Se corroboran las hipótesis principales planteadas en la introducción?"},
-                    {"id": "results-and-discussion.rd-contribution-blocks", "role": "Análisis Cuantitativo y Desempeño", "question": "¿Cuáles son los resultados empíricos obtenidos frente a las métricas de éxito?"},
-                    {"id": "results-and-discussion.rd-cost", "role": "Contraste con Baselines y Discusión", "question": "¿Qué ventajas cuantitativas y cualitativas se demuestran respecto al estado del arte?"}
+                    {"id": "results-and-discussion.rd-general-task", "role": "Hypothesis Validation and Main Task", "question": "Are the main hypotheses stated in the introduction corroborated?"},
+                    {"id": "results-and-discussion.rd-contribution-blocks", "role": "Quantitative Analysis and Performance", "question": "What empirical results were obtained against the success metrics?"},
+                    {"id": "results-and-discussion.rd-cost", "role": "Contrast with Baselines and Discussion", "question": "What quantitative and qualitative advantages are shown over the state of the art?"}
                 ],
-                "cross_relations": "Valida empíricamente las hipótesis planteadas, confirmando los claims del Abstract."
+                "cross_relations": "Empirically validates the stated hypotheses, confirming the Abstract's claims."
             },
             "04-limitations": {
                 "page": 8,
-                "principles": "Autocrítica constructiva y honestidad científica: supuestos, complejidad computacional, trade-offs y condiciones de fallo.",
+                "principles": "Constructive self-criticism and scientific honesty: assumptions, computational complexity, trade-offs and failure conditions.",
                 "blocks": [
-                    {"id": "limitations.lim-opening-concession", "role": "Concesión Inicial y Alcance", "question": "¿Cuáles son los límites de validez y supuestos asumidos en el trabajo?"},
-                    {"id": "limitations.lim-proposal-items", "role": "Restricciones de Recursos o Cómputo", "question": "¿Qué requerimientos de cómputo, energía o datos condicionan el sistema?"},
-                    {"id": "limitations.lim-validation-items", "role": "Representatividad de la Muestra/Datos", "question": "¿Qué escenarios o distribuciones aún no han sido cubiertos exhaustivamente?"},
-                    {"id": "limitations.lim-failure-mode", "role": "Modos de Fallo Potenciales", "question": "¿En qué casos extremos o bajo qué perturbaciones podría degradarse el rendimiento?"},
-                    {"id": "limitations.lim-closing", "role": "Perspectiva Constructiva", "question": "¿Cómo pueden mitigarse estas limitaciones en futuras iteraciones?"}
+                    {"id": "limitations.lim-opening-concession", "role": "Opening Concession and Scope", "question": "What are the work's validity limits and assumptions?"},
+                    {"id": "limitations.lim-proposal-items", "role": "Resource or Compute Constraints", "question": "What compute, energy or data requirements constrain the system?"},
+                    {"id": "limitations.lim-validation-items", "role": "Representativeness of the Sample/Data", "question": "What scenarios or distributions have not been covered exhaustively yet?"},
+                    {"id": "limitations.lim-failure-mode", "role": "Potential Failure Modes", "question": "In which edge cases or under which perturbations could performance degrade?"},
+                    {"id": "limitations.lim-closing", "role": "Constructive Outlook", "question": "How can these limitations be mitigated in future iterations?"}
                 ],
-                "cross_relations": "Dialoga con el Related Work y establece las líneas prioritarias para el trabajo futuro."
+                "cross_relations": "Engages with the Related Work and sets the priority lines for future work."
             },
             "07-conclusions": {
                 "page": 8,
-                "principles": "Síntesis concluyente de las aportaciones fundamentales sin reiterar datos brutos. Proyección y direcciones de trabajo futuro.",
+                "principles": "A conclusive synthesis of the fundamental contributions without repeating raw data. Outlook and directions for future work.",
                 "blocks": [
-                    {"id": "conclusions.concl-block-1", "role": "Recapitulación del Problema", "question": "¿Qué reto fundamental abordó y resolvió esta investigación?"},
-                    {"id": "conclusions.concl-block-2", "role": "Síntesis de Contribución Principal", "question": "¿Cuáles son los principales hallazgos y avances consolidados?"},
-                    {"id": "conclusions.concl-block-3", "role": "Implicaciones Científicas o Tecnológicas", "question": "¿Qué implicaciones prácticas o teóricas tiene este avance para la disciplina?"},
-                    {"id": "conclusions.concl-block-4", "role": "Líneas Futuras y Reproducibilidad", "question": "¿Qué recursos quedan disponibles para la comunidad y qué trabajo futuro se abre?"}
+                    {"id": "conclusions.concl-block-1", "role": "Problem Recap", "question": "What fundamental challenge did this research take on and solve?"},
+                    {"id": "conclusions.concl-block-2", "role": "Main Contribution Synthesis", "question": "What are the main findings and consolidated advances?"},
+                    {"id": "conclusions.concl-block-3", "role": "Scientific or Technological Implications", "question": "What practical or theoretical implications does this advance have for the discipline?"},
+                    {"id": "conclusions.concl-block-4", "role": "Future Lines and Reproducibility", "question": "What resources remain available to the community and what future work opens?"}
                 ],
-                "cross_relations": "Cierra el ciclo argumentativo abierto en el Abstract y la Introducción."
+                "cross_relations": "Closes the argumentative cycle opened in the Abstract and the Introduction."
             },
             "10-back-matter": {
                 "page": 9,
-                "principles": "Transparencia formal: autoría CRediT, fuentes de financiación, disponibilidad de datos/código y declaraciones éticas.",
+                "principles": "Formal transparency: CRediT authorship, funding sources, data/code availability and ethics statements.",
                 "blocks": [
-                    {"id": "back-matter.bm-author-contributions", "role": "Taxonomía CRediT de Coautoría", "question": "¿Qué roles y contribuciones desempeñó cada autor del manuscrito?"},
-                    {"id": "back-matter.bm-funding", "role": "Declaración de Financiación", "question": "¿Qué proyectos, becas o entidades financiaron la investigación?"},
-                    {"id": "back-matter.bm-data-availability", "role": "Disponibilidad de Datos y Código", "question": "¿Dónde reposan los datasets, código fuente y artefactos reproducibles?"},
-                    {"id": "back-matter.bm-conflicts-of-interest", "role": "Conflictos de Interés", "question": "¿Existe algún conflicto de interés financiero o personal que declarar?"},
-                    {"id": "back-matter.bm-acknowledgments", "role": "Agradecimientos", "question": "¿A qué instituciones, revisores o colaboradores técnicos se agradece?"},
-                    {"id": "back-matter.bm-appendices", "role": "Apéndices Técnicos", "question": "¿Qué derivaciones matemáticas, tablas suplementarias o detalles se anexan?"}
+                    {"id": "back-matter.bm-author-contributions", "role": "CRediT Co-authorship Taxonomy", "question": "What roles and contributions did each author of the manuscript take on?"},
+                    {"id": "back-matter.bm-funding", "role": "Funding Statement", "question": "What projects, grants or bodies funded the research?"},
+                    {"id": "back-matter.bm-data-availability", "role": "Data and Code Availability", "question": "Where do the datasets, source code and reproducible artifacts live?"},
+                    {"id": "back-matter.bm-conflicts-of-interest", "role": "Conflicts of Interest", "question": "Is there any financial or personal conflict of interest to declare?"},
+                    {"id": "back-matter.bm-acknowledgments", "role": "Acknowledgments", "question": "Which institutions, reviewers or technical collaborators are thanked?"},
+                    {"id": "back-matter.bm-appendices", "role": "Technical Appendices", "question": "What mathematical derivations, supplementary tables or details are appended?"}
                 ],
-                "cross_relations": "Cumple los requisitos regulatorios y éticos de publicación académica."
+                "cross_relations": "Meets the regulatory and ethical requirements of academic publishing."
             }
         }
 
@@ -1243,9 +1245,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "blocks_written": s.get("blocks_written", 0),
                 "blocks_total": s.get("blocks_total", 0),
                 "pdf_page": sec_meta.get("page", 1),
-                "principles": sec_meta.get("principles", "Redacción técnica formal bajo directrices de publicación."),
+                "principles": sec_meta.get("principles", "Formal technical writing under publication guidelines."),
                 "canonical_blocks": sec_meta.get("blocks", []),
-                "cross_relations": sec_meta.get("cross_relations", "Trazabilidad cruzada con el resto del manuscrito.")
+                "cross_relations": sec_meta.get("cross_relations", "Cross traceability with the rest of the manuscript.")
             })
 
         gates_list = [
@@ -1253,7 +1255,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "id": "G-EXP-POC",
                 "name": "Proof-of-Concept & Experimental Design Gate",
                 "status": "PASS" if fase5_status == "PASS" else ("ACTIVE" if fase5_status == "ACTIVE" else "PENDING"),
-                "criteria": "Validación empírica y diseño experimental: reproducibilidad de pruebas, especificación de baseline y criterios de éxito cuantitativos.",
+                "criteria": "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria.",
                 "reviewer": "experiments-reviewer",
                 "phase": "Fase 5"
             },
@@ -1261,7 +1263,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "id": "G1",
                 "name": "Writing Readiness Gate",
                 "status": "PASS" if fase6_status == "PASS" else ("ACTIVE" if fase6_status == "ACTIVE" else "PENDING"),
-                "criteria": "Contratos de sección validados con gramática cerrada y dependencias resueltas.",
+                "criteria": "Section contracts validated with a closed grammar and resolved dependencies.",
                 "reviewer": "contract-auditor",
                 "phase": "Fase 6"
             },
@@ -1269,7 +1271,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "id": "G2",
                 "name": "Coupling Verification Gate",
                 "status": "PASS" if fase7_status == "PASS" else ("ACTIVE" if fase7_status == "ACTIVE" else "PENDING"),
-                "criteria": "Hechos demandados (formulación, diseño, resultados) acoplados con declaraciones de autoría y financiación.",
+                "criteria": "Demanded facts (formulation, design, results) coupled with the authorship and funding declarations.",
                 "reviewer": "paper-graph-auditor",
                 "phase": "Fase 7"
             },
@@ -1277,7 +1279,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "id": "G3",
                 "name": "Grounding & Style Leak Gate",
                 "status": "PASS" if fase8_status == "PASS" else ("ACTIVE" if fase8_status == "ACTIVE" else "PENDING"),
-                "criteria": "Ausencia de citas vacías o placeholders, aislamiento estricto de fuentes bibliográficas.",
+                "criteria": "No empty citations or placeholders; strict isolation of bibliographic sources.",
                 "reviewer": "grounding-auditor",
                 "phase": "Fase 8"
             },
@@ -1285,24 +1287,24 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "id": "G4",
                 "name": "Diagram & Raster Gate",
                 "status": "PASS" if fase9_status == "PASS" else ("ACTIVE" if fase9_status == "ACTIVE" else "PENDING"),
-                "criteria": "Validación de compilación de diagramas TikZ, esquemas metodológicos y figuras vectoriales.",
+                "criteria": "Compilation check of TikZ diagrams, methodological schemes and vector figures.",
                 "reviewer": "figure-auditor",
                 "phase": "Fase 9"
             }
         ]
 
         telemetry_defaults = {
-            "Fase 1": {"fase": "Fase 1: Configuración de Entorno & Harness", "gate": "G-HARNESS", "tool_uses": 8, "duracion": "1m 12s", "tokens": "14,250"},
-            "Fase 2": {"fase": "Fase 2: Plausibilidad & SOTA Atlas 3D", "gate": "G-SOTA", "tool_uses": 16, "duracion": "3m 45s", "tokens": "32,800"},
-            "Fase 3": {"fase": "Fase 3: Ingestión de Referencias & Tesis Principal", "gate": "G-INGEST", "tool_uses": 24, "duracion": "5m 20s", "tokens": "48,500"},
-            "Fase 4": {"fase": "Fase 4: Deliberación de Propuesta & Modelo Conceptual", "gate": "G-PROP", "tool_uses": 14, "duracion": "2m 30s", "tokens": "26,100"},
-            "Fase 5": {"fase": "Fase 5: Prueba de concepto y experimentos", "gate": "G-EXP-POC", "tool_uses": 15, "duracion": "2m 55s", "tokens": "29,400"},
-            "Fase 6": {"fase": "Fase 6: Andamiaje de Manuscrito & Contratos", "gate": "G-SCAFFOLD", "tool_uses": 10, "duracion": "1m 50s", "tokens": "18,900"},
-            "Fase 7": {"fase": "Fase 7: Declaraciones Operativas & Coautoría", "gate": "G-DECLARATIONS", "tool_uses": 7, "duracion": "1m 10s", "tokens": "12,400"},
-            "Fase 8": {"fase": "Fase 8: Redacción Técnica & Transposición", "gate": "G-WRITING", "tool_uses": 19, "duracion": "4m 15s", "tokens": "38,200"},
-            "Fase 9": {"fase": "Fase 9: Diagramas Técnicos & Grounding", "gate": "G-FIGURES", "tool_uses": 9, "duracion": "1m 40s", "tokens": "16,500"},
-            "Fase 10": {"fase": "Fase 10: Compilación & Manuscrito PDF", "gate": "G-PDF", "tool_uses": 6, "duracion": "50s", "tokens": "9,800"},
-            "Fase 11": {"fase": "Fase 11: Auditoría Transversal & Gates", "gate": "G-AUDIT", "tool_uses": 8, "duracion": "1m 30s", "tokens": "15,600"},
+            "Fase 1": {"fase": "Phase 1: Environment Setup & Harness", "gate": "G-HARNESS", "tool_uses": 8, "duracion": "1m 12s", "tokens": "14,250"},
+            "Fase 2": {"fase": "Phase 2: Plausibility & 3D SOTA Atlas", "gate": "G-SOTA", "tool_uses": 16, "duracion": "3m 45s", "tokens": "32,800"},
+            "Fase 3": {"fase": "Phase 3: Reference Ingestion & Main Thesis", "gate": "G-INGEST", "tool_uses": 24, "duracion": "5m 20s", "tokens": "48,500"},
+            "Fase 4": {"fase": "Phase 4: Proposal Deliberation & Conceptual Model", "gate": "G-PROP", "tool_uses": 14, "duracion": "2m 30s", "tokens": "26,100"},
+            "Fase 5": {"fase": "Phase 5: Proof of concept and experiments", "gate": "G-EXP-POC", "tool_uses": 15, "duracion": "2m 55s", "tokens": "29,400"},
+            "Fase 6": {"fase": "Phase 6: Manuscript Scaffolding & Contracts", "gate": "G-SCAFFOLD", "tool_uses": 10, "duracion": "1m 50s", "tokens": "18,900"},
+            "Fase 7": {"fase": "Phase 7: Operational Declarations & Co-authorship", "gate": "G-DECLARATIONS", "tool_uses": 7, "duracion": "1m 10s", "tokens": "12,400"},
+            "Fase 8": {"fase": "Phase 8: Technical Writing & Transposition", "gate": "G-WRITING", "tool_uses": 19, "duracion": "4m 15s", "tokens": "38,200"},
+            "Fase 9": {"fase": "Phase 9: Technical Diagrams & Grounding", "gate": "G-FIGURES", "tool_uses": 9, "duracion": "1m 40s", "tokens": "16,500"},
+            "Fase 10": {"fase": "Phase 10: Compilation & PDF Manuscript", "gate": "G-PDF", "tool_uses": 6, "duracion": "50s", "tokens": "9,800"},
+            "Fase 11": {"fase": "Phase 11: Cross-cutting Audit & Gates", "gate": "G-AUDIT", "tool_uses": 8, "duracion": "1m 30s", "tokens": "15,600"},
         }
         telemetria = []
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1617,7 +1619,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         try:
             payload = await request.json()
         except Exception as e:
-            return JSONResponse({"ok": False, "error": f"JSON payload inválido: {e}"}, status_code=400)
+            return JSONResponse({"ok": False, "error": f"Invalid JSON payload: {e}"}, status_code=400)
         annotations = payload.get("annotations", [])
         ann_path = root_path / ".papersmith" / "anotaciones_pdf.json"
         ann_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1646,18 +1648,18 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         ann_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         
         md_lines = [
-            "# Reporte de Anotaciones Editoriales y Humanización",
-            f"**Fecha:** {summary['timestamp']}",
-            f"- ✂️ Textos tachados (eliminar): {len(strikes)}",
-            f"- 💬 Comentarios editoriales: {len(comments)}",
-            f"- ✨ Pasajes para humanizar: {len(humanizes)}",
-            "\n## Detalle de anotaciones:\n"
+            "# Editorial Annotation and Humanization Report",
+            f"**Date:** {summary['timestamp']}",
+            f"- ✂️ Struck-through texts (delete): {len(strikes)}",
+            f"- 💬 Editorial comments: {len(comments)}",
+            f"- ✨ Passages to humanize: {len(humanizes)}",
+            "\n## Annotation details:\n"
         ]
         for idx, ann in enumerate(annotations, 1):
-            t = ann.get("type", "nota")
+            t = ann.get("type", "note")
             txt = ann.get("text", "")
             comm = ann.get("comment", "")
-            md_lines.append(f"{idx}. **[{t.upper()}]** \"{txt}\" {f'— Nota: {comm}' if comm else ''}")
+            md_lines.append(f"{idx}. **[{t.upper()}]** \"{txt}\" {f'— Note: {comm}' if comm else ''}")
         (root_path / ".papersmith" / "anotaciones_pdf.md").write_text("\n".join(md_lines), encoding="utf-8")
         
         return JSONResponse({"ok": True, "summary": summary["summary"]})
@@ -1692,19 +1694,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         phase_id = str(payload.get("phase_id", ""))
         stage = phase_actions.stage_for(phase_id)
         if stage is None:
-            return JSONResponse({"ok": False, "error": f"fase desconocida: {phase_id}"}, status_code=422)
+            return JSONResponse({"ok": False, "error": f"unknown phase: {phase_id}"}, status_code=422)
 
         if stage == "paper" and not (root_path / "paper" / "main.tex").is_file():
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": "No hay paper/main.tex que compilar: ábrelo primero con /paper-writing (Fase 6).",
+                "message": "There is no paper/main.tex to compile: open it first with /paper-writing (Phase 6).",
                 "outputs": []
             })
         if stage in ("paper", "writing"):
             if not _PAPER_LOCK.acquire(blocking=False):
                 return JSONResponse({"ok": False, "phase_id": phase_id, "stage": stage,
-                                     "error": "Otra compilación de paper/ sigue en curso; espera a que termine."},
+                                     "error": "Another compilation of paper/ is still running; wait for it to finish."},
                                     status_code=409)
             job = _compile_paper if stage == "paper" else _build_manuscript
 
@@ -1728,7 +1730,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": f"Diagramas y figuras técnicas verificadas ({len(figs)} figuras vectoriales optimizadas).",
+                "message": f"Diagrams and technical figures verified ({len(figs)} optimized vector figures).",
                 "outputs": [f"paper/Figures/{f}" for f in figs]
             })
             
@@ -1736,8 +1738,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": f"Plausibilidad: {_candidate_count(root_path)} candidatos en sota-pool/candidates.json; "
-                           f"atlas {'presente' if (root_path / 'sota-pool' / 'atlas.html').is_file() else 'pendiente'}.",
+                "message": f"Plausibility: {_candidate_count(root_path)} candidates in sota-pool/candidates.json; "
+                           f"atlas {'present' if (root_path / 'sota-pool' / 'atlas.html').is_file() else 'pending'}.",
                 "outputs": ["sota-pool/atlas.json", "sota-pool/atlas.html", "sota-pool/candidates.json"]
             })
             
@@ -1745,7 +1747,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": f"Ingestión: {len(_children(root_path / 'guidance' / 'reference-papers'))} referencias ingeridas en guidance/reference-papers/.",
+                "message": f"Ingestion: {len(_children(root_path / 'guidance' / 'reference-papers'))} references ingested in guidance/reference-papers/.",
                 "outputs": [f"guidance/reference-papers/{name}/" for name in _children(root_path / 'guidance' / 'reference-papers')]
             })
             
@@ -1753,7 +1755,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": f"Propuesta: {len(list((root_path / 'proposals').glob('research-concept-*.md')))} revisiones de propuesta en proposals/.",
+                "message": f"Proposal: {len(list((root_path / 'proposals').glob('research-concept-*.md')))} proposal revisions in proposals/.",
                 "outputs": ["proposals/"]
             })
             
@@ -1761,7 +1763,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": f"Andamiaje: {_block_count(root_path)} bloques canónicos en paper/main.tex.",
+                "message": f"Scaffolding: {_block_count(root_path)} canonical blocks in paper/main.tex.",
                 "outputs": ["paper/main.tex", "sections/"]
             })
             
@@ -1769,23 +1771,23 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": "Declaraciones: registra o revisa cada una con /paper-writing mark.",
+                "message": "Declarations: record or review each one with /paper-writing mark.",
                 "outputs": ["paper/main.tex"]
             })
             
         elif stage == "audit":
             record = await asyncio.to_thread(_run_audit, root_path)
             if record is None:
-                message, log = "Ya hay una auditoría en curso: espera su resultado.", ""
+                message, log = "An audit is already running: wait for its result.", ""
             else:
                 if not record["ran"]:
-                    message = "La auditoría no pudo ejecutarse (papersmith no disponible o tiempo agotado)."
+                    message = "The audit could not run (papersmith unavailable or timed out)."
                 elif record["ok"]:
-                    message = "Auditoría superada: smith audit --check-drift sin hallazgos."
+                    message = "Audit passed: smith audit --check-drift with no findings."
                 else:
-                    message = f"La auditoría encontró problemas (código {record['returncode']})."
+                    message = f"The audit found problems (code {record['returncode']})."
                 if not record["written"]:
-                    message += f" No se pudo escribir .papersmith/audit.json: {record['write_error']}"
+                    message += f" Could not write .papersmith/audit.json: {record['write_error']}"
                 log = record["output"][-600:]
             return JSONResponse({
                 "ok": True,
@@ -1799,7 +1801,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({
                 "ok": True,
                 "phase_id": phase_id, "stage": stage,
-                "message": f"{phase_id}: se ejecuta desde su recuadro (comando del agente o panel).",
+                "message": f"Phase {phase_actions.STAGES.index(stage) + 1}: it runs from its card (agent command or panel).",
                 "outputs": []
             })
 
@@ -1828,7 +1830,15 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({"error": str(exc), "count": 0, "candidates": [], "families": []}, status_code=500)
 
     @app.get("/api/atlas/candidates/view")
-    def api_atlas_candidates_view() -> Response:
+    def api_atlas_candidates_view(lang: str = "en") -> Response:
+        # English, or Spanish on ?lang=es (localize.py): the view is a page of
+        # its own, so its labels are translated here rather than in JSON.
+        def T(text: str) -> str:
+            return html.escape(localize.translate(text, lang))
+
+        def J(text: str) -> str:
+            return json.dumps(localize.translate(text, lang), ensure_ascii=False).replace("<", "\\u003c")
+
         cand_file = root_path / "sota-pool" / "candidates.json"
         candidates = []
         families = []
@@ -1850,12 +1860,43 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             f'<option value="{html.escape(str(f), quote=True)}">{html.escape(str(f))}</option>'
             for f in families)
         
+                # Every label of the page, translated once; the f-string below only
+        # indexes this list (3.11 f-strings take no backslashes or nested quotes).
+        _label = [
+            T("SOTA Candidate Matrix"),
+            T("State-of-the-Art (SOTA) Candidate Matrix"),
+            T("Literature Mapping and Methodological Plausibility"),
+            T("← Back to the Main Dashboard"),
+            T("Q1/Q2 Candidate Articles"),
+            T("Thematic Families"),
+            T("SOTA Time Window"),
+            T("Validated Plausibility"),
+            T("Search by title, author, journal, DOI or keyword..."),
+            T("Year (newest)"),
+            T("Year (oldest)"),
+            T("Title (A-Z)"),
+            T("Year"),
+            T("Article & Authors"),
+            T("Journal / Venue"),
+            T("Family / Cluster"),
+            T("Contribution & Plausibility"),
+            J("📄 Abstract ▾"),
+            J("Hide ▴"),
+            J("No articles match that search."),
+            J("Q1 Journal"),
+            J("Methodological plausibility validated"),
+            T("Full Scientific Abstract"),
+            J("No abstract recorded."),
+            T("All authors:"),
+        ]
+        page_lang = "es" if lang in localize.LANGUAGES else "en"
+        all_families = T(f"All Families ({len(families)})")
         html_content = f"""<!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang="{page_lang}" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Matriz de Candidatos SOTA — {html.escape(root_path.name)}</title>
+  <title>{_label[0]} — {html.escape(root_path.name)}</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <style>
     :root {{
@@ -2056,45 +2097,45 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
       <div class="brand">
         <img src="/smith-logo.png" alt="Smith">
         <div>
-          <h1>Matriz de Candidatos del Estado del Arte (SOTA)</h1>
-          <p>{html.escape(root_path.name)} · Mapeo de Literatura y Plausibilidad Metodológica</p>
+          <h1>{_label[1]}</h1>
+          <p>{html.escape(root_path.name)} · {_label[2]}</p>
         </div>
       </div>
       <div>
-        <a href="/#atlas" class="btn">← Volver al Tablero Principal</a>
+        <a href="/#atlas" class="btn">{_label[3]}</a>
       </div>
     </header>
 
     <div class="stats-bar">
       <div class="stat-chip">
         <div class="stat-chip__val">{len(candidates)}</div>
-        <div class="stat-chip__lbl">Artículos Candidatos Q1/Q2</div>
+        <div class="stat-chip__lbl">{_label[4]}</div>
       </div>
       <div class="stat-chip">
         <div class="stat-chip__val">{len(families)}</div>
-        <div class="stat-chip__lbl">Familias Temáticas</div>
+        <div class="stat-chip__lbl">{_label[5]}</div>
       </div>
       <div class="stat-chip">
         <div class="stat-chip__val">2020 – 2025</div>
-        <div class="stat-chip__lbl">Ventana Temporal SOTA</div>
+        <div class="stat-chip__lbl">{_label[6]}</div>
       </div>
       <div class="stat-chip">
         <div class="stat-chip__val" style="color: var(--ok);">100% PASS</div>
-        <div class="stat-chip__lbl">Plausibilidad Validada</div>
+        <div class="stat-chip__lbl">{_label[7]}</div>
       </div>
     </div>
 
     <div class="toolbar">
-      <input type="text" id="searchInput" class="search-input" placeholder="Buscar por título, autor, revista, DOI o palabra clave..." oninput="renderTable()">
+      <input type="text" id="searchInput" class="search-input" placeholder="{_label[8]}" oninput="renderTable()">
       <div style="display: flex; gap: 0.5rem;">
         <select id="familySelect" onchange="renderTable()">
-          <option value="">Todas las Familias ({len(families)})</option>
+          <option value="">{all_families}</option>
           {families_options}
         </select>
         <select id="sortSelect" onchange="renderTable()">
-          <option value="year_desc">Año (más reciente)</option>
-          <option value="year_asc">Año (más antiguo)</option>
-          <option value="title_asc">Título (A-Z)</option>
+          <option value="year_desc">{_label[9]}</option>
+          <option value="year_asc">{_label[10]}</option>
+          <option value="title_asc">{_label[11]}</option>
         </select>
       </div>
     </div>
@@ -2104,11 +2145,11 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         <thead>
           <tr>
             <th style="width: 45px; text-align: center;">#</th>
-            <th style="width: 65px; text-align: center;">Año</th>
-            <th style="min-width: 320px;">Artículo &amp; Autores</th>
-            <th style="width: 180px;">Revista / Venue</th>
-            <th style="width: 160px;">Familia / Clúster</th>
-            <th style="min-width: 260px;">Aporte &amp; Plausibilidad</th>
+            <th style="width: 65px; text-align: center;">{_label[12]}</th>
+            <th style="min-width: 320px;">{_label[13]}</th>
+            <th style="width: 180px;">{_label[14]}</th>
+            <th style="width: 160px;">{_label[15]}</th>
+            <th style="min-width: 260px;">{_label[16]}</th>
             <th style="width: 100px; text-align: center;">Abstract</th>
           </tr>
         </thead>
@@ -2119,6 +2160,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
   <script>
     const CANDIDATES = {candidates_json};
+    const LABEL_SHOW = {_label[17]};
+    const LABEL_HIDE = {_label[18]};
     function esc(v) {{
       return String(v ?? '').replace(/[&<>"']/g, ch => ({{'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}})[ch]);
     }}
@@ -2152,7 +2195,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
       if (list.length === 0) {{
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">No se encontraron artículos con ese criterio de búsqueda.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">' + esc({_label[19]}) + '</td></tr>';
         return;
       }}
 
@@ -2169,10 +2212,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
               ${{c.identifier ? `<a href="${{esc(safeUrl(c.source_url || ('https://doi.org/' + c.identifier)))}}" target="_blank" rel="noopener noreferrer" class="badge badge--info">🔗 ${{esc(c.identifier)}}</a>` : ''}}
             </div>
           </td>
-          <td><span style="font-style: italic; color: var(--text-dim);">${{esc(c.venue || 'Revista Q1')}}</span></td>
+          <td><span style="font-style: italic; color: var(--text-dim);">${{esc(c.venue || {_label[20]})}}</span></td>
           <td><span class="badge ${{getFamilyBadgeClass(c.family)}}">${{esc(c.family || 'general')}}</span></td>
-          <td><div style="font-size: 0.78rem; color: var(--text); background: rgba(56, 189, 248, 0.05); padding: 0.4rem 0.6rem; border-radius: 4px; border-left: 2px solid var(--accent);">${{esc(c.plausibility_note || 'Plausibilidad metodológica validada')}}</div></td>
-          <td style="text-align: center;"><button class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.72rem;" onclick="toggleAbs(${{idx}})" id="btn-${{idx}}">📄 Resumen ▾</button></td>
+          <td><div style="font-size: 0.78rem; color: var(--text); background: rgba(56, 189, 248, 0.05); padding: 0.4rem 0.6rem; border-radius: 4px; border-left: 2px solid var(--accent);">${{esc(c.plausibility_note || {_label[21]})}}</div></td>
+          <td style="text-align: center;"><button class="btn" style="padding: 0.25rem 0.5rem; font-size: 0.72rem;" onclick="toggleAbs(${{idx}})" id="btn-${{idx}}">${{esc(LABEL_SHOW)}}</button></td>
         `;
         tbody.appendChild(tr);
 
@@ -2181,9 +2224,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         trAbs.style.display = 'none';
         trAbs.innerHTML = `
           <td colspan="7" style="background: var(--surface-2); padding: 1rem 1.25rem;">
-            <div style="font-weight: 700; color: var(--accent); font-size: 0.8rem; margin-bottom: 0.35rem; text-transform: uppercase;">Resumen Científico Completo</div>
-            <p style="font-size: 0.81rem; line-height: 1.6; color: var(--text); text-align: justify; margin-bottom: 0.5rem;">${{esc(c.abstract || 'Sin resumen registrado.')}}</p>
-            <div style="font-size: 0.74rem; color: var(--text-dim);"><strong>Autores completos:</strong> ${{ esc((c.authors || []).join(', ')) }}</div>
+            <div style="font-weight: 700; color: var(--accent); font-size: 0.8rem; margin-bottom: 0.35rem; text-transform: uppercase;">{_label[22]}</div>
+            <p style="font-size: 0.81rem; line-height: 1.6; color: var(--text); text-align: justify; margin-bottom: 0.5rem;">${{esc(c.abstract || {_label[23]})}}</p>
+            <div style="font-size: 0.74rem; color: var(--text-dim);"><strong>{_label[24]}</strong> ${{ esc((c.authors || []).join(', ')) }}</div>
           </td>
         `;
         tbody.appendChild(trAbs);
@@ -2195,7 +2238,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
       const btn = document.getElementById(`btn-${{idx}}`);
       const open = row.style.display === 'none';
       row.style.display = open ? 'table-row' : 'none';
-      btn.textContent = open ? 'Ocultar ▴' : '📄 Resumen ▾';
+      btn.textContent = open ? LABEL_HIDE : LABEL_SHOW;
     }}
 
     renderTable();
@@ -2500,8 +2543,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse(novelty_graph.build_novelty_graph(root_path), headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/atlas/novelty/view")
-    def api_atlas_novelty_view() -> Response:
-        html = novelty_graph.build_novelty_viewer_html(root_path)
+    def api_atlas_novelty_view(lang: str = "en") -> Response:
+        html = novelty_graph.build_novelty_viewer_html(root_path, lang)
         return Response(html, media_type="text/html; charset=utf-8", headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/decisions")
@@ -2519,7 +2562,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.get("/api/ai-history")
     def api_ai_history() -> JSONResponse:
-        # The Historia con IA pane: each phase's gate, colour and timeline,
+        # The AI History pane: each phase's gate, colour and timeline,
         # read-only from decisions, revisions and this workspace's transcripts.
         try:
             phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
@@ -2786,7 +2829,7 @@ def open_browser(url: str) -> None:
 
 def warm_caches(root: Path, *extra: Callable[[], Any]) -> None:
     """Fill the slow caches before the first visit: the experiments tab's
-    interpreter and CLI probes, the chat sessions Historia con IA reads and
+    interpreter and CLI probes, the chat sessions AI History reads and
     ``extra`` (``main`` passes the Smith Doctor report). Runs off the request
     path; a failure only means the first visit pays."""
     for warm in (lambda: experiments_view.get_experiments_view(root),

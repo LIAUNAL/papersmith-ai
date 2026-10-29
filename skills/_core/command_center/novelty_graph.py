@@ -14,6 +14,17 @@ import json
 from pathlib import Path
 from typing import Any
 
+from . import localize
+
+#: The display fields of the graph (localize.py): labels the framework wrote.
+#: Ids, groups, colours, links' ends, file references and page numbers are
+#: never touched.
+NOVELTY_FIELDS = frozenset({
+    "title", "target_journal", "authors", "summary", "nodes.label", "nodes.category", "nodes.badge",
+    "nodes.desc", "nodes.rhetorical_question", "nodes.paragraph_text", "nodes.metrics",
+    "nodes.novelty_claim", "nodes.thesis_ref", "nodes.section_ref", "links.label",
+})
+
 def build_novelty_graph(root_path: Path | None = None) -> dict[str, Any]:
     """The workspace's own ``.papersmith/novelty_graph.json`` when it holds a
     graph, else a neutral initial graph named after the workspace."""
@@ -28,123 +39,180 @@ def build_novelty_graph(root_path: Path | None = None) -> dict[str, Any]:
 
     project_name = root_path.name if root_path else "Paper"
     return {
-        "title": f"Grafo 3D de Novedad e Ideas del Manuscrito — {project_name}",
-        "target_journal": "Objetivo Editorial",
-        "authors": "Equipo de Investigación",
+        "title": f"3D Graph of the Manuscript's Novelty and Ideas — {project_name}",
+        "target_journal": "Editorial Target",
+        "authors": "Research Team",
         "project": project_name,
-        "summary": f"Estructura conceptual en fase inicial para {project_name}. Los nodos semánticos se pueblan durante las fases 2 (SOTA), 4 (Deliberación de Propuesta) y 5 (PoC Experimental).",
+        "summary": f"Conceptual structure at an initial stage for {project_name}. The semantic nodes are populated during phases 2 (SOTA), 4 (Proposal Deliberation) and 5 (Experimental PoC).",
         "nodes": [
             {
                 "id": "core-project",
-                "label": f"{project_name}: Propuesta en Deliberación",
+                "label": f"{project_name}: Proposal under Deliberation",
                 "group": "core",
                 "color": "#38bdf8",
                 "size": 9.0,
-                "category": "Contribución Global",
-                "badge": "ARQUITECTURA PRINCIPAL",
-                "desc": f"Marco de trabajo e investigación para {project_name} en fase inicial de formulación.",
-                "rhetorical_question": f"¿Cuál es la hipótesis central y contribución esperada de {project_name}?",
-                "paragraph_text": f"El proyecto {project_name} se encuentra en etapa inicial de deliberación de propuesta científica y acoplamiento con el estado del arte.",
-                "metrics": "Fase 1 completada (Harness). Fases de deliberación y experimentación pendientes.",
-                "novelty_claim": "Innovación metodológica y teórica en formalización.",
-                "thesis_ref": "Insumos en guidance/",
+                "category": "Overall Contribution",
+                "badge": "MAIN ARCHITECTURE",
+                "desc": f"Working and research framework for {project_name}, at an initial formulation stage.",
+                "rhetorical_question": f"What is the central hypothesis and expected contribution of {project_name}?",
+                "paragraph_text": f"The {project_name} project is at an initial stage of scientific proposal deliberation and coupling with the state of the art.",
+                "metrics": "Phase 1 complete (Harness). Deliberation and experimentation phases pending.",
+                "novelty_claim": "Methodological and theoretical innovation under formalization.",
+                "thesis_ref": "Inputs in guidance/",
                 "pdf_page": 1,
-                "section_ref": "Sección 1 (Introducción)",
+                "section_ref": "Section 1 (Introduction)",
                 "paper_blocks": ["title-and-keywords.title", "abstract.slot-1", "introduction.block-1"]
             },
             {
                 "id": "hub-problem",
-                "label": "Problema & Brecha Técnica",
+                "label": "Problem & Technical Gap",
                 "group": "problem",
                 "color": "#ef4444",
                 "size": 7.0,
-                "category": "Desafíos",
-                "badge": "BRECHA CIENTÍFICA",
-                "desc": "Limitaciones y cuellos de botella en las aproximaciones actuales.",
-                "rhetorical_question": "¿Qué problema fundamental no resuelto aborda esta investigación?",
-                "paragraph_text": "Pendiente de formalización durante Fase 4.",
-                "metrics": "Pendiente",
-                "novelty_claim": "Definición rigurosa de la brecha científica.",
+                "category": "Challenges",
+                "badge": "SCIENTIFIC GAP",
+                "desc": "Limitations and bottlenecks in current approaches.",
+                "rhetorical_question": "What fundamental unsolved problem does this research address?",
+                "paragraph_text": "Pending formalization during Phase 4.",
+                "metrics": "Pending",
+                "novelty_claim": "Rigorous definition of the scientific gap.",
                 "thesis_ref": "proposals/",
                 "pdf_page": 1,
-                "section_ref": "Sección 1 (Introducción)",
+                "section_ref": "Section 1 (Introduction)",
                 "paper_blocks": ["abstract.slot-2", "introduction.block-2"]
             },
             {
                 "id": "hub-sota",
-                "label": "Constelación SOTA & Baselines",
+                "label": "SOTA Constellation & Baselines",
                 "group": "sota",
                 "color": "#10b981",
                 "size": 7.0,
-                "category": "Estado del Arte",
-                "badge": "LITERATURA Q1",
-                "desc": "Mapeo de sistemas comparativos y papers de referencia.",
-                "rhetorical_question": "¿Cuáles son los baselines de referencia frente a los cuales se contrastará la propuesta?",
-                "paragraph_text": "Atlas 3D en construcción en sota-pool/.",
-                "metrics": "Pendiente",
-                "novelty_claim": "Taxonomía comparativa con literatura especializada.",
+                "category": "State of the Art",
+                "badge": "Q1 LITERATURE",
+                "desc": "Mapping of comparison systems and reference papers.",
+                "rhetorical_question": "Which reference baselines will the proposal be contrasted against?",
+                "paragraph_text": "3D atlas under construction in sota-pool/.",
+                "metrics": "Pending",
+                "novelty_claim": "Comparative taxonomy with specialized literature.",
                 "thesis_ref": "sota-pool/atlas.json",
                 "pdf_page": 3,
-                "section_ref": "Sección 2 (Related Work)",
+                "section_ref": "Section 2 (Related Work)",
                 "paper_blocks": ["related-work.rw-preamble", "related-work.rw-panorama"]
             },
             {
                 "id": "hub-novelty",
-                "label": "Metodología & Arquitectura",
+                "label": "Methodology & Architecture",
                 "group": "novelty",
                 "color": "#f59e0b",
                 "size": 7.0,
-                "category": "Innovación",
-                "badge": "PILAR METODOLÓGICO",
-                "desc": "Componentes, formulación matemática y diseño del sistema.",
-                "rhetorical_question": "¿Cuál es la metodología o arquitectura propuesta para resolver la brecha?",
-                "paragraph_text": "Pendiente de especificación formal.",
-                "metrics": "Pendiente",
-                "novelty_claim": "Innovación algorítmica / arquitectónica.",
+                "category": "Innovation",
+                "badge": "METHODOLOGICAL PILLAR",
+                "desc": "Components, mathematical formulation and system design.",
+                "rhetorical_question": "What methodology or architecture is proposed to close the gap?",
+                "paragraph_text": "Pending formal specification.",
+                "metrics": "Pending",
+                "novelty_claim": "Algorithmic / architectural innovation.",
                 "thesis_ref": "sections/01-materials-and-methods.md",
                 "pdf_page": 4,
-                "section_ref": "Sección 3 (Materials and Methods)",
+                "section_ref": "Section 3 (Materials and Methods)",
                 "paper_blocks": ["materials-and-methods.mm-preamble", "materials-and-methods.mm-proposal"]
             },
             {
                 "id": "hub-eval",
-                "label": "Validación Empírica & Experimentos",
+                "label": "Empirical Validation & Experiments",
                 "group": "eval",
                 "color": "#a855f7",
                 "size": 7.0,
-                "category": "Metrología",
-                "badge": "PROTOCOLO POC",
-                "desc": "Diseño experimental, métricas de éxito y contrastes empíricos.",
-                "rhetorical_question": "¿Cómo se validarán cuantitativamente las hipótesis del trabajo?",
-                "paragraph_text": "Plan experimental en experiments/.",
-                "metrics": "Pendiente",
-                "novelty_claim": "Criterios de éxito reproducibles.",
+                "category": "Metrology",
+                "badge": "POC PROTOCOL",
+                "desc": "Experimental design, success metrics and empirical contrasts.",
+                "rhetorical_question": "How will the work's hypotheses be validated quantitatively?",
+                "paragraph_text": "Experimental plan in experiments/.",
+                "metrics": "Pending",
+                "novelty_claim": "Reproducible success criteria.",
                 "thesis_ref": "experiments/",
                 "pdf_page": 5,
-                "section_ref": "Sección 4 (Experimental Setup)",
+                "section_ref": "Section 4 (Experimental Setup)",
                 "paper_blocks": ["experimental-setup.es-preamble", "results-and-discussion.rd-general-task"]
             }
         ],
         "links": [
-            {"source": "core-project", "target": "hub-problem", "label": "aborda", "value": 3.0},
-            {"source": "core-project", "target": "hub-sota", "label": "supera", "value": 3.0},
-            {"source": "core-project", "target": "hub-novelty", "label": "implementa", "value": 4.0},
-            {"source": "core-project", "target": "hub-eval", "label": "valida con", "value": 3.5}
+            {"source": "core-project", "target": "hub-problem", "label": "addresses", "value": 3.0},
+            {"source": "core-project", "target": "hub-sota", "label": "surpasses", "value": 3.0},
+            {"source": "core-project", "target": "hub-novelty", "label": "implements", "value": 4.0},
+            {"source": "core-project", "target": "hub-eval", "label": "validates with", "value": 3.5}
         ]
     }
 
 
-def build_novelty_viewer_html(root_path: Path | None = None) -> str:
+def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -> str:
     """Generate the full responsive 3D WebGL viewer for the novelty graph,
-    matching the exact style, typography, libraries, and constellation aesthetics of SOTA Atlas."""
-    data = build_novelty_graph(root_path)
-    graph_json = json.dumps(data, ensure_ascii=False)
-    graph_title = html.escape(str(data.get("title", "Grafo 3D de Novedad e Ideas del Manuscrito")))
+    matching the exact style, typography, libraries, and constellation aesthetics of SOTA Atlas.
+
+    English, or Spanish with ``lang="es"``: the page's labels and the graph's
+    display fields go through ``localize`` (the graph's ids and links do not).
+    """
+    data = localize.localize(build_novelty_graph(root_path), lang, NOVELTY_FIELDS)
+    page_lang = "es" if lang in localize.LANGUAGES else "en"
+    # Escaped so the JSON can never close the page's <script>.
+    graph_json = (json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
+                  .replace(">", "\\u003e").replace("&", "\\u0026"))
+    graph_title = html.escape(str(data.get("title") or localize.translate("3D Graph of the Manuscript's Novelty and Ideas", lang)))
     graph_subtitle = html.escape(f"{data.get('target_journal', '')} · {data.get('project', '')}")
-    core_label = json.dumps(str(data.get("project") or "Proyecto"), ensure_ascii=False)
+    core_label = json.dumps(str(data.get("project") or localize.translate("Project", lang)), ensure_ascii=False)
+    # Every label of the page, translated once; the f-string below only
+    # indexes these (3.11 f-strings take no backslashes or nested quotes).
+    _html = [html.escape(localize.translate(text, lang)) for text in (
+        "Drag with the mouse to rotate (smooth orbit), wheel for a sensitive 3D zoom, right click to pan. Click any node to inspect its evidence and paragraphs. Use the colour chips to filter by the 8 key dimensions.",
+        "8 Key Dimensions:",
+        "Links:",
+        "overall architecture",
+        "claimed novelty",
+        "closes a gap",
+        "experimental evidence",
+        "comparative metrics",
+        "Move the camera closer",
+        "Move the camera away",
+        "Reset to the centred view",
+        "Pause or resume the camera's smooth rotation",
+        "⏸️ Pause rotation",
+        "Switch what the mouse wheel does",
+        "🖱️ Wheel: 3D Zoom",
+        "🔍 Search a node, metric or paragraph...",
+        "Category",
+        "✕ close",
+        "Node Name",
+        "Detailed description of the node and its role in the research.",
+        "📜 Excerpt of the Manuscript Paragraph (LaTeX)",
+        "❓ Rhetorical Question It Answers",
+        "🎯 Answer to the Novelty (Elsevier BSPC)",
+        "⚡ Quantitative Metric / Fact",
+        "📖 Grounding in the Thesis",
+        "📑 Canonical Blocks and Location",
+        "📄 Go to this Section in the PDF Viewer",
+        "p. 1",
+    )]
+    labels_json = json.dumps({
+        "pause": localize.translate("⏸️ Pause rotation", lang),
+        "resume": localize.translate("▶️ Resume rotation", lang),
+        "wheelZoom": localize.translate("🖱️ Wheel: 3D Zoom", lang),
+        "wheelPage": localize.translate("📜 Wheel: Page Scroll", lang),
+        "thesis": localize.translate("Master's Thesis", lang),
+        "pageShort": localize.translate("p.", lang),
+        "manuscript": localize.translate("Manuscript", lang),
+        "location": localize.translate("Location in the document: page", lang),
+        "gApp": localize.translate("1. Applications", lang),
+        "gProblem": localize.translate("2. Central Problem", lang),
+        "gSota": localize.translate("3. Nearby SOTA Ideas", lang),
+        "gNovelty": localize.translate("4. Novelty", lang),
+        "gDataset": localize.translate("5. Datasets Tested", lang),
+        "gEval": localize.translate("6. Metrics & Comparison", lang),
+        "gConclusion": localize.translate("7. Conclusions", lang),
+        "gFuture": localize.translate("8. Future Work", lang),
+    }, ensure_ascii=False).replace("<", "\\u003c")
     
     return f"""<!DOCTYPE html>
-<html lang="es">
+<html lang="{page_lang}">
 <head>
   <meta charset="utf-8">
   <title>{graph_title}</title>
@@ -432,20 +500,20 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
     <span>🕸️ {graph_title}</span>
     <small>{graph_subtitle}</small>
   </h1>
-  <div id="panel">Arrastra con el ratón para rotar (órbita suave), rueda para zoom 3D sensible, clic derecho para desplazar. Clic en cualquier nodo para inspeccionar evidencia y párrafos. Usa los chips de colores para filtrar por las 8 dimensiones clave.</div>
+  <div id="panel">{_html[0]}</div>
 
   <!-- Legend & Color Grouping Chips (Atlas Style) -->
-  <div id="famlegend"><em>8 Dimensiones Clave:</em> <span id="famchips"></span></div>
-  <div id="rellegend"><em>Enlaces:</em> <span class="dot" style="border-color:#38bdf8"></span>arquitectura global <span class="dot" style="border-color:#10b981"></span>novedad vendida <span class="dot" style="border-color:#f43f5e"></span>resuelve brecha <span class="dot" style="border-color:#a855f7"></span>evidencia experimental <span class="dot" style="border-color:#eab308"></span>métricas comparativas</div>
+  <div id="famlegend"><em>{_html[1]}</em> <span id="famchips"></span></div>
+  <div id="rellegend"><em>{_html[2]}</em> <span class="dot" style="border-color:#38bdf8"></span>{_html[3]} <span class="dot" style="border-color:#10b981"></span>{_html[4]} <span class="dot" style="border-color:#f43f5e"></span>{_html[5]} <span class="dot" style="border-color:#a855f7"></span>{_html[6]} <span class="dot" style="border-color:#eab308"></span>{_html[7]}</div>
 
   <!-- Toolbar Controls (Atlas Style) -->
   <div id="toolbar">
-    <button id="zoomin" title="Acercar cámara">🔍 Zoom +</button>
-    <button id="zoomout" title="Alejar cámara">🔍 Zoom −</button>
-    <button id="zoomreset" title="Restablecer vista centrada">↺ Reset</button>
-    <button id="btnAutoRotate" class="active" title="Pausar o reanudar giro suave de la cámara">⏸️ Pausar giro</button>
-    <button id="btnWheelMode" title="Alternar función de la rueda del ratón">🖱️ Rueda: Zoom 3D</button>
-    <input type="text" id="nodeSearchInput" placeholder="🔍 Buscar nodo, métrica o párrafo..." oninput="searchNodes(this.value)">
+    <button id="zoomin" title="{_html[8]}">🔍 Zoom +</button>
+    <button id="zoomout" title="{_html[9]}">🔍 Zoom −</button>
+    <button id="zoomreset" title="{_html[10]}">↺ Reset</button>
+    <button id="btnAutoRotate" class="active" title="{_html[11]}">{_html[12]}</button>
+    <button id="btnWheelMode" title="{_html[13]}">{_html[14]}</button>
+    <input type="text" id="nodeSearchInput" placeholder="{_html[15]}" oninput="searchNodes(this.value)">
   </div>
 
   <!-- Sky Canvas Container -->
@@ -455,57 +523,58 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
     <!-- Side Inspector Drawer / Modal -->
     <aside class="inspector-card" id="inspectorCard">
       <div class="inspector-card__header">
-        <span class="inspector-badge" id="inspBadge">Categoría</span>
-        <button class="inspector-close" onclick="closeInspector()">✕ cerrar</button>
+        <span class="inspector-badge" id="inspBadge">{_html[16]}</span>
+        <button class="inspector-close" onclick="closeInspector()">{_html[17]}</button>
       </div>
-      <div class="inspector-title" id="inspTitle">Nombre del Nodo</div>
-      <p class="inspector-desc" id="inspDesc">Descripción detallada del nodo y su rol en la investigación.</p>
+      <div class="inspector-title" id="inspTitle">{_html[18]}</div>
+      <p class="inspector-desc" id="inspDesc">{_html[19]}</p>
       
-      <!-- Extracto del Párrafo del Manuscrito -->
+      <!-- Excerpt of the manuscript paragraph -->
       <div id="inspParagraphBox" style="display: none; margin-bottom: 10px;">
-        <strong style="font-size: 11px; text-transform: uppercase; color: #cbd5e1; letter-spacing: 0.04em;">📜 Extracto del Párrafo del Manuscrito (LaTeX)</strong>
+        <strong style="font-size: 11px; text-transform: uppercase; color: #cbd5e1; letter-spacing: 0.04em;">{_html[20]}</strong>
         <div class="quote" id="inspParagraphText">—</div>
       </div>
 
-      <!-- Pregunta Retórica que Responde -->
+      <!-- Rhetorical question it answers -->
       <div class="inspector-meta-block" id="inspQuestionBox">
-        <strong>❓ Pregunta Retórica que Responde</strong>
+        <strong>{_html[21]}</strong>
         <em id="inspQuestion">—</em>
       </div>
 
-      <!-- Respuesta a la Novedad para Elsevier -->
+      <!-- Answer to the novelty -->
       <div class="inspector-meta-block">
-        <strong>🎯 Respuesta a la Novedad (Elsevier BSPC)</strong>
+        <strong>{_html[22]}</strong>
         <span id="inspNovelty">—</span>
       </div>
 
-      <!-- Métrica Cuantitativa -->
+      <!-- Quantitative metric -->
       <div class="inspector-meta-block">
-        <strong>⚡ Métrica / Hecho Cuantitativo</strong>
+        <strong>{_html[23]}</strong>
         <span id="inspMetrics">—</span>
       </div>
 
-      <!-- Sustento en la Tesis de Julián -->
+      <!-- Grounding in the thesis -->
       <div class="inspector-meta-block">
-        <strong>📖 Sustento en la Tesis de Maestría de Julián</strong>
+        <strong>{_html[24]}</strong>
         <span id="inspThesis">—</span>
       </div>
 
-      <!-- Bloques Canónicos y Ubicación -->
+      <!-- Canonical blocks and location -->
       <div class="inspector-meta-block">
-        <strong>📑 Bloques Canónicos y Ubicación</strong>
+        <strong>{_html[25]}</strong>
         <div style="font-size: 11px; color: #94a3b8; margin-bottom: 4px;" id="inspLocation">—</div>
         <div class="inspector-blocks" id="inspBlocks"></div>
       </div>
 
       <button class="btn-action-jump" id="btnJumpPdf" onclick="jumpToPaperPreview()">
-        📄 Ir a esta Sección en el Visor PDF (<span id="inspPdfPage">Pág. 1</span>) ↗
+        {_html[26]} (<span id="inspPdfPage">{_html[27]}</span>) ↗
       </button>
     </aside>
   </div>
 
   <script>
     const graphData = {graph_json};
+    const L = {labels_json};
 
     let isRotating = true;
     let selectedNode = null;
@@ -633,7 +702,7 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
         controls.autoRotate = isRotating;
       }}
       const btn = document.getElementById('btnAutoRotate');
-      btn.innerHTML = isRotating ? '⏸️ Pausar giro' : '▶️ Reanudar giro';
+      btn.textContent = isRotating ? L.pause : L.resume;
       btn.classList.toggle('active', isRotating);
     }}
     document.getElementById('btnAutoRotate').addEventListener('click', toggleRotate);
@@ -641,7 +710,7 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
     function toggleWheelMode() {{
       wheelMode = (wheelMode === 'zoom') ? 'page' : 'zoom';
       const btn = document.getElementById('btnWheelMode');
-      btn.innerHTML = wheelMode === 'zoom' ? '🖱️ Rueda: Zoom 3D' : '📜 Rueda: Scroll Página';
+      btn.textContent = wheelMode === 'zoom' ? L.wheelZoom : L.wheelPage;
       btn.classList.toggle('active', wheelMode === 'page');
     }}
     document.getElementById('btnWheelMode').addEventListener('click', toggleWheelMode);
@@ -670,7 +739,7 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
       isRotating = true;
       const controls = Graph.controls();
       if (controls) controls.autoRotate = true;
-      document.getElementById('btnAutoRotate').innerHTML = '⏸️ Pausar giro';
+      document.getElementById('btnAutoRotate').textContent = L.pause;
       document.getElementById('btnAutoRotate').classList.add('active');
       activeGroup = null;
       document.querySelectorAll('.famchip').forEach(c => {{
@@ -708,7 +777,7 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
       document.getElementById('inspDesc').textContent = node.desc;
       document.getElementById('inspMetrics').textContent = node.metrics || '—';
       document.getElementById('inspNovelty').textContent = node.novelty_claim || '—';
-      document.getElementById('inspThesis').textContent = node.thesis_ref || 'Tesis de Maestría';
+      document.getElementById('inspThesis').textContent = node.thesis_ref || L.thesis;
 
       const paraBox = document.getElementById('inspParagraphBox');
       const paraText = document.getElementById('inspParagraphText');
@@ -729,8 +798,8 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
       }}
 
       targetPdfPage = node.pdf_page || 1;
-      document.getElementById('inspPdfPage').textContent = `Pág. ${{targetPdfPage}}`;
-      document.getElementById('inspLocation').textContent = `${{node.section_ref || 'Manuscrito'}} · Ubicación en documento: Página ${{targetPdfPage}}`;
+      document.getElementById('inspPdfPage').textContent = `${{L.pageShort}} ${{targetPdfPage}}`;
+      document.getElementById('inspLocation').textContent = `${{node.section_ref || L.manuscript}} · ${{L.location}} ${{targetPdfPage}}`;
 
       const blocksContainer = document.getElementById('inspBlocks');
       blocksContainer.innerHTML = '';
@@ -754,14 +823,14 @@ def build_novelty_viewer_html(root_path: Path | None = None) -> str:
     // Build Family Legend Chips (Exact 8 Pillars matching the User Specification)
     const GROUPS_META = [
       {{ id: 'core', label: {core_label}, color: '#38bdf8' }},
-      {{ id: 'app', label: '1. Aplicaciones', color: '#0ea5e9' }},
-      {{ id: 'problem', label: '2. Problema Central', color: '#f43f5e' }},
-      {{ id: 'sota', label: '3. Ideas SOTA cercanas', color: '#fb7185' }},
-      {{ id: 'novelty', label: '4. Novedad', color: '#10b981' }},
-      {{ id: 'dataset', label: '5. Datasets Probados', color: '#a855f7' }},
-      {{ id: 'eval', label: '6. Métricas & Comparación', color: '#eab308' }},
-      {{ id: 'conclusion', label: '7. Conclusiones', color: '#06b6d4' }},
-      {{ id: 'future', label: '8. Trabajo Futuro', color: '#ec4899' }}
+      {{ id: 'app', label: L.gApp, color: '#0ea5e9' }},
+      {{ id: 'problem', label: L.gProblem, color: '#f43f5e' }},
+      {{ id: 'sota', label: L.gSota, color: '#fb7185' }},
+      {{ id: 'novelty', label: L.gNovelty, color: '#10b981' }},
+      {{ id: 'dataset', label: L.gDataset, color: '#a855f7' }},
+      {{ id: 'eval', label: L.gEval, color: '#eab308' }},
+      {{ id: 'conclusion', label: L.gConclusion, color: '#06b6d4' }},
+      {{ id: 'future', label: L.gFuture, color: '#ec4899' }}
     ];
 
     const chipsContainer = document.getElementById('famchips');

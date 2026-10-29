@@ -1085,7 +1085,7 @@ def get_experiments_view(root: Path | str) -> dict[str, Any]:
     try:
         view["local_environment"] = local_environment(root)
     except Exception:  # noqa: BLE001 - a failing probe is an empty table, never an error
-        view["local_environment"] = {"workspace": None, "targets": [], "note": "No se pudo sondear."}
+        view["local_environment"] = {"workspace": None, "targets": [], "note": "Could not be probed."}
     try:
         view["run_options"] = run_options(root, view)
     except Exception:  # noqa: BLE001

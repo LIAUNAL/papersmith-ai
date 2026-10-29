@@ -33,12 +33,19 @@ TURN = {
 
 def node(body: str) -> str:
     """Run experiments-tutor.js in node with stub DOM pieces, then ``body``."""
+    i18n_js = SCRIPT.parent / "i18n.js"
+    en_js = SCRIPT.parent / "i18n" / "en.js"
+    es_js = SCRIPT.parent / "i18n" / "es.js"
     script = (
         "const fs=require('fs');const els={};const calls=[];"
-        "global.window={mathRichText:(t)=>'<p>'+String(t).replace(/</g,'&lt;')+'</p>',"
+        "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}},"
+        "mathRichText:(t)=>'<p>'+String(t).replace(/</g,'&lt;')+'</p>',"
         "sendToCli:async(...a)=>{calls.push(a);return true;}};"
         "global.document={addEventListener(){},querySelectorAll:()=>[],"
-        "getElementById:(id)=>(els[id]=els[id]||{dataset:{},value:'',textContent:'',innerHTML:''})};"
+        "getElementById:(id)=>(els[id]=els[id]||{dataset:{},value:'',textContent:'',innerHTML:'',scrollTop:0,scrollHeight:0})};"
+        f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+        f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+        f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
         f"eval(fs.readFileSync({json.dumps(str(SCRIPT))},'utf8'));"
         + body
     )
@@ -80,7 +87,7 @@ class PageTests(unittest.TestCase):
             self.assertIn(f'data-xtutor-mode="{mode}"', card)
         # The math panel binds every [data-tutor-mode]; these must not be among them.
         self.assertNotIn("data-tutor-mode", card)
-        self.assertIn("Tutor de experimentos", card)
+        self.assertIn('data-i18n="xtutor.title"', card)
 
     def test_opening_the_tab_loads_the_thread(self) -> None:
         start = PAGE.index("if (tabId === 'experiments') {")

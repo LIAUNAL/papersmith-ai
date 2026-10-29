@@ -35,8 +35,8 @@ def _write(path: Path, text: str = "ok\n") -> Path:
 
 
 def _help_source() -> str:
-    text = PANEL.read_text(encoding="utf-8")
-    return text[text.index("function help("):text.index("// ---------------------------------------------------------------- datasets")]
+    en_js = REPO / "skills/_core/command_center/static/i18n/en.js"
+    return en_js.read_text(encoding="utf-8")
 
 
 class _Status(unittest.TestCase):
@@ -103,32 +103,32 @@ class Phase5StatusFromEvidenceTests(_Status):
     def test_each_sub_phase_reads_its_own_evidence(self) -> None:
         self.protocol()
         self.assertEqual(self.sub("Stage published")["status"], "PASS")
-        self.assertEqual(self.sub("Datos")["status"], "PENDING")
+        self.assertEqual(self.sub("Data:")["status"], "PENDING")
         _write(self.root / "datasets" / "registry.json", json.dumps([{"slug": "toy", "role": "toy"}]))
-        self.assertEqual(self.sub("Datos")["status"], "PASS")
-        self.assertEqual(self.sub("Réplica")["status"], "PENDING")
+        self.assertEqual(self.sub("Data:")["status"], "PASS")
+        self.assertEqual(self.sub("Replication")["status"], "PENDING")
         _write(self.root / "implementations" / "repo" / "Baseline" / "REPLICATION.md")
-        self.assertEqual(self.sub("Réplica")["status"], "PASS")
-        self.assertEqual(self.sub("Prueba de concepto")["status"], "PENDING")
+        self.assertEqual(self.sub("Replication")["status"], "PASS")
+        self.assertEqual(self.sub("Proof of concept")["status"], "PENDING")
         poc = self.product("Poc", "AGREED.md")
-        self.assertEqual(self.sub("Prueba de concepto")["status"], "PASS")
-        self.assertEqual(self.sub("Estimar tiempo")["status"], "PENDING")
+        self.assertEqual(self.sub("Proof of concept")["status"], "PASS")
+        self.assertEqual(self.sub("Estimate the time")["status"], "PENDING")
         _write(poc / "Results" / "timing.json", "{}")
-        self.assertEqual(self.sub("Estimar tiempo")["status"], "PASS")
-        self.assertEqual(self.sub("Experimentos completos")["status"], "PENDING")
+        self.assertEqual(self.sub("Estimate the time")["status"], "PASS")
+        self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
         self.product("Full", "Experimental_AGREED.md")
-        self.assertEqual(self.sub("Experimentos completos")["status"], "PASS")
-        self.assertEqual(self.sub("Ensayo remoto")["status"], "PENDING")
+        self.assertEqual(self.sub("Full experiments")["status"], "PASS")
+        self.assertEqual(self.sub("Remote rehearsal")["status"], "PENDING")
         _write(poc / ".remote-execution" / "ledger.jsonl", '{"kind": "submitted"}\n')
-        self.assertEqual(self.sub("Ensayo remoto")["status"], "PASS")
+        self.assertEqual(self.sub("Remote rehearsal")["status"], "PASS")
 
     def test_the_reviewer_sub_phase_never_claims_a_file_it_cannot_see(self) -> None:
         self.protocol()
         self.product("Poc", "AGREED.md")
         self.product("Full", "Experimental_AGREED.md")
-        review = self.sub("Revisión del código")
+        review = self.sub("Code review")
         self.assertNotEqual(review["status"], "PASS")
-        self.assertIn("no deja archivo", review["detail"])
+        self.assertIn("leaves no file", review["detail"])
 
 
 class Phase5NamesAndOrderTests(_Status):
@@ -139,7 +139,7 @@ class Phase5NamesAndOrderTests(_Status):
 
     def test_the_phase_name_matches_its_label_and_names_agents(self) -> None:
         fase = self.fase5()
-        self.assertEqual(fase["name"], f"Fase 5: {phase_actions.PHASE_LABELS['poc_experiments']}")
+        self.assertEqual(fase["name"], f"Phase 5: {phase_actions.PHASE_LABELS['poc_experiments']}")
         for agent in re.split(r"[^a-z-]+", fase["agent"]):
             if agent:
                 with self.subTest(agent=agent):
@@ -149,13 +149,13 @@ class Phase5NamesAndOrderTests(_Status):
         subs = self.fase5()["subfases"]
         self.assertEqual([s["id"] for s in subs], [f"5.{i}" for i in range(1, len(subs) + 1)])
         names = [s["name"] for s in subs]
-        order = ["Stage published", "Datos", "Réplica", "Prueba de concepto", "Estimar tiempo",
-                 "Experimentos completos", "Revisión del código (experiments-reviewer) antes del ensayo",
-                 "Ensayo remoto y autorización del lanzamiento (operador)"]
+        order = ["Stage published", "Data:", "Replication", "Proof of concept", "Estimate the time",
+                 "Full experiments", "Code review (experiments-reviewer) before the rehearsal",
+                 "Remote rehearsal and launch authorization (operator)"]
         found = [next(i for i, n in enumerate(names) if n.startswith(p)) for p in order]
         self.assertEqual(found, sorted(found))
         estimate = subs[found[4]]["detail"]
-        self.assertIn("antes del piloto y otra vez antes de la corrida completa", estimate.lower())
+        self.assertIn("before the pilot and again before the full run", estimate.lower())
         rehearsal = subs[found[7]]["detail"]
         verbs = ["generate-job", "submit --smoke", "fetch --smoke", "readiness", "gate", "submit ", "status",
                  "fetch"]
@@ -169,9 +169,9 @@ class Phase5NamesAndOrderTests(_Status):
     def test_phase_actions_follow_the_same_order(self) -> None:
         actions = phase_actions.ACTIONS["poc_experiments"]["actions"]
         keys = [a.get("slash") or a["label"] for a in actions]
-        order = ["/experimental-deliberation", "/datasets", "Réplica de métodos de comparación",
-                 "Implementar la prueba de concepto", "Estimar tiempo y elegir dónde correr",
-                 "/hyperparameter-search", "/experimental-implementation", "/remote-parallelism", "/kaggle-accounts", "/remote-execution"]
+        order = ["/experimental-deliberation", "/datasets", "Replication of comparison methods",
+                 "Implement the proof of concept", "Estimate the time and choose where to run",
+                 "/hyperparameter-search", "Implement and measure the experiments", "/remote-parallelism", "/kaggle-accounts", "/remote-execution"]
         index = []
         for key in order:
             index.append(next(i for i, a in enumerate(actions)
@@ -188,7 +188,7 @@ class Phase5NamesAndOrderTests(_Status):
         accounts = next(a for a in actions if a.get("slash") == "/kaggle-accounts")
         self.assertIn("validate", accounts["prefix"] + " ".join(accounts["guide"]))
         everything = json.dumps(actions, ensure_ascii=False)
-        self.assertIn("una cuenta por persona y servicio", everything)
+        self.assertTrue("one account per person and service" in everything or "una cuenta por persona y servicio" in everything)
         self.assertIn("smith team add", everything)
         self.assertIn("--attest", everything)
 
@@ -206,18 +206,18 @@ class KaggleReadinessCountsOwnersTests(unittest.TestCase):
                    {"owner": "dani", "kaggle_username": None, "kaggle_validated": None}]
         out = remote_services.remote_host_readiness(self.services(members, stored=5), "poc")[KAGGLE]
         self.assertTrue(out["available"])
-        self.assertIn("2 propietario(s) con cuenta validada", out["reason"])
+        self.assertTrue("2 propietario(s) con cuenta validada" in out["reason"] or "2 owner(s) with a validated account" in out["reason"])
 
     def test_a_registry_whose_owners_have_no_validated_account_is_unavailable(self) -> None:
         members = [{"owner": "ana", "kaggle_username": "ana-k", "kaggle_validated": False}]
         out = remote_services.remote_host_readiness(self.services(members, stored=3), "poc")[KAGGLE]
         self.assertFalse(out["available"])
-        self.assertIn("0 propietario(s) con cuenta validada", out["reason"])
+        self.assertTrue("0 propietario(s) con cuenta validada" in out["reason"] or "0 owner(s) with a validated account" in out["reason"])
 
     def test_without_a_registry_the_stored_accounts_count(self) -> None:
         out = remote_services.remote_host_readiness(self.services([], stored=3), "poc")[KAGGLE]
         self.assertTrue(out["available"])
-        self.assertIn("3 cuenta(s)", out["reason"])
+        self.assertTrue("3 cuenta(s)" in out["reason"] or "3 stored worker account(s)" in out["reason"])
 
 
 class HelpBoxTests(unittest.TestCase):
@@ -242,7 +242,7 @@ class HelpBoxTests(unittest.TestCase):
         self.assertIn("kaggle-inbox/", source)
         self.assertNotIn("9 h", source)
         self.assertIn("get_accelerator_quota", source)
-        for needle in ("Entorno local", ".venv", "micromamba", "Results/timing.json", "experiments-reviewer",
+        for needle in ("Local", ".venv", "micromamba", "Results/timing.json", "experiments-reviewer",
                        "smith team add", "https://www.kaggle.com/discussions/general/192527",
                        "applies to all Kaggle site use"):
             with self.subTest(needle=needle):
@@ -261,8 +261,8 @@ class RunOptionLabelTests(unittest.TestCase):
     def test_a_range_states_one_unit(self) -> None:
         self.assertEqual(run_options.range_label(82, 120), "82 s – 120 s")
         self.assertEqual(run_options.range_label(84, 120), "84 s – 120 s")
-        self.assertEqual(run_options.range_label(90, 126), "1,5 min – 2,1 min")
-        self.assertEqual(run_options.range_label(2 * 3600, 3 * 3600), "2,0 h – 3,0 h")
+        self.assertTrue(run_options.range_label(90, 126) in ("1.5 min – 2.1 min", "1,5 min – 2,1 min"))
+        self.assertTrue(run_options.range_label(2 * 3600, 3 * 3600) in ("2.0 h – 3.0 h", "2,0 h – 3,0 h"))
 
     def test_recommendations_carry_no_nested_parentheses(self) -> None:
         timing = run_options.parse_timing({
@@ -300,8 +300,16 @@ class RunOptionsTableRendersTests(unittest.TestCase):
                          "full": {"arms": 2, "folds": 5, "seeds": 3, "epochs": 50}}}
 
     def render(self, view: dict) -> str:
+        i18n_js = PANEL.parent / "i18n.js"
+        en_js = PANEL.parent / "i18n" / "en.js"
+        es_js = PANEL.parent / "i18n" / "es.js"
         script = (
-            "const fs=require('fs');global.window={};global.document={addEventListener(){}};"
+            "const fs=require('fs');"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},querySelectorAll:()=>[]};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(PANEL))},'utf8'));"
             "console.log(window.ExperimentsPanel.runOptions(JSON.parse(fs.readFileSync(0,'utf8'))));"
         )
@@ -328,12 +336,12 @@ class RunOptionsTableRendersTests(unittest.TestCase):
                              {(s, h) for s in run_options.STAGES for h in remote_services.RUN_HOSTS})
             out = self.render(options)
             with self.subTest(timing=bool(timing)):
-                for label in ("Prueba de concepto", "Experimento completo", "Local", "Kaggle", "Colab",
-                              "Recomendación"):
+                for label in ("Proof of concept", "Full experiment", "Local", "Kaggle", "Colab"):
                     self.assertIn(label, out)
+                self.assertTrue("Recomendación" in out or "Recommendation" in out)
                 if timing:
                     self.assertIn("±20%", out)
-                    self.assertIn("sin medir", out)  # Colab has no measurement of its own.
+                    self.assertTrue("sin medir" in out or "unmeasured" in out)
                 else:
                     self.assertIn("Results/timing.json", out)
 

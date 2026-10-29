@@ -95,6 +95,16 @@ _FALLBACK_DOCTRINE = (
     "object only."
 )
 
+#: Appended to every profile's system prompt: the reader may write in Spanish
+#: or English, and the tutor answers in kind, while what it hands to other
+#: agents or tools stays English.
+REPLY_LANGUAGE_RULE = (
+    "Reply to the human in the language they write in (Spanish or English). "
+    "Everything else stays English regardless of the conversation language: skills, "
+    "agent definitions, delegations and messages between agents, tool inputs, and "
+    "every generated artifact."
+)
+
 _lock = threading.Lock()
 #: The running turn's deny rules, set by ``converse`` for its profile.
 _deny: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar("tutor_deny", default=())
@@ -230,7 +240,7 @@ def system_prompt(root: Path, profile: Profile | None = None) -> str:
         except OSError:
             continue
     doctrine = "\n\n---\n\n".join(parts) if parts else profile.fallback
-    return doctrine + "\n\n---\n\n" + profile.headless
+    return doctrine + "\n\n---\n\n" + profile.headless + "\n\n" + REPLY_LANGUAGE_RULE
 
 
 def _paper(root: Path) -> dict[str, Any]:
@@ -319,6 +329,23 @@ def _run_agent(root: Path, system: str, prompt: str, images: list[Path],
             raise TutorError(f"claude refused: {str(payload.get('result'))[:300]}")
         turn = payload.get("structured_output") or extract_turn(str(payload.get("result") or ""))
         return turn, "claude"
+    agy = find_executable("agy") or find_executable("antigravity")
+    if agy:
+        full_prompt = f"System instructions:\n{system}\n\nTask:\n{prompt}"
+        schema_json = json.dumps(schema or TURN_SCHEMA)
+        argv = [agy, "--output-format", "json", "--json-schema", schema_json, "-p", full_prompt]
+        done = subprocess.run(argv, cwd=str(root), env=session_env("antigravity", root),
+                              capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                              timeout=TIMEOUT_SECONDS, check=False)
+        try:
+            payload = json.loads(done.stdout)
+        except ValueError as error:
+            raise TutorError(f"agy answered no JSON (exit {done.returncode}): "
+                             f"{(done.stderr or done.stdout)[:300]}") from error
+        if not isinstance(payload, dict):
+            raise TutorError("agy answered JSON that is not a result object")
+        turn = payload.get("structured_output") or extract_turn(str(payload.get("response") or ""))
+        return turn, "antigravity"
     pi = find_executable("pi")
     if pi:
         argv = [pi, "-p", "--no-session", "--no-tools", "--system-prompt", system,
@@ -327,7 +354,7 @@ def _run_agent(root: Path, system: str, prompt: str, images: list[Path],
                               capture_output=True, text=True, stdin=subprocess.DEVNULL,
                               timeout=TIMEOUT_SECONDS, check=False)
         return extract_turn(done.stdout), "pi"
-    raise TutorError("no agent CLI found: install Claude Code (claude) or Pi (pi)")
+    raise TutorError("no agent CLI found: install Claude Code (claude), Antigravity (agy) or Pi (pi)")
 
 
 def _valid(turn: Any) -> dict[str, Any]:
@@ -408,4 +435,4 @@ MATH = Profile(
 
 __all__ = ["TutorError", "save_image", "image_path", "image_type", "load_thread",
            "reset_thread", "run_turn", "run_agent", "extract_turn", "claude_argv",
-           "TURN_SCHEMA", "MODES", "Profile", "MATH", "converse"]
+           "TURN_SCHEMA", "MODES", "Profile", "MATH", "REPLY_LANGUAGE_RULE", "converse"]

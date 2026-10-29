@@ -223,7 +223,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.40.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.41.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -601,7 +601,7 @@ only documented, and it is enabled manually.
 | Claude Code | wired | wired (`.claude/commands`) | wired (`.claude/agents`) | opt-in (ver [guard-hooks](docs/guard-hooks.md)) |
 | OpenCode | wired | wired (`.opencode/commands`) | wired (`.opencode/agents`) | wired (`.opencode/plugins/refuse-offpath-push.js`) |
 | Pi | wired | wired (`.pi/prompts`) | wired (`.pi/agents`) | wired (`.pi/extensions/refuse-offpath-push.js`) |
-| Google Antigravity | wired | unsupported — vía skills (workflows deprecados) | wired (`.agents/agents`) | unsupported |
+| Google Antigravity | wired | unsupported — via skills (workflows deprecated) | wired (`.agents/agents`) | unsupported |
 <!-- harness-capabilities:end -->
 
 When it finishes, `init` and `upgrade` print one line per active harness with

@@ -152,18 +152,18 @@ class ColabRowTests(_Env):
 
     def test_the_mcp_row_says_registered_or_not(self) -> None:
         rows = self.rows()
-        self.assertEqual(rows["colab_mcp"]["badge"], "no registrado")
+        self.assertEqual(rows["colab_mcp"]["badge"], "not registered")
         self.assertNotEqual(rows["colab_mcp"]["state"], "active")
         self.register_colab_mcp()
         rows = self.rows()
         self.assertEqual(rows["colab_mcp"]["state"], "active")
-        self.assertEqual(rows["colab_mcp"]["badge"], "registrado")
+        self.assertEqual(rows["colab_mcp"]["badge"], "registered")
         self.assertIn(".mcp.json", rows["colab_mcp"]["detail"])
-        self.assertIn("navegador", rows["colab_mcp"]["detail"])
+        self.assertIn("browser", rows["colab_mcp"]["detail"])
 
     def test_a_kaggle_registration_is_not_a_colab_one(self) -> None:
         _write(self.root / ".mcp.json", json.dumps({"mcpServers": {"kaggle": {"type": "http", "url": "x"}}}))
-        self.assertEqual(self.rows()["colab_mcp"]["badge"], "no registrado")
+        self.assertEqual(self.rows()["colab_mcp"]["badge"], "not registered")
 
     def test_without_a_team_file_the_team_rows_are_inactive(self) -> None:
         rows = self.rows()
@@ -284,7 +284,7 @@ class TeamTableTests(_Env):
     def test_the_empty_state_names_the_add_command(self) -> None:
         team = self.view()["team"]
         self.assertEqual(team["members"], [])
-        self.assertTrue(team["add_command"].startswith('smith team add --owner <slug> --name "<Nombre>"'))
+        self.assertTrue(team["add_command"].startswith('smith team add --owner <slug> --name "<Name>"'))
         self.assertIn("--attest", team["add_command"])
 
 
@@ -312,8 +312,16 @@ class ColabStatusTests(_Env):
 @unittest.skipUnless(NODE, "node is required to run the panel renderer")
 class RenderTests(_Env):
     def render(self, view: dict) -> str:
+        i18n_js = SCRIPT_PATH.parent / "i18n.js"
+        en_js = SCRIPT_PATH.parent / "i18n" / "en.js"
+        es_js = SCRIPT_PATH.parent / "i18n" / "es.js"
         script = (
-            "const fs=require('fs');global.window={};global.document={addEventListener(){}};"
+            "const fs=require('fs');"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},querySelectorAll:()=>[]};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(SCRIPT_PATH))},'utf8'));"
             "console.log(window.ExperimentsPanel.render(JSON.parse(fs.readFileSync(0,'utf8'))));"
         )
@@ -379,7 +387,7 @@ class RenderTests(_Env):
 
     def test_the_team_table_renders_members_and_the_empty_state(self) -> None:
         out = self.render(experiments_view.get_experiments_view(self.root))
-        self.assertIn("smith team add --owner &lt;slug&gt; --name &quot;&lt;Nombre&gt;&quot; --attest", out)
+        self.assertIn("smith team add --owner &lt;slug&gt; --name &quot;&lt;Name&gt;&quot; --attest", out)
         self.standard_team()
         out = self.render(experiments_view.get_experiments_view(self.root))
         team = out[out.index("Equipo (una cuenta por persona y servicio)"):out.index("Ayuda: lanzar")]

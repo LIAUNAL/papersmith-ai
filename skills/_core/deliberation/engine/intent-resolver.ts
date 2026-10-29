@@ -55,7 +55,7 @@ export function resolveIntent(instruction:string):ResolvedIntent {
  const semanticChange=intent==='MODIFY'||intent==='CONCEPTUAL_REVISION'||adaptive;
  const targetDescription=has(...DOMAIN.vocabulary.subjectTerms)?DOMAIN.vocabulary.subjectLocusDescription:fidelity.targetBlock??instruction;
  const ambiguous=intent==='AMBIGUOUS'||(intent==='DELETE'&&!destructive)||(has('reorganiza')&&!moveCopy&&intent!=='CONCEPTUAL_REVISION');
- const pendingQuestions=ambiguous?['Indicá el fragmento o alcance exacto.']:[];
+ const pendingQuestions=ambiguous?['Name the exact fragment or scope.']:[];
  const constraints:string[]=[];
  if(fidelity.targetBlock)constraints.push('Use only the supplied target block.');
  if(fidelity.replacementBlock)constraints.push('Use the supplied replacement block byte-for-byte.');

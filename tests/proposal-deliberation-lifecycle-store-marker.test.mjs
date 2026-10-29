@@ -84,8 +84,8 @@ const engineDir = process.env.ENGINE_DIR;
 const { DOMAIN } = await jiti.import(path.join(engineDir, 'domain-profile.ts'));
 const store = await jiti.import(path.join(engineDir, 'revision-lifecycle-store.ts'));
 
-// markerOwned:true o el marcador no se compara en absoluto -- sin la opcion el
-// archivo se resuelve por patrón de nombre y este test pasaría sin probar nada.
+// markerOwned:true or the marker is never compared at all -- without the option
+// the file resolves by name pattern and this test would pass proving nothing.
 const found = await store.resolveLatestManagedRevision(
 	process.env.PROJECT_ROOT, { markerOwned: true });
 process.stdout.write(JSON.stringify({
@@ -138,12 +138,12 @@ test('no core module declares the artifact marker as its own literal any more', 
 	const offenders = [];
 	for (const file of files) {
 		const source = await readFile(path.join(engineDir, file), 'utf8');
-		// Un literal VIVO, no un comentario que cuente que se borró uno: sólo cuenta
-		// si los bytes están dentro de un `Buffer.from(...)` en código, y descartando
-		// las líneas de comentario. Sin eso, la nota histórica de un arreglo se lee
-		// igual que el defecto que describe.
-		const codigo = source.split('\n').filter((l) => !l.trimStart().startsWith('//')).join('\n');
-		if (/Buffer\.from\('<!-- proposal-workspace:artifact:v1/.test(codigo)) offenders.push(file);
+		// A LIVE literal, not a comment recounting that one was removed: it only counts
+		// if the bytes sit inside a `Buffer.from(...)` in code, with comment lines
+		// discarded. Without that, a fix's historical note reads the same as the
+		// defect it describes.
+		const code = source.split('\n').filter((l) => !l.trimStart().startsWith('//')).join('\n');
+		if (/Buffer\.from\('<!-- proposal-workspace:artifact:v1/.test(code)) offenders.push(file);
 	}
 	assert.deepEqual(offenders, [],
 		`core modules restating the marker bytes: ${offenders.join(', ')}`);

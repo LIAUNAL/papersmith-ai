@@ -11,6 +11,28 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.41.0
+
+### Added
+
+- Dashboard i18n runtime: EN/ES language selector in the dashboard header (`index.html`)
+  persisting the operator's choice across reloads, with English default and Spanish
+  catalogues served from `skills/_core/command_center/static/i18n/`.
+- Repository-wide language guard (`tests/test_language_guard.py`) enforcing English
+  for documentation, code comments, tests, and framework artifacts.
+- Reply-language doctrine across all agent entrypoints (`.agents/AGENTS.md`,
+  `CLAUDE.md`, `.pi/APPEND_SYSTEM.md`), mandating that agents reply in the language the
+  user writes in, while code, artifacts, skills, and internal interactions remain in English.
+- Google Antigravity (`agy`) compatibility:
+  - Dashboard web terminal (`terminal.py`, `cli-console.js`) supports `antigravity` alongside `herdr`, `claude`, `opencode`, and `pi`.
+  - Headless Socratic tutors (`tutor.py`) run `agy --output-format json --json-schema` to enforce structured responses.
+  - Command Center AI history (`ai_transcripts.py`) natively parses Antigravity SQLite transcripts (`conversation_summaries.db`) and JSONL logs (`transcript.jsonl`).
+
+### Changed
+
+- All shipped repository documentation, README files, maintenance guides, generators,
+  and implementation/deliberation engines translated to English.
+
 ## 0.40.0
 
 ### Changed

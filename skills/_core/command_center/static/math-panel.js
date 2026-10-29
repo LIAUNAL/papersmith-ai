@@ -1,8 +1,8 @@
-/* Math panel of the "Mapa Conceptual & Modelo" tab.
+/* Math panel of the "Concept Map & Model" tab.
  *
  * Renders the paper's own LaTeX (GET /api/model/math) with the vendored KaTeX
- * as calm cards — heading, display equation, one-line "Conexión" — under a
- * lema, beside a compact "Idea y novedad" card; and hosts the Socratic tutor
+ * as calm cards — heading, display equation, one-line "Connection" — under a
+ * lema, beside a compact "Idea and novelty" card; and hosts the Socratic tutor
  * (skills/math-tutor): hand-written images are dropped, pasted or picked,
  * uploaded, and each message runs one headless turn of the `math-tutor` agent
  * (POST /api/terminal/tutor/turn) whose structured answer is rendered here.
@@ -17,8 +17,12 @@
 (function () {
   'use strict';
 
+  // The dashboard catalogue (i18n.js); a bare key where it is not loaded.
+  const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
   const HEADERS = { 'Content-Type': 'application/json', 'X-Papersmith-Terminal': '1' };
-  const LEVELS = ['sin evidencia', 'reconoce', 'explica', 'deriva', 'justifica'];
+  // Display labels of the assessment scale 0-4 (tutor.LEVELS holds the stored values).
+  const LEVELS = ['math.level.0', 'math.level.1', 'math.level.2', 'math.level.3', 'math.level.4'];
+  const level = (i) => (LEVELS[i] ? t(LEVELS[i]) : '');
   const state = { view: null, pending: [], mode: 'ask', busy: false, authorized: null };
   const $ = (id) => document.getElementById(id);
 
@@ -39,7 +43,7 @@
   }
 
   // Every formula carries its compiled form and its escaped LaTeX source; the
-  // "TeX / Compilado" toggle (data-math-view on <html>) shows one of the two.
+  // "TeX / Rendered" toggle (data-math-view on <html>) shows one of the two.
   function tex(latex, display) {
     const fence = display ? '$$' : '$';
     return `<span class="tex-dual${display ? ' tex-dual--block' : ''}"><span class="tex-dual__out">${compile(latex, display)}</span>`
@@ -51,7 +55,7 @@
     document.documentElement.dataset.mathView = source ? 'source' : 'rendered';
     document.querySelectorAll('[data-math-toggle]').forEach((b) => {
       b.setAttribute('aria-pressed', String(source));
-      b.textContent = source ? '∑ Ver compilado' : 'TeX Ver LaTeX';
+      b.textContent = source ? t('math.viewRendered') : t('math.viewSource');
     });
     try { localStorage.setItem('papersmith.mathView', source ? 'source' : 'rendered'); } catch (_) { /* private mode */ }
   }
@@ -86,31 +90,31 @@
     const contributions = (n.contributions || []).slice(0, 5)
       .map((c) => `<li>${richText(c).replace(/^<p>|<\/p>$/g, '')}</li>`).join('');
     card.innerHTML = `
-      <div class="math-label">Idea central</div>
+      <div class="math-label">${escapeHtml(t('math.centralIdea'))}</div>
       <div class="math-novelty__idea">${escapeHtml(n.central_idea || view.title || '')}</div>
-      ${n.novelty ? `<div class="math-novelty__row"><span class="math-label">Novedad</span><div>${richText(n.novelty)}${n.novelty_detail ? `<div class="math-novelty__detail">${richText(n.novelty_detail)}</div>` : ''}</div></div>` : ''}
-      ${n.problem ? `<div class="math-novelty__row"><span class="math-label">Problema</span><div>${richText(n.problem)}</div></div>` : ''}
-      ${contributions ? `<div class="math-novelty__row"><span class="math-label">Aportes</span><ul>${contributions}</ul></div>` : ''}
-      ${n.key_equation ? `<div class="math-novelty__key"><span class="math-label">Ecuación clave (${escapeHtml(n.key_equation.tag)})</span>${tex(n.key_equation.latex, true)}</div>` : ''}
-      ${!n.novelty && !n.key_equation ? '<p class="math-muted">Aún no hay propuesta publicada: la novedad aparecerá aquí cuando exista <code>proposals/research-concept-*-rNN.md</code> y su <code>.sky.json</code>.</p>' : ''}`;
+      ${n.novelty ? `<div class="math-novelty__row"><span class="math-label">${escapeHtml(t('math.novelty'))}</span><div>${richText(n.novelty)}${n.novelty_detail ? `<div class="math-novelty__detail">${richText(n.novelty_detail)}</div>` : ''}</div></div>` : ''}
+      ${n.problem ? `<div class="math-novelty__row"><span class="math-label">${escapeHtml(t('math.problem'))}</span><div>${richText(n.problem)}</div></div>` : ''}
+      ${contributions ? `<div class="math-novelty__row"><span class="math-label">${escapeHtml(t('math.contributions'))}</span><ul>${contributions}</ul></div>` : ''}
+      ${n.key_equation ? `<div class="math-novelty__key"><span class="math-label">${escapeHtml(t('math.keyEquation', { tag: n.key_equation.tag }))}</span>${tex(n.key_equation.latex, true)}</div>` : ''}
+      ${!n.novelty && !n.key_equation ? `<p class="math-muted">${t('math.noProposalHtml')}</p>` : ''}`;
   }
 
   function renderEquations(view) {
     const lema = $('mathLema');
     if (lema) lema.innerHTML = richText(view.lema || '');
     const source = $('mathSourceBadge');
-    if (source) source.textContent = source.title = view.source === 'none' ? 'sin matemática aún' : `fuente: ${view.source}`;
+    if (source) source.textContent = source.title = view.source === 'none' ? t('math.noMathYet') : t('math.source', { source: view.source });
     const stack = $('mathStack');
     if (!stack) return;
     if (!view.equations.length) {
-      stack.innerHTML = '<div class="eq-card eq-card--empty"><p>Este paper aún no tiene ecuaciones publicadas. Cuando la propuesta tenga bloques <code>$$ … \\tag{N} $$</code>, aparecerán aquí, una tarjeta por ecuación. Mientras tanto, el tutor trabaja con lo que dibujes.</p></div>';
+      stack.innerHTML = `<div class="eq-card eq-card--empty"><p>${t('math.noEquationsHtml')}</p></div>`;
       return;
     }
     stack.innerHTML = view.equations.map((eq) => `
       <article class="eq-card" id="mathEq-${escapeHtml(eq.id)}">
-        <header class="eq-card__head"><span class="eq-card__tag">(${escapeHtml(eq.tag)})</span><span>${escapeHtml(eq.heading || 'Ecuación')}</span></header>
+        <header class="eq-card__head"><span class="eq-card__tag">(${escapeHtml(eq.tag)})</span><span>${escapeHtml(eq.heading || t('math.equation'))}</span></header>
         <div class="eq-card__display">${tex(eq.latex, true)}</div>
-        ${eq.connection ? `<div class="eq-card__conn"><strong>Conexión:</strong> ${richText(eq.connection).replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
+        ${eq.connection ? `<div class="eq-card__conn"><strong>${escapeHtml(t('math.connection'))}</strong> ${richText(eq.connection).replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
         ${(eq.variables || []).length ? `<dl class="eq-card__vars">${eq.variables.map((v) => `<dt><code>${escapeHtml(v.symbol)}</code></dt><dd>${escapeHtml(v.meaning)}</dd>`).join('')}</dl>` : ''}
       </article>`).join('');
   }
@@ -138,9 +142,9 @@
     const meter = $('tutorMeter');
     if (!meter) return;
     const lvl = Number.isInteger(level) ? level : 0;
-    // One dot per level above "sin evidencia": level N lights N dots.
-    meter.innerHTML = LEVELS.slice(1).map((label, i) => `<span class="tutor-meter__dot${i < lvl ? ' is-on' : ''}" title="${i + 1} · ${label}"></span>`).join('')
-      + `<span class="tutor-meter__label">${lvl} · ${LEVELS[lvl]}</span>`;
+    // One dot per level above "no evidence": level N lights N dots.
+    meter.innerHTML = LEVELS.slice(1).map((_, i) => `<span class="tutor-meter__dot${i < lvl ? ' is-on' : ''}" title="${i + 1} · ${escapeHtml(level(i + 1))}"></span>`).join('')
+      + `<span class="tutor-meter__label">${lvl} · ${escapeHtml(level(lvl))}</span>`;
   }
 
   function imageUrl(id) {
@@ -149,20 +153,20 @@
 
   function renderTurn(turn) {
     if (turn.role === 'reader') {
-      const imgs = (turn.images || []).map((id) => `<img src="${imageUrl(id)}" alt="imagen del lector" loading="lazy">`).join('');
-      return `<div class="tutor-msg tutor-msg--reader"><div class="tutor-msg__meta">Tú · ${escapeHtml(turn.mode || '')}</div>${imgs ? `<div class="tutor-msg__imgs">${imgs}</div>` : ''}${turn.message ? richText(turn.message) : ''}</div>`;
+      const imgs = (turn.images || []).map((id) => `<img src="${imageUrl(id)}" alt="${escapeHtml(t('math.readerImage'))}" loading="lazy">`).join('');
+      return `<div class="tutor-msg tutor-msg--reader"><div class="tutor-msg__meta">${escapeHtml(t('tutor.you'))} · ${escapeHtml(turn.mode || '')}</div>${imgs ? `<div class="tutor-msg__imgs">${imgs}</div>` : ''}${turn.message ? richText(turn.message) : ''}</div>`;
     }
     const a = turn.assessment || {};
     const latex = (turn.latex || []).map((l) => `<div class="tutor-latex">${tex(l, true)}</div>`).join('');
     return `<div class="tutor-msg tutor-msg--tutor">
-      <div class="tutor-msg__meta">Tutor · ${escapeHtml(turn.agent || '')}</div>
-      ${turn.image_reading ? `<details class="tutor-reading"><summary>Lo que leí de tu imagen</summary>${richText(turn.image_reading)}</details>` : ''}
+      <div class="tutor-msg__meta">${escapeHtml(t('tutor.tutor'))} · ${escapeHtml(turn.agent || '')}</div>
+      ${turn.image_reading ? `<details class="tutor-reading"><summary>${escapeHtml(t('math.imageReading'))}</summary>${richText(turn.image_reading)}</details>` : ''}
       ${richText(turn.reply)}
       ${latex ? `<div class="tutor-latex-list">${latex}</div>` : ''}
       <div class="tutor-question">${richText(turn.question)}</div>
-      ${turn.novelty_link ? `<div class="tutor-novelty"><span class="math-label">Novedad</span>${richText(turn.novelty_link)}</div>` : ''}
-      <div class="tutor-assess"><span>Comprensión ${escapeHtml(a.level)} · ${escapeHtml(LEVELS[a.level] || a.label || '')}</span>${a.evidence ? ` — ${richText(a.evidence).replace(/^<p>|<\/p>$/g, '')}` : ''}${(a.gaps || []).length ? `<ul>${a.gaps.map((g) => `<li>${richText(g).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul>` : ''}</div>
-      ${turn.next_step ? `<div class="tutor-next"><span class="math-label">Siguiente paso</span>${richText(turn.next_step)}</div>` : ''}
+      ${turn.novelty_link ? `<div class="tutor-novelty"><span class="math-label">${escapeHtml(t('math.novelty'))}</span>${richText(turn.novelty_link)}</div>` : ''}
+      <div class="tutor-assess"><span>${escapeHtml(t('math.understanding', { level: a.level }))} · ${escapeHtml(level(a.level) || a.label || '')}</span>${a.evidence ? ` — ${richText(a.evidence).replace(/^<p>|<\/p>$/g, '')}` : ''}${(a.gaps || []).length ? `<ul>${a.gaps.map((g) => `<li>${richText(g).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul>` : ''}</div>
+      ${turn.next_step ? `<div class="tutor-next"><span class="math-label">${escapeHtml(t('tutor.nextStep'))}</span>${richText(turn.next_step)}</div>` : ''}
     </div>`;
   }
 
@@ -171,8 +175,8 @@
     if (!box) return;
     const turns = thread.turns || [];
     box.innerHTML = turns.length ? turns.map(renderTurn).join('')
-      : '<p class="math-muted">Arrastra aquí una foto de tu hoja (diagramas y ecuaciones a mano) o escribe tu idea. El tutor la lee, te hace una pregunta a la vez y evalúa cómo vas, siempre hacia la novedad del paper.</p>';
-    const last = [...turns].reverse().find((t) => t.role === 'tutor');
+      : `<p class="math-muted">${escapeHtml(t('math.threadEmpty'))}</p>`;
+    const last = [...turns].reverse().find((turn) => turn.role === 'tutor');
     renderMeter(last && last.assessment ? last.assessment.level : 0);
     box.scrollTop = box.scrollHeight;
   }
@@ -182,21 +186,21 @@
       const res = await fetch('/api/terminal/tutor/thread', { headers: HEADERS });
       if (res.status === 403 || res.status === 404) {
         state.authorized = false;
-        setTutorStatus(res.status === 404 ? 'Tutor deshabilitado (solo en 127.0.0.1)' : 'Abre el tablero desde el enlace de acceso de smith ui', 'bad');
+        setTutorStatus(res.status === 404 ? t('tutor.disabled') : t('tutor.openFromLink'), 'bad');
         renderThread({ turns: [] });
         return;
       }
       state.authorized = true;
       renderThread(await res.json());
-      setTutorStatus('Listo', 'ok');
-    } catch (_) { setTutorStatus('Sin conexión con el servidor', 'bad'); }
+      setTutorStatus(t('common.ready'), 'ok');
+    } catch (_) { setTutorStatus(t('tutor.offline'), 'bad'); }
   }
 
   // ---- tutor: attachments -------------------------------------------------------
   function renderPending() {
     const box = $('tutorPending');
     if (!box) return;
-    box.innerHTML = state.pending.map((p, i) => `<figure class="tutor-thumb"><img src="${p.preview}" alt=""><button type="button" data-i="${i}" title="Quitar">✕</button></figure>`).join('');
+    box.innerHTML = state.pending.map((p, i) => `<figure class="tutor-thumb"><img src="${p.preview}" alt=""><button type="button" data-i="${i}" title="${escapeHtml(t('math.remove'))}">✕</button></figure>`).join('');
     box.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       state.pending.splice(Number(b.dataset.i), 1);
       renderPending();
@@ -214,18 +218,18 @@
 
   async function addFiles(files) {
     for (const file of files) {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { setTutorStatus(`${file.name}: solo PNG, JPEG o WebP`, 'bad'); continue; }
-      if (state.pending.length >= 6) { setTutorStatus('Máximo 6 imágenes por turno', 'bad'); break; }
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { setTutorStatus(t('math.imageTypes', { name: file.name }), 'bad'); continue; }
+      if (state.pending.length >= 6) { setTutorStatus(t('math.maxImages'), 'bad'); break; }
       try {
         const dataUrl = await readAsDataUrl(file);
-        setTutorStatus('Subiendo imagen…', 'warn');
+        setTutorStatus(t('math.uploading'), 'warn');
         const res = await fetch('/api/terminal/tutor/images', { method: 'POST', headers: HEADERS, body: JSON.stringify({ data_url: dataUrl }) });
         const body = await res.json();
         if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
         state.pending.push({ id: body.id, preview: dataUrl });
         renderPending();
-        setTutorStatus('Imagen lista', 'ok');
-      } catch (err) { setTutorStatus(`No se pudo subir: ${err.message}`, 'bad'); }
+        setTutorStatus(t('math.imageReady'), 'ok');
+      } catch (err) { setTutorStatus(t('math.uploadFailed', { error: err.message }), 'bad'); }
     }
   }
 
@@ -234,10 +238,10 @@
     if (state.busy) return;
     const input = $('tutorInput');
     const message = (input?.value || '').trim();
-    if (!message && !state.pending.length) { setTutorStatus('Escribe algo o adjunta una imagen', 'bad'); return; }
+    if (!message && !state.pending.length) { setTutorStatus(t('math.writeOrAttach'), 'bad'); return; }
     state.busy = true;
     $('tutorSend').disabled = true;
-    setTutorStatus('El tutor está leyendo y pensando… (suele tardar 20–60 s)', 'warn');
+    setTutorStatus(t('tutor.thinking'), 'warn');
     try {
       const res = await fetch('/api/terminal/tutor/turn', {
         method: 'POST', headers: HEADERS,
@@ -249,9 +253,9 @@
       state.pending = [];
       renderPending();
       await loadThread();
-      setTutorStatus(`Respondió ${body.agent}`, 'ok');
+      setTutorStatus(t('tutor.answeredBy', { agent: body.agent }), 'ok');
     } catch (err) {
-      setTutorStatus(`El tutor no pudo responder: ${err.message}`, 'bad');
+      setTutorStatus(t('tutor.failed', { error: err.message }), 'bad');
     } finally {
       state.busy = false;
       $('tutorSend').disabled = false;
@@ -259,7 +263,7 @@
   }
 
   async function resetThread() {
-    if (!window.confirm('¿Empezar una conversación nueva? El hilo actual se borra (las imágenes se conservan).')) return;
+    if (!window.confirm(t('math.confirmReset'))) return;
     await fetch('/api/terminal/tutor/thread', { method: 'DELETE', headers: HEADERS, body: '{}' });
     loadThread();
   }
@@ -292,6 +296,14 @@
     try { saved = localStorage.getItem('papersmith.mathView') || 'rendered'; } catch (_) { /* private mode */ }
     setMathView(saved);
     renderMeter(0);
+  });
+
+  // Labels are drawn here; the paper's text and the thread keep their language.
+  document.addEventListener('languagechange', () => {
+    setMathView(document.documentElement.dataset.mathView === 'source' ? 'source' : 'rendered');
+    if (state.view) { renderNovelty(state.view); renderEquations(state.view); }
+    if (state.authorized !== null) loadThread();
+    else renderMeter(0);
   });
 
   window.refreshMathPanel = refreshMathPanel;

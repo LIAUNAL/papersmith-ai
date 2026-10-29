@@ -25,4 +25,6 @@ A trusted project `.pi/APPEND_SYSTEM.md` takes precedence over the operator's
 own `~/.pi/agent/APPEND_SYSTEM.md`, and the two are never combined: this file
 therefore replaces that append inside this workspace rather than adding to it.
 
+{{language_rule}}
+
 {{paper_flow}}

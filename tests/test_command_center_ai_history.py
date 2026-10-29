@@ -98,7 +98,7 @@ class AiHistoryTests(unittest.TestCase):
                          ["/proposal-deliberation idea", "corrige la ecuación 3, está mal",
                           "ahora añade la hipótesis H2"])
         self.assertEqual([r["reply"] for r in rounds], ["Revisión r01 lista.", "Corregida.", "Añadida."])
-        self.assertIn("aprobó", rounds[2]["reason"])
+        self.assertIn("approved", rounds[2]["reason"].lower())
         self.assertEqual(proposal["decision_summary"],
                          {"success": 1, "rework": 1, "iteration": 1, "pending": 0})
         # Each round names its events, and every operator turn and the reply
@@ -138,7 +138,7 @@ class AiHistoryTests(unittest.TestCase):
     def test_decision_graph_is_drawn_and_filters_main_interactions(self) -> None:
         panel = (REPO / "skills" / "_core" / "command_center" / "static" / "ai-history-panel.js").read_text(encoding="utf-8")
         self.assertIn('class="aih-dgraph', panel)
-        self.assertIn("Solo interacciones principales", panel)
+        self.assertIn("aih.mainOnly", panel)
         self.assertIn("aih-ev--hl", panel)
         self.assertIn(".aih-round {", PAGE)
 
@@ -171,7 +171,7 @@ class AiHistoryTests(unittest.TestCase):
                          ["proposals/research-concept-x-r01.md", "proposals/research-concept-x-r02.md",
                           "proposals/x.sky.json"])
         self.assertEqual({a["label"] for a in phase["artifacts"]},
-                         {"Revisiones de propuesta", "Cielo de la propuesta"})
+                         {"Proposal revisions", "Proposal sky"})
 
     def test_a_matched_directory_lists_its_files(self) -> None:
         impl = self.root / "implementations" / "Model"
@@ -199,7 +199,7 @@ class AiHistoryTests(unittest.TestCase):
         chats = view["sources"]["chats"]
         self.assertEqual({k: v["status"] for k, v in chats.items()},
                          {"claude-code": "absent", "pi": "absent", "opencode": "absent",
-                          "antigravity": "unsupported"})
+                          "antigravity": "absent"})
         self.assertEqual(view["phases"][0]["color"], "green")
 
     def test_endpoint_and_tab_sit_before_telemetry(self) -> None:

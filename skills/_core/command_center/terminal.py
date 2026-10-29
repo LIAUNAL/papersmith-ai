@@ -198,11 +198,11 @@ COLAB_CLI_INSTALL = 'uv tool install --force --python 3.14 "google-colab-cli==0.
 COLAB_PAID_TIERS = ("pro", "payg", "enterprise")
 COLAB_FAQ_URL = "https://research.google.com/colaboratory/faq.html"
 #: Commands the Colab box offers. Typed by the dashboard into the CLI
-#: assistant, so they are constants: `<slug>`, `<Nombre>` and `<tier>` are
+#: assistant, so they are constants: `<slug>`, `<Name>` and `<tier>` are
 #: literal placeholders the person replaces in the terminal before running.
 COLAB_COMMANDS = {
     "install": COLAB_CLI_INSTALL,
-    "team_add": 'smith team add --owner <slug> --name "<Nombre>" --colab --colab-tier <tier> --attest',
+    "team_add": 'smith team add --owner <slug> --name "<Name>" --colab --colab-tier <tier> --attest',
     "login": "smith colab login --owner <slug>",
     "status": "smith colab status",
     "team_list": "smith team list",
@@ -259,11 +259,12 @@ class Agent:
 def default_agents() -> dict[str, Agent]:
     shell = os.environ.get("SHELL") or "/bin/sh"
     return {
-        "herdr": Agent("herdr", "Herdr", ["herdr"], "Workspace de agentes del proyecto"),
-        "claude": Agent("claude", "Claude Code", ["claude"], "Agente Claude Code"),
-        "opencode": Agent("opencode", "OpenCode", ["opencode"], "Agente OpenCode"),
-        "pi": Agent("pi", "Pi", ["pi"], "Agente Pi"),
-        "shell": Agent("shell", "Shell", [shell, "-l"], "Shell de inicio de sesión"),
+        "herdr": Agent("herdr", "Herdr", ["herdr"], "Project agent workspace"),
+        "claude": Agent("claude", "Claude Code", ["claude"], "Claude Code agent"),
+        "opencode": Agent("opencode", "OpenCode", ["opencode"], "OpenCode agent"),
+        "pi": Agent("pi", "Pi", ["pi"], "Pi agent"),
+        "antigravity": Agent("antigravity", "Antigravity", ["agy"], "Antigravity agent"),
+        "shell": Agent("shell", "Shell", [shell, "-l"], "Login shell"),
     }
 
 

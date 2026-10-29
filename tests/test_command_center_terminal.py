@@ -179,7 +179,7 @@ class RouteTests(unittest.TestCase):
         manager = terminal.TerminalManager(self.root)
         listed = [a["id"] for a in manager.agents()]
         self.assertEqual(listed[0], "herdr")
-        self.assertEqual(listed, ["herdr", "claude", "opencode", "pi", "shell"])
+        self.assertEqual(listed, ["herdr", "claude", "opencode", "pi", "antigravity", "shell"])
 
     def test_tools_and_external_launch_require_the_token_and_same_origin(self) -> None:
         tools = _route(self.app, "/api/terminal/tools", "GET")
