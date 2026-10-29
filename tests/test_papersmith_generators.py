@@ -499,6 +499,17 @@ class GeneratorsTests(unittest.TestCase):
                     assert "model" not in meta and "tier" not in meta, head
                     assert entry["text"].endswith("---\nbody\n")
 
+    def test_the_pi_translator_drops_only_a_top_level_model_line(self) -> None:
+        """A nested key that happens to be called `model` belongs to its parent
+        mapping and survives; only the agent's own top-level `model:` goes."""
+        source = ("---\nname: nested\ndescription: d\ntools: Read\nmodel: sonnet\n"
+                  "metadata:\n  model: kept\n---\nbody\n")
+        entry, reason, _ = _translate_agent_for_pi(source)
+        assert reason is None and entry is not None
+        meta = yaml.safe_load(entry["text"].split("\n---\n")[0].removeprefix("---\n"))
+        assert "model" not in meta
+        assert meta["metadata"] == {"model": "kept"}
+
     def test_the_claude_projection_carries_the_source_model_line_verbatim(self) -> None:
         workspace = _workspace(self.new_tmp())
         for name, expected in (("math-tutor", ["model: sonnet"]), ("sota-scout", [])):

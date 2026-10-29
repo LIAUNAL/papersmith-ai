@@ -676,7 +676,7 @@ def _translate_agent_for_pi(
     notes: list[str] = []
     for line in meta_lines:
         key = line.split(":", 1)[0].strip().lower() if ":" in line else None
-        if key == "model":
+        if key == "model" and not line[:1].isspace():
             continue
         if key == "tools":
             tools_yaml, tool_notes = _pi_tools_line(line.split(":", 1)[1])
