@@ -2640,9 +2640,29 @@ class IngestedSourceRootTests(unittest.TestCase):
         self.assertEqual(status["path"], folder)
         self.assertEqual(status["documents"], 1)
 
+    def test_two_evidence_folders_combine_distinct_documents(self) -> None:
+        first = self._classify("source-manuscript", "evidence")
+        second = self._classify("second-paper", "evidence")
+        self._ingest(first, "first-id")
+        self._ingest(second, "second-id")
+
+        status = paper_declarations.source_root_status(self.base, self.root)
+
+        self.assertEqual(status["state"], "document-rooted")
+        self.assertEqual(status["documents"], 2)
+        self.assertEqual(status["paths"], [second, first])
+        self.assertIsNone(status["path"])
+        for folder, lineage in ((first, "first-id"), (second, "second-id")):
+            self.assertEqual(
+                paper_declarations.resolve_ingested_document(status["paths"], lineage),
+                folder / lineage / f"{lineage}.md",
+            )
+        candidates = paper_declarations.describe_binding_candidates(status, self.root)
+        self.assertEqual(set(candidates), {"first-id", "second-id"})
+
     def test_two_folders_classed_evidence_refuses_ambiguous(self) -> None:
-        self._classify("source-manuscript", "evidence")
-        self._classify("second-paper", "evidence")
+        for name in ("source-manuscript", "second-paper"):
+            self._ingest(self._classify(name, "evidence"), "same-id")
 
         with self.assertRaises(Refused) as ctx:
             paper_declarations.source_root_status(self.base, self.root)
@@ -2660,8 +2680,8 @@ class IngestedSourceRootTests(unittest.TestCase):
 
     def test_mutation_skipping_the_ambiguity_count_lets_the_first_match_win(self) -> None:
         proc = _run_against_mutant(
-            "    if len(evidence_folders) > 1:",
-            "    if False:",
+            "        if len(folders) > 1:",
+            "        if False:",
             "tests.test_paper_writing.IngestedSourceRootTests"
             ".test_two_folders_classed_evidence_refuses_ambiguous",
             source_path=SKILL_SCRIPTS / "paper_declarations.py",
@@ -2699,6 +2719,14 @@ class ResolveIngestedDocumentTests(unittest.TestCase):
         )
 
         self.assertEqual(resolved, markdown)
+
+    def test_single_root_list_preserves_missing_lineage_message(self) -> None:
+        with self.assertRaises(Refused) as ctx:
+            paper_declarations.resolve_ingested_document([self.evidence_dir], "missing")
+        self.assertEqual(ctx.exception.code, "SOURCE_LINEAGE_UNRESOLVED")
+        self.assertEqual(ctx.exception.detail,
+                         f"lineage 'missing' resolved to 0 ingested document(s) under "
+                         f"{self.evidence_dir} (expected exactly one)")
 
     def test_a_lineage_naming_no_ingested_paper_refuses(self) -> None:
         self._ingest("a-fixture-paper-id")
@@ -10364,6 +10392,9 @@ class SourceSectionBindingWriteGateTests(unittest.TestCase):
             (folder / ".paper-writing.json").write_text(
                 json.dumps({"class": "evidence"}), encoding="utf-8",
             )
+            paper = folder / "duplicate-id"
+            paper.mkdir()
+            (paper / "duplicate-id.md").write_text("# Dataset\n", encoding="utf-8")
 
         self._assert_refuses_before_drafting("EVIDENCE_ROOT_AMBIGUOUS")
 

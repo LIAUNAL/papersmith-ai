@@ -166,14 +166,17 @@ invent a binding rather than leave any assembly refusing.
   `SECTION_BINDING_ABSENT` naming the block and the fact id, before the
   draft stage runs
 
-#### Scenario: `write` refuses when more than one `guidance/` folder is classed evidence
+#### Scenario: `write` refuses duplicate ingested identities across evidence folders
 
 - GIVEN more than one folder under `guidance/` classed `'evidence'`
+  contains an ingested paper with the same document identity
 - WHEN `write` is invoked for any block, whether or not it names a
   `dataset` binding
-- THEN it refuses `EVIDENCE_ROOT_AMBIGUOUS` naming every candidate folder,
-  before the draft stage runs, since `Corpus.source_roots` is computed for
-  every root unconditionally as part of the same corpus assembly
+- THEN it refuses `EVIDENCE_ROOT_AMBIGUOUS` naming the duplicate identity
+  and the folders containing it, before the draft stage runs, since
+  `Corpus.source_roots` is computed for every root unconditionally as part
+  of the same corpus assembly
+- AND distinct identities across evidence folders are aggregated, not refused
 
 #### Scenario: Mutation — wiring the guard only into the read-only verb is caught
 

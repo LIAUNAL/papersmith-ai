@@ -107,7 +107,7 @@
         }
       ],
       "requires_declarations": [],
-      "citations": "none",
+      "citations": "resolution",
       "after": [
         {
           "target": "introduction.block-2",
@@ -482,7 +482,7 @@ nombre, no es posible volver a referirse al componente más adelante.
 contribución introduce y qué función cumple provienen de la formulación; el
 efecto que se afirma que logra proviene de la medición.
 
-**Sin citas.** Desde aquí hasta el final de la introducción, no cite nada.
+**Una sola cita, en 4a.** El párrafo 4a puede citar el trabajo previo que la propuesta extiende, adherida a él; desde 4b hasta el final de la introducción, no cite nada.
 
 ## Bloque 5 — Evaluación de la propuesta
 
@@ -577,7 +577,7 @@ es el sujeto de una oración.
   método de [N] combina*. Convierte el argumento en un catálogo de trabajos individuales
   en lugar de un recuento de familias.
 - **Densidad:** una cita cada una o dos oraciones en los bloques 1 a 3; **ninguna
-  cita a partir del bloque 4**.
+  cita a partir del bloque 4, salvo el trabajo previo que extiende 4a**.
 - **Toda afirmación sobre el campo lleva una cita.** Las afirmaciones sobre la
   propia propuesta no llevan ninguna.
 - **Desarrolle los acrónimos en su primera aparición**, y en adelante use solo el acrónimo — incluido
@@ -616,7 +616,7 @@ es el sujeto de una oración.
 - Una propiedad nombrada de manera distinta en los bloques 2, 4 y 5 — un sinónimo en lugar de las mismas
   palabras.
 - Una cifra, porcentaje o valor en el bloque 5.
-- Una cita en cualquier parte a partir del bloque 4.
+- Una cita en cualquier parte a partir del bloque 4, distinta de la cita de 4a al trabajo previo que la propuesta extiende.
 - Una cita ubicada en cualquier lugar que no sea el final de la oración que respalda.
 - Una cita usada como frase nominal.
 - El bloque 6 ausente, o que nombra secciones que no existen, o que repite una.

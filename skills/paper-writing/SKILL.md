@@ -516,7 +516,10 @@ real, wired consequence: `style-reference` feeds the style channel
 memory`, GATES `validate --source-md` shut (`SOURCE_STYLE_REFERENCE`);
 `evidence` is the one class `validate --source-md` accepts
 (`SOURCE_NOT_EVIDENCE` otherwise) — classifying a folder is no longer a
-label with nothing reading it back.
+label with nothing reading it back. Multiple evidence folders coexist;
+ingested source-root status and bindings aggregate their documents, while
+style-reference folders remain excluded. Paper identities must be unique
+across evidence folders (`EVIDENCE_ROOT_AMBIGUOUS` otherwise).
 
 **`read_registry` and the actual ingested papers live at two different
 depths.** `read_registry` (above, driving `plan` and now `validate`)
@@ -583,7 +586,7 @@ this is one subject (a directory's own declaration), not two.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `mark revisions --root <name> --revision-prefix <prefix> --ordinal-digits <n> [--unsealed]` | Records `<root>/.paper-writing.json`'s `revisions` grammar, matched against `sorted(path.glob("*.md"))` at the moment of writing, sealed by default | `SOURCE_ROOT_UNDECLARABLE`, `MALFORMED_SOURCE_MARKER`, `SOURCE_DECLARATION_UNMATCHED` |
-| `mark class --folder <name> --class <value> [--guidance <dir>] [--unsealed]` | Records `guidance/<folder>/.paper-writing.json`'s `class` grammar, checked against the folders actually enumerated under `guidance/` at the moment of writing, sealed by default | `GUIDANCE_FOLDER_ABSENT`, `UNKNOWN_GUIDANCE_CLASS`, `EVIDENCE_ROOT_AMBIGUOUS`, `MALFORMED_GUIDANCE_MARKER` |
+| `mark class --folder <name> --class <value> [--guidance <dir>] [--unsealed]` | Records `guidance/<folder>/.paper-writing.json`'s `class` grammar, checked against the folders actually enumerated under `guidance/` at the moment of writing, sealed by default; multiple evidence folders are accepted | `GUIDANCE_FOLDER_ABSENT`, `UNKNOWN_GUIDANCE_CLASS`, `MALFORMED_GUIDANCE_MARKER` |
 
 **Neither verb creates the directory or folder it names, and no operator
 string is ever joined onto a path.** `--root` is matched against the
@@ -665,7 +668,7 @@ the rollback a command instead of a hand edit.
 | `mark revisions` refuses `SOURCE_DECLARATION_UNMATCHED` | The prefix/digit-width pair matches zero `*.md` files under the root right now — the refusal lists every file it saw; fix the prefix/width or check the root |
 | `validate --source-md` refuses `SOURCE_NOT_EVIDENCE` on a `guidance/` folder | Run `mark class --folder <name> --class evidence` (only if the folder truly holds evidence, never to silence the refusal) |
 | `mark class` refuses `GUIDANCE_FOLDER_ABSENT` | `--folder` names a folder that does not exist directly under `guidance/` — the refusal lists every folder that is there; `mark` never creates one |
-| `mark class` refuses `EVIDENCE_ROOT_AMBIGUOUS` | Another folder already carries the `evidence` class — re-mark that other folder first if this one should hold it instead |
+| A corpus-reading verb refuses `EVIDENCE_ROOT_AMBIGUOUS` | The same ingested paper id occurs under multiple evidence folders; make document identities unique before binding. Several evidence folders with distinct papers are accepted |
 | Either `mark` refuses `MALFORMED_SOURCE_MARKER` / `MALFORMED_GUIDANCE_MARKER` | The marker file on disk was hand-edited into an invalid shape — re-run `mark` with correct values; it always overwrites |
 | `read_revisions_marker`/`_classify` refuses `SOURCE_DECLARATION_HAND_EDITED` / `GUIDANCE_DECLARATION_HAND_EDITED` | A sealed marker's bytes were hand-edited after sealing — re-run `mark` for that root/folder; there is no `--adopt` |
 | About to revert past this capability | Run `mark ... --unsealed` once per already-sealed root/folder BEFORE reverting, or the older reader will refuse every sealed marker as malformed |
@@ -716,7 +719,41 @@ cached resolved metadata — never appended, never hand-typed:
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from every block's cached, resolved AND ingested evidence records; checks both `\cite{}`/entry directions | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY`, `ENTRY_WITHOUT_CITE` |
+| `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from the cached, resolved AND ingested evidence records of the keys `main.tex` cites; a key dropped from the text leaves the bibliography while its records stay in the append-only store; checks both `\cite{}`/entry directions | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY` |
+| `bib refresh --cite-key <key> --metadata-digest <digest> [--resolver <r>] [--guidance <dir>]` | Relinks the record `bib build` reads for `<key>` to fresher cached metadata of the same work: appends one copy changing only `resolver` and `metadata_digest` | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED` |
+
+**`bib refresh` relinks metadata; it never judges support.** After a
+re-`resolve` caches better metadata (a year, a venue) for a DOI or arXiv id
+already cited, `bib refresh` points the citation at it without re-quoting
+the source:
+
+```bash
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py bib refresh \
+  --cite-key smith2024 --metadata-digest <digest printed by resolve>
+```
+
+It selects the same last-write-wins record `bib build` reads, and appends a
+copy to that record's own block store whose claim, quote, span, verdict,
+round, block and identifier are byte-identical; only `resolver` (taken from
+the new cache; `--resolver`, when given, must equal it) and
+`metadata_digest` change. Prior lines are never edited and no
+`.papersmith-evidence.json` manifest is written. Because nothing is
+re-judged, the source's `guidance/` class is not re-checked — that is the
+point for a source judged before its folder became `style-reference` — while
+`validate` still refuses any NEW quote from such a folder. Every check runs
+before the one write. It refuses `ENTRY_UNSOURCED` when no record carries
+the key, when either the current or the new cache is missing or not filed
+under its own digest, when `--resolver` disagrees, when the record and both
+caches do not name the same work, or when the record does not end the last
+store holding the key (an appended copy would not supersede it); and
+`ENTRY_NOT_INGESTED` when the record has no located `holds`/`does-not-hold`
+span or its `source_md` is no longer an ingested paper. "The same work" is
+one normalized identifier: a DOI compares without its `https://doi.org/` or
+`doi:` prefix and case-insensitively; an arXiv id compares without its
+`arXiv:` prefix, `arxiv.org/abs|pdf/` URL or `.pdf` suffix but WITH its
+version, so `2401.00001v2` never matches `2401.00001`, and a DOI never
+matches an arXiv id. Refreshing to the digest already recorded writes
+nothing and reports `"refreshed": false`.
 
 A hand-typed entry (no `resolver`/`metadata_digest` provenance) refuses
 `ENTRY_UNSOURCED` before a single byte of `refs.bib` is rewritten — checked

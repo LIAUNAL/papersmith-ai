@@ -443,7 +443,7 @@ def resolve_section_index(source_roots: dict, root, lineage: str) -> tuple:
     """
     status = source_roots[root.name]
     if root.kind is paper_declarations.SourceRootKind.INGESTED:
-        revision_path = paper_declarations.resolve_ingested_document(status["path"], lineage)
+        revision_path = paper_declarations.resolve_ingested_document(status.get("paths", [status["path"]]), lineage)
     else:
         marker = paper_declarations.read_revisions_marker(status["path"])
         if marker is None:

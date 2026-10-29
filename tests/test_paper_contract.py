@@ -906,6 +906,11 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: below the closing fence's own JSON, and move no body digest). No other
 #: file's digest moves in unit 4.
 #:
+#: `06-introduction.md`'s digest was re-captured once more when the operator
+#: allowed paragraph 4a to cite the prior work the proposal extends: the
+#: block 4 citation rule, the density rule and the matching disqualifier
+#: now carve out that single 4a citation; from 4b onward nothing is cited.
+#:
 #: `02-experimental-setup.md`'s digest was re-captured a further time for
 #: `the-requirement-names-the-sentence-that-demands-it`, Work Unit U3: the
 #: operator's ruling on `es-assessment`'s `experimental-design` and `gap`
@@ -1002,7 +1007,7 @@ PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "03-results-and-discussion.md": "1f232a64dd277d10da2e47ed3436acb58137f77ac2f5de32cc22da8e8cf974b1"[:64],
     "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
     "05-related-work.md": "0b8a99da1b91307b3e2e1a654ca161d02ac251635fec99a23edc4407b70d4323"[:64],
-    "06-introduction.md": "1018e4ffbc861a3a1eb8ff1386a772cdb506ec9272db4e7f5fc88d351c0fcb23"[:64],
+    "06-introduction.md": "fdbc7fbbb5c5cd33d076f7e31ed1359916328ed8a384f62b45015ace471964ce"[:64],
     "07-conclusions.md": "5b400628d6d7f783172a0546cb3fa92b973d471b34001f58fb8ff9277d25aeec"[:64],
     "08-abstract.md": "e5e2d180ad612c99c2f779d669956405c56f9744645ca9e229a57c1bc605ba94"[:64],
     "09-title-and-keywords.md": "0fb1238c2b4cc956f127ef75a81bb476ec1e6117c0c0baee472e5e433e17096a"[:64],
@@ -1036,6 +1041,18 @@ class ShippedHeaderDigestTests(unittest.TestCase):
             )
             self.assertEqual(header.section, name[3:-3])
 
+
+class IntroductionCitationRegimeTests(unittest.TestCase):
+    """Block 4a may cite the prior work the proposal extends, so it runs
+    under the resolution regime; from 4b to the end of the introduction
+    nothing is cited."""
+
+    def test_only_block_4a_of_block_4_onward_may_cite(self) -> None:
+        header, _ = paper_contract.parse((SECTIONS_DIR / "06-introduction.md").read_bytes())
+        regimes = {block["id"]: block["citations"] for block in header.blocks}
+        self.assertEqual(regimes["block-4a"], "resolution")
+        for block_id in ("block-4b", "block-5", "block-6"):
+            self.assertEqual(regimes[block_id], "none", block_id)
 
 #: `contract-input-partition` spec, `Requirement: Two-Heading Partition`:
 #: EVERY assembled contract, including a synthetic fixture, must carry both

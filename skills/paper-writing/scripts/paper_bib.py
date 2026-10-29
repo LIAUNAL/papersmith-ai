@@ -40,6 +40,9 @@ Public surface:
         (raises ENTRY_UNSOURCED / ENTRY_NOT_INGESTED)
     build_refs_bib(paper_dir, records, *, guidance_dir) -> dict
         (rebuilds refs.bib whole, sorted)
+    source_identity(identifier, resolver) -> tuple[str, str] | None
+    refresh_metadata(paper_dir, cite_key, metadata_digest, *, guidance_dir, resolver=None) -> dict
+        (relinks existing evidence to fresher metadata of the same work)
     cited_keys(main_tex_bytes)           -> set[str]
     entry_keys(refs_bib_bytes)           -> set[str]
     check_reciprocal(main_tex_bytes, refs_bib_bytes) -> dict (raises CITE_WITHOUT_ENTRY / ENTRY_WITHOUT_CITE)
@@ -51,6 +54,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import paper_evidence  # noqa: E402
 import paper_guidance  # noqa: E402 -- no-citation-before-its-paper-is-ingested, item 2: the ingestion check
 import paper_resolve  # noqa: E402
 
@@ -69,6 +73,8 @@ _CITE_RE = re.compile(
     r"(?:\s*\[[^\]]*\]){0,2}\s*\{([^}]*)\}"
 )
 _BIB_ENTRY_RE = re.compile(r"@\w+\{([^,]+),")
+_DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
+_ARXIV_PREFIX_RE = re.compile(r"^(?:https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/|arxiv:)", re.IGNORECASE)
 
 
 def _require_ingested(record: dict, guidance_dir: Path) -> None:
@@ -220,6 +226,155 @@ def build_refs_bib(paper_dir: Path, records: list[dict], *, guidance_dir: Path) 
     refs_path = paper_dir / "refs.bib"
     refs_path.write_text(text, encoding="utf-8")
     return {"path": str(refs_path), "entries": [entry["cite_key"] for entry in entries]}
+
+
+def source_identity(identifier: str, resolver: str) -> tuple[str, str] | None:
+    """The one normalized `(kind, value)` a resolved identifier names, or
+    `None` when it names none: a DOI (`openalex`/`crossref`) loses only a
+    `https://doi.org/`-style or `doi:` prefix and its case, which DOIs never
+    carry meaning in; an arXiv id loses only its `arXiv:` prefix or
+    `arxiv.org/abs|pdf/` URL and a trailing `.pdf`. An arXiv VERSION is
+    kept: `2401.00001v2` and `2401.00001` are not proven to be the same
+    text, so they never compare equal here, and a DOI never equals an arXiv
+    id even when it is arXiv's own `10.48550/arXiv.*` DOI.
+    """
+    text = (identifier or "").strip()
+    if not text or resolver not in paper_resolve.RESOLVERS:
+        return None
+    if resolver == "arxiv":
+        bare = _ARXIV_PREFIX_RE.sub("", text)
+        if bare.lower().endswith(".pdf"):
+            bare = bare[:-4]
+        return ("arxiv", bare.lower())
+    lowered = text.lower()
+    for prefix in _DOI_PREFIXES:
+        if lowered.startswith(prefix):
+            lowered = lowered[len(prefix):]
+            break
+    return ("doi", lowered)
+
+
+def _cache_identity(cached: dict) -> tuple[str, str] | None:
+    """A cached blob's identity; a DOI-resolver blob whose own `doi` field
+    names a different work than its `identifier` contradicts itself and
+    identifies nothing."""
+    identity = source_identity(cached.get("identifier") or "", cached.get("resolver") or "")
+    doi = cached.get("doi")
+    if identity is not None and identity[0] == "doi" and doi:
+        if source_identity(doi, cached["resolver"]) != identity:
+            return None
+    return identity
+
+
+def _identity_text(identity: tuple[str, str] | None) -> str:
+    return "unidentifiable" if identity is None else f"{identity[0]}:{identity[1]}"
+
+
+def refresh_metadata(
+    paper_dir: Path, cite_key: str, metadata_digest: str, *, guidance_dir: Path,
+    resolver: str | None = None,
+) -> dict:
+    """`bib refresh`: relinks the record `build_refs_bib` would read for
+    `cite_key` (last-write-wins over `paper_evidence.read_all_records`) to
+    the cached metadata keyed by `metadata_digest`, by appending a copy of
+    that record that differs ONLY in `resolver` and `metadata_digest`.
+
+    This is a metadata relink, never a support judgment: the claim, quote,
+    span, verdict, round and block are copied byte for byte, so the source's
+    `guidance/` classification is deliberately not re-judged here -- it was
+    judged when the span was located, and `validate` keeps refusing any NEW
+    quote from a non-evidence folder. Accordingly it can only relink what
+    already exists: refuses `ENTRY_UNSOURCED` when no record carries
+    `cite_key`, `ENTRY_NOT_INGESTED` when that record has no located,
+    verdict-bearing span or its source is no longer an ingested paper, and
+    `ENTRY_UNSOURCED` when either cache is missing or not filed under its
+    own digest, when `--resolver` disagrees with the new cache, when the
+    record and both caches do not name the same `source_identity`, or when
+    an appended copy would not supersede the record. Every check runs
+    before the one write; `append_record` is called without `guidance_dir`,
+    so no evidence manifest is touched. Refreshing to the digest already
+    recorded writes nothing and reports `refreshed: false`.
+    """
+    winner = None
+    for record in paper_evidence.read_all_records(paper_dir):
+        if record.get("cite_key") == cite_key:
+            winner = record
+    if winner is None:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"{cite_key!r}: no evidence record carries this cite key -- "
+            "refresh relinks existing evidence and never creates any",
+        )
+    if (winner.get("verdict") not in ("holds", "does-not-hold") or not winner.get("source_md")
+            or not winner.get("quote") or not winner.get("locator")
+            or set(winner) != set(paper_evidence.EvidenceRecord.__dataclass_fields__)):
+        raise Refused(
+            "ENTRY_NOT_INGESTED",
+            f"{cite_key!r}: its current evidence record carries no located, verdict-bearing span -- "
+            "refresh relinks existing located evidence only and never creates any",
+        )
+    # The current link must itself be sound: cached, self-consistent and
+    # still ingested -- the same gate `bib build` applies to it.
+    entry_from_record(paper_dir, winner, guidance_dir=guidance_dir)
+    current = paper_resolve.read_cached_metadata(paper_dir, winner["metadata_digest"])
+    fresh = paper_resolve.read_cached_metadata(paper_dir, metadata_digest)
+    if fresh is None:
+        raise Refused(
+            "ENTRY_UNSOURCED", f"{cite_key!r}: no cached metadata found for digest {metadata_digest!r}"
+        )
+    if fresh.get("metadata_digest") != metadata_digest:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"{cite_key!r}: the cached blob's own digest does not match the digest it was looked up by",
+        )
+    fresh_resolver = fresh.get("resolver")
+    if resolver is not None and resolver != fresh_resolver:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"{cite_key!r}: --resolver {resolver!r} does not match the cached metadata's "
+            f"resolver {fresh_resolver!r}",
+        )
+    identities = (
+        source_identity(winner.get("identifier") or "", winner["resolver"]),
+        _cache_identity(current),
+        _cache_identity(fresh),
+    )
+    if identities[0] is None or len(set(identities)) != 1:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"{cite_key!r}: cached metadata {metadata_digest!r} does not identify the same work as its "
+            f"evidence record (record {_identity_text(identities[0])}, current "
+            f"{_identity_text(identities[1])}, new {_identity_text(identities[2])})",
+        )
+    block_id = winner["block_id"]
+    # `read_all_records` walks the stores in sorted filename order, so the
+    # copy supersedes the record only if that record ends its own block's
+    # store and no store sorted after it carries the key.
+    stores = sorted(paper_evidence._store_path(paper_dir, block_id).parent.glob("*.jsonl"))
+    holding = [
+        path.stem for path in stores
+        if any(r.get("cite_key") == cite_key for r in paper_evidence.read_records(paper_dir, path.stem))
+    ]
+    own_store = [r for r in paper_evidence.read_records(paper_dir, block_id) if r.get("cite_key") == cite_key]
+    if holding[-1:] != [block_id] or own_store[-1:] != [winner]:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"{cite_key!r}: its current evidence record is not the last line of its own block's store "
+            f"{block_id!r} -- an appended copy would not supersede it",
+        )
+    result = {
+        "cite_key": cite_key, "refreshed": False, "block": block_id,
+        "path": str(paper_evidence._store_path(paper_dir, block_id)), "resolver": fresh_resolver,
+        "metadata_digest": metadata_digest, "previous_metadata_digest": winner["metadata_digest"],
+        "year": fresh.get("year"),
+    }
+    if (winner["resolver"], winner["metadata_digest"]) == (fresh_resolver, metadata_digest):
+        return result
+    relinked = paper_evidence.EvidenceRecord(
+        **{**winner, "resolver": fresh_resolver, "metadata_digest": metadata_digest}
+    )
+    paper_evidence.append_record(paper_dir, relinked)
+    return {**result, "refreshed": True}
 
 
 def cited_keys(main_tex_bytes: bytes) -> set[str]:

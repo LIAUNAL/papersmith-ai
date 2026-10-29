@@ -1517,11 +1517,21 @@ def cmd_full_text(args: argparse.Namespace) -> dict:
 def cmd_bib(args: argparse.Namespace) -> dict:
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
     guidance_dir = paper_guidance.resolve_guidance_dir(args.guidance)
-    records = paper_evidence.read_all_records(paper_dir)
-    result = paper_bib.build_refs_bib(paper_dir, records, guidance_dir=guidance_dir)
+    if args.bib_command == "refresh":
+        return paper_bib.refresh_metadata(
+            paper_dir, args.cite_key, args.metadata_digest, guidance_dir=guidance_dir,
+            resolver=args.resolver,
+        )
+    # The evidence store is append-only, so a citation dropped from the text
+    # keeps its records. The bibliography follows the text: only cited keys
+    # are written, each still required to carry sourced, ingested evidence.
     tex_path = paper_block.resolve_main_tex(paper_dir)
+    tex_bytes = tex_path.read_bytes()
+    cited = paper_bib.cited_keys(tex_bytes)
+    records = [r for r in paper_evidence.read_all_records(paper_dir) if r.get("cite_key") in cited]
+    result = paper_bib.build_refs_bib(paper_dir, records, guidance_dir=guidance_dir)
     reciprocal = paper_bib.check_reciprocal(
-        tex_path.read_bytes(), (paper_dir / "refs.bib").read_bytes(),
+        tex_bytes, (paper_dir / "refs.bib").read_bytes(),
     )
     return {**result, "reciprocal": reciprocal}
 
@@ -3354,6 +3364,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_bib_build.add_argument(
         "--guidance", default=None,
         help="override guidance/ location; must resolve inside the repository root",
+    )
+    p_bib_refresh = bib_sub.add_parser(
+        "refresh",
+        help="relink one citation's existing evidence to fresher cached metadata of the SAME work: "
+             "appends a copy of the record bib build reads, changing only resolver and "
+             "metadata_digest; never re-judges the source, never creates evidence",
+    )
+    p_bib_refresh.add_argument(
+        "--paper", default=None,
+        help="override paper/ location; must resolve inside the repository root",
+    )
+    p_bib_refresh.add_argument(
+        "--guidance", default=None,
+        help="override guidance/ location; must resolve inside the repository root",
+    )
+    p_bib_refresh.add_argument(
+        "--cite-key", required=True, help="the \\cite{} key whose current evidence record is relinked",
+    )
+    p_bib_refresh.add_argument(
+        "--metadata-digest", required=True,
+        help="digest of an already-cached `resolve` result for the same DOI/arXiv id",
+    )
+    p_bib_refresh.add_argument(
+        "--resolver", default=None, choices=paper_resolve.RESOLVERS,
+        help="optional; must equal the cached metadata's own resolver, which is used when omitted",
     )
 
     p_validate = sub.add_parser(

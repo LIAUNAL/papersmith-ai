@@ -59,10 +59,11 @@ A verb (`mark class`) MUST record `guidance/<folder>/.paper-writing.json`'s
 the resolved `guidance/`; otherwise it MUST refuse `GUIDANCE_FOLDER_ABSENT`,
 naming every folder that is there. `--class` MUST be a member of `CLASSES`;
 otherwise it MUST refuse `UNKNOWN_GUIDANCE_CLASS` (reused verbatim).
-Classing a second folder `evidence` while another already carries that class
-MUST refuse `EVIDENCE_ROOT_AMBIGUOUS` (reused verbatim) BEFORE the write,
-naming both folders and the exit. The written object MUST pass the same
-shape validation `_classify` applies. The verb MUST NOT create the folder,
+Multiple folders MAY be classed `evidence`; the ingested source root MUST
+aggregate their documents. Duplicate ingested document identities across
+those folders MUST refuse `EVIDENCE_ROOT_AMBIGUOUS` during source-root
+assembly, before binding resolution or drafting. The written object MUST
+pass the same shape validation `_classify` applies. The verb MUST NOT create the folder,
 and MUST NOT refuse an `evidence` folder that holds zero ingested papers —
 that condition is an earlier stage, not a fault, and stays unchanged.
 
@@ -79,12 +80,13 @@ that condition is an earlier stage, not a fault, and stays unchanged.
 - THEN it refuses `GUIDANCE_FOLDER_ABSENT`, naming every folder that exists,
   and no `missing-notes` directory is created
 
-#### Scenario: A second evidence folder refuses before writing
+#### Scenario: A second evidence folder is classed without replacing the first
 
-- GIVEN `guidance/prior-papers/` already classed `evidence`
+- GIVEN `guidance/prior-papers/` already classed `evidence` and
+  `guidance/new-corpus/` exists
 - WHEN `mark class --folder new-corpus --class evidence` is invoked
-- THEN it refuses `EVIDENCE_ROOT_AMBIGUOUS`, naming both folders, and no
-  marker is written for `new-corpus`
+- THEN it records the new evidence marker and preserves the first marker
+- AND distinct ingested identities from both folders form one source root
 
 ### Requirement: Which Roots And Folders Are Declarable Is Derived, Never Listed
 

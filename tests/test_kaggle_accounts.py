@@ -880,7 +880,20 @@ class AccountVocabularyLeakTests(unittest.TestCase):
     Two or more stored usernames that share a digit-stripped stem (`Mira-
     dor51` and `Mirador50` both stem to `Mirador`) prove that the
     stem is the human-meaningful, reused part, the same way multiple real
-    spellings of one product proved that one was. A singleton account's stem
+    spellings of one product proved that one was.
+
+    Corroboration proves the stem is the reused part of an IDENTITY; it does
+    not prove every occurrence of the stem is that identity. Measured on
+    2026-10-24: a corroborated stem on this machine is also an ordinary
+    Spanish noun, and banning it as a bare substring reddened this guard on
+    a shipped section contract's own prose, which names no account at all.
+    So a full username is still forbidden as a bare substring, anywhere,
+    but a corroborated stem is forbidden only when it wears the shape of an
+    account (`_identity_stem_hits`): a handle suffix (`Mirador52`, a
+    sibling nobody has stored yet), a disguised one (`Mirador XX`,
+    `Mirador##`, `Mirador_<n>`), an `@` mention, or a line that also carries
+    a key-shaped token -- the worked credential line the original leak was.
+    The bare word in a sentence is prose. A singleton account's stem
     is deliberately NOT added on its own — `Mateo9901` stems to `Mateo`, a
     common first name, and banning it unconditionally would flag ordinary
     prose (a citation, an example name) that has nothing to do with this
@@ -917,10 +930,49 @@ class AccountVocabularyLeakTests(unittest.TestCase):
         return [a["username"] for a in json.loads(result.stdout)["accounts"]]
 
     def _forbidden_literals(self, usernames: list[str]) -> set[str]:
-        stems = [re.sub(r"\d+$", "", u) for u in usernames]
-        stem_counts = Counter(s.lower() for s in stems)
-        shared_stems = {s.lower() for s in stems if stem_counts[s.lower()] >= 2}
-        return {u.lower() for u in usernames} | shared_stems
+        """Every stored username, lowercased: forbidden as a bare substring."""
+        return {u.lower() for u in usernames}
+
+    def _corroborated_stems(self, usernames: list[str]) -> set[str]:
+        """Digit-stripped stems two or more stored usernames share."""
+        stems = [re.sub(r"\d+$", "", u).lower() for u in usernames]
+        stem_counts = Counter(stems)
+        return {s for s in stems if s and stem_counts[s] >= 2}
+
+    #: A key-shaped token on the same line: the `KGAT_` prefix the store's own
+    #: parser recognizes, or a 32-hex legacy key.
+    _KEY_SHAPE = r"(?:kgat_|\b[0-9a-f]{32}\b)"
+
+    def _identity_stem_hits(self, source: str, stems: set[str]) -> set[str]:
+        """The corroborated stems `source` names AS AN ACCOUNT, not as a word.
+
+        `source` is already lowercased. See the class docstring for why the
+        bare word is admitted and these four shapes are not. `**` is not a
+        placeholder: it is Markdown bold closing on the bare word, measured
+        on the very contract prose that motivated this split.
+        """
+        hits = set()
+        for stem in stems:
+            s = re.escape(stem)
+            shaped = re.compile(
+                rf"{s}[_-]?\d"
+                rf"|{s}[ _-]?(?:x{{2,}}|#{{2,}}|\?{{2,}}|<[^<>\s]{{0,12}}>)"
+                rf"|@{s}"
+                rf"|^[^\n]*{s}[^\n]*{self._KEY_SHAPE}"
+                rf"|^[^\n]*{self._KEY_SHAPE}[^\n]*{s}",
+                re.MULTILINE)
+            if shaped.search(source):
+                hits.add(stem)
+        return hits
+
+    def _leaks(self, source: str, usernames: list[str]) -> list[str]:
+        """What `source` names of `usernames`: full names first, then stems."""
+        source = source.lower()
+        full = sorted(u for u in self._forbidden_literals(usernames)
+                      if u in source)
+        stems = sorted(self._identity_stem_hits(
+            source, self._corroborated_stems(usernames)))
+        return full + stems
 
     def test_no_skill_source_names_a_real_account_of_this_machine(self) -> None:
         usernames = self._stored_usernames()
@@ -929,12 +981,11 @@ class AccountVocabularyLeakTests(unittest.TestCase):
                 "no accounts stored on this machine (store is gitignored and "
                 "empty here) — nothing to check, not a proven-clean tree"
             )
-        forbidden = self._forbidden_literals(usernames)
         scripts = self._tracked_skill_scripts()
         self.assertTrue(scripts, "no tracked skill sources found to scan")
         for script in scripts:
             try:
-                source = script.read_text(encoding="utf-8").lower()
+                source = script.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 # Not valid UTF-8 (a binary fixture such as
                 # tests/fixtures/e2e/paper.pdf) -- best-effort decode rather
@@ -943,9 +994,9 @@ class AccountVocabularyLeakTests(unittest.TestCase):
                 # accepted rather than excluding the file outright.
                 source = script.read_bytes().decode(
                     "utf-8", errors="replace"
-                ).lower()
-            for leaked in forbidden:
-                self.assertNotIn(leaked, source, f"{leaked!r} in {script}")
+                )
+            leaked = self._leaks(source, usernames)
+            self.assertEqual(leaked, [], f"{leaked!r} in {script}")
 
     @staticmethod
     def _tracked_skill_scripts() -> list[Path]:

@@ -1030,7 +1030,7 @@ def _resolve_bind_document(status: dict, root: SourceRoot, lineage: str) -> Path
     verbatim) exactly as `separate` would for the identical document --
     never a second code for the same condition."""
     if root.kind is SourceRootKind.INGESTED:
-        return resolve_ingested_document(status["path"], lineage)
+        return resolve_ingested_document(status.get("paths", [status["path"]]), lineage)
     marker = read_revisions_marker(status["path"])
     if marker is None:
         raise Refused(
@@ -1155,7 +1155,7 @@ def describe_binding_candidates(status: dict, root: SourceRoot) -> dict:
     names-the-section-that-feeds-it`, U3e ruling: "the refusal IS the
     question").
 
-    `root.kind is INGESTED`: each ingested paper under `status['path']`
+    `root.kind is INGESTED`: each ingested paper under `status['paths']`
     (`paper_guidance.ingested_papers`, reused) is its own "lineage",
     identity-resolved — no ordinal to pick a "current" revision from.
 
@@ -1173,7 +1173,8 @@ def describe_binding_candidates(status: dict, root: SourceRoot) -> dict:
     """
     base_path = status["path"]
     if root.kind is SourceRootKind.INGESTED:
-        papers = paper_guidance.ingested_papers(base_path.parent).get(base_path.name, [])
+        papers = [entry for path in status.get("paths", [base_path])
+                  for entry in paper_guidance.ingested_papers(path.parent).get(path.name, [])]
         return {
             entry["folder"]: {
                 "revision": Path(entry["markdown"]).name,
@@ -1754,56 +1755,40 @@ def source_root_status(base: Path, root: SourceRoot) -> dict:
 
 
 def _ingested_root_status(base: Path) -> dict:
-    """`source_root_status`'s `SourceRootKind.INGESTED` branch (U2c ruling,
-    `the-requirement-names-the-section-that-feeds-it`): which `guidance/`
-    folder feeds an ingested-kind fact is DERIVED from that folder's own
-    `.paper-writing.json` classification — `paper_guidance.read_registry`,
-    reused verbatim, the SAME reader every other `guidance/` consumer
-    already goes through (`paper_cli._guard_source_md_classification`);
-    this is its first SOURCE-ROOT consumer, never a second reader.
+    """Aggregate all evidence-classed guidance folders without choosing one.
 
-    An absent `guidance/` directory, or one carrying no folder classed
-    `'evidence'` yet, reports `unmeasured` — a paper that has not
-    classified (or ingested) its evidence document yet is a paper at an
-    EARLIER STAGE, the same reading `experiments/` holding only
-    `.gitkeep` already gets (`source-section-binding` spec, `Requirement:
-    An Unmeasured Root Is Reported, Never Silently Passed`), never a
-    fault. Exactly one folder classed `'evidence'` but holding zero
-    ingested papers is ALSO `unmeasured`, for the identical reason.
-
-    More than one folder classed `'evidence'` refuses
-    `EVIDENCE_ROOT_AMBIGUOUS` naming every candidate — deciding WHICH
-    folder is the root is this function's own job, and picking the first
-    would be exactly the silent guess this change exists to rule out.
+    Preserve the legacy single-folder path, expose every path additively,
+    and refuse duplicate document identities before any consumer can guess.
+    Missing folders or empty evidence remain unmeasured.
     """
     guidance_dir = paper_guidance.resolve_guidance_dir(None, forge_root=base)
-    if not guidance_dir.is_dir():
-        return {
-            "state": "unmeasured", "path": None, "documents": 0,
-            "reason": f"{guidance_dir} does not exist yet",
-        }
     registry = paper_guidance.read_registry(guidance_dir)
-    evidence_folders = sorted(name for name, klass in registry.items() if klass == "evidence")
-    if not evidence_folders:
-        return {
-            "state": "unmeasured", "path": None, "documents": 0,
-            "reason": f"no folder under {guidance_dir} is classed 'evidence' yet",
-        }
-    if len(evidence_folders) > 1:
-        raise Refused(
-            "EVIDENCE_ROOT_AMBIGUOUS",
-            f"more than one folder under {guidance_dir} is classed 'evidence': "
-            f"{evidence_folders}",
-        )
-    evidence_dir = guidance_dir / evidence_folders[0]
-    papers = paper_guidance.ingested_papers(guidance_dir).get(evidence_folders[0], [])
-    if not papers:
-        return {
-            "state": "unmeasured", "path": evidence_dir, "documents": 0,
-            "reason": f"{evidence_dir} is classed 'evidence' but carries no ingested paper yet",
-        }
+    paths = [guidance_dir / name for name, klass in sorted(registry.items())
+             if klass == "evidence"]
+    ingested = paper_guidance.ingested_papers(guidance_dir)
+    identities: dict = {}
+    for path in paths:
+        for paper in ingested.get(path.name, []):
+            identities.setdefault(paper["folder"], []).append(path.name)
+    for lineage, folders in identities.items():
+        if len(folders) > 1:
+            raise Refused(
+                "EVIDENCE_ROOT_AMBIGUOUS",
+                f"ingested identity {lineage!r} occurs in multiple evidence folders: {folders}",
+            )
+    documents = len(identities)
     return {
-        "state": "document-rooted", "path": evidence_dir, "documents": len(papers), "reason": None,
+        "state": "document-rooted" if documents else "unmeasured",
+        "path": paths[0] if len(paths) == 1 else None,
+        "paths": paths,
+        "documents": documents,
+        "reason": None if documents else (
+            f"{paths[0]} is classed 'evidence' but carries no ingested paper yet"
+            if len(paths) == 1 else
+            (f"{guidance_dir} does not exist yet" if not guidance_dir.is_dir() else
+             f"no folder under {guidance_dir} is classed 'evidence' yet"
+             if not paths else f"no ingested evidence documents under {guidance_dir}")
+        ),
     }
 
 
@@ -1851,7 +1836,7 @@ def resolve_lineage(root: Path, lineage: str, marker: dict) -> Path:
     return root / winners[0]
 
 
-def resolve_ingested_document(evidence_dir: Path, lineage: str) -> Path:
+def resolve_ingested_document(evidence_dir: Path | list[Path], lineage: str) -> Path:
     """The IDENTITY resolution route for a `SourceRootKind.INGESTED` root
     (U2c ruling, `the-requirement-names-the-section-that-feeds-it`,
     Structural consequence): an ingested paper is not a revisioned
@@ -1860,9 +1845,9 @@ def resolve_ingested_document(evidence_dir: Path, lineage: str) -> Path:
     of `evidence_dir/<lineage>/<lineage>.md`, never a marker-driven
     ordinal search.
 
-    Reuses `paper_guidance.ingested_papers` verbatim (asked for
-    `evidence_dir`'s own PARENT registry, filtered to `evidence_dir.
-    name`'s own entries) rather than a second directory walk, then
+    Accepts one evidence directory or a list of directories. Reuses
+    `paper_guidance.ingested_papers` for each parent registry, filtered to
+    each evidence directory, rather than a second directory walk, then
     matches by exact folder-name equality against `lineage`. Refuses
     `SOURCE_LINEAGE_UNRESOLVED` — the SAME code a PROSE-kind root's
     `resolve_lineage` raises above, never a new one — when that filter
@@ -1874,13 +1859,16 @@ def resolve_ingested_document(evidence_dir: Path, lineage: str) -> Path:
     lineage did not resolve to exactly one document" the same way
     `resolve_lineage`'s own docstring already generalizes its two cases.
     """
-    papers = paper_guidance.ingested_papers(evidence_dir.parent).get(evidence_dir.name, [])
+    paths = [evidence_dir] if isinstance(evidence_dir, Path) else evidence_dir
+    papers = [entry for path in paths
+              for entry in paper_guidance.ingested_papers(path.parent).get(path.name, [])]
     candidates = [Path(entry["markdown"]) for entry in papers if entry["folder"] == lineage]
     if len(candidates) != 1:
         raise Refused(
             "SOURCE_LINEAGE_UNRESOLVED",
             f"lineage {lineage!r} resolved to {len(candidates)} ingested document(s) under "
-            f"{evidence_dir} (expected exactly one)",
+            f"{paths[0] if len(paths) == 1 else [str(path) for path in paths]} "
+            "(expected exactly one)",
         )
     return candidates[0]
 
