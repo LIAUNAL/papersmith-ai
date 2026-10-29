@@ -737,6 +737,24 @@ Three rules that order everything else:
   it is the `write` verb that judges what they return — it never trusts the
   operator's account nor the draft on their own.
 
+**Which model runs each agent.** An agent with no `model:` line runs on the
+session's model. Three agents only read (`Read`, `Glob`, `Grep`) and hold no
+gate — `math-tutor`, `insumos-observer` and `style-sampler` — so they carry
+`model: sonnet`. Claude Code reads that line straight from `.claude/agents/`,
+because the workspace copies that directory rather than rendering it. The
+projections for the other harnesses drop the line. Pi has no cited per-agent
+model field; OpenCode (`provider/model`) and Antigravity (`inherit`, `flash`,
+`pro`) have one, but nothing cited says which of their values matches
+`sonnet`, so writing one would be a guess. On those three harnesses every
+agent runs on the session's model.
+
+**Agents read only the stage they are in.** `proposal-implementation` keeps
+each `probe` state's section in its own file,
+`skills/proposal-implementation/references/next-step-<nextStep>.md`, and its
+`SKILL.md` leaves a `Stage reference:` line where the section stood.
+`implementation-build`, `implementation-walk` and `paper-replicator` read
+`SKILL.md`, then only the reference for the `nextStep` that `probe` reports.
+
 ---
 
 ## Anatomy of each skill
