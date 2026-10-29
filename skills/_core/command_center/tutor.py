@@ -16,15 +16,19 @@ The agent never writes; this module is the only writer, and only of the
 reader's uploads and the thread.
 
 The machinery is shared through a ``Profile`` (thread folder, doctrine files,
-context builder, turn schema, modes, tools, lock): ``MATH`` is this panel's,
-and the default of every function here, so its routes and turns are unchanged;
-``experiments_tutor`` declares the experiments panel's.
+context builder, turn schema, modes, tools, deny rules, lock): ``MATH`` is this
+panel's, and the default of every function here, so its routes and turns are
+unchanged; ``experiments_tutor`` declares the experiments panel's. A profile's
+deny rules reach ``claude -p`` as ``--disallowedTools`` through the turn that
+``converse`` runs, whichever runner the caller passed, so the CLI refuses those
+reads even when the model is asked to make them.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import contextvars
 import hashlib
 import json
 import re
@@ -92,6 +96,8 @@ _FALLBACK_DOCTRINE = (
 )
 
 _lock = threading.Lock()
+#: The running turn's deny rules, set by ``converse`` for its profile.
+_deny: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar("tutor_deny", default=())
 
 
 class TutorError(Exception):
@@ -113,6 +119,8 @@ class Profile:
     context: Callable[[Path], Any]
     valid: Callable[[Any], dict[str, Any]]
     tools: tuple[str, ...] = ("Read",)
+    #: Permission rules (``Read(path)``) the CLI must refuse, for a workspace.
+    deny: Callable[[Path], tuple[str, ...]] | None = None
     lock: Any = field(default_factory=threading.Lock, compare=False, repr=False)
 
 
@@ -259,11 +267,14 @@ def build_prompt(root: Path, message: str, image_rels: list[str], mode: str,
 # agent runners
 # --------------------------------------------------------------------------
 def claude_argv(claude: str, system: str, prompt: str, schema: dict[str, Any] | None = None,
-                tools: tuple[str, ...] = ("Read",)) -> list[str]:
+                tools: tuple[str, ...] = ("Read",), deny: tuple[str, ...] = ()) -> list[str]:
     allowed = ",".join(tools)
+    # The CLI splits the list at commas and spaces outside parentheses only, so
+    # one comma-joined value keeps a rule whose path holds a space whole.
+    refused = ["--disallowedTools", ",".join(deny)] if deny else []
     return [claude, "-p", "--output-format", "json", "--no-session-persistence",
             "--strict-mcp-config", "--setting-sources", "local",
-            "--tools", allowed, "--allowedTools", allowed,
+            "--tools", allowed, "--allowedTools", allowed, *refused,
             "--system-prompt", system, "--json-schema", json.dumps(schema or TURN_SCHEMA), prompt]
 
 
@@ -294,7 +305,7 @@ def _run_agent(root: Path, system: str, prompt: str, images: list[Path],
     claude = find_executable("claude")
     if claude:
         # stdin closed: `claude -p` appends whatever it can read there to the prompt.
-        done = subprocess.run(claude_argv(claude, system, prompt, schema, tools), cwd=str(root),
+        done = subprocess.run(claude_argv(claude, system, prompt, schema, tools, _deny.get()), cwd=str(root),
                               env=session_env("claude", root), capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, timeout=TIMEOUT_SECONDS, check=False)
         try:
@@ -366,7 +377,11 @@ def converse(profile: Profile, root: Path, record: dict[str, Any],
         thread = load_thread(root, profile)
         prompt = prompt_for(thread)
         run = runner or partial(run_agent, schema=profile.schema, tools=profile.tools)
-        answer, agent = run(root, system_prompt(root, profile), prompt, images)
+        token = _deny.set(profile.deny(root) if profile.deny else ())
+        try:
+            answer, agent = run(root, system_prompt(root, profile), prompt, images)
+        finally:
+            _deny.reset(token)
         turn = profile.valid(answer)
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         thread["turns"].append({"role": "reader", "at": now, **record})

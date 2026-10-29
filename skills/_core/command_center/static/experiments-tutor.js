@@ -111,7 +111,8 @@
         return;
       }
       renderThread(await res.json());
-      setStatus('Listo', 'ok');
+      // A refresh while a turn runs keeps its "leyendo…" status; send() sets the outcome.
+      if (!state.busy) setStatus('Listo', 'ok');
     } catch (_) { setStatus('Sin conexión con el servidor', 'bad'); }
   }
 
@@ -148,9 +149,11 @@
     loadThread();
   }
 
-  // One line: a newline typed into the agent's prompt would submit it early.
+  // One line of plain text: a newline typed into the agent's prompt would submit
+  // it early, and any other control character (ESC, BEL, DEL) is a terminal command.
   function deliberationCommand(prompt) {
-    return `/experimental-deliberation ${String(prompt || '').replace(/\s+/g, ' ').trim()}`;
+    const text = String(prompt || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    return `/experimental-deliberation ${text}`;
   }
 
   async function deliberate(prompt) {

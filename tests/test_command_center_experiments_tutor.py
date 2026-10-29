@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -256,6 +257,118 @@ class DigestTests(_Root):
             for secret in SECRETS + ("team.json", ".remote-execution", "accounts.json", ".env"):
                 self.assertNotIn(secret, text)
 
+    def test_no_path_handed_to_the_agent_is_a_link_or_leaves_the_workspace(self) -> None:
+        self.populate()
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        away = Path(outside.name).resolve()
+        _write(away, "AGREED.md", "# Elsewhere\n")
+        (away / "src").mkdir()
+        poc = self.root / "implementations/demo/Poc"
+        (poc / "AGREED.md").unlink()
+        (poc / "AGREED.md").symlink_to(away / "AGREED.md")
+        (poc / "Experimental_AGREED.md").symlink_to(poc / "Results/timing.json")
+        shutil.rmtree(self.root / "implementations/demo/src")
+        (self.root / "implementations/demo/src").symlink_to(away / "src", target_is_directory=True)
+        digest = experiments_tutor.digest(self.root)
+        product = digest["products"][0]
+        self.assertEqual(product["read"], [])
+        self.assertEqual(digest["read"], ["experiments/experiments-demo-v01.md"])
+        prompt = experiments_tutor.build_prompt(self.root, "Where is the code?", "ask", "baselines",
+                                                {"turns": []})
+        for rel in ("Poc/AGREED.md", "Experimental_AGREED.md", "implementations/demo/src/", str(away)):
+            self.assertNotIn(rel, prompt)
+
+    def test_a_real_file_beside_a_linked_one_is_still_handed_over(self) -> None:
+        self.populate()
+        poc = self.root / "implementations/demo/Poc"
+        (poc / "Experimental_AGREED.md").symlink_to(poc / "AGREED.md")
+        product = experiments_tutor.digest(self.root)["products"][0]
+        self.assertEqual(product["read"], ["implementations/demo/Poc/AGREED.md",
+                                           "implementations/demo/src/"])
+
+
+MATH_ARGV_V037 = ["/bin/claude", "-p", "--output-format", "json", "--no-session-persistence",
+                  "--strict-mcp-config", "--setting-sources", "local", "--tools", "Read",
+                  "--allowedTools", "Read", "--system-prompt", "S", "--json-schema",
+                  json.dumps(tutor.TURN_SCHEMA), "P"]
+
+#: The rules every experiments turn carries, before the workspace's own
+#: declared credential store and inbox.
+FIXED_RULES = ["Read(./.remote-execution/**)", "Read(./**/.remote-execution/**)",
+               "Read(./.papersmith/team.json)", "Read(./.env*)", "Read(./**/.env*)",
+               "Read(./**/.ssh/**)", "Read(./**/team.json)", "Read(./**/access_token)",
+               "Read(./**/token)", "Read(./**/token.json)", "Read(./**/credentials.json)",
+               "Read(~/.ssh/**)", "Read(~/.kaggle/**)", "Read(~/.config/**)"]
+
+
+class DenyRuleTests(_Root):
+    """"Never read secrets" enforced by the CLI, not only asked of the model:
+    the experiments tutor's command carries Read deny rules; the math tutor's
+    command is byte-identical to v0.37.0's."""
+
+    def declare_store_and_inbox(self) -> None:
+        _write(self.root, "skills/remote-accounts/scripts/accounts_cli.py",
+               'STORE_NAME = "store"\nSTORE_FILE = "accounts.json"\nINBOX_NAME = "remote-inbox"\n')
+
+    def capture(self) -> list:
+        calls = []
+        original_run, original_find = tutor.subprocess.run, tutor.find_executable
+        tutor.find_executable = lambda name: "/bin/claude" if name == "claude" else None
+        tutor.subprocess.run = lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(
+            argv, 0, json.dumps({"structured_output": calls_turn(argv)}), "")
+        self.addCleanup(setattr, tutor.subprocess, "run", original_run)
+        self.addCleanup(setattr, tutor, "find_executable", original_find)
+        return calls
+
+    def test_the_rules_cover_remote_secrets_credentials_home_and_the_declared_store(self) -> None:
+        self.assertEqual(list(experiments_tutor.deny_rules(self.root)), FIXED_RULES)
+        self.declare_store_and_inbox()
+        self.assertEqual(list(experiments_tutor.deny_rules(self.root)),
+                         FIXED_RULES + ["Read(./skills/remote-accounts/store/**)", "Read(./remote-inbox/**)"])
+
+    def test_a_declared_prefix_the_rule_parser_would_split_is_left_to_the_digest_filter(self) -> None:
+        _write(self.root, "skills/remote-accounts/scripts/accounts_cli.py", 'INBOX_NAME = "in(box),x"\n')
+        self.assertEqual(list(experiments_tutor.deny_rules(self.root)), FIXED_RULES)
+
+    def test_the_experiments_command_denies_and_the_math_command_is_unchanged(self) -> None:
+        argv = tutor.claude_argv("/bin/claude", "S", "P", tutor.TURN_SCHEMA, ("Read",), ("Read(./a/**)", "Read(~/b c/**)"))
+        self.assertEqual(argv[argv.index("--disallowedTools") + 1], "Read(./a/**),Read(~/b c/**)")
+        self.assertEqual(argv[-1], "P")
+        self.assertEqual(argv[:argv.index("--disallowedTools")] + argv[argv.index("--disallowedTools") + 2:],
+                         MATH_ARGV_V037)
+        self.assertEqual(tutor.claude_argv("/bin/claude", "S", "P"), MATH_ARGV_V037)
+        self.assertIsNone(tutor.MATH.deny)
+
+    def test_an_experiments_turn_runs_the_cli_with_the_deny_rules(self) -> None:
+        self.declare_store_and_inbox()
+        calls = self.capture()
+        experiments_tutor.run_turn(self.root, "Is my split leak-free?", "ask", "validation")
+        argv = calls[0]
+        self.assertEqual(argv[argv.index("--disallowedTools") + 1].split(","),
+                         FIXED_RULES + ["Read(./skills/remote-accounts/store/**)", "Read(./remote-inbox/**)"])
+        self.assertEqual(argv[argv.index("--tools") + 1], "Read,Glob,Grep")
+        self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep")
+        self.assertEqual(argv[-1].splitlines()[0], "mode: ask")
+
+    def test_a_math_turn_runs_the_v037_command(self) -> None:
+        calls = self.capture()
+        tutor.run_turn(self.root, "What is this?", [], "ask")
+        argv = calls[0]
+        self.assertNotIn("--disallowedTools", argv)
+        self.assertEqual(argv[:13], MATH_ARGV_V037[:13])
+        self.assertEqual(argv[14:16], MATH_ARGV_V037[14:16])
+        self.assertEqual(len(argv), len(MATH_ARGV_V037))
+
+
+def calls_turn(argv: list) -> dict:
+    """The canned answer for whichever tutor ``argv`` runs, read off its schema."""
+    schema = json.loads(argv[argv.index("--json-schema") + 1])
+    if "decision_area" in schema["properties"]:
+        return dict(TURN)
+    return {"image_reading": "", "reply": "r", "question": "q", "latex": [], "novelty_link": "n",
+            "next_step": "s", "assessment": {"level": 1, "label": "reconoce", "evidence": "e", "gaps": []}}
+
 
 class ExperimentsTurnTests(_Root):
     def test_a_turn_records_the_operator_and_the_tutor(self) -> None:
@@ -352,6 +465,7 @@ class ExperimentsRouteTests(_Root):
         self.cookie = {server.TERMINAL_COOKIE: self.app.state.terminal.token}
         self.calls = []
         original = tutor.run_agent
+        self.real_run_agent = original
         self.addCleanup(setattr, tutor, "run_agent", original)
         tutor.run_agent = lambda *args, **kw: self.calls.append(kw) or (dict(TURN), "fake")
 
@@ -367,6 +481,20 @@ class ExperimentsRouteTests(_Root):
                 self.assertEqual(_call(endpoint, self.req(body, {**SAME, "Origin": "http://evil.example"}))
                                  .status_code, 403)
         self.assertEqual(self.calls, [])
+
+    def test_the_route_runs_the_cli_with_the_deny_rules(self) -> None:
+        calls = []
+        original_run, original_find = tutor.subprocess.run, tutor.find_executable
+        self.addCleanup(setattr, tutor.subprocess, "run", original_run)
+        self.addCleanup(setattr, tutor, "find_executable", original_find)
+        tutor.run_agent = self.real_run_agent
+        tutor.find_executable = lambda name: "/bin/claude" if name == "claude" else None
+        tutor.subprocess.run = lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(
+            argv, 0, json.dumps({"structured_output": dict(TURN)}), "")
+        response = _call(_route(self.app, self.BASE + "/turn", "POST"),
+                         self.req({"message": "help", "mode": "ask", "area": "general"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(calls[0][calls[0].index("--disallowedTools") + 1].split(","), FIXED_RULES)
 
     def test_a_turn_runs_through_the_route_with_the_experiments_schema(self) -> None:
         turn = _route(self.app, self.BASE + "/turn", "POST")
@@ -386,6 +514,13 @@ class ExperimentsRouteTests(_Root):
         turn = _route(self.app, self.BASE + "/turn", "POST")
         self.assertEqual(_call(turn, self.req({"message": "hi", "mode": "ask", "area": "nope"})).status_code, 422)
         self.assertEqual(_call(turn, self.req(None)).status_code, 422)
+
+        tutor.run_agent = lambda *args, **kw: self.calls.append(kw) or ({}, "fake")
+        empty = _call(turn, self.req({"message": "hi", "mode": "ask", "area": "general"}))
+        self.assertEqual(empty.status_code, 422)
+        self.assertEqual(json.loads(bytes(empty.body)), {"detail": "the tutor's answer has no text `reply`"})
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(tutor.load_thread(self.root, experiments_tutor.PROFILE)["turns"], [])
 
         def slow(*args, **kw):
             raise subprocess.TimeoutExpired("claude", 300)

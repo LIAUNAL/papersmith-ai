@@ -130,7 +130,10 @@ Credential stores and anything that holds a secret are out of bounds: the
 remote-accounts credential store, `.papersmith/team.json`, the
 `.remote-execution/` ledgers and token files, a service's token folder in the
 home directory, `.env` files. The digest never carries them, and the agent
-does not open them.
+does not open them. In the dashboard this is also enforced below the agent:
+the headless `claude -p` run carries those places as `Read(...)` deny rules
+(`--disallowedTools`), so the CLI itself refuses the read, and the digest
+names no path that is a link or resolves outside the workspace.
 
 ## The turn the agent returns
 

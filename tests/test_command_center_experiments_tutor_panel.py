@@ -110,6 +110,33 @@ class ScriptTests(unittest.TestCase):
             "/experimental-deliberation En [exp:E1], ajusta el escalador dentro de cada fold.",
             False, {"kind": "slash"}]])
 
+    def test_control_characters_never_reach_the_cli(self) -> None:
+        prompt = "Fit\u001b[2J the\u0007 scaler\r\n\tinside\u0000 each\u007f fold\u001b]0;x\u0007."
+        out = node("window.ExperimentsTutor.deliberate("
+                   f"{json.dumps(prompt)}).then(()=>console.log(JSON.stringify([calls,"
+                   f"window.ExperimentsTutor.deliberationCommand({json.dumps(prompt)})])));")
+        calls, command = json.loads(out)
+        self.assertEqual(command, "/experimental-deliberation Fit [2J the scaler inside each fold ]0;x .")
+        self.assertEqual(calls, [[command, False, {"kind": "slash"}]])
+        for char in map(chr, list(range(0x20)) + [0x7F]):
+            self.assertNotIn(char, command)
+
+    def test_a_refresh_during_a_turn_keeps_the_reading_status(self) -> None:
+        out = node(
+            "let answer;const seen=[];"
+            "global.fetch=(url,opts)=>{if(opts&&opts.method==='POST'){return new Promise((r)=>{answer=r;});}"
+            "return Promise.resolve({ok:true,status:200,json:async()=>({turns:[]})});};"
+            "els.xtutorInput={value:'¿Y la fuga?'};els.xtutorArea={value:'validation'};"
+            "const turn=window.ExperimentsTutor.send();"
+            "(async()=>{seen.push(els.xtutorStatus.textContent);"
+            "await window.refreshExperimentsTutor();seen.push(els.xtutorStatus.textContent,els.xtutorStatus.dataset.tone);"
+            "answer({ok:true,status:200,json:async()=>({agent:'claude'})});await turn;"
+            "seen.push(els.xtutorStatus.textContent);"
+            "await window.refreshExperimentsTutor();seen.push(els.xtutorStatus.textContent);"
+            "console.log(JSON.stringify(seen));})();")
+        reading = "El tutor está leyendo el protocolo, el código y los resultados… (suele tardar 30–90 s)"
+        self.assertEqual(json.loads(out), [reading, reading, "warn", "Respondió claude", "Listo"])
+
     def test_a_message_posts_its_mode_and_area_to_the_experiments_route(self) -> None:
         out = node(
             "const sent=[];global.fetch=async(url,opts)=>{sent.push([url,opts&&opts.method||'GET',opts&&opts.body]);"

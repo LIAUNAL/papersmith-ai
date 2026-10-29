@@ -10,6 +10,9 @@ __pycache__/
 .papersmith/cache/
 # The team registry names people and their accounts (no secrets, still personal data).
 .papersmith/team.json
+# The tutors' threads and the reader's hand-written pages: the reader's own.
+.papersmith/math-tutor/
+.papersmith/experiments-tutor/
 skills/paper-ingestion/.venv/
 kaggle-inbox/*
 !kaggle-inbox/.gitkeep

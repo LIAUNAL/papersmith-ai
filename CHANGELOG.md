@@ -33,13 +33,21 @@ number is `0`, breaking changes can still arrive without a major bump.
   cookie and same-origin guards; the thread lives in
   `.papersmith/experiments-tutor/`. The turn's digest of the experiments is
   size-capped and never carries a credential store, `.papersmith/team.json`,
-  a `.remote-execution/` file or a token.
+  a `.remote-execution/` file or a token, nor a path that is a link or leaves
+  the workspace; the headless `claude -p` run also carries those places, the
+  workspace's declared credential store and inbox, and `~/.ssh`, `~/.kaggle`
+  and `~/.config` as `Read(...)` deny rules (`--disallowedTools`), so the CLI
+  refuses the read even if the model attempts it. A drafted change typed into
+  the CLI assistant is one line with every control character removed.
+- New workspaces ignore `.papersmith/math-tutor/` and
+  `.papersmith/experiments-tutor/` (the tutors' threads and the reader's
+  hand-written pages), and so does this repository.
 
 ### Changed
 
 - The math tutor's backend (`tutor.py`) is generalized into tutor profiles
-  (thread folder, doctrine, context, turn schema, modes, tools, lock); the
-  math tutor's routes, prompt and thread are unchanged.
+  (thread folder, doctrine, context, turn schema, modes, tools, deny rules,
+  lock); the math tutor's routes, prompt, command and thread are unchanged.
 
 ## 0.37.0
 

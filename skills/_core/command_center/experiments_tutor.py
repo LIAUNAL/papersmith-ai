@@ -11,7 +11,11 @@ local-environment sections probe credentials and spawn processes -- and keeps
 an explicit whitelist of fields: run counts but not the ledger, table headers
 but not their rows. Every path it names passes ``_exposed`` first, so a
 credential store, ``.papersmith/team.json``, a ``.remote-execution/`` file or a
-token never reaches the agent through it. ``measured`` says whether any
+token never reaches the agent through it, and no path it names is a link or
+resolves outside the workspace. The CLI enforces the same boundary on the
+agent's own reads: ``deny_rules`` hands ``claude -p`` Read deny rules for those
+places and the home credential folders (``Read`` rules also bound its Grep
+searches and listings). ``measured`` says whether any
 product holds a measurement; when it is false the prompt says "nothing
 measured yet" and the doctrine forbids supplying a number.
 
@@ -24,11 +28,13 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
 from . import experiments_view as ev
 from .state_extractor import credentials_store, inbox_directory
+from .terminal import REMOTE_MCP_TOKEN_DIR
 from .tutor import HISTORY_IN_PROMPT, MAX_MESSAGE, Profile, TutorError, converse
 
 FOLDER = (".papersmith", "experiments-tutor")
@@ -49,6 +55,15 @@ TEXT = 300
 #: Path parts and file names that hold secrets; a path carrying one is dropped.
 SECRET_PARTS = (".remote-execution", ".ssh")
 SECRET_NAMES = ("team.json", "access_token", "token", "token.json", "credentials.json")
+#: Read deny rules for the CLI: gitignore-style paths, ``./`` from the
+#: workspace (the agent's working directory), ``~/`` from the home.
+DENY_READ = ("./.remote-execution/**", "./**/.remote-execution/**", "./.papersmith/team.json",
+             "./.env*", "./**/.env*", "./**/.ssh/**",
+             *(f"./**/{name}" for name in SECRET_NAMES),
+             "~/.ssh/**", f"~/{REMOTE_MCP_TOKEN_DIR}/**", "~/.config/**")
+#: A declared prefix the rule list can carry verbatim: no parenthesis or comma
+#: (the CLI splits its list there) and no glob character.
+_PLAIN_PREFIX = re.compile(r"[\w.\- /]+/")
 
 TURN_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -104,6 +119,24 @@ def _secret_paths(root: Path) -> tuple[str, ...]:
     return tuple(out)
 
 
+def deny_rules(root: Path) -> tuple[str, ...]:
+    """The Read rules ``claude -p`` refuses for this workspace: the fixed
+    secrets and the credential store and inbox its own skills declare. A
+    declared prefix the list cannot carry verbatim stays covered only by the
+    digest's filter and the doctrine."""
+    root = Path(root).expanduser().resolve()
+    declared = (f"./{prefix}**" for prefix in _secret_paths(root) if _PLAIN_PREFIX.fullmatch(prefix))
+    return tuple(f"Read({path})" for path in (*DENY_READ, *declared))
+
+
+def _inside(root: Path, path: Path) -> bool:
+    """``path`` exists, is no link, and resolves inside the workspace."""
+    try:
+        return not path.is_symlink() and path.resolve(strict=True).is_relative_to(root)
+    except (OSError, RuntimeError):
+        return False
+
+
 def _exposed(rel: str, secret: tuple[str, ...]) -> bool:
     parts = rel.split("/")
     return (any(part in SECRET_PARTS or part.startswith(".env") for part in parts)
@@ -131,8 +164,8 @@ def _product(root: Path, view: dict[str, Any], secret: tuple[str, ...]) -> dict[
     folder = root / view["path"]
     keep = lambda rel: rel and not _exposed(rel, secret)  # noqa: E731
     read = [f"{view['path']}/{marker}" for marker in ("AGREED.md", "Experimental_AGREED.md")
-            if (folder / marker).is_file()]
-    if (folder.parent / "src").is_dir():
+            if (folder / marker).is_file() and _inside(root, folder / marker)]
+    if (folder.parent / "src").is_dir() and _inside(root, folder.parent / "src"):
         read.append(f"implementations/{view['repo']}/src/")
     significance = [{k: row.get(k) for k in ("comparison", "test", "statistic", "p_value", "p_adjusted",
                                               "correction", "effect_size", "effect_size_name", "n", "alpha")}
@@ -296,8 +329,9 @@ PROFILE = Profile(
     context=digest,
     valid=_valid,
     tools=("Read", "Glob", "Grep"),
+    deny=deny_rules,
 )
 
 
 __all__ = ["PROFILE", "TURN_SCHEMA", "AREAS", "MODES", "LEVELS", "MAX_DIGEST_CHARS", "digest",
-           "build_prompt", "run_turn"]
+           "deny_rules", "build_prompt", "run_turn"]

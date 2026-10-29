@@ -592,6 +592,27 @@ class InitTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             assert main(["audit", str(workspace), "--check-drift"]) == 0
 
+    def test_a_fresh_workspace_ignores_both_tutors_threads_and_uploads(self) -> None:
+        """The tutors keep the reader's conversation and hand-written pages
+        under `.papersmith/`; they are the reader's, and never travel."""
+        workspace = self.new_tmp() / "paper"
+        init_module.initialize(workspace, title="T", topic="t", tools=("claude",),
+                               run_npm=False, run_env=False)
+        ignore = (workspace / ".gitignore").read_text(encoding="utf-8")
+        block = ignore.split(MANAGED_BLOCK_BEGIN, 1)[1].split(MANAGED_BLOCK_END, 1)[0].splitlines()
+        for entry in (".papersmith/math-tutor/", ".papersmith/experiments-tutor/"):
+            assert entry in block, entry
+        if not (workspace / ".git").exists():
+            subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
+        for rel in (".papersmith/math-tutor/thread.json", ".papersmith/math-tutor/images/0123.png",
+                    ".papersmith/experiments-tutor/thread.json"):
+            done = subprocess.run(["git", "check-ignore", "-q", rel], cwd=workspace, check=False)
+            assert done.returncode == 0, rel
+        # This repository holds itself to the same contract.
+        own = (Path(__file__).parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
+        for entry in (".papersmith/math-tutor/", ".papersmith/experiments-tutor/"):
+            assert entry in own, entry
+
     def test_import_refuses_gitignore_with_malformed_markers(self) -> None:
         workspace = self.new_tmp() / "repo"
         workspace.mkdir()
