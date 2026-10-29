@@ -24,8 +24,12 @@ survive an environment missing everything else.
 
 import ast
 import re
+import sys
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from skill_text import stage_references  # noqa: E402  (path set above)
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENTS = ROOT / ".claude" / "agents"
@@ -368,6 +372,25 @@ class AgentBindingTests(unittest.TestCase):
         self.assertEqual(orphans, [],
                          "these agents exist and no skill delegates to them, "
                          "so nothing reaches them")
+
+    def test_every_agent_bound_to_a_split_skill_reads_the_current_stage(self) -> None:
+        """A skill that moved its per-state sections into `references/` keeps
+        one `Stage reference:` line per section. An agent told to load
+        `SKILL.md` and nothing else would never see the section for the state
+        it is in, so it has to be told where that section went."""
+        bound = 0
+        for path in self.agents():
+            body = path.read_text(encoding="utf-8")
+            for skill in sorted(set(re.findall(r"skills/([\w-]+)/SKILL\.md", body))):
+                doc = SKILLS / skill / "SKILL.md"
+                if not doc.is_file() or not stage_references(doc):
+                    continue
+                bound += 1
+                with self.subTest(agent=path.stem, skill=skill):
+                    text = " ".join(body.split())
+                    self.assertIn("references/next-step-<nextStep>.md", text)
+                    self.assertIn("`Stage reference:`", text)
+        self.assertTrue(bound, "no agent binds a skill with stage references")
 
     def test_every_agent_states_its_tools(self) -> None:
         """An agent that declares none inherits everything, which is the

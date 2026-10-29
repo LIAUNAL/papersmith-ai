@@ -12,6 +12,12 @@ Every rule about isolation, layout and verification is there and none is
 repeated here. This file adds only what replicating a method from its paper
 needs on top of it.
 
+Its per-state sections live beside it: each `Stage reference:` line in
+`SKILL.md` names the file, `references/next-step-<nextStep>.md`, that holds
+what to do when `probe` reports that `nextStep`. Read `SKILL.md`, then only the
+reference for the `nextStep` `probe` reports now, and the next one when it
+changes.
+
 ## Where you run, and on what
 
 You run as a subagent of the active harness session — Claude Code, OpenCode or
