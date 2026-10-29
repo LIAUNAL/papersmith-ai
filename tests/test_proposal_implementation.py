@@ -2081,7 +2081,7 @@ class ReportContractTests(unittest.TestCase):
                                "print(tables.conclusion(runs, 'accuracy', reduction))")]
         found = self.state(cells)["unaimed"]
         self.assertEqual(len(found), 1, found)
-        self.assertEqual(found[0]["reason"], "la sección no dice qué valor se busca")
+        self.assertEqual(found[0]["reason"], "the section does not say what number it aims for")
 
     def test_declaring_no_objective_at_all_is_the_reason_and_not_a_pass(self):
         """The lesson of `figures: []`, applied before repeating it.
@@ -2095,7 +2095,7 @@ class ReportContractTests(unittest.TestCase):
             "        'objectiveEntry': 'tables.objective',\n", "")
         found = self.state(self.WELL_FORMED, silent)["unaimed"]
         self.assertEqual(len(found), 1, found)
-        self.assertEqual(found[0]["reason"], "el contrato no declara objectiveEntry")
+        self.assertEqual(found[0]["reason"], "the contract declares no objectiveEntry")
 
     def test_the_objective_is_computed_and_counts_as_framing(self):
         """The value sought cannot be typed in: it ages just like a typed
@@ -2171,7 +2171,7 @@ class ReportContractTests(unittest.TestCase):
                        "print(tables.conclusion(runs, 'accuracy', reduction))")]
         found = self.state(cells)["duplicated"]
         self.assertTrue(found, "a cell with two tables came out clean")
-        self.assertTrue(any(f.get("reason") == "más de una medición en una celda"
+        self.assertTrue(any(f.get("reason") == "more than one reading in one cell"
                             for f in found), found)
 
     def test_one_renderer_called_once_is_not_a_duplicate(self):
@@ -5487,7 +5487,7 @@ class ComponentShareTests(unittest.TestCase):
             root = Path(raw)
             found = self.state(root, "", "{'accuracy': 'higher'}")["componentsWithoutShare"]
             self.assertEqual(len(found), 1)
-            self.assertIn("no declara `components`", found[0]["reason"])
+            self.assertIn("declares no `components`", found[0]["reason"])
 
     def test_more_than_one_term_and_no_share_is_the_gap_the_rule_is_about(self):
         """Two terms that add up and no way to read each one's share."""
@@ -5586,7 +5586,7 @@ class CellOutputTests(unittest.TestCase):
         the cell reports a file name where a result should be."""
         found = self.state(self.drawing([_stream("escrita: curves.pdf\n")]))
         self.assertEqual(len(found["describedNotShown"]), 1)
-        self.assertEqual(found["describedNotShown"][0]["emitted"], ["texto"])
+        self.assertEqual(found["describedNotShown"][0]["emitted"], ["text"])
 
     def test_a_figure_that_actually_rendered_passes(self):
         """Green has to be reachable, or the red above proves nothing."""
@@ -5661,7 +5661,7 @@ class CellOutputTests(unittest.TestCase):
                            self.SILENT)
         self.assertEqual(len(state["describedNotShown"]), 1, state["describedNotShown"])
         found = state["describedNotShown"][0]
-        self.assertEqual(found["drawing"], "<sin declarar>")
+        self.assertEqual(found["drawing"], "<undeclared>")
         self.assertEqual(found["description"], "<Figure size 640x480>")
         self.assertEqual(state["status"], "drift")
 

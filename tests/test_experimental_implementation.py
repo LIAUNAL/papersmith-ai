@@ -1767,7 +1767,7 @@ class IntrospectBenchmarkConfigFallbackTests(unittest.TestCase):
         """`__init__.py` binds nothing; `config.py` alone declares
         `__benchmark__` with a `conclusionEntry` naming a function that does
         not exist. Before the fix, `contract` reads `{}` and the inert
-        entry names `"*"` ("el contrato no declara conclusionEntry"); after
+        entry names `"*"` ("the contract declares no conclusionEntry"); after
         it, `contract` is read from `config.py` and the inert entry names
         the declared (unresolvable) entry instead -- proof the text was
         actually read, not merely that some inert entry exists."""
@@ -1790,7 +1790,7 @@ class IntrospectBenchmarkConfigFallbackTests(unittest.TestCase):
         self.assertEqual(len(conclusions), 1, conclusions)
         self.assertEqual(conclusions[0]["conclusion"],
                          "entrypoint.nonexistent_fn")
-        self.assertIn("no se pudo ejercitar", conclusions[0]["reason"])
+        self.assertIn("could not be exercised", conclusions[0]["reason"])
 
 
 class JobExecutionFieldsSharedReaderTests(unittest.TestCase):

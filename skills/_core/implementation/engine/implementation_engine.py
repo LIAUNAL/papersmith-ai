@@ -955,29 +955,29 @@ def position_state(target: Path, name: str, evidence: dict,
         if result["unbacked"]:
             unbacked.append(entry)
 
-        # No es "todavía no", es "nunca": el testigo de cuaderno se tilda contra
-        # `sourcesMatch`, que sólo escribe el sello. Un cuaderno sin la celda del
-        # sello deja ese campo en `None` para siempre, así que el paso puede
-        # correr impecable las veces que sea y el ítem no se mueve. La marca
-        # pelada confunde los dos estados y manda a correr de nuevo lo que ya
-        # corrió bien; esto los separa, sin aflojar la secuencia.
+        # Not "not yet" but "never": a notebook witness is ticked by
+        # `sourcesMatch`, which only the seal writes. A notebook without the
+        # seal cell keeps that field `None` forever, so the step can run
+        # flawlessly any number of times and the item never moves. The bare
+        # mark conflates the two states and sends a step that already ran
+        # well to run again; this separates them without loosening the sequence.
         if item["witness"]["kind"].startswith("notebook"):
-            operando = item["witness"]["operand"] or ""
-            informe = next(
+            operand = item["witness"]["operand"] or ""
+            report = next(
                 (r for r in (evidence.get("notebooks") or {}).get("reports", [])
-                 if r.get("notebook") == operando
-                 or r.get("notebook", "").endswith(f"/{operando}")), None)
-            if informe is not None and informe.get("sealed") is False:
+                 if r.get("notebook") == operand
+                 or r.get("notebook", "").endswith(f"/{operand}")), None)
+            if report is not None and report.get("sealed") is False:
                 unmeasurable.append({
                     "ordinal": item["ordinal"],
-                    "notebook": informe["notebook"],
+                    "notebook": report["notebook"],
                     "measuredBy": result["measuredBy"],
                     "reason": (
                         "the notebook carries no seal cell, so `sourcesMatch` "
                         "is never written and this witness can never be "
                         "measured -- the step running is not the problem"),
                     "resolve": (
-                        f"add the kit's seal to {informe['notebook']}: a final "
+                        f"add the kit's seal to {report['notebook']}: a final "
                         f"cell that prints `{KIT_SEAL.stem}.stamp()`, then run "
                         "the step once more so the report records it"),
                 })
@@ -1039,8 +1039,8 @@ def position_state(target: Path, name: str, evidence: dict,
         "boundTo": bound_to, "sequence": sequence,
         "disagreements": disagreements, "unmeasured": unmeasured,
         "unbacked": unbacked,
-        # Los ítems que no pueden tildarse jamás, distinguidos de los que
-        # simplemente no corrieron todavía. Ver el bloque que lo llena.
+        # The items that can never be ticked, told apart from the ones that
+        # simply have not run yet. See the block that fills it.
         "unmeasurable": unmeasurable,
         "lastGate": last_gate, "lastClose": last_close,
         "targetLevel": block["target"],
@@ -7096,9 +7096,9 @@ inert = []
 entry = contract.get("conclusionEntry")
 payload = json.load(open(record, encoding="utf-8")) if record else {}
 if not entry:
-    inert.append({"conclusion": "*", "reason": "el contrato no declara conclusionEntry"})
+    inert.append({"conclusion": "*", "reason": "the contract declares no conclusionEntry"})
 elif not payload:
-    inert.append({"conclusion": entry, "reason": "sin registro sobre el que probar"})
+    inert.append({"conclusion": entry, "reason": "no record to test with"})
 else:
     module_name, _, function_name = entry.rpartition(".")
     try:
@@ -7108,12 +7108,12 @@ else:
         first = produce(payload)
         second = produce(shuffled(payload, rng))
     except Exception as exc:
-        inert.append({"conclusion": entry, "reason": f"no se pudo ejercitar: {exc}"})
+        inert.append({"conclusion": entry, "reason": f"could not be exercised: {exc}"})
     else:
         for label in sorted(set(first) | set(second)):
             if first.get(label) == second.get(label):
                 inert.append({"conclusion": label,
-                              "reason": "el texto no cambia cuando cambian los números"})
+                              "reason": "the text does not change when the numbers do"})
 
 print(json.dumps({"subsets": subsets, "inertConclusions": inert,
                   # Named, never inferred from an empty `subsets`: a check that
@@ -7278,7 +7278,7 @@ def introspect(target: Path, package: str, record: Path | None,
     interpreter = target_interpreter(target)
     if not interpreter.exists():
         return {"status": "unavailable",
-                "detail": f"no hay intérprete en {interpreter}: corré `env` primero"}
+                "detail": f"no interpreter at {interpreter}: run `env` first"}
     proc = subprocess.run(
         [str(interpreter), "-c", INTROSPECT, package,
          str(record) if record and record.exists() else "", entry_module],
@@ -7287,11 +7287,11 @@ def introspect(target: Path, package: str, record: Path | None,
     )
     if proc.returncode != 0:
         return {"status": "unavailable",
-                "detail": (proc.stderr.strip().splitlines() or ["falló sin mensaje"])[-1]}
+                "detail": (proc.stderr.strip().splitlines() or ["failed without a message"])[-1]}
     try:
         return {"status": "ok", **json.loads(proc.stdout or "{}")}
     except json.JSONDecodeError:
-        return {"status": "unavailable", "detail": "salida ilegible del intérprete"}
+        return {"status": "unavailable", "detail": "unreadable output from the interpreter"}
 
 
 def report_contract(target: Path, name: str) -> dict:
@@ -7512,9 +7512,9 @@ def report_state(target: Path, name: str, package: str) -> dict:
                     if describes:
                         described_not_shown.append({
                             "notebook": rel, "cell": index,
-                            "drawing": ", ".join(drawn) or "<sin declarar>",
+                            "drawing": ", ".join(drawn) or "<undeclared>",
                             "emitted": sorted(produced["mimes"])
-                                       or (["texto"] if produced["streamed"] else []),
+                                       or (["text"] if produced["streamed"] else []),
                             # The repr itself when that is what gave it away, so
                             # the reader sees the sentence that stood in for the
                             # picture rather than being told one exists.
@@ -7616,7 +7616,7 @@ def report_state(target: Path, name: str, package: str) -> dict:
                               if d not in dimensions
                               and (f'"{d}"' in source or f"'{d}'" in source))
             if not writes_record:
-                for key in named or ["<sin dimensión>"]:
+                for key in named or ["<no dimension>"]:
                     for call in rendered:
                         signature = f"{call}({key})"
                         if signature in seen:
@@ -7628,10 +7628,10 @@ def report_state(target: Path, name: str, package: str) -> dict:
 
                 if len(renderings) > 1:
                     duplicated.append({"notebook": rel, "cell": index,
-                                       # Lo que la celda imprimió, con repeticiones:
-                                       # `a + a` es el caso que el conjunto perdía.
+                                       # What the cell printed, repeats included:
+                                       # `a + a` is the case the set used to lose.
                                        "rendering": " + ".join(sorted(renderings)),
-                                       "reason": "más de una medición en una celda"})
+                                       "reason": "more than one reading in one cell"})
 
             # A section may legitimately render more than once before it concludes,
             # and the rule that forbids two measurements in one cell is what makes
@@ -7677,7 +7677,7 @@ def report_state(target: Path, name: str, package: str) -> dict:
             elif gap and back >= 0 and cells[back].get("cell_type") != "markdown":
                 unframed.append({"notebook": rel, "cell": index,
                                  "rendering": ", ".join(sorted(set(rendered))),
-                                 "reason": "la explicación no está inmediatamente antes"})
+                                 "reason": "the explanation does not immediately precede it"})
 
             # Whether the section says what value would count as the good one. A
             # direction is not a target: «higher is better» tells a reader which
@@ -7701,8 +7701,8 @@ def report_state(target: Path, name: str, package: str) -> dict:
                     # An absent declaration is the reason, not an excuse. Silence
                     # here would make a package that declares no objective at all
                     # indistinguishable from one whose objectives are all stated.
-                    "reason": ("el contrato no declara objectiveEntry" if not aim
-                               else "la sección no dice qué valor se busca"),
+                    "reason": ("the contract declares no objectiveEntry" if not aim
+                               else "the section does not say what number it aims for"),
                 })
 
             concluded = any(c in conclusions for c in calls)
@@ -7763,12 +7763,12 @@ def report_state(target: Path, name: str, package: str) -> dict:
         unrecorded.append(share)
     if len(terms) > 1 and not share:
         shareless = [{"terms": terms,
-                      "reason": "más de un término y ningún `share` declarado: la "
-                                "parte de cada uno no se puede leer del registro"}]
+                      "reason": "more than one term and no `share` declared: each "
+                                "one's part cannot be read from the record"}]
     elif not components:
         shareless = [{"terms": [],
-                      "reason": "el contrato no declara `components`; sin ellos nadie "
-                                "puede decir si un término no hizo nada o no pesó nada"}]
+                      "reason": "the contract declares no `components`; without them nobody "
+                                "can tell whether a term did nothing or weighed nothing"}]
     else:
         shareless = []
 
@@ -7790,9 +7790,9 @@ def report_state(target: Path, name: str, package: str) -> dict:
                 # out as a sentence describing a figure. Both are cells that ran
                 # clean and reported nothing, which is why no check that reads
                 # `execution_count` and the error list has ever caught one.
-                # Una sección que muestra una medición y nunca dice contra qué
-                # se la compara. La dirección sola no alcanza: dice para qué lado
-                # mirar y nada sobre dónde termina lo bueno.
+                # A section that shows a reading and never says what it is
+                # compared to. A direction alone is not enough: it says which
+                # way to look and nothing about where good ends.
                 "unaimed": unaimed,
                 "unrendered": unrendered,
                 # A declared rendering that emitted a sentence where the result
@@ -9116,8 +9116,8 @@ def notebooks_state(target: Path, name: str, package: str) -> dict:
         # The boundary travels WITH the status, where a reader meets it,
         # rather than in a docstring they will not open.
         state["digestScope"] = DIGEST_SCOPE
-        # Estático, y antes de que corra nada: `unstamped` mira las SALIDAS y por
-        # eso sólo puede hablar de un cuaderno que ya corrió. Éste mira la fuente.
+        # Static, and ahead of any run: `unstamped` reads the OUTPUTS and so
+        # can only speak of a notebook that already ran. This one reads the source.
         # A file that is not a notebook document cannot seal: `False`, never a
         # traceback, so it is named in `unsealed` like one without the seal cell.
         document = read_notebook_document(notebook)
@@ -9145,10 +9145,10 @@ def notebooks_state(target: Path, name: str, package: str) -> dict:
         # failure as a green suite whose red was never reachable.
         "unstamped": [r["notebook"] for r in reports
                       if r["status"] == "executed" and r["sourcesMatch"] is None],
-        # La mitad que se puede exigir DESDE CERO. `unstamped` de arriba es su
-        # post-mortem: dice lo mismo, después de pagar la corrida. Un cuaderno
-        # acá no puede sellar, así que cualquier testigo que lo nombre es un
-        # ítem que jamás se tilda por bien que corra el paso.
+        # The half that can be demanded FROM SCRATCH. `unstamped` above is its
+        # post-mortem: it says the same thing once the run has been paid for. A
+        # notebook here cannot seal, so any witness that names it is an item
+        # that is never ticked, however well the step runs.
         "unsealed": [r["notebook"] for r in reports if not r["sealed"]],
         "status": "ok" if reports and all(
             r["status"] == "executed" and r["sourcesMatch"] for r in reports) else "drift",

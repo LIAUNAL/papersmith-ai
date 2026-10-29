@@ -326,7 +326,7 @@ class DiscoverSourceRootsTests(_BaseFixture):
             EXTRACTOR.discover_source_roots({"source_roots": ["definitely/not/here"]}), [])
 
     def test_nothing_configured_fails_closed(self) -> None:
-        """Descubrir nada en silencio se lee igual que "ya está todo ingerido"."""
+        """Discovering nothing in silence reads the same as "everything is already ingested"."""
         with self.assertRaises(EXTRACTOR.ConfigError):
             EXTRACTOR.discover_source_roots({})
 
@@ -366,11 +366,11 @@ class FindLoosePdfsTests(_BaseFixture):
 
 
 class UnfiledPdfsTests(_BaseFixture):
-    """El PDF que cae en la base misma, al lado de las carpetas y en ninguna.
+    """The PDF dropped into the base itself, beside the folders and in none of them.
 
-    Es el par peor: está pendiente y es invisible. El descubrimiento solo promueve
-    HIJAS de la base, así que nadie lo encuentra y la corrida informa que está todo
-    ingerido — el silencio exacto contra el que `source_base` falla cerrado.
+    It is the worst pair: pending and invisible. Discovery only promotes
+    CHILDREN of the base, so nobody finds it and the run reports that everything
+    is ingested — the exact silence `source_base` fails closed against.
     """
 
     def test_a_pdf_beside_the_topic_folders_is_reported(self) -> None:
@@ -380,14 +380,14 @@ class UnfiledPdfsTests(_BaseFixture):
                          ["dropped.pdf"])
 
     def test_it_is_never_ingested_where_it_lies(self) -> None:
-        """Convertirlo ahí lo volvería un tema propio, y la corrida siguiente lo
-        leería como carpeta ya ingerida y lo dejaría ahí para siempre."""
+        """Converting it there would turn it into a topic of its own, and the next
+        run would read it as an already-ingested folder and leave it there forever."""
         (self.base / "dropped.pdf").write_bytes(b"%PDF")
         roots = EXTRACTOR.discover_source_roots({**self.cfg, "source_roots": []})
         self.assertEqual(EXTRACTOR.find_loose_pdfs(roots), [])
 
     def test_a_pdf_inside_a_topic_is_not_unfiled(self) -> None:
-        """El otro polo: sin esto, un chequeo que marcara todo no distinguiría nada."""
+        """The other pole: without it, a check that flagged everything would tell nothing apart."""
         self.topic("datasets", "inside.pdf")
         self.assertEqual(EXTRACTOR.unfiled_pdfs(self.cfg), [])
 
@@ -419,13 +419,13 @@ class FileIntoTests(_BaseFixture):
         self.assertTrue(landed.is_file())
 
     def test_it_never_displaces_a_paper_already_there(self) -> None:
-        """Dos papers distintos bajo un mismo nombre: mover destruiría el primero."""
+        """Two different papers under one name: moving would destroy the first."""
         self.topic("datasets", "dropped.pdf")
         pdf = self.base / "dropped.pdf"
         pdf.write_bytes(b"%PDF-other")
         with self.assertRaises(EXTRACTOR.ConfigError):
             EXTRACTOR.file_into(pdf, "datasets", self.cfg)
-        self.assertTrue(pdf.exists(), "el original tiene que seguir donde estaba")
+        self.assertTrue(pdf.exists(), "the original must stay where it was")
 
     def test_a_topic_that_escapes_the_base_is_refused(self) -> None:
         pdf = self.base / "dropped.pdf"
@@ -435,8 +435,8 @@ class FileIntoTests(_BaseFixture):
                 EXTRACTOR.file_into(pdf, folder, self.cfg)
 
     def test_only_a_pdf_sitting_in_the_base_can_be_filed(self) -> None:
-        """Un PDF que ya está en un tema no es un pendiente sin archivar, y moverlo
-        sería reorganizar la biblioteca de alguien sin que lo pidiera."""
+        """A PDF already in a topic is not an unfiled pending one, and moving it
+        would reorganize someone's library without being asked."""
         inside = self.topic("datasets", "inside.pdf") / "inside.pdf"
         with self.assertRaises(EXTRACTOR.ConfigError):
             EXTRACTOR.file_into(inside, "reference-papers", self.cfg)

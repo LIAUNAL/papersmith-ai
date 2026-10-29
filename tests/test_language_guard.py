@@ -12,7 +12,8 @@ opens a question or exclamation with an inverted mark, when it pairs an accented
 letter with a Spanish function word, or when it holds three function words no
 English sentence uses. Test modules are judged on their prose only (comments and
 docstrings): a Spanish string literal in a test is data the code under test
-reads, and translating it would test something else.
+reads, and translating it would test something else. A JavaScript or TypeScript
+test's prose is its comment lines; a trailing comment after code is not read.
 """
 
 from __future__ import annotations
@@ -32,11 +33,14 @@ from papersmith.generators import ALL_TOOLS, render_files
 from papersmith.render import package_template_path
 
 REPO = Path(__file__).resolve().parents[1]
-SUFFIXES = (".md", ".py", ".tpl", ".json")
+SUFFIXES = (".md", ".py", ".tpl", ".json", ".ts", ".tsx", ".mjs", ".js")
+JS_SUFFIXES = (".ts", ".tsx", ".mjs", ".js")
 #: Excluded outright, not allowlisted: the dashboard's Spanish lives there
 #: until T2 of odd/tasks/language-surfaces.md moves it into a catalogue, and
-#: the guard is extended to it afterwards. Dependencies are not ours to judge.
-EXCLUDED = ("skills/_core/command_center/*", "*node_modules/*")
+#: the guard is extended to it afterwards. Dependencies, vendored code and
+#: built bundles are not ours to judge: their source is somewhere else.
+EXCLUDED = ("skills/_core/command_center/*", "*node_modules/*", "vendor/*", "*/vendor/*",
+            "dist/*", "*/dist/*", "*.bundle.js", "*.min.js")
 
 ENTRYPOINTS = ("CLAUDE.md", "OPENCODE.md", ".pi/APPEND_SYSTEM.md", ".agents/AGENTS.md")
 LANGUAGE = package_template_path("language.md.tpl").read_text(encoding="utf-8").strip()
@@ -65,7 +69,6 @@ class Allow:
     lines: tuple[str, ...] = ()
 
 
-PENDING_T1B = "pending T1b (outside T1 surfaces)"
 PENDING_T2 = "pending T2 English catalogue"
 
 ALLOWLIST = (
@@ -90,9 +93,16 @@ ALLOWLIST = (
           ("Disposición de grupos",)),
     Allow("skills/paper-writing/scripts/paper_declarations.py", "verbatim operator quote",
           ("las decisiones no viven en ti",)),
-    Allow("skills/_core/implementation/engine/implementation_engine.py", PENDING_T1B),
+    Allow("skills/proposal-deliberation/profile.ts", "vocabulary data", ("ecuaci",)),
+    Allow("skills/_core/deliberation/engine/intent-resolver.ts",
+          "Spanish instruction vocabulary the resolver recognizes",
+          ("has('", ".test(", ".match(/", "=/(?:")),
+    Allow("skills/_core/deliberation/engine/target-resolver.ts",
+          "Spanish stopwords and heading vocabulary the resolver recognizes",
+          ("STOPWORDS", "secci[oó]n")),
+    Allow("skills/_core/deliberation/engine/smoke-runner.ts",
+          "Spanish instructions the smoke run feeds the resolver", ("execute({instruction:",)),
     Allow("tests/fixtures/*", "fixture data fed to the code under test"),
-    Allow("tests/test_extract_pdf.py", PENDING_T1B),
     Allow("tests/test_experimental_implementation.py",
           "quotes a past engine refusal verbatim", ("no declara qué reescribiría",)),
 )
@@ -142,10 +152,31 @@ def _prose_lines(source: str) -> dict[int, str]:
     return prose
 
 
+def _js_prose_lines(source: str) -> dict[int, str]:
+    """A JavaScript or TypeScript test's comment lines, by line number: those
+    opening with ``//``, and every line of a block comment that opens a line."""
+    prose: dict[int, str] = {}
+    in_block = False
+    for number, line in enumerate(source.split("\n"), 1):
+        stripped = line.lstrip()
+        if in_block or stripped.startswith(("//", "/*")):
+            prose[number] = line
+            if stripped.startswith("/*") or in_block:
+                in_block = "*/" not in line
+    return prose
+
+
+def _is_test(rel: str) -> bool:
+    name = rel.rsplit("/", 1)[-1]
+    return rel.startswith("tests/") or ".test." in name or ".spec." in name
+
+
 def _lines(rel: str) -> dict[int, str]:
     text = (REPO / rel).read_text(encoding="utf-8", errors="replace")
-    if rel.startswith("tests/") and rel.endswith(".py"):
+    if _is_test(rel) and rel.endswith(".py"):
         return _prose_lines(text)
+    if _is_test(rel) and rel.endswith(JS_SUFFIXES):
+        return _js_prose_lines(text)
     return dict(enumerate(text.split("\n"), 1))
 
 
@@ -199,6 +230,21 @@ class SpanishDetectorTests(unittest.TestCase):
                   'FIXTURE = "Modifica la sección de los métodos."\n'
                   '# este comentario está en español\n')
         self.assertEqual(sorted(_prose_lines(source)), [1, 3])
+
+    def test_a_javascript_test_is_judged_on_its_comments_only(self) -> None:
+        source = ("// un comentario que nadie lee\n"
+                  "const instruction = 'Modifica la sección de los métodos.';\n"
+                  "/* un bloque\n"
+                  "   que sigue */\n"
+                  "assert.ok(true);\n")
+        self.assertEqual(sorted(_js_prose_lines(source)), [1, 3, 4])
+
+    def test_only_test_modules_are_judged_on_prose(self) -> None:
+        for rel in ("tests/proposal-workspace.test.mjs", "ui/src/lib/hash.test.ts",
+                    "ui/e2e/atlas.spec.ts", "tests/test_extract_pdf.py"):
+            with self.subTest(rel=rel):
+                self.assertTrue(_is_test(rel))
+        self.assertFalse(_is_test("skills/_core/deliberation/engine/ambiguity-gate.ts"))
 
 
 class RepositoryLanguageTests(unittest.TestCase):

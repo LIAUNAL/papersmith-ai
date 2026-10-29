@@ -424,7 +424,7 @@ test('productive lifecycle negatives block safely while ambiguous revision delet
  const ambiguous=await languageTool.execute('ambiguous',{instruction:'elimina r02'},undefined,undefined,{});
  assert.equal(ambiguous.details.status,'ambiguous',JSON.stringify(ambiguous.details));
  assert.equal(ambiguous.details.operation,'AMBIGUOUS');
- assert.match(ambiguous.details.message,/Indicá el fragmento o alcance exacto/);
+ assert.match(ambiguous.details.message,/Name the exact fragment or scope/);
  const contentDelete=await languageTool.execute('content-delete',{instruction:'elimina esta sección',sourceFilename:r02},undefined,undefined,{});
  assert.equal(contentDelete.details.operation,'DELETE');
 });
