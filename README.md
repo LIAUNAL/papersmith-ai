@@ -79,6 +79,7 @@ The full path, from a PDF to a compiled paper:
 | 5 | `/proposal-implementation` | Proof of concept: turns the proposal into Python that verifies itself against the document | `implementations/<repo>/` |
 | 5b | `/proposal-implementation` (replication) | Replicates each comparison or baseline paper through the `paper-replicator` agent: it looks for the paper's published code first and, when it exists, adopts it pinned to a commit and audits that it corresponds to the paper and is implemented correctly; only when no code exists does it reimplement the method from the ingested Markdown | the target repo, with a `REPLICATION.md` correspondence table |
 | 6 | `/experimental-deliberation` | Discusses the experimental design that will put that mathematics to the test | `experiments/` |
+| 6b | `/experiments-tutor` | Consults and iterates on each experiment decision with you — architecture, hyperparameters, ablations, significance tests, the toy set's purpose, training, upper bounds (*techos*), the methods compared and their implementation — reading the protocol, the approvals, the code and the results first; it never invents a number, and any change of decision goes back to `/experimental-deliberation` | nothing on disk but its thread (`.papersmith/experiments-tutor/`); used from the dashboard's Experimentos tab |
 | 7 | `/experimental-implementation` | Turns the protocol into code and runs its measurements | the same target repo |
 | 7b | `/experiment-diagrams` | When the proof of concept (`AGREED.md`) and then the full experiments (`Experimental_AGREED.md`) are approved, draws one TikZ diagram of each, stating the experiment's single claim along one reading spine, compiles it to PDF and PNG and reviews it, grayscale included | `implementations/<repo>/<Name>/diagrams/`, shown in the Experimentos panel |
 | 8 | `/kaggle-accounts` | Proves that the Kaggle credentials really authenticate | `store/` (never leaves the disk) |
@@ -465,7 +466,7 @@ my-paper/
 │   ├── manifest.json            #   hashes of everything the framework generated
 │   ├── runs_ledger.jsonl        #   every dispatched run, in order
 │   └── version                  #   framework version that created it
-├── .claude/agents/              # the twenty-five subagents (single source of truth)
+├── .claude/agents/              # the twenty-six subagents (single source of truth)
 ├── skills/                      # the kit copy: the skills + _core
 │   └── _core/                   #   the two shared engines (deliberation, implementation)
 ├── sections/                    # the ten section contracts (they travel WITH content, like skills/)
@@ -687,7 +688,7 @@ repo-only).
 
 ## The agents
 
-A workspace ships **twenty-five subagents** in `.claude/agents/`. They are short
+A workspace ships **twenty-six subagents** in `.claude/agents/`. They are short
 bursts of work that a harness launches (for example, with the Task tool) on
 request, not replacements for the CLI. The shape is always the
 same — **one burst between two operator gates**: the agent decides
@@ -706,6 +707,7 @@ to establish it. The operator opens and closes the gates.
 | `experimental-validation` | The `validated` stage: it looks for the area's evaluation protocol —metrics, baselines, dataset, seeds, significance test—, verifies each baseline against its repo and its venue, and dates every URL it uses. | `experimental-deliberation` |
 | `experiments-build` | From the approved map of protocol steps to executable commands: materializes whatever is needed, wires each step and instruments each measurement so that it can be run and read. | `experimental-implementation` |
 | `experiments-walk` | The walk of the protocol, with the same gates and the same stop at the rehearsal. | `experimental-implementation` |
+| `experiments-tutor` | One turn of the experiments tutor from the dashboard's Experimentos tab: reads the protocol, approvals, code and results a question touches, gives one hint, asks one question, rates the design with quoted evidence and lists the risks, and drafts any change of decision for `/experimental-deliberation`. It never writes the workspace and never invents a measured number. | `experiments-tutor` |
 | `experiments-reviewer` | From an instrumented implementation to a findings report read before any rehearsal or launch: reviews the code against the experiments protocol for code quality, the simulation and data path, remote GPU use and the declared statistical tests. It runs only the target's own tests and linters; it never repairs nor launches. | `experimental-implementation` |
 | `math-tutor` | One turn of the Socratic tutor from the dashboard's math panel: reads the hand-drawn page back as LaTeX, gives one hint, asks one question and assesses understanding quoted from your own words, always tied to why the novelty holds. It never writes the workspace. | `math-tutor` |
 | `paper-ingestion` | Turns a paper into the form in which it can really be used: LaTeX equations, tables as tables, figures as files. Stages: `filed`, `extracted`, `readable`. It asks nobody anything. | `paper-ingestion` |
@@ -727,7 +729,7 @@ Three rules that order everything else:
 - **The source of truth is `.claude/agents/`.** Each harness's routing docs
   (`CLAUDE.md`, `.pi/APPEND_SYSTEM.md`, `OPENCODE.md`,
   `.agents/AGENTS.md`) list
-  all twenty-five, and they are generated: an agent is changed
+  all twenty-six, and they are generated: an agent is changed
   there, not in the projection.
 - **Each agent declares the skill it loads** (`skills/<name>/SKILL.md`), and that
   binding is verified: an agent that points at a skill the workspace does not
@@ -747,6 +749,7 @@ The guided tour of every skill, with its flow diagram, is in [docs/skills.md](do
 - [`experiment-diagrams`](skills/experiment-diagrams/SKILL.md)
 - [`experimental-deliberation`](skills/experimental-deliberation/SKILL.md)
 - [`experimental-implementation`](skills/experimental-implementation/SKILL.md)
+- [`experiments-tutor`](skills/experiments-tutor/SKILL.md)
 - [`figure-review`](skills/figure-review/SKILL.md)
 - [`hyperparameter-search`](skills/hyperparameter-search/SKILL.md)
 - [`kaggle-accounts`](skills/kaggle-accounts/SKILL.md)

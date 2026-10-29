@@ -11,6 +11,35 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- An experiments tutor in the dashboard's *Experimentos* tab, the new
+  read-only `experiments-tutor` skill and agent (`Read`, `Glob`, `Grep` only,
+  projected to every harness). Pick a decision area — network architecture,
+  hyperparameters and their search, ablation studies, statistical
+  significance tests, the toy set's purpose, training strategies, upper
+  bounds (*techos*: oracle and reference results), the methods compared and their implementation, validation and leakage,
+  compute budget, reproducibility — and a mode; each turn reads the
+  protocol, the approvals, the target's `src/` and the results, asks one
+  question, rates the design 0–4 with quoted evidence, lists the paths read
+  and the risks, and says "nothing measured yet" rather than supply a number.
+  A change of decision comes back as a draft that **Deliberar este cambio**
+  types into the CLI assistant as `/experimental-deliberation …`, without
+  pressing Enter. Routes `GET|DELETE /api/terminal/tutor/experiments/thread`
+  and `POST /api/terminal/tutor/experiments/turn`, behind the terminal's
+  cookie and same-origin guards; the thread lives in
+  `.papersmith/experiments-tutor/`. The turn's digest of the experiments is
+  size-capped and never carries a credential store, `.papersmith/team.json`,
+  a `.remote-execution/` file or a token.
+
+### Changed
+
+- The math tutor's backend (`tutor.py`) is generalized into tutor profiles
+  (thread folder, doctrine, context, turn schema, modes, tools, lock); the
+  math tutor's routes, prompt and thread are unchanged.
+
 ## 0.37.0
 
 ### Added
