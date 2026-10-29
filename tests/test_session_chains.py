@@ -379,6 +379,13 @@ class RunConfigWithoutCarryTests(unittest.TestCase):
         self.assertEqual(json.dumps(run_config, sort_keys=True, indent=2), expected)
 
 
+
+def _newest_changelog_section(changelog: str) -> str:
+    """The newest release section: `## Unreleased` before a release is cut,
+    the version heading right after it."""
+    return changelog.split("\n## ", 1)[1].split("\n## ", 1)[0]
+
+
 class CarryLayoutDocTests(unittest.TestCase):
     def test_the_skill_states_the_resolution_rule(self) -> None:
         skill = (REPOSITORY_ROOT / "skills/remote-execution/SKILL.md").read_text(
@@ -386,7 +393,7 @@ class CarryLayoutDocTests(unittest.TestCase):
         self.assertIn("clone/<product>/<path>", skill)
         self.assertIn("into the working directory", skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        unreleased = _newest_changelog_section(changelog)
         self.assertIn("clone/<product>/<path>", unreleased)
 
 
@@ -658,7 +665,7 @@ class DeadlineRehearsalDocTests(unittest.TestCase):
                        "a target must write `partial.json` whatever that variable says"):
             self.assertIn(needle, skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        unreleased = _newest_changelog_section(changelog)
         for needle in ("deadline-rehearsal", "carry: no-share", "session-fit"):
             self.assertIn(needle, unreleased)
 
@@ -676,7 +683,7 @@ class UploadedCarryDocTests(unittest.TestCase):
                        "Unverified:", "carry: unsupported"):
             self.assertIn(needle, skill)
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        unreleased = _newest_changelog_section(changelog)
         self.assertIn("carry: uploaded", unreleased)
 
 
