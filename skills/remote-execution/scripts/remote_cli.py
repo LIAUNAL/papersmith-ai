@@ -510,7 +510,7 @@ def _job_folder_commit(resolved_entrypoint: Path) -> str | None:
 def campaign_consent_token(
     *, pin_commit: str | None, relative_entrypoint: str | Path, units: Sequence[str],
     worker: str | None = None, placement: Sequence[Mapping] | None = None,
-    done: Sequence[str] | None = None,
+    done: Sequence[str] | None = None, in_flight: Sequence[str] | None = None,
 ) -> str:
     """The ONE digest both `distribute` (which prints it) and `submit`
     (which verifies it) compute — a second, independently written hash
@@ -554,6 +554,9 @@ def campaign_consent_token(
       always together with the `placement` of the rest. A result that
       returns after the token was minted changes both, so the token stops
       authorizing the launch.
+    - `in_flight`, present ONLY when some unit of `units` is still running in
+      an earlier submission (slot queues L3), bound like `done`: a launch,
+      or a return, after the token was minted stops it authorizing anything.
 
     Deliberately NOT a `--yes` boolean and deliberately not looked up
     anywhere but the arguments handed to it: this function reads no
@@ -576,6 +579,8 @@ def campaign_consent_token(
         ]
     if done:
         fields["done"] = list(done)
+    if in_flight:
+        fields["inFlight"] = list(in_flight)
     payload = json.dumps(fields, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -1244,7 +1249,7 @@ def _queue_keys(adapter: "ADAPTER.Adapter", resolved_entrypoint: Path, timing: P
         rows.append({**row, "sessions": sessions, "minutes": minutes,
                      "chained": None if sessions is None else len(sessions) > 1})
     if fit["measured"]:
-        fit = {**fit, "makespanMinutes": max(row["minutes"] for row in rows)}
+        fit = {**fit, "makespanMinutes": max((row["minutes"] for row in rows), default=0)}
     return {"queues": rows, "sessionFit": fit}
 
 
@@ -1849,11 +1854,13 @@ def cmd_submit(
     inputs_status, inputs_config = _input_plan(adapter, resolved_entrypoint)
 
     if units:
-        # Slot queues L2: units whose shares already returned complete are
-        # left out, read from the main ledger as `distribute` reads it, so the
-        # token it minted for this placement matches in every mode.
-        done = _done_units(target, resolved_product, relative_entrypoint, digest, units)
-        placeable = [unit for unit in units if unit not in done]
+        # Slot queues L2, L3: units whose shares already returned complete,
+        # or are still running, are left out, read from the main ledger as
+        # `distribute` reads it, so the token it minted for this placement
+        # matches in every mode.
+        done, in_flight = _settled_units(target, resolved_product, relative_entrypoint,
+                                         digest, units)
+        placeable = [unit for unit in units if unit not in done and unit not in in_flight]
         carry_paths = _declared_carry_paths(resolved_entrypoint)
         evidence = (
             _carry_evidence(
@@ -1871,20 +1878,21 @@ def cmd_submit(
             live_digest=digest,
             affinity=_carry_affinity(evidence, placeable) or None,
         )
-        placement = _placement(distribution, force=bool(done))
+        placement = _placement(distribution, force=bool(done or in_flight))
         if placement is not None and consent != campaign_consent_token(
             pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
-            units=units, placement=placement, done=done,
+            units=units, placement=placement, done=done, in_flight=in_flight,
         ):
-            left_out = f"; done, left out: {', '.join(done)}" if done else ""
+            left_out = (f"; done, left out: {', '.join(done)}" if done else "") + (
+                f"; in flight, left out: {', '.join(in_flight)}" if in_flight else "")
             raise ConsentError(
                 f"{PLACEMENT_NOT_CONSENTED}: --consent does not approve this "
                 f"campaign's placement ({_placement_text(placement)}{left_out}): "
-                "the slots granted right now, or the units already done, differ "
-                "from the ones `distribute` showed, or the token approved another "
-                "campaign. Nothing was submitted. Run `distribute --unit ...` "
-                "again, check its `queues` and `done`, and pass back the token it "
-                "prints"
+                "the slots granted right now, or the units already done or in "
+                "flight, differ from the ones `distribute` showed, or the token "
+                "approved another campaign. Nothing was submitted. Run `distribute "
+                "--unit ...` again, check its `queues`, `done` and `inFlight`, and "
+                "pass back the token it prints"
             )
         if placement_consent:
             if placement is None:
@@ -2047,6 +2055,8 @@ def cmd_submit(
                                         placement, len(units)))
         if done:
             campaign["done"] = done
+        if in_flight:
+            campaign["inFlight"] = in_flight
         return campaign
 
     if worker is None:
@@ -2242,16 +2252,19 @@ def _unit_outcomes(
     return complete, in_flight, missing
 
 
-def _done_units(target: Path, product: str, relative_entrypoint: "str | Path",
-                live_digest: str, units: Sequence[str]) -> list[str]:
-    """The units of a campaign `remaining` calls complete, in the given
-    order: placement leaves them out (slot queues L2). A unit whose result
-    is no longer on disk is not among them, and stays placeable."""
-    complete, _, _ = _unit_outcomes(
+def _settled_units(target: Path, product: str, relative_entrypoint: "str | Path",
+                   live_digest: str, units: Sequence[str]) -> tuple[list[str], list[str]]:
+    """`(done, in_flight)`: the units of a campaign `remaining` calls
+    complete (slot queues L2) and in flight (L3), each in the given order.
+    Placement leaves both out, so no unit already finished or still running
+    is ever sent again. A unit whose result is no longer on disk is in
+    neither, and stays placeable."""
+    complete, running, _ = _unit_outcomes(
         target=target, product=product, relative_entrypoint=str(relative_entrypoint),
         live_digest=live_digest,
     )
-    return [unit for unit in units if str(unit) in complete]
+    return ([unit for unit in units if str(unit) in complete],
+            [unit for unit in units if str(unit) in running])
 
 
 def cmd_remaining(
@@ -2426,10 +2439,11 @@ def cmd_distribute(
     digest_fn = source_digest or _load_source_digest()
     live = digest_fn(target, product)
 
-    # Slot queues L2: a unit whose share already returned complete is done,
-    # the units `remaining` would not list; the launch leaves it out alike.
-    done = _done_units(target, product, relative_entrypoint, live, units)
-    placeable = [unit for unit in units if unit not in done]
+    # Slot queues L2, L3: a unit whose share already returned complete is
+    # done, one whose share is still running is in flight -- the units
+    # `remaining` would not list; the launch leaves both out alike.
+    done, in_flight = _settled_units(target, product, relative_entrypoint, live, units)
+    placeable = [unit for unit in units if unit not in done and unit not in in_flight]
 
     # kernel-carry S4: a continuation is placed on the worker that produced
     # its earlier output -- the same affinity the launch applies, so the
@@ -2448,13 +2462,14 @@ def cmd_distribute(
         affinity=_carry_affinity(evidence, placeable) or None,
     )
 
-    placement = _placement(result, force=bool(done))
+    placement = _placement(result, force=bool(done or in_flight))
     consent_token = campaign_consent_token(
         pin_commit=_job_folder_commit(resolved_entrypoint),
         relative_entrypoint=relative_entrypoint,
         units=units,
         placement=placement,
         done=done,
+        in_flight=in_flight,
     )
 
     report = {
@@ -2485,6 +2500,8 @@ def cmd_distribute(
                                   len(units)))
     if done:
         report["done"] = done
+    if in_flight:
+        report["inFlight"] = in_flight
     return report
 
 
@@ -4483,8 +4500,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "`submit` into campaign mode -- `packer.distribute()` replaces "
         "`packer.select()`/`packer.plan()`, spreading across every healthy "
         "account instead of stopping at the first one. A unit whose share "
-        "already returned complete is reported under `done` and not sent "
-        "again. Mutually exclusive with --worker: campaign mode has no "
+        "already returned complete is reported under `done`, one still "
+        "running under `inFlight`, and neither is sent again. Mutually "
+        "exclusive with --worker: campaign mode has no "
         "single named account to select.",
     )
     submit.add_argument(
@@ -4542,7 +4560,8 @@ def _build_parser() -> argparse.ArgumentParser:
     distribute.add_argument(
         "--unit", dest="units", action="append", required=True,
         help="repeatable: one opaque work-unit identifier; one whose share already "
-        "returned complete is reported under `done` and placed nowhere. Never "
+        "returned complete is reported under `done`, one still running under "
+        "`inFlight`, and neither is placed. Never "
         "comma-separated -- "
         "a separator would impose structure on an identifier this command, like "
         "packer.distribute() underneath it, treats as opaque; a unit containing "

@@ -15,10 +15,12 @@ Branch: `feat/slot-queues` (from `origin/main` 0ab5cecd, v0.39.0). Delivery: rel
 ## Tasks
 
 - T1 (S1-S3) queued placement in packer/distribute/submit + runner units + gate binding + tests -- done (2020e03e)
-- T2 (S4, S5, L2) schedule/plan agreement + docs; `distribute`/`submit` leave out units already done -- done (pending commit)
+- T2 (S4, S5, L2) schedule/plan agreement + docs; `distribute`/`submit` leave out units already done -- done (4d4982a4)
+- T2b (L3) `distribute`/`submit` leave out units in flight -- done (pending commit)
 - T3 independent verifier (items 3, 5: gate/consent binding, remote launches) -- pending
 
 ## Log
 
 - L1 (2026-10-29, QMLEEG HPO launch): `packer.distribute()` asks each worker for `requested=len(units)`, clamped to the Kaggle cap 2; `slot_shares()` makes one job per granted slot; in campaign mode no flag limits a worker to one slot (`--requested` only for single sends; `--worker` excludes `--unit`); places are capped at the sum of granted slots, so 10 HPO sub-studies on two accounts launched as 4 one-unit sessions with 6 unplaced.
 - L2 (2026-10-29, QMLEEG wave 2; operator scope: same feature): `distribute` with the campaign's full list of 10 ids, fold1/2 already returned, placed fold1/2 again and left fold3-5 unplaced; the parent re-gated with only the 6 remaining. Fixed in T2: `distribute` and campaign `submit` leave out the units `remaining` calls `complete` (reported under `done`; `unknown` units stay placeable) and the token binds `done` plus the placement of the rest. Open: `implementation_cli gate`/`offer` bind the exact `--unit` list, and `submit` checks the gate against the invocation's list, so a full-list submit needs a gate for the full list; whether gate/offer should apply the same exclusion is undecided (not changed here).
+- L3 (2026-10-29; operator scope: same feature, priority: never spend compute twice): after L2, a unit submitted but not yet returned was still placeable, so a full-list `distribute`/`submit` could launch a running unit a second time. Fixed in T2b: both leave out the units `remaining` calls `inFlight` (reported under `inFlight`), the token binds `inFlight` like `done`, and `PLACEMENT_NOT_CONSENTED` names the units left out; `remaining` is unchanged.

@@ -676,6 +676,158 @@ class DoneUnitsTests(unittest.TestCase):
                              sorted(WAVE[4:]))
 
 
+def _launch(target: Path, notebook: Path, units) -> list:
+    """Launch `units` as their own campaign and leave every share in flight."""
+    adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+    token = _distribute(target, notebook, adapter, units)["consentToken"]
+    _submit(target, notebook, adapter, units, token)
+    return adapter.jobs
+
+
+def _settle(tmp: str, target: Path, jobs) -> None:
+    """Settle each share `jobs` sent `returned`, with a result on disk."""
+    ledger = REMOTE_CLI._main_ledger_path(target.resolve(), PRODUCT)
+    for job in jobs:
+        sid = f"{job.worker}/kernel-{job.run_config.get('slot', 1)}"
+        artifact = Path(tmp) / "settled" / sid.replace("/", "-")
+        artifact.mkdir(parents=True)
+        LEDGER.append(ledger, LEDGER.returned_event(
+            submission_id=sid, artifact_path=str(artifact), observed_concurrency=1))
+
+
+class InFlightUnitsTests(unittest.TestCase):
+    """L3: a unit whose share was submitted and has not returned is never
+    placed again -- the units `remaining` calls in flight are reported under
+    `inFlight`, bound by the token, and launched nowhere."""
+
+    def _placed(self, report: dict) -> list[str]:
+        return [unit for row in report["assignments"] for unit in row["units"]]
+
+    def test_a_unit_in_flight_is_not_placed_again(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            _launch(target, notebook, RETURNED)
+            before = _ledger_lines(target)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            self.assertEqual(report["inFlight"], list(RETURNED))
+            self.assertNotIn("done", report)
+            self.assertEqual(report["units"], 10)
+            self.assertEqual(report["assigned"], 6)
+            self.assertEqual(report["unplaced"], [])
+            self.assertEqual(sorted(self._placed(report)), sorted(WAVE[4:]))
+            remaining = REMOTE_CLI.cmd_remaining(target=target, entrypoint=notebook,
+                                                 units=WAVE, source_digest=lambda t, n: DIGEST)
+            self.assertEqual(remaining["inFlight"], report["inFlight"])
+            self.assertEqual(remaining["remaining"], list(WAVE[4:]))
+            self.assertEqual(remaining["complete"], [])
+            self.assertEqual(adapter.jobs, [])
+            self.assertEqual(_ledger_lines(target), before, "distribute records nothing")
+
+            result = _submit(target, notebook, adapter, WAVE, report["consentToken"])
+
+            sent = [unit for job in adapter.jobs for unit in job.run_config["units"]]
+            self.assertEqual(sorted(sent), sorted(WAVE[4:]))
+            self.assertEqual(result["inFlight"], list(RETURNED))
+            self.assertNotIn("done", result)
+            self.assertEqual(result["queues"], report["queues"])
+            events = [json.loads(line) for line in _ledger_lines(target)[len(before):]]
+            self.assertEqual(sorted(u for event in events for u in event["units"]),
+                             sorted(WAVE[4:]))
+
+    def test_a_unit_that_returns_complete_moves_from_in_flight_to_done(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            jobs = _launch(target, notebook, RETURNED)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+            self.assertEqual(_distribute(target, notebook, adapter, WAVE)["inFlight"],
+                             list(RETURNED))
+
+            _settle(tmp, target, jobs)
+            report = _distribute(target, notebook, adapter, WAVE)
+
+            self.assertEqual(report["done"], list(RETURNED))
+            self.assertNotIn("inFlight", report)
+            self.assertEqual(sorted(self._placed(report)), sorted(WAVE[4:]))
+
+    def test_the_token_binds_the_units_in_flight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            _launch(target, notebook, ("u0", "u1"))
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            report = _distribute(target, notebook, adapter, ("u0", "u1", "u2", "u3"))
+
+            import hashlib
+            payload = {"entrypoint": "Notebooks/a.ipynb", "pin": None,
+                       "units": ["u0", "u1", "u2", "u3"], "inFlight": ["u0", "u1"],
+                       "placement": [{"worker": "w1", "slot": 1, "units": ["u2"]},
+                                     {"worker": "w2", "slot": 1, "units": ["u3"]}]}
+            self.assertEqual(report["consentToken"], hashlib.sha256(
+                json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest())
+
+    def test_a_token_minted_while_units_were_in_flight_is_refused_once_they_return(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            jobs = _launch(target, notebook, RETURNED)
+            stale = _distribute(target, notebook, QueueAdapter([("w1", 2), ("w2", 2)]),
+                                WAVE)["consentToken"]
+            _settle(tmp, target, jobs)
+            before = _ledger_lines(target)
+            launch = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            with self.assertRaises(REMOTE_CLI.ConsentError) as caught:
+                _submit(target, notebook, launch, WAVE, stale)
+
+            self.assertIn("PLACEMENT_NOT_CONSENTED", str(caught.exception))
+            self.assertIn("done, left out: fold1-a", str(caught.exception))
+            self.assertEqual(launch.jobs, [])
+            self.assertEqual(_ledger_lines(target), before)
+
+    def test_a_token_minted_before_units_were_launched_is_refused_naming_them(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            stale = _distribute(target, notebook, QueueAdapter([("w1", 2), ("w2", 2)]),
+                                WAVE)["consentToken"]
+            _launch(target, notebook, RETURNED)
+            before = _ledger_lines(target)
+            launch = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            with self.assertRaises(REMOTE_CLI.ConsentError) as caught:
+                _submit(target, notebook, launch, WAVE, stale)
+
+            message = str(caught.exception)
+            self.assertIn("PLACEMENT_NOT_CONSENTED", message)
+            self.assertIn("in flight, left out: fold1-a, fold1-b, fold2-a, fold2-b", message)
+            self.assertEqual(launch.jobs, [], "nothing is sent twice")
+            self.assertEqual(_ledger_lines(target), before)
+
+    def test_a_campaign_whose_every_unit_is_in_flight_or_done_sends_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            jobs = _launch(target, notebook, RETURNED[:2])
+            _settle(tmp, target, jobs)
+            _launch(target, notebook, RETURNED[2:])
+            before = _ledger_lines(target)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)], limit=LIMIT_SECONDS)
+
+            report = _distribute(target, notebook, adapter, RETURNED)
+
+            self.assertEqual(report["done"], list(RETURNED[:2]))
+            self.assertEqual(report["inFlight"], list(RETURNED[2:]))
+            self.assertEqual(report["assigned"], 0)
+            self.assertEqual(report["unplaced"], [])
+            self.assertEqual(report["queues"], [])
+
+            result = _submit(target, notebook, adapter, RETURNED, report["consentToken"])
+
+            self.assertEqual(adapter.jobs, [])
+            self.assertEqual(result["queues"], [])
+            self.assertEqual(_ledger_lines(target), before)
+
+
 class QueueRunnerAndRemainingTests(unittest.TestCase):
     """S2: a queue travels whole to the runner and `remaining` reads it per slot."""
 
@@ -800,7 +952,8 @@ class SlotQueueDocTests(unittest.TestCase):
         rule = skill.split("**Slot queues.**", 1)[1].split("\n  - ", 1)[0]
         for needle in ("FORGE_RUN_UNITS", "`queues`", "`sessionFit`", "--timing", "--stage",
                        "unitsPerSession", "PLACEMENT_NOT_CONSENTED", "same account",
-                       "`remaining`", "`done`", "`unknown`", "never placed again"):
+                       "`remaining`", "`done`", "`unknown`", "never placed again",
+                       "`inFlight`", "no running unit is sent"):
             self.assertIn(needle, rule)
         for service in ("kaggle", "colab"):
             self.assertNotIn(service, rule.lower())
@@ -808,7 +961,7 @@ class SlotQueueDocTests(unittest.TestCase):
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         unreleased = changelog.split("\n## Unreleased\n", 1)[1].split("\n## ", 1)[0]
         for needle in ("Slot queues", "PLACEMENT_NOT_CONSENTED", "sessionFit", "unplaced",
-                       "queueMakespanMinutes", "80% of its limit", "`done`"):
+                       "queueMakespanMinutes", "80% of its limit", "`done`", "`inFlight`"):
             self.assertIn(needle, unreleased)
 
     def test_remote_parallelism_states_the_queues_the_launch_runs(self) -> None:
@@ -822,6 +975,7 @@ class SlotQueueDocTests(unittest.TestCase):
             self.assertNotIn(service, rule.lower())
         self.assertIn("queues[{account, slot, units, sessions, minutes}]", skill)
         self.assertIn("queueMakespanMinutes?}]", skill)
+        self.assertIn("(`done`, `inFlight`)", rule)
 
 
 class OneUnitPerSlotGoldenTests(unittest.TestCase):

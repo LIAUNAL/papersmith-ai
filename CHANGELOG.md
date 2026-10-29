@@ -48,9 +48,13 @@ number is `0`, breaking changes can still arrive without a major bump.
   share already returned complete (the units `remaining` calls `complete`):
   they report it under `done` and place the rest, so passing a campaign's
   full unit list again launches only what is left instead of re-running
-  finished units and leaving others unplaced. A unit whose result is no
-  longer on disk stays placeable. The token binds `done` and the placement
-  of the rest.
+  finished units and leaving others unplaced. A unit whose share was
+  submitted and has not returned (the units `remaining` calls `inFlight`)
+  is never placed again either and is reported under `inFlight`, so no
+  running unit is sent twice. A unit whose result is no longer on disk
+  stays placeable. The token binds `done`, `inFlight` and the placement of
+  the rest; a launch or a return after `distribute` refuses the stale token
+  `PLACEMENT_NOT_CONSENTED`, naming the units left out.
 
 ## 0.39.0
 

@@ -256,7 +256,10 @@ The plan (`--plan plan.json`, schema 1):
   `distribute` launches for that step on the chosen services' accounts.
   With alike slots and no quota wait it equals the step's own duration; a
   quota wait or uneven session limits can make the simulation place a unit
-  elsewhere, and `queues` still says where the launch puts it.
+  elsewhere, and `queues` still says where the launch puts it. These plans
+  count every unit of the step; at launch, `distribute` leaves out the units
+  already done or still in flight (`done`, `inFlight`), so the launched
+  queues hold only what is left to run.
 
 The output: `{steps[{id, units, requires, services, allowedServices,
 unitMinutes, unitMinutesSource, setupMinutes, readyMinutes, startMinutes,

@@ -336,13 +336,17 @@ Three modules exist so far, each service-blind and stdlib-only:
     read-only distribution and before anything is sent. A unit whose share
     already returned complete -- one `remaining` lists under `complete` --
     is never placed again: both commands report it under `done` and place
-    the rest, so the campaign's full unit list can be passed every time. A
-    unit whose returned result is no longer on disk (`unknown`) stays
-    placeable. The token then binds `done` and the placement of the rest,
-    and a result that returns after `distribute` ran refuses the launch
-    `PLACEMENT_NOT_CONSENTED`. The `gate` record still binds the unit list
-    the invocation names. A campaign with no more units than slots and
-    nothing done reports, mints and records exactly what 0.39.0 did.
+    the rest, so the campaign's full unit list can be passed every time.
+    A unit whose share was submitted and has not returned -- one
+    `remaining` lists under `inFlight` -- is never placed again either:
+    both commands report it under `inFlight`, so no running unit is sent
+    twice. A unit whose returned result is no longer on disk (`unknown`)
+    stays placeable. The token then binds `done`, `inFlight` and the
+    placement of the rest, and a launch or a return after `distribute` ran
+    refuses the launch `PLACEMENT_NOT_CONSENTED`, naming the units left
+    out. The `gate` record still binds the unit list the invocation names.
+    A campaign with no more units than slots and nothing done or in flight
+    reports, mints and records exactly what 0.39.0 did.
   - **Diagram validation, every launch**: when the resolved product holds
     `AGREED.md` (proof of concept) or `Experimental_AGREED.md` (full
     experiments), `submit` — `--smoke` included — refuses
@@ -1548,7 +1552,7 @@ refusal.
 | --- | --- |
 | `submit` | submit one notebook to a registered backend's worker |
 | `status` | report the fold for one product's ledger; resolves nothing |
-| `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares` and, when units outnumber the slots, each slot's `queues` and their `sessionFit`, and the units already returned complete under `done` (never placed again); issues no work and records nothing |
+| `distribute` | report how opaque work units would spread across every healthy worker account right now, with each worker's per-slot `shares` and, when units outnumber the slots, each slot's `queues` and their `sessionFit`, and the units already returned complete under `done` and still running under `inFlight` (neither placed again); issues no work and records nothing |
 | `remaining` | report which declared units have no complete result yet (`complete`, `inFlight`, `unknown` with its `refetch` commands, `remaining`, in the declared order), the list the next campaign sends; asks no backend and records nothing |
 | `poll` | ask the adapter for one submission's status |
 | `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
@@ -1570,7 +1574,7 @@ can branch on it without parsing prose.
 | `CAMPAIGN_WORKERS_NOT_READY` | campaign `submit` (`--unit`, not `--smoke`) | a worker the distribution assigns units to has no passing rehearsal of its own at the current pin; the message names every such worker |
 | `DUPLICATE_SUBMISSION_ID` | campaign `submit` | the backend answered two slots of one campaign with the same submission id; the repeat is not recorded |
 | `LEDGER_EVENT_TOO_LARGE` | campaign `submit` | a slot's share of units would make its `submitted` event exceed the ledger's 4096-byte line; checked for every slot before the first submission, so nothing is sent |
-| `PLACEMENT_NOT_CONSENTED` | campaign `submit` (a slot queues more than one unit, or units are `done`) | `--consent` does not approve this exact placement (each slot's queue and the units left out as done): capacity moved or a result returned since `distribute`, or the token approved another campaign. Checked after the read-only distribution, before anything is sent; the message names the placement and asks for a fresh `distribute` |
+| `PLACEMENT_NOT_CONSENTED` | campaign `submit` (a slot queues more than one unit, or units are `done` or `inFlight`) | `--consent` does not approve this exact placement (each slot's queue and the units left out as done or in flight, named in the message): capacity moved, a unit was launched or a result returned since `distribute`, or the token approved another campaign. Checked after the read-only distribution, before anything is sent; the message names the placement and asks for a fresh `distribute` |
 | `CODE_BUNDLE_NOT_CARRIED` | `generate-job --code-bundle` | the service's adapter does not declare `CODE_BUNDLE_MAX_BYTES`, so it cannot ship a code bundle; refused before any git call |
 | `CODE_BUNDLE_TOO_LARGE` | `generate-job --code-bundle` | the compressed bundle exceeds the service's `CODE_BUNDLE_MAX_BYTES`; the message names both sizes and nothing is written |
 | `CODE_BUNDLE_UNSAFE_ENTRY` | `generate-job --code-bundle`, the runner | an archive entry is absolute, carries `..`, is a link or special file, or lies outside the declared clone paths |
