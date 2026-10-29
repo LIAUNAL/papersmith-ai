@@ -243,7 +243,7 @@ and each agent's first instruction is to load this file.
 | Stretch | Delegated to | Begins after | Ends at | Measure this before delegating |
 | --- | --- | --- | --- | --- |
 | Build | this skill delegates to the `experiments-build` agent | the object-to-map is approved | every declared measurement has a place to land (`instrumentation`) | `verify` -- the protocol's declared steps must already be traced to runnable commands |
-| Review | this skill delegates to the `experiments-reviewer` agent | every declared measurement has a place to land (`instrumentation`) | a findings report on code quality, optimisation, remote GPU use and statistical tests, read by the operator before the rehearsal and the launch | `verify` -- every declared measurement resolves, so the code under review is the code that will run |
+| Review | this skill delegates to the `experiments-reviewer` agent | every declared measurement has a place to land (`instrumentation`) | a findings report on code quality, optimisation, remote GPU use and statistical tests, read by the operator before the rehearsal and the launch; persisted as `<Product>/Results/reviewer_report.json` and `reviewer_report.md` pinned in `panel.json` | `verify` -- every declared measurement resolves, so the code under review is the code that will run |
 | Walk | this skill delegates to the `experiments-walk` agent | each step's placement is decided | the launch the operator must authorize | `verify` -- `undeclaredPlacement` is empty, so every step says where it runs |
 
 Each agent also refuses from inside when it finds itself before its own start --
