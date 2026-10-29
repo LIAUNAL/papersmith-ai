@@ -89,8 +89,17 @@ module.invoke(run_config, base_dir=base)
 '''
 
 
+#: The fix for a `--keep-rehearsal` directory the rehearsal cannot use.
+KEEP_FIX = "rerun with --keep-rehearsal <new dir outside the target>"
+
+
 class RehearsalError(Exception):
-    """The rehearsal could not even be set up (no smoke block, no code)."""
+    """The rehearsal could not even be set up (no smoke block, no code, no
+    usable scratch directory). `fix`, when set, is the exact fix to show."""
+
+    def __init__(self, message: str, *, fix: str | None = None) -> None:
+        super().__init__(message)
+        self.fix = fix
 
 
 def target_interpreter(target: Path) -> Path:
@@ -120,7 +129,8 @@ def rehearsal_config(
     if smoke_kwargs is not None:
         if "notebook" in smoke:
             raise RehearsalError("--local-smoke-kwargs applies to a smoke callable, "
-                                 "not to a smoke notebook")
+                                 "not to a smoke notebook",
+                                 fix="rerun preflight without --local-smoke-kwargs")
         smoke["kwargs"] = dict(smoke_kwargs)
     config["mode"] = "smoke"
     if session_limit_seconds:
@@ -170,26 +180,36 @@ def rehearse(
     `fail`. `completeness(stamp, required)` is `shard_io.completeness`,
     handed in so this module and `smoke record` hold one predicate.
     `keep`, when given, is where the scratch directory is left (it must not
-    exist yet); otherwise the scratch directory is removed, passing or
-    failing -- the row's evidence carries what a failure left behind.
+    exist yet and must lie outside the target; both are refused before
+    anything is written); otherwise the scratch directory is removed, passing
+    or failing -- the row's evidence carries what a failure left behind. An
+    unexpected error after the scratch exists is a `fail` row, not a
+    traceback.
     """
     required = list(((run_config.get("run") or {}).get("smoke") or {})
                     .get("requiredEvidence") or [])
     config = rehearsal_config(run_config, smoke_kwargs=smoke_kwargs,
                               session_limit_seconds=session_limit_seconds)
+    resolved_target = Path(target).resolve()
     if keep is not None:
         keep = Path(keep).resolve()
+        if resolved_target in [keep, *keep.parents]:
+            raise RehearsalError(f"--keep-rehearsal {keep} lies inside the target "
+                                 f"{resolved_target}", fix=KEEP_FIX)
         if keep.exists():
-            raise RehearsalError(f"--keep-rehearsal {keep} already exists")
-        keep.mkdir(parents=True)
+            raise RehearsalError(f"--keep-rehearsal {keep} already exists", fix=KEEP_FIX)
+        try:
+            keep.mkdir(parents=True)
+        except OSError as exc:
+            raise RehearsalError(f"--keep-rehearsal {keep} could not be created: {exc}",
+                                 fix=KEEP_FIX) from exc
         scratch = keep
     else:
         scratch = Path(tempfile.mkdtemp(prefix="psmith-preflight-"))
-    resolved_target = Path(target).resolve()
-    if resolved_target in [scratch.resolve(), *scratch.resolve().parents]:
-        raise RehearsalError(f"the scratch directory {scratch} lies inside the target")
-    session = scratch / SESSION_DIRNAME
-    session.mkdir()
+        if resolved_target in [scratch.resolve(), *scratch.resolve().parents]:
+            shutil.rmtree(scratch, ignore_errors=True)
+            raise RehearsalError(f"the scratch directory {scratch} lies inside the target",
+                                 fix=KEEP_FIX)
     details: dict[str, Any] = {"scratch": str(scratch), "interpreter": str(interpreter)}
 
     def finish(status: str, evidence: str, fix: str) -> dict:
@@ -197,12 +217,31 @@ def rehearse(
         if not details["kept"]:
             shutil.rmtree(scratch, ignore_errors=True)
             if status != "pass":
-                evidence = (f"{evidence}; rerun with --keep-rehearsal <new dir> to read "
-                            "the scratch session")
+                evidence = (f"{evidence}; rerun with --keep-rehearsal <new dir outside the "
+                            "target> to read the scratch session")
         return {"status": status, "evidence": evidence, "fix": fix, "details": details}
 
     try:
-        clone, how = materialize(config, Path(job_dir), resolved_target, session)
+        return _run(scratch=scratch, config=config, required=required, job_dir=Path(job_dir),
+                    target=resolved_target, interpreter=interpreter,
+                    completeness=completeness, timeout=timeout, details=details,
+                    finish=finish)
+    except Exception as exc:  # noqa: BLE001 -- a row, never a traceback
+        return finish("fail", f"the rehearsal stopped on an unexpected error: "
+                      f"{type(exc).__name__}: {exc}",
+                      "fix what the error names (the job folder or the target's "
+                      "interpreter), then rerun preflight")
+
+
+def _run(*, scratch: Path, config: Mapping[str, Any], required: list, job_dir: Path,
+         target: Path, interpreter: Path, completeness, timeout: float,
+         details: dict, finish) -> dict:
+    """Everything after the scratch directory exists; `rehearse` turns any
+    exception it lets through into a `fail` row and removes the scratch."""
+    session = scratch / SESSION_DIRNAME
+    session.mkdir()
+    try:
+        clone, how = materialize(config, job_dir, target, session)
     except (BOOTSTRAP.BootstrapError, OSError) as exc:
         return finish("fail", f"the job's code could not be materialized as the runner "
                       f"would: {exc}", "regenerate the job (`generate-job --regenerate`) "

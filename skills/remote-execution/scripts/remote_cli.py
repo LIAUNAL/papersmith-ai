@@ -3656,8 +3656,8 @@ def _preflight_rehearsal(
             session_limit_seconds=_declared_session_limit(adapter) if adapter else None,
             timeout=timeout, keep=keep)
     except local.RehearsalError as exc:
-        return _preflight_row("local-rehearsal", "fail", str(exc), "regenerate the job with a "
-                              "smoke block")
+        return _preflight_row("local-rehearsal", "fail", str(exc),
+                              exc.fix or "regenerate the job with a smoke block")
     return _preflight_row("local-rehearsal", result["status"], result["evidence"],
                           result["fix"], details=result["details"])
 
@@ -3684,7 +3684,9 @@ def cmd_preflight(
     `pass`/`warn`/`fail`. Read-only on every service: it never submits, and
     reaches a service only through the existing read-only probes (the
     anonymous reachability probe `generate-job` runs, an adapter's own
-    account and interpreter probes). It reads no credential itself.
+    account and interpreter probes). A `repo_credential` token is read only
+    through the generator's single read site, inside that probe, as
+    `generate-job` reads it; this function opens no credential file.
     """
     resolved_target = Path(target).resolve()
     resolved = guard_entrypoint(resolved_target, Path(entrypoint))
@@ -4423,8 +4425,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     preflight.add_argument(
         "--workspace", type=Path, default=None,
-        help="override: the workspace whose env interpreter and datasets/registry.json are "
-        "read (default: the workspace this skill is installed in)",
+        help="override: the workspace whose env interpreter, datasets/registry.json, team "
+        "registry and account store are read (default: the workspace this skill is "
+        "installed in)",
     )
     preflight.add_argument(
         "--interpreter", type=Path, default=None,
@@ -4467,8 +4470,8 @@ def _build_parser() -> argparse.ArgumentParser:
     preflight.add_argument(
         "--repo-credential", dest="repo_credential", type=Path, default=None,
         help="path to the token file `submit --repo-credential` will carry, so the "
-        "reachability probe authenticates the same way (carrier services only); never "
-        "read by preflight itself",
+        "reachability probe authenticates the same way (carrier services only); read only "
+        "through the generator's single read site, as generate-job reads it",
     )
 
     return parser

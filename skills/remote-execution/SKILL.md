@@ -1546,6 +1546,10 @@ can branch on it without parsing prose.
 | `DATASET_NOT_PUBLIC` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset is published privately and its source names no public dataset page; the fix names `/datasets publish ... --public` with the operator's consent. Nothing is uploaded |
 | `DATASET_NOT_PUBLISHED` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset is not published and its source names no public dataset page a worker can attach; the fix names `/datasets publish` with the operator's consent. Nothing is uploaded |
 | `DATASET_HOST_NOT_ATTACHABLE` | `generate-job --dataset`, `generate-jobs --dataset` | the dataset resolves to a host other than the one the service's adapter attaches from (`INPUT_DATASETS_HOST`) |
+| `DATASETS_SKILL_MISSING` | `generate-job --dataset`, `generate-jobs --dataset` | the workspace has no `skills/datasets/scripts/datasets_cli.py` beside this skill, so the registry cannot be resolved; the fix names `smith upgrade` |
+| `STEPS_UNREADABLE` | `generate-jobs` | the product's `src/<Package>/__init__.py` or `config.py` does not parse, or the `__steps__` it assigns is not a literal the reader can evaluate without running the target's code |
+| `SCHEDULE_UNREADABLE` | `generate-jobs --from-schedule` | the file is not readable JSON, holds no `steps` list, or a step has no `id` or names no `services` |
+| `SCHEDULE_IS_A_PLAN` | `generate-jobs --from-schedule` | the file is the schedule's input plan (it carries `schema` and no `makespanMinutes`), whose `services` are only the allowed ones; the fix names `parallelism_cli.py schedule --plan <file>` and passing its output instead |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Before the first rehearsal
@@ -1554,7 +1558,9 @@ Run `preflight` on every generated job before the operator is asked to
 authorize its first rehearsal, and again after any re-pin. It never submits;
 it reaches a service only through the existing read-only probes (the
 anonymous reachability probe `generate-job` already runs, the adapter's own
-interpreter and account probes) and reads no credential itself.
+interpreter and account probes). A `--repo-credential` token is read only
+through the generator's single read site, inside that probe, exactly as
+`generate-job` reads it; preflight itself opens no credential file.
 
 ```
 python3 scripts/remote_cli.py preflight --target <repo> \
@@ -1562,7 +1568,8 @@ python3 scripts/remote_cli.py preflight --target <repo> \
     [--worker <id>]... [--expect-accelerator <name|sm_*>] \
     [--timing <Results/timing.json>] [--stage poc|full] [--units N] \
     [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
-    [--skip-rehearsal] [--keep-rehearsal <new dir>] [--repo-credential <token file>]
+    [--skip-rehearsal] [--keep-rehearsal <new dir>] [--interpreter <python>] \
+    [--repo-credential <token file>] [--workspace <workspace>]
 ```
 
 `--entrypoint` is repeatable: given more than one (the command
@@ -1596,14 +1603,23 @@ functions in a fresh scratch directory outside the target: unpacked from
 `code-bundle.tar.gz` when the job carries one (so only `.git/HEAD`, never git
 history), sparse-cloned at the pin from the target otherwise. It runs the
 smoke block through the runner's own `invoke()` with `mode` `smoke`, under the
-target's `.venv` interpreter (`--interpreter` overrides it), with only `PATH`,
-`HOME`, the clone's `src` on `PYTHONPATH`, `FORGE_CLONE_ROOT`,
-`FORGE_CLONE_COMMIT` and what `invoke()` exports itself (`FORGE_RUN_MODE`,
-`FORGE_INPUT_DATASETS` with every declared input unattached,
-`FORGE_SESSION_DEADLINE`). The `shard.json` it leaves is judged by the same
-`shard_io.completeness()` `smoke record` uses. The scratch directory is
-removed afterwards, passing or failing; `--keep-rehearsal <new dir>` keeps it
-there to read.
+target's `.venv` interpreter (`--interpreter` overrides it). The child
+inherits only `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR` and `SYSTEMROOT`
+(those set here), and gets the clone's `src` on `PYTHONPATH`,
+`FORGE_CLONE_ROOT`, `FORGE_CLONE_COMMIT` and what `invoke()` exports itself
+(`FORGE_RUN_MODE`, `FORGE_INPUT_DATASETS` with every declared input
+unattached, `FORGE_SESSION_DEADLINE`). The `shard.json` it leaves is judged by
+the same `shard_io.completeness()` `smoke record` uses. The scratch directory
+is removed afterwards, passing or failing, and an unexpected error during the
+rehearsal is a `fail` row carrying the error, never a traceback.
+`--keep-rehearsal <new dir>` keeps the scratch directory there to read; the
+path must not exist yet and must lie outside the target, and either refusal
+happens before anything is written.
+
+The rehearsal is not a sandbox. It runs the target's smoke on this machine
+with the real `HOME`, so a smoke that downloads reaches the network and
+writes its caches (under `HOME`) exactly as it would anywhere else; what it
+withholds is the workspace, not the network.
 
 Every rule below was learned from a remote round that a local check would
 have saved:
@@ -1635,10 +1651,10 @@ have saved:
    by sha256, never through a workspace path. `generate-job --dataset <slug>`
    declares it from the registry and records the preparation's sha256 values
    (`FORGE_DATASET_CHECKS`).
-11. Several remote steps: `generate-jobs` writes every job in one call (code
+10. Several remote steps: `generate-jobs` writes every job in one call (code
     bundle, requirements, carry paths and inputs derived), then run the one
     `preflight` it prints.
-10. Every fix after a rehearsal moves the pin, which means regenerated jobs and
+11. Every fix after a rehearsal moves the pin, which means regenerated jobs and
     re-minted consent tokens: fix what `preflight` reports first.
 
 ## Smoke — a readiness gate, evidence-derived

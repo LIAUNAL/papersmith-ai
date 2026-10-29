@@ -317,5 +317,26 @@ class TemplateRunsInTheTargetTests(ScaffoldedTarget):
              if hit.startswith(Path(READINESS).name)], [])
 
 
+class TemplateIgnoresTheRunnerCommitTests(unittest.TestCase):
+    """Where git cannot answer, the stamp reads `FORGE_CLONE_COMMIT`; the
+    shipped test must not fail because the shell running it exported one."""
+
+    def test_template_passes_outside_git_with_a_clone_commit_exported(self):
+        with tempfile.TemporaryDirectory() as box:
+            root = Path(box) / "target"
+            root.mkdir()
+            subprocess.run([sys.executable, str(MATERIALIZE), str(root), NAME, "7"],
+                           check=True, capture_output=True, text=True)
+            code = ("import sys, pytest; sys.exit(pytest.main(['-q', '-p', "
+                    f"'no:cacheprovider', '{READINESS}']))")
+            env = {**{k: v for k, v in os.environ.items() if k != "FORGE_RUN_MODE"},
+                   "FORGE_CLONE_COMMIT": "deadbeef", "GIT_CEILING_DIRECTORIES": box}
+            run = subprocess.run([sys.executable, "-c", code], cwd=root,
+                                 capture_output=True, text=True, env=env)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertRegex(run.stdout, r"\d+ passed")
+        self.assertNotRegex(run.stdout, r"\d+ (failed|error)")
+
+
 if __name__ == "__main__":
     unittest.main()

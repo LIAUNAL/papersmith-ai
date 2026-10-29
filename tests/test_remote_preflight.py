@@ -354,6 +354,63 @@ class RehearsalScratchTests(PreflightCase):
         self.assertEqual(self.row(payload, "local-rehearsal")["status"], "fail")
         self.assertTrue(keep.is_dir())
 
+    def test_keep_rehearsal_inside_the_target_is_refused_before_anything_is_written(self) -> None:
+        job = self.generate()
+        keep = self.target / "kept-inside"
+        code, payload, _ = self.preflight(job, "--keep-rehearsal", str(keep))
+        row = self.row(payload, "local-rehearsal")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("inside the target", row["evidence"])
+        self.assertIn("--keep-rehearsal <new dir outside the target>", row["fix"])
+        self.assertNotIn("smoke block", row["fix"])
+        self.assertFalse(keep.exists())
+
+    def test_an_existing_keep_directory_names_a_new_one_as_the_fix(self) -> None:
+        job = self.generate()
+        keep = self.root / "already"
+        keep.mkdir()
+        code, payload, _ = self.preflight(job, "--keep-rehearsal", str(keep))
+        row = self.row(payload, "local-rehearsal")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("already exists", row["evidence"])
+        self.assertIn("--keep-rehearsal <new dir outside the target>", row["fix"])
+        self.assertNotIn("smoke block", row["fix"])
+        self.assertEqual(list(keep.iterdir()), [])
+
+    def test_an_unexpected_error_fails_the_row_and_removes_the_scratch(self) -> None:
+        import tempfile
+        local = REMOTE_CLI._load_sibling("remote_execution_local_rehearsal",
+                                         "local_rehearsal.py")
+        before = set(Path(tempfile.gettempdir()).glob("psmith-preflight-*"))
+        job = self.generate()
+        with unittest.mock.patch.object(local, "materialize",
+                                        side_effect=RuntimeError("boom")):
+            code, payload, _ = self.preflight(job)
+        row = self.row(payload, "local-rehearsal")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("RuntimeError: boom", row["evidence"])
+        self.assertIn("rerun preflight", row["fix"])
+        self.assertFalse(row["details"]["kept"])
+        self.assertEqual(set(Path(tempfile.gettempdir()).glob("psmith-preflight-*")), before)
+
+    def test_an_unexpected_error_keeps_the_scratch_when_asked(self) -> None:
+        local = REMOTE_CLI._load_sibling("remote_execution_local_rehearsal",
+                                         "local_rehearsal.py")
+        job = self.generate()
+        keep = self.root / "kept-error"
+        with unittest.mock.patch.object(local, "materialize",
+                                        side_effect=RuntimeError("boom")):
+            code, payload, _ = self.preflight(job, "--keep-rehearsal", str(keep))
+        row = self.row(payload, "local-rehearsal")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("RuntimeError: boom", row["evidence"])
+        self.assertTrue(row["details"]["kept"])
+        self.assertTrue((keep / "session").is_dir())
+
 
 class InputsFixTests(PreflightCase):
     def test_the_inputs_warning_names_the_registry_flag_too(self) -> None:
