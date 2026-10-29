@@ -7,7 +7,9 @@ numbers -- a pilot's per-unit duration, a rehearsal's setup overhead, the
 accounts' own limits -- and writes nothing but an optional assessment or
 estimate record. `estimate` turns a timing probe's `Results/timing.json` into a
 processing-time range per stage and per host, and never estimates a host it has
-no measurement of.
+no measurement of. `plan` compares every measured candidate -- local CPU with N
+processes, a local accelerator, each account's machine, CPU-only remote -- and
+recommends the fastest affordable one; a GPU wins only when measured faster.
 
 Accounts are counted under the team rule: one account per person per service,
 so parallelism counts DISTINCT OWNERS (`--owners`), never accounts. On Colab
@@ -55,7 +57,7 @@ OBJECTIVE_FLOW = {
     ],
 }
 
-VERBS = ("assess", "schedule", "estimate", "checklist", "stamp-fields")
+VERBS = ("assess", "schedule", "estimate", "plan", "checklist", "stamp-fields")
 
 ERROR_CODES = (
     "missing-input", "bad-argument", "units-file-missing", "units-file-invalid",
@@ -1584,6 +1586,339 @@ def _product(ranges: list) -> list[tuple]:
     return combos
 
 
+# ------------------------------------------------------------- plan
+#: Loading dominates an epoch past this share of it; the plan then advises a
+#: cached representation of the data, with the measured share as evidence.
+LOAD_SHARE_THRESHOLD = 0.4
+CACHED_FORMS = ("float32 tensors", "a .npy memmap", "precomputed windows")
+UNIT_DEFINITION = "one fold x seed pair, every arm on the same machine"
+PROBE = "skills/remote-parallelism/scripts/timing_probe.py"
+
+
+def candidate_kind(candidate: str) -> tuple[str, str | None, str | None]:
+    """`(host, service, machine)`: local candidates have no service; schema 1
+    remote hosts have no machine."""
+    if candidate == "local" or candidate.startswith("local-"):
+        return "local", None, None
+    host, _, machine = candidate.partition("/")
+    return host, host.split(":", 1)[0], machine or None
+
+
+def pack_slots(count: int, slots: list[dict]) -> list[dict]:
+    """Greedy packing of `count` equal units onto slots, each with its own unit
+    seconds, setup and session limit (None locally). A slot pays its setup
+    when it opens a session; a remote session never runs past its limit."""
+    state = [dict(slot, finish=0.0, used=None, units=0, busy=0.0) for slot in slots]
+    for _ in range(count):
+        best = None
+        for index, slot in enumerate(state):
+            unit, setup, limit = slot["unit"], slot["setup"], slot["limit"]
+            if slot["used"] is not None and (limit is None or slot["used"] + unit <= limit):
+                finish, new = slot["finish"] + unit, False
+            else:
+                finish, new = slot["finish"] + setup + unit, True
+            if best is None or finish < best[0]:
+                best = (finish, index, new)
+        finish, index, new = best
+        slot = state[index]
+        slot["used"] = (slot["setup"] + slot["unit"]) if new else slot["used"] + slot["unit"]
+        slot["finish"], slot["units"] = finish, slot["units"] + 1
+        slot["busy"] += slot["unit"] + (slot["setup"] if new else 0.0)
+    return state
+
+
+def seconds_range(seconds: float) -> dict:
+    return {"seconds": num(seconds), "low": num(seconds * (1 - ESTIMATE_RANGE)),
+            "high": num(seconds * (1 + ESTIMATE_RANGE))}
+
+
+def measured_option(candidate: str, items: list[dict], scale: dict, stage: str, accounts: dict) -> dict:
+    """One candidate alone: its slots, makespan, accelerator hours and status."""
+    rows, _ = best_setting(items)
+    host, service, _ = candidate_kind(candidate)
+    device = rows[0]["device"]
+    setups = [float(item["setupSeconds"]) for item in rows if "setupSeconds" in item]
+    setup = sum(setups) / len(setups) if setups else 0.0
+    unit = per_unit_of(rows) * scale["arms"] * scale["epochs"]
+    processes = (int(candidate.rsplit("-", 1)[1]) if candidate.startswith("local-cpu-")
+                 else rows[0].get("processes", 1))
+    option = {"option": candidate, "kind": "local" if service is None else "remote", "candidates": [candidate],
+              "device": device, "settings": {key: rows[0][key] for key in SETTING_KEYS if key in rows[0]},
+              "processes": processes, "unitSeconds": num(unit), "setupSeconds": num(setup),
+              "accounts": [] if service is None else [host], "status": "eligible", "reason": ""}
+    if service is None:
+        state = pack_slots(scale["folds"] * scale["seeds"],
+                           [{"account": "local", "unit": unit, "setup": setup, "limit": None}] * processes)
+        option.update(finish_option(state, device, {}))
+        if option["makespanSeconds"]["high"] > LOCAL_LIMIT_SECONDS:
+            option.update(status="over-local-limit",
+                          reason=f"its makespan upper bound {option['makespanSeconds']['high']} s exceeds the "
+                                 "20 minutes a run may take locally")
+        return option
+    account = accounts.get(host)
+    if account is None:
+        option.update(status="no-account", makespanSeconds=None, acceleratorHours=None, perAccount=[],
+                      reason=f"no account limits for {host}: declare them with --account or --accounts-file")
+        return option
+    if account["tier"] is not None and account["tier"] not in PAID_COLAB_TIERS and stage == "full":
+        option.update(status="free-tier", makespanSeconds=None, acceleratorHours=None, perAccount=[],
+                      reason=f"{host} is on a free tier: it runs a proof of concept in one session, never a full "
+                             "campaign or a worker of a split")
+        return option
+    return dict(option, **remote_makespan([(candidate, rows, account)], scale))
+
+
+def remote_makespan(members: list[tuple[str, list[dict], dict]], scale: dict) -> dict:
+    """The makespan of a stage over one or more accounts, each with its own rows."""
+    slots, device = [], members[0][1][0]["device"]
+    for candidate, rows, account in members:
+        setups = [float(item["setupSeconds"]) for item in rows if "setupSeconds" in item]
+        unit = per_unit_of(rows) * scale["arms"] * scale["epochs"]
+        setup = sum(setups) / len(setups) if setups else 0.0
+        limit = account["sessionHours"] * 3600
+        if unit * (1 + ESTIMATE_RANGE) + setup > usable_session(limit):
+            return {"status": "split-first", "makespanSeconds": None, "acceleratorHours": None, "perAccount": [],
+                    "reason": f"one unit on {candidate} ({num(unit * (1 + ESTIMATE_RANGE))} s at its upper bound) "
+                              f"plus its {num(setup)} s setup exceeds {margin_text(account['sessionHours'] * 60)}: "
+                              "split it along the declared axis or declare it resumable"}
+        processes = rows[0].get("processes", 1)
+        slots += [{"account": account["label"], "unit": unit, "setup": setup, "limit": limit}] * (
+            account["sessions"] * processes)
+    state = pack_slots(scale["folds"] * scale["seeds"], slots)
+    quotas = {account["label"]: account["quotaHours"] for _, _, account in members}
+    result = finish_option(state, device, quotas)
+    over = [item["account"] for item in result["perAccount"] if item["overQuota"]]
+    unknown = [item["account"] for item in result["perAccount"] if item["overQuota"] is None and item["units"]
+               and device != "cpu"]
+    result.update(status="eligible", reason="")
+    if over:
+        result.update(status="over-quota", reason=f"{', '.join(over)} would exceed its weekly quota")
+    elif unknown:
+        result["quotaNote"] = f"{', '.join(unknown)}: unknown weekly quota, not checked; record it before the launch"
+    return result
+
+
+def finish_option(state: list[dict], device: str, quotas: dict) -> dict:
+    accelerated = device != "cpu"
+    by_account: dict[str, dict] = {}
+    for slot in state:
+        entry = by_account.setdefault(slot["account"], {"account": slot["account"], "units": 0, "busy": 0.0})
+        entry["units"] += slot["units"]
+        entry["busy"] += slot["busy"]
+    per = []
+    for label, entry in by_account.items():
+        hours = entry["busy"] / 3600 if accelerated else 0.0
+        quota = quotas.get(label)
+        per.append({"account": label, "units": entry["units"], "acceleratorHours": num(hours),
+                    "quotaHours": None if quota is None else num(quota),
+                    "overQuota": None if quota is None or not accelerated else hours > quota})
+    makespan = max(slot["finish"] for slot in state)
+    return {"makespanSeconds": seconds_range(makespan), "slots": len(state),
+            "acceleratorHours": num(sum(item["acceleratorHours"] for item in per)),
+            "perAccount": per}
+
+
+def split_options(by_candidate: dict, scale: dict, stage: str, accounts: dict, singles: dict) -> list[dict]:
+    """One split per service and machine measured on two or more paid owners'
+    own rows, kept only when it passes assess's worth-it thresholds."""
+    groups: dict[tuple, list] = {}
+    for candidate, items in sorted(by_candidate.items()):
+        host, service, machine = candidate_kind(candidate)
+        account = accounts.get(host)
+        if service is None or machine is None or account is None:
+            continue
+        if account["tier"] is not None and account["tier"] not in PAID_COLAB_TIERS:
+            continue
+        groups.setdefault((service, machine), []).append((candidate, best_setting(items)[0], account))
+    options = []
+    for (service, machine), members in groups.items():
+        if len(members) < 2:
+            continue
+        name = f"{service}/{machine} x{len(members)}"
+        option = {"option": name, "kind": "split", "candidates": [m[0] for m in members],
+                  "device": members[0][1][0]["device"], "settings": {}, "processes": 1,
+                  "accounts": [m[2]["label"] for m in members]}
+        option.update(remote_makespan(members, scale))
+        fits = [singles[m[0]] for m in members if singles[m[0]]["status"] == "eligible"]
+        if option["status"] == "eligible" and fits:
+            single = min(fits, key=lambda item: item["makespanSeconds"]["high"])
+            speedup = single["makespanSeconds"]["seconds"] / option["makespanSeconds"]["seconds"]
+            saved = (single["makespanSeconds"]["seconds"] - option["makespanSeconds"]["seconds"]) / 60
+            option.update(speedup=num(speedup), savedMinutes=num(saved), baseline=single["option"])
+            if speedup < MIN_SPEEDUP or saved < MIN_SAVED_MINUTES:
+                option.update(status="split-not-worth",
+                              reason=f"speed-up {num(speedup)} over {single['option']} alone and {num(saved)} saved "
+                                     f"minutes are below the {MIN_SPEEDUP} and {MIN_SAVED_MINUTES}-minute thresholds")
+            else:
+                option["reason"] = (f"speed-up {num(speedup)} >= {MIN_SPEEDUP} and {num(saved)} saved minutes >= "
+                                    f"{MIN_SAVED_MINUTES} over {single['option']} alone")
+        options.append(option)
+    return options
+
+
+def unmeasured_candidates(data: dict, by_candidate: dict, accounts: dict, asked: list[str]) -> list[dict]:
+    """Every candidate the team has and the record does not: what would measure it."""
+    measured = set(by_candidate)
+    local_info = (data.get("hosts") or {}).get("local") or {}
+    probe = f"run {PROBE} on the target's interpreter with --candidates "
+    rows = []
+    if not any(name == "local" or name.startswith("local-cpu-") for name in measured):
+        rows.append({"candidate": "local-cpu-1", "measureWith": probe + "local-cpu-1"})
+    for name, key in (("local-mps", "mps"), ("local-cuda", "cuda")):
+        if local_info.get(key) and name not in measured:
+            rows.append({"candidate": name, "measureWith": probe + name})
+    rehearse = ("a rehearsal on {host} that runs the timing probe there (generate-job{flag}, submit --smoke, "
+                "fetch --smoke) and appends its own row")
+    for host in sorted(accounts):
+        mine = [candidate_kind(name)[2] for name in measured if candidate_kind(name)[0] == host]
+        if not mine:
+            rows.append({"candidate": host, "measureWith": rehearse.format(host=host, flag="")})
+            continue
+        if "cpu" not in [machine and machine.lower() for machine in mine]:
+            rows.append({"candidate": f"{host}/cpu",
+                         "measureWith": rehearse.format(host=host, flag=" --accelerator-kind cpu")})
+        if all(machine and machine.lower() == "cpu" for machine in mine):
+            rows.append({"candidate": f"{host}/gpu", "measureWith": rehearse.format(host=host, flag="")})
+    listed = {item["candidate"] for item in rows}
+    for name in asked:
+        if name not in measured and name not in listed:
+            host = candidate_kind(name)[0]
+            rows.append({"candidate": name, "measureWith": probe + name if host == "local" else
+                         rehearse.format(host=host, flag=" --accelerator-kind cpu" if name.endswith("/cpu") else "")})
+    return rows
+
+
+def representation_advice(by_candidate: dict) -> tuple[list[dict], list[dict]]:
+    advice, comparisons = [], []
+    for candidate, items in sorted(by_candidate.items()):
+        rows, _ = best_setting(items)
+        share = load_share(rows)
+        if share is not None and share > LOAD_SHARE_THRESHOLD:
+            advice.append({"candidate": candidate, "loadShare": num(share), "threshold": LOAD_SHARE_THRESHOLD,
+                           "dataSource": rows[0].get("dataSource", "raw"), "rewritesData": False,
+                           "advice": (f"loading takes {round(share * 100)}% of an epoch on {candidate}, above the "
+                                      f"{round(LOAD_SHARE_THRESHOLD * 100)}% threshold: prepare a cached "
+                                      f"preprocessed form ({', '.join(CACHED_FORMS)}) and probe again with "
+                                      "--data-source cached; advice only, no data is rewritten")})
+        sources = {source: [item for item in items if item.get("dataSource") == source] for source in DATA_SOURCES}
+        if all(sources.values()):
+            comparisons.append({"candidate": candidate,
+                                "rawSecondsPerUnit": num(per_unit_of(best_setting(sources["raw"])[0])),
+                                "cachedSecondsPerUnit": num(per_unit_of(best_setting(sources["cached"])[0]))})
+    return advice, comparisons
+
+
+def stage_plan(stage: str, data: dict, by_candidate: dict, accounts: dict, advice: list[dict]) -> dict:
+    scale = data["scales"][stage]
+    singles = {candidate: measured_option(candidate, items, scale, stage, accounts)
+               for candidate, items in sorted(by_candidate.items())}
+    options = [*singles.values(), *split_options(by_candidate, scale, stage, accounts, singles)]
+    eligible = [item for item in options if item["status"] == "eligible"]
+
+    def key(item: dict) -> tuple:
+        return (item["makespanSeconds"]["high"], item["acceleratorHours"], item["device"] != "cpu",
+                item["kind"] != "local", item["option"])
+
+    eligible.sort(key=key)
+    result = {"units": scale["folds"] * scale["seeds"], "unit": UNIT_DEFINITION, "options": options,
+              "recommended": None, "lost": []}
+    if not eligible:
+        result["reason"] = ("no measured candidate is eligible: measure one listed under unmeasured, or declare "
+                            "the accounts of the ones measured")
+    else:
+        best = eligible[0]
+        high = best["makespanSeconds"]["high"]
+        reason = f"{best['option']} has the smallest measured makespan upper bound ({high} s)"
+        accelerators = [item for item in options if item["device"] != "cpu" and item is not best]
+        cpus = [item for item in eligible if item["device"] == "cpu" and item is not best]
+        if best["device"] == "cpu" and accelerators:
+            reason += "; the CPU wins: no accelerator was measured faster"
+        elif best["device"] != "cpu":
+            reason += ("; an accelerator wins because it was measured faster than every eligible CPU candidate"
+                       + (f" (best CPU {cpus[0]['option']}: {cpus[0]['makespanSeconds']['high']} s)" if cpus else ""))
+        if best["kind"] == "split":
+            reason += f"; {best['reason']}"
+        result["recommended"] = dict(best, reason=reason)
+        mine = next((item["advice"] for item in advice if item["candidate"] in best["candidates"]), None)
+        if mine:
+            result["recommended"]["representationAdvice"] = mine
+        result["reason"] = reason
+    winner = result["recommended"]
+    for item in options:
+        if winner is not None and item["option"] == winner["option"]:
+            continue
+        if item["status"] != "eligible":
+            why = item["reason"]
+        elif item["makespanSeconds"]["high"] > winner["makespanSeconds"]["high"]:
+            why = (f"slower: makespan upper bound {item['makespanSeconds']['high']} s against "
+                   f"{winner['option']}'s {winner['makespanSeconds']['high']} s")
+        else:
+            why = (f"as fast as {winner['option']}, but it spends {item['acceleratorHours']} accelerator hours "
+                   "or is not the CPU or local option")
+        result["lost"].append({"option": item["option"], "status": item["status"], "reason": why})
+    if stage == "poc":
+        result["pocBudget"] = (UNMEASURED if winner is None else
+                               "within" if winner["makespanSeconds"]["high"] <= POC_BUDGET_SECONDS else "exceeds")
+        if result["pocBudget"] == "exceeds":
+            result["reason"] += ("; it exceeds the 5-hour proof-of-concept budget: reduce the design (subjects, "
+                                 "epochs, folds, seeds, arms) before the pilot")
+    return result
+
+
+def cmd_plan(args, root: Path, today: str) -> dict:
+    if args.timing is None:
+        raise Refusal("missing-input", "--timing is required: the timing probe's Results/timing.json")
+    stage = (args.stage or "both").strip().lower()
+    if stage not in (*STAGES, "both"):
+        raise Refusal("bad-argument", f"--stage {args.stage!r}: one of poc, full or both")
+    asked = []
+    for raw in args.candidate or []:
+        for name in (part.strip() for part in raw.split(",")):
+            if not CANDIDATE_PATTERN.match(name):
+                raise Refusal("bad-argument", f"--candidate {name!r}: local-cpu-<processes>, local-mps, "
+                                              "local-cuda or <host>:<owner>/<machine>")
+            asked.append(name)
+    path, inside = resolved(root, args.timing)
+    if args.record is not None and not inside:
+        raise Refusal("timing-outside-workspace", f"--timing {args.timing} resolves outside the workspace {root}")
+    if args.record is None:
+        path = Path(args.timing) if Path(args.timing).is_absolute() else root / args.timing
+    data = load_timing(path, args.timing)
+    _, by_candidate = measured_candidates(data)
+    entries = (load_accounts(root, args.account, args.accounts_file)
+               if args.account or args.accounts_file else [])
+    pool = account_pool(entries)
+    accounts = {entry["label"]: entry for entry in pool["eligible"]}
+    for item in pool["excluded"]:
+        entry = next(e for e in entries if f"{e['service']}:{e['owner']}" == item["account"])
+        accounts[item["account"]] = dict(entry, label=item["account"])
+    advice, comparisons = representation_advice(by_candidate)
+    stages = STAGES if stage == "both" else (stage,)
+    unmeasured = unmeasured_candidates(data, by_candidate, accounts, asked)
+    plans = {}
+    for name in stages:
+        plans[name] = stage_plan(name, data, by_candidate, accounts, advice)
+        plans[name]["unmeasured"] = unmeasured
+    result = {"timing": args.timing, "plans": plans, "representationAdvice": advice,
+              "dataSourceComparisons": comparisons,
+              "accounts": sorted(accounts), "ignoredAccounts": pool["ignored"],
+              "excludedAccounts": [{"account": item["account"], "tier": item["tier"]} for item in pool["excluded"]],
+              "rules": {"localLimitSeconds": LOCAL_LIMIT_SECONDS, "pocBudgetSeconds": POC_BUDGET_SECONDS,
+                        "bound": "high", "range": RANGE_NOTE, "loadShareThreshold": LOAD_SHARE_THRESHOLD,
+                        "minSpeedup": MIN_SPEEDUP, "minSavedMinutes": MIN_SAVED_MINUTES,
+                        "sessionMarginPercent": SESSION_MARGIN_PERCENT,
+                        "makespan": ("the stage's units (" + UNIT_DEFINITION + ") packed onto the option's slots "
+                                     "(processes locally, sessions x processes per account), each slot paying its "
+                                     "setup once per session, from each candidate's own rows at its fastest "
+                                     "measured setting"),
+                        "order": "smallest makespan upper bound, then fewest accelerator hours, then CPU, then local"},
+              "unmeasuredMeans": "no row of that candidate: it is never extrapolated from another host or device",
+              "readOnly": True, "launchAuthorization": False}
+    if args.record is not None:
+        result["recorded"] = record(root, args.record, result, today, prefix="plan")
+    return result
+
+
 def cmd_checklist(args, root: Path, today: str) -> dict:
     return {"checklist": [dict(item) for item in CHECKLIST]}
 
@@ -1619,6 +1954,16 @@ def build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--record", default=None)
     estimate.add_argument("--json", action="store_true", help="JSON output (the only output; accepted for symmetry)")
     estimate.set_defaults(func=cmd_estimate)
+    placement_plan = verbs.add_parser("plan", help="the fastest affordable placement over every measured "
+                                                   "candidate, read-only")
+    placement_plan.add_argument("--timing", default=None)
+    placement_plan.add_argument("--stage", default=None)
+    placement_plan.add_argument("--account", action="append", default=None)
+    placement_plan.add_argument("--accounts-file", default=None)
+    placement_plan.add_argument("--candidate", action="append", default=None,
+                                help="a candidate the team has, listed as unmeasured when the record lacks it")
+    placement_plan.add_argument("--record", default=None)
+    placement_plan.set_defaults(func=cmd_plan)
     verbs.add_parser("checklist", help="the reproducibility checklist").set_defaults(func=cmd_checklist)
     verbs.add_parser("stamp-fields", help="the fields to declare identicalAcrossShards").set_defaults(
         func=cmd_stamp_fields)

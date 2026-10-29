@@ -1,6 +1,6 @@
 ---
 name: remote-parallelism
-description: "Trigger: decide whether a proof of concept or an experiment campaign is worth spreading over several remote GPU accounts, and how to keep the split reproducible. Turns measured inputs (a pilot's per-unit duration, a rehearsal's setup overhead, each account's concurrent sessions, session wall-time limit and weekly GPU quota) into serial and parallel makespans, speed-up, quota per account and a verdict with its threshold stated, plus the reproducibility checklist a split must satisfy before any job is generated, and estimates a stage's processing time from a timing probe before the pilot and before the full run. Reuses remote-execution's placement and launch gate; never places, generates or launches anything. Stdlib-only CLI, no network, no credentials."
+description: "Trigger: decide whether a proof of concept or an experiment campaign is worth spreading over several remote GPU accounts, and how to keep the split reproducible. Turns measured inputs (a pilot's per-unit duration, a rehearsal's setup overhead, each account's concurrent sessions, session wall-time limit and weekly GPU quota) into serial and parallel makespans, speed-up, quota per account and a verdict with its threshold stated, plus the reproducibility checklist a split must satisfy before any job is generated, estimates a stage's processing time from a timing probe before the pilot and before the full run, and plans where a stage runs (local or cloud, CPU or GPU, processes, accounts, batch and loader settings) from every measured candidate, a GPU never by default. Reuses remote-execution's placement and launch gate; never places, generates or launches anything. Stdlib-only CLI, no network, no credentials."
 ---
 
 # Remote parallelism
@@ -426,6 +426,55 @@ range, and both are stated in every output as `placementRules`
 A placement is never launch authorization: the operator still authorizes
 every remote run.
 
+## Plan the placement before you run
+
+Before a proof of concept or a full experiment runs, `plan` answers where and
+how: local or cloud, CPU or GPU, how many processes or accounts, and which
+batch and loader settings. It reads the schema 2 timing record and the team's
+accounts and writes nothing unless `--record` is given. A GPU is never the
+default: every candidate competes on its own measurement.
+
+- **Units.** A stage's units are its fold x seed pairs, each carrying every
+  arm on the same machine, so no comparison crosses a hardware boundary. A
+  unit lasts `secondsPerUnit x arms x epochs` at the candidate's fastest
+  measured setting.
+- **Options.** Every measured candidate alone (`local-cpu-<N>` packs units onto
+  N processes; a remote candidate onto its account's sessions x processes,
+  paying its setup once per session inside the 80% session margin), and one
+  split per service and machine measured on two or more paid owners' own rows.
+  A split is kept only when it clears `assess`'s thresholds (speed-up 1.5,
+  30 saved minutes) over its best single account.
+- **Eligibility.** A local option whose makespan upper bound exceeds 20
+  minutes, a remote one without declared account limits, a unit that does not
+  fit a session, an account over its quota, or a free-tier account on a full
+  campaign is listed with its reason and never recommended.
+- **The pick.** The eligible option with the smallest makespan upper bound,
+  then the fewest accelerator hours, then the CPU, then local. So an
+  accelerator wins only when it was measured faster, and `reason` says which
+  CPU it beat; every other option is under `lost` with why.
+- **Unmeasured.** Every candidate the team has and the record lacks — the
+  local CPU, a local accelerator `hosts` reports, each account without a row,
+  each account's CPU-only machine, and every `--candidate` named — is listed
+  under `unmeasured` with what would measure it: the timing probe locally, a
+  rehearsal (with `generate-job --accelerator-kind cpu` for a CPU-only one)
+  remotely. It is never extrapolated from another host or device.
+- **Data representation.** When waiting on batches takes more than 40% of an
+  epoch at a candidate's fastest setting, `representationAdvice` names the
+  measured share and advises a cached preprocessed form (float32 tensors, a
+  `.npy` memmap, precomputed windows), to be probed again with
+  `--data-source cached`. It is advice: no data is rewritten. A candidate
+  measured both ways is compared under `dataSourceComparisons`.
+- **A recommendation is not a launch.** The operator still authorizes every
+  run, and each account still needs its own passing rehearsal.
+
+Worked example, the launch-bound case: a proof of concept of 8 units (4 folds
+x 2 seeds, 2 arms, 2 epochs), measured at 12 s per epoch on each of 8 local
+CPU processes with a 5 s setup, and at 8 s per epoch on a remote T4 with a
+420 s setup, for two paid owners. Per epoch the T4 is faster, yet `plan`
+recommends `local-cpu-8`: makespan 53 s (upper bound 63.6 s), against 676 s
+for one T4 account and 548 s for the two-account split, whose speed-up 1.23
+is below the 1.5 threshold.
+
 ## Accepted operations
 
 ```
@@ -437,6 +486,7 @@ python3 skills/remote-parallelism/scripts/parallelism_cli.py [--root <workspace>
 | `assess` | `--units N --unit-minutes M --owners N --sessions-per-account S --session-limit-hours H --quota-hours Q --setup-minutes O` or, with each account's own limits, `--units N --unit-minutes M --setup-minutes O --account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...` (or `--accounts-file accounts.json`), then `[--accounts A] [--service kaggle\|colab[,...]] [--tiers free,pro,...] [--stamps-identical] [--units-file units.json] [--axis <name>] [--quota-source <text>] [--quota-date YYYY-MM-DD] [--record <dir>]`: JSON `{inputs, thresholds, serialMinutes, singleAccountMinutes, parallelMinutes, speedup, savedMinutes, accountsUsed, recommendedAccounts, perAccount[{account, units, gpuHours, overQuota}], quotaOk, unitsOverSessionLimit, eligibleOwners, excludedOwners[{owner, tier}], verdict, reasons, unitSeeds?, reproducibilityChecklist, stampFields, launchAuthorization: false}`; each `perAccount` entry is one eligible owner's account. `--record <dir>` writes `<dir>/.remote-parallelism/assessment-<date>.json` (a second one the same day gets `-2`, never an overwrite); `<dir>` must resolve inside the workspace, through no symlink that leaves it |
 | `estimate` | `--timing <path to timing.json> [--stage poc\|full\|both] [--host <host>:<owner> ...] [--record <dir>] [--json]`: JSON `{estimates: {stage: {host: {seconds, low, high, formula, measurements, device, secondsPerUnit, perArm, setupSeconds} \| "unmeasured"}}, placement: {stage: {where: "local"\|"cloud"\|null, host, reason, pocBudget?: "within"\|"exceeds"\|"unmeasured"}}, placementRules, timing, range, unmeasuredMeans, launchAuthorization: false}`; `local` and every host the record measured are always reported, and each `--host` named adds a row (`unmeasured` when the record has no measurement of it). `--record <dir>` writes `<dir>/.remote-parallelism/estimate-<date>.json` under the same containment as `assess`, and then `--timing` too must resolve inside the workspace, through no symlink that leaves it |
 | `schedule` | `--plan <plan.json> [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json]`: places each remote step on one service and its units on that service's accounts, honouring `requires`, for the smallest makespan; JSON `{steps[{id, services, startMinutes, endMinutes, shares[...]}], makespanMinutes, serialMinutes, speedup, savedMinutes, quota[{account, gpuHours, quotaHours, overQuota}], quotaOk, excludedAccounts, search, doctrineChecks, reasons, launchAuthorization: false}` (see "Planning a project's remote steps"); read-only, writes nothing |
+| `plan` | `--timing <path to timing.json> [--stage poc\|full\|both] [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json] [--candidate <candidate> ...] [--record <dir>]`: JSON `{plans: {stage: {units, unit, options[{option, kind: "local"\|"remote"\|"split", candidates, device, settings, processes, accounts, slots, makespanSeconds{seconds, low, high}, acceleratorHours, perAccount, status, reason}], recommended, reason, lost[{option, status, reason}], unmeasured[{candidate, measureWith}], pocBudget?}}, representationAdvice[{candidate, loadShare, threshold, advice, rewritesData: false}], dataSourceComparisons, accounts, excludedAccounts, rules, readOnly: true, launchAuthorization: false}` (see "Plan the placement before you run"); `--record <dir>` writes `<dir>/.remote-parallelism/plan-<date>.json` under the same containment as `estimate` |
 | `checklist` | the reproducibility checklist as JSON |
 | `stamp-fields` | the shard stamp fields to declare `identicalAcrossShards` |
 
@@ -477,7 +527,11 @@ than one unit.
 
 ## Output Reporting
 
-For `schedule`, report each step's service, window and per-account units,
+For `plan`, report each stage's recommended option with its device,
+settings, processes or accounts, makespan range and accelerator hours, why
+every other option lost, every `unmeasured` candidate with what would
+measure it, any representation advice with its measured share, and that the
+plan is never launch authorization. For `schedule`, report each step's service, window and per-account units,
 the makespan against the serial one, every account's GPU hours against its
 quota (overruns and unknown quotas named), each doctrine check, and that the
 plan is never launch authorization. For `estimate`, report each stage's range per host with its formula and
