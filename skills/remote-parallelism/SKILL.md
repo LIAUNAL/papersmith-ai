@@ -341,9 +341,36 @@ product folder, declared among the step's produces roots:
 revision) for `full` and from the declared pilot for `poc`; nothing guesses
 it. A record with any other shape is refused (`timing-invalid`).
 
-**Schema 2: one row per candidate.** The kit's timing probe
-(`proposal-implementation/assets/kit/nb/timing_probe.py`) writes schema 2,
-and schema 1 records keep loading with unchanged outputs. Schema 2 adds
+**The probe that writes it.** `scripts/timing_probe.py` ships with this
+skill and runs under the target's own interpreter against the target's own
+epoch function (`--entry <module>:<function>`, called as
+`epoch(settings, wrap)` and iterating its loader through `wrap`):
+
+```
+<target>/.venv/bin/python skills/remote-parallelism/scripts/timing_probe.py \
+    --path <target>/src --entry <package>.<module>:<function> --arm <arm id> \
+    --out <target>/<Name>/Results/timing.json [--candidates local-cpu-1,local-cpu-4,local-mps] \
+    [--batch-sizes 32,128] [--num-workers 0,4] [--pin-memory false,true] [--prefetch 2] \
+    [--threads 4] [--dtype float32] [--data-source raw,cached] [--cap-seconds 300] [--scales '<json>']
+```
+
+It times one epoch per candidate and setting, `local-cpu-<N>` as N
+concurrent processes each timed under the others' contention, and splits
+every epoch into the wait for batches and the compute. Each candidate's sweep
+stops at its time cap (300 s by default; the first setting always runs, and
+every setting past the cap is listed under `skipped`). An accelerator the
+machine lacks is skipped, never run on the CPU under its name. Without
+`--candidates` it measures the local CPU (one process and half the cores)
+and every accelerator the machine has. It writes only `Results/timing.json`,
+appending to it (a schema 1 record is upgraded and keeps its rows), and
+takes `--scales` only for a new record. It never picks a device: a target
+reads its device from `plan`'s measured recommendation
+(`timing_probe.device_from_plan`), and with no plan there is no choice. A
+target may vendor the file to run it on a remote machine with `--host
+<host>:<owner>` and a `<host>:<owner>/<machine>` candidate.
+
+**Schema 2: one row per candidate.** The probe writes schema 2, and schema 1
+records keep loading with unchanged outputs. Schema 2 adds
 `hosts` (`{"<host>": {"cpuCount", "ramGB", "mps", "cuda"}}`) and, per
 measurement, optional keys: `candidate` (`local-cpu-<processes>`,
 `local-mps`, `local-cuda` or `<host>:<owner>/<machine>`, where a machine
