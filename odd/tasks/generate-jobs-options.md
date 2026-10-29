@@ -14,9 +14,10 @@ Branch: `feat/generate-jobs-options` (from `origin/main` 1392aed0, v0.38.0). Del
 
 ## Tasks
 
-- T1 (S1-S5) options + equivalence tests + docs -- pending
+- T1 (S1-S5) options + equivalence tests + docs -- implemented (L2), awaiting review
 - T2 independent verifier (item 3: CLI and run-config contracts) -- pending
 
 ## Log
 
 - L1 (2026-10-29, QMLEEG regeneration): `generate-jobs` 0.38.0 could not express per-job smoke kwargs (`{"steps":[<job>]}`), the extra carry path `Results/checkpoints` (e1/e2/e3), or `--input-dataset` (only `--dataset`, which adds `datasetChecks`), and it would regenerate `tools/colab/e5_run_end_to_end` (a finished remote step in `__steps__`); the four jobs were regenerated one by one with `generate-job --regenerate`.
+- L2 (2026-10-29, T1): step keys `smoke` (`module`/`function`/`kwargs`/`requiredEvidence`, each optional, each winning over the command's smoke option) and `carry` (read by `job_plan.step_smoke`/`step_carry`, malformed -> that row `STEP_DECLARATION_MALFORMED`); flags `--smoke-kwargs-for` (JSON object, once per step, wins over both), `--carry-path-for`, `--input-dataset` (only jobs whose adapter declares `INPUT_DATASETS_ROOT`, per S3's wording), `--input-dataset-for` (any service), `--only`, `--skip` (`job_plan.select_steps`: `STEP_UNKNOWN` for a non-remote name, `STEP_SELECTION_CONFLICT` for only+skip on one step, a `--*-for` on a step left out, or an empty selection; both before any write). Tests: `tests/test_generate_jobs_options.py` (25): byte-identity against `generate-job` per option, and a v0.38.0 golden captured before the change (passed RED and GREEN). RED 23 failed / 2 passed (argparse: unrecognized arguments); GREEN 25 passed.
