@@ -29,9 +29,21 @@ number is `0`, breaking changes can still arrive without a major bump.
 - `submit` of a job that declares carry paths without `--unit` is still sent,
   but reports `carry: no-share` and a `carryWarning`: no share is recorded,
   so `remaining` would never list the units of a run cut at its limit.
+- `remote-parallelism plan --resumable --checkpoint-minutes <minutes>` costs a
+  unit over the session margin as a chain of sessions on one account, each
+  paying the setup again, instead of dropping the candidate as `split-first`;
+  the option reports `resumable`, `checkpointMinutes` and `sessionsPerUnit`.
 
 ### Changed
 
+- `schedule` and `plan` spend each account's weekly quota (`quotaHours`) as
+  they place units: a session that would overrun it waits for the next
+  reset, another account with quota left takes the unit when that is
+  sooner, and a chained unit waits on its own account. The wait is in the
+  makespan; `quotaWeeks` and the per-account `quotaWeeks` and
+  `quotaWaitMinutes` (`quotaWaitSeconds` in `plan`) report it. A `plan`
+  option over its quota is now eligible with the wait included (it was
+  `over-quota`). The schema 1 `schedule` golden gains only these keys.
 - `session-fit` no longer passes a unit that spans sessions merely because
   the job declares carry paths: it fails when the deadline rehearsal failed
   (no `partial.json`, among others) and warns when it was skipped.
