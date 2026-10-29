@@ -337,6 +337,25 @@ class SelectionTests(_OptionsCase):
         self.assert_generate_job_writes_the_same(
             SERVICE, "e2", *GLOBAL_SMOKE, "--carry-path", "Results/e2")
 
+    def test_a_schedule_naming_a_skipped_step_is_not_refused(self) -> None:
+        schedule = self.root / "schedule.json"
+        schedule.write_text(json.dumps({"steps": [
+            {"id": "e1", "services": [SERVICE]}, {"id": "e2", "services": [SERVICE]},
+            {"id": "e5", "services": [PLAIN]}], "makespanMinutes": 10}), encoding="utf-8")
+        code, payload, err = self.generate_jobs(*GLOBAL_SMOKE, "--from-schedule", str(schedule),
+                                                "--skip", "e5")
+        self.assertEqual(code, 0, (payload, err))
+        self.assertEqual({row["step"] for row in payload["jobs"]}, {"e1", "e2"})
+        self.assertIn({"step": "e5", "reason": "excluded by --skip"}, payload["skipped"])
+        self.assertFalse(self.folder(PLAIN, "e5").exists())
+        before = _snapshot(self.target / "tools")
+        code, payload, err = self.generate_jobs(*GLOBAL_SMOKE, "--regenerate",
+                                                "--from-schedule", str(schedule),
+                                                "--only", "ghost")
+        self.assertEqual(code, 1)
+        self.assertIn("STEP_UNKNOWN", err)
+        self.assertEqual(_snapshot(self.target / "tools"), before)
+
     def assert_refused_before_writing(self, *extra: str, says: str) -> None:
         before = _snapshot(self.target / "tools")
         code, payload, err = self.generate_jobs(*GLOBAL_SMOKE, "--regenerate", *extra)

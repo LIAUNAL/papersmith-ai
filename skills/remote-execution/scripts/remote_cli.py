@@ -4052,6 +4052,9 @@ def cmd_generate_jobs(
             "(or config.py) __steps__: a step needs placement 'remote', a job and a service")
     smoke_kwargs_for, carry_paths_for = dict(smoke_kwargs_for or {}), dict(carry_paths_for or {})
     input_datasets_for = dict(input_datasets_for or {})
+    # Schedule ids are checked against every declared remote step, not only the
+    # selected ones: a schedule that names a step `--skip` left out is still valid.
+    declared_remote = {name for name, _ in remote}
     remote, skipped = JOB_PLAN.select_steps(
         steps, remote, skipped, only=list(only or ()), skip=list(skip or ()),
         named={"--smoke-kwargs-for": list(smoke_kwargs_for),
@@ -4061,7 +4064,7 @@ def cmd_generate_jobs(
         if not isinstance(value, dict):
             raise RemoteCLIError(f"--smoke-kwargs-for {step} must be a JSON object")
     chosen = JOB_PLAN.schedule_services(Path(from_schedule)) if from_schedule else {}
-    unknown = sorted(set(chosen) - {name for name, _ in remote})
+    unknown = sorted(set(chosen) - declared_remote)
     if unknown:
         raise RemoteCLIError(
             f"the schedule names {', '.join(unknown)}, which {product}'s __steps__ does not "
