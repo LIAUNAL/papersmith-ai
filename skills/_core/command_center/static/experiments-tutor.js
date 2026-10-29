@@ -27,7 +27,7 @@
     significance: 'Pruebas de significancia estadística',
     'toy-set': 'Propósito del toy set',
     training: 'Estrategias de entrenamiento',
-    ceilings: 'Techos (cotas y oráculos)',
+    'upper-bounds': 'Techos (cotas y oráculos)',
     baselines: 'Métodos a comparar y su implementación',
     validation: 'Esquema de validación y fuga de datos',
     compute: 'Presupuesto de cómputo y sesión',

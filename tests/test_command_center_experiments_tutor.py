@@ -20,7 +20,7 @@ AGENT = ROOT / ".claude" / "agents" / "experiments-tutor.md"
 
 #: The decision areas, by the id the turn's `decision_area` carries.
 AREAS = ("architecture", "hyperparameters", "ablation", "significance", "toy-set", "training",
-         "ceilings", "baselines", "validation", "compute", "reproducibility")
+         "upper-bounds", "baselines", "validation", "compute", "reproducibility")
 
 
 def flat(text: str) -> str:
@@ -41,7 +41,7 @@ class DoctrineTests(unittest.TestCase):
         for area in AREAS + ("general",):
             self.assertIn(f"`{area}`", self.skill, area)
         for topic in ("network architecture", "hyperparameter search", "ablation",
-                      "statistical significance", "toy set", "training strateg", "ceiling",
+                      "statistical significance", "toy set", "training strateg", "upper bound",
                       "oracle", "baseline", "leakage", "compute budget", "reproducib"):
             self.assertIn(topic, self.skill.lower(), topic)
 

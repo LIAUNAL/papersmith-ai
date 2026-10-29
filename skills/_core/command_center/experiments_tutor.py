@@ -35,7 +35,7 @@ FOLDER = (".papersmith", "experiments-tutor")
 MODES = ("ask", "explain", "evaluate")
 #: The decision areas the skill's doctrine covers, plus ``general``.
 AREAS = ("architecture", "hyperparameters", "ablation", "significance", "toy-set", "training",
-         "ceilings", "baselines", "validation", "compute", "reproducibility", "general")
+         "upper-bounds", "baselines", "validation", "compute", "reproducibility", "general")
 LEVELS = ("sin-evidencia", "declarada", "justificada", "controlada", "defendible")
 MAX_DIGEST_CHARS = 24_000
 MAX_PRODUCTS = 12
@@ -47,8 +47,8 @@ MAX_DATASETS = 40
 TEXT = 300
 
 #: Path parts and file names that hold secrets; a path carrying one is dropped.
-SECRET_PARTS = (".remote-execution", ".kaggle", ".ssh")
-SECRET_NAMES = ("team.json", "kaggle.json", "access_token", "token", "token.json", "credentials.json")
+SECRET_PARTS = (".remote-execution", ".ssh")
+SECRET_NAMES = ("team.json", "access_token", "token", "token.json", "credentials.json")
 
 TURN_SCHEMA: dict[str, Any] = {
     "type": "object",

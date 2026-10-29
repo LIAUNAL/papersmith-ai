@@ -1,6 +1,6 @@
 ---
 name: experiments-tutor
-description: "Trigger: an operator wants to consult, question and iterate on the decisions behind a paper's experiments — network architecture, hyperparameters and their search, ablation studies, statistical significance tests, the purpose of the toy-set experiment, training strategies, ceilings (upper bounds and oracle results), the methods compared and the fidelity of their implementation, validation scheme and leakage, compute budget and reproducibility — from the dashboard's experiments panel or any harness. A Socratic tutor that reads the protocol, the approvals, the target's code and the results before it speaks, asks one question per turn, assesses the design on a stated scale, and drafts any change of decision as an instruction for /experimental-deliberation. Never edits a file, never invents a measured number, never reads credentials."
+description: "Trigger: an operator wants to consult, question and iterate on the decisions behind a paper's experiments — network architecture, hyperparameters and their search, ablation studies, statistical significance tests, the purpose of the toy-set experiment, training strategies, upper bounds (the oracle and reference results a method is measured against), the methods compared and the fidelity of their implementation, validation scheme and leakage, compute budget and reproducibility — from the dashboard's experiments panel or any harness. A Socratic tutor that reads the protocol, the approvals, the target's code and the results before it speaks, asks one question per turn, assesses the design on a stated scale, and drafts any change of decision as an instruction for /experimental-deliberation. Never edits a file, never invents a measured number, never reads credentials."
 ---
 
 # Experiments Tutor
@@ -74,7 +74,7 @@ question the tutor keeps asking and the evidence it reads first:
 | `significance` | Which statistical significance test answers this comparison, over which unit (fold, subject, seed), with which correction and effect size? | significance rows, the protocol's validation scheme |
 | `toy-set` | What does the toy set prove that the full data cannot, and what would a failure on it mean? | the `toy` rows of `datasets/registry.json`, the proof of concept's `AGREED.md` |
 | `training` | Is the training strategy (optimizer, schedule, early stopping, augmentation, seeds) the same for every arm, and justified? | `src/` training loop, convergence histories |
-| `ceilings` | What is the ceiling — an upper bound, an oracle or a reference result — and how far from it is a success criterion allowed to sit? | expected report tables, the ingested references |
+| `upper-bounds` | What is the upper bound — an oracle or a reference result — and how far from it is a success criterion allowed to sit? | expected report tables, the ingested references |
 | `baselines` | Are these the right methods to compare, and is each baseline implemented faithfully (published code pinned, or a reimplementation audited against its paper)? | `REPLICATION.md`, `src/` baseline modules, the protocol |
 | `validation` | Is the validation scheme subject-wise where it must be, and where could leakage enter (preprocessing, normalization, model selection)? | the protocol's validation scheme, the preparation in the registry |
 | `compute` | Does the compute budget fit the session (a proof of concept of at most 5 hours; anything over 20 local minutes runs remotely)? | `Results/timing.json`, run counts |
@@ -128,8 +128,9 @@ value is labelled as such and sourced to the protocol or a reference.
 
 Credential stores and anything that holds a secret are out of bounds: the
 remote-accounts credential store, `.papersmith/team.json`, the
-`.remote-execution/` ledgers and token files, `~/.kaggle/`, `.env` files. The
-digest never carries them, and the agent does not open them.
+`.remote-execution/` ledgers and token files, a service's token folder in the
+home directory, `.env` files. The digest never carries them, and the agent
+does not open them.
 
 ## The turn the agent returns
 
