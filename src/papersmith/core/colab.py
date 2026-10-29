@@ -2,11 +2,12 @@
 
 Each team member with a Colab account (``smith team add --colab``) gets a
 private state directory, ``$XDG_CONFIG_HOME/papersmith/colab/<owner>/``
-(``0700``). ``google-colab-cli`` 0.7.5 keeps its oauth token at
-``~/.config/colab-cli/token.json`` resolved from ``HOME`` at import time; its
-global ``--config PATH`` names the session STATE FILE (``sessions.json``) and
-does not move the token (measured against the 0.7.5 source and ``colab
---help``). So an owner's isolation is the child's ``HOME``: every invocation
+(``0700``). ``google-colab-cli`` (pinned at :data:`PINNED_VERSION`) keeps its
+oauth token at ``~/.config/colab-cli/token.json`` resolved from ``HOME`` at
+import time; its global ``--config PATH`` names the session STATE FILE
+(``sessions.json``) and does not move the token (measured against the 0.7.5
+source and ``colab --help``; the remote-execution Colab adapter records the
+same in the 0.6.0 source). So an owner's isolation is the child's ``HOME``: every invocation
 runs ``HOME=<configDir> colab --config <configDir>/.config/colab-cli/sessions.json
 <command>``, and the token lands at ``<configDir>/.config/colab-cli/token.json``.
 
