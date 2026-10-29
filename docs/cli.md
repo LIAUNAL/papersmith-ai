@@ -352,6 +352,55 @@ are forwarded to `remote_cli.py`. A real submission spends quota: prefer
 `--smoke` and `--dry-run` first (see
 [Remote compute, carefully](../README.md#remote-compute-carefully)).
 
+`smith remote` wraps five operations (`pack` = `generate-job`, `push` =
+`submit`, `status`, `pull` = `fetch`, `sync` = `reconcile`). The rest of the
+remote-execution CLI runs directly, under the workspace env interpreter:
+
+```bash
+python skills/remote-execution/scripts/remote_cli.py generate-jobs --target <repo> --product <Name> \
+    [--from-schedule <schedule output.json>] [--dataset <slug>]... \
+    [--smoke-module M --smoke-function F] [--smoke-kwargs '<json>'] \
+    [--smoke-required-evidence <path>]... [--repo-url URL] [--repo-ref REF] \
+    [--repo-credential <token file>] [--regenerate] [--workspace <dir>] \
+    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads] \
+    [--smoke-kwargs-for <step> '<json>']... [--carry-path-for <step> <path>]... \
+    [--input-dataset <owner/slug>]... [--input-dataset-for <step> <owner/slug>]... \
+    [--only <step>]... [--skip <step>]...
+python skills/remote-execution/scripts/remote_cli.py preflight --target <repo> \
+    --entrypoint <repo>/tools/<service>/<job-name>/runner.ipynb [--entrypoint ...] \
+    [--worker <id>]... [--expect-accelerator <name|sm_*>] \
+    [--timing <Results/timing.json>] [--candidate <host>:<owner>/<machine>] \
+    [--stage poc|full] [--units N] [--unit <id>]... [--deadline-block smoke|run] \
+    [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
+    [--skip-rehearsal] [--keep-rehearsal <new dir>] [--interpreter <python>] \
+    [--repo-credential <token file>] [--workspace <workspace>]
+python skills/remote-execution/scripts/remote_cli.py distribute --target <repo> \
+    --entrypoint <runner.ipynb> --backend kaggle|colab --unit <id>... [--timing <file>] [--stage poc|full]
+python skills/remote-execution/scripts/remote_cli.py remaining --target <repo> \
+    --entrypoint <runner.ipynb> --unit <id>... [--unit-field <field>]
+```
+
+- `generate-jobs` writes one job folder per remote step the product's
+  `__steps__` declares and prints the single `preflight` command over all of
+  them; `--only`/`--skip` choose the steps, and the `--*-for` flags set one
+  step's smoke kwargs, carry paths or input datasets.
+- `generate-job --dataset <slug>` (and `generate-jobs --dataset`) declares a
+  workspace dataset as the job's input, with the preparation's sha256 values
+  as `datasetChecks`; it uploads nothing.
+- `preflight` checks each job locally before its first remote rehearsal
+  (pin, diagrams, interpreter, code reachability, inputs, a local rehearsal,
+  each account, the accelerator, a deadline rehearsal for a session chain,
+  session fit) and exits non-zero on any `fail`; it never submits.
+- `distribute` and campaign `submit` (`--unit`, `--timing`, `--stage`,
+  `--no-carry`) place every unit: past the granted slots, units join per-slot
+  queues, and units already `done` or `inFlight` are left out.
+- `remaining` lists the units with no complete result; a returned result no
+  longer on disk is `unknown`, with the `refetch` command that brings it back.
+
+The refusal codes, the report shapes and the session-chain rule are in the
+remote-execution section of the [skill tour](skills.md#8-remote-execution--the-record-of-what-was-sent-out)
+and in `skills/remote-execution/SKILL.md`.
+
 ### `smith target {list,set,check}`
 
 ```bash
@@ -554,7 +603,8 @@ schema, no MCP and only local settings, or `pi -p` as a fallback — so no API k
 lives in the dashboard. The tutor reads the image back as LaTeX and parts, asks
 one question at a time, rates understanding 0–4 (*reconoce*, *explica*,
 *deriva*, *justifica*) with evidence quoted from you, and ties every step to the
-paper's novelty. Uploads and the thread live in `.papersmith/math-tutor/`. Routes
+paper's novelty. Uploads and the thread live in `.papersmith/math-tutor/`
+(git-ignored: they are the reader's own). Routes
 (behind the terminal's secret cookie and origin guards):
 `GET|DELETE /api/terminal/tutor/thread`, `POST /api/terminal/tutor/images`,
 `GET /api/terminal/tutor/images/<id>` and `POST /api/terminal/tutor/turn`.
@@ -581,9 +631,21 @@ with quoted evidence, lists the paths it read and the risks it sees, and says
 never edits anything: when a decision should change, the turn carries a draft
 instruction, and **Deliberar este cambio** types it into the CLI assistant as
 `/experimental-deliberation …` without pressing Enter. The thread lives in
-`.papersmith/experiments-tutor/`. Routes (same guards):
+`.papersmith/experiments-tutor/` (git-ignored). Routes (same guards):
 `GET|DELETE /api/terminal/tutor/experiments/thread` and
 `POST /api/terminal/tutor/experiments/turn`.
+
+**Run options.** The *Experimentos* tab's *Opciones de corrida* table gives,
+per stage (`poc`, `full`) and host, availability, a ±20% estimate from that
+host's own measurements in `Results/timing.json` (a host without one reads
+*sin medir*, never scaled from a local timing) and a recommendation under the
+placement rules (over 20 local minutes runs in the cloud; a proof of concept
+fits 5 hours where it runs). Below it, *Candidatos* lists one row per
+candidate, measured or not —`local-cpu-<N>`, a local accelerator, each
+account's machine, a CPU-only remote session— with its device, serial
+estimate, settings and load share, and the latest recorded `remote-parallelism
+plan`'s pick per stage with its reason (`<product>/.remote-parallelism/plan-*.json`);
+without a recorded plan it says which command records one.
 
 **Graph toolbar and cross-panel links.** The *Atlas* tab keeps its three graph
 switches and adds **⚡ Regenerar grafo** (the SOTA atlas through
