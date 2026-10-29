@@ -26357,17 +26357,23 @@ class RemainingUnitsTests(unittest.TestCase):
             self.assertEqual(report["remaining"], [])
 
     def test_a_quarantined_returned_result_does_not_count(self) -> None:
-        # The verifier's scenario: a second campaign on the same lane makes
-        # the first submission's result stale, so `fetch` quarantines it.
+        # The verifier's scenario, as a ledger 0.39.0 wrote it: a second
+        # share recorded in a running share's lane makes the first result
+        # stale, so `fetch` quarantines it. `submit` no longer records one
+        # (slot queues L4), so the two events are appended by hand.
         units = ("u0", "u1", "u2")
         with tempfile.TemporaryDirectory() as tmp:
             target, notebook = self._target_and_notebook(tmp)
             adapter = FakeAdapter(worker_id="w1", capacity=1)
-            # One slot: u0 and u1 run as one queue (slot queues S1).
-            first = self._campaign(target, notebook, adapter, ("u0", "u1"))
-            before = self._remaining(target, notebook, units)
-            self.assertEqual(before["inFlight"], ["u0", "u1"])
-            second = self._campaign(target, notebook, adapter, tuple(before["remaining"]))
+            ledger_path = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                           / REMOTE_CLI.LEDGER_FILENAME)
+            for sid, share in (("s1", ["u0", "u1"]), ("s2", ["u2"])):
+                LEDGER.append(ledger_path, LEDGER.submitted_event(
+                    entrypoint="Notebooks/a.ipynb", source_digest="d" * 64,
+                    submission_id=sid, worker="w1", requested_capacity=1,
+                    granted_capacity=1, units=share))
+            first = {"assignments": [{"submissionId": "s1"}]}
+            second = {"assignments": [{"submissionId": "s2"}]}
             stale = self._fetch_through(
                 target, notebook, adapter, first["assignments"][0]["submissionId"],
                 Path(tmp) / "d1")
@@ -26741,8 +26747,11 @@ class KernelCarryTests(unittest.TestCase):
             self._submit(target, notebook, adapter, ("u2",))
 
             (row,) = adapter.pushed
-            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry-2")
+            # The running continuation holds slot 1: the share takes slot 2
+            # and its own kernel (slot queues L4), not an alternate of slot 1.
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-slot-2")
             (job,) = adapter.jobs
+            self.assertEqual(job.run_config["slot"], 2)
             self.assertEqual(job.run_config["carryProtected"],
                              ["w1/papersmith-search-a", "w1/papersmith-search-a-carry"])
 
@@ -26755,10 +26764,12 @@ class KernelCarryTests(unittest.TestCase):
             self._submit(target, notebook, adapter, ("u1",))
 
             (row,) = adapter.pushed
-            self.assertEqual(row["ref"], "w1/papersmith-search-a-carry")
+            # The running kernel holds slot 1: the share takes slot 2 and its
+            # own kernel and ledger lane (slot queues L4).
+            self.assertEqual(row["ref"], "w1/papersmith-search-a-slot-2")
             (job,) = adapter.jobs
             self.assertEqual(dict(job.run_config), {
-                "units": ["u1"], "carryProtected": ["w1/papersmith-search-a"]})
+                "units": ["u1"], "slot": 2, "carryProtected": ["w1/papersmith-search-a"]})
 
     def test_a_job_without_carry_paths_and_nothing_running_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

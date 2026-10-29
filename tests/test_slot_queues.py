@@ -45,16 +45,22 @@ class QueueAdapter(ADAPTER.Adapter):
     session limit; every `submit` is recorded and answered with an id per
     worker and slot."""
 
-    def __init__(self, workers: list[tuple[str, int]], limit: int | None = None) -> None:
+    def __init__(self, workers: list[tuple[str, int]], limit: int | None = None,
+                 fail: bool = False) -> None:
         self._workers = [ADAPTER.Worker(id=name, capacity=cap) for name, cap in workers]
         self._limit = limit
+        self._fail = fail
         self.jobs: list = []
+        self.workers_calls = 0
         self.list_active_calls: list[str] = []
 
     def session_limit_seconds(self, machine_shape=None):
         return self._limit
 
     def workers(self) -> list:
+        self.workers_calls += 1
+        if self._fail:
+            raise ADAPTER.AdapterError("the service is unreachable (test double)")
         return list(self._workers)
 
     def submit(self, job) -> "ADAPTER.Submission":
@@ -217,15 +223,24 @@ TEN_QUEUES = {
 }
 
 
-def _placement_token(units, queues: dict) -> str:
-    """The consent token of a queued campaign of ENTRYPOINT at COMMIT,
-    spelled out by hand: the v0.39.0 payload plus `placement`, one
-    `{worker, slot, units}` per slot in launch order, keys sorted."""
+def _two_part_token(entrypoint: str, pin, units, placement: list, **bound) -> str:
+    """A queued campaign's token spelled out by hand: `<campaign>.<placement>`,
+    the campaign part the v0.39.0 payload, the placement part that part with
+    `placement` and any `done`/`inFlight`, keys sorted."""
     import hashlib
-    payload = {"entrypoint": ENTRYPOINT, "pin": COMMIT, "units": list(units),
-               "placement": [{"worker": worker, "slot": slot, "units": list(queue)}
-                             for (worker, slot), queue in queues.items()]}
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def digest(payload) -> str:
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+    campaign = digest({"entrypoint": entrypoint, "pin": pin, "units": list(units)})
+    return f"{campaign}." + digest({"consent": campaign, "placement": placement, **bound})
+
+
+def _placement_token(units, queues: dict) -> str:
+    """The consent token of a queued campaign of ENTRYPOINT at COMMIT."""
+    return _two_part_token(ENTRYPOINT, COMMIT, units,
+                           [{"worker": worker, "slot": slot, "units": list(queue)}
+                            for (worker, slot), queue in queues.items()])
 
 
 def _queues_of(report: dict) -> dict:
@@ -584,13 +599,10 @@ class DoneUnitsTests(unittest.TestCase):
             # Two units left on four places: one per slot, yet the token
             # binds the placement and what was left out.
             self.assertEqual(report["done"], ["u0", "u1"])
-            import hashlib
-            payload = {"entrypoint": "Notebooks/a.ipynb", "pin": None,
-                       "units": ["u0", "u1", "u2", "u3"], "done": ["u0", "u1"],
-                       "placement": [{"worker": "w1", "slot": 1, "units": ["u2"]},
-                                     {"worker": "w2", "slot": 1, "units": ["u3"]}]}
-            self.assertEqual(report["consentToken"], hashlib.sha256(
-                json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest())
+            self.assertEqual(report["consentToken"], _two_part_token(
+                "Notebooks/a.ipynb", None, ["u0", "u1", "u2", "u3"],
+                [{"worker": "w1", "slot": 1, "units": ["u2"]},
+                 {"worker": "w2", "slot": 1, "units": ["u3"]}], done=["u0", "u1"]))
 
     def test_submit_with_the_full_list_sends_only_what_is_left(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -760,13 +772,11 @@ class InFlightUnitsTests(unittest.TestCase):
 
             report = _distribute(target, notebook, adapter, ("u0", "u1", "u2", "u3"))
 
-            import hashlib
-            payload = {"entrypoint": "Notebooks/a.ipynb", "pin": None,
-                       "units": ["u0", "u1", "u2", "u3"], "inFlight": ["u0", "u1"],
-                       "placement": [{"worker": "w1", "slot": 1, "units": ["u2"]},
-                                     {"worker": "w2", "slot": 1, "units": ["u3"]}]}
-            self.assertEqual(report["consentToken"], hashlib.sha256(
-                json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest())
+            # u0 and u1 still run in slot 1 of each worker: u2, u3 take slot 2 (L4).
+            self.assertEqual(report["consentToken"], _two_part_token(
+                "Notebooks/a.ipynb", None, ["u0", "u1", "u2", "u3"],
+                [{"worker": "w1", "slot": 2, "units": ["u2"]},
+                 {"worker": "w2", "slot": 2, "units": ["u3"]}], inFlight=["u0", "u1"]))
 
     def test_a_token_minted_while_units_were_in_flight_is_refused_once_they_return(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -943,6 +953,264 @@ class PlanningAgreementTests(unittest.TestCase):
             self.assertEqual(option["queueMakespanMinutes"], 3 * 5 + 14 * 90)
 
 
+class ConsentBeforeBackendTests(unittest.TestCase):
+    """L4 (D1): a forged token is refused before the digest and before any
+    backend call, exactly as v0.39.0 refused it, whatever shape the campaign
+    would take; the launch authorization runs before `distribute` too. Only
+    the placement part of a queued campaign's token is read after the
+    read-only distribution."""
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(JOBFOLDER, "verify_pin_preconditions",
+                                             return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _no_digest(target, product):
+        raise AssertionError("the digest is never walked for a refused token")
+
+    def _forged(self, target, notebook, adapter, units) -> str:
+        with self.assertRaises(REMOTE_CLI.ConsentError) as caught:
+            REMOTE_CLI.cmd_submit(target=target, entrypoint=notebook, requested=1,
+                                  adapter=adapter, source_digest=self._no_digest,
+                                  units=units, consent="0" * 64)
+        self.assertEqual(adapter.workers_calls, 0, "no backend call")
+        self.assertEqual(adapter.list_active_calls, [], "no live capacity read")
+        self.assertEqual(adapter.jobs, [])
+        self.assertEqual(_ledger_lines(target), [])
+        return str(caught.exception)
+
+    def test_a_forged_token_on_a_one_unit_per_slot_campaign_calls_no_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            message = self._forged(target, notebook, QueueAdapter([("w1", 2), ("w2", 2)]),
+                                   ("u0", "u1"))
+            self.assertIn("consent token does not match", message)
+            self.assertNotIn("PLACEMENT_NOT_CONSENTED", message)
+
+    def test_a_forged_token_on_a_queued_campaign_calls_no_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            message = self._forged(target, notebook, QueueAdapter([("w1", 2), ("w2", 2)]), TEN)
+            self.assertIn("consent token does not match", message)
+
+    def test_a_forged_token_is_refused_for_consent_when_the_backend_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            for units in (("u0", "u1"), TEN):
+                with self.subTest(units=len(units)):
+                    message = self._forged(target, notebook,
+                                           QueueAdapter([("w1", 2)], fail=True), units)
+                    self.assertIn("consent token does not match", message)
+
+    def test_the_gate_is_checked_before_distribute_for_a_queued_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _job_folder(tmp)
+            token = _distribute(target, notebook, QueueAdapter([("w1", 2), ("w2", 2)]),
+                                TEN)["consentToken"]
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)], limit=LIMIT_SECONDS)
+
+            with self.assertRaises(REMOTE_CLI.AuthorizationError):
+                REMOTE_CLI.cmd_submit(target=target, entrypoint=notebook, requested=1,
+                                      adapter=adapter, source_digest=self._no_digest,
+                                      units=TEN, consent=token)
+            self.assertEqual((adapter.workers_calls, adapter.list_active_calls), (0, []))
+            self.assertEqual(adapter.jobs, [])
+
+    def test_only_the_placement_part_is_read_after_the_distribution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            token = _distribute(target, notebook, QueueAdapter([("w1", 2), ("w2", 2)]),
+                                TEN)["consentToken"]
+            campaign, _, placement = token.partition(".")
+            self.assertEqual(campaign, REMOTE_CLI.campaign_consent_token(
+                pin_commit=None, relative_entrypoint="Notebooks/a.ipynb", units=TEN))
+            self.assertEqual(len(placement), 64)
+            adapter = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            with self.assertRaises(REMOTE_CLI.ConsentError) as caught:
+                _submit(target, notebook, adapter, TEN, f"{campaign}.{'0' * 64}")
+
+            self.assertIn("PLACEMENT_NOT_CONSENTED", str(caught.exception))
+            self.assertGreater(len(adapter.list_active_calls), 0, "the read-only distribution ran")
+            self.assertEqual(adapter.jobs, [])
+            self.assertEqual(_ledger_lines(target), [])
+
+    def test_a_placement_part_on_a_campaign_that_no_longer_queues_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _legacy(tmp)
+            units = ("u0", "u1", "u2")
+            token = _distribute(target, notebook, QueueAdapter([("w1", 2)]), units)["consentToken"]
+            self.assertIn(".", token)
+            roomy = QueueAdapter([("w1", 2), ("w2", 2)])
+
+            with self.assertRaises(REMOTE_CLI.ConsentError) as caught:
+                _submit(target, notebook, roomy, units, token)
+
+            self.assertIn("PLACEMENT_NOT_CONSENTED", str(caught.exception))
+            self.assertEqual(roomy.jobs, [])
+
+
+class OverMarginQueueTests(unittest.TestCase):
+    """L4 (D2): a unit over the session margin is reported as the chained
+    sessions it really runs, in both CLIs."""
+
+    def test_queue_plan_lists_each_chained_session_of_an_over_margin_unit(self) -> None:
+        par = REMOTE_CLI._parallelism_cli()
+        # 100-minute limit: 80 usable, an 8-minute setup leaves 72 of work.
+        sessions, minutes = par.queue_plan(["u0"], 180, 8, 100)
+        self.assertEqual(sessions, [["u0"], ["u0"], ["u0"]])
+        self.assertEqual(minutes, (8 + 72) + (8 + 72) + (8 + 36))
+        sessions, _ = par.queue_plan(["u0", "u1"], 180, 8, 100)
+        self.assertEqual(sessions, [["u0"]] * 3 + [["u1"]] * 3)
+
+    def test_distribute_reports_the_chain_of_an_over_margin_unit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            # 30 folds of work over 3 units: 900 minutes per unit against
+            # 571 minutes of work per 12-hour session, so 2 sessions each.
+            target, notebook = _job_folder(tmp, timing_folds=30)
+            adapter = QueueAdapter([("w1", 2)], limit=LIMIT_SECONDS)
+
+            report = _distribute(target, notebook, adapter, ("u0", "u1", "u2"))
+
+            self.assertTrue(report["sessionFit"]["unitOverMargin"])
+            rows = {(row["worker"], row["slot"]): row for row in report["queues"]}
+            self.assertEqual(rows[("w1", 1)]["sessions"], [["u0"], ["u0"], ["u2"], ["u2"]])
+            self.assertEqual(rows[("w1", 2)]["sessions"], [["u1"], ["u1"]])
+            self.assertTrue(rows[("w1", 2)]["chained"], "one unit over two sessions is a chain")
+            self.assertEqual(rows[("w1", 2)]["minutes"], (5 + 571) + (5 + 329))
+            self.assertEqual(rows[("w1", 1)]["minutes"], 2 * 910)
+            self.assertEqual(report["sessionFit"]["makespanMinutes"], 1820)
+
+    def test_schedule_reports_the_same_chain(self) -> None:
+        par = REMOTE_CLI._parallelism_cli()
+        rows = par.launch_queues([0, 1, 2], [
+            {"account": "a", "slot": slot, "unit": 900, "setup": 5, "limit": 720}
+            for _, slot in par.round_robin_slots([("a", 2)])])
+        self.assertEqual([row["sessions"] for row in rows], [[[0], [0], [2], [2]], [[1], [1]]])
+        self.assertEqual([row["minutes"] for row in rows], [1820, 910])
+
+
+class SlugFallbackAdapter(QueueAdapter):
+    """A backend that, like an identity-stable one, pushes to a ref named by
+    worker and slot, and moves to `<ref>-carry` when that ref is protected
+    because a submission there is still running."""
+
+    def carry_source(self, submission_id):
+        return {"ref": submission_id, "mount": f"/mnt/in/{submission_id}"}
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.running: list[str] = []
+
+    def submit(self, job) -> "ADAPTER.Submission":
+        self.jobs.append(job)
+        ref = f"{job.worker}/kernel-{job.run_config.get('slot', 1)}"
+        if ref in (job.run_config.get("carryProtected") or ()):
+            ref = f"{ref}-carry"
+        self.running.append(ref)
+        return ADAPTER.Submission(id=ref, worker=job.worker)
+
+    def fetch(self, submission_id: str, into: Path) -> "ADAPTER.Fetched":
+        self.running.remove(submission_id)
+        return super().fetch(submission_id, into)
+
+    def list_active(self, worker: str) -> list:
+        self.list_active_calls.append(worker)
+        return [ref for ref in self.running if ref.startswith(f"{worker}/")]
+
+
+class LaneTests(unittest.TestCase):
+    """L4 (D4): a new share takes the lowest slot no in-flight submission of
+    the same entrypoint holds on that worker, so a running share's result is
+    never folded as superseded by a later, concurrent one."""
+
+    def setUp(self) -> None:
+        patcher = unittest.mock.patch.object(JOBFOLDER, "verify_pin_preconditions",
+                                             return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _campaign(self, target, notebook, adapter, units) -> dict:
+        _gate(target, units, ["w1", "w2"])
+        token = _distribute(target, notebook, adapter, units)["consentToken"]
+        return _submit(target, notebook, adapter, units, token)
+
+    @staticmethod
+    def _entries(result: dict) -> dict:
+        return {(row["worker"], entry["slot"]): (entry["submissionId"], entry["units"])
+                for row in result["assignments"] for entry in row["submissions"]}
+
+    def test_a_running_share_keeps_its_lane_and_its_result_is_current(self) -> None:
+        """QMLEEG wave 3: each worker runs one share in slot 1 and has one
+        free slot; a two-unit campaign puts one unit on each worker."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _job_folder(tmp)
+            adapter = SlugFallbackAdapter([("w1", 2), ("w2", 2)], limit=LIMIT_SECONDS)
+            first = self._campaign(target, notebook, adapter, ("fold3-a", "fold3-b"))
+            self.assertEqual(self._entries(first), {
+                ("w1", 1): ("w1/kernel-1", ["fold3-a"]), ("w2", 1): ("w2/kernel-1", ["fold3-b"])})
+
+            second = self._campaign(target, notebook, adapter, ("fold5-a", "fold5-b"))
+
+            self.assertEqual(self._entries(second), {
+                ("w1", 2): ("w1/kernel-2", ["fold5-a"]), ("w2", 2): ("w2/kernel-2", ["fold5-b"])})
+            self.assertEqual([(job.worker, job.run_config["slot"]) for job in adapter.jobs[2:]],
+                             [("w1", 2), ("w2", 2)])
+            events = [json.loads(line) for line in _ledger_lines(target)]
+            self.assertEqual([(e["worker"], e.get("slot", 1), e["units"]) for e in events[2:]],
+                             [("w1", 2, ["fold5-a"]), ("w2", 2, ["fold5-b"])])
+
+            for worker in ("w1", "w2"):
+                fetched = REMOTE_CLI.cmd_fetch(
+                    target=target, entrypoint=notebook, submission_id=f"{worker}/kernel-1",
+                    dest=Path(tmp) / f"{worker}-fold3", adapter=adapter,
+                    source_digest=lambda t, n: DIGEST)
+                self.assertEqual(fetched["verdict"], "current")
+                self.assertNotIn(REMOTE_CLI.QUARANTINE_DIRNAME, Path(fetched["path"]).parts)
+            remaining = REMOTE_CLI.cmd_remaining(
+                target=target, entrypoint=notebook,
+                units=("fold3-a", "fold3-b", "fold5-a", "fold5-b"),
+                source_digest=lambda t, n: DIGEST)
+            self.assertEqual(remaining["complete"], ["fold3-a", "fold3-b"])
+            self.assertEqual(remaining["inFlight"], ["fold5-a", "fold5-b"])
+
+    def test_the_lowest_free_lane_is_taken_and_a_settled_lane_is_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _job_folder(tmp)
+            adapter = SlugFallbackAdapter([("w1", 3)], limit=LIMIT_SECONDS)
+            self._campaign(target, notebook, adapter, ("a", "b"))
+            REMOTE_CLI.cmd_fetch(
+                target=target, entrypoint=notebook, submission_id="w1/kernel-1",
+                dest=Path(tmp) / "a-result", adapter=adapter, source_digest=lambda t, n: DIGEST)
+
+            result = self._campaign(target, notebook, adapter, ("c", "d"))
+
+            # Lane 1 settled, lane 2 still running: one slot granted, lane 1.
+            self.assertEqual(self._entries(result), {("w1", 1): ("w1/kernel-1", ["c", "d"])})
+            self.assertNotIn("slot", adapter.jobs[-1].run_config)
+
+    def test_distribute_reports_the_lanes_submit_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = _job_folder(tmp)
+            adapter = SlugFallbackAdapter([("w1", 2)], limit=LIMIT_SECONDS)
+            self._campaign(target, notebook, adapter, ("fold3", "fold4"))
+            REMOTE_CLI.cmd_fetch(
+                target=target, entrypoint=notebook, submission_id="w1/kernel-2",
+                dest=Path(tmp) / "fold4-result", adapter=adapter,
+                source_digest=lambda t, n: DIGEST)
+            units = ("fold5", "fold6")
+
+            report = _distribute(target, notebook, adapter, units)
+            result = self._campaign(target, notebook, adapter, units)
+
+            # Lane 1 still runs fold3: the one slot granted is lane 2.
+            self.assertEqual(_queues_of(report), {("w1", 2): ["fold5", "fold6"]})
+            self.assertEqual(_queues_of(result), _queues_of(report))
+            self.assertEqual(adapter.jobs[-1].run_config["slot"], 2)
+
+
 class SlotQueueDocTests(unittest.TestCase):
     """The skill and the changelog state slot queues, naming no service."""
 
@@ -953,11 +1221,17 @@ class SlotQueueDocTests(unittest.TestCase):
         for needle in ("FORGE_RUN_UNITS", "`queues`", "`sessionFit`", "--timing", "--stage",
                        "unitsPerSession", "PLACEMENT_NOT_CONSENTED", "same account",
                        "`remaining`", "`done`", "`unknown`", "never placed again",
-                       "`inFlight`", "no running unit is sent"):
+                       "`inFlight`", "no running unit is sent", "<campaign>.<placement>",
+                       "before any backend call"):
             self.assertIn(needle, rule)
         for service in ("kaggle", "colab"):
             self.assertNotIn(service, rule.lower())
         self.assertIn("| `PLACEMENT_NOT_CONSENTED` | campaign `submit`", skill)
+        lanes = skill.split("**Lanes of concurrent shares.**", 1)[1].split("\n  - ", 1)[0]
+        for needle in ("lowest", "in-flight", "fromStaleSubmission",
+                       "**Recovering a result quarantined by that collision**", "`sourceDigest`"):
+            self.assertIn(needle, lanes)
+        self.assertNotIn("kaggle", lanes.lower())
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         unreleased = changelog.split("\n## Unreleased\n", 1)[1].split("\n## ", 1)[0]
         for needle in ("Slot queues", "PLACEMENT_NOT_CONSENTED", "sessionFit", "unplaced",

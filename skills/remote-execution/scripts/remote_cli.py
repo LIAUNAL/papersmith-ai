@@ -209,6 +209,8 @@ CARRY_WORKER_MISMATCH = "CARRY_WORKER_MISMATCH"
 # that did not approve this exact placement (slot queues S3): refused after
 # the read-only `packer.distribute()` and before any submission.
 PLACEMENT_NOT_CONSENTED = "PLACEMENT_NOT_CONSENTED"
+# Between a queued campaign token's campaign part and its placement part.
+PLACEMENT_TOKEN_SEPARATOR = "."
 
 # Where `_carry_evidence()` notes, on its own copy of a `submitted` event,
 # the local directory that submission's output was fetched to. Never written
@@ -543,20 +545,19 @@ def campaign_consent_token(
       so a campaign or auto-select derivation is byte-for-byte identical to
       before this parameter existed — this is what keeps
       `test_campaign_token_derivation_byte_identical_to_pre_change` true.
-    - `placement`, present ONLY for a campaign whose slots queue more than
-      one unit (slot queues S3): each slot's `{worker, slot, units}`, in
-      launch order (`_placement()`). One approval then covers which
-      account and slot runs which queue, and a launch whose live capacity
-      moved the queues no longer matches. A campaign with no more units
-      than slots passes `None` and keeps the v0.39.0 token.
-    - `done`, present ONLY when some unit of `units` already returned
-      complete (slot queues L2): those units, which the launch leaves out,
-      always together with the `placement` of the rest. A result that
-      returns after the token was minted changes both, so the token stops
-      authorizing the launch.
-    - `in_flight`, present ONLY when some unit of `units` is still running in
-      an earlier submission (slot queues L3), bound like `done`: a launch,
-      or a return, after the token was minted stops it authorizing anything.
+
+    Slot queues (S3, L2-L4): `placement` (each slot's `{worker, slot,
+    units}`, in launch order, `_placement()`), `done` (units already
+    returned complete) and `in_flight` (units still running) are known only
+    from the ledger and a live distribution, so they never enter the digest
+    above. When any is given the token is TWO parts, `<campaign>.<placement>`:
+    the campaign part is the digest above, byte-identical to v0.39.0's, and
+    the placement part is `sha256(campaign part, placement[, done][,
+    inFlight])`. `submit` checks the campaign part before the digest and
+    before any backend call, exactly as v0.39.0 checked the whole token, and
+    the placement part right after the read-only distribution. A campaign
+    with no queue and nothing done or in flight passes none of them and
+    keeps the one-part v0.39.0 token.
 
     Deliberately NOT a `--yes` boolean and deliberately not looked up
     anywhere but the arguments handed to it: this function reads no
@@ -572,17 +573,22 @@ def campaign_consent_token(
     }
     if worker is not None:
         fields["worker"] = worker
+    payload = json.dumps(fields, sort_keys=True)
+    campaign = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    if placement is None and not done and not in_flight:
+        return campaign
+    bound: dict[str, object] = {"consent": campaign}
     if placement is not None:
-        fields["placement"] = [
+        bound["placement"] = [
             {"worker": row["worker"], "slot": row["slot"], "units": list(row["units"])}
             for row in placement
         ]
     if done:
-        fields["done"] = list(done)
+        bound["done"] = list(done)
     if in_flight:
-        fields["inFlight"] = list(in_flight)
-    payload = json.dumps(fields, sort_keys=True)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        bound["inFlight"] = list(in_flight)
+    suffix = hashlib.sha256(json.dumps(bound, sort_keys=True).encode("utf-8")).hexdigest()
+    return f"{campaign}{PLACEMENT_TOKEN_SEPARATOR}{suffix}"
 
 
 def _verify_launch_consent(
@@ -599,7 +605,11 @@ def _verify_launch_consent(
     written as a structural invariant rather than a list of gated cases:
     nothing reaches `packer.select()`/`packer.plan()`/`packer.distribute()`
     -- and therefore never `adapter.submit()` -- without a token that
-    matches what is being sent.
+    matches what is being sent. For a campaign that matches the token's
+    campaign part, which `cmd_submit` hands this function (slot queues L4);
+    the placement part of a queued campaign's token is the one thing read
+    after the read-only `packer.distribute()`, and still before any
+    `adapter.submit()`.
 
     `expected_consent` is always `campaign_consent_token()`'s own output
     -- ONE derivation, ONE shape, for BOTH campaign and single-send
@@ -1173,14 +1183,54 @@ def _declared_session_limit(adapter: "ADAPTER.Adapter") -> int | None:
     return limit
 
 
-def _placement(distribution: "PACKER.Distribution", *, force: bool = False) -> list[dict] | None:
+def _held_lanes(target: Path, product: str, relative_entrypoint: "str | Path") -> dict[str, set[int]]:
+    """worker -> the slots its in-flight submissions of this entrypoint hold,
+    in the main and the rehearsal ledger, at any source digest (a kernel
+    pushed from an older source still runs). Slot 1 is an event with no
+    `slot` field (slot queues L4)."""
+    held: dict[str, set[int]] = {}
+    for path in (_main_ledger_path(target, product), _smoke_ledger_path(target, product)):
+        for submitted, terminal in LEDGER.submission_outcomes(_read_ledger_lines(path)):
+            if terminal is not None or str(submitted.get("entrypoint")) != str(relative_entrypoint):
+                continue
+            slot = submitted.get("slot")
+            slot = slot if isinstance(slot, int) and not isinstance(slot, bool) else 1
+            held.setdefault(str(submitted.get("worker")), set()).add(slot)
+    return held
+
+
+def _lane_slots(distribution: "PACKER.Distribution", held: Mapping[str, set[int]]
+                ) -> dict[str, list[int]]:
+    """worker -> the slot each of its shares takes, in share order: the
+    lowest slots no in-flight submission of this entrypoint holds on that
+    worker (slot queues L4). A share in a held slot would share that
+    submission's ledger lane and fold its result as superseded; on an
+    identity-stable backend it would also push over the running kernel.
+    With nothing in flight the slots are 1..k, as before."""
+    lanes: dict[str, list[int]] = {}
+    for row in distribution.assignments:
+        taken = held.get(row.plan.worker, set())
+        free, slot = [], 1
+        while len(free) < len(PACKER.slot_shares(row)):
+            if slot not in taken:
+                free.append(slot)
+            slot += 1
+        lanes[row.plan.worker] = free
+    return lanes
+
+
+def _placement(distribution: "PACKER.Distribution", *, force: bool = False,
+               lanes: Mapping[str, Sequence[int]] | None = None) -> list[dict] | None:
     """Each slot's queue as `{worker, slot, units}`, in launch order, when
     some slot of `distribution` queues more than one unit (slot queues S1)
-    or `force` (units were left out as done, L2); `None` otherwise -- the
-    campaign v0.39.0 launched, whose report, token and records stay exactly
-    what they were."""
+    or `force` (units were left out as done or in flight, L2, L3); `None`
+    otherwise -- the campaign v0.39.0 launched, whose report, token and
+    records stay exactly what they were. `slot` is the lane `lanes` gives
+    the share (`_lane_slots()`), else its position."""
     rows = [
-        {"worker": row.plan.worker, "slot": index + 1, "units": list(share)}
+        {"worker": row.plan.worker,
+         "slot": lanes[row.plan.worker][index] if lanes else index + 1,
+         "units": list(share)}
         for row in distribution.assignments
         for index, share in enumerate(PACKER.slot_shares(row))
     ]
@@ -1588,15 +1638,19 @@ def cmd_submit(
     unit, so a campaign with more units than slots sends one job per slot
     holding that slot's whole queue (`run_config["units"]`, the runner's
     `FORGE_RUN_UNITS`) and records it as the share of its `submitted`
-    event. Such a campaign launches only with the token `distribute`
-    printed for its placement (`campaign_consent_token(placement=...)`): a
-    token that is not this invocation's v0.39.0 token cannot be checked
-    before the placement exists, so it is checked right after the
-    read-only `distribute()` and before anything is sent, refusing
-    `PLACEMENT_NOT_CONSENTED` when the queues moved; the launch
-    authorization (`gate`) runs right after it. The result gains `queues`
-    and `sessionFit` exactly as `cmd_distribute` reports them. A campaign
-    with no more units than slots is checked and recorded as before.
+    event. Such a campaign launches only with the two-part token
+    `distribute` printed (`<campaign>.<placement>`,
+    `campaign_consent_token()`): the campaign part is checked where
+    v0.39.0 checked the whole token, before the digest and any backend
+    call, then the launch authorization (`gate`); only the placement part
+    waits for the read-only `distribute()`, and is checked before anything
+    is sent, refusing `PLACEMENT_NOT_CONSENTED` when the queues, the units
+    done or the units in flight moved (L4). Each share takes the lowest
+    slot no in-flight submission of this entrypoint holds on its worker
+    (`_lane_slots()`), so a running share keeps its own ledger lane and
+    kernel (L4). The result gains `queues` and `sessionFit` exactly as
+    `cmd_distribute` reports them. A campaign with no more units than
+    slots, and nothing done or in flight, is checked and recorded as before.
 
     Carry (kernel-carry S2-S5), campaign mode only, and only for a job
     folder whose `run-config.json` declares `carryPaths`: a unit an
@@ -1804,26 +1858,29 @@ def cmd_submit(
         worker=worker,
     )
     _verify_diagrams_validated(target / resolved_product)
-    # Slot queues S3: a campaign token that is not the v0.39.0 one may
-    # approve a queued placement, known only once `distribute()` ran; both
-    # checks below then wait for it, still before any submission.
-    placement_consent = bool(units) and consent is not None and consent != expected_consent
-    if not placement_consent:
-        _verify_launch_consent(
-            consent=consent, expected_consent=expected_consent, units=units,
-            worker=worker,
-        )
+    # Slot queues L4: a campaign's token may carry a placement part, read
+    # after the distribution below; its campaign part is checked here, as
+    # v0.39.0 checked the whole token -- before the digest, before any
+    # backend call -- so a forged token is refused the same way.
+    checked_consent = (
+        consent.partition(PLACEMENT_TOKEN_SEPARATOR)[0]
+        if units and consent is not None else consent
+    )
+    _verify_launch_consent(
+        consent=checked_consent, expected_consent=expected_consent, units=units,
+        worker=worker,
+    )
 
-        # A second, INDEPENDENT precondition (design §4.2) -- never folded
-        # into the consent check above, and never sharing its payload. Runs
-        # right after consent and before the digest walk, so a refusal here
-        # costs exactly as little as a consent refusal does: no digest, no
-        # plan, no adapter call, no ledger line.
-        _verify_launch_authorization(
-            smoke=smoke, target=target, product=resolved_product,
-            pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
-            units=units, worker=worker,
-        )
+    # A second, INDEPENDENT precondition (design §4.2) -- never folded into
+    # the consent check above, and never sharing its payload. Runs right
+    # after consent and before the digest walk, so a refusal here costs
+    # exactly as little as a consent refusal does: no digest, no plan, no
+    # adapter call, no ledger line. It never depends on the placement.
+    _verify_launch_authorization(
+        smoke=smoke, target=target, product=resolved_product,
+        pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
+        units=units, worker=worker,
+    )
 
     digest_fn = source_digest or _load_source_digest()
     digest = digest_fn(target, resolved_product)
@@ -1878,31 +1935,25 @@ def cmd_submit(
             live_digest=digest,
             affinity=_carry_affinity(evidence, placeable) or None,
         )
-        placement = _placement(distribution, force=bool(done or in_flight))
-        if placement is not None and consent != campaign_consent_token(
+        lanes = _lane_slots(distribution, _held_lanes(target, resolved_product,
+                                                      relative_entrypoint))
+        placement = _placement(distribution, force=bool(done or in_flight), lanes=lanes)
+        if consent != campaign_consent_token(
             pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
             units=units, placement=placement, done=done, in_flight=in_flight,
         ):
             left_out = (f"; done, left out: {', '.join(done)}" if done else "") + (
                 f"; in flight, left out: {', '.join(in_flight)}" if in_flight else "")
+            shown = _placement_text(placement or _placement(distribution, force=True,
+                                                            lanes=lanes))
             raise ConsentError(
                 f"{PLACEMENT_NOT_CONSENTED}: --consent does not approve this "
-                f"campaign's placement ({_placement_text(placement)}{left_out}): "
+                f"campaign's placement ({shown}{left_out}): "
                 "the slots granted right now, or the units already done or in "
                 "flight, differ from the ones `distribute` showed, or the token "
                 "approved another campaign. Nothing was submitted. Run `distribute "
                 "--unit ...` again, check its `queues`, `done` and `inFlight`, and "
                 "pass back the token it prints"
-            )
-        if placement_consent:
-            if placement is None:
-                _verify_launch_consent(
-                    consent=consent, expected_consent=expected_consent, units=units,
-                )
-            _verify_launch_authorization(
-                smoke=smoke, target=target, product=resolved_product,
-                pin_commit=pin_commit, relative_entrypoint=relative_entrypoint,
-                units=units, worker=worker,
             )
         protected = _protected_refs(
             adapter, target=target, product=resolved_product,
@@ -1943,13 +1994,13 @@ def cmd_submit(
                     worker=row.plan.worker,
                     requested_capacity=row.plan.requested,
                     granted_capacity=row.plan.granted,
-                    slot=index + 1 if index else None,
+                    slot=lanes[row.plan.worker][index],
                     units=share,
                     carried_from=planned[1] if planned else None,
                 )
                 if LEDGER.event_bytes(probe) > LEDGER.MAX_EVENT_BYTES:
                     raise RemoteCLIError(
-                        f"{LEDGER_EVENT_TOO_LARGE}: slot {index + 1} of worker "
+                        f"{LEDGER_EVENT_TOO_LARGE}: slot {lanes[row.plan.worker][index]} of worker "
                         f"{row.plan.worker!r} carries {len(share)} units whose "
                         "`submitted` event would exceed the ledger's "
                         f"{LEDGER.MAX_EVENT_BYTES}-byte line; nothing was "
@@ -1965,8 +2016,9 @@ def cmd_submit(
                 # Slot 1 is shaped exactly as a one-slot worker's single job
                 # always was; only slots 2..k name themselves, so the
                 # adapter can give each its own remote identity and the
-                # ledger its own lane.
-                slot = index + 1
+                # ledger its own lane. The slot is the lowest one no running
+                # submission of this entrypoint holds on the worker (L4).
+                slot = lanes[row.plan.worker][index]
                 run_config = {"mode": "smoke"} if smoke else {}
                 run_config = dict(run_config)
                 run_config.update(session_config)
@@ -2462,7 +2514,9 @@ def cmd_distribute(
         affinity=_carry_affinity(evidence, placeable) or None,
     )
 
-    placement = _placement(result, force=bool(done or in_flight))
+    placement = _placement(result, force=bool(done or in_flight),
+                           lanes=_lane_slots(result, _held_lanes(target, product,
+                                                                 relative_entrypoint)))
     consent_token = campaign_consent_token(
         pin_commit=_job_folder_commit(resolved_entrypoint),
         relative_entrypoint=relative_entrypoint,
@@ -4443,8 +4497,9 @@ def _add_queue_timing_arguments(command: argparse.ArgumentParser) -> None:
     one unit on a slot (slot queues S1)."""
     command.add_argument(
         "--timing", type=Path, default=None,
-        help="campaign mode, when units outnumber the granted slots: the timing record "
-        "each slot's queue is cut into sessions by, at 80%% of the session limit "
+        help="campaign mode, when units outnumber the granted slots or units already "
+        "done or in flight are left out (a placement is then reported): the timing "
+        "record each slot's queue is cut into sessions by, at 80%% of the session limit "
         "(default <target>/<product>/Results/timing.json; without one the queues are "
         "balanced by count and their fit is reported unmeasured)",
     )

@@ -259,7 +259,10 @@ The plan (`--plan plan.json`, schema 1):
   elsewhere, and `queues` still says where the launch puts it. These plans
   count every unit of the step; at launch, `distribute` leaves out the units
   already done or still in flight (`done`, `inFlight`), so the launched
-  queues hold only what is left to run.
+  queues hold only what is left to run. A unit over the margin (a resumable
+  step, or a `plan` option with `--resumable`) is listed in each chained
+  session it runs: a 180-minute unit against 72 minutes of work per session
+  is `sessions` `[[0], [0], [0]]`, and `minutes` pays the setup in each.
 
 The output: `{steps[{id, units, requires, services, allowedServices,
 unitMinutes, unitMinutesSource, setupMinutes, readyMinutes, startMinutes,

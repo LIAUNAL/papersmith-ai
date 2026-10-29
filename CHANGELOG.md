@@ -55,6 +55,22 @@ number is `0`, breaking changes can still arrive without a major bump.
   stays placeable. The token binds `done`, `inFlight` and the placement of
   the rest; a launch or a return after `distribute` refuses the stale token
   `PLACEMENT_NOT_CONSENTED`, naming the units left out.
+- A forged campaign token is refused before the digest and before any
+  backend call again, as in 0.39.0, whatever shape the campaign takes; the
+  launch authorization (`gate`) also runs before any backend call. A
+  queued campaign's token is now `<campaign>.<placement>`: the campaign
+  part is the 0.39.0 token and is checked first, and only the placement
+  part is checked after the read-only distribution. A failing backend no
+  longer turns a consent refusal into a backend error.
+- A campaign share takes the lowest slot no in-flight submission of the
+  same entrypoint holds on its worker. A worker running one share in slot 1
+  used to get the next share in slot 1 too, in the same ledger lane (and,
+  on Kaggle, the `-carry` kernel), so the running share's genuine result
+  was folded `fromStaleSubmission` and quarantined when it returned. The
+  skill documents how to recover a result 0.39.0 quarantined this way.
+- A unit over the session margin is reported as the chained sessions it
+  runs (`sessions` lists it once per session, `chained: true`), in
+  `distribute`, `submit`, `schedule` and `plan`, instead of as one session.
 
 ## 0.39.0
 

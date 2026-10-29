@@ -108,12 +108,14 @@ def queue_plan(queue: list, unit: float, setup: float, limit: float) -> tuple[li
     """A slot's queue cut into its chained sessions, and their busy time:
     each session pays the setup once and runs its units; a unit over the
     margin runs alone as a chain of sessions, each paying the setup again
-    (`chain_costs`). Any one time unit, the same for all three numbers."""
-    sessions = queue_sessions(queue, session_capacity(unit, setup, limit))
+    (`chain_costs`), and is listed in each of them. Any one time unit, the
+    same for all three numbers."""
     work = usable_session(limit) - setup
     if unit + setup > usable_session(limit) and work > 0:
         chain = math.ceil(unit / work)
+        sessions = [[item] for item in queue for _ in range(chain)]
         return sessions, sum(sum(chain_costs(unit, setup, chain, work)) for _ in queue)
+    sessions = queue_sessions(queue, session_capacity(unit, setup, limit))
     return sessions, sum(setup + len(session) * unit for session in sessions)
 
 
