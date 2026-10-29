@@ -1233,7 +1233,7 @@ class SlotQueueDocTests(unittest.TestCase):
             self.assertIn(needle, lanes)
         self.assertNotIn("kaggle", lanes.lower())
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = changelog.split("\n## Unreleased\n", 1)[1].split("\n## ", 1)[0]
+        unreleased = changelog.split("\n## 0.40.0\n", 1)[1].split("\n## ", 1)[0]
         for needle in ("Slot queues", "PLACEMENT_NOT_CONSENTED", "sessionFit", "unplaced",
                        "queueMakespanMinutes", "80% of its limit", "`done`", "`inFlight`"):
             self.assertIn(needle, unreleased)
