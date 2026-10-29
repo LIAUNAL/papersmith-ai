@@ -17,8 +17,8 @@ Branch: `feat/slot-queues` (from `origin/main` 0ab5cecd, v0.39.0). Delivery: rel
 - T1 (S1-S3) queued placement in packer/distribute/submit + runner units + gate binding + tests -- done (2020e03e)
 - T2 (S4, S5, L2) schedule/plan agreement + docs; `distribute`/`submit` leave out units already done -- done (4d4982a4)
 - T2b (L3) `distribute`/`submit` leave out units in flight -- done (4721306a)
-- T2c (L4: D1-D4) consent before any backend call; chained sessions of an over-margin unit; `--timing` help; lowest free lane per share -- done (pending commit)
-- T3 independent verifier (items 3, 5: gate/consent binding, remote launches) -- pending
+- T2c (L4: D1-D4) consent before any backend call; chained sessions of an over-margin unit; `--timing` help; lowest free lane per share -- done (ba9bf716)
+- T3 independent verifier (items 3, 5: gate/consent binding, remote launches) -- done (verifier PASS, D1-D4 fixed in ba9bf716; review-54db1481b834b722 approved)
 
 ## Log
 
@@ -31,3 +31,4 @@ Branch: `feat/slot-queues` (from `origin/main` 0ab5cecd, v0.39.0). Delivery: rel
   - D3 (nit): "the --timing help at remote_cli.py:4446 should also say it applies when done or inFlight force a placement."
   - D4 (live, QMLEEG wave 3, kit 0.39.0, still at HEAD): "Each worker had 1 slot busy (slot 1 running fold3) and 1 free. `distribute` and `submit` for 2 units placed one unit per worker and recorded each submission as `"slot": 1` ... The kernel slug fell back to `-carry` because the slot-1 slug was busy. ledger.lane_key then put fold5's submission in fold3's lane (entrypoint, worker = slot 1), so fold3's later `returned` folded as `fromStaleSubmission` and its genuine result was quarantined (ledger.py:538-540)."
   - Fixed in T2c. D1: the suggested test (units <= declared capacity) cannot rule out queueing, which depends on the live grant (one unreachable worker or busy slot lowers it), so the token was split instead: `<campaign>.<placement>`, the campaign part the 0.39.0 token checked before the digest and any backend call, the gate next, only the placement part after the read-only distribution. D2: `queue_plan` lists an over-margin unit once per chained session. D3: help text. D4: each share takes the lowest slot no in-flight submission of the entrypoint holds on its worker (main and rehearsal ledgers); the Kaggle `-carry` fallback lives in `adapters/kaggle.py` (outside this slice) and is no longer reached for an in-flight lane. Recovery of results 0.39.0 quarantined this way is documented in the skill; a release command (it needs `ledger.py` and a new subcommand) is open.
+- L5 (2026-10-29, T3 closed): the independent verifier PASSed with D1-D4 fixed in ba9bf716, and native review lineage review-54db1481b834b722 was approved and acknowledged, with advisory R4-orphan-lane-growth (remote_cli.py:1186-1195). Open, not in this slice: the packer clamp `granted = max(0, min(requested, cap) - in_flight)` (skills/remote-execution/scripts/packer.py:250) under-grants a 1-unit campaign on a half-busy worker. Release 0.40.0 prepared (minor: slot queues add behavior).
