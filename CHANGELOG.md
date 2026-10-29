@@ -11,6 +11,57 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- Compute placement by measurement. `remote-parallelism plan --timing
+  <Name>/Results/timing.json [--account ...] [--candidate ...] [--record
+  <Name>]` compares every measured way to run a proof of concept or a full
+  experiment: local CPU with N processes, a local accelerator, each account's
+  machine (a CPU-only session included), and a split over several paid owners
+  that clears `assess`'s thresholds. It packs the stage's fold x seed units onto
+  each option's slots with its own setup, session limits and quota and
+  recommends the smallest makespan upper bound, then the fewest accelerator
+  hours, then the CPU, then local, so a GPU wins only when it was measured
+  faster. Every other option is listed with why it lost; every candidate the
+  record lacks is listed as `unmeasured` with the probe or rehearsal that would
+  measure it, never extrapolated from another host. When waiting on data takes
+  more than 40% of an epoch, `representationAdvice` recommends a cached form
+  (float32 tensors, a `.npy` memmap, precomputed windows) and rewrites
+  nothing. Read-only; it never submits.
+- `skills/remote-parallelism/scripts/timing_probe.py`, a bounded sweep run by
+  the target's own interpreter against its epoch function: one epoch per
+  candidate and setting (batch size, loader workers, pin memory, prefetch,
+  threads, dtype, raw or cached data), `local-cpu-<N>` timed as N concurrent
+  processes, each epoch split into load and compute time, each candidate
+  capped in time (300 s by default). It writes only `Results/timing.json` and
+  never picks a device: `device_from_plan` reads the plan's measured
+  recommendation and refuses without one.
+- Timing records schema 2: a `candidate` per measurement, its settings,
+  `loadSeconds`/`computeSeconds`, and per-host `cpuCount`, `ramGB`, `mps`,
+  `cuda`. `estimate` adds `candidateEstimates`, and `mixed-devices` is keyed
+  by candidate, so one host may hold CPU and accelerator rows. Schema 1
+  records load as before, with unchanged `estimate`, `assess` and
+  `schedule` outputs.
+- `remote_cli generate-job --accelerator-kind cpu` writes a CPU-only job
+  (`{"kind": "cpu", "architectures": []}`): Colab's `new` gets no `--gpu`,
+  Kaggle's metadata carries `enable_gpu: false` and no `machine_shape`. A
+  service that declares no CPU-only session refuses it by name. Without the
+  flag the generated files are byte-identical.
+- The Experimentos tab's run options list one row per candidate, measured or
+  not, and the latest recorded `plan`'s pick with its reason.
+
+### Changed
+
+- `preflight`'s `accelerator` row calls the service's default GPU what it is,
+  a default and not a measured choice, and points to `plan`; `session-fit`
+  reads the job's own candidate rows of a schema 2 record (`--candidate`, or
+  the slowest candidate on the job's kind of machine).
+- `proposal-implementation`, `experimental-implementation`, their walk and
+  build agents and `remote-parallelism` require the timing probe and `plan`
+  before a proof of concept or a full experiment is placed.
+
 ## 0.37.0
 
 ### Added

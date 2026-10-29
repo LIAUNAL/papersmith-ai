@@ -107,6 +107,18 @@ locally, and a proof of concept whose `placement.pocBudget` reads `exceeds`
 (over 5 hours on its host) is reported as a design to reduce before the pilot,
 never run as it stands.
 
+Before the stage's placement is taken, run `remote-parallelism`'s timing
+probe (`scripts/timing_probe.py` of that skill, under the target's own
+interpreter) over the candidates — the local CPU with one and with several
+processes, any local accelerator, and the batch, loader and thread settings —
+then its `plan` over the record with the team's accounts and `--record`.
+Report the recommended option with its device, settings and makespan, why each
+other option lost, every candidate that reads `unmeasured` and what would
+measure it, and any representation advice. An accelerator is taken only when
+`plan` measured it faster or cheaper, never by default; a remote CPU-only
+session is generated with `generate-job --accelerator-kind cpu`. The plan is
+never authorization.
+
 ## Whether to split a campaign
 
 Before generating jobs for more than one unit, load

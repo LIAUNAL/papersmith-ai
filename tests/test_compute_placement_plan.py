@@ -162,7 +162,7 @@ class PlanTests(Workspace):
         best = poc["recommended"]["makespanSeconds"]
         self.assertIn(f"recommends `{poc['recommended']['option']}`: makespan {best['seconds']} s "
                       f"(upper bound {best['high']} s), against "
-                      f"{options['colab:ana/T4']['makespanSeconds']['seconds']} s for one T4 account and "
+                      f"{options['colab:ana/T4']['makespanSeconds']['seconds']} s for one GPU account and "
                       f"{options['colab/T4 x2']['makespanSeconds']['seconds']} s for the two-account split, "
                       f"whose speed-up {options['colab/T4 x2']['speedup']} is below", doc)
 

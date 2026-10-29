@@ -430,7 +430,10 @@ every remote run.
 
 Before a proof of concept or a full experiment runs, `plan` answers where and
 how: local or cloud, CPU or GPU, how many processes or accounts, and which
-batch and loader settings. It reads the schema 2 timing record and the team's
+batch and loader settings. Running the timing probe and then `plan` is
+required before a proof of concept or a full experiment is placed: it is the
+one comparison of CPU against GPU and local against cloud that counts local
+multi-process runs and multi-account parallelism. It reads the schema 2 timing record and the team's
 accounts and writes nothing unless `--record` is given. A GPU is never the
 default: every candidate competes on its own measurement.
 
@@ -469,10 +472,10 @@ default: every candidate competes on its own measurement.
 
 Worked example, the launch-bound case: a proof of concept of 8 units (4 folds
 x 2 seeds, 2 arms, 2 epochs), measured at 12 s per epoch on each of 8 local
-CPU processes with a 5 s setup, and at 8 s per epoch on a remote T4 with a
-420 s setup, for two paid owners. Per epoch the T4 is faster, yet `plan`
+CPU processes with a 5 s setup, and at 8 s per epoch on a remote GPU with a
+420 s setup, for two paid owners. Per epoch the GPU is faster, yet `plan`
 recommends `local-cpu-8`: makespan 53 s (upper bound 63.6 s), against 676 s
-for one T4 account and 548 s for the two-account split, whose speed-up 1.23
+for one GPU account and 548 s for the two-account split, whose speed-up 1.23
 is below the 1.5 threshold.
 
 ## Accepted operations

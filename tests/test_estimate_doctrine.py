@@ -97,5 +97,39 @@ class AgentEstimateTests(unittest.TestCase):
                 self.assertIn("before the pilot", flat(AGENTS / f"{agent}.md"))
 
 
+class PlacementPlanDoctrineTests(unittest.TestCase):
+    """Placement by measurement (compute-placement S7): the timing probe over
+    every candidate, then `plan`, before a proof of concept or a full run is
+    placed; CPU against GPU and local against cloud, local processes and
+    account parallelism counted, and a GPU never chosen by default."""
+
+    FRAGMENTS = ("timing_probe.py", "`plan`", "CPU", "processes", "accounts", "measured faster",
+                 "never by default", "--accelerator-kind cpu", "representation advice", "unmeasured")
+
+    def test_both_skills_require_the_probe_and_plan_before_placement(self) -> None:
+        for skill in ("proposal-implementation", "experimental-implementation"):
+            with self.subTest(skill=skill):
+                doc = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
+                text = " ".join(doc.split(HEADING, 1)[1].split("\n## ", 1)[0].split())
+                for fragment in self.FRAGMENTS:
+                    self.assertIn(fragment, text, fragment)
+
+    def test_each_agent_runs_the_probe_and_plan(self) -> None:
+        for agent in AGENT_BINDINGS:
+            with self.subTest(agent=agent):
+                text = flat(AGENTS / f"{agent}.md")
+                for fragment in ("timing_probe.py", "`plan`", "never by default", "--accelerator-kind cpu",
+                                 "unmeasured", "never authorization"):
+                    self.assertIn(fragment, text, fragment)
+
+    def test_the_parallelism_skill_states_it_as_a_requirement(self) -> None:
+        text = flat(SKILLS / "remote-parallelism" / "SKILL.md")
+        self.assertIn("## Plan the placement before you run", (SKILLS / "remote-parallelism" / "SKILL.md")
+                      .read_text(encoding="utf-8"))
+        for fragment in ("before a proof of concept or a full experiment is placed",
+                         "local multi-process", "multi-account"):
+            self.assertIn(fragment, text, fragment)
+
+
 if __name__ == "__main__":
     unittest.main()
