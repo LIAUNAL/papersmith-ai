@@ -5,6 +5,9 @@ dist/
 src/papersmith/_kit/
 # paper-ingestion's per-page cache (skills/paper-ingestion/scripts/pdf_pipeline.py)
 .papersmith/cache/
+# The tutors' threads and the reader's hand-written pages: the reader's own.
+.papersmith/math-tutor/
+.papersmith/experiments-tutor/
 
 # Local Pi runtime state
 .atl/

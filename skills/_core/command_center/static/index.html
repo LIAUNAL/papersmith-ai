@@ -18,7 +18,8 @@
   <script src="./vendor/katex/katex.min.js"></script>
   <script src="./math-panel.js?v=0.19.6"></script>
   <script src="./model-panel.js?v=0.19.6"></script>
-  <script src="./experiments-panel.js?v=0.35.0"></script>
+  <script src="./experiments-panel.js?v=0.38.0"></script>
+  <script src="./experiments-tutor.js?v=0.38.0"></script>
   <script src="./agents-panel.js?v=0.20.0"></script>
   <script src="./doctor-panel.js?v=0.26.0"></script>
   <script src="./ai-history-panel.js?v=0.36.0"></script>
@@ -2413,6 +2414,16 @@
     .tutor__status[data-tone="warn"] { color: var(--warn); }
     .tutor__status[data-tone="bad"] { color: var(--bad); }
 
+    /* ---- Experiments tutor (experiments-tutor.js): the same .tutor card ---- */
+    .xtutor { margin: 0 0 1rem; }
+    .xtutor .tutor__thread { max-height: 460px; }
+    .xtutor__area { display: flex; align-items: center; gap: 0.45rem; font-size: 0.74rem; color: var(--text-muted); }
+    .xtutor__area select { flex: 1; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); padding: 0.3rem 0.45rem; font: inherit; font-size: 0.8rem; }
+    .xtutor-list { margin: 0.35rem 0; font-size: 0.8rem; }
+    .xtutor-list ul { margin: 0.15rem 0 0; padding-left: 1.1rem; }
+    .xtutor-deliberate { margin-top: 0.5rem; padding: 0.55rem 0.7rem; border: 1px dashed var(--warn); border-radius: 8px; }
+    .xtutor-deliberate .btn { margin-top: 0.4rem; }
+
     /* ---- Smith CLI assistant (FAB + floating terminal) ---- */
     :root { --fab-size: 58px; --fab-offset: 24px; }
     footer.dashboard-footer { padding-right: calc(2rem + var(--fab-size) + var(--fab-offset)); }
@@ -3023,6 +3034,43 @@
         </div>
         <p class="exp-intro">Convergencia, figuras, tablas, significancia estadística y ejecuciones remotas leídas de <code>implementations/&lt;repo&gt;/&lt;Nombre&gt;/Results/</code>, junto al protocolo vigente de <code>experiments/</code>.</p>
       </div>
+      <!-- Experiments tutor (experiments-tutor.js): outside #experimentsRoot, which experiments-panel.js repaints. -->
+      <section id="xtutorPanel" class="tutor xtutor" aria-label="Tutor de experimentos">
+        <header class="tutor__head">
+          <div><strong>Tutor de experimentos</strong><span class="tutor__sub">experiments-tutor · consulta e itera las decisiones del diseño experimental</span></div>
+          <button id="xtutorReset" class="btn btn--sm" type="button" title="Nueva conversación">↺</button>
+        </header>
+        <div id="xtutorMeter" class="tutor-meter" title="Solidez del diseño que el tutor ha evaluado en la decisión discutida"></div>
+        <div id="xtutorThread" class="tutor__thread"></div>
+        <div class="tutor__composer">
+          <label class="xtutor__area">Decisión
+            <select id="xtutorArea">
+              <option value="general" selected>General</option>
+              <option value="architecture">Arquitectura de la red</option>
+              <option value="hyperparameters">Hiperparámetros y búsqueda</option>
+              <option value="ablation">Estudios de ablación</option>
+              <option value="significance">Pruebas de significancia estadística</option>
+              <option value="toy-set">Propósito del toy set</option>
+              <option value="training">Estrategias de entrenamiento</option>
+              <option value="upper-bounds">Techos (cotas y oráculos)</option>
+              <option value="baselines">Métodos a comparar y su implementación</option>
+              <option value="validation">Esquema de validación y fuga de datos</option>
+              <option value="compute">Presupuesto de cómputo y sesión</option>
+              <option value="reproducibility">Reproducibilidad</option>
+            </select>
+          </label>
+          <div class="tutor__modes" role="group" aria-label="Modo">
+            <button type="button" class="is-on" data-xtutor-mode="ask">Preguntar</button>
+            <button type="button" data-xtutor-mode="explain">Explícame</button>
+            <button type="button" data-xtutor-mode="evaluate">Evalúame</button>
+          </div>
+          <textarea id="xtutorInput" rows="3" placeholder="Pregunta por una decisión: arquitectura, hiperparámetros, ablaciones, significancia, toy set, entrenamiento, techos, métodos a comparar… El tutor lee el protocolo, las aprobaciones, el código y los resultados antes de responder."></textarea>
+          <div class="tutor__actions">
+            <span id="xtutorStatus" class="tutor__status" data-tone="muted"></span>
+            <button id="xtutorSend" type="button" class="btn btn--primary btn--sm">Enviar ⌘↵</button>
+          </div>
+        </div>
+      </section>
       <div id="experimentsRoot"><p class="exp-empty">Cargando experimentos…</p></div>
     </div>
 
@@ -3698,6 +3746,7 @@
       }
       if (tabId === 'experiments') {
         window.refreshExperimentsPanel?.();
+        window.refreshExperimentsTutor?.();
       }
       if (tabId === 'doctor') {
         window.refreshDoctorPanel?.();

@@ -37,7 +37,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, ai_transcripts, atlas, atlas_build, decisions, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import agents_view, ai_history, ai_transcripts, atlas, atlas_build, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
 from . import doctor_view, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -2351,6 +2351,45 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             turn = await asyncio.to_thread(tutor.run_turn, root_path, body.get("message", ""),
                                            body.get("images", []), body.get("mode", "ask"),
                                            runner=lambda *args: tutor.run_agent(*args))
+        except tutor.TutorError as error:
+            return _tutor_error(error)
+        except subprocess.TimeoutExpired:
+            return _tutor_error(RuntimeError("the tutor took too long to answer"), 504)
+        return JSONResponse(turn, headers=dict(_PAPER_HEADERS))
+
+    # ------------------------------------------------------- experiments tutor
+    # The same machinery and guards, its own profile: a thread under
+    # .papersmith/experiments-tutor/, the experiments digest, Read/Glob/Grep.
+    @app.get("/api/terminal/tutor/experiments/thread")
+    def api_experiments_tutor_thread(request: Request) -> JSONResponse:
+        refusal = _terminal_refusal(request, mutating=False)
+        if refusal is not None:
+            return refusal
+        return JSONResponse(tutor.load_thread(root_path, experiments_tutor.PROFILE),
+                            headers=dict(_PAPER_HEADERS))
+
+    @app.delete("/api/terminal/tutor/experiments/thread")
+    def api_experiments_tutor_reset(request: Request) -> JSONResponse:
+        refusal = _terminal_refusal(request, mutating=True)
+        if refusal is not None:
+            return refusal
+        tutor.reset_thread(root_path, experiments_tutor.PROFILE)
+        return JSONResponse({"ok": True}, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/terminal/tutor/experiments/turn")
+    async def api_experiments_tutor_turn(request: Request) -> JSONResponse:
+        refusal = _terminal_refusal(request, mutating=True)
+        if refusal is not None:
+            return refusal
+        body = await _terminal_body(request)
+        if body is None:
+            return _bad_body()
+        profile = experiments_tutor.PROFILE
+        try:
+            turn = await asyncio.to_thread(
+                experiments_tutor.run_turn, root_path, body.get("message", ""),
+                body.get("mode", "ask"), body.get("area", "general"),
+                runner=lambda *args: tutor.run_agent(*args, schema=profile.schema, tools=profile.tools))
         except tutor.TutorError as error:
             return _tutor_error(error)
         except subprocess.TimeoutExpired:

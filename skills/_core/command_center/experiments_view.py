@@ -58,7 +58,7 @@ from .state_extractor import credentials_store, inbox_directory
 from .terminal import colab_mcp_status, remote_mcp_status
 from .remote_services import remote_services, service_of_worker
 from .local_env import local_environment
-from .run_options import parse_timing, run_options
+from .run_options import parse_plan, parse_timing, run_options
 from .decisions import LEDGER_MAX_BYTES, MAX_LEDGER_LINES, _discover_ledgers, _read_bytes
 
 MAX_PRODUCTS = 50
@@ -961,7 +961,8 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         if timing is not None:
             timing["file"] = _rel(root, timing_path)
         else:
-            reader.warn(f"{reader.label(timing_path)}: not a schema-1 timing record")
+            reader.warn(f"{reader.label(timing_path)}: not a schema 1 or 2 timing record")
+    placement_plan = _placement_plan(root, folder, reader)
     hpo = _hpo_studies(root, results, reader)
     for message in warnings:
         if len(global_warnings) < MAX_WARNINGS:
@@ -979,10 +980,36 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         "runs": _fold_runs(root, ledger, reader),
         "remote_workers": _fold_workers(root, ledger),
         "timing": timing,
+        "placement_plan": placement_plan,
         "hpo": hpo,
         "diagrams": _diagrams(root, repo, folder, reader),
         "warnings": warnings,
     }
+
+
+#: `plan-<date>.json` or `plan-<date>-<n>.json`, as `remote-parallelism plan --record` names them.
+_PLAN_RECORD = re.compile(r"^plan-(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.json$")
+
+
+def _placement_plan(root: Path, folder: Path, reader: Any) -> dict[str, Any] | None:
+    """The latest `plan` recorded in the product's `.remote-parallelism/`, reduced."""
+    records = folder / ".remote-parallelism"
+    if not records.is_dir():
+        return None  # Each record is vetted below: one resolving outside the workspace is skipped.
+    found = []
+    for path in records.iterdir():
+        match = _PLAN_RECORD.match(path.name)
+        if match and path.is_file() and reader.contained(path):
+            found.append(((match.group(1), int(match.group(2) or 1)), path))
+    if not found:
+        return None
+    path = max(found)[1]
+    plan = parse_plan(reader.json(path))
+    if plan is None:
+        reader.warn(f"{reader.label(path)}: not a remote-parallelism plan record")
+        return None
+    plan["file"] = _rel(root, path)
+    return plan
 
 
 def _remote_accounts(root: Path) -> dict[str, Any]:

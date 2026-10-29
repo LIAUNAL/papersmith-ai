@@ -11,6 +11,115 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.38.0
+
+### Added
+
+- An experiments tutor in the dashboard's *Experimentos* tab, the new
+  read-only `experiments-tutor` skill and agent (`Read`, `Glob`, `Grep` only,
+  projected to every harness). Pick a decision area — network architecture,
+  hyperparameters and their search, ablation studies, statistical
+  significance tests, the toy set's purpose, training strategies, upper
+  bounds (*techos*: oracle and reference results), the methods compared and
+  their implementation, validation and leakage, compute budget,
+  reproducibility — and a mode; each turn reads the
+  protocol, the approvals, the target's `src/` and the results, asks one
+  question, rates the design 0–4 with quoted evidence, lists the paths read
+  and the risks, and says "nothing measured yet" rather than supply a number.
+  A change of decision comes back as a draft that **Deliberar este cambio**
+  types into the CLI assistant as `/experimental-deliberation …`, without
+  pressing Enter. Routes `GET|DELETE /api/terminal/tutor/experiments/thread`
+  and `POST /api/terminal/tutor/experiments/turn`, behind the terminal's
+  cookie and same-origin guards; the thread lives in
+  `.papersmith/experiments-tutor/`. The turn's digest of the experiments is
+  size-capped and never carries a credential store, `.papersmith/team.json`,
+  a `.remote-execution/` file or a token, nor a path that is a link or leaves
+  the workspace; the headless `claude -p` run also carries those places, the
+  workspace's declared credential store and inbox, and `~/.ssh`, `~/.kaggle`
+  and `~/.config` as `Read(...)` deny rules (`--disallowedTools`), so the CLI
+  refuses the read even if the model attempts it. A drafted change typed into
+  the CLI assistant is one line with every control character removed.
+- New workspaces ignore `.papersmith/math-tutor/` and
+  `.papersmith/experiments-tutor/` (the tutors' threads and the reader's
+  hand-written pages), and so does this repository.
+
+- Compute placement by measurement. `remote-parallelism plan --timing
+  <Name>/Results/timing.json [--account ...] [--candidate ...] [--record
+  <Name>]` compares every measured way to run a proof of concept or a full
+  experiment: local CPU with N processes, a local accelerator, each account's
+  machine (a CPU-only session included), and a split over several paid owners
+  that clears `assess`'s thresholds. It packs the stage's fold x seed units onto
+  each option's slots with its own setup, session limits and quota and
+  recommends the smallest makespan upper bound, then the fewest accelerator
+  hours, then the CPU, then local, so a GPU wins only when it was measured
+  faster. An accelerator is recommended only when it beat a measured CPU
+  option on makespan, and `reason` names that CPU; with no CPU measured, or
+  every measured CPU faster (one over the local limit included), the stage
+  reads `status: needs-measurement`, recommends nothing, shows the leader as
+  `provisional` and lists the CPU candidates to measure first under
+  `measureFirst` with the probe command for each. Every other option is listed with why it lost; every candidate the
+  record lacks is listed as `unmeasured` with the probe or rehearsal that would
+  measure it, never extrapolated from another host. When waiting on data takes
+  more than 40% of an epoch, `representationAdvice` recommends a cached form
+  (float32 tensors, a `.npy` memmap, precomputed windows) and rewrites
+  nothing. Read-only; it never submits.
+- `skills/remote-parallelism/scripts/timing_probe.py`, a bounded sweep run by
+  the target's own interpreter against its epoch function: one epoch per
+  candidate and setting (batch size, loader workers, pin memory, prefetch,
+  threads, dtype, raw or cached data), `local-cpu-<N>` timed as N concurrent
+  processes, each epoch split into load and compute time, each candidate
+  capped in time (300 s by default). A candidate of another host than
+  `--host` is refused before anything runs or is written, and an epoch below
+  the record's resolution is written as 0.0001 s, never 0. It writes only
+  `Results/timing.json` and never picks a device: `device_from_plan` reads the plan's measured
+  recommendation and refuses without one.
+- Timing records schema 2: a `candidate` per measurement, its settings,
+  `loadSeconds`/`computeSeconds`, and per-host `cpuCount`, `ramGB`, `mps`,
+  `cuda`. `estimate` adds `candidateEstimates`, and `mixed-devices` is keyed
+  by candidate, so one host may hold CPU and accelerator rows. Schema 1
+  records load as before, with unchanged `estimate`, `assess` and
+  `schedule` outputs. `hyperparameter-search plan --timing` reads schema 2 too
+  (the probe upgrades a schema 1 record in place), estimating per candidate
+  at its fastest setting with `mixed-devices` keyed by candidate; its schema 1
+  output is unchanged.
+- `remote_cli generate-job --accelerator-kind cpu` writes a CPU-only job
+  (`{"kind": "cpu", "architectures": []}`): Colab's `new` gets no `--gpu`,
+  Kaggle's metadata carries `enable_gpu: false` and no `machine_shape`. A
+  service that declares no CPU-only session refuses it by name. Without the
+  flag the generated files are byte-identical.
+- The Experimentos tab's run options list one row per candidate, measured or
+  not, and the latest recorded `plan`'s pick with its reason.
+
+### Changed
+
+- The math tutor's backend (`tutor.py`) is generalized into tutor profiles
+  (thread folder, doctrine, context, turn schema, modes, tools, deny rules,
+  lock); the math tutor's routes, prompt, command and thread are unchanged.
+
+- `proposal-implementation`'s twelve `### nextStep: "…"` sections moved,
+  verbatim, into `skills/proposal-implementation/references/next-step-<nextStep>.md`,
+  and each one left a `Stage reference:` line in `SKILL.md` where it stood.
+  `SKILL.md` drops from 308,488 to 258,251 bytes; the largest load for one
+  stage, `SKILL.md` plus `next-step-validate.md`, is 268,098 bytes. No rule
+  was reworded: put back in place, the references give the old `SKILL.md`
+  plus one new `## References` bullet. `implementation-build`,
+  `implementation-walk` and `paper-replicator` now read `SKILL.md`, then only
+  the reference for the `nextStep` that `probe` reports.
+- `math-tutor`, `insumos-observer` and `style-sampler`, the three agents that
+  only read and hold no gate, now carry `model: sonnet` and run on it in
+  Claude Code. Every other agent still runs on the session's model. The Pi
+  agent projection now drops a source's `model:` line. The OpenCode and
+  Antigravity projections already wrote no model, so those three harnesses
+  run every agent on the session's model.
+
+- `preflight`'s `accelerator` row calls the service's default GPU what it is,
+  a default and not a measured choice, and points to `plan`; `session-fit`
+  reads the job's own candidate rows of a schema 2 record (`--candidate`, or
+  the slowest candidate on the job's kind of machine).
+- `proposal-implementation`, `experimental-implementation`, their walk and
+  build agents and `remote-parallelism` require the timing probe and `plan`
+  before a proof of concept or a full experiment is placed.
+
 ## 0.37.0
 
 ### Added
@@ -352,7 +461,6 @@ number is `0`, breaking changes can still arrive without a major bump.
   order; an expired report is served while one background rebuild replaces
   it (re-measuring still rebuilds in line); and `smith ui` prepares the
   report at startup, so the first visit is immediate.
-
 
 ## 0.30.2
 

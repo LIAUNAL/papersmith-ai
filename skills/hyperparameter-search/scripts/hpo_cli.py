@@ -17,6 +17,7 @@ the operator's consent.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import re
@@ -75,6 +76,9 @@ FIGURES = ("contour", "importance", "history")
 ESTIMATE_RANGE = 0.20
 RANGE_NOTE = ("±20%, single-probe extrapolation, an upper bound: every trial is counted at "
               "maxEpochs, and pruning and early stopping only lower it")
+#: Schema 2 (the timing probe's) is estimated per candidate, at its fastest
+#: measured setting.
+RANGE_NOTE_V2 = RANGE_NOTE + "; each candidate is read at its fastest measured setting"
 
 TIMING_HOST = re.compile(r"^(local|[a-z0-9-]+:[A-Za-z0-9_.-]+)$")
 SKILL_SCRIPTS = Path(__file__).resolve().parent
@@ -225,15 +229,38 @@ def study_names(plan: dict) -> list[str]:
 
 
 # ------------------------------------------------------------- the estimate
-def load_timing(path: Path) -> list[dict]:
+def parallelism_cli():
+    """`remote-parallelism`'s CLI module, for its schema 2 timing reader and
+    its candidate rules -- never a second copy of them."""
+    module_name = "hyperparameter_search_parallelism_cli"
+    if module_name not in sys.modules:
+        script = SKILL_SCRIPTS.parents[1] / "remote-parallelism" / "scripts" / "parallelism_cli.py"
+        if not script.is_file():
+            raise Refusal("timing-invalid", f"a schema 2 timing record is read by {script}, which is missing")
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[module_name] = module
+    return sys.modules[module_name]
+
+
+def load_timing(path: Path) -> list[dict] | dict:
+    """Schema 1's measurements, or the whole schema 2 record the timing probe
+    writes, validated by remote-parallelism's own reader."""
     if not path.is_file():
         raise Refusal("timing-missing", f"{path} does not exist; run the timing probe first")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise Refusal("timing-invalid", f"{path} is not JSON: {exc}")
+    if isinstance(data, dict) and data.get("schema") == 2 and not isinstance(data.get("schema"), bool):
+        reader = parallelism_cli()
+        try:
+            return reader.load_timing(path, path.name)
+        except reader.Refusal as refusal:
+            raise Refusal(refusal.code, refusal.message)
     if not isinstance(data, dict) or data.get("schema") != 1 or isinstance(data.get("schema"), bool):
-        raise Refusal("timing-invalid", f"{path.name}: the timing record must be schema 1")
+        raise Refusal("timing-invalid", f"{path.name}: the timing record must be schema 1 or 2")
     measurements = data.get("measurements")
     if not isinstance(measurements, list) or not measurements:
         raise Refusal("timing-invalid", f"{path.name}: measurements must be a non-empty list")
@@ -247,6 +274,42 @@ def load_timing(path: Path) -> list[dict]:
     return measurements
 
 
+def search_seconds(plan: dict, items: list[dict]) -> dict:
+    trials, arms = plan["nTrials"], len(plan["arms"])
+    folds, epochs = plan["nested"]["outerFolds"], plan["maxEpochs"]
+    per_unit = sum(float(item["secondsPerUnit"]) for item in items) / len(items)
+    seconds = trials * arms * folds * epochs * per_unit
+    return {
+        "seconds": num(seconds), "low": num(seconds * (1 - ESTIMATE_RANGE)),
+        "high": num(seconds * (1 + ESTIMATE_RANGE)), "secondsPerUnit": num(per_unit),
+        "measurements": len(items), "device": items[0]["device"],
+        "formula": (f"{trials} trials x {arms} arms x {folds} outer folds x {epochs} epochs x "
+                    f"mean secondsPerUnit {num(per_unit)} s = {num(seconds)} s"),
+    }
+
+
+def estimate_v2(plan: dict, data: dict, extra_hosts: list[str]) -> dict:
+    """Schema 2: one row per candidate, from its own rows at its fastest measured
+    setting, so one host's CPU and accelerator rows are never pooled. A host
+    asked for (and `local`) with no candidate measured reads `unmeasured`."""
+    reader = parallelism_cli()
+    try:
+        _, by_candidate = reader.measured_candidates(data)
+    except reader.Refusal as refusal:
+        raise Refusal(refusal.code, refusal.message)
+    result: dict = {}
+    hosts = set()
+    for candidate, items in sorted(by_candidate.items()):
+        rows, _ = reader.best_setting(items)
+        host = rows[0]["host"]
+        hosts.add(host)
+        result[candidate] = dict(search_seconds(plan, rows), candidate=candidate, host=host,
+                                 settings={key: rows[0][key] for key in reader.SETTING_KEYS if key in rows[0]})
+    for host in sorted({"local", *extra_hosts} - hosts):
+        result[host] = "unmeasured"
+    return dict(sorted(result.items()))
+
+
 def estimate(plan: dict, measurements: list[dict], extra_hosts: list[str]) -> dict:
     by_host: dict[str, list[dict]] = {}
     for item in measurements:
@@ -256,23 +319,10 @@ def estimate(plan: dict, measurements: list[dict], extra_hosts: list[str]) -> di
         if len(devices) > 1:
             raise Refusal("mixed-devices", f"{host} was timed on {', '.join(devices)}; timing is never "
                                            "pooled across machines")
-    trials, arms = plan["nTrials"], len(plan["arms"])
-    folds, epochs = plan["nested"]["outerFolds"], plan["maxEpochs"]
     result: dict = {}
     for host in sorted({"local", *by_host, *extra_hosts}):
         items = by_host.get(host)
-        if not items:
-            result[host] = "unmeasured"
-            continue
-        per_unit = sum(float(item["secondsPerUnit"]) for item in items) / len(items)
-        seconds = trials * arms * folds * epochs * per_unit
-        result[host] = {
-            "seconds": num(seconds), "low": num(seconds * (1 - ESTIMATE_RANGE)),
-            "high": num(seconds * (1 + ESTIMATE_RANGE)), "secondsPerUnit": num(per_unit),
-            "measurements": len(items), "device": items[0]["device"],
-            "formula": (f"{trials} trials x {arms} arms x {folds} outer folds x {epochs} epochs x "
-                        f"mean secondsPerUnit {num(per_unit)} s = {num(seconds)} s"),
-        }
+        result[host] = search_seconds(plan, items) if items else "unmeasured"
     return result
 
 
@@ -291,9 +341,13 @@ def cmd_plan(args) -> dict:
     if args.host and args.timing is None:
         raise Refusal("timing-missing", "--host adds a row to the estimate, which needs --timing <timing.json>")
     if args.timing is not None:
-        measurements = load_timing(Path(args.timing).expanduser().resolve())
-        result["estimate"] = estimate(plan, measurements, args.host or [])
-        result["range"] = RANGE_NOTE
+        timing = load_timing(Path(args.timing).expanduser().resolve())
+        if isinstance(timing, dict):
+            result["estimate"] = estimate_v2(plan, timing, args.host or [])
+            result["range"] = RANGE_NOTE_V2
+        else:
+            result["estimate"] = estimate(plan, timing, args.host or [])
+            result["range"] = RANGE_NOTE
     return result
 
 

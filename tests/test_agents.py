@@ -24,8 +24,12 @@ survive an environment missing everything else.
 
 import ast
 import re
+import sys
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from skill_text import stage_references  # noqa: E402  (path set above)
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENTS = ROOT / ".claude" / "agents"
@@ -35,7 +39,20 @@ SKILLS = ROOT / "skills"
 # nor a TypeScript `profile.ts` `objective`. Pinned by name, not discovered,
 # so removing an entry (or a skill quietly growing a north) changes what the
 # seal below expects to check, rather than changing what it silently skips.
-NORTHLESS_SKILLS = {"skill-audit", "plausibility", "math-tutor"}
+NORTHLESS_SKILLS = {"skill-audit", "plausibility", "math-tutor", "experiments-tutor"}
+
+# The agents that run on the lighter model. `.claude/agents` is copied into a
+# workspace, not rendered, so the `model:` line written in these sources IS the
+# Claude projection; every other harness's translator drops it. Pinned by name:
+# each one only reads (no tool below in `WRITE_TOOLS`) and holds no gate, and a
+# writer, a judge or a gate holder keeps the session's model.
+LIGHT_AGENTS = {"math-tutor", "insumos-observer", "style-sampler"}
+LIGHT_MODEL = "sonnet"
+WRITE_TOOLS = {"Write", "Edit", "Bash", "NotebookEdit"}
+
+# The projections of `.claude/agents` for the harnesses with no cited per-agent
+# model mechanism; `scripts/sync-repo-harness.py` writes them.
+PROJECTED_AGENT_DIRS = (".pi/agents", ".opencode/agents", ".agents/agents")
 
 # A single-line `arrival: "..."` or `stage: "..."` literal inside a
 # TypeScript `objective` block. Anchored to the whole line so a token that
@@ -368,6 +385,52 @@ class AgentBindingTests(unittest.TestCase):
         self.assertEqual(orphans, [],
                          "these agents exist and no skill delegates to them, "
                          "so nothing reaches them")
+
+    def test_every_agent_bound_to_a_split_skill_reads_the_current_stage(self) -> None:
+        """A skill that moved its per-state sections into `references/` keeps
+        one `Stage reference:` line per section. An agent told to load
+        `SKILL.md` and nothing else would never see the section for the state
+        it is in, so it has to be told where that section went."""
+        bound = 0
+        for path in self.agents():
+            body = path.read_text(encoding="utf-8")
+            for skill in sorted(set(re.findall(r"skills/([\w-]+)/SKILL\.md", body))):
+                doc = SKILLS / skill / "SKILL.md"
+                if not doc.is_file() or not stage_references(doc):
+                    continue
+                bound += 1
+                with self.subTest(agent=path.stem, skill=skill):
+                    text = " ".join(body.split())
+                    self.assertIn("references/next-step-<nextStep>.md", text)
+                    self.assertIn("`Stage reference:`", text)
+        self.assertTrue(bound, "no agent binds a skill with stage references")
+
+    def test_only_the_read_only_agents_name_a_model(self) -> None:
+        """Omitted is the default and means the session's model. The one value
+        an agent may name is the lighter one, and only a read-only agent may
+        name it."""
+        named = {}
+        for path in self.agents():
+            header = path.read_text(encoding="utf-8").split("---\n", 2)[1]
+            models = re.findall(r"^model:[ \t]*(.*?)[ \t]*$", header, re.MULTILINE)
+            if models:
+                named[path.stem] = models
+        self.assertEqual(named, {name: [LIGHT_MODEL] for name in LIGHT_AGENTS})
+        for name in sorted(LIGHT_AGENTS):
+            with self.subTest(agent=name):
+                tools = {tool.strip() for tool in
+                         frontmatter(AGENTS / f"{name}.md")["tools"].split(",")}
+                self.assertEqual(tools & WRITE_TOOLS, set())
+
+    def test_no_other_harness_projection_names_a_model(self) -> None:
+        for directory in PROJECTED_AGENT_DIRS:
+            projected = sorted((ROOT / directory).glob("*.md"))
+            self.assertTrue(projected, f"{directory} holds no agent")
+            for path in projected:
+                with self.subTest(agent=f"{directory}/{path.name}"):
+                    header = path.read_text(encoding="utf-8").split("---\n", 2)[1]
+                    self.assertIsNone(
+                        re.search(r"^(model|tier):", header, re.MULTILINE), header)
 
     def test_every_agent_states_its_tools(self) -> None:
         """An agent that declares none inherits everything, which is the

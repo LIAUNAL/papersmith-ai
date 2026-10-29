@@ -7,7 +7,9 @@ numbers -- a pilot's per-unit duration, a rehearsal's setup overhead, the
 accounts' own limits -- and writes nothing but an optional assessment or
 estimate record. `estimate` turns a timing probe's `Results/timing.json` into a
 processing-time range per stage and per host, and never estimates a host it has
-no measurement of.
+no measurement of. `plan` compares every measured candidate -- local CPU with N
+processes, a local accelerator, each account's machine, CPU-only remote -- and
+recommends the fastest affordable one; a GPU wins only when measured faster.
 
 Accounts are counted under the team rule: one account per person per service,
 so parallelism counts DISTINCT OWNERS (`--owners`), never accounts. On Colab
@@ -55,7 +57,7 @@ OBJECTIVE_FLOW = {
     ],
 }
 
-VERBS = ("assess", "schedule", "estimate", "checklist", "stamp-fields")
+VERBS = ("assess", "schedule", "estimate", "plan", "checklist", "stamp-fields")
 
 ERROR_CODES = (
     "missing-input", "bad-argument", "units-file-missing", "units-file-invalid",
@@ -173,6 +175,25 @@ PLACEMENT_RULES = {"localLimitSeconds": LOCAL_LIMIT_SECONDS, "pocBudgetSeconds":
 TIMING_KEYS = {"schema", "measurements", "scales"}
 MEASUREMENT_REQUIRED = ("measuredAt", "host", "device", "arm", "unit", "secondsPerUnit", "unitsMeasured")
 MEASUREMENT_KEYS = set(MEASUREMENT_REQUIRED) | {"setupSeconds"}
+#: Schema 2 adds, per record, what each host is (`hosts`), and per measurement
+#: the candidate it ran as, its batch and loader settings, and the split of an
+#: epoch into time spent waiting on data and time spent computing. Schema 1
+#: records keep loading exactly as before.
+TIMING_SCHEMAS = (1, 2)
+TIMING_KEYS_V2 = TIMING_KEYS | {"hosts"}
+HOST_INFO_KEYS = ("cpuCount", "ramGB", "mps", "cuda")
+SETTING_KEYS = ("threads", "batchSize", "numWorkers", "pinMemory", "prefetch", "dtype", "dataSource")
+MEASUREMENT_KEYS_V2 = MEASUREMENT_KEYS | {"candidate", "processes", "loadSeconds", "computeSeconds",
+                                         *SETTING_KEYS}
+#: `local-cpu-<processes>`, `local-mps`, `local-cuda`, or `<host>:<owner>/<machine>`
+#: for a remote host, where a machine named `cpu` is a CPU-only session.
+CANDIDATE_PATTERN = re.compile(r"^(local-cpu-[1-9][0-9]*|local-mps|local-cuda|"
+                               r"[a-z0-9][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*)$")
+DTYPE_PATTERN = re.compile(r"^[a-z][a-z0-9]*$")
+DATA_SOURCES = ("raw", "cached")
+#: loadSeconds + computeSeconds may exceed secondsPerUnit by at most this share
+#: (clock granularity); past it the split does not describe the epoch it splits.
+LOAD_SPLIT_TOLERANCE = 0.05
 #: `local`, or `<host slug>:<owner slug>` for a remote host. The slug is never
 #: a fixed list: this CLI does not name the services a team rents.
 HOST_PATTERN = re.compile(r"^(local|[a-z0-9][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*)$")
@@ -484,11 +505,17 @@ def load_timing(path: Path, name: str) -> dict:
 
     if not isinstance(data, dict):
         bad("the record must be a JSON object")
-    unknown = sorted(set(data) - TIMING_KEYS)
+    schema = data.get("schema")
+    v2 = schema == 2 and not isinstance(schema, bool)
+    unknown = sorted(set(data) - (TIMING_KEYS_V2 if v2 else TIMING_KEYS))
     if unknown:
-        bad(f"unknown key(s) {', '.join(unknown)}; schema 1 holds schema, measurements and scales")
-    if data.get("schema") != 1 or isinstance(data.get("schema"), bool):
-        bad(f"schema must be 1, got {data.get('schema')!r}")
+        bad(f"unknown key(s) {', '.join(unknown)}; "
+            + ("schema 2 holds schema, hosts, measurements and scales" if v2 else
+               "schema 1 holds schema, measurements and scales"))
+    if isinstance(schema, bool) or schema not in TIMING_SCHEMAS:
+        bad(f"schema must be 1 or 2, got {schema!r}")
+    if v2:
+        check_hosts(data.get("hosts"), bad)
     measurements = data.get("measurements")
     if not isinstance(measurements, list) or not measurements:
         bad("measurements must be a non-empty list")
@@ -499,7 +526,7 @@ def load_timing(path: Path, name: str) -> dict:
         missing = [key for key in MEASUREMENT_REQUIRED if key not in item]
         if missing:
             bad(f"{where} is missing {', '.join(missing)}")
-        extra = sorted(set(item) - MEASUREMENT_KEYS)
+        extra = sorted(set(item) - (MEASUREMENT_KEYS_V2 if v2 else MEASUREMENT_KEYS))
         if extra:
             bad(f"{where} has unknown key(s) {', '.join(extra)}")
         stamp = item["measuredAt"]
@@ -523,6 +550,8 @@ def load_timing(path: Path, name: str) -> dict:
             bad(f"{where}.unitsMeasured must be a positive whole number, got {item['unitsMeasured']!r}")
         if "setupSeconds" in item and (not is_number(item["setupSeconds"]) or item["setupSeconds"] < 0):
             bad(f"{where}.setupSeconds must be a non-negative number, got {item['setupSeconds']!r}")
+        if v2:
+            check_candidate_row(where, item, bad)
     scales = data.get("scales")
     if not isinstance(scales, dict) or sorted(scales) != sorted(STAGES):
         bad("scales must hold exactly poc and full, copied from the approved protocol and the declared pilot")
@@ -534,6 +563,147 @@ def load_timing(path: Path, name: str) -> dict:
             if not is_count(scale[key]):
                 bad(f"scales.{stage}.{key} must be a positive whole number, got {scale[key]!r}")
     return data
+
+
+def check_hosts(hosts, bad) -> None:
+    """Schema 2's `hosts`: what each host is, keyed like a measurement's host."""
+    if not isinstance(hosts, dict):
+        bad("hosts must map each host (local or <host>:<owner>) to its cpuCount, ramGB, mps and cuda")
+    for host, info in hosts.items():
+        where = f"hosts[{host!r}]"
+        if not HOST_PATTERN.match(host):
+            bad(f"{where}: a host is local or <host>:<owner>")
+        if not isinstance(info, dict) or sorted(info) != sorted(HOST_INFO_KEYS):
+            bad(f"{where} must hold exactly {', '.join(HOST_INFO_KEYS)}")
+        if not is_count(info["cpuCount"]):
+            bad(f"{where}.cpuCount must be a positive whole number, got {info['cpuCount']!r}")
+        if info["ramGB"] is not None and (not is_number(info["ramGB"]) or info["ramGB"] <= 0):
+            bad(f"{where}.ramGB must be a positive number or null, got {info['ramGB']!r}")
+        for key in ("mps", "cuda"):
+            if not isinstance(info[key], bool):
+                bad(f"{where}.{key} must be true or false, got {info[key]!r}")
+
+
+def candidate_of(item: dict) -> str:
+    """The candidate a measurement ran as: its own, or its host on schema 1."""
+    return item.get("candidate") or item["host"]
+
+
+def check_candidate_row(where: str, item: dict, bad) -> None:
+    """A schema 2 measurement's candidate agrees with its host and device, and
+    its settings and load/compute split are well formed."""
+    host, device = item["host"], item["device"]
+    if "candidate" in item:
+        candidate = item["candidate"]
+        if not isinstance(candidate, str) or not CANDIDATE_PATTERN.match(candidate):
+            bad(f"{where}.candidate must be local-cpu-<processes>, local-mps, local-cuda or "
+                f"<host>:<owner>/<machine>, got {candidate!r}")
+        if candidate.startswith("local-"):
+            if host != "local":
+                bad(f"{where}: candidate {candidate} runs on local, not on {host}")
+            wanted = {"local-mps": "mps", "local-cuda": "cuda"}.get(candidate, "cpu")
+            if device.split(":", 1)[0] != wanted:
+                bad(f"{where}: candidate {candidate} computes on {wanted}, but the device recorded is {device}")
+            if candidate.startswith("local-cpu-") and "processes" in item \
+                    and item["processes"] != int(candidate.rsplit("-", 1)[1]):
+                bad(f"{where}: candidate {candidate} runs {candidate.rsplit('-', 1)[1]} process(es), "
+                    f"not {item['processes']!r}")
+        else:
+            owner_host, machine = candidate.split("/", 1)
+            if owner_host != host:
+                bad(f"{where}: candidate {candidate} runs on {owner_host}, not on {host}; a candidate is "
+                    "never measured on another host")
+            if (machine.lower() == "cpu") != (device == "cpu"):
+                bad(f"{where}: candidate {candidate} was measured on device {device}: a CPU-only machine "
+                    "records cpu and an accelerator machine records the accelerator that arrived")
+    for key in ("threads", "processes", "batchSize"):
+        if key in item and not is_count(item[key]):
+            bad(f"{where}.{key} must be a positive whole number, got {item[key]!r}")
+    for key in ("numWorkers", "prefetch"):
+        value = item.get(key)
+        if key in item and value is not None and (not isinstance(value, int) or isinstance(value, bool)
+                                                  or value < 0):
+            bad(f"{where}.{key} must be a non-negative whole number, got {value!r}")
+    if "pinMemory" in item and not isinstance(item["pinMemory"], bool):
+        bad(f"{where}.pinMemory must be true or false, got {item['pinMemory']!r}")
+    if "dtype" in item and (not isinstance(item["dtype"], str) or not DTYPE_PATTERN.match(item["dtype"])):
+        bad(f"{where}.dtype must be a dtype name such as float32, got {item['dtype']!r}")
+    if "dataSource" in item and item["dataSource"] not in DATA_SOURCES:
+        bad(f"{where}.dataSource must be one of {', '.join(DATA_SOURCES)}, got {item['dataSource']!r}")
+    for key in ("loadSeconds", "computeSeconds"):
+        if key in item and (not is_number(item[key]) or item[key] < 0):
+            bad(f"{where}.{key} must be a non-negative number, got {item[key]!r}")
+    split = item.get("loadSeconds", 0) + item.get("computeSeconds", 0)
+    if split > item["secondsPerUnit"] * (1 + LOAD_SPLIT_TOLERANCE):
+        bad(f"{where}: loadSeconds + computeSeconds ({num(split)} s) exceed the epoch's secondsPerUnit "
+            f"({num(item['secondsPerUnit'])} s)")
+
+
+def settings_of(item: dict) -> tuple:
+    return tuple(item.get(key) for key in SETTING_KEYS)
+
+
+def per_unit_of(items: list[dict]) -> float:
+    by_arm: dict[str, list[float]] = {}
+    for item in items:
+        by_arm.setdefault(item["arm"], []).append(float(item["secondsPerUnit"]))
+    return sum(sum(values) / len(values) for values in by_arm.values()) / len(by_arm)
+
+
+def best_setting(items: list[dict]) -> tuple[list[dict], int]:
+    """The rows of a candidate's fastest measured setting, and how many settings
+    it was measured under. Settings are never pooled: a sweep row is one try."""
+    groups: dict[tuple, list[dict]] = {}
+    for item in items:
+        groups.setdefault(settings_of(item), []).append(item)
+    best = min(groups.values(), key=per_unit_of)
+    return best, len(groups)
+
+
+def load_share(items: list[dict]) -> float | None:
+    """The share of an epoch spent waiting on data, over the rows that split it."""
+    split = [item for item in items if "loadSeconds" in item and "computeSeconds" in item]
+    total = sum(item["loadSeconds"] + item["computeSeconds"] for item in split)
+    return sum(item["loadSeconds"] for item in split) / total if split and total > 0 else None
+
+
+def candidate_estimate(items: list[dict], scale: dict) -> dict:
+    """A schema 2 candidate's estimate: the one formula over its fastest setting."""
+    rows, tried = best_setting(items)
+    estimate = host_estimate(rows, scale)
+    candidate = candidate_of(rows[0])
+    processes = (int(candidate.rsplit("-", 1)[1]) if candidate.startswith("local-cpu-")
+                 else rows[0].get("processes", 1))
+    share = load_share(rows)
+    estimate.update({"candidate": candidate, "processes": processes,
+                     "settings": {key: rows[0][key] for key in SETTING_KEYS if key in rows[0]},
+                     "settingsMeasured": tried, "loadShare": None if share is None else num(share)})
+    return estimate
+
+
+def item_host(estimate: dict) -> str:
+    candidate = estimate["candidate"]
+    return "local" if candidate.startswith("local-") else candidate.split("/", 1)[0]
+
+
+def measured_candidates(data: dict) -> tuple[dict[str, list[dict]], dict[str, list[dict]]]:
+    """The record's rows per host and per candidate, or a `mixed-devices`
+    refusal when one candidate was timed on two devices. On schema 1 the
+    candidate is the host, so the refusal reads as it always has."""
+    by_host: dict[str, list[dict]] = {}
+    by_candidate: dict[str, list[dict]] = {}
+    for item in data["measurements"]:
+        by_host.setdefault(item["host"], []).append(item)
+        by_candidate.setdefault(candidate_of(item), []).append(item)
+    for candidate, items in by_candidate.items():
+        devices = sorted({item["device"] for item in items})
+        if len(devices) > 1:
+            if data["schema"] == 1:
+                raise Refusal("mixed-devices", f"host {candidate} was timed on {', '.join(devices)}: timing is "
+                                               "never pooled across machines; keep one device per host in the record")
+            raise Refusal("mixed-devices", f"candidate {candidate} was timed on {', '.join(devices)}: timing is "
+                                           "never pooled across machines; keep one device per candidate")
+    return by_host, by_candidate
 
 
 def host_estimate(measurements: list[dict], scale: dict) -> dict:
@@ -612,24 +782,32 @@ def cmd_estimate(args, root: Path, today: str) -> dict:
         path = path if path.is_absolute() else root / path
     data = load_timing(path, args.timing)
 
-    by_host: dict[str, list[dict]] = {}
-    for item in data["measurements"]:
-        by_host.setdefault(item["host"], []).append(item)
-    for host, items in by_host.items():
-        devices = sorted({item["device"] for item in items})
-        if len(devices) > 1:
-            raise Refusal("mixed-devices", f"host {host} was timed on {', '.join(devices)}: timing is never "
-                                           "pooled across machines; keep one device per host in the record")
+    by_host, by_candidate = measured_candidates(data)
     hosts = ["local", *sorted(host for host in by_host if host != "local")]
     hosts += [host for host in asked if host not in hosts]
-    estimates = {
-        name: {host: host_estimate(by_host[host], data["scales"][name]) if host in by_host else UNMEASURED
-               for host in hosts}
-        for name in stages}
+    if data["schema"] == 1:
+        estimates = {
+            name: {host: host_estimate(by_host[host], data["scales"][name]) if host in by_host else UNMEASURED
+                   for host in hosts}
+            for name in stages}
+    else:
+        per_candidate = {name: {candidate: candidate_estimate(items, data["scales"][name])
+                                for candidate, items in sorted(by_candidate.items())} for name in stages}
+        estimates = {name: {host: min((item for item in per_candidate[name].values()
+                                       if item_host(item) == host),
+                                      key=lambda item: (item["high"], item["candidate"]), default=UNMEASURED)
+                            for host in hosts}
+                     for name in stages}
     result = {"estimates": estimates, "placement": {name: placement(name, estimates[name]) for name in stages},
               "placementRules": PLACEMENT_RULES, "timing": args.timing, "range": RANGE_NOTE,
               "unmeasuredMeans": "no measurement on that host; a remote host is never estimated from local timings",
               "launchAuthorization": False}
+    if data["schema"] == 2:
+        result["candidateEstimates"] = per_candidate
+        result["hostInfo"] = data["hosts"]
+        result["candidateNote"] = ("each candidate is estimated from its own rows at its fastest measured "
+                                   "setting; the estimate is serial work (processes and accounts are "
+                                   "counted by plan)")
     if args.record is not None:
         result["recorded"] = record(root, args.record, result, today, prefix="estimate")
     return result
@@ -982,8 +1160,10 @@ def per_service(where: str, value, services: list[str], allow_zero: bool) -> dic
 def timing_unit_minutes(root: Path, where: str, service: str, spec, units: int) -> tuple[float, str]:
     """A step's per-unit minutes on one service from that service's own timing
     record: the stage's work at the estimate's upper bound, over the step's units."""
-    if not isinstance(spec, dict) or set(spec) != {"path", "host", "stage"}:
-        raise Refusal("plan-invalid", f"{where}: timing.{service} holds exactly path, host and stage")
+    if not isinstance(spec, dict) or not {"path", "host", "stage"} <= set(spec) <= {"path", "host", "stage",
+                                                                                      "candidate"}:
+        raise Refusal("plan-invalid", f"{where}: timing.{service} holds path, host and stage, and a "
+                                      "candidate when its host holds several")
     host, stage = spec["host"], spec["stage"]
     if not isinstance(host, str) or not HOST_PATTERN.match(host) or host.split(":")[0] != service:
         raise Refusal("plan-invalid", f"{where}: timing.{service}.host must be {service}:<owner>, the service's "
@@ -995,13 +1175,21 @@ def timing_unit_minutes(root: Path, where: str, service: str, spec, units: int) 
     path = Path(spec["path"])
     data = load_timing(path if path.is_absolute() else root / path, spec["path"])
     items = [item for item in data["measurements"] if item["host"] == host]
+    if "candidate" in spec:
+        items = [item for item in items if candidate_of(item) == spec["candidate"]]
     if not items:
-        raise Refusal("plan-invalid", f"{where}: {spec['path']} has no measurement on {host} ({UNMEASURED}); "
+        raise Refusal("plan-invalid", f"{where}: {spec['path']} has no measurement on "
+                                      f"{spec.get('candidate', host)} ({UNMEASURED}); "
                                       "a remote host is never estimated from another host's timings")
+    candidates = sorted({candidate_of(item) for item in items})
+    if len(candidates) > 1:
+        raise Refusal("plan-invalid", f"{where}: {host} holds candidates {', '.join(candidates)}: name one as "
+                                      f"timing.{service}.candidate (timing is never pooled across machines)")
     devices = sorted({item["device"] for item in items})
     if len(devices) > 1:
         raise Refusal("mixed-devices", f"host {host} was timed on {', '.join(devices)}: timing is never "
                                        "pooled across machines; keep one device per host in the record")
+    items = best_setting(items)[0]
     estimate = host_estimate(items, data["scales"][stage])
     scale = data["scales"][stage]
     work = estimate["secondsPerUnit"] * scale["epochs"] * scale["folds"] * scale["seeds"] * scale["arms"]
@@ -1398,6 +1586,397 @@ def _product(ranges: list) -> list[tuple]:
     return combos
 
 
+# ------------------------------------------------------------- plan
+#: Loading dominates an epoch past this share of it; the plan then advises a
+#: cached representation of the data, with the measured share as evidence.
+LOAD_SHARE_THRESHOLD = 0.4
+CACHED_FORMS = ("float32 tensors", "a .npy memmap", "precomputed windows")
+UNIT_DEFINITION = "one fold x seed pair, every arm on the same machine"
+PROBE = "skills/remote-parallelism/scripts/timing_probe.py"
+
+
+def candidate_kind(candidate: str) -> tuple[str, str | None, str | None]:
+    """`(host, service, machine)`: local candidates have no service; schema 1
+    remote hosts have no machine."""
+    if candidate == "local" or candidate.startswith("local-"):
+        return "local", None, None
+    host, _, machine = candidate.partition("/")
+    return host, host.split(":", 1)[0], machine or None
+
+
+def pack_slots(count: int, slots: list[dict]) -> list[dict]:
+    """Greedy packing of `count` equal units onto slots, each with its own unit
+    seconds, setup and session limit (None locally). A slot pays its setup
+    when it opens a session; a remote session never runs past its limit."""
+    state = [dict(slot, finish=0.0, used=None, units=0, busy=0.0) for slot in slots]
+    for _ in range(count):
+        best = None
+        for index, slot in enumerate(state):
+            unit, setup, limit = slot["unit"], slot["setup"], slot["limit"]
+            if slot["used"] is not None and (limit is None or slot["used"] + unit <= limit):
+                finish, new = slot["finish"] + unit, False
+            else:
+                finish, new = slot["finish"] + setup + unit, True
+            if best is None or finish < best[0]:
+                best = (finish, index, new)
+        finish, index, new = best
+        slot = state[index]
+        slot["used"] = (slot["setup"] + slot["unit"]) if new else slot["used"] + slot["unit"]
+        slot["finish"], slot["units"] = finish, slot["units"] + 1
+        slot["busy"] += slot["unit"] + (slot["setup"] if new else 0.0)
+    return state
+
+
+def seconds_range(seconds: float) -> dict:
+    return {"seconds": num(seconds), "low": num(seconds * (1 - ESTIMATE_RANGE)),
+            "high": num(seconds * (1 + ESTIMATE_RANGE))}
+
+
+def measured_option(candidate: str, items: list[dict], scale: dict, stage: str, accounts: dict) -> dict:
+    """One candidate alone: its slots, makespan, accelerator hours and status."""
+    rows, _ = best_setting(items)
+    host, service, _ = candidate_kind(candidate)
+    device = rows[0]["device"]
+    setups = [float(item["setupSeconds"]) for item in rows if "setupSeconds" in item]
+    setup = sum(setups) / len(setups) if setups else 0.0
+    unit = per_unit_of(rows) * scale["arms"] * scale["epochs"]
+    processes = (int(candidate.rsplit("-", 1)[1]) if candidate.startswith("local-cpu-")
+                 else rows[0].get("processes", 1))
+    option = {"option": candidate, "kind": "local" if service is None else "remote", "candidates": [candidate],
+              "device": device, "settings": {key: rows[0][key] for key in SETTING_KEYS if key in rows[0]},
+              "processes": processes, "unitSeconds": num(unit), "setupSeconds": num(setup),
+              "accounts": [] if service is None else [host], "status": "eligible", "reason": ""}
+    if service is None:
+        state = pack_slots(scale["folds"] * scale["seeds"],
+                           [{"account": "local", "unit": unit, "setup": setup, "limit": None}] * processes)
+        option.update(finish_option(state, device, {}))
+        if option["makespanSeconds"]["high"] > LOCAL_LIMIT_SECONDS:
+            option.update(status="over-local-limit",
+                          reason=f"its makespan upper bound {option['makespanSeconds']['high']} s exceeds the "
+                                 "20 minutes a run may take locally")
+        return option
+    account = accounts.get(host)
+    if account is None:
+        option.update(status="no-account", makespanSeconds=None, acceleratorHours=None, perAccount=[],
+                      reason=f"no account limits for {host}: declare them with --account or --accounts-file")
+        return option
+    if account["tier"] is not None and account["tier"] not in PAID_COLAB_TIERS and stage == "full":
+        option.update(status="free-tier", makespanSeconds=None, acceleratorHours=None, perAccount=[],
+                      reason=f"{host} is on a free tier: it runs a proof of concept in one session, never a full "
+                             "campaign or a worker of a split")
+        return option
+    return dict(option, **remote_makespan([(candidate, rows, account)], scale))
+
+
+def remote_makespan(members: list[tuple[str, list[dict], dict]], scale: dict) -> dict:
+    """The makespan of a stage over one or more accounts, each with its own rows."""
+    slots, device = [], members[0][1][0]["device"]
+    for candidate, rows, account in members:
+        setups = [float(item["setupSeconds"]) for item in rows if "setupSeconds" in item]
+        unit = per_unit_of(rows) * scale["arms"] * scale["epochs"]
+        setup = sum(setups) / len(setups) if setups else 0.0
+        limit = account["sessionHours"] * 3600
+        if unit * (1 + ESTIMATE_RANGE) + setup > usable_session(limit):
+            return {"status": "split-first", "makespanSeconds": None, "acceleratorHours": None, "perAccount": [],
+                    "reason": f"one unit on {candidate} ({num(unit * (1 + ESTIMATE_RANGE))} s at its upper bound) "
+                              f"plus its {num(setup)} s setup exceeds {margin_text(account['sessionHours'] * 60)}: "
+                              "split it along the declared axis or declare it resumable"}
+        processes = rows[0].get("processes", 1)
+        slots += [{"account": account["label"], "unit": unit, "setup": setup, "limit": limit}] * (
+            account["sessions"] * processes)
+    state = pack_slots(scale["folds"] * scale["seeds"], slots)
+    quotas = {account["label"]: account["quotaHours"] for _, _, account in members}
+    result = finish_option(state, device, quotas)
+    over = [item["account"] for item in result["perAccount"] if item["overQuota"]]
+    unknown = [item["account"] for item in result["perAccount"] if item["overQuota"] is None and item["units"]
+               and device != "cpu"]
+    result.update(status="eligible", reason="")
+    if over:
+        result.update(status="over-quota", reason=f"{', '.join(over)} would exceed its weekly quota")
+    elif unknown:
+        result["quotaNote"] = f"{', '.join(unknown)}: unknown weekly quota, not checked; record it before the launch"
+    return result
+
+
+def finish_option(state: list[dict], device: str, quotas: dict) -> dict:
+    accelerated = device != "cpu"
+    by_account: dict[str, dict] = {}
+    for slot in state:
+        entry = by_account.setdefault(slot["account"], {"account": slot["account"], "units": 0, "busy": 0.0})
+        entry["units"] += slot["units"]
+        entry["busy"] += slot["busy"]
+    per = []
+    for label, entry in by_account.items():
+        hours = entry["busy"] / 3600 if accelerated else 0.0
+        quota = quotas.get(label)
+        per.append({"account": label, "units": entry["units"], "acceleratorHours": num(hours),
+                    "quotaHours": None if quota is None else num(quota),
+                    "overQuota": None if quota is None or not accelerated else hours > quota})
+    makespan = max(slot["finish"] for slot in state)
+    return {"makespanSeconds": seconds_range(makespan), "slots": len(state),
+            "acceleratorHours": num(sum(item["acceleratorHours"] for item in per)),
+            "perAccount": per}
+
+
+def split_options(by_candidate: dict, scale: dict, stage: str, accounts: dict, singles: dict) -> list[dict]:
+    """One split per service and machine measured on two or more paid owners'
+    own rows, kept only when it passes assess's worth-it thresholds."""
+    groups: dict[tuple, list] = {}
+    for candidate, items in sorted(by_candidate.items()):
+        host, service, machine = candidate_kind(candidate)
+        account = accounts.get(host)
+        if service is None or machine is None or account is None:
+            continue
+        if account["tier"] is not None and account["tier"] not in PAID_COLAB_TIERS:
+            continue
+        groups.setdefault((service, machine), []).append((candidate, best_setting(items)[0], account))
+    options = []
+    for (service, machine), members in groups.items():
+        if len(members) < 2:
+            continue
+        name = f"{service}/{machine} x{len(members)}"
+        option = {"option": name, "kind": "split", "candidates": [m[0] for m in members],
+                  "device": members[0][1][0]["device"], "settings": {}, "processes": 1,
+                  "accounts": [m[2]["label"] for m in members]}
+        option.update(remote_makespan(members, scale))
+        fits = [singles[m[0]] for m in members if singles[m[0]]["status"] == "eligible"]
+        if option["status"] == "eligible" and fits:
+            single = min(fits, key=lambda item: item["makespanSeconds"]["high"])
+            speedup = single["makespanSeconds"]["seconds"] / option["makespanSeconds"]["seconds"]
+            saved = (single["makespanSeconds"]["seconds"] - option["makespanSeconds"]["seconds"]) / 60
+            option.update(speedup=num(speedup), savedMinutes=num(saved), baseline=single["option"])
+            if speedup < MIN_SPEEDUP or saved < MIN_SAVED_MINUTES:
+                option.update(status="split-not-worth",
+                              reason=f"speed-up {num(speedup)} over {single['option']} alone and {num(saved)} saved "
+                                     f"minutes are below the {MIN_SPEEDUP} and {MIN_SAVED_MINUTES}-minute thresholds")
+            else:
+                option["reason"] = (f"speed-up {num(speedup)} >= {MIN_SPEEDUP} and {num(saved)} saved minutes >= "
+                                    f"{MIN_SAVED_MINUTES} over {single['option']} alone")
+        options.append(option)
+    return options
+
+
+def unmeasured_candidates(data: dict, by_candidate: dict, accounts: dict, asked: list[str]) -> list[dict]:
+    """Every candidate the team has and the record does not: what would measure it."""
+    measured = set(by_candidate)
+    local_info = (data.get("hosts") or {}).get("local") or {}
+    probe = f"run {PROBE} on the target's interpreter with --candidates "
+    rows = []
+    if not any(name == "local" or name.startswith("local-cpu-") for name in measured):
+        rows.append({"candidate": "local-cpu-1", "measureWith": probe + "local-cpu-1"})
+    for name, key in (("local-mps", "mps"), ("local-cuda", "cuda")):
+        if local_info.get(key) and name not in measured:
+            rows.append({"candidate": name, "measureWith": probe + name})
+    rehearse = ("a rehearsal on {host} that runs the timing probe there (generate-job{flag}, submit --smoke, "
+                "fetch --smoke) and appends its own row")
+    for host in sorted(accounts):
+        mine = [candidate_kind(name)[2] for name in measured if candidate_kind(name)[0] == host]
+        if not mine:
+            rows.append({"candidate": host, "measureWith": rehearse.format(host=host, flag="")})
+            continue
+        if "cpu" not in [machine and machine.lower() for machine in mine]:
+            rows.append({"candidate": f"{host}/cpu",
+                         "measureWith": rehearse.format(host=host, flag=" --accelerator-kind cpu")})
+        if all(machine and machine.lower() == "cpu" for machine in mine):
+            rows.append({"candidate": f"{host}/gpu", "measureWith": rehearse.format(host=host, flag="")})
+    listed = {item["candidate"] for item in rows}
+    for name in asked:
+        if name not in measured and name not in listed:
+            host = candidate_kind(name)[0]
+            rows.append({"candidate": name, "measureWith": probe + name if host == "local" else
+                         rehearse.format(host=host, flag=" --accelerator-kind cpu" if name.endswith("/cpu") else "")})
+    return rows
+
+
+def representation_advice(by_candidate: dict) -> tuple[list[dict], list[dict]]:
+    advice, comparisons = [], []
+    for candidate, items in sorted(by_candidate.items()):
+        rows, _ = best_setting(items)
+        share = load_share(rows)
+        if share is not None and share > LOAD_SHARE_THRESHOLD:
+            advice.append({"candidate": candidate, "loadShare": num(share), "threshold": LOAD_SHARE_THRESHOLD,
+                           "dataSource": rows[0].get("dataSource", "raw"), "rewritesData": False,
+                           "advice": (f"loading takes {round(share * 100)}% of an epoch on {candidate}, above the "
+                                      f"{round(LOAD_SHARE_THRESHOLD * 100)}% threshold: prepare a cached "
+                                      f"preprocessed form ({', '.join(CACHED_FORMS)}) and probe again with "
+                                      "--data-source cached; advice only, no data is rewritten")})
+        sources = {source: [item for item in items if item.get("dataSource") == source] for source in DATA_SOURCES}
+        if all(sources.values()):
+            comparisons.append({"candidate": candidate,
+                                "rawSecondsPerUnit": num(per_unit_of(best_setting(sources["raw"])[0])),
+                                "cachedSecondsPerUnit": num(per_unit_of(best_setting(sources["cached"])[0]))})
+    return advice, comparisons
+
+
+def is_cpu_candidate(name: str) -> bool:
+    return name.startswith("local-cpu-") or name.lower().endswith("/cpu")
+
+
+def measure_first(unmeasured: list[dict], timing: str) -> list[dict]:
+    """The CPU candidates listed as unmeasured, with the probe command that
+    measures each: the local one directly, a remote one inside its rehearsal."""
+    entry = "--path <target>/src --entry <package>.<module>:<function> --arm <arm id>"
+    rows = []
+    for item in unmeasured:
+        name = item["candidate"]
+        if not is_cpu_candidate(name):
+            continue
+        host = candidate_kind(name)[0]
+        command = (f"<target>/.venv/bin/python {PROBE} {entry} --out {timing} --candidates {name}"
+                   if host == "local" else
+                   f"python {PROBE} {entry} --out {timing} --host {host} --candidates {name}")
+        rows.append({"candidate": name, "measureWith": item["measureWith"], "command": command})
+    return rows
+
+
+def epoch_seconds(option: dict, by_candidate: dict) -> float:
+    """An option's measured seconds per epoch: its fastest candidate's, at its fastest setting."""
+    return min(per_unit_of(best_setting(by_candidate[name])[0]) for name in option["candidates"])
+
+
+def cpu_evidence(best: dict, cpu: dict, by_candidate: dict) -> str:
+    """How an accelerator option compares with one measured CPU option."""
+    label = cpu["option"] + ("" if cpu["status"] == "eligible" else f", {cpu['status']}")
+    if cpu["makespanSeconds"] is None:
+        return f"{label}: no makespan to compare"
+    return (f"{label}: {num(epoch_seconds(best, by_candidate))} s per epoch against "
+            f"{num(epoch_seconds(cpu, by_candidate))} s, makespan upper bound {best['makespanSeconds']['high']} s "
+            f"against {cpu['makespanSeconds']['high']} s")
+
+
+def stage_plan(stage: str, data: dict, by_candidate: dict, accounts: dict, advice: list[dict],
+               first: list[dict]) -> dict:
+    scale = data["scales"][stage]
+    singles = {candidate: measured_option(candidate, items, scale, stage, accounts)
+               for candidate, items in sorted(by_candidate.items())}
+    options = [*singles.values(), *split_options(by_candidate, scale, stage, accounts, singles)]
+    eligible = [item for item in options if item["status"] == "eligible"]
+
+    def key(item: dict) -> tuple:
+        return (item["makespanSeconds"]["high"], item["acceleratorHours"], item["device"] != "cpu",
+                item["kind"] != "local", item["option"])
+
+    eligible.sort(key=key)
+    result = {"units": scale["folds"] * scale["seeds"], "unit": UNIT_DEFINITION, "options": options,
+              "status": "recommended", "recommended": None, "measureFirst": [], "lost": []}
+    leader = None
+    if not eligible:
+        result["status"] = "no-eligible"
+        result["reason"] = ("no measured candidate is eligible: measure one listed under unmeasured, or declare "
+                            "the accounts of the ones measured")
+    else:
+        best = leader = eligible[0]
+        high = best["makespanSeconds"]["high"]
+        reason = f"{best['option']} has the smallest measured makespan upper bound ({high} s)"
+        accelerators = [item for item in options if item["device"] != "cpu" and item is not best]
+        # An accelerator wins only over a measured CPU option it beat on makespan: an eligible
+        # one it outran, or one that has a makespan and is ineligible (over the local limit).
+        cpus = sorted((item for item in options if item["device"] == "cpu"),
+                      key=lambda item: (item["makespanSeconds"] is None,
+                                        item["makespanSeconds"]["high"] if item["makespanSeconds"] else 0,
+                                        item["option"]))
+        beaten = [item for item in cpus if item["makespanSeconds"] is not None
+                  and item["makespanSeconds"]["high"] > high]
+        if best["device"] == "cpu" and accelerators:
+            reason += "; the CPU wins: no accelerator was measured faster"
+        elif best["device"] != "cpu" and beaten:
+            reason += ("; an accelerator wins because it was measured faster than "
+                       + cpu_evidence(best, beaten[0], by_candidate))
+        if best["device"] != "cpu" and not beaten:
+            evidence = "; ".join(cpu_evidence(best, item, by_candidate) for item in cpus)
+            why = f"it beat no measured CPU candidate ({evidence})" if cpus else "no CPU candidate was measured"
+            then = (f"measure {', '.join(item['candidate'] for item in first)} first, then plan again" if first else
+                    "no unmeasured CPU candidate is left to name: measure a CPU candidate the team has (the timing "
+                    "probe locally, a rehearsal with generate-job --accelerator-kind cpu remotely), then plan again")
+            reason = (f"no firm recommendation: {best['option']} has the smallest measured makespan upper bound "
+                      f"({high} s), but {why}, so an accelerator is never chosen by default; {then}")
+            result.update(status="needs-measurement", provisional=dict(best, reason=reason), measureFirst=first,
+                          reason=reason)
+        else:
+            if best["kind"] == "split":
+                reason += f"; {best['reason']}"
+            result["recommended"] = dict(best, reason=reason)
+            mine = next((item["advice"] for item in advice if item["candidate"] in best["candidates"]), None)
+            if mine:
+                result["recommended"]["representationAdvice"] = mine
+            result["reason"] = reason
+    winner = result["recommended"]
+    for item in options:
+        if leader is not None and item["option"] == leader["option"]:
+            continue
+        if item["status"] != "eligible":
+            why = item["reason"]
+        elif item["makespanSeconds"]["high"] > leader["makespanSeconds"]["high"]:
+            why = (f"slower: makespan upper bound {item['makespanSeconds']['high']} s against "
+                   f"{leader['option']}'s {leader['makespanSeconds']['high']} s")
+        else:
+            why = (f"as fast as {leader['option']}, but it spends {item['acceleratorHours']} accelerator hours "
+                   "or is not the CPU or local option")
+        result["lost"].append({"option": item["option"], "status": item["status"], "reason": why})
+    if stage == "poc":
+        result["pocBudget"] = (UNMEASURED if winner is None else
+                               "within" if winner["makespanSeconds"]["high"] <= POC_BUDGET_SECONDS else "exceeds")
+        if result["pocBudget"] == "exceeds":
+            result["reason"] += ("; it exceeds the 5-hour proof-of-concept budget: reduce the design (subjects, "
+                                 "epochs, folds, seeds, arms) before the pilot")
+    return result
+
+
+def cmd_plan(args, root: Path, today: str) -> dict:
+    if args.timing is None:
+        raise Refusal("missing-input", "--timing is required: the timing probe's Results/timing.json")
+    stage = (args.stage or "both").strip().lower()
+    if stage not in (*STAGES, "both"):
+        raise Refusal("bad-argument", f"--stage {args.stage!r}: one of poc, full or both")
+    asked = []
+    for raw in args.candidate or []:
+        for name in (part.strip() for part in raw.split(",")):
+            if not CANDIDATE_PATTERN.match(name):
+                raise Refusal("bad-argument", f"--candidate {name!r}: local-cpu-<processes>, local-mps, "
+                                              "local-cuda or <host>:<owner>/<machine>")
+            asked.append(name)
+    path, inside = resolved(root, args.timing)
+    if args.record is not None and not inside:
+        raise Refusal("timing-outside-workspace", f"--timing {args.timing} resolves outside the workspace {root}")
+    if args.record is None:
+        path = Path(args.timing) if Path(args.timing).is_absolute() else root / args.timing
+    data = load_timing(path, args.timing)
+    _, by_candidate = measured_candidates(data)
+    entries = (load_accounts(root, args.account, args.accounts_file)
+               if args.account or args.accounts_file else [])
+    pool = account_pool(entries)
+    accounts = {entry["label"]: entry for entry in pool["eligible"]}
+    for item in pool["excluded"]:
+        entry = next(e for e in entries if f"{e['service']}:{e['owner']}" == item["account"])
+        accounts[item["account"]] = dict(entry, label=item["account"])
+    advice, comparisons = representation_advice(by_candidate)
+    stages = STAGES if stage == "both" else (stage,)
+    unmeasured = unmeasured_candidates(data, by_candidate, accounts, asked)
+    plans = {}
+    first = measure_first(unmeasured, args.timing)
+    for name in stages:
+        plans[name] = stage_plan(name, data, by_candidate, accounts, advice, first)
+        plans[name]["unmeasured"] = unmeasured
+    result = {"timing": args.timing, "plans": plans, "representationAdvice": advice,
+              "dataSourceComparisons": comparisons,
+              "accounts": sorted(accounts), "ignoredAccounts": pool["ignored"],
+              "excludedAccounts": [{"account": item["account"], "tier": item["tier"]} for item in pool["excluded"]],
+              "rules": {"localLimitSeconds": LOCAL_LIMIT_SECONDS, "pocBudgetSeconds": POC_BUDGET_SECONDS,
+                        "bound": "high", "range": RANGE_NOTE, "loadShareThreshold": LOAD_SHARE_THRESHOLD,
+                        "minSpeedup": MIN_SPEEDUP, "minSavedMinutes": MIN_SAVED_MINUTES,
+                        "sessionMarginPercent": SESSION_MARGIN_PERCENT,
+                        "makespan": ("the stage's units (" + UNIT_DEFINITION + ") packed onto the option's slots "
+                                     "(processes locally, sessions x processes per account), each slot paying its "
+                                     "setup once per session, from each candidate's own rows at its fastest "
+                                     "measured setting"),
+                        "order": "smallest makespan upper bound, then fewest accelerator hours, then CPU, then local"},
+              "unmeasuredMeans": "no row of that candidate: it is never extrapolated from another host or device",
+              "readOnly": True, "launchAuthorization": False}
+    if args.record is not None:
+        result["recorded"] = record(root, args.record, result, today, prefix="plan")
+    return result
+
+
 def cmd_checklist(args, root: Path, today: str) -> dict:
     return {"checklist": [dict(item) for item in CHECKLIST]}
 
@@ -1433,6 +2012,16 @@ def build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--record", default=None)
     estimate.add_argument("--json", action="store_true", help="JSON output (the only output; accepted for symmetry)")
     estimate.set_defaults(func=cmd_estimate)
+    placement_plan = verbs.add_parser("plan", help="the fastest affordable placement over every measured "
+                                                   "candidate, read-only")
+    placement_plan.add_argument("--timing", default=None)
+    placement_plan.add_argument("--stage", default=None)
+    placement_plan.add_argument("--account", action="append", default=None)
+    placement_plan.add_argument("--accounts-file", default=None)
+    placement_plan.add_argument("--candidate", action="append", default=None,
+                                help="a candidate the team has, listed as unmeasured when the record lacks it")
+    placement_plan.add_argument("--record", default=None)
+    placement_plan.set_defaults(func=cmd_plan)
     verbs.add_parser("checklist", help="the reproducibility checklist").set_defaults(func=cmd_checklist)
     verbs.add_parser("stamp-fields", help="the fields to declare identicalAcrossShards").set_defaults(
         func=cmd_stamp_fields)

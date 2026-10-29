@@ -193,13 +193,14 @@ class HarnessProjectionTests(unittest.TestCase):
 
 
 class HarnessCommandProjectionTests(unittest.TestCase):
-    """The fifteen skills arrive as slash commands, plus the OpenCode safety plugin."""
+    """The eighteen skills arrive as slash commands, plus the OpenCode safety plugin."""
 
     COMMAND_NAMES = (
         "datasets",
         "experiment-diagrams",
         "experimental-deliberation",
         "experimental-implementation",
+        "experiments-tutor",
         "figure-review",
         "hyperparameter-search",
         "kaggle-accounts",
@@ -215,7 +216,7 @@ class HarnessCommandProjectionTests(unittest.TestCase):
         "upgrade-project",
     )
 
-    def test_init_projects_fifteen_commands_per_command_harness(self) -> None:
+    def test_init_projects_eighteen_commands_per_command_harness(self) -> None:
         workspace = make_workspace(new_tmp(self))
         for harness in (".opencode/commands", ".claude/commands", ".pi/prompts"):
             with self.subTest(harness=harness):

@@ -279,7 +279,7 @@ over the timing probe's record.
   declared pilot; nothing guesses it.
 - **The estimate.** `estimate --timing <Name>/Results/timing.json --record
   <Name>` gives each stage (`poc`, `full`) a range per host, from the one
-  formula that verb defines. A remote GPU host reads `unmeasured` until a
+  formula that verb defines. A remote host reads `unmeasured` until a
   measured rehearsal on that host adds its own timing; local timings never
   stand in for it.
 - **Where it runs, and how long a proof of concept may take.** The same
@@ -290,6 +290,22 @@ over the timing probe's record.
   when `placement.pocBudget` reads `exceeds`, the design is reduced (subjects,
   epochs, folds, seeds or arms) and estimated again before the pilot is asked
   for.
+- **Placement by measurement, never by default.** Before the proof of
+  concept or the full run is placed, run `remote-parallelism`'s timing probe
+  (`skills/remote-parallelism/scripts/timing_probe.py`, under the target's own
+  interpreter against its epoch function) over the candidates: the local CPU
+  with one process and with several processes, any local accelerator, each
+  account's machine once its own rehearsal adds the row (a CPU-only session
+  included), and the batch, loader and thread settings. Then run `plan
+  --timing <Name>/Results/timing.json --record <Name>` with the team's
+  accounts. `plan` compares CPU against GPU and local against cloud, counts
+  local processes and the parallelism of several accounts, and recommends an
+  accelerator only when it was measured faster or cheaper: a GPU is never by
+  default. A candidate that reads `unmeasured` is measured before it is
+  chosen, never assumed. A remote CPU-only session is generated with
+  `generate-job --accelerator-kind cpu`. When loading dominates an epoch, the
+  plan's representation advice (a cached preprocessed form of the data) goes
+  to the operator. The plan, like the estimate, is never authorization.
 - **What it is.** A measurement-derived range (±20%, single-probe
   extrapolation), never a promise, and never authorization: the pilot and the
   launch stay the operator's to approve after reading it.
@@ -335,8 +351,8 @@ the dataset only when the value is null. The details live in
 Only when the bound experiments revision declares a Hyperparameter Search
 subsection. The step sits after the proof of concept and the timing estimate,
 and before the full runs: the timing probe sizes it (`plan --timing`), and it
-is placed like the full runs — a step routed to a remote GPU notebook is
-generated, rehearsed and launched through `remote-execution`, behind the
+is placed like the full runs, by `plan` — a step routed to a remote notebook
+(a GPU or a CPU-only session, as measured) is generated, rehearsed and launched through `remote-execution`, behind the
 operator's consent. It runs through `/hyperparameter-search`
 (`skills/hyperparameter-search/SKILL.md`), which validates the plan, names one
 study per arm and outer fold and reports their importance and contour figures

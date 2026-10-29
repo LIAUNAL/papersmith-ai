@@ -37,7 +37,7 @@ from papersmith.kit import resolve_and_validate
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The fifteen command-bearing skills, in the deterministic order
+#: The eighteen command-bearing skills, in the deterministic order
 #: ``collect_commands`` sorts them into. Pinned literally so a new or renamed
 #: top-level skill has to be acknowledged here.
 COMMAND_NAMES = (
@@ -45,6 +45,7 @@ COMMAND_NAMES = (
     "experiment-diagrams",
     "experimental-deliberation",
     "experimental-implementation",
+    "experiments-tutor",
     "figure-review",
     "hyperparameter-search",
     "kaggle-accounts",
@@ -60,7 +61,7 @@ COMMAND_NAMES = (
     "upgrade-project",
 )
 
-#: The twenty-five agent definitions, in the deterministic order
+#: The twenty-six agent definitions, in the deterministic order
 #: ``collect_pi_agents`` sorts them into. Pinned literally so a new or renamed
 #: agent has to be acknowledged here -- and in the `.pi/agents/` projection
 #: the Pi harness discovers.
@@ -75,6 +76,7 @@ AGENT_NAMES = (
     "experimental-validation",
     "experiments-build",
     "experiments-reviewer",
+    "experiments-tutor",
     "experiments-walk",
     "figure-auditor",
     "implementation-build",
@@ -187,7 +189,7 @@ class GeneratorsTests(unittest.TestCase):
         workspace = _workspace(self.new_tmp())
         assert [agent["name"] for agent in collect_pi_agents(workspace, warnings=[])] == list(AGENT_NAMES)
         pi = render_files(workspace, tools=("pi",))
-        assert sum(1 for path in pi if path.startswith(".pi/agents/")) == 25
+        assert sum(1 for path in pi if path.startswith(".pi/agents/")) == 26
         assert ".pi/agents/sota-scout.md" in pi
         assert not any(
             path.startswith(".pi/agents/")
@@ -202,7 +204,7 @@ class GeneratorsTests(unittest.TestCase):
         workspace = _workspace(self.new_tmp())
         assert [a["name"] for a in collect_opencode_agents(workspace, warnings=[])] == list(AGENT_NAMES)
         opencode = render_files(workspace, tools=("opencode",))
-        assert sum(1 for path in opencode if path.startswith(".opencode/agents/")) == 25
+        assert sum(1 for path in opencode if path.startswith(".opencode/agents/")) == 26
         assert ".opencode/agents/sota-scout.md" in opencode
         for tool in ("claude", "pi", "antigravity"):
             assert not any(
@@ -291,7 +293,7 @@ class GeneratorsTests(unittest.TestCase):
         (agents / "dir.md").mkdir()
         sink: list[str] = []
         names = [a["name"] for a in collect_opencode_agents(workspace, warnings=sink)]
-        assert len(names) == 25
+        assert len(names) == 26
         for stem in ("broken", "unclosed", "nameless", "undescribed", "unsafe", "binary", "dir"):
             assert any(f"'{stem}'" in w for w in sink), (stem, sink)
 
@@ -328,7 +330,7 @@ class GeneratorsTests(unittest.TestCase):
         workspace = _workspace(self.new_tmp())
         assert [a["name"] for a in collect_antigravity_agents(workspace, warnings=[])] == list(AGENT_NAMES)
         rendered = render_files(workspace, tools=("antigravity",))
-        assert sum(1 for path in rendered if path.startswith(".agents/agents/")) == 25
+        assert sum(1 for path in rendered if path.startswith(".agents/agents/")) == 26
         assert ".agents/agents/sota-scout.md" in rendered
         for tool in ("claude", "pi", "opencode"):
             assert not any(
@@ -415,7 +417,7 @@ class GeneratorsTests(unittest.TestCase):
         (agents / "dir.md").mkdir()
         sink: list[str] = []
         names = [a["name"] for a in collect_antigravity_agents(workspace, warnings=sink)]
-        assert len(names) == 25
+        assert len(names) == 26
         for stem in ("broken", "unclosed", "nameless", "undescribed", "unsafe", "binary", "dir"):
             assert any(f"'{stem}'" in w for w in sink), (stem, sink)
 
@@ -480,6 +482,45 @@ class GeneratorsTests(unittest.TestCase):
             "read", "find", "grep", "write", "edit", "bash", "fetch_content",
         ]
 
+    def test_a_model_line_stays_in_the_claude_projection(self) -> None:
+        """`.claude/agents` is copied, not rendered, so a source's `model:` line
+        is already the Claude projection. No other harness here has a cited
+        per-agent model mechanism, so each translator writes no model at all,
+        whether the source names one or omits it."""
+        named = ("---\nname: light\ndescription: d\ntools: Read, Glob, Grep\n"
+                 "model: sonnet\n---\nbody\n")
+        omitted = "---\nname: inherit\ndescription: d\ntools: Read, Glob, Grep\n---\nbody\n"
+        for translate in (_translate_agent_for_pi, _translate_agent_for_opencode,
+                          _translate_agent_for_antigravity):
+            for source in (named, omitted):
+                with self.subTest(translator=translate.__name__, source=source):
+                    entry, reason, _ = translate(source)
+                    assert reason is None and entry is not None
+                    head = entry["text"].split("\n---\n")[0].removeprefix("---\n")
+                    meta = yaml.safe_load(head)
+                    assert "model" not in meta and "tier" not in meta, head
+                    assert entry["text"].endswith("---\nbody\n")
+
+    def test_the_pi_translator_drops_only_a_top_level_model_line(self) -> None:
+        """A nested key that happens to be called `model` belongs to its parent
+        mapping and survives; only the agent's own top-level `model:` goes."""
+        source = ("---\nname: nested\ndescription: d\ntools: Read\nmodel: sonnet\n"
+                  "metadata:\n  model: kept\n---\nbody\n")
+        entry, reason, _ = _translate_agent_for_pi(source)
+        assert reason is None and entry is not None
+        meta = yaml.safe_load(entry["text"].split("\n---\n")[0].removeprefix("---\n"))
+        assert "model" not in meta
+        assert meta["metadata"] == {"model": "kept"}
+
+    def test_the_claude_projection_carries_the_source_model_line_verbatim(self) -> None:
+        workspace = _workspace(self.new_tmp())
+        for name, expected in (("math-tutor", ["model: sonnet"]), ("sota-scout", [])):
+            with self.subTest(agent=name):
+                header = (workspace / ".claude" / "agents" / f"{name}.md").read_text(
+                    encoding="utf-8").split("---\n", 2)[1]
+                assert [line for line in header.splitlines()
+                        if line.startswith("model:")] == expected
+
     def test_pi_agent_projection_skips_malformed_definitions(self) -> None:
         workspace = _workspace(self.new_tmp())
         (workspace / ".claude" / "agents" / "broken.md").write_text("no frontmatter\n", encoding="utf-8")
@@ -487,7 +528,7 @@ class GeneratorsTests(unittest.TestCase):
         names = [agent["name"] for agent in collect_pi_agents(workspace, warnings=sink)]
         assert "broken" not in names
         assert any("broken" in warning for warning in sink), sink
-        assert len(names) == 25
+        assert len(names) == 26
 
     def test_unsupported_runtime_generator_still_raises(self) -> None:
         workspace = _workspace(self.new_tmp())

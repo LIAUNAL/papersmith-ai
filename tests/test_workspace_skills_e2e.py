@@ -33,6 +33,7 @@ SKILL_NAMES = (
     "experiment-diagrams",
     "experimental-deliberation",
     "experimental-implementation",
+    "experiments-tutor",
     "figure-review",
     "hyperparameter-search",
     "kaggle-accounts",

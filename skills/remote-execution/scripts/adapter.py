@@ -421,6 +421,22 @@ def resolve_default_accelerator(name: str) -> DefaultAcceleratorProvider | None:
     return _DEFAULT_ACCELERATOR_REGISTRY.get(name)
 
 
+# Which services can run a job on a CPU-only session (`generate-job
+# --accelerator-kind cpu`). Service knowledge again, and opt-in: a backend
+# that registers nothing here has a CPU-only job refused at generation,
+# naming the service, rather than handed whatever machine it defaults to.
+_CPU_ONLY_SERVICES: set[str] = set()
+
+
+def register_cpu_only(name: str) -> None:
+    """Declare that the service named `name` can run a CPU-only session."""
+    _CPU_ONLY_SERVICES.add(name)
+
+
+def supports_cpu_only(name: str) -> bool:
+    return name in _CPU_ONLY_SERVICES
+
+
 # A FOURTH, separate registry — deliberately not a seventh `Adapter` ABC
 # operation, for the identical reason the metadata registry above is not:
 # the spec pins that ABC at exactly six operations

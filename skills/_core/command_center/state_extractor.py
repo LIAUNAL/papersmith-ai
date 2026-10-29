@@ -153,6 +153,8 @@ AGENT_STAGES = {
     "math-tutor": "proposal",
     "experimental-publish": "experimental-deliberation",
     "experimental-validation": "experimental-deliberation",
+    # Tutors the experiment decisions from the experiments panel; hands changes to the deliberation.
+    "experiments-tutor": "experimental-deliberation",
     "experiments-build": "experimental-implementation",
     "experiments-walk": "experimental-implementation",
     "experiments-reviewer": "experimental-implementation",

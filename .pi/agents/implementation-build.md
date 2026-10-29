@@ -16,6 +16,12 @@ stretch: audit
 Skill: `skills/proposal-implementation/SKILL.md`. Load it and follow it.
 Every rule is there and none is repeated here.
 
+Its per-state sections live beside it: each `Stage reference:` line in
+`SKILL.md` names the file, `references/next-step-<nextStep>.md`, that holds
+what to do when `probe` reports that `nextStep`. Read `SKILL.md`, then only the
+reference for the `nextStep` `probe` reports now, and the next one when it
+changes.
+
 ## Your stretch, and its two ends
 
 You begin **after** the operator authorized that code be written and approved the
@@ -65,6 +71,18 @@ local estimate exceeds 20 minutes is reported as a remote step on a cloud host, 
 locally, and a proof of concept whose `placement.pocBudget` reads `exceeds`
 (over 5 hours on its host) is reported as a design to reduce before the pilot,
 never run as it stands.
+
+Before the stage's placement is taken, run `remote-parallelism`'s timing
+probe (`scripts/timing_probe.py` of that skill, under the target's own
+interpreter) over the candidates — the local CPU with one and with several
+processes, any local accelerator, and the batch, loader and thread settings —
+then its `plan` over the record with the team's accounts and `--record`.
+Report the recommended option with its device, settings and makespan, why each
+other option lost, every candidate that reads `unmeasured` and what would
+measure it, and any representation advice. An accelerator is taken only when
+`plan` measured it faster or cheaper, never by default; a remote CPU-only
+session is generated with `generate-job --accelerator-kind cpu`. The plan is
+never authorization.
 
 ## Every remote unit fits one session, or resumes
 
