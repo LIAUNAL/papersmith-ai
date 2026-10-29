@@ -77,10 +77,11 @@
 
 import { createInterface } from 'node:readline';
 import { readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createJiti } from 'jiti';
 
-const engineDir = path.dirname(new URL(import.meta.url).pathname);
+const engineDir = path.dirname(fileURLToPath(import.meta.url));
 const jiti = createJiti(import.meta.url);
 
 const host = await jiti.import(path.join(engineDir, 'proposal-workspace.ts'));
