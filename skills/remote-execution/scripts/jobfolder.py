@@ -159,6 +159,8 @@ RUNNER_FILENAME = "runner.ipynb"
 PARTIAL_SUFFIX = ".partial"
 STALE_SUFFIX_PREFIX = ".stale-"
 RUN_CONFIG_SCHEMA_VERSION = 1
+#: The accelerator kind of a CPU-only job: `{"kind": "cpu", "architectures": []}`.
+CPU_ONLY_KIND = "cpu"
 
 # `scripts/jobfolder.py` -> `scripts/` -> `remote-execution/` -> `assets/`.
 # Holds the two runner assets' real, byte-for-byte-copied content;
@@ -2082,7 +2084,13 @@ def build_run_config(
             "judge is not a value run-config.json can express"
         )
     has_accelerator = accelerator_kind is not None or accelerator_architectures is not None
-    if has_accelerator and not (accelerator_kind and accelerator_architectures):
+    cpu_only = accelerator_kind == CPU_ONLY_KIND
+    if cpu_only and accelerator_architectures:
+        raise JobFolderError(
+            "a CPU-only job (accelerator kind 'cpu') declares no accelerator "
+            "architecture; drop --accelerator-architecture"
+        )
+    if has_accelerator and not cpu_only and not (accelerator_kind and accelerator_architectures):
         raise JobFolderError(
             "accelerator_kind and accelerator_architectures must both be "
             "given (and non-empty), or both omitted; a kind with no "
@@ -2162,7 +2170,7 @@ def build_run_config(
     if has_accelerator:
         run_config["accelerator"] = {
             "kind": accelerator_kind,
-            "architectures": list(accelerator_architectures),
+            "architectures": list(accelerator_architectures or ()),
         }
     if local_budget_seconds is not None:
         run_config["localBudget"] = {"seconds": local_budget_seconds}
@@ -2552,6 +2560,15 @@ def generate_job(
     # default, never a value this module invents. An explicit caller value
     # (either half) always wins and skips this lookup entirely — matching
     # `build_run_config()`'s own refusal below for a half-given pair.
+    # A CPU-only job runs only where the service declares a CPU-only session;
+    # anywhere else it is refused here, before a byte is written, rather than
+    # landing on whatever machine the service hands out.
+    if accelerator_kind == CPU_ONLY_KIND and not ADAPTER.supports_cpu_only(service):
+        raise JobFolderError(
+            f"the {service!r} backend declares no CPU-only session, so "
+            "--accelerator-kind cpu cannot be honoured there; run the job on a "
+            "service that declares one, or omit the flag for its default machine"
+        )
     if accelerator_kind is None and accelerator_architectures is None:
         default_accelerator = ADAPTER.resolve_default_accelerator(service)
         if default_accelerator is not None:

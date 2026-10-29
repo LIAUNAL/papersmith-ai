@@ -3529,19 +3529,56 @@ def _preflight_accelerator(adapter: "ADAPTER.Adapter", run_config: Mapping, serv
                               f"the plan expects {expect}", regenerate)
     default = ADAPTER.resolve_default_accelerator(service)
     declared = run_config.get("accelerator")
+    if isinstance(declared, Mapping) and declared.get("kind") == JOBFOLDER.CPU_ONLY_KIND:
+        return _preflight_row("accelerator", "pass", f"the job will request {label}: a CPU-only "
+                              "session, generated with --accelerator-kind cpu")
     if default is not None:
         kind, default_architectures = default()
         if declared == {"kind": kind, "architectures": list(default_architectures)}:
             return _preflight_row(
                 "accelerator", "warn", f"the job will request {label}, the service default "
-                "(no --accelerator-* flag was given at generation)",
-                "confirm it with `--expect-accelerator <the plan's accelerator>`; if the plan "
-                f"names another, {regenerate}")
+                "(no --accelerator-* flag was given at generation): a default, not a measured "
+                "choice",
+                "compare CPU and GPU candidates with `/remote-parallelism plan` over the timing "
+                "record; confirm a GPU it recommends with `--expect-accelerator <the plan's "
+                "accelerator>`, regenerate with `--accelerator-kind cpu` when it recommends a "
+                f"CPU-only session, and if the plan names another GPU, {regenerate}")
     return _preflight_row("accelerator", "pass", f"the job will request {label}")
 
 
+def _session_fit_rows(par, items: list[dict], run_config: Mapping, service: str,
+                      candidate: str | None) -> tuple[list[dict] | None, str, dict | None]:
+    """A schema 2 record's rows for this job: its named `candidate`, or every
+    candidate of this service on the job's own kind of machine (CPU-only or
+    accelerator); the slowest of them is the one a unit must fit.
+    Returns the rows, the candidate read, and a row that ends the check early."""
+    declared = run_config.get("accelerator")
+    cpu_job = isinstance(declared, Mapping) and declared.get("kind") == JOBFOLDER.CPU_ONLY_KIND
+    kind = "CPU-only" if cpu_job else "accelerator"
+    if candidate is not None:
+        items = [item for item in items if par.candidate_of(item) == candidate]
+        if items and (items[0]["device"] == "cpu") != cpu_job:
+            return None, kind, _preflight_row(
+                "session-fit", "warn", f"{candidate} is not a {kind} candidate, and this job runs "
+                f"on {'a CPU-only session' if cpu_job else 'an accelerator'}",
+                "name a candidate of the job's own machine, or regenerate the job")
+    else:
+        items = [item for item in items if (item["device"] == "cpu") == cpu_job]
+    if not items:
+        return None, kind, _preflight_row(
+            "session-fit", "warn", f"unmeasured: no {kind} row of "
+            f"{candidate or service} in the timing record",
+            "run the timing probe on this service's machine for this job")
+    by_candidate: dict[str, list[dict]] = {}
+    for item in items:
+        by_candidate.setdefault(par.candidate_of(item), []).append(item)
+    slowest = max(by_candidate, key=lambda name: par.per_unit_of(par.best_setting(by_candidate[name])[0]))
+    return par.best_setting(by_candidate[slowest])[0], slowest, None
+
+
 def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, service: str,
-                           timing: Path, stage: str, units: int) -> dict:
+                           timing: Path, stage: str, units: int,
+                           candidate: str | None = None) -> dict:
     limit = _declared_session_limit(adapter)
     if limit is None:
         return _preflight_row("session-fit", "warn", "this service declares no session limit",
@@ -3559,6 +3596,12 @@ def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, serv
                               "repair the timing record")
     items = [item for item in data["measurements"]
              if str(item.get("host", "")).split(":")[0] == service]
+    read = ""
+    if data["schema"] == 2 and items:
+        items, read, refused = _session_fit_rows(par, items, run_config, service, candidate)
+        if refused is not None:
+            return refused
+        read = f"{read}: "
     if not items:
         return _preflight_row(
             "session-fit", "warn", f"unmeasured on {service}: {timing} holds no measurement "
@@ -3572,7 +3615,7 @@ def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, serv
     unit_minutes = float(estimate["high"]) / units / 60
     limit_minutes = limit / 60
     usable = par.usable_session(limit_minutes)
-    measured = (f"{stage} upper bound {par.num(estimate['high'])} s over {units} unit(s) is "
+    measured = (f"{read}{stage} upper bound {par.num(estimate['high'])} s over {units} unit(s) is "
                 f"{par.num(unit_minutes)} minutes per unit against {par.margin_text(limit_minutes)}")
     if unit_minutes <= usable:
         return _preflight_row("session-fit", "pass", f"{measured}: each unit fits one session")
@@ -3671,6 +3714,7 @@ def cmd_preflight(
     interpreter: str | Path | None = None,
     expect_accelerator: str | None = None,
     timing: str | Path | None = None,
+    candidate: str | None = None,
     stage: str = "full",
     units: int = 1,
     local_smoke_kwargs: Mapping | None = None,
@@ -3734,7 +3778,7 @@ def cmd_preflight(
         timing_path = (Path(timing) if timing is not None
                        else resolved_target / product / "Results" / "timing.json")
         rows.append(_preflight_session_fit(adapter, run_config, service, timing_path, stage,
-                                           units))
+                                           units, candidate))
     counts = {status: sum(1 for row in rows if row["status"] == status)
               for status in ("pass", "warn", "fail")}
     return {
@@ -4271,7 +4315,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="override: the expected accelerator kind (e.g. 'cuda'). Omitted "
         "together with --accelerator-architecture, the service adapter's own "
         "registered default is used instead (never a forge-invented value); "
-        "given without --accelerator-architecture, refused.",
+        "given without --accelerator-architecture, refused -- except 'cpu', a "
+        "CPU-only job with no architecture, on a service that declares a "
+        "CPU-only session (refused, naming the service, elsewhere).",
     )
     generate_job.add_argument(
         "--accelerator-architecture", dest="accelerator_architectures",
@@ -4443,6 +4489,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--timing", type=Path, default=None,
         help="the timing record the session-fit check reads (default: "
         "<target>/<product>/Results/timing.json)",
+    )
+    preflight.add_argument(
+        "--candidate", default=None,
+        help="on a schema 2 timing record, the candidate (<host>:<owner>/<machine>) whose rows "
+        "session-fit reads (default: the slowest of this service's candidates on the job's own "
+        "kind of machine)",
     )
     preflight.add_argument("--stage", default="full", choices=("poc", "full"),
                            help="which scale of the timing record the job runs (default full)")
@@ -5004,7 +5056,7 @@ def main(argv: list[str] | None = None) -> int:
                 target=args.target, entrypoint=entrypoint, workers=args.workers,
                 workspace=args.workspace, interpreter=args.interpreter,
                 expect_accelerator=args.expect_accelerator, timing=args.timing,
-                stage=args.stage, units=args.units, local_smoke_kwargs=smoke_kwargs,
+                candidate=args.candidate, stage=args.stage, units=args.units, local_smoke_kwargs=smoke_kwargs,
                 local_timeout=args.local_timeout, skip_rehearsal=args.skip_rehearsal,
                 keep_rehearsal=(args.keep_rehearsal if len(args.entrypoints) == 1
                                 or args.keep_rehearsal is None

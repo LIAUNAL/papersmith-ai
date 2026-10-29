@@ -614,6 +614,7 @@
     const sources = (state.sources || []).length
       ? `<p class="exp-intro">Mediciones: ${(state.sources || []).map((f) => `<a href="${artifactUrl(f)}" target="_blank" rel="noopener"><code>${esc(f)}</code></a>`).join(', ')}</p>`
       : '';
+    const candidates = runCandidates(state, stages.length ? stages : ['poc', 'full'], rows);
     return `<section class="panel exp-run-options" id="expRunOptions">
       <h3 class="panel__title">Opciones de corrida</h3>
       <p class="exp-intro">Por etapa y host: disponibilidad, estimación (rango ${esc(state.note || '±20%, single-probe extrapolation')}) desde las mediciones propias de cada host, y una recomendación. Un host sin medición propia se lee "sin medir"; nunca se escala desde la medición local.</p>
@@ -621,7 +622,41 @@
       ${hint}${sources}
       ${body ? `<div class="table-responsive"><table class="table exp-table"><thead><tr><th>Etapa</th><th>Host</th><th>Disponible</th><th>Estimación</th><th>Motivo</th><th>Recomendación</th></tr></thead>
       <tbody>${body}</tbody></table></div>` : ''}
+      ${candidates}
     </section>`;
+  }
+
+  // run_options' `candidates` and `plan_picks`: one row per candidate (measured
+  // or not) and the latest recorded `plan`'s pick per stage, with its reason.
+  function runCandidates(state, stages, rows) {
+    const list = Array.isArray(state.candidates) ? state.candidates : [];
+    if (!list.length) return '';
+    const picks = state.plan_picks || {};
+    const stageLabel = (stage) => ((rows.find((r) => r.stage === stage) || {}).stage_label || stage);
+    const settings = (value) => Object.entries(value || {}).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(', ');
+    const anyPick = stages.some((stage) => picks[stage]);
+    const pickLines = stages.map((stage) => {
+      const pick = picks[stage];
+      if (!pick) return '';
+      const where = pick.processes > 1 ? ` · ${esc(pick.processes)} procesos` : '';
+      const accounts = (pick.accounts || []).length ? ` · cuentas ${esc(pick.accounts.join(', '))}` : '';
+      return `<p class="exp-intro"><strong>${esc(stageLabel(stage))}</strong> · Plan: <strong>${esc(pick.option)}</strong> (${esc(pick.device || '—')}${where}${accounts}), ${esc(pick.label || '—')}${settings(pick.settings) ? ` · ${settings(pick.settings)}` : ''}<br><small>${esc(pick.reason || '')}</small></p>`;
+    }).join('');
+    const body = stages.map((stage) => list.filter((c) => c.stage === stage).map((c, i, all) => {
+      const status = c.status === 'medido'
+        ? '<span class="badge badge--ok">medido</span>'
+        : `<span class="badge badge--info">${esc(c.status || 'sin medir')}</span>`;
+      const plan = c.plan === 'recomendado' ? '<span class="badge badge--ok">recomendado</span>' : `<small>${esc(c.plan || '')}</small>`;
+      const detail = [c.processes ? `${esc(c.processes)} proceso(s)` : '', settings(c.settings),
+        c.load_share != null ? `carga ${esc(Math.round(c.load_share * 100))}%` : ''].filter(Boolean).join(' · ');
+      const stageCell = i === 0 ? `<td rowspan="${all.length}"><strong>${esc(stageLabel(stage))}</strong></td>` : '';
+      return `<tr>${stageCell}<td><code>${esc(c.candidate)}</code></td><td>${esc(c.device || '—')}</td><td>${status}</td><td>${esc(c.estimate_label || 'sin medir')}</td><td><small>${detail || '—'}</small></td><td><small>${esc(c.reason || '')}</small></td><td>${plan}</td></tr>`;
+    }).join('')).join('');
+    return `<h4 class="exp-h4">Candidatos</h4>
+      <p class="exp-intro">Cada forma de correr la etapa (CPU local con N procesos, acelerador local, cada cuenta y su máquina, CPU remota) con su medición propia. La estimación por candidato es trabajo en serie; <code>/remote-parallelism plan</code> suma procesos, cuentas y preparación, y una GPU solo gana si se midió más rápida.</p>
+      ${anyPick ? pickLines : `<p class="exp-intro"><span class="badge badge--warn">sin plan</span> ${esc(state.plan_hint || 'Sin plan registrado.')}</p>`}
+      <div class="table-responsive"><table class="table exp-table"><thead><tr><th>Etapa</th><th>Candidato</th><th>Dispositivo</th><th>Estado</th><th>Estimación (serie)</th><th>Ajustes</th><th>Motivo</th><th>Plan</th></tr></thead>
+      <tbody>${body}</tbody></table></div>`;
   }
 
   // ---------------------------------------------------------------- team
@@ -675,7 +710,7 @@
         <li><code>/datasets synth</code> crea el toy set sembrado; <code>/datasets search|license|qc|prepare</code> deja el dataset oficial.</li>
         <li>Réplica de los métodos de comparación (<code>/proposal-implementation</code> → <code>paper-replicator</code>): primero el código publicado, auditado; si no existe, reimplementación (<code>REPLICATION.md</code>).</li>
         <li><code>/proposal-implementation</code> construye la <strong>prueba de concepto</strong> (carpeta con <code>AGREED.md</code>).</li>
-        <li>Sonda de tiempo corta (una época de un fold por brazo) en <code>Results/timing.json</code>, antes del piloto y otra vez antes de la corrida completa: la tabla <em>Opciones de corrida</em> estima cada etapa por host (±20%); <code>/remote-parallelism estimate</code> y luego <code>assess --owners &lt;propietarios distintos&gt;</code> deciden si repartir.</li>
+        <li>Sonda de tiempo corta (una época de un fold por brazo) en <code>Results/timing.json</code>, antes del piloto y otra vez antes de la corrida completa: la tabla <em>Opciones de corrida</em> estima cada etapa por host (±20%); <code>/remote-parallelism estimate</code> y luego <code>assess --owners &lt;propietarios distintos&gt;</code> deciden si repartir. Con la sonda por candidatos (<code>timing_probe.py</code>: CPU con N procesos, acelerador, lote, workers del cargador), <code>/remote-parallelism plan</code> elige dónde y cómo correr: local o nube, CPU o GPU, nunca la GPU por defecto.</li>
         <li>Opcional, solo si la deliberación lo estimó conveniente: búsqueda de hiperparámetros con Optuna (<code>/hyperparameter-search plan|report|status</code>), anidada dentro de los sujetos de entrenamiento de cada fold externo, con el mismo presupuesto de trials para cada brazo y baseline y el evaluador de importancia declarado; sus contornos e importancias aparecen en cada producto.</li>
         <li><code>/experimental-implementation</code> construye los <strong>experimentos completos</strong> del protocolo (carpeta con <code>Experimental_AGREED.md</code>).</li>
         <li><code>experiments-reviewer</code> revisa el código (calidad, optimización, uso de GPU, pruebas estadísticas) antes de cualquier ensayo; su informe va al operador.</li>

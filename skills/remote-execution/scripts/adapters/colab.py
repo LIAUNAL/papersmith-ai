@@ -1178,6 +1178,10 @@ class ColabAdapter(ADAPTER.Adapter):
                 "guess at which machine this job needs"
             )
         kind = accelerator.get("kind")
+        if kind == "cpu" and not accelerator.get("architectures"):
+            # A CPU-only job (`generate-job --accelerator-kind cpu`): `new`
+            # gets no `--gpu`, which is a CPU runtime, by request this time.
+            return None
         if kind != "cuda":
             raise ColabAdapterError(
                 f"run-config.json declares accelerator kind {kind!r}, and "
@@ -1854,3 +1858,4 @@ def _declared_capacity() -> tuple[int, int] | None:
 ADAPTER.register("colab", ColabAdapter)
 ADAPTER.register_declared_capacity("colab", _declared_capacity)
 ADAPTER.register_default_accelerator("colab", _default_accelerator)
+ADAPTER.register_cpu_only("colab")

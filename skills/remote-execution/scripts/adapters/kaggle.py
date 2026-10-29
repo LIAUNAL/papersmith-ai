@@ -749,7 +749,25 @@ def assemble_metadata(run_config: Mapping[str, object]) -> tuple[str, str]:
         "enable_gpu": REQUEST_GPU,
         "machine_shape": KAGGLE_MACHINE_SHAPE,
     }
+    if _cpu_only(run_config):
+        # `generate-job --accelerator-kind cpu`: a CPU session, no card requested.
+        payload["enable_gpu"] = False
+        del payload["machine_shape"]
     return KERNEL_METADATA_FILENAME, json.dumps(payload)
+
+
+def _cpu_only(run_config: Mapping[str, object]) -> bool:
+    declared = run_config.get("accelerator")
+    return isinstance(declared, Mapping) and declared.get("kind") == "cpu"
+
+
+def staged_machine_shape(template: dict) -> dict:
+    """`submit()`'s absence-gated `machine_shape` default (see its comment):
+    a template that asks for no GPU (`enable_gpu: false`, a CPU-only job) is
+    staged as read, never handed the default card."""
+    if template.get("enable_gpu", True) is not False:
+        template.setdefault("machine_shape", KAGGLE_MACHINE_SHAPE)
+    return template
 
 
 def _run_config_cell_source(run_config_text: str) -> str:
@@ -1246,6 +1264,8 @@ class KaggleAdapter(ADAPTER.Adapter):
         """The machine every push requests, and whether the job's declared
         architectures are ones that machine has: the runner's accelerator
         gate refuses a mismatch only after the session started."""
+        if _cpu_only(run_config):
+            return {"name": "cpu", "architectures": [], "problem": None}
         architecture = KAGGLE_MACHINE_SHAPES.get(KAGGLE_MACHINE_SHAPE)
         declared = run_config.get("accelerator")
         problem = None
@@ -1438,7 +1458,7 @@ class KaggleAdapter(ADAPTER.Adapter):
             # back exactly as staged. This method cannot tell "never set"
             # apart from "set on purpose to a different value", and only
             # the former is this defect.
-            template.setdefault("machine_shape", KAGGLE_MACHINE_SHAPE)
+            staged_machine_shape(template)
 
             ref, title, carried = kernel_ref(
                 worker=job.worker, title=template.get("title"),
@@ -1800,4 +1820,5 @@ def _declared_capacity() -> tuple[int, int] | None:
 ADAPTER.register("kaggle", KaggleAdapter)
 ADAPTER.register_metadata("kaggle", assemble_metadata)
 ADAPTER.register_default_accelerator("kaggle", _default_accelerator)
+ADAPTER.register_cpu_only("kaggle")
 ADAPTER.register_declared_capacity("kaggle", _declared_capacity)

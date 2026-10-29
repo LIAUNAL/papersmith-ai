@@ -811,6 +811,14 @@ contract lives in the `remote-execution` section of the
 - **Kaggle**: runs against the configured worker pool. Its credentials live in the `kaggle-accounts` store (`skills/kaggle-accounts/store/accounts.json`), never leave the disk and are never printed: `materialize` writes a worker's token to a text file and reports **where**, never **what**. `/kaggle-accounts` validates or removes accounts, and `smith target check kaggle` tests them from the side. A `papersmith accounts` subcommand does not exist yet (recorded follow-up): it is invoked as `python3 skills/kaggle-accounts/scripts/accounts_cli.py {list,discover,validate,remove,materialize}`.
 - **Colab**: runs against sessions managed by `google-colab-cli` (`smith remote push --backend colab ...`). It is not a workspace target (it is not passed to `init --remote` or to `target check`), but a direct backend of `remote-execution`. It requires `google-colab-cli` on `PATH` and the token resolved in `~/.config/colab-cli/token.json`.
 
+**Placement by measurement.** Before a proof of concept or a full experiment
+runs, `remote-parallelism`'s timing probe measures each candidate way to run
+it (local CPU with N processes, a local accelerator, each account's machine,
+a CPU-only remote session, batch and loader settings), and `plan` recommends
+the fastest affordable one with its reason. A GPU is never the default: it is
+chosen only when measured faster, and `generate-job --accelerator-kind cpu`
+writes a CPU-only remote job when the plan says so.
+
 **Real quota.** A real submission spends quota and GPU hours. The house rule is
 simple: everything that can be rehearsed with `--dry-run` and `--smoke` is
 rehearsed; what is left after that is a decision for the operator.

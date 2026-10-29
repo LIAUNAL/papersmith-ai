@@ -1566,7 +1566,8 @@ through the generator's single read site, inside that probe, exactly as
 python3 scripts/remote_cli.py preflight --target <repo> \
     --entrypoint <repo>/tools/<service>/<job-name>/runner.ipynb \
     [--worker <id>]... [--expect-accelerator <name|sm_*>] \
-    [--timing <Results/timing.json>] [--stage poc|full] [--units N] \
+    [--timing <Results/timing.json>] [--candidate <host>:<owner>/<machine>] \
+    [--stage poc|full] [--units N] \
     [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
     [--skip-rehearsal] [--keep-rehearsal <new dir>] [--interpreter <python>] \
     [--repo-credential <token file>] [--workspace <workspace>]
@@ -1595,8 +1596,8 @@ row fails. Run it under the workspace env interpreter, the one `submit` uses.
 | `inputs` | warns: a service that attaches inputs, a job declaring no `--input-dataset`, and a workspace `datasets/registry.json` naming a remote source | `generate-job --dataset <slug> --regenerate`, or `--input-dataset <owner>/<slug>` |
 | `local-rehearsal` | the job's smoke, run locally under runner conditions, raises, overruns `--local-timeout`, leaves no `shard.json`, or leaves one missing a `requiredEvidence` path | the target's smoke stamps (`remote_stamp.write_shard`, `@remote_stamp.stamped`); `--local-smoke-kwargs` for a cheaper local scale |
 | `account` | fails when the worker's account does not authenticate or is not signed in; warns when it has no passing rehearsal of its own at this pin | validate or sign in the account; `submit --smoke --worker <id>` once authorized |
-| `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given | regenerate with `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
-| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths; warns when unmeasured | more units, or `generate-job --carry-path` |
+| `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given, saying the GPU is a default, not a measured choice; passes a CPU-only job (`--accelerator-kind cpu`) and says so | compare candidates with `remote-parallelism plan`, then regenerate with `--accelerator-kind cpu` or `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
+| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths; warns when unmeasured | more units, or `generate-job --carry-path` |
 
 The local rehearsal materializes the job's code with the runner's own
 functions in a fresh scratch directory outside the target: unpacked from
@@ -1645,7 +1646,9 @@ have saved:
 7. Register each person's own account and take its credential in before any
    rehearsal; every account needs its own rehearsal at the current pin.
 8. Name the accelerator the plan expects (`--expect-accelerator`) and generate
-   with `--accelerator-*` when it is not the service default.
+   with `--accelerator-*` when it is not the service default, or with
+   `--accelerator-kind cpu` when `remote-parallelism plan` recommends a
+   CPU-only session; the service's GPU default is never the measured choice.
 9. The workspace's `datasets/` folder is not in the target: a remote run
    reaches its data through a declared input or a download the target checks
    by sha256, never through a workspace path. `generate-job --dataset <slug>`
@@ -1956,6 +1959,18 @@ without CUDA (its arch list is empty), so the smoke fails and `readiness` stays
 `false` instead of counting a CPU rehearsal as ready. Pass
 `--accelerator-kind cuda --accelerator-architecture sm_80` (or `sm_90`) to ask
 a paid account for an A100 (or H100).
+
+**CPU-only jobs.** The GPU default stays for compatibility, and it is a
+default, not a measured choice: `remote-parallelism plan` decides from the
+timing record whether a CPU-only session, a GPU, or the local machine runs a
+stage. When it recommends a CPU-only remote session, `generate-job
+--accelerator-kind cpu` (no `--accelerator-architecture`) writes the block
+`{"kind": "cpu", "architectures": []}`: Colab's `new` then gets no `--gpu`, and
+Kaggle's `kernel-metadata.json` carries `enable_gpu: false` and no
+`machine_shape`, which `submit` leaves as read. A service whose adapter does
+not declare a CPU-only session (`ADAPTER.register_cpu_only`) refuses the flag
+at generation, naming the service. A generation without the flag writes
+byte-identical files.
 
 Sessions are expensive and idle-reclaimed, so release is part of the flow,
 not housekeeping: `fetch` stops a session only AFTER the manifest has
