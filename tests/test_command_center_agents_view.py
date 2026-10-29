@@ -51,6 +51,7 @@ class AgentsViewTests(unittest.TestCase):
         self.assertEqual(number("sota-scout"), [2])
         self.assertEqual(number("paper-ingestion"), [3])
         self.assertEqual(number("math-tutor"), [4])
+        self.assertEqual(number("experiments-tutor"), [5])
         self.assertEqual(number("paper-replicator"), [5])
         self.assertEqual(number("dataset-scout"), [5])
         self.assertEqual(number("dataset-curator"), [5])

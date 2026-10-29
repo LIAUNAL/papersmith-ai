@@ -559,6 +559,32 @@ paper's novelty. Uploads and the thread live in `.papersmith/math-tutor/`. Route
 `GET|DELETE /api/terminal/tutor/thread`, `POST /api/terminal/tutor/images`,
 `GET /api/terminal/tutor/images/<id>` and `POST /api/terminal/tutor/turn`.
 
+**Experiments tutor.** The *Experimentos* tab opens with a second tutor card,
+the `experiments-tutor` skill, for consulting and iterating on the experiment
+decisions: pick a decision area (*Arquitectura de la red*, *Hiperparámetros y
+búsqueda*, *Estudios de ablación*, *Pruebas de significancia estadística*,
+*Propósito del toy set*, *Estrategias de entrenamiento*, *Techos*, *Métodos a
+comparar y su implementación*, *Esquema de validación y fuga de datos*,
+*Presupuesto de cómputo y sesión*, *Reproducibilidad* or *General*), a mode
+(*Preguntar*, *Explícame*, *Evalúame*) and write. Each turn runs the
+`experiments-tutor` agent headless the same way as the math tutor, with only
+`Read`, `Glob` and `Grep`, grounded in a size-capped digest of the experiments
+(the latest protocol, and per product its kind, significance rows,
+hyperparameter summaries, table headers, timing, run counts and diagrams, plus
+the datasets registry) and in the files it names: the protocol, each
+`AGREED.md` and `Experimental_AGREED.md`, and `implementations/<repo>/src/`.
+The digest never carries a credential store, `.papersmith/team.json`, a
+`.remote-execution/` file or a token. The tutor asks one question at a time,
+rates the design 0–4 (*declarada*, *justificada*, *controlada*, *defendible*)
+with quoted evidence, lists the paths it read and the risks it sees, and says
+"nothing measured yet" instead of supplying numbers when no result exists. It
+never edits anything: when a decision should change, the turn carries a draft
+instruction, and **Deliberar este cambio** types it into the CLI assistant as
+`/experimental-deliberation …` without pressing Enter. The thread lives in
+`.papersmith/experiments-tutor/`. Routes (same guards):
+`GET|DELETE /api/terminal/tutor/experiments/thread` and
+`POST /api/terminal/tutor/experiments/turn`.
+
 **Graph toolbar and cross-panel links.** The *Atlas* tab keeps its three graph
 switches and adds **⚡ Regenerar grafo** (the SOTA atlas through
 `POST /api/atlas/build`, same as `smith atlas build`; on the novelty graph it

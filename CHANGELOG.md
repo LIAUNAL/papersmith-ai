@@ -13,7 +13,41 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+### Added
+
+- An experiments tutor in the dashboard's *Experimentos* tab, the new
+  read-only `experiments-tutor` skill and agent (`Read`, `Glob`, `Grep` only,
+  projected to every harness). Pick a decision area — network architecture,
+  hyperparameters and their search, ablation studies, statistical
+  significance tests, the toy set's purpose, training strategies, upper
+  bounds (*techos*: oracle and reference results), the methods compared and
+  their implementation, validation and leakage, compute budget,
+  reproducibility — and a mode; each turn reads the
+  protocol, the approvals, the target's `src/` and the results, asks one
+  question, rates the design 0–4 with quoted evidence, lists the paths read
+  and the risks, and says "nothing measured yet" rather than supply a number.
+  A change of decision comes back as a draft that **Deliberar este cambio**
+  types into the CLI assistant as `/experimental-deliberation …`, without
+  pressing Enter. Routes `GET|DELETE /api/terminal/tutor/experiments/thread`
+  and `POST /api/terminal/tutor/experiments/turn`, behind the terminal's
+  cookie and same-origin guards; the thread lives in
+  `.papersmith/experiments-tutor/`. The turn's digest of the experiments is
+  size-capped and never carries a credential store, `.papersmith/team.json`,
+  a `.remote-execution/` file or a token, nor a path that is a link or leaves
+  the workspace; the headless `claude -p` run also carries those places, the
+  workspace's declared credential store and inbox, and `~/.ssh`, `~/.kaggle`
+  and `~/.config` as `Read(...)` deny rules (`--disallowedTools`), so the CLI
+  refuses the read even if the model attempts it. A drafted change typed into
+  the CLI assistant is one line with every control character removed.
+- New workspaces ignore `.papersmith/math-tutor/` and
+  `.papersmith/experiments-tutor/` (the tutors' threads and the reader's
+  hand-written pages), and so does this repository.
+
 ### Changed
+
+- The math tutor's backend (`tutor.py`) is generalized into tutor profiles
+  (thread folder, doctrine, context, turn schema, modes, tools, deny rules,
+  lock); the math tutor's routes, prompt, command and thread are unchanged.
 
 - `proposal-implementation`'s twelve `### nextStep: "…"` sections moved,
   verbatim, into `skills/proposal-implementation/references/next-step-<nextStep>.md`,
@@ -372,7 +406,6 @@ number is `0`, breaking changes can still arrive without a major bump.
   order; an expired report is served while one background rebuild replaces
   it (re-measuring still rebuilds in line); and `smith ui` prepares the
   report at startup, so the first visit is immediate.
-
 
 ## 0.30.2
 
