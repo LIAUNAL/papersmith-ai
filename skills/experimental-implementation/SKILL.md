@@ -221,7 +221,12 @@ already produced -- typically arms placed on different services -- the plan and
 launched through its own `propose`/`offer`/`gate`, and name every step still
 `waiting` with what it `waitsOn`. A campaign `gate --unit` refuses `NOT_READY`
 until every worker its `propose` record names has its own passing rehearsal
-at the job's pin, and names the ones that do not. `proposal-implementation`'s `references/usage.md`
+at the job's pin, and names the ones that do not. Before any rehearsal of a
+job, its first and the first after a re-pin, run `remote_cli preflight` on it
+and fix every `fail` row before the operator is asked to authorize one: it
+runs the smoke locally under runner conditions and checks every other lesson
+the remote rehearsals taught (`remote-execution`, **Before the first
+rehearsal**). `proposal-implementation`'s `references/usage.md`
 (*`launch-plan` — what is still missing before a job launches*) documents its
 output.
 

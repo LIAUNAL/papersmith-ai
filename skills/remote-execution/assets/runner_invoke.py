@@ -234,6 +234,12 @@ def restore_carry(run_config: Mapping[str, Any], base_dir: str | Path | None = N
 # directory was found, so the target downloads that dataset itself. A job
 # declaring no inputs exports nothing and prints nothing.
 INPUT_DATASETS_ENV = "FORGE_INPUT_DATASETS"
+
+# `FORGE_DATASET_CHECKS` carries `run_config["datasetChecks"]` as JSON when
+# the job declares one (remote-preflight S2: `generate-job --dataset`): per
+# input ref, the workspace preparation's sha256 values, so the target can
+# verify the data it reads is the data the preparation was made from.
+DATASET_CHECKS_ENV = "FORGE_DATASET_CHECKS"
 INPUT_DATASETS_KEY = "inputDatasets"
 INPUT_ROOT_KEY = "inputRoot"
 INPUT_LOG_PREFIX = "[inputs]"
@@ -369,6 +375,7 @@ def submission_environment(
     session_deadline: int | None = None,
     carry_in: str | None = None,
     input_datasets: str | None = None,
+    dataset_checks: str | None = None,
 ) -> dict:
     """Compose `FORGE_RUN_MODE` and `FORGE_RUN_UNITS` — the two
     per-submission facts described beside `MODE_ENV`/`UNITS_ENV` above —
@@ -410,6 +417,8 @@ def submission_environment(
         result[CARRY_IN_ENV] = str(carry_in)
     if input_datasets:
         result[INPUT_DATASETS_ENV] = str(input_datasets)
+    if dataset_checks:
+        result[DATASET_CHECKS_ENV] = str(dataset_checks)
     return result
 
 
@@ -423,6 +432,7 @@ def kernel_environment(
     session_deadline: int | None = None,
     carry_in: str | None = None,
     input_datasets: str | None = None,
+    dataset_checks: str | None = None,
 ) -> dict:
     """Everything the kernel receives from this cell, composed in one place.
 
@@ -459,7 +469,7 @@ def kernel_environment(
         CLONE_COMMIT_ENV: str(commit),
     }
     composed.update(submission_environment(mode, units, session_deadline, carry_in,
-                                           input_datasets))
+                                           input_datasets, dataset_checks))
     return composed
 
 
@@ -582,6 +592,7 @@ def execute_notebook(
     session_deadline: int | None = None,
     carry_in: str | None = None,
     input_datasets: str | None = None,
+    dataset_checks: str | None = None,
     client_factory: Callable[..., Any] = _default_notebook_client,
 ) -> dict:
     """Execute the declared notebook — the notebook half of cell 1.
@@ -683,7 +694,8 @@ def execute_notebook(
                                  mode=mode, units=units,
                                  session_deadline=session_deadline,
                                  carry_in=carry_in,
-                                 input_datasets=input_datasets)
+                                 input_datasets=input_datasets,
+                                 dataset_checks=dataset_checks)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:
@@ -768,6 +780,8 @@ def invoke(
     carry_in = restore_carry(run_config, base_dir)
     # Where the declared input datasets are mounted (kernel-input-datasets S3).
     input_datasets = discover_input_datasets(run_config)
+    checks = run_config.get("datasetChecks")
+    dataset_checks = json.dumps(checks, sort_keys=True) if checks else None
     if kind == "notebook":
         return execute_notebook(block, base_dir,
                                 commit=run_config.get("commit"),
@@ -775,10 +789,24 @@ def invoke(
                                 session_deadline=deadline,
                                 carry_in=carry_in,
                                 input_datasets=input_datasets,
+                                dataset_checks=dataset_checks,
                                 client_factory=client_factory)
     func = resolve_callable(block, import_module=import_module)
     kwargs = dict(block.get("kwargs") or {})
-    handoff = submission_environment(mode, units, deadline, carry_in, input_datasets)
+    handoff = submission_environment(mode, units, deadline, carry_in, input_datasets,
+                                     dataset_checks)
+    # remote-preflight F1: a callable job is handed the clone root and the
+    # pinned commit under the same two names a notebook kernel receives, so
+    # a target that stamps its commit on a code-bundle worker (no git
+    # metadata beyond `.git/HEAD`) reads it from `FORGE_CLONE_COMMIT` there
+    # too. Exported only when the pin is present: unlike the notebook
+    # branch, a callable needs neither to run, so a missing pin is not a
+    # refusal here.
+    commit = run_config.get("commit")
+    if isinstance(commit, str) and commit.strip():
+        base = Path(base_dir) if base_dir is not None else Path.cwd()
+        handoff[CLONE_ROOT_ENV] = str((base / CLONE_DIRNAME).resolve())
+        handoff[CLONE_COMMIT_ENV] = commit
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:

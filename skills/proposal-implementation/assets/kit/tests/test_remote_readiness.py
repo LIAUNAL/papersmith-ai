@@ -93,6 +93,7 @@ def test_stamp_writes_nothing_without_the_run_mode(tmp_path, monkeypatch):
 def test_stamp_writes_the_declared_fields_under_the_run_mode(tmp_path, monkeypatch):
     stamp = _stamp()
     monkeypatch.setenv(stamp.RUN_MODE_ENV, "smoke")
+    monkeypatch.delenv(stamp.CLONE_COMMIT_ENV, raising=False)
     path = stamp.write_shard({"units": 1}, tmp_path, device="cpu")
     shard = json.loads(path.read_text(encoding="utf-8"))
     head = subprocess.run(

@@ -92,6 +92,10 @@ JOBFOLDER = _load_sibling("remote_execution_jobfolder", "jobfolder.py")
 # uses — never a second, independently written completeness check here.
 SHARD_IO = _load_sibling("remote_execution_shard_io", "shard_io.py")
 
+# What `generate-jobs` and `generate-job --dataset` derive from the target's
+# and the workspace's own declarations (remote-preflight S2, S3).
+JOB_PLAN = _load_sibling("remote_execution_job_plan", "job_plan.py")
+
 
 def _load_source_digest() -> Callable[[Path, str], str]:
     """Path-import `source_digest()` from proposal-implementation's digest kit.
@@ -2799,29 +2803,41 @@ def _diagram_cli():
     return sys.modules[module_name]
 
 
-def _verify_diagrams_validated(product_dir: Path) -> None:
-    """Refuse `DIAGRAM_NOT_VALIDATED` while any approved kind's diagram is not
-    `validated`. A product holding neither approval marker is not gated."""
-    owed = [(kind, marker) for kind, marker in DIAGRAM_APPROVALS
-            if (product_dir / marker).is_file()]
+#: The two routes by which the operator validates a diagram, and how to draw
+#: a missing one -- the same sentence `submit` refuses with and `preflight`
+#: names as its fix.
+DIAGRAM_ROUTES = (
+    "its experiment diagrams, in the dashboard (Experimentos tab, "
+    "\"Validar diagrama\") or by approving each one explicitly in the agent chat "
+    "(`diagram_cli.py validate`, run only on that approval)")
+DIAGRAM_DRAW = ("Draw a missing one with `/experiment-diagrams <poc|experiments>` or the "
+                "panel's \"Generar diagrama\".")
+
+
+def _open_diagrams(product_dir: Path) -> tuple[list[str], list[str]]:
+    """`(owed kinds, open "kind: state" items)` for `product_dir`. A product
+    holding neither approval marker owes nothing."""
+    owed = [kind for kind, marker in DIAGRAM_APPROVALS if (product_dir / marker).is_file()]
     if not owed:
-        return
+        return [], []
     try:
         cli = _diagram_cli()
     except OSError as exc:
         raise DiagramValidationError(
             "DIAGRAM_NOT_VALIDATED: the experiment-diagrams skill this check reads is not "
             f"installed here ({exc}); run `smith upgrade`.") from None
-    open_items = [f"{kind}: {state}" for kind, _ in owed
+    return owed, [f"{kind}: {state}" for kind in owed
                   if (state := cli.validation_state(product_dir, kind)) != "validated"]
+
+
+def _verify_diagrams_validated(product_dir: Path) -> None:
+    """Refuse `DIAGRAM_NOT_VALIDATED` while any approved kind's diagram is not
+    `validated`. A product holding neither approval marker is not gated."""
+    _, open_items = _open_diagrams(product_dir)
     if open_items:
         raise DiagramValidationError(
             "DIAGRAM_NOT_VALIDATED: nothing of this product is launched until the operator "
-            "validates its experiment diagrams, in the dashboard (Experimentos tab, "
-            "\"Validar diagrama\") or by approving each one explicitly in the agent chat "
-            "(`diagram_cli.py validate`, run only on that approval); "
-            f"open: {', '.join(open_items)}. Draw a missing one with "
-            "`/experiment-diagrams <poc|experiments>` or the panel's \"Generar diagrama\".")
+            f"validates {DIAGRAM_ROUTES}; open: {', '.join(open_items)}. {DIAGRAM_DRAW}")
 
 
 def _main_ledger_path(target: Path, product: str) -> Path:
@@ -3130,6 +3146,7 @@ def _construct_adapter(
     adapter_cls: type["ADAPTER.Adapter"],
     credentials_provider: Callable[[str], "ADAPTER.CredentialHandle"],
     repo_credential_path: str | Path | None = None,
+    workspace: str | Path | None = None,
 ) -> "ADAPTER.Adapter":
     """Construct a registered adapter, handing it a credential provider only
     when its own constructor is written to accept one — and, since S3, the
@@ -3168,6 +3185,12 @@ def _construct_adapter(
         "repo_credential_path" in parameters or accepts_var_keyword
     ):
         kwargs["repo_credential_path"] = repo_credential_path
+    # remote-preflight F3: the workspace whose team registry and account
+    # store the adapter reads, passed under the same introspection and only
+    # when a caller names one (`preflight --workspace`); omitted, every
+    # adapter keeps its own default, the workspace it ships inside.
+    if workspace is not None and ("workspace" in parameters or accepts_var_keyword):
+        kwargs["workspace"] = Path(workspace)
     return adapter_cls(**kwargs)
 
 
@@ -3290,6 +3313,622 @@ def _load_backend_module(name: str) -> None:
     # above already uses, for the same reason.
     spec.loader.exec_module(module)
     sys.modules[module_name] = module
+
+
+# ---------------------------------------------------------------------------
+# preflight: what a first remote rehearsal used to find, found locally
+# ---------------------------------------------------------------------------
+
+#: The workspace env's interpreter, relative to the workspace root: the one
+#: that carries this skill's pinned service drivers, and so the one `submit`
+#: has to run under.
+WORKSPACE_ENV_PYTHON = Path(".micromamba") / "envs" / "papersmith" / "bin" / "python"
+
+#: The workspace this skill was installed into: `<workspace>/skills/
+#: remote-execution/scripts/remote_cli.py`.
+DEFAULT_WORKSPACE = Path(__file__).resolve().parents[3]
+
+#: Where the datasets skill keeps its registry, relative to the workspace.
+DATASETS_REGISTRY = Path("datasets") / "registry.json"
+
+PREFLIGHT_STAGES = ("poc", "full")
+
+
+def _preflight_row(check: str, status: str, evidence: str, fix: str = "", **extra) -> dict:
+    row = {"check": check, "status": status, "evidence": evidence, "fix": fix}
+    row.update({key: value for key, value in extra.items() if value is not None})
+    return row
+
+
+def _parallelism_cli():
+    """`remote-parallelism`'s CLI module, for its timing reader, its
+    estimate formula and its session margin -- the `schedule`/`assess`
+    rules, never a second copy of them."""
+    module_name = "remote_execution_parallelism_cli"
+    if module_name not in sys.modules:
+        script = (Path(__file__).resolve().parents[2] / "remote-parallelism"
+                  / "scripts" / "parallelism_cli.py")
+        spec = importlib.util.spec_from_file_location(module_name, script)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[module_name] = module
+    return sys.modules[module_name]
+
+
+def _no_credentials(worker: str) -> "ADAPTER.CredentialHandle":
+    raise RemoteCLIError(
+        f"preflight never materializes a credential (asked for {worker!r}); "
+        "the account check uses the service's own read-only probe")
+
+
+def _preflight_pin(job_folder: "JOBFOLDER.JobFolder") -> dict:
+    staleness = dict(job_folder.staleness)
+    state = staleness.get("status")
+    commit = job_folder.run_config["commit"]
+    if state == "fresh":
+        return _preflight_row("pin", "pass", f"the job is pinned to {commit} and its "
+                              "clone paths have not moved since")
+    changed = ", ".join(staleness.get("changedPaths") or []) or staleness.get("reason") or state
+    return _preflight_row(
+        "pin", "fail", f"the job's pin {commit} is {state}: {changed}",
+        "commit, then `generate-job ... --regenerate` so the job is re-pinned (a re-pinned "
+        "job needs a fresh rehearsal and a fresh consent token)")
+
+
+def _preflight_diagrams(product_dir: Path) -> dict:
+    try:
+        owed, open_items = _open_diagrams(product_dir)
+    except DiagramValidationError as exc:
+        return _preflight_row("diagrams", "fail", str(exc), "run `smith upgrade`")
+    if not owed:
+        return _preflight_row("diagrams", "pass", "the product holds no approval that owes "
+                              "an experiment diagram")
+    if not open_items:
+        return _preflight_row("diagrams", "pass", "every approved kind's diagram is "
+                              f"validated: {', '.join(owed)}")
+    return _preflight_row(
+        "diagrams", "fail", f"`submit` refuses DIAGRAM_NOT_VALIDATED; open: "
+        f"{', '.join(open_items)}", f"the operator validates {DIAGRAM_ROUTES}. {DIAGRAM_DRAW}")
+
+
+def _preflight_interpreter(adapter: "ADAPTER.Adapter", workspace: Path) -> dict:
+    hook = getattr(adapter, "interpreter_check", None)
+    if not callable(hook):
+        return _preflight_row("interpreter", "warn", "this service declares no interpreter "
+                              "probe; `submit` finds out at launch", "")
+    try:
+        result = dict(hook())
+    except Exception as exc:  # noqa: BLE001 - a failing probe is a row
+        result = {"ok": False, "evidence": f"the interpreter probe failed: {exc}"}
+    evidence = f"{result.get('evidence', '')} (interpreter {sys.executable})".strip()
+    if result.get("ok"):
+        return _preflight_row("interpreter", "pass", evidence)
+    env_python = workspace / WORKSPACE_ENV_PYTHON
+    if env_python.exists() and env_python.resolve() != Path(sys.executable).resolve():
+        fix = (f"run remote_cli under the workspace env interpreter, which carries the pinned "
+               f"driver: `{env_python} {Path(__file__).resolve()} preflight ...` (and `submit` "
+               "under the same interpreter)")
+    else:
+        fix = result.get("fix") or (
+            f"install this skill's pinned requirements for {sys.executable}, or run remote_cli "
+            "under the interpreter that has them")
+    return _preflight_row("interpreter", "fail", evidence, fix)
+
+
+def _preflight_reachability(
+    adapter_cls: type["ADAPTER.Adapter"], run_config: Mapping, target: Path,
+    repo_credential: Path | None,
+) -> dict:
+    bundle = run_config.get("codeBundle")
+    if bundle is not None:
+        return _preflight_row("code-reachability", "pass", "the job carries its code bundle "
+                              f"(sha256 {bundle.get('sha256')}); the runner unpacks it and "
+                              "never clones")
+    repo = run_config.get("repo") or {}
+    try:
+        JOBFOLDER._verify_commit_reachable(run_config["commit"], repo.get("url"), repo.get("ref"),
+                                           decision="preflight", target=target)
+        return _preflight_row("code-reachability", "pass", f"{repo.get('url')} serves the pin "
+                              "anonymously, as the runner's clone will ask for it")
+    except (JOBFOLDER.JobFolderError, OSError) as exc:
+        anonymous = str(exc)
+    carrier = _repo_credential_carrier(adapter_cls)
+    if repo_credential is not None and carrier:
+        try:
+            JOBFOLDER._verify_commit_reachable(
+                run_config["commit"], repo.get("url"), repo.get("ref"), decision="preflight",
+                repo_credential_path=repo_credential, target=target)
+            return _preflight_row("code-reachability", "pass", "the pin is reachable with the "
+                                  "declared repository credential; pass the same "
+                                  "`--repo-credential` to `submit`")
+        except (JOBFOLDER.JobFolderError, OSError) as exc:
+            return _preflight_row("code-reachability", "fail", f"not even with the declared "
+                                  f"credential: {exc}", "check the token's repository scope")
+    if carrier:
+        fix = ("this service carries a repository credential: pass `--repo-credential <token "
+               "file>` to `submit` (and to `preflight`, to probe it)")
+    elif getattr(adapter_cls, "CODE_BUNDLE_MAX_BYTES", None):
+        fix = ("the runner cannot authenticate a clone on this service: regenerate with "
+               "`generate-job ... --code-bundle --regenerate`")
+    else:
+        fix = "publish the pin where the runner can clone it anonymously, then regenerate"
+    return _preflight_row("code-reachability", "fail",
+                          f"the runner could not clone the pin: {anonymous}", fix)
+
+
+def _registry_remote_sources(workspace: Path) -> list[str]:
+    path = workspace / DATASETS_REGISTRY
+    try:
+        registry = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    named = []
+    for entry in registry if isinstance(registry, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        remote = entry.get("remote") if isinstance(entry.get("remote"), dict) else {}
+        source = entry.get("source") if isinstance(entry.get("source"), dict) else {}
+        if remote.get("ref"):
+            named.append(f"{entry.get('slug')} (published as {remote['ref']})")
+        elif source.get("kind") not in (None, "", "synthetic") and source.get("url"):
+            named.append(f"{entry.get('slug')} ({source['url']})")
+    return named
+
+
+def _preflight_inputs(adapter_cls: type["ADAPTER.Adapter"], run_config: Mapping,
+                      workspace: Path) -> dict:
+    declared = list(run_config.get("inputDatasets") or [])
+    attaches = bool(getattr(adapter_cls, "INPUT_DATASETS_ROOT", None))
+    if declared:
+        how = ("attached to the push and mounted read-only" if attaches else
+               "not attachable on this service: the runner exports them as null and the "
+               "target downloads them")
+        return _preflight_row("inputs", "pass", f"the job declares {', '.join(declared)}; {how}")
+    sources = _registry_remote_sources(workspace) if attaches else []
+    if sources:
+        return _preflight_row(
+            "inputs", "warn", "the job declares no --input-dataset, and on this service a "
+            "non-interactive session cannot download a dataset it was not attached; the "
+            f"workspace registry names a remote source: {'; '.join(sources)}",
+            "if the target reads it, regenerate with `generate-job ... --dataset <slug> "
+            "--regenerate` (the registry entry, with its preparation's sha256) or "
+            "`generate-job ... --input-dataset <owner>/<slug> --regenerate`")
+    return _preflight_row("inputs", "pass", "the job declares no input dataset"
+                          + ("" if attaches else " and this service attaches none"))
+
+
+def _preflight_accelerator(adapter: "ADAPTER.Adapter", run_config: Mapping, service: str,
+                           expect: str | None) -> dict:
+    hook = getattr(adapter, "accelerator_request", None)
+    if not callable(hook):
+        return _preflight_row("accelerator", "warn", "this service does not name the "
+                              "accelerator it requests", "")
+    try:
+        request = dict(hook(dict(run_config)))
+    except Exception as exc:  # noqa: BLE001 - an adapter refusal is a row
+        return _preflight_row("accelerator", "fail", f"the service refuses the job's "
+                              f"accelerator block: {exc}", "regenerate with an "
+                              "`--accelerator-kind`/`--accelerator-architecture` the "
+                              "service maps")
+    name = str(request.get("name"))
+    architectures = [str(a) for a in request.get("architectures") or []]
+    label = f"{name} ({', '.join(architectures)})" if architectures else name
+    if request.get("problem"):
+        return _preflight_row("accelerator", "fail", f"the job will request {label}, but "
+                              f"{request['problem']}", "regenerate with an "
+                              "`--accelerator-architecture` the requested machine has")
+    regenerate = ("regenerate with `--accelerator-kind cuda --accelerator-architecture "
+                  "<the plan's sm_*>` (the service's own table chooses the machine), or "
+                  "correct the plan")
+    if expect:
+        if expect.lower() in (value.lower() for value in (name, *architectures)):
+            return _preflight_row("accelerator", "pass", f"the job will request {label}, as "
+                                  f"the plan expects ({expect})")
+        return _preflight_row("accelerator", "fail", f"the job will request {label}, but "
+                              f"the plan expects {expect}", regenerate)
+    default = ADAPTER.resolve_default_accelerator(service)
+    declared = run_config.get("accelerator")
+    if default is not None:
+        kind, default_architectures = default()
+        if declared == {"kind": kind, "architectures": list(default_architectures)}:
+            return _preflight_row(
+                "accelerator", "warn", f"the job will request {label}, the service default "
+                "(no --accelerator-* flag was given at generation)",
+                "confirm it with `--expect-accelerator <the plan's accelerator>`; if the plan "
+                f"names another, {regenerate}")
+    return _preflight_row("accelerator", "pass", f"the job will request {label}")
+
+
+def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, service: str,
+                           timing: Path, stage: str, units: int) -> dict:
+    limit = _declared_session_limit(adapter)
+    if limit is None:
+        return _preflight_row("session-fit", "warn", "this service declares no session limit",
+                              "")
+    if not timing.is_file():
+        return _preflight_row(
+            "session-fit", "warn", f"unmeasured: no timing record at {timing}",
+            "run the timing probe on this service, then `/remote-parallelism estimate` "
+            "(and pass --timing here when the record lives elsewhere)")
+    par = _parallelism_cli()
+    try:
+        data = par.load_timing(timing, str(timing))
+    except par.Refusal as exc:
+        return _preflight_row("session-fit", "warn", f"{exc.code}: {exc.message}",
+                              "repair the timing record")
+    items = [item for item in data["measurements"]
+             if str(item.get("host", "")).split(":")[0] == service]
+    if not items:
+        return _preflight_row(
+            "session-fit", "warn", f"unmeasured on {service}: {timing} holds no measurement "
+            "on this service's own host, and a remote host is never estimated from another's",
+            "run the timing probe on this service")
+    if len({item["device"] for item in items}) > 1:
+        return _preflight_row("session-fit", "warn", f"{service} was timed on several "
+                              "devices; timing is never pooled across machines",
+                              "keep one device per host in the record")
+    estimate = par.host_estimate(items, data["scales"][stage])
+    unit_minutes = float(estimate["high"]) / units / 60
+    limit_minutes = limit / 60
+    usable = par.usable_session(limit_minutes)
+    measured = (f"{stage} upper bound {par.num(estimate['high'])} s over {units} unit(s) is "
+                f"{par.num(unit_minutes)} minutes per unit against {par.margin_text(limit_minutes)}")
+    if unit_minutes <= usable:
+        return _preflight_row("session-fit", "pass", f"{measured}: each unit fits one session")
+    carry = list(run_config.get("carryPaths") or [])
+    if carry:
+        return _preflight_row("session-fit", "pass", f"{measured}: a unit spans sessions and "
+                              f"the job declares carry paths ({', '.join(carry)}), so each "
+                              "continuation resumes from the last checkpoint")
+    return _preflight_row(
+        "session-fit", "fail", f"{measured}: a unit does not fit one session",
+        "split the work into more units (`--units`, `submit --unit`) along the declared axis, "
+        "or checkpoint and regenerate with `--carry-path <checkpoint dir>`")
+
+
+def _preflight_accounts(adapter: "ADAPTER.Adapter", job_dir: Path, workers: Sequence[str] | None,
+                        smoke_command: str) -> list[dict]:
+    if workers:
+        names = list(workers)
+    else:
+        try:
+            names = [worker.id for worker in adapter.workers()]
+        except Exception as exc:  # noqa: BLE001 - a failing listing is a row
+            return [_preflight_row("account", "fail", f"the service's workers could not be "
+                                   f"listed: {exc}", "check the account registry")]
+    if not names:
+        return [_preflight_row("account", "fail", "this service has no worker account",
+                               "register one per person (`smith team add ... --attest`) and "
+                               "validate its credential")]
+    hook = getattr(adapter, "account_check", None)
+    rows = []
+    for worker in names:
+        if callable(hook):
+            try:
+                result = dict(hook(worker))
+            except Exception as exc:  # noqa: BLE001
+                result = {"ok": False, "evidence": f"the account probe failed: {exc}"}
+        else:
+            result = {"ok": None, "evidence": "this service declares no account probe"}
+        evidence = str(result.get("evidence", ""))
+        if result.get("ok") is False:
+            rows.append(_preflight_row("account", "fail", evidence,
+                                       result.get("fix") or "validate the account", worker=worker))
+            continue
+        try:
+            readiness = cmd_readiness(job_dir=job_dir, worker=worker)
+        except (RemoteCLIError, JOBFOLDER.JobFolderError) as exc:
+            readiness = {"ready": False, "reason": str(exc)}
+        if readiness["ready"]:
+            status = "pass" if result.get("ok") else "warn"
+            rows.append(_preflight_row("account", status, f"{evidence}; it has its own passing "
+                                       "rehearsal at this pin", "", worker=worker))
+            continue
+        rows.append(_preflight_row(
+            "account", "warn", f"{evidence}; it needs its own rehearsal at this pin "
+            f"({readiness.get('reason')})",
+            f"after the operator authorizes it: `{smoke_command} --worker {worker}`, then "
+            "`fetch --smoke` and `smoke record`", worker=worker))
+    return rows
+
+
+def _preflight_rehearsal(
+    *, job_dir: Path, target: Path, run_config: Mapping, adapter: "ADAPTER.Adapter | None",
+    interpreter: Path | None, smoke_kwargs: Mapping | None, timeout: float,
+    keep: Path | None, skip: bool,
+) -> dict:
+    if skip:
+        return _preflight_row("local-rehearsal", "warn", "skipped (--skip-rehearsal)",
+                              "run preflight without --skip-rehearsal before the first "
+                              "remote rehearsal")
+    local = _load_sibling("remote_execution_local_rehearsal", "local_rehearsal.py")
+    python = Path(interpreter) if interpreter is not None else local.target_interpreter(target)
+    if not python.exists():
+        return _preflight_row(
+            "local-rehearsal", "fail", f"the target has no .venv interpreter at {python}",
+            "create it with the implementation skill's venv stage (the target's pinned "
+            "dependencies installed), or pass --interpreter")
+    try:
+        result = local.rehearse(
+            job_dir=job_dir, target=target, run_config=run_config, interpreter=python,
+            completeness=SHARD_IO.completeness, smoke_kwargs=smoke_kwargs,
+            session_limit_seconds=_declared_session_limit(adapter) if adapter else None,
+            timeout=timeout, keep=keep)
+    except local.RehearsalError as exc:
+        return _preflight_row("local-rehearsal", "fail", str(exc),
+                              exc.fix or "regenerate the job with a smoke block")
+    return _preflight_row("local-rehearsal", result["status"], result["evidence"],
+                          result["fix"], details=result["details"])
+
+
+def cmd_preflight(
+    *,
+    target: str | Path,
+    entrypoint: str | Path,
+    workers: Sequence[str] | None = None,
+    workspace: str | Path | None = None,
+    interpreter: str | Path | None = None,
+    expect_accelerator: str | None = None,
+    timing: str | Path | None = None,
+    stage: str = "full",
+    units: int = 1,
+    local_smoke_kwargs: Mapping | None = None,
+    local_timeout: float = 600,
+    skip_rehearsal: bool = False,
+    keep_rehearsal: str | Path | None = None,
+    repo_credential: str | Path | None = None,
+) -> dict:
+    """Every check a first remote rehearsal used to fail on, run locally:
+    one row per check, `{check, status, evidence, fix}`, `status` one of
+    `pass`/`warn`/`fail`. Read-only on every service: it never submits, and
+    reaches a service only through the existing read-only probes (the
+    anonymous reachability probe `generate-job` runs, an adapter's own
+    account and interpreter probes). A `repo_credential` token is read only
+    through the generator's single read site, inside that probe, as
+    `generate-job` reads it; this function opens no credential file.
+    """
+    resolved_target = Path(target).resolve()
+    resolved = guard_entrypoint(resolved_target, Path(entrypoint))
+    job_dir = resolved.parent
+    if not (job_dir / RUN_CONFIG_FILENAME).is_file():
+        raise RemoteCLIError(f"{resolved} is not a generated job folder's notebook; "
+                             "preflight checks a `generate-job` folder's runner.ipynb")
+    if stage not in PREFLIGHT_STAGES:
+        raise RemoteCLIError(f"--stage {stage!r}: one of {', '.join(PREFLIGHT_STAGES)}")
+    if units < 1:
+        raise RemoteCLIError("--units must be a positive whole number")
+    job_folder = JOBFOLDER.read(job_dir)
+    run_config = dict(job_folder.run_config)
+    service, product = run_config["service"], run_config["product"]
+    workspace_root = Path(workspace).resolve() if workspace is not None else DEFAULT_WORKSPACE
+    rows = [_preflight_pin(job_folder), _preflight_diagrams(resolved_target / product)]
+
+    adapter_cls = adapter = None
+    _load_backend_module(service)
+    try:
+        adapter_cls = ADAPTER.resolve(service)
+        adapter = _construct_adapter(
+            adapter_cls, _no_credentials,
+            workspace=workspace_root if workspace is not None else None)
+    except KeyError as exc:
+        rows.append(_preflight_row("service", "fail", f"no backend is registered as "
+                                   f"{service!r}: {exc}", "run `smith upgrade`"))
+    if adapter is not None:
+        rows.append(_preflight_interpreter(adapter, workspace_root))
+        rows.append(_preflight_reachability(
+            adapter_cls, run_config, resolved_target,
+            Path(repo_credential) if repo_credential is not None else None))
+        rows.append(_preflight_inputs(adapter_cls, run_config, workspace_root))
+    rows.append(_preflight_rehearsal(
+        job_dir=job_dir, target=resolved_target, run_config=run_config, adapter=adapter,
+        interpreter=Path(interpreter) if interpreter is not None else None,
+        smoke_kwargs=local_smoke_kwargs, timeout=local_timeout,
+        keep=Path(keep_rehearsal) if keep_rehearsal is not None else None,
+        skip=skip_rehearsal))
+    if adapter is not None:
+        smoke_command = (f"remote_cli submit --smoke --target {resolved_target} "
+                         f"--entrypoint {resolved} --backend {service}")
+        rows.extend(_preflight_accounts(adapter, job_dir, workers, smoke_command))
+        rows.append(_preflight_accelerator(adapter, run_config, service, expect_accelerator))
+        timing_path = (Path(timing) if timing is not None
+                       else resolved_target / product / "Results" / "timing.json")
+        rows.append(_preflight_session_fit(adapter, run_config, service, timing_path, stage,
+                                           units))
+    counts = {status: sum(1 for row in rows if row["status"] == status)
+              for status in ("pass", "warn", "fail")}
+    return {
+        "jobFolder": str(job_dir),
+        "service": service,
+        "commit": run_config["commit"],
+        "checks": rows,
+        "summary": {**counts, "ok": counts["fail"] == 0},
+    }
+
+
+# ---------------------------------------------------------------------------
+# generate-jobs: every remote step's job, from what the target declares
+# ---------------------------------------------------------------------------
+
+def _workspace_python(workspace: Path) -> Path:
+    env_python = workspace / WORKSPACE_ENV_PYTHON
+    return env_python if env_python.exists() else Path(sys.executable)
+
+
+def cmd_generate_jobs(
+    *,
+    target: str | Path,
+    product: str,
+    from_schedule: str | Path | None = None,
+    repo_url: str | None = None,
+    repo_ref: str | None = None,
+    repo_credential: str | Path | None = None,
+    smoke_module: str | None = None,
+    smoke_function: str | None = None,
+    smoke_kwargs: Mapping | None = None,
+    smoke_required_evidence: Sequence[str] | None = None,
+    regenerate: bool = False,
+    datasets: Sequence[str] | None = None,
+    workspace: str | Path | None = None,
+    accept_unresolved: bool = False,
+    accept_unresolved_reads: bool = False,
+    accept_produced_reads: bool = False,
+) -> dict:
+    """One `generate-job` per remote step the product's `__steps__`
+    declares (remote-preflight S3), each derived rather than typed:
+
+    - service: the step's `service`, or the one(s) a `schedule` output chose
+      for it (one job per chosen service);
+    - job folder: the step's `job`; run: the step's notebook among its
+      `produces` (`Notebooks/...ipynb`), else its `module`/`function`;
+      clone paths: what the generator's own import/read walk computes for
+      those entries (plus the notebook itself);
+    - code bundle: when the pin is not anonymously reachable and the
+      service carries bundles (`CODE_BUNDLE_MAX_BYTES`);
+    - environment requirements: the target's pinned requirements minus the
+      adapter's `PROVIDED_REQUIREMENTS`;
+    - carry paths: the step's non-notebook `produces` roots;
+    - inputs: `--dataset` slugs, resolved as `generate-job --dataset` does.
+
+    Every job is attempted; one refusal is that job's row, never the end of
+    the others. Returns `{jobs, skipped, summary, next}` where `next` is the
+    one `preflight` command over every generated job.
+    """
+    resolved = JOBFOLDER.resolve_target(target)
+    steps = JOB_PLAN.declared_steps(resolved, product)
+    remote, skipped = JOB_PLAN.remote_steps(steps)
+    if not remote:
+        raise RemoteCLIError(
+            f"{product} declares no remote step in src/{product.replace('-', '_')}/__init__.py "
+            "(or config.py) __steps__: a step needs placement 'remote', a job and a service")
+    chosen = JOB_PLAN.schedule_services(Path(from_schedule)) if from_schedule else {}
+    unknown = sorted(set(chosen) - {name for name, _ in remote})
+    if unknown:
+        raise RemoteCLIError(
+            f"the schedule names {', '.join(unknown)}, which {product}'s __steps__ does not "
+            "declare as a remote step; schedule step ids must be __steps__ names")
+    origin, branch = JOB_PLAN.target_remote(resolved)
+    url, ref = repo_url or origin, repo_ref or branch
+    if not url or not ref:
+        raise RemoteCLIError("the target has no origin remote or current branch: pass "
+                             "--repo-url and --repo-ref")
+    commit = JOBFOLDER._resolve_pin(resolved, None)
+    pins = JOB_PLAN.pinned_requirements(resolved)
+    workspace_root = Path(workspace).resolve() if workspace is not None else DEFAULT_WORKSPACE
+    reachable: bool | None = None
+    rows: list[dict] = []
+    for step, entry in remote:
+        services = chosen.get(step) or ([entry["service"]] if isinstance(entry.get("service"), str)
+                                        and entry["service"].strip() else [])
+        job = entry.get("job") if isinstance(entry.get("job"), str) else None
+        for service in services or [None]:
+            row = {"step": step, "service": service, "job": job}
+            rows.append(row)
+            if not service or not job:
+                row.update(status="refused", error="the step declares no "
+                           + ("service" if not service else "job"))
+                continue
+            _load_backend_module(service)
+            try:
+                adapter_cls = ADAPTER.resolve(service)
+            except KeyError:
+                adapter_cls = None
+            bundle = False
+            if adapter_cls is not None and getattr(adapter_cls, "CODE_BUNDLE_MAX_BYTES", None):
+                if reachable is None:
+                    try:
+                        JOBFOLDER._verify_commit_reachable(commit, url, ref,
+                                                           decision="generate-jobs",
+                                                           target=resolved)
+                        reachable = True
+                    except (JOBFOLDER.JobFolderError, OSError):
+                        reachable = False
+                bundle = not reachable
+            credential = (Path(repo_credential) if repo_credential is not None and not bundle
+                          and adapter_cls is not None and _repo_credential_carrier(adapter_cls)
+                          else None)
+            notebook = JOB_PLAN.step_notebook(entry)
+            module, function = entry.get("module"), entry.get("function")
+            requirements = JOB_PLAN.without_provided(
+                pins, getattr(adapter_cls, "PROVIDED_REQUIREMENTS", ()) if adapter_cls else ())
+            carry = JOB_PLAN.carry_paths(entry)
+            entry_notebook = f"{product}/{notebook}" if notebook else None
+            try:
+                inputs, checks = _dataset_plan(adapter_cls, workspace, datasets, None)
+                # The clone paths the generator's own import/read walk
+                # computes for this step's entries: exactly what its
+                # `computedNotDeclared` check would otherwise refuse.
+                walk = JOBFOLDER.resolve_clone_paths(
+                    resolved, [m for m in ((None if notebook else module), smoke_module)
+                               if isinstance(m, str) and m],
+                    ["src"], [entry_notebook] if entry_notebook else [])
+                clone_paths = sorted(set(walk["computed"])
+                                     | set(walk["computedReadsNotDeclared"])) or ["src"]
+                destination = JOBFOLDER.generate_job(
+                    target=resolved, service=service, job_name=job, product=product,
+                    commit=commit, repo_url=url, repo_ref=ref,
+                    repo_credential_path=credential, clone_paths=clone_paths,
+                    run_module=None if notebook else module,
+                    run_function=None if notebook else function,
+                    run_notebook=entry_notebook,
+                    smoke_module=smoke_module, smoke_function=smoke_function,
+                    smoke_kwargs=smoke_kwargs, smoke_required_evidence=smoke_required_evidence,
+                    regenerate=regenerate, accept_unresolved=accept_unresolved,
+                    accept_unresolved_reads=accept_unresolved_reads,
+                    accept_produced_reads=accept_produced_reads,
+                    environment_requirements=requirements or None,
+                    carry_paths=carry or None, code_bundle=bundle,
+                    input_datasets=inputs, dataset_checks=checks)
+            except (JOBFOLDER.JobFolderError, JOB_PLAN.JobPlanError, ADAPTER.AdapterError,
+                    KeyError) as exc:
+                row.update(status="refused", error=str(exc))
+                continue
+            row.update(status="generated", jobFolder=str(destination), codeBundle=bundle,
+                       inputDatasets=list(inputs or []), carryPaths=carry,
+                       environmentRequirements=requirements)
+    generated = [row for row in rows if row["status"] == "generated"]
+    command = None
+    if generated:
+        command = (f"{_workspace_python(workspace_root)} {Path(__file__).resolve()} preflight "
+                   f"--target {resolved}"
+                   + (f" --workspace {workspace_root}" if workspace is not None else "")
+                   + "".join(f" --entrypoint {Path(row['jobFolder']) / 'runner.ipynb'}"
+                             for row in generated))
+    return {"target": str(resolved), "product": product, "commit": commit, "jobs": rows,
+            "skipped": skipped,
+            "summary": {"generated": len(generated), "refused": len(rows) - len(generated)},
+            "next": command}
+
+
+def _add_dataset_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--dataset", dest="datasets", action="append", default=None, metavar="SLUG",
+        help="repeatable: a workspace dataset (datasets/registry.json) the job reads. Its "
+        "public ref -- the published remote when public, else the public dataset page its "
+        "source names -- is declared as an input dataset, and the official preparation's "
+        "sha256 values are recorded as datasetChecks (the runner exports them as "
+        "FORGE_DATASET_CHECKS). Nothing is uploaded: an unpublished or private dataset "
+        "refuses (DATASET_NOT_PUBLISHED / DATASET_NOT_PUBLIC) naming `/datasets publish` "
+        "with the operator's consent")
+    command.add_argument(
+        "--workspace", type=Path, default=None,
+        help="override: the workspace whose datasets/registry.json --dataset reads "
+        "(default: the workspace this skill is installed in)")
+
+
+def _dataset_plan(adapter_cls, workspace: Path | None,
+                  slugs: Sequence[str] | None,
+                  explicit: Sequence[str] | None) -> tuple[list[str] | None, dict | None]:
+    """`(inputDatasets, datasetChecks)` for `--dataset` beside any explicit
+    `--input-dataset` refs (kept first, in their order)."""
+    if not slugs:
+        return (list(explicit) if explicit else None), None
+    root = Path(workspace).resolve() if workspace is not None else DEFAULT_WORKSPACE
+    host = getattr(adapter_cls, "INPUT_DATASETS_HOST", None) if adapter_cls else None
+    refs, checks = JOB_PLAN.dataset_inputs(root, slugs, host)
+    merged = list(explicit or [])
+    merged += [ref for ref in refs if ref not in merged]
+    return merged, checks
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -3697,6 +4336,45 @@ def _build_parser() -> argparse.ArgumentParser:
         "otherwise), and a bundle over that limit refuses "
         "CODE_BUNDLE_TOO_LARGE. Omitted, the job clones as before.",
     )
+    _add_dataset_arguments(generate_job)
+
+    generate_jobs = subparsers.add_parser(
+        "generate-jobs",
+        help="generate every remote step's job folder in one call, from the product's "
+        "declared __steps__ (and a `schedule` output), then name the one preflight to run",
+    )
+    generate_jobs.add_argument("--target", required=True, type=Path)
+    generate_jobs.add_argument(
+        "--product", required=True,
+        help="the product whose src/<Package>/__init__.py (or config.py) declares __steps__; "
+        "every step with placement 'remote' gets a job at tools/<service>/<job>/")
+    generate_jobs.add_argument(
+        "--from-schedule", dest="from_schedule", type=Path, default=None,
+        help="a remote-parallelism `schedule` output: a step it names runs on the service(s) "
+        "it chose (one job per service) instead of the step's declared service")
+    generate_jobs.add_argument(
+        "--repo-url", default=None,
+        help="the remote the runner clones (default: the target's origin)")
+    generate_jobs.add_argument(
+        "--repo-ref", default=None, help="the branch (default: the target's current branch)")
+    generate_jobs.add_argument(
+        "--repo-credential", dest="repo_credential", type=Path, default=None,
+        help="as for generate-job: a token file, used only for services declaring "
+        "REPO_CREDENTIAL_CARRIER")
+    generate_jobs.add_argument("--smoke-module", default=None)
+    generate_jobs.add_argument("--smoke-function", default=None)
+    generate_jobs.add_argument("--smoke-kwargs", default=None, help="a JSON object")
+    generate_jobs.add_argument(
+        "--smoke-required-evidence", dest="smoke_required_evidence", action="append",
+        default=[], help="repeatable, as for generate-job; applied to every job")
+    generate_jobs.add_argument(
+        "--regenerate", action="store_true",
+        help="replace existing job folders atomically instead of refusing")
+    for flag in ("--accept-unresolved", "--accept-unresolved-reads", "--accept-produced-reads"):
+        generate_jobs.add_argument(
+            flag, action="store_true",
+            help=f"as for generate-job's {flag}; applied to every job")
+    _add_dataset_arguments(generate_jobs)
 
     smoke = subparsers.add_parser(
         "smoke", help="smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict"
@@ -3728,6 +4406,73 @@ def _build_parser() -> argparse.ArgumentParser:
     # "is THIS account ready", not "which account should this go to", so
     # there is nothing here for automatic selection to stand in for.
     readiness.add_argument("--worker", required=True)
+
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="check a generated job locally before its first remote rehearsal: one "
+        "pass/warn/fail row per check with its evidence and fix; never submits",
+    )
+    preflight.add_argument("--target", required=True, type=Path)
+    preflight.add_argument(
+        "--entrypoint", dest="entrypoints", required=True, type=Path, action="append",
+        help="the job folder's runner.ipynb (<target>/tools/<service>/<job-name>/runner.ipynb). "
+        "Repeatable: with more than one, the report is {jobs: [one report per job], summary}",
+    )
+    preflight.add_argument(
+        "--worker", dest="workers", action="append", default=None,
+        help="repeatable: the account(s) to check. Omitted, every worker the service lists "
+        "is checked, since each account needs its own rehearsal",
+    )
+    preflight.add_argument(
+        "--workspace", type=Path, default=None,
+        help="override: the workspace whose env interpreter, datasets/registry.json, team "
+        "registry and account store are read (default: the workspace this skill is "
+        "installed in)",
+    )
+    preflight.add_argument(
+        "--interpreter", type=Path, default=None,
+        help="override: the interpreter the local rehearsal runs the smoke under (default: "
+        "the target's own .venv interpreter)",
+    )
+    preflight.add_argument(
+        "--expect-accelerator", dest="expect_accelerator", default=None,
+        help="the accelerator the plan expects (a machine name or an sm_* architecture); "
+        "a job that will request another one fails",
+    )
+    preflight.add_argument(
+        "--timing", type=Path, default=None,
+        help="the timing record the session-fit check reads (default: "
+        "<target>/<product>/Results/timing.json)",
+    )
+    preflight.add_argument("--stage", default="full", choices=("poc", "full"),
+                           help="which scale of the timing record the job runs (default full)")
+    preflight.add_argument(
+        "--units", type=int, default=1,
+        help="how many units the stage's work is split into across sessions (default 1)",
+    )
+    preflight.add_argument(
+        "--local-smoke-kwargs", dest="local_smoke_kwargs", default=None,
+        help="a JSON object replacing the smoke callable's kwargs for the local rehearsal "
+        "only: a cheaper local scale the target declares",
+    )
+    preflight.add_argument(
+        "--local-timeout", dest="local_timeout", type=float, default=600.0,
+        help="the local rehearsal's time budget in seconds (default 600)",
+    )
+    preflight.add_argument(
+        "--skip-rehearsal", dest="skip_rehearsal", action="store_true",
+        help="skip the local rehearsal (its row reads warn)",
+    )
+    preflight.add_argument(
+        "--keep-rehearsal", dest="keep_rehearsal", type=Path, default=None,
+        help="leave the local rehearsal's scratch directory at this new path, to read it",
+    )
+    preflight.add_argument(
+        "--repo-credential", dest="repo_credential", type=Path, default=None,
+        help="path to the token file `submit --repo-credential` will carry, so the "
+        "reachability probe authenticates the same way (carrier services only); read only "
+        "through the generator's single read site, as generate-job reads it",
+    )
 
     return parser
 
@@ -4105,6 +4850,20 @@ def main(argv: list[str] | None = None) -> int:
                 return _refused(exc)
             if not _repo_credential_carrier(adapter_cls):
                 return _refused(_uncarried_repo_credential(args.service))
+        if args.workspace is not None and not args.datasets:
+            return _refused(RemoteCLIError(
+                "WORKSPACE_WITHOUT_DATASET: --workspace only chooses whose "
+                "datasets/registry.json --dataset reads; give --dataset <slug>, or drop "
+                "--workspace"))
+        try:
+            try:
+                dataset_cls = ADAPTER.resolve(args.service) if args.datasets else None
+            except KeyError:
+                dataset_cls = None
+            input_datasets, dataset_checks = _dataset_plan(
+                dataset_cls, args.workspace, args.datasets, args.input_datasets)
+        except JOB_PLAN.JobPlanError as exc:
+            return _refused(exc)
         try:
             destination = JOBFOLDER.generate_job(
                 target=args.target,
@@ -4136,7 +4895,8 @@ def main(argv: list[str] | None = None) -> int:
                 local_budget_seconds=args.local_budget_seconds,
                 carry_paths=args.carry_paths,
                 code_bundle=args.code_bundle,
-                input_datasets=args.input_datasets,
+                input_datasets=input_datasets,
+                dataset_checks=dataset_checks,
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)
@@ -4169,6 +4929,9 @@ def main(argv: list[str] | None = None) -> int:
                        if (warnings := JOBFOLDER.smoke_warnings(job_folder.run_config)) else {}),
                     **({"codeBundle": dict(job_folder.run_config["codeBundle"])}
                        if "codeBundle" in job_folder.run_config else {}),
+                    **({"inputDatasets": list(job_folder.run_config["inputDatasets"]),
+                        "datasetChecks": dict(job_folder.run_config["datasetChecks"])}
+                       if args.datasets else {}),
                 },
                 sort_keys=True,
                 # `default=str`: `staleness` is the exact sub-dict `status`
@@ -4210,6 +4973,61 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         return 1
+
+    if args.command == "generate-jobs":
+        try:
+            smoke_kwargs = json.loads(args.smoke_kwargs) if args.smoke_kwargs else None
+            result = cmd_generate_jobs(
+                target=args.target, product=args.product, from_schedule=args.from_schedule,
+                repo_url=args.repo_url, repo_ref=args.repo_ref,
+                repo_credential=args.repo_credential, smoke_module=args.smoke_module,
+                smoke_function=args.smoke_function, smoke_kwargs=smoke_kwargs,
+                smoke_required_evidence=args.smoke_required_evidence or None,
+                regenerate=args.regenerate, datasets=args.datasets, workspace=args.workspace,
+                accept_unresolved=args.accept_unresolved,
+                accept_unresolved_reads=args.accept_unresolved_reads,
+                accept_produced_reads=args.accept_produced_reads)
+        except json.JSONDecodeError as exc:
+            return _refused(f"--smoke-kwargs is not JSON: {exc}")
+        except (RemoteCLIError, JOB_PLAN.JobPlanError, JOBFOLDER.JobFolderError) as exc:
+            return _refused(exc)
+        print(json.dumps(result, sort_keys=True, default=str))
+        return 0 if result["summary"]["refused"] == 0 else 1
+
+    if args.command == "preflight":
+        try:
+            smoke_kwargs = (json.loads(args.local_smoke_kwargs)
+                            if args.local_smoke_kwargs is not None else None)
+            if smoke_kwargs is not None and not isinstance(smoke_kwargs, dict):
+                raise RemoteCLIError("--local-smoke-kwargs must be a JSON object")
+            reports = [cmd_preflight(
+                target=args.target, entrypoint=entrypoint, workers=args.workers,
+                workspace=args.workspace, interpreter=args.interpreter,
+                expect_accelerator=args.expect_accelerator, timing=args.timing,
+                stage=args.stage, units=args.units, local_smoke_kwargs=smoke_kwargs,
+                local_timeout=args.local_timeout, skip_rehearsal=args.skip_rehearsal,
+                keep_rehearsal=(args.keep_rehearsal if len(args.entrypoints) == 1
+                                or args.keep_rehearsal is None
+                                else args.keep_rehearsal / f"job-{index}"),
+                repo_credential=args.repo_credential)
+                for index, entrypoint in enumerate(args.entrypoints)]
+        except json.JSONDecodeError as exc:
+            return _refused(f"--local-smoke-kwargs is not JSON: {exc}")
+        except (RemoteCLIError, JOBFOLDER.JobFolderError) as exc:
+            return _refused(exc)
+        if len(reports) == 1:
+            result = reports[0]
+        else:
+            # One report per job, and one verdict over all of them: the
+            # `generate-jobs` follow-up is a single command (S3).
+            counts = {status: sum(r["summary"][status] for r in reports)
+                      for status in ("pass", "warn", "fail")}
+            result = {"jobs": reports,
+                      "summary": {**counts, "ok": all(r["summary"]["ok"] for r in reports)}}
+        # The report is data on stdout either way; the exit status is the
+        # verdict: 0 only when no row fails.
+        print(json.dumps(result, sort_keys=True, default=str))
+        return 0 if result["summary"]["ok"] else 1
 
     if args.command == "readiness":
         try:

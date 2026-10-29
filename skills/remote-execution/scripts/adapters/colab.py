@@ -90,6 +90,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -212,6 +213,11 @@ def restore_notebook_json(path: Path) -> None:
 # the CLI's default path re-rooted at the owner's directory, so the flag
 # states the file rather than changing it.
 CLI_SESSIONS_FILE_RELATIVE = Path(".config") / "colab-cli" / "sessions.json"
+
+# The token the CLI authenticates itself from under a given HOME. Only its
+# EXISTENCE is ever asked (`account_check`, preflight's sign-in probe): one
+# stat, never a read, the same rule the command center's sign-in row keeps.
+CLI_TOKEN_FILE_RELATIVE = Path(".config") / "colab-cli" / "token.json"
 
 # Every session this adapter creates carries this name prefix. The CLI
 # lists the ACCOUNT's sessions, not this skill's — `list_active()` claims
@@ -627,11 +633,17 @@ class ColabAdapter(ADAPTER.Adapter):
         assets_dir: Path | None = None,
         repo_credential_path: str | Path | None = None,
         team_registry: str | Path | None = None,
+        workspace: str | Path | None = None,
     ) -> None:
         self._colab_executable = colab_executable
         # The registry's PATH; read lazily (and once) by `_team()`, so a
         # constructor never fails over a file no operation has needed yet.
         # `None` means the module default, resolved at read time.
+        # `workspace` (remote-preflight F3): the workspace `preflight
+        # --workspace` names, whose team registry is the one read; an
+        # explicit `team_registry` still wins.
+        if team_registry is None and workspace is not None:
+            team_registry = Path(workspace) / TEAM_REGISTRY_RELATIVE
         self._team_registry = Path(team_registry) if team_registry is not None else None
         self._team_cache: tuple[TeamAccount, ...] | None = None
         self._team_loaded = False
@@ -735,6 +747,50 @@ class ColabAdapter(ADAPTER.Adapter):
         from the registry alone (no subprocess, no network)."""
         account = self._account_for(worker, allow_legacy=True)
         return None if account is None else account.campaign_refusal()
+
+    # -- preflight hooks (remote-preflight S1) -----------------------------
+    # Ordinary methods, never ABC operations: `remote_cli preflight` reads
+    # them with `getattr`. None of them starts a session or reads a token.
+
+    def interpreter_check(self) -> dict:
+        """Whether the official CLI every `submit` drives is on `PATH`."""
+        found = shutil.which(self._colab_executable)
+        if found:
+            return {"ok": True, "evidence": f"the colab CLI is at {found}"}
+        return {"ok": False, "evidence": f"the colab CLI ({self._colab_executable!r}) is not "
+                "on PATH", "fix": "install the official colab CLI and put it on PATH"}
+
+    def account_check(self, worker: str) -> dict:
+        """Whether `worker` is declared and signed in: its state directory
+        holds the CLI's token file (existence only, never its bytes)."""
+        try:
+            account = self._account_for(worker, allow_legacy=False)
+        except ColabAdapterError as exc:
+            return {"ok": False, "evidence": str(exc),
+                    "fix": "register the owner (`smith team add ... --attest`) with a Colab "
+                           "tier and configDir"}
+        home = account.config_dir if account is not None else Path.home()
+        token = home / CLI_TOKEN_FILE_RELATIVE
+        if token.exists():
+            tier = f", tier {account.tier}" if account is not None else ""
+            return {"ok": True, "evidence": f"{worker} is signed in ({home}{tier})"}
+        return {"ok": False, "evidence": f"{worker} is not signed in: no CLI token under {home}",
+                "fix": f"sign in once with `HOME={home} colab` (the CLI's own login), then "
+                       "preflight again"}
+
+    def accelerator_request(self, run_config: dict) -> dict:
+        """The `--gpu` variant `colab new` will request for this job's
+        declared accelerator (`cpu` when it declares none). A block the
+        variant table cannot map is reported, as `submit` would refuse it."""
+        declared = run_config.get("accelerator")
+        try:
+            variant = self._accelerator_variant(declared)
+        except ColabAdapterError as exc:
+            return {"name": "unmapped", "architectures": [], "problem": str(exc)}
+        if variant is None:
+            return {"name": "cpu", "architectures": [], "problem": None}
+        architectures = list(declared.get("architectures") or []) if isinstance(declared, dict) else []
+        return {"name": variant, "architectures": architectures, "problem": None}
 
     def _cli(self, account: TeamAccount | None) -> list[str]:
         """The argv prefix for one worker's child: the executable, plus —

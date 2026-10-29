@@ -353,6 +353,34 @@ def validate_input_datasets(input_datasets: object) -> tuple[str, ...]:
     return tuple(validated)
 
 
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+def validate_dataset_checks(checks: object, input_datasets: object) -> dict:
+    """`datasetChecks` (remote-preflight S2, `generate-job --dataset`): per
+    declared input ref, the workspace preparation's sha256 values the
+    target verifies what it reads against, exported by the runner as
+    `FORGE_DATASET_CHECKS`. Every key must be a declared `inputDatasets`
+    ref and every value carry a full lowercase `sha256` (and, when given,
+    `splitsSha256`). Checked at generation and on every read."""
+    if not isinstance(checks, Mapping):
+        raise JobFolderError("run-config.json's datasetChecks must be an object keyed by "
+                             "input dataset ref")
+    declared = set(input_datasets or []) if isinstance(input_datasets, (list, tuple)) else set()
+    for ref, check in checks.items():
+        if ref not in declared:
+            raise JobFolderError(f"datasetChecks names {ref!r}, which inputDatasets does "
+                                 "not declare")
+        if not isinstance(check, Mapping) or not isinstance(check.get("sha256"), str) \
+                or not _SHA256_HEX.fullmatch(check["sha256"]):
+            raise JobFolderError(f"datasetChecks[{ref!r}] must carry a lowercase 64-hex sha256")
+        splits = check.get("splitsSha256")
+        if splits is not None and not (isinstance(splits, str) and _SHA256_HEX.fullmatch(splits)):
+            raise JobFolderError(f"datasetChecks[{ref!r}].splitsSha256 must be a lowercase "
+                                 "64-hex sha256")
+    return {ref: dict(check) for ref, check in checks.items()}
+
+
 def with_entry_notebooks(
     clone_paths: Sequence[str], notebooks: Sequence[str]
 ) -> list[str]:
@@ -1732,6 +1760,8 @@ def validate_run_config(run_config: Mapping[str, object]) -> None:
         validate_carry_paths(carry_paths)
     if "inputDatasets" in run_config:
         validate_input_datasets(run_config["inputDatasets"])
+    if "datasetChecks" in run_config:
+        validate_dataset_checks(run_config["datasetChecks"], run_config.get("inputDatasets"))
     if "codeBundle" in run_config:
         validate_code_bundle_block(run_config["codeBundle"])
 
@@ -1948,6 +1978,7 @@ def build_run_config(
     carry_paths: Sequence[str] | None = None,
     code_bundle: Mapping[str, object] | None = None,
     input_datasets: Sequence[str] | None = None,
+    dataset_checks: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict:
     """Assemble `run-config.json`'s exact shape from target-supplied values.
 
@@ -2139,6 +2170,8 @@ def build_run_config(
         run_config["carryPaths"] = list(validate_carry_paths(carry_paths))
     if input_datasets:
         run_config["inputDatasets"] = list(validate_input_datasets(input_datasets))
+    if dataset_checks:
+        run_config["datasetChecks"] = validate_dataset_checks(dataset_checks, input_datasets)
     if code_bundle is not None:
         run_config["codeBundle"] = dict(code_bundle)
     if has_environment_install:
@@ -2237,6 +2270,7 @@ def generate_job(
     carry_paths: Sequence[str] | None = None,
     code_bundle: bool = False,
     input_datasets: Sequence[str] | None = None,
+    dataset_checks: Mapping[str, Mapping[str, object]] | None = None,
 ) -> Path:
     """Generate one job folder, atomically, refusing to overwrite an
     existing one unless `regenerate=True`.
@@ -2324,6 +2358,11 @@ def generate_job(
     exports their mounts in `FORGE_INPUT_DATASETS`. Omitted or empty, no
     `inputDatasets` key is written, exactly as before.
 
+    `dataset_checks` (remote-preflight S2), when given, is recorded as
+    `datasetChecks`: per declared input ref, the workspace preparation's
+    sha256 values (`validate_dataset_checks()`), which the runner exports
+    as `FORGE_DATASET_CHECKS`. Omitted, no key is written.
+
     `repo_credential_path` (S3) is forwarded verbatim into that same
     condition set, where only the network-reaching `pin-published` probe
     ever reads it: with a path, generation's reachability check
@@ -2363,6 +2402,8 @@ def generate_job(
         )
     if input_datasets:
         validate_input_datasets(input_datasets)
+    if dataset_checks:
+        validate_dataset_checks(dataset_checks, input_datasets)
     resolved_target = resolve_target(target)
     destination = resolve_destination(resolved_target, service, job_name)
     # Before the pin is resolved: resolution may already call git with it.
@@ -2551,6 +2592,7 @@ def generate_job(
         carry_paths=carry_paths,
         code_bundle=bundle_block,
         input_datasets=input_datasets,
+        dataset_checks=dataset_checks,
     )
     notebook = build_notebook(resolved_bootstrap, resolved_invoke)
 

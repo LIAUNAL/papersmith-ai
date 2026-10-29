@@ -4,7 +4,9 @@ Every module in this package is one host. It declares ``NAME`` and a
 ``search(query, http, limit)`` that returns hits as
 ``{"ref", "title", "url", "license"}`` dicts, and may declare a ``PUBLISHER``
 (an object with ``create_argv``, ``version_argv``, ``status_argv``,
-``validate_metadata`` and ``mount_hint``) when the host can receive an upload.
+``validate_metadata`` and ``mount_hint``) when the host can receive an upload,
+and may declare ``ref_from_url(url)`` -> ``"owner/slug"`` or ``None`` when a
+job's runner can attach one of its public dataset pages by ref.
 
 The front door (``datasets_cli.py``) never names a host: it asks
 :func:`discover` what is here, so a host is added by adding one file, and the
@@ -57,4 +59,15 @@ def publisher() -> tuple[str, object] | None:
         candidate = getattr(module, "PUBLISHER", None)
         if candidate is not None:
             return name, candidate
+    return None
+
+
+def ref_from_url(url) -> tuple[str, str] | None:
+    """``(NAME, ref)`` for the host whose ``ref_from_url`` recognizes ``url``
+    as one of its public dataset pages, or ``None``."""
+    for name, module in discover().items():
+        parse = getattr(module, "ref_from_url", None)
+        ref = parse(url) if callable(parse) else None
+        if ref:
+            return name, ref
     return None

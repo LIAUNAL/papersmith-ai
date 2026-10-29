@@ -57,6 +57,18 @@ def search(query, http, limit=20):
     return hits[:limit]
 
 
+_DATASET_URL = re.compile(
+    r"^https?://(?:www\.)?kaggle\.com/datasets/([A-Za-z0-9_-]+)/([a-z0-9][a-z0-9-]*[a-z0-9])/?(?:[?#].*)?$")
+
+
+def ref_from_url(url):
+    """The ``owner/slug`` a public dataset page names, or ``None`` when the
+    URL is not one of this host's dataset pages. A job's runner attaches a
+    dataset by this ref (``remote_cli generate-job --dataset``)."""
+    match = _DATASET_URL.match(str(url or "").strip())
+    return f"{match.group(1)}/{match.group(2)}" if match else None
+
+
 class _Publisher:
     """Command lines for the official client and the metadata it accepts."""
 

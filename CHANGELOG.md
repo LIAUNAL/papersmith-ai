@@ -11,6 +11,87 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Added
+
+- `remote_cli preflight --target <repo> --entrypoint <job>/runner.ipynb
+  [--worker <id>]...` checks a generated job locally before its first remote
+  rehearsal and never submits. It prints one `{check, status, evidence, fix}`
+  row per check (`pin`, `diagrams`, `interpreter`, `code-reachability`,
+  `inputs`, `local-rehearsal`, `account` per worker, `accelerator`,
+  `session-fit`) and exits non-zero on any `fail`. The local rehearsal
+  materializes the job's code with the runner's own functions (from the code
+  bundle when there is one, so only `.git/HEAD`) in a scratch directory outside
+  the target, runs the smoke through the runner's `invoke()` under the
+  target's `.venv` interpreter with the runner's environment and a time budget
+  (`--local-timeout`, `--local-smoke-kwargs` for a cheaper local scale), and
+  judges the `shard.json` it leaves with the same predicate `smoke record`
+  uses. Each check comes from a remote round the QMLEEG full experiments spent:
+  a diagram validated too late, a driver missing from the interpreter, a
+  private repository, an unattached dataset, a smoke that never stamped, a
+  stamp that read the commit with git on a bundled worker, an account without
+  its own rehearsal, the default accelerator instead of the planned one.
+  Options: `--expect-accelerator` (the machine the plan expects),
+  `--timing`/`--stage`/`--units` (the session-fit inputs), `--skip-rehearsal`,
+  `--keep-rehearsal <new dir outside the target>` (otherwise the scratch is
+  removed, passing or failing), `--interpreter` (the rehearsal's interpreter),
+  `--repo-credential` (read only through the generator's single read site, as
+  `generate-job` does) and `--workspace`, which decides the env interpreter,
+  dataset registry, team registry and account store the checks read, so a CLI
+  run from another checkout checks the accounts that workspace holds.
+- The adapters answer three optional preflight hooks (the ABC keeps six
+  operations): `interpreter_check` (Kaggle: the SDK driver's `selftest`;
+  Colab: the CLI on `PATH`), `account_check` (Kaggle: the accounts CLI's
+  `validate --account <username> --json`, new, which re-checks one stored
+  account and writes nothing; Colab: the owner's CLI token file exists) and
+  `accelerator_request` (the machine each push requests). `validate --json`
+  without `--account` refuses `JSON_NEEDS_ACCOUNT`.
+- The scaffold's `remote_stamp.py` reads the commit from `FORGE_CLONE_COMMIT`
+  when `git rev-parse HEAD` fails, and ships `@stamped`, a smoke template that
+  writes `shard.json` from whatever the smoke returns.
+- The remote-execution skill gains **Before the first rehearsal**, the
+  preflight and each lesson as a rule; the walk and build agents and both
+  implementation skills run `preflight` before a rehearsal is run or offered.
+- `generate-job --dataset <slug>` (repeatable) declares a workspace dataset as
+  the job's input from `datasets/registry.json`: the published remote when it
+  is public, else the public dataset page its source names, recorded beside
+  the official preparation's sha256 values as `datasetChecks`, which the
+  runner exports as `FORGE_DATASET_CHECKS`. It uploads nothing: an
+  unpublished, private, unprepared or unlicensed dataset refuses
+  (`DATASET_NOT_PUBLISHED`, `DATASET_NOT_PUBLIC`, `DATASET_NOT_PREPARED`,
+  `DATASET_LICENSE_NOT_ALLOWED`) naming the `/datasets` verb that fixes it,
+  and one served by a host the service does not attach from refuses
+  `DATASET_HOST_NOT_ATTACHABLE` (the adapter's optional `INPUT_DATASETS_HOST`);
+  an unknown slug refuses `DATASET_UNKNOWN`, a workspace without the datasets
+  skill `DATASETS_SKILL_MISSING`. `generate-job --workspace` chooses whose
+  registry `--dataset` reads, and alone refuses `WORKSPACE_WITHOUT_DATASET`.
+- `remote_cli generate-jobs --target <repo> --product <Name>
+  [--from-schedule <schedule output>] [--dataset <slug>]...` generates every
+  remote step's job folder in one call from the product's `__steps__`: the
+  step's service (or the one a `schedule` output chose), its notebook or
+  callable, the clone paths the generator's own walk computes, a code bundle
+  when the pin is not anonymously reachable and the service carries bundles,
+  the target's pinned requirements minus the adapter's optional
+  `PROVIDED_REQUIREMENTS`, carry paths from the step's non-notebook
+  `produces`, and the `--dataset` inputs. It prints one row per job and the
+  single `preflight` command over all of them; `preflight --entrypoint` is now
+  repeatable (one entrypoint: the report is unchanged). It also takes
+  `--smoke-module`/`--smoke-function`/`--smoke-kwargs`/`--smoke-required-evidence`
+  and `--accept-unresolved`/`--accept-unresolved-reads`/`--accept-produced-reads`
+  (applied to every job), `--regenerate`, `--repo-url`/`--repo-ref`/
+  `--repo-credential` and `--workspace`, and refuses `STEPS_UNREADABLE`,
+  `SCHEDULE_UNREADABLE` and `SCHEDULE_IS_A_PLAN`.
+
+### Fixed
+
+- A callable job's runner now exports `FORGE_CLONE_ROOT` and
+  `FORGE_CLONE_COMMIT` as a notebook job's does, so a callable smoke on a
+  code-bundle worker reads its commit.
+- The Kaggle driver's "kagglesdk is not importable" refusal names the
+  workspace env interpreter instead of suggesting `pip install --user` into
+  whichever interpreter ran it.
+
 ## 0.36.0
 
 ### Added

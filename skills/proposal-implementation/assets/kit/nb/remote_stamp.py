@@ -12,6 +12,11 @@ no such variable, and a stamp written there would be a claim about a run that
 never happened remotely. So without it `write_shard` writes nothing and
 returns `None`.
 
+A smoke callable decorated with `stamped` calls it for you with whatever the
+smoke returns, which is the scaffold's smoke template: a smoke that only
+times or only runs and never stamps is refused at `smoke record`, after a
+whole remote rehearsal.
+
 It lives beside the method's own package, like `report_digest.py`, and for
 the same reason: it proves nothing, declares no `__provenance__`, and finds
 the repository from its own path. Standard library only at import time;
@@ -20,6 +25,7 @@ the repository from its own path. Standard library only at import time;
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
 import os
@@ -33,6 +39,9 @@ RUN_MODE_ENV = "FORGE_RUN_MODE"
 #: The file `remote-execution` reads a shard's stamp from.
 SHARD = "shard.json"
 
+#: The pinned commit the remote runner exports beside the clone it hands over.
+CLONE_COMMIT_ENV = "FORGE_CLONE_COMMIT"
+
 
 def repository_root() -> Path:
     """`<repo>`, read off this file's own path: `<repo>/src/<Package>/`."""
@@ -40,14 +49,19 @@ def repository_root() -> Path:
 
 
 def commit(repository: Path | None = None) -> str | None:
-    """The checked-out commit, or `None` when there is no git or no commit."""
+    """The checked-out commit: `git rev-parse HEAD`, or, where git cannot
+    answer, the commit the runner exported (`FORGE_CLONE_COMMIT`). A worker
+    that received the code as a bundle holds only `.git/HEAD`, so git fails
+    there while the runner still knows the pin. `None` when neither answers."""
     repository = repository or repository_root()
     try:
         run = subprocess.run(["git", "-C", str(repository), "rev-parse", "HEAD"],
                              capture_output=True, text=True, check=False)
     except OSError:
-        return None
-    return run.stdout.strip() if run.returncode == 0 and run.stdout.strip() else None
+        run = None
+    if run is not None and run.returncode == 0 and run.stdout.strip():
+        return run.stdout.strip()
+    return os.environ.get(CLONE_COMMIT_ENV) or None
 
 
 def sources_digest(repository: Path | None = None) -> str:
@@ -124,3 +138,22 @@ def write_shard(summary: dict, directory=None, *, device=None,
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_jsonable)
                     + "\n", encoding="utf-8")
     return path
+
+
+def stamped(function):
+    """The smoke template: wrap the target's smoke callable so it leaves
+    `shard.json` by itself. Whatever the smoke returns becomes the stamp's
+    `runs` (a non-mapping is stored under `result`); outside the runner
+    nothing is written, exactly as `write_shard` behaves.
+
+        @stamped
+        def smoke(**kwargs):
+            ...
+            return {"units": 1, "seconds": elapsed}
+    """
+    @functools.wraps(function)
+    def run(*args, **kwargs):
+        summary = function(*args, **kwargs)
+        write_shard(summary if isinstance(summary, dict) else {"result": summary})
+        return summary
+    return run
