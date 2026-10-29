@@ -24,7 +24,12 @@ number is `0`, breaking changes can still arrive without a major bump.
   each option's slots with its own setup, session limits and quota and
   recommends the smallest makespan upper bound, then the fewest accelerator
   hours, then the CPU, then local, so a GPU wins only when it was measured
-  faster. Every other option is listed with why it lost; every candidate the
+  faster. An accelerator is recommended only when it beat a measured CPU
+  option on makespan, and `reason` names that CPU; with no CPU measured, or
+  every measured CPU faster (one over the local limit included), the stage
+  reads `status: needs-measurement`, recommends nothing, shows the leader as
+  `provisional` and lists the CPU candidates to measure first under
+  `measureFirst` with the probe command for each. Every other option is listed with why it lost; every candidate the
   record lacks is listed as `unmeasured` with the probe or rehearsal that would
   measure it, never extrapolated from another host. When waiting on data takes
   more than 40% of an epoch, `representationAdvice` recommends a cached form
@@ -35,15 +40,20 @@ number is `0`, breaking changes can still arrive without a major bump.
   candidate and setting (batch size, loader workers, pin memory, prefetch,
   threads, dtype, raw or cached data), `local-cpu-<N>` timed as N concurrent
   processes, each epoch split into load and compute time, each candidate
-  capped in time (300 s by default). It writes only `Results/timing.json` and
-  never picks a device: `device_from_plan` reads the plan's measured
+  capped in time (300 s by default). A candidate of another host than
+  `--host` is refused before anything runs or is written, and an epoch below
+  the record's resolution is written as 0.0001 s, never 0. It writes only
+  `Results/timing.json` and never picks a device: `device_from_plan` reads the plan's measured
   recommendation and refuses without one.
 - Timing records schema 2: a `candidate` per measurement, its settings,
   `loadSeconds`/`computeSeconds`, and per-host `cpuCount`, `ramGB`, `mps`,
   `cuda`. `estimate` adds `candidateEstimates`, and `mixed-devices` is keyed
   by candidate, so one host may hold CPU and accelerator rows. Schema 1
   records load as before, with unchanged `estimate`, `assess` and
-  `schedule` outputs.
+  `schedule` outputs. `hyperparameter-search plan --timing` reads schema 2 too
+  (the probe upgrades a schema 1 record in place), estimating per candidate
+  at its fastest setting with `mixed-devices` keyed by candidate; its schema 1
+  output is unchanged.
 - `remote_cli generate-job --accelerator-kind cpu` writes a CPU-only job
   (`{"kind": "cpu", "architectures": []}`): Colab's `new` gets no `--gpu`,
   Kaggle's metadata carries `enable_gpu: false` and no `machine_shape`. A

@@ -1808,7 +1808,44 @@ def representation_advice(by_candidate: dict) -> tuple[list[dict], list[dict]]:
     return advice, comparisons
 
 
-def stage_plan(stage: str, data: dict, by_candidate: dict, accounts: dict, advice: list[dict]) -> dict:
+def is_cpu_candidate(name: str) -> bool:
+    return name.startswith("local-cpu-") or name.lower().endswith("/cpu")
+
+
+def measure_first(unmeasured: list[dict], timing: str) -> list[dict]:
+    """The CPU candidates listed as unmeasured, with the probe command that
+    measures each: the local one directly, a remote one inside its rehearsal."""
+    entry = "--path <target>/src --entry <package>.<module>:<function> --arm <arm id>"
+    rows = []
+    for item in unmeasured:
+        name = item["candidate"]
+        if not is_cpu_candidate(name):
+            continue
+        host = candidate_kind(name)[0]
+        command = (f"<target>/.venv/bin/python {PROBE} {entry} --out {timing} --candidates {name}"
+                   if host == "local" else
+                   f"python {PROBE} {entry} --out {timing} --host {host} --candidates {name}")
+        rows.append({"candidate": name, "measureWith": item["measureWith"], "command": command})
+    return rows
+
+
+def epoch_seconds(option: dict, by_candidate: dict) -> float:
+    """An option's measured seconds per epoch: its fastest candidate's, at its fastest setting."""
+    return min(per_unit_of(best_setting(by_candidate[name])[0]) for name in option["candidates"])
+
+
+def cpu_evidence(best: dict, cpu: dict, by_candidate: dict) -> str:
+    """How an accelerator option compares with one measured CPU option."""
+    label = cpu["option"] + ("" if cpu["status"] == "eligible" else f", {cpu['status']}")
+    if cpu["makespanSeconds"] is None:
+        return f"{label}: no makespan to compare"
+    return (f"{label}: {num(epoch_seconds(best, by_candidate))} s per epoch against "
+            f"{num(epoch_seconds(cpu, by_candidate))} s, makespan upper bound {best['makespanSeconds']['high']} s "
+            f"against {cpu['makespanSeconds']['high']} s")
+
+
+def stage_plan(stage: str, data: dict, by_candidate: dict, accounts: dict, advice: list[dict],
+               first: list[dict]) -> dict:
     scale = data["scales"][stage]
     singles = {candidate: measured_option(candidate, items, scale, stage, accounts)
                for candidate, items in sorted(by_candidate.items())}
@@ -1821,39 +1858,59 @@ def stage_plan(stage: str, data: dict, by_candidate: dict, accounts: dict, advic
 
     eligible.sort(key=key)
     result = {"units": scale["folds"] * scale["seeds"], "unit": UNIT_DEFINITION, "options": options,
-              "recommended": None, "lost": []}
+              "status": "recommended", "recommended": None, "measureFirst": [], "lost": []}
+    leader = None
     if not eligible:
+        result["status"] = "no-eligible"
         result["reason"] = ("no measured candidate is eligible: measure one listed under unmeasured, or declare "
                             "the accounts of the ones measured")
     else:
-        best = eligible[0]
+        best = leader = eligible[0]
         high = best["makespanSeconds"]["high"]
         reason = f"{best['option']} has the smallest measured makespan upper bound ({high} s)"
         accelerators = [item for item in options if item["device"] != "cpu" and item is not best]
-        cpus = [item for item in eligible if item["device"] == "cpu" and item is not best]
+        # An accelerator wins only over a measured CPU option it beat on makespan: an eligible
+        # one it outran, or one that has a makespan and is ineligible (over the local limit).
+        cpus = sorted((item for item in options if item["device"] == "cpu"),
+                      key=lambda item: (item["makespanSeconds"] is None,
+                                        item["makespanSeconds"]["high"] if item["makespanSeconds"] else 0,
+                                        item["option"]))
+        beaten = [item for item in cpus if item["makespanSeconds"] is not None
+                  and item["makespanSeconds"]["high"] > high]
         if best["device"] == "cpu" and accelerators:
             reason += "; the CPU wins: no accelerator was measured faster"
-        elif best["device"] != "cpu":
-            reason += ("; an accelerator wins because it was measured faster than every eligible CPU candidate"
-                       + (f" (best CPU {cpus[0]['option']}: {cpus[0]['makespanSeconds']['high']} s)" if cpus else ""))
-        if best["kind"] == "split":
-            reason += f"; {best['reason']}"
-        result["recommended"] = dict(best, reason=reason)
-        mine = next((item["advice"] for item in advice if item["candidate"] in best["candidates"]), None)
-        if mine:
-            result["recommended"]["representationAdvice"] = mine
-        result["reason"] = reason
+        elif best["device"] != "cpu" and beaten:
+            reason += ("; an accelerator wins because it was measured faster than "
+                       + cpu_evidence(best, beaten[0], by_candidate))
+        if best["device"] != "cpu" and not beaten:
+            evidence = "; ".join(cpu_evidence(best, item, by_candidate) for item in cpus)
+            why = f"it beat no measured CPU candidate ({evidence})" if cpus else "no CPU candidate was measured"
+            then = (f"measure {', '.join(item['candidate'] for item in first)} first, then plan again" if first else
+                    "no unmeasured CPU candidate is left to name: measure a CPU candidate the team has (the timing "
+                    "probe locally, a rehearsal with generate-job --accelerator-kind cpu remotely), then plan again")
+            reason = (f"no firm recommendation: {best['option']} has the smallest measured makespan upper bound "
+                      f"({high} s), but {why}, so an accelerator is never chosen by default; {then}")
+            result.update(status="needs-measurement", provisional=dict(best, reason=reason), measureFirst=first,
+                          reason=reason)
+        else:
+            if best["kind"] == "split":
+                reason += f"; {best['reason']}"
+            result["recommended"] = dict(best, reason=reason)
+            mine = next((item["advice"] for item in advice if item["candidate"] in best["candidates"]), None)
+            if mine:
+                result["recommended"]["representationAdvice"] = mine
+            result["reason"] = reason
     winner = result["recommended"]
     for item in options:
-        if winner is not None and item["option"] == winner["option"]:
+        if leader is not None and item["option"] == leader["option"]:
             continue
         if item["status"] != "eligible":
             why = item["reason"]
-        elif item["makespanSeconds"]["high"] > winner["makespanSeconds"]["high"]:
+        elif item["makespanSeconds"]["high"] > leader["makespanSeconds"]["high"]:
             why = (f"slower: makespan upper bound {item['makespanSeconds']['high']} s against "
-                   f"{winner['option']}'s {winner['makespanSeconds']['high']} s")
+                   f"{leader['option']}'s {leader['makespanSeconds']['high']} s")
         else:
-            why = (f"as fast as {winner['option']}, but it spends {item['acceleratorHours']} accelerator hours "
+            why = (f"as fast as {leader['option']}, but it spends {item['acceleratorHours']} accelerator hours "
                    "or is not the CPU or local option")
         result["lost"].append({"option": item["option"], "status": item["status"], "reason": why})
     if stage == "poc":
@@ -1896,8 +1953,9 @@ def cmd_plan(args, root: Path, today: str) -> dict:
     stages = STAGES if stage == "both" else (stage,)
     unmeasured = unmeasured_candidates(data, by_candidate, accounts, asked)
     plans = {}
+    first = measure_first(unmeasured, args.timing)
     for name in stages:
-        plans[name] = stage_plan(name, data, by_candidate, accounts, advice)
+        plans[name] = stage_plan(name, data, by_candidate, accounts, advice, first)
         plans[name]["unmeasured"] = unmeasured
     result = {"timing": args.timing, "plans": plans, "representationAdvice": advice,
               "dataSourceComparisons": comparisons,

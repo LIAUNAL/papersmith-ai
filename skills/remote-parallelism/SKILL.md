@@ -361,7 +361,11 @@ stops at its time cap (300 s by default; the first setting always runs, and
 every setting past the cap is listed under `skipped`). An accelerator the
 machine lacks is skipped, never run on the CPU under its name. Without
 `--candidates` it measures the local CPU (one process and half the cores)
-and every accelerator the machine has. It writes only `Results/timing.json`,
+and every accelerator the machine has. A candidate whose host is not
+`--host` (a `local-*` candidate with `--host <host>:<owner>`, or another
+host's `<host>:<owner>/<machine>`) is refused before any epoch runs or any
+byte is written, so a remote run names its own candidates. An epoch shorter
+than the record's resolution is written as 0.0001 s, never 0. It writes only `Results/timing.json`,
 appending to it (a schema 1 record is upgraded and keeps its rows), and
 takes `--scales` only for a new record. It never picks a device: a target
 reads its device from `plan`'s measured recommendation
@@ -455,6 +459,18 @@ default: every candidate competes on its own measurement.
   then the fewest accelerator hours, then the CPU, then local. So an
   accelerator wins only when it was measured faster, and `reason` says which
   CPU it beat; every other option is under `lost` with why.
+- **A GPU is never the default.** An accelerator is recommended only when it
+  beat a measured CPU option on makespan upper bound: an eligible one, or one
+  over the local limit whose makespan was still larger. `reason` names that
+  CPU with both seconds per epoch and both makespan upper bounds. When no CPU
+  was measured, or every measured CPU was faster (one over the 20-minute local
+  limit included), the stage's `status` is `needs-measurement`:
+  `recommended` is null, the leading accelerator is shown under
+  `provisional`, and `measureFirst` lists the unmeasured CPU candidates with
+  the probe `command` that measures each (a remote one inside its CPU-only
+  rehearsal). A target reading its device from such a plan gets no device.
+  `status` is otherwise `recommended`, or `no-eligible` when no measured
+  option is eligible.
 - **Unmeasured.** Every candidate the team has and the record lacks — the
   local CPU, a local accelerator `hosts` reports, each account without a row,
   each account's CPU-only machine, and every `--candidate` named — is listed
@@ -489,7 +505,7 @@ python3 skills/remote-parallelism/scripts/parallelism_cli.py [--root <workspace>
 | `assess` | `--units N --unit-minutes M --owners N --sessions-per-account S --session-limit-hours H --quota-hours Q --setup-minutes O` or, with each account's own limits, `--units N --unit-minutes M --setup-minutes O --account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...` (or `--accounts-file accounts.json`), then `[--accounts A] [--service kaggle\|colab[,...]] [--tiers free,pro,...] [--stamps-identical] [--units-file units.json] [--axis <name>] [--quota-source <text>] [--quota-date YYYY-MM-DD] [--record <dir>]`: JSON `{inputs, thresholds, serialMinutes, singleAccountMinutes, parallelMinutes, speedup, savedMinutes, accountsUsed, recommendedAccounts, perAccount[{account, units, gpuHours, overQuota}], quotaOk, unitsOverSessionLimit, eligibleOwners, excludedOwners[{owner, tier}], verdict, reasons, unitSeeds?, reproducibilityChecklist, stampFields, launchAuthorization: false}`; each `perAccount` entry is one eligible owner's account. `--record <dir>` writes `<dir>/.remote-parallelism/assessment-<date>.json` (a second one the same day gets `-2`, never an overwrite); `<dir>` must resolve inside the workspace, through no symlink that leaves it |
 | `estimate` | `--timing <path to timing.json> [--stage poc\|full\|both] [--host <host>:<owner> ...] [--record <dir>] [--json]`: JSON `{estimates: {stage: {host: {seconds, low, high, formula, measurements, device, secondsPerUnit, perArm, setupSeconds} \| "unmeasured"}}, placement: {stage: {where: "local"\|"cloud"\|null, host, reason, pocBudget?: "within"\|"exceeds"\|"unmeasured"}}, placementRules, timing, range, unmeasuredMeans, launchAuthorization: false}`; `local` and every host the record measured are always reported, and each `--host` named adds a row (`unmeasured` when the record has no measurement of it). `--record <dir>` writes `<dir>/.remote-parallelism/estimate-<date>.json` under the same containment as `assess`, and then `--timing` too must resolve inside the workspace, through no symlink that leaves it |
 | `schedule` | `--plan <plan.json> [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json]`: places each remote step on one service and its units on that service's accounts, honouring `requires`, for the smallest makespan; JSON `{steps[{id, services, startMinutes, endMinutes, shares[...]}], makespanMinutes, serialMinutes, speedup, savedMinutes, quota[{account, gpuHours, quotaHours, overQuota}], quotaOk, excludedAccounts, search, doctrineChecks, reasons, launchAuthorization: false}` (see "Planning a project's remote steps"); read-only, writes nothing |
-| `plan` | `--timing <path to timing.json> [--stage poc\|full\|both] [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json] [--candidate <candidate> ...] [--record <dir>]`: JSON `{plans: {stage: {units, unit, options[{option, kind: "local"\|"remote"\|"split", candidates, device, settings, processes, accounts, slots, makespanSeconds{seconds, low, high}, acceleratorHours, perAccount, status, reason}], recommended, reason, lost[{option, status, reason}], unmeasured[{candidate, measureWith}], pocBudget?}}, representationAdvice[{candidate, loadShare, threshold, advice, rewritesData: false}], dataSourceComparisons, accounts, excludedAccounts, rules, readOnly: true, launchAuthorization: false}` (see "Plan the placement before you run"); `--record <dir>` writes `<dir>/.remote-parallelism/plan-<date>.json` under the same containment as `estimate` |
+| `plan` | `--timing <path to timing.json> [--stage poc\|full\|both] [--account <owner>:<service>:<sessions>:<session_hours>:<quota_hours>[:<tier>] ...] [--accounts-file accounts.json] [--candidate <candidate> ...] [--record <dir>]`: JSON `{plans: {stage: {units, unit, options[{option, kind: "local"\|"remote"\|"split", candidates, device, settings, processes, accounts, slots, makespanSeconds{seconds, low, high}, acceleratorHours, perAccount, status, reason}], status: "recommended"\|"needs-measurement"\|"no-eligible", recommended, provisional?, measureFirst[{candidate, measureWith, command}], reason, lost[{option, status, reason}], unmeasured[{candidate, measureWith}], pocBudget?}}, representationAdvice[{candidate, loadShare, threshold, advice, rewritesData: false}], dataSourceComparisons, accounts, excludedAccounts, rules, readOnly: true, launchAuthorization: false}` (see "Plan the placement before you run"); `--record <dir>` writes `<dir>/.remote-parallelism/plan-<date>.json` under the same containment as `estimate` |
 | `checklist` | the reproducibility checklist as JSON |
 | `stamp-fields` | the shard stamp fields to declare `identicalAcrossShards` |
 

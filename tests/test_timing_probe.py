@@ -120,6 +120,33 @@ class SweepTests(unittest.TestCase):
         self.assertIsInstance(info["mps"], bool)
         self.assertIsInstance(info["cuda"], bool)
 
+    def test_a_sub_50_microsecond_epoch_is_recorded_at_the_floor_never_as_zero(self) -> None:
+        clock = Clock()
+
+        def tiny(settings: dict, wrap) -> None:
+            for _ in wrap(range(1)):
+                clock.now += 0.00003
+
+        (row,) = self.sweep(tiny, clock, grid={})["rows"]
+        self.assertEqual((row["secondsPerUnit"], row["loadSeconds"], row["computeSeconds"]), (0.0001, 0.0, 0.0))
+        # The row is a valid measurement: a positive secondsPerUnit.
+        record = {"schema": 2, "hosts": {"local": HOST}, "measurements": [row], "scales": SCALES}
+        with tempfile.TemporaryDirectory() as holder:
+            path = Path(holder) / "timing.json"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            self.assertEqual(CLI.load_timing(path, "timing.json")["measurements"][0]["secondsPerUnit"], 0.0001)
+
+    def test_candidates_that_disagree_with_the_host_are_refused_before_anything_runs(self) -> None:
+        ran = []
+        for host, candidates in (("kaggle:zoe", ["local-cpu-1"]), ("kaggle:zoe", ["kaggle:zoe/T4", "local-mps"]),
+                                 ("kaggle:zoe", ["colab:zoe/T4"]), ("local", ["kaggle:zoe/cpu"])):
+            with self.subTest(host=host, candidates=candidates):
+                with self.assertRaises(PROBE.ProbeRefusal) as caught:
+                    self.sweep(lambda settings, wrap: ran.append(settings), Clock(), host=host,
+                               candidates=candidates)
+                self.assertIn(f"--host {host}", str(caught.exception))
+        self.assertEqual(ran, [])
+
     def test_several_processes_are_timed_concurrently(self) -> None:
         sys.path.insert(0, str(FIXTURES))
         self.addCleanup(sys.path.remove, str(FIXTURES))
@@ -201,6 +228,26 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(summary["rows"], 2)
         data = CLI.load_timing(self.path, "timing.json")
         self.assertEqual([row.get("batchSize") for row in data["measurements"]], [None, 8, 16])
+
+    def test_the_command_line_refuses_local_candidates_on_a_remote_host_and_writes_nothing(self) -> None:
+        self.path.write_text(json.dumps({"schema": 1, "scales": SCALES, "measurements": [
+            {"measuredAt": "2026-10-25T10:00:00Z", "host": "local", "device": "cpu", "arm": "a",
+             "unit": "epoch", "secondsPerUnit": 69.5, "unitsMeasured": 1}]}), encoding="utf-8")
+        before = self.path.read_bytes()
+        for extra in (["--candidates", "local-cpu-1,local-cpu-4"], []):
+            with self.subTest(extra=extra):
+                proc = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "timing_probe.py"), "--path", str(FIXTURES),
+                     "--entry", "epochs:sleepy_epoch", "--arm", "b", "--host", "kaggle:zoe", *extra,
+                     "--out", str(self.path)],
+                    capture_output=True, text=True, timeout=120)
+                self.assertEqual((proc.returncode, proc.stdout), (2, ""))
+                error = json.loads(proc.stderr)
+                self.assertEqual(error["error"], "probe-refused")
+                self.assertIn("local-cpu-1", error["message"])
+                self.assertIn("--host kaggle:zoe", error["message"])
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertEqual(sorted(p.name for p in self.results.iterdir()), ["timing.json"])
 
 
 if __name__ == "__main__":

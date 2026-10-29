@@ -91,6 +91,20 @@ def local_candidates(info: dict) -> list[str]:
     return names
 
 
+def host_of(candidate: str) -> str:
+    """The host a candidate runs on: `local` for `local-*`, else `<host>:<owner>`."""
+    return "local" if candidate.startswith("local-") else candidate.split("/", 1)[0]
+
+
+def check_hosts(candidates: list[str], host: str) -> None:
+    """Refuse, before anything runs, a candidate measured on another host than `--host`."""
+    wrong = [candidate for candidate in candidates if host_of(candidate) != host]
+    if wrong:
+        raise ProbeRefusal(f"{', '.join(wrong)} cannot be measured with --host {host}: a candidate is measured "
+                           "on its own host (local-* with --host local, <host>:<owner>/<machine> with --host "
+                           "<host>:<owner>), and nothing was run or written")
+
+
 def processes_of(candidate: str) -> int:
     return int(candidate.rsplit("-", 1)[1]) if candidate.startswith("local-cpu-") else 1
 
@@ -170,6 +184,7 @@ def sweep(epoch, *, arm: str, candidates: list[str], grid: dict | None = None, h
     """Time `epoch` for every candidate and setting, each candidate within its cap."""
     if not candidates:
         raise ProbeRefusal("name the candidates to measure: the probe never picks one")
+    check_hosts(candidates, host)
     info = host_info() if info is None else info
     rows, skipped = [], []
     for candidate in candidates:
@@ -199,7 +214,7 @@ def sweep(epoch, *, arm: str, candidates: list[str], grid: dict | None = None, h
                                 "reason": f"{type(exc).__name__}: {exc}"[:300]})
                 continue
             row = {"measuredAt": now(), "host": host, "candidate": candidate, "device": device, "arm": arm,
-                   "unit": "epoch", "secondsPerUnit": round(max(wall, 1e-6), 4), "unitsMeasured": 1}
+                   "unit": "epoch", "secondsPerUnit": max(round(wall, 4), 0.0001), "unitsMeasured": 1}
             if candidate.startswith("local-cpu-") or processes > 1:
                 row["processes"] = processes
             row.update({key: value for key, value in setting.items() if value is not None})
@@ -280,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
             "dataSource": _values(args.data_source, str)}
     candidates = _values(args.candidates, str) or local_candidates(info)
     try:
+        check_hosts(candidates, args.host)
         result = sweep(resolve(args.entry), arm=args.arm, candidates=candidates, host=args.host,
                        grid={key: value for key, value in grid.items() if value},
                        cap_seconds=args.cap_seconds, info=info,

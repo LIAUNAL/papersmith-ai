@@ -97,12 +97,23 @@ optimises the studies with the plan's sampler, seed and pruner; this skill
 reads them.
 
 **The estimate.** `plan --timing <Name>/Results/timing.json` (the timing
-probe's schema 1 record, `skills/remote-parallelism/SKILL.md`) reports, per
+probe's record, `skills/remote-parallelism/SKILL.md`) reports, per
 host, `nTrials × arms × outerFolds × maxEpochs × secondsPerUnit` (the mean of
 that host's measurements) as a range, ±20%. It is an upper bound: every trial
 is counted at its full epoch budget, and pruning and early stopping only lower
 it. A host with no measurement reads `unmeasured`; local timings never stand
 in for a remote host.
+
+The timing probe writes schema 2 and upgrades a schema 1 record in place, so
+both are read. On schema 2 the estimate is keyed by candidate (`local-cpu-4`,
+`local-mps`, `<host>:<owner>/<machine>`; an upgraded schema 1 row keeps its
+host as its candidate), each from its own rows at its fastest measured
+setting (`settings` names it), with its `candidate` and `host`. One host may
+hold CPU and accelerator rows: they are never pooled, and `mixed-devices` is
+refused only when one candidate was timed on two devices. `local` and every
+`--host` with no candidate measured read `unmeasured`. Schema 2 is validated
+by remote-parallelism's own reader, so its refusals read the same there and
+here.
 
 ## The report
 
@@ -137,7 +148,7 @@ python3 skills/hyperparameter-search/scripts/hpo_cli.py <verb> ...
 
 | Verb | What it does |
 |---|---|
-| `plan` | `--file <plan.json> [--timing <timing.json>] [--host <host>:<owner> ...]`: validates the plan under every rule above and prints `{plan, valid, studies, storage, trialsPerStudy, trialsTotal, arms, outerFolds, sampler, importance, fixed, launchAuthorization: false}`; with `--timing`, adds `estimate` per host (`{seconds, low, high, secondsPerUnit, measurements, device, formula}` or `"unmeasured"`) and `range`. `local` and every measured host are always reported; each `--host` adds a row |
+| `plan` | `--file <plan.json> [--timing <timing.json>] [--host <host>:<owner> ...]`: validates the plan under every rule above and prints `{plan, valid, studies, storage, trialsPerStudy, trialsTotal, arms, outerFolds, sampler, importance, fixed, launchAuthorization: false}`; with `--timing`, adds `estimate` per host (`{seconds, low, high, secondsPerUnit, measurements, device, formula}` or `"unmeasured"`) and `range`. `local` and every measured host are always reported; each `--host` adds a row. On a schema 2 record the rows are per candidate and add `{candidate, host, settings}` |
 | `report` | `--target <repo> --name <Name> [--python <path>]`: runs `<target>/.venv/bin/python -I scripts/optuna_report.py` (or `--python`) over `<Name>/hpo/studies.db` and the plan, writing each study's summary and figures under `<Name>/Results/hpo/`; prints `{results, summaries, notes, python}` |
 | `status` | `--target <repo> --name <Name>`: reads `<Name>/Results/hpo/*/summary.json` and prints each study's `study`, `arm`, `fold`, `trials`, `complete`, `pruned`, `bestValue`, `bestParams`, `topParameter`, `evaluator`, `figures` and `missingFigures`, plus `missingStudies` against the plan, `unreadable` and the `stage` reached |
 
@@ -157,8 +168,8 @@ Success prints one JSON object on stdout. A refusal prints
 | `not-nested` | more than one outer fold and no `innerValidation` statement |
 | `bad-evaluator` | the importance evaluator is outside the closed set, unseeded where it or its `check` takes a seed, or its `check` repeats it |
 | `timing-missing` | `--timing` names no file, or `--host` was given without `--timing`: run the timing probe first |
-| `timing-invalid` | the timing record is not schema 1, or a measurement lacks a host, a device, unit `epoch` or a positive `secondsPerUnit` |
-| `mixed-devices` | one host was timed on more than one device; timing is never pooled across machines |
+| `timing-invalid` | the timing record is not schema 1 or 2, a schema 2 record fails remote-parallelism's reader, or a measurement lacks a host, a device, unit `epoch` or a positive `secondsPerUnit` |
+| `mixed-devices` | one host (schema 1) or one candidate (schema 2) was timed on more than one device; timing is never pooled across machines |
 | `target-missing` | `--target` is not a directory |
 | `bad-name` | `--name` is not one product folder name |
 | `storage-missing` | `<Name>/hpo/studies.db` does not exist: the search has not run, or its storage was not fetched |
