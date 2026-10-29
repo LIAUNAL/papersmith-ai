@@ -4697,7 +4697,7 @@ class MethodsProducesContributionsMutationTests(unittest.TestCase):
     (4.1-4.3): mutation proofs against a COPY of the real, shipped
     `sections/` tree (`SECTIONS_DIR` itself is never written to — copied
     fresh per test, then mutated). Each test proves the specific guard this
-    change relies on can actually FIRE (MANTENIMIENTO pattern 2: a guard
+    change relies on can actually FIRE (MAINTENANCE pattern 2: a guard
     that merely exists is not the same as one that is reachable), then
     confirms the real, unmutated shipped corpus still assembles clean —
     proving the shipped edit, not the mutation, is what ships."""
@@ -4859,7 +4859,7 @@ class WaveOrderingPropertyTests(unittest.TestCase):
     block's `after` dependency lands in a strictly earlier wave than the
     block itself, checked as a PROPERTY over the real shipped corpus's full
     edge set -- no wave count or shape is asserted here (pattern 7 of
-    `MANTENIMIENTO-siete-formas-de-fallar-en-verde.md`; the exact,
+    `MAINTENANCE-seven-ways-to-fail-green.md`; the exact,
     re-measured shape is asserted, dated, only in `SKILL.md`)."""
 
     def test_every_after_dependency_resolves_to_a_strictly_earlier_wave(self) -> None:
@@ -5673,7 +5673,7 @@ class SkillMdModeCountAccuracyTests(unittest.TestCase):
         -- so an operator hitting `SECTION_UNKNOWN` and consulting `--help`
         was handed the wrong answer again. A grep found those six; a grep is
         a list, and a list ages the day someone writes the seventh
-        (`MANTENIMIENTO-siete-formas-de-fallar-en-verde.md`, 6: the fix is
+        (`MAINTENANCE-seven-ways-to-fail-green.md`, 6: the fix is
         not touching the N sites, it is having something DERIVED find them).
 
         Both sides are derived, nothing hand-listed: the forbidden spellings
@@ -5850,7 +5850,7 @@ class ContractAuditTests(unittest.TestCase):
         never a frozen count. A count would go red the day someone adds or
         removes a disqualifier, which breaks nothing in production and is
         exactly the "test that ratifies a decision instead of verifying a
-        property" pattern `MANTENIMIENTO-siete-formas-de-fallar-en-verde.md`
+        property" pattern `MAINTENANCE-seven-ways-to-fail-green.md`
         (7) names. These two stay true at 178 bullets, at 179, or at 200,
         and still redden if the reader ever truncates, merges or splits one.
 

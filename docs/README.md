@@ -35,7 +35,7 @@ date.
 | Release notes, newest first | [`CHANGELOG.md`](../CHANGELOG.md) |
 | Completed OpenSpec changes, dated | [`openspec/changes/archive/`](../openspec/changes/archive/) |
 | Feature task logs | [`odd/tasks/`](../odd/tasks/) |
-| Maintenance essays | [`MANTENIMIENTO-la-forja-no-lleva-un-paper-adentro.md`](../MANTENIMIENTO-la-forja-no-lleva-un-paper-adentro.md), [`MANTENIMIENTO-siete-formas-de-fallar-en-verde.md`](../MANTENIMIENTO-siete-formas-de-fallar-en-verde.md) |
+| Maintenance essays | [`MAINTENANCE-the-forge-carries-no-paper-inside.md`](../MAINTENANCE-the-forge-carries-no-paper-inside.md), [`MAINTENANCE-seven-ways-to-fail-green.md`](../MAINTENANCE-seven-ways-to-fail-green.md) |
 
 ## Policy
 
