@@ -1518,7 +1518,7 @@ refusal.
 | `fetch` | materialize one submission's result, quarantining it when it is not current; an incomplete result is kept under `partial/` and, when the run is over (`failed`/`unknown`), recorded `errored` naming it |
 | `reconcile` | compare the ledger against the adapter's `list_active()` in both directions |
 | `generate-job` | generate a forge-owned job folder at `<target>/tools/<service>/<job-name>/` |
-| `generate-jobs` | generate every remote step's job folder in one call from the product's declared `__steps__` (and a `schedule` output), deriving service, run, clone paths, code bundle, requirements, carry paths and `--dataset` inputs; prints one row per job and the single `preflight` command to run next |
+| `generate-jobs` | generate every remote step's job folder in one call from the product's declared `__steps__` (and a `schedule` output), deriving service, run, clone paths, code bundle, requirements, carry paths and `--dataset` inputs, with per-step smoke kwargs, carry paths and input datasets and an `--only`/`--skip` selection; prints one row per job and the single `preflight` command to run next |
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
 | `readiness` | state whether a job is ready for a full submission on a worker, from that worker's own latest rehearsal; reports only, issues no submission |
 | `preflight` | check a generated job locally before its first remote rehearsal, one `pass`/`warn`/`fail` row per check with its evidence and fix, including a local rehearsal of its smoke; exits non-zero on any `fail`, never submits |
@@ -1549,6 +1549,9 @@ can branch on it without parsing prose.
 | `DATASETS_SKILL_MISSING` | `generate-job --dataset`, `generate-jobs --dataset` | the workspace has no `skills/datasets/scripts/datasets_cli.py` beside this skill, so the registry cannot be resolved; the fix names `smith upgrade` |
 | `STEPS_UNREADABLE` | `generate-jobs` | the product's `src/<Package>/__init__.py` or `config.py` does not parse, or the `__steps__` it assigns is not a literal the reader can evaluate without running the target's code |
 | `SCHEDULE_UNREADABLE` | `generate-jobs --from-schedule` | the file is not readable JSON, holds no `steps` list, or a step has no `id` or names no `services` |
+| `STEP_UNKNOWN` | `generate-jobs --only`, `--skip`, `--smoke-kwargs-for`, `--carry-path-for`, `--input-dataset-for` | the step name is not a remote step the product's `__steps__` declares (undeclared, or declared with another placement); the message names the remote steps. Refused before anything is written |
+| `STEP_SELECTION_CONFLICT` | `generate-jobs --only`, `--skip` | one step is named by both `--only` and `--skip`, a `--*-for` flag names a step the selection leaves out, or the selection leaves no remote step. Refused before anything is written |
+| `STEP_DECLARATION_MALFORMED` | `generate-jobs` (that job's row) | the step's `smoke` is not an object of `module`, `function` (strings), `kwargs` (an object) and `requiredEvidence` (a list of strings), or its `carry` is not a list of paths; only that job is refused |
 | `SCHEDULE_IS_A_PLAN` | `generate-jobs --from-schedule` | the file is the schedule's input plan (it carries `schema` and no `makespanMinutes`), whose `services` are only the allowed ones; the fix names `parallelism_cli.py schedule --plan <file>` and passing its output instead |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
@@ -1655,8 +1658,9 @@ have saved:
    declares it from the registry and records the preparation's sha256 values
    (`FORGE_DATASET_CHECKS`).
 10. Several remote steps: `generate-jobs` writes every job in one call (code
-    bundle, requirements, carry paths and inputs derived), then run the one
-    `preflight` it prints.
+    bundle, requirements, carry paths and inputs derived; per-step smoke
+    kwargs, carry paths and inputs, and `--skip` for a finished job), then
+    run the one `preflight` it prints.
 11. Every fix after a rehearsal moves the pin, which means regenerated jobs and
     re-minted consent tokens: fix what `preflight` reports first.
 
@@ -2233,7 +2237,10 @@ python3 scripts/remote_cli.py generate-jobs --target <repo> --product <Name> \
     [--smoke-module M --smoke-function F] [--smoke-kwargs '<json>'] \
     [--smoke-required-evidence <path>]... [--repo-url URL] [--repo-ref REF] \
     [--repo-credential <token file>] [--regenerate] [--workspace <dir>] \
-    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads]
+    [--accept-unresolved] [--accept-unresolved-reads] [--accept-produced-reads] \
+    [--smoke-kwargs-for <step> '<json>']... [--carry-path-for <step> <path>]... \
+    [--input-dataset <owner/slug>]... [--input-dataset-for <step> <owner/slug>]... \
+    [--only <step>]... [--skip <step>]...
 ```
 
 The three `--accept-*` flags mean what they mean for `generate-job`, applied to
@@ -2241,7 +2248,14 @@ every job, so a refusal relayed in a job's row names a flag this command takes.
 
 - **Steps**: every `__steps__` entry (`src/<Package>/__init__.py`, else
   `config.py`, read with `ast`) with `placement: "remote"`; other steps are
-  listed under `skipped`.
+  listed under `skipped`. `--only <step>` (repeatable) generates just those,
+  `--skip <step>` (repeatable) leaves that step's job alone (a finished one
+  is not regenerated by `--regenerate`), and each step they leave out is
+  listed under `skipped` (`not named by --only`, `excluded by --skip`). A
+  name `--only`, `--skip` or a `--*-for` flag gives that is not a remote
+  step refuses `STEP_UNKNOWN`; the same step under `--only` and `--skip`, a
+  `--*-for` value for a step left out, or a selection that leaves nothing
+  refuses `STEP_SELECTION_CONFLICT`. Both refuse before anything is written.
 - **Service and job folder**: the step's `service` and `job`. With
   `--from-schedule` (a remote-parallelism `schedule` OUTPUT), a step it names
   runs on the service(s) it chose, one job per service; a schedule naming an
@@ -2250,7 +2264,15 @@ every job, so a refusal relayed in a job's row names a flag this command takes.
 - **Run and clone paths**: the step's notebook among its `produces`
   (`Notebooks/...ipynb`) as `--run-notebook`, else its `module`/`function`;
   clone paths are the ones the generator's own import/read walk computes for
-  those entries. The smoke options apply to every job.
+  those entries.
+- **Smoke**: a step may declare its own `smoke`, an object of optional
+  `module`, `function`, `kwargs` and `requiredEvidence`; each field it
+  declares wins over the command's `--smoke-module`, `--smoke-function`,
+  `--smoke-kwargs` and `--smoke-required-evidence`, which fill the rest.
+  `--smoke-kwargs-for <step> '<json object>'` (repeatable, once per step)
+  wins over both for that step's kwargs, so a per-job value such as
+  `{"steps": ["e1"]}` needs no declaration. A malformed `smoke` refuses
+  that job `STEP_DECLARATION_MALFORMED`.
 - **Code bundle**: when the pin is not anonymously reachable and the service's
   adapter declares `CODE_BUNDLE_MAX_BYTES`. On a repository-credential
   carrier, `--repo-credential` is passed instead.
@@ -2258,8 +2280,20 @@ every job, so a refusal relayed in a job's row names a flag this command takes.
   `pyproject.toml` `[project].dependencies`), minus the distributions the
   adapter's optional `PROVIDED_REQUIREMENTS` says its image provides (none
   declared: every pin is installed).
-- **Carry paths**: the step's `produces` roots that are not notebooks.
-- **Inputs**: `--dataset`, as for `generate-job` below.
+- **Carry paths**: the step's `produces` roots that are not notebooks, then
+  the step's own `carry` list (paths relative to the product folder, such as
+  `Results/checkpoints`), then each `--carry-path-for <step> <path>`, each
+  once, validated exactly as `generate-job --carry-path` validates them.
+- **Inputs**: `--input-dataset <owner/slug>` (repeatable) on every job whose
+  service attaches inputs (its adapter declares `INPUT_DATASETS_ROOT`), then
+  `--input-dataset-for <step> <owner/slug>` on that step's job whatever its
+  service, each ref once and recorded as `generate-job --input-dataset`
+  records it (no `datasetChecks`); then `--dataset`, as for `generate-job`
+  below.
+
+Every job it writes is byte-identical to the one `generate-job` writes with
+the equivalent flags, and a call without these options writes what 0.38.0
+wrote.
 
 It prints `{jobs, skipped, summary, next}`: one row per job (`step`,
 `service`, `job`, `status` `generated` or `refused` with its `error`, and for a
