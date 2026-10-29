@@ -2013,6 +2013,15 @@ and the service reclaims it, taking every result with it (`poll` then
 answers `unknown`, `session not found`). Whoever waits on a Colab run fetches
 in the same loop that sees `complete`, never later.
 
+What of this rule the code holds, and what it does not: releasing the session
+after completion is verified in code, since `fetch` stops it only after every
+manifest file is local and only when `status.json` exists
+(`test_colab_fetch_stops_session_only_after_terminal_status`, and the
+round-trip test's download-before-stop order). Unverified: nothing fetches on
+its own when a run turns terminal, so a prompt fetch rests on whoever polls,
+and the delay after which the service reclaims an idle session was never
+measured.
+
 **The manifest is kept current during the run.** The executor rewrites
 `files.json` every `MANIFEST_REFRESH_SECONDS` (60 s) while the notebook
 executes, atomically (`files.json.tmp`, then a rename), so a fetch of a
@@ -2227,10 +2236,27 @@ nothing), or whose `errored` event names bytes kept under
    present mounts as `FORGE_CARRY_IN` (joined with `os.pathsep`). A missing
    mount or path is one `[carry]` line in the run log, and the unit starts
    fresh; it is never fatal.
-4. **Services without kernel inputs say so.** A backend whose `carry_source`
-   is the seam's default (Colab) carries nothing automatically, and the
-   row reports `carry: unsupported`; upload the checkpoint into the new
-   session yourself.
+4. **Services without kernel inputs upload the fetched output.** A backend
+   whose jobs cannot mount another job's output, but which can put local
+   files into the session it starts, declares the optional class attribute
+   `CARRY_UPLOAD` (not a seventh operation). Colab does: its CLI's `upload`
+   writes one local file into a running session (a contents-API `PUT`; the
+   parent directory must exist). For such a backend the share's job gets
+   one `{"submissionId", "ref", "upload"}` row per earlier submission,
+   `upload` naming the local directory `fetch` left (the returned result
+   holding the `partial.json`, or the kept bytes under
+   `.remote-execution/partial/`); the row reports `carry: uploaded` and
+   `carriedFrom` as above, and the ledger never records the local path.
+   Before the launch, the Colab adapter creates
+   `<root>/<session>.carry/<k>/` (beside the session directory, so the
+   manifest never fetches carried inputs back), uploads every regular file
+   under a declared carry path in either layout (`clone/<product>/<path>`
+   and `<path>`) and nothing else, and hands the runner the same row with
+   `mount` in place of `upload`, which `restore_carry()` reads as above. A
+   source that is not a directory refuses before any CLI call; a failed
+   upload stops the session before the launch. A backend that can neither
+   mount nor upload reports `carry: unsupported` and carries nothing;
+   upload the checkpoint into the new session yourself.
 
 A single send (no `--unit`) and the legacy shape carry nothing. A single
 send of a job that declares carry paths is still sent, but its output

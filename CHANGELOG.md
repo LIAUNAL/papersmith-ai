@@ -26,6 +26,14 @@ number is `0`, breaking changes can still arrive without a major bump.
   the remaining ids with those paths restored, must finish them. Each
   session is bounded by `--local-timeout`. New flags: `--unit <id>`
   (repeatable) and `--deadline-block smoke|run`.
+- A Colab continuation resumes from its earlier session's checkpoints
+  instead of starting fresh (`carry: uploaded`). A backend that cannot mount
+  an earlier output but uploads files into a session declares the optional
+  `Adapter.CARRY_UPLOAD`; `submit` hands it the local directory `fetch` left,
+  and the Colab adapter uploads the job's declared carry paths (both
+  layouts, nothing else) to `<root>/<session>.carry/<k>/` before the launch,
+  then gives the runner that `mount`. The ledger records only
+  `submissionId` and `ref`.
 - `submit` of a job that declares carry paths without `--unit` is still sent,
   but reports `carry: no-share` and a `carryWarning`: no share is recorded,
   so `remaining` would never list the units of a run cut at its limit.

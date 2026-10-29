@@ -23501,6 +23501,114 @@ class ColabSessionLifecycleTests(unittest.TestCase):
                 COLAB.restore_notebook_json(path)
                 self.assertEqual(path.read_text(encoding="utf-8"), text)
 
+    # -- session-chains S5: a continuation uploads its carry --------------
+
+    def _carry_job(self, tmp: str) -> Path:
+        return self._job_folder(tmp, config={
+            "schemaVersion": 1, "product": "P", "commit": "c" * 40,
+            "repo": {"url": "https://example.invalid/repo.git", "ref": "refs/heads/main"},
+            "clonePaths": ["src/pkg"], "carryPaths": ["Results/runs"],
+            "run": {"module": "pkg.harness", "function": "run", "kwargs": {}},
+        })
+
+    @staticmethod
+    def _fetched(tmp: str) -> Path:
+        """What `fetch` left of session 1: both carry layouts, the marker,
+        and files outside every carry path."""
+        local = Path(tmp) / "fetched-1"
+        files = {
+            "clone/P/Results/runs/u1.json": "done-u1",
+            "Results/runs/old.json": "working-layout",
+            "partial.json": json.dumps({"remaining": ["u2"]}),
+            "clone/P/src/m.py": "pinned code",
+            "other/x.json": "undeclared",
+        }
+        for relative, text in files.items():
+            (local / relative).parent.mkdir(parents=True, exist_ok=True)
+            (local / relative).write_text(text, encoding="utf-8")
+        return local
+
+    @staticmethod
+    def _tree(root: Path) -> dict:
+        return {p.relative_to(root).as_posix(): p.read_text(encoding="utf-8")
+                for p in sorted(root.rglob("*")) if p.is_file()}
+
+    def test_a_continuation_uploads_its_carry_paths_before_the_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(**self._fast_knobs())
+            folder = self._carry_job(tmp)
+            local = self._fetched(tmp)
+            before = self._tree(local)
+            adapter = self._adapter(sim)
+            row = {"submissionId": "colab/psmith-old", "ref": "colab/psmith-old",
+                   "upload": str(local)}
+
+            submission = self._submit(adapter, folder,
+                                      run_config={"units": ["u2"], "carry": [row]})
+
+            session = submission.id.split("/", 1)[1]
+            mount = sim.remote_root / f"{session}.carry" / "0"
+            self.assertEqual(self._tree(mount), {
+                "clone/P/Results/runs/u1.json": "done-u1",
+                "Results/runs/old.json": "working-layout",
+            })
+            self.assertFalse(mount.resolve().is_relative_to(sim.session_dir(session).resolve()),
+                             "the carry lies outside the folder whose files come back")
+            staged = json.loads((sim.session_dir(session) / "run-config.json")
+                                .read_text(encoding="utf-8"))
+            self.assertEqual(staged["carry"], [{"submissionId": "colab/psmith-old",
+                                                "ref": "colab/psmith-old",
+                                                "mount": f"{sim.remote_root}/{session}.carry/0"}])
+            self.assertEqual(staged["units"], ["u2"])
+            self.assertEqual(self._tree(local), before, "the fetched output is only read")
+            tokens = sim.invocations()
+            carried = [i for i, entry in enumerate(tokens)
+                       if entry[0] == "upload" and ".carry/" in entry[-1]]
+            launch = next(i for i, entry in enumerate(tokens)
+                          if entry[0] == "exec" and entry[-3].endswith("launch.py"))
+            self.assertEqual(len(carried), 2)
+            self.assertLess(max(carried), launch)
+
+            # The runner's own restore reads that mount into the layout the
+            # target writes, inside the session's working directory.
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                RUNNER_INVOKE.restore_carry(staged, sim.session_dir(session))
+            self.assertEqual((sim.session_dir(session) / "clone/P/Results/runs/u1.json")
+                             .read_text(encoding="utf-8"), "done-u1")
+
+    def test_a_failed_carry_upload_releases_the_session_before_the_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(**self._fast_knobs(upload_fail="u1.json"))
+            folder = self._carry_job(tmp)
+            adapter = self._adapter(sim)
+            row = {"submissionId": "s", "ref": "s", "upload": str(self._fetched(tmp))}
+            with self.assertRaises(COLAB.ColabAdapterError) as ctx:
+                self._submit(adapter, folder, run_config={"units": ["u2"], "carry": [row]})
+            self.assertIn("u1.json", str(ctx.exception))
+            self.assertEqual(sim.sessions_on_sim(), {})
+            self.assertFalse(any(entry[0] == "exec" and entry[-3].endswith("launch.py")
+                                 for entry in sim.invocations()))
+
+    def test_a_carry_source_that_is_not_a_directory_refuses_before_any_cli_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(**self._fast_knobs())
+            folder = self._carry_job(tmp)
+            adapter = self._adapter(sim)
+            row = {"submissionId": "s", "ref": "s", "upload": str(Path(tmp) / "absent")}
+            with self.assertRaises(COLAB.ColabAdapterError) as ctx:
+                self._submit(adapter, folder, run_config={"units": ["u2"], "carry": [row]})
+            self.assertIn("absent", str(ctx.exception))
+            self.assertEqual(sim.invocations(), [])
+
+    def test_the_colab_adapter_declares_the_upload_capability(self) -> None:
+        self.assertIs(COLAB.ColabAdapter.CARRY_UPLOAD, True)
+        self.assertIs(ADAPTER.Adapter.CARRY_UPLOAD, False)
+        self.assertIsNone(COLAB.ColabAdapter().carry_source("colab/psmith-x"))
+
     # -- submit: naming, pre-check, merge, cleanup, installs ---------------
 
     def test_colab_submit_refuses_an_existing_session_name_before_new(self) -> None:
@@ -26142,6 +26250,14 @@ class _CarryingAdapter(MultiWorkerFakeAdapter):
         return {"ref": submission_id, "mount": f"/mnt/in/{submission_id}"}
 
 
+class _UploadingAdapter(MultiWorkerFakeAdapter):
+    """A MultiWorkerFakeAdapter whose backend mounts nothing but uploads an
+    earlier submission's fetched output into the next session
+    (the optional `CARRY_UPLOAD` capability)."""
+
+    CARRY_UPLOAD = True
+
+
 class _KernelNamingAdapter(_CarryingAdapter):
     """A carrying adapter that names each pushed kernel with the Kaggle
     adapter's own ref rule (`KAGGLE.kernel_ref()`), so a campaign's pushed
@@ -26614,6 +26730,55 @@ class KernelCarryTests(unittest.TestCase):
             (submission,) = result["assignments"][0]["submissions"]
             self.assertEqual(submission["carry"], "unsupported")
             self.assertNotIn("carriedFrom", self._submitted_events(target)[-1])
+
+    # -- session-chains S5: a service that uploads the fetched output -------
+
+    def test_an_uploading_service_is_handed_the_fetched_output(self) -> None:
+        """A backend that cannot mount an earlier output but uploads one
+        (`CARRY_UPLOAD`) gets the local directory `fetch` left, for a
+        returned partial result and for kept bytes alike; the ledger
+        records only where it came from."""
+        for kind in ("returned", "kept"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                target, notebook = self._job_folder(tmp)
+                if kind == "returned":
+                    self._stopped_early(tmp, target, sid="w1/session-1", worker="w1",
+                                        units=("u0", "u1"), remaining=("u1",))
+                    local = (Path(tmp) / "artifact-w1-session-1").resolve()
+                else:
+                    self._kept_partial(target, sid="w1/session-1", worker="w1", units=("u1",))
+                    local = (target.resolve() / "FEM-TOLLA" / REMOTE_CLI.LEDGER_DIRNAME
+                             / REMOTE_CLI.KEPT_PARTIAL_DIRNAME / "w1/session-1"
+                             / "20261028T000000Z")
+                before = sorted(p.relative_to(local).as_posix() for p in local.rglob("*"))
+                adapter = _UploadingAdapter(workers=[("w1", 1)])
+
+                result = self._submit(target, notebook, adapter, ("u1",))
+
+                (job,) = adapter.jobs
+                self.assertEqual(job.run_config["carry"], [
+                    {"submissionId": "w1/session-1", "ref": "w1/session-1",
+                     "upload": str(local)}])
+                (submission,) = result["assignments"][0]["submissions"]
+                self.assertEqual(submission["carry"], "uploaded")
+                self.assertEqual(submission["carriedFrom"],
+                                 [{"submissionId": "w1/session-1", "ref": "w1/session-1"}])
+                self.assertEqual(self._submitted_events(target)[-1]["carriedFrom"],
+                                 [{"submissionId": "w1/session-1", "ref": "w1/session-1"}])
+                self.assertEqual(sorted(p.relative_to(local).as_posix()
+                                        for p in local.rglob("*")), before)
+
+    def test_no_carry_starts_an_uploading_service_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            self._stopped_early(tmp, target, sid="w1/session-1", worker="w1",
+                                units=("u1",), remaining=("u1",))
+            adapter = _UploadingAdapter(workers=[("w1", 1)])
+            result = self._submit(target, notebook, adapter, ("u1",), no_carry=True)
+            (job,) = adapter.jobs
+            self.assertNotIn("carry", job.run_config)
+            (submission,) = result["assignments"][0]["submissions"]
+            self.assertEqual(submission["carry"], "fresh")
 
     def test_the_seam_default_carries_nothing_and_adds_no_abstract_method(self) -> None:
         self.assertEqual(len(ADAPTER.Adapter.__abstractmethods__), 6)

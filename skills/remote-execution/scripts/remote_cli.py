@@ -206,6 +206,11 @@ LEDGER_EVENT_TOO_LARGE = "LEDGER_EVENT_TOO_LARGE"
 # is refused before any submission. `--no-carry` starts such units fresh.
 CARRY_WORKER_MISMATCH = "CARRY_WORKER_MISMATCH"
 
+# Where `_carry_evidence()` notes, on its own copy of a `submitted` event,
+# the local directory that submission's output was fetched to. Never written
+# to the ledger: `carriedFrom` keeps only `submissionId` and `ref`.
+_CARRY_ARTIFACT_KEY = "_carryArtifact"
+
 # The longest submission id the size pre-check assumes a backend may answer
 # with: generous next to every id shape shipped today (`<owner>/<slug>`,
 # `colab:<owner>/psmith-...`), so the check never passes a share whose real
@@ -1254,6 +1259,10 @@ def _carry_evidence(
         elif terminal.get("kind") == "errored" and resolved is not None:
             if resolved.is_relative_to(kept_root) and resolved.is_dir():
                 left = set(share)
+        if left:
+            # One copy per submission, shared by its units, so a share can
+            # still tell two units of one earlier submission apart by identity.
+            submitted = {**submitted, _CARRY_ARTIFACT_KEY: str(resolved)}
         for unit in share:
             if unit in left:
                 evidence[unit] = submitted
@@ -1392,9 +1401,13 @@ def _plan_share_carry(
     """What one campaign share carries: `None` when no unit of it continues
     an earlier submission, else `(status, sources)` with `status` one of
     `attached` (sources are `{"submissionId", "ref", "mount"}` rows),
-    `unsupported` (the backend cannot mount an earlier output; nothing is
-    carried) or `fresh` (`--no-carry`). A source produced on another worker
-    refuses `CARRY_WORKER_MISMATCH` (kernel-carry S4)."""
+    `uploaded` (the backend uploads the earlier output from this machine,
+    `Adapter.CARRY_UPLOAD`: sources are `{"submissionId", "ref", "upload"}`
+    rows naming the local directory `fetch` left), `unsupported` (the
+    backend can do neither; nothing is carried) or `fresh` (`--no-carry`).
+    A source produced on another worker refuses `CARRY_WORKER_MISMATCH`
+    (kernel-carry S4). An upload source always exists: the evidence that
+    names it is read from inside it (`_carry_evidence()`)."""
     earlier: list[dict] = []
     seen: set[str] = set()
     for unit in share:
@@ -1411,8 +1424,15 @@ def _plan_share_carry(
     if no_carry:
         return ("fresh", [])
     sources: list[dict] = []
+    status = "attached"
+    uploads = getattr(adapter, "CARRY_UPLOAD", False) is True
     for submitted in earlier:
-        source = _carry_source(adapter, str(submitted.get("submissionId")))
+        submission_id = str(submitted.get("submissionId"))
+        source = _carry_source(adapter, submission_id)
+        if source is None and uploads:
+            status = "uploaded"
+            source = {"submissionId": submission_id, "ref": submission_id,
+                      "upload": str(submitted.get(_CARRY_ARTIFACT_KEY))}
         if source is None:
             return ("unsupported", [])
         sources.append(source)
@@ -1433,7 +1453,7 @@ def _plan_share_carry(
                 "(distribute places continuations there), or pass --no-carry "
                 "to start these units fresh"
             )
-    return ("attached", sources)
+    return (status, sources)
 
 
 def cmd_submit(
@@ -1793,7 +1813,7 @@ def cmd_submit(
                 if slot > 1:
                     run_config["slot"] = slot
                 planned = share_carry[(row.plan.worker, index)]
-                if planned and planned[0] == "attached":
+                if planned and planned[0] in ("attached", "uploaded"):
                     run_config["carry"] = [dict(source) for source in planned[1]]
                 if protected:
                     run_config["carryProtected"] = list(protected)

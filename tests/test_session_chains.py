@@ -550,5 +550,22 @@ class DeadlineRehearsalDocTests(unittest.TestCase):
             self.assertIn(needle, unreleased)
 
 
+
+class UploadedCarryDocTests(unittest.TestCase):
+    """S5: the uploaded continuation and the idle-reclaim rule, each stated
+    with what verifies it."""
+
+    def test_the_skill_documents_the_uploaded_carry_and_the_reclaim_rule(self) -> None:
+        skill = (REPOSITORY_ROOT / "skills/remote-execution/SKILL.md").read_text(
+            encoding="utf-8")
+        for needle in ("carry: uploaded", "`CARRY_UPLOAD`", "<session>.carry/<k>/",
+                       "test_colab_fetch_stops_session_only_after_terminal_status",
+                       "Unverified:", "carry: unsupported"):
+            self.assertIn(needle, skill)
+        changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("carry: uploaded", unreleased)
+
+
 if __name__ == "__main__":
     unittest.main()

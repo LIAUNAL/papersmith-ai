@@ -393,6 +393,33 @@ if __name__ == "__main__":
     main()
 '''
 
+# session-chains S5: where a continuation's carried files are uploaded, beside
+# the session directory and never inside it -- the session directory is what
+# the manifest walks and `fetch` brings back, and carried bytes are inputs.
+# Row `k` of `run_config["carry"]` goes to `<root>/<session><suffix>/<k>/`,
+# the `mount` the runner's `restore_carry()` reads.
+CARRY_DIR_SUFFIX = ".carry"
+CARRY_DIRS_TOKEN = "__CARRY_DIRS__"
+
+_CARRY_MKDIR_SOURCE = '''\
+"""Create the directories a continuation's carried files land in
+(rendered per submission)."""
+import json
+from pathlib import Path
+
+DIRS = __CARRY_DIRS__
+
+
+def main() -> None:
+    for raw in DIRS:
+        Path(raw).mkdir(parents=True, exist_ok=True)
+    print(json.dumps({"exists": all(Path(raw).is_dir() for raw in DIRS)}))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
 _PROBE_SOURCE = '''\
 """Report the executor's three dependencies without importing them
 (rendered per submission; an import would be the failure it reports)."""
@@ -613,6 +640,13 @@ class ColabAdapter(ADAPTER.Adapter):
     # `--repo-credential` refuses there rather than authenticating a probe
     # whose runner still could not clone (S3/D6).
     REPO_CREDENTIAL_CARRIER = True
+
+    # session-chains S5 (`Adapter.CARRY_UPLOAD`): a Colab session cannot
+    # mount an earlier session's output, but the CLI's `upload` puts a local
+    # file into the session (a contents-API PUT of one file, whose parent
+    # directory must exist), so a continuation's carry paths go up from the
+    # directory `fetch` left before the launch (`_carry_plan`).
+    CARRY_UPLOAD = True
 
     @classmethod
     def session_limit_seconds(cls, machine_shape: str | None = None) -> int | None:
@@ -1314,6 +1348,73 @@ class ColabAdapter(ADAPTER.Adapter):
                 f"{result.stderr.strip() or result.stdout.strip()}"
             )
 
+    def _carry_plan(
+        self, parsed_run_config: dict, rows: object, session_name: str
+    ) -> tuple[list[dict], list[str], list[tuple[Path, str]]]:
+        """What a continuation uploads (session-chains S5): `(runner rows,
+        remote directories, [(local file, remote path)])`.
+
+        Each `{"submissionId", "ref", "upload"}` row names the local
+        directory `fetch` left of an earlier session. From it, every regular
+        file under a declared carry path, in either layout the runner
+        restores (`clone/<product>/<path>` and `<path>`), goes to
+        `<root>/<session>.carry/<k>/` at the same relative path; nothing
+        else is uploaded, and nothing local is written. The runner row is
+        the same row with `mount` in place of `upload`, so no local path
+        reaches the session. A row that already names a `mount` passes
+        through unchanged. Called before any CLI call: a source that is not
+        a directory refuses while refusing is free.
+        """
+        if not isinstance(rows, list):
+            return [], [], []
+        declared = [
+            PurePosixPath(raw) for raw in parsed_run_config.get("carryPaths") or []
+            if isinstance(raw, str) and raw
+            and not PurePosixPath(raw).is_absolute() and ".." not in PurePosixPath(raw).parts
+        ]
+        product = parsed_run_config.get("product")
+        prefixes = [PurePosixPath()]
+        if isinstance(product, str) and product not in ("", ".", "..") and "/" not in product \
+                and "\\" not in product:
+            prefixes.insert(0, PurePosixPath("clone") / product)
+        carry_root = f"{self._remote_root}/{session_name}{CARRY_DIR_SUFFIX}"
+        runner_rows: list[dict] = []
+        directories: list[str] = []
+        files: list[tuple[Path, str]] = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict) or "upload" not in row:
+                runner_rows.append(row)
+                continue
+            local = Path(str(row["upload"]))
+            if not local.is_dir():
+                raise ColabAdapterError(
+                    f"cannot continue from {row.get('submissionId')!r}: its fetched "
+                    f"output {local} is not a directory; nothing was started"
+                )
+            root = local.resolve()
+            mount = f"{carry_root}/{index}"
+            directories.append(mount)
+            chosen: set[Path] = set()
+            for prefix in prefixes:
+                for path in declared:
+                    source = local / prefix / path
+                    found = [source] if source.is_file() else (
+                        sorted(source.rglob("*")) if source.is_dir() else [])
+                    for item in found:
+                        if (item.is_file() and not item.is_symlink()
+                                and item.resolve().is_relative_to(root)):
+                            chosen.add(item)
+            for item in sorted(chosen):
+                relative = item.relative_to(local).as_posix()
+                remote = f"{mount}/{relative}"
+                files.append((item, remote))
+                parent = remote.rsplit("/", 1)[0]
+                if parent not in directories:
+                    directories.append(parent)
+            runner_rows.append({key: value for key, value in row.items() if key != "upload"}
+                               | {"mount": mount})
+        return runner_rows, directories, files
+
     def _ensure_dependencies(
         self, probe: Path, session_name: str, account: TeamAccount | None = None
     ) -> None:
@@ -1519,11 +1620,17 @@ class ColabAdapter(ADAPTER.Adapter):
             else None
         )
 
+        carry_rows, carry_dirs, carry_files = self._carry_plan(
+            parsed_run_config, job.run_config.get("carry"), session_name
+        )
+
         self._refuse_existing_session(session_name, account)
 
         if job.run_config:
             merged = dict(parsed_run_config)
             merged.update(dict(job.run_config))
+            if "carry" in merged and carry_dirs:
+                merged["carry"] = carry_rows
             staged_run_config_text = json.dumps(merged)
         else:
             staged_run_config_text = run_config_text
@@ -1561,6 +1668,26 @@ class ColabAdapter(ADAPTER.Adapter):
                         f"the remote mkdir helper did not confirm the session "
                         f"directory: {payload!r}"
                     )
+
+                # session-chains S5: the carried files go up before the
+                # launch, into directories the helper creates first.
+                if carry_dirs:
+                    carry_helper = tmp / "remote-carry-mkdir.py"
+                    carry_helper.write_text(
+                        _CARRY_MKDIR_SOURCE.replace(CARRY_DIRS_TOKEN, repr(carry_dirs)),
+                        encoding="utf-8",
+                    )
+                    created = self._parse_json_line(
+                        self._exec_result(carry_helper, session_name, account=account),
+                        f"carry mkdir for {session_name!r}",
+                    )
+                    if created.get("exists") is not True:
+                        raise ColabAdapterError(
+                            f"the carry mkdir helper did not confirm its directories: "
+                            f"{created!r}"
+                        )
+                    for local_file, remote_file in carry_files:
+                        self._upload(local_file, remote_file, session_name, account)
 
                 self._upload(self._assets_dir / EXECUTOR_ASSET, f"{self._session_dir(session_name)}/{EXECUTOR_ASSET}", session_name, account)
                 self._upload(staged_run_config, f"{self._session_dir(session_name)}/{RUN_CONFIG_FILENAME}", session_name, account)
