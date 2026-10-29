@@ -26247,6 +26247,48 @@ class KernelCarryTests(unittest.TestCase):
         return [event for event in _ledger_events(self._ledger(target))
                 if event["kind"] == "submitted"]
 
+    # -- session-chains: a carry job sent without a share -------------------
+
+    def _single_send(self, target, notebook, adapter):
+        token = _mint_launch_consent(
+            target=target, entrypoint=notebook, adapter=adapter,
+            source_digest=lambda t, n: self.DIGEST, worker="w1",
+        )
+        _mint_launch_authorization(
+            target=target, product="FEM-TOLLA", pin_commit="a" * 40,
+            relative_entrypoint=self.ENTRYPOINT, worker="w1",
+        )
+        _mint_rehearsal(target=target, worker="w1")
+        return REMOTE_CLI.cmd_submit(
+            target=target, entrypoint=notebook, worker="w1", requested=1,
+            adapter=adapter, source_digest=lambda t, n: self.DIGEST, consent=token,
+        )
+
+    def test_a_carry_job_sent_without_units_is_sent_and_warned(self) -> None:
+        """A plain `submit` records no share, so `remaining` never lists the
+        units of a run cut at its limit: still sent as before, but the
+        result says so and names `--unit`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp)
+            adapter = _CarryingAdapter(workers=[("w1", 1)])
+            result = self._single_send(target, notebook, adapter)
+            (job,) = adapter.jobs
+            self.assertNotIn("units", job.run_config)
+            self.assertNotIn("carry", job.run_config)
+            self.assertEqual(result["carry"], "no-share")
+            self.assertIn("submit --unit", result["carryWarning"])
+            self.assertIn("remaining", result["carryWarning"])
+            (event,) = self._submitted_events(target)
+            self.assertNotIn("units", event)
+
+    def test_a_job_without_carry_paths_sent_without_units_is_not_warned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target, notebook = self._job_folder(tmp, carry_paths=())
+            adapter = _CarryingAdapter(workers=[("w1", 1)])
+            result = self._single_send(target, notebook, adapter)
+            self.assertNotIn("carry", result)
+            self.assertNotIn("carryWarning", result)
+
     # -- S2: automatic attach on continuation ------------------------------
 
     def test_a_continuation_unit_carries_the_earlier_submission(self) -> None:

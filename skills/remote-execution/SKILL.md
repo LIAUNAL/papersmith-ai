@@ -1567,7 +1567,7 @@ python3 scripts/remote_cli.py preflight --target <repo> \
     --entrypoint <repo>/tools/<service>/<job-name>/runner.ipynb \
     [--worker <id>]... [--expect-accelerator <name|sm_*>] \
     [--timing <Results/timing.json>] [--candidate <host>:<owner>/<machine>] \
-    [--stage poc|full] [--units N] \
+    [--stage poc|full] [--units N] [--unit <id>]... [--deadline-block smoke|run] \
     [--local-smoke-kwargs '<json>'] [--local-timeout SECONDS] \
     [--skip-rehearsal] [--keep-rehearsal <new dir>] [--interpreter <python>] \
     [--repo-credential <token file>] [--workspace <workspace>]
@@ -1597,7 +1597,8 @@ row fails. Run it under the workspace env interpreter, the one `submit` uses.
 | `local-rehearsal` | the job's smoke, run locally under runner conditions, raises, overruns `--local-timeout`, leaves no `shard.json`, or leaves one missing a `requiredEvidence` path | the target's smoke stamps (`remote_stamp.write_shard`, `@remote_stamp.stamped`); `--local-smoke-kwargs` for a cheaper local scale |
 | `account` | fails when the worker's account does not authenticate or is not signed in; warns when it has no passing rehearsal of its own at this pin | validate or sign in the account; `submit --smoke --worker <id>` once authorized |
 | `accelerator` | fails when the machine the job will request is not the one `--expect-accelerator` names, or lacks the job's declared architecture; warns when it is the service default and no expectation was given, saying the GPU is a default, not a measured choice; passes a CPU-only job (`--accelerator-kind cpu`) and says so | compare candidates with `remote-parallelism plan`, then regenerate with `--accelerator-kind cpu` or `--accelerator-kind`/`--accelerator-architecture`, or confirm with `--expect-accelerator` |
-| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths; warns when unmeasured | more units, or `generate-job --carry-path` |
+| `deadline-rehearsal` | present only for a job that declares carry paths or whose unit or whole-session estimate exceeds the usable session. Fails when the job's smoke (or `--deadline-block run`), run locally under a deadline that has already arrived, overruns `--local-timeout`, raises, leaves no `partial.json`, leaves one whose ids are not among the `--unit` ids, leaves it inside a carry path, leaves none of its declared carry paths, or when the second session, handed only the remaining ids with those paths restored, does not finish them; warns when skipped (`--skip-rehearsal`, no `--unit`, or a failed local rehearsal) | read `FORGE_SESSION_DEADLINE` before each unit, epoch or trial, checkpoint into a carry path, write `partial.json` with the `FORGE_RUN_UNITS` ids and exit 0; `--unit <id>` per unit |
+| `session-fit` | fails when one unit's upper-bound estimate (the timing record's measurements on this service; on a schema 2 record, the `--candidate` named, or else the slowest candidate of this service on the job's own kind of machine, CPU-only or accelerator, at its fastest measured setting) exceeds the usable session (`remote-parallelism`'s 80% margin) and the job declares no carry paths, or declares them and the deadline rehearsal failed; warns when the deadline rehearsal was skipped, and when unmeasured. Declared carry paths alone never pass a unit that spans sessions | more units, or `generate-job --carry-path` and a passing deadline rehearsal |
 
 The local rehearsal materializes the job's code with the runner's own
 functions in a fresh scratch directory outside the target: unpacked from
@@ -1616,6 +1617,32 @@ rehearsal is a `fail` row carrying the error, never a traceback.
 `--keep-rehearsal <new dir>` keeps the scratch directory there to read; the
 path must not exist yet and must lie outside the target, and either refusal
 happens before anything is written.
+
+**The deadline rehearsal** (`deadline_rehearse()` in
+`scripts/local_rehearsal.py`) proves, before any remote hour, that a chain of
+sessions resumes. It runs in its own scratch directory outside the target
+(`<--keep-rehearsal>/deadline/` when kept), with the same runner functions,
+interpreter and environment as the local rehearsal, two sessions in a row:
+
+1. Session 1 gets the `--unit` ids as `FORGE_RUN_UNITS` and a session limit
+   whose `FORGE_SESSION_DEADLINE`, by the runner's own formula, arrives one
+   second after the runner starts. It must exit 0, leave a `partial.json`
+   (`{"remaining": [<unit id strings>]}`, read by `shard_io.partial_marker`
+   exactly as `remaining` reads it) whose ids are among the `--unit` ids and
+   which lies outside every carry path, and leave at least one declared
+   carry path where `restore_carry()` looks (`clone/<product>/<path>` or
+   `<path>`).
+2. Session 2 gets only the remaining ids, a `carry` row whose mount is
+   session 1's directory (restored by the runner's own `restore_carry()`),
+   and the service's own limit; it must exit 0 and leave no `partial.json`.
+
+Each session has `--local-timeout` seconds. The rehearsal needs the unit ids
+the job's `submit --unit` will send, because a marker's ids must equal the
+submitted unit strings: `remaining` and the carry evidence intersect them
+with each `submitted` event's `units`, and a `submit` without `--unit`
+records no share at all, so a run cut at its limit is never listed as
+remaining. `FORGE_RUN_MODE` is set only for a smoke (`run_config["mode"]`),
+so a target must write `partial.json` whatever that variable says.
 
 The rehearsal is not a sandbox. It runs the target's smoke on this machine
 with the real `HOME`, so a smoke that downloads reaches the network and
@@ -2205,7 +2232,11 @@ nothing), or whose `errored` event names bytes kept under
    row reports `carry: unsupported`; upload the checkpoint into the new
    session yourself.
 
-A single send (no `--unit`) and the legacy shape carry nothing.
+A single send (no `--unit`) and the legacy shape carry nothing. A single
+send of a job that declares carry paths is still sent, but its output
+reports `carry: no-share` and a `carryWarning`: it records no share, so if
+its session is cut at the limit `remaining` lists none of its units and no
+continuation carries its checkpoints. Send a chain as `submit --unit <id>`.
 
 **No push replaces an output a continuation reads.** `submit` hands every
 job of a job declaring carry paths -- every share of a campaign, a single

@@ -13,6 +13,29 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+### Added
+
+- `preflight` rehearses a session chain before any remote hour is spent. For a
+  job that declares carry paths, or whose unit or whole-session estimate
+  exceeds the usable session, a new `deadline-rehearsal` row runs the job's
+  smoke (or `--deadline-block run`) twice through the runner's own `invoke()`
+  in a scratch directory outside the target: session 1 under a
+  `FORGE_SESSION_DEADLINE` that has already arrived, which must exit 0 and
+  leave a `partial.json` whose ids are among the `--unit` ids, outside every
+  carry path, plus at least one declared carry path; session 2, handed only
+  the remaining ids with those paths restored, must finish them. Each
+  session is bounded by `--local-timeout`. New flags: `--unit <id>`
+  (repeatable) and `--deadline-block smoke|run`.
+- `submit` of a job that declares carry paths without `--unit` is still sent,
+  but reports `carry: no-share` and a `carryWarning`: no share is recorded,
+  so `remaining` would never list the units of a run cut at its limit.
+
+### Changed
+
+- `session-fit` no longer passes a unit that spans sessions merely because
+  the job declares carry paths: it fails when the deadline rehearsal failed
+  (no `partial.json`, among others) and warns when it was skipped.
+
 ### Fixed
 
 - A continuation now resumes from the checkpoints its earlier session

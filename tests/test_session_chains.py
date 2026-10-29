@@ -26,7 +26,9 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from tests.remote_fakes import JOBFOLDER, REPOSITORY_ROOT, _load_or_reuse
+from tests.remote_fakes import (  # noqa: F401
+    JOBFOLDER, REMOTE_CLI, REPOSITORY_ROOT, SERVICE, PreflightCase, _git, _load_or_reuse,
+)
 
 RUNNER_INVOKE = _load_or_reuse(
     "remote_execution_runner_invoke",
@@ -299,6 +301,253 @@ class CarryLayoutDocTests(unittest.TestCase):
         changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
         self.assertIn("clone/<product>/<path>", unreleased)
+
+
+
+# ---------------------------------------------------------------------------
+# S1: the deadline rehearsal in preflight
+# ---------------------------------------------------------------------------
+
+#: Appended to the fake target's `pkg/mod.py`: a smoke that runs the units
+#: `FORGE_RUN_UNITS` hands it, skips the ones whose record is already on disk,
+#: and stops at `FORGE_SESSION_DEADLINE` leaving `partial.json`. Its kwargs
+#: select the defects the deadline rehearsal must catch.
+CHAIN_SOURCE = """
+
+def smoke_chain(**kwargs):
+    units = json.loads(os.environ.get("FORGE_RUN_UNITS", '["solo"]'))
+    deadline = float(os.environ.get("FORGE_SESSION_DEADLINE", "inf"))
+    if kwargs.get("layout", "product") == "product":
+        root = Path(os.environ["FORGE_CLONE_ROOT"]) / "P"
+    else:
+        root = Path(".")
+    runs = root / kwargs.get("records", "Results/runs")
+    runs.mkdir(parents=True, exist_ok=True)
+    todo = [u for u in units if not (runs / (u + ".json")).is_file()]
+    ran = []
+    for index, unit in enumerate(todo):
+        if not kwargs.get("ignore") and time.time() >= deadline:
+            left = todo[index:]
+            if kwargs.get("ids") == "renamed":
+                left = ["unit-" + u for u in left]
+            marker = Path(kwargs.get("marker", "partial.json"))
+            if kwargs.get("marker") == "in-carry":
+                marker = runs / "partial.json"
+            marker.write_text(json.dumps({"remaining": left}), encoding="utf-8")
+            break
+        time.sleep(float(kwargs.get("unitSeconds", 0)))
+        (runs / (unit + ".json")).write_text("done-" + unit, encoding="utf-8")
+        ran.append(unit)
+    Path("ran.json").write_text(json.dumps({
+        "units": units, "ran": ran, "seenDone": [u for u in units if u not in todo],
+        "mode": os.environ.get("FORGE_RUN_MODE"),
+    }), encoding="utf-8")
+    Path("shard.json").write_text(json.dumps({"evidence": {"commit": _commit()}}),
+                                  encoding="utf-8")
+"""
+
+UNIT_ARGS = ("--unit", "u1", "--unit", "u2", "--unit", "u3")
+#: Longer than the rehearsal's deadline window, so a target that honours the
+#: deadline finishes at most one unit before it stops.
+UNIT_SECONDS = 1.1
+
+
+class DeadlineRehearsalCase(PreflightCase):
+    def setUp(self) -> None:
+        super().setUp()
+        module = self.target / "src" / "pkg" / "mod.py"
+        module.write_text(module.read_text(encoding="utf-8") + CHAIN_SOURCE, encoding="utf-8")
+        _git(self.target, "add", "-A")
+        _git(self.target, "commit", "-q", "-m", "chain smoke")
+        self.commit = _git(self.target, "rev-parse", "HEAD")
+
+    def chain_job(self, carry=("Results/runs",), **smoke_kwargs) -> Path:
+        return self.generate(smoke="smoke_chain", carry_paths=list(carry) or None,
+                             smoke_kwargs={"unitSeconds": UNIT_SECONDS, **smoke_kwargs})
+
+    def timing(self, seconds_per_epoch: float) -> None:
+        path = self.target / "P" / "Results" / "timing.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "schema": 1,
+            "measurements": [{"measuredAt": "2026-10-28T00:00:00Z", "host": f"{SERVICE}:w1",
+                              "device": "cuda:GPU-X", "arm": "a", "unit": "epoch",
+                              "secondsPerUnit": seconds_per_epoch, "unitsMeasured": 1}],
+            "scales": {"poc": {"arms": 1, "folds": 1, "seeds": 1, "epochs": 1},
+                       "full": {"arms": 2, "folds": 5, "seeds": 1, "epochs": 10}},
+        }), encoding="utf-8")
+
+    def target_files(self) -> dict[str, bytes]:
+        return {p.relative_to(self.target).as_posix(): p.read_bytes()
+                for p in sorted(self.target.rglob("*"))
+                if p.is_file() and ".git" not in p.relative_to(self.target).parts}
+
+    @staticmethod
+    def kept_session(keep: Path, index: int) -> Path:
+        return keep / "deadline" / f"session-{index}"
+
+
+class DeadlineRehearsalPassTests(DeadlineRehearsalCase):
+    def test_a_target_that_stops_and_resumes_passes(self) -> None:
+        job = self.chain_job()
+        before = self.target_files()
+        keep = self.root / "kept"
+        code, payload, err = self.preflight(job, *UNIT_ARGS, "--keep-rehearsal", str(keep))
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "pass", row)
+        self.assertEqual(code, 0, (payload, err))
+        remaining = row["details"]["remaining"]
+        self.assertTrue(set(remaining) <= {"u1", "u2", "u3"} and remaining, row)
+        self.assertEqual(row["details"]["units"], ["u1", "u2", "u3"])
+        self.assertEqual(row["details"]["carried"], ["clone/P/Results/runs"])
+        self.assertIn("partial.json", row["evidence"])
+        # Session 1 ran under the runner with every unit and stopped early.
+        first = json.loads((self.kept_session(keep, 1) / "ran.json").read_text())
+        self.assertEqual(first["units"], ["u1", "u2", "u3"])
+        self.assertEqual(first["mode"], "smoke")
+        self.assertEqual(first["ran"] + remaining, ["u1", "u2", "u3"])
+        # Session 2 got only the remaining ids, found the rest done under the
+        # same product path, and ran only what was left.
+        second = json.loads((self.kept_session(keep, 2) / "ran.json").read_text())
+        self.assertEqual(second["units"], remaining)
+        self.assertEqual(second["ran"], remaining)
+        self.assertEqual(second["seenDone"], [])
+        self.assertEqual(
+            sorted(p.name for p in (self.kept_session(keep, 2) / "clone/P/Results/runs")
+                   .iterdir()), ["u1.json", "u2.json", "u3.json"])
+        self.assertFalse((self.kept_session(keep, 2) / "partial.json").exists())
+        self.assertEqual(self.target_files(), before, "preflight writes nothing in the target")
+
+    def test_a_working_directory_layout_also_resumes(self) -> None:
+        job = self.chain_job(layout="working")
+        _, payload, _ = self.preflight(job, *UNIT_ARGS)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "pass", row)
+        self.assertEqual(row["details"]["carried"], ["Results/runs"])
+
+    def test_carry_with_a_passing_rehearsal_lets_a_long_unit_pass_session_fit(self) -> None:
+        self.timing(120.0)  # 100 epochs x 120 s = 200 min > 80% of 2 h
+        job = self.chain_job()
+        _, payload, _ = self.preflight(job, *UNIT_ARGS)
+        deadline = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(deadline["status"], "pass")
+        self.assertFalse(deadline["details"]["kept"])
+        self.assertFalse(Path(deadline["details"]["scratch"]).exists())
+        row = self.row(payload, "session-fit")
+        self.assertEqual(row["status"], "pass", row)
+        self.assertIn("deadline rehearsal", row["evidence"])
+
+
+class DeadlineRehearsalFailTests(DeadlineRehearsalCase):
+    def test_a_target_that_ignores_the_deadline_fails_both_rows(self) -> None:
+        self.timing(120.0)
+        job = self.chain_job(ignore=True)
+        code, payload, _ = self.preflight(job, *UNIT_ARGS)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("no partial.json", row["evidence"])
+        self.assertIn("FORGE_SESSION_DEADLINE", row["fix"])
+        fit = self.row(payload, "session-fit")
+        self.assertEqual(fit["status"], "fail")
+        self.assertIn("deadline rehearsal", fit["evidence"])
+        self.assertNotEqual(code, 0)
+
+    def test_marker_ids_that_are_not_the_submitted_units_fail(self) -> None:
+        job = self.chain_job(ids="renamed")
+        _, payload, _ = self.preflight(job, *UNIT_ARGS)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("unit-u", row["evidence"])
+        self.assertIn("equal the submitted unit strings", row["fix"])
+
+    def test_a_marker_inside_a_carry_path_fails(self) -> None:
+        job = self.chain_job(marker="in-carry")
+        _, payload, _ = self.preflight(job, *UNIT_ARGS)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("inside the declared carry path", row["evidence"])
+
+    def test_records_outside_every_carry_path_fail(self) -> None:
+        job = self.chain_job(carry=("checkpoints",))
+        _, payload, _ = self.preflight(job, *UNIT_ARGS)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("checkpoints", row["evidence"])
+        self.assertIn("start fresh", row["evidence"])
+
+    def test_a_session_over_its_budget_fails_and_leaves_no_scratch(self) -> None:
+        local = REMOTE_CLI._load_sibling("remote_execution_local_rehearsal",
+                                         "local_rehearsal.py")
+        job = self.chain_job(ignore=True, unitSeconds=5)
+        run_config = json.loads((job / "run-config.json").read_text())
+        result = local.deadline_rehearse(
+            job_dir=job, target=self.target, run_config=run_config,
+            interpreter=Path(sys.executable), units=["u1", "u2", "u3"],
+            partial_marker=REMOTE_CLI.SHARD_IO.partial_marker, timeout=2)
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("did not stop", result["evidence"])
+        self.assertFalse(result["details"]["kept"])
+        self.assertFalse(Path(result["details"]["scratch"]).exists())
+
+
+class DeadlineRehearsalTriggerTests(DeadlineRehearsalCase):
+    def test_skipping_the_rehearsal_warns_and_session_fit_warns(self) -> None:
+        self.timing(120.0)
+        job = self.chain_job()
+        _, payload, _ = self.preflight(job, "--skip-rehearsal", *UNIT_ARGS)
+        self.assertEqual(self.row(payload, "deadline-rehearsal")["status"], "warn")
+        fit = self.row(payload, "session-fit")
+        self.assertEqual(fit["status"], "warn")
+        self.assertIn("skipped", fit["evidence"])
+
+    def test_without_unit_ids_the_rehearsal_is_skipped_naming_the_flag(self) -> None:
+        self.timing(120.0)
+        job = self.chain_job()
+        _, payload, _ = self.preflight(job)
+        row = self.row(payload, "deadline-rehearsal")
+        self.assertEqual(row["status"], "warn")
+        self.assertIn("--unit", row["fix"])
+        self.assertEqual(self.row(payload, "session-fit")["status"], "warn")
+
+    def test_a_job_that_fits_one_session_and_carries_nothing_has_no_row(self) -> None:
+        self.timing(1.0)  # 100 s for the whole stage
+        job = self.chain_job(carry=())
+        code, payload, _ = self.preflight(job, *UNIT_ARGS)
+        self.assertEqual(self.rows(payload, "deadline-rehearsal"), [])
+        self.assertEqual(self.row(payload, "session-fit")["status"], "pass")
+        self.assertEqual(code, 0, payload)
+
+    def test_a_session_over_the_margin_requires_it_even_when_units_fit(self) -> None:
+        self.timing(120.0)  # 10 units of 20 min fit; 200 min in one session do not
+        job = self.chain_job(carry=())
+        _, payload, _ = self.preflight(job, "--units", "10", *UNIT_ARGS)
+        self.assertEqual(self.row(payload, "deadline-rehearsal")["status"], "pass")
+        self.assertEqual(self.row(payload, "session-fit")["status"], "pass")
+
+    def test_the_preflight_parser_declares_unit_and_deadline_block(self) -> None:
+        parser = REMOTE_CLI._build_parser()
+        args = parser.parse_args(["preflight", "--target", "/t", "--entrypoint", "/t/a.ipynb",
+                                  "--unit", "u1", "--unit", "u2"])
+        self.assertEqual(args.unit_ids, ["u1", "u2"])
+        self.assertEqual(args.deadline_block, "smoke")
+        args = parser.parse_args(["preflight", "--target", "/t", "--entrypoint", "/t/a.ipynb",
+                                  "--deadline-block", "run"])
+        self.assertEqual(args.deadline_block, "run")
+        self.assertIsNone(args.unit_ids)
+
+
+class DeadlineRehearsalDocTests(unittest.TestCase):
+    def test_the_skill_documents_the_deadline_rehearsal(self) -> None:
+        skill = (REPOSITORY_ROOT / "skills/remote-execution/SKILL.md").read_text(
+            encoding="utf-8")
+        for needle in ("`deadline-rehearsal`", "--deadline-block", "[--unit <id>]...",
+                       "warns when the deadline rehearsal was skipped", "carry: no-share",
+                       "a target must write `partial.json` whatever that variable says"):
+            self.assertIn(needle, skill)
+        changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+        for needle in ("deadline-rehearsal", "carry: no-share", "session-fit"):
+            self.assertIn(needle, unreleased)
 
 
 if __name__ == "__main__":
