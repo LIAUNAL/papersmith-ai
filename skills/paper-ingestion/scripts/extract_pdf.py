@@ -72,6 +72,13 @@ from pathlib import Path
 # do not yet implement on the Metal backend.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
+# On Intel Macs with discrete AMD GPUs, MPS is exposed by Metal but unsupported
+# by PyTorch (which requires unified memory on Apple Silicon). Default to CPU
+# unless the operator explicitly chose another device.
+import platform
+if sys.platform == "darwin" and platform.machine() == "x86_64":
+    os.environ.setdefault("TORCH_DEVICE", "cpu")
+
 
 # skills/paper-ingestion/scripts/extract_pdf.py -> repo root is parents[3]
 REPO_ROOT = Path(__file__).resolve().parents[3]

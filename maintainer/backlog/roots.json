@@ -45,7 +45,7 @@
     {
       "key": "argv-boundaries",
       "tier": 2,
-      "state": "partial",
+      "state": "closed",
       "title": "Untrusted values reach argv where they can act as options",
       "fix": "End options with -- (or reject a leading -) before every value-bearing positional, quote remote command text once, and make dry-run the default the guard assumes.",
       "issues": [
@@ -59,7 +59,7 @@
         "59": "src/papersmith/mcp/registry.py:1450-1451, :853",
         "81": "paper_bib.py:60 \\cite only; paper_figure.py:84-88, paper_latex.py:220"
       },
-      "proof": "fix/argv-boundaries closes #81, refs #56 #59; PR #98 (#82) needs the smith: error prefix"
+      "proof": "PR #98 closes #82; fix/argv-boundaries closes #81, refs #56 #59"
     },
     {
       "key": "engine-defect-recorder",
@@ -136,7 +136,7 @@
     {
       "key": "model-output-validation",
       "tier": 2,
-      "state": "open",
+      "state": "closed",
       "title": "Generated JSON is indexed before it is validated",
       "fix": "Validate draft envelopes at the paper_cli boundary before paper_write reads them.",
       "issues": [
@@ -144,7 +144,8 @@
       ],
       "evidence": {
         "71": "skills/paper-writing/scripts/paper_cli.py:2486, paper_write.py:123"
-      }
+      },
+      "proof": "closes #71 with envelope validation and fence stripping"
     },
     {
       "key": "evidence-integrity",
@@ -218,12 +219,13 @@
     {
       "key": "ingestion-device",
       "tier": 3,
-      "state": "needs-decision",
+      "state": "closed",
       "title": "OCR device selection on Intel Macs",
       "fix": "Decide whether to pin CPU when MPS is unusable; surfacing OCR timeouts is part of ingestion-silent-loss.",
       "issues": [
         103
-      ]
+      ],
+      "proof": "closes #103 with Intel Mac MPS CPU fallback"
     },
     {
       "key": "pixelrag",

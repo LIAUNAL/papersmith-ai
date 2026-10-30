@@ -16,6 +16,7 @@ from ..bridges.python import interpreter_for, mapped_returncode, script_environm
 from ..core.exit_codes import EXECUTION_ERROR, SUCCESS, USER_ERROR
 from ..errors import ExecutionError, UserError
 from . import config, ledger
+from .target import ssh_destination
 
 
 def _job_id() -> str:
@@ -254,15 +255,16 @@ def _remote_command(root: Path, job: dict[str, Any], target: dict, *, consent: s
 
 
 def _slurm_command(job: dict[str, Any], target: dict) -> list[str]:
-    host = target.get("host")
-    if not isinstance(host, str) or not host:
-        raise UserError("remote-ssh target requires host")
-    command = ["ssh", host, "sbatch"]
+    host = ssh_destination(target.get("host"), missing_message="remote-ssh target requires host")
+    command = ["sbatch"]
     for key, flag in (("partition", "--partition"), ("walltime", "--time")):
         if target.get(key):
             command.extend([flag, str(target[key])])
     command.extend(["--wrap", job["command_text"]])
-    return command
+    # ssh joins its remote arguments with spaces and hands them to the remote
+    # shell, so the sbatch argv is quoted as ONE string: --wrap's command text
+    # stays a single argument and its metacharacters stay inert (#82).
+    return ["ssh", "--", host, shlex.join(command)]
 
 
 def run_profile(workspace: str | Path, profile_name: str, *, target_override: str | None = None,
