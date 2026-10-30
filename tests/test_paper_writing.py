@@ -8849,8 +8849,13 @@ class RefusalRosterTests(unittest.TestCase):
         wiring reaches the same module through `write_block`, contributing
         no code of its own. Measured directly against `reachable_paper_
         refusal_codes()`, EXECUTED after all of this change's engine code
-        landed, never forecast."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 165)
+        landed, never forecast.
+
+        165 -> 167 in `model-output-validation` (Issue #71):
+        `cmd_write` and `write_block` validate draft and audit account
+        JSON envelopes before indexing fields, adding `DRAFT_UNREADABLE`
+        and `AUDIT_UNREADABLE` (both invocation defects)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 167)
 
 
 class ObjectiveNorthTests(unittest.TestCase):
@@ -15838,6 +15843,101 @@ class WriteQualifiedIdMutationProofTests(unittest.TestCase):
         self.assertIn("MUTANT_IMPORTED_OK", output, output)
         self.assertNotEqual(proc.returncode, 0, output)
 
+
+
+class ModelOutputEnvelopeValidationTests(unittest.TestCase):
+    """Issue #71: Validate generated JSON envelopes before indexing model output."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="paper-envelope-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_strip_markdown_fences_handles_fences_and_raw_json(self) -> None:
+        raw = '{"latex": "abc", "bindings": []}'
+        self.assertEqual(paper_cli._strip_markdown_fences(raw), raw)
+
+        fenced = '```json\n{"latex": "abc", "bindings": []}\n```'
+        self.assertEqual(paper_cli._strip_markdown_fences(fenced), raw)
+
+        fenced_no_lang = '```\n{"latex": "abc", "bindings": []}\n```'
+        self.assertEqual(paper_cli._strip_markdown_fences(fenced_no_lang), raw)
+
+    def test_draft_envelope_valid_and_fenced_loads(self) -> None:
+        p = self.tmp / "draft.json"
+        p.write_text('```json\n{"latex": "Hello world", "bindings": []}\n```', encoding="utf-8")
+        loaded = paper_cli._load_draft_envelope(p)
+        self.assertEqual(loaded["latex"], "Hello world")
+        self.assertEqual(loaded["bindings"], [])
+
+    def test_draft_envelope_malformed_json_refuses(self) -> None:
+        p = self.tmp / "draft.json"
+        p.write_text('not json at all', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_draft_envelope(p)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+        self.assertIn("invalid JSON", ctx.exception.detail)
+
+    def test_draft_envelope_non_dict_refuses(self) -> None:
+        p = self.tmp / "draft.json"
+        p.write_text('[1, 2, 3]', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_draft_envelope(p)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+        self.assertIn("must be a JSON object", ctx.exception.detail)
+
+    def test_draft_envelope_missing_or_invalid_latex_refuses(self) -> None:
+        p = self.tmp / "draft.json"
+        p.write_text('{"bindings": []}', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_draft_envelope(p)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+        self.assertIn("missing or non-string 'latex'", ctx.exception.detail)
+
+        p.write_text('{"latex": 123, "bindings": []}', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_draft_envelope(p)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+        self.assertIn("missing or non-string 'latex'", ctx.exception.detail)
+
+    def test_draft_envelope_missing_or_invalid_bindings_refuses(self) -> None:
+        p = self.tmp / "draft.json"
+        p.write_text('{"latex": "ok"}', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_draft_envelope(p)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+        self.assertIn("missing or non-list 'bindings'", ctx.exception.detail)
+
+        p.write_text('{"latex": "ok", "bindings": "not a list"}', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_draft_envelope(p)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+        self.assertIn("missing or non-list 'bindings'", ctx.exception.detail)
+
+    def test_audit_envelope_valid_and_fenced_loads(self) -> None:
+        p = self.tmp / "audit.json"
+        p.write_text('```json\n{"verdicts": []}\n```', encoding="utf-8")
+        loaded = paper_cli._load_audit_envelope(p)
+        self.assertEqual(loaded["verdicts"], [])
+
+    def test_audit_envelope_malformed_and_missing_keys_refuses(self) -> None:
+        p = self.tmp / "audit.json"
+        p.write_text('{"wrong": 1}', encoding="utf-8")
+        with self.assertRaises(Refused) as ctx:
+            paper_cli._load_audit_envelope(p)
+        self.assertEqual(ctx.exception.code, "AUDIT_UNREADABLE")
+        self.assertIn("missing or non-list 'verdicts'", ctx.exception.detail)
+
+    def test_write_block_defensive_checks_refuse_bad_inputs(self) -> None:
+        contract = unittest.mock.MagicMock()
+        contract.mode = "argument"
+        contract.citations_regime = "none"
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(Path("/dummy"), contract, "not a dict", {})
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
+
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(Path("/dummy"), contract, {"latex": "ok", "bindings": []}, "not a dict")
+        self.assertEqual(ctx.exception.code, "AUDIT_UNREADABLE")
 
 
 if __name__ == "__main__":

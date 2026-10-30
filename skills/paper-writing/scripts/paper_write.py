@@ -160,6 +160,12 @@ def write_block(
     pre-`write` state.
     """
     _stage_readiness(contract)
+    if not isinstance(draft, dict) or "latex" not in draft or not isinstance(draft["latex"], str):
+        raise Refused("DRAFT_UNREADABLE", "draft must be a dict with string 'latex'")
+    if "bindings" not in draft or not isinstance(draft["bindings"], list):
+        raise Refused("DRAFT_UNREADABLE", "draft must be a dict with list 'bindings'")
+    if not isinstance(audit_account, dict) or "verdicts" not in audit_account or not isinstance(audit_account["verdicts"], list):
+        raise Refused("AUDIT_UNREADABLE", "audit_account must be a dict with list 'verdicts'")
     bindings = _stage_evidence_audit(contract, draft)
 
     key = _attempt_key(contract)
