@@ -33,6 +33,16 @@ number is `0`, breaking changes can still arrive without a major bump.
 - All shipped repository documentation, README files, maintenance guides, generators,
   and implementation/deliberation engines translated to English.
 
+### Fixed
+
+- Deliberation CLI URL resolution: use `fileURLToPath` in `cli.mjs` for portable module paths (#76).
+- Command Center smoke test runtime selection: prioritize dependency-ready Python interpreters (#143).
+- Paper writing bibliography refresh: refresh citation metadata without recreating evidence (#144).
+- Test vocabulary guards: distinguish protected identities from ordinary English prose (#145).
+- Paper writing multi-evidence aggregation: combine distinct papers across citation folders (#146).
+- Paper writing bibliography cleanup: build `.bib` from cited evidence only, excluding uncited keys (#147).
+- Paper section contracts: allow introduction paragraph 4a to cite extended prior work (#148).
+
 ## 0.40.0
 
 ### Changed
