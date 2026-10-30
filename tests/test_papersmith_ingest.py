@@ -146,3 +146,23 @@ class IngestTests(unittest.TestCase):
             text=True,
         )
         assert invalid.returncode == 2
+
+    def test_extract_pdf_defaults_cpu_on_intel_mac(self) -> None:
+        script = (
+            "import os, sys, platform\n"
+            "os.environ.pop('TORCH_DEVICE', None)\n"
+            "platform.machine = lambda: 'x86_64'\n"
+            "sys.platform = 'darwin'\n"
+            "import runpy\n"
+            "runpy.run_path('skills/paper-ingestion/scripts/extract_pdf.py', run_name='fake')\n"
+            "print(os.environ.get('TORCH_DEVICE', ''))\n"
+        )
+        res = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), "cpu")
+

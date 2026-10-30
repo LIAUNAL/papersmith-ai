@@ -158,8 +158,11 @@ Requirements: Python 3.10+ to run the provisioner itself; micromamba is
 downloaded automatically if missing.
 
 **No `.env` / no keys.** Ingestion is fully keyless — the only runtime env var,
-`PYTORCH_ENABLE_MPS_FALLBACK=1` (Apple Silicon), is set by the script itself. To
-point at a llama.cpp outside the environment, export `LLAMA_CPP_BINARY`.
+`PYTORCH_ENABLE_MPS_FALLBACK=1` (Apple Silicon), is set by the script itself.
+On Intel Macs (`darwin` + `x86_64`), `extract_pdf.py` automatically defaults
+`TORCH_DEVICE=cpu` because PyTorch's MPS backend requires Apple Silicon unified
+memory and fails on Intel/AMD GPUs. To point at a llama.cpp outside the
+environment, export `LLAMA_CPP_BINARY`.
 
 ## How to execute
 
