@@ -399,6 +399,63 @@
     </div>`;
   }
 
+  function executionMonitor(p) {
+    if (!p || !p.execution_monitor) return '';
+    const m = p.execution_monitor;
+    const stages = m.stages || [];
+    const isCompleted = m.status === 'completed';
+    const isRunning = m.status === 'running';
+    const badgeCls = isCompleted ? 'badge--ok' : (isRunning ? 'badge--info' : 'badge--warn');
+    const statusText = isCompleted ? (t('exp.monitor.status.completed') || 'Completado')
+      : (isRunning ? (t('exp.monitor.status.running') || 'En ejecución')
+      : (t('exp.monitor.status.inProgress') || 'En progreso'));
+
+    const etaText = isCompleted
+      ? `<span style="color: var(--accent-success, #4ade80); font-weight: 600;">✓ ${esc(t('exp.monitor.allCompleted') || 'Todas las etapas finalizadas')}</span>`
+      : `<span><strong>${esc(t('exp.monitor.eta') || 'Finalización estimada')}:</strong> ${esc(m.estimated_completion_label || '—')} <span class="badge badge--info" style="margin-left: 0.35rem;">~${esc(m.remaining_duration || '—')} ${esc(t('exp.monitor.remaining') || 'restantes')}</span></span>`;
+
+    const stageRows = stages.map((s) => {
+      const sCls = s.status === 'completed' ? 'badge--ok' : (s.status === 'running' ? 'badge--info' : 'badge--warn');
+      const sStatusLabel = s.status === 'completed' ? '✓ ' + (t('exp.monitor.stage.done') || 'Listo')
+        : (s.status === 'running' ? '⚡ ' + (t('exp.monitor.stage.running') || 'Corriendo')
+        : (t('exp.monitor.stage.pending') || 'Pendiente'));
+      const catCls = s.category === 'smoke' ? 'badge--info' : (s.category === 'training' ? 'badge--warn' : '');
+      return `<tr>
+        <td><strong>#${esc(s.index)}</strong></td>
+        <td><code>${esc(s.step || s.tag || s.kind)}</code> <small class="exp-muted">(${esc(s.kind)})</small><br><small>${esc(s.name)}</small></td>
+        <td><span class="badge ${sCls}">${esc(sStatusLabel)}</span></td>
+        <td><span class="badge ${catCls}">${esc(s.category)}</span></td>
+        <td><strong>~${esc(s.estimated_duration)}</strong></td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="exp-monitor-card" style="margin: 1rem 0; padding: 0.85rem; background: var(--surface-2, rgba(255,255,255,0.03)); border: 1px solid var(--border); border-radius: var(--radius);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+          <strong style="color: var(--accent); font-size: 1rem;">📊 ${esc(t('exp.monitor.title') || 'Monitor de Ejecución y Tiempos Estimados')}</strong>
+          <span class="badge ${badgeCls}" style="margin-left: 0.5rem;">${esc(statusText)}</span>
+        </div>
+        <div style="font-size: 0.85rem;">${etaText}</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; margin-top: 0.25rem;">
+        <span>${esc(t('exp.monitor.progress') || 'Progreso')}: <strong>${esc(m.completed_stages)}/${esc(m.total_stages)} ${esc(t('exp.monitor.stages') || 'etapas')} (${esc(m.progress_percent)}%)</strong></span>
+        ${m.current_stage ? `<small class="exp-muted">${esc(t('exp.monitor.current') || 'Etapa actual')}: <em>${esc(m.current_stage)}</em></small>` : ''}
+      </div>
+      <div style="background: rgba(255,255,255,0.1); border-radius: 999px; height: 7px; overflow: hidden; margin: 0.5rem 0 0.85rem 0;">
+        <div style="background: ${isCompleted ? 'var(--accent-success, #4ade80)' : 'var(--accent, #3b82f6)'}; height: 100%; width: ${Math.min(100, Math.max(0, m.progress_percent))}%; transition: width 0.3s ease;"></div>
+      </div>
+      <details style="font-size: 0.85rem;">
+        <summary style="cursor: pointer; color: var(--accent);">${esc(t('exp.monitor.viewStages') || 'Ver desglose de tiempos por etapa')} (${esc(stages.length)} etapas)</summary>
+        <div class="table-responsive" style="margin-top: 0.5rem;">
+          <table class="table exp-table" style="font-size: 0.82rem;">
+            <thead><tr><th>#</th><th>${esc(t('exp.monitor.col.stage') || 'Etapa / Descripción')}</th><th>${esc(t('exp.monitor.col.status') || 'Estado')}</th><th>${esc(t('exp.monitor.col.type') || 'Tipo')}</th><th>${esc(t('exp.monitor.col.duration') || 'Duración est.')}</th></tr></thead>
+            <tbody>${stageRows}</tbody>
+          </table>
+        </div>
+      </details>
+    </div>`;
+  }
+
   function product(p) {
     const pinned = p.pinned || [];
     const figures = (p.figures || []).filter((f) => !pinned.includes(f));
@@ -409,6 +466,7 @@
         <div class="exp-chips">${runs(p)}</div>
       </header>
       ${remoteWorkers(p)}
+      ${executionMonitor(p)}
       ${diagrams(p)}
       ${reviewerAudit(p)}
       ${pinned.length ? `<h4 class="exp-h4">${esc(t('exp.pinned'))}</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}

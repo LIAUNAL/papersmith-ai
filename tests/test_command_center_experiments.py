@@ -589,6 +589,43 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Results/history", out)
         self.assertIn("Ayuda: lanzar y monitorear en Kaggle (CLI o MCP)", out)
 
+    def test_execution_monitor_parses_ladder_and_computes_eta(self) -> None:
+        ws = Workspace(self)
+        full_dir = ws.root / "implementations" / "repo" / "FullModel"
+        ladder = """# Agreed
+## Ladder
+- [x] 1. Rehearse HPO. `@rehearsal hpo_search`
+- [x] 2. Run nested HPO search. `@notebook Notebooks/hpo.ipynb`
+- [ ] 3. Run E1. `@step e1_run`
+"""
+        _write(full_dir / "Experimental_AGREED.md", ladder)
+        view = experiments_view.get_experiments_view(ws.root)
+        prod = next(p for p in view["products"] if p["name"] == "FullModel")
+        m = prod.get("execution_monitor")
+        self.assertIsNotNone(m)
+        self.assertEqual(m["total_stages"], 3)
+        self.assertEqual(m["completed_stages"], 2)
+        self.assertEqual(m["progress_percent"], 66.7)
+        self.assertIn("Run E1", m["current_stage"])
+        self.assertEqual(m["stages"][2]["step"], "e1_run")
+        self.assertGreater(m["remaining_seconds"], 0)
+        self.assertIsNotNone(m["estimated_completion_iso"])
+
+    def test_renders_execution_monitor_card(self) -> None:
+        ws = Workspace(self)
+        full_dir = ws.root / "implementations" / "repo" / "FullModel"
+        ladder = """# Agreed
+## Ladder
+- [x] 1. Rehearse HPO. `@rehearsal hpo_search`
+- [ ] 2. Run E1. `@step e1_run`
+"""
+        _write(full_dir / "Experimental_AGREED.md", ladder)
+        out = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn("exp-monitor-card", out)
+        self.assertIn("Monitor de Ejecución", out)
+        self.assertIn("Finalización estimada", out)
+
+
 
 if __name__ == "__main__":
     unittest.main()

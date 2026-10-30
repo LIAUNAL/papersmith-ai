@@ -42,6 +42,7 @@ recorded in ``warnings``. Returned paths are relative to ``root`` so
 from __future__ import annotations
 
 import csv
+from datetime import datetime, timezone, timedelta
 import importlib.util
 import io
 import json
@@ -911,6 +912,162 @@ def validate_diagram(root: Path, repo: str, name: str, kind: str) -> tuple[int, 
     return 200, {"ok": True, "validation": "validated", "record": record}
 
 
+STAGE_DURATIONS_FULL: dict[str, int] = {
+    "hpo_search": 2100,
+    "full_time_probe": 900,
+    "e1_run": 6300,
+    "e2_run": 3000,
+    "e3_run": 4800,
+    "e3_gradvar": 60,
+    "e4_saliency": 480,
+    "e1_report": 90,
+    "e2_report": 90,
+    "e3_report": 90,
+    "e4_report": 90,
+}
+
+STAGE_DURATIONS_POC: dict[str, int] = {
+    "time_probe": 120,
+    "poc_train": 900,
+    "poc_report": 120,
+    "e5_time_probe": 180,
+    "e5_run_fixed": 1500,
+    "e5_run_end_to_end": 2400,
+    "e5_report": 180,
+}
+
+
+def _format_duration_label(seconds: float) -> str:
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    mins = int(round(seconds / 60))
+    hrs = mins // 60
+    rem_mins = mins % 60
+    if hrs > 0:
+        return f"{hrs}h {rem_mins}m" if rem_mins > 0 else f"{hrs}h"
+    return f"{mins}m"
+
+
+def _execution_monitor(root: Path, folder: Path, kind: str, ledger: Path | None,
+                       reader: _Reader) -> dict[str, Any] | None:
+    """Track the execution ladder (PoC or Full), estimating stage durations, remaining time, and ETA."""
+    agreed_file = folder / ("Experimental_AGREED.md" if kind == "full" else "AGREED.md")
+    if not agreed_file.is_file():
+        fallback = folder / ("AGREED.md" if kind == "full" else "Experimental_AGREED.md")
+        if fallback.is_file():
+            agreed_file = fallback
+            kind = "poc" if agreed_file.name == "AGREED.md" else "full"
+        else:
+            return None
+
+    text = reader.text(agreed_file)
+    if not text:
+        return None
+
+    durations = STAGE_DURATIONS_FULL if kind == "full" else STAGE_DURATIONS_POC
+
+    active_steps: set[str] = set()
+    if ledger and ledger.is_file():
+        try:
+            raw_ledger = reader.text(ledger, cap=LEDGER_MAX_BYTES)
+            if raw_ledger:
+                for line in raw_ledger.splitlines():
+                    if not line.strip():
+                        continue
+                    entry = json.loads(line)
+                    if entry.get("kind") == "submitted":
+                        ep = entry.get("entrypoint", "")
+                        step_stem = Path(ep).parent.name if "/" in ep else ""
+                        if step_stem:
+                            active_steps.add(step_stem)
+                    elif entry.get("kind") in ("returned", "errored"):
+                        ep = entry.get("entrypoint", "")
+                        step_stem = Path(ep).parent.name if "/" in ep else ""
+                        active_steps.discard(step_stem)
+        except Exception:
+            pass
+
+    stages: list[dict[str, Any]] = []
+    line_re = re.compile(r"^\s*-\s*\[([ x])\]\s*(\d+)\.\s*(.*?)(?:\s*`?@([a-z]+)\s+([^`\s]+)`?)?\s*$")
+    for line in text.splitlines():
+        m = line_re.match(line)
+        if not m:
+            continue
+        checked = (m.group(1) == "x")
+        idx = int(m.group(2))
+        desc = m.group(3).strip()
+        step_type = m.group(4) or "step"
+        raw_tag = m.group(5) or ""
+        tag = re.sub(r"[^a-zA-Z0-9_\-\./]", "", raw_tag)
+        step_stem = Path(tag).stem if tag else ""
+
+        if step_type == "rehearsal":
+            sec = 660
+            category = "smoke"
+        elif "report" in step_stem:
+            sec = 90
+            category = "report"
+        elif "gradvar" in step_stem:
+            sec = 60
+            category = "analysis"
+        elif "saliency" in step_stem:
+            sec = 480
+            category = "analysis"
+        else:
+            sec = durations.get(step_stem, 1800)
+            category = "training" if ("run" in step_stem or "train" in step_stem) else "probe"
+
+        is_running = not checked and (step_stem in active_steps or any(step_stem in s for s in active_steps))
+        status = "completed" if checked else ("running" if is_running else "pending")
+
+        stages.append({
+            "index": idx,
+            "name": desc,
+            "category": category,
+            "kind": step_type,
+            "tag": tag,
+            "step": step_stem,
+            "status": status,
+            "estimated_seconds": sec,
+            "estimated_duration": _format_duration_label(sec),
+        })
+
+    if not stages:
+        return None
+
+    total_stages = len(stages)
+    completed_stages = sum(1 for s in stages if s["status"] == "completed")
+    progress_percent = round((completed_stages / total_stages) * 100, 1) if total_stages else 0.0
+    remaining_seconds = sum(s["estimated_seconds"] for s in stages if s["status"] != "completed")
+
+    now = datetime.now(timezone.utc)
+    completion_dt = now + timedelta(seconds=remaining_seconds) if remaining_seconds > 0 else now
+    estimated_completion_iso = completion_dt.isoformat()
+    estimated_completion_label = completion_dt.strftime("%Y-%m-%d %H:%M UTC")
+
+    overall_status = "completed" if completed_stages == total_stages else (
+        "running" if any(s["status"] == "running" for s in stages) else "in_progress"
+    )
+
+    current_stage = next((s["name"] for s in stages if s["status"] == "running"), None)
+    if not current_stage:
+        current_stage = next((s["name"] for s in stages if s["status"] == "pending"), None)
+
+    return {
+        "kind": kind,
+        "status": overall_status,
+        "current_stage": current_stage,
+        "total_stages": total_stages,
+        "completed_stages": completed_stages,
+        "progress_percent": progress_percent,
+        "remaining_seconds": remaining_seconds,
+        "remaining_duration": _format_duration_label(remaining_seconds),
+        "estimated_completion_iso": estimated_completion_iso,
+        "estimated_completion_label": estimated_completion_label,
+        "stages": stages,
+    }
+
+
 def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
              global_warnings: list[str]) -> dict[str, Any]:
     warnings: list[str] = []
@@ -993,6 +1150,7 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         "hpo": hpo,
         "reviewer": reviewer,
         "diagrams": _diagrams(root, repo, folder, reader),
+        "execution_monitor": _execution_monitor(root, folder, kind, ledger, reader),
         "warnings": warnings,
     }
 
