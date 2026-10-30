@@ -11,6 +11,15 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.42.0
+
+### Fixed
+
+- **Executor & Transport**: preserve argument boundaries in SSH and Slurm execution via single `shlex.join` remote quotation and pre-launch host validation, preventing option-like flags and argument word-splitting (PR #98, closes #82).
+- **Paper Ingestion**: automatic CPU fallback on Intel Macs (`darwin` + `x86_64`) when MPS is unsupported due to non-unified discrete AMD GPU memory, avoiding silent timeout crashes (closes #103).
+- **Paper Writing**: validate model-generated JSON envelopes (`DRAFT_UNREADABLE`, `AUDIT_UNREADABLE`) and strip markdown code fences before indexing draft and audit fields, preventing tracebacks from malformed LLM responses (closes #71).
+- **Backlog Roots**: marked `argv-boundaries`, `ingestion-device`, and `model-output-validation` closed in `maintainer/backlog/roots.json` and re-rendered tracker #110.
+
 ## 0.41.0
 
 ### Added
