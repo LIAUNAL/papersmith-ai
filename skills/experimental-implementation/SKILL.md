@@ -168,6 +168,9 @@ relative to the product folder `<Name>/`. One folder per experiment (`Results/e1
 | `Results/tables/**`, or `Results/<experiment>/tables/**` | The experiment's tables | `csv`, `md` or `json` files, in a `tables` folder at any depth. |
 | `Results/summary.json`, or `Results/<experiment>/summary.json` | The run's headline numbers | One JSON object; a `summary.json` deeper than one experiment folder is not read. |
 | `Results/significance*.json` | The significance table | A JSON list of objects with the keys `comparison`, `test`, `statistic`, `p_value`, `p_adjusted`, `correction`, `effect_size`, `effect_size_name`, `ci_low`, `ci_high`, `n` and `alpha`. |
+| `Results/significance*.json` (optional keys) | Which hypothesis a row tests | Each row may also carry `hypothesis` (the id in the protocol's hypothesis matrix) and `experiment` (its `[exp:E#]`); the panel reads and shows them, and the discussion's `significance:<comparison>` evidence resolves against the row's `comparison`. |
+| `Results/qualitative/**` | Qualitative, interpretability and explainability figures | `png`, `svg`, `jpg` or `pdf` files (saliency or attribution maps, attention, embeddings, error cases). The panel shows them in their own gallery, never among the generic figures. |
+| `Results/discussion.json` | The results discussion | One JSON object, schema 1, written by `discussion_cli.py scaffold` and completed from the results on disk; see [After the runs](#after-the-runs-the-results-discussion). |
 
 The test, correction and effect size written there are the ones the bound
 experiments revision declares (see `experimental-deliberation`'s **Choosing
@@ -502,6 +505,22 @@ narrowed to what this domain actually has:
    re-documents that table or re-asks its own gate; this skill drives the
    same shared scripts (`REMOTE_EXECUTION_CLI_SCRIPT` et al., already
    `FORGE_ROOT`-derived) rather than rebuilding them.
+
+## After the runs: the results discussion
+
+When the full run's results are on disk, the experiments close with one `Results/discussion.json` per product: the hypothesis verdicts backed by their tests, the novelty justification, the qualitative or interpretability analysis, and a summarized discussion. The dashboard shows it per stage and gates sub-phase 5.11 on a **complete** discussion; a run with results and no checked discussion has not finished. The measures, the hypothesis matrix, the novelty claim and the analyses it reports against were decided in the protocol (`experimental-deliberation`, *Deliberating the results discussion before the run*); this step reads them back and never decides them again.
+
+```bash
+python skills/_core/results/discussion_cli.py scaffold --product implementations/<repo>/<Name>
+python skills/_core/results/discussion_cli.py check    --product implementations/<repo>/<Name>
+python skills/_core/results/discussion_cli.py status   --product implementations/<repo>/<Name>
+```
+
+1. **`scaffold`** reads the holder to set the stage (`Experimental_AGREED.md` is `full`), binds the latest `experiments-*-vNN.md`, and writes one hypothesis per `## Experiment [exp:E#]` with its declared hypothesis and success criterion copied verbatim, every verdict `pending`, and the figures, tables and significance comparisons that exist listed under `available_evidence`. It refuses `DISCUSSION_EXISTS` rather than overwrite a file that is there.
+2. **Fill it from the results on disk, and only from them.** Never invent a number: each `observed` is read from a table, `summary.json` or a significance row, and a number with no source in `Results/` does not go in. Each verdict follows from the hypothesis's declared criterion and its significance row (`supported`, `partially_supported`, `not_supported`, `inconclusive`), with the criterion quoted in the `rationale`; a result that disagrees with the hypothesis is reported as it came out, as `not_supported` or `inconclusive`, never softened. Do not change the criterion, the test or the metric to fit what was measured; that is a change to the protocol and goes back through `experimental-deliberation`. The `novelty` verdict names the comparison that justifies it. Write the qualitative figures under `Results/qualitative/`, with their method and reading, or state in `qualitative_not_applicable` the reason none applies.
+3. **At the full stage, every decided hypothesis cites a `significance:<comparison>`** row from `Results/significance*.json`: a `supported`, `partially_supported` or `not_supported` verdict with no test behind it is an error, not a warning. Give the significance rows their `hypothesis` and `experiment` keys so the panel can link them.
+4. **Repeat `check` until the status is `complete`.** `invalid` lists errors to fix (a verdict outside the enum, evidence that does not exist, a `significance:` that matches no row); `draft` means valid with a hypothesis or the novelty still `pending`. Fix the file, never the check.
+5. **Declare the two new outputs** in the benchmark's `records` (`Results/discussion.json`, `Results/qualitative`), or `verify` reports them under `undeclaredRecords`.
 
 ## Entry command
 

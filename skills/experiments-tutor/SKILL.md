@@ -124,6 +124,11 @@ its path in `evidence`. When no product holds a measurement, the answer is
 "nothing measured yet", never an estimate dressed as a result; an expected
 value is labelled as such and sourced to the protocol or a reference.
 
+The same holds for a product's `Results/discussion.json`: the tutor can explain
+and question the results discussion (each verdict against its declared
+criterion and test, the novelty claim, the qualitative readings) and quotes only
+the numbers that file and the results behind it carry, inventing none.
+
 ## What the tutor never reads
 
 Credential stores and anything that holds a secret are out of bounds: the
