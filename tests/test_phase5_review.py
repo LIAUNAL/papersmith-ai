@@ -1,8 +1,8 @@
 """Phase 5 (proof of concept and experiments), reviewed end to end.
 
 The phase passes from evidence on disk, never from a file name: a published
-managed experiments revision, a proof of concept with results and a full
-experiment with results. Each sub-phase carries its own evidence, the gate
+managed experiments revision, a proof of concept and a full experiment that
+each close with a complete ``Results/discussion.json``. Each sub-phase carries its own evidence, the gate
 names a reviewer that exists, the remote rehearsal and the operator's launch
 are their own steps, the Kaggle host counts one validated account per team
 owner, the help box states the verbs in the order they run, and run-option
@@ -34,6 +34,35 @@ def _write(path: Path, text: str = "ok\n") -> Path:
     return path
 
 
+def _discussion(stage: str, verdict: str = "supported") -> dict:
+    """A minimal discussion that cites only the evidence ``_write_discussion`` lays down."""
+    return {
+        "schema": 1, "stage": stage, "protocol": "experiments/experiments-eeg-v01.md",
+        "generated_at": "2026-10-30T00:00:00Z",
+        "summary": "The hybrid model beats the linear baseline.",
+        "discussion_type": ["comparative"],
+        "metrics": [{"name": "balanced_accuracy", "role": "primary", "why": "Classes are imbalanced.",
+                     "source": "Results/figures/acc.png"}],
+        "hypotheses": [{"id": "H1", "experiment": "E1", "statement": "The hybrid model beats the baseline.",
+                        "metric": "balanced_accuracy", "test": "Wilcoxon signed-rank",
+                        "criterion": "At least 0.85", "observed": "0.87",
+                        "evidence": ["significance:hybrid vs linear", "Results/figures/acc.png"],
+                        "verdict": verdict, "rationale": "The criterion is met."}],
+        "novelty": {"claim": "Hybrid encoding is new.", "verdict": "justified",
+                    "evidence": ["significance:hybrid vs linear"], "rationale": "It beats the baseline."},
+        "qualitative_not_applicable": "No interpretable component in this stage.",
+        "limitations": [], "next_steps": [],
+    }
+
+
+def _write_discussion(folder: Path, stage: str, verdict: str = "supported") -> None:
+    """The discussion plus the evidence files it cites (a figure and a significance file)."""
+    _write(folder / "Results" / "figures" / "acc.png")
+    _write(folder / "Results" / "significance.json",
+           json.dumps([{"comparison": "hybrid vs linear", "p_value": 0.01}]))
+    _write(folder / "Results" / "discussion.json", json.dumps(_discussion(stage, verdict)))
+
+
 def _help_source() -> str:
     en_js = REPO / "skills/_core/command_center/static/i18n/en.js"
     return en_js.read_text(encoding="utf-8")
@@ -60,12 +89,19 @@ class _Status(unittest.TestCase):
     def protocol(self, marked: bool = True) -> None:
         _write(self.root / "experiments" / "experiments-eeg-v01.md", (MARKER if marked else "") + "# E\n")
 
-    def product(self, name: str, marker: str, results: bool = True) -> Path:
+    def product(self, name: str, marker: str, results: bool = True, discussion: str | None = None) -> Path:
+        """A product folder; ``discussion`` is ``None`` (a bare ``Results/``), ``"draft"`` or ``"complete"``."""
         folder = self.root / "implementations" / "repo" / name
         _write(folder / marker)
         if results:
             (folder / "Results").mkdir(parents=True, exist_ok=True)
+        if discussion:
+            stage = "full" if marker == "Experimental_AGREED.md" else "poc"
+            _write_discussion(folder, stage, "supported" if discussion == "complete" else "pending")
         return folder
+
+    def report(self, folder: Path, body: object, name: str = "reviewer_report.json") -> None:
+        _write(folder / "Results" / name, json.dumps(body))
 
 
 class Phase5StatusFromEvidenceTests(_Status):
@@ -87,18 +123,34 @@ class Phase5StatusFromEvidenceTests(_Status):
         self.product("Full", "Experimental_AGREED.md")
         self.assertEqual(self.fase5()["status"], "ACTIVE")
 
-    def test_revision_poc_and_full_results_pass(self) -> None:
+    def test_revision_poc_and_full_discussions_pass(self) -> None:
+        self.protocol()
+        self.product("Poc", "AGREED.md", discussion="complete")
+        self.product("Full", "Experimental_AGREED.md", discussion="complete")
+        fase = self.fase5()
+        self.assertEqual((fase["status"], fase["progress"]), ("PASS", 1.0))
+
+    def test_bare_results_folders_no_longer_pass_the_phase(self) -> None:
         self.protocol()
         self.product("Poc", "AGREED.md")
         self.product("Full", "Experimental_AGREED.md")
         fase = self.fase5()
-        self.assertEqual((fase["status"], fase["progress"]), ("PASS", 1.0))
+        self.assertEqual(fase["status"], "ACTIVE")
+        self.assertAlmostEqual(fase["progress"], 0.333, places=3)
 
     def test_a_product_without_results_does_not_count(self) -> None:
         self.protocol()
-        self.product("Poc", "AGREED.md")
+        self.product("Poc", "AGREED.md", discussion="complete")
         self.product("Full", "Experimental_AGREED.md", results=False)
         self.assertEqual(self.fase5()["status"], "ACTIVE")
+
+    def test_the_phase_detail_counts_discussed_products(self) -> None:
+        self.protocol()
+        self.product("Poc", "AGREED.md", discussion="complete")
+        self.product("Poc2", "AGREED.md")
+        detail = self.fase5()["detail"]
+        self.assertIn("1 of 2", detail)
+        self.assertIn("discussion", detail)
 
     def test_each_sub_phase_reads_its_own_evidence(self) -> None:
         self.protocol()
@@ -110,25 +162,126 @@ class Phase5StatusFromEvidenceTests(_Status):
         _write(self.root / "implementations" / "repo" / "Baseline" / "REPLICATION.md")
         self.assertEqual(self.sub("Replication")["status"], "PASS")
         self.assertEqual(self.sub("Proof of concept")["status"], "PENDING")
-        poc = self.product("Poc", "AGREED.md")
+        poc = self.product("Poc", "AGREED.md", discussion="complete")
         self.assertEqual(self.sub("Proof of concept")["status"], "PASS")
         self.assertEqual(self.sub("Estimate the time")["status"], "PENDING")
         _write(poc / "Results" / "timing.json", "{}")
         self.assertEqual(self.sub("Estimate the time")["status"], "PASS")
         self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
-        self.product("Full", "Experimental_AGREED.md")
+        self.product("Full", "Experimental_AGREED.md", discussion="complete")
         self.assertEqual(self.sub("Full experiments")["status"], "PASS")
         self.assertEqual(self.sub("Remote rehearsal")["status"], "PENDING")
         _write(poc / ".remote-execution" / "ledger.jsonl", '{"kind": "submitted"}\n')
         self.assertEqual(self.sub("Remote rehearsal")["status"], "PASS")
 
-    def test_the_reviewer_sub_phase_never_claims_a_file_it_cannot_see(self) -> None:
+    def test_the_reviewer_sub_phase_reads_the_reviewer_report(self) -> None:
+        self.protocol()
+        poc = self.product("Poc", "AGREED.md", discussion="complete")
+        review = self.sub("Code review")
+        self.assertEqual(review["status"], "PENDING")
+        self.assertNotIn("leaves no file", review["detail"])
+        self.assertIn("Results/reviewer_report.json", review["detail"])
+        self.report(poc, {"status": "open", "summary": {"blockers": 2, "blockers_resolved": 1}})
+        self.assertEqual(self.sub("Code review")["status"], "ACTIVE")
+        self.report(poc, {"status": "resolved"})
+        self.assertEqual(self.sub("Code review")["status"], "PASS")
+
+    def test_a_report_with_every_blocker_resolved_passes(self) -> None:
+        folder = self.product("Full", "Experimental_AGREED.md")
+        self.report(folder, {"summary": {"blockers": 3, "blockers_resolved": 3}}, "reviewer-report.json")
+        self.assertEqual(self.sub("Code review")["status"], "PASS")
+
+    def test_a_report_that_is_not_an_object_is_no_report(self) -> None:
+        folder = self.product("Poc", "AGREED.md")
+        self.report(folder, ["resolved"])
+        self.assertEqual(self.sub("Code review")["status"], "PENDING")
+        _write(folder / "Results" / "reviewer_report.json", "{not json")
+        self.assertEqual(self.sub("Code review")["status"], "PENDING")
+
+
+class Phase5DiscussionGatesTests(_Status):
+    DETAIL_PIECES = ("complete Results/discussion.json", "hypothesis verdicts",
+                     "python skills/_core/results/discussion_cli.py check --product")
+
+    def test_a_bare_results_folder_is_active_not_pass(self) -> None:
+        self.product("Poc", "AGREED.md")
+        sub = self.sub("Proof of concept")
+        self.assertEqual(sub["status"], "ACTIVE")
+        self.assertIn("0 of 1", sub["detail"])
+
+    def test_a_draft_discussion_is_active(self) -> None:
+        self.product("Poc", "AGREED.md", discussion="draft")
+        self.assertEqual(self.sub("Proof of concept")["status"], "ACTIVE")
+
+    def test_an_invalid_discussion_is_active(self) -> None:
+        folder = self.product("Poc", "AGREED.md")
+        _write(folder / "Results" / "discussion.json", json.dumps({"schema": 1}))
+        self.assertEqual(self.sub("Proof of concept")["status"], "ACTIVE")
+        _write(folder / "Results" / "discussion.json", "{broken")
+        self.assertEqual(self.sub("Proof of concept")["status"], "ACTIVE")
+
+    def test_a_complete_discussion_passes_and_states_the_counts(self) -> None:
+        self.product("Poc", "AGREED.md", discussion="complete")
+        self.product("Poc2", "AGREED.md", discussion="draft")
+        sub = self.sub("Proof of concept")
+        self.assertEqual(sub["status"], "PASS")
+        self.assertIn("1 of 2", sub["detail"])
+        for piece in self.DETAIL_PIECES:
+            with self.subTest(piece=piece):
+                self.assertIn(piece, sub["detail"])
+        self.assertIn("AGREED.md", sub["detail"])
+
+    def test_without_a_poc_the_sub_phase_is_pending(self) -> None:
+        self.assertEqual(self.sub("Proof of concept")["status"], "PENDING")
+
+    def test_the_full_stage_follows_the_same_rule(self) -> None:
+        self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
+        folder = self.product("Full", "Experimental_AGREED.md")
+        self.assertEqual(self.sub("Full experiments")["status"], "ACTIVE")
+        _write_discussion(folder, "full", "pending")
+        self.assertEqual(self.sub("Full experiments")["status"], "ACTIVE")
+        _write_discussion(folder, "full")
+        sub = self.sub("Full experiments")
+        self.assertEqual(sub["status"], "PASS")
+        self.assertIn("1 of 1", sub["detail"])
+        self.assertIn("Experimental_AGREED.md", sub["detail"])
+
+    def test_a_full_discussion_without_a_significance_test_is_not_complete(self) -> None:
+        folder = self.product("Full", "Experimental_AGREED.md")
+        _write_discussion(folder, "full")
+        (folder / "Results" / "significance.json").unlink()
+        self.assertEqual(self.sub("Full experiments")["status"], "ACTIVE")
+
+    def test_a_poc_discussion_does_not_pass_the_full_sub_phase(self) -> None:
+        self.product("Poc", "AGREED.md", discussion="complete")
+        self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
+
+    def test_the_evidence_counts_discussed_drafts_and_reviews(self) -> None:
+        poc = self.product("Poc", "AGREED.md", discussion="complete")
+        self.product("Poc2", "AGREED.md", discussion="draft")
+        self.product("Poc3", "AGREED.md")
+        full = self.product("Full", "Experimental_AGREED.md", discussion="complete")
+        self.report(poc, {"status": "resolved"})
+        self.report(full, {"status": "open"})
+        evidence = server._phase5_evidence(self.root)
+        self.assertEqual((evidence["poc"], evidence["poc_discussed"], evidence["poc_discussion_drafts"]), (3, 1, 1))
+        self.assertEqual((evidence["full"], evidence["full_discussed"], evidence["full_discussion_drafts"]), (1, 1, 0))
+        self.assertEqual((evidence["reviewed"], evidence["review_reports"]), (1, 2))
+
+    def test_the_gate_criteria_name_verdicts_tests_novelty_and_the_discussion(self) -> None:
+        gate = next(g for g in self.status()["gates"] if g["id"] == "G-EXP-POC")
+        criteria = gate["criteria"].lower()
+        for needle in ("hypothesis", "novelty", "qualitative", "discussion", "reproducibility",
+                       "baseline", "success criteria"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, criteria)
+
+    def test_the_gate_follows_the_phase(self) -> None:
         self.protocol()
         self.product("Poc", "AGREED.md")
         self.product("Full", "Experimental_AGREED.md")
-        review = self.sub("Code review")
-        self.assertNotEqual(review["status"], "PASS")
-        self.assertIn("leaves no file", review["detail"])
+        gate = next(g for g in self.status()["gates"] if g["id"] == "G-EXP-POC")
+        self.assertEqual(gate["status"], "ACTIVE")
 
 
 class Phase5NamesAndOrderTests(_Status):

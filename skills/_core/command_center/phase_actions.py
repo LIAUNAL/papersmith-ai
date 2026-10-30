@@ -155,6 +155,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
             _prompt("/proposal-implementation", "Implement the proof of concept", [
                 "Turns the latest proposal into Python against a target repository, or verifies an existing implementation.",
                 "Give the target repository and whether it is a first pass or a later one.",
+                "It is done when Results/discussion.json is complete: hypothesis verdicts backed by tests, novelty and qualitative analysis (python skills/_core/results/discussion_cli.py scaffold|check --product <path>).",
             ], "E.g.: implement the PoC of proposal r03 in ../my-poc", optional=True),
             _redirect("Estimate the time and choose where to run", "experiments",
                       "Before the pilot and again before the full run: a short timing probe (one epoch of "
@@ -172,6 +173,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
             _prompt("/experimental-implementation", "Implement and measure the experiments", [
                 "Turns the current experimental protocol into Python and runs its declared measurements.",
                 "Give the target repository; the verification compares against the protocol and the proposal.",
+                "It is done when Results/discussion.json is complete (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); the full run needs a hypothesis test behind every verdict.",
                 "Before any remote rehearsal, experiments-reviewer reviews the code (quality, optimization, GPU use and statistical tests) and hands in its report.",
             ], "E.g.: implement E1 and E2 and report the metrics.", optional=True),
             _prompt("/experiment-diagrams", "Diagrams of the PoC and of the experiments", [

@@ -369,6 +369,65 @@ def _dirs(folder: Path) -> list[Path]:
         return []
 
 
+DISCUSSION_CLI = "python skills/_core/results/discussion_cli.py"
+MAX_REVIEW_REPORT_BYTES = 2 * 1024 * 1024
+
+
+def _discussion_module():
+    """The results-discussion contract (``skills/_core/results/discussion.py``),
+    loaded by file path because that folder is not a package; the one owner of
+    what a ``complete`` ``Results/discussion.json`` is."""
+    import importlib.util
+    name = "papersmith_results_discussion"
+    if name not in sys.modules:
+        script = Path(__file__).resolve().parents[1] / "results" / "discussion.py"
+        spec = importlib.util.spec_from_file_location(name, script)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
+
+
+def _discussion_status(product: Path) -> str:
+    """``complete``, ``draft``, ``invalid`` or ``absent``; never raises."""
+    try:
+        status = _discussion_module().load_and_check(product).get("status")
+    except Exception:
+        return "invalid"
+    return status if status in ("complete", "draft", "invalid", "absent") else "invalid"
+
+
+def _review_state(results: Path) -> tuple[bool, bool]:
+    """``(a parseable reviewer report exists, it is resolved)`` for one product's
+    ``Results/``: ``status`` is ``resolved`` or ``summary.blockers_resolved``
+    equals ``summary.blockers``. Bounded and never raises."""
+    present = resolved = False
+    for name in ("reviewer_report.json", "reviewer-report.json"):
+        path = results / name
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_REVIEW_REPORT_BYTES:
+                continue
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, RecursionError):
+            continue
+        if not isinstance(report, dict):
+            continue
+        present = True
+        summary = report.get("summary")
+        blockers = summary.get("blockers") if isinstance(summary, dict) else None
+        done = summary.get("blockers_resolved") if isinstance(summary, dict) else None
+        if report.get("status") == "resolved" or (
+                isinstance(blockers, int) and isinstance(done, int)
+                and not isinstance(blockers, bool) and not isinstance(done, bool) and done == blockers):
+            resolved = True
+    return present, resolved
+
+
 def _phase5_evidence(root: Path) -> dict[str, Any]:
     """What Phase 5 has on disk, from evidence rather than file names; bounded
     and never raises.
@@ -378,11 +437,19 @@ def _phase5_evidence(root: Path) -> dict[str, Any]:
     ``implementations/<repo>/<Name>/`` is a proof of concept when it holds
     ``AGREED.md`` and a full experiment when it holds ``Experimental_AGREED.md``,
     and it counts as done only with a ``Results/`` directory beside the marker.
+    ``poc_discussed`` / ``full_discussed`` count the products whose
+    ``Results/discussion.json`` is ``complete`` (hypothesis verdicts backed by
+    tests, novelty, qualitative analysis; ``results/discussion.py``) and the
+    ``*_discussion_drafts`` those with a draft or invalid one; ``review_reports``
+    counts products with a parseable ``Results/reviewer_report.json`` and
+    ``reviewed`` those whose report is resolved.
     """
     from . import remote_services
     out: dict[str, Any] = {"files": 0, "revisions": 0, "toy": False, "registry": False,
                            "replications": 0, "poc": 0, "poc_results": 0, "full": 0, "full_results": 0,
-                           "timing": 0, "hpo": 0}
+                           "poc_discussed": 0, "poc_discussion_drafts": 0,
+                           "full_discussed": 0, "full_discussion_drafts": 0,
+                           "reviewed": 0, "review_reports": 0, "timing": 0, "hpo": 0}
     exp_dir = root / "experiments"
     try:
         names = [f for f in exp_dir.iterdir() if f.is_file() and not f.name.startswith(".")] \
@@ -406,12 +473,20 @@ def _phase5_evidence(root: Path) -> dict[str, Any]:
             if (product / "REPLICATION.md").is_file():
                 out["replications"] += 1
             results = (product / "Results").is_dir()
-            if (product / "Experimental_AGREED.md").is_file():
-                out["full"] += 1
-                out["full_results"] += results
-            elif (product / "AGREED.md").is_file():
-                out["poc"] += 1
-                out["poc_results"] += results
+            kind = ("full" if (product / "Experimental_AGREED.md").is_file()
+                    else "poc" if (product / "AGREED.md").is_file() else None)
+            if kind:
+                out[kind] += 1
+                out[f"{kind}_results"] += results
+                if results:
+                    discussion = _discussion_status(product)
+                    if discussion == "complete":
+                        out[f"{kind}_discussed"] += 1
+                    elif discussion in ("draft", "invalid"):
+                        out[f"{kind}_discussion_drafts"] += 1
+                    present, resolved = _review_state(product / "Results")
+                    out["review_reports"] += present
+                    out["reviewed"] += resolved
             if (product / "Results" / "timing.json").is_file():
                 out["timing"] += 1
             if any((study / "summary.json").is_file() for study in _dirs(product / "Results" / "hpo")):
@@ -741,11 +816,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         else:
             fase4_status, fase4_prog, fase4_det = "PENDING", 0.0, "No proposal in proposals/"
 
-        # Phase 5: a published protocol revision, a proof of concept with
-        # results and a full experiment with results; never a file name.
-        p5_done = [p5["revisions"] > 0, p5["poc_results"] > 0, p5["full_results"] > 0]
-        fase5_det = (f"Protocol published: {'yes' if p5_done[0] else 'no'} · PoC with Results/: {p5['poc_results']}"
-                     f" · full experiments with Results/: {p5['full_results']}")
+        # Phase 5: a published protocol revision, a proof of concept and a full
+        # experiment that each close with a complete Results/discussion.json;
+        # never a file name or a bare Results/ folder.
+        p5_done = [p5["revisions"] > 0, p5["poc_discussed"] > 0, p5["full_discussed"] > 0]
+        fase5_det = (f"Protocol published: {'yes' if p5_done[0] else 'no'}"
+                     f" · PoC with a complete discussion: {p5['poc_discussed']} of {p5['poc']}"
+                     f" · full experiments with a complete discussion: {p5['full_discussed']} of {p5['full']}")
         if all(p5_done):
             fase5_status, fase5_prog = "PASS", 1.0
         elif any(p5_done) or p5["files"] or p5["poc"] or p5["full"]:
@@ -908,11 +985,11 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "5.5", "name": "Stage published: Gate Approval", "status": p5_protocol, "detail": f"experimental-publish leaves experiments/experiments-<slug>-vNN.md with the artifact marker ({p5['revisions']} published revision(s))"},
                     {"id": "5.6", "name": "Data: always a toy set, plus the official dataset", "status": _p5(p5["toy"], p5["registry"]), "detail": "/datasets synth|search|license|qc|prepare|publish with dataset-scout and dataset-curator; passes with a toy set in datasets/registry.json; private publishing only with the operator's consent"},
                     {"id": "5.7", "name": "Replication of comparison methods", "status": _p5(p5["replications"] > 0), "detail": f"/proposal-implementation → paper-replicator: the published code first, adopted and audited; when there is none, a reimplementation ({p5['replications']} REPLICATION.md)"},
-                    {"id": "5.8", "name": "Proof of concept", "status": _p5(p5["poc_results"] > 0, p5["poc"] > 0), "detail": f"/proposal-implementation (implementation-build): a folder with AGREED.md and Results/ ({p5['poc_results']} of {p5['poc']})"},
+                    {"id": "5.8", "name": "Proof of concept", "status": _p5(p5["poc_discussed"] > 0, p5["poc"] > 0), "detail": f"/proposal-implementation (implementation-build): a folder with AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts, tests, novelty, qualitative analysis): {p5['poc_discussed']} of {p5['poc']}; check with `{DISCUSSION_CLI} check --product <path>`"},
                     {"id": "5.9", "name": "Estimate the time and choose where to run", "status": _p5(p5["timing"] > 0), "detail": "Before the pilot and again before the full run: a short timing probe (one epoch of one fold per arm) in Results/timing.json; the Experiments tab estimates the PoC and the full run (±20%) and lists the local and remote options"},
                     {"id": "5.10", "name": "Hyperparameter search (Optuna, optional)", "status": _p5(p5["hpo"] > 0), "detail": f"Only when the deliberation judged it worthwhile: /hyperparameter-search plan|report|status, nested inside each outer fold, the same budget per arm, a declared importance evaluator; contours and importances in Results/hpo/ ({p5['hpo']} product(s) with studies)"},
-                    {"id": "5.11", "name": "Full experiments", "status": _p5(p5["full_results"] > 0, p5["full"] > 0), "detail": f"/experimental-implementation (experiments-build): a folder with Experimental_AGREED.md and Results/ ({p5['full_results']} of {p5['full']})"},
-                    {"id": "5.12", "name": "Code review (experiments-reviewer) before the rehearsal", "status": "PENDING", "detail": "Code quality, optimization, GPU use and declared statistical tests; the report goes to the operator and leaves no file, so this sub-phase is not verified from disk"},
+                    {"id": "5.11", "name": "Full experiments", "status": _p5(p5["full_discussed"] > 0, p5["full"] > 0), "detail": f"/experimental-implementation (experiments-build): a folder with Experimental_AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts backed by tests, novelty, qualitative analysis): {p5['full_discussed']} of {p5['full']}; check with `{DISCUSSION_CLI} check --product <path>`"},
+                    {"id": "5.12", "name": "Code review (experiments-reviewer) before the rehearsal", "status": _p5(p5["reviewed"] > 0, p5["review_reports"] > 0), "detail": f"Code quality, optimization, GPU use and declared statistical tests; it reads Results/reviewer_report.json (status resolved, or every blocker resolved): {p5['reviewed']} resolved of {p5['review_reports']} report(s)"},
                     {"id": "5.13", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"}
                 ]
             },
@@ -1255,7 +1332,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "id": "G-EXP-POC",
                 "name": "Proof-of-Concept & Experimental Design Gate",
                 "status": "PASS" if fase5_status == "PASS" else ("ACTIVE" if fase5_status == "ACTIVE" else "PENDING"),
-                "criteria": "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria.",
+                "criteria": "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria; hypothesis verdicts backed by hypothesis tests, novelty justification, qualitative or interpretability analysis where it applies and a summarized discussion per stage.",
                 "reviewer": "experiments-reviewer",
                 "phase": "Fase 5"
             },
