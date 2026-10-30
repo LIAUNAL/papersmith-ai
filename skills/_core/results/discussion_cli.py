@@ -22,6 +22,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -100,14 +101,26 @@ def _scaffold(product: Path, shown: str) -> int:
     except contract.DiscussionRefusal as refusal:
         return _refuse(refusal.code, refusal.message)
     text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    # Written whole to a temporary file, then linked into place: an interrupted
+    # write never leaves a truncated discussion.json, and the link refuses an
+    # existing file instead of replacing it.
+    temporary: str | None = None
     try:
         results.mkdir(exist_ok=True)
-        with open(target, "x", encoding="utf-8") as handle:
+        fd, temporary = tempfile.mkstemp(prefix=".discussion-", suffix=".json", dir=results)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
+        os.link(temporary, target)
     except FileExistsError:
         return _refuse("DISCUSSION_EXISTS", f"{contract.DISCUSSION_FILE} already exists; it is never overwritten")
     except OSError as exc:
         return _refuse("WRITE_FAILED", f"could not write {contract.DISCUSSION_FILE}: {exc.strerror or exc}")
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
     checked = contract.check_discussion(product, data)
     warnings = list(checked["warnings"])
     if not data["protocol"]:
