@@ -703,6 +703,13 @@ code is faithful to the mathematics: that it runs, that its invariants hold, tha
 defects it reports are real, that the corrections it proposes are validated, and that
 its reports say what the numbers say.
 
+**After the pilot.** The proof of concept closes with the same checked
+`Results/discussion.json` (`discussion_cli.py scaffold|check|status`), filled from the
+results on disk. A pilot may cite descriptive evidence (a missing `significance:` citation
+is a warning here, an error at the full stage) but still states whether each hypothesis
+and the novelty look supported so far. The dashboard gates sub-phase 5.8 on a complete
+discussion.
+
 #### The connection with `proposal-deliberation`
 
 It is the most important seam of the forge, it runs in both directions, and **it behaves
@@ -1234,6 +1241,15 @@ runs.
 *It hands to everything else:* the `STATUS` operation, which is where the answer to which
 revision is current comes from. Nobody opens the directory by eye.
 
+*It also decides, before any run, the discussion each experiment owes:* the performance
+measures (which answers the hypothesis, which is primary), a hypothesis matrix
+(hypothesis → metric → test → success criterion → the verdict each outcome yields:
+supported, partially supported, not supported, inconclusive), the novelty claim and the
+comparison that justifies it, whether a qualitative, interpretability or explainability
+analysis applies (or why not), and the type of discussion. They are declarations with no
+number in them, and they are what `Results/discussion.json` reports against at the end
+of the proof of concept and of the full run.
+
 **What it needs first.** Nothing but Node. The engine is keyless — it calls no model and uses
 no `ANTHROPIC_API_KEY` — because the "model" of this deliberation is the agent already in the
 conversation.
@@ -1419,6 +1435,16 @@ itself writes it in its comment: document 1 declares its complete overlay
 path —the ledger and the entry gate— never the adapter. And toward `experimental-deliberation`
 it hands local findings over by `handoff`, never publishing itself: the correction returns to
 the document through the same gate as any other change.
+
+**After the runs.** The full run closes with one checked `Results/discussion.json` per
+product: `python skills/_core/results/discussion_cli.py scaffold|check|status --product
+implementations/<repo>/<Name>`. `scaffold` copies each experiment's declared hypothesis
+and success criterion and leaves every verdict `pending`; the author fills it from the
+results on disk (never a number without a source, each verdict from its declared criterion
+and its significance row) and runs `check` until it reads `complete`. At the full stage
+every decided hypothesis cites a `significance:<comparison>`. Qualitative figures live
+under `Results/qualitative/`, and significance rows may carry `hypothesis` and
+`experiment` keys. The dashboard gates sub-phase 5.11 on a complete discussion.
 
 **What it needs first.** A published experiments protocol, and a target repository
 under `implementations/` that is already a git repository. No virtual environment of the
@@ -2891,7 +2917,9 @@ hint, one question, an assessment of the design on a fixed 0–4 scale
 (`declarada`, `justificada`, `controlada`, `defendible`) with quoted evidence,
 the paths it read and the risks it sees. A change of decision comes back as a
 draft for `/experimental-deliberation`, which holds the gate; the dashboard's
-**Deliberar este cambio** types it into the CLI assistant without pressing Enter.
+**Deliberar este cambio** types it into the CLI assistant without pressing Enter. It can
+also explain and question a product's results discussion (verdicts, tests, novelty,
+qualitative readings) without inventing numbers.
 
 **How it runs.** From the Experimentos tab, where each turn runs the
 `experiments-tutor` agent headless with only `Read`, `Glob` and `Grep`, or from

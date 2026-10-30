@@ -1857,6 +1857,10 @@ behind it is right:
   artefact per checkpoint by this layout's own design; reporting sixty manifests
   as undeclared would be a finding nobody reads.
 
+  Two outputs arrive after the run and belong in `records` too:
+  `Results/discussion.json` and `Results/qualitative`, the closing discussion
+  described in [After the pilot](#after-the-pilot-the-results-discussion).
+
   It says a file is unaccounted for. It cannot say the file is a second
   experiment — what it does is force the question, which is where somebody has to
   write down what the thing is.
@@ -2352,6 +2356,22 @@ have to count rows to learn the answer.
    step 2, so drift is always visible. But it does not stop the flow and it is not
    asked about again: that question belongs to the first pass, and it was answered
    there — including when the answer was "no".
+
+## After the pilot: the results discussion
+
+The proof of concept (sub-phase 5.8 of the dashboard) closes like the full run does: once its results are on disk, the product holds one `Results/discussion.json` with the hypothesis verdicts, the novelty justification, the qualitative or interpretability analysis and a summarized discussion. The dashboard shows it per stage and gates 5.8 on a **complete** discussion, so a pilot with results and no checked discussion has not closed. A pilot is a small, descriptive run, and the discussion says so; it still has to state whether each hypothesis and the novelty *look* supported so far, which is the reason to run a pilot at all.
+
+```bash
+python skills/_core/results/discussion_cli.py scaffold --product implementations/<repo>/<Name>
+python skills/_core/results/discussion_cli.py check    --product implementations/<repo>/<Name>
+python skills/_core/results/discussion_cli.py status   --product implementations/<repo>/<Name>
+```
+
+- **`scaffold`** takes the stage from the holder (`AGREED.md` alone is `poc`), binds the latest experiments revision, copies each experiment's declared hypothesis and success criterion verbatim, leaves every verdict `pending` and lists the figures, tables and significance comparisons that exist under `available_evidence`. It refuses `DISCUSSION_EXISTS` rather than overwrite.
+- **Fill it from the results on disk, never inventing a number.** Each `observed` is read from `Results/` (the verdict table above, `summary.json`, a significance row), and each verdict follows from the declared criterion and its test. Verdicts: `supported`, `partially_supported`, `not_supported`, `inconclusive`; a pilot whose test cannot decide at its scale is `inconclusive`, and says why. The criterion, the test and the metric are not moved to fit the pilot: that is a change to the protocol and goes back through `experimental-deliberation`.
+- **Descriptive evidence is allowed at this stage.** A verdict may cite figures, tables or the verdict table's own rows instead of a `significance:<comparison>` row; at the proof of concept the missing significance citation is a **warning**, not an error. At the full stage it is an error (`experimental-implementation`, *After the runs*).
+- **Qualitative figures** go under `Results/qualitative/` (`png`, `svg`, `jpg`, `pdf`) with their method and reading, or `qualitative_not_applicable` states why none applies. Significance rows may carry `hypothesis` and `experiment` keys linking them to the hypothesis matrix.
+- **Repeat `check` until the status is `complete`**: `invalid` lists errors to fix, `draft` means a hypothesis or the novelty is still `pending`. Declare `Results/discussion.json` and `Results/qualitative` in the benchmark's `records`, or `verify` reports them under `undeclaredRecords`.
 
 ## Output Contract
 

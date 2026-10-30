@@ -91,6 +91,23 @@ a suggested change in words. You never write the change.
    (`Results/history*`, `Results/significance*.json`). Suggest which tests to
    add when the protocol declares none or an inappropriate one.
 
+   When `Results/discussion.json` exists, review it under this dimension too
+   (the skill's **After the runs: the results discussion**): run
+   `python skills/_core/results/discussion_cli.py check --product
+   implementations/<repo>/<Name>` and quote its status. Then judge each
+   hypothesis against the protocol and the results on disk: its verdict must
+   follow from the declared criterion and the declared test (a `supported`
+   verdict whose significance row does not meet the criterion, or a criterion
+   and test rewritten to match what was measured, is a `blocker`); every
+   `observed` figure must trace to a table, `summary.json` or significance row,
+   and a number with no source in `Results/` is a `blocker` as an invented
+   result; a `significance:<comparison>` must name the row of that hypothesis;
+   the novelty verdict must rest on the comparison the protocol named; a
+   qualitative reading must not claim more than its figure shows. A `complete`
+   status from `check` is not evidence that these hold, only that the file is
+   well formed. When results exist and the file does not, report the missing
+   discussion as a `major` finding.
+
 ## Reviewing a split campaign
 
 When reviewing a campaign that runs more than one unit remotely, load

@@ -158,6 +158,18 @@ copy of the job's code, the way the worker materializes it, and checks the
 it encodes live in `.claude/skills/remote-execution/SKILL.md`, **Before the
 first rehearsal**.
 
+## Close with the results discussion
+
+When the runs' results are on disk and this product has no complete
+`Results/discussion.json`, finish with the skill's **After the runs: the results discussion**:
+run `python skills/_core/results/discussion_cli.py scaffold --product
+implementations/<repo>/<Name>`, fill it from the results on disk (never a
+number without a source in `Results/`, each verdict from its declared criterion
+and test), and run `check` until the status is `complete`. At the full stage every decided hypothesis cites a `significance:<comparison>`. When the
+results are not yet in, do not scaffold: report the discussion under `owed` as
+the next step once the runs finish. Never decide a verdict the protocol's
+criterion does not give.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which
