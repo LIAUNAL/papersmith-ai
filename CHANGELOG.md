@@ -11,6 +11,57 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.44.0
+
+### Added
+
+- **Results discussion contract**: `Results/discussion.json` (schema 1) closes each
+  proof of concept and each full experiment with a summarized discussion, the
+  performance measures and why each was chosen, a verdict per hypothesis
+  (`supported`, `partially_supported`, `not_supported`, `inconclusive`, `pending`)
+  backed by evidence on disk, the novelty verdict, the qualitative,
+  interpretability or explainability analysis (figures under
+  `Results/qualitative/**`, or the reason it does not apply), limitations and next
+  steps. `python skills/_core/results/discussion_cli.py scaffold|check|status
+  --product implementations/<repo>/<Name>` scaffolds it from the latest protocol
+  (hypotheses and success criteria copied verbatim, nothing measured invented),
+  never overwrites it, and checks it: an evidence path must exist inside the
+  product, a `significance:<comparison>` must match a row of
+  `Results/**/significance*.json`, and at the full stage every decided hypothesis
+  must cite its hypothesis test.
+- **Experiments tab**: every proof-of-concept and full-experiment card opens with
+  its summary and discussion (status, hypothesis verdicts with evidence links and
+  tests, novelty, measures, qualitative gallery with its reading, limitations,
+  next steps), a "PoC vs full experiments" section compares each hypothesis's
+  verdict across stages, and the significance table names the hypothesis and
+  experiment of each test.
+- **Protocol deliberation**: `experimental-deliberation` now deliberates each
+  performance measure, a hypothesis matrix (metric, test, success criterion and
+  the verdict each outcome yields), the novelty claim and the comparison that
+  justifies it, whether a qualitative or interpretability analysis applies, and
+  the type of discussion each experiment will produce. The build agents produce
+  and check the discussion; `experiments-reviewer` checks that each verdict
+  follows from its test and that no number is invented.
+
+### Changed
+
+- **Phase 5 gating (breaking)**: sub-phases 5.8 (proof of concept) and 5.11 (full
+  experiments) pass only when a product of that stage holds a complete
+  `Results/discussion.json`; a bare `Results/` folder now reads as active, and
+  Phase 5's progress follows them. Sub-phase 5.12 reads
+  `Results/reviewer_report.json` instead of staying pending, and the
+  `G-EXP-POC` criteria name hypothesis verdicts, hypothesis tests, novelty and
+  the qualitative analysis.
+
+### Fixed
+
+- **Release hygiene**: 0.43.0 (the execution monitor card in the Experiments tab)
+  was tagged with `package.json` and `package-lock.json` still at 0.42.0, no
+  changelog section and no GitHub release; 0.44.0 realigns every version source
+  and the dashboard's cache-busting query.
+- **Experiments tab**: the execution monitor no longer carries Spanish fallback
+  strings outside the Spanish catalogue.
+
 ## 0.42.0
 
 ### Fixed
