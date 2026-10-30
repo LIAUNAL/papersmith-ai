@@ -625,6 +625,310 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Monitor de Ejecución", out)
         self.assertIn("Finalización estimada", out)
 
+    def discussed(self) -> Workspace:
+        ws = Workspace(self)
+        poc = _discussion(summary="<script>alert(1)</script> hybrid wins",
+                          discussion_type=["comparative", "cost"])
+        poc["hypotheses"][0]["statement"] = "<img src=x onerror=alert(2)> beats linear"
+        poc["hypotheses"].append({"id": "H2", "statement": "Only at PoC.", "verdict": "pending"})
+        poc["qualitative"] = [{"title": "Saliency map", "kind": "interpretability", "method": "Grad-CAM",
+                               "figure": "Results/qualitative/saliency.png", "reading": "Focus on C3."}]
+        poc.pop("qualitative_not_applicable")
+        _write(ws.root / "implementations" / "repo" / "PocModel" / "Results" / "qualitative" / "saliency.png", "png")
+        _write(ws.root / "implementations" / "repo" / "PocModel" / "Results" / "qualitative" / "extra.png", "png")
+        _put_discussion(ws, "PocModel", poc)
+        full = _discussion("full")
+        full["hypotheses"][0]["verdict"] = "not_supported"
+        _put_discussion(ws, "FullModel", full)
+        return ws
+
+    def test_the_product_card_opens_with_the_discussion_block(self) -> None:
+        out = self.render(experiments_view.get_experiments_view(self.discussed().root))
+        self.assertIn("Resumen y discusión", out)
+        self.assertLess(out.index("Resumen y discusión"), out.index("Convergencia"))
+        for text in ("hybrid wins", "comparative", "cost", "balanced_accuracy", "wilcoxon", "&gt;= 0.85",
+                     "Grad-CAM", "Focus on C3.", "Saliency map", "A new encoding.", "Small sample.",
+                     "More seeds."):
+            self.assertIn(text, out)
+        # The two figures under Results/qualitative: the referenced one and the unreferenced one.
+        self.assertIn("qualitative%2Fsaliency.png", out)
+        self.assertIn("qualitative%2Fextra.png", out)
+        # One artifact renders its URL twice (link and image); the referenced figure is not repeated.
+        self.assertEqual(out.count("qualitative%2Fsaliency.png"), 2)
+        self.assertEqual(out.count("qualitative%2Fextra.png"), 2)
+        self.assertIn("significance:hybrid vs linear", out)
+
+    def test_verdicts_and_statuses_are_badges_in_spanish(self) -> None:
+        out = self.render(experiments_view.get_experiments_view(self.discussed().root))
+        for label in ("soportada", "pendiente", "no soportada", "justificada"):
+            self.assertIn(label, out)
+        self.assertRegex(out, r'badge--ok[^>]*>[^<]*soportada')
+        self.assertRegex(out, r'badge--bad[^>]*>[^<]*no soportada')
+        self.assertIn("completa", out)
+
+    def test_a_draft_and_an_invalid_status_show_their_badge_and_errors(self) -> None:
+        ws = Workspace(self)
+        draft = _discussion()
+        draft["hypotheses"][0].update(verdict="pending", evidence=[])
+        _put_discussion(ws, "PocModel", draft)
+        _put_discussion(ws, "FullModel", _discussion("full", summary=""))
+        out = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn("badge--warn", out)
+        self.assertIn("borrador", out)
+        self.assertIn("inválida", out)
+        self.assertIn("summary", out)
+
+    def test_the_absent_discussion_names_the_scaffold_and_check_commands(self) -> None:
+        out = self.render(experiments_view.get_experiments_view(Workspace(self).root))
+        self.assertIn("Resumen y discusión", out)
+        self.assertIn("python skills/_core/results/discussion_cli.py scaffold --product "
+                      "implementations/repo/PocModel", out)
+        self.assertIn("discussion_cli.py check --product implementations/repo/FullModel", out)
+
+    def test_the_stage_comparison_follows_the_full_group(self) -> None:
+        out = self.render(experiments_view.get_experiments_view(self.discussed().root))
+        self.assertIn("PoC vs experimentos completos", out)
+        self.assertGreater(out.index("PoC vs experimentos completos"), out.index("Experimentos completos"))
+        section = out[out.index("PoC vs experimentos completos"):]
+        self.assertIn("PocModel", section)
+        self.assertIn("FullModel", section)
+        self.assertIn("H2", section)
+        plain = self.render(experiments_view.get_experiments_view(Workspace(self).root))
+        self.assertNotIn("PoC vs experimentos completos", plain)
+
+    def test_the_discussion_is_escaped(self) -> None:
+        out = self.render(experiments_view.get_experiments_view(self.discussed().root))
+        self.assertNotIn("<script>alert(1)</script>", out)
+        self.assertNotIn("<img src=x", out)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt; hybrid wins", out)
+        self.assertIn("&lt;img src=x onerror=alert(2)&gt; beats linear", out)
+
+    def test_a_not_applicable_reason_is_shown_without_a_gallery(self) -> None:
+        ws = Workspace(self)
+        _put_discussion(ws, "PocModel", _discussion())
+        out = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn("No interpretability method applies.", out)
+
+    def test_the_significance_table_gains_hypothesis_and_experiment_columns(self) -> None:
+        ws = Workspace(self)
+        full = ws.root / "implementations" / "repo" / "FullModel" / "Results"
+        _write(full / "significance.json", json.dumps([
+            {"comparison": "hybrid vs linear", "test": "wilcoxon", "p_value": 0.03,
+             "hypothesis": "H1", "experiment": "E1"}]))
+        with_columns = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn("<th>Hipótesis</th><th>Experimento</th>", with_columns)
+        without = self.render(experiments_view.get_experiments_view(Workspace(self).root))
+        self.assertNotIn("<th>Hipótesis</th>", without)
+
+
+
+def _discussion(stage: str = "poc", **over) -> dict:
+    """A discussion that the shared check calls complete for the ``Workspace`` products."""
+    evidence = (["significance:hybrid vs linear", "Results/figures/cm.pdf"] if stage == "full"
+                else ["Results/figures/fig.png"])
+    data = {
+        "schema": 1, "stage": stage, "protocol": "experiments/experiments-demo-v02.md",
+        "generated_at": "2026-10-30T00:00:00+00:00",
+        "summary": "The hybrid model beats the baseline.",
+        "discussion_type": ["comparative", "ablation"],
+        "metrics": [{"name": "balanced_accuracy", "role": "primary", "why": "Balanced classes.",
+                     "source": "Results/tables/metrics.csv"}],
+        "hypotheses": [{"id": "H1", "experiment": "E1", "statement": "Hybrid beats linear.",
+                        "metric": "balanced_accuracy", "test": "wilcoxon", "criterion": ">= 0.85",
+                        "observed": "0.90", "evidence": list(evidence), "verdict": "supported",
+                        "rationale": "The criterion is met."}],
+        "novelty": {"claim": "A new encoding.", "verdict": "justified", "evidence": list(evidence),
+                    "rationale": "Beats the baseline."},
+        "qualitative": [],
+        "qualitative_not_applicable": "No interpretability method applies.",
+        "limitations": ["Small sample."], "next_steps": ["More seeds."],
+    }
+    data.update(over)
+    return data
+
+
+def _put_discussion(ws: "Workspace", product: str, data: dict) -> Path:
+    path = ws.root / "implementations" / "repo" / product / "Results" / "discussion.json"
+    return _write(path, json.dumps(data))
+
+
+class DiscussionViewTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.ws = Workspace(self)
+
+    def products(self) -> dict:
+        view = experiments_view.get_experiments_view(self.ws.root)
+        return {p["name"]: p for p in view["products"]}
+
+    def test_a_product_without_a_discussion_has_none(self) -> None:
+        products = self.products()
+        self.assertIsNone(products["PocModel"]["discussion"])
+        self.assertIsNone(products["FullModel"]["discussion"])
+        self.assertEqual(experiments_view.get_experiments_view(self.ws.root)["stage_comparison"], [])
+
+    def test_an_overlong_summary_is_invalid_and_shown_clipped(self) -> None:
+        _put_discussion(self.ws, "PocModel", _discussion(summary="S" * 3000))
+        d = self.products()["PocModel"]["discussion"]
+        self.assertEqual((d["status"], d["errors"]), ("invalid", ["summary: longer than 2000 characters"]))
+        self.assertEqual(len(d["summary"]), 2000)
+
+    def test_a_complete_discussion_is_carried_and_linked(self) -> None:
+        _put_discussion(self.ws, "PocModel", _discussion())
+        d = self.products()["PocModel"]["discussion"]
+        self.assertEqual(d["file"], "implementations/repo/PocModel/Results/discussion.json")
+        self.assertEqual((d["status"], d["stage"], d["errors"]), ("complete", "poc", []))
+        self.assertEqual(d["summary"], "The hybrid model beats the baseline.")
+        self.assertEqual(d["discussion_type"], ["comparative", "ablation"])
+        self.assertEqual(d["metrics"][0]["name"], "balanced_accuracy")
+        h = d["hypotheses"][0]
+        self.assertEqual((h["id"], h["experiment"], h["verdict"]), ("H1", "E1", "supported"))
+        self.assertEqual(h["evidence"], [{"ref": "Results/figures/fig.png",
+                                          "path": "implementations/repo/PocModel/Results/figures/fig.png"}])
+        self.assertEqual(d["novelty"]["verdict"], "justified")
+        self.assertEqual(d["novelty"]["evidence"][0]["path"],
+                         "implementations/repo/PocModel/Results/figures/fig.png")
+        self.assertEqual(d["qualitative"], [])
+        self.assertEqual(d["qualitative_not_applicable"], "No interpretability method applies.")
+        self.assertEqual((d["limitations"], d["next_steps"]), (["Small sample."], ["More seeds."]))
+
+    def test_significance_evidence_is_text_and_not_linked(self) -> None:
+        _put_discussion(self.ws, "FullModel", _discussion("full"))
+        d = self.products()["FullModel"]["discussion"]
+        self.assertEqual(d["status"], "complete")
+        evidence = {e["ref"]: e["path"] for e in d["hypotheses"][0]["evidence"]}
+        self.assertIsNone(evidence["significance:hybrid vs linear"])
+        self.assertEqual(evidence["Results/figures/cm.pdf"], "implementations/repo/FullModel/Results/figures/cm.pdf")
+
+    def test_a_draft_and_an_invalid_discussion_keep_their_status(self) -> None:
+        draft = _discussion()
+        draft["hypotheses"][0].update(verdict="pending", evidence=[])
+        _put_discussion(self.ws, "PocModel", draft)
+        _put_discussion(self.ws, "FullModel", _discussion("full", summary=""))
+        products = self.products()
+        self.assertEqual(products["PocModel"]["discussion"]["status"], "draft")
+        invalid = products["FullModel"]["discussion"]
+        self.assertEqual(invalid["status"], "invalid")
+        self.assertTrue(any("summary" in e for e in invalid["errors"]))
+
+    def test_a_malformed_discussion_is_invalid_and_never_raises(self) -> None:
+        _write(self.ws.root / "implementations" / "repo" / "PocModel" / "Results" / "discussion.json", "{nope")
+        d = self.products()["PocModel"]["discussion"]
+        self.assertEqual(d["status"], "invalid")
+        self.assertTrue(d["errors"])
+        self.assertEqual(d["hypotheses"], [])
+
+    def test_evidence_escaping_the_product_is_text_and_not_linked(self) -> None:
+        # A sibling product's file is inside the workspace but outside this product.
+        data = _discussion()
+        data["hypotheses"][0]["evidence"] = [
+            "../FullModel/Results/figures/cm.pdf", "Results/figures/fig.png", "/etc/passwd"]
+        _put_discussion(self.ws, "PocModel", data)
+        d = self.products()["PocModel"]["discussion"]
+        self.assertEqual(d["status"], "invalid")
+        links = {e["ref"]: e["path"] for e in d["hypotheses"][0]["evidence"]}
+        self.assertIsNone(links["../FullModel/Results/figures/cm.pdf"])
+        self.assertIsNone(links["/etc/passwd"])
+        self.assertEqual(links["Results/figures/fig.png"], "implementations/repo/PocModel/Results/figures/fig.png")
+
+    def test_a_symlink_leaving_the_product_is_not_linked(self) -> None:
+        poc = self.ws.root / "implementations" / "repo" / "PocModel"
+        os.symlink(self.ws.outside / "leak.png", poc / "Results" / "figures" / "leak.png")
+        data = _discussion()
+        data["qualitative"] = [{"title": "Leak", "kind": "qualitative", "method": "m",
+                                "figure": "Results/figures/leak.png", "reading": "r"}]
+        _put_discussion(self.ws, "PocModel", data)
+        d = self.products()["PocModel"]["discussion"]
+        self.assertIsNone(d["qualitative"][0]["figure"])
+        self.assertEqual(d["qualitative"][0]["figure_ref"], "Results/figures/leak.png")
+
+    def test_a_discussion_symlinked_outside_the_workspace_is_not_read(self) -> None:
+        secret = _write(self.ws.outside / "discussion.json", json.dumps(_discussion(summary="SECRET")))
+        os.symlink(secret, self.ws.root / "implementations" / "repo" / "PocModel" / "Results" / "discussion.json")
+        d = self.products()["PocModel"]["discussion"]
+        self.assertEqual(d["status"], "invalid")
+        self.assertNotIn("SECRET", json.dumps(d))
+
+    def test_lists_and_text_are_bounded(self) -> None:
+        data = _discussion(limitations=["L" * 2000] * 100, hypotheses=[
+            {"id": f"H{i}", "statement": "x" * 2000, "verdict": "pending"} for i in range(250)])
+        _put_discussion(self.ws, "PocModel", data)
+        d = self.products()["PocModel"]["discussion"]
+        self.assertLessEqual(len(d["hypotheses"]), 200)
+        self.assertLessEqual(len(d["limitations"]), 50)
+        self.assertLessEqual(len(d["hypotheses"][0]["statement"]), experiments_view.TEXT_MAX)
+        self.assertLessEqual(len(d["limitations"][0]), experiments_view.TEXT_MAX)
+        self.assertLessEqual(len(d["errors"]), 100)
+
+    def test_qualitative_figures_have_their_own_kind_and_list(self) -> None:
+        poc = self.ws.root / "implementations" / "repo" / "PocModel" / "Results"
+        _write(poc / "qualitative" / "saliency.png", "png")
+        _write(poc / "E1" / "qualitative" / "cam.svg", "<svg/>")
+        _write(poc / "qualitative" / "notes.md", "# not a figure")
+        product = self.products()["PocModel"]
+        base = "implementations/repo/PocModel/Results/"
+        self.assertEqual(product["qualitative_figures"], [base + "E1/qualitative/cam.svg",
+                                                          base + "qualitative/saliency.png"])
+        self.assertNotIn(base + "qualitative/saliency.png", product["figures"])
+        self.assertNotIn(base + "E1/qualitative/cam.svg", product["figures"])
+        self.assertEqual(sorted(p.rsplit("/", 1)[-1] for p in product["figures"]), ["curve.svg", "fig.png"])
+        results = poc
+        self.assertEqual(experiments_view._result_kind(results, results / "qualitative" / "x.png"), "qualitative")
+        self.assertEqual(experiments_view._result_kind(results, results / "figures" / "x.png"), "figure")
+
+    def test_qualitative_figures_are_bounded(self) -> None:
+        poc = self.ws.root / "implementations" / "repo" / "PocModel" / "Results" / "qualitative"
+        for i in range(experiments_view.MAX_FIGURES + 10):
+            _write(poc / f"q{i:03d}.png", "png")
+        product = self.products()["PocModel"]
+        self.assertEqual(len(product["qualitative_figures"]), experiments_view.MAX_FIGURES)
+
+    def test_significance_rows_carry_hypothesis_and_experiment(self) -> None:
+        full = self.ws.root / "implementations" / "repo" / "FullModel" / "Results"
+        _write(full / "significance.json", json.dumps([
+            {"comparison": "hybrid vs linear", "test": "wilcoxon", "p_value": 0.03, "hypothesis": "H1",
+             "experiment": "E" + "1" * 900},
+            {"comparison": "other", "test": "t", "p_value": 0.2}]))
+        rows = self.products()["FullModel"]["significance"]
+        self.assertEqual(rows[0]["hypothesis"], "H1")
+        self.assertLessEqual(len(rows[0]["experiment"]), 200)
+        self.assertIsNone(rows[1]["hypothesis"])
+        self.assertIsNone(rows[1]["experiment"])
+
+    def test_the_stage_comparison_joins_the_verdicts_by_hypothesis_id(self) -> None:
+        poc = _discussion()
+        poc["hypotheses"].append({"id": "H2", "statement": "Only at PoC.", "verdict": "pending"})
+        full = _discussion("full")
+        full["hypotheses"][0]["verdict"] = "partially_supported"
+        full["hypotheses"].append({"id": "H3", "statement": "Only at full.", "verdict": "inconclusive"})
+        _put_discussion(self.ws, "PocModel", poc)
+        _put_discussion(self.ws, "FullModel", full)
+        rows = experiments_view.get_experiments_view(self.ws.root)["stage_comparison"]
+        by_id = {r["id"]: r for r in rows}
+        self.assertEqual([r["id"] for r in rows], ["H1", "H2", "H3"])
+        self.assertEqual(by_id["H1"]["statement"], "Hybrid beats linear.")
+        self.assertEqual(by_id["H1"]["poc"], {"product": "PocModel", "verdict": "supported"})
+        self.assertEqual(by_id["H1"]["full"], {"product": "FullModel", "verdict": "partially_supported"})
+        self.assertIsNone(by_id["H2"]["full"])
+        self.assertEqual(by_id["H2"]["poc"]["verdict"], "pending")
+        self.assertIsNone(by_id["H3"]["poc"])
+        self.assertEqual(by_id["H3"]["full"]["verdict"], "inconclusive")
+
+    def test_with_several_products_of_a_kind_the_first_by_listing_wins(self) -> None:
+        second = self.ws.root / "implementations" / "repo" / "AaaPoc"
+        _write(second / "AGREED.md", "agreed\n")
+        _write(second / "Results" / "figures" / "fig.png", "png")
+        other = _discussion(summary="Other.")
+        other["hypotheses"][0]["verdict"] = "not_supported"
+        _write(second / "Results" / "discussion.json", json.dumps(other))
+        _put_discussion(self.ws, "PocModel", _discussion())
+        rows = experiments_view.get_experiments_view(self.ws.root)["stage_comparison"]
+        self.assertEqual(rows[0]["poc"], {"product": "AaaPoc", "verdict": "not_supported"})
+
+    def test_no_comparison_row_without_a_discussion_at_either_stage(self) -> None:
+        _put_discussion(self.ws, "PocModel", _discussion())
+        rows = experiments_view.get_experiments_view(self.ws.root)["stage_comparison"]
+        self.assertEqual(rows[0]["poc"]["verdict"], "supported")
+        self.assertIsNone(rows[0]["full"])
 
 
 if __name__ == "__main__":

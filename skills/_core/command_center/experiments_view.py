@@ -12,7 +12,18 @@
   its ``.remote-execution/ledger.jsonl`` (also per worker: each worker's
   lanes -- entrypoint and concurrent slot -- with state, units and service), plus one row per hyperparameter
   study the ``hyperparameter-search`` skill reported under
-  ``Results/hpo/<study>/summary.json`` (schema 1) with its figures;
+  ``Results/hpo/<study>/summary.json`` (schema 1) with its figures; its
+  qualitative figures (``Results/qualitative/**`` or
+  ``Results/<exp>/qualitative/**``, kept apart from the generic ``figures``);
+  and its closing ``discussion`` (``Results/discussion.json``, schema 1,
+  checked by ``skills/_core/results/discussion.py``): ``None`` when absent,
+  else the status (complete, draft, invalid) with its errors and a bounded,
+  clipped copy of the summary, hypothesis verdicts, novelty, metrics,
+  qualitative entries, limitations and next steps -- an evidence or figure path
+  becomes a workspace-relative link only while it resolves inside the product;
+* ``stage_comparison``: per hypothesis id, the verdict at the proof of concept
+  and at the full experiments, from the first product of each kind (in listing
+  order) whose discussion holds hypotheses, with the product it came from;
 * the ``datasets`` skill's registry (``datasets/registry.json``): per dataset
   its role (toy or full), title, license decision, qc status, preparation
   version and remote ref/visibility, plus the search files beside it;
@@ -87,6 +98,14 @@ MAX_PROTOCOL_BYTES = 1024 * 1024
 MAX_HPO_STUDIES = 24
 MAX_HPO_PARAMS = 40
 MAX_HPO_NOTES = 10
+#: The summary of a discussion may be longer than any other text (schema 1 allows 2000).
+SUMMARY_MAX = 2000
+MAX_DISCUSSION_HYPOTHESES = 200
+MAX_DISCUSSION_METRICS = 100
+MAX_DISCUSSION_QUALITATIVE = 100
+#: Evidence entries per hypothesis or novelty claim; also the bound of each plain list.
+MAX_DISCUSSION_ITEMS = 50
+DISCUSSION_FILE = "Results/discussion.json"
 HPO_FIGURES = ("contour", "importance", "history")
 TEXT_MAX = 600
 
@@ -97,6 +116,8 @@ GROUP_KEYS = ("model", "variant", "fold", "seed")
 X_KEYS = ("epoch", "step")
 SIGNIFICANCE_KEYS = ("comparison", "test", "statistic", "p_value", "p_adjusted", "correction",
                      "effect_size", "effect_size_name", "ci_low", "ci_high", "n", "alpha")
+#: Optional text keys tying a test to the hypothesis and experiment it answers.
+SIGNIFICANCE_TEXT_KEYS = ("hypothesis", "experiment")
 
 _PROTOCOL_RE = re.compile(r"^experiments-.+-v(\d+)\.md$")
 _EXPERIMENT_RE = re.compile(r"^##\s+Experiment\s+\[exp:([^\]]+)\]\s*[—–-]?\s*(.*)$")
@@ -489,6 +510,10 @@ def _read_significance(path: Path, reader: _Reader) -> list[dict[str, Any]]:
                 row[key] = _clip(value, 200) if value is not None else None
             else:
                 row[key] = _number(value)
+        for key in SIGNIFICANCE_TEXT_KEYS:
+            value = item.get(key)
+            row[key] = _clip(value, 200) if isinstance(value, (str, int, float)) and not isinstance(value, bool) \
+                and str(value).strip() else None
         rows.append(row)
     return rows
 
@@ -689,8 +714,9 @@ def _result_kind(results: Path, path: Path) -> str | None:
     """What the panel shows a file under ``Results/`` as, or None.
 
     A figure or a table sits in a ``figures`` or ``tables`` folder at any depth
-    (``Results/figures`` or ``Results/<experiment>/figures``); a summary is
-    ``Results/summary.json`` or ``Results/<experiment>/summary.json``.
+    (``Results/figures`` or ``Results/<experiment>/figures``); a qualitative
+    figure sits in a ``qualitative`` folder at any depth and is kept apart; a
+    summary is ``Results/summary.json`` or ``Results/<experiment>/summary.json``.
     """
     parts = path.relative_to(results).parts
     name, ext = path.name.lower(), path.suffix.lower()
@@ -701,6 +727,8 @@ def _result_kind(results: Path, path: Path) -> str | None:
         return "history"
     if name.startswith("significance") and ext == ".json":
         return "significance"
+    if "qualitative" in folders and ext in FIGURE_EXTS:
+        return "qualitative"  # Before "figure": a qualitative image is never a generic figure.
     if "figures" in folders and ext in FIGURE_EXTS:
         return "figure"
     if ("tables" in folders and ext in TABLE_EXTS) or (len(parts) <= 2 and name == "summary.json"):
@@ -1068,6 +1096,155 @@ def _execution_monitor(root: Path, folder: Path, kind: str, ledger: Path | None,
     }
 
 
+def results_discussion():
+    """The kit's `discussion.py`, the one owner of the discussion schema and its check."""
+    name = "papersmith_results_discussion"
+    if name not in sys.modules:
+        script = Path(__file__).resolve().parents[1] / "results" / "discussion.py"
+        spec = importlib.util.spec_from_file_location(name, script)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
+
+
+def _str(value: Any, limit: int = TEXT_MAX) -> str:
+    """A clipped string from a string or a number; anything else is empty."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return ""
+    return _clip(value, limit)
+
+
+def _strings(value: Any, cap: int = MAX_DISCUSSION_ITEMS) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [text for item in value[:cap] if (text := _str(item))]
+
+
+def _dicts(value: Any, cap: int) -> list[dict[str, Any]]:
+    return [item for item in value[:cap] if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _inside_product(root: Path, folder: Path, value: Any) -> str | None:
+    """``value`` as a workspace-relative path while it names a file inside the
+    product folder; ``None`` for a ``significance:`` reference, an absolute
+    path, a ``..`` escape, a missing file or a symlink leaving the product."""
+    if not isinstance(value, str) or not value or value.startswith("significance:"):
+        return None
+    relative = Path(value)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    candidate = folder / relative
+    status, resolved, _size, _mtime = _locate(root, candidate, MAX_FILE_BYTES * 64)
+    if status not in ("ok", "too_large") or resolved is None:
+        return None
+    try:
+        resolved.relative_to(folder.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return _rel(root, candidate)
+
+
+def _evidence(root: Path, folder: Path, value: Any) -> list[dict[str, Any]]:
+    """Each reference as ``{ref, path}``: ``path`` is set only when it links."""
+    return [{"ref": ref, "path": _inside_product(root, folder, ref)}
+            for ref in _strings(value, MAX_DISCUSSION_ITEMS)]
+
+
+def _discussion(root: Path, folder: Path, reader: _Reader) -> dict[str, Any] | None:
+    """``Results/discussion.json`` as the card shows it; ``None`` when absent.
+
+    The status comes from the shared check (``discussion.py``), which reads the
+    file contained in the product; a file linked outside the workspace is not
+    read. Every text is clipped and every list bounded. Never raises.
+    """
+    path = folder / DISCUSSION_FILE
+    if not os.path.lexists(path):
+        return None
+    shared = None
+    try:
+        shared = results_discussion()
+        if reader.contained(path):
+            result = shared.load_and_check(folder)
+        else:
+            result = {"data": None, "status": "invalid", "stage": shared.product_stage(folder),
+                      "errors": [f"{DISCUSSION_FILE}: is not a readable file inside the workspace"],
+                      "warnings": []}
+    except Exception as exc:  # noqa: BLE001 - a broken check is an invalid discussion, never an error
+        result = {"data": None, "status": "invalid", "stage": None,
+                  "errors": [f"{DISCUSSION_FILE}: could not be checked ({type(exc).__name__})"], "warnings": []}
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    novelty = data.get("novelty")
+    hypotheses = [{
+        "id": _str(h.get("id"), 80), "experiment": _str(h.get("experiment"), 80),
+        "statement": _str(h.get("statement")), "metric": _str(h.get("metric")),
+        "test": _str(h.get("test")), "criterion": _str(h.get("criterion")),
+        "observed": _str(h.get("observed")), "evidence": _evidence(root, folder, h.get("evidence")),
+        "verdict": _str(h.get("verdict"), 40), "rationale": _str(h.get("rationale")),
+    } for h in _dicts(data.get("hypotheses"), MAX_DISCUSSION_HYPOTHESES)]
+    qualitative = []
+    for entry in _dicts(data.get("qualitative"), MAX_DISCUSSION_QUALITATIVE):
+        qualitative.append({
+            "title": _str(entry.get("title")), "kind": _str(entry.get("kind"), 40),
+            "method": _str(entry.get("method")), "reading": _str(entry.get("reading")),
+            "figure": _inside_product(root, folder, entry.get("figure")),
+            "figure_ref": _str(entry.get("figure"), 300),
+        })
+    return {
+        "file": _rel(root, path),
+        "status": _str(result.get("status"), 20) or "invalid",
+        "errors": _strings(result.get("errors"), MAX_WARNINGS),
+        "warnings": _strings(result.get("warnings"), MAX_WARNINGS),
+        "stage": _str(result.get("stage"), 20) or None,
+        "summary": _str(data.get("summary"), SUMMARY_MAX),
+        "discussion_type": _strings(data.get("discussion_type"), 20),
+        "metrics": [{"name": _str(m.get("name")), "role": _str(m.get("role"), 40),
+                     "why": _str(m.get("why")), "source": _str(m.get("source"))}
+                    for m in _dicts(data.get("metrics"), MAX_DISCUSSION_METRICS)],
+        "hypotheses": hypotheses,
+        "novelty": ({"claim": _str(novelty.get("claim")), "verdict": _str(novelty.get("verdict"), 40),
+                     "evidence": _evidence(root, folder, novelty.get("evidence")),
+                     "rationale": _str(novelty.get("rationale"))}
+                    if isinstance(novelty, dict) else None),
+        "qualitative": qualitative,
+        "qualitative_not_applicable": _str(data.get("qualitative_not_applicable")),
+        "limitations": _strings(data.get("limitations")),
+        "next_steps": _strings(data.get("next_steps")),
+    }
+
+
+def _stage_comparison(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per hypothesis id, its verdict at the proof of concept and at the full
+    experiments. Each stage reads the first product of its kind (listing order)
+    whose discussion holds hypotheses; ids keep the proof of concept's order,
+    then the ones only the full experiments declare."""
+    chosen: dict[str, dict[str, Any]] = {}
+    for item in products:
+        discussion = item.get("discussion")
+        if item.get("kind") in ("poc", "full") and item["kind"] not in chosen \
+                and discussion and discussion.get("hypotheses"):
+            chosen[item["kind"]] = item
+    rows: dict[str, dict[str, Any]] = {}
+    for kind in ("poc", "full"):
+        if kind not in chosen:
+            continue
+        for h in chosen[kind]["discussion"]["hypotheses"]:
+            if not h["id"]:
+                continue
+            row = rows.setdefault(h["id"], {"id": h["id"], "statement": h["statement"],
+                                            "poc": None, "full": None})
+            if row[kind] is None:
+                row[kind] = {"product": chosen[kind]["name"], "verdict": h["verdict"]}
+            if not row["statement"]:
+                row["statement"] = h["statement"]
+    return list(rows.values())[:MAX_DISCUSSION_HYPOTHESES]
+
+
 def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
              global_warnings: list[str]) -> dict[str, Any]:
     warnings: list[str] = []
@@ -1087,6 +1264,7 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         reader.warn(f"{reader.label(results)}: the scan stopped after {MAX_SCANNED_FILES} files were visited")
     convergence: list[dict[str, Any]] = []
     figures: list[str] = []
+    qualitative_figures: list[str] = []
     tables: list[dict[str, Any]] = []
     significance: list[dict[str, Any]] = []
     panel: Path | None = None
@@ -1106,6 +1284,9 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         elif role == "figure":
             if len(figures) < MAX_FIGURES:
                 figures.append(_rel(root, path))
+        elif role == "qualitative":
+            if len(qualitative_figures) < MAX_FIGURES:
+                qualitative_figures.append(_rel(root, path))
         elif role == "table":
             if len(tables) < MAX_TABLES:
                 table = _read_table(path, reader)
@@ -1140,6 +1321,7 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         "path": _rel(root, folder),
         "convergence": convergence,
         "figures": figures,
+        "qualitative_figures": qualitative_figures,
         "tables": tables,
         "significance": significance[:MAX_SIGNIFICANCE_ROWS],
         "pinned": _pinned(root, folder, reader, panel),
@@ -1149,6 +1331,7 @@ def _product(root: Path, repo: str, folder: Path, ledger: Path | None,
         "placement_plan": placement_plan,
         "hpo": hpo,
         "reviewer": reviewer,
+        "discussion": _discussion(root, folder, reader),
         "diagrams": _diagrams(root, repo, folder, reader),
         "execution_monitor": _execution_monitor(root, folder, kind, ledger, reader),
         "warnings": warnings,
@@ -1245,7 +1428,8 @@ def get_experiments_view(root: Path | str) -> dict[str, Any]:
     by_folder = {path.parent.parent: path for path in ledgers}
     products = [_product(root, repo, folder, by_folder.get(folder), warnings)
                 for repo, folder in _product_dirs(root, reader)]
-    view = {"protocol": protocol, "products": products, "datasets": _datasets(root, reader),
+    view = {"protocol": protocol, "products": products, "stage_comparison": _stage_comparison(products),
+            "datasets": _datasets(root, reader),
             "remote_accounts": _remote_accounts(root),
             "remote_mcp": remote_mcp_status(root), "remote_colab": colab_mcp_status(root),
             "remote_services": remote_services(root),

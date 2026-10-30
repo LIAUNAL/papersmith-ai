@@ -15,9 +15,23 @@
  * figures), the team table (one account per person and service) and the
  * Colab box (official CLI headless, official MCP interactive). Convergence is
  * always drawn (inline SVG); when nothing produces it yet, the empty state
- * says which file does. Every value is escaped before insertion.
+ * says which file does.
  *
- * Public surface (window): refreshExperimentsPanel(), ExperimentsPanel.render(view).
+ * Every product card opens with the "Summary and discussion" block read from
+ * Results/discussion.json (product.discussion): its check status with the
+ * errors, the summary, the discussion types, the hypothesis table with a
+ * verdict badge and evidence links (a path links to /api/artifact; a
+ * significance:<comparison> reference shows as code), the novelty verdict, the
+ * performance measures, the qualitative gallery (product.qualitative_figures
+ * not cited by an entry follow it), the limitations and the next steps. A
+ * product without the file shows an empty state naming the scaffold and check
+ * commands. When both stages have a discussion, a "PoC vs full experiments"
+ * section (view.stage_comparison) puts each hypothesis's two verdicts side by
+ * side. The significance table gains Hypothesis and Experiment columns when
+ * any row carries them. Every value is escaped before insertion.
+ *
+ * Public surface (window): refreshExperimentsPanel(), ExperimentsPanel.render(view),
+ * ExperimentsPanel.discussion(product), ExperimentsPanel.stageComparison(view).
  */
 (function () {
   'use strict';
@@ -150,6 +164,7 @@
       return `<h4 class="exp-h4">${esc(t('exp.significance'))}</h4>`
         + empty(t('exp.noSignificance'));
     }
+    const linked = rows.some((r) => r.hypothesis || r.experiment);
     const body = rows.map((r) => {
       const alpha = Number.isFinite(Number(r.alpha)) && r.alpha !== null ? Number(r.alpha) : 0.05;
       const p = r.p_adjusted ?? r.p_value;
@@ -158,13 +173,14 @@
       const effect = r.effect_size === null || r.effect_size === undefined ? '—'
         : `${fmt(r.effect_size)}${r.effect_size_name ? ` <small>(${esc(r.effect_size_name)})</small>` : ''}`;
       return `<tr class="${sig ? 'exp-sig' : ''}">
+        ${linked ? `<td>${esc(r.hypothesis || '—')}</td><td>${esc(r.experiment || '—')}</td>` : ''}
         <td>${esc(r.test || '—')}</td><td>${esc(r.comparison || '—')}</td><td>${fmt(r.statistic)}</td>
         <td>${fmt(r.p_value)}</td><td>${fmt(r.p_adjusted)}${r.correction ? ` <small>${esc(r.correction)}</small>` : ''}</td>
         <td>${effect}</td><td>${ci}</td><td>${fmt(r.n, 0)}</td>
         <td>${sig ? `<span class="badge badge--ok">p &lt; ${fmt(alpha)}</span>` : `<span class="badge">n.s.</span>`}</td></tr>`;
     }).join('');
     return `<h4 class="exp-h4">${esc(t('exp.significance'))}</h4><div class="table-responsive"><table class="table exp-table">
-      <thead><tr><th>${esc(t('exp.sig.test'))}</th><th>${esc(t('exp.sig.comparison'))}</th><th>${esc(t('exp.sig.statistic'))}</th><th>p</th><th>${esc(t('exp.sig.pAdjusted'))}</th><th>${esc(t('exp.sig.effect'))}</th><th>${esc(t('exp.sig.ci'))}</th><th>n</th><th></th></tr></thead>
+      <thead><tr>${linked ? `<th>${esc(t('exp.disc.col.hypothesis'))}</th><th>${esc(t('exp.disc.col.experiment'))}</th>` : ''}<th>${esc(t('exp.sig.test'))}</th><th>${esc(t('exp.sig.comparison'))}</th><th>${esc(t('exp.sig.statistic'))}</th><th>p</th><th>${esc(t('exp.sig.pAdjusted'))}</th><th>${esc(t('exp.sig.effect'))}</th><th>${esc(t('exp.sig.ci'))}</th><th>n</th><th></th></tr></thead>
       <tbody>${body}</tbody></table></div>`;
   }
 
@@ -406,19 +422,19 @@
     const isCompleted = m.status === 'completed';
     const isRunning = m.status === 'running';
     const badgeCls = isCompleted ? 'badge--ok' : (isRunning ? 'badge--info' : 'badge--warn');
-    const statusText = isCompleted ? (t('exp.monitor.status.completed') || 'Completado')
-      : (isRunning ? (t('exp.monitor.status.running') || 'En ejecución')
-      : (t('exp.monitor.status.inProgress') || 'En progreso'));
+    const statusText = isCompleted ? (t('exp.monitor.status.completed'))
+      : (isRunning ? (t('exp.monitor.status.running'))
+      : (t('exp.monitor.status.inProgress')));
 
     const etaText = isCompleted
-      ? `<span style="color: var(--accent-success, #4ade80); font-weight: 600;">✓ ${esc(t('exp.monitor.allCompleted') || 'Todas las etapas finalizadas')}</span>`
-      : `<span><strong>${esc(t('exp.monitor.eta') || 'Finalización estimada')}:</strong> ${esc(m.estimated_completion_label || '—')} <span class="badge badge--info" style="margin-left: 0.35rem;">~${esc(m.remaining_duration || '—')} ${esc(t('exp.monitor.remaining') || 'restantes')}</span></span>`;
+      ? `<span style="color: var(--accent-success, #4ade80); font-weight: 600;">✓ ${esc(t('exp.monitor.allCompleted'))}</span>`
+      : `<span><strong>${esc(t('exp.monitor.eta'))}:</strong> ${esc(m.estimated_completion_label || '—')} <span class="badge badge--info" style="margin-left: 0.35rem;">~${esc(m.remaining_duration || '—')} ${esc(t('exp.monitor.remaining'))}</span></span>`;
 
     const stageRows = stages.map((s) => {
       const sCls = s.status === 'completed' ? 'badge--ok' : (s.status === 'running' ? 'badge--info' : 'badge--warn');
-      const sStatusLabel = s.status === 'completed' ? '✓ ' + (t('exp.monitor.stage.done') || 'Listo')
-        : (s.status === 'running' ? '⚡ ' + (t('exp.monitor.stage.running') || 'Corriendo')
-        : (t('exp.monitor.stage.pending') || 'Pendiente'));
+      const sStatusLabel = s.status === 'completed' ? '✓ ' + (t('exp.monitor.stage.done'))
+        : (s.status === 'running' ? '⚡ ' + (t('exp.monitor.stage.running'))
+        : (t('exp.monitor.stage.pending')));
       const catCls = s.category === 'smoke' ? 'badge--info' : (s.category === 'training' ? 'badge--warn' : '');
       return `<tr>
         <td><strong>#${esc(s.index)}</strong></td>
@@ -432,28 +448,147 @@
     return `<div class="exp-monitor-card" style="margin: 1rem 0; padding: 0.85rem; background: var(--surface-2, rgba(255,255,255,0.03)); border: 1px solid var(--border); border-radius: var(--radius);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
         <div>
-          <strong style="color: var(--accent); font-size: 1rem;">📊 ${esc(t('exp.monitor.title') || 'Monitor de Ejecución y Tiempos Estimados')}</strong>
+          <strong style="color: var(--accent); font-size: 1rem;">📊 ${esc(t('exp.monitor.title'))}</strong>
           <span class="badge ${badgeCls}" style="margin-left: 0.5rem;">${esc(statusText)}</span>
         </div>
         <div style="font-size: 0.85rem;">${etaText}</div>
       </div>
       <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; margin-top: 0.25rem;">
-        <span>${esc(t('exp.monitor.progress') || 'Progreso')}: <strong>${esc(m.completed_stages)}/${esc(m.total_stages)} ${esc(t('exp.monitor.stages') || 'etapas')} (${esc(m.progress_percent)}%)</strong></span>
-        ${m.current_stage ? `<small class="exp-muted">${esc(t('exp.monitor.current') || 'Etapa actual')}: <em>${esc(m.current_stage)}</em></small>` : ''}
+        <span>${esc(t('exp.monitor.progress'))}: <strong>${esc(m.completed_stages)}/${esc(m.total_stages)} ${esc(t('exp.monitor.stages'))} (${esc(m.progress_percent)}%)</strong></span>
+        ${m.current_stage ? `<small class="exp-muted">${esc(t('exp.monitor.current'))}: <em>${esc(m.current_stage)}</em></small>` : ''}
       </div>
       <div style="background: rgba(255,255,255,0.1); border-radius: 999px; height: 7px; overflow: hidden; margin: 0.5rem 0 0.85rem 0;">
         <div style="background: ${isCompleted ? 'var(--accent-success, #4ade80)' : 'var(--accent, #3b82f6)'}; height: 100%; width: ${Math.min(100, Math.max(0, m.progress_percent))}%; transition: width 0.3s ease;"></div>
       </div>
       <details style="font-size: 0.85rem;">
-        <summary style="cursor: pointer; color: var(--accent);">${esc(t('exp.monitor.viewStages') || 'Ver desglose de tiempos por etapa')} (${esc(stages.length)} etapas)</summary>
+        <summary style="cursor: pointer; color: var(--accent);">${esc(t('exp.monitor.viewStages'))} (${esc(stages.length)} etapas)</summary>
         <div class="table-responsive" style="margin-top: 0.5rem;">
           <table class="table exp-table" style="font-size: 0.82rem;">
-            <thead><tr><th>#</th><th>${esc(t('exp.monitor.col.stage') || 'Etapa / Descripción')}</th><th>${esc(t('exp.monitor.col.status') || 'Estado')}</th><th>${esc(t('exp.monitor.col.type') || 'Tipo')}</th><th>${esc(t('exp.monitor.col.duration') || 'Duración est.')}</th></tr></thead>
+            <thead><tr><th>#</th><th>${esc(t('exp.monitor.col.stage'))}</th><th>${esc(t('exp.monitor.col.status'))}</th><th>${esc(t('exp.monitor.col.type'))}</th><th>${esc(t('exp.monitor.col.duration'))}</th></tr></thead>
             <tbody>${stageRows}</tbody>
           </table>
         </div>
       </details>
     </div>`;
+  }
+
+  // -------------------------------------------------- summary and discussion
+  // Results/discussion.json (schema 1), checked by skills/_core/results/discussion.py.
+  const own = (map, key) => (Object.prototype.hasOwnProperty.call(map, key) ? map[key] : '');
+  const STATUS_TONE = { complete: 'badge--ok', draft: 'badge--warn', invalid: 'badge--bad' };
+  const VERDICT_TONE = {
+    supported: 'badge--ok', partially_supported: 'badge--warn', not_supported: 'badge--bad', inconclusive: 'badge--info', pending: '',
+  };
+  const NOVELTY_TONE = { justified: 'badge--ok', partially_justified: 'badge--warn', not_justified: 'badge--bad', pending: '' };
+  const verdictBadge = (v) => `<span class="badge ${own(VERDICT_TONE, v)}">${esc(labelOf('exp.disc.verdict', v))}</span>`;
+  const noveltyBadge = (v) => `<span class="badge ${own(NOVELTY_TONE, v)}">${esc(labelOf('exp.disc.novelty', v))}</span>`;
+  const DISCUSSION_CLI = 'python skills/_core/results/discussion_cli.py';
+
+  // A path inside the product links to /api/artifact; anything else (a
+  // significance:<comparison> reference, a path that escapes) is plain text.
+  function evidenceList(list) {
+    const items = (list || []).map((e) => {
+      const ref = e && typeof e === 'object' ? e.ref : e;
+      const path = e && typeof e === 'object' ? e.path : null;
+      if (path) return `<a href="${artifactUrl(path)}" target="_blank" rel="noopener"><code>${esc(ref)}</code></a>`;
+      return String(ref).startsWith('significance:') ? `<code>${esc(ref)}</code>` : `<span class="exp-muted">${esc(ref)}</span>`;
+    });
+    return items.length ? items.join('<br>') : '<span class="exp-muted">—</span>';
+  }
+
+  const mapRows = (items, row) => items.map(row).join('');
+  const cells = (...values) => `<tr>${values.map((v) => `<td>${v}</td>`).join('')}</tr>`;
+  const plainList = (title, items) => (items && items.length
+    ? `<h5 class="exp-h4">${esc(title)}</h5><ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '');
+
+  function hypothesisTable(list) {
+    if (!list.length) return '';
+    const head = ['id', 'experiment', 'statement', 'metric', 'test', 'criterion', 'observed', 'verdict', 'evidence']
+      .map((k) => `<th>${esc(t(`exp.disc.col.${k}`))}</th>`).join('');
+    const body = mapRows(list, (h) => cells(
+      `<strong>${esc(h.id || '—')}</strong>`, esc(h.experiment || '—'), esc(h.statement || '—'), esc(h.metric || '—'),
+      esc(h.test || '—'), esc(h.criterion || '—'), esc(h.observed || '—'),
+      `${verdictBadge(h.verdict)}${h.rationale ? `<br><small>${esc(h.rationale)}</small>` : ''}`,
+      evidenceList(h.evidence),
+    ));
+    return `<h5 class="exp-h4">${esc(t('exp.disc.hypotheses'))}</h5><div class="table-responsive"><table class="table exp-table">
+      <thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  function noveltyBlock(n) {
+    if (!n) return '';
+    return `<h5 class="exp-h4">${esc(t('exp.disc.noveltyTitle'))} ${noveltyBadge(n.verdict)}</h5>
+      ${n.claim ? `<p>${esc(n.claim)}</p>` : ''}
+      ${n.rationale ? `<p><small>${esc(n.rationale)}</small></p>` : ''}
+      <p class="exp-intro">${esc(t('exp.disc.col.evidence'))}: ${evidenceList(n.evidence)}</p>`;
+  }
+
+  function metricsTable(list) {
+    if (!list.length) return '';
+    const head = ['name', 'role', 'why', 'source'].map((k) => `<th>${esc(t(`exp.disc.col.${k}`))}</th>`).join('');
+    const body = mapRows(list, (m) => cells(
+      `<strong>${esc(m.name || '—')}</strong>`, esc(m.role ? labelOf('exp.disc.role', m.role) : '—'), esc(m.why || '—'), esc(m.source || '—'),
+    ));
+    return `<h5 class="exp-h4">${esc(t('exp.disc.metrics'))}</h5><div class="table-responsive"><table class="table exp-table">
+      <thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  function qualitativeBlock(d, p) {
+    const entries = (d && d.qualitative) || [];
+    const cited = new Set(entries.map((e) => e.figure).filter(Boolean));
+    const extra = (p.qualitative_figures || []).filter((f) => !cited.has(f));
+    const reason = d && d.qualitative_not_applicable;
+    if (!entries.length && !extra.length && !reason) return '';
+    const cards = entries.map((e) => `<div class="exp-diagram"><div class="exp-file">${esc(e.title || '—')}
+        <span class="badge badge--info">${esc(labelOf('exp.disc.kind', e.kind))}</span></div>
+      ${e.method ? `<p class="exp-intro"><strong>${esc(t('exp.disc.col.method'))}:</strong> ${esc(e.method)}</p>` : ''}
+      ${e.figure ? `<div class="exp-gallery">${artifact(e.figure)}</div>`
+        : `<p class="exp-empty">${esc(t('exp.disc.noFigure'))}${e.figure_ref ? ` <code>${esc(e.figure_ref)}</code>` : ''}</p>`}
+      ${e.reading ? `<p><strong>${esc(t('exp.disc.col.reading'))}:</strong> ${esc(e.reading)}</p>` : ''}</div>`).join('');
+    return `<h5 class="exp-h4">${esc(t('exp.disc.qualitative'))}</h5>${cards}
+      ${extra.length ? `<div class="exp-file">${esc(t('exp.disc.otherQualitative'))}</div><div class="exp-gallery">${extra.map(artifact).join('')}</div>` : ''}
+      ${reason ? `<p><span class="badge">${esc(t('exp.disc.notApplicable'))}</span> ${esc(reason)}</p>` : ''}`;
+  }
+
+  function discussion(p) {
+    const d = (p && p.discussion) || null;
+    const head = `<h4 class="exp-h4">${esc(t('exp.disc.title'))}`;
+    if (!d) {
+      const path = (p && p.path) || '<product>';
+      return `${head}</h4>${empty(t('exp.disc.absent'))}
+        <p class="exp-intro">${t('exp.disc.absentHtml', {
+    scaffold: `<code>${esc(`${DISCUSSION_CLI} scaffold --product ${path}`)}</code>`,
+    check: `<code>${esc(`${DISCUSSION_CLI} check --product ${path}`)}</code>`,
+  })}</p>${qualitativeBlock(null, p || {})}`;
+    }
+    const errors = d.errors || [];
+    const warns = d.warnings || [];
+    return `${head} <span class="badge ${own(STATUS_TONE, d.status)}">${esc(labelOf('exp.disc.status', d.status))}</span>
+      <small class="exp-muted">${esc(d.file)}</small></h4>
+      ${errors.length ? `<details class="exp-warnings" open><summary>${esc(t('exp.disc.errors', { n: errors.length }))}</summary><ul>${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></details>` : ''}
+      ${warns.length ? `<details class="exp-warnings"><summary>${esc(t('exp.disc.warnings', { n: warns.length }))}</summary><ul>${warns.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
+      ${d.summary ? `<p class="exp-disc-summary">${esc(d.summary)}</p>` : ''}
+      ${(d.discussion_type || []).length ? `<div class="exp-chips"><small class="exp-muted">${esc(t('exp.disc.types'))}</small> ${d.discussion_type.map((k) => `<span class="badge badge--info">${esc(k)}</span>`).join(' ')}</div>` : ''}
+      ${hypothesisTable(d.hypotheses || [])}
+      ${noveltyBlock(d.novelty)}
+      ${metricsTable(d.metrics || [])}
+      ${qualitativeBlock(d, p)}
+      ${plainList(t('exp.disc.limitations'), d.limitations)}
+      ${plainList(t('exp.disc.nextSteps'), d.next_steps)}`;
+  }
+
+  // PoC vs full experiments: one row per hypothesis id with the verdict at each stage.
+  function stageComparison(v) {
+    const list = (v && v.stage_comparison) || [];
+    if (!list.length) return '';
+    const stage = (e) => (e ? `${verdictBadge(e.verdict)} <small class="exp-muted">${esc(e.product)}</small>` : '<span class="exp-muted">—</span>');
+    const body = mapRows(list, (r) => cells(`<strong>${esc(r.id)}</strong>`, esc(r.statement || '—'), stage(r.poc), stage(r.full)));
+    return `<section class="panel exp-section exp-comparison">
+      <div class="panel__header"><div class="panel__title">${esc(t('exp.disc.compare.title'))}</div></div>
+      <p class="exp-intro">${esc(t('exp.disc.compare.intro'))}</p>
+      <div class="table-responsive"><table class="table exp-table"><thead><tr>
+        <th>${esc(t('exp.disc.col.id'))}</th><th>${esc(t('exp.disc.col.statement'))}</th><th>${esc(t('exp.group.poc'))}</th><th>${esc(t('exp.group.full'))}</th>
+      </tr></thead><tbody>${body}</tbody></table></div></section>`;
   }
 
   function product(p) {
@@ -465,6 +600,7 @@
         <div><strong>${esc(p.name)}</strong> <small class="exp-muted">${esc(p.path)}</small></div>
         <div class="exp-chips">${runs(p)}</div>
       </header>
+      ${discussion(p)}
       ${remoteWorkers(p)}
       ${executionMonitor(p)}
       ${diagrams(p)}
@@ -858,6 +994,7 @@
       datasets(v.datasets),
       group(t('exp.group.poc'), t('exp.group.pocIntro'), poc, t('exp.group.pocEmpty')),
       group(t('exp.group.full'), t('exp.group.fullIntro'), full, t('exp.group.fullEmpty')),
+      stageComparison(v),
       other.length ? group(t('exp.group.other'), t('exp.group.otherIntro'), other, '') : '',
       protocol(v.protocol),
     ].join('');
@@ -913,5 +1050,5 @@
   }
 
   window.refreshExperimentsPanel = refreshExperimentsPanel;
-  window.ExperimentsPanel = { render, mcpActivation, colabActivation, remoteServices, localEnvironment, runOptions, team, datasets };
+  window.ExperimentsPanel = { render, mcpActivation, colabActivation, remoteServices, localEnvironment, runOptions, team, datasets, discussion, stageComparison };
 })();
