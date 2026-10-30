@@ -596,9 +596,9 @@ gets generated; `unsupported` is what does not get generated; `opt-in` is
 only documented, and it is enabled manually.
 
 <!-- harness-capabilities:start -->
-| Harness | Skills | Comandos | Agentes | Plugins / guards |
+| Harness | Skills | Commands | Agents | Plugins / guards |
 |---------|--------|----------|---------|------------------|
-| Claude Code | wired | wired (`.claude/commands`) | wired (`.claude/agents`) | opt-in (ver [guard-hooks](docs/guard-hooks.md)) |
+| Claude Code | wired | wired (`.claude/commands`) | wired (`.claude/agents`) | opt-in (see [guard-hooks](docs/guard-hooks.md)) |
 | OpenCode | wired | wired (`.opencode/commands`) | wired (`.opencode/agents`) | wired (`.opencode/plugins/refuse-offpath-push.js`) |
 | Pi | wired | wired (`.pi/prompts`) | wired (`.pi/agents`) | wired (`.pi/extensions/refuse-offpath-push.js`) |
 | Google Antigravity | wired | unsupported — via skills (workflows deprecated) | wired (`.agents/agents`) | unsupported |

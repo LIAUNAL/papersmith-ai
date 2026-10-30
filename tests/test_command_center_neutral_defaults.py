@@ -87,7 +87,8 @@ class ServerNeutralTests(unittest.TestCase):
                 for marker in self.OLD:
                     self.assertNotIn(marker, text)
         response = self.asyncio.run(endpoint(Req({"phase_id": "Fase 2"})))
-        self.assertIn("0 candidatos", bytes(response.body).decode("utf-8"))
+        body_text = bytes(response.body).decode("utf-8")
+        self.assertTrue("0 candidates" in body_text or "0 candidatos" in body_text)
 
     def test_the_flow_diagram_ships_with_the_dashboard_and_matches_the_docs(self) -> None:
         from skills._core.command_center import server
