@@ -189,11 +189,25 @@ press *Buscar revistas* (or press *Analizar con agente*, which types
 title, abstract, keywords and references into a ranked shortlist of journals
 that already publish work like it. Nothing is ever submitted.
 
+- **How the fit is scored.** `fit_score = 0.45 * similar_works + 0.3 *
+  cited_in_paper + 0.25 * topic_overlap`, each component divided by its maximum
+  over the journals evaluated: works like the paper that the journal published
+  (one OpenAlex query of quoted key phrases, last six years), references of
+  `paper/refs.bib` published there, and the overlap between the paper's OpenAlex
+  topics and the journal's. A component that is zero for every journal drops out
+  and the other weights are rescaled. When the title applies a method to a
+  domain (the tail after `for`, `applied to`, `toward`), the search runs one
+  query per facet, method and application, and a journal that shows no
+  application evidence has its score halved and carries the
+  `no-application-evidence` flag; it still appears, flagged. The numbers are in
+  the JSON (`fit`, `facets`, `query.scoring`) and in the panel, which prints the
+  formula above the table.
 - **Where the quartile comes from.** The SJR quartile comes from a SCImago CSV
   that **you** download once from <https://www.scimagojr.com/journalrank.php>
   ("Download data") and import (`python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <csv>`,
-  or the panel's upload); scimagojr.com answers automated downloads with a
-  browser challenge, so the forge never scrapes it. Without that file, or for a
+  or the panel's upload, which sends the file as the raw body of
+  `POST /api/journals/sjr`, up to 16 MiB); scimagojr.com answers automated
+  downloads with a browser challenge, so the forge never scrapes it. Without that file, or for a
   journal that is not in it, the quartile is an OpenAlex proxy (the share of
   journals of the same field with a higher 2-year mean citedness). The proxy is
   always labelled `openalex-proxy`, in the JSON, in the panel and in the
@@ -205,10 +219,20 @@ that already publish work like it. Nothing is ever submitted.
   none (fewer than five dated articles reads as none). It is an estimate of
   submission-to-acceptance, revision rounds included; it is not the time to
   first decision.
-- **The OpenAlex budget.** OpenAlex answers without a key, but a keyless caller
-  has a small daily budget (about USD 0.10 per day per IP). A free
-  `OPENALEX_API_KEY` in the environment raises it, and the CLI keeps a response
-  cache so a repeated search does not spend it again.
+- **The OpenAlex budget and the response cache.** OpenAlex answers without a
+  key, but a keyless caller has a small daily budget (about USD 0.10 per day per
+  IP). The CLI keeps successful answers in
+  `~/.cache/papersmith/journal-finder/http/` (`PAPERSMITH_JOURNAL_CACHE_DIR`
+  moves it): a search is reused for one day, any other lookup for seven, and an
+  error is never stored. *Forzar actualización* in the panel, or `--no-cache`,
+  skips the cache for one search. The result's `api_calls` reports the calls
+  made and served from the cache per service and the budget state, and the
+  panel shows it. When OpenAlex answers `429` asking for a wait of more than a
+  minute the quota is spent and the CLI does not retry: if that happens on the
+  first search the refusal is `NETWORK_UNAVAILABLE` and its message names
+  `OPENALEX_API_KEY` (a free key has its own daily budget and is sent only when
+  set); later in a search that step degrades with a note and the budget reads
+  `exhausted`.
 - **From a journal to its template.** *Elegir esta revista* runs
   `venue select` and opens `paper/venues/<slug>/`. The state machine is
   `selected → requirements → template → audited → planned → approved → built
@@ -219,7 +243,11 @@ that already publish work like it. Nothing is ever submitted.
   adjustment plan only when one is prudent.
 - **The operator approval gate.** The plan is approved by you, with your own
   words, bound to the plan's sha256: `venue approve --statement "..." --plan-sha256 <hex>`
-  or the panel's *Aprobar plan* button. A revised plan voids the approval, and
+  or the panel's *Aprobar plan* button. The button's route,
+  `POST /api/venues/<slug>/approve`, refuses a request with no `Origin` header
+  (curl, an agent's shell) as well as a foreign one, so an approval recorded
+  `via: dashboard` always came from the page; from the terminal you give your
+  words to `venue approve`. A revised plan voids the approval, and
   `venue build` refuses while a blocker finding has no approved plan. The
   approved text changes are applied one block at a time through the existing
   `write` loop, never by the agent that proposed them.

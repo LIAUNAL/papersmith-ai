@@ -816,26 +816,36 @@ requests; a failure shows the error with *Retry*.
 **Suggested journals and venue adaptation (the *Previsualización PDF* tab).**
 Below the preview, the tab carries a *Revistas sugeridas* block and, once a
 journal is chosen, a *Revista elegida* card. Nothing in either submits the
-paper or contacts an editor. The routes behind them are same-origin on `POST`
-(403 otherwise), keep their paths inside the workspace and answer with an error
-object instead of raising:
+paper or contacts an editor. Every `POST` is same-origin: a request whose
+`Origin` header names another origin is refused with `403`, and one with no
+`Origin` (curl, an agent's shell) is allowed, except `approve`, which also
+refuses a missing `Origin`. The routes keep their paths inside the workspace
+and answer with an error object instead of raising:
 
 | Route | What it does |
 |---|---|
-| `GET /api/journals` | The contents of `paper/journal-candidates.json`, or an empty answer that still reports the SJR state (the imported file and its year, or none) |
-| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, limit}`. Runs `journal_cli.py search` in a worker thread under a deadline and returns the CLI's JSON; `422` for an invalid quartile range |
-| `POST /api/journals/sjr` | A SCImago "Download data" CSV, as multipart or a raw body, under a size cap; runs `journal_cli.py sjr-import` and returns its JSON |
-| `POST /api/paper/compile?venue=<slug>` | The paper compile with a venue target: the same `pdflatex`/`bibtex` sequence, in `paper/venues/<slug>/`, under the same lock |
-| `GET /api/pdf?venue=<slug>` | Serves `paper/venues/<slug>/main.pdf`, with the same `ETag` handling as `GET /api/pdf` |
+| `GET /api/journals` | `{ok, candidates, sjr, sjr_download_url, notes_md, busy}`: the contents of `paper/journal-candidates.json` (or `null`, with `candidates_error` when it cannot be read), the SJR state from `journal_cli.py status` (the imported file and its year, or `null`), whether `paper/journal-candidates.md` exists, and whether a search is running |
+| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, max_review_days, limit, no_cache}`; only `quartiles` is required. Runs `journal_cli.py search` in a worker thread (330 s) and returns the CLI's JSON, `api_calls` included. `no_cache: true` adds `--no-cache` (the *Forzar actualización* checkbox). One search at a time (`409 SEARCH_RUNNING`). `422` for an invalid range (`QUARTILE_RANGE_INVALID`) or filter (`FILTER_INVALID`: `limit` 1-50, `max_apc` 0-10000000, `max_review_days` 1-3650, `oa_only` and `no_cache` booleans). A CLI refusal keeps its shape: `409 PAPER_ABSENT`, `404 WORKSPACE_ABSENT`, `502 NETWORK_UNAVAILABLE` (an unreachable OpenAlex, or a spent daily quota whose message names `OPENALEX_API_KEY`), `504 TIMEOUT`; a CLI that prints no JSON is `502 JOURNAL_CLI_FAILED` |
+| `POST /api/journals/sjr` | The SCImago "Download data" CSV as the **raw request body** (not multipart), its file name and optional year in the query string (`?name=scimagojr 2025.csv&year=2025`). Capped at 16 MiB (`413 FILE_TOO_LARGE`); an empty body or an invalid CSV is `422 SJR_FILE_INVALID`. Runs `journal_cli.py sjr-import` and returns its JSON |
+| `GET /api/venues` | `{ok, venues: [{slug, journal, quartile, state, blockers, next_action}]}`, one per `paper/venues/<slug>/` that holds a `venue.json` |
+| `POST /api/venues/select` | Body `{candidate}` (an OpenAlex source id from `paper/journal-candidates.json`) or `{journal, issn}`, plus an optional `slug` (else derived from the journal's name). Runs `venue select`; `409 VENUE_EXISTS`, `404 CANDIDATE_UNKNOWN`, `409 CANDIDATES_ABSENT`, `400 VENUE_SLUG_INVALID` and `422` for a body that gives neither or both modes |
+| `GET /api/venues/{slug}` | Everything the card shows, read-only: `status` (the state machine, the next action, stale audit/build), `venue`, `requirements`, `template`, `audit`, `build`, `plan` (`text` and `sha256`), `approval` (with `valid`: whether it is bound to the current plan), `pdf` and `compile_env`; `404 VENUE_ABSENT` |
+| `POST /api/venues/{slug}/approve` | Body `{statement, plan_sha256}`. Runs `venue approve` with `via: dashboard`. **Requires the page's `Origin` header**, as *Validar diagrama* does, so a `via: dashboard` record always came from the page. `409 PLAN_HASH_MISMATCH`, `422 STATEMENT_EMPTY` |
+| `POST /api/venues/{slug}/build` | Runs `venue build` under the paper lock (`409 PAPER_BUSY` when a compile is running); `409 PLAN_NOT_APPROVED`, `AUDIT_STALE`, `BLOCK_HAND_EDITED` keep their codes |
+| `POST /api/paper/compile?venue=<slug>` | The paper compile with a venue target: the same `pdflatex`/`bibtex` sequence, in `paper/venues/<slug>/`, under the same lock, with only `TEXINPUTS` and `BSTINPUTS` taken from the template's `compile_env`. `404 VENUE_ABSENT`, `409 VENUE_NOT_BUILT`, `400` for a malformed slug; without `venue` it compiles the canonical `paper/main.tex` |
+| `GET /api/pdf?venue=<slug>` | Serves `paper/venues/<slug>/main.pdf`, with the same `ETag` handling as `GET /api/pdf`; `400` for a malformed slug, `404` when the PDF is absent, `413` over 100 MiB |
 
-The venue state (`venue select`, the audit, the plan, its approval and the
-build) is served and written through the `/api/venues*` routes, which call the
-`paper-writing` `venue` verbs; the approval button writes the same
-`approval.json` record as `venue approve`, with `via: dashboard`.
+A venue slug is lowercase letters, digits and hyphens (up to 63 characters). The
+approval button writes the same `approval.json` record as `venue approve`, with
+`via: dashboard`; the other venue state (`select`, the audit, the plan and the
+build) is written through the `paper-writing` `venue` verbs these routes call.
 
 *Revistas sugeridas* has two quartile selects (from Q? to Q?), an open-access
-checkbox and the max-APC, max-review-days and limit inputs. *Buscar revistas*
-runs the search with a loading state; *Analizar con agente* types
+checkbox, a *Forzar actualización* checkbox (the search skips the response
+cache and spends the OpenAlex budget again) and the max-APC, max-review-days and
+limit inputs. *Buscar revistas* runs the search with a loading state, and a
+refused search shows the CLI's code and message (a spent OpenAlex quota names
+`OPENALEX_API_KEY`); *Analizar con agente* types
 `/journal-finder <range> [flags]` into the CLI assistant through
 `window.sendToCli`, as the phase cards do. A line states the SJR state: the file
 and its year, or "sin archivo SJR: cuartil aproximado OpenAlex" with the
@@ -843,9 +853,17 @@ download link and an upload button. The results table shows, per journal, the
 homepage link, the quartile badge with its source (`sjr` or the OpenAlex proxy),
 the SJR or proxy value, OA and DOAJ state, the APC, the h-index, the fit score,
 the review-time estimate (median and interquartile range in weeks, `n` and its
-source; "sin datos públicos" when there is none, and the table can sort by it)
-and the similar works, expandable, with DOI links. A link to
-`paper/journal-candidates.md` appears when the agent wrote it.
+source; "sin datos públicos" when there is none, and the table can sort by it),
+the fit score with its three components (`fit`: similar works, cited in the
+paper, topic overlap), the facet hits and the application gate (`facets`), the
+flag badges (`no-application-evidence`, `apc-unknown`, `review-time-unknown`)
+and the similar works, expandable, with DOI links. Above the table, the panel
+prints the scoring formula and the application gate from `query.scoring`, and
+the `api_calls` line: calls made and served from the cache in total and per
+service, "caché desactivada" after a forced refresh, and the OpenAlex budget
+(remaining and limit in USD, or the exhausted state with the wait and a pointer
+to `OPENALEX_API_KEY`). A link to `paper/journal-candidates.md` appears when the
+agent wrote it.
 
 Each row has *Elegir esta revista* (`venue select`). The *Revista elegida* card
 shows the state machine (`selected -> requirements -> template -> audited ->
