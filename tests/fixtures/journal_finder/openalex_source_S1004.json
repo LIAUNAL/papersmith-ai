@@ -1,0 +1,39 @@
+{
+  "id": "https://openalex.org/S1004",
+  "display_name": "Obscure Quarterly",
+  "issn_l": "5555-5555",
+  "issn": [
+    "5555-5555"
+  ],
+  "type": "journal",
+  "host_organization_name": "Quarterly House",
+  "is_oa": false,
+  "is_in_doaj": false,
+  "apc_usd": null,
+  "homepage_url": "https://obscure.example/",
+  "summary_stats": {
+    "2yr_mean_citedness": 1.0,
+    "h_index": 12,
+    "i10_index": 120
+  },
+  "topics": [
+    {
+      "id": "https://openalex.org/T1",
+      "display_name": "Fixture topic",
+      "count": 100,
+      "field": {
+        "id": "https://openalex.org/fields/17",
+        "display_name": "Computer Science"
+      }
+    },
+    {
+      "id": "https://openalex.org/T2",
+      "display_name": "Other topic",
+      "count": 5,
+      "field": {
+        "id": "https://openalex.org/fields/28",
+        "display_name": "Neuroscience"
+      }
+    }
+  ]
+}

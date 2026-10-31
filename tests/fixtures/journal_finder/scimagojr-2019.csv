@@ -1,0 +1,6 @@
+Rank;Sourceid;Title;Type;Issn;SJR;SJR Best Quartile;H index;Total Docs. (2019);Total Docs. (3years);Total Refs.;Total Cites (3years);Citable Docs. (3years);Cites / Doc. (2years);Ref. / Doc.;Country;Publisher;Coverage;Categories;Areas
+1;21100000001;"Neural Fixtures Letters";journal;"22222222";"2,345";Q1;180;120;350;6200;5400;340;"9,10";"51,67";"United States";"Fixture Press";"2005-2019";"Artificial Intelligence (Q1); Software (Q2)";"Computer Science"
+2;21100000002;"Open Signal Processing";journal;"99999999";"3,100";Q1;99;80;240;4100;3900;230;"7,80";"51,25";"Netherlands";"Impostor Publishing";"2010-2019";"Signal Processing (Q1)";"Computer Science"
+3;21100000003;"Obscure Quarterly";journal;"55555555, 66666666";"0,812";Q2;12;40;110;1900;300;100;"1,10";"47,50";"Spain";"Quarterly House";"1999-2019";"Neuroscience (miscellaneous) (Q2); General Medicine (Q3)";"Neuroscience; Medicine"
+4;21100000004;"Unrated Fixtures";journal;"77777777";"0,100";-;3;10;30;300;20;28;"0,30";"30,00";"Brazil";"Unrated Press";"2015-2019";"Computer Science (miscellaneous) (Q4)";"Computer Science"
+5;21100000005;"Plain Fixtures Review";journal;"88888888";"1,500";Q1;77;60;180;3000;2500;170;"4,00";"50,00";"Germany";"Plain Press";"2001-2019";"Hardware and Architecture (Q1)";"Computer Science"

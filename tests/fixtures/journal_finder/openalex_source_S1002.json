@@ -1,0 +1,39 @@
+{
+  "id": "https://openalex.org/S1002",
+  "display_name": "Open Signal Processing",
+  "issn_l": "3333-3333",
+  "issn": [
+    "3333-3333"
+  ],
+  "type": "journal",
+  "host_organization_name": "Open Fixture Society",
+  "is_oa": true,
+  "is_in_doaj": true,
+  "apc_usd": 1500,
+  "homepage_url": "https://open-signal.example/",
+  "summary_stats": {
+    "2yr_mean_citedness": 6.0,
+    "h_index": 60,
+    "i10_index": 600
+  },
+  "topics": [
+    {
+      "id": "https://openalex.org/T1",
+      "display_name": "Fixture topic",
+      "count": 100,
+      "field": {
+        "id": "https://openalex.org/fields/17",
+        "display_name": "Computer Science"
+      }
+    },
+    {
+      "id": "https://openalex.org/T2",
+      "display_name": "Other topic",
+      "count": 5,
+      "field": {
+        "id": "https://openalex.org/fields/28",
+        "display_name": "Neuroscience"
+      }
+    }
+  ]
+}

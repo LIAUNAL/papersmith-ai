@@ -1,0 +1,220 @@
+{
+  "header": {
+    "type": "esummary",
+    "version": "0.3"
+  },
+  "result": {
+    "uids": [
+      "900001",
+      "900002",
+      "900003",
+      "900004",
+      "900005",
+      "900006",
+      "900101",
+      "900102",
+      "900103"
+    ],
+    "900001": {
+      "uid": "900001",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/01/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/01/31 00:00"
+        },
+        {
+          "pubstatus": "epublish",
+          "date": "2024/02/02 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900002": {
+      "uid": "900002",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/01/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/03/01 00:00"
+        },
+        {
+          "pubstatus": "epublish",
+          "date": "2024/03/05 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900003": {
+      "uid": "900003",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/01/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/03/31 00:00"
+        },
+        {
+          "pubstatus": "epublish",
+          "date": "2024/04/06 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900004": {
+      "uid": "900004",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/01/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/04/30 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900005": {
+      "uid": "900005",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/01/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/05/30 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900006": {
+      "uid": "900006",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/01/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/06/29 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900101": {
+      "uid": "900101",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/02/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/03/10 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900102": {
+      "uid": "900102",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/02/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/03/11 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    },
+    "900103": {
+      "uid": "900103",
+      "history": [
+        {
+          "pubstatus": "received",
+          "date": "2024/02/01 00:00"
+        },
+        {
+          "pubstatus": "accepted",
+          "date": "2024/03/12 00:00"
+        },
+        {
+          "pubstatus": "pubmed",
+          "date": "2025/10/16 12:31"
+        },
+        {
+          "pubstatus": "medline",
+          "date": "2025/12/01 12:29"
+        }
+      ]
+    }
+  }
+}

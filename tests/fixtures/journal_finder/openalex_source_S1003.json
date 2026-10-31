@@ -1,0 +1,39 @@
+{
+  "id": "https://openalex.org/S1003",
+  "display_name": "Biomedical Fixture Reports",
+  "issn_l": "4444-444X",
+  "issn": [
+    "4444-444X"
+  ],
+  "type": "journal",
+  "host_organization_name": "Biomed Fixtures Ltd",
+  "is_oa": true,
+  "is_in_doaj": false,
+  "apc_usd": 3200,
+  "homepage_url": "https://biomed-fixtures.example/",
+  "summary_stats": {
+    "2yr_mean_citedness": 3.0,
+    "h_index": 35,
+    "i10_index": 350
+  },
+  "topics": [
+    {
+      "id": "https://openalex.org/T1",
+      "display_name": "Fixture topic",
+      "count": 100,
+      "field": {
+        "id": "https://openalex.org/fields/17",
+        "display_name": "Computer Science"
+      }
+    },
+    {
+      "id": "https://openalex.org/T2",
+      "display_name": "Other topic",
+      "count": 5,
+      "field": {
+        "id": "https://openalex.org/fields/28",
+        "display_name": "Neuroscience"
+      }
+    }
+  ]
+}
