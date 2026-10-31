@@ -75,8 +75,14 @@ class FakeApi:
     the real answer (`[429]` fails the first call once).
     """
 
-    def __init__(self, *, script: dict[str, list] | None = None, max_terms_matching: int | None = None):
+    def __init__(self, *, script: dict[str, list] | None = None, max_terms_matching: int | None = None,
+                 or_count: int | None = None, topics: bool = False):
         self.max_terms_matching = max_terms_matching
+        #: when set, a quoted-phrase (OR) works query matches this many works and returns none
+        self.or_count = or_count
+        #: attach OpenAlex `topics` to the matched works, by hosting source
+        self.topics = topics
+        self.cited = fixture("openalex_cited_works.json")
         self.requests: list[dict] = []
         self.lock = threading.Lock()
         self.script = {key: list(value) for key, value in (script or {}).items()}
@@ -138,8 +144,37 @@ class FakeApi:
         return [r for r in self.requests if r["path"].startswith(prefix)]
 
     # -- canned answers
+    WORK_TOPICS = {"S1004": [("T3", 0.9)], "default": [("T1", 0.9), ("T2", 0.1)]}
+
+    def _cited_works(self, wanted: str) -> dict:
+        dois = {d.lower() for d in wanted.split("|") if d}
+        assert len(dois) <= 50, f"DOI batch of {len(dois)} exceeds the 50 OpenAlex allows"
+        results = [r for r in self.cited["results"] if r["doi"].split("doi.org/")[1].lower() in dois]
+        return {"meta": {"count": len(results)}, "results": results}
+
+    def _source_search(self, params: dict) -> dict:
+        wanted = params["search"].strip().lower()
+        results = [{"id": "https://openalex.org/S9999", "display_name": f"{params['search']} Supplement",
+                    "type": "journal", "topics": []}]
+        for target in sorted(FIXTURES.glob("openalex_source_S*.json")):
+            record = json.loads(target.read_text(encoding="utf-8"))
+            if record["display_name"].lower() == wanted:
+                results.append(record)
+        return {"meta": {"count": len(results)}, "results": results}
+
+    def _with_topics(self, page: dict) -> dict:
+        for work in page["results"]:
+            sid = ((work.get("primary_location") or {}).get("source") or {}).get("id", "").rsplit("/", 1)[-1]
+            work["topics"] = [{"id": f"https://openalex.org/{tid}", "display_name": f"Topic {tid}", "score": score}
+                              for tid, score in self.WORK_TOPICS.get(sid, self.WORK_TOPICS["default"])]
+        return page
+
     def answer(self, path: str, params: dict):
         if path == "/openalex/works":
+            if params.get("filter", "").startswith("doi:"):
+                return 200, self._cited_works(params["filter"][4:])
+            if params.get("search", "").lstrip().startswith('"') and self.or_count is not None:
+                return 200, {"meta": {"count": self.or_count}, "results": []}
             if int(params.get("page", "1")) > 1 or "zzqx" in params.get("search", ""):
                 return 200, {"meta": {"count": 0}, "results": []}
             if self.max_terms_matching is not None and len(params.get("search", "").split()) > self.max_terms_matching:
@@ -147,8 +182,10 @@ class FakeApi:
             page = fixture("openalex_works_page1.json")
             per_page = int(params.get("per-page", "100"))
             page["results"] = page["results"][:per_page]
-            return 200, page
+            return 200, self._with_topics(page) if self.topics else page
         if path == "/openalex/sources":
+            if "search" in params:
+                return 200, self._source_search(params)
             return 200, {"meta": {"count": self._count(params.get("filter", ""))}, "results": []}
         if path.startswith("/openalex/sources/"):
             sid = path.rsplit("/", 1)[1]
@@ -285,6 +322,14 @@ class SkillFileTests(unittest.TestCase):
         module = load_module()
         missing = [code for code in module.REFUSAL_CODES if f"`{code}`" not in self.text]
         self.assertEqual(missing, [])
+
+    def test_the_skill_documents_the_three_fit_signals_and_the_formula(self):
+        for phrase in ("cited_in_paper", "topic_overlap", "similar_works", "query.scoring", "refs.bib",
+                       "phrases-or", "terms-and-relaxation", "fit_score ="):
+            self.assertIn(phrase, self.text, phrase)
+        module = load_module()
+        for name, weight in module.FIT_WEIGHTS.items():
+            self.assertIn(f"{weight:g} * {name}", self.text.replace("×", "*"), name)
 
     def test_every_verb_is_documented(self):
         for verb in ("search", "sjr-import", "status"):
@@ -811,33 +856,37 @@ class CapsAndEtiquetteTests(JournalFinderCase):
         self.assertEqual(self.names(result), ["Neural Fixtures Letters"])
         self.assertEqual(result.json["candidates"][0]["similar_works_count"], 5)
 
-    def test_works_search_asks_for_journal_articles_with_the_profile_terms(self):
+    def test_works_search_asks_for_journal_articles_with_the_profile_phrases(self):
         api = self.start_api()
         result = self.search()
         calls = api.hits("/openalex/works")
-        self.assertEqual(len(calls), 1, "50+ works matched, so no term was dropped")
+        self.assertEqual(len(calls), 1, "the phrase query matched 50+ works, so nothing was relaxed")
         call = calls[0]
-        self.assertIn("quantum", call["params"]["search"])
+        self.assertIn('"data re-uploading"', call["params"]["search"])
+        self.assertIn(" OR ", call["params"]["search"])
         self.assertIn("primary_location.source.type:journal", call["params"]["filter"])
-        self.assertEqual(len(call["params"]["search"].split()), 6)
-        self.assertEqual(result.json["query"]["terms"], call["params"]["search"].split())
+        self.assertIn("topics", call["params"]["select"])
+        self.assertEqual(result.json["query"]["search_mode"], "phrases-or")
 
     def test_terms_are_relaxed_one_by_one_until_enough_works_match(self):
-        api = self.start_api(max_terms_matching=4)
+        api = self.start_api(max_terms_matching=4, or_count=0)
         result = self.search()
         self.assertEqual(result.code, 0, result.stdout)
-        searches = [r["params"]["search"].split() for r in api.hits("/openalex/works")]
+        calls = api.hits("/openalex/works")
+        self.assertIn(" OR ", calls[0]["params"]["search"])
+        searches = [r["params"]["search"].split() for r in calls[1:]]
         self.assertEqual([len(s) for s in searches], [6, 5, 4])
         self.assertEqual(searches[1], searches[0][:5])
         self.assertEqual(result.json["query"]["terms"], searches[2])
+        self.assertEqual(result.json["query"]["search_mode"], "terms-and-relaxation")
         self.assertEqual(len(result.json["candidates"]), 4)
         self.assertTrue(any("dropped" in n for n in result.json["notes"]), result.json["notes"])
 
     def test_relaxation_stops_at_two_terms(self):
-        api = self.start_api(max_terms_matching=0)
+        api = self.start_api(max_terms_matching=0, or_count=0)
         result = self.search()
         self.assertEqual(result.code, 0, result.stdout)
-        self.assertEqual([len(r["params"]["search"].split()) for r in api.hits("/openalex/works")],
+        self.assertEqual([len(r["params"]["search"].split()) for r in api.hits("/openalex/works")[1:]],
                          [6, 5, 4, 3, 2])
         self.assertEqual(result.json["candidates"], [])
 
@@ -1150,6 +1199,422 @@ class ReviewTimeUnits(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- status
+
+
+# --------------------------------------------------------------------------- S2 topical fit units
+
+
+class PhraseUnits(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_module()
+        tex = (FIXTURES / "paper_main.tex").read_text(encoding="utf-8")
+        root = Path(tempfile.mkdtemp(prefix="jf-phrase-"))
+        (root / "paper").mkdir()
+        (root / "paper" / "main.tex").write_text(tex, encoding="utf-8")
+        cls.profile = cls.mod.extract_profile(root)
+        shutil.rmtree(root, ignore_errors=True)
+
+    def test_phrases_come_from_keywords_and_title_and_keep_hyphenated_compounds_whole(self):
+        phrases = self.mod.build_phrases(self.profile)
+        self.assertLessEqual(len(phrases), self.mod.MAX_PHRASES)
+        self.assertEqual(len(phrases), len(set(phrases)))
+        for expected in ("data re-uploading", "variational quantum circuits", "quantum machine learning"):
+            self.assertIn(expected, phrases)
+        for fragment in ("re", "uploading", "re uploading"):
+            self.assertNotIn(fragment, phrases)
+        self.assertTrue(any("quantum-classical" in p for p in phrases), phrases)
+        self.assertNotIn("zebra giraffe", " ".join(phrases))
+
+    def test_phrases_are_multi_word_unless_the_author_declared_them_as_keywords(self):
+        phrases = self.mod.build_phrases(self.profile)
+        keywords = {k.lower() for k in self.profile["keywords"]}
+        for phrase in phrases:
+            single = len(phrase.split()) == 1 and "-" not in phrase
+            if single:
+                self.assertTrue(any(phrase in k for k in keywords), f"{phrase!r} is a bare word, not a keyword")
+        for phrase in phrases:
+            self.assertFalse(set(phrase.split()) <= self.mod._PHRASE_BREAKS, phrase)
+
+    def test_frequent_abstract_bigrams_join_and_one_off_bigrams_do_not(self):
+        profile = {"title": "", "keywords": [], "abstract": (
+            "Graph attention helps. We use graph attention here and graph attention again. "
+            "A lone pair appears once.")}
+        phrases = self.mod.build_phrases(profile)
+        self.assertIn("graph attention", phrases)
+        self.assertNotIn("lone pair", phrases)
+
+    def test_a_bigram_inside_a_declared_longer_phrase_is_dropped(self):
+        profile = {"title": "", "keywords": ["Variational Quantum Circuits"],
+                   "abstract": "Quantum circuits matter. Quantum circuits scale. Quantum circuits win."}
+        phrases = self.mod.build_phrases(profile)
+        self.assertIn("variational quantum circuits", phrases)
+        self.assertNotIn("quantum circuits", phrases)
+
+    def test_quotes_never_survive_into_a_phrase_and_nothing_comes_from_nothing(self):
+        profile = {"title": 'The "quoted" thing', "keywords": ['say "hi" there'], "abstract": ""}
+        for phrase in self.mod.build_phrases(profile):
+            self.assertNotIn('"', phrase)
+        self.assertEqual(self.mod.build_phrases({"title": "zzqx", "keywords": [], "abstract": ""}), [])
+
+    def test_the_or_query_quotes_every_phrase(self):
+        self.assertEqual(self.mod.or_query(["data re-uploading", "adhd"]), '"data re-uploading" OR "adhd"')
+
+    def test_recency_window_is_six_years_and_survives_leap_day(self):
+        start = self.mod.recency_start
+        self.assertEqual(start(datetime.date(2026, 10, 31)), datetime.date(2020, 10, 31))
+        self.assertEqual(start(datetime.date(2028, 2, 29)), datetime.date(2022, 2, 28))
+        self.assertEqual(self.mod.RECENT_YEARS, 6)
+
+
+class BibliographyUnits(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_module()
+
+    def test_entries_fields_in_braces_quotes_and_bare_numbers(self):
+        entries = self.mod.parse_bib((FIXTURES / "refs.bib").read_text(encoding="utf-8"))
+        self.assertEqual([e["key"] for e in entries], ["k1", "k2", "k3", "k4", "k5", "k6", "k7"])
+        by_key = {e["key"]: e for e in entries}
+        self.assertEqual(by_key["k1"]["journal"], "Neural Fixtures Letters")
+        self.assertEqual(by_key["k1"]["title"], "Quantum circuits for {EEG} decoding")
+        self.assertEqual(by_key["k2"]["journal"], "Cited Only Journal")
+        self.assertEqual(by_key["k5"]["journal"], "Obscure Quarterly")
+        self.assertIsNone(by_key["k5"]["doi"])
+
+    def test_doi_forms_are_normalised_and_arxiv_ids_become_arxiv_dois(self):
+        entries = {e["key"]: e for e in self.mod.parse_bib((FIXTURES / "refs.bib").read_text(encoding="utf-8"))}
+        self.assertEqual(entries["k1"]["doi"], "10.1111/nfl.1")
+        self.assertEqual(entries["k2"]["doi"], "10.5555/cited.1")
+        self.assertEqual(entries["k4"]["doi"], "10.48550/arxiv.2101.00001")
+        for raw, want in (("https://doi.org/10.1/AbC.", "10.1/abc"), ("doi:10.1/x", "10.1/x"),
+                          (" 10.1/y ", "10.1/y"), ("not a doi", None), ("", None), (None, None)):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.mod.normalize_doi(raw), want)
+
+    def test_comment_blocks_and_nested_braces_do_not_leak_entries(self):
+        text = "@comment{@article{ghost, doi={10.0/ghost}}}\n@string{x = {y}}\n" \
+               "@article{real, title={{ADHDeepNet} {A {nested}} title}, journal={J}, doi={10.2/real}}"
+        entries = self.mod.parse_bib(text)
+        self.assertEqual([e["key"] for e in entries], ["real"])
+        self.assertEqual(entries[0]["title"], "{ADHDeepNet} {A {nested}} title")
+
+    def test_arxiv_style_journal_names_are_not_looked_up(self):
+        skip = self.mod.is_repository_name
+        for name in ("arXiv preprint arXiv:1234.5678", "IEEE Dataport", "bioRxiv", "SSRN Electronic Journal",
+                     "Zenodo"):
+            with self.subTest(name=name):
+                self.assertTrue(skip(name))
+        for name in ("Quantum", "Physical Review A", "Nature Communications"):
+            with self.subTest(name=name):
+                self.assertFalse(skip(name))
+
+
+class FitUnits(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_module()
+
+    def test_topic_overlap_is_the_histogram_intersection(self):
+        overlap = self.mod.topic_overlap
+        self.assertAlmostEqual(overlap({"A": 0.5, "B": 0.5}, {"A": 0.25, "C": 0.75}), 0.25)
+        self.assertAlmostEqual(overlap({"A": 1.0}, {"A": 1.0}), 1.0)
+        self.assertEqual(overlap({"A": 1.0}, {"B": 1.0}), 0.0)
+        self.assertEqual(overlap({}, {"B": 1.0}), 0.0)
+
+    def test_topic_profile_blends_matched_and_cited_works_and_normalises(self):
+        profile = self.mod.blend_topics({"A": 3.0, "B": 1.0}, {"B": 2.0})
+        self.assertAlmostEqual(sum(profile.values()), 1.0)
+        self.assertAlmostEqual(profile["A"], 0.375)
+        self.assertAlmostEqual(profile["B"], 0.625)
+        self.assertEqual(self.mod.blend_topics({"A": 2.0}, {}), {"A": 1.0})
+        self.assertEqual(self.mod.blend_topics({}, {}), {})
+
+    def test_weights_sum_to_one_and_cited_venues_are_strong_evidence(self):
+        weights = self.mod.FIT_WEIGHTS
+        self.assertEqual(set(weights), {"similar_works", "cited_in_paper", "topic_overlap"})
+        self.assertAlmostEqual(sum(weights.values()), 1.0)
+        self.assertGreaterEqual(weights["cited_in_paper"], weights["topic_overlap"])
+
+    def test_apply_fit_normalises_each_component_by_its_maximum_and_weights_them(self):
+        details = [{"similar_works_count": 4, "cited_count": 0, "topic_raw": 0.2},
+                   {"similar_works_count": 2, "cited_count": 2, "topic_raw": 0.4},
+                   {"similar_works_count": 0, "cited_count": 1, "topic_raw": 0.1}]
+        scoring = self.mod.apply_fit(details)
+        w = self.mod.FIT_WEIGHTS
+        self.assertEqual(details[0]["fit"], {"similar_works": 1.0, "cited_in_paper": 0.0, "topic_overlap": 0.5})
+        self.assertEqual(details[1]["fit"], {"similar_works": 0.5, "cited_in_paper": 1.0, "topic_overlap": 1.0})
+        self.assertEqual(details[2]["fit"], {"similar_works": 0.0, "cited_in_paper": 0.5, "topic_overlap": 0.25})
+        expected = round(w["similar_works"] * 0.5 + w["cited_in_paper"] * 1.0 + w["topic_overlap"] * 1.0, 4)
+        self.assertEqual(details[1]["fit_score"], expected)
+        self.assertEqual(scoring["active"], ["similar_works", "cited_in_paper", "topic_overlap"])
+        self.assertIn("formula", scoring)
+
+    def test_a_component_with_no_signal_anywhere_drops_out_and_the_rest_are_rescaled(self):
+        details = [{"similar_works_count": 4, "cited_count": 0, "topic_raw": 0.0},
+                   {"similar_works_count": 2, "cited_count": 0, "topic_raw": 0.0}]
+        scoring = self.mod.apply_fit(details)
+        self.assertEqual(scoring["active"], ["similar_works"])
+        self.assertEqual([d["fit_score"] for d in details], [1.0, 0.5])
+        self.assertEqual(details[0]["fit"]["cited_in_paper"], 0.0)
+        self.assertAlmostEqual(sum(scoring["weights"].values()), 1.0)
+        self.assertEqual(scoring["weights"]["cited_in_paper"], 0.0)
+
+    def test_an_empty_pool_scores_nothing_and_does_not_divide_by_zero(self):
+        self.assertEqual(self.mod.apply_fit([])["active"], [])
+
+
+# --------------------------------------------------------------------------- S2 topical fit, end to end
+
+
+class PhraseSearchTests(JournalFinderCase):
+    def test_the_works_query_ors_quoted_phrases_with_a_six_year_recency_filter(self):
+        api = self.start_api()
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        call = api.hits("/openalex/works")[0]
+        search = call["params"]["search"]
+        quoted = re.findall(r'"([^"]+)"', search)
+        self.assertGreaterEqual(len(quoted), 3)
+        self.assertEqual(search, " OR ".join(f'"{p}"' for p in quoted))
+        self.assertIn("data re-uploading", quoted)
+        today = datetime.date.today()
+        self.assertIn(f"from_publication_date:{today.replace(year=today.year - 6).isoformat()}",
+                      call["params"]["filter"])
+        self.assertIn("type:article", call["params"]["filter"])
+        self.assertEqual(result.json["query"]["phrases"], quoted)
+        self.assertEqual(result.json["query"]["search_mode"], "phrases-or")
+        self.assertLessEqual(len(quoted), 8)
+
+    def test_a_phrase_query_with_too_few_matches_falls_back_to_the_relaxation_with_a_note(self):
+        api = self.start_api(or_count=3, max_terms_matching=100)
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout)
+        self.assertEqual(result.json["query"]["search_mode"], "terms-and-relaxation")
+        self.assertTrue(any("phrase" in n.lower() and "3" in n for n in result.json["notes"]), result.json["notes"])
+        self.assertEqual(result.json["query"]["phrases"], [])
+        self.assertEqual(len(api.hits("/openalex/works")), 2)
+
+    def test_a_paper_without_phrases_goes_straight_to_the_relaxation(self):
+        api = self.start_api()
+        (self.workspace / "paper" / "main.tex").write_text(
+            "\\title{zzqx}\\begin{abstract}Some words here for the zzqx query.\\end{abstract}", encoding="utf-8")
+        result = self.search()
+        self.assertEqual(result.json["query"]["search_mode"], "terms-and-relaxation")
+        self.assertTrue(all('"' not in r["params"]["search"] for r in api.hits("/openalex/works")))
+
+
+class CitedVenueTests(JournalFinderCase):
+    def with_refs(self, text: str | None = None) -> None:
+        target = self.workspace / "paper" / "refs.bib"
+        target.write_text(text if text is not None else (FIXTURES / "refs.bib").read_text(encoding="utf-8"),
+                          encoding="utf-8")
+
+    def by_name(self, result: Result) -> dict:
+        return {c["display_name"]: c for c in result.json["candidates"]}
+
+    def test_dois_are_resolved_in_one_batched_call_and_count_the_journals_cited(self):
+        api = self.start_api()
+        self.with_refs()
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        doi_calls = [r for r in api.hits("/openalex/works") if r["params"].get("filter", "").startswith("doi:")]
+        self.assertEqual(len(doi_calls), 1)
+        batch = doi_calls[0]["params"]["filter"][4:].split("|")
+        self.assertEqual(sorted(batch), sorted({"10.1111/nfl.1", "10.5555/cited.1", "10.5555/cited.2",
+                                                "10.48550/arxiv.2101.00001", "10.9999/dataset"}))
+        self.assertLessEqual(int(doi_calls[0]["params"]["per-page"]), 50)
+        names = self.by_name(result)
+        self.assertEqual(names["Neural Fixtures Letters"]["cited_in_paper_count"], 1)
+        self.assertEqual(names["Open Signal Processing"]["cited_in_paper_count"], 1, "through its arXiv DOI")
+        self.assertEqual(names["Cited Only Journal"]["cited_in_paper_count"], 2)
+        self.assertEqual(names["Biomedical Fixture Reports"]["cited_in_paper_count"], 0)
+
+    def test_a_journal_only_the_paper_cites_is_kept_with_zero_similar_works(self):
+        self.start_api()
+        self.with_refs()
+        result = self.search()
+        cited_only = self.by_name(result)["Cited Only Journal"]
+        self.assertEqual(cited_only["similar_works_count"], 0)
+        self.assertEqual(cited_only["similar_works"], [])
+        self.assertEqual(cited_only["fit"]["similar_works"], 0.0)
+        self.assertEqual(cited_only["fit"]["cited_in_paper"], 1.0)
+        self.assertGreater(cited_only["fit_score"], 0.0)
+        self.assertEqual(cited_only["quartile_source"], "openalex-proxy")
+        self.assertEqual(cited_only["quartile"], "Q3")
+
+    def test_citing_a_journal_raises_its_rank_against_the_same_search_without_refs(self):
+        self.start_api()
+        without = self.search()
+        rank_without = {c["display_name"]: c["rank"] for c in without.json["candidates"]}
+        self.assertEqual(rank_without["Obscure Quarterly"], 4)
+        self.assertEqual(rank_without["Biomedical Fixture Reports"], 3)
+        self.with_refs()
+        with_refs = self.search()
+        ranks = {c["display_name"]: c["rank"] for c in with_refs.json["candidates"]}
+        self.assertLess(ranks["Obscure Quarterly"], ranks["Biomedical Fixture Reports"],
+                        "one similar work plus one citation beats two similar works and none")
+        scores = [c["fit_score"] for c in with_refs.json["candidates"]]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_references_without_dois_fall_back_to_an_exact_journal_name_lookup(self):
+        api = self.start_api()
+        self.with_refs()
+        result = self.search()
+        lookups = api.hits("/openalex/sources")
+        lookups = [r for r in lookups if "search" in r["params"]]
+        self.assertEqual([r["params"]["search"] for r in lookups], ["Obscure Quarterly"])
+        self.assertIn("type:journal", lookups[0]["params"]["filter"])
+        names = self.by_name(result)
+        self.assertEqual(names["Obscure Quarterly"]["cited_in_paper_count"], 1, "the Supplement decoy is not it")
+        self.assertNotIn("Obscure Quarterly Supplement", names)
+
+    def test_the_cited_summary_is_reported_in_the_query(self):
+        self.start_api()
+        self.with_refs()
+        cited = self.search().json["query"]["cited"]
+        self.assertEqual(cited["references_file"], "paper/refs.bib")
+        self.assertEqual(cited["entries"], 7)
+        self.assertEqual(cited["resolved_by_doi"], 4)
+        self.assertEqual(cited["resolved_by_journal_name"], 1)
+        self.assertEqual(cited["unresolved"], 2)
+        top = cited["journals"][0]
+        self.assertEqual((top["display_name"], top["count"]), ("Cited Only Journal", 2))
+
+    def test_only_journal_hosted_cited_works_count(self):
+        self.start_api()
+        self.with_refs()
+        result = self.search()
+        self.assertNotIn("arXiv (Cornell University)", self.by_name(result))
+        self.assertEqual(result.json["query"]["cited"]["unresolved"], 2, "the dataset and the arXiv-named journal")
+
+    def test_doi_batches_are_at_most_fifty_and_bounded(self):
+        api = self.start_api()
+        self.with_refs("\n".join(f"@article{{r{i}, doi={{10.7777/n.{i}}}, title={{T{i}}}}}" for i in range(260)))
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        doi_calls = [r for r in api.hits("/openalex/works") if r["params"].get("filter", "").startswith("doi:")]
+        self.assertLessEqual(len(doi_calls), 4)
+        self.assertGreaterEqual(len(doi_calls), 2)
+        for call in doi_calls:
+            self.assertLessEqual(len(call["params"]["filter"][4:].split("|")), 50)
+
+    def test_journal_name_lookups_are_bounded(self):
+        api = self.start_api()
+        self.with_refs("\n".join(f"@article{{r{i}, journal={{Journal Number {i}}}, title={{T{i}}}}}"
+                                 for i in range(60)))
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        lookups = [r for r in api.hits("/openalex/sources") if "search" in r["params"]]
+        self.assertLessEqual(len(lookups), 15)
+        self.assertGreaterEqual(len(lookups), 1)
+
+    def test_a_failing_cited_lookup_degrades_with_a_note_and_never_fails_the_search(self):
+        api = self.start_api(script={"/openalex/works": [None, 404]})
+        self.with_refs()
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        self.assertTrue(any("cited" in n.lower() for n in result.json["notes"]), result.json["notes"])
+        self.assertTrue(result.json["candidates"])
+
+    def test_no_references_file_is_a_note_and_the_signal_is_inactive(self):
+        self.start_api()
+        result = self.search()
+        self.assertIsNone(result.json["query"]["cited"]["references_file"])
+        self.assertNotIn("cited_in_paper", result.json["query"]["scoring"]["active"])
+        self.assertTrue(any("references" in n.lower() for n in result.json["notes"]), result.json["notes"])
+        for candidate in result.json["candidates"]:
+            self.assertEqual(candidate["cited_in_paper_count"], 0)
+
+    def test_a_workspace_bib_other_than_refs_bib_is_used_when_refs_bib_is_absent(self):
+        self.start_api()
+        (self.workspace / "paper" / "library.bib").write_text(
+            (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
+        result = self.search()
+        self.assertEqual(result.json["query"]["cited"]["references_file"], "paper/library.bib")
+
+
+class TopicTests(JournalFinderCase):
+    def test_matched_work_topics_form_the_paper_profile_and_boost_journals_that_share_them(self):
+        api = self.start_api(topics=True)
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        topics = result.json["query"]["topics"]
+        self.assertEqual(topics[0]["id"], "T1")
+        self.assertAlmostEqual(sum(t["weight"] for t in topics), 1.0, places=2)
+        by_name = {c["display_name"]: c for c in result.json["candidates"]}
+        self.assertEqual(by_name["Neural Fixtures Letters"]["fit"]["topic_overlap"], 1.0)
+        self.assertLess(by_name["Obscure Quarterly"]["fit"]["topic_overlap"],
+                        by_name["Neural Fixtures Letters"]["fit"]["topic_overlap"])
+        for candidate in result.json["candidates"]:
+            self.assertTrue(0.0 <= candidate["fit"]["topic_overlap"] <= 1.0)
+            self.assertTrue(candidate["topics"], "each candidate shows its main topics")
+            self.assertEqual(set(candidate["topics"][0]), {"id", "name", "share"})
+
+    def test_cited_work_topics_pull_the_profile_toward_the_cited_literature(self):
+        self.start_api(topics=True)
+        without = self.search().json["query"]["topics"]
+        (self.workspace / "paper" / "refs.bib").write_text(
+            (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
+        with_refs = self.search().json["query"]["topics"]
+        self.assertNotIn("T3", [t["id"] for t in without])
+        self.assertIn("T3", [t["id"] for t in with_refs])
+
+    def test_without_topics_the_signal_is_inactive(self):
+        self.start_api(topics=False)
+        result = self.search()
+        self.assertNotIn("topic_overlap", result.json["query"]["scoring"]["active"])
+        self.assertEqual(result.json["query"]["topics"], [])
+
+
+class FitContractTests(JournalFinderCase):
+    def test_every_candidate_exposes_its_components_and_the_documented_formula_holds(self):
+        self.start_api(topics=True)
+        (self.workspace / "paper" / "refs.bib").write_text(
+            (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
+        result = self.search()
+        scoring = result.json["query"]["scoring"]
+        self.assertEqual(set(scoring), {"formula", "weights", "active", "normalization"})
+        self.assertAlmostEqual(sum(scoring["weights"].values()), 1.0, places=6)
+        self.assertEqual(scoring["active"], ["similar_works", "cited_in_paper", "topic_overlap"])
+        for candidate in result.json["candidates"]:
+            fit = candidate["fit"]
+            self.assertEqual(set(fit), {"similar_works", "cited_in_paper", "topic_overlap"})
+            self.assertEqual(candidate["fit_score"], round(sum(scoring["weights"][k] * fit[k] for k in fit), 4))
+        ordered = [c["fit_score"] for c in result.json["candidates"]]
+        self.assertEqual(ordered, sorted(ordered, reverse=True))
+        self.assertEqual([c["rank"] for c in result.json["candidates"]], list(range(1, len(ordered) + 1)))
+
+    def test_with_the_proxy_world_only_the_similar_works_signal_is_active(self):
+        self.start_api()
+        result = self.search()
+        self.assertEqual(result.json["query"]["scoring"]["active"], ["similar_works"])
+        self.assertEqual([c["fit_score"] for c in result.json["candidates"]], [1.0, 0.6, 0.4, 0.2])
+        self.assertEqual([c["fit"]["similar_works"] for c in result.json["candidates"]], [1.0, 0.6, 0.4, 0.2])
+
+    def test_a_refusal_with_references_present_still_writes_nothing(self):
+        api = self.start_api()
+        (self.workspace / "paper" / "refs.bib").write_text(
+            (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
+        before = self.tree_snapshot()
+        for args in (("--quartiles", "Q3-Q1"),):
+            result = self.run_cli("search", "--workspace", str(self.workspace), *args)
+            self.assertEqual(result.code, 2)
+            self.assertEqual(result.json["error"], "QUARTILE_RANGE_INVALID")
+        self.assertEqual(api.requests, [])
+        self.assertEqual(self.tree_snapshot(), before)
+
+    def test_unreachable_openalex_with_references_is_still_network_unavailable(self):
+        (self.workspace / "paper" / "refs.bib").write_text(
+            (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
+        before = self.tree_snapshot()
+        result = self.run_cli("search", "--workspace", str(self.workspace), "--quartiles", "Q1",
+                              extra_env={"PAPERSMITH_OPENALEX_URL": "http://127.0.0.1:9",
+                                         "PAPERSMITH_HTTP_RETRIES": "0", "PAPERSMITH_HTTP_TIMEOUT": "0.5"},
+                              use_api=False)
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.json["error"], "NETWORK_UNAVAILABLE")
+        self.assertEqual(self.tree_snapshot(), before)
 
 
 class StatusTests(JournalFinderCase):

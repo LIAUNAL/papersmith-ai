@@ -18,8 +18,8 @@
   },
   "topics": [
     {
-      "id": "https://openalex.org/T1",
-      "display_name": "Fixture topic",
+      "id": "https://openalex.org/T3",
+      "display_name": "Clinical neurophysiology",
       "count": 100,
       "field": {
         "id": "https://openalex.org/fields/17",

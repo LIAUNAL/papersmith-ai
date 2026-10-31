@@ -1,0 +1,30 @@
+{
+  "id": "https://openalex.org/S1005",
+  "display_name": "Cited Only Journal",
+  "issn_l": "6666-666X",
+  "issn": [
+    "6666-666X"
+  ],
+  "type": "journal",
+  "host_organization_name": "Cited Press",
+  "is_oa": true,
+  "is_in_doaj": true,
+  "apc_usd": 900,
+  "homepage_url": "https://cited-only.example/",
+  "summary_stats": {
+    "2yr_mean_citedness": 4.5,
+    "h_index": 44,
+    "i10_index": 440
+  },
+  "topics": [
+    {
+      "id": "https://openalex.org/T3",
+      "display_name": "Clinical neurophysiology",
+      "count": 100,
+      "field": {
+        "id": "https://openalex.org/fields/17",
+        "display_name": "Computer Science"
+      }
+    }
+  ]
+}
