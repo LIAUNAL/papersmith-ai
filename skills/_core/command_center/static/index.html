@@ -5698,6 +5698,8 @@
         if (textLayerDiv) {
           textLayerDiv.style.width = `${Math.floor(viewport.width)}px`;
           textLayerDiv.style.height = `${Math.floor(viewport.height)}px`;
+          // PDF.js sizes its text spans from this variable and warns without it.
+          textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
           textLayerDiv.innerHTML = '';
         }
         if (annotationsLayerDiv) {
