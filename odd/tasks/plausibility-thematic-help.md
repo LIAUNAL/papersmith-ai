@@ -23,8 +23,8 @@ Branch: `feat/plausibility-thematic-help` (from `main` 7d04eb14, after v0.45.0).
 - T2 (S7) Archify flow regeneration -- worker -- done e17212a5
 - T3 (S8) README and linked docs -- worker -- done 3049ecc5
 - T6 (S10) novelty panel sobriety box made data-driven -- after T1 (shares i18n) -- done 63aa56d4
-- T4 verification (full suites vs base, live banco-lia smoke, dashboard render) -- parent
-- T5 release 0.46.0, merge, push, delete branches, GitHub release, update pipx smith and QMLEEG -- parent
+- T4 verification (full suites vs base, live banco-lia smoke, dashboard render) -- parent -- done (L6)
+- T5 release 0.46.0, merge, push, delete branches, GitHub release, update pipx smith and QMLEEG -- parent -- done (L6)
 
 ## Log
 
@@ -33,3 +33,4 @@ Branch: `feat/plausibility-thematic-help` (from `main` 7d04eb14, after v0.45.0).
 - L3 (T3 worker): docs done (commit 3049ecc5). G-NOVELTY records the operator decision but no phase status reads it (documented as advisory). `docs/cli.md` mixes the static dashboard and the Vite `ui/` frontend (note added). README install pin still v0.45.0 (bump at release). The novelty panel's sobriety box hard-codes QMLEEG findings -> S10.
 - L4 (parent): T1 done 66b07264 (live smoke: eeg/quantum/classification -> 8 items, top cluster C02 "BCI por imaginación motora", 3-sentence draft); T2 done e17212a5 (finalize exit 0, PNG 1400x2756); T6 done 63aa56d4 (sobriety box from discussions; rigor audit domain-neutral). T2b dropped: the drawing is pinned to revision 7d04eb14 and every source is valid there; re-pointing the help nodes to banco_suggest.py would force re-validating ~25 shifted README/server.py sources without changing what is drawn.
 - L5 (incident): another session switched the shared checkout to `main` and left uncommitted 0.45.1 work (CHANGELOG, `__init__.py`, paper-reviewer x4, paper-writing SKILL.md). T6's uncommitted files were moved by patch into the linked worktree `.scratch/wt-plaus` (branch feat/plausibility-thematic-help), committed there, and removed from the shared tree; the other session's files were not touched. No peer session was advertised to notify.
+- L6 (T4/T5, parent): full pytest branch 22 failed / 8205 passed vs base 7d04eb14 33 failed / 8116 passed, none only on the branch; npm 834/834. Live endpoint smoke (real banco-lia): 200 with 8 items and a Spanish draft, 422 KEYWORDS_INVALID for 2 keywords, 403 cross-origin, workspace untouched. On the user's request: paper-reviewer made project-neutral (22677da4, guard test), GitHub release for v0.45.1 published. Released 0.46.0 (tag on 7e9ace2a), pushed, branches and worktrees deleted, pipx smith 0.46.0, QMLEEG upgraded (c5ffb67, no research file touched). CI and PyPI publish for 0.46.0 (and 0.45.1) were triggered and not watched (the machine was put to sleep on request).
