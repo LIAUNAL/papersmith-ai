@@ -75,6 +75,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "team",
     "colab",
     "doctor",
+    "novelty",
 )
 
 
@@ -1603,6 +1604,11 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # account; `status` probes that sign-in. Both are an operator's acts.
     "colab": "out",
     "doctor": "exposed",
+    # `novelty approve|iterate|reset` commits the G-NOVELTY gate decision that
+    # unlocks manuscript drafting: the operator's verdict on whether the results
+    # support the novelty claims, never an agent's. `status` is the same data the
+    # dashboard's Novelty & Findings panel and `results` tooling already surface.
+    "novelty": "out",
 }
 
 PAPER_DISPOSITIONS: dict[str, str] = {
