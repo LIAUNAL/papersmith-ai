@@ -43,6 +43,8 @@ without guessing the order. The minimum path:
    What it leaves inside, in [Inside the workspace](#inside-the-workspace).
 3. **Check that the idea is plausible** — with your idea in two sentences,
    `/plausibility` tracks the SOTA and returns the constellation plus a ranked top 5.
+   If you have no clear sentences yet, the dashboard's phase-2 box offers an
+   optional *Ayuda temática*: type 3 to 5 keywords and it proposes the idea for you to edit.
 4. **Put a reference PDF** in `guidance/reference-papers/` and run
    `smith ingest <pdf>` — or ask for `/paper-ingestion` inside your harness.
 5. **Open the deliberation** with `/proposal-deliberation` and discuss the mathematics
@@ -71,17 +73,18 @@ The full path, from a PDF to a compiled paper:
 
 | # | You invoke | What it does | Where it leaves the result |
 |---|---------|----------|-------------------------|
-| 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA | `sota-pool/` (ignored, like `guidance/`) |
+| 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, the dashboard's optional thematic help turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
 | 2 | `/paper-ingestion` | Converts the reference PDFs into readable Markdown (equations in LaTeX, tables as tables, figures as files) | `guidance/<folder>/` |
 | 3 | `/proposal-deliberation` | Discusses the mathematics with you and publishes each agreement as a managed revision, with the SOTA constellation alongside | `proposals/` (the revision and its `graph.html`) |
 | 3b | `/math-tutor` | Before implementing a revision: a Socratic tutor that discusses its concept map and mathematics with you, reads the pages you draw by hand, and checks your understanding of why the novelty holds | nothing on disk but its thread (`.papersmith/math-tutor/`); used from the dashboard's Mapa Conceptual & Modelo tab |
 | 4 | `/datasets` | Gives the proof of concept and the full experiments their data: a seeded toy set always (`synth`), then an official dataset searched for (`search`) across the paper's own repository and the open dataset hosts, its source license decided (`license`), its quality measured (`qc`) and one subject-wise preparation both stages read (`prepare`); `publish` uploads it privately only with your explicit consent. Agents `dataset-scout` and `dataset-curator` | `datasets/` (registry, toy and prepared sets) |
-| 5 | `/proposal-implementation` | Proof of concept: turns the proposal into Python that verifies itself against the document | `implementations/<repo>/` |
+| 5 | `/proposal-implementation` | Proof of concept: turns the proposal into Python that verifies itself against the document, and closes with a checked `Results/discussion.json` | `implementations/<repo>/` |
 | 5b | `/proposal-implementation` (replication) | Replicates each comparison or baseline paper through the `paper-replicator` agent: it looks for the paper's published code first and, when it exists, adopts it pinned to a commit and audits that it corresponds to the paper and is implemented correctly; only when no code exists does it reimplement the method from the ingested Markdown | the target repo, with a `REPLICATION.md` correspondence table |
 | 6 | `/experimental-deliberation` | Discusses the experimental design that will put that mathematics to the test | `experiments/` |
 | 6b | `/experiments-tutor` | Consults and iterates on each experiment decision with you — architecture, hyperparameters, ablations, significance tests, the toy set's purpose, training, upper bounds (*techos*), the methods compared and their implementation — reading the protocol, the approvals, the code and the results first; it never invents a number, and any change of decision goes back to `/experimental-deliberation` | nothing on disk but its thread (`.papersmith/experiments-tutor/`); used from the dashboard's Experimentos tab |
-| 7 | `/experimental-implementation` | Turns the protocol into code and runs its measurements | the same target repo |
+| 7 | `/experimental-implementation` | Turns the protocol into code, runs its measurements and closes the full experiments with their own checked `Results/discussion.json` (a verdict per hypothesis, backed by its test) | the same target repo |
 | 7b | `/experiment-diagrams` | When the proof of concept (`AGREED.md`) and then the full experiments (`Experimental_AGREED.md`) are approved, draws one TikZ diagram of each, stating the experiment's single claim along one reading spine, compiles it to PDF and PNG and reviews it, grayscale included | `implementations/<repo>/<Name>/diagrams/`, shown in the Experimentos panel |
+| 7c | `smith novelty {status,approve,iterate,reset}` (or the dashboard's Novedad & Hallazgos tab) | Not a skill but a gate between the experiments and the paper: you contrast the discussions' hypothesis verdicts with the SOTA pool, read the reviewer-defense checklist and record whether the evidence supports the novelty (`G-NOVELTY`) or record that the work returns to experiments, proposal or plausibility | `.papersmith/novelty_gate.json` (the decision and its history) |
 | 8 | `/kaggle-accounts` | Proves that the Kaggle credentials really authenticate | `store/` (never leaves the disk) |
 | 9 | `/remote-execution` | Sends work to a remote worker and keeps the record of what came back | the target repo's ledger |
 | 10 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence | `paper/` |
@@ -112,7 +115,9 @@ loads, its stretch, its tools, the phase(s) it acts in and the harnesses it is
 projected to, in a table you can sort and filter. Clicking a phase opens its console:
 a text box with the stage's rules as a guide that sends `/<skill> <text>` to an
 agent in the support terminal (for `/plausibility`, the idea in at least two
-sentences), the real `smith` command for the phase, or a link to the panel
+sentences, or the optional *Ayuda temática* described under
+[Step 1](#step-1--check-that-the-idea-is-plausible-plausibility)), the real
+`smith` command for the phase, or a link to the panel
 that owns the work: the concept map, the math tutor, the PoC board, the
 sections, the PDF preview or the gates. After "Ejecutar", the drawer tracks the run
 step by step until the server finds the phase's evidence on disk and marks it
@@ -124,6 +129,54 @@ agent's turn and keeps its session. Closing the CLI, changing tabs or reloading 
 page never ends the session of a running phase: a reload reattaches to it. The same eleven phases are written into
 every harness entrypoint (`CLAUDE.md`, `OPENCODE.md`, `.pi/APPEND_SYSTEM.md`,
 `.agents/AGENTS.md`) under "Paper construction flow".
+
+The dashboard has twelve tabs; the tab names below are the Spanish ones the
+dashboard shows (the interface also has an English catalogue):
+
+| Tab | What it shows |
+|---|---|
+| **Flujo Archify** | The interactive flow diagram above and the table of every agent the workspace ships. It is the tab the dashboard opens on |
+| **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console |
+| **Mapa Conceptual & Modelo** | The proposal and its novelty, the five-layer concept map, and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it |
+| **Experimentos** | The proof-of-concept and full-experiment cards, run options and the `experiments-tutor`. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
+| **Novedad & Hallazgos** | The novelty assessment and its gate, `G-NOVELTY` (below) |
+| **Secciones del Paper** | The canonical section structure of the manuscript: state, words and blocks of each section |
+| **Atlas de Grafos** | The 3D SOTA constellation (`sota-pool/atlas.html`), the manuscript's novelty graph and the candidate matrix |
+| **Previsualización PDF** | The written blocks and the compiled `paper/main.pdf` side by side |
+| **Artefactos** | Explorer of the section rules, canonical contracts and the documents of the formulation cycle |
+| **Historia con IA** | Each phase's gate, colour and timeline of AI interactions |
+| **Telemetría** (*Telemetry and Costs* in English) | Tokens, tool uses and duration per measured phase |
+| **Smith Doctor** | The same health table as `smith doctor` |
+
+**The novelty assessment and its gate.** *Novedad & Hallazgos* (new in 0.45.0)
+sits between the experiments and the manuscript and has four parts: a matrix of
+hypotheses against the empirical evidence of both stages (metric, criterion,
+observed result, test, rationale and verdict badge, read from each product's
+`Results/discussion.json`); the novelty claims contrasted with the
+`sota-pool/candidates.json` candidates and the baselines; a checklist for
+defending the work before reviewers (leakage-free partitioning, significance
+tests, empirical support, SOTA contrast), derived from what the discussions
+record; and the decision gate. `G-NOVELTY` ("Novelty & Findings Gate") turns
+`ACTIVE` once Phase 5 passes, and `PASS` when you approve. You decide from the
+panel's buttons or from the terminal with
+`smith novelty {status,approve,iterate,reset}`: *approve* records that the
+evidence supports the novelty, and *iterate* records that the work returns to
+experiments, proposal or plausibility. The decision and its history go to
+`.papersmith/novelty_gate.json`. The gate records your decision; it does not
+lock a later phase on its own.
+
+**Phase 5 gating.** The sub-phases that close the experiments read the results
+discussion, not just a folder. 5.8 (proof of concept) and 5.11 (full
+experiments) pass only when a product of that stage holds a complete
+`Results/discussion.json` — a bare `Results/` folder reads as active — and
+Phase 5's progress follows them; 5.12 (code review) reads
+`Results/reviewer_report.json`. Scaffold and check the discussion with
+`python skills/_core/results/discussion_cli.py scaffold|check|status --product
+implementations/<repo>/<Name>`. `scaffold` copies each experiment's hypotheses
+and success criteria verbatim and leaves every verdict `pending`; `check`
+rejects an evidence path that does not exist and, at the full stage, a decided
+hypothesis that cites no significance test. The schema is in
+[`skills/_core/results/README.md`](skills/_core/results/README.md).
 
 [![papersmith-ai flow in Pi: commands, skills and agents](docs/diagrams/papersmith-pi-flow.png)](docs/diagrams/papersmith-pi-flow.html)
 
@@ -312,7 +365,14 @@ pipeline's details, in the `paper-ingestion` section of the
 smith deliberate . --action status                                   # state of the managed proposal
 smith implement . --action verify --target implementations/my-repo   # over an already materialized repo
 smith run smoke_and_invariants --dry-run                             # plans; dispatches nothing
+smith novelty status                                                 # hypotheses vs evidence and the G-NOVELTY gate
+python skills/_core/results/discussion_cli.py check --product implementations/my-repo/MyPaper   # a stage's results discussion
 ```
+
+`smith novelty` also takes `approve`, `iterate --stage {experiments,proposal,plausibility}`
+and `reset`; the discussion tool takes `scaffold`, `check` and `status`. Both are
+described in [The dashboard](#use-flow--the-short-path) above and in
+[docs/cli.md](docs/cli.md#smith-novelty-statusapproveiteratereset).
 
 Inside a harness, the same capabilities are requested by skill name:
 `/paper-ingestion`, `/proposal-deliberation`, `/experimental-deliberation`,
@@ -346,6 +406,21 @@ which PDFs are worth having.
 An idea stated in fewer than two sentences is refused before the search starts:
 scouting an unstated idea invents its own question. A claim with no abstract
 passage behind it does not become a planet — a quoteless planet is a drawing.
+
+**Thematic help, when the idea is not clear yet.** In the dashboard, the box
+that opens when you click phase 2 carries an optional *Ayuda temática*. Type 3 to
+5 keywords and the server asks the lab's `banco-lia` MCP (its `search_bank` tool)
+for the best matches; the panel lists the ranked LIA items (projects and
+articles), the topics they fall under and a proposed `/plausibility` idea,
+composed from your keywords and those matches, in an editable text area.
+Nothing runs until you press **Aprobar y lanzar**, which sends
+`/plausibility <your edited idea>` through the same launch path as any other
+phase-2 prompt, so the two-sentence rule still applies. The bank items are LIA
+continuity context, never SOTA evidence. It needs `uv`/`uvx` on `PATH` and the
+`banco-lia` entry of the workspace's `.mcp.json`; the first run downloads the
+package and later runs work offline. If the bank cannot be reached the panel
+says why and you write the idea yourself. Details and the endpoint
+(`POST /api/plausibility/suggest`) are in [docs/mcp.md](docs/mcp.md#the-dashboards-thematic-help).
 
 ### Step 2 — Put each PDF in the folder according to its role
 
@@ -955,7 +1030,7 @@ and why `tests/domain_profile.py` seeds and restores it by import.
 importable`. The form that works is the one above, without `-t .`.
 
 **What tests what.** `tests/` covers **the forge's tooling**: the two shared
-engines, the twelve `SKILL.md` files and their scripts, the tie between each skill
+engines, every skill's `SKILL.md` and its scripts, the tie between each skill
 and its agents in both directions, and a *from-scratch* series that generates a
 workspace with the CLI and walks every command, every embedded skill and every
 subagent inside it (`tests/test_workspace_{commands,skills,agents}_e2e.py`).

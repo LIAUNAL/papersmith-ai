@@ -37,7 +37,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, ai_transcripts, atlas, atlas_build, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -918,7 +918,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "name": "Phase 2: Plausibility & 3D SOTA Atlas",
                 "gate": "G-SOTA",
                 "agent": "sota-scout & sota-grapher & novelty-screener",
-                "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation.",
+                "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional thematic help turns 3 to 5 keywords into a proposed idea from the Banco LIA, which the operator edits, approves and launches.",
                 "tools": ["read", "write", "mcp"],
                 "skills": ["sota-scout", "semantic-scholar", "pubmed-search"],
                 "cli_command": "smith run --stage plausibility",
@@ -1801,6 +1801,28 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             body["verified"] = body["status"] == "PASS"
             body["evidence"] = phase.get("evidence", [])
         return JSONResponse(body, status_code=response.status_code)
+
+    @app.post("/api/plausibility/suggest")
+    async def api_plausibility_suggest(request: Request) -> JSONResponse:
+        """Thematic help for phase 2: 3 to 5 keywords in, the Banco LIA items
+        and topics that match plus a proposed /plausibility idea out. Read only:
+        it queries the banco-lia MCP server and never touches the workspace;
+        the operator launches the idea from the phase card."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
+                                status_code=403)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = None
+        payload = payload if isinstance(payload, dict) else {}
+        try:
+            result = await asyncio.to_thread(
+                banco_suggest.suggest, payload.get("keywords"), str(payload.get("language") or "es"),
+                root=root_path)
+        except banco_suggest.KeywordsInvalid as exc:
+            return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
+        return JSONResponse(result)
 
     async def _phase_check(request: Request) -> JSONResponse:
         try:

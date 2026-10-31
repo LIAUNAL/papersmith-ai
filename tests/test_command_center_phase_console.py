@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 from skills._core.command_center import phase_actions, server
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -25,7 +27,20 @@ const fs = require('fs');
 const calls = [];
 const els = {};
 const listeners = {};
-function el(id) { return els[id] || (els[id] = { id, value: '', textContent: '', classList: { add(){}, remove(){} }, focus(){} }); }
+// Assigning innerHTML that holds the proposal's <textarea id="kwDraftN"> creates that
+// field with the unescaped text, as a browser would.
+function el(id) {
+  return els[id] || (els[id] = {
+    id, value: '', textContent: '', _html: '', hidden: false, disabled: false, classList: { add(){}, remove(){} }, focus(){},
+    get innerHTML() { return this._html; },
+    set innerHTML(v) {
+      this._html = v;
+      const m = /<textarea[^>]*id="(kwDraft\d+)"[^>]*>([\s\S]*?)<\/textarea>/.exec(v);
+      if (m) el(m[1]).value = m[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    },
+  });
+}
+const fetches = [];
 let sendResult;
 const options = [];
 let agents = { current: 'herdr', live: false, agents: [] };
@@ -57,6 +72,12 @@ global.localStorage = {
 };
 global.window.localStorage = global.localStorage;
 sendResult = input.sendResult;
+global.window.fetch = async (url, init) => {
+  fetches.push([url, JSON.parse(init.body)]);
+  if (input.fetchError) throw new Error(input.fetchError);
+  const r = input.fetchResponse || { status: 200, body: {} };
+  return { ok: r.status < 400, status: r.status, json: async () => r.body };
+};
 if (input.agents) agents = input.agents;
 refusal = input.refusal || '';
 if (input.override) el('phaseOverride').checked = true;
@@ -66,14 +87,21 @@ await new Promise((r) => setTimeout(r, 20));
 if (input.pick) el('phaseAgent0').value = input.pick;
 if (input.fresh) el('phaseFresh0').checked = true;
 function click(i) {
-  listeners.click({ target: { closest: () => ({ dataset: { phaseAction: String(i) } }) } });
+  listeners.click({ target: { closest: (sel) => (sel.includes('data-kw-help') ? null : { dataset: { phaseAction: String(i) } }) } });
 }
 for (const step of input.steps) {
+  if (step.kw) {
+    step.kw.forEach((word, n) => { el('kwInput' + step.i + '_' + n).value = word; });
+    listeners.input({ target: { closest: () => ({ dataset: { kwInput: String(step.i) } }) } });
+  }
+  if (step.draft !== undefined) el('kwDraft' + step.i).value = step.draft;
   if (step.type) el('phaseInput' + step.i).value = step.type;
-  click(step.i);
+  if (step.help) {
+    listeners.click({ target: { closest: (sel) => (sel.includes('data-kw-help') ? { dataset: { kwHelp: step.help, kwIndex: String(step.i) } } : null) } });
+  } else if (!step.kw) click(step.i);
   await new Promise((r) => setTimeout(r, 10));
 }
-console.log(JSON.stringify({ html, calls, options, select: el('phaseAgent0').innerHTML, note: el('phaseAgentNote0').textContent, hints: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, v.textContent])) }));
+console.log(JSON.stringify({ html, calls, options, fetches, select: el('phaseAgent0').innerHTML, note: el('phaseAgentNote0').textContent, hints: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, v.textContent])), els: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, { value: v.value, textContent: v.textContent, innerHTML: v.innerHTML, hidden: v.hidden, disabled: v.disabled }])) }));
 })();
 """
 
@@ -213,6 +241,183 @@ class PhaseConsoleTests(unittest.TestCase):
 
     def test_a_phase_without_actions_renders_nothing(self) -> None:
         self.assertEqual(run({"actions": []}, [])["html"], "")
+
+
+SUGGESTION = {
+    "available": True, "keywords": ["eeg", "quantum", "classification"], "match": "any",
+    "items": [
+        {"id": "A023", "kind": "articulo", "title": "Quantum <img src=x onerror=alert(1)> EEG", "year": 2025,
+         "cluster": "C05", "doi": "10.3390/computers14110475", "score": 11.48, "snippet": "…[quantum]…"},
+        {"id": "H0042", "kind": "proyecto", "title": "Interfaz cerebro-computador", "year": 2020,
+         "cluster": "C02", "doi": "", "score": 4.2, "snippet": ""},
+    ],
+    "topics": [{"id": "C05", "name": "Quantum <b>ML</b>", "count": 1}, {"id": "C02", "name": "Señales", "count": 1}],
+    "draft": "Propongo explorar EEG y quantum. Parto del proyecto H0042 como antecedente. La idea probaría algo nuevo.",
+}
+KEYWORDS = ["eeg", "quantum", "classification"]
+
+
+def suggest(steps: list[dict], status: int = 200, body: dict | None = None, **extra) -> dict:
+    response = {"status": status, "body": SUGGESTION if body is None else body}
+    return run(phase("plausibility"), steps, fetchResponse=response, **extra)
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class ThematicHelpTests(unittest.TestCase):
+    def test_only_the_plausibility_card_gets_the_help_block(self) -> None:
+        html = run(phase("plausibility"), [])["html"]
+        self.assertIn('id="kwHelp0"', html)
+        self.assertIn("Ayuda temática (palabras clave)", html)
+        for stage in ("harness", "ingestion", "proposal", "declarations", "writing"):
+            self.assertNotIn("kwHelp", run(phase(stage), [])["html"], stage)
+        flagged = [(stage, a["label"]) for stage, spec in phase_actions.ACTIONS.items()
+                   for a in spec["actions"] if a.get("keyword_help")]
+        self.assertEqual(flagged, [("plausibility", "Explore the plausibility of the idea")])
+
+    def test_the_guide_mentions_the_help_and_the_block_is_collapsible(self) -> None:
+        guide = " ".join(phase_actions.ACTIONS["plausibility"]["actions"][0]["guide"])
+        self.assertIn("Thematic help", guide)
+        html = run(phase("plausibility"), [])["html"]
+        self.assertRegex(html, r'<details class="kw-help"[^>]*id="kwHelp0"|<details[^>]*id="kwHelp0"')
+        self.assertIn("<summary>", html)
+
+    def test_three_inputs_show_and_two_more_open_up_to_five(self) -> None:
+        html = run(phase("plausibility"), [])["html"]
+        for n in range(5):
+            self.assertIn(f'id="kwInput0_{n}"', html)
+        for n in (3, 4):
+            self.assertRegex(html, rf'<input[^>]*id="kwInput0_{n}"[^>]*hidden')
+        for n in (0, 1, 2):
+            self.assertNotRegex(html, rf'<input[^>]*id="kwInput0_{n}"[^>]*hidden')
+        self.assertIn('maxlength="40"', html)
+        self.assertIn('id="kwAdd0"', html)
+        self.assertRegex(html, r'<button[^>]*id="kwPropose0"[^>]*disabled')
+
+    def test_the_button_is_disabled_under_three_distinct_keywords(self) -> None:
+        for words, disabled in ((["eeg", "quantum"], True), (["eeg", "quantum", "svm"], False),
+                                (["eeg", "EEG", "quantum"], True), (["eeg", " ", "quantum"], True),
+                                (["a", "b", "c", "d", "e"], False)):
+            with self.subTest(words=words):
+                result = suggest([{"i": 0, "kw": words}])
+                self.assertIs(result["els"]["kwPropose0"]["disabled"], disabled)
+
+    def test_proposing_with_too_few_keywords_calls_nothing(self) -> None:
+        result = suggest([{"i": 0, "kw": ["eeg", "quantum"]}, {"i": 0, "help": "propose"}])
+        self.assertEqual(result["fetches"], [])
+        self.assertEqual(result["calls"], [])
+
+    def test_the_plus_button_reveals_the_next_input(self) -> None:
+        result = suggest([{"i": 0, "help": "add"}, {"i": 0, "help": "add"}, {"i": 0, "help": "add"}])
+        self.assertIs(result["els"]["kwInput0_3"]["hidden"], False)
+        self.assertIs(result["els"]["kwInput0_4"]["hidden"], False)
+        self.assertIs(result["els"]["kwAdd0"]["hidden"], True)
+
+    def test_a_response_renders_items_topics_and_the_draft_escaped(self) -> None:
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}])
+        self.assertEqual(result["fetches"], [["/api/plausibility/suggest", {"keywords": KEYWORDS, "language": "es"}]])
+        shown = result["els"]["kwResult0"]
+        self.assertIs(shown["hidden"], False)
+        html = shown["innerHTML"]
+        self.assertNotIn("<img", html)
+        self.assertNotIn("<b>", html)
+        self.assertIn("&lt;img", html)
+        self.assertIn("Quantum &lt;b&gt;ML&lt;/b&gt;", html)
+        self.assertIn("Señales", html)
+        self.assertIn("2025", html)
+        self.assertIn("11.48", html)
+        self.assertIn("Artículo", html)
+        self.assertIn("Proyecto", html)
+        self.assertIn('href="https://doi.org/10.3390/computers14110475"', html)
+        self.assertEqual(html.count("doi.org"), 1)
+        self.assertIn('id="kwDraft0"', html)
+        self.assertIn("Propongo explorar EEG y quantum.", html)
+        self.assertIn("no estado del arte", html)
+        self.assertIn('data-kw-help="approve"', html)
+        self.assertIn('data-kw-help="discard"', html)
+
+    def test_a_hostile_draft_and_doi_are_inert(self) -> None:
+        body = dict(SUGGESTION, draft='Idea </textarea><script>alert(1)</script>. Segunda oración.')
+        body["items"] = [dict(SUGGESTION["items"][0], doi='"><script>alert(2)</script>')]
+        html = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}], body=body)["els"]["kwResult0"]["innerHTML"]
+        self.assertNotIn("<script>", html)
+        self.assertNotIn("</textarea><", html)
+
+    def test_nothing_is_launched_until_the_operator_approves(self) -> None:
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}])
+        self.assertEqual(result["calls"], [])
+        self.assertEqual(result["els"].get("phaseInput0", {}).get("value", ""), "")
+
+    def test_approve_fills_the_prompt_and_goes_through_the_run_path(self) -> None:
+        edited = "Mi versión editada del problema. Y lo que propongo con QML híbrido."
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"},
+                          {"i": 0, "draft": edited, "help": "approve"}])
+        self.assertEqual(result["els"]["phaseInput0"]["value"], edited)
+        self.assertEqual(result["calls"], [["send", "/plausibility " + edited, True, "slash"]])
+        self.assertEqual(result["options"][-1]["kind"], "slash")
+
+    def test_approve_uses_the_selected_agent_like_the_run_button(self) -> None:
+        agents = {"current": "pi", "live": True,
+                  "agents": [{"id": "claude", "label": "Claude Code"}, {"id": "pi", "label": "Pi"}]}
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}, {"i": 0, "help": "approve"}],
+                         agents=agents, pick="claude")
+        self.assertEqual(result["options"][-1], {"kind": "slash", "agent": "claude", "fresh": False})
+        self.assertEqual(result["calls"][0][1], "/plausibility " + SUGGESTION["draft"])
+
+    def test_the_sentence_check_still_applies_to_an_edited_draft(self) -> None:
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"},
+                          {"i": 0, "draft": "Una sola idea.", "help": "approve"}])
+        self.assertEqual(result["calls"], [])
+        self.assertIn("al menos 2 oraciones", result["hints"]["phaseError0"])
+
+    def test_a_locked_phase_does_not_launch_from_the_help(self) -> None:
+        locked = dict(phase("plausibility"), unlocked=False, blocked_by="Fase 1")
+        result = run(locked, [{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}, {"i": 0, "help": "approve"}],
+                     fetchResponse={"status": 200, "body": SUGGESTION})
+        self.assertEqual(result["calls"], [])
+        self.assertIn("primero verifica Fase 1", result["hints"]["phaseHint0"])
+
+    def test_discard_clears_the_proposal_and_launches_nothing(self) -> None:
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}, {"i": 0, "help": "discard"}])
+        self.assertEqual(result["els"]["kwResult0"]["innerHTML"], "")
+        self.assertIs(result["els"]["kwResult0"]["hidden"], True)
+        self.assertEqual(result["calls"], [])
+
+    def test_an_unavailable_bank_shows_the_reason_and_the_install_hint(self) -> None:
+        body = {"available": False, "reason": "cannot start uvx: No such file <or directory>"}
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}], body=body)
+        html = result["els"]["kwResult0"]["innerHTML"]
+        self.assertIn("cannot start uvx: No such file &lt;or directory&gt;", html)
+        self.assertIn(".mcp.json", html)
+        self.assertIn("docs/mcp.md", html)
+        self.assertNotIn('data-kw-help="approve"', html)
+
+    def test_a_refusal_from_the_server_is_shown(self) -> None:
+        body = {"ok": False, "code": "KEYWORDS_INVALID", "error": "give 3 to 5 different keywords (got 2)"}
+        result = suggest([{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}], status=422, body=body)
+        self.assertIn("give 3 to 5 different keywords", result["els"]["kwResult0"]["innerHTML"])
+        self.assertEqual(result["calls"], [])
+
+    def test_a_failed_request_is_reported_in_the_block(self) -> None:
+        result = run(phase("plausibility"), [{"i": 0, "kw": KEYWORDS}, {"i": 0, "help": "propose"}],
+                     fetchError="offline")
+        self.assertIn("offline", result["els"]["kwResult0"]["innerHTML"])
+        self.assertEqual(result["calls"], [])
+
+    def test_the_catalogues_cover_every_help_text_in_both_languages(self) -> None:
+        en, es = EN_JS.read_text(encoding="utf-8"), ES_JS.read_text(encoding="utf-8")
+        self.assertIn('"kwHelp.summary": "Thematic help (keywords)"', en)
+        self.assertIn('"kwHelp.summary": "Ayuda temática (palabras clave)"', es)
+        self.assertIn('"kwHelp.approve": "Aprobar y lanzar"', es)
+        self.assertIn('"kwHelp.approve": "Approve and launch"', en)
+
+
+class PhaseTwoDescriptionTests(unittest.TestCase):
+    def test_the_phase_two_description_mentions_the_optional_thematic_help(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fases = TestClient(server.create_app(tmp)).get("/api/status").json()["fases"]
+        desc = next(f for f in fases if f["id"] == "Fase 2")["desc"]
+        self.assertIn("thematic help", desc)
+        self.assertIn("Banco LIA", desc)
 
 
 class PageWiringTests(unittest.TestCase):

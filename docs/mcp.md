@@ -34,7 +34,56 @@ manages — `banco-lia`, Kaggle's official server (`kaggle`) and Google Colab's
 warning. `opencode.json` is a rendered file, so upgrade rewrites it whole.
 The `papersmith` server itself is never written to any of them; use
 `smith mcp print-config` for it. `uv` must be on `PATH` for the harness to
-start the bank.
+start the bank, and for the dashboard's thematic help below.
+
+## The dashboard's thematic help
+
+`banco-lia` is not only for agents. The dashboard's phase-2 box (`/plausibility`)
+has an optional *Ayuda temática (palabras clave)* that queries the same bank for an
+operator who has no clear sentences yet. See [cli.md](cli.md#smith-ui-dir) for the
+panel and [skills.md](skills.md#1-plausibility--map-the-territory-before-collecting-it)
+for the skill's side.
+
+**What it calls.** The dashboard server is its own small MCP client (standard
+library only). For each request it starts the same server command papersmith
+registers for agents — the `mcpServers["banco-lia"]` entry of the workspace
+`.mcp.json` when it exists, else `uvx --from
+git+https://github.com/LIAUNAL/bancoProyectosPapersLIA banco-lia-mcp` — performs
+`initialize` and `notifications/initialized`, then calls `search_bank` with the
+keywords (`match: "all"` first, `match: "any"` when that returns fewer than three
+items) and `taxonomy` for the topic names, and always terminates the child process.
+From the matches it builds a ranked list of up to 8 items (`id`, `kind`, `title`,
+`year`, `cluster`, `doi`, `score`, `snippet`), up to 5 topics, and a proposed
+`/plausibility` idea composed from the keywords and the strongest matches. There
+is no model call and no invented data. When nothing matches, the idea still states
+the keywords as something to explore, with a note that the bank holds no related
+work.
+
+**The route.** `POST /api/plausibility/suggest` with
+`{"keywords": [...], "language": "es"|"en"}`. It takes 3 to 5 keywords, each
+trimmed, non-empty, at most 40 characters, duplicates ignored regardless of case;
+anything else is refused `422` with `KEYWORDS_INVALID`. It is same-origin only
+(`403` otherwise), never writes to the workspace, and answers `200` for every
+other case, including `{"available": false, "reason": "..."}`.
+
+**Requirements and offline behaviour.**
+
+- `uv` (`uvx`) on `PATH`, exactly as for the harnesses above. Without it, or when
+  the entry is missing from `.mcp.json`, the panel reports why and keeps the
+  box usable: the operator writes the idea by hand.
+- The first run downloads the bank package from GitHub, which can take a while, so
+  the client allows about 90 seconds before giving up. Once `uvx` has cached the
+  package, later runs work offline. A spawn failure, a timeout or a protocol error
+  is also reported as `available: false` and never as a server error.
+- `PAPERSMITH_BANCO_LIA_COMMAND` overrides the command: set it to a JSON array of
+  arguments (for example `["uvx", "--from", "<path-or-url>", "banco-lia-mcp"]`)
+  to point the dashboard at a local clone of the bank or at a test double.
+- `PAPERSMITH_BANCO_LIA_TIMEOUT` sets the seconds allowed for the whole exchange
+  (90 by default); a value that is not a positive number keeps the default.
+
+The bank's items are LIA continuity context (projects `H*` and `P*`, articles by
+title and DOI). They are not state-of-the-art evidence, and nothing in the proposed
+idea cites them as such.
 
 ## Wiring
 

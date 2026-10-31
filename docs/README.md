@@ -19,6 +19,9 @@ document is the defect.
 | Harness support, per harness | [harness-support-matrix.md](harness-support-matrix.md) |
 | Guard hooks | [guard-hooks.md](guard-hooks.md) |
 | MCP server and tool catalogue | [mcp.md](mcp.md) |
+| The dashboard's thematic help for `/plausibility` (`banco-lia`, `uv`, offline behaviour) | [mcp.md](mcp.md#the-dashboards-thematic-help) |
+| The dashboard's tabs, including *Experimentos* (results discussion) and *Novedad & Hallazgos* | [cli.md](cli.md#smith-ui-dir) |
+| Novelty assessment, the `G-NOVELTY` gate and `smith novelty`; the results-discussion tool | [cli.md](cli.md#smith-novelty-statusapproveiteratereset) |
 | Releasing | [releasing.md](releasing.md) |
 | Dashboard under WSL | [wsl-dashboard.md](wsl-dashboard.md) |
 | Flow diagrams | [diagrams/README.md](diagrams/README.md) |

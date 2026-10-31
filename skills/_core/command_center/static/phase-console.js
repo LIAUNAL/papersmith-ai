@@ -5,6 +5,10 @@
  *              `/<skill> <text>` into an agent of the support terminal;
  *   command  — a real `smith` command, run in the terminal's shell;
  *   redirect — opens the dashboard panel that owns the work.
+ * A prompt flagged `keyword_help` (plausibility) also carries the thematic
+ * help: 3 to 5 keywords go to POST /api/plausibility/suggest, which answers
+ * Banco LIA items, topics and a proposed idea; "Approve and launch" copies the
+ * (edited) idea into the card's prompt and runs the same path as "Run".
  * Every value is escaped before insertion; handlers read the action back
  * from the rendered phase, never from markup.
  *
@@ -38,6 +42,134 @@
     return Math.max(parts.length, Math.floor(words / WORDS_PER_SENTENCE));
   }
 
+  // ---- thematic help (keywords -> Banco LIA -> proposed idea) --------------
+  const KW_MIN = 3;
+  const KW_MAX = 5;
+  const KW_CHARS = 40;
+  const kwRequest = {};
+
+  function kwBlock(i) {
+    const inputs = Array.from({ length: KW_MAX }, (_, n) => `<input type="text" class="kw-help__input"
+          id="kwInput${i}_${n}" data-kw-input="${i}" maxlength="${KW_CHARS}" autocomplete="off"
+          aria-label="${esc(t('kwHelp.keyword', { n: n + 1 }))}"${n >= KW_MIN ? ' hidden' : ''}>`).join('');
+    return `<details class="kw-help" id="kwHelp${i}">
+        <summary>${esc(t('kwHelp.summary'))}</summary>
+        <p class="kw-help__intro">${esc(t('kwHelp.intro'))}</p>
+        <div class="kw-help__inputs">${inputs}
+          <button type="button" class="btn btn--sm" id="kwAdd${i}" data-kw-help="add" data-kw-index="${i}"
+            title="${esc(t('kwHelp.add'))}" aria-label="${esc(t('kwHelp.add'))}">+</button>
+        </div>
+        <div class="kw-help__bar">
+          <button type="button" class="btn btn--sm btn--primary" id="kwPropose${i}" data-kw-help="propose"
+            data-kw-index="${i}" disabled>${esc(t('kwHelp.propose'))}</button>
+          <span class="kw-help__status" id="kwStatus${i}">${esc(t('kwHelp.needThree'))}</span>
+        </div>
+        <div class="kw-help__result" id="kwResult${i}" aria-live="polite" hidden></div>
+      </details>`;
+  }
+
+  // The distinct, non-empty keywords typed so far (case-insensitive).
+  function kwWords(i) {
+    const seen = new Set();
+    const words = [];
+    for (let n = 0; n < KW_MAX; n += 1) {
+      const word = String(document.getElementById(`kwInput${i}_${n}`)?.value ?? '').replace(/\s+/g, ' ').trim().slice(0, KW_CHARS);
+      if (word && !seen.has(word.toLowerCase())) { seen.add(word.toLowerCase()); words.push(word); }
+    }
+    return words;
+  }
+
+  function kwState(i) {
+    const count = kwWords(i).length;
+    const button = document.getElementById(`kwPropose${i}`);
+    const status = document.getElementById(`kwStatus${i}`);
+    if (button) button.disabled = count < KW_MIN;
+    if (status) status.textContent = count < KW_MIN ? t('kwHelp.needThree') : t('kwHelp.ready', { n: count });
+  }
+
+  function kwShow(i, html) {
+    const box = document.getElementById(`kwResult${i}`);
+    if (!box) return;
+    box.innerHTML = html;
+    box.hidden = !html;
+  }
+
+  const kwNote = (text) => `<p class="kw-help__note">${esc(text)}</p>`;
+
+  function kwResultHtml(i, data) {
+    if (!data.available) {
+      return `<div class="kw-help__unavailable" role="alert">${esc(t('kwHelp.unavailable', { reason: data.reason || '' }))}
+        <br><span>${esc(t('kwHelp.unavailableHint'))}</span></div>`;
+    }
+    const items = (data.items || []).map((it) => {
+      const kind = it.kind === 'proyecto' ? t('kwHelp.kindProyecto') : t('kwHelp.kindArticulo');
+      const doi = /^10\.\S+$/.test(String(it.doi || ''))
+        ? ` · <a href="https://doi.org/${esc(it.doi)}" target="_blank" rel="noopener">DOI</a>` : '';
+      return `<li><strong>${esc(it.title)}</strong>
+          <span class="kw-help__meta">${esc(it.id)} · ${esc(kind)}${it.year ? ` · ${esc(it.year)}` : ''} · ${esc(t('kwHelp.score', { score: it.score }))}${doi}</span></li>`;
+    }).join('');
+    const topics = (data.topics || []).map((tp) => `<span class="kw-help__topic">${esc(tp.name)} (${esc(tp.count)})</span>`).join('');
+    const match = data.match === 'all' ? t('kwHelp.matchAll') : t('kwHelp.matchAny');
+    return `${(data.items || []).length
+      ? `<h5>${esc(t('kwHelp.items'))}</h5>${kwNote(match)}<ul class="kw-help__items">${items}</ul>
+         ${topics ? `<h5>${esc(t('kwHelp.topics'))}</h5><div class="kw-help__topics">${topics}</div>` : ''}
+         ${kwNote(t('kwHelp.context'))}`
+      : kwNote(t('kwHelp.noItems'))}
+      <label class="kw-help__draftlabel" for="kwDraft${i}">${esc(t('kwHelp.draft'))}</label>
+      <textarea class="phase-action__input kw-help__draft" id="kwDraft${i}" rows="6">${esc(data.draft)}</textarea>
+      <div class="kw-help__actions">
+        <button type="button" class="btn btn--sm btn--primary" data-kw-help="approve" data-kw-index="${i}">${esc(t('kwHelp.approve'))}</button>
+        <button type="button" class="btn btn--sm" data-kw-help="discard" data-kw-index="${i}">${esc(t('kwHelp.discard'))}</button>
+      </div>`;
+  }
+
+  async function kwPropose(i) {
+    const words = kwWords(i);
+    if (words.length < KW_MIN) return kwState(i);
+    const ticket = (kwRequest[i] = (kwRequest[i] || 0) + 1);
+    kwShow(i, kwNote(t('kwHelp.loading')));
+    let html;
+    try {
+      const language = window.i18n && window.i18n.getLanguage ? window.i18n.getLanguage() : 'es';
+      const response = await window.fetch('/api/plausibility/suggest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords: words, language }),
+      });
+      const data = await response.json();
+      html = response.ok
+        ? kwResultHtml(i, data)
+        : `<div class="kw-help__unavailable" role="alert">${esc(t('kwHelp.refused', { why: data.error || response.status }))}</div>`;
+    } catch (err) {
+      html = `<div class="kw-help__unavailable" role="alert">${esc(t('kwHelp.failed', { why: (err && err.message) || err }))}</div>`;
+    }
+    if (ticket === kwRequest[i]) kwShow(i, html);  // a newer request owns the box
+  }
+
+  // The operator's click is what launches: the (edited) idea becomes the
+  // card's prompt and goes through runPrompt, so the agent selector, the
+  // sentence check, the lock and the run tracking all apply.
+  async function kwApprove(a, i) {
+    const draft = document.getElementById(`kwDraft${i}`);
+    const input = document.getElementById(`phaseInput${i}`);
+    if (!draft || !input) return;
+    input.value = draft.value;
+    await runPrompt(a, i);
+  }
+
+  function kwAdd(i) {
+    for (let n = KW_MIN; n < KW_MAX; n += 1) {
+      const field = document.getElementById(`kwInput${i}_${n}`);
+      if (field && field.hidden) {
+        field.hidden = false;
+        if (field.focus) field.focus();
+        break;
+      }
+    }
+    const last = document.getElementById(`kwInput${i}_${KW_MAX - 1}`);
+    const button = document.getElementById(`kwAdd${i}`);
+    if (button && last && !last.hidden) button.hidden = true;
+  }
+
   function promptCard(a, i) {
     const guide = (a.guide || []).map((g) => `<li>${esc(g)}</li>`).join('');
     const need = a.min_sentences ? t('phaseConsole.minSentences', { n: a.min_sentences }) : (a.optional ? t('phaseConsole.optionalText') : '');
@@ -47,6 +179,7 @@
           <code>${esc(a.slash)}${a.prefix ? ' ' + esc(a.prefix.trim()) : ''}</code>
         </div>
         <ul class="phase-action__guide">${guide}</ul>
+        ${a.keyword_help ? kwBlock(i) : ''}
         <textarea class="phase-action__input" id="phaseInput${i}" rows="4"
           placeholder="${esc(a.placeholder)}" aria-label="${esc(a.label)}"></textarea>
         <div class="phase-action__error" id="phaseError${i}" role="alert" hidden></div>
@@ -238,6 +371,18 @@
   // Capture phase: the phase drawer stops click propagation
   // (onclick="event.stopPropagation()"), so a bubbling listener never fires.
   document.addEventListener('click', (event) => {
+    const help = event.target.closest('[data-kw-help]');
+    if (help) {
+      const i = Number(help.dataset.kwIndex);
+      const a = current[i];
+      if (!a || !a.keyword_help) return;
+      const what = help.dataset.kwHelp;
+      if (what === 'propose') kwPropose(i);
+      else if (what === 'add') kwAdd(i);
+      else if (what === 'approve') kwApprove(a, i);
+      else if (what === 'discard') kwShow(i, '');
+      return;
+    }
     const el = event.target.closest('[data-phase-action]');
     if (!el) return;
     const i = Number(el.dataset.phaseAction);
@@ -251,6 +396,10 @@
     } else redirect(a);
   }, true);
 
+  document.addEventListener('input', (event) => {
+    const field = event.target && event.target.closest && event.target.closest('[data-kw-input]');
+    if (field) kwState(Number(field.dataset.kwInput));
+  }, true);
   document.addEventListener('change', (event) => {
     const el = event.target && event.target.closest && event.target.closest('[data-phase-agent]');
     if (el) refreshAgentInfo().then(() => agentNote(Number(el.dataset.phaseAgent)));

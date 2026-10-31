@@ -33,6 +33,7 @@
   "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.": "Luego divide la hipótesis en afirmaciones y califica cada una (novel / known / tension / contradicted) con citas literales.",
   "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.": "Nada se ingiere ni se archiva: el informe espera tu aceptación antes de pasar el top 5 a ingestión.",
   "You can adjust the idea and ask for a new screening; every pass is a new report.": "Puedes ajustar la idea y pedir un nuevo screening; cada pasada es un informe nuevo.",
+  "No clear idea yet? Open Thematic help, give 3 to 5 keywords and the Banco LIA proposes one you can edit and approve.": "¿Aún no tienes una idea clara? Abre la Ayuda temática, escribe de 3 a 5 palabras clave y el Banco LIA te propone una que puedes editar y aprobar.",
   "E.g.: Current models lose accuracy outside their training domain. I propose …": "Ej.: Los modelos actuales pierden precisión fuera de su dominio de entrenamiento. Propongo …",
   "View the SOTA constellation": "Ver la constelación SOTA",
   "3D atlas of the candidate pool.": "Atlas 3D del pool de candidatos.",
@@ -480,7 +481,7 @@
   "CLI Integrity": "Integridad de CLI",
   "papersmith CLI verified": "CLI papersmith verificado",
   "Phase 2: Plausibility & 3D SOTA Atlas": "Fase 2: Plausibilidad & SOTA Atlas 3D",
-  "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation.": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual.",
+  "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional thematic help turns 3 to 5 keywords into a proposed idea from the Banco LIA, which the operator edits, approves and launches.": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la ayuda temática opcional convierte de 3 a 5 palabras clave en una idea propuesta a partir del Banco LIA, que el operador edita, aprueba y lanza.",
   "SOTA Article Discovery": "Discovery de Artículos SOTA",
   "Search and filtering of Q1/Q2 literature": "Búsqueda y filtrado de literatura Q1/Q2",
   "Metadata & Family Extraction": "Extracción de Metadatos & Familias",
@@ -754,5 +755,15 @@
   "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria; hypothesis verdicts backed by hypothesis tests, novelty justification, qualitative or interpretability analysis where it applies and a summarized discussion per stage.": "Validación empírica y diseño experimental: reproducibilidad de pruebas, especificación de baseline y criterios de éxito cuantitativos; veredictos de hipótesis respaldados por pruebas de hipótesis, justificación de la novedad, análisis cualitativo o de interpretabilidad cuando aplique y una discusión resumida por etapa.",
   "It is done when Results/discussion.json is complete: hypothesis verdicts backed by tests, novelty and qualitative analysis (python skills/_core/results/discussion_cli.py scaffold|check --product <path>).": "Está lista cuando Results/discussion.json está completo: veredictos de hipótesis respaldados por pruebas, novedad y análisis cualitativo (python skills/_core/results/discussion_cli.py scaffold|check --product <path>).",
   "It is done when Results/discussion.json is complete (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); the full run needs a hypothesis test behind every verdict.": "Está listo cuando Results/discussion.json está completo (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); la corrida completa exige una prueba de hipótesis detrás de cada veredicto.",
-  "Scientific novelty assessment and empirical evidence support: hypothesis contrast vs SOTA, reviewer defense audit, and explicit operator authorization before manuscript scaffolding and drafting.": "Evaluación de novedad científica y soporte de evidencia empírica: contraste de hipótesis vs SOTA, auditoría de defensa ante revisores y autorización explícita del operador antes del andamiaje y redacción del manuscrito."
+  "Scientific novelty assessment and empirical evidence support: hypothesis contrast vs SOTA, reviewer defense audit, and explicit operator authorization before manuscript scaffolding and drafting.": "Evaluación de novedad científica y soporte de evidencia empírica: contraste de hipótesis vs SOTA, auditoría de defensa ante revisores y autorización explícita del operador antes del andamiaje y redacción del manuscrito.",
+  "I propose to explore an idea that crosses {keywords}{where} and that has no clear framing yet.": "Propongo explorar una idea que cruza {keywords}{where} y que hoy no tiene un planteamiento claro.",
+  "As the lab's (LIA) background, not as state of the art, I start from {cited}.": "Como antecedentes del laboratorio (LIA) y no como estado del arte, parto de {cited}.",
+  "The idea would test whether {keywords} supports a new contribution beyond that prior experience and the current literature.": "La idea probaría si {keywords} permite una contribución nueva frente a esa experiencia previa y a la literatura actual.",
+  "I propose to explore the plausibility of an idea about {keywords}.": "Propongo explorar la plausibilidad de una idea sobre {keywords}.",
+  "The LIA bank holds no related work for these keywords, so there is no lab background to build on.": "El banco de proyectos del LIA no tiene trabajo relacionado con estas palabras clave, así que no hay antecedentes propios del laboratorio en los que apoyarse.",
+  "The idea would test whether {keywords} supports a new contribution beyond the current literature.": "La idea probaría si {keywords} permite una contribución nueva frente a la literatura actual.",
+  "and": "y",
+  "within the topic": "dentro del tema",
+  "within the topics": "dentro de los temas",
+  "the project": "el proyecto"
 }

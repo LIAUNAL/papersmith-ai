@@ -44,6 +44,9 @@ VALID_ACTIONS = {
 
 MAX_RATIONALE_LENGTH = 4000
 MAX_HISTORY_ENTRIES = 50
+MAX_LIMITATIONS = 50
+MAX_LIMITATION_LENGTH = 600
+MAX_HYPOTHESES_PER_PRODUCT = 100
 
 
 class NoveltyRefusal(Exception):
@@ -173,6 +176,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
     discussions: list[dict[str, Any]] = []
     hypotheses: list[dict[str, Any]] = []
     novelty_claims: list[dict[str, Any]] = []
+    limitations: list[dict[str, Any]] = []
 
     if products_dir.is_dir():
         for repo in sorted(products_dir.iterdir()):
@@ -198,8 +202,20 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
                             }
                             discussions.append(disc_summary)
 
+                            # Limitations the discussion records, bounded
+                            raw_limits = disc_data.get("limitations")
+                            for item in raw_limits if isinstance(raw_limits, list) else []:
+                                text = item.strip() if isinstance(item, str) else ""
+                                if text and len(limitations) < MAX_LIMITATIONS:
+                                    limitations.append({
+                                        "product": prod_name,
+                                        "stage": stage,
+                                        "text": text[:MAX_LIMITATION_LENGTH],
+                                    })
+
                             # Hypotheses
-                            for h in disc_data.get("hypotheses", []):
+                            raw_hyps = disc_data.get("hypotheses")
+                            for h in (raw_hyps if isinstance(raw_hyps, list) else [])[:MAX_HYPOTHESES_PER_PRODUCT]:
                                 if isinstance(h, dict) and h.get("id"):
                                     hypotheses.append({
                                         "id": h.get("id"),
@@ -250,7 +266,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
     # Derived from observed discussion hypotheses and empirical artifacts
     has_leakage_free_validation = any(
         any(k in " ".join([h.get("criterion", ""), h.get("rationale", ""), h.get("statement", ""), h.get("observed", "")]).lower()
-            for k in ("subject", "group", "leak", "cross-subject"))
+            for k in ("leak", "group", "subject", "held-out", "holdout", "disjoint"))
         for h in hypotheses
     )
     has_statistical_testing = any(bool(h.get("test")) for h in hypotheses)
@@ -260,15 +276,15 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
     rigor_audit = [
         {
             "id": "leakage_free",
-            "title": "Leakage-free evaluation (Subject-Level Partitioning)",
+            "title": "Leakage-free split at the unit of replication",
             "passed": has_leakage_free_validation,
-            "detail": "Subject-level or GroupKFold validation verified in discussion/hypotheses." if has_leakage_free_validation else "Recommend verifying that no segment leakage exists between folds.",
+            "detail": "The discussion hypotheses describe a group-wise or held-out evaluation." if has_leakage_free_validation else "Recommend verifying that no unit of replication is shared between training and evaluation splits.",
         },
         {
             "id": "statistical_rigor",
             "title": "Statistical significance testing (Significance Testing)",
             "passed": has_statistical_testing,
-            "detail": "Decided hypotheses cite paired/non-parametric tests or ANOVA." if has_statistical_testing else "Formal statistical significance tests should be cited for all hypotheses.",
+            "detail": "The hypotheses name the statistical test that decides them." if has_statistical_testing else "Formal statistical significance tests should be cited for all hypotheses.",
         },
         {
             "id": "hypothesis_backing",
@@ -289,6 +305,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
         "discussions": discussions,
         "hypotheses": hypotheses,
         "novelty_claims": novelty_claims,
+        "limitations": limitations,
         "sota": {
             "candidates_count": candidates_count,
             "families": sota_families,

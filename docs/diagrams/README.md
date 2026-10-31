@@ -3,21 +3,32 @@
 `papersmith-pi-flow.html` is this repository's flow of record: the twelve
 numbered tramos plus the transversal audit lane, drawn from the repository's own
 files. Two sub-lanes sit beside the numbered ones without being
-tramos of their own: `3b` (the concept map and the math tutor) and `4a`
+tramos of their own: `1a` (the optional thematic help before `/plausibility`:
+keywords typed in the phase-2 box, the `banco-lia` MCP's `search_bank`, and the
+operator's approval of the proposed prompt, which is then launched as
+`/plausibility <draft>`), `3b` (the concept map and the math tutor), `4a`
 (datasets: `dataset-scout`, `dataset-curator`, the operator's upload consent and
 `datasets/`, feeding the toy set to the proof of concept and the official
-preparation to the experiments). The implementation lane takes a second row for
-`paper-replicator` -- published code first, reimplementation otherwise -- since
-a sixth column would break the width cap below. The dashboard's *Pipeline* tab transcribes it — `PIPELINE_STAGES`,
+preparation to the experiments) and `8a` (the Novelty & Findings assessment
+between the measured results and the writing: the dashboard panel, the
+`G-NOVELTY` operator gate, `.papersmith/novelty_gate.json` and `smith novelty`).
+Two lanes take a second row, since a sixth column would break the width cap
+below: implementation, for `paper-replicator` -- published code first,
+reimplementation otherwise -- and for the proof of concept's
+`Results/discussion.json` (gates sub-phase 5.8); experimental implementation, for
+the full run's `Results/discussion.json` (5.11) and the
+`Results/reviewer_report.json` of `experiments-reviewer` (5.12). The dashboard's *Pipeline* tab transcribes it — `PIPELINE_STAGES`,
 `PIPELINE_CHAIN`, `GATE_SOURCES` and `AGENT_STAGES` in
 `skills/_core/command_center/state_extractor.py` — and
 `tests/test_command_center_state.py` holds the transcription, so the drawing and
 the board cannot drift apart without a failing test. One family is drawn and
 deliberately not on the board: the human stops, which the drawing shows inline
-(the plausibility report's acceptance, the two deliberation acceptances, the
-launch authorization). An acceptance leaves no artifact to read, so
-`GATE_SOURCES` carries the verdict gates that land in the audit lane and none of
-the stops.
+(the approval of the thematic-help draft, the plausibility report's acceptance,
+the two deliberation acceptances, the launch authorization, `G-NOVELTY`). An
+acceptance leaves no artifact to read -- `G-NOVELTY` does record its decision in
+`novelty_gate.json`, but it is the operator's decision, not a verdict computed
+from artifacts -- so `GATE_SOURCES` carries the verdict gates that land in the
+audit lane and none of the stops.
 
 | File | What it is |
 | --- | --- |

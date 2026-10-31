@@ -45,10 +45,11 @@ PHASE_LABELS: dict[str, str] = {
 
 
 def _prompt(slash: str, label: str, guide: list[str], placeholder: str, *,
-            min_sentences: int = 0, optional: bool = False, prefix: str = "") -> dict[str, Any]:
+            min_sentences: int = 0, optional: bool = False, prefix: str = "",
+            keyword_help: bool = False) -> dict[str, Any]:
     return {"kind": "prompt", "slash": slash, "label": label, "guide": guide,
             "placeholder": placeholder, "min_sentences": min_sentences,
-            "optional": optional, "prefix": prefix}
+            "optional": optional, "prefix": prefix, "keyword_help": keyword_help}
 
 
 def _command(command: str, label: str, desc: str) -> dict[str, Any]:
@@ -92,8 +93,9 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.",
                 "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.",
                 "You can adjust the idea and ask for a new screening; every pass is a new report.",
+                "No clear idea yet? Open Thematic help, give 3 to 5 keywords and the Banco LIA proposes one you can edit and approve.",
             ], "E.g.: Current models lose accuracy outside their training domain. I propose …",
-                min_sentences=2),
+                min_sentences=2, keyword_help=True),
             _redirect("View the SOTA constellation", "atlas", "3D atlas of the candidate pool."),
         ],
     },
