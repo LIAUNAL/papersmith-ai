@@ -1307,6 +1307,8 @@ window.PAPERSMITH_I18N.es = {
   "venue.pdf.canonical": "PDF canónico",
   "venue.pdf.venue": "PDF de la revista",
   "venue.audit.title": "Hallazgos de la auditoría",
+  "venue.audit.pending": "Aún no hay auditoría: el agente registra los requisitos de la revista y luego `venue diff` audita el manuscrito.",
+  "venue.plan.pending": "Aún no hay plan: llega después de la auditoría.",
   "venue.audit.clean": "Sin hallazgos: el manuscrito cumple los requisitos de la revista.",
   "venue.audit.severity": "Gravedad",
   "venue.audit.finding": "Hallazgo",

@@ -444,6 +444,8 @@
   }
 
   function auditHtml(audit) {
+    // No audit yet is not a clean audit: nothing has been measured.
+    if (!audit || !Array.isArray(obj(audit).findings)) return `<div class="agents-empty">${esc(t('venue.audit.pending'))}</div>`;
     const findings = list(obj(audit).findings);
     if (!findings.length) return `<div class="agents-empty">${esc(t('venue.audit.clean'))}</div>`;
     const body = findings.map((f) => {
@@ -483,6 +485,9 @@
     const status = obj(detail.status);
     if (detail.plan_error) {
       return `<div class="journals-msg journals-msg--bad">${esc(detail.plan_error.message)}</div>`;
+    }
+    if (!plan && (!detail.audit || !Array.isArray(obj(detail.audit).findings))) {
+      return `<div class="agents-empty">${esc(t('venue.plan.pending'))}</div>`;
     }
     if (!plan) {
       return `<div class="agents-empty">${esc(status.blockers ? t('venue.plan.none') : t('venue.plan.notRequired'))}</div>`;
@@ -697,6 +702,9 @@
       state.message = { kind: 'bad', text: t('venue.selectFailed', { error: failure(res) }) };
     }
     render();
+    // The chosen journal's card sits below the results table: bring it into view.
+    const card = res.ok && host() && host().querySelector ? host().querySelector('.journals-venue') : null;
+    if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function doApprove(sha) {

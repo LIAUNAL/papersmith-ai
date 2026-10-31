@@ -1045,6 +1045,22 @@ class PanelRenderTests(unittest.TestCase):
         self.assertNotIn("javascript:", html)
         self.assert_only_known_markup(html)
 
+    def test_a_venue_with_no_audit_claims_neither_a_clean_audit_nor_no_plan(self) -> None:
+        """Freshly chosen, nothing measured yet: the card must not say the
+        manuscript matches the venue or that no plan is needed."""
+        fresh, clean = self.node(self.VENUE_JS + """
+          const fresh = { ...detail, audit: null, plan: null,
+            status: { ...detail.status, state: 'selected', blockers: 0,
+              steps: detail.status.steps.map((st, i) => ({ ...st, done: i < 1 })) } };
+          const clean = { ...detail, audit: { findings: [] }, plan: null,
+            status: { ...detail.status, state: 'audited', blockers: 0 } };
+          out([P.venueHtml({ ...base, detail: fresh }), P.venueHtml({ ...base, detail: clean })]);""")
+        self.assertNotIn("Sin hallazgos", fresh)
+        self.assertNotIn("No hace falta plan", fresh)
+        self.assertIn("Aún no hay auditoría", fresh)
+        self.assertIn("Sin hallazgos", clean)
+        self.assertIn("No hace falta plan", clean)
+
     def test_apply_needs_an_approval_bound_to_the_current_plan(self) -> None:
         pending, approved, stale = self.node(self.VENUE_JS + """
           const apply = (d) => P.venueHtml({ ...base, detail: d });

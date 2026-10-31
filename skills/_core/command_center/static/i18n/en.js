@@ -1308,6 +1308,8 @@ window.PAPERSMITH_I18N.en = {
   "venue.pdf.canonical": "Canonical PDF",
   "venue.pdf.venue": "Venue PDF",
   "venue.audit.title": "Audit findings",
+  "venue.audit.pending": "No audit yet: the agent records the venue's requirements, then `venue diff` audits the manuscript.",
+  "venue.plan.pending": "No plan yet: it comes after the audit.",
   "venue.audit.clean": "No findings: the manuscript matches the venue's requirements.",
   "venue.audit.severity": "Severity",
   "venue.audit.finding": "Finding",

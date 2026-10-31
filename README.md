@@ -224,7 +224,7 @@ that already publish work like it. Nothing is ever submitted.
   IP). The CLI keeps successful answers in
   `~/.cache/papersmith/journal-finder/http/` (`PAPERSMITH_JOURNAL_CACHE_DIR`
   moves it): a search is reused for one day, any other lookup for seven, and an
-  error is never stored. *Forzar actualización* in the panel, or `--no-cache`,
+  error is never stored. the panel's forced-refresh option, or `--no-cache`,
   skips the cache for one search. The result's `api_calls` reports the calls
   made and served from the cache per service and the budget state, and the
   panel shows it. When OpenAlex answers `429` asking for a wait of more than a
