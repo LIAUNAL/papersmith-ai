@@ -1167,6 +1167,14 @@ class PanelRenderTests(unittest.TestCase):
         self.assertIn("OPENALEX_API_KEY", html)
         self.assertIn("10 veces", html)
 
+    def test_the_key_guidance_is_shown_once_when_a_fallback_also_spent_the_budget(self) -> None:
+        html = self.node(self.fallback_js() + """
+          doc.api_calls.budget = { state: 'exhausted', remaining_usd: 0, limit_usd: 0.1, retry_after_seconds: 3600 };
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertIn("Presupuesto de OpenAlex agotado", html)
+        panel = re.sub(r'<details class="journals-notes">.*?</details>', "", html, flags=re.S)
+        self.assertEqual(panel.count("openalex.org/settings/api"), 1)
+
     def test_the_unknown_quartile_exclusion_is_counted_with_a_hint(self) -> None:
         script = self.fallback_js() + """
           const view = (count) => P.resultsHtml({ journals: { candidates: { ...doc, excluded_count: count,

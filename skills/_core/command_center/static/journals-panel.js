@@ -442,7 +442,7 @@
 
   // api_calls: calls made and served from the cache (per service), whether the
   // cache was on, and the OpenAlex budget state; an exhausted budget is a warning.
-  function apiCallsHtml(calls) {
+  function apiCallsHtml(calls, keyShown) {
     const info = obj(calls);
     if (!isNum(info.made) && !isNum(info.cached)) return '';
     const services = Object.keys(obj(info.by_service)).map((name) => {
@@ -457,7 +457,7 @@
     if (budget.state === 'exhausted') {
       const retry = isNum(budget.retry_after_seconds) ? t('journals.api.retryIn', { seconds: budget.retry_after_seconds }) : '';
       budgetHtml = `<div class="journals-msg journals-msg--warn" role="status"><span class="badge badge--bad">429</span> `
-        + `${esc(t('journals.api.exhausted', { retry }))} ${esc(t('journals.key.guidance'))}</div>`;
+        + `${esc(t('journals.api.exhausted', { retry }))}${keyShown ? '' : ` ${esc(t('journals.key.guidance'))}`}</div>`;
     } else if (budget.state === 'ok' || budget.state === 'unknown') {
       const text = budget.state === 'unknown' || !isNum(budget.remaining_usd) ? t('journals.api.budget.unknown')
         : (isNum(budget.limit_usd)
@@ -487,7 +487,8 @@
     const fallback = fallbackHtml(doc.fallback);
     const unknownExcluded = unknownExcludedHtml(doc.excluded_reasons);
     const scoring = scoringHtml(obj(doc.query).scoring);
-    const api = apiCallsHtml(doc.api_calls);
+    // The fallback banner already carries the key guidance; say it once.
+    const api = apiCallsHtml(doc.api_calls, Boolean(obj(doc.fallback).used));
     const notes = list(doc.notes).map((n) => `<li>${esc(n)}</li>`).join('');
     const notesLink = data.notes_md
       ? ` · <a href="/api/artifact?path=paper/journal-candidates.md" target="_blank" rel="noopener noreferrer">${esc(t('journals.notesLink'))}</a>` : '';
