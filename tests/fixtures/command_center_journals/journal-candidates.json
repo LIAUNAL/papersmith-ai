@@ -1,58 +1,606 @@
 {
   "schema": 1,
   "generated_at": "2026-10-31T12:00:00+00:00",
-  "query": {"title": "Fixture paper <b>title</b>", "keywords": ["quantum", "eeg"], "terms": ["quantum", "eeg"]},
-  "quartiles": ["Q1", "Q2"],
-  "filters": {"oa_only": false, "max_apc": null, "max_review_days": null, "limit": 15},
-  "quartile_source_summary": {"sjr": 1, "openalex-proxy": 1},
-  "sjr": {"file": "scimagojr-2025.csv", "year": 2025},
-  "api_calls": {"made": 42, "cached": 7},
+  "query": {
+    "title": "Hybrid Quantum-Classical Networks with Data Re-Uploading for Interpretable EEG Biomarker Discovery in ADHD",
+    "keywords": [
+      "Quantum Machine Learning",
+      "Variational Quantum Circuits",
+      "Data Re-Uploading",
+      "Electroencephalography (EEG)",
+      "Attention Deficit Hyperactivity Disorder (ADHD)"
+    ],
+    "terms": [
+      "quantum",
+      "uploading",
+      "eeg",
+      "adhd",
+      "variational",
+      "circuits",
+      "electroencephalography",
+      "attention",
+      "deficit",
+      "hyperactivity"
+    ],
+    "phrases": [
+      "data re-uploading",
+      "quantum machine learning",
+      "variational quantum circuits",
+      "hybrid quantum-classical networks",
+      "attention deficit hyperactivity disorder",
+      "interpretable eeg biomarker discovery",
+      "electroencephalography",
+      "eeg",
+      "adhd"
+    ],
+    "search_mode": "phrases-or",
+    "facets": {
+      "tail": "Interpretable EEG Biomarker Discovery in ADHD",
+      "queries": [
+        {
+          "facet": "method",
+          "phrases": [
+            "data re-uploading",
+            "quantum machine learning",
+            "variational quantum circuits",
+            "hybrid quantum-classical networks"
+          ],
+          "matched": 120,
+          "works_read": 10
+        },
+        {
+          "facet": "application",
+          "phrases": [
+            "attention deficit hyperactivity disorder",
+            "interpretable eeg biomarker discovery",
+            "electroencephalography",
+            "eeg",
+            "adhd"
+          ],
+          "matched": 120,
+          "works_read": 6
+        }
+      ]
+    },
+    "topics": [
+      {
+        "id": "T3",
+        "name": "Topic T3",
+        "weight": 0.6143
+      },
+      {
+        "id": "T1",
+        "name": "Topic T1",
+        "weight": 0.3401
+      },
+      {
+        "id": "T2",
+        "name": "Topic T2",
+        "weight": 0.0456
+      }
+    ],
+    "cited": {
+      "references_file": "paper/refs.bib",
+      "entries": 7,
+      "resolved_by_doi": 4,
+      "resolved_by_journal_name": 1,
+      "unresolved": 2,
+      "journals": [
+        {
+          "openalex_id": "https://openalex.org/S1005",
+          "display_name": "Cited Only Journal",
+          "count": 2
+        },
+        {
+          "openalex_id": "https://openalex.org/S1001",
+          "display_name": "Neural Fixtures Letters",
+          "count": 1
+        },
+        {
+          "openalex_id": "https://openalex.org/S1004",
+          "display_name": "Obscure Quarterly",
+          "count": 1
+        },
+        {
+          "openalex_id": "https://openalex.org/S1002",
+          "display_name": "Open Signal Processing",
+          "count": 1
+        }
+      ]
+    },
+    "scoring": {
+      "formula": "fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 * topic_overlap",
+      "weights": {
+        "similar_works": 0.45,
+        "cited_in_paper": 0.3,
+        "topic_overlap": 0.25
+      },
+      "active": [
+        "similar_works",
+        "cited_in_paper",
+        "topic_overlap"
+      ],
+      "normalization": "each component is divided by its maximum over the evaluated journals; a component that is zero for every journal drops out and the remaining weights are rescaled to sum to 1",
+      "facet_gate": {
+        "applies": true,
+        "factor": 0.5,
+        "rule": "when the paper has a method and an application facet and both were searched, a journal none of whose similar works matched an application phrase, and whose topics overlap the application works' topics by less than 0.05, has fit_score multiplied by 0.5 and is flagged no-application-evidence"
+      }
+    }
+  },
+  "quartiles": [
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4"
+  ],
+  "filters": {
+    "oa_only": false,
+    "max_apc": null,
+    "max_review_days": null,
+    "limit": 15
+  },
+  "quartile_source_summary": {
+    "sjr": 2,
+    "openalex-proxy": 3
+  },
+  "sjr": {
+    "file": "scimagojr-2019.csv",
+    "year": 2019
+  },
   "candidates": [
     {
-      "rank": 1,
-      "openalex_id": "https://openalex.org/S1001",
-      "display_name": "Expert Systems with Applications",
-      "issn_l": "0957-4174",
-      "issn": ["0957-4174", "1873-6793"],
-      "publisher": "Elsevier BV",
-      "homepage_url": "https://www.journals.elsevier.com/expert-systems-with-applications",
-      "is_oa": false,
-      "is_in_doaj": false,
-      "apc_usd": 3450,
-      "h_index": 300,
-      "quartile": "Q1",
-      "quartile_source": "sjr",
-      "sjr": {"value": 1.8, "year": 2025, "best_quartile": "Q1", "categories": ["Artificial Intelligence (Q1)"]},
-      "proxy": null,
-      "similar_works_count": 9,
-      "similar_works": [
-        {"title": "Quantum kernels for EEG", "year": 2024, "doi": "10.1000/xyz123"},
-        {"title": "<img src=x onerror=alert(1)>", "year": 2023, "doi": "10.1000/\"><script>alert(2)</script>"}
-      ],
-      "fit_score": 0.82,
-      "fit": {"similar_works": 1.0, "cited_in_paper": 0.5, "topic_overlap": 0.75},
-      "facets": {"method": 0.8, "application": 0.2},
-      "flags": ["no-application-evidence"],
-      "review_time": {
-        "median_days": 120, "p25_days": 90, "p75_days": 160, "n": 31,
-        "accept_to_online_median_days": 14, "source": "pubmed",
-        "window": {"from": "2023-01-01", "to": "2026-10-01"}
-      }
-    },
-    {
-      "rank": 2,
       "openalex_id": "https://openalex.org/S1002",
-      "display_name": "Journal Without Optional Fields",
+      "display_name": "Open Signal Processing",
+      "issn_l": "3333-3333",
+      "issn": [
+        "3333-3333"
+      ],
+      "publisher": "Open Fixture Society",
       "is_oa": true,
       "is_in_doaj": true,
+      "apc_usd": 1500,
+      "homepage_url": "https://open-signal.example/",
+      "h_index": 60,
+      "mean_citedness_2yr": 6.0,
+      "field": "Computer Science",
+      "similar_works_count": 3,
+      "similar_works": [
+        {
+          "title": "Open EEG pipelines",
+          "year": 2024,
+          "doi": "10.3333/osp.1"
+        },
+        {
+          "title": "Spectral features for ADHD",
+          "year": 2023,
+          "doi": "10.3333/osp.2"
+        },
+        {
+          "title": "Channel selection under noise",
+          "year": 2021,
+          "doi": null
+        },
+        {
+          "title": "<img src=x onerror=alert(1)>",
+          "year": 2023,
+          "doi": "10.1000/\"><script>alert(2)</script>"
+        }
+      ],
+      "topics": [
+        {
+          "id": "T1",
+          "name": "Fixture topic",
+          "share": 0.9524
+        },
+        {
+          "id": "T2",
+          "name": "Other topic",
+          "share": 0.0476
+        }
+      ],
+      "fit": {
+        "similar_works": 0.6,
+        "cited_in_paper": 0.5,
+        "topic_overlap": 0.5845
+      },
+      "fit_score": 0.5661,
+      "cited_in_paper_count": 1,
+      "facets": {
+        "method": 3,
+        "application": 3,
+        "application_topic_overlap": 0,
+        "gate": 1.0
+      },
+      "sjr": null,
       "quartile": "Q2",
       "quartile_source": "openalex-proxy",
-      "proxy": {"field": "Computer Science", "percentile": 62.5, "quartile": "Q2"},
+      "proxy": {
+        "field": "Computer Science",
+        "field_id": "17",
+        "journals_in_field": 100,
+        "share_of_field_above": 0.4,
+        "percentile": 60.0,
+        "quartile": "Q2",
+        "basis": "2yr_mean_citedness against OpenAlex core journals of the same field"
+      },
+      "flags": [],
+      "review_time": {
+        "median_days": 105.0,
+        "p25_days": 67.5,
+        "p75_days": 142.5,
+        "n": 6,
+        "accept_to_online_median_days": 4.0,
+        "accept_to_online_n": 3,
+        "source": "pubmed",
+        "kind": "submission-to-acceptance-estimate",
+        "window": {
+          "from": "2023-11-01",
+          "to": "2026-10-31"
+        }
+      },
+      "rank": 1
+    },
+    {
+      "openalex_id": "https://openalex.org/S1005",
+      "display_name": "Cited Only Journal",
+      "issn_l": "6666-666X",
+      "issn": [
+        "6666-666X"
+      ],
+      "publisher": "Cited Press",
+      "is_oa": true,
+      "is_in_doaj": true,
+      "apc_usd": 900,
+      "homepage_url": "https://cited-only.example/",
+      "h_index": 44,
+      "mean_citedness_2yr": 4.5,
+      "field": "Computer Science",
+      "similar_works_count": 0,
       "similar_works": [],
-      "fit_score": 0.4,
-      "review_time": {"median_days": null, "n": 2, "source": "none"}
+      "topics": [
+        {
+          "id": "T3",
+          "name": "Clinical neurophysiology",
+          "share": 1.0
+        }
+      ],
+      "fit": {
+        "similar_works": 0.0,
+        "cited_in_paper": 1.0,
+        "topic_overlap": 0.931
+      },
+      "fit_score": 0.5328,
+      "cited_in_paper_count": 2,
+      "facets": {
+        "method": 0,
+        "application": 0,
+        "application_topic_overlap": 1.0,
+        "gate": 1.0
+      },
+      "sjr": null,
+      "quartile": "Q3",
+      "quartile_source": "openalex-proxy",
+      "proxy": {
+        "field": "Computer Science",
+        "field_id": "17",
+        "journals_in_field": 100,
+        "share_of_field_above": 0.55,
+        "percentile": 45.0,
+        "quartile": "Q3",
+        "basis": "2yr_mean_citedness against OpenAlex core journals of the same field"
+      },
+      "flags": [],
+      "review_time": {
+        "median_days": null,
+        "p25_days": null,
+        "p75_days": null,
+        "n": 0,
+        "accept_to_online_median_days": null,
+        "accept_to_online_n": 0,
+        "source": "none",
+        "kind": "submission-to-acceptance-estimate",
+        "window": {
+          "from": "2023-11-01",
+          "to": "2026-10-31"
+        }
+      },
+      "rank": 2
+    },
+    {
+      "openalex_id": "https://openalex.org/S1004",
+      "display_name": "Obscure Quarterly",
+      "issn_l": "5555-5555",
+      "issn": [
+        "5555-5555"
+      ],
+      "publisher": "Quarterly House",
+      "is_oa": false,
+      "is_in_doaj": false,
+      "apc_usd": null,
+      "homepage_url": "https://obscure.example/",
+      "h_index": 12,
+      "mean_citedness_2yr": 1.0,
+      "field": "Computer Science",
+      "similar_works_count": 1,
+      "similar_works": [
+        {
+          "title": "Once-off in an obscure venue",
+          "year": 2019,
+          "doi": "10.5555/oq.1"
+        }
+      ],
+      "topics": [
+        {
+          "id": "T3",
+          "name": "Clinical neurophysiology",
+          "share": 0.9524
+        },
+        {
+          "id": "T2",
+          "name": "Other topic",
+          "share": 0.0476
+        }
+      ],
+      "fit": {
+        "similar_works": 0.2,
+        "cited_in_paper": 0.5,
+        "topic_overlap": 1.0
+      },
+      "fit_score": 0.49,
+      "cited_in_paper_count": 1,
+      "facets": {
+        "method": 0,
+        "application": 1,
+        "application_topic_overlap": 0.9524,
+        "gate": 1.0
+      },
+      "quartile": "Q2",
+      "quartile_source": "sjr",
+      "proxy": null,
+      "sjr": {
+        "value": 0.812,
+        "year": 2019,
+        "best_quartile": "Q2",
+        "categories": [
+          {
+            "name": "Neuroscience (miscellaneous)",
+            "quartile": "Q2"
+          },
+          {
+            "name": "General Medicine",
+            "quartile": "Q3"
+          }
+        ]
+      },
+      "flags": [],
+      "review_time": {
+        "median_days": null,
+        "p25_days": null,
+        "p75_days": null,
+        "n": 0,
+        "accept_to_online_median_days": null,
+        "accept_to_online_n": 0,
+        "source": "none",
+        "kind": "submission-to-acceptance-estimate",
+        "window": {
+          "from": "2023-11-01",
+          "to": "2026-10-31"
+        }
+      },
+      "rank": 3
+    },
+    {
+      "openalex_id": "https://openalex.org/S1001",
+      "display_name": "Neural Fixtures Letters",
+      "issn_l": "1111-111X",
+      "issn": [
+        "1111-111X",
+        "2222-2222"
+      ],
+      "publisher": "Fixture Press",
+      "is_oa": false,
+      "is_in_doaj": false,
+      "apc_usd": null,
+      "homepage_url": "https://neural-fixtures.example/",
+      "h_index": 180,
+      "mean_citedness_2yr": 9.0,
+      "field": "Computer Science",
+      "similar_works_count": 5,
+      "similar_works": [
+        {
+          "title": "Quantum circuits for EEG decoding",
+          "year": 2024,
+          "doi": "10.1111/nfl.1"
+        },
+        {
+          "title": "Variational classifiers on brain signals",
+          "year": 2023,
+          "doi": "10.1111/nfl.2"
+        },
+        {
+          "title": "Data re-uploading for biosignals",
+          "year": 2022,
+          "doi": "10.1111/nfl.3"
+        }
+      ],
+      "topics": [
+        {
+          "id": "T1",
+          "name": "Fixture topic",
+          "share": 0.9524
+        },
+        {
+          "id": "T2",
+          "name": "Other topic",
+          "share": 0.0476
+        }
+      ],
+      "fit": {
+        "similar_works": 1.0,
+        "cited_in_paper": 0.5,
+        "topic_overlap": 0.5845
+      },
+      "fit_score": 0.373,
+      "cited_in_paper_count": 1,
+      "facets": {
+        "method": 5,
+        "application": 0,
+        "application_topic_overlap": 0,
+        "gate": 0.5
+      },
+      "quartile": "Q1",
+      "quartile_source": "sjr",
+      "proxy": null,
+      "sjr": {
+        "value": 2.345,
+        "year": 2019,
+        "best_quartile": "Q1",
+        "categories": [
+          {
+            "name": "Artificial Intelligence",
+            "quartile": "Q1"
+          },
+          {
+            "name": "Software",
+            "quartile": "Q2"
+          }
+        ]
+      },
+      "flags": [
+        "no-application-evidence"
+      ],
+      "review_time": {
+        "median_days": 35.0,
+        "p25_days": 22.5,
+        "p75_days": 47.5,
+        "n": 6,
+        "accept_to_online_median_days": 7.0,
+        "accept_to_online_n": 6,
+        "source": "crossref",
+        "kind": "submission-to-acceptance-estimate",
+        "window": {
+          "from": "2023-11-01",
+          "to": "2026-10-31"
+        }
+      },
+      "rank": 4
+    },
+    {
+      "openalex_id": "https://openalex.org/S1003",
+      "display_name": "Biomedical Fixture Reports",
+      "issn_l": "4444-444X",
+      "issn": [
+        "4444-444X"
+      ],
+      "publisher": "Biomed Fixtures Ltd",
+      "is_oa": true,
+      "is_in_doaj": false,
+      "apc_usd": 3200,
+      "homepage_url": "https://biomed-fixtures.example/",
+      "h_index": 35,
+      "mean_citedness_2yr": 3.0,
+      "field": "Computer Science",
+      "similar_works_count": 2,
+      "similar_works": [
+        {
+          "title": "Clinical EEG biomarkers",
+          "year": 2024,
+          "doi": "10.4444/bfr.1"
+        },
+        {
+          "title": "Neurodevelopmental screening",
+          "year": 2020,
+          "doi": "10.4444/bfr.2"
+        }
+      ],
+      "topics": [
+        {
+          "id": "T1",
+          "name": "Fixture topic",
+          "share": 0.9524
+        },
+        {
+          "id": "T2",
+          "name": "Other topic",
+          "share": 0.0476
+        }
+      ],
+      "fit": {
+        "similar_works": 0.4,
+        "cited_in_paper": 0.0,
+        "topic_overlap": 0.5845
+      },
+      "fit_score": 0.3261,
+      "cited_in_paper_count": 0,
+      "facets": {
+        "method": 0,
+        "application": 2,
+        "application_topic_overlap": 0,
+        "gate": 1.0
+      },
+      "sjr": null,
+      "quartile": "Q3",
+      "quartile_source": "openalex-proxy",
+      "proxy": {
+        "field": "Computer Science",
+        "field_id": "17",
+        "journals_in_field": 100,
+        "share_of_field_above": 0.7,
+        "percentile": 30.0,
+        "quartile": "Q3",
+        "basis": "2yr_mean_citedness against OpenAlex core journals of the same field"
+      },
+      "flags": [],
+      "review_time": {
+        "median_days": null,
+        "p25_days": null,
+        "p75_days": null,
+        "n": 3,
+        "accept_to_online_median_days": null,
+        "accept_to_online_n": 0,
+        "source": "none",
+        "kind": "submission-to-acceptance-estimate",
+        "window": {
+          "from": "2023-11-01",
+          "to": "2026-10-31"
+        }
+      },
+      "rank": 5
     }
   ],
-  "excluded_count": 3,
-  "notes": ["Candidates labelled openalex-proxy carry an approximate quartile."]
+  "excluded_count": 0,
+  "notes": [
+    "Candidates labelled openalex-proxy carry an approximate quartile from OpenAlex citedness percentiles within the field; it is not an SJR quartile.",
+    "The SJR file in use is from 2019, older than two years; import a fresher download from https://www.scimagojr.com/journalrank.php.",
+    "review_time estimates submission-to-acceptance from public article histories, including revision rounds; it is not the time to first decision."
+  ],
+  "api_calls": {
+    "made": 26,
+    "cached": 0,
+    "by_service": {
+      "openalex": {
+        "made": 15,
+        "cached": 0
+      },
+      "crossref": {
+        "made": 5,
+        "cached": 0
+      },
+      "pubmed": {
+        "made": 6,
+        "cached": 0
+      }
+    },
+    "cache": {
+      "enabled": true,
+      "dir": "~/.cache/papersmith/journal-finder/http"
+    },
+    "budget": {
+      "state": "ok",
+      "remaining_usd": 0.05,
+      "limit_usd": 0.1,
+      "retry_after_seconds": null
+    }
+  }
 }

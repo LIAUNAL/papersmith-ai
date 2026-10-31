@@ -766,7 +766,7 @@ def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | 
         return None, _journal_error(code, message)[0]
 
     if not isinstance(payload, dict):
-        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit}")
+        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit, no_cache}")
     raw = payload.get("quartiles")
     match = _QUARTILE_RE.match(raw) if isinstance(raw, str) else None
     low = int(match.group(1)) if match else 0
@@ -806,6 +806,11 @@ def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | 
         return refuse("FILTER_INVALID", f"limit must be a whole number from 1 to {JOURNAL_MAX_LIMIT}")
     if limit is not None:
         argv += ["--limit", str(limit)]
+    no_cache = payload.get("no_cache")
+    if no_cache is not None and not isinstance(no_cache, bool):
+        return refuse("FILTER_INVALID", "no_cache must be true or false")
+    if no_cache:
+        argv.append("--no-cache")
     return argv, None
 
 

@@ -95,11 +95,15 @@ class JournalsStateTests(JournalCase):
         self.candidates()
         body = self.client.get("/api/journals").json()
         names = [c["display_name"] for c in body["candidates"]["candidates"]]
-        self.assertEqual(names, ["Expert Systems with Applications", "Journal Without Optional Fields"])
-        first = body["candidates"]["candidates"][0]
-        self.assertEqual(first["fit"]["cited_in_paper"], 0.5)
-        self.assertEqual(first["flags"], ["no-application-evidence"])
-        self.assertEqual(body["candidates"]["api_calls"], {"made": 42, "cached": 7})
+        self.assertEqual(names, ["Open Signal Processing", "Cited Only Journal", "Obscure Quarterly",
+                                 "Neural Fixtures Letters", "Biomedical Fixture Reports"])
+        flagged = body["candidates"]["candidates"][3]
+        self.assertEqual(flagged["fit"]["cited_in_paper"], 0.5)
+        self.assertEqual(flagged["flags"], ["no-application-evidence"])
+        self.assertEqual(flagged["facets"]["gate"], 0.5)
+        calls = body["candidates"]["api_calls"]
+        self.assertEqual((calls["made"], calls["cached"]), (26, 0))
+        self.assertEqual(calls["budget"]["state"], "ok")
 
     def test_the_sjr_state_comes_from_the_imported_file(self) -> None:
         code = subprocess.run([sys.executable, str(server.JOURNAL_CLI), "sjr-import", "--file",
@@ -165,7 +169,7 @@ class JournalSearchTests(JournalCase):
     def test_invalid_filters_are_422(self) -> None:
         self.stub(SEARCH_OK)
         for patch in ({"limit": 0}, {"limit": 51}, {"limit": "x"}, {"max_apc": -1}, {"max_apc": "lots"},
-                      {"max_review_days": 0}, {"max_review_days": 1.5}, {"oa_only": "yes"}):
+                      {"max_review_days": 0}, {"max_review_days": 1.5}, {"oa_only": "yes"}, {"no_cache": "yes"}, {"no_cache": 1}):
             with self.subTest(patch=patch):
                 response = self.post({"quartiles": "Q1", **patch})
                 self.assertEqual(response.status_code, 422)
@@ -189,6 +193,15 @@ class JournalSearchTests(JournalCase):
         self.assertEqual(argv, ["search", "--workspace", str(self.root), "--quartiles", "Q1-Q2",
                                 "--oa-only", "--max-apc", "2000", "--max-review-days", "180",
                                 "--limit", "10"])
+
+    def test_force_refresh_passes_no_cache_through(self) -> None:
+        self.stub(SEARCH_OK)
+        self.assertEqual(self.post({"quartiles": "Q1", "no_cache": True, "limit": 5}).status_code, 200)
+        self.assertEqual(self.post({"quartiles": "Q1", "no_cache": False}).status_code, 200)
+        forced, plain = self.calls()
+        self.assertEqual(forced, ["search", "--workspace", str(self.root), "--quartiles", "Q1",
+                                  "--limit", "5", "--no-cache"])
+        self.assertNotIn("--no-cache", plain)
 
     def test_optional_filters_are_left_out_when_absent(self) -> None:
         self.stub(SEARCH_OK)
@@ -803,27 +816,58 @@ class PanelRenderTests(unittest.TestCase):
     # -- results --------------------------------------------------------------
     def test_the_results_render_in_spanish_with_every_column(self) -> None:
         html = self.node(self.candidates_js() + """
-          out(P.resultsHtml({ journals: { candidates: doc, notes_md: true, sjr: { file: '/x/scimagojr-2025.csv', year: 2025 } },
+          out(P.resultsHtml({ journals: { candidates: doc, notes_md: true, sjr: { file: '/x/scimagojr-2019.csv', year: 2019 } },
                               sort: 'fit', busy: {} }));""")
         for expected in (
-            "Expert Systems with Applications", "Elegir esta revista", "Aproximado con OpenAlex",
-            "sin datos públicos", "17.1 sem (RIC 12.9–22.9) · n=31", "<strong>0.82</strong>",
-            "trabajos similares 1.00", "citadas en el artículo 0.50", "afinidad temática 0.75",
-            "método 0.80", "aplicación 0.20", "Sin evidencia de aplicación", "Sin trabajos similares registrados",
-            "Llamadas a OpenAlex: 42 hechas, 7 en caché", "ISSN 0957-4174", "SJR 1.800 · 2025", "percentil 62.5",
-            "Acceso abierto", "DOAJ", "APC 3450 USD", "APC desconocido", ">pubmed<", "Revista", "Cuartil",
-            "https://doi.org/10.1000/xyz123", "https://www.journals.elsevier.com/expert-systems-with-applications",
-            "Abrir paper/journal-candidates.md", "excluidas",
+            "Open Signal Processing", "Neural Fixtures Letters", "Elegir esta revista", "Aproximado con OpenAlex",
+            "sin datos públicos", "15 sem (RIC 9.6–20.4) · n=6", "5 sem (RIC 3.2–6.8) · n=6", "<strong>0.57</strong>",
+            "trabajos similares 0.60", "citadas en el artículo 0.50", "afinidad temática 0.58",
+            "ISSN 3333-3333", "SJR 2.345 · 2019", "percentil 60.0", "Acceso abierto", "DOAJ", "APC 1500 USD",
+            "APC desconocido", ">pubmed<", ">crossref<", "Revista", "Cuartil",
+            "https://doi.org/10.3333/osp.1", "https://neural-fixtures.example/",
+            "Abrir paper/journal-candidates.md", "excluidas", "Artificial Intelligence (Q1), Software (Q2)",
         ):
             self.assertIn(expected, html)
         self.assertIn('rel="noopener noreferrer"', html)
         self.assert_only_known_markup(html)
 
+    def test_facet_hits_the_gate_and_the_flag_badge_use_the_cli_names(self) -> None:
+        html = self.node(self.candidates_js() + """
+          const row = (name) => {
+            const one = { ...doc, candidates: doc.candidates.filter((c) => c.display_name === name) };
+            return P.resultsHtml({ journals: { candidates: one }, sort: 'fit', busy: {} });
+          };
+          out({ gated: row('Neural Fixtures Letters'), plain: row('Open Signal Processing') });""")
+        gated, plain = html["gated"], html["plain"]
+        self.assertIn("método 5 · aplicación 0", gated)
+        self.assertIn("afinidad temática de la aplicación 0", gated)
+        self.assertIn("compuerta ×0.5", gated)
+        self.assertIn('<span class="badge badge--warn">Sin evidencia de aplicación</span>', gated)
+        self.assertIn("método 3 · aplicación 3", plain)
+        self.assertNotIn("compuerta", plain)
+        self.assertNotIn("Sin evidencia de aplicación", plain)
+
+    def test_the_scoring_formula_line_comes_from_query_scoring(self) -> None:
+        es, off, dropped = self.node(self.candidates_js() + """
+          const view = (patch) => P.resultsHtml({ journals: { candidates: { ...doc, query: { ...doc.query, scoring: { ...doc.query.scoring, ...patch } } } },
+                                                 sort: 'fit', busy: {} });
+          out([view({}),
+               view({ facet_gate: { applies: false, factor: 0.5, rule: 'x' } }),
+               view({ active: ['similar_works', 'cited_in_paper'] })]);""")
+        self.assertIn("Fórmula de ajuste: fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 * topic_overlap", es)
+        self.assertIn("Compuerta de aplicación: ×0.5 sin evidencia de aplicación", es)
+        self.assertNotIn("Componentes sin señal", es)
+        self.assertIn("Compuerta de aplicación inactiva", off)
+        self.assertIn("Componentes sin señal, fuera de la fórmula: topic_overlap", dropped)
+
     def test_the_same_results_render_in_english(self) -> None:
         html = self.node(self.candidates_js() + """
           out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""", lang="en")
         for expected in ("Choose this journal", "OpenAlex proxy (approximate)", "no public data",
-                         "17.1 wk (IQR 12.9–22.9) · n=31", "OpenAlex calls: 42 made, 7 cached"):
+                         "15 wk (IQR 9.6–20.4) · n=6", "API calls: 26 made, 0 cached",
+                         "Fit formula: fit_score = 0.45 * similar_works", "method 5 · application 0",
+                         "application gate ×0.5", "OpenAlex 15/0 · Crossref 5/0 · PubMed 6/0",
+                         "OpenAlex budget: USD 0.05 left of 0.1"):
             self.assertIn(expected, html)
         self.assertNotIn("Elegir", html)
 
@@ -846,18 +890,37 @@ class PanelRenderTests(unittest.TestCase):
         order = self.node(self.candidates_js() + """
           doc.candidates.reverse();
           const names = (sort) => { const html = P.resultsHtml({ journals: { candidates: doc }, sort, busy: {} });
-            return [...html.matchAll(/<strong>([^<]*)<\\/strong>/g)].map((m) => m[1]).filter((n) => n.includes('Journal') || n.includes('Systems')); };
+            return [...html.matchAll(/<strong>([^<]*)<\\/strong>/g)].map((m) => m[1]).filter((n) => /[a-z]/.test(n)); };
           out([names('fit'), names('review'), names('hindex')]);""")
-        self.assertEqual(order[0][0], "Expert Systems with Applications")
-        self.assertEqual(order[1], ["Expert Systems with Applications", "Journal Without Optional Fields"])
-        self.assertEqual(order[2][0], "Expert Systems with Applications")
+        self.assertEqual(order[0], ["Open Signal Processing", "Cited Only Journal", "Obscure Quarterly",
+                                    "Neural Fixtures Letters", "Biomedical Fixture Reports"])
+        self.assertEqual(order[1], ["Neural Fixtures Letters", "Open Signal Processing", "Cited Only Journal",
+                                    "Obscure Quarterly", "Biomedical Fixture Reports"])
+        self.assertEqual(order[2], ["Neural Fixtures Letters", "Open Signal Processing", "Cited Only Journal",
+                                    "Biomedical Fixture Reports", "Obscure Quarterly"])
 
-    def test_a_budget_or_rate_limit_state_is_shown_when_present(self) -> None:
-        html = self.node("""
-          const doc = { candidates: [], api_calls: { made: 3, cached: 1 }, rate_limited: true, budget: { remaining: 12 } };
-          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
-        self.assertIn("remaining: 12", html)
-        self.assertIn("límite de la API", html)
+    def test_the_api_calls_line_shows_made_cached_per_service_and_the_budget(self) -> None:
+        ok, exhausted, unknown, cache_off, absent = self.node(self.candidates_js() + """
+          const view = (calls) => P.resultsHtml({ journals: { candidates: { ...doc, api_calls: calls } }, sort: 'fit', busy: {} });
+          const base = doc.api_calls;
+          out([view(base),
+               view({ ...base, budget: { state: 'exhausted', remaining_usd: 0, limit_usd: 0.1, retry_after_seconds: 3600 } }),
+               view({ ...base, budget: { state: 'unknown', remaining_usd: null, limit_usd: null, retry_after_seconds: null } }),
+               view({ ...base, cache: { enabled: false, dir: '/x' } }),
+               view(undefined)]);""")
+        self.assertIn("Llamadas a las APIs: 26 hechas, 0 en caché", ok)
+        self.assertIn("OpenAlex 15/0 · Crossref 5/0 · PubMed 6/0", ok)
+        self.assertIn("Presupuesto de OpenAlex: quedan USD 0.05 de 0.1", ok)
+        self.assertIn("badge--ok", ok)
+        self.assertNotIn("agotado", ok)
+        self.assertIn("Presupuesto de OpenAlex agotado (reintentar en 3600 s)", exhausted)
+        self.assertIn("OPENALEX_API_KEY", exhausted)
+        self.assertIn("badge--bad", exhausted)
+        self.assertIn("Presupuesto de OpenAlex: sin datos", unknown)
+        self.assertNotIn("agotado", unknown)
+        self.assertIn("Caché desactivada", cache_off)
+        self.assertNotIn("Llamadas a las APIs", absent)
+        self.assertNotIn("Presupuesto", absent)
 
     # -- escaping -------------------------------------------------------------
     def test_hostile_values_never_become_markup(self) -> None:
@@ -866,10 +929,13 @@ class PanelRenderTests(unittest.TestCase):
           const doc = { candidates: [{
             display_name: evil, openalex_id: evil, publisher: evil, issn_l: evil, homepage_url: 'javascript:alert(3)',
             quartile: evil, quartile_source: 'sjr', sjr: { value: evil, year: evil }, review_time: { source: evil, median_days: 70, n: evil },
-            fit_score: 0.5, fit: { similar_works: evil }, facets: { method: evil, application: { score: evil } },
+            fit_score: 0.5, fit: { similar_works: evil }, facets: { method: evil, application: evil, application_topic_overlap: evil, gate: evil },
             flags: [evil], similar_works: [{ title: evil, year: evil, doi: evil }, { title: 'ok', doi: 'https://doi.org/10.1/a"b' }],
             h_index: evil, is_oa: true, apc_usd: evil }],
-            query: { title: evil }, notes: [evil], quartiles: [evil], generated_at: evil, excluded_count: evil };
+            api_calls: { made: evil, cached: evil, by_service: { [evil]: { made: evil, cached: evil } },
+                         cache: { enabled: evil }, budget: { state: evil, remaining_usd: evil, limit_usd: evil, retry_after_seconds: evil } },
+            query: { title: evil, scoring: { formula: evil, active: [evil], facet_gate: { applies: true, factor: evil } } },
+            notes: [evil], quartiles: [evil], generated_at: evil, excluded_count: evil };
           out(P.resultsHtml({ journals: { candidates: doc, candidates_error: { message: evil } }, sort: 'fit', busy: {} }));""")
         self.assertNotIn("<script", html)
         self.assertNotIn("<img", html)
@@ -893,10 +959,13 @@ class PanelRenderTests(unittest.TestCase):
                P.sjrHtml({ ...base, journals: { sjr: null, sjr_download_url: 'https://www.scimagojr.com/journalrank.php' } }),
                P.sjrHtml({ ...base, journals: { sjr: { file: '/home/u/.cache/scimagojr-2025.csv', year: 2025 } } })]);""")
         for expected in ("Desde el cuartil", "Hasta el cuartil", "Solo acceso abierto", "APC máximo (USD)",
-                         "Revisión máxima (días)", "Buscar revistas", "Analizar con agente", "Ordenar por"):
+                         "Revisión máxima (días)", "Buscar revistas", "Analizar con agente", "Ordenar por",
+                         "Forzar actualización"):
             self.assertIn(expected, form)
         self.assertIn('<option value="Q2" selected>', form)
         self.assertIn('data-jp-field="oaOnly" checked', form)
+        self.assertIn('data-jp-field="noCache">', form)
+        self.assertNotIn('data-jp-field="noCache" checked', form)
         self.assertIn('value="1500"', form)
         self.assertIn("Sin archivo SJR", sjr_none)
         self.assertIn('href="https://www.scimagojr.com/journalrank.php"', sjr_none)
@@ -920,7 +989,8 @@ class PanelRenderTests(unittest.TestCase):
                 full: P.agentCommand(f({ oaOnly: true, maxApc: '2000', maxReview: '180', limit: '10' })),
                 junk: P.agentCommand(f({ maxApc: '-5', maxReview: 'x', limit: '99' })),
                 body: P.searchBody(f({ oaOnly: true, maxApc: '2000', maxReview: '180', limit: '10' })),
-                bare: P.searchBody(f({ from: 'Q3', to: 'Q4' })) });""")
+                bare: P.searchBody(f({ from: 'Q3', to: 'Q4' })),
+                forced: P.searchBody(f({ noCache: true })), forcedCommand: P.agentCommand(f({ noCache: true })) });""")
         self.assertEqual(result["plain"], "/journal-finder Q1-Q2")
         self.assertEqual(result["single"], "/journal-finder Q1")
         self.assertEqual(result["full"], "/journal-finder Q1-Q2 --oa-only --max-apc 2000 --max-review-days 180 --limit 10")
@@ -928,6 +998,9 @@ class PanelRenderTests(unittest.TestCase):
         self.assertEqual(result["body"], {"quartiles": "Q1-Q2", "oa_only": True, "max_apc": 2000,
                                           "max_review_days": 180, "limit": 10})
         self.assertEqual(result["bare"], {"quartiles": "Q3-Q4", "oa_only": False})
+        self.assertEqual(result["forced"], {"quartiles": "Q1-Q2", "oa_only": False, "no_cache": True})
+        # The skill's usage has no --no-cache flag, so the agent command never carries it.
+        self.assertEqual(result["forcedCommand"], "/journal-finder Q1-Q2")
 
     # -- the venue card -------------------------------------------------------
     VENUE_JS = """
@@ -1023,7 +1096,7 @@ class PanelRenderTests(unittest.TestCase):
                                               json.dumps({"quartiles": "Q1-Q2", "oa_only": True, "limit": 5}, separators=(",", ":"))])
         self.assertEqual(result["calls"][1][:2], ["GET", "/api/journals"])
         self.assertEqual(result["message"], {"kind": "ok", "text": "Búsqueda terminada: 3 revistas."})
-        self.assertEqual(result["names"], 2)
+        self.assertEqual(result["names"], 5)
 
     def test_a_failed_search_shows_the_code_and_message_escaped(self) -> None:
         result = self.node("""
@@ -1032,6 +1105,26 @@ class PanelRenderTests(unittest.TestCase):
           out({ html: host.innerHTML, busy: P.state.busy.search });""")
         self.assertIn("La búsqueda falló: NETWORK_UNAVAILABLE: &lt;b&gt;down&lt;/b&gt;", result["html"])
         self.assertFalse(result["busy"])
+
+    def test_force_refresh_sends_no_cache_and_the_checkbox_is_remembered(self) -> None:
+        result = self.node("""
+          __routes.push(['POST', '/api/journals/search', { status: 200, body: { ok: true, candidates: [] } }]);
+          __routes.push(['GET', '/api/journals', { status: 200, body: { ok: true, candidates: null, sjr: null } }]);
+          await field({ 'data-jp-field': 'noCache' }, { checked: true }, 'change');
+          const formHtml = P.formHtml(P.state);
+          await click({ 'data-jp-action': 'search' });
+          out({ body: JSON.parse(calls.find((c) => c.method === 'POST').body), formHtml });""")
+        self.assertEqual(result["body"], {"quartiles": "Q1-Q2", "oa_only": False, "limit": 15, "no_cache": True})
+        self.assertIn('data-jp-field="noCache" checked', result["formHtml"])
+
+    def test_a_spent_openalex_quota_reaches_the_operator_with_the_key_name(self) -> None:
+        html = self.node("""
+          const message = 'OpenAlex could not be reached: HTTP 429; set OPENALEX_API_KEY (a free key has its own daily budget) or wait for the reset';
+          __routes.push(['POST', '/api/journals/search', { status: 502, body: { ok: false, error: 'NETWORK_UNAVAILABLE', message } }]);
+          await click({ 'data-jp-action': 'search' });
+          out(host.innerHTML);""")
+        self.assertIn("La búsqueda falló: NETWORK_UNAVAILABLE: OpenAlex could not be reached", html)
+        self.assertIn("OPENALEX_API_KEY", html)
 
     def test_analyze_with_agent_sends_the_slash_command_to_the_console(self) -> None:
         sent = self.node("""

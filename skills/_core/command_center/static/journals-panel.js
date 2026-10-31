@@ -6,8 +6,12 @@
  * `/journal-finder <range> [flags]` to the CLI console. The results table comes
  * from paper/journal-candidates.json (GET /api/journals): quartile with its
  * source (SJR or the labelled OpenAlex proxy), access, APC, h-index, review-time
- * estimate, fit score and its components, facets, flags and the similar works
- * that justify the fit. The SJR line links to scimagojr.com and uploads the CSV.
+ * estimate, fit score and its components (`fit`), facet hits and gate (`facets`),
+ * flags and the similar works that justify the fit. Above the table: the scoring
+ * formula (`query.scoring`) and the calls made / served from the cache per service
+ * with the OpenAlex budget state (`api_calls`). "Force refresh" sends `no_cache`.
+ * The field names are the journal-finder CLI's own. The SJR line links to
+ * scimagojr.com and uploads the CSV.
  *
  * Venue adaptation: "Choose this journal" runs `venue select`; the "Chosen
  * journal" card shows the venue state machine and its next action, the audit
@@ -100,7 +104,7 @@
     statement: '',
     note: '',
     sjrYear: '',
-    form: { from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '15' },
+    form: { from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '15', noCache: false },
   };
 
   // ---------------------------------------------------------------- commands
@@ -142,6 +146,8 @@
     if (days !== null) body.max_review_days = days;
     const limit = wholeOrNull(form.limit, 1, 50);
     if (limit !== null) body.limit = limit;
+    // "Force refresh": the CLI's --no-cache, neither reading nor writing the response cache.
+    if (form.noCache) body.no_cache = true;
     return body;
   }
 
@@ -187,6 +193,10 @@
       detail = esc(t('journals.quartile.sjr'));
       if (isNum(sjr.value)) detail += ` ${esc(fixed(sjr.value, 3))}`;
       if (sjr.year) detail += ` · ${esc(sjr.year)}`;
+      // [{name, quartile}] as the CLI writes them; a plain string is shown as is.
+      const categories = list(sjr.categories).map((entry) => (entry && typeof entry === 'object'
+        ? `${oneLine(entry.name)} (${oneLine(entry.quartile)})` : oneLine(entry))).filter(Boolean);
+      if (categories.length) detail = `<span title="${esc(categories.join(', '))}">${detail}</span>`;
     } else if (source === 'openalex-proxy') {
       const proxy = obj(c.proxy);
       detail = `<span class="journals-proxy">${esc(t('journals.quartile.proxy'))}</span>`;
@@ -232,21 +242,18 @@
     return `${score}<div class="panel__meta">${parts.join(' · ')}</div>`;
   }
 
-  function facetValue(v) {
-    if (isNum(v)) return fixed(v, 2);
-    if (typeof v === 'boolean') return v ? '✓' : '✗';
-    if (v && typeof v === 'object') {
-      const key = ['score', 'share', 'fit', 'count', 'works', 'n'].find((k) => isNum(v[k]));
-      return key ? fixed(v[key], 2) : JSON.stringify(v).slice(0, 40);
-    }
-    return String(v ?? '');
-  }
+  // Hit counts are whole numbers, the overlap and the gate short decimals.
+  const plain = (v) => (isNum(v) ? String(Math.round(v * 100) / 100) : oneLine(v));
 
   function evidenceCell(c) {
     const facets = obj(c.facets);
-    const facetBits = [['method', 'journals.facet.method'], ['application', 'journals.facet.application']]
+    const facetBits = [['method', 'journals.facet.method'], ['application', 'journals.facet.application'],
+      ['application_topic_overlap', 'journals.facet.overlap']]
       .filter(([k]) => facets[k] !== undefined && facets[k] !== null)
-      .map(([k, key]) => `${esc(t(key))} ${esc(facetValue(facets[k]))}`);
+      .map(([k, key]) => `${esc(t(key))} ${esc(plain(facets[k]))}`);
+    if (isNum(facets.gate) && facets.gate < 1) {
+      facetBits.push(esc(t('journals.facet.gate', { value: plain(facets.gate) })));
+    }
     const flags = list(c.flags).map((flag) => {
       const label = FLAG_LABEL[flag] ? FLAG_LABEL[flag]() : flag;
       return `<span class="badge badge--warn">${esc(label)}</span>`;
@@ -309,6 +316,7 @@
       + `<label>${esc(t('journals.form.from'))}<select data-jp-field="from">${options(form.from)}</select></label>`
       + `<label>${esc(t('journals.form.to'))}<select data-jp-field="to">${options(form.to)}</select></label>`
       + `<label class="journals-check"><input type="checkbox" data-jp-field="oaOnly"${form.oaOnly ? ' checked' : ''}> ${esc(t('journals.form.oaOnly'))}</label>`
+      + `<label class="journals-check" title="${esc(t('journals.form.noCacheTitle'))}"><input type="checkbox" data-jp-field="noCache"${form.noCache ? ' checked' : ''}> ${esc(t('journals.form.noCache'))}</label>`
       + `<label>${esc(t('journals.form.maxApc'))}<input type="number" min="0" step="1" data-jp-field="maxApc" value="${esc(form.maxApc)}"></label>`
       + `<label>${esc(t('journals.form.maxReview'))}<input type="number" min="1" step="1" data-jp-field="maxReview" value="${esc(form.maxReview)}"></label>`
       + `<label>${esc(t('journals.form.limit'))}<input type="number" min="1" max="50" step="1" data-jp-field="limit" value="${esc(form.limit)}"></label>`
@@ -335,6 +343,58 @@
       + `${messageHtml(s.sjrMessage)}</div>`;
   }
 
+  const SERVICE_NAME = { openalex: 'OpenAlex', crossref: 'Crossref', pubmed: 'PubMed' };
+  const FIT_COMPONENTS = ['similar_works', 'cited_in_paper', 'topic_overlap'];
+  const money = (v) => String(Math.round(v * 10000) / 10000);
+
+  // query.scoring: the formula the CLI ranked with, the application gate, and
+  // the components no journal had a signal for (they left the formula).
+  function scoringHtml(scoring) {
+    const info = obj(scoring);
+    if (typeof info.formula !== 'string' || !info.formula) return '';
+    const lines = [esc(t('journals.scoring', { formula: info.formula }))];
+    const gate = obj(info.facet_gate);
+    if (typeof gate.applies === 'boolean') {
+      lines.push(esc(gate.applies ? t('journals.scoring.gate', { factor: plain(gate.factor) })
+        : t('journals.scoring.gateOff')));
+    }
+    const active = list(info.active);
+    if (active.length && active.length < FIT_COMPONENTS.length) {
+      const dropped = FIT_COMPONENTS.filter((name) => active.indexOf(name) < 0);
+      if (dropped.length) lines.push(esc(t('journals.scoring.dropped', { names: dropped.join(', ') })));
+    }
+    return `<div class="panel__meta journals-scoring">${lines.map((line) => `<div>${line}</div>`).join('')}</div>`;
+  }
+
+  // api_calls: calls made and served from the cache (per service), whether the
+  // cache was on, and the OpenAlex budget state; an exhausted budget is a warning.
+  function apiCallsHtml(calls) {
+    const info = obj(calls);
+    if (!isNum(info.made) && !isNum(info.cached)) return '';
+    const services = Object.keys(obj(info.by_service)).map((name) => {
+      const slot = obj(obj(info.by_service)[name]);
+      return `${esc(SERVICE_NAME[name] || name)} ${esc(plain(slot.made ?? 0))}/${esc(plain(slot.cached ?? 0))}`;
+    });
+    const line = [esc(t('journals.api', { made: info.made ?? 0, cached: info.cached ?? 0 })),
+      ...(services.length ? [`<span title="${esc(t('journals.api.servicesTitle'))}">${services.join(' · ')}</span>`] : []),
+      ...(obj(info.cache).enabled === false ? [esc(t('journals.api.cacheOff'))] : [])];
+    const budget = obj(info.budget);
+    let budgetHtml = '';
+    if (budget.state === 'exhausted') {
+      const retry = isNum(budget.retry_after_seconds) ? t('journals.api.retryIn', { seconds: budget.retry_after_seconds }) : '';
+      budgetHtml = `<div class="journals-msg journals-msg--warn" role="status"><span class="badge badge--bad">429</span> `
+        + `${esc(t('journals.api.exhausted', { retry }))}</div>`;
+    } else if (budget.state === 'ok' || budget.state === 'unknown') {
+      const text = budget.state === 'unknown' || !isNum(budget.remaining_usd) ? t('journals.api.budget.unknown')
+        : (isNum(budget.limit_usd)
+          ? t('journals.api.budget.left', { remaining: money(budget.remaining_usd), limit: money(budget.limit_usd) })
+          : t('journals.api.budget.leftOnly', { remaining: money(budget.remaining_usd) }));
+      budgetHtml = `<div class="panel__meta"><span class="badge ${budget.state === 'ok' ? 'badge--ok' : 'badge--absent'}">`
+        + `${esc(t(`journals.api.state.${budget.state}`))}</span> ${esc(text)}</div>`;
+    }
+    return `<div class="panel__meta">${line.join(' · ')}</div>${budgetHtml}`;
+  }
+
   function resultsHtml(s) {
     const data = s.journals || {};
     const doc = data.candidates;
@@ -349,15 +409,8 @@
       at: doc.generated_at || '',
     }));
     const titleLine = obj(doc.query).title ? `<div class="panel__meta">${esc(t('journals.paper', { title: doc.query.title }))}</div>` : '';
-    const calls = obj(doc.api_calls);
-    const budget = obj(doc.budget);
-    const budgetBits = Object.keys(budget).filter((k) => ['string', 'number', 'boolean'].indexOf(typeof budget[k]) >= 0)
-      .map((k) => `${esc(k)}: ${esc(budget[k])}`);
-    const limited = doc.rate_limited || doc.budget_exhausted || budget.exhausted || budget.rate_limited;
-    const api = (isNum(calls.made) || isNum(calls.cached))
-      ? `<div class="panel__meta">${esc(t('journals.api', { made: calls.made ?? 0, cached: calls.cached ?? 0 }))}`
-        + `${budgetBits.length ? ` · ${budgetBits.join(' · ')}` : ''}</div>` : '';
-    const limitedHtml = limited ? `<div class="journals-msg journals-msg--warn">${esc(t('journals.api.limited'))}</div>` : '';
+    const scoring = scoringHtml(obj(doc.query).scoring);
+    const api = apiCallsHtml(doc.api_calls);
     const notes = list(doc.notes).map((n) => `<li>${esc(n)}</li>`).join('');
     const notesLink = data.notes_md
       ? ` · <a href="/api/artifact?path=paper/journal-candidates.md" target="_blank" rel="noopener noreferrer">${esc(t('journals.notesLink'))}</a>` : '';
@@ -367,7 +420,7 @@
       + `<td>${fitCell(c)}</td><td>${evidenceCell(c)}</td>`
       + `<td><button type="button" class="btn btn--sm" data-jp-action="select" data-jp-id="${esc(c.openalex_id || c.id || '')}"`
       + `${s.busy.select ? ' disabled' : ''}>${esc(t('journals.select'))}</button></td></tr>`).join('');
-    return `${error}<div class="panel__meta">${summary}${notesLink}</div>${titleLine}${api}${limitedHtml}`
+    return `${error}<div class="panel__meta">${summary}${notesLink}</div>${titleLine}${scoring}${api}`
       + `<div class="agents-table-wrap"><table class="agents-table journals-table"><thead><tr>`
       + `<th>${esc(t('journals.col.journal'))}</th><th>${esc(t('journals.col.quartile'))}</th>`
       + `<th>${esc(t('journals.col.access'))}</th><th>${esc(t('journals.col.hindex'))}</th>`
@@ -729,6 +782,8 @@
       if (field === 'from' || field === 'to') render();
     } else if (field === 'oaOnly') {
       state.form.oaOnly = !!el.checked;
+    } else if (field === 'noCache') {
+      state.form.noCache = !!el.checked;
     } else if (field === 'sort') {
       state.sort = el.value;
       render();
