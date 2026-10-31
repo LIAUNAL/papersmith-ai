@@ -194,45 +194,87 @@ that already publish work like it. Nothing is ever submitted.
   over the journals evaluated: works like the paper that the journal published
   (one OpenAlex query of quoted key phrases, last six years), references of
   `paper/refs.bib` published there, and the overlap between the paper's OpenAlex
-  topics and the journal's. A component that is zero for every journal drops out
-  and the other weights are rescaled. When the title applies a method to a
+  topics and the journal's (with the fallback chain, the paper's keywords and
+  facet phrases against the journal's SJR categories and DOAJ subjects). A
+  component that is zero for every journal drops out and the other weights are
+  rescaled. When the title applies a method to a
   domain (the tail after `for`, `applied to`, `toward`), the search runs one
   query per facet, method and application, and a journal that shows no
   application evidence has its score halved and carries the
   `no-application-evidence` flag; it still appears, flagged. The numbers are in
   the JSON (`fit`, `facets`, `query.scoring`) and in the panel, which prints the
   formula above the table.
+- **Where the journals come from.** `--source auto|openalex|crossref` picks the
+  chain (default `auto`; the panel's source selector sends the same choice).
+  OpenAlex answers first. When it cannot (no key and the keyless demo allowance
+  is spent, a `429`, a `401`/`403`, a 5xx or a network error) `auto` does not
+  refuse: it continues with free sources and says so in the output
+  (`fallback: {used, code, reason}`, a note and, in the panel, a banner). The
+  fallback chain is Crossref works search for works like the paper (the polite
+  pool: set `PAPERSMITH_CONTACT_EMAIL` and it travels as `mailto`), Europe PMC
+  for biomedical papers (a keyword or an application phrase such as EEG,
+  clinical or brain triggers it), DOAJ for open-access state, APC and review
+  process, and Semantic Scholar only when `SEMANTIC_SCHOLAR_API_KEY` is set.
+  Works are aggregated per journal by ISSN, else by title. `--source openalex`
+  keeps the old behaviour and refuses when OpenAlex is unavailable;
+  `--source crossref` skips OpenAlex. The JSON names who answered
+  (`providers`, and `sources` on every candidate), so a fallback result is
+  never passed off as an OpenAlex one. The fallback has less to go on: no
+  OpenAlex topics, no citedness and no proxy quartile.
 - **Where the quartile comes from.** The SJR quartile comes from a SCImago CSV
   that **you** download once from <https://www.scimagojr.com/journalrank.php>
   ("Download data") and import (`python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <csv>`,
   or the panel's upload, which sends the file as the raw body of
   `POST /api/journals/sjr`, up to 16 MiB); scimagojr.com answers automated
-  downloads with a browser challenge, so the forge never scrapes it. Without that file, or for a
-  journal that is not in it, the quartile is an OpenAlex proxy (the share of
-  journals of the same field with a higher 2-year mean citedness). The proxy is
+  downloads with a browser challenge, so the forge never scrapes it. When
+  OpenAlex answered, a journal without an SJR row gets an OpenAlex proxy (the
+  share of journals of the same field with a higher 2-year mean citedness),
   always labelled `openalex-proxy`, in the JSON, in the panel and in the
   agent's markdown: it approximates a citation percentile and is not an SJR
-  quartile.
+  quartile. No free source besides SJR and that proxy gives a quartile, so
+  without OpenAlex the quartile is SJR or it is unknown (`quartile: null`,
+  `quartile_source: "unknown"`). Journals of unknown quartile are excluded from
+  a quartile range by default and counted in `excluded_reasons.quartile_unknown`;
+  `--include-unknown-quartile` (the panel's toggle) keeps them, flagged
+  `quartile-unknown`. Import the SJR file or get an OpenAlex key and the
+  question goes away.
 - **The review-time estimate.** Per journal, the median and interquartile range
   of the days between *received* and *accepted* over its latest 40 research
   articles of the last three years, read from Crossref first, then PubMed, else
   none (fewer than five dated articles reads as none). It is an estimate of
   submission-to-acceptance, revision rounds included; it is not the time to
   first decision.
-- **The OpenAlex budget and the response cache.** OpenAlex answers without a
-  key, but a keyless caller has a small daily budget (about USD 0.10 per day per
-  IP). The CLI keeps successful answers in
-  `~/.cache/papersmith/journal-finder/http/` (`PAPERSMITH_JOURNAL_CACHE_DIR`
-  moves it): a search is reused for one day, any other lookup for seven, and an
-  error is never stored. the panel's forced-refresh option, or `--no-cache`,
-  skips the cache for one search. The result's `api_calls` reports the calls
-  made and served from the cache per service and the budget state, and the
-  panel shows it. When OpenAlex answers `429` asking for a wait of more than a
-  minute the quota is spent and the CLI does not retry: if that happens on the
-  first search the refusal is `NETWORK_UNAVAILABLE` and its message names
-  `OPENALEX_API_KEY` (a free key has its own daily budget and is sent only when
-  set); later in a search that step degrades with a note and the budget reads
-  `exhausted`.
+- **The OpenAlex key, its budget and the response cache.** OpenAlex now
+  requires a free API key for real use; keyless calls are a small demo
+  allowance (USD 0.10 per day, shared by everyone behind one IP). A free key
+  takes an account at <https://openalex.org/signup> with a verified email, then
+  the key from <https://openalex.org/settings/api>, and `export
+  OPENALEX_API_KEY=...` (the CLI sends it only when set, and never asks for it
+  on your behalf). It gives USD 1 per day of usage, ten times the keyless
+  budget. By OpenAlex's price list (checked 2026-10-31), fetching a record by
+  id is free, a list with a filter costs USD 0.10 per 1,000 requests and a
+  search USD 1 per 1,000, so a day's budget is about 1,000 searches or 10,000
+  filtered lists. The rate limit is 30 requests per second with a key (10
+  without) and 5 per second for searches with more than 5 boolean operators;
+  the budget resets at midnight UTC, a refused request costs nothing, and the
+  data is CC0. The finder's own cost is an estimate from its call pattern, not
+  a measurement: a search makes two or so search-priced calls for similar works,
+  up to 15 more when references name journals without a DOI, up to 4
+  DOI-batch lists, and, for each journal without an SJR row, two filtered lists
+  for the proxy quartile (up to about 130). That is roughly USD 0.01 to 0.04
+  per search, fewer with an imported SJR file; `api_calls.budget` reports what
+  OpenAlex says is left. The CLI keeps successful answers (of every
+  service) in `~/.cache/papersmith/journal-finder/http/`
+  (`PAPERSMITH_JOURNAL_CACHE_DIR` moves it): a search is reused for one day, any
+  other lookup for seven, and an error is never stored. The panel's
+  forced-refresh option, or `--no-cache`, skips the cache for one search. The
+  result's `api_calls` reports the calls made and served from the cache per
+  service and the budget state, and the panel shows it. When OpenAlex answers
+  `429` asking for a wait of more than a minute the quota is spent and the CLI
+  does not retry: with `auto` the search continues with the fallback chain and
+  a note says how to get the key; with `--source openalex` the refusal is
+  `NETWORK_UNAVAILABLE` and its message names `OPENALEX_API_KEY`; later in a
+  search that step degrades with a note and the budget reads `exhausted`.
 - **From a journal to its template.** *Elegir esta revista* runs
   `venue select` and opens `paper/venues/<slug>/`. The state machine is
   `selected → requirements → template → audited → planned → approved → built
