@@ -11,15 +11,21 @@ from pathlib import Path
 
 from skills._core.command_center import server
 
-PAGE = (Path(server.__file__).resolve().parent / "static" / "index.html").read_text(encoding="utf-8")
+STATIC = Path(server.__file__).resolve().parent / "static"
+PAGE = (STATIC / "index.html").read_text(encoding="utf-8")
+ES_CATALOGUE = (STATIC / "i18n" / "es.js").read_text(encoding="utf-8")
 
 
 class GraphToolbarTests(unittest.TestCase):
     def test_regenerate_and_group_layout_buttons_sit_in_the_graph_toolbar(self) -> None:
         self.assertIn('id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()"', PAGE)
-        self.assertIn('⚡ Regenerar grafo', PAGE)
+        # The label is rendered through the i18n catalogue: the page carries
+        # the English default and the key, the Spanish copy lives in es.js.
+        self.assertIn('data-i18n="atlas.build">⚡ Regenerate graph</button>', PAGE)
+        self.assertIn('"atlas.build": "⚡ Regenerar grafo"', ES_CATALOGUE)
         self.assertIn('id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()"', PAGE)
-        self.assertIn('🧩 Disposición de grupos', PAGE)
+        self.assertIn('data-i18n="atlas.group">🧩 Group layout</button>', PAGE)
+        self.assertIn('"atlas.group": "🧩 Disposición de grupos"', ES_CATALOGUE)
 
     def test_regenerate_posts_to_the_build_route_and_reloads_the_frame(self) -> None:
         self.assertIn("fetch('/api/atlas/build', { method: 'POST' })", PAGE)
@@ -59,7 +65,8 @@ class GraphToolbarTests(unittest.TestCase):
 class PreservedPanelsTests(unittest.TestCase):
     def test_the_concept_map_panel_is_still_there(self) -> None:
         self.assertIn('id="pane-modelo"', PAGE)
-        self.assertIn("Mapa Conceptual", PAGE)
+        self.assertIn('data-i18n="nav.model">🧠 Concept Map &amp; Model</button>', PAGE)
+        self.assertIn('"nav.model": "🧠 Mapa Conceptual & Modelo"', ES_CATALOGUE)
 
     def test_the_graph_switches_and_smith_phase_run_are_unchanged(self) -> None:
         for kind in ("atlas", "novelty", "papers"):
@@ -70,9 +77,9 @@ class PreservedPanelsTests(unittest.TestCase):
     def test_the_archify_flow_tab_comes_first_and_opens_by_default(self) -> None:
         order = ["flow", "pipeline", "modelo", "sections", "atlas",
                  "preview", "artifacts", "telemetria"]
-        positions = [PAGE.index(f"onclick=\"navigateTab('{tab}')\">") for tab in order]
+        positions = [PAGE.index(f"onclick=\"navigateTab('{tab}')\"") for tab in order]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn('<button class="tab-nav__btn active" onclick="navigateTab(\'flow\')">', PAGE)
+        self.assertIn('<button class="tab-nav__btn active" onclick="navigateTab(\'flow\')" data-i18n="nav.flow">', PAGE)
         self.assertIn('id="pane-flow" class="tab-pane active"', PAGE)
         self.assertIn('id="pane-pipeline" class="tab-pane"', PAGE)
         self.assertIn("let activeTab = 'flow';", PAGE)

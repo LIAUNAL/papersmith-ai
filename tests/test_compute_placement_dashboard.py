@@ -78,14 +78,14 @@ class CandidateRowTests(unittest.TestCase):
     def test_one_row_per_candidate_measured_or_not(self) -> None:
         options = run_options.run_options(Path("."), _view())
         poc = {r["candidate"]: r for r in options["candidates"] if r["stage"] == "poc"}
-        self.assertEqual(poc["local-cpu-8"]["status"], "medido")
+        self.assertEqual(poc["local-cpu-8"]["status"], "measured")
         self.assertEqual(poc["local-cpu-8"]["device"], "cpu")
         self.assertEqual(poc["local-cpu-8"]["processes"], 8)
         self.assertEqual(poc["local-cpu-8"]["settings"], {"threads": 1, "batchSize": 64})
         self.assertEqual(poc["local-cpu-8"]["load_share"], 0.17)
-        self.assertEqual(poc[f"{REMOTE_A}:ana/T4"]["kind"], "acelerador")
-        self.assertEqual(poc["local-mps"]["status"], "sin medir")
-        self.assertEqual(poc[REMOTE_B]["status"], "sin medir")
+        self.assertEqual(poc[f"{REMOTE_A}:ana/T4"]["kind"], "accelerator")
+        self.assertEqual(poc["local-mps"]["status"], "unmeasured")
+        self.assertEqual(poc[REMOTE_B]["status"], "unmeasured")
         self.assertIsNone(poc[REMOTE_B]["estimate"])
         self.assertIsNone(options["plan_picks"]["poc"])
         self.assertIn("plan", options["plan_hint"])
@@ -97,9 +97,9 @@ class CandidateRowTests(unittest.TestCase):
         self.assertIn("smallest measured makespan", pick["reason"])
         self.assertIn("42 s – 64 s", pick["label"])
         poc = {r["candidate"]: r for r in options["candidates"] if r["stage"] == "poc"}
-        self.assertEqual(poc[f"{REMOTE_A}:ana/cpu"]["status"], "sin medir")
+        self.assertEqual(poc[f"{REMOTE_A}:ana/cpu"]["status"], "unmeasured")
         self.assertIn("--accelerator-kind cpu", poc[f"{REMOTE_A}:ana/cpu"]["reason"])
-        self.assertEqual(poc["local-cpu-8"]["plan"], "recomendado")
+        self.assertEqual(poc["local-cpu-8"]["plan"], "recommended")
         self.assertIn("slower", poc[f"{REMOTE_A}:ana/T4"]["plan"])
         self.assertIsNone(options["plan_picks"]["full"])
 
@@ -138,8 +138,18 @@ class ViewWiringTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which("node"), "node is required to run the panel renderer")
 class RenderTests(unittest.TestCase):
     def render(self, view: dict) -> str:
+        # Labels come from the i18n catalogues, so load them and ask for Spanish
+        # the way the sibling run-options render test does.
+        i18n_js = SCRIPT_PATH.parent / "i18n.js"
+        en_js = SCRIPT_PATH.parent / "i18n" / "en.js"
+        es_js = SCRIPT_PATH.parent / "i18n" / "es.js"
         script = (
-            "const fs=require('fs');global.window={};global.document={addEventListener(){}};"
+            "const fs=require('fs');"
+            "global.window={localStorage:{getItem:()=>'es',setItem:()=>{}}};"
+            "global.document={addEventListener(){},querySelectorAll:()=>[]};"
+            f"eval(fs.readFileSync({json.dumps(str(en_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(es_js))},'utf8'));"
+            f"eval(fs.readFileSync({json.dumps(str(i18n_js))},'utf8'));"
             f"eval(fs.readFileSync({json.dumps(str(SCRIPT_PATH))},'utf8'));"
             "console.log(window.ExperimentsPanel.render(JSON.parse(fs.readFileSync(0,'utf8'))));"
         )
@@ -159,7 +169,11 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("<script>alert(3)", out)
         view = _view()
         view["run_options"] = run_options.run_options(Path("."), view)
-        self.assertIn("Sin plan registrado", self.render(view))
+        out = self.render(view)
+        # The badge is catalogue text; the hint is the server's own (English
+        # here, localized by localize.py only when the request asks for Spanish).
+        self.assertIn("sin plan", out)
+        self.assertIn(view["run_options"]["plan_hint"].replace("'", "&#39;").replace("<", "&lt;").replace(">", "&gt;"), out)
 
 
 if __name__ == "__main__":
