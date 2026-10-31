@@ -651,7 +651,7 @@ def build_terms(profile: dict) -> list[str]:
 
 _PHRASE_KEEP = frozenset("data model models network networks system systems feature features framework "
                          "algorithm algorithms analysis".split())
-#: words that end a phrase; the generic nouns above stay inside phrases ("data re-uploading")
+#: words that end a phrase; the generic nouns above stay inside phrases ("training data")
 _PHRASE_BREAKS = _STOPWORDS - _PHRASE_KEEP
 _PHRASE_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*")
 _PHRASE_SPLIT = re.compile(r"[.,;:!?()\[\]{}\"\u201c\u201d/\u2014\u2013|]+|\s-\s")

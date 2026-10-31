@@ -113,12 +113,12 @@ fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 * topic_overlap
 
 - **`similar_works`**: works like the paper published by the journal, counted
   once per distinct work. The search is OpenAlex `search` with quoted key
-  phrases joined by `OR` (`"data re-uploading" OR "variational quantum
-  circuits" OR ...`), limited to journal articles of the last six years.
+  phrases joined by `OR` (`"graph neural networks" OR "few-shot
+  learning" OR ...`), limited to journal articles of the last six years.
   Phrases come from the keywords (weight 3, a single-word keyword is
   allowed), the title (weight 2: runs of content words between punctuation and
   function words, at most four words each; hyphenated compounds such as
-  *re-uploading* stay whole) and the abstract's bigrams that occur at least
+  *self-supervised* stay whole) and the abstract's bigrams that occur at least
   twice and share a word with a keyword or title phrase; a phrase inside a
   longer keyword or title phrase is dropped (only a longer keyword absorbs a
   keyword), and so is a title phrase that contains a multi-word keyword.
