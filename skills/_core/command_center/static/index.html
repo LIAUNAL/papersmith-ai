@@ -13,21 +13,22 @@
   <link rel="stylesheet" href="./vendor/xterm.css">
   <script src="./vendor/xterm.js"></script>
   <script src="./vendor/xterm-addon-fit.js"></script>
-  <script src="./i18n/en.js?v=0.44.0"></script>
-  <script src="./i18n/es.js?v=0.44.0"></script>
-  <script src="./i18n.js?v=0.44.0"></script>
-  <script src="./cli-console.js?v=0.44.0"></script>
+  <script src="./i18n/en.js?v=0.45.0"></script>
+  <script src="./i18n/es.js?v=0.45.0"></script>
+  <script src="./i18n.js?v=0.45.0"></script>
+  <script src="./cli-console.js?v=0.45.0"></script>
   <link rel="stylesheet" href="./vendor/katex/katex.min.css">
   <script src="./vendor/katex/katex.min.js"></script>
-  <script src="./math-panel.js?v=0.44.0"></script>
-  <script src="./model-panel.js?v=0.44.0"></script>
-  <script src="./experiments-panel.js?v=0.44.0"></script>
-  <script src="./experiments-tutor.js?v=0.44.0"></script>
-  <script src="./agents-panel.js?v=0.44.0"></script>
-  <script src="./doctor-panel.js?v=0.44.0"></script>
-  <script src="./ai-history-panel.js?v=0.44.0"></script>
-  <script src="./phase-console.js?v=0.44.0"></script>
-  <script src="./phase-run.js?v=0.44.0"></script>
+  <script src="./math-panel.js?v=0.45.0"></script>
+  <script src="./model-panel.js?v=0.45.0"></script>
+  <script src="./experiments-panel.js?v=0.45.0"></script>
+  <script src="./experiments-tutor.js?v=0.45.0"></script>
+  <script src="./novelty-panel.js?v=0.45.0"></script>
+  <script src="./agents-panel.js?v=0.45.0"></script>
+  <script src="./doctor-panel.js?v=0.45.0"></script>
+  <script src="./ai-history-panel.js?v=0.45.0"></script>
+  <script src="./phase-console.js?v=0.45.0"></script>
+  <script src="./phase-run.js?v=0.45.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -2786,6 +2787,7 @@
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
     <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
     <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-i18n="nav.experiments">🧪 Experiments</button>
+    <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
     <button class="tab-nav__btn" onclick="navigateTab('sections')" data-i18n="nav.sections">Paper Sections</button>
     <button class="tab-nav__btn" onclick="navigateTab('atlas')" data-i18n="nav.atlas">Graph Atlas</button>
     <button class="tab-nav__btn" onclick="navigateTab('preview')" data-i18n="nav.preview">PDF Preview</button>
@@ -3055,6 +3057,11 @@
         </div>
       </section>
       <div id="experimentsRoot"><p class="exp-empty" data-i18n="exp.loading">Loading experiments…</p></div>
+    </div>
+
+    <!-- TAB: NOVELTY & FINDINGS ASSESSMENT -->
+    <div id="pane-novelty" class="tab-pane">
+      <div id="noveltyRoot"><p class="exp-empty" data-i18n="novelty.loading">Loading novelty and findings assessment…</p></div>
     </div>
 
     <!-- TAB 3: SECTIONS -->
@@ -3725,6 +3732,9 @@
       if (tabId === 'experiments') {
         window.refreshExperimentsPanel?.();
         window.refreshExperimentsTutor?.();
+      }
+      if (tabId === 'novelty') {
+        window.refreshNoveltyPanel?.();
       }
       if (tabId === 'doctor') {
         window.refreshDoctorPanel?.();

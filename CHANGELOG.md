@@ -11,6 +11,30 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.45.0
+
+### Added
+
+- **Novelty assessment and findings gate**: A dedicated panel in the command center
+  (`pane-novelty`, positioned directly after `pane-experiments` and before `pane-sections`)
+  and formal gate (`G-NOVELTY`) to evaluate whether empirical results firmly support the
+  novelty claims of the proposal before manuscript drafting.
+  - **Subsection 1 (Hypotheses vs. Empirical Evidence)**: Tabular matrix of hypotheses across
+    PoC and full experiment stages from `Results/discussion.json` with metrics, criteria,
+    observed results, cited statistical tests, rationale, and verdict badges.
+  - **Subsection 2 (Novelty Assessment & SOTA Grounding)**: Contrast against `sota-pool/candidates.json`
+    and baseline methods, formalizing where novelty holds and scientific sobriety dispelling hype.
+  - **Subsection 3 (Scientific Rigor & Reviewer Defense Audit)**: Automated checklist auditing
+    subject-level partitioning (leakage-free), paired statistical significance tests,
+    and empirical support for core claims.
+  - **Subsection 4 (Novelty Decision Gate)**: Interactive decision gate operable via UI buttons
+    or CLI/chat (`smith novelty {status,approve,iterate,reset}`), recording append-only history
+    in `.papersmith/novelty_gate.json`.
+- **Command center and CLI**:
+  - `smith novelty status|approve|iterate|reset` command in `src/papersmith/core/novelty.py`.
+  - API endpoints `GET /api/novelty/status` and `POST /api/novelty/decision`.
+  - Registered gate `G-NOVELTY` ("Novelty & Findings Gate") in the command center server.
+
 ## 0.44.0
 
 ### Added

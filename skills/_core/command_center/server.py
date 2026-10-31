@@ -595,6 +595,20 @@ def terminal_allowed(host: str) -> bool:
     return is_loopback_bind(host)
 
 
+def _novelty_gate():
+    """Import and return the novelty_gate module safely."""
+    name = "papersmith_novelty_gate"
+    if name not in sys.modules:
+        script = Path(__file__).resolve().parents[1] / "results" / "novelty_gate.py"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name, script)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
 def create_app(root: Path | str, *, debounce_ms: int = 300,
                health_ttl: float = DEFAULT_HEALTH_TTL_SECONDS,
                history_store: history.HistoryStore | None = None,
@@ -1327,6 +1341,23 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "cross_relations": sec_meta.get("cross_relations", "Cross traceability with the rest of the manuscript.")
             })
 
+        gate_mod = _novelty_gate()
+        nov_gate_data = gate_mod.read_gate(root_path)
+        nov_status = nov_gate_data.get("status", "pending")
+        g_nov_status = (
+            "PASS"
+            if nov_status == "approved"
+            else (
+                "ACTIVE"
+                if fase5_status == "PASS" and nov_status == "pending"
+                else (
+                    "ACTIVE"
+                    if nov_status.startswith("iterating_")
+                    else "PENDING"
+                )
+            )
+        )
+
         gates_list = [
             {
                 "id": "G-EXP-POC",
@@ -1335,6 +1366,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "criteria": "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria; hypothesis verdicts backed by hypothesis tests, novelty justification, qualitative or interpretability analysis where it applies and a summarized discussion per stage.",
                 "reviewer": "experiments-reviewer",
                 "phase": "Fase 5"
+            },
+            {
+                "id": "G-NOVELTY",
+                "name": "Novelty & Findings Gate",
+                "status": g_nov_status,
+                "criteria": "Scientific novelty assessment and empirical evidence support: hypothesis contrast vs SOTA, reviewer defense audit, and explicit operator authorization before manuscript scaffolding and drafting.",
+                "reviewer": "novelty-screener & operator",
+                "phase": "Fase 5.5 (Novedad)"
             },
             {
                 "id": "G1",
@@ -2623,6 +2662,31 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     def api_atlas_novelty_view(lang: str = "en") -> Response:
         html = novelty_graph.build_novelty_viewer_html(root_path, lang)
         return Response(html, media_type="text/html; charset=utf-8", headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/novelty/status")
+    def api_novelty_status() -> JSONResponse:
+        overview = _novelty_gate().get_novelty_overview(root_path)
+        return JSONResponse(overview, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/novelty/decision")
+    async def api_novelty_decision(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
+                                status_code=403)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        action = str(payload.get("action", "") or "")
+        notes = str(payload.get("notes", "") or "")
+        actor = str(payload.get("actor", "operator") or "operator")
+        try:
+            record = _novelty_gate().record_decision(root_path, action, rationale=notes, actor=actor)
+            return JSONResponse({"ok": True, "action": action, "gate": record},
+                                headers=dict(_PAPER_HEADERS))
+        except _novelty_gate().NoveltyRefusal as ref:
+            return JSONResponse({"ok": False, "error": ref.code, "message": ref.message},
+                                status_code=422)
 
     @app.get("/api/decisions")
     def api_decisions(source: str | None = None,

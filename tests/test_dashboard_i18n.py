@@ -152,7 +152,7 @@ class PageTests(unittest.TestCase):
     def test_changed_scripts_are_cache_busted_for_this_release(self) -> None:
         for name in ["i18n/en.js", "i18n/es.js", "i18n.js", *(path.name for path in PANELS)]:
             with self.subTest(script=name):
-                self.assertIn(f'src="./{name}?v=0.44.0"', PAGE)
+                self.assertIn(f'src="./{name}?v=0.45.0"', PAGE)
 
     def test_the_runtime_persists_the_choice_and_announces_it(self) -> None:
         runtime = (STATIC / "i18n.js").read_text(encoding="utf-8")

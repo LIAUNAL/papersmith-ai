@@ -21,6 +21,7 @@ from .core import env as env_command
 from .core import executor as executor_command
 from .core import init as init_command
 from .core import ingest as ingest_command
+from .core import novelty as novelty_command
 from .core import status as status_command
 from .core import target as target_command
 from .core import team as team_command
@@ -56,6 +57,7 @@ _REGISTRY: list = [
     target_command.register,
     audit_command.register,
     doctor_command.register,
+    novelty_command.register,
     ui_command.register,
     atlas_command.register,
     mcp_command.register,
