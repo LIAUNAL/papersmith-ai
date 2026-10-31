@@ -2204,6 +2204,61 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     )
                     if match:
                         text = match.group(1).strip()
+            else:
+                # Whole manuscript audit
+                main_tex = root_path / "paper" / "main.tex"
+                if not main_tex.is_file():
+                    return JSONResponse({
+                        "ok": True,
+                        "scope": "manuscript",
+                        "blocks_analyzed": 0,
+                        "composite_score": 0.0,
+                        "risk": "low",
+                        "blocks": {},
+                    })
+                content = main_tex.read_text(encoding="utf-8", errors="replace")
+                pattern = re.compile(
+                    r"%% paper-writing block (?P<id>[A-Za-z0-9._-]+) begin[^\n]*\n(?P<body>.*?)%% paper-writing block (?P=id) end",
+                    re.DOTALL,
+                )
+                blocks_data = {}
+                all_blocks_text = []
+                mod = _ai_metrics_module()
+                for match in pattern.finditer(content):
+                    b_id = match.group("id")
+                    b_text = match.group("body").strip()
+                    if b_text:
+                        b_res = mod.analyze_ai_signatures(b_text)
+                        blocks_data[b_id] = {
+                            "composite_score": b_res["composite_score"],
+                            "risk": b_res.get("verdict", "low"),
+                            "cliches": b_res.get("cliches", {}).get("total_count", 0),
+                        }
+                        all_blocks_text.append(b_text)
+
+                full_text = "\n\n".join(all_blocks_text)
+                if not full_text:
+                    return JSONResponse({
+                        "ok": True,
+                        "scope": "manuscript",
+                        "blocks_analyzed": 0,
+                        "composite_score": 0.0,
+                        "risk": "low",
+                        "blocks": {},
+                    })
+                manuscript_res = mod.analyze_ai_signatures(full_text)
+                return JSONResponse({
+                    "ok": True,
+                    "scope": "manuscript",
+                    "blocks_analyzed": len(blocks_data),
+                    "composite_score": manuscript_res["composite_score"],
+                    "risk": manuscript_res.get("verdict", "low"),
+                    "burstiness": manuscript_res.get("burstiness"),
+                    "cliches": manuscript_res.get("cliches"),
+                    "lexical_diversity": manuscript_res.get("lexical_diversity"),
+                    "blocks": blocks_data,
+                })
+
         if not text:
             return JSONResponse({"ok": False, "error": "No text or valid block provided to audit"}, status_code=400)
 

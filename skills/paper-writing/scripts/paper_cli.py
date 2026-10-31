@@ -3131,19 +3131,20 @@ def _cmd_figure_audit(args: argparse.Namespace) -> dict:
 
 
 def cmd_ai_audit(args: argparse.Namespace) -> dict:
-    source_label = ""
     if args.file:
         path = _resolve_repo_path(args.file)
         if not path.is_file():
             raise Refused("TARGET_UNREADABLE", f"{args.file}: file not found")
         text = path.read_text(encoding="utf-8")
-        source_label = str(path)
+        results = paper_ai_metrics.analyze_ai_signatures(text)
+        return {"target": str(path), **results}
     elif args.draft:
         path = _resolve_repo_path(args.draft)
         if not path.is_file():
             raise Refused("DRAFT_UNREADABLE", f"{args.draft}: draft not found")
         text = path.read_text(encoding="utf-8")
-        source_label = str(path)
+        results = paper_ai_metrics.analyze_ai_signatures(text)
+        return {"target": str(path), **results}
     elif args.block:
         paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
         main_tex = paper_block.resolve_main_tex(paper_dir)
@@ -3154,25 +3155,63 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
         begin, end = doc.pairs[args.block]
         body_bytes = data[begin["end"]:end["start"]]
         text = body_bytes.decode("utf-8", errors="replace")
-        source_label = f"block:{args.block}"
+        results = paper_ai_metrics.analyze_ai_signatures(text)
+        return {"target": f"block:{args.block}", **results}
+    elif args.all:
+        # Full manuscript audit across all blocks in main.tex
+        paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+        main_tex = paper_block.resolve_main_tex(paper_dir)
+        data = main_tex.read_bytes()
+        doc = paper_block.parse(data)
+        block_metrics = {}
+        all_texts = []
+        for blk_id, (begin, end) in sorted(doc.pairs.items()):
+            blk_text = data[begin["end"]:end["start"]].decode("utf-8", errors="replace").strip()
+            if blk_text:
+                m = paper_ai_metrics.analyze_ai_signatures(blk_text)
+                block_metrics[blk_id] = {
+                    "composite_score": m["composite_score"],
+                    "verdict": m.get("verdict", "low"),
+                    "cliches_count": m.get("cliches", {}).get("total_count", 0),
+                }
+                all_texts.append(blk_text)
+        full_text = "\n\n".join(all_texts)
+        if not full_text:
+            return {
+                "target": "manuscript:main.tex",
+                "blocks_analyzed": 0,
+                "composite_score": 0.0,
+                "verdict": "human_like",
+                "blocks": {},
+            }
+        results = paper_ai_metrics.analyze_ai_signatures(full_text)
+        return {
+            "target": "manuscript:main.tex",
+            "blocks_analyzed": len(block_metrics),
+            "composite_score": results["composite_score"],
+            "verdict": results.get("verdict", "low"),
+            "burstiness": results.get("burstiness"),
+            "cliches": results.get("cliches"),
+            "lexical_diversity": results.get("lexical_diversity"),
+            "blocks": block_metrics,
+        }
     else:
-        raise Refused("TARGET_REQUIRED", "One of --file, --draft, or --block is required for ai_audit.")
-
-    results = paper_ai_metrics.analyze_ai_signatures(text)
-    return {
-        "target": source_label,
-        **results,
-    }
+        raise Refused("TARGET_REQUIRED", "One of --file, --draft, --block, or --all is required for ai_audit.")
 
 
 def cmd_humanize(args: argparse.Namespace) -> dict:
     if not args.block:
         raise Refused("BLOCK_REQUIRED", "--block <id> is required for humanize")
-    if not args.draft:
-        raise Refused("DRAFT_REQUIRED", "--draft <path> is required for humanize")
-    draft_path = _resolve_repo_path(args.draft)
-    if not draft_path.is_file():
-        raise Refused("DRAFT_UNREADABLE", f"{args.draft}: draft not found")
+    draft_body = ""
+    if args.draft:
+        draft_path = _resolve_repo_path(args.draft)
+        if not draft_path.is_file():
+            raise Refused("DRAFT_UNREADABLE", f"{args.draft}: draft not found")
+        draft_body = draft_path.read_text(encoding="utf-8")
+    elif getattr(args, "replacement", None):
+        draft_body = args.replacement
+    else:
+        raise Refused("DRAFT_REQUIRED", "Either --draft <path> or --replacement <text> is required for humanize")
 
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
     main_tex = paper_block.resolve_main_tex(paper_dir)
@@ -3183,7 +3222,6 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
 
     begin, end = doc.pairs[args.block]
     orig_body = data[begin["end"]:end["start"]].decode("utf-8", errors="replace")
-    draft_body = draft_path.read_text(encoding="utf-8")
 
     # 1. Enforce F5 invariant gate
     passed_f5, violations = paper_ai_metrics.verify_f5_invariants(orig_body, draft_body)
@@ -3981,6 +4019,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ai_audit.add_argument("--file", default=None, help="path to a text or LaTeX file")
     p_ai_audit.add_argument("--draft", default=None, help="path to a draft file")
     p_ai_audit.add_argument("--block", default=None, help="block id to inspect from paper/main.tex")
+    p_ai_audit.add_argument("--all", action="store_true", default=False, help="audit all blocks across the entire manuscript")
     p_ai_audit.add_argument("--paper", default=None, help="override paper/ location")
 
     p_humanize = sub.add_parser(
@@ -3988,9 +4027,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="verify F5 invariants and stylometric quality of a humanized block draft",
     )
     p_humanize.add_argument("--block", required=True, help="the block id being humanized")
-    p_humanize.add_argument("--draft", required=True, help="path to the humanized draft")
+    p_humanize.add_argument("--draft", default=None, help="path to the humanized draft")
+    p_humanize.add_argument("--replacement", default=None, help="inline replacement text (alternative to --draft)")
     p_humanize.add_argument("--target-score", type=float, default=0.20, dest="target_score", help="maximum allowable composite AI score (default 0.20)")
     p_humanize.add_argument("--apply", action="store_true", default=False, help="substitute into paper/main.tex if verified")
+    p_humanize.add_argument("--inplace", action="store_true", default=False, dest="apply", help="substitute into paper/main.tex if verified (alias for --apply)")
     p_humanize.add_argument("--force", action="store_true", default=False, help="apply even if target score is not met")
     p_humanize.add_argument("--contract", default=None, help="path to the section contract")
     p_humanize.add_argument("--paper", default=None, help="override paper/ location")

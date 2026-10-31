@@ -361,3 +361,8 @@ def verify_f5_invariants(original_latex: str, humanized_latex: str) -> tuple[boo
         )
 
     return len(violations) == 0, violations
+
+
+# Convenience alias matching the CLI verb
+audit_ai_metrics = analyze_ai_signatures
+

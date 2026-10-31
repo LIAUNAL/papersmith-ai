@@ -87,7 +87,7 @@ The full path, from a PDF to a compiled paper:
 | 7c | `smith novelty {status,approve,iterate,reset}` (or the dashboard's Novedad & Hallazgos tab) | Not a skill but a gate between the experiments and the paper: you contrast the discussions' hypothesis verdicts with the SOTA pool, read the reviewer-defense checklist and record whether the evidence supports the novelty (`G-NOVELTY`) or record that the work returns to experiments, proposal or plausibility | `.papersmith/novelty_gate.json` (the decision and its history) |
 | 8 | `/kaggle-accounts` | Proves that the Kaggle credentials really authenticate | `store/` (never leaves the disk) |
 | 9 | `/remote-execution` | Sends work to a remote worker and keeps the record of what came back | the target repo's ledger |
-| 10 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence | `paper/` |
+| 10 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence, stylometric burstiness analysis ($CV$), AI cliché detection and humanization under F5 invariant preservation | `paper/` |
 | 10b | `/journal-finder` (or the PDF Preview tab's *Revistas sugeridas* block) | Once the paper compiles: you pick a quartile range (`Q1`, `Q2-Q3`, `Q1-Q4`) and it ranks the journals that already publish work like the paper, each with its quartile and where it came from, open-access state, APC, h-index, a review-time estimate and the similar works that justify the fit; an agent then reads each journal's aims and scope and writes the case for it. It never submits and never contacts an editor | `paper/journal-candidates.json` and `paper/journal-candidates.md` |
 | 10c | `paper-writing` `venue` verbs and the `venue-adapter` agent (the PDF Preview tab's *Revista elegida* card) | After you choose a journal: reads its author guidelines and template, measures the manuscript against them and alerts on sections to adjust, sections missing and inconsistencies with smith's base template, proposes an adjustment plan only when it is prudent, and builds the journal's own `main.tex` once you approve the plan. Text changes go only through the `write` loop | `paper/venues/<slug>/` (the canonical `paper/main.tex` is never written) |
 | 11 | `/figure-review` | Looks at the render: rasterizes every `Figures/<id>.pdf` and measures what a raster can support (ink outside the canvas, collisions) | a visual report, never a change |
@@ -403,7 +403,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.48.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.49.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -923,6 +923,7 @@ to establish it. The operator opens and closes the gates.
 | `paper-reviewer` | Reviews the compiled paper with the NeurIPS 2026 review form; grounds pertinence, novelty and coherence in quoted evidence. | `paper-writing` |
 | `section-grounding-auditor` | Reads a block's own bound source section, verbatim, and judges each subject sentence against it: `supported` — with the quoted span that carries it —, `unsupported` or `undecidable`. No code path invokes it, and `write` re-derives both sides independently rather than trusting its account. | `paper-writing` |
 | `insumos-observer` | Reads the paper's four declared input sources —`proposals/`, `experiments/`, the destination repo's code and its own run outputs— and reports, for each observable fact, whether it holds and with what evidence. It never decides a value nor runs `declare`. | `paper-writing` |
+| `ai-auditor` | Evaluates prose for AI stylometry (sentence burstiness $CV$, Claudeisms, triadic parallelisms) and humanizes written blocks under the strict F5 invariant preservation contract (citations, numbers, math inviolable). | `paper-writing` |
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
 | `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 5 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
 | `sota-grapher` | Maps the pool to its constellation —one solar system per paper grouped by family, 20 planets maximum, edges between sibling systems— as `atlas.json` plus the single `atlas.html`, running checker and renderer until green. | `plausibility` |

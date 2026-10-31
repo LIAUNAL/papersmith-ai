@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import io
 import json
+import hashlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -264,6 +266,72 @@ class CliIntegrationTests(unittest.TestCase):
             shutil.rmtree(paper_dir, ignore_errors=True)
             draft_file.unlink(missing_ok=True)
 
+    def test_ai_audit_whole_manuscript_cli(self) -> None:
+        paper_dir = REPO / "tests" / "fixtures" / "temp_paper_whole"
+        paper_dir.mkdir(parents=True, exist_ok=True)
+        main_tex = paper_dir / "main.tex"
+        main_tex.write_text(
+            "\\begin{document}\n"
+            "%% paper-writing block intro begin sha256=1111111111111111111111111111111111111111111111111111111111111111\n"
+            "We delve into this framework. It serves as a testament to progress.\n"
+            "%% paper-writing block intro end\n"
+            "%% paper-writing block methods begin sha256=2222222222222222222222222222222222222222222222222222222222222222\n"
+            "We evaluate 32 subjects using cross-validation over 10 folds.\n"
+            "%% paper-writing block methods end\n"
+            "\\end{document}\n",
+            encoding="utf-8",
+        )
+        try:
+            buf = io.StringIO()
+            with mock.patch("sys.stdout", buf):
+                exit_code = paper_cli.main([
+                    "ai_audit",
+                    "--all",
+                    "--paper", str(paper_dir.relative_to(REPO)),
+                ])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["target"], "manuscript:main.tex")
+            self.assertEqual(payload["blocks_analyzed"], 2)
+            self.assertIn("intro", payload["blocks"])
+            self.assertIn("methods", payload["blocks"])
+            self.assertIn("composite_score", payload)
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
+
+    def test_humanize_with_replacement_and_inplace(self) -> None:
+        paper_dir = REPO / "tests" / "fixtures" / "temp_paper_inplace"
+        paper_dir.mkdir(parents=True, exist_ok=True)
+        main_tex = paper_dir / "main.tex"
+        orig_body = "In this work, we delve into 12 metrics \\cite{smith2025}.\n"
+        digest = hashlib.sha256(orig_body.encode("utf-8")).hexdigest()
+        main_tex.write_text(
+            f"%% paper-writing block b1 begin sha256={digest}\n"
+            f"{orig_body}"
+            f"%% paper-writing block b1 end\n",
+            encoding="utf-8",
+        )
+        try:
+            buf = io.StringIO()
+            with mock.patch("sys.stdout", buf):
+                exit_code = paper_cli.main([
+                    "humanize",
+                    "--block", "b1",
+                    "--replacement", "Here we investigate 12 metrics \\cite{smith2025}.\n",
+                    "--inplace",
+                    "--paper", str(paper_dir.relative_to(REPO)),
+                ])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["status"], "ok")
+            self.assertTrue(payload["f5_invariants_preserved"])
+            self.assertTrue(payload["applied"])
+            updated = main_tex.read_text(encoding="utf-8")
+            self.assertIn("Here we investigate 12 metrics", updated)
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
+
 
 class ServerEndpointTests(unittest.TestCase):
     def test_ai_audit_endpoint_with_text(self) -> None:
@@ -279,6 +347,51 @@ class ServerEndpointTests(unittest.TestCase):
         self.assertIn("burstiness", data)
         self.assertIn("cliches", data)
         self.assertGreaterEqual(data["composite_score"], 0.40)
+
+    def test_ai_audit_endpoint_manuscript(self) -> None:
+        client = TestClient(server.create_app(REPO))
+        res = client.post("/api/pdf/ai-audit", json={})
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["scope"], "manuscript")
+        self.assertIn("composite_score", data)
+        self.assertIn("blocks", data)
+
+    def test_write_block_includes_ai_stylometry(self) -> None:
+        import paper_write
+        paper_dir = REPO / "tests" / "fixtures" / "temp_paper_wb"
+        paper_dir.mkdir(parents=True, exist_ok=True)
+        main_tex = paper_dir / "main.tex"
+        main_tex.write_text(
+            "%% paper-writing block intro begin sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n"
+            "%% paper-writing block intro end\n",
+            encoding="utf-8",
+        )
+        contract = paper_write.BlockContract(
+            block_id="intro",
+            contract_prose="## Disqualifiers\n- None.\n",
+            contract_source="contract.md",
+            citations_regime="none",
+            mode="argument",
+            requires_facts=(),
+            evidence_set=(),
+        )
+        sentence = "In this section, we provide an overview of the proposed framework."
+        draft = {
+            "latex": sentence,
+            "bindings": [{"sentence": sentence, "binding": "structural"}],
+        }
+        audit = {"verdicts": [{"bullet": "None.", "verdict": "clear"}]}
+        try:
+            res = paper_write.write_block(paper_dir, contract, draft, audit)
+            self.assertEqual(res["status"], "written")
+            self.assertIn("aiStylometry", res)
+            self.assertIn("composite_score", res["aiStylometry"])
+            self.assertIn("burstiness", res["aiStylometry"])
+            self.assertIn("cliches", res["aiStylometry"])
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

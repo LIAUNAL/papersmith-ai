@@ -2264,7 +2264,7 @@ item the operator decides, never something drafted on the agent's authority. It
 never submits. The literal contract is the "Venue adaptation" section of
 `skills/paper-writing/SKILL.md` and `.claude/agents/venue-adapter.md`.
 
-**The substitution engine is four of those twenty-nine** — `scaffold`, `status`,
+**The substitution engine is four of those thirty-one** — `scaffold`, `status`,
 `open`, `substitute` — and they carry one rule: **there is no `--force`**. Nothing
 here ever discards a person's on-disk text in favor of an incoming body. The only
 exit from a hand-edited block is `--adopt`, which re-baselines the digest and

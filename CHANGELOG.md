@@ -11,6 +11,26 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.49.0
+
+### Added
+
+- **AI Stylometry & Claude Fingerprint Quantification Engine** (`paper_ai_metrics.py`):
+  - Local, zero-dependency deterministic engine analyzing sentence burstiness coefficient of variation ($CV$), closed catalogue of 40+ high-frequency Claude clichés and formulaic patterns (e.g. *delve*, *testament*, *foster*, *interplay*, repetitive triadic parallelisms, "not only ... but also", empty nominalizations), Type-Token Ratio (TTR), and hapax diversity.
+  - Composite AI signature risk grading (`human_like`, `mixed`, `ai_flagged`).
+- **F5 Invariant Preservation Gate**:
+  - Inviolable verification of citations (`\cite{...}`), numeric/statistical values, percentages, units, displayed equations, and evidence bindings before any humanized draft can be accepted or substituted into `paper/main.tex`.
+- **New CLI Verbs & Manuscript-Wide Auditing** (`paper_cli.py`):
+  - `ai_audit`: quantifies AI markers for individual files (`--file`), drafts (`--draft`), single blocks (`--block`), or the entire manuscript across all written blocks (`--all`).
+  - `humanize`: verifies F5 invariants and stylometric threshold (`--target-score`), and substitutes into `paper/main.tex` via `--apply` / `--inplace` or inline `--replacement`.
+- **`ai-auditor` Agent**:
+  - Shipped and mapped to the `writing` phase across `.claude`, `.opencode`, `.pi`, and `.agents` harnesses (`AGENT_STAGES`).
+- **Command Center & PDF Preview Integration**:
+  - Endpoint `POST /api/pdf/ai-audit` supporting text snippet, block, and full-manuscript audit.
+  - PDF viewer toolbar button (`btnAuditAi`) and active selection panel AI risk indicator with cliché hints and bilingual i18n support (`en` and `es`).
+- **Full Archify Flow Regeneration**:
+  - Updated to 31 verbs in `papersmith-pi-flow.build.mjs` and re-finalized with Archify 3.0.1 (showcase quality pass).
+
 ## 0.48.0
 
 ### Added
