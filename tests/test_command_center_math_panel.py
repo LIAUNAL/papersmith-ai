@@ -110,3 +110,19 @@ class SafeRenderingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HelperShadowingTests(unittest.TestCase):
+    """A parameter named like a top-level helper hides it inside that
+    function: `renderMeter(level)` called `level(i)` on a number and the
+    tutor meter threw `level is not a function` on every render."""
+
+    def test_no_function_parameter_shadows_a_top_level_helper(self) -> None:
+        import re
+        for name in ("math-panel.js", "experiments-tutor.js"):
+            source = (STATIC / name).read_text(encoding="utf-8")
+            helpers = set(re.findall(r"^  const (\w+) = \(", source, re.M))
+            for match in re.finditer(r"function \w+\(([^)]*)\)", source):
+                params = {p.strip().split("=")[0].strip() for p in match.group(1).split(",") if p.strip()}
+                with self.subTest(script=name, signature=match.group(0)):
+                    self.assertFalse(params & helpers, f"{params & helpers} shadows a helper")
