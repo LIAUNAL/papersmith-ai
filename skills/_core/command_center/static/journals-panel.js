@@ -10,6 +10,11 @@
  * flags and the similar works that justify the fit. Above the table: the scoring
  * formula (`query.scoring`) and the calls made / served from the cache per service
  * with the OpenAlex budget state (`api_calls`). "Force refresh" sends `no_cache`.
+ * The source selector (auto / openalex / crossref) and the unknown-quartile
+ * toggle go to the CLI as `source` and `include_unknown_quartile`; the results then show which providers answered
+ * (`providers`), the fallback banner (`fallback`) with the OpenAlex key
+ * guidance, the unknown-quartile exclusions (`excluded_reasons`), the sources
+ * of each row (`sources`) and the DOAJ APC and review process (`doaj`).
  * The field names are the journal-finder CLI's own. The SJR line links to
  * scimagojr.com and uploads the CSV.
  *
@@ -65,6 +70,13 @@
     'no-application-evidence': () => t('journals.flag.noApplicationEvidence'),
     'apc-unknown': () => t('journals.flag.apcUnknown'),
     'review-time-unknown': () => t('journals.flag.reviewTimeUnknown'),
+    'quartile-unknown': () => t('journals.flag.quartileUnknown'),
+  };
+  const SOURCES = ['auto', 'openalex', 'crossref'];
+  const SOURCE_LABEL = {
+    auto: () => t('journals.form.source.auto'),
+    openalex: () => 'OpenAlex',
+    crossref: () => 'Crossref',
   };
   const STEP_LABEL = {
     selected: () => t('venue.step.selected'),
@@ -104,7 +116,8 @@
     statement: '',
     note: '',
     sjrYear: '',
-    form: { from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '15', noCache: false },
+    form: { from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '15', noCache: false,
+      source: 'auto', includeUnknown: false },
   };
 
   // ---------------------------------------------------------------- commands
@@ -134,6 +147,8 @@
     if (days !== null) parts.push('--max-review-days', String(days));
     const limit = wholeOrNull(form.limit, 1, 50);
     if (limit !== null) parts.push('--limit', String(limit));
+    if (SOURCES.indexOf(form.source) > 0) parts.push('--source', form.source);
+    if (form.includeUnknown) parts.push('--include-unknown-quartile');
     return parts.join(' ');
   }
 
@@ -148,6 +163,8 @@
     if (limit !== null) body.limit = limit;
     // "Force refresh": the CLI's --no-cache, neither reading nor writing the response cache.
     if (form.noCache) body.no_cache = true;
+    if (SOURCES.indexOf(form.source) > 0) body.source = form.source;
+    if (form.includeUnknown) body.include_unknown_quartile = true;
     return body;
   }
 
@@ -182,8 +199,9 @@
   const weeks = (days) => (Math.round((days / 7) * 10) / 10).toString();
 
   function quartileCell(c) {
-    const q = c.quartile;
     const source = c.quartile_source;
+    // An unknown quartile is never a Q badge, whatever value the file carries.
+    const q = source === 'unknown' ? null : c.quartile;
     const badge = q
       ? `<span class="badge ${esc(QUARTILE_BADGE[q] || 'badge--info')}">${esc(q)}</span>`
       : `<span class="badge badge--absent">${esc(t('journals.quartile.none'))}</span>`;
@@ -210,8 +228,18 @@
       ? `<span class="badge badge--ok">${esc(t('journals.oa'))}</span>`
       : `<span class="badge badge--absent">${esc(t('journals.subscription'))}</span>`;
     const doaj = c.is_in_doaj ? ` <span class="badge badge--info">DOAJ</span>` : '';
-    const apc = isNum(c.apc_usd) ? esc(t('journals.apc', { value: Math.round(c.apc_usd) })) : esc(t('journals.apc.unknown'));
-    return `${open}${doaj}<div class="panel__meta">${apc}</div>`;
+    const info = obj(c.doaj);
+    const prices = list(info.apc_max).map((p) => `${plain(obj(p).price)} ${oneLine(obj(p).currency)}`.trim()).filter(Boolean);
+    // DOAJ answers the APC in its own currencies; it fills the gap OpenAlex leaves.
+    const doajApc = info.has_apc === false ? esc(t('journals.doaj.noApc'))
+      : (prices.length ? esc(t('journals.doaj.apc', { value: prices.join(', ') })) : '');
+    const usd = isNum(c.apc_usd) && info.has_apc !== false
+      ? esc(t('journals.apc', { value: Math.round(c.apc_usd) }))
+      : (doajApc ? '' : esc(t('journals.apc.unknown')));
+    const review = list(info.review_process).map(oneLine).filter(Boolean);
+    const lines = [usd, doajApc, review.length ? esc(t('journals.doaj.review', { value: review.join('; ') })) : '']
+      .filter(Boolean).map((line) => `<div class="panel__meta">${line}</div>`).join('');
+    return `${open}${doaj}${lines}`;
   }
 
   function reviewCell(review) {
@@ -278,8 +306,10 @@
       ? ` <a href="${esc(c.homepage_url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('journals.home'))}">↗</a>`
       : '';
     const issn = c.issn_l ? ` · ISSN ${esc(c.issn_l)}` : '';
+    const sources = list(c.sources).map((name) => `<span class="badge badge--info">${esc(name)}</span>`).join(' ');
     return `<strong>${esc(c.display_name || c.openalex_id || '—')}</strong>${home}`
-      + `<div class="panel__meta">${esc(c.publisher || '')}${issn}</div>`;
+      + `<div class="panel__meta">${esc(c.publisher || '')}${issn}</div>`
+      + `${sources ? `<div title="${esc(t('journals.sources.title'))}">${sources}</div>` : ''}`;
   }
 
   function sortedCandidates(doc, sort) {
@@ -312,10 +342,14 @@
     const bad = rangeValid(form) ? '' : `<div class="journals-msg journals-msg--bad">${esc(t('journals.form.rangeInvalid'))}</div>`;
     const sorts = Object.keys(SORT_LABEL).map((key) =>
       `<option value="${key}"${key === s.sort ? ' selected' : ''}>${esc(SORT_LABEL[key]())}</option>`).join('');
+    const sourceOptions = SOURCES.map((key) =>
+      `<option value="${key}"${key === (SOURCES.indexOf(form.source) >= 0 ? form.source : 'auto') ? ' selected' : ''}>${esc(SOURCE_LABEL[key]())}</option>`).join('');
     return `<div class="journals-form">`
       + `<label>${esc(t('journals.form.from'))}<select data-jp-field="from">${options(form.from)}</select></label>`
       + `<label>${esc(t('journals.form.to'))}<select data-jp-field="to">${options(form.to)}</select></label>`
       + `<label class="journals-check"><input type="checkbox" data-jp-field="oaOnly"${form.oaOnly ? ' checked' : ''}> ${esc(t('journals.form.oaOnly'))}</label>`
+      + `<label title="${esc(t('journals.form.sourceTitle'))}">${esc(t('journals.form.source'))}<select data-jp-field="source">${sourceOptions}</select></label>`
+      + `<label class="journals-check" title="${esc(t('journals.form.includeUnknownTitle'))}"><input type="checkbox" data-jp-field="includeUnknown"${form.includeUnknown ? ' checked' : ''}> ${esc(t('journals.form.includeUnknown'))}</label>`
       + `<label class="journals-check" title="${esc(t('journals.form.noCacheTitle'))}"><input type="checkbox" data-jp-field="noCache"${form.noCache ? ' checked' : ''}> ${esc(t('journals.form.noCache'))}</label>`
       + `<label>${esc(t('journals.form.maxApc'))}<input type="number" min="0" step="1" data-jp-field="maxApc" value="${esc(form.maxApc)}"></label>`
       + `<label>${esc(t('journals.form.maxReview'))}<input type="number" min="1" step="1" data-jp-field="maxReview" value="${esc(form.maxReview)}"></label>`
@@ -343,7 +377,47 @@
       + `${messageHtml(s.sjrMessage)}</div>`;
   }
 
-  const SERVICE_NAME = { openalex: 'OpenAlex', crossref: 'Crossref', pubmed: 'PubMed' };
+  const SERVICE_NAME = {
+    openalex: 'OpenAlex', crossref: 'Crossref', pubmed: 'PubMed', europepmc: 'Europe PMC', doaj: 'DOAJ',
+    semanticscholar: 'Semantic Scholar',
+  };
+  const providerName = (name) => {
+    if (name === 'sjr') return 'SJR';
+    if (name === 'openalex-proxy') return t('journals.providers.proxy');
+    if (name === 'unknown') return t('journals.providers.unknown');
+    return SERVICE_NAME[name] || oneLine(name);
+  };
+  const providerNames = (v) => {
+    const names = (Array.isArray(v) ? v : [v]).filter((n) => n !== undefined && n !== null && n !== '').map(providerName);
+    return names.length ? names.join(', ') : '—';
+  };
+
+  // providers: which services answered each part of the search.
+  function providersHtml(providers) {
+    const info = obj(providers);
+    if (!Object.keys(info).length) return '';
+    return `<div class="panel__meta">${esc(t('journals.providers', {
+      similar: providerNames(info.similar_works), cited: providerNames(info.cited_venues),
+      metadata: providerNames(info.metadata), quartile: providerNames(info.quartile),
+    }))}</div>`;
+  }
+
+  // fallback: OpenAlex could not answer; the banner says why and how to get the free key.
+  function fallbackHtml(fallback) {
+    const info = obj(fallback);
+    if (info.used !== true) return '';
+    const reason = oneLine(info.reason) || oneLine(info.code) || '—';
+    return `<div class="journals-msg journals-msg--warn" role="status"><div>${esc(t('journals.fallback', { reason }))}</div>`
+      + `<div>${esc(t('journals.key.guidance'))}</div></div>`;
+  }
+
+  // Journals the quartile filter dropped for lacking one, and how to get them back.
+  function unknownExcludedHtml(reasons) {
+    const count = obj(reasons).quartile_unknown;
+    if (!isNum(count) || count < 1) return '';
+    return `<div class="panel__meta">${esc(t('journals.excluded.unknown', {
+      count, toggle: t('journals.form.includeUnknown') }))}</div>`;
+  }
   const FIT_COMPONENTS = ['similar_works', 'cited_in_paper', 'topic_overlap'];
   const money = (v) => String(Math.round(v * 10000) / 10000);
 
@@ -383,7 +457,7 @@
     if (budget.state === 'exhausted') {
       const retry = isNum(budget.retry_after_seconds) ? t('journals.api.retryIn', { seconds: budget.retry_after_seconds }) : '';
       budgetHtml = `<div class="journals-msg journals-msg--warn" role="status"><span class="badge badge--bad">429</span> `
-        + `${esc(t('journals.api.exhausted', { retry }))}</div>`;
+        + `${esc(t('journals.api.exhausted', { retry }))} ${esc(t('journals.key.guidance'))}</div>`;
     } else if (budget.state === 'ok' || budget.state === 'unknown') {
       const text = budget.state === 'unknown' || !isNum(budget.remaining_usd) ? t('journals.api.budget.unknown')
         : (isNum(budget.limit_usd)
@@ -409,6 +483,9 @@
       at: doc.generated_at || '',
     }));
     const titleLine = obj(doc.query).title ? `<div class="panel__meta">${esc(t('journals.paper', { title: doc.query.title }))}</div>` : '';
+    const providers = providersHtml(doc.providers);
+    const fallback = fallbackHtml(doc.fallback);
+    const unknownExcluded = unknownExcludedHtml(doc.excluded_reasons);
     const scoring = scoringHtml(obj(doc.query).scoring);
     const api = apiCallsHtml(doc.api_calls);
     const notes = list(doc.notes).map((n) => `<li>${esc(n)}</li>`).join('');
@@ -420,7 +497,8 @@
       + `<td>${fitCell(c)}</td><td>${evidenceCell(c)}</td>`
       + `<td><button type="button" class="btn btn--sm" data-jp-action="select" data-jp-id="${esc(c.openalex_id || c.id || '')}"`
       + `${s.busy.select ? ' disabled' : ''}>${esc(t('journals.select'))}</button></td></tr>`).join('');
-    return `${error}<div class="panel__meta">${summary}${notesLink}</div>${titleLine}${scoring}${api}`
+    return `${error}<div class="panel__meta">${summary}${notesLink}</div>${titleLine}`
+      + `${providers}${fallback}${unknownExcluded}${scoring}${api}`
       + `<div class="agents-table-wrap"><table class="agents-table journals-table"><thead><tr>`
       + `<th>${esc(t('journals.col.journal'))}</th><th>${esc(t('journals.col.quartile'))}</th>`
       + `<th>${esc(t('journals.col.access'))}</th><th>${esc(t('journals.col.hindex'))}</th>`
@@ -792,6 +870,10 @@
       state.form.oaOnly = !!el.checked;
     } else if (field === 'noCache') {
       state.form.noCache = !!el.checked;
+    } else if (field === 'includeUnknown') {
+      state.form.includeUnknown = !!el.checked;
+    } else if (field === 'source') {
+      state.form.source = SOURCES.indexOf(el.value) >= 0 ? el.value : 'auto';
     } else if (field === 'sort') {
       state.sort = el.value;
       render();

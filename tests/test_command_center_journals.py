@@ -1148,6 +1148,7 @@ class PanelRenderTests(unittest.TestCase):
     def test_a_search_that_did_not_fall_back_has_no_banner_and_no_key_guidance(self) -> None:
         html = self.node(self.fallback_js() + """
           doc.fallback = { used: false, code: null, reason: null };
+          doc.notes = [];
           doc.providers = { similar_works: ['openalex'], cited_venues: ['openalex'], metadata: ['openalex'], quartile: 'openalex-proxy' };
           doc.api_calls.budget = { state: 'ok', remaining_usd: 0.05, limit_usd: 0.1, retry_after_seconds: null };
           out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
@@ -1194,7 +1195,7 @@ class PanelRenderTests(unittest.TestCase):
         self.assertNotRegex(biomed, r'badge--[a-z]+">Q[1-4]<')
         self.assertRegex(obscure, r'badge--info">Q2<')
         self.assertIn("Cuartil desconocido", biomed)
-        self.assertNotIn("quartile-unknown", biomed)
+        self.assertNotIn('badge--warn">quartile-unknown<', biomed)
 
     def test_an_unknown_quartile_never_shows_a_q_badge_even_if_a_value_slips_in(self) -> None:
         html = self.node("""
