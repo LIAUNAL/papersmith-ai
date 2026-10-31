@@ -1296,7 +1296,8 @@ class PanelRenderTests(unittest.TestCase):
         topbar = PAGE.index('<div class="pdf-viewer-topbar">')
         self.assertLess(banner, mount)
         self.assertLess(mount, topbar)
-        self.assertIn('<script src="./journals-panel.js?v=0.46.0"></script>', PAGE)
+        from papersmith import __version__
+        self.assertIn(f'<script src="./journals-panel.js?v={__version__}"></script>', PAGE)
 
     def test_the_pdf_viewer_follows_the_venue_toggle(self) -> None:
         self.assertIn("window.setPdfVenue = setPdfVenue;", PAGE)
