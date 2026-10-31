@@ -10167,11 +10167,12 @@ class WriteGateTests(unittest.TestCase):
         never closes. Opening `phase-a.a` clears the gate; `cmd_write`
         then runs PAST it and fails on the very next real stage instead
         -- the draft file this test deliberately never creates --
-        `FileNotFoundError`, never `Refused('PHASE_NOT_READY')`."""
+        `Refused('DRAFT_UNREADABLE')`, never `Refused('PHASE_NOT_READY')`."""
         paper_block.open_block(self.paper_dir, "phase-a.a", at_end=True)
 
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(Refused) as ctx:
             paper_cli.cmd_write(self.args)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
 
 
 class WriteGateMutationProofTests(unittest.TestCase):
@@ -11798,8 +11799,9 @@ class PacketWriteGateTests(unittest.TestCase):
         `cmd_write` proceeds past the gate and fails on the very next real
         stage instead, the draft file this test deliberately never
         creates, never `Refused('GUIDANCE_MARKDOWN_UNREADABLE')`."""
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(Refused) as ctx:
             paper_cli.cmd_write(self.args)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
 
 
 class PacketWriteGateMutationProofTests(unittest.TestCase):
@@ -12238,8 +12240,9 @@ class CitationReadinessGateTests(unittest.TestCase):
             json.dumps({"class": "evidence"}), encoding="utf-8",
         )
 
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(Refused) as ctx:
             paper_cli.cmd_write(self.args)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
 
     def test_a_none_regime_block_is_never_gated_even_with_no_guidance_folder_at_all(self) -> None:
         """A guard that blocks everything is as wrong as one that blocks
@@ -12247,8 +12250,9 @@ class CitationReadinessGateTests(unittest.TestCase):
         "none"`, so it is written with no citations to gate at all, even
         though `guidance/cited-section/` still does not exist."""
         args = argparse.Namespace(**{**vars(self.args), "block": "uncited"})
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(Refused) as ctx:
             paper_cli.cmd_write(args)
+        self.assertEqual(ctx.exception.code, "DRAFT_UNREADABLE")
 
 
 class CitationReadinessGateMutationProofTests(unittest.TestCase):
