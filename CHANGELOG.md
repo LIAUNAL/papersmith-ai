@@ -11,6 +11,55 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.47.0
+
+### Added
+
+- **Journal finder (`/journal-finder`)**: from the dashboard's PDF Preview tab
+  (or the slash command), the operator picks a contiguous quartile range (`Q1`,
+  `Q1-Q2`, `Q2-Q4`...) and gets the journals that publish work like the paper,
+  ranked by `fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 *
+  topic_overlap`: OpenAlex works found by the paper's key phrases joined with
+  `OR` (split into method and application facets, with a 0.5 gate for journals
+  showing no application evidence), the journals the paper's own references
+  appeared in, and topic overlap. Each journal carries its quartile (SJR from a
+  SCImago CSV the operator downloads once and imports -- scimagojr.com blocks
+  automated downloads -- or an OpenAlex citedness proxy that is always labelled
+  as such), open access, DOAJ, APC, h-index and an **estimated review time**:
+  the median and IQR of days from submission to acceptance of its recent
+  articles, from Crossref (Springer and others) or PubMed, with the sample size
+  and source, or "no public data". Filters: open access only, maximum APC,
+  maximum review days. Responses are cached on disk; `api_calls` reports calls
+  made, served from cache and the OpenAlex budget, and an exhausted keyless
+  budget fails fast naming `OPENALEX_API_KEY`. `skills/journal-finder/scripts/
+  journal_cli.py search|sjr-import|status` writes `paper/journal-candidates.json`;
+  nothing is ever submitted.
+- **Venue adaptation (`paper-writing venue ...` and the `venue-adapter` agent)**:
+  choosing a journal in the panel records it under `paper/venues/<slug>/`; the
+  agent reads the author guidelines and records every requirement with its quote
+  and URL; `venue diff` audits the manuscript against them (missing, extra or
+  out-of-order sections, word and keyword limits, missing declarations, class and
+  reference-style mismatches), the agent proposes an adjustment plan, the
+  operator approves it in the panel (bound to the plan's hash) or asks for
+  changes, text changes go only through the existing `write` loop, and `venue
+  build` assembles the journal's version (its class, front matter and section
+  order, the canonical blocks verbatim) which the dashboard compiles beside the
+  canonical PDF. The canonical `paper/main.tex` and `sections/` are never
+  written by a venue verb.
+- **Archify flow**: sub-lane 11a draws journal choice and venue adaptation.
+
+### Fixed
+
+- **CI is green again**: stale test expectations after the dashboard's i18n
+  (English server messages, attribute order), `smith novelty` registered in the
+  MCP CLI roster, write-gate tests expecting `DRAFT_UNREADABLE`, and
+  remote-execution adapter tests made independent of file order.
+- **Math tutor meter**: `renderMeter(level)` shadowed the `level()` label
+  helper, so the meter threw on every render in the browser.
+- **PDF preview**: the text layer sets the `--scale-factor` PDF.js expects.
+- **Domain-neutral journal-finder doctrine**: phrase examples no longer use one
+  project's method terms.
+
 ## 0.46.0
 
 ### Added
