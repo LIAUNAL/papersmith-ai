@@ -78,6 +78,8 @@ other case, including `{"available": false, "reason": "..."}`.
 - `PAPERSMITH_BANCO_LIA_COMMAND` overrides the command: set it to a JSON array of
   arguments (for example `["uvx", "--from", "<path-or-url>", "banco-lia-mcp"]`)
   to point the dashboard at a local clone of the bank or at a test double.
+- `PAPERSMITH_BANCO_LIA_TIMEOUT` sets the seconds allowed for the whole exchange
+  (90 by default); a value that is not a positive number keeps the default.
 
 The bank's items are LIA continuity context (projects `H*` and `P*`, articles by
 title and DOI). They are not state-of-the-art evidence, and nothing in the proposed
