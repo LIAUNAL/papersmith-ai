@@ -38,8 +38,8 @@
           "yearOfPublication": 2025,
           "journal": {
             "title": "Neuro Fixture Journal",
-            "issn": "8888-8888",
-            "essn": "8888-8889"
+            "issn": "8181-8181",
+            "essn": "8181-8189"
           }
         }
       },
@@ -84,7 +84,7 @@
           "yearOfPublication": 2025,
           "journal": {
             "title": "Neuro Fixture Journal",
-            "issn": "8888-8888",
+            "issn": "8181-8181",
             "essn": null
           }
         }

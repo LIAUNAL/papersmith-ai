@@ -28,7 +28,7 @@ OpenAlex is unavailable or skipped), by journal and the works that name it:
   works; DOAJ with a EUR APC only.
 * D  Obscure Quarterly         5555-5555 -- application facet plus one Europe PMC work.
 * T  Title Only Review         no ISSN -- two works under spellings of one title.
-* N  Neuro Fixture Journal     8888-8888 -- Europe PMC only, DOAJ without APC.
+* N  Neuro Fixture Journal     8181-8181 -- Europe PMC only, DOAJ without APC.
 * Q  Quantum Fixture Letters   1234-5679 -- Semantic Scholar only (needs the key).
 * F  Cited Only Journal        6666-666X -- reached only through the paper's references.
 """
@@ -1688,7 +1688,8 @@ class FitContractTests(JournalFinderCase):
             (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
         result = self.search()
         scoring = result.json["query"]["scoring"]
-        self.assertEqual(set(scoring), {"formula", "weights", "active", "normalization", "facet_gate"})
+        self.assertEqual(set(scoring), {"formula", "weights", "active", "normalization", "facet_gate",
+                                        "topic_overlap_basis"})
         self.assertAlmostEqual(sum(scoring["weights"].values()), 1.0, places=6)
         self.assertEqual(scoring["active"], ["similar_works", "cited_in_paper", "topic_overlap"])
         for candidate in result.json["candidates"]:
@@ -2444,7 +2445,7 @@ class EuropePmcTests(FallbackCase):
         self.assertEqual(by_name[BFR]["similar_works_count"], 2, "its Europe PMC work repeats a Crossref DOI")
         self.assertEqual(by_name[OQ]["similar_works_count"], 2, "one from each provider")
         self.assertEqual(by_name[NFJ]["similar_works_count"], 1, "a journal only Europe PMC names")
-        self.assertEqual(by_name[NFJ]["issn"], ["8888-8888", "8888-8889"])
+        self.assertEqual(by_name[NFJ]["issn"], ["8181-8181", "8181-8189"])
         self.assertNotIn("preprint", json.dumps(result.json["candidates"]).lower())
         self.assertEqual(by_name[NFJ]["sources"], ["europepmc", "doaj"])
         self.assertEqual(by_name[BFR]["sources"], ["crossref", "europepmc", "doaj"])
@@ -2631,7 +2632,7 @@ class FallbackMetadataTests(FallbackCase):
         info = [r["path"] for r in api.requests if re.fullmatch(r"/crossref/journals/[^/]+", r["path"])]
         self.assertEqual(info.count("/crossref/journals/1111-111X"), 1)
         self.assertNotIn("/crossref/journals/3333-3333", info)
-        self.assertNotIn("/crossref/journals/8888-8888", info)
+        self.assertNotIn("/crossref/journals/8181-8181", info)
         self.assertIn("crossref", by_name[NFL]["sources"])
 
     def test_doaj_maps_open_access_apc_review_process_and_subjects(self):
