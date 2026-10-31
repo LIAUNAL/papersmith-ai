@@ -7,6 +7,7 @@ Two jobs, both strictly read-only:
   preview payload.
 * :func:`resolve_artifact` maps a public artifact name to a real file under
   ``paper/`` (``main.pdf`` and ``figures/<id>.pdf|png``) or says why not.
+  :func:`resolve_venue_pdf` does the same for ``paper/venues/<slug>/main.pdf``.
 
 Every read goes through :func:`bounded_read`: the path is resolved and must stay
 inside the workspace, must be a regular file, and its size is checked BEFORE any
@@ -53,6 +54,8 @@ _FIGURE_ID_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,%d}$" % (FIGURE_ID_M
 _REGION_BEGIN_RE = re.compile(r"^%% paper-writing (declarations|provenance) begin\b")
 _REGION_END_RE = re.compile(r"^%% paper-writing (declarations|provenance) end\s*$")
 _CONTENT_TYPES = {"pdf": "application/pdf", "png": "image/png"}
+#: A venue slug, as ``paper_venue.SLUG_RE`` defines it.
+VENUE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 
 # --------------------------------------------------------------------------
@@ -385,3 +388,76 @@ def read_artifact(path: Path) -> bytes | None:
     except OSError:
         return None
     return None if len(data) > FILE_MAX_BYTES else data
+
+
+def venue_directory(root: Path | str, slug: str) -> Path | None:
+    """The real directory of venue ``slug``, or ``None``.
+
+    ``None`` for a malformed slug, a missing venue, or a venue directory that
+    resolves anywhere but directly under ``paper/venues/`` inside the
+    workspace (a symlink out is not followed).
+    """
+    if not isinstance(slug, str) or VENUE_SLUG_RE.match(slug) is None:
+        return None
+    root = Path(root).expanduser().resolve()
+    try:
+        base = (root / "paper" / "venues").resolve(strict=True)
+        base.relative_to(root)
+        real = (base / slug).resolve(strict=True)
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if real.parent != base or not real.is_dir():
+        return None
+    return real
+
+
+def resolve_venue_pdf(root: Path | str, slug: str) -> tuple[str, Path | None]:
+    """Resolve ``paper/venues/<slug>/main.pdf`` to ``(status, path)``.
+
+    ``status`` is ``ok``, ``bad`` (malformed slug, HTTP 400), ``absent``
+    (HTTP 404) or ``too_large`` (HTTP 413). The file must resolve inside the
+    venue's own directory.
+    """
+    if not isinstance(slug, str) or VENUE_SLUG_RE.match(slug) is None:
+        return "bad", None
+    directory = venue_directory(root, slug)
+    if directory is None:
+        return "absent", None
+    resolved = _contained(directory, directory / "main.pdf")
+    if resolved is None:
+        return "absent", None
+    try:
+        if resolved.stat().st_size > FILE_MAX_BYTES:
+            return "too_large", None
+    except OSError:
+        return "absent", None
+    return "ok", resolved
+
+
+def read_capped_bytes(root: Path | str, path: Path, cap: int) -> tuple[str, bytes | None]:
+    """Like :func:`bounded_read` but returns the raw bytes, so a hash taken
+    from them is the hash of the file on disk."""
+    root = Path(root).expanduser().resolve()
+    try:
+        resolved = path.resolve(strict=True)
+    except FileNotFoundError:
+        return "absent", None
+    except (OSError, RuntimeError):
+        return "unreadable", None
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return "unsafe", None
+    try:
+        info = resolved.stat()
+        if not stat.S_ISREG(info.st_mode):
+            return "unreadable", None
+        if info.st_size > cap:
+            return "too_large", None
+        with open(resolved, "rb") as handle:
+            data = handle.read(cap + 1)
+    except OSError:
+        return "unreadable", None
+    if len(data) > cap:
+        return "too_large", None
+    return "ok", data

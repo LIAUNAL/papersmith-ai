@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-31T12:00:00+00:00",
+  "query": {"title": "Fixture paper <b>title</b>", "keywords": ["quantum", "eeg"], "terms": ["quantum", "eeg"]},
+  "quartiles": ["Q1", "Q2"],
+  "filters": {"oa_only": false, "max_apc": null, "max_review_days": null, "limit": 15},
+  "quartile_source_summary": {"sjr": 1, "openalex-proxy": 1},
+  "sjr": {"file": "scimagojr-2025.csv", "year": 2025},
+  "api_calls": {"made": 42, "cached": 7},
+  "candidates": [
+    {
+      "rank": 1,
+      "openalex_id": "https://openalex.org/S1001",
+      "display_name": "Expert Systems with Applications",
+      "issn_l": "0957-4174",
+      "issn": ["0957-4174", "1873-6793"],
+      "publisher": "Elsevier BV",
+      "homepage_url": "https://www.journals.elsevier.com/expert-systems-with-applications",
+      "is_oa": false,
+      "is_in_doaj": false,
+      "apc_usd": 3450,
+      "h_index": 300,
+      "quartile": "Q1",
+      "quartile_source": "sjr",
+      "sjr": {"value": 1.8, "year": 2025, "best_quartile": "Q1", "categories": ["Artificial Intelligence (Q1)"]},
+      "proxy": null,
+      "similar_works_count": 9,
+      "similar_works": [
+        {"title": "Quantum kernels for EEG", "year": 2024, "doi": "10.1000/xyz123"},
+        {"title": "<img src=x onerror=alert(1)>", "year": 2023, "doi": "10.1000/\"><script>alert(2)</script>"}
+      ],
+      "fit_score": 0.82,
+      "fit": {"similar_works": 1.0, "cited_in_paper": 0.5, "topic_overlap": 0.75},
+      "facets": {"method": 0.8, "application": 0.2},
+      "flags": ["no-application-evidence"],
+      "review_time": {
+        "median_days": 120, "p25_days": 90, "p75_days": 160, "n": 31,
+        "accept_to_online_median_days": 14, "source": "pubmed",
+        "window": {"from": "2023-01-01", "to": "2026-10-01"}
+      }
+    },
+    {
+      "rank": 2,
+      "openalex_id": "https://openalex.org/S1002",
+      "display_name": "Journal Without Optional Fields",
+      "is_oa": true,
+      "is_in_doaj": true,
+      "quartile": "Q2",
+      "quartile_source": "openalex-proxy",
+      "proxy": {"field": "Computer Science", "percentile": 62.5, "quartile": "Q2"},
+      "similar_works": [],
+      "fit_score": 0.4,
+      "review_time": {"median_days": null, "n": 2, "source": "none"}
+    }
+  ],
+  "excluded_count": 3,
+  "notes": ["Candidates labelled openalex-proxy carry an approximate quartile."]
+}
