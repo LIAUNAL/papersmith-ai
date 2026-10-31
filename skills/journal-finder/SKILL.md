@@ -271,9 +271,11 @@ served from disk, in total and per service (`openalex`, `crossref`,
 `remaining_usd`, `limit_usd` and `retry_after_seconds` when known. A retry
 counts as a call made.
 
-OpenAlex's keyless budget is small (USD 0.10 per day, shared by everyone
-behind one IP address, roughly a hundred searches) and one search spends a
-noticeable part of it. Successful answers are therefore kept in
+OpenAlex's keyless budget is a demo allowance (USD 0.10 per day, shared by
+everyone behind one IP address; a free key raises it to USD 1 per day), and
+one journal search spends roughly USD 0.01 to 0.04 of it, depending on how
+many candidates need the proxy's count queries: a handful of searches a day
+without a key, a few dozen with one. Successful answers are therefore kept in
 `~/.cache/papersmith/journal-finder/http/` (override with
 `PAPERSMITH_JOURNAL_CACHE_DIR`), keyed by the request without credentials
 or contact email (the Semantic Scholar key is a header and never part of it),
