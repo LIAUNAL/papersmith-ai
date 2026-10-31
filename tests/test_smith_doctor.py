@@ -86,7 +86,7 @@ class DoctorTests(unittest.TestCase):
             self.assertIn(("tools", tool), items)
         self.assertIn(("skills", "paper-writing"), items)
         self.assertIn(("agents", "redactor"), items)
-        self.assertTrue(any(area == "flows" and item.startswith("Fase 1") for area, item in items))
+        self.assertTrue(any(area == "flows" and item.startswith("Phase 1:") for area, item in items))
         self.assertEqual(code, EXECUTION_ERROR if payload["summary"]["state"] == "fail" else SUCCESS)
 
     def test_a_missing_tool_is_a_row_not_an_exception(self) -> None:
