@@ -15,13 +15,44 @@ from typing import Any
 from ..errors import UserError
 from .exit_codes import SUCCESS
 
-# Import the contract engine
-try:
-    from skills._core.results import novelty_gate
-except ImportError:
-    # Direct import when skills is under kit or relative
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_core" / "results"))
-    import novelty_gate  # type: ignore
+
+def _get_novelty_gate(root: Path | None = None):
+    """Dynamically resolve and import the novelty_gate engine."""
+    name = "papersmith_novelty_gate"
+    if name in sys.modules:
+        return sys.modules[name]
+
+    candidates: list[Path] = []
+    if root:
+        candidates.append(root / "skills" / "_core" / "results" / "novelty_gate.py")
+    try:
+        from ..kit import resolve_kit_root
+        kit_root = resolve_kit_root()
+        candidates.append(kit_root / "skills" / "_core" / "results" / "novelty_gate.py")
+    except Exception:
+        pass
+
+    # Repo fallback (when running directly from a papersmith-ai clone)
+    repo_cand = Path(__file__).resolve().parents[3] / "skills" / "_core" / "results" / "novelty_gate.py"
+    candidates.append(repo_cand)
+
+    for script in candidates:
+        if script.is_file():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(name, script)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[name] = module
+                spec.loader.exec_module(module)
+                return module
+
+    try:
+        from skills._core.results import novelty_gate  # type: ignore
+        return novelty_gate
+    except ImportError:
+        pass
+
+    raise UserError("could not locate novelty_gate module (skills/_core/results/novelty_gate.py)")
 
 
 def workspace_root(raw: str | None) -> Path:
@@ -34,7 +65,8 @@ def workspace_root(raw: str | None) -> Path:
 
 def run_status(args) -> int:
     root = workspace_root(args.workspace)
-    overview = novelty_gate.get_novelty_overview(root)
+    gate_mod = _get_novelty_gate(root)
+    overview = gate_mod.get_novelty_overview(root)
     if getattr(args, "json", False):
         print(json.dumps(overview, indent=2, ensure_ascii=False))
         return SUCCESS
@@ -58,23 +90,26 @@ def run_status(args) -> int:
         if h.get("test"):
             print(f"      Test: {h.get('test')} | Observed: {h.get('observed')}")
 
-    # Rigor summary
-    print("\nScientific Rigor & Reviewer Defense Audit:")
-    for item in overview.get("rigor_audit", []):
-        mark = "✓" if item.get("passed") else "✗"
-        print(f"  [{mark}] {item.get('title')}: {item.get('detail')}")
+    # Scientific rigor checklist
+    rigor = overview.get("rigor_audit", [])
+    print(f"\nScientific Rigor Checklist ({sum(1 for r in rigor if r.get('passed'))}/{len(rigor)} passed):")
+    for r in rigor:
+        mark = "✓" if r.get("passed") else "✗"
+        print(f"  [{mark}] {r.get('title')}: {r.get('detail')}")
 
-    print("\nActions:")
-    print("  Approve: `smith novelty approve [--notes \"...\"]`")
-    print("  Iterate: `smith novelty iterate --stage {experiments|proposal|plausibility} [--notes \"...\"]`")
+    print("\nActions available:")
+    print("  smith novelty approve [--notes '...']")
+    print("  smith novelty iterate --stage {experiments|proposal|plausibility} [--notes '...']")
+    print("  smith novelty reset")
     return SUCCESS
 
 
 def run_approve(args) -> int:
     root = workspace_root(args.workspace)
+    gate_mod = _get_novelty_gate(root)
     try:
-        record = novelty_gate.record_decision(root, "approve", rationale=args.notes)
-    except novelty_gate.NoveltyRefusal as exc:
+        record = gate_mod.record_decision(root, "approve", rationale=args.notes)
+    except gate_mod.NoveltyRefusal as exc:
         raise UserError(f"could not approve novelty gate: {exc.message}") from exc
 
     print("Novelty gate APPROVED: empirical evidence supports proposal novelty.")
@@ -87,10 +122,11 @@ def run_approve(args) -> int:
 
 def run_iterate(args) -> int:
     root = workspace_root(args.workspace)
+    gate_mod = _get_novelty_gate(root)
     action = f"iterate_{args.stage}"
     try:
-        record = novelty_gate.record_decision(root, action, rationale=args.notes)
-    except novelty_gate.NoveltyRefusal as exc:
+        record = gate_mod.record_decision(root, action, rationale=args.notes)
+    except gate_mod.NoveltyRefusal as exc:
         raise UserError(f"could not record iteration: {exc.message}") from exc
 
     stage_names = {
@@ -108,43 +144,46 @@ def run_iterate(args) -> int:
 
 def run_reset(args) -> int:
     root = workspace_root(args.workspace)
+    gate_mod = _get_novelty_gate(root)
     try:
-        record = novelty_gate.record_decision(root, "reset", rationale="Gate reset to pending")
-    except novelty_gate.NoveltyRefusal as exc:
+        record = gate_mod.record_decision(root, "reset", rationale="Gate reset to pending")
+    except gate_mod.NoveltyRefusal as exc:
         raise UserError(f"could not reset gate: {exc.message}") from exc
 
-    print("Novelty gate reset to PENDING.")
+    print("Novelty gate RESET: status is now [PENDING].")
+    print(f"Recorded at: {record['decided_at']}")
     return SUCCESS
 
 
 def register(subparsers) -> None:
     parser = subparsers.add_parser(
         "novelty",
-        help="novelty evaluation & gate: assess empirical support and authorize paper writing",
+        help="novelty assessment and findings gate (hypotheses vs SOTA, reviewer defense, gate decision)",
     )
-    commands = parser.add_subparsers(dest="novelty_command", required=True)
+    cmd_sub = parser.add_subparsers(dest="novelty_subcommand", required=True)
 
-    status = commands.add_parser("status", help="view consolidated novelty status, hypotheses, and gate")
-    status.add_argument("--json", action="store_true", help="output as machine-readable JSON")
-    status.add_argument("--workspace", default=None, help="workspace root (default: current directory)")
-    status.set_defaults(handler=run_status)
+    # status
+    p_status = cmd_sub.add_parser("status", help="show novelty assessment overview and gate status")
+    p_status.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
+    p_status.add_argument("--json", action="store_true", help="output JSON format")
+    p_status.set_defaults(handler=run_status)
 
-    approve = commands.add_parser("approve", help="approve novelty and authorize manuscript writing")
-    approve.add_argument("--notes", default="", help="rationale supporting the approval")
-    approve.add_argument("--workspace", default=None, help="workspace root (default: current directory)")
-    approve.set_defaults(handler=run_approve)
+    # approve
+    p_approve = cmd_sub.add_parser("approve", help="approve novelty and unlock manuscript scaffolding")
+    p_approve.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
+    p_approve.add_argument("--notes", "-n", default="Empirical evidence supports core claims",
+                           help="justification / rationale for approval")
+    p_approve.set_defaults(handler=run_approve)
 
-    iterate = commands.add_parser("iterate", help="record need for further iteration before drafting")
-    iterate.add_argument(
-        "--stage",
-        required=True,
-        choices=["experiments", "proposal", "plausibility"],
-        help="target stage to iterate on",
-    )
-    iterate.add_argument("--notes", default="", help="reason or instructions for iteration")
-    iterate.add_argument("--workspace", default=None, help="workspace root (default: current directory)")
-    iterate.set_defaults(handler=run_iterate)
+    # iterate
+    p_iterate = cmd_sub.add_parser("iterate", help="reject novelty or request iteration before manuscript drafting")
+    p_iterate.add_argument("--stage", "-s", choices=["experiments", "proposal", "plausibility"],
+                           default="experiments", help="target stage to iterate on")
+    p_iterate.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
+    p_iterate.add_argument("--notes", "-n", default="", help="iteration guidelines and requested remedies")
+    p_iterate.set_defaults(handler=run_iterate)
 
-    reset = commands.add_parser("reset", help="reset novelty gate status to pending")
-    reset.add_argument("--workspace", default=None, help="workspace root (default: current directory)")
-    reset.set_defaults(handler=run_reset)
+    # reset
+    p_reset = cmd_sub.add_parser("reset", help="reset gate status to pending")
+    p_reset.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
+    p_reset.set_defaults(handler=run_reset)
