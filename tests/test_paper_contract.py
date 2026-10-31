@@ -3003,5 +3003,143 @@ class DatasetForkAndProposalFactsTests(unittest.TestCase):
         self.assertNotIn("implementation", mm_proposal.requires_facts)
 
 
+def _paper_cli_venue_verbs() -> set[str]:
+    """The `venue` group's verbs, read from the live nested parser -- never
+    hand-listed, the same derivation `_shipped_paper_cli_verbs` uses one
+    level up."""
+    parser = paper_cli.build_parser()
+    top = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    group = next(
+        a for a in top.choices["venue"]._actions if isinstance(a, argparse._SubParsersAction)
+    )
+    return set(group.choices.keys())
+
+
+def _venue_verbs_called_through_main(path: Path) -> set[str]:
+    """Every `venue <verb>` this file reaches through `main([\"venue\", \"<verb>\",
+    ...])` -- the front door `VerbFrontDoorCoverageTests` recognizes, one
+    level deeper: the top-level scanner credits `venue` once, this credits
+    each of its nine verbs."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    verbs: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        named_main = (isinstance(func, ast.Attribute) and func.attr == "main") or (
+            isinstance(func, ast.Name) and func.id == "main"
+        )
+        if not (named_main and node.args and isinstance(node.args[0], (ast.List, ast.Tuple))):
+            continue
+        elts = node.args[0].elts
+        if len(elts) >= 2 and _string_constant(elts[0]) == "venue":
+            verb = _string_constant(elts[1])
+            if verb:
+                verbs.add(verb)
+    return verbs
+
+
+class VenueVerbFrontDoorTests(unittest.TestCase):
+    """`journal-finder` S9-S10: every `venue` verb is exercised through
+    `paper_cli.main` -- the real argparse dispatch -- on a scratch tree under
+    the gitignored `.scratch/`, and the set of verbs this class calls is held
+    equal to the nested parser's own roster, so a tenth verb goes red here
+    until it has a front-door test."""
+
+    def _captured(self):
+        import contextlib
+        import io
+
+        @contextlib.contextmanager
+        def capture():
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                yield buffer
+
+        return capture()
+
+    def test_the_nine_venue_verbs_run_through_the_front_door(self) -> None:
+        import test_paper_venue as support
+
+        root = FORGE_ROOT / ".scratch" / f".paper-contract-venue-{os.getpid()}"
+        shutil.rmtree(root, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        paper, sections = root / "paper", root / "sections"
+        paper.mkdir(parents=True)
+        sections.mkdir()
+        (paper / "refs.bib").write_text("@article{ref1,title={A}}\n@article{ref2,title={B}}\n")
+        (paper / "main.tex").write_text(support.canonical_tex(abstract_words=260), encoding="utf-8")
+        shutil.copy(support.FIXTURES / "journal-candidates.json", paper / "journal-candidates.json")
+        shutil.copy(support.FIXTURES / "requirements-elsevier.json", root / "requirements.json")
+        fake_class = root / "elsarticle.cls"
+        fake_class.write_text("\\ProvidesClass{elsarticle}\n", encoding="utf-8")
+        scaffold = support.VenueCase("setUp")
+        scaffold.sections = sections
+        scaffold.write_contracts()
+        plan = root / "plan.md"
+        plan.write_text("[over-limit:abstract_words] shorten the abstract.\n", encoding="utf-8")
+        p = str(paper)
+
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "list", "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["venues"]), (0, []))
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "select", "--slug", "eswa", "--candidate", "S1001", "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["verb"]), (0, "select"))
+        with self._captured() as out:
+            code = paper_cli.main([
+                "venue", "requirements", "--slug", "eswa", "--file", str(root / "requirements.json"),
+                "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["verb"]), (0, "requirements"))
+        with self._captured() as out:
+            code = paper_cli.main([
+                "venue", "acquire", "--slug", "eswa", "--file", str(fake_class),
+                "--url", "https://example.org/elsarticle.cls", "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["class"]), (0, "elsarticle"))
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "diff", "--slug", "eswa", "--sections", str(sections), "--paper", p])
+        self.assertEqual(code, 0)
+        self.assertGreater(json.loads(out.getvalue())["summary"]["blocker"], 0)
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "build", "--slug", "eswa", "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["code"]), (2, "PLAN_NOT_APPROVED"))
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "plan", "--slug", "eswa", "--file", str(plan), "--paper", p])
+        self.assertEqual(code, 0)
+        digest = json.loads(out.getvalue())["plan_sha256"]
+        with self._captured() as out:
+            code = paper_cli.main([
+                "venue", "approve", "--slug", "eswa", "--statement", "Apply it.",
+                "--plan-sha256", digest, "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["verb"]), (0, "approve"))
+        before = hashlib.sha256((paper / "main.tex").read_bytes()).hexdigest()
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "build", "--slug", "eswa", "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["verb"]), (0, "build"))
+        self.assertEqual(hashlib.sha256((paper / "main.tex").read_bytes()).hexdigest(), before)
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "status", "--slug", "eswa", "--paper", p])
+        self.assertEqual((code, json.loads(out.getvalue())["state"]), (0, "built"))
+
+    def test_every_venue_verb_has_a_front_door_call_here(self) -> None:
+        shipped = _paper_cli_venue_verbs()
+        called = _venue_verbs_called_through_main(Path(__file__))
+        self.assertEqual(
+            sorted(shipped - called), [],
+            "these `venue` verbs ship in paper_cli.py's nested parser with no "
+            "`main([\"venue\", <verb>, ...])` call in this file")
+        self.assertEqual(sorted(called - shipped), [], "this file calls a `venue` verb the parser no longer ships")
+
+    def test_the_venue_scanner_reads_a_synthetic_call_and_nothing_else(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "sample.py"
+            sample.write_text(
+                "import paper_cli\n\ndef t():\n    paper_cli.main(['venue', 'diff', '--slug', 'x'])\n"
+                "    paper_cli.main(['status'])\n    other.run(['venue', 'build'])\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(_venue_verbs_called_through_main(sample), {"diff"})
+
+
 if __name__ == "__main__":
     unittest.main()

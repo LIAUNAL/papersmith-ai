@@ -18,6 +18,7 @@ other (design.md, "the compile's verdict never comes from the parser").
 """
 from __future__ import annotations
 
+import glob
 import os
 import re
 import shutil
@@ -137,6 +138,68 @@ def discover_latexmk(path: str | None) -> str:
             f"latexmk not found; searched PATH={searched!r}",
         )
     return found
+
+
+#: Where a TeX Live install keeps its binaries when the calling shell's
+#: `PATH` does not carry them -- the same list `experiment-diagrams`'
+#: `diagram_cli.py` searches (macOS MacTeX symlinks, Homebrew, versioned
+#: `texlive/<year>/bin/<arch>` trees).
+TOOL_FALLBACK_DIRS: tuple = (
+    "/Library/TeX/texbin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/local/texlive/*/bin/*",
+    "/opt/texlive/*/bin/*",
+    "~/texlive/*/bin/*",
+)
+
+
+def discover_kpsewhich(path: str | None = None, fallback_dirs: tuple = TOOL_FALLBACK_DIRS) -> str | None:
+    """Finds `kpsewhich` on the injectable `path` (default: the real `PATH`),
+    then in `fallback_dirs` (glob patterns, `~` expanded). Returns `None`
+    rather than refusing: `venue acquire` names its own refusal for "no
+    TeX Live here" (`TEXLIVE_UNAVAILABLE`), distinct from "TeX Live has no
+    such class" (`TEMPLATE_ABSENT`).
+    """
+    found = shutil.which("kpsewhich", path=path)
+    if found:
+        return found
+    for pattern in fallback_dirs:
+        expanded = os.path.expanduser(pattern)
+        for directory in sorted(glob.glob(expanded)):
+            candidate = os.path.join(directory, "kpsewhich")
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
+def kpsewhich_lookup(binary: str, filename: str, timeout: float = 30) -> str | None:
+    """One `kpsewhich <filename>` call: the resolved absolute path, or `None`
+    when TeX Live does not carry the file. `filename` is never an option:
+    a leading `-` or a path separator returns `None` without a spawn.
+    """
+    if not filename or filename.startswith("-") or "/" in filename or "\\" in filename:
+        return None
+    try:
+        proc = subprocess.run(
+            [binary, filename], capture_output=True, text=True, timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    return lines[0] if lines else None
+
+
+def resolve_texlive_file(
+    filename: str, *, path: str | None = None, fallback_dirs: tuple = TOOL_FALLBACK_DIRS,
+) -> str | None:
+    """`discover_kpsewhich` then `kpsewhich_lookup`, `None` on either miss."""
+    binary = discover_kpsewhich(path, fallback_dirs)
+    if binary is None:
+        return None
+    return kpsewhich_lookup(binary, filename)
 
 
 def parse_log(log_text: str) -> tuple[tuple[Diagnostic, ...], int]:

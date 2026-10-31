@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "guidelines_urls": [
+    "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"
+  ],
+  "document_class": {
+    "name": "elsarticle",
+    "options": ["preprint", "12pt"],
+    "source": "texlive",
+    "quote": "Authors may use the elsarticle LaTeX class to prepare their manuscript.",
+    "url": "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions"
+  },
+  "sections": [
+    {"id": "introduction", "title": "Introduction", "required": true, "order": 1,
+     "quote": "Introduction: state the objectives of the work and provide an adequate background.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "related-work", "title": "Related work", "required": false, "order": 2,
+     "quote": "A literature survey should be given where appropriate.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "materials-and-methods", "title": "Material and methods", "required": true, "order": 3,
+     "quote": "Material and methods: provide sufficient detail to allow the work to be reproduced.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "results-and-discussion", "title": "Results and discussion", "required": true, "order": 4,
+     "quote": "Results should be clear and concise; discussion should explore their significance.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "conclusions", "title": "Conclusions", "required": true, "order": 5,
+     "quote": "Conclusions: the main conclusions of the study may be presented in a short Conclusions section.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "references", "title": "References", "required": true, "order": 6,
+     "quote": "References: list the references cited in the text.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "back-matter", "title": "Declarations", "required": true, "order": 7,
+     "quote": "Declarations: funding, competing interests and data availability statements.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"}
+  ],
+  "limits": {
+    "abstract_words": {"max": 250,
+      "quote": "The abstract should be a maximum of 250 words.",
+      "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    "keywords": {"min": 1, "max": 7,
+      "quote": "Provide 1 to 7 keywords, in English.",
+      "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"}
+  },
+  "declarations_required": [
+    {"id": "author-contributions",
+     "quote": "CRediT author statement: provide author contributions using the CRediT taxonomy.",
+     "url": "https://www.elsevier.com/researcher/author/policies-and-guidelines/credit-author-statement"},
+    {"id": "data-availability",
+     "quote": "Data availability: authors must include a data availability statement.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "funding",
+     "quote": "Funding sources: name the funding bodies that supported the work.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"},
+    {"id": "conflicts",
+     "quote": "Declaration of competing interest is required for every submission.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"}
+  ],
+  "reference_style": {
+    "bst": "elsarticle-num",
+    "quote": "Use the elsarticle-num bibliographic style with numbered references.",
+    "url": "https://www.elsevier.com/researcher/author/policies-and-guidelines/latex-instructions"
+  },
+  "extras": [
+    {"id": "highlights",
+     "quote": "Highlights are mandatory: 3 to 5 bullet points, max 85 characters each.",
+     "url": "https://www.sciencedirect.com/journal/expert-systems-with-applications/publish/guide-for-authors"}
+  ]
+}

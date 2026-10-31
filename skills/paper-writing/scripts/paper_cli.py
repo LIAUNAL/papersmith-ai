@@ -6,7 +6,8 @@ Standard library only, keyless, offline, fail-closed — the shape of
 invocation. Exit 0 means the command ran; exit 2 means a guard refused
 before touching disk.
 
-Wires twenty-five verbs: `scaffold`, `open`, `status`, `substitute` (from
+Wires twenty-nine verbs (the twenty-ninth, `venue`, a nine-verb group of its
+own -- see the paragraph at the end of this docstring): `scaffold`, `open`, `status`, `substitute` (from
 `only-the-block-changes`; `substitute` grew an optional `--contract <path>`
 in Slice C1 of `the-paper-carries-its-own-decisions`, recording provenance
 without changing what bytes get written); `contract`, `readiness`, `order`
@@ -60,7 +61,12 @@ no verdict yet; `exhaustion` is the corpus-wide report of which papers now
 carry a `does-not-hold` against every open claim in the whole corpus —
 `paper_lifecycle.py` does every real read; this file only resolves paths
 and threads `--min-sources` through. Neither verb ever deletes anything —
-the operator deletes by hand, per the operator's own ruling). Left
+the operator deletes by hand, per the operator's own ruling); and `venue`
+(from `journal-finder`, S9-S11 -- adapting the manuscript to a chosen
+journal under `paper/venues/<slug>/`: `select`, `requirements`, `acquire`,
+`diff`, `plan`, `approve`, `build`, `status`, `list`; `paper_venue.py` does
+every real read and write, and never writes `paper/main.tex` or `sections/`
+-- text changes the plan calls for go through `write`, after `approve`). Left
 extensible on purpose; nothing here assumes it is the last verb this file
 will ever grow.
 """
@@ -106,6 +112,7 @@ import paper_verify  # noqa: E402 -- the-couplings-hold-or-they-do-not: the seve
 import paper_couplings  # noqa: E402 -- the-skill-stops-trusting-memory, item 4: the producer `paper/couplings.json` never had; `couplings` verb
 import paper_full_text  # noqa: E402 -- the-pdf-arrives-or-the-operator-is-told: fills the full-text role; `full_text` verb
 import paper_lifecycle  # noqa: E402 -- a-leftover-paper-is-offered-before-it-is-lost: the reuse and exhaustion reports over the ingested-papers lifecycle; `reuse`/`exhaustion` verbs; raises no `Refused` of its own
+import paper_venue  # noqa: E402 -- journal-finder, S9-S11: the `venue` verb group (select, requirements, acquire, diff, plan, approve, build, status, list)
 import paper_separation  # noqa: E402 -- the-whole-cut-is-argued-before-any-section-is-claimed, U1: the pure claimable-section/score-cut core; wired to the `separate` verb in U2 (`compute_separation`/`cmd_separate` below); raises no `Refused` of its own
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
@@ -569,6 +576,38 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "GROUNDING_SENTENCE_UNKNOWN": WORK_STATE,
     "GROUNDING_VERDICT_MISSING": WORK_STATE,
     "SECTION_UNSUPPORTED_CLAIM": WORK_STATE,
+    # --- journal-finder, S9-S11: the `venue` verb group (paper_venue.py).
+    # `PAPER_ABSENT`, `PAPER_NOT_A_DIRECTORY`, `PAPER_OUTSIDE_REPOSITORY`,
+    # `SECTION_CONTRACTS_UNREADABLE`, `MALFORMED_HEADER`, `BLOCK_HAND_EDITED`
+    # and the marker/region codes above are reused verbatim, never a second
+    # code for the same condition -----------------------------------------
+    "VENUE_SLUG_INVALID": INVOCATION_DEFECT,
+    "VENUE_EXISTS": WORK_STATE,
+    "VENUE_ABSENT": WORK_STATE,
+    "SELECT_MODE_REQUIRED": INVOCATION_DEFECT,
+    "SELECT_MODE_CONFLICT": INVOCATION_DEFECT,
+    "ISSN_INVALID": INVOCATION_DEFECT,
+    "CANDIDATES_ABSENT": WORK_STATE,
+    "CANDIDATE_UNKNOWN": INVOCATION_DEFECT,
+    "REQUIREMENTS_INVALID": WORK_STATE,
+    "REQUIREMENT_UNSOURCED": WORK_STATE,
+    "REQUIREMENTS_ABSENT": WORK_STATE,
+    "ACQUIRE_MODE_REQUIRED": INVOCATION_DEFECT,
+    "ACQUIRE_MODE_CONFLICT": INVOCATION_DEFECT,
+    "TEMPLATE_CLASS_INVALID": INVOCATION_DEFECT,
+    "TEMPLATE_ORIGIN_REQUIRED": INVOCATION_DEFECT,
+    "TEMPLATE_FILE_UNSUPPORTED": INVOCATION_DEFECT,
+    "TEXLIVE_UNAVAILABLE": WORK_STATE,
+    "TEMPLATE_ABSENT": WORK_STATE,
+    "TEMPLATE_UNSAFE": WORK_STATE,
+    "AUDIT_ABSENT": WORK_STATE,
+    "AUDIT_STALE": WORK_STATE,
+    "PLAN_UNREADABLE": WORK_STATE,
+    "PLAN_REFERENCES_NO_FINDING": WORK_STATE,
+    "PLAN_ABSENT": WORK_STATE,
+    "PLAN_HASH_MISMATCH": INVOCATION_DEFECT,
+    "STATEMENT_EMPTY": INVOCATION_DEFECT,
+    "PLAN_NOT_APPROVED": WORK_STATE,
 }
 
 
@@ -2886,6 +2925,42 @@ def cmd_exhaustion(args: argparse.Namespace) -> dict:
     return paper_lifecycle.exhaustion_report(paper_dir, guidance_dir, min_sources=min_sources)
 
 
+def cmd_venue(args: argparse.Namespace) -> dict:
+    """`venue <verb>`: the journal-adaptation group (`paper_venue.py` does
+    every real read and write under `paper/venues/<slug>/`). `--file`
+    operands of `requirements` and `plan` resolve inside the repository
+    root, like every other shuttled file; `acquire --file` may name a
+    template the operator downloaded anywhere. Never writes `paper/main.tex`
+    or `sections/`."""
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    verb = args.venue_command
+    if verb == "select":
+        return paper_venue.select(
+            paper_dir, args.slug, candidate=args.candidate, journal=args.journal, issn=args.issn,
+        )
+    if verb == "requirements":
+        return paper_venue.store_requirements(paper_dir, args.slug, _resolve_repo_path(args.file))
+    if verb == "acquire":
+        return paper_venue.acquire(
+            paper_dir, args.slug, texlive=args.texlive,
+            file=Path(args.file) if args.file is not None else None, url=args.url,
+        )
+    if verb == "diff":
+        sections_dir = paper_contract.resolve_sections_dir(args.sections)
+        return paper_venue.diff(paper_dir, args.slug, sections_dir)
+    if verb == "plan":
+        return paper_venue.store_plan(paper_dir, args.slug, _resolve_repo_path(args.file))
+    if verb == "approve":
+        return paper_venue.approve(
+            paper_dir, args.slug, statement=args.statement, plan_sha256=args.plan_sha256,
+        )
+    if verb == "build":
+        return paper_venue.build(paper_dir, args.slug)
+    if verb == "status":
+        return paper_venue.status(paper_dir, args.slug)
+    return paper_venue.list_venues(paper_dir)
+
+
 def cmd_place(args: argparse.Namespace) -> dict:
     """`place`: places an already-measured figure's PDF — compiles nothing,
     requires provenance naming the run (`authored-diagram` spec,
@@ -3695,6 +3770,64 @@ def build_parser() -> argparse.ArgumentParser:
              "audit_semantics(visual=...) -- this call never reads Figures/ or spawns a "
              "rasterizer to produce it itself",
     )
+    p_venue = sub.add_parser(
+        "venue",
+        help="adapt the manuscript to a chosen journal under paper/venues/<slug>/ -- "
+             "never writes paper/main.tex or sections/",
+    )
+    venue_sub = p_venue.add_subparsers(dest="venue_command", required=True)
+
+    def _venue_verb(name: str, help_text: str, *, slug: bool = True) -> argparse.ArgumentParser:
+        verb_parser = venue_sub.add_parser(name, help=help_text)
+        verb_parser.add_argument(
+            "--paper", default=None,
+            help="override paper/ location; must resolve inside the repository root",
+        )
+        if slug:
+            verb_parser.add_argument("--slug", required=True, help="the venue's slug (lowercase, hyphens)")
+        return verb_parser
+
+    p_venue_select = _venue_verb("select", "choose the journal; writes venue.json")
+    p_venue_select.add_argument(
+        "--candidate", default=None,
+        help="an OpenAlex source id from paper/journal-candidates.json",
+    )
+    p_venue_select.add_argument("--journal", default=None, help="the journal's name (with --issn)")
+    p_venue_select.add_argument("--issn", default=None, help="the journal's ISSN (with --journal)")
+
+    p_venue_requirements = _venue_verb(
+        "requirements", "validate and store the agent's requirements.json; every requirement quoted and sourced",
+    )
+    p_venue_requirements.add_argument(
+        "--file", required=True,
+        help="path to the requirements JSON (schema 1); must resolve inside the repository root",
+    )
+
+    p_venue_acquire = _venue_verb("acquire", "record the document class: TeX Live by name, or a publisher template")
+    p_venue_acquire.add_argument("--texlive", default=None, help="a class TeX Live carries (resolved with kpsewhich)")
+    p_venue_acquire.add_argument("--file", default=None, help="a .zip/.cls/.sty/.bst/.tex downloaded by the operator")
+    p_venue_acquire.add_argument("--url", default=None, help="where --file came from (http or https)")
+
+    p_venue_diff = _venue_verb("diff", "audit smith's contracts and manuscript against the requirements; writes audit.json")
+    p_venue_diff.add_argument(
+        "--sections", default=None,
+        help="override sections/ location; must resolve inside the repository root",
+    )
+
+    p_venue_plan = _venue_verb("plan", "store the agent's adjustment plan; resets any approval")
+    p_venue_plan.add_argument(
+        "--file", required=True,
+        help="path to the plan markdown, citing audit finding ids; must resolve inside the repository root",
+    )
+
+    p_venue_approve = _venue_verb("approve", "record the operator's approval, bound to the plan's sha256")
+    p_venue_approve.add_argument("--statement", required=True, help="the operator's words, verbatim")
+    p_venue_approve.add_argument("--plan-sha256", required=True, dest="plan_sha256", help="sha256 of the plan the operator read")
+
+    _venue_verb("build", "assemble paper/venues/<slug>/main.tex from the canonical blocks")
+    _venue_verb("status", "the venue's state machine and its next action, read-only")
+    _venue_verb("list", "every venue and its state, read-only", slug=False)
+
     p_packet = sub.add_parser(
         "packet",
         help="read-only: this block's own contract prose plus every style-reference "
@@ -3761,7 +3894,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = (
     "scaffold", "status", "open", "substitute", "contract", "readiness", "phases", "skeleton", "order",
     "declare", "bind", "mark", "separate", "observe", "plan", "resolve", "full_text", "bib", "validate",
-    "write", "render", "place", "couplings", "verify", "figure", "packet", "reuse", "exhaustion",
+    "write", "render", "place", "couplings", "verify", "figure", "packet", "reuse", "exhaustion", "venue",
 )
 _COMMANDS = {
     "scaffold": cmd_scaffold,
@@ -3792,6 +3925,7 @@ _COMMANDS = {
     "packet": cmd_packet,
     "reuse": cmd_reuse,
     "exhaustion": cmd_exhaustion,
+    "venue": cmd_venue,
 }
 
 
