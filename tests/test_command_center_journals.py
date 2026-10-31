@@ -879,6 +879,9 @@ class PanelRenderTests(unittest.TestCase):
     def candidates_js(self) -> str:
         return "const doc = " + (FIXTURES / "journal-candidates.json").read_text(encoding="utf-8") + ";"
 
+    def fallback_js(self) -> str:
+        return "const doc = " + (FIXTURES / "journal-candidates-fallback.json").read_text(encoding="utf-8") + ";"
+
     def assert_only_known_markup(self, html: str) -> None:
         tags = set(re.findall(r"</?([a-zA-Z][a-zA-Z0-9]*)", html))
         self.assertLessEqual(tags, ALLOWED_TAGS, f"unexpected tags: {tags - ALLOWED_TAGS}")
@@ -1073,6 +1076,186 @@ class PanelRenderTests(unittest.TestCase):
         self.assertEqual(result["forced"], {"quartiles": "Q1-Q2", "oa_only": False, "no_cache": True})
         # The skill's usage has no --no-cache flag, so the agent command never carries it.
         self.assertEqual(result["forcedCommand"], "/journal-finder Q1-Q2")
+
+    def test_the_form_offers_the_source_and_the_unknown_quartile_toggle(self) -> None:
+        script = """
+          const base = { form: { from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '15', source: 'auto', includeUnknown: false },
+                         busy: {}, sort: 'fit', sjrYear: '' };
+          out([P.formHtml(base), P.formHtml({ ...base, form: { ...base.form, source: 'crossref', includeUnknown: true } })]);"""
+        auto, crossref = self.node(script)
+        for expected in ("Fuente", "Automática", "OpenAlex", "Crossref", "Incluir revistas sin cuartil"):
+            self.assertIn(expected, auto)
+        self.assertIn('<option value="auto" selected>', auto)
+        self.assertIn('data-jp-field="source"', auto)
+        self.assertIn('data-jp-field="includeUnknown">', auto)
+        self.assertIn('<option value="crossref" selected>', crossref)
+        self.assertIn('data-jp-field="includeUnknown" checked', crossref)
+        english = self.node(script, lang="en")[0]
+        self.assertIn("Include journals without a quartile", english)
+        self.assertIn("Automatic", english)
+
+    def test_the_source_and_the_unknown_quartile_choice_reach_the_body_and_the_command(self) -> None:
+        result = self.node("""
+          const f = (patch) => ({ from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '', ...patch });
+          out({ auto: P.searchBody(f({ source: 'auto' })), absent: P.searchBody(f({})),
+                crossref: P.searchBody(f({ source: 'crossref', includeUnknown: true })),
+                openalex: P.searchBody(f({ source: 'openalex' })), junk: P.searchBody(f({ source: 'bing' })),
+                autoCommand: P.agentCommand(f({ source: 'auto' })),
+                crossrefCommand: P.agentCommand(f({ source: 'crossref', includeUnknown: true, limit: '10' })),
+                unknownCommand: P.agentCommand(f({ includeUnknown: true })), junkCommand: P.agentCommand(f({ source: 'bing' })) });""")
+        self.assertEqual(result["auto"], {"quartiles": "Q1-Q2", "oa_only": False})
+        self.assertEqual(result["absent"], {"quartiles": "Q1-Q2", "oa_only": False})
+        self.assertEqual(result["crossref"], {"quartiles": "Q1-Q2", "oa_only": False, "source": "crossref",
+                                              "include_unknown_quartile": True})
+        self.assertEqual(result["openalex"], {"quartiles": "Q1-Q2", "oa_only": False, "source": "openalex"})
+        self.assertEqual(result["junk"], {"quartiles": "Q1-Q2", "oa_only": False})
+        self.assertEqual(result["autoCommand"], "/journal-finder Q1-Q2")
+        self.assertEqual(result["crossrefCommand"],
+                         "/journal-finder Q1-Q2 --limit 10 --source crossref --include-unknown-quartile")
+        self.assertEqual(result["unknownCommand"], "/journal-finder Q1-Q2 --include-unknown-quartile")
+        self.assertEqual(result["junkCommand"], "/journal-finder Q1-Q2")
+
+    def test_the_source_and_the_toggle_are_remembered_and_posted(self) -> None:
+        result = self.node("""
+          __routes.push(['POST', '/api/journals/search', { status: 200, body: { ok: true, candidates: [] } }]);
+          __routes.push(['GET', '/api/journals', { status: 200, body: { ok: true, candidates: null, sjr: null } }]);
+          const first = P.formHtml(P.state);
+          await field({ 'data-jp-field': 'source' }, { value: 'crossref' }, 'change');
+          await field({ 'data-jp-field': 'includeUnknown' }, { checked: true }, 'change');
+          const formHtml = P.formHtml(P.state);
+          await click({ 'data-jp-action': 'search' });
+          out({ first, formHtml, body: JSON.parse(calls.find((c) => c.method === 'POST').body) });""")
+        self.assertIn('<option value="auto" selected>', result["first"])
+        self.assertIn('<option value="crossref" selected>', result["formHtml"])
+        self.assertIn('data-jp-field="includeUnknown" checked', result["formHtml"])
+        self.assertEqual(result["body"], {"quartiles": "Q1-Q2", "oa_only": False, "limit": 15, "source": "crossref",
+                                          "include_unknown_quartile": True})
+
+    # -- results of the fallback path -----------------------------------------
+    def test_the_providers_line_and_the_fallback_banner_name_what_answered(self) -> None:
+        script = self.fallback_js() + """
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));"""
+        es, en = self.node(script), self.node(script, lang="en")
+        for expected in ("trabajos similares: Crossref, Europe PMC", "revistas citadas: Crossref",
+                         "metadatos: SJR, DOAJ", "cuartil: SJR", "respaldo", "HTTP 429 from api.example",
+                         "openalex.org/settings/api", "OPENALEX_API_KEY", "10 veces"):
+            self.assertIn(expected, es)
+        for expected in ("similar works: Crossref, Europe PMC", "cited venues: Crossref", "metadata: SJR, DOAJ",
+                         "quartile: SJR", "fallback", "openalex.org/settings/api", "OPENALEX_API_KEY", "10x"):
+            self.assertIn(expected, en)
+        self.assert_only_known_markup(es)
+
+    def test_a_search_that_did_not_fall_back_has_no_banner_and_no_key_guidance(self) -> None:
+        html = self.node(self.fallback_js() + """
+          doc.fallback = { used: false, code: null, reason: null };
+          doc.providers = { similar_works: ['openalex'], cited_venues: ['openalex'], metadata: ['openalex'], quartile: 'openalex-proxy' };
+          doc.api_calls.budget = { state: 'ok', remaining_usd: 0.05, limit_usd: 0.1, retry_after_seconds: null };
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertIn("trabajos similares: OpenAlex", html)
+        self.assertIn("cuartil: OpenAlex (aproximado)", html)
+        self.assertNotIn("respaldo", html)
+        self.assertNotIn("settings/api", html)
+        self.assertNotIn("HTTP 429", html)
+
+    def test_the_key_guidance_also_comes_with_a_spent_budget(self) -> None:
+        html = self.node(self.candidates_js() + """
+          doc.api_calls.budget = { state: 'exhausted', remaining_usd: 0, limit_usd: 0.1, retry_after_seconds: 3600 };
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertIn("Presupuesto de OpenAlex agotado (reintentar en 3600 s)", html)
+        self.assertIn("openalex.org/settings/api", html)
+        self.assertIn("OPENALEX_API_KEY", html)
+        self.assertIn("10 veces", html)
+
+    def test_the_unknown_quartile_exclusion_is_counted_with_a_hint(self) -> None:
+        script = self.fallback_js() + """
+          const view = (count) => P.resultsHtml({ journals: { candidates: { ...doc, excluded_count: count,
+            excluded_reasons: { ...doc.excluded_reasons, quartile_unknown: count } } }, sort: 'fit', busy: {} });
+          out([view(4), view(0)]);"""
+        shown, hidden = self.node(script)
+        self.assertIn("4 revistas excluidas por no tener cuartil", shown)
+        self.assertIn("Incluir revistas sin cuartil", shown)
+        self.assertIn("SJR", shown)
+        self.assertNotIn("por no tener cuartil", hidden)
+        english = self.node(script, lang="en")[0]
+        self.assertIn("4 journals excluded for having no quartile", english)
+        self.assertIn("Include journals without a quartile", english)
+
+    def test_rows_show_their_sources_and_never_a_quartile_badge_for_unknown(self) -> None:
+        rows = self.node(self.fallback_js() + """
+          const one = (id) => P.resultsHtml({ journals: { candidates: { ...doc, candidates: doc.candidates.filter((c) => c.id === id) } },
+                                              sort: 'fit', busy: {} });
+          out({ biomed: one('issn:4444444X'), obscure: one('issn:55555555'), title: one('title:title only review') });""")
+        biomed, obscure, title = rows["biomed"], rows["obscure"], rows["title"]
+        for source in (">crossref<", ">europepmc<", ">doaj<"):
+            self.assertIn(source, biomed)
+        self.assertIn(">sjr<", obscure)
+        self.assertIn("sin cuartil", biomed)
+        self.assertIn("sin cuartil", title)
+        self.assertNotRegex(biomed, r'badge--[a-z]+">Q[1-4]<')
+        self.assertRegex(obscure, r'badge--info">Q2<')
+        self.assertIn("Cuartil desconocido", biomed)
+        self.assertNotIn("quartile-unknown", biomed)
+
+    def test_an_unknown_quartile_never_shows_a_q_badge_even_if_a_value_slips_in(self) -> None:
+        html = self.node("""
+          out(P.resultsHtml({ journals: { candidates: { candidates: [{ display_name: 'X', id: 'issn:1', quartile: 'Q1', quartile_source: 'unknown' }] } },
+                              sort: 'fit', busy: {} }));""")
+        self.assertIn("sin cuartil", html)
+        self.assertNotIn(">Q1<", html)
+
+    def test_doaj_apc_and_review_process_show_when_present(self) -> None:
+        rows = self.node(self.fallback_js() + """
+          const one = (id) => P.resultsHtml({ journals: { candidates: { ...doc, candidates: doc.candidates.filter((c) => c.id === id) } },
+                                              sort: 'fit', busy: {} });
+          out({ biomed: one('issn:4444444X'), open: one('issn:33333333'), free: one('issn:81818181'), none: one('issn:55555555') });""")
+        biomed, open_, free, none = rows["biomed"], rows["open"], rows["free"], rows["none"]
+        self.assertIn("2900 EUR", biomed)
+        self.assertIn("Single anonymous peer review", biomed)
+        self.assertNotIn("APC desconocido", biomed)
+        self.assertIn("1400 EUR", open_)
+        self.assertIn("1500 USD", open_)
+        self.assertIn("Double anonymous peer review", open_)
+        self.assertIn("Sin APC", free)
+        self.assertIn("Open peer review", free)
+        self.assertNotIn("APC 0 USD", free)
+        self.assertIn("APC desconocido", none)
+        self.assertNotIn("Revisión (DOAJ)", none)
+
+    def test_a_fallback_candidate_is_chosen_by_its_id_unchanged(self) -> None:
+        result = self.node(self.fallback_js() + """
+          __routes.push(['POST', '/api/venues/select', { status: 200, body: { ok: true, slug: 'obscure-quarterly', journal: 'Obscure Quarterly' } }]);
+          __routes.push(['GET', '/api/venues', { status: 200, body: { ok: true, venues: [] } }]);
+          const html = P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} });
+          const ids = [...html.matchAll(/data-jp-action="select" data-jp-id="([^"]*)"/g)].map((m) => m[1]);
+          await click({ 'data-jp-action': 'select', 'data-jp-id': ids[1] });
+          await click({ 'data-jp-action': 'select', 'data-jp-id': ids[4] });
+          out({ ids, posts: calls.filter((c) => c.method === 'POST').map((c) => JSON.parse(c.body)) });""")
+        self.assertEqual(sorted(result["ids"]), sorted(["issn:4444444X", "issn:55555555", "issn:33333333", "issn:1111111X",
+                                                        "title:title only review", "issn:6666666X", "issn:81818181"]))
+        self.assertEqual(result["posts"], [{"candidate": result["ids"][1]}, {"candidate": result["ids"][4]}])
+
+    def test_the_fallback_results_stay_inert_and_use_only_known_markup(self) -> None:
+        html = self.node(self.fallback_js() + """
+          const evil = '<script>alert(1)</script><img src=x onerror=alert(2)>';
+          doc.fallback.reason = evil;
+          doc.providers.similar_works = [evil];
+          doc.candidates[0].sources = [evil];
+          doc.candidates[0].doaj.review_process = [evil];
+          doc.candidates[0].doaj.apc_max = [{ currency: evil, price: evil }];
+          doc.candidates[0].id = evil;
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertNotIn("<script", html)
+        self.assertNotIn("<img", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assert_only_known_markup(html)
+
+    def test_the_english_fallback_view_has_no_spanish_left(self) -> None:
+        html = self.node(self.fallback_js() + """
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""", lang="en")
+        for expected in ("no quartile", "Quartile unknown", "Single anonymous peer review", "Choose this journal"):
+            self.assertIn(expected, html)
+        for spanish in ("sin cuartil", "respaldo", "Elegir", "Revisión"):
+            self.assertNotIn(spanish, html)
 
     # -- the venue card -------------------------------------------------------
     VENUE_JS = """
