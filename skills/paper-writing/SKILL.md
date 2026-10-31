@@ -1157,12 +1157,12 @@ is an accelerator inside that contract, never a prerequisite for it: a skill tha
 stops working because a third-party server is absent has made the operator's
 environment part of its contract.
 
-**What it is not.** It does not lower an AI-detection score, it does not add
-digressions or asides so the text reads as humanly edited, and it does not change
-what a sentence claims. A rewrite whose purpose is that a detector reads the text
-differently is a different capability from this one, and it is not built here: the
-forge's invariant is that every claim is tied to its evidence, and prose that is
-shaped to fool a classifier is prose shaped by something other than that evidence.
+**Authentic humanization and stylometric audit.** An already-written block can be
+evaluated for burstiness ($CV$) and AI fingerprints (Claudeisms, formulaic patterns)
+via `paper_cli.py ai_audit`, and rephrased under the F5 invariant contract via
+`paper_cli.py humanize`. The audit delegates to the `ai-auditor` agent, which measures
+sentence length variance and cliché density, while ensuring every citation and number
+remains byte-identical.
 
 **It reports what it changed**, block by block, so the operator reads the diff it
 produced instead of being asked to trust it.

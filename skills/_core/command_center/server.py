@@ -643,6 +643,8 @@ _SKILLS = Path(__file__).resolve().parents[2]
 JOURNAL_CLI = _SKILLS / "journal-finder" / "scripts" / "journal_cli.py"
 #: The venue verbs, imported by file path so `approve` can record `via=dashboard`.
 PAPER_VENUE = _SKILLS / "paper-writing" / "scripts" / "paper_venue.py"
+#: The stylometric and AI-risk quantification metrics module.
+PAPER_AI_METRICS = _SKILLS / "paper-writing" / "scripts" / "paper_ai_metrics.py"
 SJR_DOWNLOAD_URL = "https://www.scimagojr.com/journalrank.php"
 #: The CLI's own search deadline is 300 s; the child is killed shortly after.
 JOURNAL_SEARCH_TIMEOUT_SECONDS = 330.0
@@ -688,6 +690,24 @@ def _venue_module():
         spec = importlib.util.spec_from_file_location(name, PAPER_VENUE)
         if spec is None or spec.loader is None:
             raise ImportError(f"cannot load {PAPER_VENUE}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return module
+
+
+def _ai_metrics_module():
+    """paper_ai_metrics, loaded once from its file."""
+    name = "papersmith_paper_ai_metrics"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, PAPER_AI_METRICS)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {PAPER_AI_METRICS}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
         try:
@@ -2159,6 +2179,40 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         (root_path / ".papersmith" / "anotaciones_pdf.md").write_text("\n".join(md_lines), encoding="utf-8")
         
         return JSONResponse({"ok": True, "summary": summary["summary"]})
+
+    @app.post("/api/pdf/ai-audit")
+    async def api_pdf_ai_audit(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
+                                status_code=403)
+        try:
+            payload = await request.json()
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": f"Invalid JSON payload: {e}"}, status_code=400)
+
+        text = payload.get("text", "")
+        if not text:
+            block_id = payload.get("block")
+            if block_id:
+                main_tex = root_path / "paper" / "main.tex"
+                if main_tex.is_file():
+                    content = main_tex.read_text(encoding="utf-8", errors="replace")
+                    match = re.search(
+                        rf"%% paper-writing block {re.escape(block_id)} begin[^\n]*\n(.*?)%% paper-writing block {re.escape(block_id)} end",
+                        content,
+                        re.DOTALL,
+                    )
+                    if match:
+                        text = match.group(1).strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "No text or valid block provided to audit"}, status_code=400)
+
+        try:
+            mod = _ai_metrics_module()
+            results = mod.analyze_ai_signatures(text)
+            return JSONResponse({"ok": True, **results})
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
     @app.post("/api/phase/run")
     async def api_phase_run(request: Request) -> JSONResponse:
