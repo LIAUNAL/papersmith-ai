@@ -11,6 +11,29 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.48.0
+
+### Added
+
+- **Journal finder free fallback chain**: when OpenAlex is unavailable (unauthenticated
+  demo budget exhausted, 429 rate limit, 401/403 missing key, or network error), the
+  journal finder automatically falls back to free academic APIs rather than refusing:
+  - **Crossref**: `/works?query=...` aggregates similar articles by normalized ISSN and
+    container title in the polite pool (`mailto` from `PAPERSMITH_CONTACT_EMAIL`), and
+    resolves cited venues from DOIs in `paper/refs.bib`.
+  - **Europe PMC**: biomedical query merge without authentication (`/search?query=...`).
+  - **DOAJ**: queries journal open access status, APC (`has_apc`, `max`), review process,
+    and subjects.
+  - **Semantic Scholar**: queried only when `SEMANTIC_SCHOLAR_API_KEY` is provided
+    (`/graph/v1/paper/search`).
+  - **Quartile without OpenAlex**: uses SJR when imported via `sjr-import`; otherwise
+    marks `quartile: null` (`quartile_source: "unknown"`).
+- **Journal panel fallback controls & transparency**:
+  - Source selector (`Auto`, `OpenAlex`, `Crossref`).
+  - Fallback banner with reason and one-time OpenAlex key guidance.
+  - Unknown-quartile toggle and counter (`--include-unknown-quartile`).
+  - DOAJ details and source provenance badges per candidate.
+
 ## 0.47.0
 
 ### Added
