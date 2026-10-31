@@ -13,23 +13,23 @@
   <link rel="stylesheet" href="./vendor/xterm.css">
   <script src="./vendor/xterm.js"></script>
   <script src="./vendor/xterm-addon-fit.js"></script>
-  <script src="./i18n/en.js?v=0.48.0"></script>
-  <script src="./i18n/es.js?v=0.48.0"></script>
-  <script src="./i18n.js?v=0.48.0"></script>
-  <script src="./cli-console.js?v=0.48.0"></script>
+  <script src="./i18n/en.js?v=0.49.0"></script>
+  <script src="./i18n/es.js?v=0.49.0"></script>
+  <script src="./i18n.js?v=0.49.0"></script>
+  <script src="./cli-console.js?v=0.49.0"></script>
   <link rel="stylesheet" href="./vendor/katex/katex.min.css">
   <script src="./vendor/katex/katex.min.js"></script>
-  <script src="./math-panel.js?v=0.48.0"></script>
-  <script src="./model-panel.js?v=0.48.0"></script>
-  <script src="./experiments-panel.js?v=0.48.0"></script>
-  <script src="./experiments-tutor.js?v=0.48.0"></script>
-  <script src="./novelty-panel.js?v=0.48.0"></script>
-  <script src="./agents-panel.js?v=0.48.0"></script>
-  <script src="./doctor-panel.js?v=0.48.0"></script>
-  <script src="./journals-panel.js?v=0.48.0"></script>
-  <script src="./ai-history-panel.js?v=0.48.0"></script>
-  <script src="./phase-console.js?v=0.48.0"></script>
-  <script src="./phase-run.js?v=0.48.0"></script>
+  <script src="./math-panel.js?v=0.49.0"></script>
+  <script src="./model-panel.js?v=0.49.0"></script>
+  <script src="./experiments-panel.js?v=0.49.0"></script>
+  <script src="./experiments-tutor.js?v=0.49.0"></script>
+  <script src="./novelty-panel.js?v=0.49.0"></script>
+  <script src="./agents-panel.js?v=0.49.0"></script>
+  <script src="./doctor-panel.js?v=0.49.0"></script>
+  <script src="./journals-panel.js?v=0.49.0"></script>
+  <script src="./ai-history-panel.js?v=0.49.0"></script>
+  <script src="./phase-console.js?v=0.49.0"></script>
+  <script src="./phase-run.js?v=0.49.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -3390,6 +3390,7 @@
                 </div>
               </div>
 
+              <button class="btn btn--sm" id="btnAuditAi" onclick="auditManuscriptAi()" title="Audit manuscript for AI markers and stylometric burstiness" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">🤖 AI Audit</button>
               <button class="btn btn--sm" onclick="toggleNativeViewer()" id="btnToggleNative" title="Switch between PDF.js and the browser's native viewer" data-i18n-attr="title:pdf.toggleViewerTitle">Native Viewer</button>
               <a href="/api/pdf" download class="btn btn--sm" title="Download the compiled main.pdf" data-i18n-attr="title:pdf.downloadTitle" data-i18n="pdf.download">⬇ Download</a>
             </div>
@@ -3460,12 +3461,15 @@
                 <div class="selection-meta">
                   <span class="badge badge--info" id="selectedPageBadge" data-i18n="pdf.pageOne">p. 1</span>
                   <span id="selectionWordCount" style="font-size: 0.72rem; color: var(--text-dim);" data-i18n="pdf.zeroWords">0 words</span>
+                  <span id="selectionAiRiskBadge" class="badge" style="display: none; font-size: 0.7rem; margin-left: auto;"></span>
                 </div>
                 <div class="selection-quote" id="selectedQuoteText">""</div>
+                <div id="selectionAiCliches" style="display: none; font-size: 0.72rem; color: #f59e0b; margin-top: 0.25rem;"></div>
                 <div class="selection-quick-actions">
                   <button class="btn btn--xs btn--comment" onclick="triggerAddComment()" data-i18n="changes.quick.comment">💬 Comment</button>
                   <button class="btn btn--xs btn--strikethrough" onclick="triggerStrikethrough()" data-i18n="annot.card.strike">✂️ Strike through</button>
                   <button class="btn btn--xs btn--humanize" onclick="triggerHumanize()" data-i18n="annot.card.humanize">✨ Humanize</button>
+                  <button class="btn btn--xs btn--info" id="btnAuditSelectionAi" onclick="auditCurrentSelectionAi()" title="Audit manuscript for AI markers and stylometric burstiness" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">🤖 AI Audit</button>
                 </div>
               </div>
             </div>
@@ -5877,6 +5881,10 @@
           const words = text.split(/\s+/).filter(Boolean).length;
           countEl.textContent = words === 1 ? t('pdf.oneWord') : t('pdf.words', { n: words });
         }
+        const riskBadge = document.getElementById('selectionAiRiskBadge');
+        if (riskBadge) riskBadge.style.display = 'none';
+        const clichesEl = document.getElementById('selectionAiCliches');
+        if (clichesEl) clichesEl.style.display = 'none';
       }
     }
 
@@ -5894,6 +5902,75 @@
         const activeState = document.getElementById('selectionActiveState');
         if (emptyState) emptyState.style.display = 'flex';
         if (activeState) activeState.style.display = 'none';
+        const riskBadge = document.getElementById('selectionAiRiskBadge');
+        if (riskBadge) riskBadge.style.display = 'none';
+        const clichesEl = document.getElementById('selectionAiCliches');
+        if (clichesEl) clichesEl.style.display = 'none';
+      }
+    }
+
+    async function auditCurrentSelectionAi() {
+      if (!currentSelectedText) return;
+      const btn = document.getElementById('btnAuditSelectionAi');
+      const badge = document.getElementById('selectionAiRiskBadge');
+      const clichesEl = document.getElementById('selectionAiCliches');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch('/api/pdf/ai-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: currentSelectedText })
+        });
+        const data = await res.json();
+        if (data.ok && badge) {
+          const score = (data.composite_score * 100).toFixed(0);
+          badge.style.display = 'inline-block';
+          if (data.verdict === 'ai_flagged') {
+            badge.className = 'badge badge--bad';
+            badge.textContent = `${t('pdf.aiRiskHigh')} (${score}%)`;
+          } else if (data.verdict === 'mixed') {
+            badge.className = 'badge badge--warn';
+            badge.textContent = `${t('pdf.aiRiskMixed')} (${score}%)`;
+          } else {
+            badge.className = 'badge badge--ok';
+            badge.textContent = `${t('pdf.aiRiskLow')} (${score}%)`;
+          }
+          if (clichesEl && data.cliches && data.cliches.findings && data.cliches.findings.length) {
+            clichesEl.style.display = 'block';
+            clichesEl.textContent = `${t('pdf.clichesDetected')}: ${data.cliches.findings.map(c => c.target).slice(0, 3).join(', ')}`;
+          }
+        }
+      } catch (err) {
+        console.error('AI audit error:', err);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function auditManuscriptAi() {
+      const btn = document.getElementById('btnAuditAi');
+      if (btn) btn.disabled = true;
+      showToast(t('pdf.auditAiRunning'));
+      try {
+        const res = await fetch('/api/pdf/ai-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (data.ok) {
+          const score = (data.composite_score * 100).toFixed(0);
+          const verdictLabel = data.risk === 'ai_flagged' ? t('pdf.aiRiskHigh') : (data.risk === 'mixed' ? t('pdf.aiRiskMixed') : t('pdf.aiRiskLow'));
+          const msg = `${t('pdf.auditManuscriptResult')}: ${verdictLabel} (${score}%, ${data.blocks_analyzed} blocks)`;
+          showToast(msg);
+          alert(`${msg}\n\n• Burstiness CV: ${data.burstiness && data.burstiness.cv != null ? data.burstiness.cv.toFixed(2) : 'N/A'}\n• Cliches: ${data.cliches ? data.cliches.total_count : 0}\n• Lexical diversity (TTR): ${data.lexical_diversity && data.lexical_diversity.ttr != null ? data.lexical_diversity.ttr.toFixed(2) : 'N/A'}`);
+        } else {
+          showToast(`AI audit error: ${data.error || 'unknown'}`);
+        }
+      } catch (err) {
+        showToast(`AI audit failed: ${err.message}`);
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 

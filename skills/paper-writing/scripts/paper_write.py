@@ -302,6 +302,9 @@ def write_block(
     #    counts against.
     paper_evidence.append_grounding_run(paper_dir, contract.block_id, source_grounding)
 
+    import paper_ai_metrics  # noqa: PLC0415
+    ai_report = paper_ai_metrics.analyze_ai_signatures(draft["latex"])
+
     return {
         "status": "written",
         "block": contract.block_id,
@@ -309,6 +312,7 @@ def write_block(
         "styleChannel": style_report,
         "sourceFidelity": source_fidelity,
         "sourceGrounding": source_grounding,
+        "aiStylometry": ai_report,
         **result,
     }
 

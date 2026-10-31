@@ -2210,7 +2210,7 @@ $ paper_cli.py resolve --identifier 10.1038/nature14539 --resolver crossref
 ```
 
 **The flow, by groups of verbs.** This skill declares no stage table: it declares
-**twenty-nine verbs behind a single door** (`scripts/paper_cli.py`; `mark`, `bib`,
+**thirty-one verbs behind a single door** (`scripts/paper_cli.py`; `mark`, `bib`,
 `figure` and `venue` count once each and carry their own sub-verbs), and the flow
 is the order in which those groups enable one another.
 
@@ -2221,6 +2221,7 @@ is the order in which those groups enable one another.
 | The paper's own decisions | `declare`, `observe`, `plan` | What the paper decides about itself. `observe` validates a report from `insumos-observer` against the schema **before** a person runs `declare` |
 | The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it** |
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
+| Authentic humanization & stylometry | `ai_audit`, `humanize` | Quantifies sentence burstiness ($CV \ge 0.38$), Claudeisms, and formulaic clichés, while enforcing the untouchable F5 invariant gate (citations, statistics, and formulas) |
 | Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads |
 | Structure, sources and reuse | `phases`, `skeleton`, `bind`, `separate`, `mark`, `packet`, `full_text`, `reuse`, `exhaustion` | The derived "what can I write now" report and the one-time opening of the empty section/block structure; the source-section binding loop and the revision/class declarations of a source root or `guidance/` folder; the redactor's own context; one already-resolved identifier's PDF placed under `guidance/<section>/`; and the read-only reports of which ingested papers carry no verdict yet and of the exhaustion state of the evidence papers |
 | Venue adaptation | `venue select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` | Measures the manuscript against a chosen journal's guidelines and template and builds the journal's own `main.tex` under `paper/venues/<slug>/`, never touching the canonical one (below) |
@@ -2263,7 +2264,7 @@ item the operator decides, never something drafted on the agent's authority. It
 never submits. The literal contract is the "Venue adaptation" section of
 `skills/paper-writing/SKILL.md` and `.claude/agents/venue-adapter.md`.
 
-**The substitution engine is four of those twenty-nine** — `scaffold`, `status`,
+**The substitution engine is four of those thirty-one** — `scaffold`, `status`,
 `open`, `substitute` — and they carry one rule: **there is no `--force`**. Nothing
 here ever discards a person's on-disk text in favor of an incoming body. The only
 exit from a hand-edited block is `--adopt`, which re-baselines the digest and
@@ -2293,8 +2294,9 @@ nothing was asserted without a run having checked it.
 
 | File | What it does and why it exists |
 |---------|---------------------------|
-| `SKILL.md` | The conduct contract: the 29 verbs, their refusals, the shuttle procedure to the 9 agents. |
-| `scripts/paper_cli.py` | The front door — 29 verbs: `scaffold, status, open, substitute, contract, readiness, phases, skeleton, order, declare, bind, mark, separate, observe, resolve, full_text, bib, validate, plan, write, render, couplings, verify, place, figure, venue, packet, reuse, exhaustion`; `mark` (`revisions`, `class`), `bib` (`build`, `refresh`), `figure` (`optimize`, `audit`) and `venue` (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list`) take a sub-verb. No external dependencies. |
+| `SKILL.md` | The conduct contract: the 31 verbs, their refusals, the shuttle procedure to the 10 agents. |
+| `scripts/paper_cli.py` | The front door — 31 verbs: `scaffold, status, open, substitute, contract, readiness, phases, skeleton, order, declare, bind, mark, separate, observe, resolve, full_text, bib, validate, plan, write, render, couplings, verify, place, figure, venue, packet, reuse, exhaustion, ai_audit, humanize`; `mark` (`revisions`, `class`), `bib` (`build`, `refresh`), `figure` (`optimize`, `audit`) and `venue` (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list`) take a sub-verb. No external dependencies. |
+| `scripts/paper_ai_metrics.py` | Stylometric and AI-risk quantification: sentence burstiness coefficient of variation, closed catalog of Claudeisms and formulaic clichés, lexical diversity, and the F5 invariant gate. |
 | `scripts/paper_venue.py` | The `venue` verbs: the venue folder under `paper/venues/<slug>/`, the requirements schema (every requirement quoted and sourced), the audit against smith's section contracts and `main.tex`, the plan and its sha256-bound approval, and the build of the journal's own `main.tex`. It never writes `paper/main.tex` or `sections/`. |
 | `scripts/paper_scaffold.py` | Creates and re-enters `paper/` without clobbering — the same pattern as `proposals/`/`experiments/`. |
 | `scripts/paper_block.py` | Marker grammar: delimits, locates, substitutes and refuses over named blocks inside `main.tex`, byte by byte. |

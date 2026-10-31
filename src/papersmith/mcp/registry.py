@@ -55,6 +55,8 @@ PAPER_VERBS: tuple[str, ...] = (
     "reuse",
     "exhaustion",
     "venue",
+    "ai_audit",
+    "humanize",
 )
 
 #: The orchestrator CLI's own command roster (``cli._REGISTRY``).
@@ -1625,6 +1627,7 @@ PAPER_DISPOSITIONS: dict[str, str] = {
         # `plan`, `approve`, `build`) next to read-only `diff`/`status`/`list`:
         # mixed like `figure`, so declared out for the same reason.
         else "out" if verb == "venue"
+        else "out" if verb in {"ai_audit", "humanize"}
         else "exposed"
     )
     for verb in PAPER_VERBS
