@@ -49,6 +49,14 @@ number is `0`, breaking changes can still arrive without a major bump.
   unsupported or inconclusive hypotheses and a partially or not justified
   novelty, and the rigor audit names a leakage-free split at the unit of
   replication instead of an EEG-specific partition.
+- **`paper-reviewer` carries no project findings**: 0.45.1's adjusted novelty
+  concordance check illustrated itself with one project's results (quantum
+  supremacy, entanglement advantage, parameter-shift saliency, harmonic
+  expressivity, "quantum hype") in the doctrine every workspace receives. The
+  check stays; its examples are now domain-neutral and read the verdicts and
+  the novelty verdict of `Results/discussion.json`, and
+  `tests/test_doctrine_carries_no_project.py` keeps those phrases out of every
+  skill and agent definition.
 - **Release hygiene**: `package.json` and `package-lock.json` were left at 0.45.0
   by 0.45.1; every version source and the dashboard's cache-busting query move
   to 0.46.0 together.

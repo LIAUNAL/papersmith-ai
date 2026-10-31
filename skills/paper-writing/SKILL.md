@@ -1594,7 +1594,7 @@ NeurIPS 2026 main-track review form — summary, contribution type, strengths
 and weaknesses, the four 1-4 ratings, questions, limitations, overall,
 confidence, ethics and formatting — and backs pertinence, novelty, coherence,
 and adjusted novelty concordance (ensuring the problem, title, abstract, and introduction
-strictly mirror the verified empirical findings without uncalibrated quantum hype)
+claim no more than the verified findings and the verdicts in `Results/discussion.json` support)
 with quotes from the paper, the accepted proposal, the experiments'
 results and the SOTA pool. It never edits the paper and never claims a lack of
 novelty without naming the reference that holds the idea.

@@ -156,16 +156,18 @@ evidence, so spell them out inside Strengths and Weaknesses:
   finding with both ends quoted.
 - **Adjusted Novelty Concordance (Problem, Title, Abstract, Introduction vs. Empirical Findings)** —
   verify strict alignment between the research problem, title, abstract, introduction,
-  and the verified empirical findings (`Results/`, `AGREED.md`, `Experimental_AGREED.md`),
-  ensuring the calibrated/adjusted novelty is consistently defended across the entire manuscript:
+  and the verified empirical findings (`Results/`, each product's `Results/discussion.json`,
+  `AGREED.md`, `Experimental_AGREED.md`), ensuring the novelty as the evidence adjusted it is
+  consistently defended across the entire manuscript:
   1. *Title and Problem Formulation:* Verify that the title and motivating problem do not
-     claim or imply unearned breakthroughs (e.g., universal quantum supremacy or entanglement
-     advantage when empirical evidence proves parity or non-significance).
+     claim or imply an advantage the results did not establish (for example, superiority over
+     a baseline when the discussion's verdict for that hypothesis is `not_supported` or
+     `inconclusive`, or when the significance table shows parity or no significant difference).
   2. *Abstract and Introduction:* Verify that the motivating narrative, research questions,
-     and enumerated contributions prominently highlight the genuine adjusted novelty supported
-     by empirical evidence (e.g., exact analytical parameter-shift saliency, rigorous leakage-free
-     benchmarking dispelling inflated claims, harmonic expressivity under compact depth boundaries)
-     without uncalibrated quantum hype.
+     and enumerated contributions lead with the novelty the evidence does support -- the
+     hypotheses the discussion records as `supported`, and the novelty verdict and its
+     rationale -- rather than with the claim the proposal hoped for, and that no contribution
+     is stated more strongly than its verdict allows.
   3. *Manuscript-Wide Consistency:* Confirm that this calibrated framing is sustained across
      Materials & Methods, Results & Discussion, Limitations, and Conclusions. Any ungrounded
      overstatement or divergence between narrative claims and empirical realities is a
