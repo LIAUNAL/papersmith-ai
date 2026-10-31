@@ -11,6 +11,48 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.46.0
+
+### Added
+
+- **Plausibility thematic help**: the phase-2 box of the dashboard offers an
+  optional "Ayuda temática" for an operator without a clear idea yet. The
+  operator types 3 to 5 keywords; the dashboard queries the banco-lia MCP over
+  stdio (the same server `.mcp.json` registers for agents: `search_bank` and
+  `taxonomy`), shows the best-matching LIA articles and projects with their
+  topics, and proposes an editable idea of at least two sentences. Only when the
+  operator approves it is `/plausibility <draft>` launched, through the same
+  agent selector, sentence check and run tracking as a typed idea. The route
+  `POST /api/plausibility/suggest` is same-origin only and never writes; an
+  absent `uvx`, a timeout or a protocol error reads as `available: false` with
+  its reason. `PAPERSMITH_BANCO_LIA_COMMAND` and `PAPERSMITH_BANCO_LIA_TIMEOUT`
+  override the command and the 90-second deadline. The bank items are LIA
+  continuity context, never state-of-the-art evidence (`skills/plausibility`).
+- **Archify flow**: the drawing gains the thematic help (sub-lane 1a), the
+  novelty assessment with Novedad & Hallazgos, G-NOVELTY and `smith novelty`
+  (sub-lane 8a), and `Results/discussion.json` with the reviewer report in the
+  implementation lanes; stale sources are re-pointed and the README figure is
+  recaptured.
+
+### Changed
+
+- **README and docs**: the use flow, the twelve dashboard tabs, the plausibility
+  section, phase 5 gating, `smith novelty`, the discussion CLI and the banco-lia
+  thematic help are documented in `README.md`, `docs/cli.md`, `docs/skills.md`,
+  `docs/mcp.md` and the docs index; stale counts are fixed.
+
+### Fixed
+
+- **Novedad & Hallazgos carries no project findings**: its sobriety box listed
+  one project's results (entanglement, barren plateaus, a fixed depth and
+  p-value) for every workspace. It now lists each discussion's limitations, its
+  unsupported or inconclusive hypotheses and a partially or not justified
+  novelty, and the rigor audit names a leakage-free split at the unit of
+  replication instead of an EEG-specific partition.
+- **Release hygiene**: `package.json` and `package-lock.json` were left at 0.45.0
+  by 0.45.1; every version source and the dashboard's cache-busting query move
+  to 0.46.0 together.
+
 ## 0.45.1
 
 ### Added
