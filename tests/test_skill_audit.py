@@ -9055,7 +9055,9 @@ class NewlyCoveredSubjectRosterTests(unittest.TestCase):
         # `figure audit`) joins the roster on top of upstream's `mark`
         # widening (`the-skill-writes-the-declaration-it-demands`), a real,
         # measured widening of `paper_cli.py`'s own argparse roster, not drift.
-        ("paper-writing", 28),
+        # 28 -> 29: the `venue` group (journal-finder), which adapts the
+        # manuscript to a chosen journal's template.
+        ("paper-writing", 29),
     )
 
     def test_each_new_recipe_derives_a_real_nonempty_roster(self):
