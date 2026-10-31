@@ -19,6 +19,7 @@ to the current directory and has to point at an initialized workspace, except fo
 | `target` | Lists, selects and checks compute targets |
 | `audit` | Audits the structure and detects drift in what was generated |
 | `doctor` | One health table: framework, packages, tools, skills, agents and phases |
+| `novelty` | Reads the novelty assessment and records the `G-NOVELTY` decision (approve, iterate, reset) |
 | `ui` | Serves the local Paper Command Center (DAG, gates, sections, wiring) |
 | `mcp` | Exposes the orchestrator and the paper verbs over Model Context Protocol |
 
@@ -496,8 +497,9 @@ smith ui --export-static ./dashboard-static
 | `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
 
 Serves the **Paper Command Center**: a local dashboard inside the workspace with
-its two flows, the four quality gates, the ten-section matrix and the health of
-the harness wiring. It updates live over Server-Sent Events, with a 300 ms
+its twelve tabs, the eleven phases of the paper flow, the gates (`G-EXP-POC`,
+`G-NOVELTY` and `G1` to `G4`), the ten-section matrix and the health of the
+harness wiring. It updates live over Server-Sent Events, with a 300 ms
 debounce on `sections/`, `openspec/`, `experiments/` and `papersmith.yaml`.
 
 The backend lives in `skills/_core/command_center/` (part of the kit, so it
@@ -507,16 +509,71 @@ travels with every workspace) and runs standalone without Node/npm:
 python -m skills._core.command_center.server --port 8080
 ```
 
-**The two flows.** The *Pipeline* tab draws the overall flow: the twelve stages of
-the architecture diagram, in order, plus the audit path across them where the four
-gates land. Each stage lights up from what is on disk — `sota-pool/`, `guidance/`,
+**The tabs.** The dashboard opens on *Flujo Archify* (the interactive flow diagram,
+served at `/api/flow`, and the table of the workspace's agents from `/api/agents`).
+The rest, in order: *Pipeline y Avance*, *Mapa Conceptual & Modelo*, *Experimentos*,
+*Novedad & Hallazgos*, *Secciones del Paper*, *Atlas de Grafos*, *Previsualización
+PDF*, *Artefactos*, *Historia con IA*, *Telemetría y Costos* and *Smith Doctor* (the
+table `smith doctor` prints). The English catalogue calls them Archify Flow,
+Pipeline and Progress, Concept Map & Model, Experiments, Novelty & Findings, Paper
+Sections, Graph Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and
+Smith Doctor.
+
+**The phases.** *Pipeline y Avance* draws the eleven phases the server reports
+under `fases` in `/api/status`, each with its sub-phases and the gate that guards
+it, and lights each one up from what is on disk — `sota-pool/`, `guidance/`,
 `proposals/`, `implementations/`, `.experimental-deliberation/`, `experiments/`,
-the credentials store, the inbox, `paper/Figures/` and `sections/` — and a stage
-with no artifact is reported inactive saying what is missing, never with an
-invented progress. The *Writing* tab draws the writing flow: one section per node,
-in render order, each with its state, its words and its blocks. The edges do not
-live in the frontend: the extractor sends them in the payload (`pipeline_chain`
-and `gate_links`), so the dashboard cannot contradict the diagram.
+the credentials store, the inbox, `paper/Figures/` and `sections/`. A phase with
+no artifact is reported inactive saying what is missing, never with an invented
+progress. Phase 5 passes on evidence the experiments leave behind: sub-phases 5.8
+(proof of concept) and 5.11 (full experiments) need a product of that stage with
+a complete `Results/discussion.json`, a bare `Results/` folder reads as active,
+and 5.12 reads `Results/reviewer_report.json`. Phase 2's console carries the
+optional thematic help described below. `/api/state` carries the diagram's edges
+(`pipeline_chain` and `gate_links`) in its payload instead of the frontend.
+
+**Thematic help for `/plausibility`.** Clicking phase 2 opens its console. Under
+*Ayuda temática (palabras clave)* (*Thematic help (keywords)* in English), 3 to 5
+keywords — each trimmed, non-empty, at most 40 characters, duplicates ignored
+regardless of case — become a query to the `banco-lia` MCP. The panel shows the
+ranked LIA items, the topics they fall under and a proposed `/plausibility` idea
+(at least two sentences, in the dashboard's language) that you edit; **Aprobar y
+lanzar** sends `/plausibility <idea>` through the same launch path as the box's
+own prompt, and nothing is launched without that click. The route is
+`POST /api/plausibility/suggest` with `{"keywords": [...], "language": "es"|"en"}`;
+it is same-origin only (`403` otherwise), answers `422` with the refusal
+`KEYWORDS_INVALID` when the keywords break the rule above, and `200` otherwise,
+including `{"available": false, "reason": "..."}` when the bank cannot be
+reached. It never writes to the workspace. What it calls, what it needs and how
+it behaves offline is in [mcp.md](mcp.md#the-dashboards-thematic-help).
+
+**Results discussion in *Experimentos*.** Every proof-of-concept and full-experiment
+card opens with *Summary and discussion*, read from the product's
+`Results/discussion.json`: its status (`complete`, `draft` or `invalid`, with the
+check's errors and warnings), the hypotheses with their metric, test, criterion,
+observed result, verdict and evidence links, the novelty verdict, the performance
+measures and why each was chosen, the qualitative or interpretability gallery with
+its reading (or the reason none applies), limitations and next steps. A product
+without the file shows how to create it:
+`python skills/_core/results/discussion_cli.py scaffold --product <path>`, then
+`check`. A **PoC vs full experiments** section compares each hypothesis's verdict
+across the two stages, and the significance table names the hypothesis and
+experiment of each test.
+
+**Novelty & Findings.** *Novedad & Hallazgos* reads `GET /api/novelty/status` (the
+same overview `smith novelty status --json` prints): the hypotheses of every
+discussion against their evidence and tests, the novelty claims contrasted with the
+`sota-pool/candidates.json` candidates, the reviewer-defense checklist (leakage-free
+partitioning, significance tests, empirical support, SOTA contrast) and the
+decision gate. The buttons *Aprobar Novedad & Proceder a Redacción*, *Iterar en
+Experimentos*, *Iterar en Propuesta / Modelo*, *Iterar en Plausibilidad / SOTA* and
+*Reiniciar a Pendiente* post `{"action", "notes", "actor"}` to
+`POST /api/novelty/decision` (`approve`, `iterate_experiments`, `iterate_proposal`,
+`iterate_plausibility`, `reset`; same-origin only, `422` with the refusal code for
+anything else). The gate `G-NOVELTY` is `PASS` once approved and `ACTIVE` while
+Phase 5 has passed and the decision is pending or iterating. It records the
+operator's decision in `.papersmith/novelty_gate.json`; it does not change any
+phase's status by itself.
 
 Endpoints: `/api/state`, `/api/health/wiring`, `/api/health/run-wiring-smoke`
 (POST) and `/api/events` (SSE); the dashboard build is served at `/`. The frontend
@@ -531,6 +588,13 @@ not belong to any dependency change. The end-to-end smoke is
 **Light theme.** The dashboard uses a single light theme, defined by colour tokens
 in `ui/src/styles.css`; a Vitest test rejects any literal colour outside `:root`
 and checks the contrast (WCAG AA) of the token pairs.
+
+**Two frontends.** The tabs listed above are those of the dashboard shipped in
+`skills/_core/command_center/static/index.html`. The Vite frontend under `ui/`
+(`npm run build:ui` emits into that same `static/` folder) has its own layout, and
+the next three paragraphs — clickable diagram and deep links, the in-memory *History*
+tab and the *Decisions* tab — describe that frontend. In the shipped dashboard the
+same `/api/decisions` events feed *Historia con IA*.
 
 **Clickable diagram and deep links.** Every node (stage, gate, section) and every
 edge of the pipeline diagram can be selected with the mouse or the keyboard
@@ -862,6 +926,63 @@ node scripts/command-center-visual-check.mjs --out /tmp/shots --full-page --clic
 
 It is a development tool (it needs Chromium); it does not run in CI. The UI tests
 (`npm --prefix ui test`) do run in CI.
+
+### `smith novelty {status,approve,iterate,reset}`
+
+```bash
+smith novelty status
+smith novelty status --json
+smith novelty approve --notes "H1 and H2 supported with paired tests; novelty holds against the SOTA pool"
+smith novelty iterate --stage experiments --notes "H3 is inconclusive: add the missing ablation"
+smith novelty reset
+```
+
+The novelty assessment and its gate (`G-NOVELTY`, the "Novelty & Findings Gate"),
+between the experiments and the manuscript. Every verb takes `--workspace <dir>` /
+`-w` (default: the current directory, which must be a workspace).
+
+- `status [--json]` — prints the gate (state, who decided and when, rationale,
+  target stage), the hypotheses read from every product's
+  `Results/discussion.json` with their verdict, test and observed result, and the
+  scientific-rigor checklist (leakage-free partitioning, significance tests,
+  empirical support for the hypotheses, SOTA contrast). `--json` prints the whole
+  overview, the same one the dashboard's *Novedad & Hallazgos* tab reads from
+  `GET /api/novelty/status`.
+- `approve [--notes TEXT]` — records that the empirical evidence supports the
+  novelty (`approved`, target stage `scaffolding`).
+- `iterate [--stage {experiments,proposal,plausibility}] [--notes TEXT]` — records
+  that the work returns to Phase 5 (default), Phase 4 or Phase 2
+  (`iterating_experiments`, `iterating_proposal`, `iterating_plausibility`), with
+  the instructions in the notes.
+- `reset` — returns the gate to `pending`.
+
+The decision, its actor, timestamp and rationale are written atomically to
+`.papersmith/novelty_gate.json`, together with the history of earlier decisions (the
+last 50). The gate records the operator's decision; it does not change the status of
+any phase. The dashboard shows `G-NOVELTY` as `PASS` once approved, and as `ACTIVE`
+while Phase 5 has passed and the decision is pending or iterating. The engine is
+`skills/_core/results/novelty_gate.py`; `smith novelty` locates it in the workspace
+kit, the installed kit or a papersmith-ai clone.
+
+**The results discussion tool.** The hypotheses `smith novelty` reads come from
+`Results/discussion.json`, which each product closes its proof of concept and its
+full experiments with. It has its own command line, outside `smith`:
+
+```bash
+python skills/_core/results/discussion_cli.py scaffold --product implementations/<repo>/<Name>
+python skills/_core/results/discussion_cli.py check    --product implementations/<repo>/<Name>
+python skills/_core/results/discussion_cli.py status   --product implementations/<repo>/<Name>
+```
+
+`scaffold` writes a pending skeleton from the latest experiments protocol
+(hypotheses and success criteria copied verbatim, every verdict `pending`) and
+never overwrites an existing file; `check` validates it and exits non-zero when it
+is invalid or absent; `status` prints the same report but exits `0` whenever the
+product exists. Each prints one JSON object, and a refusal prints
+`{"ok": false, "error": <CODE>, "message": ...}`. The dashboard's sub-phases 5.8 and
+5.11 pass only when a product of the stage holds a complete discussion. The schema
+and the refusal codes are in
+[`skills/_core/results/README.md`](../skills/_core/results/README.md).
 
 ### `smith atlas build [<dir>]`
 

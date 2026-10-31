@@ -156,6 +156,20 @@ same pass from the abstract its evidence names, and never grades a claim whose
 abstract was not read in the same reply. An invented quote reads as a finding and
 is acted on as one.
 
+**Thematic help, when the operator has no sentences yet.** The skill itself only
+ever receives an idea. In the dashboard, the box that opens on phase 2 offers an
+optional *Ayuda temática*: the operator types 3 to 5 keywords, the dashboard's
+server queries the lab bank through the `banco-lia` MCP (`search_bank`), and the
+panel shows the best-matching LIA items, the topics they belong to and a proposed
+idea, composed deterministically from the keywords and those matches (no model
+call). The operator edits it and presses **Aprobar y lanzar**, which sends
+`/plausibility <idea>` through the normal launch path; nothing runs without that
+click. For the skill, a draft that arrives this way is an idea like any other: the
+two-sentence minimum still applies, and the bank items are LIA continuity context,
+never SOTA evidence and never cited as such. The help needs `uv`/`uvx` and the
+`banco-lia` entry of `.mcp.json`; what it calls and how it behaves offline is in
+[mcp.md](mcp.md#the-dashboards-thematic-help).
+
 ### 2. `paper-ingestion` — from PDF to Markdown
 
 **What it is for.** Papers arrive as PDFs, and for an agent a PDF is a closed box:
@@ -1445,6 +1459,17 @@ and its significance row) and runs `check` until it reads `complete`. At the ful
 every decided hypothesis cites a `significance:<comparison>`. Qualitative figures live
 under `Results/qualitative/`, and significance rows may carry `hypothesis` and
 `experiment` keys. The dashboard gates sub-phase 5.11 on a complete discussion.
+
+**Then the novelty gate.** The discussions are what the dashboard's *Novedad &
+Hallazgos* tab and `smith novelty status` read to judge whether the evidence
+supports the proposal's novelty: the hypotheses with their verdicts and tests, the
+novelty claims contrasted with `sota-pool/candidates.json`, and a reviewer-defense
+checklist (leakage-free partitioning, significance tests, empirical support, SOTA
+contrast). The operator records the decision with the tab's buttons or with
+`smith novelty {approve,iterate,reset}`; `G-NOVELTY` reads `PASS` once the novelty
+is approved. An *iterate* decision names the stage the work returns to
+(`experiments`, `proposal` or `plausibility`). The gate records the decision and
+does not itself lock a later phase; see [cli.md](cli.md#smith-novelty-statusapproveiteratereset).
 
 **What it needs first.** A published experiments protocol, and a target repository
 under `implementations/` that is already a git repository. No virtual environment of the
