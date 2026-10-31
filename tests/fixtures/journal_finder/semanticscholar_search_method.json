@@ -1,0 +1,55 @@
+{
+  "total": 31,
+  "offset": 0,
+  "data": [
+    {
+      "paperId": "p1",
+      "title": "Quantum fixture learning",
+      "year": 2025,
+      "externalIds": {
+        "DOI": "10.1234/QFL.1"
+      },
+      "publicationVenue": {
+        "id": "v1",
+        "name": "Quantum Fixture Letters",
+        "type": "journal",
+        "issn": "1234-5679"
+      }
+    },
+    {
+      "paperId": "p2",
+      "title": "Quantum circuits for EEG decoding",
+      "year": 2024,
+      "externalIds": {
+        "DOI": "10.1111/nfl.1"
+      },
+      "publicationVenue": {
+        "id": "v2",
+        "name": "Neural Fixtures Letters",
+        "type": "journal",
+        "issn": "1111-111X"
+      }
+    },
+    {
+      "paperId": "p3",
+      "title": "A conference paper",
+      "year": 2024,
+      "externalIds": {
+        "DOI": "10.1109/conf.9"
+      },
+      "publicationVenue": {
+        "id": "v3",
+        "name": "Fixture Conference",
+        "type": "conference",
+        "issn": null
+      }
+    },
+    {
+      "paperId": "p4",
+      "title": "A paper without a venue record",
+      "year": 2024,
+      "externalIds": {},
+      "publicationVenue": null
+    }
+  ]
+}

@@ -291,6 +291,63 @@ class SelectTests(VenueCase):
         self.ok("select", "--slug", "eswa", "--candidate", "https://openalex.org/s1001")
         self.assertTrue((self.venue_dir() / "venue.json").is_file())
 
+    def fallback_candidates(self) -> None:
+        """A candidates file written by a fallback run: no OpenAlex id, `issn:`/`title:` ids."""
+        entries = [
+            {"openalex_id": None, "id": "issn:4444444X", "display_name": "Biomedical Fixture Reports",
+             "issn": ["4444-444X"], "issn_l": None, "publisher": "Biomed Fixtures Ltd",
+             "homepage_url": "https://biomed-fixtures.example/", "quartile": None, "quartile_source": "unknown",
+             "review_time": {"source": "none", "median_days": None}},
+            {"openalex_id": None, "id": "title:ieee/acm trans. on signals", "display_name": "IEEE/ACM Trans. on Signals",
+             "issn": [], "issn_l": None, "publisher": None, "homepage_url": None, "quartile": None,
+             "quartile_source": "unknown", "review_time": None},
+            {"openalex_id": None, "id": "title:acm trans. on signals", "display_name": "ACM Trans. on Signals",
+             "issn": [], "issn_l": None, "publisher": None, "homepage_url": None, "quartile": None,
+             "quartile_source": "unknown", "review_time": None},
+            {"openalex_id": "https://openalex.org/S1001", "id": "S1001", "display_name": "OpenAlex Journal",
+             "issn": ["0957-4174"], "quartile": "Q1", "quartile_source": "sjr"},
+        ]
+        (self.paper / "journal-candidates.json").write_text(json.dumps({"schema": 1, "candidates": entries}),
+                                                            encoding="utf-8")
+
+    def test_an_issn_candidate_is_found_by_its_id_as_written(self) -> None:
+        self.fallback_candidates()
+        self.ok("select", "--slug", "bfr", "--candidate", "issn:4444444X")
+        record = json.loads((self.venue_dir("bfr") / "venue.json").read_text())
+        self.assertEqual(record["journal"]["name"], "Biomedical Fixture Reports")
+        self.assertEqual(record["journal"]["issn"], ["4444-444X"])
+        self.assertEqual(record["quartile_source"], "unknown")
+        self.assertIsNone(record["quartile"])
+        self.assertEqual(record["via"], "candidate")
+        self.assertEqual(record["candidate_id"], "issn:4444444X")
+
+    def test_a_title_candidate_is_found_by_its_id_as_written(self) -> None:
+        self.fallback_candidates()
+        self.ok("select", "--slug", "ieee", "--candidate", "title:ieee/acm trans. on signals")
+        record = json.loads((self.venue_dir("ieee") / "venue.json").read_text())
+        self.assertEqual(record["journal"]["name"], "IEEE/ACM Trans. on Signals")
+        self.assertEqual(record["candidate_id"], "title:ieee/acm trans. on signals")
+
+    def test_fallback_ids_are_matched_exactly_not_by_their_last_path_segment_or_case(self) -> None:
+        self.fallback_candidates()
+        self.ok("select", "--slug", "acm", "--candidate", "title:acm trans. on signals")
+        record = json.loads((self.venue_dir("acm") / "venue.json").read_text())
+        self.assertEqual(record["journal"]["name"], "ACM Trans. on Signals")
+        for wrong in ("issn:4444444x", "ISSN:4444444X", "title:ACM TRANS. ON SIGNALS", "title:other/acm trans. on signals",
+                      "issn:", "title:", "4444444X"):
+            with self.subTest(candidate=wrong):
+                self.refused("select", "CANDIDATE_UNKNOWN", "--slug", "nope", "--candidate", wrong)
+
+    def test_an_openalex_candidate_still_works_beside_the_fallback_ids(self) -> None:
+        self.fallback_candidates()
+        for given in ("S1001", "s1001", "https://openalex.org/S1001"):
+            with self.subTest(candidate=given):
+                self.ok("select", "--slug", "oa", "--candidate", given)
+                record = json.loads((self.venue_dir("oa") / "venue.json").read_text())
+                self.assertEqual(record["journal"]["name"], "OpenAlex Journal")
+                self.assertEqual(record["candidate_id"], "S1001")
+                (self.venue_dir("oa") / "venue.json").unlink()
+
     def test_a_candidate_missing_every_optional_field_is_tolerated(self) -> None:
         self.candidates()
         self.ok("select", "--slug", "bare", "--candidate", "S1002")

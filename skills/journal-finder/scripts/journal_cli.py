@@ -6,6 +6,7 @@ Stdlib only. One JSON object on stdout per call; a refusal is
 
     journal_cli.py search --workspace <dir> --quartiles <range> [--oa-only]
                           [--max-apc N] [--max-review-days N] [--limit N]
+                          [--source auto|openalex|crossref] [--include-unknown-quartile]
                           [--sjr <csv>] [--out <path>] [--no-cache]
     journal_cli.py sjr-import --file <path> [--year YYYY]
     journal_cli.py status --workspace <dir>
@@ -58,8 +59,31 @@ Budget and cache
     quota: no retry, NETWORK_UNAVAILABLE naming OPENALEX_API_KEY. `api_calls` reports calls made/cached
     and the budget state.
 
+Providers (`--source`, `providers`, `fallback`, candidate `sources`)
+    auto (default)  OpenAlex first; when it is unavailable (no response, 429 quota, 401/403 key required, 5xx,
+                    network error, no journal record) the search continues with the fallback chain and says so.
+    openalex        today's behaviour: refuse (NETWORK_UNAVAILABLE) when OpenAlex is unavailable.
+    crossref        skip OpenAlex.
+    Fallback chain  similar works: Crossref /works (one query per facet, journal articles of the last 6 years,
+                    polite `mailto`, <= 3 list requests/s); Europe PMC /search when a keyword or an application-facet
+                    phrase has a biomedical word (merged into the same per-journal aggregate; the method facet and
+                    the abstract never trigger it); Semantic Scholar /graph/v1/paper/search only with
+                    SEMANTIC_SCHOLAR_API_KEY (header x-api-key). Aggregated per journal by normalised ISSN, else by
+                    normalised container title. Cited venues: Crossref /works/<doi>; journal names match journals
+                    already found. Journal record: SJR file, DOAJ (OA, APC, review process, subjects), Crossref
+                    /journals/<issn> for a missing publisher. topic_overlap: SJR categories / DOAJ subjects against
+                    the paper's keywords and facet phrases (query.scoring.topic_overlap_basis "subjects"); the
+                    signal drops out when 0 for every journal.
+    Quartile        SJR when imported, else the OpenAlex proxy when OpenAlex answered, else quartile null with
+                    quartile_source "unknown": excluded unless --include-unknown-quartile (excluded_reasons).
+    OpenAlex key    a free key from openalex.org/settings/api (about USD 1/day, 10x the keyless budget):
+                    export OPENALEX_API_KEY. The CLI never asks for it on the operator's behalf.
+
 Environment
     PAPERSMITH_OPENALEX_URL / _CROSSREF_URL / _PUBMED_URL   base URLs (tests)
+    PAPERSMITH_EUROPEPMC_URL / _DOAJ_URL / _SEMANTICSCHOLAR_URL   base URLs of the fallback providers
+    SEMANTIC_SCHOLAR_API_KEY     enables Semantic Scholar (header x-api-key; never cached or printed)
+    PAPERSMITH_CROSSREF_MIN_INTERVAL / PAPERSMITH_FALLBACK_MIN_INTERVAL   rate-limit spacing (tests set 0)
     PAPERSMITH_CONTACT_EMAIL     polite `mailto`/User-Agent/NCBI `email` (never hard-coded)
     NCBI_API_KEY, OPENALEX_API_KEY                         sent only when set
     PAPERSMITH_SJR_DIR           SJR cache (default ~/.cache/papersmith/sjr)
@@ -130,9 +154,26 @@ APP_TOPIC_MIN = 0.05
 OPENALEX_DEFAULT = "https://api.openalex.org"
 CROSSREF_DEFAULT = "https://api.crossref.org"
 PUBMED_DEFAULT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+EUROPEPMC_DEFAULT = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+DOAJ_DEFAULT = "https://doaj.org"
+SEMANTICSCHOLAR_DEFAULT = "https://api.semanticscholar.org"
 SJR_DOWNLOAD_URL = "https://www.scimagojr.com/journalrank.php"
 PUBMED_MIN_INTERVAL = 0.34  # strictly under 3 requests per second
-CROSSREF_MIN_INTERVAL = 0.2
+CROSSREF_LIST_INTERVAL = 0.34  # Crossref polite pool: 3 list requests per second
+CROSSREF_SINGLE_INTERVAL = 0.11  # Crossref polite pool: 10 single-record requests per second
+EUROPEPMC_INTERVAL = 0.1
+DOAJ_INTERVAL = 0.5  # DOAJ API: 2 requests per second
+SEMANTICSCHOLAR_INTERVAL = 1.0  # a Semantic Scholar key starts at 1 request per second
+CROSSREF_WORK_FIELDS = "DOI,title,container-title,ISSN,published,subject"
+MAX_CROSSREF_DOIS = 100
+UNAVAILABLE_STATUSES = (200, 401, 402, 403, 429)  # 200: an answer that is not JSON
+PROVIDER_ORDER = ("openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj")
+SOURCE_CHOICES = ("auto", "openalex", "crossref")
+OPENALEX_KEY_URL = "openalex.org/settings/api"
+OPENALEX_KEY_GUIDE = ("OpenAlex now asks for a free API key for real use: keyless calls are a small demo "
+                      "allowance and a free key gives about USD 1 per day, 10x the keyless budget. Create a free "
+                      "account at openalex.org, copy the key from " + OPENALEX_KEY_URL + " and export "
+                      "OPENALEX_API_KEY.")
 SJR_FIRST_YEAR = 1999
 SJR_REQUIRED = ("Title", "Issn", "SJR", "SJR Best Quartile", "Categories", "Publisher")
 SOURCE_SELECT = ("id,display_name,issn_l,issn,type,host_organization_name,is_oa,is_in_doaj,"
@@ -232,7 +273,7 @@ def cache_dir() -> Path:
 class ResponseCache:
     """Successful JSON answers on disk, keyed by URL without credentials.
 
-    A search (`search` or `term` parameter) lives CACHE_TTL_SEARCH, any other lookup CACHE_TTL_LOOKUP. Errors
+    A search (`search`, `term` or `query` parameter) lives CACHE_TTL_SEARCH, any other lookup CACHE_TTL_LOOKUP. Errors
     are never stored and a cache that cannot be read or written is silently a miss.
     """
 
@@ -247,7 +288,8 @@ class ResponseCache:
 
     @staticmethod
     def _ttl(params: dict) -> float:
-        return CACHE_TTL_SEARCH if ("search" in params or "term" in params) else CACHE_TTL_LOOKUP
+        return CACHE_TTL_SEARCH if ("search" in params or "term" in params or "query" in params) \
+            else CACHE_TTL_LOOKUP
 
     def _path(self, canonical: str) -> Path:
         return self.directory / (hashlib.sha256(canonical.encode("utf-8")).hexdigest() + ".json")
@@ -277,7 +319,7 @@ class ResponseCache:
 class CallStats:
     """How many HTTP requests were made or served from the cache, per service, and the OpenAlex budget."""
 
-    SERVICES = ("openalex", "crossref", "pubmed")
+    SERVICES = ("openalex", "crossref", "pubmed", "europepmc", "doaj", "semanticscholar")
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -337,14 +379,14 @@ class Http:
         self.user_agent = f"{agent} (mailto:{contact})" if contact else agent
 
     def get_json(self, url: str, params: dict, limiter: RateLimiter | None = None,
-                 service: str = "http") -> dict:
+                 service: str = "http", headers: dict | None = None) -> dict:
         cached = self.cache.get(url, params)
         if cached is not None:
             self.stats.record(service, cached=True)
             return cached
         full = f"{url}?{urllib.parse.urlencode(params)}" if params else url
         request = urllib.request.Request(
-            full, headers={"User-Agent": self.user_agent, "Accept": "application/json"})
+            full, headers={"User-Agent": self.user_agent, "Accept": "application/json", **(headers or {})})
         last = "no attempt made"
         for attempt in range(self.retries + 1):
             remaining = self.deadline.remaining()
@@ -843,6 +885,10 @@ def _parse_categories(cell: str) -> list[dict]:
     return out
 
 
+def cell_at(index: int | None, record: list[str]) -> str:
+    return record[index].strip() if index is not None and index < len(record) else ""
+
+
 def _invalid(message: str) -> Refusal:
     return Refusal("SJR_FILE_INVALID", message)
 
@@ -867,6 +913,7 @@ def read_sjr(path: Path) -> SjrTable:
         raise _invalid(f"{path} lacks the SCImago column(s): {', '.join(missing)}; use "
                        f"'Download data' at {SJR_DOWNLOAD_URL}")
     column = {name: header.index(name.lower()) for name in SJR_REQUIRED}
+    h_column = header.index("h index") if "h index" in header else None
     rows = 0
     by_issn: dict[str, dict] = {}
     for record in reader:
@@ -883,8 +930,10 @@ def read_sjr(path: Path) -> SjrTable:
             value = float(cell("SJR").replace(",", "."))
         except ValueError:
             value = None
+        h_index = cell_at(h_column, record)
         row = {"title": cell("Title"), "publisher": cell("Publisher"), "value": value,
                "quartile": quartile if re.fullmatch(r"Q[1-4]", quartile) else None,
+               "h_index": int(h_index) if h_index.isdigit() else None,
                "categories": _parse_categories(cell("Categories"))}
         for issn in re.split(r"[,;\s]+", cell("Issn")):
             key = normalize_issn(issn)
@@ -943,9 +992,22 @@ class Services:
         self.openalex = _base("PAPERSMITH_OPENALEX_URL", OPENALEX_DEFAULT)
         self.crossref = _base("PAPERSMITH_CROSSREF_URL", CROSSREF_DEFAULT)
         self.pubmed = _base("PAPERSMITH_PUBMED_URL", PUBMED_DEFAULT)
+        self.europepmc = _base("PAPERSMITH_EUROPEPMC_URL", EUROPEPMC_DEFAULT)
+        self.doaj = _base("PAPERSMITH_DOAJ_URL", DOAJ_DEFAULT)
+        self.semanticscholar = _base("PAPERSMITH_SEMANTICSCHOLAR_URL", SEMANTICSCHOLAR_DEFAULT)
+        self.semanticscholar_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
         self.openalex_limiter = RateLimiter(max(0.0, _env_float("PAPERSMITH_OPENALEX_MIN_INTERVAL", 0.11)))
-        self.crossref_limiter = RateLimiter(CROSSREF_MIN_INTERVAL)
+        crossref_interval = max(0.0, _env_float("PAPERSMITH_CROSSREF_MIN_INTERVAL", CROSSREF_LIST_INTERVAL))
+        self.crossref_limiter = RateLimiter(crossref_interval)
+        self.crossref_single_limiter = RateLimiter(min(crossref_interval, CROSSREF_SINGLE_INTERVAL))
         self.pubmed_limiter = RateLimiter(PUBMED_MIN_INTERVAL)
+
+        def fallback_interval(default: float) -> float:
+            return max(0.0, _env_float("PAPERSMITH_FALLBACK_MIN_INTERVAL", default))
+
+        self.europepmc_limiter = RateLimiter(fallback_interval(EUROPEPMC_INTERVAL))
+        self.doaj_limiter = RateLimiter(fallback_interval(DOAJ_INTERVAL))
+        self.semanticscholar_limiter = RateLimiter(fallback_interval(SEMANTICSCHOLAR_INTERVAL))
 
     def openalex_get(self, path: str, params: dict) -> dict:
         params = dict(params)
@@ -961,11 +1023,23 @@ class Services:
                                   "for the reset", status=429, quota=True) from exc
             raise
 
-    def crossref_get(self, path: str, params: dict) -> dict:
+    def crossref_get(self, path: str, params: dict, single: bool = False) -> dict:
+        """`single` marks a record request (a work or a journal), which has its own, faster polite-pool limit."""
         params = dict(params)
         if _contact():
             params["mailto"] = _contact()
-        return self.http.get_json(f"{self.crossref}{path}", params, self.crossref_limiter, "crossref")
+        limiter = self.crossref_single_limiter if single else self.crossref_limiter
+        return self.http.get_json(f"{self.crossref}{path}", params, limiter, "crossref")
+
+    def europepmc_get(self, path: str, params: dict) -> dict:
+        return self.http.get_json(f"{self.europepmc}{path}", params, self.europepmc_limiter, "europepmc")
+
+    def doaj_get(self, path: str) -> dict:
+        return self.http.get_json(f"{self.doaj}{path}", {}, self.doaj_limiter, "doaj")
+
+    def semanticscholar_get(self, path: str, params: dict) -> dict:
+        return self.http.get_json(f"{self.semanticscholar}{path}", params, self.semanticscholar_limiter,
+                                  "semanticscholar", headers={"x-api-key": self.semanticscholar_key})
 
     def pubmed_get(self, path: str, params: dict) -> dict:
         params = {**params, "tool": "papersmith"}
@@ -1498,6 +1572,404 @@ def estimate_review_time(services: Services, candidate: dict, today: dt.date) ->
     return _empty_review(best_n, window), notes
 
 
+# --------------------------------------------------------------------------- the fallback chain (no OpenAlex)
+
+#: Words that mark an application facet or a keyword as biomedical; matched whole, `\w*` extends a stem.
+_BIOMEDICAL = re.compile(
+    r"eeg|ecg|emg|meg|fmri|mri|biomedical|medical|medicine|clinical|clinic\w*|patient\w*|health\w*|disease\w*|"
+    r"disorder\w*|diagnos\w*|therap\w*|neuro\w*|brain|cancer\w*|tumou?r\w*|genom\w*|protein\w*|drug\w*|"
+    r"pharma\w*|cardi\w*|epilep\w*|seizure\w*|adhd|autis\w*|dementia|alzheimer\w*|parkinson\w*|biomarker\w*|"
+    r"surg\w*|hospital\w*|physiolog\w*|electroenceph\w*|psychiatr\w*|mental|covid\w*|virus\w*|viral|infect\w*|"
+    r"oncolog\w*|radiolog\w*|patholog\w*|gene|genes")
+BIOMEDICAL_RULE = ("Europe PMC is queried (and merged into the same per-journal aggregate) when a keyword or a "
+                   "phrase of the paper's application facet contains a biomedical word (EEG, clinical, disease, "
+                   "neuro..., brain, cancer, ...); the method facet and the abstract never trigger it")
+
+
+def biomedical_matches(profile: dict, facets: dict[str, list[str]]) -> list[str]:
+    """Biomedical words found in the paper's keywords and in the phrases of its application facet."""
+    texts = [*(profile.get("keywords") or []), *(facets.get("application") or [])]
+    found: list[str] = []
+    for text in texts:
+        for word in re.findall(r"[a-z0-9]+", text.lower()):
+            if word not in found and _BIOMEDICAL.fullmatch(word):
+                found.append(word)
+    return found
+
+
+def format_issn(value) -> str:
+    key = normalize_issn(value)
+    return f"{key[:4]}-{key[4:]}" if len(key) == 8 else str(value or "").strip()
+
+
+def _stem(token: str) -> str:
+    return token[:-1] if len(token) > 4 and token.endswith("s") and not token.endswith("ss") else token
+
+
+def vocabulary(texts) -> set[str]:
+    """Content words of some texts, lower-cased, stop words dropped and a plural `s` removed."""
+    return {_stem(token) for text in texts for token in _tokens(text)}
+
+
+def subject_overlap(paper_words: set[str], labels) -> float:
+    """Share of the paper's words that the journal's subject labels (SJR categories, DOAJ subjects) contain."""
+    if not paper_words:
+        return 0.0
+    return len(paper_words & vocabulary(labels)) / len(paper_words)
+
+
+class JournalIndex:
+    """Journals the fallback providers found, merged by ISSN (any of a journal's numbers) or, for a work with
+    no ISSN, by normalised container title; a work that bridges two entries joins them."""
+
+    def __init__(self):
+        self.entries: list[dict] = []
+        self._by_issn: dict[str, dict] = {}
+        self._by_title: dict[str, dict] = {}
+        self._seen = 0
+
+    def find(self, name: str, issns) -> dict | None:
+        keys = [normalize_issn(i) for i in issns or [] if normalize_issn(i)]
+        for key in keys:
+            if key in self._by_issn:
+                return self._by_issn[key]
+        return None if keys else self._by_title.get(_name_key(name))
+
+    def get_or_create(self, name: str, issns) -> dict:
+        keys = [normalize_issn(i) for i in issns or [] if normalize_issn(i)]
+        touched: list[dict] = []
+        for key in keys:
+            entry = self._by_issn.get(key)
+            if entry is not None and entry not in touched:
+                touched.append(entry)
+        if not touched and not keys and _name_key(name) in self._by_title:
+            touched.append(self._by_title[_name_key(name)])
+        if touched:
+            entry = touched[0]
+            for other in touched[1:]:
+                self._merge(entry, other)
+        else:
+            self._seen += 1
+            entry = {"name": name, "issns": [], "count": 0, "works": [], "first": self._seen, "ids": set(),
+                     "facet_ids": {}, "found_by": set(), "cited": 0}
+            self.entries.append(entry)
+        for issn in issns or []:
+            key = normalize_issn(issn)
+            if key and key not in {normalize_issn(i) for i in entry["issns"]}:
+                entry["issns"].append(format_issn(issn))
+            if key:
+                self._by_issn[key] = entry
+        self._by_title.setdefault(_name_key(name), entry)
+        return entry
+
+    def _merge(self, into: dict, other: dict) -> None:
+        into["issns"].extend(i for i in other["issns"]
+                             if normalize_issn(i) not in {normalize_issn(x) for x in into["issns"]})
+        into["ids"] |= other["ids"]
+        into["count"] = len(into["ids"])
+        into["works"].extend(other["works"])
+        del into["works"][3:]
+        for facet, ids in other["facet_ids"].items():
+            into["facet_ids"].setdefault(facet, set()).update(ids)
+        into["found_by"] |= other["found_by"]
+        into["cited"] += other["cited"]
+        into["first"] = min(into["first"], other["first"])
+        self.entries.remove(other)
+        for mapping in (self._by_issn, self._by_title):
+            for key, value in list(mapping.items()):
+                if value is other:
+                    mapping[key] = into
+
+    @staticmethod
+    def add_work(entry: dict, key: str, work: dict, facet: str, provider: str) -> None:
+        entry["facet_ids"].setdefault(facet, set()).add(key)
+        entry["found_by"].add(provider)
+        if key in entry["ids"]:
+            return
+        entry["ids"].add(key)
+        entry["count"] = len(entry["ids"])
+        if len(entry["works"]) < 3:
+            entry["works"].append(work)
+
+    def finalize(self) -> None:
+        for entry in self.entries:
+            entry["id"] = (f"issn:{normalize_issn(entry['issns'][0])}" if entry["issns"]
+                           else f"title:{_name_key(entry['name'])}")
+
+
+def _first(value) -> str:
+    items = value if isinstance(value, list) else [value]
+    return next((str(i).strip() for i in items if i and str(i).strip()), "")
+
+
+def _year(value) -> int | None:
+    match = re.match(r"\d{4}", str(value or ""))
+    return int(match.group(0)) if match else None
+
+
+def crossref_works(data: dict) -> list[dict]:
+    works = []
+    for item in ((data.get("message") or {}).get("items")) or []:
+        container = _first(item.get("container-title"))
+        if not container:
+            continue
+        parts = (((item.get("published") or {}).get("date-parts")) or [[None]])[0] or [None]
+        works.append({"title": _first(item.get("title")), "year": parts[0], "doi": normalize_doi(item.get("DOI")),
+                      "container": container, "issns": [str(i) for i in item.get("ISSN") or []]})
+    return works
+
+
+def europepmc_works(data: dict) -> list[dict]:
+    works = []
+    for record in ((data.get("resultList") or {}).get("result")) or []:
+        journal = ((record.get("journalInfo") or {}).get("journal")) or {}
+        types = ((record.get("pubTypeList") or {}).get("pubType")) or []
+        if not journal.get("title") or record.get("source") == "PPR":
+            continue
+        if types and not any("article" in str(t).lower() for t in types):
+            continue
+        works.append({"title": str(record.get("title") or "").strip().rstrip("."), "year": _year(record.get("pubYear")),
+                      "doi": normalize_doi(record.get("doi")), "container": str(journal["title"]).strip(),
+                      "issns": [str(i) for i in (journal.get("issn"), journal.get("essn")) if i]})
+    return works
+
+
+def semanticscholar_works(data: dict) -> list[dict]:
+    works = []
+    for paper in data.get("data") or []:
+        venue = paper.get("publicationVenue") or {}
+        issns = [str(i) for i in (venue.get("issn"), *(venue.get("alternate_issns") or [])) if i]
+        if not venue.get("name") or str(venue.get("type") or "journal").lower() != "journal" or not issns:
+            continue
+        works.append({"title": str(paper.get("title") or "").strip(), "year": paper.get("year"),
+                      "doi": normalize_doi((paper.get("externalIds") or {}).get("DOI")),
+                      "container": str(venue["name"]).strip(), "issns": issns})
+    return works
+
+
+def _work_key(work: dict) -> str:
+    return work["doi"] or f"title:{_name_key(work['title'])}#{work['year']}"
+
+
+def fetch_similar_fallback(services: Services, profile: dict, facets: dict[str, list[str]], terms: list[str],
+                           max_works: int, today: dt.date) -> dict:
+    """Journals hosting works like the paper, from Crossref, Europe PMC and Semantic Scholar.
+
+    One query per facet and provider, each with an equal share of `max_works` (one page of at most 100):
+    Crossref `/works` always, Europe PMC when `biomedical_matches` finds something (BIOMEDICAL_RULE), Semantic
+    Scholar only when SEMANTIC_SCHOLAR_API_KEY is set. Journal articles only; works are counted once per DOI
+    (else per title and year) however many providers or facets found them, and aggregated per journal. A
+    provider that fails costs a note; when none answers the failure is raised. Returns the same shape as
+    `fetch_similar_sources` with the `index` of journals in place of `sources`.
+    """
+    notes: list[str] = []
+    index = JournalIndex()
+    since = recency_start(today)
+    plan = [(name, list(phrases)) for name, phrases in facets.items() if phrases] or [("all", [])]
+    rows = max(1, min(WORKS_PAGE_SIZE, max_works // len(plan)))
+    matched_words = biomedical_matches(profile, facets)
+    keyed = bool(services.semanticscholar_key)
+    contributed: set[str] = set()
+    answered: set[str] = set()
+    failures: dict[str, str] = {}
+    queries: list[dict] = []
+    scanned = 0
+
+    def absorb(provider: str, facet: str, works: list[dict]) -> None:
+        for work in works:
+            entry = index.get_or_create(work["container"], work["issns"])
+            index.add_work(entry, _work_key(work), {
+                "title": work["title"], "year": work["year"], "doi": work["doi"]}, facet, provider)
+            contributed.add(provider)
+
+    def attempt(provider: str, label: str, facet: str, phrases: list[str], call, parse, matched_of, total_of):
+        nonlocal scanned
+        try:
+            data = call()
+        except HttpFailure as exc:
+            if exc.deadline:
+                raise
+            failures.setdefault(provider, str(exc))
+            notes.append(f"{label} failed for the {facet} query ({exc}); skipped")
+            return
+        answered.add(provider)
+        works = parse(data)
+        scanned += total_of(data)
+        absorb(provider, facet, works)
+        if facet != "all":
+            queries.append({"provider": provider, "facet": facet, "phrases": list(phrases),
+                            "matched": matched_of(data), "works_read": total_of(data)})
+
+    recent = f"type:journal-article,from-pub-date:{since.isoformat()}"
+    for facet, phrases in plan:
+        quoted = " ".join(f'"{p}"' for p in phrases) if phrases else " ".join(terms[:START_TERMS])
+        attempt("crossref", "Crossref", facet, phrases,
+                lambda: services.crossref_get("/works", {
+                    "query": quoted, "filter": recent, "rows": rows, "select": CROSSREF_WORK_FIELDS}),
+                crossref_works, lambda d: (d.get("message") or {}).get("total-results"),
+                lambda d: len((d.get("message") or {}).get("items") or []))
+        if matched_words:
+            core = or_query(phrases) if phrases else " OR ".join(terms[:START_TERMS])
+            attempt("europepmc", "Europe PMC", facet, phrases,
+                    lambda: services.europepmc_get("/search", {
+                        "query": f"({core}) AND (FIRST_PDATE:[{since.isoformat()} TO {today.isoformat()}]) "
+                                 "AND (SRC:MED OR SRC:PMC)",
+                        "resultType": "core", "format": "json", "pageSize": rows}),
+                    europepmc_works, lambda d: d.get("hitCount"),
+                    lambda d: len((d.get("resultList") or {}).get("result") or []))
+        if keyed:
+            attempt("semanticscholar", "Semantic Scholar", facet, phrases,
+                    lambda: services.semanticscholar_get("/graph/v1/paper/search", {
+                        "query": " ".join(phrases) if phrases else " ".join(terms[:START_TERMS]),
+                        "limit": rows, "year": f"{since.year}-",
+                        "fields": "title,year,externalIds,publicationVenue"}),
+                    semanticscholar_works, lambda d: d.get("total"), lambda d: len(d.get("data") or []))
+    if not answered:
+        raise HttpFailure("no fallback provider answered (" + "; ".join(
+            f"{PROVIDER_LABELS[p]}: {m}" for p, m in failures.items()) + ")")
+    return {"index": index, "scanned": scanned, "terms": terms,
+            "phrases": [p for _, phrases in plan for p in phrases], "mode": "phrases" if facets else "terms",
+            "notes": notes, "queries": queries, "tail": None, "contributed": contributed,
+            "europepmc": {"queried": bool(matched_words), "matched": matched_words, "rule": BIOMEDICAL_RULE},
+            "semanticscholar": {"queried": keyed, "reason": (
+                "SEMANTIC_SCHOLAR_API_KEY is set" if keyed else "no SEMANTIC_SCHOLAR_API_KEY: not queried")}}
+
+
+def resolve_cited_fallback(services: Services, entries: list[dict], index: JournalIndex, notes: list[str]) -> dict:
+    """Journals the paper's references were published in, through Crossref.
+
+    A DOI is resolved with `/works/<doi>` (container title and ISSN; journal articles only; arXiv DOIs belong to
+    DataCite and are not asked). A reference that stays unresolved but names a journal is matched, by normalised
+    title, against the journals already in `index`; a name never creates a journal. Failures degrade into notes.
+    """
+    stats = {"entries": len(entries), "resolved_by_doi": 0, "resolved_by_journal_name": 0}
+    resolved: set[int] = set()
+    dois = list(dict.fromkeys(e["doi"] for e in entries if e["doi"] and not e["doi"].startswith("10.48550/")))
+    if len(dois) > MAX_CROSSREF_DOIS:
+        notes.append(f"cited venues: only the first {MAX_CROSSREF_DOIS} of {len(dois)} DOIs were resolved")
+        dois = dois[:MAX_CROSSREF_DOIS]
+
+    def lookup(doi: str):
+        try:
+            data = services.crossref_get(f"/works/{urllib.parse.quote(doi, safe='/')}", {}, single=True)
+            return doi, data.get("message") or {}, None
+        except HttpFailure as exc:
+            return doi, None, None if exc.status == 404 else str(exc)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+        looked = list(executor.map(lookup, dois))
+    errors = [error for _, _, error in looked if error]
+    if errors:
+        notes.append(f"cited venues: the Crossref DOI lookup failed for {len(errors)} of {len(dois)} DOIs "
+                     f"({errors[0]}); those references were not resolved by DOI")
+    records = {doi: message for doi, message, _ in looked if message}
+    counted: dict[int, dict] = {}
+    for position, entry in enumerate(entries):
+        message = records.get(entry["doi"] or "")
+        container = _first((message or {}).get("container-title"))
+        if message and message.get("type") == "journal-article" and container:
+            journal = index.get_or_create(container, [str(i) for i in message.get("ISSN") or []])
+            journal["cited"] += 1
+            journal["found_by"].add("crossref")
+            counted[id(journal)] = journal
+            resolved.add(position)
+            stats["resolved_by_doi"] += 1
+    for position, entry in enumerate(entries):
+        if position in resolved or not entry["journal"] or is_repository_name(entry["journal"]):
+            continue
+        journal = index.find(entry["journal"], [])
+        if journal is not None:
+            journal["cited"] += 1
+            counted[id(journal)] = journal
+            resolved.add(position)
+            stats["resolved_by_journal_name"] += 1
+    stats["unresolved"] = len(entries) - len(resolved)
+    ranked = sorted(counted.values(), key=lambda j: (-j["cited"], j["name"].lower()))
+    return {"providers": {"crossref"} if stats["resolved_by_doi"] else set(), "summary": {
+        **stats, "journals": [{"display_name": j["name"], "count": j["cited"], "issn": list(j["issns"])}
+                              for j in ranked[:10]]}}
+
+
+def parse_doaj_record(data: dict, issn: str) -> dict | None:
+    """The DOAJ record whose ISSN is the one asked for: access, APC, review process, subjects, publisher."""
+    wanted = normalize_issn(issn)
+    for result in data.get("results") or []:
+        bib = result.get("bibjson") or {}
+        if wanted not in {normalize_issn(bib.get("eissn")), normalize_issn(bib.get("pissn"))}:
+            continue
+        apc = bib.get("apc") or {}
+        amounts = [{"currency": str(a.get("currency") or ""), "price": a.get("price")}
+                   for a in apc.get("max") or [] if isinstance(a, dict)]
+        has_apc = apc.get("has_apc")
+        usd = next((a["price"] for a in amounts if a["currency"].upper() == "USD" and a["price"] is not None), None)
+        return {
+            "publisher": (bib.get("publisher") or {}).get("name"),
+            "homepage_url": (bib.get("ref") or {}).get("journal"),
+            "apc_usd": 0 if has_apc is False else usd,
+            "doaj": {"has_apc": has_apc, "apc_max": amounts,
+                     "review_process": [str(r) for r in (bib.get("editorial") or {}).get("review_process") or []],
+                     "subjects": [str(s["term"]) for s in bib.get("subject") or []
+                                  if isinstance(s, dict) and s.get("term")]}}
+    return None
+
+
+def fetch_fallback_record(services: Services, entry: dict, table: SjrTable | None) -> dict:
+    """One journal's record without OpenAlex: SJR first, then DOAJ, then Crossref for a missing publisher."""
+    issns = list(entry["issns"])
+    found_by, meta_by = set(entry["found_by"]), set()
+    errors: dict[str, str] = {}
+    sjr = table.lookup(issns) if table else None
+    if sjr:
+        meta_by.add("sjr")
+    doaj, doaj_answered = None, False
+    for issn in issns:
+        try:
+            data = services.doaj_get(f"/api/search/journals/issn:{urllib.parse.quote(issn, safe='-')}")
+        except HttpFailure as exc:
+            if exc.status != 404:
+                errors["DOAJ"] = str(exc)
+                break
+            doaj_answered = True
+            continue
+        doaj_answered = True
+        doaj = parse_doaj_record(data, issn)
+        if doaj:
+            meta_by.add("doaj")
+            break
+    publisher = (sjr or {}).get("publisher") or (doaj or {}).get("publisher") or None
+    if not publisher:
+        for issn in issns:
+            try:
+                message = services.crossref_get(f"/journals/{urllib.parse.quote(issn, safe='-')}", {},
+                                                single=True).get("message") or {}
+            except HttpFailure as exc:
+                if exc.status != 404:
+                    errors["Crossref journal record"] = str(exc)
+                    break
+                continue
+            publisher = str(message.get("publisher") or "").strip() or None
+            if publisher:
+                meta_by.add("crossref")
+                break
+    labels = [(c["name"], "sjr") for c in (sjr or {}).get("categories") or []]
+    labels += [(s, "doaj") for s in ((doaj or {}).get("doaj") or {}).get("subjects") or []]
+    return {
+        "openalex_id": None, "id": entry["id"], "display_name": entry["name"], "issn_l": None, "issn": issns,
+        "publisher": publisher,
+        "is_oa": True if doaj else None,
+        "is_in_doaj": True if doaj else (False if doaj_answered else None),
+        "apc_usd": (doaj or {}).get("apc_usd"),
+        "homepage_url": (doaj or {}).get("homepage_url"),
+        "h_index": (sjr or {}).get("h_index"), "mean_citedness_2yr": None, "field": None, "field_id": None,
+        "similar_works_count": entry["count"], "similar_works": entry["works"], "cited_count": entry["cited"],
+        "facet_hits": {name: len(entry["facet_ids"].get(name, ())) for name in ("method", "application")},
+        "topics": [{"id": f"{origin}:{name}", "name": name, "share": round(1 / len(labels), 4), "origin": origin}
+                   for name, origin in labels[:SOURCE_TOPICS_SHOWN]],
+        "doaj": (doaj or {}).get("doaj"),
+        "_labels": [name for name, _ in labels], "_sjr": sjr, "_found_by": found_by, "_meta_by": meta_by,
+        "_errors": errors}
+
+
 # --------------------------------------------------------------------------- search
 
 
@@ -1541,8 +2013,6 @@ def _load_sjr(args: argparse.Namespace, notes: list[str]) -> tuple[SjrTable | No
         return read_sjr(path), {"file": str(path), "year": year_from_name(path.name)}
     cached = latest_cached_sjr()
     if cached is None:
-        notes.append(f"No SJR file imported: quartiles are the openalex-proxy approximation. Download the CSV "
-                     f"from {SJR_DOWNLOAD_URL} ('Download data') and run `journal_cli.py sjr-import`.")
         return None, None
     path, year = cached
     try:
@@ -1556,47 +2026,40 @@ def _write_json(path: Path, document: dict) -> None:
     _atomic_write(path, (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
-def cmd_search(args: argparse.Namespace) -> dict:
-    low, high = parse_quartile_range(args.quartiles)
-    filters, notes = _validated_filters(args)
-    workspace = Path(args.workspace).expanduser()
-    if not workspace.is_dir():
-        raise Refusal("WORKSPACE_ABSENT", f"{workspace} is not a directory")
-    table, sjr_info = _load_sjr(args, notes)
-    profile = extract_profile(workspace)
-    terms = build_terms(profile)
-    facets = build_phrase_facets(profile)
-    out = Path(args.out).expanduser() if args.out else workspace / "paper" / "journal-candidates.json"
+EXCLUSION_REASONS = ("record_unavailable", "quartile_unknown", "quartile_range", "not_oa", "apc_above_max",
+                     "review_time_above_max")
+PROVIDER_LABELS = {"crossref": "Crossref", "europepmc": "Europe PMC", "semanticscholar": "Semantic Scholar"}
 
-    max_works = max(1, _env_int("PAPERSMITH_JOURNAL_MAX_WORKS", DEFAULT_MAX_WORKS))
-    services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_DEADLINE", 300.0)),
-                        ResponseCache(cache_dir(), enabled=not args.no_cache))
-    try:
-        found = fetch_similar_sources(services, facets, terms, max_works, dt.date.today(),
-                                      profile["title"])
-    except HttpFailure as exc:
-        raise Refusal("NETWORK_UNAVAILABLE", f"OpenAlex could not be reached: {exc}") from exc
-    sources, scanned, terms = found["sources"], found["scanned"], found["terms"]
+
+class OpenAlexUnavailable(Exception):
+    """OpenAlex answered the search but no journal record, so nothing can be ranked from it."""
+
+
+def openalex_unavailable(failure: HttpFailure) -> bool:
+    """No response, a spent quota, a key required (401/402/403), 429, a 5xx or an answer that is not JSON.
+
+    A deadline or any other client error (a bad request) is not unavailability: it is reported, not worked around.
+    """
+    if failure.deadline:
+        return False
+    if failure.quota or failure.status is None:
+        return True
+    return failure.status in UNAVAILABLE_STATUSES or failure.status >= 500
+
+
+def run_openalex(services: Services, profile: dict, terms: list[str], facets: dict[str, list[str]], max_works: int,
+                 entries: list[dict], filters: dict, notes: list[str]) -> dict:
+    """The OpenAlex path: similar works, cited venues, journal records, fit. Raises HttpFailure when the search
+    itself cannot be answered and OpenAlexUnavailable when no journal record could be fetched."""
+    found = fetch_similar_sources(services, facets, terms, max_works, dt.date.today(), profile["title"])
+    sources = found["sources"]
     notes.extend(found["notes"])
-
-    references_file, entries = load_bibliography(workspace)
-    if references_file is None:
-        notes.append("no references file (paper/refs.bib) was found: the cited-venues signal is inactive")
-    elif not entries:
-        notes.append(f"{references_file} holds no entries: the cited-venues signal is inactive")
-    cited = resolve_cited(services, entries, notes) if entries else {
-        "journals": {}, "topics": {}, "topic_names": {}, "summary": {
-            "entries": 0, "resolved_by_doi": 0, "resolved_by_journal_name": 0, "unresolved": 0, "journals": []}}
+    for query in found["queries"]:
+        query["provider"] = "openalex"
+    cited = resolve_cited(services, entries, notes) if entries else empty_cited()
     matched_topics = blend_topics(*found["topics_by_facet"].values())
     topic_profile = blend_topics(matched_topics, cited["topics"])
-    queried = {q["facet"] for q in found["queries"]}
-    gate_applies = {"method", "application"} <= queried
     application_profile = blend_topics(found["topics_by_facet"].get("application", {}))
-    topic_names = {**cited["topic_names"], **found["topic_names"]}
-
-    excluded = 0
-    candidates: list[dict] = []
-    scoring = apply_fit([])
     if not sources:
         notes.append("no journal-hosted works matched the paper's terms in OpenAlex")
     by_id = {s["id"]: s for s in sources}
@@ -1617,22 +2080,143 @@ def cmd_search(args: argparse.Namespace) -> dict:
     if left_out > 0:
         notes.append(f"{left_out} journals with fewer similar works were not evaluated "
                      f"(the top {pool_size} by similar-works count, plus the cited journals, were)")
+    details: list[dict] = []
+    unavailable = 0
     if pool:
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
             fetched = list(executor.map(lambda e: fetch_source(services, e), pool))
         details = [d for d, _ in fetched if d is not None]
-        for _, note in fetched:
-            if note:
-                notes.append(note)
-        excluded += len(fetched) - len(details)
+        notes.extend(note for _, note in fetched if note)
+        unavailable = len(fetched) - len(details)
         if not details:
-            raise Refusal("NETWORK_UNAVAILABLE", "OpenAlex answered no journal record; see the search notes: "
-                          + "; ".join(n for _, n in fetched if n)[:300])
+            raise OpenAlexUnavailable("OpenAlex answered no journal record; see the search notes: "
+                                      + "; ".join(n for _, n in fetched if n)[:300])
         for detail in details:
             shares = detail.pop("topic_shares")
             detail["topic_raw"] = topic_overlap(topic_profile, shares)
             detail["application_overlap"] = topic_overlap(application_profile, shares)
+            detail.update(doaj=None, _found_by={"openalex"}, _meta_by={"openalex"})
+    return {"found": found, "details": details, "unavailable": unavailable, "cited": cited,
+            "topic_profile": topic_profile, "basis": "openalex-topics", "provider": "openalex",
+            "similar_providers": {"openalex"} if sources else set(),
+            "cited_providers": {"openalex"} if cited["summary"]["resolved_by_doi"]
+            or cited["summary"]["resolved_by_journal_name"] else set(),
+            "topic_names": {**cited["topic_names"], **found["topic_names"]}, "europepmc": None}
+
+
+def empty_cited() -> dict:
+    return {"journals": {}, "topics": {}, "topic_names": {}, "providers": set(), "summary": {
+        "entries": 0, "resolved_by_doi": 0, "resolved_by_journal_name": 0, "unresolved": 0, "journals": []}}
+
+
+def run_fallback(services: Services, profile: dict, terms: list[str], facets: dict[str, list[str]], max_works: int,
+                 entries: list[dict], filters: dict, notes: list[str], table: SjrTable | None) -> dict:
+    """The fallback path: Crossref (+ Europe PMC, + Semantic Scholar with a key) for similar works, Crossref for
+    cited venues, SJR + DOAJ + Crossref for the journal record. Raises HttpFailure when no provider answers."""
+    found = fetch_similar_fallback(services, profile, facets, terms, max_works, dt.date.today())
+    index: JournalIndex = found["index"]
+    notes.extend(found["notes"])
+    cited = empty_cited()
+    if entries:
+        resolved = resolve_cited_fallback(services, entries, index, notes)
+        cited.update(providers=resolved["providers"], summary=resolved["summary"])
+    index.finalize()
+    if not index.entries:
+        notes.append("no journal-hosted works matched the paper's terms in Crossref, Europe PMC or Semantic Scholar")
+    ranked = sorted(index.entries, key=lambda e: (-e["count"], e["first"]))
+    pool_size = min(MAX_SOURCES, max(MIN_SOURCES, filters["limit"] * 3))
+    pool = ranked[:pool_size]
+    in_pool = {id(e) for e in pool}
+    cited_only = sorted((e for e in index.entries if e["cited"] and id(e) not in in_pool),
+                        key=lambda e: (-e["cited"], e["name"].lower()))
+    pool.extend(cited_only[:MAX_CITED_ONLY])
+    left_out = len(index.entries) - len(pool)
+    if left_out > 0:
+        notes.append(f"{left_out} journals with fewer similar works were not evaluated "
+                     f"(the top {pool_size} by similar-works count, plus the cited journals, were)")
+    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+        details = list(executor.map(lambda e: fetch_fallback_record(services, e, table), pool))
+    failed: dict[str, list[str]] = {}
+    for detail in details:
+        for label, message in detail.pop("_errors").items():
+            failed.setdefault(label, []).append(message)
+    for label, messages in failed.items():
+        notes.append(f"{label} failed for {len(messages)} of {len(details)} journals ({messages[0]}); "
+                     "that metadata is missing for them")
+    paper_words = vocabulary([*(profile.get("keywords") or []), *(p for ps in facets.values() for p in ps)])
+    application_words_ = vocabulary(facets.get("application") or [])
+    for detail in details:
+        labels = detail.pop("_labels")
+        detail["topic_raw"] = subject_overlap(paper_words, labels)
+        detail["application_overlap"] = subject_overlap(application_words_, labels)
+        detail["_found_by"] = set(detail["_found_by"])
+    found["tail"] = application_tail(profile["title"])
+    return {"found": found, "details": details, "unavailable": 0, "cited": cited, "topic_profile": {},
+            "basis": "subjects", "provider": "fallback", "similar_providers": found["contributed"],
+            "cited_providers": cited["providers"], "topic_names": {}, "europepmc": {
+                "europepmc": found["europepmc"], "semanticscholar": found["semanticscholar"]}}
+
+
+def cmd_search(args: argparse.Namespace) -> dict:
+    low, high = parse_quartile_range(args.quartiles)
+    filters, notes = _validated_filters(args)
+    filters["include_unknown_quartile"] = bool(args.include_unknown_quartile)
+    workspace = Path(args.workspace).expanduser()
+    if not workspace.is_dir():
+        raise Refusal("WORKSPACE_ABSENT", f"{workspace} is not a directory")
+    table, sjr_info = _load_sjr(args, notes)
+    profile = extract_profile(workspace)
+    terms = build_terms(profile)
+    facets = build_phrase_facets(profile)
+    out = Path(args.out).expanduser() if args.out else workspace / "paper" / "journal-candidates.json"
+
+    max_works = max(1, _env_int("PAPERSMITH_JOURNAL_MAX_WORKS", DEFAULT_MAX_WORKS))
+    services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_DEADLINE", 300.0)),
+                        ResponseCache(cache_dir(), enabled=not args.no_cache))
+    references_file, entries = load_bibliography(workspace)
+    if references_file is None:
+        notes.append("no references file (paper/refs.bib) was found: the cited-venues signal is inactive")
+    elif not entries:
+        notes.append(f"{references_file} holds no entries: the cited-venues signal is inactive")
+
+    fallback = {"used": False, "reason": None, "code": None}
+    run = None
+    if args.source == "crossref":
+        fallback = {"used": True, "code": "requested",
+                    "reason": "--source crossref skips OpenAlex; the free fallback providers answered"}
+    else:
+        try:
+            run = run_openalex(services, profile, terms, facets, max_works, entries, filters, notes)
+        except (HttpFailure, OpenAlexUnavailable) as exc:
+            unavailable = isinstance(exc, OpenAlexUnavailable) or openalex_unavailable(exc)
+            if args.source == "openalex" or not unavailable:
+                message = str(exc) if isinstance(exc, OpenAlexUnavailable) else f"OpenAlex could not be reached: {exc}"
+                raise Refusal("NETWORK_UNAVAILABLE", message) from exc
+            fallback = {"used": True, "code": "openalex-unavailable", "reason": f"OpenAlex is unavailable ({exc})"}
+            notes.append(f"Fallback in use: {fallback['reason']}. Results come from the free fallback providers "
+                         f"and some signals are missing. {OPENALEX_KEY_GUIDE} Never share the key in a paper "
+                         "or a repository.")
+    if run is None:
+        try:
+            run = run_fallback(services, profile, terms, facets, max_works, entries, filters, notes, table)
+        except HttpFailure as exc:
+            if exc.deadline:
+                raise Refusal("NETWORK_UNAVAILABLE", f"the fallback providers could not be reached: {exc}") from exc
+            prefix = f"{fallback['reason']} and " if fallback["code"] == "openalex-unavailable" else ""
+            raise Refusal("NETWORK_UNAVAILABLE", f"{prefix}the fallback providers could not be reached: {exc}") from exc
+    found, details, cited = run["found"], run["details"], run["cited"]
+    on_openalex = run["provider"] == "openalex"
+    queried = {q["facet"] for q in found["queries"]}
+    gate_applies = {"method", "application"} <= queried
+
+    reasons = {name: 0 for name in EXCLUSION_REASONS}
+    reasons["record_unavailable"] = run["unavailable"]
+    candidates: list[dict] = []
+    scoring = apply_fit([])
+    scoring["topic_overlap_basis"] = run["basis"]
+    if details:
         scoring = apply_fit(details)
+        scoring["topic_overlap_basis"] = run["basis"]
         scoring["facet_gate"]["applies"] = gate_applies
         for detail in details:
             detail["cited_in_paper_count"] = detail.pop("cited_count")
@@ -1647,14 +2231,18 @@ def cmd_search(args: argparse.Namespace) -> dict:
         def resolve_quartile(detail: dict) -> tuple[dict, str | None]:
             hit = table.lookup(_issn_list(detail)) if table else None
             if hit and hit["quartile"]:
+                detail["_meta_by"].add("sjr")
                 detail.update(quartile=hit["quartile"], quartile_source="sjr", proxy=None, sjr={
                     "value": hit["value"], "year": sjr_info["year"], "best_quartile": hit["quartile"],
                     "categories": hit["categories"]})
                 return detail, None
-            proxy, note = proxy_for(services, detail)
             detail["sjr"] = None
+            if not on_openalex:
+                detail.update(quartile=None, quartile_source="unknown", proxy=None)
+                return detail, None
+            proxy, note = proxy_for(services, detail)
             if proxy is None:
-                detail.update(quartile=None, quartile_source="none", proxy=None)
+                detail.update(quartile=None, quartile_source="unknown", proxy=None)
                 return detail, note
             detail.update(quartile=proxy["quartile"], quartile_source="openalex-proxy", proxy=proxy)
             return detail, None
@@ -1666,15 +2254,19 @@ def cmd_search(args: argparse.Namespace) -> dict:
             if note:
                 notes.append(note)
             number = int(detail["quartile"][1]) if detail["quartile"] else None
-            if number is None or not low <= number <= high:
-                excluded += 1
+            if number is None and not filters["include_unknown_quartile"]:
+                reasons["quartile_unknown"] += 1
+            elif number is not None and not low <= number <= high:
+                reasons["quartile_range"] += 1
             elif filters["oa_only"] and not detail["is_oa"]:
-                excluded += 1
+                reasons["not_oa"] += 1
             elif filters["max_apc"] is not None and detail["apc_usd"] is not None \
                     and detail["apc_usd"] > filters["max_apc"]:
-                excluded += 1
+                reasons["apc_above_max"] += 1
             else:
                 detail["flags"] = ["no-application-evidence"] if detail["facets"]["gate"] < 1.0 else []
+                if number is None:
+                    detail["flags"].append("quartile-unknown")
                 if filters["max_apc"] is not None and detail["apc_usd"] is None:
                     detail["flags"].append("apc-unknown")
                 eligible.append(detail)
@@ -1696,51 +2288,88 @@ def cmd_search(args: argparse.Namespace) -> dict:
                         if review["source"] == "none":
                             candidate["flags"].append("review-time-unknown")
                         elif review["median_days"] > limit_days:
-                            excluded += 1
+                            reasons["review_time_above_max"] += 1
                             continue
                     candidates.append(candidate)
         if index < len(eligible):
             notes.append(f"{len(eligible) - index} further matching journals ranked below the limit were not "
                          "evaluated for review time")
 
+    meta_by: set[str] = set()
     for rank, candidate in enumerate(candidates, start=1):
         candidate["rank"] = rank
         candidate.pop("field_id", None)
+        meta_by |= candidate["_meta_by"]
+        candidate["sources"] = sorted(candidate.pop("_found_by") | candidate["_meta_by"],
+                                      key=PROVIDER_ORDER.index)
+        for private in [k for k in candidate if k.startswith("_")]:
+            candidate.pop(private)
     summary = {"sjr": 0, "openalex-proxy": 0}
     for candidate in candidates:
         summary[candidate["quartile_source"]] = summary.get(candidate["quartile_source"], 0) + 1
     if summary["openalex-proxy"]:
         notes.append("Candidates labelled openalex-proxy carry an approximate quartile from OpenAlex citedness "
                      "percentiles within the field; it is not an SJR quartile.")
+    unknown = summary.get("unknown", 0) + reasons["quartile_unknown"]
+    if table is None and on_openalex:
+        notes.append(f"No SJR file imported: quartiles are the openalex-proxy approximation. Download the CSV "
+                     f"from {SJR_DOWNLOAD_URL} ('Download data') and run `journal_cli.py sjr-import`.")
+    if unknown:
+        what = ("They are kept, flagged quartile-unknown, because --include-unknown-quartile was given."
+                if filters["include_unknown_quartile"] else
+                "They were excluded (excluded_reasons.quartile_unknown); pass --include-unknown-quartile to keep them.")
+        notes.append(f"{unknown} journal(s) have an unknown quartile (quartile_source unknown): no imported SJR file "
+                     f"covers them and OpenAlex gave none. Import the SCImago CSV ({SJR_DOWNLOAD_URL}) with "
+                     "`journal_cli.py sjr-import`, or export OPENALEX_API_KEY (a free key from "
+                     f"{OPENALEX_KEY_URL}) so the OpenAlex proxy can rank them. {what}")
     if sjr_info and sjr_info["year"] and dt.date.today().year - sjr_info["year"] > 2:
         notes.append(f"The SJR file in use is from {sjr_info['year']}, older than two years; import a fresher "
                      f"download from {SJR_DOWNLOAD_URL}.")
     if any(c["review_time"]["source"] != "none" for c in candidates):
         notes.append("review_time estimates submission-to-acceptance from public article histories, "
                      "including revision rounds; it is not the time to first decision.")
+    if not on_openalex:
+        notes.append("topic_overlap compares the paper's keywords and facet phrases with the journal's SJR "
+                     "categories and DOAJ subjects (OpenAlex topics are not available); it is 0 for journals "
+                     "with neither, and the signal drops out when it is 0 for every journal.")
     notes = list(dict.fromkeys(notes))
+    if summary["sjr"]:
+        quartile_provider = "sjr"
+    elif summary["openalex-proxy"]:
+        quartile_provider = "openalex-proxy"
+    else:
+        quartile_provider = "unknown"
+    ordered = lambda names: sorted(set(names), key=PROVIDER_ORDER.index)
+    providers = {"similar_works": ordered(run["similar_providers"]), "cited_venues": ordered(run["cited_providers"]),
+                 "metadata": ordered(meta_by or ({"openalex"} if on_openalex else set())),
+                 "quartile": quartile_provider}
     document = {
         "schema": SCHEMA,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "source": args.source,
+        "providers": providers,
+        "fallback": fallback,
         "query": {
-            "title": profile["title"], "keywords": profile["keywords"], "terms": terms,
+            "title": profile["title"], "keywords": profile["keywords"], "terms": found["terms"],
             "phrases": found["phrases"], "search_mode": found["mode"],
             "facets": {"tail": found["tail"], "queries": found["queries"]},
-            "topics": [{"id": tid, "name": topic_names.get(tid, ""), "weight": round(weight, 4)}
-                       for tid, weight in sorted(topic_profile.items(), key=lambda kv: -kv[1])[:5]],
+            "topics": [{"id": tid, "name": run["topic_names"].get(tid, ""), "weight": round(weight, 4)}
+                       for tid, weight in sorted(run["topic_profile"].items(), key=lambda kv: -kv[1])[:5]],
             "cited": {"references_file": references_file, **cited["summary"]},
+            "fallback": run["europepmc"],
             "scoring": scoring},
         "quartiles": [f"Q{n}" for n in range(low, high + 1)],
         "filters": filters,
         "quartile_source_summary": summary,
         "sjr": sjr_info,
         "candidates": candidates,
-        "excluded_count": excluded,
+        "excluded_count": sum(reasons.values()),
+        "excluded_reasons": reasons,
         "notes": notes,
         "api_calls": services.stats.summary(services.cache),
     }
     _write_json(out, document)
-    return {"ok": True, "out": str(out), "works_scanned": scanned, **document}
+    return {"ok": True, "out": str(out), "works_scanned": found["scanned"], **document}
 
 
 # --------------------------------------------------------------------------- status
@@ -1792,6 +2421,11 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--out", default=None, help="default <workspace>/paper/journal-candidates.json")
     search.add_argument("--no-cache", action="store_true",
                         help="neither read nor write the on-disk response cache")
+    search.add_argument("--source", choices=SOURCE_CHOICES, default="auto",
+                        help="auto: OpenAlex, falling back to Crossref/Europe PMC/DOAJ when it is unavailable; "
+                             "openalex: refuse when unavailable; crossref: skip OpenAlex")
+    search.add_argument("--include-unknown-quartile", action="store_true",
+                        help="keep journals whose quartile is unknown (excluded and counted by default)")
     search.set_defaults(func=cmd_search)
 
     imp = sub.add_parser("sjr-import", help="validate and cache a SCImago 'Download data' CSV")

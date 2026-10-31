@@ -3034,19 +3034,26 @@ its own scope. Nothing is ever submitted and no editor is contacted.
 **What it receives and what it hands on.** It reads `paper/main.tex` (`\title`,
 the `abstract` environment, `\keywords` or a keywords block; else the title and
 abstract files under `paper/sections/`) and `paper/refs.bib`, and asks OpenAlex
-for works like the paper. It hands back `paper/journal-candidates.json` (schema
+for works like the paper (when OpenAlex cannot answer, free Crossref, Europe PMC
+and DOAJ calls take its place). It hands back `paper/journal-candidates.json` (schema
 1) and, after the agent reads each journal's aims-and-scope page,
 `paper/journal-candidates.md`. The chosen journal then passes to the `venue`
 verbs of `paper-writing` (section 9), which adapt the manuscript to its template
 under `paper/venues/<slug>/`.
 
 **How it runs.** `/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>]
-[--max-review-days N] [--limit N]`, or from the dashboard's *Previsualización
+[--max-review-days N] [--limit N] [--source auto|openalex|crossref]
+[--include-unknown-quartile]`, or from the dashboard's *Previsualización
 PDF* tab: the *Revistas sugeridas* block takes the quartile range, the
-open-access, APC, review-time and limit filters, and either runs the search
-(*Buscar revistas*, `POST /api/journals/search`; *Forzar actualización* adds
-`no_cache` so that one search skips the response cache) or types the same
-command into the CLI assistant (*Analizar con agente*). The range is a single
+open-access, APC, review-time and limit filters, a source selector (Auto,
+OpenAlex, Crossref) and a toggle to include journals of unknown quartile, and
+either runs the search (*Buscar revistas*, `POST /api/journals/search`, whose
+body carries `source` and `include_unknown_quartile`; *Forzar actualización*
+adds `no_cache` so that one search skips the response cache) or types the same
+command into the CLI assistant (*Analizar con agente*). After a search the
+block shows which providers answered, a banner with the reason when the
+fallback chain was used, the count of journals excluded for an unknown
+quartile, and a source badge per row. The range is a single
 quartile or an ascending contiguous one, case-insensitive; the default
 `--limit` is 15, the maximum 50. The routes behind the block are in
 [cli.md](cli.md#smith-ui-dir).
@@ -3056,12 +3063,64 @@ only, one JSON object on stdout):
 
 | Verb | What it does |
 |---|---|
-| `search --workspace <dir> --quartiles <range> [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--sjr <csv>] [--out <path>] [--no-cache]` | Reads the paper, searches OpenAlex for works like it, keeps the journals they appeared in (and those the paper cites), fetches each journal's record, scores the fit, attaches the quartile and the review-time estimate, filters, ranks and writes `paper/journal-candidates.json` |
+| `search --workspace <dir> --quartiles <range> [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--source auto\|openalex\|crossref] [--include-unknown-quartile] [--sjr <csv>] [--out <path>] [--no-cache]` | Reads the paper, searches OpenAlex (or, per `--source` and availability, the free fallback providers) for works like it, keeps the journals they appeared in (and those the paper cites), fetches each journal's record, scores the fit, attaches the quartile and the review-time estimate, filters, ranks and writes `paper/journal-candidates.json` |
 | `sjr-import --file <path> [--year YYYY]` | Validates a SCImago "Download data" CSV (semicolon or comma delimited, decimal commas; the columns `Title`, `Issn`, `SJR`, `SJR Best Quartile`, `Categories`, `Publisher`) and stores it as `~/.cache/papersmith/sjr/scimagojr-<year>.csv` |
 | `status --workspace <dir>` | Read-only: the candidates file's summary and the SJR file in use, or none |
 
 **The inputs.** The paper's title or abstract (without either, `PAPER_ABSENT`);
-the quartile range; optionally an SJR file; optionally a contact email.
+the quartile range; optionally an SJR file; optionally a contact email, an
+OpenAlex key and a Semantic Scholar key.
+
+**The providers and the fallback chain.** OpenAlex now requires a free API key
+for real use; keyless calls are a small demo allowance. `--source` chooses what
+answers:
+
+- `auto` (the default) asks OpenAlex first. When it is unavailable (no
+  response, a `429` for a spent quota, a `401`/`403` because a key is required,
+  a 5xx, a network error, or no journal record fetched) the search continues
+  with the fallback chain instead of refusing and says so:
+  `fallback: {used: true, code: "openalex-unavailable", reason}` and a note
+  that points to the OpenAlex key. A bad request or the total deadline is still
+  a refusal.
+- `openalex` keeps the old behaviour: `NETWORK_UNAVAILABLE` when OpenAlex is
+  unavailable.
+- `crossref` skips OpenAlex (`fallback.code` is `requested`).
+
+The chain, per signal:
+
+- *Similar works.* Crossref `/works` with a quoted-phrase query per facet,
+  journal articles of the last six years, in the polite pool (the contact email
+  travels as `mailto`; at most three list requests per second). Europe PMC
+  `/search` is queried and merged into the same aggregate when the paper looks
+  biomedical: a keyword, or a phrase of the application facet, contains a
+  biomedical word (EEG, clinical, disease, neuro..., brain, cancer, ...); the
+  method facet and the abstract never trigger it, and `query.fallback.europepmc`
+  reports `queried`, the `matched` words and the rule. Semantic Scholar
+  `/graph/v1/paper/search` (venues with an ISSN) is queried only when
+  `SEMANTIC_SCHOLAR_API_KEY` is set, sent in the `x-api-key` header and never
+  stored or cached. A work found by several providers or facets counts once (by
+  DOI, else title and year); journals aggregate by normalised ISSN, else by
+  normalised container title; journal articles only, up to three examples each.
+- *Cited venues.* The DOIs of `paper/refs.bib` resolve through Crossref
+  `/works/<doi>`; a reference that names a journal matches, by normalised
+  title, a journal the search already found. A name never creates a journal.
+- *Journal record.* The imported SJR file (publisher, h-index, quartile,
+  categories); DOAJ for open-access state, APC (`doaj.has_apc`, `doaj.apc_max`
+  with every price and currency, `apc_usd` only for a USD price, `0` when DOAJ
+  lists the journal without APC), review process and subjects; Crossref
+  `/journals/<issn>` for a publisher nobody else named. A journal absent from
+  DOAJ reads `is_in_doaj: false`, `is_oa: null`, `apc_usd: null` (absence proves
+  nothing about access); if DOAJ itself failed, `is_in_doaj` is `null`. So
+  `--oa-only` drops journals DOAJ does not list.
+- *Topic overlap.* Without OpenAlex topics the signal compares the content words
+  of the paper's keywords and facet phrases with the journal's SJR categories
+  and DOAJ subjects (`query.scoring.topic_overlap_basis` is `"subjects"`, against
+  `"openalex-topics"` on the OpenAlex path). A journal with neither scores 0, and
+  the signal drops out when it is 0 for every journal, as usual.
+
+What the fallback lacks: OpenAlex topics, `mean_citedness_2yr`, the proxy
+quartile and the OpenAlex budget line. Every output says so, and nothing from the
+fallback is presented as OpenAlex.
 
 **The fit score.** Three signals, each normalised to 0..1 over the journals
 evaluated and exposed per candidate as `fit`:
@@ -3092,23 +3151,41 @@ one facet and no gate. The other flags are `apc-unknown` (an APC limit was set
 and the journal's APC is unknown) and `review-time-unknown` (a review-time limit
 was set and the journal has no public data).
 
-**Calls, the cache and the OpenAlex budget.** OpenAlex's keyless budget is
-small (about USD 0.10 per day, shared by everyone behind one IP address) and a
-search spends a noticeable part of it. Successful answers are kept in
+**The OpenAlex key and its budget.** Keyless OpenAlex is a demo allowance of
+USD 0.10 per day, shared by everyone behind one IP address. A free key (checked
+against OpenAlex's help pages on 2026-10-31) takes an account at
+<https://openalex.org/signup> with a verified email, then the key from
+<https://openalex.org/settings/api>, and `export OPENALEX_API_KEY=...`; it gives
+USD 1 per day of usage, ten times the keyless budget. The skill never asks for
+the key on the operator's behalf and never prints it. OpenAlex prices: fetching
+a record by id is free, a list with a filter costs USD 0.10 per 1,000 requests
+and a search USD 1 per 1,000, so a day is roughly 1,000 searches or 10,000
+filtered lists. Rate limits: 30 requests per second with a key (10 without),
+and 5 per second for searches with more than 5 boolean operators. The budget
+resets at midnight UTC, a refused request costs nothing, and the data is CC0.
+The finder's cost per search is an estimate from its call pattern, not a
+measurement: about two search-priced calls for similar works, up to 15 more when
+references name journals without a DOI, up to 4 DOI-batch lists and, for each
+journal without an SJR row, two filtered lists for the proxy quartile (up to
+about 130), which is roughly USD 0.01 to 0.04, less with an imported SJR file.
+`api_calls.budget` reports what OpenAlex says is left.
+
+**Calls and the cache.** A search spends part of that budget. Successful answers
+of every service are kept in
 `~/.cache/papersmith/journal-finder/http/` (`PAPERSMITH_JOURNAL_CACHE_DIR`
 overrides the directory), keyed by the request without credentials or contact
 email: a request with a `search` or `term` parameter is reused for one day, any
 other lookup for seven. Errors are never stored, a cache that cannot be read or
 written is just a miss, and `--no-cache` neither reads nor writes it.
 `api_calls` in the output reports `made` and `cached` in total and per service
-(`openalex`, `crossref`, `pubmed`), `cache` (`enabled`, `dir`) and `budget`:
+(`openalex`, `crossref`, `pubmed`, `europepmc`, `doaj`, `semanticscholar`), `cache` (`enabled`, `dir`) and `budget`:
 `state` is `ok` (the answers carried `x-ratelimit-remaining-usd`), `exhausted`
 or `unknown`, with `remaining_usd`, `limit_usd` and `retry_after_seconds` when
 known. A `429` that asks for a wait of more than 60 seconds is a spent quota,
-not a burst: the CLI does not retry it. On the first search the refusal is
-`NETWORK_UNAVAILABLE` and its message names the wait and `OPENALEX_API_KEY`;
-later in a search that step degrades with a note and `budget.state` reads
-`exhausted`.
+not a burst: the CLI does not retry it. On the first search `--source openalex`
+refuses with `NETWORK_UNAVAILABLE` and a message that names the wait and
+`OPENALEX_API_KEY`, while `auto` continues with the fallback chain; later in a
+search that step degrades with a note and `budget.state` reads `exhausted`.
 
 **Where the quartile comes from.** `sjr`: the SCImago file the operator imported,
 matched by any ISSN, never by title. scimagojr.com sits behind a browser
@@ -3117,8 +3194,16 @@ from <https://www.scimagojr.com/journalrank.php> and imports it with
 `sjr-import` or the panel's upload; the latest imported year is used, and a file
 older than two years adds a note. `openalex-proxy`: with no SJR file, or for a
 journal not in it, the share of OpenAlex journals of the same field with a
-higher 2-year mean citedness maps to Q1..Q4. It approximates a citation
-percentile, is **not** an SJR quartile, and travels labelled with every row.
+higher 2-year mean citedness maps to Q1..Q4, provided OpenAlex answered. It
+approximates a citation percentile, is **not** an SJR quartile, and travels
+labelled with every row. `unknown`: no SJR row and no proxy, which is every
+journal outside the SJR file when OpenAlex did not answer, because no other free
+source gives a quartile. Then `quartile` is `null`, `quartile_source` is
+`"unknown"`, and a note names `sjr-import` and `OPENALEX_API_KEY` as the two ways
+out. The quartile range filter excludes those journals by default and counts
+them in `excluded_count` and `excluded_reasons.quartile_unknown`;
+`--include-unknown-quartile` keeps them, flagged `quartile-unknown`, ignoring
+the range for them.
 
 **The review-time estimate.** Per candidate, `review_time`: the median and
 quartiles of the days between `received` and `accepted` over the journal's
@@ -3138,23 +3223,34 @@ exit 2, nothing written:
 |---|---|
 | `QUARTILE_RANGE_INVALID` | the range is not `Q1`, `Q2-Q3`, `Q1-Q4`... ascending and contiguous |
 | `PAPER_ABSENT` | no title and no abstract can be read |
-| `NETWORK_UNAVAILABLE` | OpenAlex cannot be reached within the bounded retries and deadline, or its daily quota is spent (a `429` with `Retry-After` over 60 s; the message names `OPENALEX_API_KEY`) |
+| `NETWORK_UNAVAILABLE` | `--source openalex`: OpenAlex cannot be reached within the bounded retries and deadline, or its daily quota is spent (a `429` with `Retry-After` over 60 s; the message names `OPENALEX_API_KEY`). `auto` and `crossref`: the fallback providers could not be reached either, or the total deadline passed |
 | `SJR_FILE_INVALID` | the CSV lacks a required column, is empty, or has no year |
 | `FILTER_INVALID` | `--limit`, `--max-apc` or `--max-review-days` is not a valid number |
 | `WORKSPACE_ABSENT` | `--workspace` is not a directory |
 | `CANDIDATES_UNREADABLE` | `status` found a `journal-candidates.json` that is not valid |
 | `USAGE` | a flag or verb the CLI does not know |
 
-**The outputs.** `paper/journal-candidates.json`: `generated_at`, `query`
-(title, keywords, terms, phrases, `search_mode`, `facets`, `topics`, `cited`,
-`scoring`), `quartiles`, `filters`, `quartile_source_summary`, `sjr` (`file`,
-`year`, or null), `candidates`, `excluded_count`, `notes` and `api_calls`. Each
+**The outputs.** `paper/journal-candidates.json`: `generated_at`, `source`,
+`providers` (`similar_works`, `cited_venues` and `metadata`, each the list of
+providers that answered, in the order openalex, crossref, europepmc,
+semanticscholar, sjr, doaj; and `quartile`: `sjr` when any candidate has an SJR
+quartile, else `openalex-proxy` when any has a proxy, else `unknown`),
+`fallback` (`used`, `code`: `openalex-unavailable` or `requested`, `reason`),
+`query` (title, keywords, terms, phrases, `search_mode`, `facets`, `topics`,
+`cited`, `fallback`, `scoring`), `quartiles`, `filters`
+(`include_unknown_quartile` among them), `quartile_source_summary`, `sjr`
+(`file`, `year`, or null), `candidates`, `excluded_count`, `excluded_reasons`
+(`record_unavailable`, `quartile_unknown`, `quartile_range`, `not_oa`,
+`apc_above_max`, `review_time_above_max`), `notes` and `api_calls`. Each
 candidate carries `rank`, `fit_score`, `fit` (`similar_works`, `cited_in_paper`,
 `topic_overlap`), `facets`, `similar_works_count`, `similar_works` (up to three
 examples with title, year and DOI), `cited_in_paper_count`, `topics`,
-`quartile`, `quartile_source`, `sjr` (value, year, best quartile, and the
-categories as `{name, quartile}`) or `proxy`, `is_oa`, `is_in_doaj`, `apc_usd`,
-`h_index`, `mean_citedness_2yr`, `review_time` and `flags`.
+`quartile` (`null` when unknown), `quartile_source`, `sjr` (value, year, best
+quartile, and the categories as `{name, quartile}`) or `proxy`, `is_oa`,
+`is_in_doaj`, `apc_usd`, `doaj` (`has_apc`, `apc_max` as `{currency, price}`,
+`review_process`, `subjects`), `h_index`, `mean_citedness_2yr`, `review_time`,
+`sources` (the providers that contributed that journal) and `flags`
+(`quartile-unknown` joins the others).
 `paper/journal-candidates.md`, written by the agent: per journal, why it fits
 (quoting the paper and the journal's scope), scope risks, OA and APC, the
 quartile with its source and the review time; it never changes the CLI's
@@ -3164,18 +3260,19 @@ numbers.
 
 | Variable | Effect |
 |---|---|
-| `PAPERSMITH_CONTACT_EMAIL` | Optional polite `mailto`, User-Agent and NCBI `email`; never hard-coded and sent only when set |
-| `OPENALEX_API_KEY` | Sent to OpenAlex only when set. Keyless calls have a small daily budget (about USD 0.10 per IP per day); a free key has its own daily budget. The quota refusal names this variable |
+| `PAPERSMITH_CONTACT_EMAIL` | Optional polite `mailto` (Crossref's polite pool), User-Agent and NCBI `email`; never hard-coded and sent only when set |
+| `OPENALEX_API_KEY` | Sent to OpenAlex only when set. Keyless calls are a demo allowance (USD 0.10 per IP per day); a free key from openalex.org/settings/api gives USD 1 per day. The quota refusal and the fallback note name this variable |
+| `SEMANTIC_SCHOLAR_API_KEY` | Enables Semantic Scholar in the fallback chain; without it that provider is not queried at all. Sent in the `x-api-key` header, never cached or printed |
 | `PAPERSMITH_JOURNAL_CACHE_DIR` | The response cache's directory (default `~/.cache/papersmith/journal-finder/http`) |
 | `NCBI_API_KEY` | Sent to PubMed only when set (the CLI stays under three requests per second either way) |
 | `PAPERSMITH_SJR_DIR` | The directory of the imported SJR files (default `~/.cache/papersmith/sjr`) |
-| `PAPERSMITH_OPENALEX_URL`, `PAPERSMITH_CROSSREF_URL`, `PAPERSMITH_PUBMED_URL` | Override the base URLs (the tests point them at local fakes) |
+| `PAPERSMITH_OPENALEX_URL`, `PAPERSMITH_CROSSREF_URL`, `PAPERSMITH_PUBMED_URL`, `PAPERSMITH_EUROPEPMC_URL`, `PAPERSMITH_DOAJ_URL`, `PAPERSMITH_SEMANTICSCHOLAR_URL` | Override the base URLs (the tests point them at local fakes) |
 | `PAPERSMITH_HTTP_TIMEOUT`, `PAPERSMITH_HTTP_RETRIES`, `PAPERSMITH_HTTP_BACKOFF` | Per-request seconds (default 15), retries on 429/5xx/transport errors (default 3), first backoff in seconds (default 0.5, doubling) |
 | `PAPERSMITH_JOURNAL_DEADLINE`, `PAPERSMITH_JOURNAL_MAX_WORKS` | Total seconds for one search (default 300) and works read from OpenAlex (default 200) |
 | `PAPERSMITH_OPENALEX_MIN_INTERVAL` | Seconds between OpenAlex calls (default 0.11) |
 
 **What it never does.** It never submits a manuscript, fills a form or contacts
-an editor; never invents a quartile, an impact factor, an APC or an acceptance
+an editor; never asks for an API key on the operator's behalf; never invents a quartile, an impact factor, an APC or an acceptance
 rate (no impact factor is reported at all: none of its sources publishes it);
 never presents the proxy as SJR; never changes the ranking numbers or hand-edits
 `journal-candidates.json`; never scrapes scimagojr.com; and never edits the
@@ -3186,7 +3283,7 @@ paper. Adapting the manuscript to the chosen journal is the `venue` verbs' job
 
 ```mermaid
 flowchart TD
-    A["Operator: a quartile range, filters"] --> B["journal_cli.py search: OpenAlex works like the paper"]
+    A["Operator: a quartile range, filters, source"] --> B["journal_cli.py search: OpenAlex works like the paper, else Crossref, Europe PMC, DOAJ"]
     S["SJR CSV the operator imported (optional)"] --> B
     B --> C["paper/journal-candidates.json: ranked, quartile labelled by source, review time"]
     C --> D["Agent reads each journal's aims and scope"]

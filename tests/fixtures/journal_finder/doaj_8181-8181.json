@@ -1,0 +1,36 @@
+{
+  "total": 1,
+  "results": [
+    {
+      "id": "x88888888",
+      "bibjson": {
+        "title": "Neuro Fixture Journal",
+        "publisher": {
+          "name": "Neuro Open Press",
+          "country": "NL"
+        },
+        "eissn": "8181-8181",
+        "pissn": null,
+        "apc": {
+          "has_apc": false,
+          "max": []
+        },
+        "subject": [
+          {
+            "scheme": "LCC",
+            "code": "X",
+            "term": "Science: Neuroscience"
+          }
+        ],
+        "editorial": {
+          "review_process": [
+            "Open peer review"
+          ]
+        },
+        "ref": {
+          "journal": "https://neuro-fixture.example/"
+        }
+      }
+    }
+  ]
+}

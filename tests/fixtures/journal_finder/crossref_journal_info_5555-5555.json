@@ -1,0 +1,12 @@
+{
+  "status": "ok",
+  "message-type": "journal",
+  "message": {
+    "title": "Obscure Quarterly",
+    "publisher": "Quarterly House",
+    "ISSN": [
+      "5555-5555"
+    ],
+    "subjects": []
+  }
+}

@@ -173,6 +173,17 @@ def _openalex_key(value) -> str:
     return str(value or "").strip().rstrip("/").rsplit("/", 1)[-1].upper()
 
 
+def _candidate_key(value) -> str:
+    """The comparable form of a candidate id.
+
+    A fallback search (no OpenAlex) writes `issn:<n>` / `title:<n>` ids; they are compared exactly as
+    written, since a title may contain `/` and its case is part of the id. Only OpenAlex ids (a bare
+    `S123` or the `https://openalex.org/S123` URL) are normalized.
+    """
+    text = str(value or "").strip()
+    return text if text.startswith(("issn:", "title:")) else _openalex_key(text)
+
+
 def _normalize_issn(raw: str) -> str:
     if not isinstance(raw, str) or not _ISSN_RE.match(raw.strip()):
         raise Refused("ISSN_INVALID", f"{raw!r} is not an ISSN (NNNN-NNNC)")
@@ -209,7 +220,7 @@ def select(
     if candidate is None and not (journal is not None and issn is not None):
         raise Refused(
             "SELECT_MODE_REQUIRED",
-            "--candidate <openalex source id>, or --journal <name> together with --issn <issn>, is required",
+            "--candidate <candidate id: an OpenAlex source id, issn:<n> or title:<n>>, or --journal <name> together with --issn <issn>, is required",
         )
 
     if candidate is not None:
@@ -225,11 +236,11 @@ def select(
                 raise ValueError("candidates is not a list")
         except (OSError, ValueError, AttributeError) as exc:
             raise Refused("CANDIDATES_ABSENT", f"{candidates_path} is unreadable: {exc}")
-        wanted = _openalex_key(candidate)
+        wanted = _candidate_key(candidate)
         match = None
         for entry in candidates:
             if isinstance(entry, dict) and wanted and wanted in (
-                _openalex_key(entry.get("openalex_id")), _openalex_key(entry.get("id")),
+                _candidate_key(entry.get("openalex_id")), _candidate_key(entry.get("id")),
             ):
                 match = entry
                 break
@@ -247,7 +258,7 @@ def select(
             "quartile_source": match.get("quartile_source"),
             "review_time": match.get("review_time"),
             "via": "candidate",
-            "candidate_id": _openalex_key(match.get("openalex_id") or match.get("id")),
+            "candidate_id": _candidate_key(match.get("openalex_id") or match.get("id")),
         }
     else:
         name = (journal or "").strip()

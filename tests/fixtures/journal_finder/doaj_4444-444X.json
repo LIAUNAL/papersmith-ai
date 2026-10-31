@@ -1,0 +1,41 @@
+{
+  "total": 1,
+  "results": [
+    {
+      "id": "x4444444X",
+      "bibjson": {
+        "title": "Biomedical Fixture Reports",
+        "publisher": {
+          "name": "Biomed Fixtures Ltd",
+          "country": "NL"
+        },
+        "eissn": "4444-444X",
+        "pissn": null,
+        "apc": {
+          "has_apc": true,
+          "max": [
+            {
+              "price": 2900,
+              "currency": "EUR"
+            }
+          ]
+        },
+        "subject": [
+          {
+            "scheme": "LCC",
+            "code": "X",
+            "term": "Medicine: Neurology. Attention deficit hyperactivity disorder"
+          }
+        ],
+        "editorial": {
+          "review_process": [
+            "Single anonymous peer review"
+          ]
+        },
+        "ref": {
+          "journal": "https://biomed-fixtures.example/"
+        }
+      }
+    }
+  ]
+}

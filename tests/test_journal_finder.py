@@ -1,8 +1,9 @@
 """journal-finder: the skill, its CLI and the review-time estimate.
 
 Everything network-shaped talks to a local fake HTTP server (threading
-`http.server`) that serves canned OpenAlex, Crossref and PubMed answers from
-`tests/fixtures/journal_finder/`; nothing here reaches the real services.
+`http.server`) that serves canned OpenAlex, Crossref, PubMed, Europe PMC, DOAJ
+and Semantic Scholar answers from `tests/fixtures/journal_finder/`; nothing here
+reaches the real services.
 
 Fixture world (see the JSON files):
 
@@ -15,6 +16,21 @@ Fixture world (see the JSON files):
 * S1004 Obscure Quarterly        -- proxy Q4 (1.0) but SJR says Q2, no data anywhere.
 * the field population (core journals of field 17) is 0.1 .. 10.0 in steps of 0.1,
   so a citedness of 9.0 has 10% of the field above it, 6.0 has 40%, 3.0 has 70%.
+
+Fallback world (Crossref works search, Europe PMC, DOAJ, Semantic Scholar; used when
+OpenAlex is unavailable or skipped), by journal and the works that name it:
+
+* A  Neural Fixtures Letters   ISSN 1111-111X / 2222-2222 -- Crossref method facet: four
+  works, one under each ISSN alone, one under both (that one bridges the two).
+* B  Open Signal Processing    3333-3333 -- both facets (one work found twice), DOAJ with a
+  USD and a EUR APC.
+* C  Biomedical Fixture Reports 4444-444X -- application facet; Europe PMC repeats one of its
+  works; DOAJ with a EUR APC only.
+* D  Obscure Quarterly         5555-5555 -- application facet plus one Europe PMC work.
+* T  Title Only Review         no ISSN -- two works under spellings of one title.
+* N  Neuro Fixture Journal     8181-8181 -- Europe PMC only, DOAJ without APC.
+* Q  Quantum Fixture Letters   1234-5679 -- Semantic Scholar only (needs the key).
+* F  Cited Only Journal        6666-666X -- reached only through the paper's references.
 """
 
 from __future__ import annotations
@@ -49,6 +65,8 @@ SCRUBBED = (
     "PAPERSMITH_HTTP_TIMEOUT", "PAPERSMITH_HTTP_RETRIES", "PAPERSMITH_HTTP_BACKOFF",
     "PAPERSMITH_JOURNAL_DEADLINE", "PAPERSMITH_JOURNAL_MAX_WORKS",
     "PAPERSMITH_OPENALEX_MIN_INTERVAL", "PAPERSMITH_JOURNAL_CACHE_DIR",
+    "PAPERSMITH_EUROPEPMC_URL", "PAPERSMITH_DOAJ_URL", "PAPERSMITH_SEMANTICSCHOLAR_URL",
+    "SEMANTIC_SCHOLAR_API_KEY", "PAPERSMITH_CROSSREF_MIN_INTERVAL", "PAPERSMITH_FALLBACK_MIN_INTERVAL",
 )
 
 
@@ -68,9 +86,10 @@ def fixture(name: str):
 
 
 class FakeApi:
-    """One server standing in for OpenAlex, Crossref and PubMed.
+    """One server standing in for OpenAlex, Crossref, PubMed, Europe PMC, DOAJ and Semantic Scholar.
 
-    Routes by path prefix: `/openalex/...`, `/crossref/...`, `/pubmed/...`.
+    Routes by path prefix: `/openalex/...`, `/crossref/...`, `/pubmed/...`, `/europepmc/...`,
+    `/doaj/...`, `/semanticscholar/...`.
     `script` maps a request path to a list of statuses to answer with before
     the real answer (`[429]` fails the first call once).
     """
@@ -95,6 +114,7 @@ class FakeApi:
         self.script = {key: list(value) for key, value in (script or {}).items()}
         self.population = fixture("openalex_field_population.json")
         self.summaries = fixture("pubmed_esummary.json")
+        self.crossref_cited = fixture("crossref_cited_works.json")
         api = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -145,6 +165,9 @@ class FakeApi:
             "PAPERSMITH_OPENALEX_URL": f"{base}/openalex",
             "PAPERSMITH_CROSSREF_URL": f"{base}/crossref",
             "PAPERSMITH_PUBMED_URL": f"{base}/pubmed",
+            "PAPERSMITH_EUROPEPMC_URL": f"{base}/europepmc",
+            "PAPERSMITH_DOAJ_URL": f"{base}/doaj",
+            "PAPERSMITH_SEMANTICSCHOLAR_URL": f"{base}/semanticscholar",
         }
 
     def close(self):
@@ -220,6 +243,32 @@ class FakeApi:
             if target.is_file():
                 return 200, json.loads(target.read_text(encoding="utf-8"))
             return 404, {"status": "failed", "message": "Resource not found."}
+        if path == "/crossref/works":
+            if "zzqx" in params.get("query", ""):
+                return 200, {"status": "ok", "message": {"total-results": 0, "items": []}}
+            facet = "application" if "attention deficit" in params.get("query", "").lower() else "method"
+            return 200, fixture(f"crossref_works_{facet}.json")
+        if path.startswith("/crossref/works/"):
+            doi = unquote(path[len("/crossref/works/"):]).lower()
+            if doi in self.crossref_cited:
+                return 200, self.crossref_cited[doi]
+            return 404, {"status": "failed", "message": "Resource not found."}
+        if path.startswith("/crossref/journals/"):
+            target = FIXTURES / f"crossref_journal_info_{path.split('/')[3]}.json"
+            if target.is_file():
+                return 200, json.loads(target.read_text(encoding="utf-8"))
+            return 404, {"status": "failed", "message": "Resource not found."}
+        if path == "/europepmc/search":
+            facet = "application" if "attention deficit" in params.get("query", "").lower() else "method"
+            return 200, fixture(f"europepmc_search_{facet}.json")
+        if path.startswith("/doaj/api/search/journals/issn:"):
+            target = FIXTURES / f"doaj_{path.rsplit(':', 1)[1]}.json"
+            if target.is_file():
+                return 200, json.loads(target.read_text(encoding="utf-8"))
+            return 200, {"total": 0, "results": []}
+        if path == "/semanticscholar/graph/v1/paper/search":
+            facet = "application" if "attention deficit" in params.get("query", "").lower() else "method"
+            return 200, fixture(f"semanticscholar_search_{facet}.json")
         if path == "/pubmed/esearch.fcgi":
             term = params.get("term", "")
             issn = term.split("[")[0].strip('"')
@@ -283,11 +332,17 @@ class JournalFinderCase(unittest.TestCase):
             "PAPERSMITH_HTTP_BACKOFF": "0",
             "PAPERSMITH_OPENALEX_MIN_INTERVAL": "0",
             "PAPERSMITH_HTTP_RETRIES": "2",
+            "PAPERSMITH_CROSSREF_MIN_INTERVAL": "0",
+            "PAPERSMITH_FALLBACK_MIN_INTERVAL": "0",
             "HOME": str(self.tmp / "home"),
         })
         if use_api and self.api is not None:
             env.update(self.api.env)
-        env.update(extra_env or {})
+        for name, value in (extra_env or {}).items():
+            if value is None:  # None puts the real default back in force
+                env.pop(name, None)
+            else:
+                env[name] = value
         completed = subprocess.run(
             [sys.executable, "-I", str(CLI), *args], capture_output=True, text=True,
             env=env, timeout=timeout)
@@ -352,6 +407,14 @@ class SkillFileTests(unittest.TestCase):
         module = load_module()
         for name, weight in module.FIT_WEIGHTS.items():
             self.assertIn(f"{weight:g} * {name}", self.text.replace("×", "*"), name)
+
+    def test_the_skill_documents_the_provider_chain_and_the_openalex_key(self):
+        for phrase in ("--source auto|openalex|crossref", "--include-unknown-quartile", "providers", "fallback",
+                       "sources", "Europe PMC", "DOAJ", "Semantic Scholar", "SEMANTIC_SCHOLAR_API_KEY",
+                       "x-api-key", "PAPERSMITH_EUROPEPMC_URL", "PAPERSMITH_DOAJ_URL",
+                       "PAPERSMITH_SEMANTICSCHOLAR_URL", "openalex.org/settings/api", "OPENALEX_API_KEY",
+                       "quartile_source", "sjr-import", "excluded_reasons"):
+            self.assertIn(phrase, self.text, phrase)
 
     def test_every_verb_is_documented(self):
         for verb in ("search", "sjr-import", "status"):
@@ -961,6 +1024,7 @@ class NetworkTests(JournalFinderCase):
     def test_unreachable_openalex_is_a_typed_refusal_and_writes_nothing(self):
         before = self.tree_snapshot()
         result = self.run_cli("search", "--workspace", str(self.workspace), "--quartiles", "Q1-Q2",
+                              "--source", "openalex",
                               extra_env={"PAPERSMITH_OPENALEX_URL": "http://127.0.0.1:9/openalex",
                                          "PAPERSMITH_HTTP_RETRIES": "1"}, use_api=False)
         self.assertEqual(result.code, 2, result.stdout)
@@ -978,7 +1042,7 @@ class NetworkTests(JournalFinderCase):
 
     def test_persistent_429_exhausts_retries_into_network_unavailable(self):
         api = self.start_api(script={"/openalex/works": [429] * 10})
-        result = self.search()
+        result = self.search("--source", "openalex")
         self.assertEqual(result.code, 2)
         self.assertEqual(result.json["error"], "NETWORK_UNAVAILABLE")
         # one try plus two retries (PAPERSMITH_HTTP_RETRIES=2), never unbounded
@@ -1010,6 +1074,7 @@ class NetworkTests(JournalFinderCase):
         port = sock.getsockname()[1]
         started = time.monotonic()
         result = self.run_cli("search", "--workspace", str(self.workspace), "--quartiles", "Q1",
+                              "--source", "openalex",
                               extra_env={"PAPERSMITH_OPENALEX_URL": f"http://127.0.0.1:{port}",
                                          "PAPERSMITH_HTTP_TIMEOUT": "0.5",
                                          "PAPERSMITH_HTTP_RETRIES": "0"}, use_api=False)
@@ -1623,7 +1688,8 @@ class FitContractTests(JournalFinderCase):
             (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
         result = self.search()
         scoring = result.json["query"]["scoring"]
-        self.assertEqual(set(scoring), {"formula", "weights", "active", "normalization", "facet_gate"})
+        self.assertEqual(set(scoring), {"formula", "weights", "active", "normalization", "facet_gate",
+                                        "topic_overlap_basis"})
         self.assertAlmostEqual(sum(scoring["weights"].values()), 1.0, places=6)
         self.assertEqual(scoring["active"], ["similar_works", "cited_in_paper", "topic_overlap"])
         for candidate in result.json["candidates"]:
@@ -1658,6 +1724,7 @@ class FitContractTests(JournalFinderCase):
             (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
         before = self.tree_snapshot()
         result = self.run_cli("search", "--workspace", str(self.workspace), "--quartiles", "Q1",
+                              "--source", "openalex",
                               extra_env={"PAPERSMITH_OPENALEX_URL": "http://127.0.0.1:9",
                                          "PAPERSMITH_HTTP_RETRIES": "0", "PAPERSMITH_HTTP_TIMEOUT": "0.5"},
                               use_api=False)
@@ -1841,7 +1908,7 @@ class BudgetTests(JournalFinderCase):
     def test_a_quota_429_with_a_huge_retry_after_fails_fast_with_the_key_hint(self):
         api = self.start_api(script={"/openalex/works": [(429, 86400)]})
         before = self.tree_snapshot()
-        result = self.search()
+        result = self.search("--source", "openalex")
         self.assertEqual(result.code, 2)
         self.assertEqual(result.json["error"], "NETWORK_UNAVAILABLE")
         self.assertEqual(set(result.json), {"ok", "error", "message"})
@@ -1913,7 +1980,8 @@ class CacheTests(JournalFinderCase):
         api = self.start_api()
         calls = self.search().json["api_calls"]
         self.assertEqual(set(calls), {"made", "cached", "by_service", "cache", "budget"})
-        self.assertEqual(set(calls["by_service"]), {"openalex", "crossref", "pubmed"})
+        self.assertEqual(set(calls["by_service"]),
+                         {"openalex", "crossref", "pubmed", "europepmc", "doaj", "semanticscholar"})
         self.assertEqual(sum(v["made"] for v in calls["by_service"].values()), calls["made"])
         self.assertEqual(calls["by_service"]["openalex"]["made"],
                          len(api.hits("/openalex")))
@@ -2021,6 +2089,763 @@ class CacheTests(JournalFinderCase):
         result = self.search(quartiles="Q3-Q1")
         self.assertEqual(result.json["error"], "QUARTILE_RANGE_INVALID")
         self.assertEqual(self.tree_snapshot(), before)
+
+
+# --------------------------------------------------------------------------- free fallbacks when OpenAlex cannot answer
+
+NFL = "Neural Fixtures Letters"
+OSP = "Open Signal Processing"
+BFR = "Biomedical Fixture Reports"
+OQ = "Obscure Quarterly"
+TOR = "Title Only Review"
+NFJ = "Neuro Fixture Journal"
+QFL = "Quantum Fixture Letters"
+CITED_ONLY = "Cited Only Journal"
+#: the journals Crossref and Europe PMC name for the fixture paper
+FALLBACK_JOURNALS = {NFL, OSP, BFR, OQ, TOR, NFJ}
+PROVIDER_ORDER = ["openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj"]
+KEY_GUIDE = "openalex.org/settings/api"
+NON_BIOMEDICAL_TEX = (
+    "\\title{Variational Quantum Circuits and Fourier Models}\\begin{abstract}Short.\\end{abstract}"
+    "\\keywords{Quantum Machine Learning, Data Re-Uploading}")
+
+
+class FallbackCase(JournalFinderCase):
+    """Searches that skip OpenAlex (`--source crossref`) and keep journals of unknown quartile."""
+
+    def fallback(self, *extra: str, extra_env: dict | None = None) -> Result:
+        return self.search("--source", "crossref", "--include-unknown-quartile", *extra, extra_env=extra_env)
+
+    def by_name(self, result: Result) -> dict:
+        return {c["display_name"]: c for c in result.json["candidates"]}
+
+    def with_refs(self) -> None:
+        (self.workspace / "paper" / "refs.bib").write_text(
+            (FIXTURES / "refs.bib").read_text(encoding="utf-8"), encoding="utf-8")
+
+    def write_paper(self, tex: str) -> None:
+        (self.workspace / "paper" / "main.tex").write_text(tex, encoding="utf-8")
+
+    def ok(self, result: Result) -> Result:
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        return result
+
+
+class SourceFlagTests(FallbackCase):
+    def test_source_accepts_auto_openalex_and_crossref_only(self):
+        self.start_api()
+        for bad in ("bing", "OpenAlex ", "", "all"):
+            with self.subTest(bad=bad):
+                result = self.search("--source", bad)
+                self.assertEqual(result.code, 2, result.stdout)
+                self.assertEqual(result.json["error"], "USAGE")
+                self.assertEqual(set(result.json), {"ok", "error", "message"})
+        for good in ("auto", "openalex", "crossref"):
+            with self.subTest(good=good):
+                result = self.search("--source", good, "--include-unknown-quartile")
+                self.assertEqual(result.code, 0, result.stdout + result.stderr)
+                self.assertEqual(result.json["source"], good)
+
+    def test_auto_is_the_default_and_a_healthy_openalex_never_touches_the_fallback_providers(self):
+        api = self.start_api()
+        result = self.ok(self.search())
+        self.assertEqual(result.json["source"], "auto")
+        self.assertEqual(result.json["fallback"], {"used": False, "reason": None, "code": None})
+        for prefix in ("/crossref/works", "/europepmc", "/doaj", "/semanticscholar"):
+            self.assertEqual(api.hits(prefix), [], prefix)
+        for service in ("europepmc", "doaj", "semanticscholar"):
+            self.assertEqual(result.json["api_calls"]["by_service"][service], {"made": 0, "cached": 0})
+        self.assertEqual(result.json["providers"], {"similar_works": ["openalex"], "cited_venues": [],
+                                                    "metadata": ["openalex"], "quartile": "openalex-proxy"})
+        for candidate in result.json["candidates"]:
+            self.assertEqual(candidate["sources"], ["openalex"])
+
+    def test_providers_follow_the_references_and_the_sjr_file_when_openalex_answers(self):
+        self.start_api()
+        self.with_refs()
+        self.import_fixture_sjr()
+        result = self.ok(self.search())
+        self.assertEqual(result.json["providers"], {
+            "similar_works": ["openalex"], "cited_venues": ["openalex"], "metadata": ["openalex", "sjr"],
+            "quartile": "sjr"})
+        by_name = self.by_name(result)
+        self.assertEqual(by_name[NFL]["sources"], ["openalex", "sjr"])
+        self.assertEqual(by_name[OSP]["sources"], ["openalex"], "its quartile is the proxy, not SJR")
+
+    def test_crossref_skips_openalex_altogether_and_says_so(self):
+        api = self.start_api()
+        result = self.ok(self.fallback())
+        self.assertEqual(api.hits("/openalex"), [])
+        self.assertEqual(result.json["source"], "crossref")
+        fallback = result.json["fallback"]
+        self.assertTrue(fallback["used"])
+        self.assertEqual(fallback["code"], "requested")
+        self.assertIn("--source crossref", fallback["reason"])
+        self.assertEqual(set(self.names(result)), FALLBACK_JOURNALS)
+        self.assertEqual(result.json["api_calls"]["by_service"]["openalex"], {"made": 0, "cached": 0})
+
+    def test_openalex_mode_still_refuses_when_openalex_is_unavailable(self):
+        api = self.start_api(script={"/openalex/works": [401] * 5})
+        before = self.tree_snapshot()
+        result = self.search("--source", "openalex")
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.json["error"], "NETWORK_UNAVAILABLE")
+        self.assertEqual(set(result.json), {"ok", "error", "message"})
+        self.assertEqual(api.hits("/crossref"), [])
+        self.assertEqual(self.tree_snapshot(), before)
+
+
+class AutoFallbackTests(FallbackCase):
+    def test_auto_continues_with_the_fallback_chain_when_openalex_cannot_answer(self):
+        cases = {
+            "quota spent": ({"/openalex/works": [(429, 86400)]}, None, "429"),
+            "key required": ({"/openalex/works": [401] * 5}, None, "401"),
+            "forbidden": ({"/openalex/works": [403] * 5}, None, "403"),
+            "server down": ({"/openalex/works": [503] * 10}, None, "503"),
+            "network error": ({}, {"PAPERSMITH_OPENALEX_URL": "http://127.0.0.1:9/openalex"}, ""),
+        }
+        for label, (script, env, status) in cases.items():
+            with self.subTest(label):
+                api = self.start_api(script=script)
+                result = self.ok(self.search("--include-unknown-quartile", extra_env=env))
+                fallback = result.json["fallback"]
+                self.assertTrue(fallback["used"])
+                self.assertEqual(fallback["code"], "openalex-unavailable")
+                self.assertIn(status, fallback["reason"])
+                self.assertEqual(result.json["source"], "auto")
+                self.assertIn("crossref", result.json["providers"]["similar_works"])
+                self.assertEqual(set(self.names(result)), FALLBACK_JOURNALS)
+                self.assertTrue(api.hits("/crossref/works"))
+                self.assertTrue(self.out_file.is_file())
+
+    def test_the_fallback_notes_say_how_to_get_an_openalex_key(self):
+        self.start_api(script={"/openalex/works": [(429, 86400)]})
+        notes = " ".join(self.ok(self.search("--include-unknown-quartile")).json["notes"])
+        for phrase in ("OPENALEX_API_KEY", KEY_GUIDE, "free"):
+            self.assertIn(phrase, notes)
+        self.assertIn("fallback", notes.lower())
+
+    def test_a_client_error_or_the_total_deadline_is_not_an_unavailable_openalex(self):
+        api = self.start_api(script={"/openalex/works": [400]})
+        refused = self.search()
+        self.assertEqual((refused.code, refused.json["error"]), (2, "NETWORK_UNAVAILABLE"))
+        self.assertEqual(api.hits("/crossref/works"), [])
+        late = self.search(extra_env={"PAPERSMITH_JOURNAL_DEADLINE": "0"})
+        self.assertEqual((late.code, late.json["error"]), (2, "NETWORK_UNAVAILABLE"))
+
+    def test_when_openalex_returns_no_journal_record_at_all_auto_falls_back(self):
+        script = {f"/openalex/sources/S100{i}": [(429, 86400)] for i in (1, 2, 3, 4)}
+        api = self.start_api(script=script)
+        result = self.ok(self.search("--include-unknown-quartile"))
+        self.assertTrue(result.json["fallback"]["used"])
+        self.assertTrue(api.hits("/crossref/works"))
+        self.assertEqual(set(self.names(result)), FALLBACK_JOURNALS)
+
+    def test_a_fallback_chain_that_also_fails_is_the_usual_refusal(self):
+        before = self.tree_snapshot()
+        self.start_api(script={"/openalex/works": [(429, 86400)]})
+        dead = {"PAPERSMITH_CROSSREF_URL": "http://127.0.0.1:9", "PAPERSMITH_EUROPEPMC_URL": "http://127.0.0.1:9",
+                "PAPERSMITH_HTTP_RETRIES": "0"}
+        for args in ((), ("--source", "crossref")):
+            with self.subTest(args=args):
+                result = self.search(*args, extra_env=dead)
+                self.assertEqual(result.code, 2, result.stdout)
+                self.assertEqual(result.json["error"], "NETWORK_UNAVAILABLE")
+                self.assertEqual(set(result.json), {"ok", "error", "message"})
+                self.assertIn("Crossref", result.json["message"])
+        self.assertEqual(self.tree_snapshot(), before)
+
+    def test_other_refusals_keep_their_shape_in_every_source_mode(self):
+        api = self.start_api()
+        before = self.tree_snapshot()
+        for source in ("auto", "openalex", "crossref"):
+            result = self.search("--source", source, quartiles="Q3-Q1")
+            self.assertEqual((result.code, result.json["error"]), (2, "QUARTILE_RANGE_INVALID"))
+            self.assertEqual(set(result.json), {"ok", "error", "message"})
+        self.write_paper("\\documentclass{article}\n")
+        before = self.tree_snapshot()
+        absent = self.search("--source", "crossref")
+        self.assertEqual((absent.code, absent.json["error"]), (2, "PAPER_ABSENT"))
+        self.assertEqual(api.requests, [])
+        self.assertEqual(self.tree_snapshot(), before)
+
+
+class CrossrefSearchTests(FallbackCase):
+    def works_calls(self, api: FakeApi) -> list[dict]:
+        return [r for r in api.requests if r["path"] == "/crossref/works"]
+
+    def test_one_works_query_per_facet_with_the_documented_parameters(self):
+        api = self.start_api()
+        result = self.ok(self.fallback(extra_env={"PAPERSMITH_CONTACT_EMAIL": "ops@example.org"}))
+        calls = self.works_calls(api)
+        self.assertEqual(len(calls), 2)
+        today = datetime.date.today()
+        for call in calls:
+            params = call["params"]
+            self.assertEqual(params["rows"], "100")
+            self.assertEqual(params["select"], "DOI,title,container-title,ISSN,published,subject")
+            self.assertEqual(params["filter"],
+                             f"type:journal-article,from-pub-date:{today.replace(year=today.year - 6).isoformat()}")
+            self.assertEqual(params["mailto"], "ops@example.org")
+            self.assertIn("mailto:ops@example.org", call["headers"]["User-Agent"])
+        method = re.findall(r'"([^"]+)"', calls[0]["params"]["query"])
+        application = re.findall(r'"([^"]+)"', calls[1]["params"]["query"])
+        self.assertIn("data re-uploading", method)
+        self.assertIn("attention deficit hyperactivity disorder", application)
+        self.assertFalse(set(method) & set(application))
+        queries = [q for q in result.json["query"]["facets"]["queries"] if q["provider"] == "crossref"]
+        self.assertEqual([(q["facet"], q["phrases"]) for q in queries],
+                         [("method", method), ("application", application)])
+        self.assertEqual(queries[0]["matched"], 1200)
+        self.assertEqual(queries[0]["works_read"], 8)
+        self.assertEqual(result.json["query"]["search_mode"], "phrases")
+        self.assertEqual(result.json["works_scanned"], 8 + 5 + 5)
+
+    def test_no_contact_email_means_no_mailto(self):
+        api = self.start_api()
+        self.ok(self.fallback())
+        for request in api.requests:
+            self.assertNotIn("mailto", request["params"], request["path"])
+            self.assertNotIn("@", request["headers"].get("User-Agent", ""))
+
+    def test_a_paper_without_phrases_searches_crossref_with_its_terms(self):
+        api = self.start_api()
+        self.write_paper("\\title{zzqx}\\begin{abstract}Some words here for the zzqx query.\\end{abstract}")
+        result = self.ok(self.fallback())
+        self.assertTrue(all('"' not in r["params"]["query"] for r in self.works_calls(api)))
+        self.assertEqual(result.json["query"]["search_mode"], "terms")
+        self.assertEqual(result.json["candidates"], [])
+        self.assertTrue(any("no journal" in n.lower() for n in result.json["notes"]), result.json["notes"])
+
+    def test_list_requests_stay_under_three_per_second(self):
+        api = self.start_api()
+        self.ok(self.fallback(extra_env={"PAPERSMITH_CROSSREF_MIN_INTERVAL": None}))
+        stamps = sorted(r["t"] for r in api.requests
+                        if r["path"] == "/crossref/works" or r["path"].endswith("/works")
+                        and r["path"].startswith("/crossref/journals/"))
+        self.assertGreaterEqual(len(stamps), 5, "two searches and the review-time lists")
+        for i in range(len(stamps) - 3):
+            self.assertGreaterEqual(stamps[i + 3] - stamps[i], 0.9, stamps)
+
+    def test_single_record_requests_stay_under_ten_per_second(self):
+        api = self.start_api()
+        self.with_refs()
+        self.ok(self.fallback(extra_env={"PAPERSMITH_CROSSREF_MIN_INTERVAL": None}))
+        stamps = sorted(r["t"] for r in api.requests if r["path"].startswith("/crossref/works/"))
+        self.assertGreaterEqual(len(stamps), 4)
+        for i in range(len(stamps) - 10):
+            self.assertGreaterEqual(stamps[i + 10] - stamps[i], 0.9, stamps)
+
+
+class AggregationTests(FallbackCase):
+    def test_works_are_aggregated_per_journal_by_issn_across_print_and_online_numbers(self):
+        self.start_api()
+        result = self.ok(self.fallback())
+        self.assertEqual(self.names(result).count(NFL), 1, "three ISSN spellings, one journal")
+        letters = self.by_name(result)[NFL]
+        self.assertEqual(letters["similar_works_count"], 4)
+        self.assertEqual(len(letters["similar_works"]), 3, "up to three examples")
+        self.assertEqual(letters["similar_works"][0], {"title": "Quantum circuits for EEG decoding",
+                                                       "year": 2024, "doi": "10.1111/nfl.1"})
+        self.assertEqual(letters["issn"], ["1111-111X", "2222-2222"])
+        self.assertEqual(letters["id"], "issn:1111111X")
+        self.assertIsNone(letters["openalex_id"])
+        self.assertEqual({k: letters["facets"][k] for k in ("method", "application")},
+                         {"method": 4, "application": 0})
+
+    def test_works_without_an_issn_are_aggregated_by_normalised_container_title(self):
+        self.start_api()
+        result = self.ok(self.fallback())
+        title_only = self.by_name(result)[TOR]
+        self.assertEqual(title_only["similar_works_count"], 2, "'Title Only Review' and 'Title-Only Review'")
+        self.assertEqual(title_only["issn"], [])
+        self.assertEqual(title_only["id"], "title:title only review")
+        self.assertEqual({k: title_only["facets"][k] for k in ("method", "application")},
+                         {"method": 1, "application": 1})
+
+    def test_a_work_found_by_both_facets_counts_once_and_items_without_a_venue_are_dropped(self):
+        self.start_api()
+        result = self.ok(self.fallback())
+        signal = self.by_name(result)[OSP]
+        self.assertEqual(signal["similar_works_count"], 2)
+        self.assertEqual({k: signal["facets"][k] for k in ("method", "application")},
+                         {"method": 2, "application": 1})
+        self.assertEqual(len(result.json["candidates"]), 6)
+        for candidate in result.json["candidates"]:
+            self.assertNotIn("no container title", json.dumps(candidate["similar_works"]))
+
+    def test_the_gate_halves_a_journal_with_no_application_evidence(self):
+        self.start_api()
+        result = self.ok(self.fallback())
+        by_name = self.by_name(result)
+        self.assertEqual(by_name[NFL]["facets"]["gate"], 0.5)
+        self.assertIn("no-application-evidence", by_name[NFL]["flags"])
+        self.assertEqual(by_name[OSP]["facets"]["gate"], 1.0)
+        self.assertTrue(result.json["query"]["scoring"]["facet_gate"]["applies"])
+
+    def test_the_fit_formula_rebuilds_every_score_and_the_ranking_is_ordered(self):
+        self.start_api()
+        self.with_refs()
+        self.import_fixture_sjr()
+        result = self.ok(self.fallback())
+        scoring = result.json["query"]["scoring"]
+        self.assertAlmostEqual(sum(scoring["weights"].values()), 1.0, places=6)
+        for candidate in result.json["candidates"]:
+            fit = candidate["fit"]
+            base = round(sum(scoring["weights"][k] * fit[k] for k in fit), 4)
+            self.assertEqual(candidate["fit_score"], round(base * candidate["facets"]["gate"], 4))
+        ranked = [(-c["fit_score"], -c["cited_in_paper_count"], -c["similar_works_count"],
+                   c["display_name"].lower()) for c in result.json["candidates"]]
+        self.assertEqual(ranked, sorted(ranked))
+        self.assertEqual([c["rank"] for c in result.json["candidates"]], list(range(1, len(ranked) + 1)))
+
+    def test_every_candidate_keeps_the_shape_the_openalex_path_writes(self):
+        self.start_api()
+        fallback = self.ok(self.fallback()).json["candidates"][0]
+        shared = ("rank", "fit_score", "fit", "facets", "similar_works_count", "similar_works",
+                  "cited_in_paper_count", "topics", "quartile", "quartile_source", "sjr", "proxy", "is_oa",
+                  "is_in_doaj", "apc_usd", "h_index", "mean_citedness_2yr", "review_time", "flags",
+                  "display_name", "issn", "issn_l", "publisher", "homepage_url", "openalex_id", "sources")
+        for key in shared:
+            self.assertIn(key, fallback)
+        self.assertIsNone(fallback["mean_citedness_2yr"])
+        self.assertEqual(set(fallback["review_time"]), {"median_days", "p25_days", "p75_days", "n",
+                                                        "accept_to_online_median_days", "accept_to_online_n",
+                                                        "source", "kind", "window"})
+
+
+class EuropePmcTests(FallbackCase):
+    def test_biomedical_rule_matches_the_application_facet_and_the_keywords(self):
+        mod = load_module()
+        profile = {"title": "Quantum Nets for EEG", "abstract": "", "keywords": ["Quantum Machine Learning", "ADHD"]}
+        facets = {"method": ["quantum machine learning"], "application": ["eeg", "adhd"]}
+        matched = mod.biomedical_matches(profile, facets)
+        self.assertIn("eeg", matched)
+        self.assertIn("adhd", matched)
+        for text in ("quantum machine learning", "fourier models", "graph transformers"):
+            self.assertEqual(mod.biomedical_matches({"title": text, "abstract": "", "keywords": [text]},
+                                                    {"method": [text]}), [])
+        # a biomedical word in the title's method half alone does not trigger it
+        self.assertEqual(mod.biomedical_matches({"title": "Brain Inspired Hashing for Images", "abstract": "",
+                                                 "keywords": ["Hashing"]},
+                                                {"method": ["brain inspired hashing"], "application": ["images"]}), [])
+
+    def test_a_biomedical_paper_queries_europe_pmc_per_facet_and_merges_by_journal(self):
+        api = self.start_api()
+        result = self.ok(self.fallback())
+        calls = api.hits("/europepmc/search")
+        self.assertEqual(len(calls), 2)
+        today = datetime.date.today()
+        for call in calls:
+            params = call["params"]
+            self.assertEqual((params["resultType"], params["format"], params["pageSize"]), ("core", "json", "100"))
+            self.assertIn(f"FIRST_PDATE:[{today.replace(year=today.year - 6).isoformat()} TO ", params["query"])
+        self.assertIn('"attention deficit hyperactivity disorder"', calls[1]["params"]["query"])
+        by_name = self.by_name(result)
+        self.assertEqual(by_name[BFR]["similar_works_count"], 2, "its Europe PMC work repeats a Crossref DOI")
+        self.assertEqual(by_name[OQ]["similar_works_count"], 2, "one from each provider")
+        self.assertEqual(by_name[NFJ]["similar_works_count"], 1, "a journal only Europe PMC names")
+        self.assertEqual(by_name[NFJ]["issn"], ["8181-8181", "8181-8189"])
+        self.assertNotIn("preprint", json.dumps(result.json["candidates"]).lower())
+        self.assertEqual(by_name[NFJ]["sources"], ["europepmc", "doaj"])
+        self.assertEqual(by_name[BFR]["sources"], ["crossref", "europepmc", "doaj"])
+        self.assertEqual(result.json["providers"]["similar_works"], ["crossref", "europepmc"])
+        rule = result.json["query"]["fallback"]["europepmc"]
+        self.assertTrue(rule["queried"])
+        self.assertIn("eeg", rule["matched"])
+
+    def test_a_paper_that_is_not_biomedical_never_calls_europe_pmc(self):
+        api = self.start_api()
+        self.write_paper(NON_BIOMEDICAL_TEX)
+        result = self.ok(self.fallback())
+        self.assertEqual(api.hits("/europepmc"), [])
+        self.assertEqual(result.json["providers"]["similar_works"], ["crossref"])
+        self.assertEqual(result.json["query"]["fallback"]["europepmc"]["queried"], False)
+        self.assertEqual(result.json["query"]["fallback"]["europepmc"]["matched"], [])
+        self.assertEqual(result.json["api_calls"]["by_service"]["europepmc"], {"made": 0, "cached": 0})
+
+    def test_a_failing_europe_pmc_costs_a_note_not_the_search(self):
+        self.start_api()
+        result = self.ok(self.fallback(extra_env={"PAPERSMITH_EUROPEPMC_URL": "http://127.0.0.1:9",
+                                                  "PAPERSMITH_HTTP_RETRIES": "0"}))
+        self.assertTrue(any("Europe PMC" in n for n in result.json["notes"]), result.json["notes"])
+        self.assertNotIn(NFJ, self.names(result))
+        self.assertEqual(result.json["providers"]["similar_works"], ["crossref"])
+
+
+class SemanticScholarTests(FallbackCase):
+    SEARCH = "/semanticscholar/graph/v1/paper/search"
+
+    def test_without_a_key_semantic_scholar_is_never_called(self):
+        api = self.start_api()
+        for key in (None, "", "   "):
+            with self.subTest(key=key):
+                api.requests.clear()
+                result = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": key}))
+                self.assertEqual(api.hits("/semanticscholar"), [])
+                self.assertNotIn("semanticscholar", result.json["providers"]["similar_works"])
+                self.assertNotIn(QFL, self.names(result))
+
+    def test_with_a_key_it_sends_the_x_api_key_header_and_merges_journal_venues_with_an_issn(self):
+        api = self.start_api()
+        result = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "s2-secret-key"}))
+        calls = api.hits(self.SEARCH)
+        self.assertEqual(len(calls), 2, "one per facet")
+        for call in calls:
+            headers = {k.lower(): v for k, v in call["headers"].items()}
+            self.assertEqual(headers.get("x-api-key"), "s2-secret-key")
+            self.assertEqual(call["params"]["limit"], "100")
+            self.assertIn("publicationVenue", call["params"]["fields"])
+            self.assertEqual(call["params"]["year"], f"{datetime.date.today().year - 6}-")
+            self.assertNotIn('"', call["params"]["query"])
+        for request in api.requests:
+            if not request["path"].startswith("/semanticscholar"):
+                self.assertNotIn("x-api-key", {k.lower() for k in request["headers"]}, request["path"])
+        by_name = self.by_name(result)
+        self.assertEqual(by_name[QFL]["similar_works_count"], 1)
+        self.assertEqual(by_name[QFL]["issn"], ["1234-5679"])
+        self.assertEqual(by_name[QFL]["sources"], ["semanticscholar"])
+        self.assertNotIn("Fixture Conference", self.names(result), "a conference venue is not a journal")
+        self.assertEqual(by_name[NFL]["similar_works_count"], 4, "its Semantic Scholar work repeats a DOI")
+        self.assertIn("semanticscholar", by_name[NFL]["sources"])
+        self.assertEqual(result.json["providers"]["similar_works"], ["crossref", "europepmc", "semanticscholar"])
+        self.assertEqual(result.json["api_calls"]["by_service"]["semanticscholar"]["made"], 2)
+
+    def test_the_key_never_reaches_the_output_the_file_or_the_cache(self):
+        self.start_api()
+        result = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "s2-secret-key"}))
+        self.assertNotIn("s2-secret-key", result.stdout)
+        self.assertNotIn("s2-secret-key", self.out_file.read_text(encoding="utf-8"))
+        cache = self.tmp / "home" / ".cache" / "papersmith" / "journal-finder" / "http"
+        blob = "".join(p.read_text(encoding="utf-8") for p in cache.glob("*.json"))
+        self.assertTrue(blob)
+        self.assertNotIn("s2-secret-key", blob)
+
+    def test_a_refused_key_is_a_note_and_the_other_providers_carry_on(self):
+        self.start_api(script={self.SEARCH: [429] * 10})
+        result = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "s2-secret-key"}))
+        self.assertTrue(any("Semantic Scholar" in n for n in result.json["notes"]), result.json["notes"])
+        self.assertEqual(set(self.names(result)), FALLBACK_JOURNALS)
+        self.assertNotIn("semanticscholar", result.json["providers"]["similar_works"])
+
+
+class FallbackCitedVenueTests(FallbackCase):
+    def single_calls(self, api: FakeApi) -> list[str]:
+        return sorted(unquote(r["path"][len("/crossref/works/"):])
+                      for r in api.requests if r["path"].startswith("/crossref/works/"))
+
+    def test_dois_resolve_through_crossref_and_arxiv_dois_are_not_asked(self):
+        api = self.start_api()
+        self.with_refs()
+        result = self.ok(self.fallback())
+        self.assertEqual(self.single_calls(api), ["10.1111/nfl.1", "10.5555/cited.1", "10.5555/cited.2",
+                                                  "10.9999/dataset"])
+        cited = result.json["query"]["cited"]
+        self.assertEqual(cited["references_file"], "paper/refs.bib")
+        self.assertEqual((cited["entries"], cited["resolved_by_doi"], cited["resolved_by_journal_name"],
+                          cited["unresolved"]), (7, 3, 1, 3))
+        self.assertEqual((cited["journals"][0]["display_name"], cited["journals"][0]["count"]), (CITED_ONLY, 2))
+        by_name = self.by_name(result)
+        self.assertEqual(by_name[NFL]["cited_in_paper_count"], 1)
+        self.assertEqual(by_name[OQ]["cited_in_paper_count"], 1, "matched by its normalised journal name")
+        self.assertEqual(by_name[TOR]["cited_in_paper_count"], 0)
+        self.assertEqual(result.json["providers"]["cited_venues"], ["crossref"])
+
+    def test_a_journal_only_the_references_name_is_kept_with_zero_similar_works(self):
+        self.start_api()
+        self.with_refs()
+        result = self.ok(self.fallback())
+        cited_only = self.by_name(result)[CITED_ONLY]
+        self.assertEqual((cited_only["similar_works_count"], cited_only["similar_works"]), (0, []))
+        self.assertEqual(cited_only["cited_in_paper_count"], 2)
+        self.assertEqual(cited_only["fit"]["cited_in_paper"], 1.0)
+        self.assertEqual(cited_only["issn"], ["6666-666X"])
+        self.assertEqual(cited_only["sources"], ["crossref"])
+        self.assertIn("cited_in_paper", result.json["query"]["scoring"]["active"])
+
+    def test_journal_names_only_match_journals_the_search_already_found(self):
+        self.start_api()
+        (self.workspace / "paper" / "refs.bib").write_text(
+            "@article{a, journal={Totally Unknown Journal}, title={T}}\n"
+            "@article{b, journal={obscure  QUARTERLY}, title={U}}\n", encoding="utf-8")
+        result = self.ok(self.fallback())
+        self.assertNotIn("Totally Unknown Journal", self.names(result))
+        cited = result.json["query"]["cited"]
+        self.assertEqual((cited["resolved_by_doi"], cited["resolved_by_journal_name"], cited["unresolved"]),
+                         (0, 1, 1))
+        self.assertEqual(self.by_name(result)[OQ]["cited_in_paper_count"], 1)
+
+    def test_a_failing_doi_lookup_degrades_with_a_note(self):
+        script = {f"/crossref/works/{doi}": [500] * 10
+                  for doi in ("10.1111/nfl.1", "10.5555/cited.1", "10.5555/cited.2", "10.9999/dataset")}
+        self.start_api(script=script)
+        self.with_refs()
+        result = self.ok(self.fallback())
+        self.assertTrue(any("cited" in n.lower() for n in result.json["notes"]), result.json["notes"])
+        self.assertEqual(result.json["providers"]["cited_venues"], [])
+        self.assertTrue(result.json["candidates"])
+        self.assertNotIn(CITED_ONLY, self.names(result))
+
+    def test_without_a_references_file_the_signal_is_inactive_with_a_note(self):
+        self.start_api()
+        result = self.ok(self.fallback())
+        self.assertIsNone(result.json["query"]["cited"]["references_file"])
+        self.assertNotIn("cited_in_paper", result.json["query"]["scoring"]["active"])
+        self.assertTrue(any("references" in n.lower() for n in result.json["notes"]), result.json["notes"])
+        self.assertEqual(result.json["providers"]["cited_venues"], [])
+
+    def test_citing_a_journal_raises_its_rank(self):
+        self.start_api()
+        without = {c["display_name"]: c["rank"] for c in self.ok(self.fallback()).json["candidates"]}
+        self.with_refs()
+        with_refs = {c["display_name"]: c["rank"] for c in self.ok(self.fallback()).json["candidates"]}
+        self.assertLess(with_refs[OQ], without[OQ])
+
+
+class FallbackMetadataTests(FallbackCase):
+    def test_sjr_supplies_quartile_publisher_h_index_and_categories_without_openalex(self):
+        api = self.start_api()
+        self.import_fixture_sjr()
+        result = self.ok(self.fallback())
+        by_name = self.by_name(result)
+        letters = by_name[NFL]
+        self.assertEqual((letters["quartile"], letters["quartile_source"]), ("Q1", "sjr"))
+        self.assertEqual((letters["sjr"]["value"], letters["sjr"]["year"]), (2.345, 2019))
+        self.assertEqual(letters["sjr"]["categories"][1], {"name": "Software", "quartile": "Q2"})
+        self.assertEqual((letters["publisher"], letters["h_index"]), ("Fixture Press", 180))
+        self.assertEqual((by_name[OQ]["quartile"], by_name[OQ]["publisher"], by_name[OQ]["h_index"]),
+                         ("Q2", "Quarterly House", 12))
+        self.assertEqual([r for r in api.requests if r["path"] in (
+            "/crossref/journals/1111-111X", "/crossref/journals/2222-2222", "/crossref/journals/5555-5555")], [],
+            "SJR already named the publisher")
+        self.assertIn("sjr", letters["sources"])
+        self.assertIn("sjr", result.json["providers"]["metadata"])
+
+    def test_crossref_journal_record_fills_the_publisher_only_when_it_is_missing(self):
+        api = self.start_api()
+        by_name = self.by_name(self.ok(self.fallback()))
+        self.assertEqual(by_name[NFL]["publisher"], "Fixture Press")
+        self.assertEqual(by_name[OQ]["publisher"], "Quarterly House")
+        self.assertEqual(by_name[OSP]["publisher"], "Open Fixture Society", "DOAJ named it")
+        self.assertEqual(by_name[NFJ]["publisher"], "Neuro Open Press")
+        self.assertIsNone(by_name[TOR]["publisher"])
+        info = [r["path"] for r in api.requests if re.fullmatch(r"/crossref/journals/[^/]+", r["path"])]
+        self.assertEqual(info.count("/crossref/journals/1111-111X"), 1)
+        self.assertNotIn("/crossref/journals/3333-3333", info)
+        self.assertNotIn("/crossref/journals/8181-8181", info)
+        self.assertIn("crossref", by_name[NFL]["sources"])
+
+    def test_doaj_maps_open_access_apc_review_process_and_subjects(self):
+        api = self.start_api()
+        by_name = self.by_name(self.ok(self.fallback()))
+        signal = by_name[OSP]
+        self.assertEqual((signal["is_oa"], signal["is_in_doaj"], signal["apc_usd"]), (True, True, 1500))
+        self.assertEqual(signal["homepage_url"], "https://open-signal.example/")
+        self.assertEqual(signal["doaj"], {
+            "has_apc": True, "apc_max": [{"currency": "EUR", "price": 1400}, {"currency": "USD", "price": 1500}],
+            "review_process": ["Double anonymous peer review"],
+            "subjects": ["Technology: Signal processing", "Medicine: Electroencephalography (EEG)"]})
+        euro = by_name[BFR]
+        self.assertEqual((euro["is_oa"], euro["apc_usd"]), (True, None), "a EUR price is never converted")
+        self.assertEqual(euro["doaj"]["apc_max"], [{"currency": "EUR", "price": 2900}])
+        free = by_name[NFJ]
+        self.assertEqual((free["is_oa"], free["apc_usd"], free["doaj"]["has_apc"]), (True, 0, False))
+        missing = by_name[NFL]
+        self.assertEqual((missing["is_in_doaj"], missing["is_oa"], missing["apc_usd"], missing["doaj"]),
+                         (False, None, None, None), "absent from DOAJ proves nothing about access")
+        asked = sorted(r["path"].rsplit(":", 1)[1] for r in api.hits("/doaj/api/search/journals/issn:"))
+        self.assertIn("1111-111X", asked)
+        self.assertIn("2222-2222", asked, "a second ISSN is tried when the first misses")
+        self.assertEqual(asked.count("3333-3333"), 1)
+        self.assertIn("doaj", signal["sources"])
+
+    def test_oa_only_and_max_apc_use_the_doaj_answers(self):
+        self.start_api()
+        oa = self.ok(self.fallback("--oa-only"))
+        self.assertEqual(set(self.names(oa)), {OSP, BFR, NFJ})
+        self.assertEqual(oa.json["excluded_reasons"]["not_oa"], 3)
+        self.assertEqual(oa.json["excluded_count"], 3)
+        capped = self.ok(self.fallback("--max-apc", "1000"))
+        self.assertNotIn(OSP, self.names(capped))
+        self.assertIn(NFJ, self.names(capped))
+        self.assertEqual(capped.json["excluded_reasons"]["apc_above_max"], 1)
+        self.assertIn("apc-unknown", self.by_name(capped)[BFR]["flags"])
+
+    def test_review_time_still_comes_from_crossref_and_pubmed(self):
+        self.start_api()
+        by_name = self.by_name(self.ok(self.fallback()))
+        self.assertEqual((by_name[NFL]["review_time"]["source"], by_name[NFL]["review_time"]["n"]), ("crossref", 6))
+        self.assertEqual(by_name[OSP]["review_time"]["source"], "pubmed")
+
+    def test_a_dead_doaj_degrades_with_a_note_and_the_topic_signal_drops_out(self):
+        self.start_api()
+        result = self.ok(self.fallback(extra_env={"PAPERSMITH_DOAJ_URL": "http://127.0.0.1:9",
+                                                  "PAPERSMITH_HTTP_RETRIES": "0"}))
+        self.assertTrue(any("DOAJ" in n for n in result.json["notes"]), result.json["notes"])
+        for candidate in result.json["candidates"]:
+            self.assertIsNone(candidate["is_in_doaj"], "unknown, not false")
+            self.assertIsNone(candidate["doaj"])
+        self.assertEqual(result.json["query"]["scoring"]["active"], ["similar_works"])
+        self.assertAlmostEqual(sum(result.json["query"]["scoring"]["weights"].values()), 1.0, places=6)
+        self.assertNotIn("doaj", result.json["providers"]["metadata"])
+
+
+class FallbackTopicTests(FallbackCase):
+    def test_topic_overlap_compares_doaj_subjects_and_sjr_categories_with_the_paper_vocabulary(self):
+        self.start_api()
+        self.import_fixture_sjr()
+        result = self.ok(self.fallback())
+        scoring = result.json["query"]["scoring"]
+        self.assertIn("topic_overlap", scoring["active"])
+        self.assertEqual(scoring["topic_overlap_basis"], "subjects")
+        by_name = self.by_name(result)
+        self.assertEqual(by_name[BFR]["fit"]["topic_overlap"], 1.0, "four of the application words")
+        self.assertEqual(by_name[OSP]["fit"]["topic_overlap"], 0.5, "two of them")
+        for name in (NFL, OQ, NFJ, TOR):
+            self.assertEqual(by_name[name]["fit"]["topic_overlap"], 0.0, name)
+        self.assertEqual(result.json["query"]["topics"], [])
+        self.assertEqual(by_name[BFR]["topics"][0]["name"], "Medicine: Neurology. Attention deficit hyperactivity disorder")
+        self.assertEqual(by_name[BFR]["topics"][0]["origin"], "doaj")
+        self.assertEqual([t["name"] for t in by_name[NFL]["topics"]], ["Artificial Intelligence", "Software"])
+        self.assertEqual(by_name[NFL]["topics"][0]["origin"], "sjr")
+
+    def test_subjects_that_cover_the_application_lift_the_gate(self):
+        self.start_api()
+        by_name = self.by_name(self.ok(self.fallback()))
+        self.assertEqual(by_name[BFR]["facets"]["application_topic_overlap"] > 0.05, True)
+        self.assertEqual(by_name[NFL]["facets"]["application_topic_overlap"], 0.0)
+
+    def test_the_openalex_path_keeps_its_own_topic_basis(self):
+        self.start_api(topics=True)
+        result = self.ok(self.search())
+        self.assertEqual(result.json["query"]["scoring"]["topic_overlap_basis"], "openalex-topics")
+
+
+class UnknownQuartileTests(FallbackCase):
+    def test_unknown_quartiles_are_excluded_by_default_and_counted_with_a_reason(self):
+        self.start_api()
+        result = self.ok(self.search("--source", "crossref"))
+        self.assertEqual(result.json["candidates"], [])
+        self.assertEqual(result.json["excluded_count"], 6)
+        self.assertEqual(result.json["excluded_reasons"], {
+            "record_unavailable": 0, "quartile_unknown": 6, "quartile_range": 0, "not_oa": 0,
+            "apc_above_max": 0, "review_time_above_max": 0})
+        self.assertFalse(result.json["filters"]["include_unknown_quartile"])
+        note = next(n for n in result.json["notes"] if "sjr-import" in n)
+        for phrase in ("OPENALEX_API_KEY", "--include-unknown-quartile", "6"):
+            self.assertIn(phrase, note)
+
+    def test_the_flag_keeps_them_labelled_unknown(self):
+        self.start_api()
+        result = self.ok(self.fallback())
+        self.assertEqual(len(result.json["candidates"]), 6)
+        self.assertEqual(result.json["excluded_count"], 0)
+        self.assertTrue(result.json["filters"]["include_unknown_quartile"])
+        for candidate in result.json["candidates"]:
+            self.assertEqual((candidate["quartile"], candidate["quartile_source"]), (None, "unknown"))
+            self.assertIsNone(candidate["proxy"])
+            self.assertIsNone(candidate["sjr"])
+            self.assertIn("quartile-unknown", candidate["flags"])
+        self.assertEqual(result.json["quartile_source_summary"], {"sjr": 0, "openalex-proxy": 0, "unknown": 6})
+        self.assertEqual(result.json["providers"]["quartile"], "unknown")
+        notes = " ".join(result.json["notes"])
+        self.assertIn("sjr-import", notes)
+        self.assertIn("OPENALEX_API_KEY", notes)
+
+    def test_sjr_decides_the_range_and_unknown_follows_the_flag(self):
+        self.start_api()
+        self.import_fixture_sjr()
+        default = self.ok(self.search("--source", "crossref", quartiles="Q1-Q2"))
+        self.assertEqual(set(self.names(default)), {NFL, OQ})
+        self.assertEqual(default.json["excluded_reasons"]["quartile_unknown"], 4)
+        self.assertEqual(default.json["providers"]["quartile"], "sjr")
+        self.assertEqual(default.json["quartile_source_summary"], {"sjr": 2, "openalex-proxy": 0})
+        flagged = self.ok(self.search("--source", "crossref", "--include-unknown-quartile", quartiles="Q1"))
+        self.assertEqual(set(self.names(flagged)), FALLBACK_JOURNALS - {OQ})
+        self.assertEqual(flagged.json["excluded_reasons"]["quartile_range"], 1, "Obscure Quarterly is Q2")
+        self.assertEqual(flagged.json["excluded_reasons"]["quartile_unknown"], 0)
+        self.assertEqual(flagged.json["quartile_source_summary"], {"sjr": 1, "openalex-proxy": 0, "unknown": 4})
+        self.assertNotIn("quartile-unknown", self.by_name(flagged)[NFL]["flags"])
+
+    def test_the_openalex_path_counts_its_exclusions_by_reason_too(self):
+        self.start_api()
+        result = self.ok(self.search(quartiles="Q1"))
+        self.assertEqual(result.json["excluded_reasons"]["quartile_range"], 3)
+        self.assertEqual(result.json["excluded_reasons"]["quartile_unknown"], 0)
+        self.assertEqual(result.json["excluded_count"], 3)
+        self.assertFalse(result.json["filters"]["include_unknown_quartile"])
+
+
+class TransparencyTests(FallbackCase):
+    def test_providers_and_sources_use_one_vocabulary_in_a_fixed_order(self):
+        self.start_api()
+        self.with_refs()
+        result = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "k"}))
+        providers = result.json["providers"]
+        self.assertEqual(set(providers), {"similar_works", "cited_venues", "metadata", "quartile"})
+        self.assertEqual(providers["similar_works"], ["crossref", "europepmc", "semanticscholar"])
+        self.assertEqual(providers["cited_venues"], ["crossref"])
+        self.assertEqual(providers["metadata"], ["crossref", "doaj"])
+        self.assertEqual(set(result.json["fallback"]), {"used", "reason", "code"})
+        for candidate in result.json["candidates"]:
+            sources = candidate["sources"]
+            self.assertTrue(sources)
+            self.assertEqual(len(sources), len(set(sources)))
+            self.assertEqual(sources, sorted(sources, key=PROVIDER_ORDER.index))
+
+    def test_api_calls_count_every_service_and_match_what_the_server_saw(self):
+        api = self.start_api()
+        self.with_refs()
+        result = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "k"}))
+        calls = result.json["api_calls"]
+        for service in ("crossref", "pubmed", "europepmc", "doaj", "semanticscholar"):
+            self.assertEqual(calls["by_service"][service]["made"], len(api.hits(f"/{service}")), service)
+            self.assertGreater(calls["by_service"][service]["made"], 0, service)
+        self.assertEqual(calls["by_service"]["openalex"], {"made": 0, "cached": 0})
+        self.assertEqual(sum(v["made"] for v in calls["by_service"].values()), calls["made"])
+        self.assertEqual(calls["made"], len(api.requests))
+
+    def test_the_new_services_are_cached_like_the_old_ones(self):
+        api = self.start_api()
+        first = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "k"}))
+        served = len(api.requests)
+        second = self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "k"}))
+        by_service = second.json["api_calls"]["by_service"]
+        for service in ("europepmc", "doaj", "semanticscholar"):
+            self.assertEqual(by_service[service]["made"], 0, service)
+            self.assertEqual(by_service[service]["cached"], first.json["api_calls"]["by_service"][service]["made"])
+        again = {r["path"] for r in api.requests[served:]}
+        self.assertTrue(all(p.startswith("/crossref/journals/") for p in again), again)
+        self.assertEqual(second.json["candidates"], first.json["candidates"])
+
+    def test_no_cache_bypasses_the_new_services(self):
+        api = self.start_api()
+        self.ok(self.fallback("--no-cache"))
+        served = len(api.requests)
+        second = self.ok(self.fallback("--no-cache"))
+        self.assertEqual(len(api.requests), 2 * served)
+        self.assertEqual(second.json["api_calls"]["cached"], 0)
+
+    def test_searches_expire_after_a_day_and_record_lookups_after_a_week(self):
+        api = self.start_api()
+        self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "k"}))
+        cache = self.tmp / "home" / ".cache" / "papersmith" / "journal-finder" / "http"
+        for path in cache.glob("*.json"):
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["fetched_at"] -= 2 * 86400
+            path.write_text(json.dumps(document), encoding="utf-8")
+        api.requests.clear()
+        self.ok(self.fallback(extra_env={"SEMANTIC_SCHOLAR_API_KEY": "k"}))
+        paths = {r["path"] for r in api.requests}
+        for searched in ("/crossref/works", "/europepmc/search", "/semanticscholar/graph/v1/paper/search"):
+            self.assertIn(searched, paths, "a search is older than a day")
+        self.assertFalse([p for p in paths if p.startswith("/doaj")], "DOAJ lookups are still fresh")
+
+    def test_the_new_environment_overrides_and_the_key_guidance_are_documented_in_the_cli(self):
+        text = CLI.read_text(encoding="utf-8")
+        for name in ("PAPERSMITH_EUROPEPMC_URL", "PAPERSMITH_DOAJ_URL", "PAPERSMITH_SEMANTICSCHOLAR_URL",
+                     "SEMANTIC_SCHOLAR_API_KEY", "--source", "--include-unknown-quartile", KEY_GUIDE):
+            self.assertIn(name, text, name)
 
 
 class StatusTests(JournalFinderCase):

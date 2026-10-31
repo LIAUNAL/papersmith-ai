@@ -1,0 +1,94 @@
+{
+  "version": "6.9",
+  "hitCount": 42,
+  "resultList": {
+    "result": [
+      {
+        "id": "1",
+        "source": "MED",
+        "title": "Clinical EEG biomarkers.",
+        "pubYear": "2025",
+        "doi": "10.4444/BFR.1",
+        "pubTypeList": {
+          "pubType": [
+            "Journal Article"
+          ]
+        },
+        "journalInfo": {
+          "yearOfPublication": 2025,
+          "journal": {
+            "title": "Biomedical Fixture Reports",
+            "issn": "4444-444X",
+            "essn": null
+          }
+        }
+      },
+      {
+        "id": "2",
+        "source": "MED",
+        "title": "EEG markers of attention deficit in children.",
+        "pubYear": "2025",
+        "doi": "10.8888/nfj.1",
+        "pubTypeList": {
+          "pubType": [
+            "Journal Article"
+          ]
+        },
+        "journalInfo": {
+          "yearOfPublication": 2025,
+          "journal": {
+            "title": "Neuro Fixture Journal",
+            "issn": "8181-8181",
+            "essn": "8181-8189"
+          }
+        }
+      },
+      {
+        "id": "3",
+        "source": "MED",
+        "title": "A second obscure paper.",
+        "pubYear": "2024",
+        "doi": "10.5555/oq.2",
+        "pubTypeList": {
+          "pubType": [
+            "Journal Article"
+          ]
+        },
+        "journalInfo": {
+          "yearOfPublication": 2024,
+          "journal": {
+            "title": "Obscure Quarterly",
+            "issn": "5555-5555",
+            "essn": null
+          }
+        }
+      },
+      {
+        "id": "PPR1",
+        "source": "PPR",
+        "title": "A preprint.",
+        "pubYear": "2025",
+        "doi": "10.1101/ppr.1"
+      },
+      {
+        "id": "4",
+        "source": "MED",
+        "title": "A reply to the editor.",
+        "pubYear": "2025",
+        "pubTypeList": {
+          "pubType": [
+            "Comment"
+          ]
+        },
+        "journalInfo": {
+          "yearOfPublication": 2025,
+          "journal": {
+            "title": "Neuro Fixture Journal",
+            "issn": "8181-8181",
+            "essn": null
+          }
+        }
+      }
+    ]
+  }
+}

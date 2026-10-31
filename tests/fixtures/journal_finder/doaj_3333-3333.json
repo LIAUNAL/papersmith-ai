@@ -1,0 +1,50 @@
+{
+  "total": 1,
+  "results": [
+    {
+      "id": "x33333333",
+      "bibjson": {
+        "title": "Open Signal Processing",
+        "publisher": {
+          "name": "Open Fixture Society",
+          "country": "NL"
+        },
+        "eissn": "3333-3333",
+        "pissn": null,
+        "apc": {
+          "has_apc": true,
+          "max": [
+            {
+              "price": 1400,
+              "currency": "EUR"
+            },
+            {
+              "price": 1500,
+              "currency": "USD"
+            }
+          ]
+        },
+        "subject": [
+          {
+            "scheme": "LCC",
+            "code": "X",
+            "term": "Technology: Signal processing"
+          },
+          {
+            "scheme": "LCC",
+            "code": "X",
+            "term": "Medicine: Electroencephalography (EEG)"
+          }
+        ],
+        "editorial": {
+          "review_process": [
+            "Double anonymous peer review"
+          ]
+        },
+        "ref": {
+          "journal": "https://open-signal.example/"
+        }
+      }
+    }
+  ]
+}

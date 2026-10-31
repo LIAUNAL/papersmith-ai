@@ -825,7 +825,7 @@ and answer with an error object instead of raising:
 | Route | What it does |
 |---|---|
 | `GET /api/journals` | `{ok, candidates, sjr, sjr_download_url, notes_md, busy}`: the contents of `paper/journal-candidates.json` (or `null`, with `candidates_error` when it cannot be read), the SJR state from `journal_cli.py status` (the imported file and its year, or `null`), whether `paper/journal-candidates.md` exists, and whether a search is running |
-| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, max_review_days, limit, no_cache}`; only `quartiles` is required. Runs `journal_cli.py search` in a worker thread (330 s) and returns the CLI's JSON, `api_calls` included. `no_cache: true` adds `--no-cache` (the *Forzar actualización* checkbox). One search at a time (`409 SEARCH_RUNNING`). `422` for an invalid range (`QUARTILE_RANGE_INVALID`) or filter (`FILTER_INVALID`: `limit` 1-50, `max_apc` 0-10000000, `max_review_days` 1-3650, `oa_only` and `no_cache` booleans). A CLI refusal keeps its shape: `409 PAPER_ABSENT`, `404 WORKSPACE_ABSENT`, `502 NETWORK_UNAVAILABLE` (an unreachable OpenAlex, or a spent daily quota whose message names `OPENALEX_API_KEY`), `504 TIMEOUT`; a CLI that prints no JSON is `502 JOURNAL_CLI_FAILED` |
+| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, max_review_days, limit, no_cache, source, include_unknown_quartile}`; only `quartiles` is required. Runs `journal_cli.py search` in a worker thread (330 s) and returns the CLI's JSON, `api_calls`, `providers` and `fallback` included. `no_cache: true` adds `--no-cache` (the *Forzar actualización* checkbox). `source` is `auto` (the default), `openalex` or `crossref` and becomes `--source`; `include_unknown_quartile: true` adds `--include-unknown-quartile`. Both are validated like the other filters and passed through unchanged. One search at a time (`409 SEARCH_RUNNING`). `422` for an invalid range (`QUARTILE_RANGE_INVALID`) or filter (`FILTER_INVALID`: `limit` 1-50, `max_apc` 0-10000000, `max_review_days` 1-3650, `oa_only` and `no_cache` booleans). A CLI refusal keeps its shape: `409 PAPER_ABSENT`, `404 WORKSPACE_ABSENT`, `502 NETWORK_UNAVAILABLE` (with `source: openalex`, an unreachable OpenAlex or a spent daily quota whose message names `OPENALEX_API_KEY`; with `auto` or `crossref`, only when the fallback providers cannot be reached either: an unavailable OpenAlex under `auto` answers `200` with `fallback.used: true`), `504 TIMEOUT`; a CLI that prints no JSON is `502 JOURNAL_CLI_FAILED` |
 | `POST /api/journals/sjr` | The SCImago "Download data" CSV as the **raw request body** (not multipart), its file name and optional year in the query string (`?name=scimagojr 2025.csv&year=2025`). Capped at 16 MiB (`413 FILE_TOO_LARGE`); an empty body or an invalid CSV is `422 SJR_FILE_INVALID`. Runs `journal_cli.py sjr-import` and returns its JSON |
 | `GET /api/venues` | `{ok, venues: [{slug, journal, quartile, state, blockers, next_action}]}`, one per `paper/venues/<slug>/` that holds a `venue.json` |
 | `POST /api/venues/select` | Body `{candidate}` (an OpenAlex source id from `paper/journal-candidates.json`) or `{journal, issn}`, plus an optional `slug` (else derived from the journal's name). Runs `venue select`; `409 VENUE_EXISTS`, `404 CANDIDATE_UNKNOWN`, `409 CANDIDATES_ABSENT`, `400 VENUE_SLUG_INVALID` and `422` for a body that gives neither or both modes |
@@ -841,10 +841,12 @@ approval button writes the same `approval.json` record as `venue approve`, with
 build) is written through the `paper-writing` `venue` verbs these routes call.
 
 *Revistas sugeridas* has two quartile selects (from Q? to Q?), an open-access
-checkbox, a *Forzar actualización* checkbox (the search skips the response
-cache and spends the OpenAlex budget again) and the max-APC, max-review-days and
-limit inputs. *Buscar revistas* runs the search with a loading state, and a
-refused search shows the CLI's code and message (a spent OpenAlex quota names
+checkbox, a source selector (*Auto*, *OpenAlex*, *Crossref*; `source`), a toggle
+to include journals of unknown quartile (`include_unknown_quartile`), a
+*Forzar actualización* checkbox (the search skips the response cache and
+spends the OpenAlex budget again) and the max-APC, max-review-days and limit
+inputs. *Buscar revistas* runs the search with a loading state, and a
+refused search shows the CLI's code and message (a spent OpenAlex quota under *OpenAlex* names
 `OPENALEX_API_KEY`); *Analizar con agente* types
 `/journal-finder <range> [flags]` into the CLI assistant through
 `window.sendToCli`, as the phase cards do. A line states the SJR state: the file
@@ -857,8 +859,13 @@ source; "sin datos públicos" when there is none, and the table can sort by it),
 the fit score with its three components (`fit`: similar works, cited in the
 paper, topic overlap), the facet hits and the application gate (`facets`), the
 flag badges (`no-application-evidence`, `apc-unknown`, `review-time-unknown`)
-and the similar works, expandable, with DOI links. Above the table, the panel
-prints the scoring formula and the application gate from `query.scoring`, and
+and the similar works, expandable, with DOI links. Each row also carries
+source badges from the candidate's `sources` (which providers contributed it),
+and a journal of unknown quartile carries the `quartile-unknown` flag. Above the table, the panel prints the providers line
+(`providers`), a banner with the reason when `fallback.used` is true (with the
+pointer to the OpenAlex key), the count of journals excluded for an unknown
+quartile (`excluded_reasons.quartile_unknown`) beside the toggle that includes
+them, the scoring formula and the application gate from `query.scoring`, and
 the `api_calls` line: calls made and served from the cache in total and per
 service, "caché desactivada" after a forced refresh, and the OpenAlex budget
 (remaining and limit in USD, or the exhausted state with the wait and a pointer

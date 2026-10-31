@@ -1,0 +1,112 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 800,
+    "items-per-page": 100,
+    "items": [
+      {
+        "DOI": "10.3333/osp.2",
+        "title": [
+          "Spectral features for ADHD"
+        ],
+        "container-title": [
+          "Open Signal Processing"
+        ],
+        "ISSN": [
+          "3333-3333"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2024,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.4444/bfr.1",
+        "title": [
+          "Clinical EEG biomarkers"
+        ],
+        "container-title": [
+          "Biomedical Fixture Reports"
+        ],
+        "ISSN": [
+          "4444-444X"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2025,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.4444/bfr.2",
+        "title": [
+          "Neurodevelopmental screening"
+        ],
+        "container-title": [
+          "Biomedical Fixture Reports"
+        ],
+        "ISSN": [
+          "4444-444X"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2024,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.5555/oq.1",
+        "title": [
+          "Once-off in an obscure venue"
+        ],
+        "container-title": [
+          "Obscure Quarterly"
+        ],
+        "ISSN": [
+          "5555-5555"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2022,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.7777/tor.2",
+        "title": [
+          "Title-only follow-up"
+        ],
+        "container-title": [
+          "Title-Only Review"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2024,
+              3,
+              1
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}
