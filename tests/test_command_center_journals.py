@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -729,6 +731,470 @@ class VenueBuildAndCompileTests(VenueEndpointCase):
             target.write_bytes(b"%PDF-1.4 elsewhere")
             (self.venue_dir() / "main.pdf").symlink_to(target)
             self.assertEqual(self.client.get("/api/pdf?venue=eswa").status_code, 404)
+
+
+
+# --------------------------------------------------------------------------
+# the panel under node
+# --------------------------------------------------------------------------
+STATIC = REPO / "skills" / "_core" / "command_center" / "static"
+PAGE = (STATIC / "index.html").read_text(encoding="utf-8")
+PANEL = STATIC / "journals-panel.js"
+
+#: Every tag the panel may write; anything else in its output is an injection.
+ALLOWED_TAGS = {"div", "span", "strong", "a", "table", "thead", "tbody", "tr", "th", "td", "details", "summary",
+                "ul", "li", "button", "label", "select", "option", "input", "code", "pre", "h4", "h5",
+                "section", "textarea", "p", "em"}
+
+PRELUDE = """
+const fs = require('fs');
+const store = {};
+global.window = global;
+global.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
+global.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } };
+const docListeners = {};
+const host = { innerHTML: '', listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; } };
+global.document = { readyState: 'complete', documentElement: { lang: 'xx' }, querySelectorAll: () => [],
+  addEventListener(type, fn) { docListeners[type] = fn; }, dispatchEvent() {}, getElementById: (id) => (id === 'journalsPanel' ? host : null) };
+const calls = []; const sent = []; const pdf = [];
+global.__routes = [];
+global.fetch = async (url, init) => {
+  const method = (init && init.method) || 'GET';
+  calls.push({ url, method, body: init && init.body });
+  const route = global.__routes.find((r) => r[0] === method && url.startsWith(r[1]));
+  const reply = route ? route[2] : { status: 404, body: {} };
+  return { ok: reply.status < 400, status: reply.status, json: async () => reply.body };
+};
+global.sendToCli = async (text, run, options) => { sent.push({ text, run, options }); return true; };
+global.setPdfVenue = (slug) => pdf.push(slug);
+%(files)s
+window.i18n.setLanguage(%(lang)s);
+const P = window.JournalsPanel;
+P.mount();
+const out = (value) => console.log(JSON.stringify(value));
+const el = (attrs, extra) => Object.assign({ disabled: false, getAttribute: (n) => (n in attrs ? attrs[n] : null),
+  closest(selector) { const name = selector.slice(1, -1); return name in attrs ? this : null; } }, extra || {});
+const click = async (attrs) => { await host.listeners.click({ target: el(attrs) }); await new Promise((r) => setTimeout(r, 0)); };
+const field = async (attrs, extra, type) => { await host.listeners[type || 'input']({ target: el(attrs, extra) }); await new Promise((r) => setTimeout(r, 0)); };
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "node is required to run the panel")
+class PanelRenderTests(unittest.TestCase):
+    def node(self, body: str, lang: str = "es"):
+        files = "".join(f"eval(fs.readFileSync({json.dumps(str(path))}, 'utf8'));"
+                        for path in (STATIC / "i18n" / "en.js", STATIC / "i18n" / "es.js", STATIC / "i18n.js", PANEL))
+        script = (PRELUDE % {"files": files, "lang": json.dumps(lang)} + "(async () => {" + body
+                  + "})().catch((error) => { console.error(error); process.exit(1); });")
+        done = subprocess.run(["node", "-e", script], capture_output=True, text=True, cwd=tempfile.gettempdir(),
+                              check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout.strip().splitlines()[-1])
+
+    def candidates_js(self) -> str:
+        return "const doc = " + (FIXTURES / "journal-candidates.json").read_text(encoding="utf-8") + ";"
+
+    def assert_only_known_markup(self, html: str) -> None:
+        tags = set(re.findall(r"</?([a-zA-Z][a-zA-Z0-9]*)", html))
+        self.assertLessEqual(tags, ALLOWED_TAGS, f"unexpected tags: {tags - ALLOWED_TAGS}")
+        for href in re.findall(r'href="([^"]*)"', html):
+            self.assertRegex(href, r"^(https?://|/api/)", href)
+
+    # -- results --------------------------------------------------------------
+    def test_the_results_render_in_spanish_with_every_column(self) -> None:
+        html = self.node(self.candidates_js() + """
+          out(P.resultsHtml({ journals: { candidates: doc, notes_md: true, sjr: { file: '/x/scimagojr-2025.csv', year: 2025 } },
+                              sort: 'fit', busy: {} }));""")
+        for expected in (
+            "Expert Systems with Applications", "Elegir esta revista", "Aproximado con OpenAlex",
+            "sin datos públicos", "17.1 sem (RIC 12.9–22.9) · n=31", "<strong>0.82</strong>",
+            "trabajos similares 1.00", "citadas en el artículo 0.50", "afinidad temática 0.75",
+            "método 0.80", "aplicación 0.20", "Sin evidencia de aplicación", "Sin trabajos similares registrados",
+            "Llamadas a OpenAlex: 42 hechas, 7 en caché", "ISSN 0957-4174", "SJR 1.800 · 2025", "percentil 62.5",
+            "Acceso abierto", "DOAJ", "APC 3450 USD", "APC desconocido", ">pubmed<", "Revista", "Cuartil",
+            "https://doi.org/10.1000/xyz123", "https://www.journals.elsevier.com/expert-systems-with-applications",
+            "Abrir paper/journal-candidates.md", "excluidas",
+        ):
+            self.assertIn(expected, html)
+        self.assertIn('rel="noopener noreferrer"', html)
+        self.assert_only_known_markup(html)
+
+    def test_the_same_results_render_in_english(self) -> None:
+        html = self.node(self.candidates_js() + """
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""", lang="en")
+        for expected in ("Choose this journal", "OpenAlex proxy (approximate)", "no public data",
+                         "17.1 wk (IQR 12.9–22.9) · n=31", "OpenAlex calls: 42 made, 7 cached"):
+            self.assertIn(expected, html)
+        self.assertNotIn("Elegir", html)
+
+    def test_rows_tolerate_the_absence_of_the_newer_fields(self) -> None:
+        html = self.node("""
+          const doc = { candidates: [{ display_name: 'Bare', openalex_id: 'S9' }, { id: 'S8' }, {}], quartiles: 'Q1-Q2' };
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertIn("Bare", html)
+        self.assertEqual(html.count("Elegir esta revista"), 3)
+        self.assert_only_known_markup(html)
+
+    def test_no_file_and_an_unreadable_file_have_their_own_messages(self) -> None:
+        empty, broken = self.node("""
+          out([P.resultsHtml({ journals: { candidates: null }, sort: 'fit', busy: {} }),
+               P.resultsHtml({ journals: { candidates: null, candidates_error: { code: 'X', message: '<b>bad</b>' } }, sort: 'fit', busy: {} })]);""")
+        self.assertIn("Todavía no hay búsqueda", empty)
+        self.assertIn("&lt;b&gt;bad&lt;/b&gt;", broken)
+
+    def test_sorting_by_review_time_puts_journals_without_data_last(self) -> None:
+        order = self.node(self.candidates_js() + """
+          doc.candidates.reverse();
+          const names = (sort) => { const html = P.resultsHtml({ journals: { candidates: doc }, sort, busy: {} });
+            return [...html.matchAll(/<strong>([^<]*)<\\/strong>/g)].map((m) => m[1]).filter((n) => n.includes('Journal') || n.includes('Systems')); };
+          out([names('fit'), names('review'), names('hindex')]);""")
+        self.assertEqual(order[0][0], "Expert Systems with Applications")
+        self.assertEqual(order[1], ["Expert Systems with Applications", "Journal Without Optional Fields"])
+        self.assertEqual(order[2][0], "Expert Systems with Applications")
+
+    def test_a_budget_or_rate_limit_state_is_shown_when_present(self) -> None:
+        html = self.node("""
+          const doc = { candidates: [], api_calls: { made: 3, cached: 1 }, rate_limited: true, budget: { remaining: 12 } };
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertIn("remaining: 12", html)
+        self.assertIn("límite de la API", html)
+
+    # -- escaping -------------------------------------------------------------
+    def test_hostile_values_never_become_markup(self) -> None:
+        html = self.node("""
+          const evil = '<script>alert(1)</script><img src=x onerror=alert(2)>"' + "'";
+          const doc = { candidates: [{
+            display_name: evil, openalex_id: evil, publisher: evil, issn_l: evil, homepage_url: 'javascript:alert(3)',
+            quartile: evil, quartile_source: 'sjr', sjr: { value: evil, year: evil }, review_time: { source: evil, median_days: 70, n: evil },
+            fit_score: 0.5, fit: { similar_works: evil }, facets: { method: evil, application: { score: evil } },
+            flags: [evil], similar_works: [{ title: evil, year: evil, doi: evil }, { title: 'ok', doi: 'https://doi.org/10.1/a"b' }],
+            h_index: evil, is_oa: true, apc_usd: evil }],
+            query: { title: evil }, notes: [evil], quartiles: [evil], generated_at: evil, excluded_count: evil };
+          out(P.resultsHtml({ journals: { candidates: doc, candidates_error: { message: evil } }, sort: 'fit', busy: {} }));""")
+        self.assertNotIn("<script", html)
+        self.assertNotIn("<img", html)
+        self.assertNotIn('javascript:', html.replace("&quot;", '"').split('href="')[1] if 'href="' in html else "")
+        self.assert_only_known_markup(html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+
+    def test_the_fixture_with_hostile_works_stays_inert(self) -> None:
+        html = self.node(self.candidates_js() + """
+          out(P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }));""")
+        self.assertNotIn("<img", html)
+        self.assertNotIn("<script", html)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)
+        self.assertIn("%3Cscript%3E", html)
+
+    # -- the form -------------------------------------------------------------
+    def test_the_form_and_the_sjr_line_render_in_spanish(self) -> None:
+        form, sjr_none, sjr_file = self.node("""
+          const base = { form: { from: 'Q2', to: 'Q3', oaOnly: true, maxApc: '1500', maxReview: '', limit: '15' }, busy: {}, sort: 'fit', sjrYear: '' };
+          out([P.formHtml(base),
+               P.sjrHtml({ ...base, journals: { sjr: null, sjr_download_url: 'https://www.scimagojr.com/journalrank.php' } }),
+               P.sjrHtml({ ...base, journals: { sjr: { file: '/home/u/.cache/scimagojr-2025.csv', year: 2025 } } })]);""")
+        for expected in ("Desde el cuartil", "Hasta el cuartil", "Solo acceso abierto", "APC máximo (USD)",
+                         "Revisión máxima (días)", "Buscar revistas", "Analizar con agente", "Ordenar por"):
+            self.assertIn(expected, form)
+        self.assertIn('<option value="Q2" selected>', form)
+        self.assertIn('data-jp-field="oaOnly" checked', form)
+        self.assertIn('value="1500"', form)
+        self.assertIn("Sin archivo SJR", sjr_none)
+        self.assertIn('href="https://www.scimagojr.com/journalrank.php"', sjr_none)
+        self.assertIn("Subir CSV de SJR", sjr_none)
+        self.assertIn("Archivo SJR: scimagojr-2025.csv (año 2025)", sjr_file)
+        self.assertNotIn("/home/u", sjr_file)
+
+    def test_a_reversed_range_is_flagged_and_the_search_does_not_run(self) -> None:
+        result = self.node("""
+          window.JournalsPanel.state.form.from = 'Q3'; window.JournalsPanel.state.form.to = 'Q1';
+          const html = P.formHtml(P.state);
+          await click({ 'data-jp-action': 'search' });
+          out({ html, calls: calls.length });""")
+        self.assertIn("no puede ir después", result["html"])
+        self.assertEqual(result["calls"], 0)
+
+    def test_the_agent_command_and_the_search_body_follow_the_form(self) -> None:
+        result = self.node("""
+          const f = (patch) => ({ from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '', ...patch });
+          out({ plain: P.agentCommand(f({})), single: P.agentCommand(f({ to: 'Q1' })),
+                full: P.agentCommand(f({ oaOnly: true, maxApc: '2000', maxReview: '180', limit: '10' })),
+                junk: P.agentCommand(f({ maxApc: '-5', maxReview: 'x', limit: '99' })),
+                body: P.searchBody(f({ oaOnly: true, maxApc: '2000', maxReview: '180', limit: '10' })),
+                bare: P.searchBody(f({ from: 'Q3', to: 'Q4' })) });""")
+        self.assertEqual(result["plain"], "/journal-finder Q1-Q2")
+        self.assertEqual(result["single"], "/journal-finder Q1")
+        self.assertEqual(result["full"], "/journal-finder Q1-Q2 --oa-only --max-apc 2000 --max-review-days 180 --limit 10")
+        self.assertEqual(result["junk"], "/journal-finder Q1-Q2")
+        self.assertEqual(result["body"], {"quartiles": "Q1-Q2", "oa_only": True, "max_apc": 2000,
+                                          "max_review_days": 180, "limit": 10})
+        self.assertEqual(result["bare"], {"quartiles": "Q3-Q4", "oa_only": False})
+
+    # -- the venue card -------------------------------------------------------
+    VENUE_JS = """
+      const evil = '<script>alert(1)</script>';
+      const detail = {
+        ok: true, slug: 'eswa', pdf: true,
+        status: { slug: 'eswa', state: 'planned', blockers: 1, audit_stale: false, build_stale: false,
+          steps: ['selected','requirements','template','audited','planned','approved','built','compiled']
+            .map((step, i) => ({ step, done: i < 5 && step !== 'approved' })) },
+        venue: { journal: { name: 'Expert Systems <b>with</b> Applications', homepage_url: 'https://example.org/j' }, quartile: 'Q1' },
+        requirements: { guidelines_urls: ['https://example.org/guide', 'javascript:alert(1)'] },
+        template: { kind: 'texlive', class: 'elsarticle' },
+        audit: { findings: [
+          { id: 'over-limit:abstract_words', severity: 'blocker', message: 'abstract <i>too long</i>', blocks: ['abstract.slot-1'],
+            smith: { words: 260 }, venue: { quote: evil, url: 'https://example.org/guide', max: 250 }, resolved_by: 'text-change' },
+          { id: 'extra-section:x', severity: 'minor', message: 'm', smith: {}, venue: { quote: null, url: 'javascript:alert(2)' },
+            resolved_by: 'operator-decision' },
+          { id: 'reference-style-mismatch:reference-style', severity: 'major', message: 'm', smith: { bst: 'ieeetr' },
+            venue: { quote: 'Use elsarticle-num', url: 'https://example.org/bst', bst: 'elsarticle-num' }, resolved_by: 'build' }] },
+        plan: { text: '# Plan\\n- [over-limit:abstract_words] ' + evil, sha256: 'a'.repeat(64) },
+        approval: null };
+      const base = { venues: [{ slug: 'eswa', journal: 'Expert Systems' }, { slug: 'other', journal: 'Other' }], slug: 'eswa',
+        detail, pdfView: 'canonical', busy: {}, statement: 'I <b>agree</b>', note: '', form: {} };
+    """
+
+    def test_the_venue_card_renders_state_audit_plan_and_actions_in_spanish(self) -> None:
+        html = self.node(self.VENUE_JS + "out(P.venueHtml(base));")
+        for expected in (
+            "elegida", "requisitos", "plantilla", "auditada", "construida", "compilada", "Siguiente:",
+            "Leer el plan y aprobarlo, o pedir cambios.", "Hallazgos de la auditoría", "bloqueante", "mayor", "menor",
+            "cambio de texto", "decisión del operador", "construcción de la revista", "fuente",
+            "Plan de ajuste", "Aprobar plan", "Pedir cambios", "Analizar plantilla con agente",
+            "Aplicar plan con agente", "Construir y compilar versión de la revista", "PDF canónico", "PDF de la revista",
+            "Tu aprobación, con tus propias palabras", "Cambios que quieres en el plan", "Normas para autores",
+            "Plantilla: texlive elsarticle", "over-limit:abstract_words", 'data-jp-sha="' + "a" * 64 + '"',
+            "words:", "max:", "Use elsarticle-num", "https://example.org/guide",
+        ):
+            self.assertIn(expected, html)
+        self.assertIn("I &lt;b&gt;agree&lt;/b&gt;", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertNotIn("<script", html)
+        self.assertNotIn("javascript:", html)
+        self.assert_only_known_markup(html)
+
+    def test_apply_needs_an_approval_bound_to_the_current_plan(self) -> None:
+        pending, approved, stale = self.node(self.VENUE_JS + """
+          const apply = (d) => P.venueHtml({ ...base, detail: d });
+          out([apply(detail),
+               apply({ ...detail, approval: { valid: true, via: 'dashboard', approved_at: '2026-10-31T10:00:00+00:00', statement: 'ok <b>go</b>' } }),
+               apply({ ...detail, approval: { valid: false, plan_sha256: 'b'.repeat(64) } })]);""")
+        self.assertRegex(pending, r'data-jp-action="venue-apply"[^>]*disabled')
+        self.assertNotRegex(approved, r'data-jp-action="venue-apply"[^>]*disabled')
+        self.assertIn("Aprobado vía dashboard el 2026-10-31T10:00:00+00:00: “ok &lt;b&gt;go&lt;/b&gt;”", approved)
+        self.assertNotIn('data-jp-action="approve"', approved)
+        self.assertIn("aprobación de un plan anterior", stale)
+        self.assertIn('data-jp-action="approve"', stale)
+
+    def test_the_next_action_follows_the_state_machine(self) -> None:
+        result = self.node("""
+          const steps = (upto, skip) => ['selected','requirements','template','audited','planned','approved','built','compiled']
+            .map((step, i) => ({ step, done: i < upto && step !== skip }));
+          out({ fresh: P.nextAction({ steps: steps(1) }), noTemplate: P.nextAction({ steps: steps(2) }),
+                noAudit: P.nextAction({ steps: steps(3) }),
+                stale: P.nextAction({ steps: steps(4), audit_stale: true, blockers: 0 }),
+                needPlan: P.nextAction({ steps: steps(4), blockers: 2 }),
+                needApproval: P.nextAction({ steps: steps(5), blockers: 2 }),
+                cleanBuild: P.nextAction({ steps: steps(4), blockers: 0 }),
+                approvedBuild: P.nextAction({ steps: steps(6), blockers: 2 }),
+                rebuild: P.nextAction({ steps: steps(7), blockers: 0, build_stale: true }),
+                compile: P.nextAction({ steps: steps(7), blockers: 0 }),
+                done: P.nextAction({ steps: steps(8), blockers: 0 }) });""")
+        self.assertEqual(result, {
+            "fresh": "analyze", "noTemplate": "analyze", "noAudit": "analyze", "stale": "analyze",
+            "needPlan": "plan", "needApproval": "approve", "cleanBuild": "build", "approvedBuild": "build",
+            "rebuild": "rebuild", "compile": "compile", "done": "done"})
+
+    def test_no_venue_and_a_clean_audit_have_their_own_texts(self) -> None:
+        none, clean = self.node("""
+          out([P.venueHtml({ venues: [], busy: {} }), P.auditHtml({ findings: [] })]);""")
+        self.assertIn("Todavía no hay revista elegida", none)
+        self.assertIn("Sin hallazgos", clean)
+
+    # -- behaviour ------------------------------------------------------------
+    def test_search_posts_the_filters_then_reloads_the_candidates(self) -> None:
+        result = self.node(self.candidates_js() + """
+          __routes.push(['POST', '/api/journals/search', { status: 200, body: { ok: true, candidates: [1, 2, 3] } }]);
+          __routes.push(['GET', '/api/journals', { status: 200, body: { ok: true, candidates: doc, sjr: null } }]);
+          const s = P.state; s.form = { from: 'Q1', to: 'Q2', oaOnly: true, maxApc: '', maxReview: '', limit: '5' };
+          await click({ 'data-jp-action': 'search' });
+          out({ calls: calls.map((c) => [c.method, c.url, c.body]), message: s.message, html: host.innerHTML.slice(0, 400),
+                names: s.journals.candidates.candidates.length });""")
+        self.assertEqual(result["calls"][0], ["POST", "/api/journals/search",
+                                              json.dumps({"quartiles": "Q1-Q2", "oa_only": True, "limit": 5}, separators=(",", ":"))])
+        self.assertEqual(result["calls"][1][:2], ["GET", "/api/journals"])
+        self.assertEqual(result["message"], {"kind": "ok", "text": "Búsqueda terminada: 3 revistas."})
+        self.assertEqual(result["names"], 2)
+
+    def test_a_failed_search_shows_the_code_and_message_escaped(self) -> None:
+        result = self.node("""
+          __routes.push(['POST', '/api/journals/search', { status: 502, body: { ok: false, error: 'NETWORK_UNAVAILABLE', message: '<b>down</b>' } }]);
+          await click({ 'data-jp-action': 'search' });
+          out({ html: host.innerHTML, busy: P.state.busy.search });""")
+        self.assertIn("La búsqueda falló: NETWORK_UNAVAILABLE: &lt;b&gt;down&lt;/b&gt;", result["html"])
+        self.assertFalse(result["busy"])
+
+    def test_analyze_with_agent_sends_the_slash_command_to_the_console(self) -> None:
+        sent = self.node("""
+          P.state.form = { from: 'Q1', to: 'Q2', oaOnly: true, maxApc: '2000', maxReview: '180', limit: '10' };
+          await click({ 'data-jp-action': 'analyze' });
+          out(sent);""")
+        self.assertEqual(sent, [{"text": "/journal-finder Q1-Q2 --oa-only --max-apc 2000 --max-review-days 180 --limit 10",
+                                 "run": True, "options": {"kind": "slash"}}])
+
+    def test_the_sjr_upload_posts_the_raw_file_with_its_name_and_year(self) -> None:
+        result = self.node("""
+          __routes.push(['POST', '/api/journals/sjr', { status: 200, body: { ok: true, rows: 31000, year: 2024 } }]);
+          __routes.push(['GET', '/api/journals', { status: 200, body: { ok: true, candidates: null, sjr: { file: '/c/scimagojr-2024.csv', year: 2024 } } }]);
+          await field({ 'data-jp-field': 'sjrYear' }, { value: '2024' });
+          const file = { name: 'scimagojr 2024.csv' };
+          await field({ 'data-jp-field': 'sjrFile' }, { files: [file] }, 'change');
+          out({ post: calls.find((c) => c.method === 'POST'), same: calls.find((c) => c.method === 'POST').body === file,
+                message: P.state.sjrMessage });""")
+        self.assertEqual(result["post"]["url"], "/api/journals/sjr?name=scimagojr%202024.csv&year=2024")
+        self.assertTrue(result["same"])
+        self.assertEqual(result["message"]["text"], "Archivo SJR importado: 31000 revistas, año 2024.")
+
+    def test_choosing_a_journal_selects_the_venue_and_opens_its_card(self) -> None:
+        result = self.node(self.VENUE_JS + """
+          __routes.push(['POST', '/api/venues/select', { status: 200, body: { ok: true, slug: 'eswa', journal: 'Expert Systems', via: 'candidate' } }]);
+          __routes.push(['GET', '/api/venues/eswa', { status: 200, body: detail }]);
+          __routes.push(['GET', '/api/venues', { status: 200, body: { ok: true, venues: base.venues } }]);
+          await click({ 'data-jp-action': 'select', 'data-jp-id': 'https://openalex.org/S1001' });
+          out({ calls: calls.map((c) => [c.method, c.url, c.body]), slug: P.state.slug, html: host.innerHTML.includes('Aprobar plan') });""")
+        self.assertEqual(result["calls"][0], ["POST", "/api/venues/select", json.dumps({"candidate": "https://openalex.org/S1001"}, separators=(",", ":"))])
+        self.assertEqual(result["slug"], "eswa")
+        self.assertTrue(result["html"])
+
+    def test_a_failed_selection_is_reported_with_the_refusal_code(self) -> None:
+        message = self.node("""
+          __routes.push(['POST', '/api/venues/select', { status: 404, body: { ok: false, code: 'CANDIDATE_UNKNOWN', detail: 'no candidate' } }]);
+          await click({ 'data-jp-action': 'select', 'data-jp-id': 'S9' });
+          out(P.state.message);""")
+        self.assertEqual(message["kind"], "bad")
+        self.assertIn("CANDIDATE_UNKNOWN: no candidate", message["text"])
+
+    def test_the_agent_buttons_name_the_slug_and_the_venue_adapter_steps(self) -> None:
+        sent = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail });
+          await click({ 'data-jp-action': 'venue-analyze' });
+          await click({ 'data-jp-action': 'venue-apply', 'data-jp-sha': 'a'.repeat(64) });
+          out(sent);""")
+        analyze, apply = sent
+        self.assertTrue(analyze["run"] and analyze["options"] == {"kind": "slash"})
+        for needle in ('"eswa"', "venue-adapter", "venue requirements", "venue acquire", "venue diff", "venue plan",
+                       "requirements.json", "quote and url", "never submit"):
+            self.assertIn(needle, analyze["text"].replace("Never submit", "never submit").replace("Never edit", "never edit"))
+        self.assertNotIn("\n", analyze["text"])
+        for needle in ('"eswa"', "paper/venues/eswa/plan.md", "a" * 64, "write loop", "redactor", "contract-auditor",
+                       "venue diff --slug eswa"):
+            self.assertIn(needle, apply["text"])
+        self.assertNotIn("\n", apply["text"])
+        self.assertTrue(analyze["text"].startswith("/paper-writing") and apply["text"].startswith("/paper-writing"))
+
+    def test_request_changes_sends_the_note_and_needs_one(self) -> None:
+        result = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail });
+          await click({ 'data-jp-action': 'changes' });
+          const before = sent.length;
+          await field({ 'data-jp-field': 'note' }, { value: 'Keep the abstract.\\nMove methods up.' });
+          await click({ 'data-jp-action': 'changes' });
+          out({ before, sent, note: P.state.note });""")
+        self.assertEqual(result["before"], 0)
+        (message,) = result["sent"]
+        self.assertIn('"eswa"', message["text"])
+        self.assertIn("Keep the abstract. Move methods up.", message["text"])
+        self.assertIn("venue plan --slug eswa", message["text"])
+        self.assertNotIn("\n", message["text"])
+        self.assertEqual(result["note"], "")
+
+    def test_approve_posts_the_statement_with_the_plan_hash_and_needs_words(self) -> None:
+        result = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail, statement: '' });
+          __routes.push(['POST', '/api/venues/eswa/approve', { status: 200, body: { ok: true, via: 'dashboard' } }]);
+          __routes.push(['GET', '/api/venues/eswa', { status: 200, body: detail }]);
+          __routes.push(['GET', '/api/venues', { status: 200, body: { ok: true, venues: base.venues } }]);
+          await click({ 'data-jp-action': 'approve', 'data-jp-sha': 'a'.repeat(64) });
+          const empty = calls.filter((c) => c.method === 'POST').length;
+          await field({ 'data-jp-field': 'statement' }, { value: 'I read it and agree.' });
+          await click({ 'data-jp-action': 'approve', 'data-jp-sha': 'a'.repeat(64) });
+          out({ empty, posts: calls.filter((c) => c.method === 'POST').map((c) => [c.url, JSON.parse(c.body)]) });""")
+        self.assertEqual(result["empty"], 0)
+        self.assertEqual(result["posts"], [["/api/venues/eswa/approve",
+                                            {"statement": "I read it and agree.", "plan_sha256": "a" * 64}]])
+
+    def test_a_refused_approval_shows_the_code(self) -> None:
+        message = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail, statement: 'ok' });
+          __routes.push(['POST', '/api/venues/eswa/approve', { status: 409, body: { ok: false, code: 'PLAN_HASH_MISMATCH', detail: 'changed' } }]);
+          __routes.push(['GET', '/api/venues', { status: 200, body: { ok: true, venues: base.venues } }]);
+          await click({ 'data-jp-action': 'approve', 'data-jp-sha': 'a'.repeat(64) });
+          out(P.state.message);""")
+        self.assertEqual(message["kind"], "bad")
+        self.assertIn("PLAN_HASH_MISMATCH: changed", message["text"])
+
+    def test_build_and_compile_run_in_order_and_switch_to_the_venue_pdf(self) -> None:
+        result = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail });
+          __routes.push(['POST', '/api/venues/eswa/build', { status: 200, body: { ok: true, compile_env: {} } }]);
+          __routes.push(['POST', '/api/paper/compile', { status: 200, body: { ok: true, message: 'paper/venues/eswa/main.pdf compiled (4 pages).' } }]);
+          __routes.push(['GET', '/api/venues/eswa', { status: 200, body: { ...detail, pdf: true } }]);
+          __routes.push(['GET', '/api/venues', { status: 200, body: { ok: true, venues: base.venues } }]);
+          await click({ 'data-jp-action': 'build' });
+          out({ posts: calls.filter((c) => c.method === 'POST').map((c) => c.url), pdf, view: P.state.pdfView,
+                message: P.state.message });""")
+        self.assertEqual(result["posts"], ["/api/venues/eswa/build", "/api/paper/compile?venue=eswa"])
+        self.assertEqual(result["pdf"], ["eswa"])
+        self.assertEqual(result["view"], "venue")
+        self.assertIn("4 pages", result["message"]["text"])
+
+    def test_a_refused_build_does_not_compile(self) -> None:
+        result = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail });
+          __routes.push(['POST', '/api/venues/eswa/build', { status: 409, body: { ok: false, code: 'PLAN_NOT_APPROVED', detail: 'no approved plan' } }]);
+          __routes.push(['GET', '/api/venues/eswa', { status: 200, body: detail }]);
+          __routes.push(['GET', '/api/venues', { status: 200, body: { ok: true, venues: base.venues } }]);
+          await click({ 'data-jp-action': 'build' });
+          out({ posts: calls.filter((c) => c.method === 'POST').map((c) => c.url), message: P.state.message, pdf });""")
+        self.assertEqual(result["posts"], ["/api/venues/eswa/build"])
+        self.assertIn("PLAN_NOT_APPROVED: no approved plan", result["message"]["text"])
+        self.assertEqual(result["pdf"], [])
+
+    def test_the_pdf_toggle_switches_the_viewer_and_the_venue_option_needs_a_pdf(self) -> None:
+        result = self.node(self.VENUE_JS + """
+          Object.assign(P.state, { venues: base.venues, slug: 'eswa', detail });
+          await click({ 'data-jp-action': 'pdf', 'data-jp-view': 'venue' });
+          const afterVenue = [...pdf];
+          await click({ 'data-jp-action': 'pdf', 'data-jp-view': 'canonical' });
+          out({ afterVenue, pdf, without: P.venueHtml({ ...base, detail: { ...detail, pdf: false } }) });""")
+        self.assertEqual(result["afterVenue"], ["eswa"])
+        self.assertEqual(result["pdf"], ["eswa", None])
+        self.assertRegex(result["without"], r'data-jp-view="venue"[^>]*disabled')
+
+    def test_changing_the_language_redraws_the_panel(self) -> None:
+        before, after = self.node("""
+          const before = host.innerHTML;
+          window.i18n.setLanguage('en');
+          docListeners.languagechange();
+          out([before, host.innerHTML]);""")
+        self.assertIn("Buscar revistas", before)
+        self.assertIn("Search journals", after)
+        self.assertNotIn("Buscar revistas", after)
+
+    # -- the page -------------------------------------------------------------
+    def test_the_page_mounts_the_panel_between_the_banner_and_the_top_bar(self) -> None:
+        banner = PAGE.index('id="linkPdfDirect"')
+        mount = PAGE.index('id="journalsPanel"')
+        topbar = PAGE.index('<div class="pdf-viewer-topbar">')
+        self.assertLess(banner, mount)
+        self.assertLess(mount, topbar)
+        self.assertIn('<script src="./journals-panel.js?v=0.46.0"></script>', PAGE)
+
+    def test_the_pdf_viewer_follows_the_venue_toggle(self) -> None:
+        self.assertIn("window.setPdfVenue = setPdfVenue;", PAGE)
+        self.assertIn("&venue=${encodeURIComponent(pdfVenueSlug)}", PAGE)
+        self.assertIn("pdfUrl(`v=${forceReload ? (lastPdfToken || Date.now()) : 'doc'}`)", PAGE)
+        # The canonical viewer lines other tests pin stay as they were.
+        self.assertIn("native.src = `/api/pdf?v=${token}`;", PAGE)
 
 
 if __name__ == "__main__":
