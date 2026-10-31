@@ -34,6 +34,12 @@ Review time (`review_time`)
     estimates submission-to-acceptance including revisions, not time to first
     decision. Quartiles use linear interpolation between closest ranks.
 
+Search terms
+    OpenAlex `search` requires every term in the full text, so the paper's top
+    10 terms (weight: 3 in keywords, 2 in title, plus abstract frequency) are
+    tried 6 at a time and the lowest-weighted one is dropped until at least 50
+    works match (never below 2 terms). The terms used are `query.terms`.
+
 Environment
     PAPERSMITH_OPENALEX_URL / _CROSSREF_URL / _PUBMED_URL   base URLs (tests)
     PAPERSMITH_CONTACT_EMAIL     polite `mailto`/User-Agent/NCBI `email` (never hard-coded)
@@ -71,6 +77,9 @@ SCHEMA = 1
 DEFAULT_LIMIT = 15
 MAX_LIMIT = 50
 MAX_TERMS = 10
+START_TERMS = 6
+MIN_TERMS = 2
+MIN_MATCHES = 50
 DEFAULT_MAX_WORKS = 200
 WORKS_PAGE_SIZE = 100
 MAX_SOURCES = 60
@@ -441,7 +450,10 @@ _STOPWORDS = frozenset(
     "most of on or our such than that the their these this those to under using use used via was we were what when "
     "which while who will with within without not also both each other over between through towards toward based "
     "new approach method methods results show shows paper study proposed propose present presented however thus "
-    "therefore since then there here whose among across per".split())
+    "therefore since then there here whose among across per data analysis model models network networks system "
+    "systems performance feature features framework algorithm algorithms accuracy evaluation experiments "
+    "experimental novel improve improved improves achieve achieves achieved reach reaches subjects "
+    "cohort demonstrate demonstrates".split())
 
 
 def _tokens(text: str) -> list[str]:
@@ -642,17 +654,33 @@ def _short_id(url: str) -> str:
     return str(url).rstrip("/").rsplit("/", 1)[-1]
 
 
-def fetch_similar_sources(services: Services, terms: list[str], max_works: int) -> tuple[list[dict], int]:
-    """Journals hosting works like the paper: [{id, name, count, works: [...]}], plus works scanned."""
+def fetch_similar_sources(services: Services, terms: list[str], max_works: int) -> tuple[list[dict], int, list[str], list[str]]:
+    """Journals hosting works like the paper.
+
+    Returns ([{id, name, count, works: [...]}], works scanned, terms used, notes).
+    """
     per_page = max(1, min(WORKS_PAGE_SIZE, max_works))
+    used = terms[:START_TERMS]
+    notes: list[str] = []
+
+    def request(page: int) -> dict:
+        return services.openalex_get("/works", {
+            "search": " ".join(used), "filter": "primary_location.source.type:journal,type:article",
+            "per-page": per_page, "page": page,
+            "select": "id,title,publication_year,doi,primary_location"})
+
+    data = request(1)
+    while len(used) > MIN_TERMS:
+        count = (data.get("meta") or {}).get("count")
+        if count is None or count >= MIN_MATCHES:
+            break
+        dropped = used.pop()
+        notes.append(f"only {count} works matched every term; dropped '{dropped}' and searched again")
+        data = request(1)
     sources: dict[str, dict] = {}
     scanned = 0
     page = 1
-    while scanned < max_works:
-        data = services.openalex_get("/works", {
-            "search": " ".join(terms), "filter": "primary_location.source.type:journal,type:article",
-            "per-page": per_page, "page": page,
-            "select": "id,title,publication_year,doi,primary_location"})
+    while True:
         results = data.get("results") or []
         for work in results:
             scanned += 1
@@ -668,10 +696,11 @@ def fetch_similar_sources(services: Services, terms: list[str], max_works: int) 
                 entry["works"].append({
                     "title": work.get("title") or "", "year": work.get("publication_year"),
                     "doi": re.sub(r"^https?://(?:dx\.)?doi\.org/", "", doi) if doi else None})
-        if len(results) < per_page:
+        if len(results) < per_page or scanned >= max_works:
             break
         page += 1
-    return list(sources.values()), scanned
+        data = request(page)
+    return list(sources.values()), scanned, used, notes
 
 
 def _issn_list(source: dict) -> list[str]:
@@ -877,10 +906,11 @@ def cmd_search(args: argparse.Namespace) -> dict:
     max_works = max(1, _env_int("PAPERSMITH_JOURNAL_MAX_WORKS", DEFAULT_MAX_WORKS))
     services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_DEADLINE", 300.0)))
     try:
-        sources, scanned = fetch_similar_sources(services, terms, max_works)
+        sources, scanned, terms, search_notes = fetch_similar_sources(services, terms, max_works)
     except HttpFailure as exc:
         raise Refusal("NETWORK_UNAVAILABLE", f"OpenAlex could not be reached: {exc}") from exc
 
+    notes.extend(search_notes)
     excluded = 0
     candidates: list[dict] = []
     if not sources:

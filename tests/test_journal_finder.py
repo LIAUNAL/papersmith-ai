@@ -75,7 +75,8 @@ class FakeApi:
     the real answer (`[429]` fails the first call once).
     """
 
-    def __init__(self, *, script: dict[str, list] | None = None, works_cap_log: bool = False):
+    def __init__(self, *, script: dict[str, list] | None = None, max_terms_matching: int | None = None):
+        self.max_terms_matching = max_terms_matching
         self.requests: list[dict] = []
         self.lock = threading.Lock()
         self.script = {key: list(value) for key, value in (script or {}).items()}
@@ -141,6 +142,8 @@ class FakeApi:
         if path == "/openalex/works":
             if int(params.get("page", "1")) > 1 or "zzqx" in params.get("search", ""):
                 return 200, {"meta": {"count": 0}, "results": []}
+            if self.max_terms_matching is not None and len(params.get("search", "").split()) > self.max_terms_matching:
+                return 200, {"meta": {"count": 3}, "results": []}
             page = fixture("openalex_works_page1.json")
             per_page = int(params.get("per-page", "100"))
             page["results"] = page["results"][:per_page]
@@ -810,10 +813,33 @@ class CapsAndEtiquetteTests(JournalFinderCase):
 
     def test_works_search_asks_for_journal_articles_with_the_profile_terms(self):
         api = self.start_api()
-        self.search()
-        call = api.hits("/openalex/works")[0]
+        result = self.search()
+        calls = api.hits("/openalex/works")
+        self.assertEqual(len(calls), 1, "50+ works matched, so no term was dropped")
+        call = calls[0]
         self.assertIn("quantum", call["params"]["search"])
         self.assertIn("primary_location.source.type:journal", call["params"]["filter"])
+        self.assertEqual(len(call["params"]["search"].split()), 6)
+        self.assertEqual(result.json["query"]["terms"], call["params"]["search"].split())
+
+    def test_terms_are_relaxed_one_by_one_until_enough_works_match(self):
+        api = self.start_api(max_terms_matching=4)
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout)
+        searches = [r["params"]["search"].split() for r in api.hits("/openalex/works")]
+        self.assertEqual([len(s) for s in searches], [6, 5, 4])
+        self.assertEqual(searches[1], searches[0][:5])
+        self.assertEqual(result.json["query"]["terms"], searches[2])
+        self.assertEqual(len(result.json["candidates"]), 4)
+        self.assertTrue(any("dropped" in n for n in result.json["notes"]), result.json["notes"])
+
+    def test_relaxation_stops_at_two_terms(self):
+        api = self.start_api(max_terms_matching=0)
+        result = self.search()
+        self.assertEqual(result.code, 0, result.stdout)
+        self.assertEqual([len(r["params"]["search"].split()) for r in api.hits("/openalex/works")],
+                         [6, 5, 4, 3, 2])
+        self.assertEqual(result.json["candidates"], [])
 
     def test_contact_email_is_used_when_set_and_absent_otherwise(self):
         api = self.start_api()
