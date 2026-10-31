@@ -169,7 +169,10 @@ class JournalSearchTests(JournalCase):
     def test_invalid_filters_are_422(self) -> None:
         self.stub(SEARCH_OK)
         for patch in ({"limit": 0}, {"limit": 51}, {"limit": "x"}, {"max_apc": -1}, {"max_apc": "lots"},
-                      {"max_review_days": 0}, {"max_review_days": 1.5}, {"oa_only": "yes"}, {"no_cache": "yes"}, {"no_cache": 1}):
+                      {"max_review_days": 0}, {"max_review_days": 1.5}, {"oa_only": "yes"}, {"no_cache": "yes"}, {"no_cache": 1},
+                      {"source": "bing"}, {"source": ""}, {"source": "OpenAlex"}, {"source": "crossref "}, {"source": 3},
+                      {"source": ["auto"]}, {"source": True}, {"include_unknown_quartile": "yes"},
+                      {"include_unknown_quartile": 1}, {"include_unknown_quartile": 0}):
             with self.subTest(patch=patch):
                 response = self.post({"quartiles": "Q1", **patch})
                 self.assertEqual(response.status_code, 422)
@@ -202,6 +205,42 @@ class JournalSearchTests(JournalCase):
         self.assertEqual(forced, ["search", "--workspace", str(self.root), "--quartiles", "Q1",
                                   "--limit", "5", "--no-cache"])
         self.assertNotIn("--no-cache", plain)
+
+    def test_the_source_is_validated_and_passed_to_the_cli(self) -> None:
+        self.stub(SEARCH_OK)
+        for source in ("auto", "openalex", "crossref"):
+            with self.subTest(source=source):
+                self.assertEqual(self.post({"quartiles": "Q1", "source": source}).status_code, 200)
+        self.assertEqual(self.calls(), [
+            ["search", "--workspace", str(self.root), "--quartiles", "Q1", "--source", name]
+            for name in ("auto", "openalex", "crossref")])
+
+    def test_unknown_quartile_journals_are_kept_only_when_asked(self) -> None:
+        self.stub(SEARCH_OK)
+        self.assertEqual(self.post({"quartiles": "Q1", "include_unknown_quartile": True}).status_code, 200)
+        self.assertEqual(self.post({"quartiles": "Q1", "include_unknown_quartile": False}).status_code, 200)
+        self.assertEqual(self.post({"quartiles": "Q1", "include_unknown_quartile": None}).status_code, 200)
+        kept, dropped, absent = self.calls()
+        self.assertEqual(kept, ["search", "--workspace", str(self.root), "--quartiles", "Q1",
+                                "--include-unknown-quartile"])
+        self.assertNotIn("--include-unknown-quartile", dropped)
+        self.assertNotIn("--include-unknown-quartile", absent)
+
+    def test_the_source_and_the_unknown_quartile_flag_follow_the_other_filters(self) -> None:
+        self.stub(SEARCH_OK)
+        response = self.post({"quartiles": "Q1-Q4", "limit": 5, "no_cache": True, "source": "crossref",
+                              "include_unknown_quartile": True})
+        self.assertEqual(response.status_code, 200)
+        (argv,) = self.calls()
+        self.assertEqual(argv, ["search", "--workspace", str(self.root), "--quartiles", "Q1-Q4", "--limit", "5",
+                                "--no-cache", "--source", "crossref", "--include-unknown-quartile"])
+
+    def test_a_fallback_answer_reaches_the_panel_unchanged(self) -> None:
+        answer = {**SEARCH_OK, "source": "auto", "providers": {"similar_works": ["crossref"], "quartile": "unknown"},
+                  "fallback": {"used": True, "code": "openalex-unavailable", "reason": "429"},
+                  "excluded_reasons": {"quartile_unknown": 4}}
+        self.stub(answer)
+        self.assertEqual(self.post({"quartiles": "Q1", "source": "auto"}).json(), answer)
 
     def test_optional_filters_are_left_out_when_absent(self) -> None:
         self.stub(SEARCH_OK)
@@ -443,6 +482,39 @@ class VenueSelectTests(VenueEndpointCase):
         record = json.loads((self.venue_dir("expert-systems-with-applications") / "venue.json").read_text())
         self.assertEqual(record["quartile"], "Q1")
         self.assertEqual(record["via"], "candidate")
+
+    def fallback_candidates(self) -> None:
+        entries = [
+            {"openalex_id": None, "id": "issn:4444444X", "display_name": "Biomedical Fixture Reports",
+             "issn": ["4444-444X"], "quartile": None, "quartile_source": "unknown"},
+            {"openalex_id": None, "id": "title:ieee/acm trans. on signals", "display_name": "IEEE/ACM Trans. on Signals",
+             "issn": [], "quartile": None, "quartile_source": "unknown"},
+            {"openalex_id": None, "id": "title:acm trans. on signals", "display_name": "ACM Trans. on Signals",
+             "issn": [], "quartile": None, "quartile_source": "unknown"},
+            {"openalex_id": None, "id": "title:!!!", "display_name": "!!!", "issn": []},
+        ]
+        (self.paper / "journal-candidates.json").write_text(json.dumps({"schema": 1, "candidates": entries}),
+                                                            encoding="utf-8")
+
+    def test_a_fallback_candidate_is_selected_by_its_id_and_named_after_its_own_journal(self) -> None:
+        self.fallback_candidates()
+        for candidate, slug, name in (
+                ("issn:4444444X", "biomedical-fixture-reports", "Biomedical Fixture Reports"),
+                ("title:ieee/acm trans. on signals", "ieee-acm-trans-on-signals", "IEEE/ACM Trans. on Signals"),
+                ("title:acm trans. on signals", "acm-trans-on-signals", "ACM Trans. on Signals")):
+            with self.subTest(candidate=candidate):
+                response = self.post("/api/venues/select", {"candidate": candidate})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["slug"], slug)
+                record = json.loads((self.venue_dir(slug) / "venue.json").read_text())
+                self.assertEqual(record["journal"]["name"], name)
+                self.assertEqual(record["candidate_id"], candidate)
+
+    def test_a_fallback_candidate_whose_name_slugifies_to_nothing_is_named_after_its_id(self) -> None:
+        self.fallback_candidates()
+        response = self.post("/api/venues/select", {"candidate": "title:!!!"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["slug"], "venue-title")
 
     def test_an_explicit_valid_slug_is_used(self) -> None:
         self.candidates()

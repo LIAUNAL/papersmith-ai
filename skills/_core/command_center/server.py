@@ -653,6 +653,7 @@ VENUE_JSON_MAX_BYTES = 1024 * 1024
 VENUE_TEXT_MAX_BYTES = 256 * 1024
 SJR_FIRST_YEAR = 1999
 JOURNAL_MAX_LIMIT = 50
+JOURNAL_SOURCES = ("auto", "openalex", "crossref")
 #: One journal search at a time: it spends a shared API budget and writes
 #: `paper/journal-candidates.json`.
 _JOURNAL_LOCK = threading.Lock()
@@ -766,7 +767,8 @@ def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | 
         return None, _journal_error(code, message)[0]
 
     if not isinstance(payload, dict):
-        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit, no_cache}")
+        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit, no_cache, "
+                      "source, include_unknown_quartile}")
     raw = payload.get("quartiles")
     match = _QUARTILE_RE.match(raw) if isinstance(raw, str) else None
     low = int(match.group(1)) if match else 0
@@ -811,6 +813,16 @@ def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | 
         return refuse("FILTER_INVALID", "no_cache must be true or false")
     if no_cache:
         argv.append("--no-cache")
+    source = payload.get("source")
+    if source is not None:
+        if not isinstance(source, str) or source not in JOURNAL_SOURCES:
+            return refuse("FILTER_INVALID", f"source must be one of {', '.join(JOURNAL_SOURCES)}")
+        argv += ["--source", source]
+    unknown = payload.get("include_unknown_quartile")
+    if unknown is not None and not isinstance(unknown, bool):
+        return refuse("FILTER_INVALID", "include_unknown_quartile must be true or false")
+    if unknown:
+        argv.append("--include-unknown-quartile")
     return argv, None
 
 
@@ -842,6 +854,12 @@ def _source_key(value: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").rstrip("/").rsplit("/", 1)[-1].lower())
 
 
+def _candidate_key(value: Any) -> str:
+    """A candidate id in comparable form: fallback ids (`issn:<n>`, `title:<n>`) exactly as written."""
+    text = str(value or "").strip()
+    return text if text.startswith(("issn:", "title:")) else _source_key(text)
+
+
 def _venue_slug_for(root: Path, payload: dict[str, Any]) -> str:
     """The slug the body names, else one derived from the journal's name."""
     explicit = payload.get("slug")
@@ -849,14 +867,14 @@ def _venue_slug_for(root: Path, payload: dict[str, Any]) -> str:
         return explicit
     candidate, name = payload.get("candidate"), payload.get("journal")
     if isinstance(candidate, str) and candidate:
-        key = _source_key(candidate)
+        key = _candidate_key(candidate)
         document, _ = _read_candidates(root)
         for entry in (document or {}).get("candidates", []):
-            if isinstance(entry, dict) and key and key in (_source_key(entry.get("openalex_id")),
-                                                           _source_key(entry.get("id"))):
+            if isinstance(entry, dict) and key and key in (_candidate_key(entry.get("openalex_id")),
+                                                           _candidate_key(entry.get("id"))):
                 name = entry.get("display_name")
                 break
-        return _slugify(str(name or "")) or f"venue-{key}"[:63].strip("-") or "venue"
+        return _slugify(str(name or "")) or f"venue-{_slugify(key)}"[:63].strip("-") or "venue"
     return _slugify(str(name or "")) or "venue"
 
 
