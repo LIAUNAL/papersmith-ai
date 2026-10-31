@@ -8857,8 +8857,13 @@ class RefusalRosterTests(unittest.TestCase):
         and `AUDIT_UNREADABLE` (both invocation defects).
 
         167 -> 194 in `journal-finder`: the `venue` verb group adds 27
-        codes, every one classified in `REFUSAL_CLASSIFICATION`."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 194)
+        codes, every one classified in `REFUSAL_CLASSIFICATION`.
+
+        194 -> 201 in `ai-stylometry-and-humanization`: `ai_audit` and
+        `humanize` add 7 codes (TARGET_REQUIRED, TARGET_UNREADABLE,
+        BLOCK_REQUIRED, DRAFT_REQUIRED, BLOCK_UNKNOWN, F5_INVARIANT_VIOLATION,
+        TARGET_SCORE_UNMET)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 201)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

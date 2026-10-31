@@ -1006,11 +1006,11 @@ PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "02-experimental-setup.md": "8974689bc11ce955e707b14502aeaf974be7d69959df28f82e9f016cca1d8ce5"[:64],
     "03-results-and-discussion.md": "1f232a64dd277d10da2e47ed3436acb58137f77ac2f5de32cc22da8e8cf974b1"[:64],
     "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
-    "05-related-work.md": "0b8a99da1b91307b3e2e1a654ca161d02ac251635fec99a23edc4407b70d4323"[:64],
-    "06-introduction.md": "fdbc7fbbb5c5cd33d076f7e31ed1359916328ed8a384f62b45015ace471964ce"[:64],
+    "05-related-work.md": "d1e6ec50d24063c7cfa618e59fb75d1ba1d5dc4155b76e01ac918e96d4e53ea9",
+    "06-introduction.md": "3f25f3ac568e4dd872106f784d35e9595e953471f88b73d1444602b38c64b08f",
     "07-conclusions.md": "5b400628d6d7f783172a0546cb3fa92b973d471b34001f58fb8ff9277d25aeec"[:64],
     "08-abstract.md": "e5e2d180ad612c99c2f779d669956405c56f9744645ca9e229a57c1bc605ba94"[:64],
-    "09-title-and-keywords.md": "0fb1238c2b4cc956f127ef75a81bb476ec1e6117c0c0baee472e5e433e17096a"[:64],
+    "09-title-and-keywords.md": "0d6f332d5786930eb74d53318a9ceebae110c196f01cb2734ab09a20cfcc1ffe",
     "10-back-matter.md": "b1cd44fe7c00d8eca92d979be5780a97a6cd815faba9ab3890442f2286316cbb"[:64],
 }
 
@@ -2509,6 +2509,7 @@ _PAPER_CLI_SUITE_FILES = (
     "test_paper_figure.py",
     "test_paper_contract.py",
     "test_paper_decisions.py",
+    "test_paper_ai_metrics.py",
 )
 
 

@@ -122,7 +122,11 @@ Fill the fields in this order, with these exact labels.
     a major concern for the same issue.
 13. **Paper Formatting Concerns** — major formatting or anonymity problems
     (author names, acknowledgements, self-identifying links, page limit,
-    missing checklist). Report them here only; they never lower a rating.
+    missing checklist). Verify that the manuscript is presented in single-column
+    review mode (`onecolumn`) and that initial author metadata is blinded
+    ("Por definir" for authors, affiliations, emails until complete manuscript
+    user verification). Check also the 7-paragraph Introduction and subsection-structured
+    Related Work with 30–40 citations. Report them here only; they never lower a rating.
 
 ## Reading the criteria through the contribution type
 

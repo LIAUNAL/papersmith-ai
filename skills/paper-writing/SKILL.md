@@ -104,6 +104,34 @@ the page. That is a separate, unbuilt capability.
 in favor of an incoming body. The only exit from a hand-edited block is
 `--adopt`, which re-baselines the digest and leaves the body untouched.
 
+## Manuscript Presentation and Drafting Standards
+
+### Format and Review Presentation Mode
+The canonical manuscript is presented in **review mode, single column** (`onecolumn`, e.g., `\documentclass[11pt,onecolumn,a4paper]{article}` with standard review margins and line spacing). Multi-column or journal-specific publication styles are deferred to the `venue` adaptation workflow once a journal is selected.
+
+### Blinded Author Metadata on Initial Drafts
+During the initial drafting and refinement of the manuscript, **no author names, affiliations, or emails are included**. All author metadata remains blinded and marked as placeholders (*Por definir*):
+```latex
+\author{Por definir \\ \textit{Afiliaciones y correos por definir}}
+```
+Only when the complete manuscript passes all verification gates with the user is the operator prompted to provide the author identities, affiliations, and correspondence details.
+
+### Seven-Paragraph Introduction Structure
+The Introduction is strictly structured across seven canonical paragraphs:
+1. **Paragraph 1 (Application Context):** General context of the application domain and motivating phenomenon.
+2. **Paragraph 2 (AI Context & Problem Statement):** Context of AI techniques in said application, concluding with 2 to 3 sentences explicitly declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; strictly running text, no bullet items, no bold text, no numbered questions).
+3. **Paragraphs 3 & 4 (State of the Art across 3–5 Families):** Presents the state of the art in two paragraphs, identifying 3 to 5 methodological families or alternatives, detailing their principal methods, strengths, and issues/limitations.
+4. **Paragraph 5 (Proposal & Contributions):** Proposal presentation with its main contributions described in 3 to 4 short items.
+5. **Paragraph 6 (Evaluation, Results & Impact):** Summary of experiments conducted, comparison methods and criteria, most important empirical results obtained, and potential impact.
+6. **Paragraph 7 (Roadmap/Agenda):** Agenda of the paper (`The remainder of this paper is organized as follows: ...`).
+
+### Related Work Structure and Citation Density
+1. **Opening Context Paragraph:** First paragraph establishes the overarching context of problems and methods studied, framing the families introduced in the Introduction.
+2. **Subsections per Family:** Each of the 3 to 5 families has its own dedicated subsection (`\subsection{...}`).
+3. **Three-part internal structure (2 to 3 paragraphs per subsection):** Foundations (fundamentos), Main methods (métodos principales), and Main challenges/issues (principales desafíos).
+4. **Citation volume per family:** Each family subsection must cite between 5 to 10 distinct alternative works.
+5. **Reference Horizon:** Between the Introduction and Related Work, the bibliography must collectively cite between 30 and 40 references.
+
 ## When a delegated agent cannot be spawned
 
 Each stretch this skill delegates is defined in full by its own agent file:

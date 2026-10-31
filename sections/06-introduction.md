@@ -218,6 +218,15 @@ Function and paragraph are not the same unit: blocks 2 and 3 expand.
 5. how each promised property is validated
 6. how the rest of the article is organized
 
+### Canonical Seven-Paragraph Structure
+In the manuscript's initial review draft, the introduction unfolds across exactly seven canonical paragraphs:
+1. **Paragraph 1 (General Application Context):** General context of the application domain and motivating phenomenon.
+2. **Paragraph 2 (AI Context & Problem Statement):** Context of AI techniques in said application, ending with two or three sentences declaring the technical problem and its root causes (taken from the conceptual map & model panel and foundational pillars; strictly continuous running text, with no bullet items, no bold text highlights, and no numbered questions).
+3. **Paragraphs 3 & 4 (State of the Art across 3–5 Families):** Presents the state of the art in two paragraphs, indicating 3 to 5 methodological families or alternatives of the state of the art, and presenting their primary methods alongside their main strengths and issues/limitations.
+4. **Paragraph 5 (Proposal & Contributions):** Proposal presentation with its primary contributions described in 3 to 4 short items.
+5. **Paragraph 6 (Evaluation, Results & Impact):** Summary of experiments conducted, comparison methods and evaluation criteria, most significant empirical results obtained, and potential impact of the work.
+6. **Paragraph 7 (Roadmap/Agenda):** Agenda of the paper specifying section organization in a fixed roadmap formula.
+
 **Intended correspondence:** `problem i → state-of-the-art limitation i →
 contribution i → property i → instrument i → evidence i`. The chain starts at the
 problem, not at the contribution: a contribution delivering a property that no
@@ -354,6 +363,8 @@ or any experimental detail.
 **Function.** Turn the general need into a concrete technical problem, and decompose
 it into the specific problems the proposal resolves.
 
+**Paragraph 2 Directives (AI Context & Problem Statement):** Context of the AI techniques used in the application domain, terminating in two or three sentences that declare the concrete problem and its causes (drawn from the conceptual map, model panel, and pillars). Must be redacted without items/bullet points, in coherent running prose, without bold highlights, and without numbered questions (strictly continuous text).
+
 **Sequence.** general problem → specific 1 → specific 2 → [specific 3] →
 requirements an adequate solution should satisfy.
 
@@ -384,6 +395,8 @@ will measure: state them in the same words block 5 will later use.
 **Function.** Present the families of methods that have addressed the problems of
 block 2, organized **around those problems and not as an enumeration of works or
 authors**.
+
+**Paragraphs 3 & 4 Directives (State of the Art across 3–5 Families):** Indicate between 3 to 5 methodological families or alternatives of the state of the art. For each family, present the primary representative methods alongside their key strengths and critical issues/limitations.
 
 **Per family:** which problem it addresses → what advantage it provides → what
 limitation it retains.
@@ -467,7 +480,8 @@ components, and enumerate the contributions.
 
 ### Paragraph 4b — the list.
 
-**The number of items is the number of contributions the proposal has.** It is
+**The contributions are described in 3 to 4 short items.**
+The number of items is the number of contributions the proposal has. It is
 inherited, never a drafting target. What drafting requires is only that the count be
 announced in 4a before being enumerated here, and that the list agree in count,
 order, and naming with the components of the methods section.
@@ -490,6 +504,8 @@ effect it is claimed to achieve comes from the measurement.
 
 **Function.** Summarize how the proposal is validated, in direct correspondence with
 the stated contributions.
+
+**Paragraph 6 Directives (Evaluation, Results & Impact):** Summarize the experiments conducted, comparison methods and evaluation criteria, the most significant results obtained, and the potential impact of the work.
 
 **Sequence.** evaluation scenario → data or tasks → comparison methods → criteria or
 metrics → complementary analyses → general evidence.
@@ -625,3 +641,8 @@ the subject of a sentence.
 - Block 6 missing, or naming sections that do not exist, or repeating one.
 - A completed 4b whose achieved effects were not checked back against block 2 and,
   through it, block 3.
+- Bullet items, lists (`itemize`, `enumerate`), bold text highlighting, or numbered questions in Block 2 (Paragraph 2).
+- Block 3 presenting fewer than 3 or more than 5 methodological families or alternatives, or omitting their strengths and issues.
+- Block 4 presenting fewer than 3 or more than 4 contribution items.
+- Block 5 omitting the comparison methods, evaluation criteria, or potential impact.
+- An introduction deviating from the canonical seven-paragraph sequence.

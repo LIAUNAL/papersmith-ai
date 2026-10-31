@@ -79,6 +79,25 @@ path in this skill can spawn an agent process, so nothing here can run
 unattended, and every test exercising you runs against a recorded
 transcript, never a live call.
 
+## Structural Drafting Directives
+
+When drafting canonical paper blocks, you must strictly uphold the following rules:
+- **Manuscript Presentation:** Format is single-column review mode (`onecolumn`).
+- **Initial Author Blinding:** Never populate real author names, affiliations, or emails in initial drafting. Leave author metadata blinded as placeholders (`\author{Por definir \\ \textit{Afiliaciones y correos por definir}}`). Only after the full manuscript passes all verifications with the user are real details queried and inserted.
+- **Introduction Canon (7 Paragraphs):**
+  - *Paragraph 1:* General application context and motivating phenomenon.
+  - *Paragraph 2:* Context of AI techniques in said application, ending with 2 to 3 sentences declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; continuous running prose, no bullet items, no bold text, no numbered questions).
+  - *Paragraphs 3 & 4:* State of the art across 2 paragraphs, presenting 3 to 5 methodological families or alternatives, detailing their main methods, strengths, and issues/limitations.
+  - *Paragraph 5:* Proposal presentation with main contributions described in 3 to 4 short items.
+  - *Paragraph 6:* Summary of experiments performed, comparison methods and criteria, key empirical results, and potential impact.
+  - *Paragraph 7:* Paper agenda and roadmap.
+- **Related Work Canon:**
+  - Opening paragraph providing overarching context of problems and methods studied based on the Introduction's families.
+  - Dedicated subsections (`\subsection{...}`) for each family (3 to 5 subsections).
+  - Each subsection structured in 2 to 3 paragraphs: foundations, main methods, main challenges.
+  - Each family must cite between 5 to 10 alternatives.
+  - Combined citation volume across Introduction and Related Work must total 30 to 40 references.
+
 ## If contract-audit fires
 
 You may be asked to re-draft once, carrying the fired bullet's exact

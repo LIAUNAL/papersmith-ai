@@ -11,6 +11,28 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.50.0
+
+### Added
+
+- **Canonical 7-Paragraph Introduction Specification**:
+  - *Paragraph 1:* General application context and motivating phenomenon.
+  - *Paragraph 2:* Context of AI techniques in said application, concluding with 2 to 3 sentences declaring the technical problem and its causes (drawn from the conceptual map, model panel, and foundational pillars; strictly running text, no bullet items, no bold text highlights, no numbered questions).
+  - *Paragraphs 3 & 4:* State of the art across 3 to 5 methodological families or alternatives, detailing their primary methods, key strengths, and key issues/limitations.
+  - *Paragraph 5:* Proposal presentation with primary contributions described in 3 to 4 short items.
+  - *Paragraph 6:* Summary of experiments performed, comparison methods and criteria, most significant empirical results obtained, and potential impact.
+  - *Paragraph 7:* Paper agenda and roadmap (`The remainder of this paper is organized as follows: ...`).
+- **Subsection-Structured Related Work Specification**:
+  - Opening context paragraph on problems and methods studied framing the families introduced in the Introduction.
+  - Dedicated subsections per methodological family (`\subsection{...}`) across 3 to 5 families.
+  - Internal subsection triad (2 to 3 paragraphs each: foundations, main methods, main challenges).
+  - 5 to 10 alternatives cited per family.
+  - 30 to 40 references combined between Introduction and Related Work.
+- **Single-Column Review Mode**:
+  - Canonical initial presentation format set to single-column review mode (`onecolumn`, e.g. `\documentclass[11pt,onecolumn,a4paper]{article}` with review margins and line spacing); multi-column layouts reserved for post-acceptance venue adaptation.
+- **Blinded Author Metadata on Initial Drafts**:
+  - Author names, affiliations, and contact emails suppressed as placeholders ("Por definir") in initial drafts until the complete manuscript passes all verification gates with the user.
+
 ## 0.49.0
 
 ### Added

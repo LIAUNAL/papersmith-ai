@@ -184,6 +184,17 @@ Five blocks. The third repeats — once per stated problem.
 4. closing: open fronts and the gap
 5. synthesis artefact
 
+### Directives: Correspondence with Introduction's Families & Subsection Triad
+Organized in direct correspondence with the 3 to 5 methodological families or alternatives established in Paragraphs 3 and 4 of the Introduction:
+- **Opening Context Paragraph:** A first paragraph giving context to the problems and methods studied, directly framing the families that follow.
+- **Subsections per Family:** Each family introduced in the Introduction's state of the art receives its own dedicated subsection (`\subsection{...}`).
+- **Internal Subsection Triad (2 to 3 paragraphs each):**
+  1. *Foundations (Fundamentos)*: theoretical roots, mathematical formulation, and operational assumptions.
+  2. *Main Methods (Métodos principales)*: primary architectures, key representative algorithms, and benchmark works.
+  3. *Main Challenges (Principales desafíos)*: critical bottlenecks, open failure modes, and unresolved issues.
+- **Citation Volume:** Each family subsection must cite between 5 and 10 distinct alternative works.
+- **Reference Horizon:** Between the Introduction and Related Work, the manuscript must collectively cite between 30 and 40 references.
+
 **The organizing principle is one unit per stated problem**, the same principle that
 governs the introduction's state-of-the-art block. What differs is what the unit is
 made of: a paragraph in the introduction, a block of paragraphs here.
@@ -400,3 +411,8 @@ same thing at different depths.
   when this section exists, that block is a summary.
 - A variant named in the introduction: variants belong here.
 - The gap of this section and the gap of the introduction disagreeing.
+- Related Work lacking the opening context paragraph framing the problems and methods studied.
+- Any methodological family introduced in the Introduction's state of the art lacking its dedicated subsection.
+- A family subsection with fewer than 2 or more than 3 paragraphs, or omitting foundations, main methods, or main challenges.
+- Fewer than 5 or more than 10 alternatives cited per family.
+- Total combined references between Introduction and Related Work outside the range of 30 to 40.

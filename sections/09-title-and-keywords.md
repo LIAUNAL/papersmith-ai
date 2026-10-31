@@ -133,6 +133,18 @@ then the machinery.
 **Every keyword appears in the body.** A keyword absent from the paper is a keyword
 invented for the search engine.
 
+## Manuscript Review Format & Author Blinding
+
+### Single-Column Review Mode
+The canonical manuscript is presented and typeset in **review format, at one column** (`onecolumn`, e.g., `\documentclass[11pt,onecolumn,a4paper]{article}` with standard review margins and 1.5 line spacing). Two-column or final publisher layouts are reserved for post-acceptance venue adaptation via the `venue` skill.
+
+### Blinded Author Metadata on Initial Drafts
+In the initial drafting of the manuscript, **no author names, institutional affiliations, or contact emails are included**. All author metadata remains blinded and explicitly set as placeholders (*por definir* / suppressed for peer review):
+```latex
+\author{Por definir \\ \textit{Afiliaciones y correos por definir}}
+```
+Only when the entire manuscript has been drafted, compiled, and passes all verifications with the user is the operator prompted to supply author identities, affiliations, and correspondence details.
+
 ## The classification line
 
 Some journals require a subject-classification code after the keywords. That is an
@@ -184,3 +196,5 @@ acronym appears in the abstract and the body.
 - A keyword list that only repeats title terms.
 - A keyword absent from the body.
 - A missing classification line when the target journal requires one.
+- Real author names, affiliations, or contact emails populated in the initial drafting before complete manuscript verification with the user.
+- Manuscript typeset in two-column format instead of single-column review mode (`onecolumn`).
