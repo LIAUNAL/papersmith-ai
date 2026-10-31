@@ -11,6 +11,17 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.45.1
+
+### Added
+
+- **Adjusted Novelty Concordance in `paper-reviewer`**: Mandated check in the
+  NeurIPS 2026 reviewer protocol ensuring that problem statement, title, abstract,
+  and introduction strictly mirror the calibrated/adjusted empirical findings
+  (dispelling ungrounded quantum hype, ensuring exact parameter-shift saliency,
+  rigorous leakage-free benchmarking, and harmonic expressivity under compact depth
+  are prominently highlighted throughout the manuscript).
+
 ## 0.45.0
 
 ### Added

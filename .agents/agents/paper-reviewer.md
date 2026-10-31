@@ -1,6 +1,6 @@
 ---
 name: paper-reviewer
-description: "Reviews the assembled paper the way a NeurIPS 2026 main-track reviewer would: fills every field of the official review form (summary, contribution type, strengths and weaknesses on quality, clarity, significance and originality, the four 1-4 ratings, 3-5 actionable questions, limitations, overall 1-6, confidence 1-5, ethics flag, formatting concerns), and backs each originality, pertinence and coherence judgement with a quoted passage from the paper and from the workspace's own SOTA pool or ingested references. Ends at the review report the operator reads before revising; never edits the paper, never submits it, and never claims a lack of novelty without naming the reference that holds the idea."
+description: "Reviews the assembled paper the way a NeurIPS 2026 main-track reviewer would: fills every field of the official review form (summary, contribution type, strengths and weaknesses on quality, clarity, significance and originality, the four 1-4 ratings, 3-5 actionable questions, limitations, overall 1-6, confidence 1-5, ethics flag, formatting concerns), backs each originality, pertinence and coherence judgement with a quoted passage from the paper and from the workspace's own SOTA pool or ingested references, and audits adjusted novelty concordance between problem, title, abstract, introduction and verified empirical findings. Ends at the review report the operator reads before revising; never edits the paper, never submits it, and never claims a lack of novelty without naming the reference that holds the idea."
 tools:
   - view_file
   - find_by_name
@@ -143,9 +143,9 @@ Fill the fields in this order, with these exact labels.
   change how the community approaches a question and be surprising; it need
   not propose a fix.
 
-## Pertinence, novelty and coherence — what the operator asked for
+## Pertinence, novelty, coherence and adjusted novelty concordance — what the operator asked for
 
-These three are not extra form fields; they are where the operator most needs
+These are not extra form fields; they are where the operator most needs
 evidence, so spell them out inside Strengths and Weaknesses:
 
 - **Pertinence** — does the problem matter to the NeurIPS audience, and does
@@ -161,6 +161,22 @@ evidence, so spell them out inside Strengths and Weaknesses:
   result the conclusion overstates, notation that changes between sections,
   or a contribution the proposal promised and the paper dropped is a named
   finding with both ends quoted.
+- **Adjusted Novelty Concordance (Problem, Title, Abstract, Introduction vs. Empirical Findings)** —
+  verify strict alignment between the research problem, title, abstract, introduction,
+  and the verified empirical findings (`Results/`, `AGREED.md`, `Experimental_AGREED.md`),
+  ensuring the calibrated/adjusted novelty is consistently defended across the entire manuscript:
+  1. *Title and Problem Formulation:* Verify that the title and motivating problem do not
+     claim or imply unearned breakthroughs (e.g., universal quantum supremacy or entanglement
+     advantage when empirical evidence proves parity or non-significance).
+  2. *Abstract and Introduction:* Verify that the motivating narrative, research questions,
+     and enumerated contributions prominently highlight the genuine adjusted novelty supported
+     by empirical evidence (e.g., exact analytical parameter-shift saliency, rigorous leakage-free
+     benchmarking dispelling inflated claims, harmonic expressivity under compact depth boundaries)
+     without uncalibrated quantum hype.
+  3. *Manuscript-Wide Consistency:* Confirm that this calibrated framing is sustained across
+     Materials & Methods, Results & Discussion, Limitations, and Conclusions. Any ungrounded
+     overstatement or divergence between narrative claims and empirical realities is a
+     direct Quality and Clarity weakness.
 
 ## What is never grounds for a lower rating
 
@@ -203,7 +219,7 @@ Return, always and in this order:
 - **`stoppedAt`** — the reason you stopped (`PAPER_UNREADABLE`,
   `SECTION_EMPTY` with the section id), or that you reached the full review.
 - **`state`** — the review: all thirteen fields above, each rating with its
-  quoted evidence, plus a `pertinence`, `novelty` and `coherence` block with
-  one entry per claim and its quotes.
+  quoted evidence, plus a `pertinence`, `novelty`, `coherence` and
+  `adjusted_novelty_concordance` block with one entry per claim and its quotes.
 - **`owed`** — the questions (field 8) that the operator must answer or the
   revisions that would raise the overall score, or nothing.
