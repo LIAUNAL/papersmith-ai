@@ -813,6 +813,53 @@ separately. Below, the figures of `paper/Figures/` are listed with an *Open* lin
 requested again when the workspace state changes over SSE, without overlapping
 requests; a failure shows the error with *Retry*.
 
+**Suggested journals and venue adaptation (the *Previsualización PDF* tab).**
+Below the preview, the tab carries a *Revistas sugeridas* block and, once a
+journal is chosen, a *Revista elegida* card. Nothing in either submits the
+paper or contacts an editor. The routes behind them are same-origin on `POST`
+(403 otherwise), keep their paths inside the workspace and answer with an error
+object instead of raising:
+
+| Route | What it does |
+|---|---|
+| `GET /api/journals` | The contents of `paper/journal-candidates.json`, or an empty answer that still reports the SJR state (the imported file and its year, or none) |
+| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, limit}`. Runs `journal_cli.py search` in a worker thread under a deadline and returns the CLI's JSON; `422` for an invalid quartile range |
+| `POST /api/journals/sjr` | A SCImago "Download data" CSV, as multipart or a raw body, under a size cap; runs `journal_cli.py sjr-import` and returns its JSON |
+| `POST /api/paper/compile?venue=<slug>` | The paper compile with a venue target: the same `pdflatex`/`bibtex` sequence, in `paper/venues/<slug>/`, under the same lock |
+| `GET /api/pdf?venue=<slug>` | Serves `paper/venues/<slug>/main.pdf`, with the same `ETag` handling as `GET /api/pdf` |
+
+The venue state (`venue select`, the audit, the plan, its approval and the
+build) is served and written through the `/api/venues*` routes, which call the
+`paper-writing` `venue` verbs; the approval button writes the same
+`approval.json` record as `venue approve`, with `via: dashboard`.
+
+*Revistas sugeridas* has two quartile selects (from Q? to Q?), an open-access
+checkbox and the max-APC, max-review-days and limit inputs. *Buscar revistas*
+runs the search with a loading state; *Analizar con agente* types
+`/journal-finder <range> [flags]` into the CLI assistant through
+`window.sendToCli`, as the phase cards do. A line states the SJR state: the file
+and its year, or "sin archivo SJR: cuartil aproximado OpenAlex" with the
+download link and an upload button. The results table shows, per journal, the
+homepage link, the quartile badge with its source (`sjr` or the OpenAlex proxy),
+the SJR or proxy value, OA and DOAJ state, the APC, the h-index, the fit score,
+the review-time estimate (median and interquartile range in weeks, `n` and its
+source; "sin datos públicos" when there is none, and the table can sort by it)
+and the similar works, expandable, with DOI links. A link to
+`paper/journal-candidates.md` appears when the agent wrote it.
+
+Each row has *Elegir esta revista* (`venue select`). The *Revista elegida* card
+shows the state machine (`selected -> requirements -> template -> audited ->
+planned -> approved -> built`) with the next action: *Analizar plantilla con
+agente* (the agent reads the guidelines, then `venue requirements`, `venue
+acquire`, `venue diff`, `venue plan`), the audit findings table (severity
+badges, smith's side against the venue's with its quote and url links), the plan
+with *Aprobar plan* (a statement textarea; the approval is bound to the plan's
+sha256) and *Pedir cambios* (sends the operator's note to the agent to revise
+the plan), *Aplicar plan con agente* (sends `/paper-writing` instructions that
+reference the approved plan), *Construir y compilar versión de la revista*, and
+a toggle between the canonical PDF and the venue PDF. Everything is escaped, and
+the Spanish and English catalogues have the same keys.
+
 **SOTA atlas (read-only, backend).** Two GET routes over `sota-pool/atlas.json`
 and `sota-pool/atlas.html` (the `plausibility` skill writes them; the dashboard
 never writes or regenerates them). `GET /api/atlas` returns `json` and `html` with

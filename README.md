@@ -88,6 +88,8 @@ The full path, from a PDF to a compiled paper:
 | 8 | `/kaggle-accounts` | Proves that the Kaggle credentials really authenticate | `store/` (never leaves the disk) |
 | 9 | `/remote-execution` | Sends work to a remote worker and keeps the record of what came back | the target repo's ledger |
 | 10 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence | `paper/` |
+| 10b | `/journal-finder` (or the PDF Preview tab's *Revistas sugeridas* block) | Once the paper compiles: you pick a quartile range (`Q1`, `Q2-Q3`, `Q1-Q4`) and it ranks the journals that already publish work like the paper, each with its quartile and where it came from, open-access state, APC, h-index, a review-time estimate and the similar works that justify the fit; an agent then reads each journal's aims and scope and writes the case for it. It never submits and never contacts an editor | `paper/journal-candidates.json` and `paper/journal-candidates.md` |
+| 10c | `paper-writing` `venue` verbs and the `venue-adapter` agent (the PDF Preview tab's *Revista elegida* card) | After you choose a journal: reads its author guidelines and template, measures the manuscript against them and alerts on sections to adjust, sections missing and inconsistencies with smith's base template, proposes an adjustment plan only when it is prudent, and builds the journal's own `main.tex` once you approve the plan. Text changes go only through the `write` loop | `paper/venues/<slug>/` (the canonical `paper/main.tex` is never written) |
 | 11 | `/figure-review` | Looks at the render: rasterizes every `Figures/<id>.pdf` and measures what a raster can support (ink outside the canvas, collisions) | a visual report, never a change |
 | 12 | `/skill-audit` | Audits any of the above: what the code accepts versus what its documentation promises | a report, never a change |
 | 13 | `/upgrade-project` | Brings the workspace to the version of the CLI you have installed: it syncs the kit files and migrates the artifacts, delegating everything to `smith upgrade` | the workspace itself |
@@ -142,7 +144,7 @@ dashboard shows (the interface also has an English catalogue):
 | **Novedad & Hallazgos** | The novelty assessment and its gate, `G-NOVELTY` (below) |
 | **Secciones del Paper** | The canonical section structure of the manuscript: state, words and blocks of each section |
 | **Atlas de Grafos** | The 3D SOTA constellation (`sota-pool/atlas.html`), the manuscript's novelty graph and the candidate matrix |
-| **Previsualización PDF** | The written blocks and the compiled `paper/main.pdf` side by side |
+| **Previsualización PDF** | The written blocks and the compiled `paper/main.pdf` side by side, and below them the journal block: *Revistas sugeridas* (the ranked journals for a quartile range you choose) and, once you pick one, *Revista elegida* (the venue state machine, the audit, the plan and its approval, and a toggle between the canonical PDF and the journal's). See [Choosing and adapting to a journal](#choosing-and-adapting-to-a-journal) |
 | **Artefactos** | Explorer of the section rules, canonical contracts and the documents of the formulation cycle |
 | **Historia con IA** | Each phase's gate, colour and timeline of AI interactions |
 | **Telemetría** (*Telemetry and Costs* in English) | Tokens, tool uses and duration per measured phase |
@@ -177,6 +179,61 @@ and success criteria verbatim and leaves every verdict `pending`; `check`
 rejects an evidence path that does not exist and, at the full stage, a decided
 hypothesis that cites no significance test. The schema is in
 [`skills/_core/results/README.md`](skills/_core/results/README.md).
+
+### Choosing and adapting to a journal
+
+Where a paper goes is a decision of its own, and it gets evidence rather than a
+hunch. From the *Previsualización PDF* tab you choose a quartile range and
+press *Buscar revistas* (or press *Analizar con agente*, which types
+`/journal-finder <range>` into the CLI assistant). The CLI turns the paper's
+title, abstract, keywords and references into a ranked shortlist of journals
+that already publish work like it. Nothing is ever submitted.
+
+- **Where the quartile comes from.** The SJR quartile comes from a SCImago CSV
+  that **you** download once from <https://www.scimagojr.com/journalrank.php>
+  ("Download data") and import (`python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <csv>`,
+  or the panel's upload); scimagojr.com answers automated downloads with a
+  browser challenge, so the forge never scrapes it. Without that file, or for a
+  journal that is not in it, the quartile is an OpenAlex proxy (the share of
+  journals of the same field with a higher 2-year mean citedness). The proxy is
+  always labelled `openalex-proxy`, in the JSON, in the panel and in the
+  agent's markdown: it approximates a citation percentile and is not an SJR
+  quartile.
+- **The review-time estimate.** Per journal, the median and interquartile range
+  of the days between *received* and *accepted* over its latest 40 research
+  articles of the last three years, read from Crossref first, then PubMed, else
+  none (fewer than five dated articles reads as none). It is an estimate of
+  submission-to-acceptance, revision rounds included; it is not the time to
+  first decision.
+- **The OpenAlex budget.** OpenAlex answers without a key, but a keyless caller
+  has a small daily budget (about USD 0.10 per day per IP). A free
+  `OPENALEX_API_KEY` in the environment raises it, and the CLI keeps a response
+  cache so a repeated search does not spend it again.
+- **From a journal to its template.** *Elegir esta revista* runs
+  `venue select` and opens `paper/venues/<slug>/`. The state machine is
+  `selected → requirements → template → audited → planned → approved → built
+  (→ compiled)`; `planned` and `approved` are owed only while the audit holds a
+  `blocker` finding. The `venue-adapter` agent reads the author guidelines
+  (every requirement it records carries the quote and the url it came from),
+  `venue diff` measures the manuscript against them, and the agent proposes an
+  adjustment plan only when one is prudent.
+- **The operator approval gate.** The plan is approved by you, with your own
+  words, bound to the plan's sha256: `venue approve --statement "..." --plan-sha256 <hex>`
+  or the panel's *Aprobar plan* button. A revised plan voids the approval, and
+  `venue build` refuses while a blocker finding has no approved plan. The
+  approved text changes are applied one block at a time through the existing
+  `write` loop, never by the agent that proposed them.
+- **The canonical manuscript is never overwritten.** Everything for one journal
+  lives under `paper/venues/<slug>/` (`venue.json`, `requirements.json`,
+  `audit.json`, `plan.md`, `approval.json`, `main.tex`). `paper/main.tex` and
+  `sections/` are never written by any venue verb, and the journal's `main.tex`
+  carries the canonical blocks byte for byte. The panel compiles it in its own
+  directory and previews its PDF beside the canonical one.
+
+The skill's contract is [`skills/journal-finder/SKILL.md`](skills/journal-finder/SKILL.md),
+the venue verbs' is the "Venue adaptation" section of
+[`skills/paper-writing/SKILL.md`](skills/paper-writing/SKILL.md), and the guided
+tour is in [docs/skills.md](docs/skills.md#19-journal-finder--a-journal-chosen-on-evidence-a-template-adapted-on-approval).
 
 [![papersmith-ai flow in Pi: commands, skills and agents](docs/diagrams/papersmith-pi-flow.png)](docs/diagrams/papersmith-pi-flow.html)
 
@@ -541,7 +598,7 @@ my-paper/
 │   ├── manifest.json            #   hashes of everything the framework generated
 │   ├── runs_ledger.jsonl        #   every dispatched run, in order
 │   └── version                  #   framework version that created it
-├── .claude/agents/              # the twenty-six subagents (single source of truth)
+├── .claude/agents/              # the twenty-seven subagents (single source of truth)
 ├── skills/                      # the kit copy: the skills + _core
 │   └── _core/                   #   the two shared engines (deliberation, implementation)
 ├── sections/                    # the ten section contracts (they travel WITH content, like skills/)
@@ -765,7 +822,7 @@ repo-only).
 
 ## The agents
 
-A workspace ships **twenty-six subagents** in `.claude/agents/`. They are short
+A workspace ships **twenty-seven subagents** in `.claude/agents/`. They are short
 bursts of work that a harness launches (for example, with the Task tool) on
 request, not replacements for the CLI. The shape is always the
 same — **one burst between two operator gates**: the agent decides
@@ -799,6 +856,7 @@ to establish it. The operator opens and closes the gates.
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
 | `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 5 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
 | `sota-grapher` | Maps the pool to its constellation —one solar system per paper grouped by family, 20 planets maximum, edges between sibling systems— as `atlas.json` plus the single `atlas.html`, running checker and renderer until green. | `plausibility` |
+| `venue-adapter` | Reads a chosen journal's author guidelines and template and measures the manuscript against them: requirements (each one a quote and a url), sections to adjust, sections missing and inconsistencies with smith's base template; proposes an adjustment plan only when prudent and iterates it with the operator until they approve its exact text. It writes nothing and never submits. | `paper-writing` |
 | `audit-report` | Audits a subject that enumerates a closed set —operations, subcommands, codes, assets— looking for the gap between what its code accepts and what its documentation promises. It reports; it never repairs. | `skill-audit` |
 
 Three rules that order everything else:
@@ -806,7 +864,7 @@ Three rules that order everything else:
 - **The source of truth is `.claude/agents/`.** Each harness's routing docs
   (`CLAUDE.md`, `.pi/APPEND_SYSTEM.md`, `OPENCODE.md`,
   `.agents/AGENTS.md`) list
-  all twenty-six, and they are generated: an agent is changed
+  all twenty-seven, and they are generated: an agent is changed
   there, not in the projection.
 - **Each agent declares the skill it loads** (`skills/<name>/SKILL.md`), and that
   binding is verified: an agent that points at a skill the workspace does not
@@ -838,7 +896,7 @@ each `probe` state's section in its own file,
 
 ## Anatomy of each skill
 
-The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). Each skill's `SKILL.md` is its source of truth:
+The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). The workspace ships nineteen skills; each one's `SKILL.md` is its source of truth:
 
 - [`datasets`](skills/datasets/SKILL.md)
 - [`experiment-diagrams`](skills/experiment-diagrams/SKILL.md)
@@ -847,6 +905,7 @@ The guided tour of every skill, with its flow diagram, is in [docs/skills.md](do
 - [`experiments-tutor`](skills/experiments-tutor/SKILL.md)
 - [`figure-review`](skills/figure-review/SKILL.md)
 - [`hyperparameter-search`](skills/hyperparameter-search/SKILL.md)
+- [`journal-finder`](skills/journal-finder/SKILL.md)
 - [`kaggle-accounts`](skills/kaggle-accounts/SKILL.md)
 - [`math-tutor`](skills/math-tutor/SKILL.md)
 - [`paper-ingestion`](skills/paper-ingestion/SKILL.md)

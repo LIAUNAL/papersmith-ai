@@ -22,6 +22,9 @@ document is the defect.
 | The dashboard's thematic help for `/plausibility` (`banco-lia`, `uv`, offline behaviour) | [mcp.md](mcp.md#the-dashboards-thematic-help) |
 | The dashboard's tabs, including *Experimentos* (results discussion) and *Novedad & Hallazgos* | [cli.md](cli.md#smith-ui-dir) |
 | Novelty assessment, the `G-NOVELTY` gate and `smith novelty`; the results-discussion tool | [cli.md](cli.md#smith-novelty-statusapproveiteratereset) |
+| Choosing a journal by quartile range, the quartile source, the review-time estimate and the OpenAlex budget | [README](../README.md#choosing-and-adapting-to-a-journal); [skills.md](skills.md#19-journal-finder--a-journal-chosen-on-evidence-a-template-adapted-on-approval) |
+| Adapting the manuscript to a chosen journal: the `venue` verbs, the `venue-adapter` agent and the approval gate | [skills.md](skills.md#9-paper-writing--from-the-section-contracts-to-the-pdf-with-nothing-assumed); `skills/paper-writing/SKILL.md` ("Venue adaptation") |
+| The PDF Preview tab's journal block and its `/api/journals*` routes | [cli.md](cli.md#smith-ui-dir) |
 | Releasing | [releasing.md](releasing.md) |
 | Dashboard under WSL | [wsl-dashboard.md](wsl-dashboard.md) |
 | Flow diagrams | [diagrams/README.md](diagrams/README.md) |
