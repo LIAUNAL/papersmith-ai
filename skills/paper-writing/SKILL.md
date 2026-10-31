@@ -1,6 +1,6 @@
 ---
 name: paper-writing
-description: "Trigger: create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and which blocks gate the next; open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, never reference prose, plus its bound source sections in transposition mode); record or reopen a declaration or fact resolution and see the paper's plan; resolve a citation against OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement before writing a block; judge a drafted, audited block against its own evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; or check the cross-section couplings (contribution list, chain, the gap, diagram disjointness, future-work/limitations), citation integrity and contract currency. Stdlib-only, keyless, fail-closed CLI (paper_cli.py)."
+description: "Trigger: create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, bound source sections); record or reopen a declaration or fact and see the paper's plan; resolve a citation against OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement; judge a drafted, audited block against its evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; check the cross-section couplings, citation integrity and contract currency; or adapt the manuscript to a chosen journal (venue select, requirements, acquire, diff, plan, approve, build under paper/venues/<slug>/, never touching the canonical main.tex). Stdlib-only, keyless, fail-closed CLI (paper_cli.py)."
 ---
 
 # Paper Writing
@@ -13,7 +13,7 @@ it — before a single byte reaches disk.
 
 ## What this skill ships today
 
-Twenty-eight verbs, wired into one front door (`scripts/paper_cli.py`):
+Twenty-nine verbs, wired into one front door (`scripts/paper_cli.py`):
 `scaffold`, `status`, `open`, `substitute` (the block-substitution engine),
 `contract`, `readiness`, `order` (the section contract reader —
 `the-contract-is-data-not-code`), `phases` (the read-only "what can I write
@@ -47,7 +47,9 @@ full-text URL, and places it loose under `guidance/<section>/`), `reuse`
 (read-only: for one block's open claims, which already-ingested,
 evidence-classed papers carry no verdict yet), and `exhaustion`
 (read-only, corpus-wide: every evidence-classed ingested paper's
-exhaustion state -- lists only, never deletes), and `figure optimize`/`figure audit` (the TikZ optimizer and the figure-prose semantic auditor). To the
+exhaustion state -- lists only, never deletes), `figure optimize`/`figure audit` (the TikZ optimizer and the figure-prose semantic auditor), and the `venue` group
+(`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` -- adapting the
+manuscript to a chosen journal under `paper/venues/<slug>/`; "Venue adaptation" below). To the
 substitution engine, block ids
 stay opaque strings — shape only (`[A-Za-z0-9._-]+`), no meaning. The
 contract reader is what says which ids exist, what each requires, and where
@@ -108,7 +110,7 @@ Each stretch this skill delegates is defined in full by its own agent file:
 `.claude/agents/contract-auditor.md`, `.claude/agents/diagram-author.md`,
 `.claude/agents/figure-auditor.md`, `.claude/agents/insumos-observer.md`,
 `.claude/agents/paper-reviewer.md`, `.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
-`.claude/agents/style-sampler.md`. When an agent cannot be spawned — the
+`.claude/agents/style-sampler.md`, `.claude/agents/venue-adapter.md`. When an agent cannot be spawned — the
 harness has no sub-agent mechanism, the agent is not registered in this
 session, or the spawn itself fails — perform the stretch inline: read that
 agent's definition file and follow it as written, from the beginning it states
@@ -119,7 +121,7 @@ workaround. Say in the reply that the stretch ran inline and why the agent
 could not be spawned.
 
 An auditor run inline (`contract-auditor`, `section-grounding-auditor`,
-`figure-auditor`, `paper-reviewer`) is not independent of the session that drafted what it
+`figure-auditor`, `paper-reviewer`, `venue-adapter`) is not independent of the session that drafted what it
 judges. The verbs still reconcile its account against the real bytes, but say
 in the reply that the audit was not separated from the draft.
 
@@ -1778,6 +1780,103 @@ exactly the mistake the operator caught before either verb was built.
 | `exhaustion` reports a paper `active`, reason `"no-open-claims"` | Nothing has been tried against it corpus-wide yet — not a defect, and never "exhausted" by an empty set |
 | `exhaustion` reports a paper `active`, reason `"remaining-claims"` | `remaining` names every claim, corpus-wide, this paper still carries no verdict for — the operator's own next search |
 | `exhaustion` lists a paper under `exhausted` | Every corpus-wide open claim already carries this paper's own `does-not-hold` — the operator deletes it by hand; this skill never does |
+
+## Venue adaptation: `venue`
+
+A journal asks for its own document class, section list, limits, declarations
+and reference style; smith's base template (`sections/*.md`, `paper/main.tex`)
+asks for its own. `venue` measures the one against the other and builds the
+journal's file **without ever writing `paper/main.tex` or `sections/`**.
+Everything about one journal lives under `paper/venues/<slug>/`. Choose the
+journal first (`/journal-finder` ranks candidates into
+`paper/journal-candidates.json`); formatting for a venue comes after the venue
+is chosen, not before.
+
+```
+selected -> requirements -> template -> audited -> planned -> approved -> built (-> compiled)
+```
+
+`planned` and `approved` are only owed while the audit holds a `blocker`
+finding; an audit with none goes from `audited` straight to `built`.
+
+```bash
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue select --slug eswa --candidate S1001
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue requirements --slug eswa --file paper/venues/eswa/requirements.draft.json
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue acquire --slug eswa --texlive elsarticle
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue diff --slug eswa
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue plan --slug eswa --file paper/venues/eswa/plan.draft.md
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue approve --slug eswa --statement "<the operator's words>" --plan-sha256 <hex>
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py venue build --slug eswa
+```
+
+Every verb accepts `--paper <dir>`, prints one JSON object, and on a refusal
+exits 2 having written nothing.
+
+| Verb | What it does | Refuses |
+| --- | --- | --- |
+| `select --slug <s> (--candidate <openalex id> \| --journal <name> --issn <issn>)` | Writes `venue.json`: the journal (name, ISSNs, publisher, homepage), and the quartile, its source and the review-time estimate copied from `paper/journal-candidates.json`; a candidate missing optional fields is tolerated. The slug is lowercase letters, digits and hyphens | `VENUE_SLUG_INVALID`, `SELECT_MODE_REQUIRED`, `SELECT_MODE_CONFLICT`, `ISSN_INVALID`, `CANDIDATES_ABSENT`, `CANDIDATE_UNKNOWN`, `VENUE_EXISTS`, `PAPER_ABSENT` |
+| `requirements --slug <s> --file <json>` | Validates and stores `requirements.json` (schema 1): `guidelines_urls`, `document_class`, `sections`, `limits`, `declarations_required`, `reference_style`, `extras`. **Every requirement carries the `quote` from the guidelines and the `url` it came from** | `VENUE_ABSENT`, `REQUIREMENTS_INVALID`, `REQUIREMENT_UNSOURCED`, `PAPER_OUTSIDE_REPOSITORY` |
+| `acquire --slug <s> (--texlive <class> \| --file <zip\|cls\|sty\|bst\|tex> --url <origin>)` | Records `template.json`. A class TeX Live carries is recorded by name and the path `kpsewhich` resolves (also searched in `/Library/TeX/texbin` and `/usr/local/texlive/*/bin/*`). A publisher template is copied into `template/` with its origin url, sha256 and date; an archive is extracted only if no member escapes the directory, none is a symlink and the size and entry caps hold, and nothing is left behind otherwise | `VENUE_ABSENT`, `ACQUIRE_MODE_REQUIRED`, `ACQUIRE_MODE_CONFLICT`, `TEMPLATE_CLASS_INVALID`, `TEXLIVE_UNAVAILABLE`, `TEMPLATE_ABSENT`, `TEMPLATE_ORIGIN_REQUIRED`, `TEMPLATE_FILE_UNSUPPORTED`, `TEMPLATE_UNSAFE` |
+| `diff --slug <s> [--sections <dir>]` | Writes `audit.json`: smith's section contracts (`paper_contract.parse`: ids, `position`, the `**Extent**` prose read best-effort) and the written `main.tex` (blocks, declarations, keyword count, abstract/title/main-text word counts, figures, tables, cited references, the class and bibliography-style lines) against `requirements.json`. Findings: `missing-section`, `extra-section`, `out-of-order`, `over-limit`, `under-limit`, `missing-declaration`, `class-mismatch`, `reference-style-mismatch`, `missing-extra`, `undecidable`; each with a `severity` (`blocker`, `major`, `minor`), the smith side, the venue side with its quote and url, the affected block ids, and `resolved_by` (`build`, `text-change`, `operator-decision`). The audit records the sha256 of `main.tex` and of `requirements.json` it was computed from | `VENUE_ABSENT`, `REQUIREMENTS_ABSENT`, `TEMPLATE_ABSENT`, `PAPER_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `MALFORMED_HEADER` and the marker codes |
+| `plan --slug <s> --file <md>` | Stores the agent's plan as `plan.md` and returns its sha256. The plan must cite at least one finding id from the audit; storing it **resets any earlier approval** | `AUDIT_ABSENT`, `PLAN_UNREADABLE`, `PLAN_REFERENCES_NO_FINDING` |
+| `approve --slug <s> --statement "<words>" --plan-sha256 <hex>` | Records `approval.json` with the operator's statement verbatim, bound to the current plan's hash (the dashboard button writes the same record with `via: dashboard`) | `STATEMENT_EMPTY`, `PLAN_ABSENT`, `PLAN_HASH_MISMATCH` |
+| `build --slug <s>` | Assembles `paper/venues/<slug>/main.tex`: the venue's class line, the canonical preamble minus the packages the class owns (reported as `preamble.skipped`), front matter mapped from the title, abstract and keyword blocks for `elsarticle`/`IEEEtran`/`llncs` (any other class keeps the canonical title block and `\maketitle`), every canonical block copied **verbatim with its markers** in the venue's section order, `\bibliographystyle` from the requirements and `\bibliography{../../refs}`. Sections the venue does not list are kept after its own; sections smith lacks are reported, never invented. Writes `build.json` | `PLAN_NOT_APPROVED`, `AUDIT_STALE`, `AUDIT_ABSENT`, `TEMPLATE_ABSENT`, `REQUIREMENTS_ABSENT`, `BLOCK_HAND_EDITED` |
+| `status --slug <s>`, `list` | Read-only: the state, the step flags, the finding counts, whether the audit is stale, and the next action | `VENUE_ABSENT`, `VENUE_SLUG_INVALID` |
+
+**The approval gate.** `build` refuses `PLAN_NOT_APPROVED` while the audit holds
+a `blocker` finding and `approval.json` does not carry the sha256 of the
+current `plan.md`. An approval for a plan that was since replaced does not
+count. `build` also refuses `AUDIT_STALE` when `main.tex` or `requirements.json`
+changed after `diff`, so it never answers to findings that no longer exist.
+It verifies each canonical block's digest first and refuses `BLOCK_HAND_EDITED`
+for a hand edit, naming the block.
+
+**Text changes go through `write`, and only through it.** Shortening the
+abstract, adding a data-availability statement, renaming or merging a section:
+each is applied by the existing loop (redactor, then contract-auditor, then
+`write --draft --audit`), one block at a time, after the approval. No `venue`
+verb edits a block. A section the venue needs and smith lacks is a plan item
+the operator decides, never something drafted on the agent's own authority.
+After each applied item, re-run `diff` and read the findings that remain.
+
+**Compiling the venue file.** The venue `main.tex` compiles from
+`paper/venues/<slug>/` (`pdflatex`, `bibtex`, `pdflatex` twice). For a
+publisher template `build` and `status` report `compile_env`
+(`TEXINPUTS`/`BSTINPUTS` pointing at `./template//`); a TeX Live class needs
+none.
+
+**The venue stretch delegates to the `venue-adapter` agent.** It reads the
+journal's author guidelines and template, drafts the requirements (each one a
+quote and a url, none invented), reads `audit.json`, alerts on sections to
+adjust, sections missing and every inconsistency between smith's base template
+and the venue's, and proposes a plan only when one is prudent (no plan when the
+audit is clean apart from the class and preamble). It iterates the plan with
+the operator until the operator approves its exact text. It has no write tool
+and no shell: the orchestrator saves the requirements and the plan it returns,
+runs the verbs, and applies the approved text changes through `write`. It
+never submits the paper.
+
+**Measure this before delegating (venue-adapter):** confirm
+`paper/venues/<slug>/venue.json` exists (`status --slug <s>`), `paper/main.tex`
+exists and no section under `sections/` is empty, and note whether
+`requirements.json`, `template.json` and `audit.json` exist and whether
+`audit_stale` is true; an adapter asked to plan against a stale audit judges
+a manuscript that is gone.
+
+**On a harness with no Task-tool delegation:** run the stretch in-process, in
+the same order, holding to the same gate; its `tools:` line (read, search and
+fetch only) is then the orchestrator's own discipline, not a structural
+guarantee.
+
+| Situation | Action |
+| --- | --- |
+| `requirements` refuses `REQUIREMENT_UNSOURCED` | Every requirement needs the guideline's own words and the page url. Quote it or drop it; never paraphrase a limit into existence |
+| `diff` reports a `blocker` | The venue cannot be built until the operator approves a plan covering it: draft the plan, show it whole, iterate |
+| `plan` refuses `PLAN_REFERENCES_NO_FINDING` | Cite each item by a finding id from `audit.json`, e.g. `[over-limit:abstract_words]` |
+| `approve` refuses `PLAN_HASH_MISMATCH` | The plan changed after the operator read it; show the current plan and its hash again |
+| `build` refuses `AUDIT_STALE` | The manuscript or the requirements changed since `diff`; re-run it |
+| `build` refuses `BLOCK_HAND_EDITED` | A canonical block was edited by hand; read it, then `substitute --adopt` if the edit is deliberate |
+| `acquire` refuses `TEMPLATE_UNSAFE` | The archive has a member that escapes the directory, a symlink, or is past the size cap; do not extract it by hand either, ask for the publisher's original |
 
 ## Refusal roster
 

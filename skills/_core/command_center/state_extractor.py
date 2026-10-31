@@ -173,6 +173,10 @@ AGENT_STAGES = {
     "figure-auditor": "figures",
     "section-grounding-auditor": "figures",
     "audit-report": "audit",
+    # Adapts the finished manuscript to the chosen journal: reads the guidelines,
+    # audits smith's template against them and proposes the plan the operator
+    # approves; the venue build lands beside the paper, never over it.
+    "venue-adapter": "paper",
 }
 
 _EXTENT_RE = re.compile(

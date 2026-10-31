@@ -2,7 +2,7 @@
 
 `papersmith-pi-flow.html` is this repository's flow of record: the twelve
 numbered tramos plus the transversal audit lane, drawn from the repository's own
-files. Two sub-lanes sit beside the numbered ones without being
+files. Five sub-lanes sit beside the numbered ones without being
 tramos of their own: `1a` (the optional thematic help before `/plausibility`:
 keywords typed in the phase-2 box, the `banco-lia` MCP's `search_bank`, and the
 operator's approval of the proposed prompt, which is then launched as
@@ -11,7 +11,20 @@ operator's approval of the proposed prompt, which is then launched as
 `datasets/`, feeding the toy set to the proof of concept and the official
 preparation to the experiments) and `8a` (the Novelty & Findings assessment
 between the measured results and the writing: the dashboard panel, the
-`G-NOVELTY` operator gate, `.papersmith/novelty_gate.json` and `smith novelty`).
+`G-NOVELTY` operator gate, `.papersmith/novelty_gate.json` and `smith novelty`)
+and `11a` (journal choice and venue adaptation, after the compiled PDF:
+`/journal-finder` ranks journals from OpenAlex works and sources, with the SJR
+quartile from an imported CSV or a labelled OpenAlex proxy and a review time
+estimated from Crossref and then PubMed, into `paper/journal-candidates.json`;
+the operator chooses a journal in the PDF Preview tab; `paper-writing venue`
+selects it, the `venue-adapter` agent reads the guidelines and states each
+requirement with a quote and a url, the template is acquired and the audit
+computed, and the agent drafts a plan; the operator approves the plan bound to
+its sha256, text changes go only through `write`, and `venue build` assembles
+`paper/venues/<slug>/main.pdf` without writing `paper/main.tex`). It is a
+serpentine of three rows, so that every turn between rows is a short vertical
+edge, and it has no stage of its own on the board: `venue-adapter` is mapped to
+`paper` in `AGENT_STAGES`.
 Two lanes take a second row, since a sixth column would break the width cap
 below: implementation, for `paper-replicator` -- published code first,
 reimplementation otherwise -- and for the proof of concept's
@@ -78,6 +91,20 @@ minimum and the 186px node width the longest command label needs, six columns
 floor at `30 + 6*186 + 5*24 + 70 = 1312` -- which is why the flow is drawn in
 five and why the plausibility gate is a `security` edge from `novelty-screener`
 to `sota-pool/` rather than a node of its own.
+
+The component count has a cap as well, and it is the renderer's rather than a
+gate's: Archify's grid search, which routes an edge around nodes it has no
+relationship with, gives up on a scene of more than 80 obstacles
+(`maximumObstacleCount`), and an authored `via` cannot replace it, because only
+two automatic routes may cross (with a halo) -- an authored crossing is a
+showcase error. The flow was at 78 components with a single edge only the grid
+could route, the dashed `replication` -> `expBuild`, which has to cross the five
+nodes of lane 5. Lane `11a` took the count to 89, so that arrow was dropped (its
+relation lives in the `expBuild` tag and in the *Flow rules* card) and `11a`
+merges consecutive steps into one node where it can honestly. Probe it before
+adding nodes: 78 passes, 81 failed, and the failure names the one edge the grid
+could no longer route. Any new edge that only the grid can route fails at the
+current size.
 
 ## The PNG
 

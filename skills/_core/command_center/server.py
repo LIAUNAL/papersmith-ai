@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import hashlib
 import html
+import importlib.util
 import json
 import platform
 import re
@@ -29,8 +30,10 @@ import subprocess
 import sys
 import logging
 import os
+import tempfile
 import threading
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
@@ -543,8 +546,9 @@ def _pdf_page_count(pdf: Path) -> int:
         return 0
 
 
-def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
-    """pdflatex, bibtex, pdflatex twice in paper/, each bounded by a timeout.
+def _compile_tex(root: Path, workdir: Path, pdf: Path,
+                 extra_env: dict[str, str] | None = None) -> tuple[dict[str, Any], int]:
+    """pdflatex, bibtex, pdflatex twice in `workdir`, each bounded by a timeout.
     Blocking: the caller runs it off the event loop, holding _PAPER_LOCK."""
     env = os.environ.copy()
     # PATH first, then the shared fallback directories (MacTeX, Homebrew, TeX
@@ -555,25 +559,66 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
     found = [toolchain.find_tool(name, path=env.get("PATH")) for name in ("pdflatex", "bibtex")]
     lead = list(dict.fromkeys(os.path.dirname(f) for f in found if f and os.path.isabs(f)))
     env["PATH"] = os.pathsep.join(filter(None, (*lead, env.get("PATH", ""))))
-    p_dir = str(root / "paper")
+    env.update(extra_env or {})
+    label = pdf.relative_to(root).as_posix()
     pdflatex = ["pdflatex", "-interaction=nonstopmode", "main.tex"]
     first = None
     for argv in (pdflatex, ["bibtex", "main"], pdflatex, pdflatex):
         try:
-            res = subprocess.run(argv, cwd=p_dir, capture_output=True, text=True, env=env,
+            res = subprocess.run(argv, cwd=str(workdir), capture_output=True, text=True, env=env,
                                  timeout=TEX_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             return {"ok": False, "outputs": [],
                     "error": f"{argv[0]} did not finish in {TEX_TIMEOUT_SECONDS} s; compilation stopped."}, 504
+        except OSError as exc:
+            return {"ok": False, "outputs": [],
+                    "error": f"{argv[0]} could not start ({exc}); is a TeX distribution installed?"}, 500
         first = first or res
     return {
         "ok": True,
-        "message": (f"paper/main.pdf compiled ({_pdf_page_count(root / 'paper' / 'main.pdf')} pages)."
+        "message": (f"{label} compiled ({_pdf_page_count(pdf)} pages)."
                     if first.returncode == 0 else
                     f"pdflatex ended with code {first.returncode}; check the log."),
-        "outputs": ["paper/main.pdf"],
+        "outputs": [label],
         "log_tail": first.stdout[-300:] if first.stdout else "",
     }, 200
+
+
+def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
+    """The canonical paper/main.tex. Blocking: the caller runs it off the
+    event loop, holding _PAPER_LOCK."""
+    return _compile_tex(root, root / "paper", root / "paper" / "main.pdf")
+
+
+#: The only variables a venue's `compile_env` may set: where TeX looks for a
+#: publisher's class and bibliography style.
+TEX_ENV_KEYS = ("TEXINPUTS", "BSTINPUTS")
+TEX_ENV_VALUE_MAX = 512
+
+
+def _tex_environment(report: Any) -> dict[str, str]:
+    """The TeX search variables of a `compile_env` report, nothing else."""
+    if not isinstance(report, dict):
+        return {}
+    return {key: value for key in TEX_ENV_KEYS
+            if isinstance(value := report.get(key), str) and value and "\0" not in value
+            and len(value) <= TEX_ENV_VALUE_MAX}
+
+
+def _compile_venue(root: Path, slug: str) -> tuple[dict[str, Any], int]:
+    """paper/venues/<slug>/main.tex, with the template's TeX search path.
+    Blocking: the caller runs it off the event loop, holding _PAPER_LOCK."""
+    directory = paper_preview.venue_directory(root, slug)
+    if directory is None:
+        return _venue_error("VENUE_ABSENT", f"no venue {slug!r}"), 404
+    if not (directory / "main.tex").is_file():
+        return {"ok": False, "error": "VENUE_NOT_BUILT", "outputs": [],
+                "message": f"paper/venues/{slug}/main.tex does not exist: build the venue first."}, 409
+    try:
+        report = _venue_module().status(root / "paper", slug).get("compile_env")
+    except Exception:  # noqa: BLE001 - a venue that cannot report compiles without extras
+        report = None
+    return _compile_tex(root, directory, directory / "main.pdf", _tex_environment(report))
 
 
 def _build_manuscript(root: Path) -> tuple[dict[str, Any], int]:
@@ -588,6 +633,313 @@ def _build_manuscript(root: Path) -> tuple[dict[str, Any], int]:
     else:
         msg = f"Writing: {_block_count(root)} blocks in paper/main.tex."
     return {"ok": True, "message": msg, "outputs": ["paper/main.tex"]}, 200
+
+
+# --------------------------------------------------------------------------
+# journal finder and venues
+# --------------------------------------------------------------------------
+_SKILLS = Path(__file__).resolve().parents[2]
+#: The journal finder's CLI (stdlib only), run as a child process.
+JOURNAL_CLI = _SKILLS / "journal-finder" / "scripts" / "journal_cli.py"
+#: The venue verbs, imported by file path so `approve` can record `via=dashboard`.
+PAPER_VENUE = _SKILLS / "paper-writing" / "scripts" / "paper_venue.py"
+SJR_DOWNLOAD_URL = "https://www.scimagojr.com/journalrank.php"
+#: The CLI's own search deadline is 300 s; the child is killed shortly after.
+JOURNAL_SEARCH_TIMEOUT_SECONDS = 330.0
+JOURNAL_QUICK_TIMEOUT_SECONDS = 30.0
+JOURNALS_FILE_MAX_BYTES = 4 * 1024 * 1024
+SJR_UPLOAD_MAX_BYTES = 16 * 1024 * 1024
+VENUE_JSON_MAX_BYTES = 1024 * 1024
+VENUE_TEXT_MAX_BYTES = 256 * 1024
+SJR_FIRST_YEAR = 1999
+JOURNAL_MAX_LIMIT = 50
+#: One journal search at a time: it spends a shared API budget and writes
+#: `paper/journal-candidates.json`.
+_JOURNAL_LOCK = threading.Lock()
+
+_JOURNAL_ERROR_STATUS = {
+    "QUARTILE_RANGE_INVALID": 422, "FILTER_INVALID": 422, "SJR_FILE_INVALID": 422, "USAGE": 422,
+    "PAPER_ABSENT": 409, "CANDIDATES_UNREADABLE": 409, "WORKSPACE_ABSENT": 404,
+    "NETWORK_UNAVAILABLE": 502, "TIMEOUT": 504, "INTERNAL_ERROR": 500,
+}
+_VENUE_ERROR_STATUS = {
+    "VENUE_SLUG_INVALID": 400, "VENUE_ABSENT": 404, "CANDIDATE_UNKNOWN": 404,
+    "VENUE_EXISTS": 409, "PAPER_ABSENT": 409, "CANDIDATES_ABSENT": 409, "PLAN_ABSENT": 409,
+    "PLAN_HASH_MISMATCH": 409, "PLAN_NOT_APPROVED": 409, "AUDIT_STALE": 409, "AUDIT_ABSENT": 409,
+    "REQUIREMENTS_ABSENT": 409, "TEMPLATE_ABSENT": 409, "BLOCK_HAND_EDITED": 409,
+}
+_QUARTILE_RE = re.compile(r"^\s*[Qq]([1-4])\s*(?:-\s*[Qq]([1-4]))?\s*$")
+
+
+def _journal_error(code: str, message: str, status: int | None = None) -> tuple[dict[str, Any], int]:
+    return {"ok": False, "error": code, "message": message}, status or _JOURNAL_ERROR_STATUS.get(code, 500)
+
+
+def _venue_error(code: str, detail: str) -> dict[str, Any]:
+    return {"ok": False, "status": "refused", "code": code, "error": code, "detail": detail}
+
+
+def _venue_module():
+    """paper_venue, loaded once from its file."""
+    name = "papersmith_paper_venue"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, PAPER_VENUE)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {PAPER_VENUE}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return module
+
+
+def _run_journal_cli(root: Path, argv: list[str], timeout: float) -> tuple[dict[str, Any], int]:
+    """One journal_cli.py verb as a child process: (its JSON object, HTTP status).
+
+    Blocking: callers run it off the event loop. Never raises.
+    """
+    if not JOURNAL_CLI.is_file():
+        return _journal_error("JOURNAL_CLI_ABSENT", f"{JOURNAL_CLI.name} is not installed beside the dashboard", 503)
+    try:
+        done = subprocess.run([sys.executable, str(JOURNAL_CLI), *argv], cwd=str(root),
+                              capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return _journal_error("TIMEOUT", f"the journal CLI did not finish in {timeout:g} s and was stopped")
+    except OSError as exc:
+        return _journal_error("JOURNAL_CLI_FAILED", f"the journal CLI could not start: {exc}", 502)
+    lines = [line for line in done.stdout.splitlines() if line.strip()]
+    try:
+        payload = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict):
+        tail = (done.stderr or done.stdout or "no output").strip()[-300:]
+        return _journal_error("JOURNAL_CLI_FAILED",
+                              f"the journal CLI answered no JSON (exit {done.returncode}): {tail}", 502)
+    if payload.get("ok") is False:
+        return payload, _JOURNAL_ERROR_STATUS.get(str(payload.get("error")), 500)
+    return payload, 200
+
+
+def _read_candidates(root: Path) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    """paper/journal-candidates.json as (document, error); both None when absent."""
+    path = root / "paper" / "journal-candidates.json"
+    status, text = paper_preview.bounded_read(root, path, JOURNALS_FILE_MAX_BYTES)
+    if status == "absent":
+        return None, None
+    if status != "ok" or text is None:
+        return None, {"code": "CANDIDATES_UNREADABLE",
+                      "message": f"paper/journal-candidates.json is {status.replace('_', ' ')}"}
+    try:
+        document = json.loads(text)
+        if not isinstance(document, dict) or not isinstance(document.get("candidates"), list):
+            raise ValueError("no candidates list")
+    except ValueError as exc:
+        return None, {"code": "CANDIDATES_UNREADABLE",
+                      "message": f"paper/journal-candidates.json cannot be read ({exc})"}
+    return document, None
+
+
+def _journals_state(root: Path) -> dict[str, Any]:
+    document, error = _read_candidates(root)
+    sjr = None
+    status_payload, status_code = _run_journal_cli(
+        root, ["status", "--workspace", str(root)], JOURNAL_QUICK_TIMEOUT_SECONDS)
+    if status_code == 200 and isinstance(status_payload.get("sjr"), dict):
+        sjr = status_payload["sjr"]
+    notes = paper_preview.bounded_read(root, root / "paper" / "journal-candidates.md", 1)[0] in ("ok", "too_large")
+    state: dict[str, Any] = {"ok": True, "candidates": document, "sjr": sjr,
+                             "sjr_download_url": SJR_DOWNLOAD_URL, "notes_md": notes,
+                             "busy": _JOURNAL_LOCK.locked()}
+    if error:
+        state["candidates_error"] = error
+    return state
+
+
+def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | None]:
+    """The CLI flags for a search body, or the 422 body that refuses it."""
+    def refuse(code: str, message: str):
+        return None, _journal_error(code, message)[0]
+
+    if not isinstance(payload, dict):
+        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit, no_cache}")
+    raw = payload.get("quartiles")
+    match = _QUARTILE_RE.match(raw) if isinstance(raw, str) else None
+    low = int(match.group(1)) if match else 0
+    high = int(match.group(2) or match.group(1)) if match else 0
+    if not match or low > high:
+        return refuse("QUARTILE_RANGE_INVALID",
+                      "quartiles must be one quartile or an ascending range such as Q1, Q2-Q3 or Q1-Q4")
+    argv = ["--quartiles", f"Q{low}" if low == high else f"Q{low}-Q{high}"]
+
+    oa_only = payload.get("oa_only")
+    if oa_only is not None and not isinstance(oa_only, bool):
+        return refuse("FILTER_INVALID", "oa_only must be true or false")
+    if oa_only:
+        argv.append("--oa-only")
+
+    def whole(name: str, low_bound: int, high_bound: int) -> int | None | bool:
+        value = payload.get(name)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value) \
+                or not low_bound <= int(value) <= high_bound:
+            return False
+        return int(value)
+
+    apc = payload.get("max_apc")
+    if apc is not None:
+        if isinstance(apc, bool) or not isinstance(apc, (int, float)) or not 0 <= apc <= 10_000_000:
+            return refuse("FILTER_INVALID", "max_apc must be a number of USD from 0 to 10000000")
+        argv += ["--max-apc", str(int(apc)) if apc == int(apc) else repr(float(apc))]
+    days = whole("max_review_days", 1, 3650)
+    if days is False:
+        return refuse("FILTER_INVALID", "max_review_days must be a whole number of days from 1 to 3650")
+    if days is not None:
+        argv += ["--max-review-days", str(days)]
+    limit = whole("limit", 1, JOURNAL_MAX_LIMIT)
+    if limit is False:
+        return refuse("FILTER_INVALID", f"limit must be a whole number from 1 to {JOURNAL_MAX_LIMIT}")
+    if limit is not None:
+        argv += ["--limit", str(limit)]
+    no_cache = payload.get("no_cache")
+    if no_cache is not None and not isinstance(no_cache, bool):
+        return refuse("FILTER_INVALID", "no_cache must be true or false")
+    if no_cache:
+        argv.append("--no-cache")
+    return argv, None
+
+
+def _safe_csv_name(raw: str) -> str:
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", Path(raw.replace("\\", "/")).name).lstrip(".")[:80]
+    if not base.lower().endswith(".csv"):
+        base = (base or "upload") + ".csv"
+    return base
+
+
+def _import_sjr(root: Path, data: bytes, name: str, year: int | None) -> tuple[dict[str, Any], int]:
+    """Hand an uploaded CSV to `sjr-import` from a private temp directory."""
+    with tempfile.TemporaryDirectory(prefix="papersmith-sjr-") as folder:
+        source = Path(folder) / _safe_csv_name(name)
+        source.write_bytes(data)
+        argv = ["sjr-import", "--file", str(source)]
+        if year is not None:
+            argv += ["--year", str(year)]
+        return _run_journal_cli(root, argv, JOURNAL_QUICK_TIMEOUT_SECONDS)
+
+
+def _slugify(text: str) -> str:
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")[:63].strip("-")
+
+
+def _source_key(value: Any) -> str:
+    """The OpenAlex id's last segment, lowercase letters and digits only."""
+    return re.sub(r"[^a-z0-9]", "", str(value or "").rstrip("/").rsplit("/", 1)[-1].lower())
+
+
+def _venue_slug_for(root: Path, payload: dict[str, Any]) -> str:
+    """The slug the body names, else one derived from the journal's name."""
+    explicit = payload.get("slug")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    candidate, name = payload.get("candidate"), payload.get("journal")
+    if isinstance(candidate, str) and candidate:
+        key = _source_key(candidate)
+        document, _ = _read_candidates(root)
+        for entry in (document or {}).get("candidates", []):
+            if isinstance(entry, dict) and key and key in (_source_key(entry.get("openalex_id")),
+                                                           _source_key(entry.get("id"))):
+                name = entry.get("display_name")
+                break
+        return _slugify(str(name or "")) or f"venue-{key}"[:63].strip("-") or "venue"
+    return _slugify(str(name or "")) or "venue"
+
+
+def _read_json_part(root: Path, path: Path, errors: dict[str, Any], key: str) -> Any:
+    status, text = paper_preview.bounded_read(root, path, VENUE_JSON_MAX_BYTES)
+    if status == "absent":
+        return None
+    if status != "ok" or text is None:
+        errors[f"{key}_error"] = {"code": "FILE_TOO_LARGE" if status == "too_large" else "UNREADABLE",
+                                  "message": f"{path.name} is {status.replace('_', ' ')}"}
+        return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        errors[f"{key}_error"] = {"code": "UNREADABLE", "message": f"{path.name} is not valid JSON"}
+        return None
+
+
+def _venue_detail(root: Path, slug: str) -> tuple[dict[str, Any], int]:
+    """Everything the venue card shows, read-only and contained."""
+    directory = paper_preview.venue_directory(root, slug)
+    if directory is None or not (directory / "venue.json").is_file():
+        return _venue_error("VENUE_ABSENT", f"no venue {slug!r}"), 404
+    module = _venue_module()
+    try:
+        status = module.status(root / "paper", slug)
+    except module.Refused as refusal:
+        return _venue_error(refusal.code, refusal.detail), _VENUE_ERROR_STATUS.get(refusal.code, 422)
+    errors: dict[str, Any] = {}
+    detail: dict[str, Any] = {"ok": True, "slug": slug, "status": status}
+    for key, name in (("venue", "venue.json"), ("requirements", "requirements.json"),
+                      ("template", "template.json"), ("audit", "audit.json"), ("build", "build.json")):
+        detail[key] = _read_json_part(root, directory / name, errors, key)
+    plan_status, plan_bytes = paper_preview.read_capped_bytes(root, directory / "plan.md", VENUE_TEXT_MAX_BYTES)
+    plan_sha = None
+    detail["plan"] = None
+    if plan_status == "ok" and plan_bytes is not None:
+        plan_sha = hashlib.sha256(plan_bytes).hexdigest()
+        detail["plan"] = {"text": plan_bytes.decode("utf-8", errors="replace"), "sha256": plan_sha}
+    elif plan_status != "absent":
+        errors["plan_error"] = {"code": "FILE_TOO_LARGE" if plan_status == "too_large" else "UNREADABLE",
+                                "message": f"plan.md is {plan_status.replace('_', ' ')}"}
+    approval = _read_json_part(root, directory / "approval.json", errors, "approval")
+    if isinstance(approval, dict):
+        approval = {**approval, "valid": plan_sha is not None and approval.get("plan_sha256") == plan_sha}
+    detail["approval"] = approval if isinstance(approval, dict) else None
+    detail["pdf"] = paper_preview.resolve_venue_pdf(root, slug)[0] == "ok"
+    detail["compile_env"] = status.get("compile_env", {})
+    detail.update(errors)
+    return detail, 200
+
+
+def _venue_list(root: Path) -> dict[str, Any]:
+    module = _venue_module()
+    venues: list[dict[str, Any]] = []
+    try:
+        names = sorted(entry.name for entry in (root / "paper" / "venues").iterdir())
+    except OSError:
+        names = []
+    for name in names:
+        directory = paper_preview.venue_directory(root, name)
+        if directory is None or not (directory / "venue.json").is_file():
+            continue
+        try:
+            summary = module.status(root / "paper", name)
+            venues.append({key: summary.get(key) for key in
+                           ("slug", "journal", "quartile", "state", "blockers", "next_action")})
+        except Exception:  # noqa: BLE001 - one corrupt venue must not hide the others
+            venues.append({"slug": name, "journal": None, "quartile": None, "state": "unreadable",
+                           "blockers": 0, "next_action": ""})
+    return {"ok": True, "venues": venues}
+
+
+def _venue_call(function: Callable[[], dict[str, Any]]) -> tuple[dict[str, Any], int]:
+    """Run a paper_venue verb; a refusal keeps its code, a bug is a typed 500."""
+    module = _venue_module()
+    try:
+        return {"ok": True, **function()}, 200
+    except module.Refused as refusal:
+        return _venue_error(refusal.code, refusal.detail), _VENUE_ERROR_STATUS.get(refusal.code, 422)
+    except Exception as exc:  # noqa: BLE001 - a verb bug is reported, never raised into the loop
+        _log.exception("venue verb failed")
+        return {"ok": False, "error": "INTERNAL_ERROR", "message": f"{type(exc).__name__}: {exc}"}, 500
 
 
 def terminal_allowed(host: str) -> bool:
@@ -1702,8 +2054,18 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             **_PAPER_HEADERS, "Content-Disposition": "inline"})
 
     @app.get("/api/pdf")
-    def api_pdf_direct(request: Request) -> Response:
+    def api_pdf_direct(request: Request, venue: str | None = None) -> Response:
+        # `?venue=<slug>` serves paper/venues/<slug>/main.pdf instead.
         pdf_path = root_path / "paper" / "main.pdf"
+        if venue is not None:
+            found, resolved = paper_preview.resolve_venue_pdf(root_path, venue)
+            if found == "bad":
+                return JSONResponse({"detail": "malformed venue slug"}, status_code=400)
+            if found == "too_large":
+                return JSONResponse({"detail": "artifact exceeds the 100 MiB limit"}, status_code=413)
+            if resolved is None:
+                return JSONResponse({"detail": "venue main.pdf not found"}, status_code=404)
+            pdf_path = resolved
         if not pdf_path.is_file():
             return JSONResponse({"detail": "main.pdf not found in paper/"}, status_code=404)
         # Revalidatable rather than no-store: the live preview re-requests the
@@ -2416,6 +2778,212 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         else:
             status_code = 422
         return JSONResponse(result, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    # ------------------------------------------------- journals and venues
+    # The PDF Preview tab's journal finder and venue adapter. Reads are
+    # bounded and contained; every POST is same-origin; nothing here submits
+    # anything. A refusal keeps the code of the CLI or verb that gave it.
+    def _slug_or_400(slug: str) -> JSONResponse | None:
+        if not paper_preview.VENUE_SLUG_RE.match(slug):
+            return JSONResponse(_venue_error("VENUE_SLUG_INVALID",
+                                             "a venue slug is lowercase letters, digits and hyphens"),
+                                status_code=400, headers=dict(_PAPER_HEADERS))
+        return None
+
+    async def _json_object(request: Request) -> dict[str, Any] | None:
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001 - any unreadable body is a bad request
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _forbidden() -> JSONResponse:
+        return JSONResponse({"ok": False, "error": "FORBIDDEN", "code": "FORBIDDEN",
+                             "message": "cross-origin request rejected"},
+                            status_code=403, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/journals")
+    def api_journals() -> JSONResponse:
+        return JSONResponse(_journals_state(root_path), headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/journals/search")
+    async def api_journals_search(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return _forbidden()
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            payload = None
+        argv, refusal = _search_arguments(payload)
+        if refusal is not None:
+            return JSONResponse(refusal, status_code=422, headers=dict(_PAPER_HEADERS))
+        if not _JOURNAL_LOCK.acquire(blocking=False):
+            body, status_code = _journal_error("SEARCH_RUNNING", "a journal search is already running", 409)
+            return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+        def locked_search() -> tuple[dict[str, Any], int]:
+            # Released by the worker thread, so a cancelled request never
+            # frees the lock while the CLI still runs.
+            try:
+                return _run_journal_cli(root_path, ["search", "--workspace", str(root_path), *argv],
+                                        JOURNAL_SEARCH_TIMEOUT_SECONDS)
+            finally:
+                _JOURNAL_LOCK.release()
+
+        body, status_code = await asyncio.to_thread(locked_search)
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/journals/sjr")
+    async def api_journals_sjr(request: Request) -> JSONResponse:
+        # The raw CSV is the request body (no multipart dependency); its file
+        # name and year travel in the query string.
+        if not origin_is_same(request):
+            return _forbidden()
+        year_text = request.query_params.get("year")
+        year = None
+        if year_text:
+            if not year_text.isdigit() or not SJR_FIRST_YEAR <= int(year_text) <= time.gmtime().tm_year + 1:
+                body, _ = _journal_error("FILTER_INVALID", f"year must be {SJR_FIRST_YEAR} to next year")
+                return JSONResponse(body, status_code=422, headers=dict(_PAPER_HEADERS))
+            year = int(year_text)
+        too_large = _journal_error("FILE_TOO_LARGE", f"the upload exceeds {SJR_UPLOAD_MAX_BYTES} bytes", 413)
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > SJR_UPLOAD_MAX_BYTES:
+            return JSONResponse(too_large[0], status_code=413, headers=dict(_PAPER_HEADERS))
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > SJR_UPLOAD_MAX_BYTES:
+                return JSONResponse(too_large[0], status_code=413, headers=dict(_PAPER_HEADERS))
+            chunks.append(chunk)
+        if total == 0:
+            body, _ = _journal_error("SJR_FILE_INVALID", "the upload is empty")
+            return JSONResponse(body, status_code=422, headers=dict(_PAPER_HEADERS))
+        body, status_code = await asyncio.to_thread(
+            _import_sjr, root_path, b"".join(chunks), request.query_params.get("name", ""), year)
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/venues")
+    def api_venues() -> JSONResponse:
+        try:
+            return JSONResponse(_venue_list(root_path), headers=dict(_PAPER_HEADERS))
+        except Exception as exc:  # noqa: BLE001 - the card shows the failure, the page stays up
+            return JSONResponse({"ok": False, "error": "INTERNAL_ERROR", "message": str(exc), "venues": []},
+                                status_code=500, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/venues/select")
+    async def api_venues_select(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return _forbidden()
+        payload = await _json_object(request)
+        if payload is None:
+            return JSONResponse(_venue_error("SELECT_MODE_REQUIRED", "expected {candidate} or {journal, issn}"),
+                                status_code=422, headers=dict(_PAPER_HEADERS))
+
+        def select() -> tuple[dict[str, Any], int]:
+            module = _venue_module()
+
+            def run() -> dict[str, Any]:
+                candidate, journal, issn = payload.get("candidate"), payload.get("journal"), payload.get("issn")
+                if candidate and (journal or issn):
+                    raise module.Refused("SELECT_MODE_CONFLICT", "give a candidate, or a journal with its ISSN, not both")
+                if not candidate and not (journal and issn):
+                    raise module.Refused("SELECT_MODE_REQUIRED", "give a candidate, or a journal with its ISSN")
+                for value in (candidate, journal, issn):
+                    if value is not None and not isinstance(value, str):
+                        raise module.Refused("SELECT_MODE_REQUIRED", "candidate, journal and issn are text")
+                slug = _venue_slug_for(root_path, payload)
+                return module.select(root_path / "paper", slug, candidate=candidate or None,
+                                     journal=journal or None, issn=issn or None)
+            return _venue_call(run)
+
+        body, status_code = await asyncio.to_thread(select)
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/venues/{slug}")
+    def api_venue(slug: str) -> JSONResponse:
+        refused = _slug_or_400(slug)
+        if refused is not None:
+            return refused
+        try:
+            body, status_code = _venue_detail(root_path, slug)
+        except Exception as exc:  # noqa: BLE001
+            body, status_code = {"ok": False, "error": "INTERNAL_ERROR", "message": str(exc)}, 500
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/venues/{slug}/approve")
+    async def api_venue_approve(slug: str, request: Request) -> JSONResponse:
+        # The operator's own button: like "Validar diagrama", a request with
+        # no Origin header (curl, an agent's shell) is refused too, so a
+        # `via: dashboard` record always came from the page.
+        if not request.headers.get("origin") or not origin_is_same(request):
+            return _forbidden()
+        refused = _slug_or_400(slug)
+        if refused is not None:
+            return refused
+        payload = await _json_object(request)
+        statement = payload.get("statement") if payload else None
+        digest = payload.get("plan_sha256") if payload else None
+        if not isinstance(statement, str) or not isinstance(digest, str):
+            return JSONResponse(_venue_error("STATEMENT_EMPTY", "expected {statement, plan_sha256} as text"),
+                                status_code=422, headers=dict(_PAPER_HEADERS))
+        body, status_code = await asyncio.to_thread(
+            _venue_call, lambda: _venue_module().approve(
+                root_path / "paper", slug, statement=statement, plan_sha256=digest, via="dashboard"))
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/venues/{slug}/build")
+    async def api_venue_build(slug: str, request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return _forbidden()
+        refused = _slug_or_400(slug)
+        if refused is not None:
+            return refused
+        if not _PAPER_LOCK.acquire(blocking=False):
+            return JSONResponse({"ok": False, "error": "PAPER_BUSY",
+                                 "message": "Another compilation of paper/ is still running; wait for it to finish."},
+                                status_code=409, headers=dict(_PAPER_HEADERS))
+
+        def locked_build() -> tuple[dict[str, Any], int]:
+            try:
+                return _venue_call(lambda: _venue_module().build(root_path / "paper", slug))
+            finally:
+                _PAPER_LOCK.release()
+
+        body, status_code = await asyncio.to_thread(locked_build)
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/paper/compile")
+    async def api_paper_compile(request: Request) -> JSONResponse:
+        # `?venue=<slug>` compiles paper/venues/<slug>/main.tex; without it the
+        # canonical paper/main.tex. Same sequence, same lock as the phase card.
+        if not origin_is_same(request):
+            return _forbidden()
+        slug = request.query_params.get("venue")
+        if slug is not None:
+            refused = _slug_or_400(slug)
+            if refused is not None:
+                return refused
+            if paper_preview.venue_directory(root_path, slug) is None:
+                return JSONResponse(_venue_error("VENUE_ABSENT", f"no venue {slug!r}"),
+                                    status_code=404, headers=dict(_PAPER_HEADERS))
+        if not _PAPER_LOCK.acquire(blocking=False):
+            return JSONResponse({"ok": False, "error": "PAPER_BUSY",
+                                 "message": "Another compilation of paper/ is still running; wait for it to finish."},
+                                status_code=409, headers=dict(_PAPER_HEADERS))
+
+        def locked_compile() -> tuple[dict[str, Any], int]:
+            try:
+                return _compile_paper(root_path) if slug is None else _compile_venue(root_path, slug)
+            finally:
+                _PAPER_LOCK.release()
+
+        try:
+            body, status_code = await asyncio.to_thread(locked_compile)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500, headers=dict(_PAPER_HEADERS))
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
 
     # ---------------------------------------------------------------- terminal
     app.state.terminal = terminals

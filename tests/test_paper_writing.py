@@ -8854,8 +8854,11 @@ class RefusalRosterTests(unittest.TestCase):
         165 -> 167 in `model-output-validation` (Issue #71):
         `cmd_write` and `write_block` validate draft and audit account
         JSON envelopes before indexing fields, adding `DRAFT_UNREADABLE`
-        and `AUDIT_UNREADABLE` (both invocation defects)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 167)
+        and `AUDIT_UNREADABLE` (both invocation defects).
+
+        167 -> 194 in `journal-finder`: the `venue` verb group adds 27
+        codes, every one classified in `REFUSAL_CLASSIFICATION`."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 194)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

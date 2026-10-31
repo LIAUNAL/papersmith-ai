@@ -92,10 +92,10 @@ the chain: it stands aside and looks at any of them, itself included.
 
 The map draws the eleven skills that take part in the flow. Skill 12,
 `upgrade-project`, is not a stage: it operates on the workspace the flow runs
-inside, and its own section below explains it. Sections 13 to 18 cover the
+inside, and its own section below explains it. Sections 13 to 19 cover the
 skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
-`hyperparameter-search`, `remote-parallelism`, `math-tutor` and
-`experiments-tutor` — and each names its own seams.
+`hyperparameter-search`, `remote-parallelism`, `math-tutor`,
+`experiments-tutor` and `journal-finder` — and each names its own seams.
 
 ---
 
@@ -2210,8 +2210,9 @@ $ paper_cli.py resolve --identifier 10.1038/nature14539 --resolver crossref
 ```
 
 **The flow, by groups of verbs.** This skill declares no stage table: it declares
-**nineteen verbs behind a single door** (`scripts/paper_cli.py`), and the flow is
-the order in which those groups enable one another.
+**twenty-nine verbs behind a single door** (`scripts/paper_cli.py`; `mark`, `bib`,
+`figure` and `venue` count once each and carry their own sub-verbs), and the flow
+is the order in which those groups enable one another.
 
 | Group | Verbs | What it establishes |
 |---|---|---|
@@ -2220,9 +2221,49 @@ the order in which those groups enable one another.
 | The paper's own decisions | `declare`, `observe`, `plan` | What the paper decides about itself. `observe` validates a report from `insumos-observer` against the schema **before** a person runs `declare` |
 | The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it** |
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
-| Checking | `verify` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency |
+| Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads |
+| Structure, sources and reuse | `phases`, `skeleton`, `bind`, `separate`, `mark`, `packet`, `full_text`, `reuse`, `exhaustion` | The derived "what can I write now" report and the one-time opening of the empty section/block structure; the source-section binding loop and the revision/class declarations of a source root or `guidance/` folder; the redactor's own context; one already-resolved identifier's PDF placed under `guidance/<section>/`; and the read-only reports of which ingested papers carry no verdict yet and of the exhaustion state of the evidence papers |
+| Venue adaptation | `venue select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` | Measures the manuscript against a chosen journal's guidelines and template and builds the journal's own `main.tex` under `paper/venues/<slug>/`, never touching the canonical one (below) |
 
-**The substitution engine is four of those nineteen** — `scaffold`, `status`,
+**Venue adaptation: the `venue` verbs and the `venue-adapter` agent.** A journal
+asks for its own document class, section list, limits, declarations and
+reference style, and smith's base template (`sections/*.md`, `paper/main.tex`)
+asks for its own. The `venue` group measures the one against the other and
+builds the journal's file without ever writing `paper/main.tex` or `sections/`;
+everything about one journal lives under `paper/venues/<slug>/`. The journal is
+chosen first, with `/journal-finder` (section 19); formatting for a venue comes
+after the venue is chosen, not before. The state machine is `selected ->
+requirements -> template -> audited -> planned -> approved -> built (->
+compiled)`, and `planned` and `approved` are owed only while the audit holds a
+`blocker` finding.
+
+| Verb | What it does |
+|---|---|
+| `venue select --slug <s> (--candidate <openalex id> \| --journal <name> --issn <issn>)` | Writes `venue.json`: the journal, and the quartile, its source and the review-time estimate copied from `paper/journal-candidates.json` |
+| `venue requirements --slug <s> --file <json>` | Validates and stores `requirements.json` (schema 1). **Every requirement carries the `quote` from the guidelines and the `url` it came from**; one without them is refused `REQUIREMENT_UNSOURCED` |
+| `venue acquire --slug <s> (--texlive <class> \| --file <zip\|cls\|sty\|bst\|tex> --url <origin>)` | Records the template: a TeX Live class by name and resolved path, or a publisher template copied into `template/` with its origin url, sha256 and date. An archive that escapes its directory is refused `TEMPLATE_UNSAFE` |
+| `venue diff --slug <s>` | Writes `audit.json`: smith's section contracts and the written `main.tex` against `requirements.json`, as findings (`missing-section`, `extra-section`, `out-of-order`, `over-limit`, `under-limit`, `missing-declaration`, `class-mismatch`, `reference-style-mismatch`, `missing-extra`, `undecidable`), each with a severity (`blocker`, `major`, `minor`), both sides, the quote and url, and the affected block ids |
+| `venue plan --slug <s> --file <md>` | Stores the agent's plan and returns its sha256; the plan must cite a finding id, and storing it resets any earlier approval |
+| `venue approve --slug <s> --statement "<words>" --plan-sha256 <hex>` | Records the operator's statement verbatim, bound to the current plan's hash (`PLAN_HASH_MISMATCH`, `STATEMENT_EMPTY`); the dashboard button writes the same record with `via: dashboard` |
+| `venue build --slug <s>` | Assembles `paper/venues/<slug>/main.tex` with the venue's class, the canonical blocks copied verbatim with their markers in the venue's section order, and the venue's bibliography style. Refuses `PLAN_NOT_APPROVED` while a blocker finding has no approved plan, and `AUDIT_STALE` when `main.tex` or the requirements changed after `diff` |
+| `venue status --slug <s>`, `venue list` | Read-only: the state, the finding counts and the next action |
+
+Every verb prints one JSON object, and a refusal exits 2 having written
+nothing. The `venue-adapter` agent (`Read`, `Glob`, `Grep`, `WebFetch`,
+`WebSearch`; it writes nothing) reads the author guidelines and the template,
+drafts the requirements, reads `audit.json`, alerts on sections to adjust,
+sections the venue needs and smith lacks, and inconsistencies between the two
+templates, and proposes a plan only when one is prudent: with an audit clean
+except class and preamble there is nothing to plan and it stops at `venue
+build`. It iterates the plan with the operator until they approve its exact
+text. The text changes the plan calls for are applied only through the existing
+`write` loop (redactor, contract-auditor, `write --draft --audit`), one block at
+a time, after the approval; a section the venue needs and smith lacks is a plan
+item the operator decides, never something drafted on the agent's authority. It
+never submits. The literal contract is the "Venue adaptation" section of
+`skills/paper-writing/SKILL.md` and `.claude/agents/venue-adapter.md`.
+
+**The substitution engine is four of those twenty-nine** — `scaffold`, `status`,
 `open`, `substitute` — and they carry one rule: **there is no `--force`**. Nothing
 here ever discards a person's on-disk text in favor of an incoming body. The only
 exit from a hand-edited block is `--adopt`, which re-baselines the digest and
@@ -2252,8 +2293,9 @@ nothing was asserted without a run having checked it.
 
 | File | What it does and why it exists |
 |---------|---------------------------|
-| `SKILL.md` | The conduct contract: the 19 verbs, their refusals, the shuttle procedure to the 6 agents. |
-| `scripts/paper_cli.py` | The front door — 19 verbs: `scaffold, status, open, substitute, contract, readiness, order, declare, observe, resolve, bib, validate, plan, write, render, verify, place, figure optimize, figure audit`. No external dependencies. |
+| `SKILL.md` | The conduct contract: the 29 verbs, their refusals, the shuttle procedure to the 9 agents. |
+| `scripts/paper_cli.py` | The front door — 29 verbs: `scaffold, status, open, substitute, contract, readiness, phases, skeleton, order, declare, bind, mark, separate, observe, resolve, full_text, bib, validate, plan, write, render, couplings, verify, place, figure, venue, packet, reuse, exhaustion`; `mark` (`revisions`, `class`), `bib` (`build`, `refresh`), `figure` (`optimize`, `audit`) and `venue` (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list`) take a sub-verb. No external dependencies. |
+| `scripts/paper_venue.py` | The `venue` verbs: the venue folder under `paper/venues/<slug>/`, the requirements schema (every requirement quoted and sourced), the audit against smith's section contracts and `main.tex`, the plan and its sha256-bound approval, and the build of the journal's own `main.tex`. It never writes `paper/main.tex` or `sections/`. |
 | `scripts/paper_scaffold.py` | Creates and re-enters `paper/` without clobbering — the same pattern as `proposals/`/`experiments/`. |
 | `scripts/paper_block.py` | Marker grammar: delimits, locates, substitutes and refuses over named blocks inside `main.tex`, byte by byte. |
 | `scripts/paper_region.py` | The shared grammar in which the `declarations`/`provenance` regions are written. |
@@ -2286,6 +2328,11 @@ nothing was asserted without a run having checked it.
 | `.claude/agents/style-sampler.md` | Resolves the equivalent block, **whole**, from every `guidance/` folder the record classifies as `style-reference`, and returns it **verbatim, never trimmed**. `Read`, `Glob`, `Grep`. What it returns is the only material against which a later overlap test can compare a styled draft: if it trimmed, the test would compare against something no one wrote. |
 | `.claude/agents/figure-auditor.md` | Audits TikZ diagrams against their section's prose and the declared manifest; runs `figure audit` and reports the structured verdict. |
 | `.claude/agents/paper-reviewer.md` | Reviews the compiled paper with the NeurIPS 2026 review form and reports each rating with quoted evidence. |
+| `.claude/agents/redactor.md` | Drafts one contract block's LaTeX from exactly five inputs (the contract's prose, the evidence set, the mode, the style set, the bound source sections) and hands back a binding map naming every sentence's source. `Read`, `Glob`, `Grep`; `write` judges what it returns, it never calls it. |
+| `.claude/agents/contract-auditor.md` | Reads a contract's `## Disqualifiers` verbatim and judges a drafted block against each one: fires, clear or undecidable, with a quoted span for every `fires`. `Read`, `Glob`, `Grep`. |
+| `.claude/agents/section-grounding-auditor.md` | Reads a transposition block's bound source section verbatim and judges each subject sentence's support: supported, unsupported or undecidable, with a quoted span for every supported. `Read`, `Glob`, `Grep`. |
+| `.claude/agents/diagram-author.md` | Authors one standalone TikZ diagram (`<id>.tex` plus `<id>.diagram.json`) and drives its own compile loop through `render`, up to the repair budget. `Read`, `Write`, `Edit`, `Bash`. |
+| `.claude/agents/venue-adapter.md` | Reads a chosen journal's author guidelines and template and measures the manuscript against them: requirements (each a quote and its url), sections to adjust, missing sections, inconsistencies with smith's base template, and a plan only when one is prudent. `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`; it writes nothing. |
 
 **The safeguards.**
 
@@ -2971,4 +3018,186 @@ flowchart TD
     E -- No --> A
     E -- Yes --> F["Draft for /experimental-deliberation"]
     F --> G["The deliberation's gate: the operator decides"]
+```
+
+---
+
+### 19. `journal-finder` — a journal chosen on evidence, a template adapted on approval
+
+**What it is for.** A paper is ready to leave the lab when its text is settled;
+where it goes is a separate decision, and a hunch is a poor basis for it. This
+skill turns the paper's own title, abstract, keywords and references into a
+ranked shortlist of journals that already publish work like it, in a quartile
+range the operator chooses, and lets an agent read what each journal says about
+its own scope. Nothing is ever submitted and no editor is contacted.
+
+**What it receives and what it hands on.** It reads `paper/main.tex` (`\title`,
+the `abstract` environment, `\keywords` or a keywords block; else the title and
+abstract files under `paper/sections/`) and `paper/refs.bib`, and asks OpenAlex
+for works like the paper. It hands back `paper/journal-candidates.json` (schema
+1) and, after the agent reads each journal's aims-and-scope page,
+`paper/journal-candidates.md`. The chosen journal then passes to the `venue`
+verbs of `paper-writing` (section 9), which adapt the manuscript to its template
+under `paper/venues/<slug>/`.
+
+**How it runs.** `/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>]
+[--max-review-days N] [--limit N]`, or from the dashboard's *Previsualización
+PDF* tab: the *Revistas sugeridas* block takes the quartile range, the
+open-access, APC, review-time and limit filters, and either runs the search
+(*Buscar revistas*, `POST /api/journals/search`; *Forzar actualización* adds
+`no_cache` so that one search skips the response cache) or types the same
+command into the CLI assistant (*Analizar con agente*). The range is a single
+quartile or an ascending contiguous one, case-insensitive; the default
+`--limit` is 15, the maximum 50. The routes behind the block are in
+[cli.md](cli.md#smith-ui-dir).
+
+**The verbs** of `skills/journal-finder/scripts/journal_cli.py` (standard library
+only, one JSON object on stdout):
+
+| Verb | What it does |
+|---|---|
+| `search --workspace <dir> --quartiles <range> [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--sjr <csv>] [--out <path>] [--no-cache]` | Reads the paper, searches OpenAlex for works like it, keeps the journals they appeared in (and those the paper cites), fetches each journal's record, scores the fit, attaches the quartile and the review-time estimate, filters, ranks and writes `paper/journal-candidates.json` |
+| `sjr-import --file <path> [--year YYYY]` | Validates a SCImago "Download data" CSV (semicolon or comma delimited, decimal commas; the columns `Title`, `Issn`, `SJR`, `SJR Best Quartile`, `Categories`, `Publisher`) and stores it as `~/.cache/papersmith/sjr/scimagojr-<year>.csv` |
+| `status --workspace <dir>` | Read-only: the candidates file's summary and the SJR file in use, or none |
+
+**The inputs.** The paper's title or abstract (without either, `PAPER_ABSENT`);
+the quartile range; optionally an SJR file; optionally a contact email.
+
+**The fit score.** Three signals, each normalised to 0..1 over the journals
+evaluated and exposed per candidate as `fit`:
+`fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 * topic_overlap`.
+`similar_works` counts works like the paper that the journal published (one
+OpenAlex query of quoted key phrases joined by `OR`, last six years);
+`cited_in_paper` counts the paper's references published there; `topic_overlap`
+compares the paper's OpenAlex topic distribution with the journal's. A signal
+that is zero for every journal drops out and the other weights are rescaled;
+`query.scoring` records the formula, the weights in force and the components
+that are `active`, so every `fit_score` that carries no gate can be rebuilt as
+`round(sum(weights[k] * fit[k]), 4)`.
+
+**The facets and the application gate.** A paper that applies a method to a
+domain must not be ranked by the method alone. The application is the title's
+tail after its first ` for `, ` applied to `, ` towards ` or ` toward `
+(`query.facets.tail`); each key phrase belongs to the application facet when it
+shares a word with that tail (or comes from a keyword that does) and to the
+method facet otherwise. With both facets present each gets its own `OR` query of
+at most five phrases and half of the works budget (`query.facets.queries`).
+Every candidate reports `facets`: `method` and `application` (the distinct works
+each facet found there), `application_topic_overlap` and `gate`. A journal none
+of whose similar works matched an application phrase and whose topics overlap
+the application works' topics by less than 0.05 has its `fit_score` multiplied
+by 0.5 (`gate: 0.5`, `query.scoring.facet_gate`) and the flag
+`no-application-evidence`; it still appears. A title without such a marker has
+one facet and no gate. The other flags are `apc-unknown` (an APC limit was set
+and the journal's APC is unknown) and `review-time-unknown` (a review-time limit
+was set and the journal has no public data).
+
+**Calls, the cache and the OpenAlex budget.** OpenAlex's keyless budget is
+small (about USD 0.10 per day, shared by everyone behind one IP address) and a
+search spends a noticeable part of it. Successful answers are kept in
+`~/.cache/papersmith/journal-finder/http/` (`PAPERSMITH_JOURNAL_CACHE_DIR`
+overrides the directory), keyed by the request without credentials or contact
+email: a request with a `search` or `term` parameter is reused for one day, any
+other lookup for seven. Errors are never stored, a cache that cannot be read or
+written is just a miss, and `--no-cache` neither reads nor writes it.
+`api_calls` in the output reports `made` and `cached` in total and per service
+(`openalex`, `crossref`, `pubmed`), `cache` (`enabled`, `dir`) and `budget`:
+`state` is `ok` (the answers carried `x-ratelimit-remaining-usd`), `exhausted`
+or `unknown`, with `remaining_usd`, `limit_usd` and `retry_after_seconds` when
+known. A `429` that asks for a wait of more than 60 seconds is a spent quota,
+not a burst: the CLI does not retry it. On the first search the refusal is
+`NETWORK_UNAVAILABLE` and its message names the wait and `OPENALEX_API_KEY`;
+later in a search that step degrades with a note and `budget.state` reads
+`exhausted`.
+
+**Where the quartile comes from.** `sjr`: the SCImago file the operator imported,
+matched by any ISSN, never by title. scimagojr.com sits behind a browser
+challenge, so the forge never scrapes it: the operator downloads the CSV once
+from <https://www.scimagojr.com/journalrank.php> and imports it with
+`sjr-import` or the panel's upload; the latest imported year is used, and a file
+older than two years adds a note. `openalex-proxy`: with no SJR file, or for a
+journal not in it, the share of OpenAlex journals of the same field with a
+higher 2-year mean citedness maps to Q1..Q4. It approximates a citation
+percentile, is **not** an SJR quartile, and travels labelled with every row.
+
+**The review-time estimate.** Per candidate, `review_time`: the median and
+quartiles of the days between `received` and `accepted` over the journal's
+latest 40 research articles of the last three years. The chain is Crossref
+`assertion` entries, then PubMed `esummary` history, then `source: "none"`;
+fewer than five dated articles also reads as `none`, with `n` kept. It
+estimates submission-to-acceptance, revision rounds included, not the time to
+first decision, and a failing source degrades to `none` rather than failing the
+search. The journal's own declared time to first decision may be added by the
+agent to the markdown only with the page URL and labelled "declared by the
+journal", never in place of the computed one.
+
+**The refusals.** One JSON object `{"ok": false, "error": CODE, "message": ...}`,
+exit 2, nothing written:
+
+| Code | When |
+|---|---|
+| `QUARTILE_RANGE_INVALID` | the range is not `Q1`, `Q2-Q3`, `Q1-Q4`... ascending and contiguous |
+| `PAPER_ABSENT` | no title and no abstract can be read |
+| `NETWORK_UNAVAILABLE` | OpenAlex cannot be reached within the bounded retries and deadline, or its daily quota is spent (a `429` with `Retry-After` over 60 s; the message names `OPENALEX_API_KEY`) |
+| `SJR_FILE_INVALID` | the CSV lacks a required column, is empty, or has no year |
+| `FILTER_INVALID` | `--limit`, `--max-apc` or `--max-review-days` is not a valid number |
+| `WORKSPACE_ABSENT` | `--workspace` is not a directory |
+| `CANDIDATES_UNREADABLE` | `status` found a `journal-candidates.json` that is not valid |
+| `USAGE` | a flag or verb the CLI does not know |
+
+**The outputs.** `paper/journal-candidates.json`: `generated_at`, `query`
+(title, keywords, terms, phrases, `search_mode`, `facets`, `topics`, `cited`,
+`scoring`), `quartiles`, `filters`, `quartile_source_summary`, `sjr` (`file`,
+`year`, or null), `candidates`, `excluded_count`, `notes` and `api_calls`. Each
+candidate carries `rank`, `fit_score`, `fit` (`similar_works`, `cited_in_paper`,
+`topic_overlap`), `facets`, `similar_works_count`, `similar_works` (up to three
+examples with title, year and DOI), `cited_in_paper_count`, `topics`,
+`quartile`, `quartile_source`, `sjr` (value, year, best quartile, and the
+categories as `{name, quartile}`) or `proxy`, `is_oa`, `is_in_doaj`, `apc_usd`,
+`h_index`, `mean_citedness_2yr`, `review_time` and `flags`.
+`paper/journal-candidates.md`, written by the agent: per journal, why it fits
+(quoting the paper and the journal's scope), scope risks, OA and APC, the
+quartile with its source and the review time; it never changes the CLI's
+numbers.
+
+**Environment variables.**
+
+| Variable | Effect |
+|---|---|
+| `PAPERSMITH_CONTACT_EMAIL` | Optional polite `mailto`, User-Agent and NCBI `email`; never hard-coded and sent only when set |
+| `OPENALEX_API_KEY` | Sent to OpenAlex only when set. Keyless calls have a small daily budget (about USD 0.10 per IP per day); a free key has its own daily budget. The quota refusal names this variable |
+| `PAPERSMITH_JOURNAL_CACHE_DIR` | The response cache's directory (default `~/.cache/papersmith/journal-finder/http`) |
+| `NCBI_API_KEY` | Sent to PubMed only when set (the CLI stays under three requests per second either way) |
+| `PAPERSMITH_SJR_DIR` | The directory of the imported SJR files (default `~/.cache/papersmith/sjr`) |
+| `PAPERSMITH_OPENALEX_URL`, `PAPERSMITH_CROSSREF_URL`, `PAPERSMITH_PUBMED_URL` | Override the base URLs (the tests point them at local fakes) |
+| `PAPERSMITH_HTTP_TIMEOUT`, `PAPERSMITH_HTTP_RETRIES`, `PAPERSMITH_HTTP_BACKOFF` | Per-request seconds (default 15), retries on 429/5xx/transport errors (default 3), first backoff in seconds (default 0.5, doubling) |
+| `PAPERSMITH_JOURNAL_DEADLINE`, `PAPERSMITH_JOURNAL_MAX_WORKS` | Total seconds for one search (default 300) and works read from OpenAlex (default 200) |
+| `PAPERSMITH_OPENALEX_MIN_INTERVAL` | Seconds between OpenAlex calls (default 0.11) |
+
+**What it never does.** It never submits a manuscript, fills a form or contacts
+an editor; never invents a quartile, an impact factor, an APC or an acceptance
+rate (no impact factor is reported at all: none of its sources publishes it);
+never presents the proxy as SJR; never changes the ranking numbers or hand-edits
+`journal-candidates.json`; never scrapes scimagojr.com; and never edits the
+paper. Adapting the manuscript to the chosen journal is the `venue` verbs' job
+(section 9), behind the operator's approval.
+
+**Diagram.**
+
+```mermaid
+flowchart TD
+    A["Operator: a quartile range, filters"] --> B["journal_cli.py search: OpenAlex works like the paper"]
+    S["SJR CSV the operator imported (optional)"] --> B
+    B --> C["paper/journal-candidates.json: ranked, quartile labelled by source, review time"]
+    C --> D["Agent reads each journal's aims and scope"]
+    D --> E["paper/journal-candidates.md"]
+    E --> F{"Operator chooses a journal"}
+    F --> G["venue select, requirements, acquire, diff"]
+    G --> H{"Blocker findings?"}
+    H -- No --> K["venue build: paper/venues/slug/main.tex"]
+    H -- Yes --> I["venue-adapter proposes a plan"]
+    I --> J["Operator approves the plan, bound to its sha256"]
+    J --> L["Text changes through the write loop, one block at a time"]
+    L --> G
+    J --> K
 ```

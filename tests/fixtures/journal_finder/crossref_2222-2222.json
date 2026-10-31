@@ -1,0 +1,312 @@
+{
+  "status": "ok",
+  "message": {
+    "total-results": 9,
+    "items": [
+      {
+        "DOI": "10.1111/nfl.a",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 March 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "11 March 2024",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "13 March 2024",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.b",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "2024-03-01",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "2024-03-21",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "2024-03-25",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.c",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 Mar 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "31 Mar 2024",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "6 Apr 2024",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.d",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 April 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "11 May 2024",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "19 May 2024",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.e",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "2024-04-01",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "2024-05-21",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "2024-05-31",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.f",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 May 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "30 June 2024",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "12 July 2024",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.g",
+        "assertion": [
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "30 June 2024",
+            "order": 2
+          },
+          {
+            "name": "first_online",
+            "label": "First Online",
+            "value": "12 July 2024",
+            "order": 3
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.h",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "30 June 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "1 June 2024",
+            "order": 2
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.i",
+        "issued": {
+          "date-parts": [
+            [
+              2024,
+              1,
+              1
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

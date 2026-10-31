@@ -1,0 +1,40 @@
+{
+  "id": "https://openalex.org/S1001",
+  "display_name": "Neural Fixtures Letters",
+  "issn_l": "1111-111X",
+  "issn": [
+    "1111-111X",
+    "2222-2222"
+  ],
+  "type": "journal",
+  "host_organization_name": "Fixture Press",
+  "is_oa": false,
+  "is_in_doaj": false,
+  "apc_usd": null,
+  "homepage_url": "https://neural-fixtures.example/",
+  "summary_stats": {
+    "2yr_mean_citedness": 9.0,
+    "h_index": 180,
+    "i10_index": 1800
+  },
+  "topics": [
+    {
+      "id": "https://openalex.org/T1",
+      "display_name": "Fixture topic",
+      "count": 100,
+      "field": {
+        "id": "https://openalex.org/fields/17",
+        "display_name": "Computer Science"
+      }
+    },
+    {
+      "id": "https://openalex.org/T2",
+      "display_name": "Other topic",
+      "count": 5,
+      "field": {
+        "id": "https://openalex.org/fields/28",
+        "display_name": "Neuroscience"
+      }
+    }
+  ]
+}

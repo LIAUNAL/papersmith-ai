@@ -1,0 +1,148 @@
+{
+  "status": "ok",
+  "message": {
+    "total-results": 5,
+    "items": [
+      {
+        "DOI": "10.3333/osp.c0",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 January 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "2 February 2024",
+            "order": 2
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.3333/osp.c1",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 January 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "3 February 2024",
+            "order": 2
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.3333/osp.c2",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 January 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "4 February 2024",
+            "order": 2
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.3333/osp.c3",
+        "assertion": [
+          {
+            "name": "received",
+            "label": "Received",
+            "value": "1 January 2024",
+            "order": 1
+          },
+          {
+            "name": "accepted",
+            "label": "Accepted",
+            "value": "5 February 2024",
+            "order": 2
+          },
+          {
+            "name": "Ethics",
+            "label": "Ethics",
+            "value": "No conflict of interest.",
+            "order": 4
+          }
+        ],
+        "issued": {
+          "date-parts": [
+            [
+              2025,
+              6,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.3333/osp.x",
+        "issued": {
+          "date-parts": [
+            [
+              2024,
+              1,
+              1
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

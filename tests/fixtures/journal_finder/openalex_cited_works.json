@@ -1,0 +1,117 @@
+{
+  "meta": {
+    "count": 5
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W901",
+      "doi": "https://doi.org/10.1111/nfl.1",
+      "title": "Cited work 901",
+      "publication_year": 2021,
+      "primary_location": {
+        "source": {
+          "id": "https://openalex.org/S1001",
+          "display_name": "Neural Fixtures Letters",
+          "type": "journal"
+        }
+      },
+      "topics": [
+        {
+          "id": "https://openalex.org/T1",
+          "display_name": "Topic T1",
+          "score": 0.9
+        },
+        {
+          "id": "https://openalex.org/T2",
+          "display_name": "Topic T2",
+          "score": 0.1
+        }
+      ]
+    },
+    {
+      "id": "https://openalex.org/W902",
+      "doi": "https://doi.org/10.5555/cited.1",
+      "title": "Cited work 902",
+      "publication_year": 2021,
+      "primary_location": {
+        "source": {
+          "id": "https://openalex.org/S1005",
+          "display_name": "Cited Only Journal",
+          "type": "journal"
+        }
+      },
+      "topics": [
+        {
+          "id": "https://openalex.org/T3",
+          "display_name": "Topic T3",
+          "score": 0.9
+        },
+        {
+          "id": "https://openalex.org/T2",
+          "display_name": "Topic T2",
+          "score": 0.1
+        }
+      ]
+    },
+    {
+      "id": "https://openalex.org/W903",
+      "doi": "https://doi.org/10.5555/cited.2",
+      "title": "Cited work 903",
+      "publication_year": 2021,
+      "primary_location": {
+        "source": {
+          "id": "https://openalex.org/S1005",
+          "display_name": "Cited Only Journal",
+          "type": "journal"
+        }
+      },
+      "topics": [
+        {
+          "id": "https://openalex.org/T3",
+          "display_name": "Topic T3",
+          "score": 0.8
+        }
+      ]
+    },
+    {
+      "id": "https://openalex.org/W904",
+      "doi": "https://doi.org/10.9999/dataset",
+      "title": "Cited work 904",
+      "publication_year": 2021,
+      "primary_location": {
+        "source": {
+          "id": "https://openalex.org/S2001",
+          "display_name": "arXiv (Cornell University)",
+          "type": "repository"
+        }
+      },
+      "topics": [
+        {
+          "id": "https://openalex.org/T1",
+          "display_name": "Topic T1",
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "id": "https://openalex.org/W905",
+      "doi": "https://doi.org/10.48550/arxiv.2101.00001",
+      "title": "Cited work 905",
+      "publication_year": 2021,
+      "primary_location": {
+        "source": {
+          "id": "https://openalex.org/S1002",
+          "display_name": "Open Signal Processing",
+          "type": "journal"
+        }
+      },
+      "topics": [
+        {
+          "id": "https://openalex.org/T1",
+          "display_name": "Topic T1",
+          "score": 0.7
+        }
+      ]
+    }
+  ]
+}

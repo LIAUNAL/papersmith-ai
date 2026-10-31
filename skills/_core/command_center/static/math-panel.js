@@ -138,10 +138,10 @@
     el.dataset.tone = tone || 'muted';
   }
 
-  function renderMeter(level) {
+  function renderMeter(currentLevel) {
     const meter = $('tutorMeter');
     if (!meter) return;
-    const lvl = Number.isInteger(level) ? level : 0;
+    const lvl = Number.isInteger(currentLevel) ? currentLevel : 0;
     // One dot per level above "no evidence": level N lights N dots.
     meter.innerHTML = LEVELS.slice(1).map((_, i) => `<span class="tutor-meter__dot${i < lvl ? ' is-on' : ''}" title="${i + 1} · ${escapeHtml(level(i + 1))}"></span>`).join('')
       + `<span class="tutor-meter__label">${lvl} · ${escapeHtml(level(lvl))}</span>`;

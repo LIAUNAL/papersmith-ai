@@ -221,7 +221,13 @@ and auto-approve sensibly.
 when a claim is given and substitutes the block body once every claim is
 satisfied. `papersmith.paper_resolve` and `papersmith.paper_render` are
 deliberately not exposed — `resolve` reaches the network and `render` shells out
-to `latexmk`. `papersmith.paper_full_text` is the one exposed paper tool that
+to `latexmk`. The `figure` and `venue` groups are not exposed as tools either, for the
+reason the registry records: each bundles read-only verbs
+(`figure audit`; `venue diff`, `status`, `list`) with mutating ones (`figure
+optimize`; `venue select`, `requirements`, `acquire`, `plan`, `approve`, `build`),
+and one MCP tool spec can state only one `readOnlyHint`/`destructiveHint` pair.
+Run the `venue` verbs through `paper_cli.py` or the dashboard's *Revista elegida*
+card. `papersmith.paper_full_text` is the one exposed paper tool that
 reaches the network: it fetches one already-resolved identifier's PDF into
 `guidance/<section>/`, so its `openWorld` hint is set.
 

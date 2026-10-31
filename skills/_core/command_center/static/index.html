@@ -26,6 +26,7 @@
   <script src="./novelty-panel.js?v=0.46.0"></script>
   <script src="./agents-panel.js?v=0.46.0"></script>
   <script src="./doctor-panel.js?v=0.46.0"></script>
+  <script src="./journals-panel.js?v=0.46.0"></script>
   <script src="./ai-history-panel.js?v=0.46.0"></script>
   <script src="./phase-console.js?v=0.46.0"></script>
   <script src="./phase-run.js?v=0.46.0"></script>
@@ -2760,6 +2761,39 @@
       font-size: 0.72rem; letter-spacing: 0.04em; }
     .doctor-detail { color: var(--text-muted); word-break: break-word; }
     .badge--absent { background: transparent; color: var(--text-dim); border-color: var(--border); }
+    /* Journals and venue panel of the PDF Preview tab (journals-panel.js) */
+    .journals-details { margin-bottom: 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-lg);
+      background: var(--surface); padding: 0.5rem 0.85rem; }
+    .journals-details > summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+    .journals-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; margin: 0.5rem 0; }
+    .journals-form label, .journals-sjr label, .journals-approve label { display: flex; flex-direction: column;
+      gap: 0.2rem; font-size: 0.72rem; color: var(--text-muted); }
+    .journals-form .journals-check { flex-direction: row; align-items: center; gap: 0.35rem; }
+    .journals-form input[type="number"], .journals-form select, .journals-sjr input[type="number"],
+    .journals-venue select, .journals-approve textarea { padding: 0.3rem 0.45rem; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
+    .journals-form input[type="number"] { width: 6.5rem; }
+    .journals-sjr { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; font-size: 0.78rem; margin-bottom: 0.5rem; }
+    .journals-sjr input[type="number"] { width: 5.5rem; }
+    .journals-msg { font-size: 0.78rem; padding: 0.35rem 0.6rem; border-radius: 6px; margin: 0.35rem 0;
+      border: 1px solid var(--border); }
+    .journals-msg--ok { color: var(--ok); border-color: var(--ok); background: var(--ok-dim); }
+    .journals-msg--warn { color: var(--warn); border-color: var(--warn); background: var(--warn-dim); }
+    .journals-msg--bad { color: var(--bad); border-color: var(--bad); background: var(--bad-dim); }
+    .journals-table td { min-width: 5rem; }
+    .journals-works summary, .journals-notes summary { cursor: pointer; color: var(--text-muted); font-size: 0.75rem; }
+    .journals-works ul, .journals-notes ul { margin: 0.25rem 0 0 1rem; padding: 0; font-size: 0.75rem; color: var(--text-muted); }
+    .journals-proxy { color: var(--warn); }
+    .journals-venue { margin-top: 0.9rem; border-top: 1px solid var(--border-subtle); padding-top: 0.6rem; }
+    .journals-venue h4, .journals-venue h5 { margin: 0.6rem 0 0.35rem; }
+    .journals-venue-head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .journals-steps { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.45rem 0; }
+    .journals-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+    .journals-plan { white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--border-subtle);
+      border-radius: 6px; padding: 0.6rem; font-size: 0.78rem; max-height: 18rem; overflow: auto; }
+    .journals-approve { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; margin: 0.5rem 0; }
+    .journals-approve textarea { width: 100%; max-width: 36rem; }
+    .journals-quote { font-style: italic; color: var(--text-muted); font-size: 0.75rem; }
   </style>
 </head>
 <body>
@@ -3293,6 +3327,11 @@
             <a id="linkPdfDirect" href="/api/pdf" target="_blank" class="btn btn--sm" style="white-space: nowrap; font-size: 0.74rem;" data-i18n="pdf.openNewTab">Open the PDF in a new tab ↗</a>
           </div>
 
+          <details id="journalsDetails" class="journals-details" ontoggle="if (this.open) window.refreshJournalsPanel?.()">
+            <summary data-i18n="journals.title">Suggested journals</summary>
+            <div id="journalsPanel"></div>
+          </details>
+
           <div class="pdf-viewer-topbar">
             <div class="pdf-topbar__left">
               <strong class="pdf-doc-title">📄 main.pdf</strong>
@@ -3738,6 +3777,7 @@
 
       if (tabId === 'preview') {
         ensurePdfLoaded();
+        if (document.getElementById('journalsDetails')?.open) window.refreshJournalsPanel?.();
       }
       // The 3D views load the first time their tab is shown, not with the page.
       if (tabId === 'atlas' && graphFramePath() === 'blank') {
@@ -5358,6 +5398,23 @@
     let pdfTotalPages = 1;
     let pdfScale = 1.25;
     let isNativePdfViewer = false;
+    // The venue whose compiled PDF is shown instead of the canonical one
+    // (journals-panel.js toggles it); null shows paper/main.pdf.
+    let pdfVenueSlug = null;
+    function pdfUrl(query) {
+      return `/api/pdf?${query}${pdfVenueSlug ? `&venue=${encodeURIComponent(pdfVenueSlug)}` : ''}`;
+    }
+    function setPdfVenue(slug) {
+      pdfVenueSlug = slug || null;
+      const direct = document.getElementById('linkPdfDirect');
+      if (direct) direct.href = pdfVenueSlug ? `/api/pdf?venue=${encodeURIComponent(pdfVenueSlug)}` : '/api/pdf';
+      const title = document.querySelector('.pdf-doc-title');
+      if (title) title.textContent = pdfVenueSlug ? `📄 venues/${pdfVenueSlug}/main.pdf` : '📄 main.pdf';
+      const native = document.getElementById('pdfNativeIframe');
+      if (native && isNativePdfViewer) native.src = pdfUrl(`t=${Date.now()}`);
+      if (pdfDoc) initPdfViewer(true);
+    }
+    window.setPdfVenue = setPdfVenue;
 
     let currentSelectedText = '';
     let currentSelectedPage = 1;
@@ -5384,6 +5441,7 @@
       const iframe = document.getElementById('pdfNativeIframe');
       iframe.style.display = 'block';
       if (iframe.getAttribute('src') === 'about:blank') iframe.src = `/api/pdf?t=${Date.now()}`;
+      if (pdfVenueSlug) iframe.src = pdfUrl(`t=${Date.now()}`);
     }
 
     function ensurePdfLoaded() {
@@ -5406,6 +5464,8 @@
       const previous = lastPdfToken;
       lastPdfToken = token;
       if (previous === null) { loadedPdfToken = token; return; }
+      // The token follows the canonical build; the venue view reloads when it is toggled.
+      if (pdfVenueSlug) return;
       if (!token || token === loadedPdfToken) return;
       const native = document.getElementById('pdfNativeIframe');
       if (native && isNativePdfViewer) native.src = `/api/pdf?v=${token}`;
@@ -5446,7 +5506,7 @@
       }
 
       try {
-        const url = `/api/pdf?v=${forceReload ? (lastPdfToken || Date.now()) : 'doc'}`;
+        const url = pdfUrl(`v=${forceReload ? (lastPdfToken || Date.now()) : 'doc'}`);
         const loadingTask = pdfjsLib.getDocument({
           url: url,
           cMapUrl: './vendor/cmaps/',
@@ -5638,6 +5698,8 @@
         if (textLayerDiv) {
           textLayerDiv.style.width = `${Math.floor(viewport.width)}px`;
           textLayerDiv.style.height = `${Math.floor(viewport.height)}px`;
+          // PDF.js sizes its text spans from this variable and warns without it.
+          textLayerDiv.style.setProperty('--scale-factor', String(viewport.scale));
           textLayerDiv.innerHTML = '';
         }
         if (annotationsLayerDiv) {
@@ -5755,7 +5817,7 @@
       if (isNativePdfViewer) {
         if (stack) stack.style.display = 'none';
         iframe.style.display = 'block';
-        iframe.src = `/api/pdf?t=${Date.now()}`;
+        iframe.src = pdfUrl(`t=${Date.now()}`);
       } else {
         iframe.style.display = 'none';
         if (stack) stack.style.display = 'flex';
