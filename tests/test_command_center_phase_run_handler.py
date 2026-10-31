@@ -104,7 +104,7 @@ class PhaseRunHandlerTests(unittest.TestCase):
         status, body = self.run_phase("Fase 8", stub)
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
-        self.assertIn("build_manuscript.py terminó con código 0", body["message"])
+        self.assertIn("build_manuscript.py ended with code 0", body["message"])
         self.assertEqual(stub.calls[0][0][1], str(script))
         self.assertEqual(stub.calls[0][1]["timeout"], 20)
 

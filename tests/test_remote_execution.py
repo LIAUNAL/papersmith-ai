@@ -6741,8 +6741,9 @@ class DriverInterceptionTests(unittest.TestCase):
         RED half: a genuinely different interpreter with no `kaggle`
         distribution — `python3.11`/`python3.12`, measured present on
         this machine and confirmed to lack `kagglesdk` — reports a
-        refusal naming ITS OWN resolved interpreter path and the exact
-        install command for it, never a bare traceback with nothing an
+        refusal naming ITS OWN resolved interpreter path and the
+        remedy for it (run under the workspace env interpreter, or the exact
+        install command for the pin), never a bare traceback with nothing an
         operator could act on. Skipped, not failed, on a machine with no
         such second interpreter: this is a fact about the CI/dev
         environment, not about the driver's own behavior.
@@ -6790,7 +6791,17 @@ class DriverInterceptionTests(unittest.TestCase):
         refused_payload = json.loads(refused.stdout)
         self.assertFalse(refused_payload["ok"], refused_payload)
         self.assertIn(foreign_executable, refused_payload["error"])
-        self.assertIn("pip install", refused_payload["error"])
+        # The remedy depends on the checkout, not on the foreign interpreter
+        # (`_sdk_remedy`): with the workspace env present it is told to run
+        # under THAT interpreter, which carries the pin; without one, the
+        # exact `pip install` of the pin is named.
+        env_python = REPOSITORY_ROOT / ".micromamba" / "envs" / "papersmith" / "bin" / "python"
+        if env_python.exists() and env_python.resolve() != Path(foreign_executable).resolve():
+            self.assertIn("workspace env interpreter", refused_payload["error"])
+            self.assertIn(str(env_python), refused_payload["error"])
+        else:
+            self.assertIn("pip install kagglesdk==", refused_payload["error"])
+        self.assertNotIn("--user", refused_payload["error"])
         self.assertIn("kaggle", refused_payload["error"])
 
     def test_driver_refuses_a_kagglesdk_that_cannot_name_an_accelerator(self) -> None:

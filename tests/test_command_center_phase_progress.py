@@ -91,12 +91,12 @@ class PhaseProgressTests(unittest.TestCase):
         with mock.patch.object(server.subprocess, "run", return_value=clean):
             result = json.loads(bytes(asyncio.run(self.route("/api/phase/run", "POST")(Req({"phase_id": "Fase 11"}))).body))
         self.assertEqual((result["status"], result["verified"]), ("PASS", True))
-        self.assertIn("sin hallazgos", result["message"])
+        self.assertIn("with no findings", result["message"])
         with mock.patch.object(server.subprocess, "run", side_effect=subprocess.TimeoutExpired("audit", 1)):
             result = json.loads(bytes(asyncio.run(self.route("/api/phase/run", "POST")(Req({"phase_id": "Fase 11"}))).body))
         record = json.loads((self.root / ".papersmith" / "audit.json").read_text(encoding="utf-8"))
         self.assertEqual((record["ok"], record["ran"]), (False, False))
-        self.assertIn("no pudo ejecutarse", result["message"])
+        self.assertIn("could not run", result["message"])
 
     def test_only_one_audit_runs_at_a_time(self) -> None:
         self.assertTrue(server._AUDIT_LOCK.acquire(blocking=False))
@@ -104,7 +104,7 @@ class PhaseProgressTests(unittest.TestCase):
             result = json.loads(bytes(asyncio.run(self.route("/api/phase/run", "POST")(Req({"phase_id": "Fase 11"}))).body))
         finally:
             server._AUDIT_LOCK.release()
-        self.assertIn("auditoría en curso", result["message"])
+        self.assertIn("already running", result["message"])
         self.assertFalse((self.root / ".papersmith" / "audit.json").exists())
 
     def test_a_phase_run_answers_with_the_phase_verdict(self) -> None:

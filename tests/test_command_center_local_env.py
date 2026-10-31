@@ -159,7 +159,7 @@ class EnvironmentTests(_Env):
         _fake_python(target / ".venv/bin/python", None, self.log)
         [row] = local_env.local_environment(self.root)["targets"]
         self.assertEqual(row["state"], "unverified")
-        self.assertEqual(row["device"], "sin verificar")
+        self.assertEqual(row["device"], "unverified")
         local_env.clear_cache()
         _fake_python(target / ".venv/bin/python", {"python": "3.11"}, self.log, sleep=3)
         with mock.patch.object(local_env, "PROBE_TIMEOUT", 0.3):
@@ -167,7 +167,7 @@ class EnvironmentTests(_Env):
             [row] = local_env.local_environment(self.root)["targets"]
         self.assertLess(time.monotonic() - started, 2.5)
         self.assertEqual(row["state"], "unverified")
-        self.assertIn("sin verificar", row["detail"])
+        self.assertIn("unverified", row["detail"])
 
     def test_the_probe_is_cached_and_reprobed_when_the_interpreter_changes(self) -> None:
         target = self.target()
