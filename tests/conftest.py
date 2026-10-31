@@ -103,6 +103,35 @@ def _isolate_test_process_state():
     _restore(snapshot, modules=False)
 
 
+# --- One copy of each remote-execution adapter -----------------------------
+#
+# The remote-execution tests load `adapters/kaggle.py` and `adapters/colab.py`
+# once, at import, under `remote_execution_{kaggle,colab}_adapter`, and assert
+# on the registrations that exec made in the shared `adapter.py` registries.
+# `remote_cli._load_backend_module` (every `--backend`/`--service` run, here
+# in-process) looks for the same file under a different name,
+# `remote_execution_adapters_<name>`, finds nothing and execs a SECOND copy,
+# whose bottom-of-file `register(...)` calls replace the first copy's classes
+# and reporters in those registries. Which test files ran before decides
+# whether `ADAPTER.resolve("colab") is COLAB.ColabAdapter` still holds, so
+# the suite was green file by file and red in one process (CI). Publishing the
+# loaded copy under the name the CLI checks makes its loader a no-op, as it is
+# in a real process where the adapter is only ever loaded once.
+_CLI_LOADED_ADAPTERS = {
+    "remote_execution_kaggle_adapter": "remote_execution_adapters_kaggle",
+    "remote_execution_colab_adapter": "remote_execution_adapters_colab",
+}
+
+
+@pytest.fixture(autouse=True)
+def _remote_adapters_load_once():
+    for loaded, cli_name in _CLI_LOADED_ADAPTERS.items():
+        module = sys.modules.get(loaded)
+        if module is not None:
+            sys.modules.setdefault(cli_name, module)
+    yield
+
+
 # --- Run registry for the orphan sweep (#60) --------------------------------
 #
 # Several suites write fixtures into the live `implementations/`, named after
