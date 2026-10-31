@@ -12,6 +12,20 @@ constellation, then deliberate the plausibility — and nothing here ingests,
 files into `guidance/`, or publishes. Those are later stages with their own
 doors.
 
+## An idea composed by the dashboard
+
+An operator who arrives without a clear idea can use the dashboard's
+thematic help: 3 to 5 keywords are searched in the Banco LIA (the
+`banco-lia` MCP server) and the dashboard proposes a draft idea naming the
+keywords, the matching topics and a few LIA items. The operator edits and
+approves it, and it reaches this skill as the argument of `/plausibility`
+like any other idea. Treat it as such: the two-sentence minimum still
+applies, and the stretches below run unchanged. The LIA items it names are
+the lab's own continuity context (projects `H*`/`P*` as background, articles
+by title and DOI), never SOTA evidence: they enter the pool only if the
+scout finds them as references on their own merits, and the report never
+cites the draft's items as state of the art.
+
 ## The three stretches
 
 | Stretch | Delegated to | Begins after | Ends at | Measure this before delegating |
@@ -237,6 +251,7 @@ operator has to be able to say no and have that change what happens next.
 | Situation | Action |
 | --- | --- |
 | Idea under two sentences | Refuse before searching; scouting an unstated idea invents its own question |
+| The idea comes from the dashboard's thematic help | Treat it as any stated idea: two sentences still apply, and its LIA items are continuity context, never SOTA evidence |
 | Fewer than 25 resolvable candidates | Report the pool short with what was tried; never pad with unquoted entries |
 | More than 5 families | Keep the 5 the abstracts lean on hardest and say which were left out |
 | The checker refuses | Fix the atlas and re-run, up to 3 repair passes; then stop with the violations quoted in `owed` |

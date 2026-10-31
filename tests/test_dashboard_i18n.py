@@ -334,6 +334,18 @@ class ServerEndpointTests(unittest.TestCase):
         self.assertNotEqual(english["label"], spanish["label"])
         self.assertEqual(spanish["label"], SERVER_CATALOGUE[english["label"]])
 
+    def test_the_thematic_help_texts_of_phase_two_have_a_spanish_entry(self) -> None:
+        english = self.status()["fases"][1]
+        spanish = self.status("?lang=es")["fases"][1]
+        self.assertIn("thematic help", english["desc"])
+        self.assertIn("ayuda temática", spanish["desc"])
+        self.assertTrue(english["actions"][0]["keyword_help"])
+        self.assertIs(spanish["actions"][0]["keyword_help"], True)
+        help_line = next(g for g in english["actions"][0]["guide"] if "Thematic help" in g)
+        self.assertIn(help_line, SERVER_CATALOGUE)
+        self.assertIn("Ayuda temática", SERVER_CATALOGUE[help_line])
+        self.assertIn(SERVER_CATALOGUE[help_line], spanish["actions"][0]["guide"])
+
     def test_terminal_agents_are_described_in_english_and_spanish(self) -> None:
         agents = terminal.default_agents()
         self.assertEqual(agents["shell"].desc, "Login shell")

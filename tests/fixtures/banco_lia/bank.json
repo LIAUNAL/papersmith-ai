@@ -1,0 +1,162 @@
+{
+ "items": [
+  {
+   "id": "A001",
+   "kind": "articulo",
+   "title": "EEG classification with quantum kernels",
+   "year": 2023,
+   "cluster": "C05",
+   "doi": "10.1000/quantum-eeg",
+   "text": "eeg quantum classification kernels eeg"
+  },
+  {
+   "id": "A002",
+   "kind": "articulo",
+   "title": "Deep EEG classification",
+   "year": 2021,
+   "cluster": "C05",
+   "doi": "10.1000/deep-eeg",
+   "text": "eeg classification deep"
+  },
+  {
+   "id": "H0001",
+   "kind": "proyecto",
+   "title": "Interfaz cerebro-computador",
+   "year": 2020,
+   "cluster": "C02",
+   "text": "eeg interfaz"
+  },
+  {
+   "id": "S01",
+   "kind": "articulo",
+   "title": "Signal filtering study 1",
+   "year": 2011,
+   "cluster": "C01",
+   "doi": "10.1000/signal-1",
+   "text": "signal processing filters signal signal signal signal signal signal signal signal signal "
+  },
+  {
+   "id": "S02",
+   "kind": "articulo",
+   "title": "Signal filtering study 2",
+   "year": 2012,
+   "cluster": "C01",
+   "doi": "10.1000/signal-2",
+   "text": "signal processing filters signal signal signal signal signal signal signal signal "
+  },
+  {
+   "id": "S03",
+   "kind": "proyecto",
+   "title": "Signal filtering study 3",
+   "year": 2013,
+   "cluster": "C02",
+   "text": "signal processing filters signal signal signal signal signal signal signal "
+  },
+  {
+   "id": "S04",
+   "kind": "articulo",
+   "title": "Signal filtering study 4",
+   "year": 2014,
+   "cluster": "C03",
+   "doi": "10.1000/signal-4",
+   "text": "signal processing filters signal signal signal signal signal signal "
+  },
+  {
+   "id": "S05",
+   "kind": "articulo",
+   "title": "Signal filtering study 5",
+   "year": 2015,
+   "cluster": "C04",
+   "doi": "10.1000/signal-5",
+   "text": "signal processing filters signal signal signal signal signal "
+  },
+  {
+   "id": "S06",
+   "kind": "proyecto",
+   "title": "Signal filtering study 6",
+   "year": 2016,
+   "cluster": "C05",
+   "text": "signal processing filters signal signal signal signal "
+  },
+  {
+   "id": "S07",
+   "kind": "articulo",
+   "title": "Signal filtering study 7",
+   "year": 2017,
+   "cluster": "C06",
+   "doi": "10.1000/signal-7",
+   "text": "signal processing filters signal signal signal "
+  },
+  {
+   "id": "S08",
+   "kind": "articulo",
+   "title": "Signal filtering study 8",
+   "year": 2018,
+   "cluster": "C07",
+   "doi": "10.1000/signal-8",
+   "text": "signal processing filters signal signal "
+  },
+  {
+   "id": "S09",
+   "kind": "proyecto",
+   "title": "Signal filtering study 9",
+   "year": 2019,
+   "cluster": "C07",
+   "text": "signal processing filters signal "
+  },
+  {
+   "id": "S10",
+   "kind": "articulo",
+   "title": "Signal filtering study 10",
+   "year": 2020,
+   "cluster": "C07",
+   "doi": "10.1000/signal-10",
+   "text": "signal processing filters "
+  }
+ ],
+ "clusters": [
+  {
+   "id": "C01",
+   "name": "Cluster name 1",
+   "top_terms": [],
+   "items": 0
+  },
+  {
+   "id": "C02",
+   "name": "Cluster name 2",
+   "top_terms": [],
+   "items": 0
+  },
+  {
+   "id": "C03",
+   "name": "Cluster name 3",
+   "top_terms": [],
+   "items": 0
+  },
+  {
+   "id": "C04",
+   "name": "Cluster name 4",
+   "top_terms": [],
+   "items": 0
+  },
+  {
+   "id": "C05",
+   "name": "Cluster name 5",
+   "top_terms": [],
+   "items": 0
+  },
+  {
+   "id": "C06",
+   "name": "Cluster name 6",
+   "top_terms": [],
+   "items": 0
+  },
+  {
+   "id": "C07",
+   "name": "Cluster name 7",
+   "top_terms": [],
+   "items": 0
+  }
+ ],
+ "topics": []
+}
