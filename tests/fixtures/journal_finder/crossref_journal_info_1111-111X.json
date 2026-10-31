@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "message-type": "journal",
+  "message": {
+    "title": "Neural Fixtures Letters",
+    "publisher": "Fixture Press",
+    "ISSN": [
+      "1111-111X",
+      "2222-2222"
+    ],
+    "subjects": []
+  }
+}

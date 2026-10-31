@@ -1,0 +1,170 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 1200,
+    "items-per-page": 100,
+    "items": [
+      {
+        "DOI": "10.1111/nfl.1",
+        "title": [
+          "Quantum circuits for EEG decoding"
+        ],
+        "container-title": [
+          "Neural Fixtures Letters"
+        ],
+        "ISSN": [
+          "1111-111X"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2024,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.2",
+        "title": [
+          "Variational classifiers on brain signals"
+        ],
+        "container-title": [
+          "Neural Fixtures Letters"
+        ],
+        "ISSN": [
+          "2222-2222"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2024,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.3",
+        "title": [
+          "Data re-uploading for biosignals"
+        ],
+        "container-title": [
+          "Neural Fixtures Letters"
+        ],
+        "ISSN": [
+          "1111-111X",
+          "2222-2222"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2023,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.1111/nfl.4",
+        "title": [
+          "Entangling layers and expressivity"
+        ],
+        "container-title": [
+          "Neural Fixtures Letters"
+        ],
+        "ISSN": [
+          "1111-111X"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2022,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.3333/osp.1",
+        "title": [
+          "Open EEG pipelines"
+        ],
+        "container-title": [
+          "Open Signal Processing"
+        ],
+        "ISSN": [
+          "3333-3333"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2025,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.3333/osp.2",
+        "title": [
+          "Spectral features for ADHD"
+        ],
+        "container-title": [
+          "Open Signal Processing"
+        ],
+        "ISSN": [
+          "3333-3333"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2024,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.7777/tor.1",
+        "title": [
+          "Quantum kernels on a budget"
+        ],
+        "container-title": [
+          "Title Only Review"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2023,
+              3,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "DOI": "10.9999/noc.1",
+        "title": [
+          "A work with no container title"
+        ],
+        "published": {
+          "date-parts": [
+            [
+              2023,
+              3,
+              1
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

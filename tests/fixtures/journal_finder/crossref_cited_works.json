@@ -1,0 +1,55 @@
+{
+  "10.1111/nfl.1": {
+    "status": "ok",
+    "message-type": "work",
+    "message": {
+      "DOI": "10.1111/nfl.1",
+      "type": "journal-article",
+      "container-title": [
+        "Neural Fixtures Letters"
+      ],
+      "ISSN": [
+        "1111-111X",
+        "2222-2222"
+      ]
+    }
+  },
+  "10.5555/cited.1": {
+    "status": "ok",
+    "message-type": "work",
+    "message": {
+      "DOI": "10.5555/cited.1",
+      "type": "journal-article",
+      "container-title": [
+        "Cited Only Journal"
+      ],
+      "ISSN": [
+        "6666-666X"
+      ]
+    }
+  },
+  "10.5555/cited.2": {
+    "status": "ok",
+    "message-type": "work",
+    "message": {
+      "DOI": "10.5555/cited.2",
+      "type": "journal-article",
+      "container-title": [
+        "Cited Only Journal"
+      ],
+      "ISSN": [
+        "6666-666X"
+      ]
+    }
+  },
+  "10.9999/dataset": {
+    "status": "ok",
+    "message-type": "work",
+    "message": {
+      "DOI": "10.9999/dataset",
+      "type": "dataset",
+      "container-title": [],
+      "ISSN": []
+    }
+  }
+}
