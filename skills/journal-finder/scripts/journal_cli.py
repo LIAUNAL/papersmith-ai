@@ -6,20 +6,30 @@ Stdlib only. One JSON object on stdout per call; a refusal is
 
     journal_cli.py search --workspace <dir> --quartiles <range> [--oa-only]
                           [--max-apc N] [--max-review-days N] [--limit N]
-                          [--sjr <csv>] [--out <path>]
+                          [--sjr <csv>] [--out <path>] [--no-cache]
     journal_cli.py sjr-import --file <path> [--year YYYY]
     journal_cli.py status --workspace <dir>
 
-`search` reads the paper's title, abstract and keywords, asks OpenAlex for
-works like it, keeps the journals those works appeared in, scores each by how
-many similar works it published, attaches a quartile (SCImago SJR when a CSV
+`search` reads the paper's title, abstract, keywords and references, asks OpenAlex
+for works like it, keeps the journals those works (and the paper's references)
+appeared in, scores each by topical fit, attaches a quartile (SCImago SJR when a CSV
 was imported, an OpenAlex citedness proxy otherwise, always labelled), a
 review-time estimate (Crossref, then PubMed) and writes
 `paper/journal-candidates.json` (schema 1). Nothing is ever submitted.
 
-Fit score
-    similar-works count of the journal / the largest count among the journals
-    the search found, so the best-represented journal scores 1.0.
+Fit score (`fit`, `fit_score`, `query.scoring`)
+    fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 * topic_overlap
+    similar_works   works like the paper that the journal published (one OpenAlex OR query of quoted key
+                    phrases, last 6 years), over the largest count among the journals evaluated
+    cited_in_paper  references of paper/refs.bib published in the journal (DOIs and arXiv ids in batches of
+                    50, else exact journal name), over the largest count
+    topic_overlap   histogram intersection between the paper's OpenAlex topic distribution (matched works
+                    blended with cited works) and the journal's, over the largest overlap
+    A component that is zero for every journal drops out and the other weights are rescaled to sum to 1.
+    A journal the paper cites is kept even when no similar work was published there.
+    Facets: the title's tail after "for" is the application, the rest the method; each gets its own OR query
+    of at most 5 phrases and half the works budget. When both were searched, a journal with no application
+    hit and application-topic overlap < 0.05 gets fit_score * 0.5 and the flag no-application-evidence.
 
 Proxy quartile (`quartile_source: "openalex-proxy"`)
     share = journals of the same OpenAlex field (core journals with a
@@ -34,11 +44,19 @@ Review time (`review_time`)
     estimates submission-to-acceptance including revisions, not time to first
     decision. Quartiles use linear interpolation between closest ranks.
 
-Search terms
-    OpenAlex `search` requires every term in the full text, so the paper's top
-    10 terms (weight: 3 in keywords, 2 in title, plus abstract frequency) are
-    tried 6 at a time and the lowest-weighted one is dropped until at least 50
-    works match (never below 2 terms). The terms used are `query.terms`.
+Search
+    Key phrases (keywords, title runs of content words, abstract bigrams seen twice; hyphenated compounds
+    whole) are sent as `"phrase one" OR "phrase two" ...` with a last-6-years filter. OpenAlex `search`
+    supports boolean OR; with plain terms it requires every one, so when the OR query matches fewer than 50
+    works (or there are no phrases) the paper's top 10 terms (weight: 3 in keywords, 2 in title, plus
+    abstract frequency) are tried 6 at a time, dropping the lowest-weighted until 50 works match (never
+    below 2 terms). `query.phrases`, `query.terms` and `query.search_mode` say which ran.
+
+Budget and cache
+    OpenAlex's keyless budget is USD 0.10/day per IP. Successful answers are cached on disk (1 day for
+    searches, 7 for lookups; never errors; --no-cache bypasses). A 429 asking for more than 60 s is a spent
+    quota: no retry, NETWORK_UNAVAILABLE naming OPENALEX_API_KEY. `api_calls` reports calls made/cached
+    and the budget state.
 
 Environment
     PAPERSMITH_OPENALEX_URL / _CROSSREF_URL / _PUBMED_URL   base URLs (tests)
@@ -51,12 +69,14 @@ Environment
     PAPERSMITH_JOURNAL_DEADLINE  total seconds for one search (default 300)
     PAPERSMITH_JOURNAL_MAX_WORKS works fetched from OpenAlex (default 200)
     PAPERSMITH_OPENALEX_MIN_INTERVAL  seconds between OpenAlex calls (default 0.11)
+    PAPERSMITH_JOURNAL_CACHE_DIR response cache (default ~/.cache/papersmith/journal-finder/http)
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import datetime as dt
+import hashlib
 import http.client
 import io
 import json
@@ -84,10 +104,29 @@ DEFAULT_MAX_WORKS = 200
 WORKS_PAGE_SIZE = 100
 MAX_SOURCES = 60
 MIN_SOURCES = 30
+RECENT_YEARS = 6
+MAX_PHRASES = 10
+MAX_PHRASE_WORDS = 4
+NAME_LOOKUP_RESULTS = 25
+MIN_BIGRAM_COUNT = 2
+DOI_BATCH = 50
+MAX_DOI_BATCHES = 4
+MAX_NAME_LOOKUPS = 15
+MAX_CITED_ONLY = 20
+WORK_TOPICS_PER_WORK = 3
+SOURCE_TOPICS_SHOWN = 5
+FIT_WEIGHTS = {"similar_works": 0.45, "cited_in_paper": 0.30, "topic_overlap": 0.25}
+WORK_SELECT = "id,title,publication_year,doi,primary_location,topics"
 WORKERS = 4
 REVIEW_SAMPLE = 40
 REVIEW_YEARS = 3
 REVIEW_MIN_N = 5
+QUOTA_RETRY_AFTER = 60.0   # a 429 asking for a longer wait than this is a spent quota, not a burst
+CACHE_TTL_SEARCH = 86400.0
+CACHE_TTL_LOOKUP = 7 * 86400.0
+VOLATILE_PARAMS = ("api_key", "mailto", "email")
+FACET_GATE = 0.5
+APP_TOPIC_MIN = 0.05
 OPENALEX_DEFAULT = "https://api.openalex.org"
 CROSSREF_DEFAULT = "https://api.crossref.org"
 PUBMED_DEFAULT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -113,10 +152,11 @@ class Refusal(Exception):
 
 
 class HttpFailure(Exception):
-    def __init__(self, message: str, status: int | None = None, deadline: bool = False):
+    def __init__(self, message: str, status: int | None = None, deadline: bool = False, quota: bool = False):
         super().__init__(message)
         self.status = status
         self.deadline = deadline
+        self.quota = quota
 
 
 # --------------------------------------------------------------------------- environment
@@ -182,9 +222,113 @@ class Deadline:
         return self._end - time.monotonic()
 
 
+def cache_dir() -> Path:
+    override = os.environ.get("PAPERSMITH_JOURNAL_CACHE_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".cache" / "papersmith" / "journal-finder" / "http"
+
+
+class ResponseCache:
+    """Successful JSON answers on disk, keyed by URL without credentials.
+
+    A search (`search` or `term` parameter) lives CACHE_TTL_SEARCH, any other lookup CACHE_TTL_LOOKUP. Errors
+    are never stored and a cache that cannot be read or written is silently a miss.
+    """
+
+    def __init__(self, directory: Path, enabled: bool = True):
+        self.directory = directory
+        self.enabled = enabled
+
+    @staticmethod
+    def _canonical(url: str, params: dict) -> str:
+        kept = sorted((k, str(v)) for k, v in (params or {}).items() if k not in VOLATILE_PARAMS)
+        return f"{url}?{urllib.parse.urlencode(kept)}" if kept else url
+
+    @staticmethod
+    def _ttl(params: dict) -> float:
+        return CACHE_TTL_SEARCH if ("search" in params or "term" in params) else CACHE_TTL_LOOKUP
+
+    def _path(self, canonical: str) -> Path:
+        return self.directory / (hashlib.sha256(canonical.encode("utf-8")).hexdigest() + ".json")
+
+    def get(self, url: str, params: dict):
+        if not self.enabled:
+            return None
+        try:
+            document = json.loads(self._path(self._canonical(url, params)).read_text(encoding="utf-8"))
+            if time.time() - float(document["fetched_at"]) <= self._ttl(params):
+                return document["data"]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return None
+
+    def put(self, url: str, params: dict, data) -> None:
+        if not self.enabled:
+            return
+        canonical = self._canonical(url, params)
+        try:
+            _atomic_write(self._path(canonical), json.dumps(
+                {"fetched_at": time.time(), "url": canonical, "data": data}).encode("utf-8"))
+        except (OSError, TypeError, ValueError):
+            pass
+
+
+class CallStats:
+    """How many HTTP requests were made or served from the cache, per service, and the OpenAlex budget."""
+
+    SERVICES = ("openalex", "crossref", "pubmed")
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.counts = {name: {"made": 0, "cached": 0} for name in self.SERVICES}
+        self.remaining_usd: float | None = None
+        self.limit_usd: float | None = None
+        self.retry_after: int | None = None
+
+    def record(self, service: str, cached: bool) -> None:
+        with self._lock:
+            slot = self.counts.setdefault(service, {"made": 0, "cached": 0})
+            slot["cached" if cached else "made"] += 1
+
+    def note_headers(self, headers) -> None:
+        try:
+            remaining = headers.get("x-ratelimit-remaining-usd")
+            limit = headers.get("x-ratelimit-limit-usd")
+            with self._lock:
+                if remaining is not None:
+                    self.remaining_usd = float(remaining)
+                if limit is not None:
+                    self.limit_usd = float(limit)
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    def note_exhausted(self, retry_after: float) -> None:
+        with self._lock:
+            self.retry_after = int(retry_after)
+
+    def summary(self, cache: ResponseCache) -> dict:
+        with self._lock:
+            made = sum(v["made"] for v in self.counts.values())
+            cached = sum(v["cached"] for v in self.counts.values())
+            if self.retry_after is not None or (self.remaining_usd is not None and self.remaining_usd <= 0):
+                state = "exhausted"
+            elif self.remaining_usd is not None:
+                state = "ok"
+            else:
+                state = "unknown"
+            return {"made": made, "cached": cached,
+                    "by_service": {k: dict(v) for k, v in self.counts.items()},
+                    "cache": {"enabled": cache.enabled, "dir": str(cache.directory)},
+                    "budget": {"state": state, "remaining_usd": self.remaining_usd,
+                               "limit_usd": self.limit_usd, "retry_after_seconds": self.retry_after}}
+
+
 class Http:
-    def __init__(self, deadline: Deadline):
+    def __init__(self, deadline: Deadline, cache: ResponseCache | None = None, stats: CallStats | None = None):
         self.deadline = deadline
+        self.cache = cache or ResponseCache(cache_dir(), enabled=False)
+        self.stats = stats or CallStats()
         self.timeout = _env_float("PAPERSMITH_HTTP_TIMEOUT", 15.0)
         self.retries = max(0, _env_int("PAPERSMITH_HTTP_RETRIES", 3))
         self.backoff = max(0.0, _env_float("PAPERSMITH_HTTP_BACKOFF", 0.5))
@@ -192,7 +336,12 @@ class Http:
         agent = "papersmith-journal-finder/1.0"
         self.user_agent = f"{agent} (mailto:{contact})" if contact else agent
 
-    def get_json(self, url: str, params: dict, limiter: RateLimiter | None = None) -> dict:
+    def get_json(self, url: str, params: dict, limiter: RateLimiter | None = None,
+                 service: str = "http") -> dict:
+        cached = self.cache.get(url, params)
+        if cached is not None:
+            self.stats.record(service, cached=True)
+            return cached
         full = f"{url}?{urllib.parse.urlencode(params)}" if params else url
         request = urllib.request.Request(
             full, headers={"User-Agent": self.user_agent, "Accept": "application/json"})
@@ -204,22 +353,32 @@ class Http:
             if limiter is not None:
                 limiter.wait()
             retry_after = 0.0
+            self.stats.record(service, cached=False)
             try:
                 with urllib.request.urlopen(request, timeout=max(0.05, min(self.timeout, remaining))) as response:
                     raw = response.read()
+                    self.stats.note_headers(response.headers)
                 try:
-                    return json.loads(raw.decode("utf-8"))
+                    data = json.loads(raw.decode("utf-8"))
                 except ValueError as exc:
                     raise HttpFailure(f"answer is not JSON ({exc})", status=200) from exc
+                self.cache.put(url, params, data)
+                return data
             except urllib.error.HTTPError as exc:
+                self.stats.note_headers(exc.headers)
                 if exc.code != 429 and not 500 <= exc.code <= 599:
                     raise HttpFailure(f"HTTP {exc.code} from {urllib.parse.urlsplit(url).netloc}",
                                       status=exc.code) from exc
                 last = f"HTTP {exc.code}"
                 try:
-                    retry_after = min(10.0, float(exc.headers.get("Retry-After", "0")))
+                    asked = float(exc.headers.get("Retry-After", "0"))
                 except (TypeError, ValueError):
-                    retry_after = 0.0
+                    asked = 0.0
+                if exc.code == 429 and asked > QUOTA_RETRY_AFTER:
+                    self.stats.note_exhausted(asked)
+                    raise HttpFailure(f"HTTP 429 from {urllib.parse.urlsplit(url).netloc}: the request quota is "
+                                      f"spent, retry after {int(asked)} s", status=429, quota=True) from exc
+                retry_after = min(10.0, asked)
                 status = exc.code
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
                 reason = getattr(exc, "reason", exc)
@@ -488,6 +647,165 @@ def build_terms(profile: dict) -> list[str]:
     return ranked[:MAX_TERMS]
 
 
+# --------------------------------------------------------------------------- key phrases
+
+_PHRASE_KEEP = frozenset("data model models network networks system systems feature features framework "
+                         "algorithm algorithms analysis".split())
+#: words that end a phrase; the generic nouns above stay inside phrases ("data re-uploading")
+_PHRASE_BREAKS = _STOPWORDS - _PHRASE_KEEP
+_PHRASE_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*")
+_PHRASE_SPLIT = re.compile(r"[.,;:!?()\[\]{}\"\u201c\u201d/\u2014\u2013|]+|\s-\s")
+_PARENTHETICAL = re.compile(r"\(([^()]*)\)")
+
+
+def _phrase_chunks(text: str) -> list[list[str]]:
+    """Runs of content words between punctuation and function words; hyphenated compounds stay whole."""
+    chunks: list[list[str]] = []
+    for segment in _PHRASE_SPLIT.split(text.lower()):
+        run: list[str] = []
+        for token in _PHRASE_WORD.findall(segment):
+            if len(token) < 2 or token.isdigit() or token in _PHRASE_BREAKS:
+                if run:
+                    chunks.append(run)
+                run = []
+            else:
+                run.append(token)
+        if run:
+            chunks.append(run)
+    return chunks
+
+
+def _pieces(chunk: list[str], size: int) -> list[list[str]]:
+    """The chunk itself, or consecutive non-overlapping pieces of `size` words when it is longer."""
+    return [chunk[i:i + size] for i in range(0, len(chunk), size)]
+
+
+def _ranked_phrases(profile: dict) -> tuple[list[tuple[str, ...]], set[tuple[str, ...]]]:
+    """Every surviving candidate phrase, best first, and the phrases that come from application keywords.
+
+    Keywords weigh 3 (a keyword may be a single word), title chunks 2 (two words or more, or one hyphenated
+    compound), abstract bigrams their frequency when at least MIN_BIGRAM_COUNT and sharing a word with a
+    keyword or title phrase (boilerplate such as "statistically significant" never qualifies). A chunk longer
+    than MAX_PHRASE_WORDS is cut into consecutive pieces. A phrase inside a longer keyword or title phrase is
+    dropped, except that only a longer keyword absorbs a keyword; so is a title or abstract phrase that
+    contains a multi-word keyword (every work matching it matches the keyword). Ties prefer longer phrases,
+    then first appearance.
+    """
+    weights: dict[tuple[str, ...], float] = {}
+    from_keywords: set[tuple[str, ...]] = set()
+    from_title: set[tuple[str, ...]] = set()
+    application_keywords: set[tuple[str, ...]] = set()
+    order: dict[tuple[str, ...], int] = {}
+    app_words = application_words(profile.get("title") or "")
+
+    def add(words: list[str], weight: float, origin: set[tuple[str, ...]] | None) -> None:
+        key = tuple(words)
+        order.setdefault(key, len(order))
+        weights[key] = weights.get(key, 0.0) + weight
+        if origin is not None:
+            origin.add(key)
+
+    def multi(words: list[str]) -> bool:
+        return len(words) > 1 or "-" in words[0]
+
+    for keyword in profile.get("keywords") or []:
+        pieces = [_PARENTHETICAL.sub(" ", keyword), *_PARENTHETICAL.findall(keyword)]
+        in_application = bool(app_words & {w for c in _phrase_chunks(keyword) for w in c})
+        for piece in pieces:
+            for chunk in _phrase_chunks(piece):
+                for words in _pieces(chunk, MAX_PHRASE_WORDS):
+                    add(words, 3.0, from_keywords)
+                    if in_application:
+                        application_keywords.add(tuple(words))
+    for chunk in _phrase_chunks(profile.get("title") or ""):
+        for words in _pieces(chunk, MAX_PHRASE_WORDS):
+            if multi(words):
+                add(words, 2.0, from_title)
+    declared_words = from_keywords | from_title
+    bigrams: dict[tuple[str, ...], int] = {}
+    for chunk in _phrase_chunks(profile.get("abstract") or ""):
+        for i in range(len(chunk) - 1):
+            pair = tuple(chunk[i:i + 2])
+            bigrams[pair] = bigrams.get(pair, 0) + 1
+    topical = {word for key in declared_words for word in key}
+    for pair, count in bigrams.items():
+        if count >= MIN_BIGRAM_COUNT and topical.intersection(pair):
+            add(list(pair), float(count), None)
+
+    def inside(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
+        return len(long) > len(short) and any(long[i:i + len(short)] == short
+                                              for i in range(len(long) - len(short) + 1))
+
+    declared = from_keywords | from_title
+
+    def subsumed(key: tuple[str, ...]) -> bool:
+        # a keyword is only absorbed by a longer keyword; anything else by any longer keyword or title phrase
+        if any(inside(key, other) for other in (from_keywords if key in from_keywords else declared)):
+            return True
+        # a non-keyword phrase that contains a multi-word keyword adds nothing to an OR query
+        return key not in from_keywords and any(inside(kw, key) for kw in from_keywords if multi(list(kw)))
+
+    kept = [k for k in weights if not subsumed(k)]
+
+    def rank(key: tuple[str, ...]):
+        single = not multi(list(key))
+        return (-(weights[key] - (1 if single else 0)), -len(key), order[key])
+
+    kept.sort(key=rank)
+    return kept, application_keywords
+
+
+_APPLICATION_MARKER = re.compile(r"\s(?:applied to|towards?|for)\s", re.IGNORECASE)
+
+
+def application_tail(title: str) -> str | None:
+    """The part of the title after its first ` for `, ` applied to `, ` towards ` or ` toward `, if any."""
+    match = _APPLICATION_MARKER.search(title or "")
+    if not match or not _phrase_chunks(title[:match.start()]):
+        return None
+    tail = title[match.end():].strip()
+    return tail or None
+
+
+def application_words(title: str) -> set[str]:
+    tail = application_tail(title)
+    return {w for chunk in _phrase_chunks(tail) for w in chunk} if tail else set()
+
+
+def build_phrase_facets(profile: dict) -> dict[str, list[str]]:
+    """Key phrases split into the paper's `method` and `application` facets.
+
+    The application is the title's tail (`... for <application>`): a phrase belongs to it when it shares a
+    word with the tail, or comes from a keyword that does (so "Electroencephalography (EEG)" follows its
+    acronym). When both facets have phrases each keeps at most MAX_PHRASES // 2, so neither can take more
+    than half of the query; otherwise the one facet keeps up to MAX_PHRASES.
+    """
+    ranked, application_keywords = _ranked_phrases(profile)
+    app_words = application_words(profile.get("title") or "")
+    facets: dict[str, list[tuple[str, ...]]] = {"method": [], "application": []}
+    for key in ranked:
+        in_application = key in application_keywords or bool(app_words & set(key))
+        facets["application" if in_application else "method"].append(key)
+    both = bool(facets["method"]) and bool(facets["application"])
+    cap = MAX_PHRASES // 2 if both else MAX_PHRASES
+    return {name: [" ".join(k).replace('"', "") for k in keys[:cap]] for name, keys in facets.items() if keys}
+
+
+def build_phrases(profile: dict) -> list[str]:
+    return [phrase for phrases in build_phrase_facets(profile).values() for phrase in phrases]
+
+
+def or_query(phrases: list[str]) -> str:
+    return " OR ".join(f'"{p}"' for p in phrases)
+
+
+def recency_start(today: dt.date, years: int = RECENT_YEARS) -> dt.date:
+    try:
+        return today.replace(year=today.year - years)
+    except ValueError:  # 29 February
+        return today.replace(year=today.year - years, day=28)
+
+
 # --------------------------------------------------------------------------- SJR
 
 
@@ -618,8 +936,10 @@ def cmd_sjr_import(args: argparse.Namespace) -> dict:
 
 
 class Services:
-    def __init__(self, deadline: Deadline):
-        self.http = Http(deadline)
+    def __init__(self, deadline: Deadline, cache: ResponseCache | None = None):
+        self.stats = CallStats()
+        self.cache = cache or ResponseCache(cache_dir(), enabled=False)
+        self.http = Http(deadline, self.cache, self.stats)
         self.openalex = _base("PAPERSMITH_OPENALEX_URL", OPENALEX_DEFAULT)
         self.crossref = _base("PAPERSMITH_CROSSREF_URL", CROSSREF_DEFAULT)
         self.pubmed = _base("PAPERSMITH_PUBMED_URL", PUBMED_DEFAULT)
@@ -633,13 +953,19 @@ class Services:
             params["mailto"] = _contact()
         if os.environ.get("OPENALEX_API_KEY"):
             params["api_key"] = os.environ["OPENALEX_API_KEY"]
-        return self.http.get_json(f"{self.openalex}{path}", params, self.openalex_limiter)
+        try:
+            return self.http.get_json(f"{self.openalex}{path}", params, self.openalex_limiter, "openalex")
+        except HttpFailure as exc:
+            if exc.quota:
+                raise HttpFailure(f"{exc}; set OPENALEX_API_KEY (a free key has its own daily budget) or wait "
+                                  "for the reset", status=429, quota=True) from exc
+            raise
 
     def crossref_get(self, path: str, params: dict) -> dict:
         params = dict(params)
         if _contact():
             params["mailto"] = _contact()
-        return self.http.get_json(f"{self.crossref}{path}", params, self.crossref_limiter)
+        return self.http.get_json(f"{self.crossref}{path}", params, self.crossref_limiter, "crossref")
 
     def pubmed_get(self, path: str, params: dict) -> dict:
         params = {**params, "tool": "papersmith"}
@@ -647,60 +973,110 @@ class Services:
             params["email"] = _contact()
         if os.environ.get("NCBI_API_KEY"):
             params["api_key"] = os.environ["NCBI_API_KEY"]
-        return self.http.get_json(f"{self.pubmed}{path}", params, self.pubmed_limiter)
+        return self.http.get_json(f"{self.pubmed}{path}", params, self.pubmed_limiter, "pubmed")
 
 
 def _short_id(url: str) -> str:
     return str(url).rstrip("/").rsplit("/", 1)[-1]
 
 
-def fetch_similar_sources(services: Services, terms: list[str], max_works: int) -> tuple[list[dict], int, list[str], list[str]]:
-    """Journals hosting works like the paper.
+def fetch_similar_sources(services: Services, facets: dict[str, list[str]], terms: list[str], max_works: int,
+                          today: dt.date, title: str = "") -> dict:
+    """Journals hosting works like the paper, and the topics of those works.
 
-    Returns ([{id, name, count, works: [...]}], works scanned, terms used, notes).
+    One OR query of quoted phrases per facet (journal articles of the last RECENT_YEARS), each with an equal
+    share of `max_works`. A facet whose query matches fewer than MIN_MATCHES works is dropped; when none
+    survives (or there are no phrases) the AND relaxation of `terms` runs instead. Returns {sources: [{id,
+    name, count, works, first, ids, facet_ids}], scanned, terms, phrases, mode, notes, queries,
+    topics_by_facet, topic_names, tail}.
     """
-    per_page = max(1, min(WORKS_PAGE_SIZE, max_works))
-    used = terms[:START_TERMS]
     notes: list[str] = []
+    used = terms[:START_TERMS]
+    base_filter = "primary_location.source.type:journal,type:article"
 
-    def request(page: int) -> dict:
+    def request(search: str, flt: str, page: int, per_page: int) -> dict:
         return services.openalex_get("/works", {
-            "search": " ".join(used), "filter": "primary_location.source.type:journal,type:article",
-            "per-page": per_page, "page": page,
-            "select": "id,title,publication_year,doi,primary_location"})
+            "search": search, "filter": flt, "per-page": per_page, "page": page, "select": WORK_SELECT})
 
-    data = request(1)
-    while len(used) > MIN_TERMS:
-        count = (data.get("meta") or {}).get("count")
+    kept: list[dict] = []
+    names = [name for name, phrases in facets.items() if phrases]
+    share = max(1, max_works // max(1, len(names)))
+    recent = base_filter + f",from_publication_date:{recency_start(today).isoformat()}"
+    for name in names:
+        per_page = max(1, min(WORKS_PAGE_SIZE, share))
+        search = or_query(facets[name])
+        first = request(search, recent, 1, per_page)
+        count = (first.get("meta") or {}).get("count")
         if count is None or count >= MIN_MATCHES:
-            break
-        dropped = used.pop()
-        notes.append(f"only {count} works matched every term; dropped '{dropped}' and searched again")
-        data = request(1)
+            kept.append({"facet": name, "phrases": list(facets[name]), "search": search, "filter": recent,
+                         "per_page": per_page, "data": first, "matched": count})
+        else:
+            notes.append(f"the {name} phrase query matched only {count} works (fewer than {MIN_MATCHES}) and "
+                         "was dropped")
+    if not kept:
+        search, per_page = " ".join(used), max(1, min(WORKS_PAGE_SIZE, max_works))
+        data = request(search, base_filter, 1, per_page)
+        while len(used) > MIN_TERMS:
+            count = (data.get("meta") or {}).get("count")
+            if count is None or count >= MIN_MATCHES:
+                break
+            dropped = used.pop()
+            notes.append(f"only {count} works matched every term; dropped '{dropped}' and searched again")
+            search = " ".join(used)
+            data = request(search, base_filter, 1, per_page)
+        if names:
+            notes.append("no phrase query matched enough works; fell back to the AND relaxation of single terms")
+        kept.append({"facet": "all", "phrases": [], "search": search, "filter": base_filter,
+                     "per_page": per_page, "data": data, "matched": (data.get("meta") or {}).get("count")})
+    mode = "phrases-or" if names and kept[0]["facet"] != "all" else "terms-and-relaxation"
+    budget = max(1, max_works // len(kept))
     sources: dict[str, dict] = {}
+    topics_by_facet: dict[str, dict[str, float]] = {}
+    topic_names: dict[str, str] = {}
+    queries: list[dict] = []
     scanned = 0
-    page = 1
-    while True:
-        results = data.get("results") or []
-        for work in results:
-            scanned += 1
-            source = ((work.get("primary_location") or {}).get("source")) or {}
-            if source.get("type") != "journal" or not source.get("id"):
-                continue
-            entry = sources.setdefault(source["id"], {
-                "id": source["id"], "name": source.get("display_name") or "", "count": 0, "works": [],
-                "first": len(sources)})
-            entry["count"] += 1
-            if len(entry["works"]) < 3:
-                doi = work.get("doi")
-                entry["works"].append({
-                    "title": work.get("title") or "", "year": work.get("publication_year"),
-                    "doi": re.sub(r"^https?://(?:dx\.)?doi\.org/", "", doi) if doi else None})
-        if len(results) < per_page or scanned >= max_works:
-            break
-        page += 1
-        data = request(page)
-    return list(sources.values()), scanned, used, notes
+    for query in kept:
+        topics = topics_by_facet.setdefault(query["facet"], {})
+        read = 0
+        page = 1
+        data = query["data"]
+        while True:
+            results = data.get("results") or []
+            for work in results:
+                scanned += 1
+                read += 1
+                for tid, name, score in _top_topics(work):
+                    topics[tid] = topics.get(tid, 0.0) + score
+                    topic_names.setdefault(tid, name)
+                source = ((work.get("primary_location") or {}).get("source")) or {}
+                if source.get("type") != "journal" or not source.get("id"):
+                    continue
+                entry = sources.setdefault(source["id"], {
+                    "id": source["id"], "name": source.get("display_name") or "", "count": 0, "works": [],
+                    "first": len(sources), "ids": set(), "facet_ids": {}})
+                key = work.get("id") or f"{source['id']}#{scanned}"
+                entry["facet_ids"].setdefault(query["facet"], set()).add(key)
+                if key in entry["ids"]:
+                    continue
+                entry["ids"].add(key)
+                entry["count"] += 1
+                if len(entry["works"]) < 3:
+                    doi = work.get("doi")
+                    entry["works"].append({
+                        "title": work.get("title") or "", "year": work.get("publication_year"),
+                        "doi": re.sub(r"^https?://(?:dx\.)?doi\.org/", "", doi) if doi else None})
+            if len(results) < query["per_page"] or read >= budget:
+                break
+            page += 1
+            data = request(query["search"], query["filter"], page, query["per_page"])
+        queries.append({"facet": query["facet"], "phrases": query["phrases"], "matched": query["matched"],
+                        "works_read": read})
+    return {"sources": list(sources.values()), "scanned": scanned,
+            "terms": used if mode != "phrases-or" else terms,
+            "phrases": [p for q in queries for p in q["phrases"]], "mode": mode, "notes": notes,
+            "queries": [q for q in queries if q["facet"] != "all"],
+            "topics_by_facet": topics_by_facet, "topic_names": topic_names,
+            "tail": application_tail(title)}
 
 
 def _issn_list(source: dict) -> list[str]:
@@ -721,6 +1097,7 @@ def fetch_source(services: Services, entry: dict) -> tuple[dict | None, str | No
         return None, f"source {sid} ({entry['name']}) could not be fetched: {exc}; skipped"
     stats = data.get("summary_stats") or {}
     topics = data.get("topics") or []
+    shares = _source_shares(data)
     field = (topics[0].get("field") or {}) if topics else {}
     return {
         "openalex_id": data.get("id") or entry["id"],
@@ -738,6 +1115,13 @@ def fetch_source(services: Services, entry: dict) -> tuple[dict | None, str | No
         "field_id": _short_id(field["id"]) if field.get("id") else None,
         "similar_works_count": entry["count"],
         "similar_works": entry["works"],
+        "cited_count": entry.get("cited", 0),
+        "facet_hits": {name: len(entry.get("facet_ids", {}).get(name, ())) for name in ("method", "application")},
+        "topics": [{"id": _short_id(t["id"]), "name": t.get("display_name") or "",
+                    "share": round(shares[_short_id(t["id"])], 4)}
+                   for t in sorted(topics, key=lambda t: -(t.get("count") or 0))[:SOURCE_TOPICS_SHOWN]
+                   if t.get("id") and _short_id(t["id"]) in shares],
+        "topic_shares": shares,
     }, None
 
 
@@ -763,6 +1147,286 @@ def proxy_for(services: Services, candidate: dict) -> tuple[dict | None, str | N
             "share_of_field_above": round(share, 4), "percentile": round(100 * (1 - share), 1),
             "quartile": proxy_quartile(share),
             "basis": "2yr_mean_citedness against OpenAlex core journals of the same field"}, None
+
+
+# --------------------------------------------------------------------------- references the paper cites
+
+_BIB_START = re.compile(r"@([A-Za-z]+)\s*[{(]")
+_BIB_SKIPPED = ("comment", "string", "preamble")
+_DOI_PATTERN = re.compile(r"10\.\d+/\S+")
+_ARXIV_NEW = re.compile(r"(?<![\d.])(\d{4}\.\d{4,5})(?:v\d+)?(?![\d])")
+_ARXIV_OLD = re.compile(r"(?<![\w/-])([a-z-]+(?:\.[A-Za-z]{2})?/\d{7})(?:v\d+)?(?!\d)")
+_REPOSITORY_NAME = re.compile(r"\b(?:arxiv|biorxiv|medrxiv|chemrxiv|techrxiv|preprint|preprints|dataport|ssrn|"
+                              r"zenodo|figshare|osf|thesis|dissertation)\b", re.IGNORECASE)
+
+
+def normalize_doi(value) -> str | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    text = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", text, flags=re.IGNORECASE)
+    text = text.strip().rstrip(".,;").lower()
+    return text if _DOI_PATTERN.fullmatch(text) else None
+
+
+def is_repository_name(name: str) -> bool:
+    return bool(_REPOSITORY_NAME.search(name or ""))
+
+
+def _arxiv_doi(*texts) -> str | None:
+    for text in texts:
+        if not text:
+            continue
+        match = _ARXIV_NEW.search(str(text)) or _ARXIV_OLD.search(str(text))
+        if match:
+            return f"10.48550/arxiv.{match.group(1).lower()}"
+    return None
+
+
+def _balanced(text: str, open_index: int) -> tuple[str, int]:
+    """Inner text of the {...} or (...) group opening at `open_index`, and the index after its close."""
+    opener = text[open_index]
+    closer = "}" if opener == "{" else ")"
+    depth = 0
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if text[index - 1:index] == "\\":
+            continue
+        if char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:index], index + 1
+    return text[open_index + 1:], len(text)
+
+
+def _bib_fields(body: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    pos = 0
+    pattern = re.compile(r"\s*,?\s*([A-Za-z][\w:-]*)\s*=\s*")
+    while True:
+        match = pattern.match(body, pos)
+        if not match:
+            break
+        name, pos = match.group(1).lower(), match.end()
+        if pos >= len(body):
+            break
+        if body[pos] == "{":
+            value, pos = _balanced(body, pos)
+        elif body[pos] == '"':
+            end, depth = pos + 1, 0
+            while end < len(body) and not (body[end] == '"' and depth == 0 and body[end - 1] != "\\"):
+                depth += {"{": 1, "}": -1}.get(body[end], 0)
+                end += 1
+            value, pos = body[pos + 1:end], end + 1
+        else:
+            end = body.find(",", pos)
+            end = len(body) if end < 0 else end
+            value, pos = body[pos:end].strip(), end
+        fields.setdefault(name, re.sub(r"\s+", " ", value).strip())
+    return fields
+
+
+def _plain(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = re.sub(r"\\([&%$#_])", r"\1", value).replace("{", "").replace("}", "")
+    return re.sub(r"\s+", " ", text).strip() or None
+
+
+def parse_bib(text: str) -> list[dict]:
+    """Entries of a BibTeX file as {key, title, journal, doi}; `doi` falls back to the arXiv DOI."""
+    entries: list[dict] = []
+    pos = 0
+    while True:
+        start = _BIB_START.search(text, pos)
+        if not start:
+            return entries
+        body, pos = _balanced(text, start.end() - 1)
+        if start.group(1).lower() in _BIB_SKIPPED:
+            continue
+        key, _, rest = body.partition(",")
+        fields = _bib_fields(rest)
+        journal = _plain(fields.get("journal") or fields.get("journaltitle"))
+        url = fields.get("url") or ""
+        doi = normalize_doi(fields.get("doi")) or normalize_doi(url if "doi.org/" in url else None)
+        if doi is None:
+            eprint = fields.get("eprint")
+            arxiv_flag = "arxiv" in (fields.get("archiveprefix", "") + fields.get("eprinttype", "")).lower()
+            doi = _arxiv_doi(eprint if eprint and (arxiv_flag or _ARXIV_NEW.fullmatch(eprint)
+                                                   or _ARXIV_OLD.fullmatch(eprint)) else None,
+                             url if "arxiv.org/" in url else None,
+                             journal if journal and re.search(r"arxiv", journal, re.IGNORECASE) else None)
+        entries.append({"key": key.strip(), "title": fields.get("title") or "", "journal": journal, "doi": doi})
+
+
+def load_bibliography(workspace: Path) -> tuple[str | None, list[dict]]:
+    folder = workspace / "paper"
+    preferred = folder / "refs.bib"
+    candidates = [preferred] if preferred.is_file() else sorted(folder.glob("*.bib"))
+    if not candidates:
+        return None, []
+    return f"paper/{candidates[0].name}", parse_bib(_read_text(candidates[0]))
+
+
+def _name_key(name: str) -> str:
+    text = re.sub(r"^the\s+", "", (name or "").lower().replace("&", " and "))
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _top_topics(work: dict) -> list[tuple[str, str, float]]:
+    ranked = sorted((t for t in work.get("topics") or [] if t.get("id")),
+                    key=lambda t: -(t.get("score") or 0))[:WORK_TOPICS_PER_WORK]
+    return [(_short_id(t["id"]), t.get("display_name") or "", float(t.get("score") or 0)) for t in ranked]
+
+
+def _source_shares(source: dict) -> dict[str, float]:
+    counts = {_short_id(t["id"]): float(t.get("count") or 0) for t in source.get("topics") or [] if t.get("id")}
+    total = sum(counts.values())
+    return {tid: c / total for tid, c in counts.items() if c > 0} if total > 0 else {}
+
+
+def resolve_cited(services: "Services", entries: list[dict], notes: list[str]) -> dict:
+    """Journals the paper's references were published in, with the topics of the cited works.
+
+    DOIs (and arXiv ids as 10.48550/arxiv.<id>) are resolved in OpenAlex batches of DOI_BATCH; a reference
+    that stays unresolved but names a journal is looked up by exact name. Failures degrade into notes.
+    """
+    journals: dict[str, dict] = {}
+    topics: dict[str, float] = {}
+    names: dict[str, str] = {}
+    stats = {"entries": len(entries), "resolved_by_doi": 0, "resolved_by_journal_name": 0}
+    resolved: set[int] = set()
+
+    def count(source: dict, index: int) -> None:
+        sid = source["id"]
+        slot = journals.setdefault(sid, {"openalex_id": sid, "display_name": source.get("display_name") or "",
+                                         "count": 0})
+        slot["count"] += 1
+        resolved.add(index)
+
+    dois = list(dict.fromkeys(e["doi"] for e in entries if e["doi"]))
+    if len(dois) > DOI_BATCH * MAX_DOI_BATCHES:
+        notes.append(f"cited venues: only the first {DOI_BATCH * MAX_DOI_BATCHES} of {len(dois)} DOIs were resolved")
+        dois = dois[:DOI_BATCH * MAX_DOI_BATCHES]
+    works: dict[str, dict] = {}
+    for start in range(0, len(dois), DOI_BATCH):
+        batch = dois[start:start + DOI_BATCH]
+        try:
+            data = services.openalex_get("/works", {"filter": "doi:" + "|".join(batch), "per-page": len(batch),
+                                                   "select": "id,doi,primary_location,topics"})
+        except HttpFailure as exc:
+            notes.append(f"cited venues: the DOI lookup failed ({exc}); the references were not resolved by DOI")
+            break
+        for work in data.get("results") or []:
+            key = normalize_doi(work.get("doi"))
+            if key:
+                works[key] = work
+    for index, entry in enumerate(entries):
+        work = works.get(entry["doi"] or "")
+        source = ((work or {}).get("primary_location") or {}).get("source") or {}
+        if work and source.get("type") == "journal" and source.get("id"):
+            count(source, index)
+            stats["resolved_by_doi"] += 1
+            for tid, name, score in _top_topics(work):
+                topics[tid] = topics.get(tid, 0.0) + score
+                names.setdefault(tid, name)
+
+    pending = [(i, e) for i, e in enumerate(entries)
+               if i not in resolved and e["journal"] and not is_repository_name(e["journal"])]
+    lookups: dict[str, dict | None] = {}
+    for _, entry in pending:
+        key = _name_key(entry["journal"])
+        if key in lookups or len(lookups) >= MAX_NAME_LOOKUPS:
+            continue
+        try:
+            data = services.openalex_get("/sources", {
+                "search": entry["journal"], "filter": "type:journal", "per-page": NAME_LOOKUP_RESULTS,
+                "select": "id,display_name,type,topics"})
+        except HttpFailure as exc:
+            notes.append(f"cited venues: the journal-name lookup failed ({exc}); stopped looking names up")
+            break
+        lookups[key] = next((r for r in data.get("results") or []
+                             if r.get("type") == "journal" and r.get("id")
+                             and _name_key(r.get("display_name")) == key), None)
+    for index, entry in pending:
+        source = lookups.get(_name_key(entry["journal"]))
+        if source:
+            count(source, index)
+            stats["resolved_by_journal_name"] += 1
+            for tid, share in _source_shares(source).items():
+                topics[tid] = topics.get(tid, 0.0) + share
+            for topic in source.get("topics") or []:
+                if topic.get("id"):
+                    names.setdefault(_short_id(topic["id"]), topic.get("display_name") or "")
+    if len(pending) > 0 and len({_name_key(e["journal"]) for _, e in pending}) > MAX_NAME_LOOKUPS:
+        notes.append(f"cited venues: only {MAX_NAME_LOOKUPS} distinct journal names were looked up")
+    stats["unresolved"] = len(entries) - len(resolved)
+    ranked = sorted(journals.values(), key=lambda j: (-j["count"], j["display_name"].lower()))
+    return {"journals": journals, "topics": topics, "topic_names": names, "summary": {
+        **stats, "journals": ranked[:10]}}
+
+
+# --------------------------------------------------------------------------- the combined fit score
+
+
+def blend_topics(*weighted: dict[str, float]) -> dict[str, float]:
+    """The paper's topic distribution: each non-empty part (facet, cited works) weighs the same."""
+    parts = []
+    for weights in weighted:
+        total = sum(weights.values())
+        if total > 0:
+            parts.append({tid: w / total for tid, w in weights.items() if w > 0})
+    if not parts:
+        return {}
+    blended: dict[str, float] = {}
+    for part in parts:
+        for tid, share in part.items():
+            blended[tid] = blended.get(tid, 0.0) + share / len(parts)
+    return blended
+
+
+def topic_overlap(paper: dict[str, float], journal: dict[str, float]) -> float:
+    """Histogram intersection of two topic distributions: 0 (disjoint) .. 1 (identical)."""
+    return sum(min(share, journal[tid]) for tid, share in paper.items() if tid in journal)
+
+
+def facet_gate(application_hits: int, application_topic_overlap: float) -> float:
+    """1.0 when the journal shows application evidence, else FACET_GATE: no work found by the application
+    phrases and topics that barely overlap those of the works those phrases found."""
+    if application_hits > 0 or application_topic_overlap >= APP_TOPIC_MIN:
+        return 1.0
+    return FACET_GATE
+
+
+def apply_fit(details: list[dict]) -> dict:
+    """Set `fit` (three components in 0..1) and `fit_score` on each detail; return the scoring description.
+
+    Each component is divided by its maximum over the evaluated journals. A component that is zero for every
+    journal (no references file, no OpenAlex topics) drops out and the remaining weights are rescaled to 1.
+    """
+    raw = {"similar_works": [d["similar_works_count"] for d in details],
+           "cited_in_paper": [d["cited_count"] for d in details],
+           "topic_overlap": [d["topic_raw"] for d in details]}
+    peak = {name: max(values, default=0) for name, values in raw.items()}
+    active = [name for name in FIT_WEIGHTS if peak[name] > 0]
+    total = sum(FIT_WEIGHTS[name] for name in active)
+    weights = {name: round(FIT_WEIGHTS[name] / total, 6) if name in active else 0.0 for name in FIT_WEIGHTS}
+    for position, detail in enumerate(details):
+        detail["fit"] = {name: round(raw[name][position] / peak[name], 4) if peak[name] > 0 else 0.0
+                         for name in FIT_WEIGHTS}
+        detail["fit_score"] = round(sum(weights[name] * detail["fit"][name] for name in FIT_WEIGHTS), 4)
+    formula = "fit_score = " + " + ".join(f"{w:g} * {name}" for name, w in FIT_WEIGHTS.items())
+    return {"formula": formula, "weights": weights, "active": active,
+            "normalization": "each component is divided by its maximum over the evaluated journals; a "
+                             "component that is zero for every journal drops out and the remaining weights "
+                             "are rescaled to sum to 1",
+            "facet_gate": {"applies": False, "factor": FACET_GATE, "rule": (
+                "when the paper has a method and an application facet and both were searched, a journal none "
+                "of whose similar works matched an application phrase, and whose topics overlap the "
+                f"application works' topics by less than {APP_TOPIC_MIN:g}, has fit_score multiplied by "
+                f"{FACET_GATE:g} and is flagged no-application-evidence")}}
 
 
 # --------------------------------------------------------------------------- review time
@@ -901,28 +1565,59 @@ def cmd_search(args: argparse.Namespace) -> dict:
     table, sjr_info = _load_sjr(args, notes)
     profile = extract_profile(workspace)
     terms = build_terms(profile)
+    facets = build_phrase_facets(profile)
     out = Path(args.out).expanduser() if args.out else workspace / "paper" / "journal-candidates.json"
 
     max_works = max(1, _env_int("PAPERSMITH_JOURNAL_MAX_WORKS", DEFAULT_MAX_WORKS))
-    services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_DEADLINE", 300.0)))
+    services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_DEADLINE", 300.0)),
+                        ResponseCache(cache_dir(), enabled=not args.no_cache))
     try:
-        sources, scanned, terms, search_notes = fetch_similar_sources(services, terms, max_works)
+        found = fetch_similar_sources(services, facets, terms, max_works, dt.date.today(),
+                                      profile["title"])
     except HttpFailure as exc:
         raise Refusal("NETWORK_UNAVAILABLE", f"OpenAlex could not be reached: {exc}") from exc
+    sources, scanned, terms = found["sources"], found["scanned"], found["terms"]
+    notes.extend(found["notes"])
 
-    notes.extend(search_notes)
+    references_file, entries = load_bibliography(workspace)
+    if references_file is None:
+        notes.append("no references file (paper/refs.bib) was found: the cited-venues signal is inactive")
+    elif not entries:
+        notes.append(f"{references_file} holds no entries: the cited-venues signal is inactive")
+    cited = resolve_cited(services, entries, notes) if entries else {
+        "journals": {}, "topics": {}, "topic_names": {}, "summary": {
+            "entries": 0, "resolved_by_doi": 0, "resolved_by_journal_name": 0, "unresolved": 0, "journals": []}}
+    matched_topics = blend_topics(*found["topics_by_facet"].values())
+    topic_profile = blend_topics(matched_topics, cited["topics"])
+    queried = {q["facet"] for q in found["queries"]}
+    gate_applies = {"method", "application"} <= queried
+    application_profile = blend_topics(found["topics_by_facet"].get("application", {}))
+    topic_names = {**cited["topic_names"], **found["topic_names"]}
+
     excluded = 0
     candidates: list[dict] = []
+    scoring = apply_fit([])
     if not sources:
         notes.append("no journal-hosted works matched the paper's terms in OpenAlex")
-    else:
-        best = max(s["count"] for s in sources)
-        sources.sort(key=lambda s: (-s["count"], s["first"]))
-        pool_size = min(MAX_SOURCES, max(MIN_SOURCES, filters["limit"] * 3))
-        if len(sources) > pool_size:
-            notes.append(f"{len(sources) - pool_size} journals with fewer similar works were not evaluated "
-                         f"(the top {pool_size} by similar-works count were)")
-        pool = sources[:pool_size]
+    by_id = {s["id"]: s for s in sources}
+    ranked_sources = sorted(sources, key=lambda s: (-s["count"], s["first"]))
+    pool_size = min(MAX_SOURCES, max(MIN_SOURCES, filters["limit"] * 3))
+    pool = ranked_sources[:pool_size]
+    in_pool = {s["id"] for s in pool}
+    cited_ranked = sorted(cited["journals"].values(), key=lambda j: (-j["count"], j["display_name"].lower()))
+    for journal in cited_ranked[:MAX_CITED_ONLY]:
+        entry = by_id.get(journal["openalex_id"]) or {
+            "id": journal["openalex_id"], "name": journal["display_name"], "count": 0, "works": [],
+            "first": len(sources) + len(in_pool)}
+        entry["cited"] = journal["count"]
+        if entry["id"] not in in_pool:
+            pool.append(entry)
+            in_pool.add(entry["id"])
+    left_out = len(sources) - sum(1 for s in sources if s["id"] in in_pool)
+    if left_out > 0:
+        notes.append(f"{left_out} journals with fewer similar works were not evaluated "
+                     f"(the top {pool_size} by similar-works count, plus the cited journals, were)")
+    if pool:
         with ThreadPoolExecutor(max_workers=WORKERS) as executor:
             fetched = list(executor.map(lambda e: fetch_source(services, e), pool))
         details = [d for d, _ in fetched if d is not None]
@@ -934,7 +1629,20 @@ def cmd_search(args: argparse.Namespace) -> dict:
             raise Refusal("NETWORK_UNAVAILABLE", "OpenAlex answered no journal record; see the search notes: "
                           + "; ".join(n for _, n in fetched if n)[:300])
         for detail in details:
-            detail["fit_score"] = round(detail["similar_works_count"] / best, 4)
+            shares = detail.pop("topic_shares")
+            detail["topic_raw"] = topic_overlap(topic_profile, shares)
+            detail["application_overlap"] = topic_overlap(application_profile, shares)
+        scoring = apply_fit(details)
+        scoring["facet_gate"]["applies"] = gate_applies
+        for detail in details:
+            detail["cited_in_paper_count"] = detail.pop("cited_count")
+            detail.pop("topic_raw")
+            hits = detail.pop("facet_hits")
+            overlap = detail.pop("application_overlap")
+            gate = facet_gate(hits["application"], overlap) if gate_applies else 1.0
+            detail["facets"] = {"method": hits["method"], "application": hits["application"],
+                                "application_topic_overlap": round(overlap, 4), "gate": gate}
+            detail["fit_score"] = round(detail["fit_score"] * gate, 4)
 
         def resolve_quartile(detail: dict) -> tuple[dict, str | None]:
             hit = table.lookup(_issn_list(detail)) if table else None
@@ -966,11 +1674,12 @@ def cmd_search(args: argparse.Namespace) -> dict:
                     and detail["apc_usd"] > filters["max_apc"]:
                 excluded += 1
             else:
-                detail["flags"] = []
+                detail["flags"] = ["no-application-evidence"] if detail["facets"]["gate"] < 1.0 else []
                 if filters["max_apc"] is not None and detail["apc_usd"] is None:
                     detail["flags"].append("apc-unknown")
                 eligible.append(detail)
-        eligible.sort(key=lambda d: (-d["fit_score"], -d["similar_works_count"], d["display_name"].lower()))
+        eligible.sort(key=lambda d: (-d["fit_score"], -d["cited_in_paper_count"], -d["similar_works_count"],
+                                     d["display_name"].lower()))
 
         today = dt.date.today()
         index = 0
@@ -1013,7 +1722,14 @@ def cmd_search(args: argparse.Namespace) -> dict:
     document = {
         "schema": SCHEMA,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "query": {"title": profile["title"], "keywords": profile["keywords"], "terms": terms},
+        "query": {
+            "title": profile["title"], "keywords": profile["keywords"], "terms": terms,
+            "phrases": found["phrases"], "search_mode": found["mode"],
+            "facets": {"tail": found["tail"], "queries": found["queries"]},
+            "topics": [{"id": tid, "name": topic_names.get(tid, ""), "weight": round(weight, 4)}
+                       for tid, weight in sorted(topic_profile.items(), key=lambda kv: -kv[1])[:5]],
+            "cited": {"references_file": references_file, **cited["summary"]},
+            "scoring": scoring},
         "quartiles": [f"Q{n}" for n in range(low, high + 1)],
         "filters": filters,
         "quartile_source_summary": summary,
@@ -1021,6 +1737,7 @@ def cmd_search(args: argparse.Namespace) -> dict:
         "candidates": candidates,
         "excluded_count": excluded,
         "notes": notes,
+        "api_calls": services.stats.summary(services.cache),
     }
     _write_json(out, document)
     return {"ok": True, "out": str(out), "works_scanned": scanned, **document}
@@ -1073,6 +1790,8 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--limit", default=None, help=f"default {DEFAULT_LIMIT}, max {MAX_LIMIT}")
     search.add_argument("--sjr", default=None, help="a SCImago CSV to use instead of the cache")
     search.add_argument("--out", default=None, help="default <workspace>/paper/journal-candidates.json")
+    search.add_argument("--no-cache", action="store_true",
+                        help="neither read nor write the on-disk response cache")
     search.set_defaults(func=cmd_search)
 
     imp = sub.add_parser("sjr-import", help="validate and cache a SCImago 'Download data' CSV")

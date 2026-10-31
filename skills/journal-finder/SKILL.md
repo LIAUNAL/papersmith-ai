@@ -45,8 +45,9 @@ maximum 50.
 4. **Write `paper/journal-candidates.md`**, one section per journal, in the
    CLI's rank order, each holding:
    - *Why it fits*: a sentence quoted from the paper beside a sentence quoted
-     from the journal's scope, and the similar works the CLI found
-     (title, year, DOI) as the evidence of fit.
+     from the journal's scope, the similar works the CLI found (title, year,
+     DOI) and the `fit` components (similar works, references of the paper
+     published there, shared topics) as the evidence of fit.
    - *Scope risks*: what the scope page excludes or emphasises that the paper
      does not match.
    - *OA and APC*: copied from the JSON; `apc_usd: null` reads "APC not
@@ -69,21 +70,20 @@ Run from the workspace root. One JSON object on stdout per call; a refusal is
 `{"ok": false, "error": CODE, "message": ...}` with exit 2 and nothing written.
 
 ```
-python3 skills/journal-finder/scripts/journal_cli.py search --workspace . --quartiles Q1-Q2 [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--sjr <csv>] [--out <path>]
+python3 skills/journal-finder/scripts/journal_cli.py search --workspace . --quartiles Q1-Q2 [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--sjr <csv>] [--out <path>] [--no-cache]
 python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <path> [--year YYYY]
 python3 skills/journal-finder/scripts/journal_cli.py status --workspace .
 ```
 
 `search` reads the paper, asks OpenAlex for works like it, keeps the journals
 those works appeared in and aggregates per journal: how many similar works,
-and up to three examples. It then fetches each journal's record (publisher,
-OA and DOAJ state, APC, h-index, 2-year mean citedness, main field). The fit
-score is the journal's similar-works count over the largest count the search
-found, so the best-represented journal scores 1.0. OpenAlex requires every
-search term in the full text, so the paper's top terms are tried six at a time
-and the lowest-weighted one is dropped until at least 50 works match; the
-terms actually used are `query.terms` and each dropped term is named in
-`notes`.
+and up to three examples. It also resolves the journals the paper already
+cites and reads the OpenAlex topics of the matched and the cited works. It
+then fetches each journal's record (publisher, OA and DOAJ state, APC,
+h-index, 2-year mean citedness, main field, main topics) and combines the
+three signals into the fit score (next section). The journals fetched are the
+top 30 to 60 by similar-works count plus up to 20 cited ones, so a journal the
+paper cites stays in the list even when no similar work was published there.
 
 `--oa-only` keeps fully open-access journals. `--max-apc N` drops journals
 whose published APC is above N USD and keeps those with no published APC,
@@ -93,12 +93,115 @@ review time is above N days and keeps those without data, flagged
 `excluded_count`.
 
 `paper/journal-candidates.json` is schema 1: `generated_at`, `query`
-(`title`, `keywords`, `terms`), `quartiles`, `filters`,
-`quartile_source_summary`, `sjr` (`file`, `year`, or null), `candidates`,
-`excluded_count`, `notes`. Each candidate carries `rank`, `fit_score`,
-`similar_works_count`, `similar_works`, `quartile`, `quartile_source`, `sjr`
-or `proxy`, `is_oa`, `is_in_doaj`, `apc_usd`, `h_index`,
-`mean_citedness_2yr`, `review_time` and `flags`.
+(`title`, `keywords`, `terms`, `phrases`, `search_mode`, `facets`, `topics`,
+`cited`, `scoring`), `quartiles`, `filters`, `quartile_source_summary`, `sjr`
+(`file`, `year`, or null), `candidates`, `excluded_count`, `notes`,
+`api_calls`. Each candidate carries `rank`, `fit_score`, `fit`, `facets`,
+`similar_works_count`, `similar_works`, `cited_in_paper_count`, `topics`, `quartile`, `quartile_source`, `sjr` or
+`proxy`, `is_oa`, `is_in_doaj`, `apc_usd`, `h_index`, `mean_citedness_2yr`,
+`review_time` and `flags`.
+
+### How the fit score is built
+
+Three signals, each in 0..1, exposed per candidate as
+`fit: {similar_works, cited_in_paper, topic_overlap}` and described in
+`query.scoring`:
+
+```
+fit_score = 0.45 * similar_works + 0.3 * cited_in_paper + 0.25 * topic_overlap
+```
+
+- **`similar_works`**: works like the paper published by the journal, counted
+  once per distinct work. The search is OpenAlex `search` with quoted key
+  phrases joined by `OR` (`"data re-uploading" OR "variational quantum
+  circuits" OR ...`), limited to journal articles of the last six years.
+  Phrases come from the keywords (weight 3, a single-word keyword is
+  allowed), the title (weight 2: runs of content words between punctuation and
+  function words, at most four words each; hyphenated compounds such as
+  *re-uploading* stay whole) and the abstract's bigrams that occur at least
+  twice and share a word with a keyword or title phrase; a phrase inside a
+  longer keyword or title phrase is dropped (only a longer keyword absorbs a
+  keyword), and so is a title phrase that contains a multi-word keyword.
+  OpenAlex ranks by relevance, so works matching several phrases come first.
+  When the OR query for a facet matches fewer than 50 works, that query is
+  dropped with a note; when none is left, or the paper yields no phrase, the
+  CLI falls back to the AND relaxation of single terms (`query.terms`,
+  `search_mode: "terms-and-relaxation"`, each dropped term named in `notes`),
+  because OpenAlex's plain `search` requires every term. `query.phrases` lists
+  the phrases queried and `query.search_mode` is `"phrases-or"` otherwise.
+
+  **Facets.** A paper that applies a method to a domain must not be ranked
+  by the method alone. The application is the title's tail after its first
+  ` for `, ` applied to `, ` towards ` or ` toward `
+  (`query.facets.tail`); a phrase belongs to the application facet when it
+  shares a word with that tail, or comes from a keyword that does
+  ("Electroencephalography (EEG)" follows its acronym), and to the method
+  facet otherwise. With both facets present each gets its own OR query and at
+  most five phrases, so neither takes more than half the query, and half of
+  the 200-work reading budget (`query.facets.queries` reports phrases, works
+  matched and works read per facet). Each candidate reports the distinct
+  works each facet found as `facets.method` and `facets.application`. When
+  both facets were searched, a journal none of whose similar works matched an
+  application phrase and whose topics overlap the application works' topics
+  by less than 0.05 (`facets.application_topic_overlap`) has its `fit_score`
+  multiplied by 0.5 (`facets.gate`, `query.scoring.facet_gate`) and carries the
+  flag `no-application-evidence`: it still appears, and the agent says why it
+  is lower. A title without such a marker has one facet and no gate.
+- **`cited_in_paper`**: how many of the paper's references appeared in the
+  journal. The CLI reads `paper/refs.bib` (any `paper/*.bib` when that file is
+  absent) and resolves DOIs, and arXiv ids as `10.48550/arxiv.<id>`, through
+  `/works?filter=doi:a|b|c` in batches of at most 50 (at most 4 batches). A
+  reference with no DOI that names a journal is looked up by exact normalised
+  journal name (at most 15 lookups, the exact name among the first 25 matches); preprint servers and datasets are never
+  looked up. Only journal-hosted works count. `query.cited` reports the
+  entries, how many resolved by DOI or by name, how many did not, and the
+  most-cited journals; each candidate carries `cited_in_paper_count`.
+- **`topic_overlap`**: the paper's OpenAlex topic distribution (the topics of
+  the matched works of each facet, blended with those of the cited works when
+  there are any, every part weighing the same; `query.topics`) against the journal's own topic distribution
+  (`topics[].count` normalised), as a histogram intersection. Each candidate
+  lists its main `topics`.
+
+Each component is divided by its maximum over the journals evaluated, so the
+best journal on a signal scores 1.0 on it. A component that is zero for every
+journal (no bibliography, no topics returned) drops out and the remaining
+weights are rescaled to sum to 1; `query.scoring.active` names the components
+in force and `query.scoring.weights` the effective weights. The same numbers
+rebuild every `fit_score` that carries no gate:
+`round(sum(weights[k] * fit[k]), 4)`; a gated one is that value times 0.5.
+
+A failing cited-venue lookup never fails the search: the signal degrades and
+`notes` says why. The agent reports the components when it explains a rank and
+never presents a journal that appears only through a citation as one that
+publishes similar work.
+
+### Calls, the cache and the OpenAlex budget
+
+`api_calls` reports how many HTTP requests the search made and how many it
+served from disk, in total and per service (`openalex`, `crossref`,
+`pubmed`), whether the cache was on and where, and the OpenAlex budget:
+`budget.state` is `ok` (the answers carried `x-ratelimit-remaining-usd`),
+`exhausted` (a request was refused for a spent quota) or `unknown`, with
+`remaining_usd`, `limit_usd` and `retry_after_seconds` when known. A retry
+counts as a call made.
+
+OpenAlex's keyless budget is small (USD 0.10 per day, shared by everyone
+behind one IP address, roughly a hundred searches) and one search spends a
+noticeable part of it. Successful answers are therefore kept in
+`~/.cache/papersmith/journal-finder/http/` (override with
+`PAPERSMITH_JOURNAL_CACHE_DIR`), keyed by the request without credentials
+or contact email: a search lives one day, any other lookup seven. Errors are
+never stored, an unreadable or unwritable cache is just a miss, and
+`--no-cache` neither reads nor writes it. Review-time lookups carry the
+current date in their request, so they are reused on the same day only.
+
+A `429` that asks for a wait of more than 60 seconds is a spent quota, not a
+burst: the CLI does not retry it. If it happens on the first search the
+refusal is `NETWORK_UNAVAILABLE` and its message names the wait and
+`OPENALEX_API_KEY`; a free key has its own daily budget and is sent only when
+that variable is set. Later in a search it degrades that step with a note and
+`budget.state` reads `exhausted`. The agent tells the operator which of the
+two happened and never retries in a loop.
 
 ### Where the quartile comes from
 
@@ -136,7 +239,7 @@ it is **not** the time to first decision, and the markdown says so.
 | --- | --- | --- |
 | `QUARTILE_RANGE_INVALID` | the range is not `Q1`, `Q2-Q3`, `Q1-Q4`... ascending and contiguous | ask for a valid range; never guess one |
 | `PAPER_ABSENT` | no title and no abstract can be read | send the operator to write them; never search on a topic they typed instead |
-| `NETWORK_UNAVAILABLE` | OpenAlex cannot be reached within the bounded retries and deadline | report it; never fall back to remembered journals |
+| `NETWORK_UNAVAILABLE` | OpenAlex cannot be reached within the bounded retries and deadline, or its daily quota is spent (the message gives the wait and names `OPENALEX_API_KEY`) | report it; never fall back to remembered journals |
 | `SJR_FILE_INVALID` | the CSV lacks `Title`, `Issn`, `SJR`, `SJR Best Quartile`, `Categories` or `Publisher`, is empty, or has no year | say which column is missing and point to the download page |
 | `FILTER_INVALID` | `--limit`, `--max-apc` or `--max-review-days` is not a valid number | correct the flag |
 | `WORKSPACE_ABSENT` | `--workspace` is not a directory | fix the path |

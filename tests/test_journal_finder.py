@@ -896,7 +896,7 @@ class CapsAndEtiquetteTests(JournalFinderCase):
         self.assertEqual(result.code, 0, result.stdout)
         calls = api.hits("/openalex/works")
         self.assertIn(" OR ", calls[0]["params"]["search"])
-        searches = [r["params"]["search"].split() for r in calls[1:]]
+        searches = [r["params"]["search"].split() for r in calls[2:]]
         self.assertEqual([len(s) for s in searches], [6, 5, 4])
         self.assertEqual(searches[1], searches[0][:5])
         self.assertEqual(result.json["query"]["terms"], searches[2])
@@ -908,7 +908,7 @@ class CapsAndEtiquetteTests(JournalFinderCase):
         api = self.start_api(max_terms_matching=0, or_count=0)
         result = self.search()
         self.assertEqual(result.code, 0, result.stdout)
-        self.assertEqual([len(r["params"]["search"].split()) for r in api.hits("/openalex/works")[1:]],
+        self.assertEqual([len(r["params"]["search"].split()) for r in api.hits("/openalex/works")[2:]],
                          [6, 5, 4, 3, 2])
         self.assertEqual(result.json["candidates"], [])
 
@@ -972,7 +972,7 @@ class NetworkTests(JournalFinderCase):
         api = self.start_api(script={"/openalex/works": [429], "/openalex/sources/S1001": [503]})
         result = self.search()
         self.assertEqual(result.code, 0, result.stdout + result.stderr)
-        self.assertEqual(len(api.hits("/openalex/works")), 2)
+        self.assertEqual(len(api.hits("/openalex/works")), 3, "the 429, then one query per facet")
         self.assertEqual(len(api.hits("/openalex/sources/S1001")), 2)
         self.assertEqual(len(result.json["candidates"]), 4)
 
@@ -1555,7 +1555,7 @@ class CitedVenueTests(JournalFinderCase):
         self.assertGreaterEqual(len(lookups), 1)
 
     def test_a_failing_cited_lookup_degrades_with_a_note_and_never_fails_the_search(self):
-        api = self.start_api(script={"/openalex/works": [None, 404]})
+        api = self.start_api(script={"/openalex/works": [None, None, 404]})
         self.with_refs()
         result = self.search()
         self.assertEqual(result.code, 0, result.stdout + result.stderr)
@@ -1879,6 +1879,9 @@ class BudgetTests(JournalFinderCase):
 
 
 class CacheTests(JournalFinderCase):
+    #: Crossref has no record of these ISSNs in the fixture world; an error answer is never cached
+    UNCACHED = {"/crossref/journals/4444-444X/works", "/crossref/journals/5555-5555/works"}
+
     @property
     def cache_dir(self) -> Path:
         return self.tmp / "home" / ".cache" / "papersmith" / "journal-finder" / "http"
@@ -1899,9 +1902,11 @@ class CacheTests(JournalFinderCase):
         self.assertEqual(first.json["api_calls"]["cached"], 0)
         second = self.search()
         self.assertEqual(second.code, 0, second.stdout + second.stderr)
-        self.assertEqual(len(api.requests), served, "the second search made no HTTP request")
-        self.assertEqual(second.json["api_calls"]["made"], 0)
-        self.assertEqual(second.json["api_calls"]["cached"], served)
+        again = [r["path"] for r in api.requests[served:]]
+        self.assertEqual(set(again), self.UNCACHED, "only the answers that were errors are asked again")
+        self.assertEqual(second.json["api_calls"]["made"], len(again))
+        self.assertEqual(second.json["api_calls"]["cached"], served - len(again))
+        self.assertEqual(second.json["api_calls"]["by_service"]["openalex"]["made"], 0)
         self.assertEqual(self.candidates_of(second), self.candidates_of(first))
 
     def test_api_calls_are_counted_per_service_and_describe_the_cache(self):
@@ -1952,7 +1957,8 @@ class CacheTests(JournalFinderCase):
         self.assertIn("/openalex/works", paths, "searches are older than a day")
         self.assertFalse([p for p in paths if p.startswith("/openalex/sources/")],
                          "source lookups are still fresh after two days")
-        self.assertFalse([p for p in paths if p.startswith("/crossref")], "lookups are fresh")
+        self.assertFalse([p for p in paths if p.startswith("/crossref") and p not in self.UNCACHED],
+                         "lookups are fresh")
         for path in self.cache_files():
             document = json.loads(path.read_text(encoding="utf-8"))
             document["fetched_at"] -= 6 * 86400
@@ -1975,11 +1981,12 @@ class CacheTests(JournalFinderCase):
                                "OPENALEX_API_KEY": "SECRETKEY123", "NCBI_API_KEY": "NCBISECRET456"})
         served = len(api.requests)
         second = self.search()
-        self.assertEqual(len(api.requests), served, "a different identity hits the same cache entries")
+        self.assertEqual({r["path"] for r in api.requests[served:]}, self.UNCACHED,
+                         "a different identity hits the same cache entries")
         blob = "".join(p.read_text(encoding="utf-8") for p in self.cache_files())
         for secret in ("SECRETKEY123", "NCBISECRET456", "someone@example.org"):
             self.assertNotIn(secret, blob)
-        self.assertEqual(second.json["api_calls"]["made"], 0)
+        self.assertEqual(second.json["api_calls"]["by_service"]["openalex"]["made"], 0)
 
     def test_a_corrupt_cache_file_is_a_miss_not_a_failure(self):
         self.start_api()
