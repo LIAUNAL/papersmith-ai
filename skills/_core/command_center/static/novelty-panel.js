@@ -3,7 +3,7 @@
  *
  * Renders the 4 core subsections:
  *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts).
- *   2. Novelty Assessment & Scientific Sobriety vs SOTA.
+ *   2. Novelty Assessment & Scientific Sobriety vs SOTA (claims, limits, unsupported findings).
  *   3. Scientific Rigor & Reviewer Defense Audit checklist.
  *   4. Novelty Decision Gate with interactive action buttons (Approve, Iterate).
  */
@@ -43,6 +43,42 @@
     iterating_proposal: '<span class="badge badge--info">🔄 ITERATING PROPOSAL</span>',
     iterating_plausibility: '<span class="badge badge--info">🔄 ITERATING PLAUSIBILITY</span>',
   };
+
+  const STATEMENT_CLIP = 160;
+  const clip = (text, max) => {
+    const value = String(text === null || text === undefined ? '' : text);
+    return value.length > max ? `${value.slice(0, max)}…` : value;
+  };
+
+  const verdictLabel = (family, verdict) => t(`${family}.${verdict}`, String(verdict));
+
+  // What the product discussions record against the claims: their limitations,
+  // the hypotheses that were not supported or left inconclusive, and a novelty
+  // verdict that is not (fully) justified. Nothing here is written by the forge.
+  function sobrietyListItems(data) {
+    const item = (kind, who, body) => `<li><strong>${esc(kind)}</strong>${who ? ` <span class="badge badge--sm">${esc(who)}</span>` : ''} ${body}</li>`;
+    const detail = (rationale) => (rationale
+      ? ` <span style="color:var(--text-muted);"><em>${esc(t('novelty.hypotheses.rationale_label', 'Rationale:'))}</em> ${esc(rationale)}</span>` : '');
+    const items = [];
+    (data.limitations || []).forEach((l) => {
+      items.push(item(t('novelty.sota.sobriety_limitation', 'Limitation'), l.product, esc(l.text)));
+    });
+    (data.hypotheses || []).forEach((h) => {
+      if (h.verdict !== 'not_supported' && h.verdict !== 'inconclusive') return;
+      items.push(item(
+        `${t('novelty.sota.sobriety_hypothesis', 'Hypothesis')} ${h.id}`, h.product,
+        `${esc(clip(h.statement, STATEMENT_CLIP))} <span class="badge badge--sm">${esc(verdictLabel('exp.disc.verdict', h.verdict))}</span>${detail(h.rationale)}`,
+      ));
+    });
+    (data.discussions || []).forEach((d) => {
+      if (d.verdict !== 'not_justified' && d.verdict !== 'partially_justified') return;
+      items.push(item(
+        t('exp.disc.noveltyTitle', 'Novelty'), d.product,
+        `<span class="badge badge--sm">${esc(verdictLabel('exp.disc.novelty', d.verdict))}</span>${detail(d.rationale)}`,
+      ));
+    });
+    return items;
+  }
 
   let currentOverview = null;
 
@@ -242,6 +278,7 @@
     // ----------------------------------------------------
     const sota = data.sota || {};
     const noveltyClaims = data.novelty_claims || [];
+    const sobrietyItems = sobrietyListItems(data);
     html += `
       <section class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel__header">
@@ -266,13 +303,11 @@
               `).join('') : `<p style="font-size:0.85rem; color:var(--text-muted);">${t('novelty.sota.empty_claims', 'No formalized claims in discussion.json.')}</p>`}
             </div>
 
-            <div style="background:var(--surface); border:1px solid var(--border); padding:1rem; border-radius:6px;">
-              <div style="font-weight:700; color:var(--accent); margin-bottom:0.5rem;">⚖️ ${t('novelty.sota.sobriety', 'Scientific Sobriety & Dispelling Hype')}</div>
-              <ul style="font-size:0.85rem; line-height:1.5; padding-left:1.2rem; color:var(--text);">
-                <li>${t('novelty.sota.sobriety_entanglement', 'Entanglement vs. Separability: If quantum topology does not statistically outperform separable layers (p = 1.0), report with rigorous sobriety, affirming that quantum value lies in analytical interpretability and harmonic expressivity, not brute supremacy.')}</li>
-                <li>${t('novelty.sota.sobriety_leakage', 'Data Leakage in Prior Literature: Contrast with inflated claims (>99% accuracy) stemming from random trial-level splitting rather than subject-level GroupKFold.')}</li>
-                <li>${t('novelty.sota.sobriety_plateaus', 'Barren Plateau Boundary: Transparent circuit depth limits (L <= 3) justified by exponential gradient variance collapse (< 10^-5).')}</li>
-              </ul>
+            <div id="noveltySobriety" style="background:var(--surface); border:1px solid var(--border); padding:1rem; border-radius:6px;">
+              <div style="font-weight:700; color:var(--accent); margin-bottom:0.5rem;">⚖️ ${t('novelty.sota.sobriety', 'Sobriety: limits and unsupported claims')}</div>
+              ${sobrietyItems.length > 0
+                ? `<ul style="font-size:0.85rem; line-height:1.5; padding-left:1.2rem; color:var(--text);">${sobrietyItems.join('')}</ul>`
+                : `<p style="font-size:0.85rem; color:var(--text-muted);">${t('novelty.sota.sobriety_empty', 'No limitations or unsupported hypotheses recorded in Results/discussion.json.')}</p>`}
             </div>
           </div>
         </div>
