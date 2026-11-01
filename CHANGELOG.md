@@ -11,6 +11,51 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.52.0
+
+### Added
+
+- **AI-use declaration built from the pipeline record**: the back matter gains
+  a required `bm-ai-use-declaration` block whose placement and wording follow
+  the venue (Elsevier: its own section before the references, with the Elsevier
+  template; MDPI and IEEE: inside the Acknowledgments; a neutral template
+  otherwise). `paper_cli packet` adds an `ai_usage` key for that block and for
+  the set-up's training details, drawn from the AI History record (agents per
+  phase, harnesses, approvals, revisions, blocks the redactor drafted, whether
+  agents ran code). A declaration that contradicts the record is disqualified.
+- **More back-matter blocks**: code availability (required), ethics statement
+  and informed consent (with the new `ethics-approval` declaration),
+  supplementary materials, abbreviations, highlights and graphical abstract;
+  funding placement follows the publisher family (`paper_venue.py`).
+- **Cited layer of the SOTA atlas** (`sota-pool/atlas.manuscript.json`): which
+  pool papers the manuscript cites, in which blocks and for which claims, plus
+  cited papers outside the pool. It refreshes after a clean `bib build`, a
+  passing `verify` citation check and a dashboard compile, never failing the
+  command; `smith atlas cited`, `GET /api/atlas/manuscript` and a "Cited in
+  manuscript" panel expose it. `atlas.json` is never modified.
+- **Manuscript summary graph** (`.papersmith/manuscript_graph.json`): topic,
+  problem, pillars, hypotheses, cited SOTA, base and novelty mathematics,
+  experiments, findings with their verdicts, and conclusions, each linked to
+  its source and paper blocks, with missing nodes naming the phase that fills
+  them. `smith atlas summary`, `/api/atlas/manuscript-graph` and a new view in
+  the Atlas tab. Proposal revisions may now carry `pillars` and `hypotheses`
+  in their `.sky.json`.
+
+### Changed
+
+- **Conclusions contract** re-measured on the group's papers: 350-950 words in
+  3-6 paragraphs, one finding paragraph per contribution, at most one headline
+  number each and identical to the results.
+- **Style metrics** (`paper_ai_metrics`, `ai_audit`, `humanize`): reoriented
+  from an AI-signature score to a writing-quality style score
+  (`analyze_style`, `style_score`, `style_verdict`, `--style-target`); the
+  report reminds that a passing score does not change the obligation to
+  declare AI use. Old names stay as deprecated aliases for one release.
+- `paper_cli verify` now writes the derived atlas layer outside `paper/` when
+  its citation check passes.
+- Methods extent reads 2 to 9 subsections, and the set-up extent 800-3500
+  words, matching their own tables.
+
 ## 0.51.0
 
 ### Changed
