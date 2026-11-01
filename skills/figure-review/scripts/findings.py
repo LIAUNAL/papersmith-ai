@@ -64,6 +64,7 @@ def _point_box(box, pt_per_px: float | None) -> list | None:
 def build_visual(
     *, width: int, height: int, gray, tool: str, dpi, dpi_source: str,
     color_model: str, declared_border_pt: float | None, boxes: list | None = None,
+    vector: dict | None = None,
 ) -> dict:
     """Assemble the full `visual` dict: every roster dimension present
     exactly once (`visual-finding-boundary`, `Requirement: Every
@@ -76,11 +77,20 @@ def build_visual(
     where painting two adjacent boxes merges them into one connected
     region); when omitted, regions are detected from `gray` via
     `geometry.ink_regions`.
+
+    `vector` carries the PDF-read verdicts (`typeset.measure_pdf`:
+    `min-printed-font`, `background`, `whitespace`, `in-figure-title`);
+    when omitted they stay `unmeasured` with the roster's
+    `PDF_NOT_MEASURED`, the way the raster dimensions do without a raster.
     """
     dimensions = {
         name: {"verdict": "unmeasured", "reason": figure_dimensions.DEFAULT_REASONS[name]}
         for name in figure_dimensions.SILENT_DIMENSIONS
     }
+    for name in ("min-printed-font", "background", "whitespace", "in-figure-title"):
+        dimensions[name] = (vector or {}).get(name) or {
+            "verdict": "unmeasured", "reason": figure_dimensions.DEFAULT_REASONS[name],
+        }
 
     oob = geometry.out_of_bounds(width, height, gray)
     if declared_border_pt is None:
@@ -123,7 +133,10 @@ def build_visual(
     return {"provenance": provenance, "dimensions": dimensions}
 
 
-def measure_figure(png_path: Path, raster_provenance: dict, *, tex_path: Path | None = None) -> dict:
+def measure_figure(
+    png_path: Path, raster_provenance: dict, *, tex_path: Path | None = None,
+    vector: dict | None = None,
+) -> dict:
     """The end-to-end entry point `review_cli.py measure` calls:
     `png_read` -> `geometry` -> this module's assembly, using the
     already-written `raster-provenance.json` for `tool`/`dpi`/
@@ -141,4 +154,5 @@ def measure_figure(png_path: Path, raster_provenance: dict, *, tex_path: Path | 
         dpi_source=raster_provenance.get("dpiSource"),
         color_model=raster_provenance.get("colorModel"),
         declared_border_pt=declared_border_pt,
+        vector=vector,
     )

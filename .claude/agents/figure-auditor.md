@@ -57,8 +57,8 @@ false green the third verdict value exists to prevent.
 
 ## The visual half, and where it stops
 
-Clarity, overlaps, arrow legibility, text running out of bounds, legend
-problems — these are bounded to the `figure-review` skill, and whether that
+Clarity, overlaps, printed text size, backgrounds, wasted margins, in-figure
+titles, arrow legibility, text running out of bounds, legend problems — these are bounded to the `figure-review` skill, and whether that
 bound is live is a command you run and quote, never a belief about the
 session:
 
@@ -81,14 +81,20 @@ Never infer a visual verdict from the TikZ source: source that *should* render
 cleanly is not the rendered figure, and claiming otherwise is a conclusion
 where a measurement belongs.
 
-`legibility` stays `unmeasured` even when the probe resolves and
-`figure-review` measures cleanly — not because a tool is absent, but because
-whether a measured text height reads as legible is a threshold judgement about
-a reader, not a pixel property. Its reason code is
-`LEGIBILITY_IS_A_THRESHOLD_JUDGEMENT`, and you report it exactly: glyph metrics
-are in fact obtainable from the PDF's own text layer, so deferring behind this
-honest reason is a note, and reporting a tool-absence reason that is not true
-is the defect this doctrine exists to remove.
+Text size is no longer a judgement: the threshold is a declared rule (every
+text span, labels and ticks included, prints at least 0.70 x the manuscript
+body), so `measure` reads it from the figure PDF's own text layer as the
+`min-printed-font` verdict. Run it with the width the manuscript includes the
+figure at, `--printed-width-pt <fraction x \textwidth x 72/72.27>` (natural
+size when omitted), and the body size from `--body-pt` or `paper/main.tex`.
+`measure` also reads three more verdicts from the PDF: `background` (a filled
+rectangle covering the page), `whitespace` (a margin wider than 4 pt) and
+`in-figure-title` (a title row above the plotting area; the caption carries
+the title). Each `fail` names its offending spans, sides or title text: quote
+them. When the PDF has no text layer (raster, or text converted to outlines),
+`min-printed-font` is `unmeasured` with `NO_TEXT_LAYER`, and an unreadable
+PDF leaves all four `unmeasured` with `PDF_UNREADABLE`; report those reasons
+exactly, never a `pass`.
 
 ## Typographic parity, which is measurable
 

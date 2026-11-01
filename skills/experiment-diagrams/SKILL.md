@@ -1,6 +1,6 @@
 ---
 name: experiment-diagrams
-description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`) and how it was validated, `validate` records the operator's approval given in the agent chat. Never runs an experiment, never edits the approval, never validates a diagram on its own initiative: the operator does, in the dashboard or by approving it explicitly in the conversation."
+description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png at print size and audits it, `audit` re-runs the overflow, overlap, font-floor, background and margin checks, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`) and how it was validated, `validate` records the operator's approval given in the agent chat. Never runs an experiment, never edits the approval, never validates a diagram on its own initiative: the operator does, in the dashboard or by approving it explicitly in the conversation."
 ---
 
 # Experiment diagrams
@@ -38,9 +38,43 @@ restart when the dashboard started under an older release than the workspace's.
 ```
 python skills/experiment-diagrams/scripts/diagram_cli.py derive --target implementations/<repo> --name <Name> --kind poc|experiments [--force]
 python skills/experiment-diagrams/scripts/diagram_cli.py render --spec implementations/<repo>/<Name>/diagrams/<kind>.json
+python skills/experiment-diagrams/scripts/diagram_cli.py audit --spec implementations/<repo>/<Name>/diagrams/<kind>.json
 python skills/experiment-diagrams/scripts/diagram_cli.py status --target implementations/<repo> --name <Name>
-python skills/experiment-diagrams/scripts/diagram_cli.py validate --target implementations/<repo> --name <Name> --kind poc|experiments --png-sha256 <hex> --operator-statement "<the operator's words, verbatim>"
+python skills/experiment-diagrams/scripts/diagram_cli.py validate --target implementations/<repo> --name <Name> --kind poc|experiments --png-sha256 <hex> --operator-statement "<the operator's words, verbatim>" [--audit-override "<the operator's words, verbatim>"]
 ```
+
+## Drawn at the size it prints, then audited
+
+`render` designs the figure at the width it is included at in the
+manuscript, so it prints at scale ~1: the body size comes from the spec's
+optional `print.body_pt`, else `paper/main.tex`'s class option, else 10 pt;
+the width is `print.width_fraction` (default 1) x `print.text_width_pt`
+(default: the A4 article text width for that body size). Every font is an
+explicit `\fontsize` per role (claim = body, spine = 0.9 x body, notes and
+evidence = 0.8 x body), never a relative switch and never below 0.70 x the
+body size. Boxes share the width the layout has; fonts never shrink to fit.
+The export draws no background (the PNG rasterizes on white) and keeps a
+2 pt border.
+
+`render` keeps the TeX log. When it reports an `Overfull \hbox` the boxes
+are widened once (the gap between them narrows); still overfull, `render`
+refuses `TEX_OVERFULL` quoting the log line, and the Corrector shortens that
+label. Then it runs the shared mechanical audit
+(`skills/_core/figure/diagram_audit.py`, the same one `paper-writing`'s
+`render` runs) and writes `diagrams/<kind>.audit.json`, bound to the PNG:
+overfull boxes = 0, no relative size switch, no overlapping text (from the
+PDF's vector text layer: spans intersecting each other, or a span crossing a
+drawn frame it is not inside), every span >= 0.70 x body at the declared
+width, no background and every margin <= 4 pt. `audit` re-runs it on the
+drawing as it is (a failing audit exits 0 with `"verdict": "fail"`).
+`status` reports each kind's `audit` (`pass`, `fail`, `unmeasured`,
+`absent`, or `stale` when it audited an earlier drawing).
+
+`validate` shows the audit and refuses `AUDIT_NOT_PASSED` unless it reads
+`pass` for the PNG drawn now. When the operator explicitly accepts a
+diagram whose audit does not pass, pass their words verbatim as
+`--audit-override`; the record keeps them as `audit_override`. Never
+override on your own judgement.
 
 `status` reports, per kind, `validation` and `provenance`: `null` unless the
 diagram reads `validated`, otherwise `{"via": "chat"|"dashboard",
@@ -85,12 +119,14 @@ Every command prints one JSON object. Refusals carry `"ok": false`, an
 | `SPEC_INVALID` | the spec breaks a rule; the message names the field | fix that field (Corrector) |
 | `TEX_TOOLCHAIN_ABSENT` | no `latexmk`, `pdflatex` or `lualatex` on PATH or in the usual TeX folders | install TeX Live / MacTeX; the `.tex` is already written |
 | `TEX_COMPILE_FAILED` | TeX ran and failed; the message carries the log tail | usually an unusual character in a label |
+| `TEX_OVERFULL` | a label is wider than its box even after the boxes were widened; the message quotes the log line | shorten that label (Corrector) |
 | `RASTER_TOOLCHAIN_ABSENT` | none of `pdftoppm`, `pdftocairo`, `gs`, `sips` produced a PNG | install poppler-utils or Ghostscript; the `.pdf` is kept |
 | `SPEC_ABSENT` | `validate`: `diagrams/<kind>.json` does not exist | draw the diagram first (`derive`, `render`) |
 | `DIAGRAM_ABSENT` | `validate`: `diagrams/<kind>.png` has not been drawn | run `render` |
 | `PNG_HASH_INVALID` | `validate`: `--png-sha256` is not hex or shorter than 12 characters | pass the SHA-256 of the PNG you showed |
 | `PNG_HASH_MISMATCH` | `validate`: the current PNG is not the one the operator saw | show the current PNG and ask the operator again |
-| `STATEMENT_EMPTY` | `validate`: `--operator-statement` is blank | pass the operator's approval, verbatim |
+| `STATEMENT_EMPTY` | `validate`: `--operator-statement` (or a given `--audit-override`) is blank | pass the operator's words, verbatim |
+| `AUDIT_NOT_PASSED` | `validate`: the mechanical audit of the PNG drawn now is `fail`, `unmeasured`, `absent` or `stale`; the message lists the findings | fix the spec and render again, or pass the operator's explicit acceptance as `--audit-override` |
 | `USAGE` | a required option is missing or a value is not accepted | fix the command line |
 
 The toolchain is found through `PATH` first and then the folders TeX
@@ -118,10 +154,24 @@ Play each role in turn. Do not skip the review because the render succeeded.
      `label` of at most 24 characters.
 2. **Drawer** -- run `render`. The script computes the layout and applies the
    style library; never hand-edit the `.tex`, change the spec instead.
-3. **Reviewer** -- open the PNG (read the image) and check it against the
-   rules below, one by one. Check grayscale explicitly: imagine or produce a
-   gray copy (`pdftoppm -gray`) and confirm the focal node and the primary
-   path still stand out without hue. Write down each rule that fails.
+3. **Reviewer** -- first read the mechanical audit `render` returned
+   (`audit.verdict`, `audit.messages`): a failing check is a finding
+   already measured, never re-judged by eye. Then the visual pass delegates
+   to the `figure-visual-reviewer` agent, once per drawing, on
+   `diagrams/<kind>.png` (at most 1400 px wide at print size; otherwise it
+   makes a `pdftoppm -scale-to 1400` preview in a temporary folder): it
+   judges legibility at print scale, centring and balance, overlaps and
+   crowding, and whether labels and arrows read correctly, returning
+   `PASS`, `FAIL` with concrete spec fixes, or `PASS` plus an
+   `UNCERTAINTY:` line it never turns into a FAIL. Then check the rules
+   below, one by one. Check grayscale explicitly: imagine or produce a gray
+   copy (`pdftoppm -gray`) and confirm the focal node and the primary path
+   still stand out without hue. Write down each rule that fails.
+
+   **Measure this before delegating (figure-visual-reviewer):** confirm
+   `render` returned `"ok": true` and `audit.verdict` `pass` for this kind,
+   and that `diagrams/<kind>.png` exists; a visual pass over a drawing the
+   audit already fails spends a model call on what the messages say.
 4. **Corrector** -- make the smallest spec change that fixes each failure
    (shorter label, a node moved to a row, one edge demoted to secondary),
    render again and review once more. **At most one correction round**: if
@@ -148,7 +198,7 @@ template or asset of Sivia is copied here, and the TikZ library in
   | --- | --- | --- |
   | `operator` | something that acts; label it with a verb | a rounded box with a cool outline |
   | `state` | data or a feature at rest | a pale pill (a port or token) |
-  | `focal` | the mechanism the claim is about | a warm ellipse, thick outline, bold label |
+  | `focal` | the mechanism the claim is about | a warm box, thick alert outline, bold label |
   | `evidence` | what a reader can check afterwards | a plain restrained frame |
   | `context` | where it came from, caveats | a small note, no frame |
   | `group` | related nodes (`members`) | a light wash behind them, never a heavy box |
@@ -161,12 +211,14 @@ template or asset of Sivia is copied here, and the TikZ library in
 - **Arrows enter from the side that faces their source** and never run
   through a label. Branches to a row leave vertically and share one lane.
 - **Sentence case everywhere**, no Title Case labels (the validator refuses
-  them). Two font weights and three sizes, nothing more.
+  them). Two font weights and three explicit sizes, nothing more, none below
+  0.70 x the manuscript body size.
 - **Not a dashboard.** A wall of equal-size cards says nothing about what
   matters. If the evidence row grows past five frames, group them or keep
   only the ones the claim needs.
 - **Measured strokes and a fixed palette.** Connectors 1.4-1.9 pt, outlines
-  1.3-1.8 pt. Canvas `#F7F3E8`, ink `#20252B`, cool `#4F7CAC`, warm
+  1.3-1.8 pt. No canvas in the export (`psCanvas` `#F7F3E8` stays
+  defined for a caller that paints its own preview), ink `#20252B`, cool `#4F7CAC`, warm
   `#E09F3E` and `#D96855`, with pale tints for fills. Hue is decoration;
   value (light against dark) and stroke weight carry the meaning, so the
   figure reads in grayscale.

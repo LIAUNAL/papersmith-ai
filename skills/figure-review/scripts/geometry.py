@@ -47,7 +47,11 @@ def ink_regions(width: int, height: int, gray, *, ink_max: int = INK_MAX_LEVEL) 
     `(x0, y0, x1, y1)`, via run-length row union-find under
     8-connectivity: two runs on adjacent rows connect whenever their
     column ranges overlap OR touch diagonally (`a0 <= b1 and b0 <= a1`
-    on half-open intervals includes the diagonal-touch case)."""
+    on half-open intervals includes the diagonal-touch case).
+
+    A region wholly inside another region's box (the label inside a framed
+    node) is dropped (`drop_contained`): it can never be a visible
+    collision, and reporting it made every framed node a false overlap."""
     row_runs = _ink_runs(width, height, gray, ink_max)
 
     parent: list = []
@@ -92,7 +96,27 @@ def ink_regions(width: int, height: int, gray, *, ink_max: int = INK_MAX_LEVEL) 
                 box[1] = min(box[1], y)
                 box[2] = max(box[2], e)
                 box[3] = max(box[3], y + 1)
-    return [tuple(box) for box in boxes.values()]
+    return drop_contained([tuple(box) for box in boxes.values()])
+
+
+def drop_contained(boxes: list) -> list:
+    """`boxes` without every box that lies wholly inside another one (edges
+    may coincide). A framed node's border is one connected region and the
+    text inside it is another; the text's box sits inside the frame's box,
+    which is containment, not a collision, so it never reaches `overlaps`.
+    Of two identical boxes one is kept. Order is preserved."""
+    kept = []
+    for i, (x0, y0, x1, y1) in enumerate(boxes):
+        inside = False
+        for j, (X0, Y0, X1, Y1) in enumerate(boxes):
+            if i == j or not (X0 <= x0 and Y0 <= y0 and x1 <= X1 and y1 <= Y1):
+                continue
+            if (X0, Y0, X1, Y1) != (x0, y0, x1, y1) or j < i:
+                inside = True
+                break
+        if not inside:
+            kept.append((x0, y0, x1, y1))
+    return kept
 
 
 def out_of_bounds(width: int, height: int, gray, *, ink_max: int = INK_MAX_LEVEL) -> dict:

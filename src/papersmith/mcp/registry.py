@@ -74,6 +74,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "audit",
     "ui",
     "atlas",
+    "paper",
     "mcp",
     "team",
     "colab",
@@ -1596,6 +1597,10 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # An agent regenerates the atlas through the plausibility skill's own
     # check_atlas.py/render_atlas.py, which this command only sequences.
     "atlas": "out",
+    # `paper qa` measures a compiled main.pdf and writes paper/.qa/: the
+    # dashboard's compile already runs it, and an operator runs it from a
+    # terminal; an agent reads the report through the dashboard API.
+    "paper": "out",
     # The server host itself: never a tool it exposes.
     "mcp": "out",
     # Operator environment provisioning: long-running multi-gigabyte command.

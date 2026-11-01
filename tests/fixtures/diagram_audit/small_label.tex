@@ -1,0 +1,10 @@
+% A 6 pt label: at natural size in an 11 pt manuscript it prints below
+% 0.70 x 11 = 7.7 pt.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\begin{document}
+\begin{tikzpicture}
+\node[draw, font=\fontsize{6}{7.2}\selectfont] at (0,0) {Pilot tables};
+\end{tikzpicture}
+\end{document}

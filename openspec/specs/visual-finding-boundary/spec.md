@@ -20,9 +20,10 @@ slot the classified findings land in.
 
 Every visual dimension reported by the figure pipeline MUST be classified into
 exactly one of three tiers: a Tier 1 **computed verdict** (`out-of-bounds`,
-`overlap`), a Tier 1 **evidence-only** fact carrying no verdict
-(`canvas-occupancy`), or a Tier 2 **announced silence** — `unmeasured` paired
-with a named reason code (`legibility`, connection/arrow correctness,
+`overlap` from the raster; `min-printed-font`, `background`, `whitespace`,
+`in-figure-title` from the figure PDF), a Tier 1 **evidence-only** fact
+carrying no verdict (`canvas-occupancy`), or a Tier 2 **announced silence** —
+`unmeasured` paired with a named reason code (connection/arrow correctness,
 style/aesthetics/legend quality, and which component an overlap belongs to).
 No dimension MAY exist outside this classification, and no dimension MAY be
 reported as `pass` on the strength of a judgement rather than a computation.
@@ -35,16 +36,25 @@ reported as `pass` on the strength of a judgement rather than a computation.
 - THEN `canvas-occupancy` is reported as a number with no `pass`/`fail` value,
   even though it is the most visually striking fact measured
 
-#### Scenario: Legibility is an announced silence because it is a threshold judgement
+#### Scenario: Printed font size is a measured verdict against a declared floor
 
-- GIVEN glyph metrics that ARE measurable from the PDF's own text layer (for
-  example per-word bounding boxes or per-span text height in points), so no
-  tool is absent
+- GIVEN a figure PDF with a text layer, the manuscript body size (the
+  `\documentclass` size option, 10 pt without one) and the width the figure
+  prints at
 - WHEN the visual findings are assembled
-- THEN `legibility` is still reported `unmeasured` with reason
-  `LEGIBILITY_IS_A_THRESHOLD_JUDGEMENT`, never `pass` — because whether a
-  measured text height reads as legible is a judgement about a reader, not a
-  property the pixels themselves settle
+- THEN `min-printed-font` reads `pass` only when every text span (labels,
+  ticks, legends, annotations), scaled to that printed width, is at least
+  0.70 x the body size, and `fail` naming each offending span otherwise —
+  the former `legibility` silence (`LEGIBILITY_IS_A_THRESHOLD_JUDGEMENT`) is
+  replaced by this declared, measured rule
+
+#### Scenario: A figure without a text layer leaves the printed font unmeasured
+
+- GIVEN a figure PDF that carries no text layer (raster-only, or text
+  converted to outlines)
+- WHEN the visual findings are assembled
+- THEN `min-printed-font` is reported `unmeasured` with reason
+  `NO_TEXT_LAYER`, never `pass`
 
 #### Scenario: Overlap ownership without a name is an announced silence
 
@@ -94,13 +104,14 @@ field. Content placed under `assistedReading` MUST NOT be written into any
 `visual.<dimension>.verdict` field, and it MUST NEVER cause an `unmeasured`
 dimension to be reported as `pass`.
 
-#### Scenario: A confident reading does not upgrade legibility
+#### Scenario: A confident reading does not change the measured printed font
 
-- GIVEN an agent that read the raster and judged the text legible
+- GIVEN an agent that read the raster and judged the text legible, on a
+  figure whose `min-printed-font` measured `fail` (or `unmeasured`)
 - WHEN the agent composes its report
 - THEN that judgement appears only under `assistedReading`, and
-  `visual.legibility.verdict` remains `unmeasured` with its named reason,
-  unchanged by the agent's reading
+  `visual.min-printed-font.verdict` keeps its measured value, unchanged by
+  the agent's reading
 
 #### Scenario: A named suspicion does not resolve unattributed overlap
 

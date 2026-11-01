@@ -49,11 +49,36 @@ data-figure boundary's source-side stop, and it refuses before a single
 never a measured result.** Placing a measured figure is `place`, a
 different verb this agent never calls.
 
+## Size every font for the width it prints at
+
+The audit `render` runs after every successful compile fails the figure, and
+spends an attempt, on any of these — so write it this way from the start:
+
+- **Explicit sizes only**: `\fontsize{<pt>}{<1.2 pt>}\selectfont`, never
+  `\tiny`, `\scriptsize`, `\footnotesize`, `\small`, `\large` or any other
+  relative switch. Pick each size so it prints at >= 0.70 x the manuscript
+  body size (`paper/main.tex`'s class option) once the figure is scaled to
+  the width it is included at: declare that width in the manifest as
+  `widthFraction` (the `width=<f>\textwidth` of its `\includegraphics`).
+  Design the picture at about that width so the scale stays near 1; at
+  scale `s` a label needs `0.70 x body / s` points.
+- **Hyphenation off** in the preamble (`\hyphenpenalty=10000
+  \exhyphenpenalty=10000`), and a box wide enough for its longest word: an
+  `Overfull \hbox` in the log fails the audit. When a label does not fit,
+  shorten it or widen its box; never shrink the font.
+- **No overlaps**: no two labels may intersect, and a label may not cross a
+  drawn frame it does not sit inside.
+- **No background, no wasted margin**: no `show background rectangle`, no
+  page-filling fill; the fixed `border=2pt` header keeps every margin
+  under the 4 pt limit.
+
 ## The compile loop is yours to drive; the bound is the CLI's
 
 Run `render --figure-id <id>` after every edit. On `"verdict": "failure"`,
 read the returned diagnostics (each naming a source line where the parser
-could explain it), fix the source, and run `render` again — up to four
+could explain it, or the audit check that failed: `overfull`,
+`size_switches`, `text_overlap`, `font_floor`, `margins`), fix the source,
+and run `render` again — up to four
 times per id, `attemptsUsed`/`budgetRemaining` in every reply telling you
 exactly where you stand. The fifth attempt is never yours to make:
 `REPAIR_BUDGET_SPENT` names every distinct diagnostic and digest already
@@ -61,6 +86,15 @@ tried, and you stop there rather than guessing at a fifth fix. A missing
 package (`LATEX_PACKAGE_ABSENT`) or an absent toolchain
 (`LATEX_TOOLCHAIN_ABSENT`) spends nothing and is not yours to fix by
 redrawing — report it and stop.
+
+## One look by eye, once it passes
+
+When `render` returns `success` with `audit.verdict` `pass`, the orchestrator
+hands the figure to the `figure-visual-reviewer` agent for one read-only
+visual pass on a preview of at most 1400 px. A `FAIL` comes back with
+concrete fixes; apply them as one more edit-and-render round within the
+same budget. An `UNCERTAINTY:` line is reported, never turned into another
+round.
 
 ## If the manifest and source disagree
 

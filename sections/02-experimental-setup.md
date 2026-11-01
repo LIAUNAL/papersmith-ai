@@ -307,6 +307,25 @@ one shows the experiment. The test: **no dataset and no baseline appears in the
 methods diagram, and no internal component of the proposal appears in this one.** A
 box appearing in both means one of them is wrong.
 
+## Tables stay inside the text block
+
+A table prints inside `\textwidth` at a legible size, by the same rule as a figure:
+**no text in a table prints below 0.70 times the body font size** (7 pt in a 10 pt
+document).
+
+- **Rules are `booktabs`** — `\toprule`, `\midrule`, `\bottomrule` — with no vertical
+  rules; a column of prose is a `tabularx` `X` column, so the table takes the text width
+  instead of running past it.
+- **The table runs at the body size.** `\small` is the most it is reduced, and only
+  when the body is 11 pt or larger; `\footnotesize`, `\scriptsize` and `\tiny` are
+  never used inside a table when they fall below the floor.
+- **A table is never scaled to fit.** No `\resizebox`, `\scalebox` or `adjustbox`
+  below a factor of 0.85, and no `width=\textwidth` scaling of a `tabular`: scaling
+  shrinks the text with the box.
+- **A table wider than `\textwidth` is split, transposed, or moved** to a `table*` or
+  a landscape page when the venue allows either — never shrunk below the floor.
+- **The caption goes above the table.**
+
 ## LIA house style
 
 Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025), Elsevier first and MDPI after: items A008, A017, A018, A003, A006, A007, A009, A021, A022 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
@@ -415,3 +434,8 @@ ablation here — the rest surface them in the results, which this contract forb
 - Any element of execution in the closing diagram other than the repetition unit.
 - The full parameter table in the body when only some values were reasoned about, or
   an appendix table contradicting the body.
+- A table that runs past `\textwidth`, or whose text prints below 0.70 times the body
+  font size.
+- A table scaled with `\resizebox`, `\scalebox` or `adjustbox` below 0.85, or scaled
+  to `\textwidth`.
+- A table with vertical rules, or a table whose caption sits below it.

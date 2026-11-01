@@ -1,0 +1,13 @@
+% A clean diagram: explicit sizes, framed nodes holding their own text,
+% a 2 pt border and no background. Every audit check passes.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usetikzlibrary{arrows.meta}
+\begin{document}
+\begin{tikzpicture}[font=\fontsize{9}{10.8}\selectfont]
+\node[draw, rounded corners, text width=2cm, align=center] (a) at (0,0) {Train every arm};
+\node[draw, fill=blue!10, text width=2cm, align=center] (b) at (3.5,0) {Test};
+\draw[-{Stealth}, line width=1.5pt] (a) -- (b);
+\end{tikzpicture}
+\end{document}

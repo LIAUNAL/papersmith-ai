@@ -1,0 +1,81 @@
+% Manuscript QA fixture (spec S6 of odd/tasks/figure-and-table-quality.md).
+% Page 1 is clean (body text and a booktabs table at body size); page 2
+% carries a tabular wider than \textwidth; page 3 a table set in \tiny with
+% an 11 pt body; page 4 a figure whose 5 pt labels print below the floor.
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=30mm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\newcommand{\para}{The measured response of the proposed estimator was
+recorded under every condition the protocol declared, and each value reported
+here is an average over the repetitions with its dispersion computed across
+the folds. The comparison runs against the same baselines under the same
+splits and the same tuning budget, so that a difference in the reported cell
+reflects the method rather than the configuration that produced it.\par}
+\begin{document}
+
+\para\para\para
+
+\begin{table}[h!]
+\centering
+\caption{Clean table at body size.}
+\begin{tabular}{lcc}
+\toprule
+Method & Accuracy & Recall \\
+\midrule
+Baseline & 80.1 & 78.4 \\
+Proposed & 84.6 & 82.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\para\para
+\clearpage
+
+\para\para
+
+\begin{table}[h!]
+\centering
+\caption{A table wider than the text block.}
+\begin{tabular}{llllll}
+\toprule
+Configuration of the first arm & Configuration of the second arm & Third arm configuration & Fourth arm configuration & Fifth & Sixth \\
+\midrule
+long descriptive cell value & long descriptive cell value & long descriptive cell & long descriptive cell & value & value \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\para\para
+\clearpage
+
+\para\para
+
+\begin{table}[h!]
+\centering
+\tiny
+\caption{A table set in tiny type.}
+\begin{tabular}{lcc}
+\toprule
+Method & Accuracy & Recall \\
+\midrule
+Baseline & 80.1 & 78.4 \\
+Proposed & 84.6 & 82.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\para\para
+\clearpage
+
+\para\para
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.5\linewidth]{small-text-figure.pdf}
+\caption{A figure whose labels print below the floor.}
+\end{figure}
+
+\para\para
+
+\end{document}

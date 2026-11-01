@@ -33,7 +33,9 @@ from impl_refusals import Refused  # noqa: E402
 #: unused (`shapes.geometric`, `calc`), one it can detect as missing
 #: (`positioning`, triggered by `below=of`), and the same non-positional
 #: option list on two sites — while `beta`'s copy carries `below=of a`, so it
-#: must NOT join the factored style.
+#: must NOT join the factored style. `gamma` sits clear of `alpha` with an
+#: `at` outside its option list, so the list still matches `alpha`'s and the
+#: rendered audit finds no text overlap.
 BLOATED = r"""\documentclass[tikz,border=2pt]{standalone}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric,calc}
@@ -44,7 +46,7 @@ BLOATED = r"""\documentclass[tikz,border=2pt]{standalone}
 % node: beta
 \node[draw, rounded corners, fill=blue!10, below=of a] (b) {Beta};
 % node: gamma
-\node[draw, rounded corners, fill=blue!10] (c) {Gamma};
+\node[draw, rounded corners, fill=blue!10] (c) at (2.5,0) {Gamma};
 \draw[->] (a) -- (b);
 \draw[->] (b) -- (c);
 \end{tikzpicture}

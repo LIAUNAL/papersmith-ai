@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from ..core import manifest
+from ..core import paper_qa
 from ..core.exit_codes import DRIFT_ERROR, SUCCESS
 from ..errors import UserError
 from ..core import fs
@@ -77,6 +78,12 @@ def execute(workspace: str | Path, *, check_drift: bool = False, verbose: bool =
     code = emit_result(result)
     if code != SUCCESS:
         return code
+    # Read-only: the stored manuscript QA report's findings and staleness
+    # (`smith paper qa`), printed only when a compiled manuscript exists. It
+    # never changes the exit code.
+    qa_line = paper_qa.audit_line(root)
+    if qa_line is not None:
+        print(qa_line)
     if not check_drift:
         return SUCCESS
     # ``context_for_workspace`` raises on an absent/corrupt config, so a

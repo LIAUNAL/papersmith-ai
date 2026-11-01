@@ -1,6 +1,6 @@
 ---
 name: figure-review
-description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Never repairs a figure, never compiles LaTeX, never judges style or legibility. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance."
+description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints at least 0.70 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension."
 ---
 
 # Figure Review
@@ -13,10 +13,8 @@ reported `unmeasured`, honestly, because nobody ever rasterized it.
 This skill closes that gap, and only that gap. It consumes a PDF `render`
 already produced; it never compiles anything, and it never touches the
 per-figure repair budget that guards `render`'s own compile attempts. Its job
-ends at pixels and the facts a raster can actually support — it never repairs
-a figure and it never decides what "too much whitespace" or "illegible text"
-means, because those are judgements about a reader, not properties a
-rasterizer can settle.
+ends at pixels, the facts a raster can actually support, and four declared
+rules read from the figure PDF itself — it never repairs a figure.
 
 ## What this skill answers, and what it refuses to
 
@@ -33,7 +31,27 @@ rasterizer can settle.
   is a fact, not a failing condition; deciding whether that is "too much" is a
   composition judgement this skill does not make.
 
-**Never answerable from pixels, and never claimed to be:** legibility, arrow
+**Read from the PDF, with a computed verdict** (`measure`; the rules live in
+`skills/_core/figure/figure_dimensions.py`, the same ones `paper-writing`'s
+`place` refuses with):
+
+- `min-printed-font` — every text span (labels, ticks, legends, annotations),
+  at its printed size, is at least 0.70 x the manuscript body
+  (`skills/_core/figure/print_scale.py`). The printed size is the span size
+  times `--printed-width-pt` / the PDF width (natural size when omitted); the
+  body comes from `--body-pt`, else `--main-tex` (default `<paper>/main.tex`),
+  else 10 pt. A PDF without a text layer is `unmeasured` (`NO_TEXT_LAYER`).
+- `background` — a filled rectangle covering the page (`FULL_PAGE_BACKGROUND`).
+- `whitespace` — a margin wider than 4 pt between the drawn content and the
+  page (`MARGIN_WASTE`, naming the sides).
+- `in-figure-title` — a row of text above every drawn path, as large as the
+  axis labels and at least 30 % of the width, crossed by no path
+  (`TITLE_BELONGS_IN_CAPTION`, naming the text): the caption carries it.
+
+An unreadable PDF leaves these four `unmeasured` with `PDF_UNREADABLE`; the
+raster dimensions are still reported.
+
+**Never answerable from pixels, and never claimed to be:** arrow
 or connection correctness, style, aesthetics, legend quality, and which
 declared component an overlap belongs to. Each of these stays an announced
 silence — `unmeasured` with a reason naming exactly why — rather than a guess
@@ -50,6 +68,8 @@ machine will use.
 ```
 python scripts/review_cli.py probe [--json]
 python scripts/review_cli.py raster --pdf <path/to/example-figure.pdf> [--dpi 150] [--out <dir>]
+python scripts/review_cli.py measure --pdf <path/to/example-figure.pdf> [--out <dir>] [--tex <path>]
+                                     [--body-pt <pt>] [--main-tex <path>] [--printed-width-pt <pt>]
 ```
 
 `probe` names the first tool this skill's fallback chain finds — in order,
@@ -75,7 +95,7 @@ compile.
   to change about it are different jobs, kept apart on purpose.
 - It never imports another skill's scripts, and no other skill imports this
   one's. The two sides meet only through a plain-data file on disk.
-- It never reports a judgement — style, legibility, "does this look right" —
+- It never reports a judgement — style, "does this look right" —
   as a measurement. Two boxes that merely sit close together, or an arrow that
   merely looks thin, are not findings this skill produces; only a computed
   collision or an out-of-bounds pixel is.

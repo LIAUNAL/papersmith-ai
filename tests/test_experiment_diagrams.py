@@ -348,10 +348,19 @@ class DiagramCliTests(unittest.TestCase):
 
     STATEMENT = "aprobados. ponlos como validados y lanza"
 
-    def _drawn_with_spec(self, kind: str = "poc") -> tuple[Path, str]:
+    def _drawn_with_spec(self, kind: str = "poc", audit: str | None = "pass") -> tuple[Path, str]:
+        """A drawn PNG and its spec; `audit` writes the record `render`'s
+        audit would leave for that PNG (`None`: no audit record)."""
         png = self._drawn(kind)
         (png.parent / f"{kind}.json").write_text("{}\n", encoding="utf-8")
-        return png, hashlib.sha256(png.read_bytes()).hexdigest()
+        sha = hashlib.sha256(png.read_bytes()).hexdigest()
+        if audit is not None:
+            (png.parent / f"{kind}.audit.json").write_text(json.dumps({
+                "kind": kind, "verdict": audit, "png_sha256": sha,
+                "failures": [] if audit == "pass" else ["font_floor"],
+                "messages": [] if audit == "pass" else ["font_floor: 'x' prints at 5.0 pt < 6.97 pt"],
+            }), encoding="utf-8")
+        return png, sha
 
     def _validate(self, *extra: str, kind: str = "poc", sha: str | None = None,
                   statement: str | None = None) -> tuple[int, dict]:

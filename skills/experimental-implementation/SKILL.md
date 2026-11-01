@@ -178,6 +178,44 @@ the significance test by experiment type**); the instrumentation stage is not
 closed for an experiment whose declared significance table has nowhere to
 land.
 
+### Figures that enter the manuscript
+
+Every figure under `figures/` may be placed in the paper, and
+`paper_cli.py place` refuses one that would print badly. Draw them with the
+shipped helper, `assets/kit/ps_figures.py`: copy it into the target
+repository beside the plotting code (matplotlib lives there, never in the
+papersmith environment) and call it in every figure:
+
+```python
+from ps_figures import apply_style, save_figure
+
+apply_style(body_pt=10, printed_width_fraction=0.8)   # the manuscript's body size and inclusion width
+fig, ax = plt.subplots()                               # already the printed size
+ax.plot(...); ax.set_xlabel(...); ax.set_ylabel(...)  # no set_title, no suptitle
+save_figure(fig, "Results/figures/accuracy.pdf", png_preview=True)
+```
+
+- **PDF with embedded text.** The manuscript copy is a vector PDF (TrueType
+  fonts embedded, `pdf.fonttype 42`); a PNG is only a preview. `place`
+  refuses a plot without a text layer (`FIGURE_NO_TEXT_LAYER`).
+- **Tight, transparent, no wasted space.** `save_figure` writes
+  `savefig(pdf, bbox_inches="tight", pad_inches=0.02, transparent=True)`;
+  `place` refuses a full-page background (`FIGURE_FULL_PAGE_BACKGROUND`) and a
+  margin wider than 4 pt (`FIGURE_MARGIN_WASTE`).
+- **Text at least 70 % of the body, at printed size.** `apply_style` makes
+  the figure its printed size (scale 1) and sets every text role (axis
+  labels, ticks, legend, annotations) to at least 0.80 x the body;
+  `place` refuses a span below 0.70 x body
+  (`FIGURE_TEXT_BELOW_PRINT_FLOOR`) at the width the figure's provenance
+  declares as `"printedWidthFraction"` (default 1.0, the full text width).
+- **No title in the figure.** The caption carries it. `save_figure` refuses
+  a figure with `set_title`/`suptitle`, and `place` refuses a title row above
+  the plotting area (`FIGURE_IN_FIGURE_TITLE`).
+
+A photograph or micrograph (a raster by nature) declares
+`"figureKind": "image"` in its provenance record; it is held to every rule
+except the text layer.
+
 The panel classifies a product folder by its checklist holder: one holding
 `Experimental_AGREED.md` is a full experiment (this skill), and one holding
 only `AGREED.md` is a proof of concept (`proposal-implementation`).

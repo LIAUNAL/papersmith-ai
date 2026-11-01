@@ -430,6 +430,9 @@ smith audit --check-drift
 
 Audits the workspace's structure and consistency. It is bound to the `skill-audit`
 subject today; drift is reported, not fixed.
+When `paper/main.pdf` exists it also prints one read-only `manuscript qa:` line:
+the finding count of the stored `paper/.qa/qa.json` and whether `main.pdf` changed
+since (`smith paper qa`). It never changes the exit code.
 
 > **Note:** `kaggle-accounts` (validate/remove/list/discover/materialize) has no
 > `smith` subcommand yet — it runs as
@@ -1145,6 +1148,33 @@ SHA-256 of every input, so staleness is detectable. Exit `0` when the graph was
 written, `1` otherwise. `paper_cli.py bib build`, `verify` (citations passing) and a
 successful dashboard compile rebuild it in a workspace (`papersmith.yaml` present)
 and report it under `manuscript_graph`, never failing because of it.
+
+### `smith paper qa [<dir>]`
+
+```bash
+smith paper qa
+smith paper qa ~/papers/sparse-ae --json
+```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints the full report instead of one summary line and the findings |
+
+Runs the visual QA of the compiled manuscript through the workspace's
+`skills/_core/figure/manuscript_qa.py`, under the workspace's provisioned
+interpreter (it needs pypdfium2). It infers the text block of each page of
+`paper/main.pdf` from its body lines and reports every text span, image, figure
+or drawing passing it by more than 1 pt (`overflow`), text inside a figure or a
+ruled table that prints below 0.70 × the body size (`figure-font`,
+`table-font`), and every `Overfull \hbox` of `paper/main.log` with its source
+lines and page (`overfull`). It writes `paper/.qa/qa.json`, holding the sha256
+of the `main.pdf` it measured, and 100 dpi page images under `paper/.qa/pages/`
+(`pdftoppm`). It reports; it never repairs. Exit `0` when the report was written,
+findings or not; `1` without `paper/main.pdf` or the module. A successful
+dashboard compile runs the same pass and reports it under `manuscript_qa`, never
+failing because of it; `smith audit` prints the stored count and whether
+`main.pdf` changed since. The check reads the PDF itself because Playwright
+renders HTML, not PDFs; Playwright stays for the dashboard UI (`ui/e2e`).
 
 ### `smith mcp {serve,inspect,print-config,kaggle}`
 

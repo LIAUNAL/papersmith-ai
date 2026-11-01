@@ -137,7 +137,8 @@ The Introduction has exactly seven paragraphs; the full contract, with the exten
 
 Each stretch this skill delegates is defined in full by its own agent file:
 `.claude/agents/contract-auditor.md`, `.claude/agents/diagram-author.md`,
-`.claude/agents/figure-auditor.md`, `.claude/agents/insumos-observer.md`,
+`.claude/agents/figure-auditor.md`, `.claude/agents/figure-visual-reviewer.md`,
+`.claude/agents/insumos-observer.md`,
 `.claude/agents/paper-reviewer.md`, `.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
 `.claude/agents/style-sampler.md`, `.claude/agents/venue-adapter.md`. When an agent cannot be spawned — the
 harness has no sub-agent mechanism, the agent is not registered in this
@@ -150,7 +151,7 @@ workaround. Say in the reply that the stretch ran inline and why the agent
 could not be spawned.
 
 An auditor run inline (`contract-auditor`, `section-grounding-auditor`,
-`figure-auditor`, `paper-reviewer`, `venue-adapter`) is not independent of the session that drafted what it
+`figure-auditor`, `figure-visual-reviewer`, `paper-reviewer`, `venue-adapter`) is not independent of the session that drafted what it
 judges. The verbs still reconcile its account against the real bytes, but say
 in the reply that the audit was not separated from the draft.
 
@@ -765,6 +766,23 @@ result rides in the verb's JSON under `atlas_manuscript`; a builder error is a
 `warning` there and never changes the verb's status or exit code. Without an
 atlas the output is unchanged. On demand: `smith atlas cited`.
 
+**The compiled manuscript gets a visual QA pass.** A successful dashboard
+compile (and `smith paper qa [--json] [<dir>]` on demand) runs
+`skills/_core/figure/manuscript_qa.py` over `paper/main.pdf`: the text block of
+each page is inferred from its body lines (running headers, footers and page
+numbers set apart), and any text span, image, figure or drawn path passing it by
+more than 1 pt is an `overflow` finding; text inside a figure placement or a
+ruled table region printing below 0.70 × body is `figure-font`/`table-font`; each
+`Overfull \hbox` of `main.log` is `overfull`, with its source lines and page. It
+writes `paper/.qa/qa.json` (with the sha256 of the `main.pdf` it measured, so
+staleness is detectable) and 100 dpi page images under `paper/.qa/pages/`; the
+dashboard's PDF preview tab lists the findings with page thumbnails
+(`GET /api/paper/qa`), and `smith audit` prints the stored count and staleness.
+A QA error is a `warning` under `manuscript_qa` and never fails the compile.
+**Why not Playwright:** it renders HTML, not PDFs, so it cannot see where
+pdfTeX placed a glyph; the check reads the PDF itself (pypdfium2 geometry,
+poppler rasters). Playwright stays for the dashboard UI (`ui/e2e`).
+
 **The manuscript summary graph follows the same events.** In a workspace
 (`papersmith.yaml` present) the same `bib build`/`bib refresh`, `verify` and
 compile also rebuild `.papersmith/manuscript_graph.json`
@@ -1306,6 +1324,19 @@ block (`packet`'s own assembly, above) as a gate in its own right: a
 `GUIDANCE_MARKDOWN_UNREADABLE` here, before the draft/audit stage is ever
 reached.
 
+**A table that shrinks to fit is a warning, never a refusal.** Every `write`
+envelope (`written` and `audit-fired`) carries `tableLint`
+(`paper_latex.table_lint_report`): the body size read from `main.tex`
+(`print_scale.body_font_pt`), the floor (0.70 × body), and one finding per
+`\resizebox` or `adjustbox` width scaling of a tabular
+(`table-scaled-to-width`), `\scalebox`/`adjustbox scale=` below 0.85
+(`table-scaled-below-floor`), and `\tiny`/`\scriptsize`/`\footnotesize`/`\small`
+inside a table that prints below the floor (`table-font-below-floor`). It warns
+for the same reason an `Overfull` box is a non-blocking diagnostic: the source
+cannot prove what prints (the body size may be a fallback), and the compiled
+manuscript's QA measures it. Contracts 02 and 03 carry the rule
+(`## Tables stay inside the text block`).
+
 ### The shuttle procedure — this CLI never invokes an agent
 
 No module under `scripts/` imports `subprocess`, `os.system`, `os.popen`,
@@ -1562,7 +1593,7 @@ existing `substitute` verb's `\includegraphics`; no TikZ byte ever enters
 | `render --figure-id <id> [--paper <dir>]` | Compiles `<id>.tex` standalone via exactly one `latexmk` call, cross-checks the manifest both directions, and scans stop A before ever spawning the compiler | `DIAGRAM_SOURCE_ABSENT`, `MANIFEST_SOURCE_MISMATCH`, `DIAGRAM_PLOTS_DATA`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_LOG_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED`, `LATEX_PACKAGE_ABSENT`, `REPAIR_BUDGET_SPENT` |
 | `render --figure-id <id> --section <section-id> --block <id> [--sections <dir>] [--paper <dir>]` | The same compile, and then the full obligation suite (components — only when the block declares `components_from`, excludes, caption, mandatory, cross-diagram separation) against the block's own `figure:` declaration | adds `MALFORMED_FIGURE_OBLIGATION`, `COMPONENT_MISMATCH`, `COMPONENTS_FACT_UNRESOLVED`, `COMPONENTS_FACT_NOT_A_LIST`, `EXCLUDED_COMPONENT`, `SHARED_COMPONENT`, `CAPTION_INCOMPLETE`, `MANDATORY_DIAGRAM_ABSENT` |
 | `render --figure-id <id> --acknowledge-reset [--paper <dir>]` | The explicit operator acknowledgement that clears a spent ledger — compiles nothing, never combined with a compile in the same call | (none beyond `render`'s own) |
-| `place --figure-id <id> --pdf <path> --provenance <path> [--paper <dir>]` | Places an already-measured figure's PDF — compiles nothing, requires a provenance record naming the run that produced it | `DIAGRAM_SOURCE_ABSENT` (reused: the named artifact this call needs is absent) |
+| `place --figure-id <id> --pdf <path> --provenance <path> [--paper <dir>]` | Places an already-measured figure's PDF — compiles nothing, requires a provenance record naming the run that produced it, and measures the PDF first (`paper_place.py`, the same rules `figure-review measure` reports): a plot carries a text layer, no full-page background, no margin wider than 4 pt, no in-figure title, and every text span prints at >= 0.70 x the body at the provenance's `printedWidthFraction` of `\textwidth` (1.0 by default; `figureKind: image` exempts a photograph from the text-layer rule only). No override: the fix is the figure or its declared width | `DIAGRAM_SOURCE_ABSENT` (reused: the named artifact this call needs is absent), `FIGURE_PDF_UNREADABLE`, `FIGURE_PROVENANCE_INVALID`, `FIGURE_MEASUREMENT_UNAVAILABLE`, `FIGURE_NO_TEXT_LAYER`, `FIGURE_FULL_PAGE_BACKGROUND`, `FIGURE_MARGIN_WASTE`, `FIGURE_IN_FIGURE_TITLE`, `FIGURE_TEXT_BELOW_PRINT_FLOOR` |
 | `figure optimize --figure-id <id> [--in-place \| --output <path>] [--strip-comments] [--no-compile] [--paper <dir>]` | Rewrites one diagram's TikZ source: prunes the libraries it can **prove** unused, adds the ones it detects as missing, factors repeated option lists into one `\tikzset`, then compiles the candidate and commits it only on a `success` verdict. `background=2pt` headers, relative positioning, and `% node:` markers are preserved by construction | `DIAGRAM_SOURCE_ABSENT`, `DIAGRAM_PLOTS_DATA`, `MANIFEST_SOURCE_MISMATCH`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_PACKAGE_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED` |
 | `figure optimize --file <path.tex> [--strip-comments]` | Dry run: prints the optimized candidate for one source path and writes nothing (no manifest, so no cross-check applies) | `DIAGRAM_SOURCE_ABSENT` |
 | `figure audit --figure-id <id> --section <id> [--block <id>] [--sections <dir>] [--paper <dir>]` | Compares the manifest's declared components — **not** every `\node{}` string — against the section prose, and the `components_from` fact's list against both. Emits `verdict` (`pass`/`fail`/`unmeasured`) plus `unmatched_nodes`, `missing_pipeline_steps`, `label_mismatches`, `warnings`, `remediation`, and writes `figure_audit.json` beside the figure's ledger | `DIAGRAM_SOURCE_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `SECTION_UNKNOWN`, `BLOCK_ABSENT` |
@@ -1582,6 +1613,27 @@ repairable compile failure as the loop's ordinary cost. `unmeasured` exists so
 "could not check" never reads as "checked and clean": a figure whose contract
 declares no `components_from`, or a call that omits `--block`, reports
 `unmeasured` rather than a vacuous pass.
+
+**Every successful compile is audited at print size.** `render` runs the
+shared diagram audit (`skills/_core/figure/diagram_audit.py`, the same one
+`experiment-diagrams` runs) on the compiled PDF, its log and its source:
+no `Overfull \hbox`/`\vbox` in the log; no relative size switch
+(`\tiny` ... `\Huge`, `\small`, `\footnotesize`) — every size is an
+explicit `\fontsize{<pt>}{<1.2 pt>}\selectfont`; no two text spans
+intersecting and no span crossing a drawn frame it is not inside; every
+span printing at >= 0.70 x the manuscript body size (`paper/main.tex`'s
+class option, 10 pt without one) once the figure is scaled to its declared
+inclusion width — the manifest's optional `widthFraction` (the
+`width=<f>\textwidth` its `\includegraphics` uses, 1.0 by default) and
+`textWidthPt` (the A4 article width for the body size by default); and no
+background canvas or content margin wider than 4 pt. A failing audit is a
+repairable `failure` like any other: it spends one attempt, returns the
+`audit` and one diagnostic per finding, and leaves the PDF in scratch
+(`preview`) instead of `Figures/<id>.pdf`. Size each font for the width
+the figure prints at (`diagram_audit.role_font_pt(body_pt, scale)` gives
+the sizes per role); when a label does not fit, shorten it or widen its
+box, never shrink the font. `figure optimize` reports a relative switch as
+a warning before a compile is spent.
 
 **A repairable failure is an ordinary outcome, not a refusal.** `render`
 returns `"status": "ok"`, `"verdict": "failure"` with the parsed
@@ -1659,6 +1711,21 @@ checklist when the probe resolves a rasterizer link, and reporting them
 checks typographic parity between the figure's preamble and the paper's own
 font setup. It never repairs the figure and never reports a visual verdict it
 did not measure.
+
+**Judging a rendered diagram by eye delegates to the `figure-visual-reviewer` agent.**
+After `render` reports `success` (its audit reads `pass`), one read-only
+pass over a preview of at most 1400 px judges what no script can: legibility
+at print scale, centring and balance, overlaps and crowding a reader would
+see, and whether labels and arrows read correctly. It returns `PASS`, or
+`FAIL` with concrete fixes for `diagram-author`, and adds an `UNCERTAINTY:`
+line instead of failing when it cannot decide. It never edits anything and
+runs once per drawing.
+
+**Measure this before delegating (figure-visual-reviewer):** confirm
+`render`'s last reply for the id reads `"verdict": "success"` with
+`audit.verdict` `pass` and that `paper/Figures/<id>.pdf` exists; a visual
+pass over a figure the mechanical audit already fails spends a model call
+on what the diagnostics already say.
 
 **Measure this before delegating (figure-auditor):** confirm the block's
 `figure:` declaration is readable (`contract --file <path>`) and that the

@@ -25,6 +25,7 @@ from pathlib import Path
 
 FORGE_ROOT = Path(__file__).resolve().parent.parent
 SKILL_SCRIPTS = FORGE_ROOT / "skills" / "paper-writing" / "scripts"
+COMPLIANT_PDF = FORGE_ROOT / "tests" / "fixtures" / "plot_figures" / "compliant.pdf"
 CLI = SKILL_SCRIPTS / "paper_cli.py"
 sys.path.insert(0, str(SKILL_SCRIPTS))
 import paper_block  # noqa: E402
@@ -4471,7 +4472,9 @@ class PlaceCliFrontDoorTests(unittest.TestCase):
     def _sources(self) -> tuple[Path, Path]:
         tmp_dir = Path(self._tmp.name)
         pdf_source = tmp_dir / "measured.pdf"
-        pdf_source.write_bytes(b"%PDF-1.4 cli-front-door\n")
+        # `place` reads the PDF it places (FIGURE_PDF_UNREADABLE otherwise):
+        # a compliant plot, not stub bytes.
+        pdf_source.write_bytes(COMPLIANT_PDF.read_bytes())
         provenance_source = tmp_dir / "provenance.json"
         provenance_source.write_text(json.dumps({"run": "campaign-cli-1"}), encoding="utf-8")
         return pdf_source, provenance_source
@@ -4486,7 +4489,7 @@ class PlaceCliFrontDoorTests(unittest.TestCase):
         result = paper_cli.cmd_place(args)
 
         self.assertEqual(result["figureId"], "cli-fig")
-        self.assertEqual(Path(result["pdf"]).read_bytes(), b"%PDF-1.4 cli-front-door\n")
+        self.assertEqual(Path(result["pdf"]).read_bytes(), COMPLIANT_PDF.read_bytes())
         self.assertEqual(
             json.loads(Path(result["provenance"]).read_text(encoding="utf-8"))["run"],
             "campaign-cli-1",

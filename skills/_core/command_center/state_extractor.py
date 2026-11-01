@@ -172,6 +172,8 @@ AGENT_STAGES = {
     "paper-reviewer": "audit",
     "diagram-author": "figures",
     "figure-auditor": "figures",
+    # One visual pass over a rendered diagram whose mechanical audit passed.
+    "figure-visual-reviewer": "figures",
     "section-grounding-auditor": "figures",
     "audit-report": "audit",
     # Adapts the finished manuscript to the chosen journal: reads the guidelines,

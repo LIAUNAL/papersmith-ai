@@ -1,0 +1,13 @@
+%% A plot that meets S2-S4: tight border, no title, 9 pt ticks.
+\documentclass[border=0pt]{standalone}
+\usepackage{tikz}
+\begin{document}
+\begin{tikzpicture}[every node/.style={font=\fontsize{9}{11}\selectfont}]
+\draw (0,0) rectangle (8,4);
+\draw[thick] (0,0.5) -- (2,1.5) -- (4,2.2) -- (6,3) -- (8,3.4);
+\foreach \x in {0,2,4,6,8} {\draw (\x,0) -- (\x,-0.1); \node[below] at (\x,-0.1) {\x};}
+\foreach \y in {0,1,2,3,4} {\draw (0,\y) -- (-0.1,\y); \node[left] at (-0.1,\y) {\y};}
+\node[below] at (4,-0.7) {\fontsize{10}{12}\selectfont Training epoch};
+\node[rotate=90] at (-1.0,2) {\fontsize{10}{12}\selectfont Accuracy};
+\end{tikzpicture}
+\end{document}
