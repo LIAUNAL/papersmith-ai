@@ -11,10 +11,58 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.53.0
+
+### Added
+
+- **Diagrams audited at print size**: `skills/_core/figure/diagram_audit.py`
+  checks every rendered diagram for overfull boxes in the kept TeX log,
+  relative size switches (every size is an explicit `\fontsize`), vector
+  text overlap, text below 0.70 x the manuscript body at the declared
+  inclusion width, a background canvas and margins over 4 pt.
+  `experiment-diagrams` draws each role at its print size and gains an
+  `audit` verb writing `diagrams/<kind>.audit.json`; `paper-writing render`
+  treats a failing audit as a repairable failure. The new read-only
+  `figure-visual-reviewer` agent gives one PASS/FAIL pass on a preview of
+  at most 1400 px after the mechanical audit passed.
+- **`ps_figures` plotting helper for experiment repositories**: a shipped
+  matplotlib style sizes text roles at >= 0.70 x body and saves a tight,
+  transparent PDF with embedded text, refusing in-figure titles (the caption
+  carries them) and non-PDF copies.
+- **Table rules**: contracts 02 and 03 (and their Spanish copies) require
+  `booktabs`/`tabularx` tables inside `\textwidth`, no scaling below 0.85
+  and no text below 0.70 x body; `paper-writing` lints `\resizebox`,
+  `adjustbox` and small size switches inside tables and reports them as
+  `tableLint` when a block is written.
+- **Manuscript visual QA**: after a compile, `manuscript_qa` measures
+  `paper/main.pdf` (pypdfium2) for text past the text block, figure and
+  table text below 0.70 x body and overfull boxes, renders the pages and
+  writes `paper/.qa/qa.json`. `smith paper qa` runs it, `GET /api/paper/qa`
+  serves it, the dashboard's PDF tab shows it in a panel, and `smith audit`
+  reports it in its own line.
+
+### Changed
+
+- **`place` gates figure print quality**: a measured figure is refused when
+  a plot has no text layer, a filled rectangle covers the page, a margin
+  exceeds 4 pt, it carries an in-figure title, or a text span prints below
+  0.70 x body at the provenance's `printedWidthFraction` (1.0 by default).
+  Eight new stable refusal codes, no override.
+- **`figure-review` measures the PDF**: the `legibility` silence is replaced
+  by a measured `min-printed-font` verdict, and `background`, `whitespace`
+  and `in-figure-title` join the verdict dimensions; the rules live once in
+  `figure_dimensions` so `place` and `measure` cannot disagree.
+- **Diagram validation requires a passing audit**: `diagram_cli.py validate`
+  and the dashboard's "Validar diagrama" refuse `AUDIT_NOT_PASSED` unless
+  the mechanical audit of the PNG drawn now reads `pass` or the operator's
+  own words are recorded as the override; the panel lists the findings.
 
 ### Fixed
 
+- **Print-scale measurements of included PDFs**: `print_scale.content_bbox`
+  walks top-level page objects only, so a form XObject (an included PDF)
+  counts by its page bounds instead of its children's form-space bounds;
+  `drawn_path_boxes` and `path_is_drawn` are now public.
 - **Atlas citation join without evidence records**: `smith atlas cited` now
   joins cite keys to atlas systems through `paper/refs.bib` when a block has
   no evidence record (its `doi`, `eprint`, an `arXiv:<id>` in `journal`/`note`,

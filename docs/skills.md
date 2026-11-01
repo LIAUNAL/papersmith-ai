@@ -2445,7 +2445,22 @@ that gap.
 each band occupies. A canvas that is a third blank is a fact; deciding whether
 that is too much is a composition judgement this skill does not make.
 
-**Never answerable from pixels, and never claimed to be:** legibility,
+**Read from the figure PDF, with a computed verdict** (`measure`; the rules
+live in `skills/_core/figure/figure_dimensions.py`, the same ones `place`
+refuses with):
+
+- `min-printed-font` — every text span (labels, ticks, legends,
+  annotations), at its printed size, is at least 0.70 x the manuscript body
+  font (`skills/_core/figure/print_scale.py`). It replaces the former
+  `legibility` silence: the threshold is now a declared rule, measured
+  whenever the PDF carries a text layer (`NO_TEXT_LAYER` otherwise).
+- `background` — no filled rectangle covering the page.
+- `whitespace` — no margin wider than 4 pt between the drawn content and
+  the page.
+- `in-figure-title` — no title row above the plotting area: the caption
+  carries it.
+
+**Never answerable from pixels, and never claimed to be:**
 arrow or connection correctness, style, aesthetics, legend quality, and which
 declared component an overlap belongs to. Each stays an announced silence —
 `unmeasured` with a reason naming why — rather than a guess dressed as a
@@ -2456,6 +2471,8 @@ measurement. A `pass` on any of them would be worse than the silence.
 ```bash
 python scripts/review_cli.py probe [--json]
 python scripts/review_cli.py raster --pdf <path/to/example-figure.pdf> [--dpi 150] [--out <dir>]
+python scripts/review_cli.py measure --pdf <path/to/example-figure.pdf> [--out <dir>] [--tex <path>]
+                                     [--body-pt <pt>] [--main-tex <path>] [--printed-width-pt <pt>]
 ```
 
 `probe` names the first tool its fallback chain finds, in order `pdftoppm`,
