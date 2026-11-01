@@ -1005,6 +1005,7 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: now fixes the block extents (block 2 one paragraph, block 3 always two,
 #: blocks 4a+4b one), the 4a hinge follows the paper's one voice, and the
 #: 3-to-4 contribution range is enforced in the methods section.
+#: `09` re-captured (keywords-3-5): keyword count narrowed from 4-8 to 3-5.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "4a4d5078955ba64d77e9b45b1f4d116bf072ac011069e2ad57e100d77927405e"[:64],
     "02-experimental-setup.md": "8974689bc11ce955e707b14502aeaf974be7d69959df28f82e9f016cca1d8ce5"[:64],
@@ -1014,7 +1015,7 @@ PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "06-introduction.md": "fdb4847f869e44480895fab4bf2b1fa7a199ad851a372ee1841dee856ee398ab",
     "07-conclusions.md": "5b400628d6d7f783172a0546cb3fa92b973d471b34001f58fb8ff9277d25aeec"[:64],
     "08-abstract.md": "e5e2d180ad612c99c2f779d669956405c56f9744645ca9e229a57c1bc605ba94"[:64],
-    "09-title-and-keywords.md": "0d6f332d5786930eb74d53318a9ceebae110c196f01cb2734ab09a20cfcc1ffe",
+    "09-title-and-keywords.md": "fd563a4b96e5aeb8cd952d748c6961863ba094837a8ea5a374e3d2d9eaff4fe8",
     "10-back-matter.md": "b1cd44fe7c00d8eca92d979be5780a97a6cd815faba9ab3890442f2286316cbb"[:64],
 }
 

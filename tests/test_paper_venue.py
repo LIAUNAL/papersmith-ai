@@ -45,7 +45,7 @@ SECTION_TITLES = {
 
 #: `(section id, position, file number, block ids, **Extent** line or None)`
 CONTRACTS = (
-    ("title-and-keywords", 1, "09", ["title", "keywords"], "**Extent** title 10–13 words · keywords 4–8"),
+    ("title-and-keywords", 1, "09", ["title", "keywords"], "**Extent** title 10–13 words · keywords 3–5"),
     ("abstract", 2, "08", ["slot-1", "slot-2"], "**Extent** 216–280 words · 7–14 sentences · **one paragraph**"),
     ("introduction", 3, "06", ["block-1"], "**Extent** 900–1650 words · 7–13 paragraphs"),
     ("related-work", 4, "05", ["rw-preamble"], "**Extent** 820–1700 words"),
@@ -858,10 +858,10 @@ class DiffTests(VenueCase):
         self.assertEqual(audit["summary"]["blocker"], 0)
         self.assertFalse(audit["needs_plan"])
         self.assertEqual({f["kind"] for f in audit["findings"]},
-                         {"class-mismatch", "reference-style-mismatch", "over-limit"})
-        contract_only = [f for f in audit["findings"] if f["kind"] == "over-limit"]
-        self.assertEqual([(f["id"], f["severity"]) for f in contract_only],
-                         [("over-limit:keywords:contract", "minor")])
+                         {"class-mismatch", "reference-style-mismatch"})
+        # Keywords 3-5 in the contract fit inside the fixture venue's maximum,
+        # so no contract-basis over-limit finding is raised any more.
+        self.assertEqual([f for f in audit["findings"] if f["kind"] == "over-limit"], [])
         self.assertEqual(audit["measurements"]["figures"], 1)
 
     def test_under_limits_are_reported(self) -> None:

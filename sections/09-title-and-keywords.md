@@ -59,7 +59,7 @@
 ---
 # Title and Keywords
 
-**Extent** title 10–13 words · keywords 4–8
+**Extent** title 10–13 words · keywords 3–5
 **Carries** no number, no percentage, no claim of superiority
 
 The title is the paper's only irrevocable claim: it is what gets cited, indexed and
@@ -111,7 +111,7 @@ Title case, with prepositions and articles in lower case.
 
 ## Keywords
 
-**Four to eight, separated by semicolons.** Lower case by default; acronyms in capitals;
+**Three to five, separated by semicolons.** Lower case by default; acronyms in capitals;
 proper nouns keep their case.
 
 **They are not a restatement of the title.** Roughly a third repeat a term the title
@@ -192,7 +192,7 @@ acronym appears in the abstract and the body.
 - An acronym in the title without a colon, or one the abstract does not expand.
 - A domain or place named when the work is not bound to it.
 - A hyphen where co-equal terms in a series need an en dash.
-- Fewer than 4 or more than 8 keywords, or a count the target journal does not permit.
+- Fewer than 3 or more than 5 keywords, or a count the target journal does not permit.
 - A keyword list that only repeats title terms.
 - A keyword absent from the body.
 - A missing classification line when the target journal requires one.

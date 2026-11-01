@@ -56,7 +56,7 @@ class HouseStyleTests(unittest.TestCase):
                       body(SECTIONS / "01-materials-and-methods.md"))
 
     def test_the_title_extent_follows_the_group(self) -> None:
-        self.assertIn("**Extent** title 10–13 words · keywords 4–8",
+        self.assertIn("**Extent** title 10–13 words · keywords 3–5",
                       body(SECTIONS / "09-title-and-keywords.md"))
 
 
