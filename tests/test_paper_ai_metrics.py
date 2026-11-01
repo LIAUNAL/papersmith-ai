@@ -1,8 +1,9 @@
-"""Unit tests for paper_ai_metrics: stylometry, burstiness, Claude fingerprints,
+"""Unit tests for paper_ai_metrics: writing-quality metrics (cadence, overused phrasing, lexical diversity)
 and F5 invariant verification.
 """
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import hashlib
@@ -392,6 +393,162 @@ class ServerEndpointTests(unittest.TestCase):
             self.assertIn("cliches", res["aiStylometry"])
         finally:
             shutil.rmtree(paper_dir, ignore_errors=True)
+
+
+_OVERUSED_DRAFT = (
+    "We delve into the intricate landscape of brain-computer interfaces. "
+    "Our bespoke methodology serves as a testament to the seamless interplay of quantum algorithms. "
+    "It is worth noting that this architecture is paramount for unlocking vibrant solutions. "
+    "Furthermore, not only does our model foster adaptability, but it also underscores the multifaceted nature of neural decoding. "
+    "In conclusion, the proposed framework revolutionizes the realm of biomedical engineering."
+)
+_DECLARATION_NOTICE = "does not change the obligation to declare AI use"
+
+
+def _run_cli(argv: list[str]) -> tuple[int, dict]:
+    buf = io.StringIO()
+    with mock.patch("sys.stdout", buf):
+        exit_code = paper_cli.main(argv)
+    return exit_code, json.loads(buf.getvalue())
+
+
+def _style_paper(name: str, body: str) -> tuple[Path, Path]:
+    """A one-block paper under tests/fixtures (the CLI refuses a paper path
+    outside the repository root); the caller removes it."""
+    paper_dir = REPO / "tests" / "fixtures" / name
+    paper_dir.mkdir(parents=True, exist_ok=True)
+    main_tex = paper_dir / "main.tex"
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    main_tex.write_text(
+        f"%% paper-writing block b1 begin sha256={digest}\n{body}%% paper-writing block b1 end\n",
+        encoding="utf-8",
+    )
+    return paper_dir, main_tex
+
+
+class StyleQualityTests(unittest.TestCase):
+    """S4 (closing-sections-and-manuscript-graphs): the metrics measure writing
+    quality, never AI detectability, and every report keeps the AI-use
+    declaration obligation explicit."""
+
+    def test_analyze_style_reports_a_style_score_and_quality_verdict(self) -> None:
+        result = metrics.analyze_style(_OVERUSED_DRAFT)
+        self.assertGreaterEqual(result["style_score"], 0.50)
+        self.assertEqual(result["style_verdict"], "needs_revision")
+        self.assertIn("monotone_cadence", result)
+        self.assertEqual(result["overused_phrasing"]["total_count"], result["cliches"]["total_count"])
+        clean = metrics.analyze_style(
+            "We evaluated the proposed classifier on 54 subjects from the public PhysioNet dataset. "
+            "All recordings were acquired at 160 Hz using a standard 64-channel montage. "
+            "Specifically, artifacts caused by ocular movements were removed using independent component analysis. "
+            "The filtered signals were subsequently segmented into 3-second non-overlapping epochs. "
+            "Overall, the median classification accuracy reached 84.5% across five cross-validation folds."
+        )
+        self.assertLessEqual(clean["style_score"], 0.20)
+        self.assertEqual(clean["style_verdict"], "clear")
+
+    def test_report_states_it_does_not_change_the_ai_use_declaration(self) -> None:
+        result = metrics.analyze_style("A short sentence.")
+        self.assertIn(_DECLARATION_NOTICE, result["disclosure_notice"])
+
+    def test_deprecated_keys_and_entry_point_still_answer(self) -> None:
+        result = metrics.analyze_ai_signatures(_OVERUSED_DRAFT)
+        self.assertEqual(result["composite_score"], result["style_score"])
+        self.assertEqual(result["verdict"], "ai_flagged")
+        self.assertEqual(sorted(result["deprecated_keys"]), ["composite_score", "verdict"])
+
+    def test_catalog_is_overused_academic_phrasing(self) -> None:
+        self.assertIn("delve", metrics.OVERUSED_ACADEMIC_WORDS)
+        findings = metrics.detect_cliches("We delve into this.")
+        self.assertEqual(findings[0]["category"], "overused_word")
+
+    def test_module_carries_no_detection_evasion_language(self) -> None:
+        source = Path(metrics.__file__).read_text(encoding="utf-8")
+        for phrase in ("Claudeism", "fingerprint", "AI Risk", "AI-risk", "humanized", "human style"):
+            self.assertNotIn(phrase, source)
+
+    def test_ai_audit_cli_reports_style_score_and_notice(self) -> None:
+        paper_dir, _ = _style_paper("temp_style_audit", _OVERUSED_DRAFT + "\n")
+        rel = str(paper_dir.relative_to(REPO))
+        try:
+            code, payload = _run_cli(["ai_audit", "--block", "b1", "--paper", rel])
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["style_verdict"], "needs_revision")
+            self.assertIn(_DECLARATION_NOTICE, payload["disclosure_notice"])
+            code, payload = _run_cli(["ai_audit", "--all", "--paper", rel])
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["style_score"], payload["composite_score"])
+            self.assertIn("style_score", payload["blocks"]["b1"])
+            self.assertIn(_DECLARATION_NOTICE, payload["disclosure_notice"])
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
+
+    def test_humanize_unmet_style_target_refuses_unless_forced(self) -> None:
+        body = "We study 12 metrics \\cite{smith2025}.\n"
+        paper_dir, main_tex = _style_paper("temp_style_unmet", body)
+        rel = str(paper_dir.relative_to(REPO))
+        before = main_tex.read_bytes()
+        draft = ("We delve into the multifaceted landscape of 12 metrics, "
+                 "a testament to the seamless interplay \\cite{smith2025}.\n")
+        try:
+            code, payload = _run_cli(["humanize", "--block", "b1", "--replacement", draft,
+                                      "--style-target", "0.10", "--apply", "--paper", rel])
+            self.assertEqual(code, 2)
+            self.assertEqual(payload["status"], "refused")
+            self.assertEqual(payload["code"], "TARGET_SCORE_UNMET")
+            self.assertIn("style score", payload["detail"])
+            self.assertEqual(main_tex.read_bytes(), before)
+            code, payload = _run_cli(["humanize", "--block", "b1", "--replacement", draft,
+                                      "--style-target", "0.10", "--apply", "--force", "--paper", rel])
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["applied"])
+            self.assertFalse(payload["meets_style_target"])
+            self.assertEqual(payload["style_target"], 0.10)
+            self.assertEqual(payload["target_score"], 0.10)
+            self.assertIn(_DECLARATION_NOTICE, payload["disclosure_notice"])
+            self.assertIn("multifaceted landscape", main_tex.read_text(encoding="utf-8"))
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
+
+    def test_humanize_without_apply_reports_and_never_writes(self) -> None:
+        paper_dir, main_tex = _style_paper("temp_style_dry", "We study 12 metrics \\cite{smith2025}.\n")
+        before = main_tex.read_bytes()
+        try:
+            code, payload = _run_cli(["humanize", "--block", "b1",
+                                      "--replacement", "Here we study 12 metrics \\cite{smith2025}.\n",
+                                      "--target-score", "0.20", "--paper", str(paper_dir.relative_to(REPO))])
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["meets_style_target"])
+            self.assertTrue(payload["meets_target"])
+            self.assertFalse(payload["applied"])
+            self.assertEqual(payload["style_target"], 0.20)
+            self.assertIn("style_score", payload["metrics"])
+            self.assertEqual(main_tex.read_bytes(), before)
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
+
+    def test_humanize_changed_citation_refuses_f5_even_when_forced(self) -> None:
+        paper_dir, main_tex = _style_paper("temp_style_f5", "We study 12 metrics \\cite{smith2025}.\n")
+        before = main_tex.read_bytes()
+        try:
+            code, payload = _run_cli(["humanize", "--block", "b1",
+                                      "--replacement", "We study 12 metrics \\cite{jones2020}.\n",
+                                      "--apply", "--force", "--paper", str(paper_dir.relative_to(REPO))])
+            self.assertEqual(code, 2)
+            self.assertEqual(payload["code"], "F5_INVARIANT_VIOLATION")
+            self.assertEqual(main_tex.read_bytes(), before)
+        finally:
+            shutil.rmtree(paper_dir, ignore_errors=True)
+
+    def test_help_text_describes_style_not_detection(self) -> None:
+        parser = paper_cli.build_parser()
+        sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+        texts = " ".join(
+            [parser.format_help(), sub.choices["humanize"].format_help(), sub.choices["ai_audit"].format_help()]
+        )
+        self.assertIn("style", texts)
+        for phrase in ("AI signatures", "humanized", "composite AI score"):
+            self.assertNotIn(phrase, texts)
 
 
 if __name__ == "__main__":

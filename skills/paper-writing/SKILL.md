@@ -1181,17 +1181,28 @@ outside the target block moved — still holds for it. A pass with its own
 file-writing path would sit outside every guarantee this skill makes.
 
 **It runs as a checklist with nothing installed.** The untouchable list above, plus
-the three audits `write` already sequences. An operator-wired humanizer connector
+the three audits `write` already sequences. An operator-wired prose-editing connector
 is an accelerator inside that contract, never a prerequisite for it: a skill that
 stops working because a third-party server is absent has made the operator's
 environment part of its contract.
 
-**Authentic humanization and stylometric audit.** An already-written block can be
-evaluated for burstiness ($CV$) and AI fingerprints (Claudeisms, formulaic patterns)
-via `paper_cli.py ai_audit`, and rephrased under the F5 invariant contract via
-`paper_cli.py humanize`. The audit delegates to the `ai-auditor` agent, which measures
-sentence length variance and cliché density, while ensuring every citation and number
-remains byte-identical.
+**Style audit and style revision.** An already-written block can be measured for
+writing quality — cadence (sentence-length $CV$; a monotone cadence reads flat),
+overused academic phrasing (a closed catalog of words and formulaic patterns), and
+lexical diversity — via `paper_cli.py ai_audit`, which reports a `style_score`
+(0 clear, 1 needs revision) and a `style_verdict` (`clear`, `uneven`,
+`needs_revision`). `paper_cli.py humanize` checks a revised draft of one block:
+it refuses `F5_INVARIANT_VIOLATION` when a citation, number, statistic, or display
+equation changed, and with `--apply` it substitutes the block only when the draft
+meets `--style-target` (default 0.20) unless `--force`, refusing
+`TARGET_SCORE_UNMET` otherwise. The audit delegates to the `ai-auditor` agent.
+
+These are readability checks, never an AI detector: no step aims to make
+machine-assisted prose pass as human-written, and a passing style score does not
+change the obligation to declare AI use (every report carries that
+`disclosure_notice`). The old keys `composite_score`, `verdict`, `target_score`,
+and `meets_target`, and the `--target-score` flag, remain as deprecated aliases
+for one release.
 
 **It reports what it changed**, block by block, so the operator reads the diff it
 produced instead of being asked to trust it.

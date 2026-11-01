@@ -1,17 +1,24 @@
-"""paper_ai_metrics: deterministic stylometry, burstiness quantification,
-Claude/LLM fingerprint detection, and F5 invariant verification.
+"""paper_ai_metrics: deterministic writing-quality metrics and F5 invariant
+verification for academic prose.
+
+These are style checks, not an AI detector. They measure whether a passage
+reads well; they never estimate, and never try to lower, the chance that a
+passage is recognized as machine-assisted. Using them does not change the
+obligation to declare AI use in the manuscript (publisher policies such as
+Elsevier's generative-AI declaration, Springer Nature's rule against
+presenting AI output as human-derived, and ICMJE's disclosure guidance).
 
 Computes:
-1. Sentence Burstiness: Cadence variance through coefficient of variation
-   (CV = sigma / mu). Human writing alternates short and complex sentences
-   (CV >= 0.38); raw LLMs exhibit flat sentence lengths (CV < 0.25).
-2. Closed Catalog of Claudeisms & AI Clichés: Lexical and syntactic markers
-   hyperfrequent in Claude/GPT academic drafts (e.g., 'delve', 'testament',
-   'tapestry', 'paramount', 'pivotal', triadic parallelism, redundant hedges).
-3. Lexical Diversity: Type-Token Ratio (TTR) and Hapax Legomena ratio.
-4. Composite AI Risk Score: 0.0 (natural human style) to 1.0 (high AI signature).
-5. F5 Invariant Verification: Enforces that citations, numbers, statistics,
-   and math formulas are untouched during humanization passes.
+1. Cadence (burstiness): coefficient of variation of sentence length
+   (CV = sigma / mu). Readable academic prose alternates short and complex
+   sentences (CV >= 0.38); a monotone cadence keeps them flat (CV < 0.25).
+2. Overused academic phrasing: a closed catalog of words and patterns that
+   are overused in academic drafts (e.g., 'delve', 'testament', 'tapestry',
+   'paramount', 'pivotal', triadic parallelism, redundant hedges).
+3. Lexical diversity: Type-Token Ratio (TTR) and Hapax Legomena ratio.
+4. Style score: 0.0 (clear, varied prose) to 1.0 (needs revision).
+5. F5 invariant verification: citations, numbers, statistics, and math
+   formulas stay untouched during a style revision.
 """
 from __future__ import annotations
 
@@ -19,8 +26,14 @@ import math
 import re
 from typing import Any
 
-# Closed catalog of AI clichés, high-frequency Claudeisms, and hyperbolic transitions
-CLAUDE_WORDS: tuple[str, ...] = (
+#: Stated by every style report: the metrics judge readability only.
+DISCLOSURE_NOTICE = (
+    "Style metrics measure readability only; a passing style score does not "
+    "change the obligation to declare AI use in the manuscript."
+)
+
+# Closed catalog of overused academic words and hyperbolic vocabulary
+OVERUSED_ACADEMIC_WORDS: tuple[str, ...] = (
     "delve", "delves", "delving",
     "testament", "testaments",
     "tapestry", "tapestries",
@@ -54,6 +67,8 @@ CLAUDE_WORDS: tuple[str, ...] = (
     "quintessential",
     "intricacies", "intricacy",
 )
+#: Deprecated alias of ``OVERUSED_ACADEMIC_WORDS``, kept for one release.
+CLAUDE_WORDS = OVERUSED_ACADEMIC_WORDS
 
 # Common formulaic transitions and redundant hedges
 FORMULAIC_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -144,9 +159,9 @@ def compute_burstiness(sentences: list[str]) -> dict[str, Any]:
     cv = (std_len / mean_len) if mean_len > 0 else 0.0
 
     # Burstiness penalty:
-    # CV >= 0.45: 0.0 (very human, high cadence variation)
+    # CV >= 0.45: 0.0 (varied cadence)
     # CV == 0.35: ~0.2
-    # CV <= 0.20: 1.0 (flat, machine-like cadence)
+    # CV <= 0.20: 1.0 (monotone cadence)
     if cv >= 0.45:
         burstiness_penalty = 0.0
     elif cv <= 0.20:
@@ -165,13 +180,12 @@ def compute_burstiness(sentences: list[str]) -> dict[str, Any]:
 
 
 def detect_cliches(text: str) -> list[dict[str, Any]]:
-    """Detects Claude/GPT academic clichés, hyperbolic words, and formulaic patterns."""
+    """Detects overused academic words, hyperbolic vocabulary, and formulaic patterns."""
     findings: list[dict[str, Any]] = []
     clean_text = strip_latex_markup(text)
-    lower_text = clean_text.lower()
 
-    # 1. High-frequency Claude words
-    for word in CLAUDE_WORDS:
+    # 1. Overused academic words
+    for word in OVERUSED_ACADEMIC_WORDS:
         pattern = re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
         for match in pattern.finditer(clean_text):
             start = max(0, match.start() - 25)
@@ -180,7 +194,7 @@ def detect_cliches(text: str) -> list[dict[str, Any]]:
             findings.append({
                 "type": "word",
                 "target": match.group(0),
-                "category": "claude_word",
+                "category": "overused_word",
                 "start": match.start(),
                 "end": match.end(),
                 "context": f"...{context}...",
@@ -230,44 +244,47 @@ def compute_lexical_diversity(tokens: list[str]) -> dict[str, float]:
     }
 
 
-def analyze_ai_signatures(text: str) -> dict[str, Any]:
-    """Runs full deterministic stylometric and AI-risk quantification."""
+#: Quality verdict per style-score band, beside the deprecated label the
+#: ``verdict`` key carried before (kept for one release so existing readers,
+#: e.g. the command center, keep working).
+_STYLE_VERDICTS = ((0.20, "clear", "human"), (0.45, "uneven", "mixed"), (1.0, "needs_revision", "ai_flagged"))
+DEPRECATED_KEYS: tuple[str, ...] = ("composite_score", "verdict")
+
+
+def analyze_style(text: str) -> dict[str, Any]:
+    """Runs the deterministic writing-quality metrics over one passage."""
     sentences = split_sentences(text)
     tokens = tokenize(text)
     burstiness = compute_burstiness(sentences)
     cliches = detect_cliches(text)
     lexical = compute_lexical_diversity(tokens)
 
-    # Cliché density: findings per 100 words
+    # Overused-phrasing density: findings per 100 words
     total_tokens = len(tokens)
     cliche_count = len(cliches)
     cliche_density = (cliche_count / (total_tokens / 100.0)) if total_tokens >= 50 else (cliche_count * 2.0)
 
     # Score components (0.0 to 1.0):
-    # - Cliche score: density >= 3.0 cliches/100w -> 1.0
+    # - Overused phrasing: density >= 3.0 findings/100w -> 1.0
     cliche_score = min(1.0, cliche_density / 3.0)
-    # - Burstiness penalty: directly from compute_burstiness
+    # - Monotone cadence: directly from compute_burstiness
     burstiness_score = burstiness["burstiness_penalty"]
     # - Lexical repetitiveness: low TTR in short texts is penalized
     # Normal academic TTR for 200-500 words is ~0.45 - 0.65
     lexical_penalty = 1.0 - min(1.0, max(0.0, (lexical["ttr"] - 0.35) / 0.25))
 
-    # Composite AI Score:
-    # If no clichés are present, the text uses clean academic vocabulary;
-    # burstiness acts as a mild cadence check (never exceeding 0.20 on its own).
-    # When clichés are present, burstiness monotony and low TTR strongly amplify the AI risk.
+    # Style score: without overused phrasing, cadence is a mild check (never
+    # above 0.20 on its own); with it, a monotone cadence and low lexical
+    # diversity weigh in fully.
     if cliche_count == 0:
-        composite = (0.15 * burstiness_score) + (0.05 * lexical_penalty)
+        score = (0.15 * burstiness_score) + (0.05 * lexical_penalty)
     else:
-        composite = (0.50 * cliche_score) + (0.35 * burstiness_score) + (0.15 * lexical_penalty)
-    composite = round(min(1.0, max(0.0, composite)), 3)
+        score = (0.50 * cliche_score) + (0.35 * burstiness_score) + (0.15 * lexical_penalty)
+    score = round(min(1.0, max(0.0, score)), 3)
 
-    if composite <= 0.20:
-        verdict = "human"
-    elif composite <= 0.45:
-        verdict = "mixed"
-    else:
-        verdict = "ai_flagged"
+    style_verdict, legacy_verdict = next(
+        (style, legacy) for bound, style, legacy in _STYLE_VERDICTS if score <= bound
+    )
 
     # Per-sentence evaluation
     sentence_reports = []
@@ -284,18 +301,30 @@ def analyze_ai_signatures(text: str) -> dict[str, Any]:
             "flagged": len(s_cliches) > 0 or s_len > 45,
         })
 
+    overused = {
+        "total_count": cliche_count,
+        "density_per_100_words": round(cliche_density, 2),
+        "findings": cliches,
+    }
     return {
-        "composite_score": composite,
-        "verdict": verdict,
+        "style_score": score,
+        "style_verdict": style_verdict,
+        "monotone_cadence": burstiness_score > 0.5,
+        "overused_phrasing": overused,
         "burstiness": burstiness,
-        "cliches": {
-            "total_count": cliche_count,
-            "density_per_100_words": round(cliche_density, 2),
-            "findings": cliches,
-        },
+        "cliches": overused,
         "lexical_diversity": lexical,
         "sentences": sentence_reports,
+        "disclosure_notice": DISCLOSURE_NOTICE,
+        # Deprecated aliases, removed in the next release.
+        "composite_score": score,
+        "verdict": legacy_verdict,
+        "deprecated_keys": list(DEPRECATED_KEYS),
     }
+
+
+#: Deprecated entry point, kept for one release; call ``analyze_style``.
+analyze_ai_signatures = analyze_style
 
 
 def extract_f5_invariants(latex_text: str) -> dict[str, list[str]]:
@@ -327,14 +356,14 @@ def extract_f5_invariants(latex_text: str) -> dict[str, list[str]]:
     }
 
 
-def verify_f5_invariants(original_latex: str, humanized_latex: str) -> tuple[bool, list[str]]:
-    """Verifies that an edited/humanized block preserved every F5 invariant:
+def verify_f5_invariants(original_latex: str, revised_latex: str) -> tuple[bool, list[str]]:
+    """Verifies that a style-revised block preserved every F5 invariant:
     citations, numbers/statistics, and mathematical formulas.
     Returns (passed, list_of_violations).
     """
     violations: list[str] = []
     orig = extract_f5_invariants(original_latex)
-    hum = extract_f5_invariants(humanized_latex)
+    hum = extract_f5_invariants(revised_latex)
 
     # Check citations
     missing_cites = [c for c in orig["citations"] if c not in hum["citations"]]
@@ -357,12 +386,12 @@ def verify_f5_invariants(original_latex: str, humanized_latex: str) -> tuple[boo
     if len(orig["math_displays"]) != len(hum["math_displays"]):
         violations.append(
             f"Displayed equation count mismatch: original has {len(orig['math_displays'])}, "
-            f"humanized has {len(hum['math_displays'])}"
+            f"revised has {len(hum['math_displays'])}"
         )
 
     return len(violations) == 0, violations
 
 
-# Convenience alias matching the CLI verb
-audit_ai_metrics = analyze_ai_signatures
+#: Deprecated alias matching the ``ai_audit`` CLI verb; call ``analyze_style``.
+audit_ai_metrics = analyze_style
 

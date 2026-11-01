@@ -114,7 +114,7 @@ import paper_full_text  # noqa: E402 -- the-pdf-arrives-or-the-operator-is-told:
 import paper_lifecycle  # noqa: E402 -- a-leftover-paper-is-offered-before-it-is-lost: the reuse and exhaustion reports over the ingested-papers lifecycle; `reuse`/`exhaustion` verbs; raises no `Refused` of its own
 import paper_venue  # noqa: E402 -- journal-finder, S9-S11: the `venue` verb group (select, requirements, acquire, diff, plan, approve, build, status, list)
 import paper_separation  # noqa: E402 -- the-whole-cut-is-argued-before-any-section-is-claimed, U1: the pure claimable-section/score-cut core; wired to the `separate` verb in U2 (`compute_separation`/`cmd_separate` below); raises no `Refused` of its own
-import paper_ai_metrics  # noqa: E402 -- ai-stylometry-and-humanization: deterministic stylometry, burstiness, Claude fingerprints, and F5 invariant checks
+import paper_ai_metrics  # noqa: E402 -- closing-sections-and-manuscript-graphs S4: writing-quality metrics (cadence, overused phrasing, lexical diversity) and F5 invariant checks; never an AI-detection score
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -609,7 +609,7 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "PLAN_HASH_MISMATCH": INVOCATION_DEFECT,
     "STATEMENT_EMPTY": INVOCATION_DEFECT,
     "PLAN_NOT_APPROVED": WORK_STATE,
-    # --- ai stylometry and humanization (ai_audit, humanize) --------------
+    # --- writing-quality audit and style revision (ai_audit, humanize) ----
     "TARGET_REQUIRED": INVOCATION_DEFECT,
     "TARGET_UNREADABLE": INVOCATION_DEFECT,
     "BLOCK_REQUIRED": INVOCATION_DEFECT,
@@ -3144,14 +3144,14 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
         if not path.is_file():
             raise Refused("TARGET_UNREADABLE", f"{args.file}: file not found")
         text = path.read_text(encoding="utf-8")
-        results = paper_ai_metrics.analyze_ai_signatures(text)
+        results = paper_ai_metrics.analyze_style(text)
         return {"target": str(path), **results}
     elif args.draft:
         path = _resolve_repo_path(args.draft)
         if not path.is_file():
             raise Refused("DRAFT_UNREADABLE", f"{args.draft}: draft not found")
         text = path.read_text(encoding="utf-8")
-        results = paper_ai_metrics.analyze_ai_signatures(text)
+        results = paper_ai_metrics.analyze_style(text)
         return {"target": str(path), **results}
     elif args.block:
         paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
@@ -3163,7 +3163,7 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
         begin, end = doc.pairs[args.block]
         body_bytes = data[begin["end"]:end["start"]]
         text = body_bytes.decode("utf-8", errors="replace")
-        results = paper_ai_metrics.analyze_ai_signatures(text)
+        results = paper_ai_metrics.analyze_style(text)
         return {"target": f"block:{args.block}", **results}
     elif args.all:
         # Full manuscript audit across all blocks in main.tex
@@ -3176,11 +3176,15 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
         for blk_id, (begin, end) in sorted(doc.pairs.items()):
             blk_text = data[begin["end"]:end["start"]].decode("utf-8", errors="replace").strip()
             if blk_text:
-                m = paper_ai_metrics.analyze_ai_signatures(blk_text)
+                m = paper_ai_metrics.analyze_style(blk_text)
                 block_metrics[blk_id] = {
+                    "style_score": m["style_score"],
+                    "style_verdict": m["style_verdict"],
+                    "overused_phrasing_count": m["overused_phrasing"]["total_count"],
+                    # Deprecated aliases, removed in the next release.
                     "composite_score": m["composite_score"],
-                    "verdict": m.get("verdict", "low"),
-                    "cliches_count": m.get("cliches", {}).get("total_count", 0),
+                    "verdict": m["verdict"],
+                    "cliches_count": m["overused_phrasing"]["total_count"],
                 }
                 all_texts.append(blk_text)
         full_text = "\n\n".join(all_texts)
@@ -3188,19 +3192,29 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
             return {
                 "target": "manuscript:main.tex",
                 "blocks_analyzed": 0,
+                "style_score": 0.0,
+                "style_verdict": "clear",
+                "disclosure_notice": paper_ai_metrics.DISCLOSURE_NOTICE,
                 "composite_score": 0.0,
                 "verdict": "human_like",
+                "deprecated_keys": list(paper_ai_metrics.DEPRECATED_KEYS),
                 "blocks": {},
             }
-        results = paper_ai_metrics.analyze_ai_signatures(full_text)
+        results = paper_ai_metrics.analyze_style(full_text)
         return {
             "target": "manuscript:main.tex",
             "blocks_analyzed": len(block_metrics),
-            "composite_score": results["composite_score"],
-            "verdict": results.get("verdict", "low"),
+            "style_score": results["style_score"],
+            "style_verdict": results["style_verdict"],
+            "monotone_cadence": results["monotone_cadence"],
+            "overused_phrasing": results["overused_phrasing"],
             "burstiness": results.get("burstiness"),
             "cliches": results.get("cliches"),
             "lexical_diversity": results.get("lexical_diversity"),
+            "disclosure_notice": results["disclosure_notice"],
+            "composite_score": results["composite_score"],
+            "verdict": results["verdict"],
+            "deprecated_keys": results["deprecated_keys"],
             "blocks": block_metrics,
         }
     else:
@@ -3208,6 +3222,9 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
 
 
 def cmd_humanize(args: argparse.Namespace) -> dict:
+    """Style revision of one block: the draft must keep every F5 invariant and,
+    to be applied, reach the style target. It improves readability only; it
+    never aims at AI detectability and never changes the AI-use declaration."""
     if not args.block:
         raise Refused("BLOCK_REQUIRED", "--block <id> is required for humanize")
     draft_body = ""
@@ -3236,16 +3253,17 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
     if not passed_f5:
         raise Refused("F5_INVARIANT_VIOLATION", "; ".join(violations))
 
-    metrics_report = paper_ai_metrics.analyze_ai_signatures(draft_body)
-    target_score = args.target_score if args.target_score is not None else 0.20
-    meets_target = metrics_report["composite_score"] <= target_score
+    metrics_report = paper_ai_metrics.analyze_style(draft_body)
+    style_target = args.style_target if args.style_target is not None else 0.20
+    meets_target = metrics_report["style_score"] <= style_target
 
     applied = False
     if args.apply:
         if not meets_target and not args.force:
             raise Refused(
                 "TARGET_SCORE_UNMET",
-                f"Draft composite AI score {metrics_report['composite_score']} exceeds target {target_score}. Use --force to override.",
+                f"Draft style score {metrics_report['style_score']} exceeds the style target "
+                f"{style_target}; revise the overused phrasing or cadence, or use --force to override.",
             )
         contract = Path(args.contract) if args.contract else None
         paper_block.substitute(paper_dir, args.block, new_body=draft_body.encode("utf-8"), contract=contract)
@@ -3254,10 +3272,15 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
     return {
         "block": args.block,
         "f5_invariants_preserved": True,
-        "target_score": target_score,
-        "meets_target": meets_target,
+        "style_target": style_target,
+        "meets_style_target": meets_target,
         "applied": applied,
         "metrics": metrics_report,
+        "disclosure_notice": paper_ai_metrics.DISCLOSURE_NOTICE,
+        # Deprecated aliases, removed in the next release.
+        "target_score": style_target,
+        "meets_target": meets_target,
+        "deprecated_keys": ["target_score", "meets_target"],
     }
 
 
@@ -4022,7 +4045,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_ai_audit = sub.add_parser(
         "ai_audit",
-        help="quantify AI signatures, burstiness, and clichés in a text, draft, or block",
+        help="measure writing style (cadence, overused academic phrasing, lexical diversity) "
+             "of a text, draft, block, or the manuscript; a style check, not an AI detector",
     )
     p_ai_audit.add_argument("--file", default=None, help="path to a text or LaTeX file")
     p_ai_audit.add_argument("--draft", default=None, help="path to a draft file")
@@ -4032,12 +4056,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_humanize = sub.add_parser(
         "humanize",
-        help="verify F5 invariants and stylometric quality of a humanized block draft",
+        help="style revision of one block: verify F5 invariants and the style score of a revised draft "
+             "(readability only; the AI-use declaration still applies)",
     )
-    p_humanize.add_argument("--block", required=True, help="the block id being humanized")
-    p_humanize.add_argument("--draft", default=None, help="path to the humanized draft")
+    p_humanize.add_argument("--block", required=True, help="the block id being revised")
+    p_humanize.add_argument("--draft", default=None, help="path to the style-revised draft")
     p_humanize.add_argument("--replacement", default=None, help="inline replacement text (alternative to --draft)")
-    p_humanize.add_argument("--target-score", type=float, default=0.20, dest="target_score", help="maximum allowable composite AI score (default 0.20)")
+    p_humanize.add_argument("--style-target", "--target-score", type=float, default=0.20, dest="style_target",
+                            help="maximum allowable style score (default 0.20); --target-score is a deprecated alias")
     p_humanize.add_argument("--apply", action="store_true", default=False, help="substitute into paper/main.tex if verified")
     p_humanize.add_argument("--inplace", action="store_true", default=False, dest="apply", help="substitute into paper/main.tex if verified (alias for --apply)")
     p_humanize.add_argument("--force", action="store_true", default=False, help="apply even if target score is not met")
