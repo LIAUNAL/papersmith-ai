@@ -1948,6 +1948,13 @@ they are here and not in the contract.
 - **What the framing carries, the figure does not repeat.** No title restating the
   heading directly above it. No caption restating bounds the notebook already
   stated. Stating them twice is the duplication rule again, in two media.
+- **A figure that may reach the paper is saved for print.** Copy
+  `skills/experimental-implementation/assets/kit/ps_figures.py` beside the
+  drawing code and use `apply_style(body_pt, printed_width_fraction)` and
+  `save_figure(fig, path_pdf)`: a vector PDF with embedded text, tight and
+  transparent, no in-figure title (the caption carries it), and every label,
+  tick and legend at least 0.70 x the manuscript body at its printed size.
+  `paper_cli.py place` refuses a figure that breaks any of these.
 - **Decoration appears once.** Axis labels shared by every panel collapse into one
   for the whole figure; tick labels stay at the border. But whether an axis really
   is shared is a claim about the data, so the drawing code **measures it** and

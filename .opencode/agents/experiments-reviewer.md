@@ -63,6 +63,23 @@ a suggested change in words. You never write the change.
    computed differently from the protocol's definition, dead or duplicated
    code paths, hard-coded paths, and missing or failing tests. Run the
    target's own suite under its own interpreter and quote the result.
+
+   Figure code is part of this dimension, because every figure that leaves
+   `Results/**/figures/` may enter the manuscript, where `paper_cli.py place`
+   refuses it at the door. Find the plotting calls with an AST walk of the
+   target's `.py` files and notebook code cells, never a text search: a
+   `Call` whose function is the attribute `set_title`, `suptitle` or `title`
+   (`ax.set_title`, `fig.suptitle`, `plt.title`) is a `major` finding (the
+   caption carries the title; `place` refuses `FIGURE_IN_FIGURE_TITLE`). A
+   `savefig` call writing a line, scatter or bar plot only as `.png`/`.jpg`
+   (no `.pdf`) is `major` (raster-only plot: `FIGURE_NO_TEXT_LAYER`); a
+   `savefig` to `.pdf` without `transparent=True` or without
+   `bbox_inches="tight"` is `major` (`FIGURE_FULL_PAGE_BACKGROUND`,
+   `FIGURE_MARGIN_WASTE`). The fix you suggest is the shipped helper,
+   `skills/experimental-implementation/assets/kit/ps_figures.py`
+   (`apply_style(body_pt, printed_width_fraction)` then `save_figure(fig,
+   path_pdf)`), which sets the printed size so every label, tick and legend
+   prints at least 0.70 x the manuscript body.
 2. **Optimisation.** Look for per-sample Python loops where a batched or
    vectorised call exists; quantum-circuit simulation run with the
    parameter-shift rule when an exact-gradient simulator is available (for
