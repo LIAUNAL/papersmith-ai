@@ -1028,10 +1028,14 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: graphical abstract and the always-present AI-use declaration. `01` aligned
 #: its extent line with the slot table (2 to 9 subsections) and `02` raised its
 #: upper extent to 3500 words for the evaluation blocks.
+#: `02` and `03` re-captured (figure-and-table-quality T3, spec S5): both
+#: contracts that carry tables gained `## Tables stay inside the text block`
+#: (booktabs rules, tabularx, no scaling below 0.85, no text below 0.70 times
+#: the body size, caption above) and three matching disqualifiers.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "bceddb15a3514b0ee355abe24a0ac6c59f78a15ad900921d8b10e72104718d90"[:64],
-    "02-experimental-setup.md": "0f66d68b0d02718f8f45c9b6bf34c45b8a81f7ea4fea1ff56cb8e13eb32e8b51"[:64],
-    "03-results-and-discussion.md": "522ac2d7cee130f4fe463d963f964747c02d9206edcfac6949d3c4a4f3e2b39f"[:64],
+    "02-experimental-setup.md": "6afe354371c1b466ea8eb95b72a7a7fb2276219dc6877d635b43b30d1c6c9fae",
+    "03-results-and-discussion.md": "51d4b9a933b34956e6300d5d88e44cb1e36fc067cd9cb5caf8e77a83687c3cd0",
     "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
     "05-related-work.md": "d1e6ec50d24063c7cfa618e59fb75d1ba1d5dc4155b76e01ac918e96d4e53ea9",
     "06-introduction.md": "fdb4847f869e44480895fab4bf2b1fa7a199ad851a372ee1841dee856ee398ab",

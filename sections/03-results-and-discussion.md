@@ -281,6 +281,25 @@ takes figures and may carry no table.
 Almost none — and never for a result. A citation here credits **an instrument** used
 to read the data, or a **behaviour already established** that the result agrees with.
 
+## Tables stay inside the text block
+
+A table prints inside `\textwidth` at a legible size, by the same rule as a figure:
+**no text in a table prints below 0.70 times the body font size** (7 pt in a 10 pt
+document).
+
+- **Rules are `booktabs`** — `\toprule`, `\midrule`, `\bottomrule` — with no vertical
+  rules; a column of prose is a `tabularx` `X` column, so the table takes the text width
+  instead of running past it.
+- **The table runs at the body size.** `\small` is the most it is reduced, and only
+  when the body is 11 pt or larger; `\footnotesize`, `\scriptsize` and `\tiny` are
+  never used inside a table when they fall below the floor.
+- **A table is never scaled to fit.** No `\resizebox`, `\scalebox` or `adjustbox`
+  below a factor of 0.85, and no `width=\textwidth` scaling of a `tabular`: scaling
+  shrinks the text with the box.
+- **A table wider than `\textwidth` is split, transposed, or moved** to a `table*` or
+  a landscape page when the venue allows either — never shrunk below the floor.
+- **The caption goes above the table.**
+
 ## LIA house style
 
 Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025), Elsevier first and MDPI after: items A008, A017, A018, A003, A006, A007, A009, A021, A022 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
@@ -377,3 +396,8 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
   faithfulness measure for it.
 - The section closing on a synthesis paragraph.
 - A table with values in bold whose caption does not say what the bold marks.
+- A table that runs past `\textwidth`, or whose text prints below 0.70 times the body
+  font size.
+- A table scaled with `\resizebox`, `\scalebox` or `adjustbox` below 0.85, or scaled
+  to `\textwidth`.
+- A table with vertical rules, or a table whose caption sits below it.

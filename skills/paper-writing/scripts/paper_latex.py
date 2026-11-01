@@ -313,3 +313,210 @@ def compile(
         exit_code=proc.returncode, pdf_written=pdf_written, log_path=log_path,
         diagnostics=diagnostics, unrecognized_lines=unrecognized, verdict=verdict,
     )
+
+
+# ---------------------------------------------------------------------------
+# Table source lint (spec S5 of `odd/tasks/figure-and-table-quality.md`).
+#
+# A table never shrinks to fit the text block: no `\resizebox`/`\scalebox`/
+# `adjustbox` below a factor of 0.85 or to a width, and no size switch inside
+# a table that prints below 0.70 times the body size. The floor comes from
+# `skills/_core/figure/print_scale.py` (imported, never copied), the same
+# rule figures are measured against. The lint WARNS, never refuses: the
+# write gate already treats typographic diagnostics that way (an `Overfull`
+# box above is a non-blocking `Diagnostic`), the body size it compares
+# against is read from `main.tex` and may be a fallback, and the compiled
+# manuscript QA (`skills/_core/figure/manuscript_qa.py`) is what measures
+# the printed result.
+# ---------------------------------------------------------------------------
+
+def _print_scale():
+    """`skills/_core/figure/print_scale.py`, imported on first lint, never
+    at module load: this module is the compile seam every figure path and
+    the mutation harnesses import, and they must not need `_core/figure`
+    (nor pypdfium2) to compile a diagram."""
+    figure_dir = str(Path(__file__).resolve().parents[2] / "_core" / "figure")
+    if figure_dir not in sys.path:
+        sys.path.insert(0, figure_dir)
+    import print_scale  # noqa: PLC0415
+
+    return print_scale
+
+#: Scaling at or above this factor is tolerated; below it the text shrinks
+#: past what the section contracts allow.
+TABLE_MIN_SCALE = 0.85
+
+#: Printed size of LaTeX's relative size switches, in TeX points, for the
+#: standard classes' 10/11/12 pt bodies (`size10.clo`, `size11.clo`,
+#: `size12.clo`). Other bodies scale the 10 pt row proportionally.
+_SIZE_SWITCH_PT = {
+    10.0: {"tiny": 5.0, "scriptsize": 7.0, "footnotesize": 8.0, "small": 9.0},
+    11.0: {"tiny": 6.0, "scriptsize": 8.0, "footnotesize": 9.0, "small": 10.0},
+    12.0: {"tiny": 6.0, "scriptsize": 8.0, "footnotesize": 10.0, "small": 10.95},
+}
+
+_TABLE_ENV_RE = re.compile(
+    r"\\begin\{(?P<env>table\*?|sidewaystable\*?|tabular[x*]?|tabulary|longtable)\}"
+)
+_TABULAR_RE = re.compile(r"\\begin\{(?:tabular[x*]?|tabulary|longtable)\}")
+_SIZE_SWITCH_RE = re.compile(r"\\(?P<name>tiny|scriptsize|footnotesize|small)(?![A-Za-z])")
+_SCALEBOX_RE = re.compile(r"\\scalebox\s*\{")
+_RESIZEBOX_RE = re.compile(r"\\resizebox\*?\s*\{")
+_ADJUSTBOX_ENV_RE = re.compile(r"\\begin\{adjustbox\}\s*\{")
+_ADJUSTBOX_CMD_RE = re.compile(r"\\adjustbox\s*\{")
+_ADJUST_SCALE_RE = re.compile(r"(?:^|,)\s*scale\s*=\s*\{?\s*(?P<factor>[0-9]*\.?[0-9]+)")
+_ADJUST_WIDTH_RE = re.compile(r"(?:^|,)\s*(?:max\s+)?(?:width|totalheight|height)\s*=")
+
+
+def _size_switch_pt(name: str, body_pt: float) -> float:
+    row = _SIZE_SWITCH_PT.get(float(body_pt))
+    if row is not None:
+        return row[name]
+    return _SIZE_SWITCH_PT[10.0][name] * float(body_pt) / 10.0
+
+
+def _brace_group(text: str, open_index: int) -> tuple[int, int] | None:
+    """`(start, end)` of the content of the brace group opening at
+    `open_index` (which holds `{`), or `None` when it never closes. An
+    escaped `\\{`/`\\}` does not count."""
+    depth = 0
+    index = open_index
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return open_index + 1, index
+        index += 1
+    return None
+
+
+def _next_group(text: str, index: int) -> tuple[int, int] | None:
+    """The next `{...}` group at or after `index`, skipping whitespace and
+    one optional `[...]` argument."""
+    while index < len(text) and text[index].isspace():
+        index += 1
+    if index < len(text) and text[index] == "[":
+        close = text.find("]", index)
+        if close < 0:
+            return None
+        index = close + 1
+        while index < len(text) and text[index].isspace():
+            index += 1
+    if index < len(text) and text[index] == "{":
+        return _brace_group(text, index)
+    return None
+
+
+def _wraps_tabular(text: str, group: tuple[int, int] | None) -> bool:
+    return bool(group) and _TABULAR_RE.search(text, group[0], group[1]) is not None
+
+
+def _table_regions(latex: str) -> list[tuple[int, int]]:
+    regions = []
+    for match in _TABLE_ENV_RE.finditer(latex):
+        end = latex.find("\\end{" + match.group("env") + "}", match.end())
+        regions.append((match.start(), len(latex) if end < 0 else end))
+    return regions
+
+
+def _finding(latex: str, index: int, rule: str, command: str, **extra) -> dict:
+    start = latex.rfind("\n", 0, index) + 1
+    end = latex.find("\n", index)
+    snippet = (latex[start:] if end < 0 else latex[start:end]).strip()[:160]
+    line = latex.count("\n", 0, index) + 1
+    return {"rule": rule, "line": line, "command": command, "snippet": snippet, **extra}
+
+
+def lint_tables(latex: str, body_pt: float) -> list[dict]:
+    """Every table-sizing finding in `latex`, in source order. Rules:
+
+    - `table-scaled-to-width`: `\\resizebox`, or an `adjustbox` width or
+      height key, wrapping a tabular (the factor is unknowable from the
+      source and the text shrinks with the box);
+    - `table-scaled-below-floor`: `\\scalebox` or `adjustbox` `scale=`
+      below `TABLE_MIN_SCALE` wrapping a tabular;
+    - `table-font-below-floor`: `\\tiny`/`\\scriptsize`/`\\footnotesize`/
+      `\\small` inside a table that prints below
+      `print_scale.min_printed_pt(body_pt)`.
+
+    Each finding: `{"rule", "line" (1-based in `latex`), "command",
+    "snippet"}` plus `factor` or `size_pt`/`min_printed_pt`."""
+    findings: list[dict] = []
+    floor = _print_scale().min_printed_pt(body_pt)
+
+    for match in _SCALEBOX_RE.finditer(latex):
+        factor_group = _brace_group(latex, match.end() - 1)
+        if factor_group is None:
+            continue
+        try:
+            factor = float(latex[factor_group[0]:factor_group[1]].strip())
+        except ValueError:
+            continue
+        content = _next_group(latex, factor_group[1] + 1)
+        if factor < TABLE_MIN_SCALE and _wraps_tabular(latex, content):
+            findings.append(_finding(latex, match.start(), "table-scaled-below-floor",
+                                     "\\scalebox", factor=factor))
+
+    for match in _RESIZEBOX_RE.finditer(latex):
+        width = _brace_group(latex, match.end() - 1)
+        height = _next_group(latex, width[1] + 1) if width else None
+        content = _next_group(latex, height[1] + 1) if height else None
+        if _wraps_tabular(latex, content):
+            findings.append(_finding(latex, match.start(), "table-scaled-to-width", "\\resizebox"))
+
+    for pattern, command in ((_ADJUSTBOX_ENV_RE, "adjustbox"), (_ADJUSTBOX_CMD_RE, "\\adjustbox")):
+        for match in pattern.finditer(latex):
+            options = _brace_group(latex, match.end() - 1)
+            if options is None:
+                continue
+            if command == "adjustbox":
+                end = latex.find("\\end{adjustbox}", options[1])
+                content = (options[1], len(latex) if end < 0 else end)
+            else:
+                content = _next_group(latex, options[1] + 1)
+            if not _wraps_tabular(latex, content):
+                continue
+            keys = latex[options[0]:options[1]]
+            scale = _ADJUST_SCALE_RE.search(keys)
+            if scale and float(scale.group("factor")) < TABLE_MIN_SCALE:
+                findings.append(_finding(latex, match.start(), "table-scaled-below-floor", command,
+                                         factor=float(scale.group("factor"))))
+            elif _ADJUST_WIDTH_RE.search(keys):
+                findings.append(_finding(latex, match.start(), "table-scaled-to-width", command))
+
+    regions = _table_regions(latex)
+    for match in _SIZE_SWITCH_RE.finditer(latex):
+        if not any(start <= match.start() < end for start, end in regions):
+            continue
+        size = _size_switch_pt(match.group("name"), body_pt)
+        if size < floor - 1e-9:
+            findings.append(_finding(latex, match.start(), "table-font-below-floor",
+                                     "\\" + match.group("name"), size_pt=size, min_printed_pt=floor))
+
+    findings.sort(key=lambda finding: finding["line"])
+    return findings
+
+
+def table_lint_report(latex: str, main_tex: Path) -> dict:
+    """The write envelope's `tableLint`: the body size read from `main_tex`
+    (the 10 pt fallback when it is absent), the floor, and `lint_tables`'s
+    findings. `status` is `"clean"` or `"warnings"`; never a refusal."""
+    print_scale = _print_scale()
+    if Path(main_tex).is_file():
+        body, source = print_scale.body_font_pt(Path(main_tex))
+    else:
+        body, source = print_scale.FALLBACK_BODY_PT, "fallback"
+    findings = lint_tables(latex, body)
+    return {
+        "status": "warnings" if findings else "clean",
+        "bodyPt": body,
+        "bodySource": source,
+        "minPrintedPt": print_scale.min_printed_pt(body),
+        "findings": findings,
+    }

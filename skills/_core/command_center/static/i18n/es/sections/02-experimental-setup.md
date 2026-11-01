@@ -306,6 +306,26 @@ muestra el experimento. La prueba: **ningún conjunto de datos ni ninguna línea
 diagrama de métodos, y ningún componente interno de la propuesta aparece en este.** Una
 caja que aparece en ambos significa que uno de ellos está mal.
 
+## Las tablas quedan dentro de la caja de texto
+
+Una tabla se imprime dentro de `\textwidth` a un tamaño legible, con la misma regla que
+una figura: **ningún texto de una tabla se imprime por debajo de 0,70 veces el tamaño
+de la fuente del cuerpo** (7 pt en un documento de 10 pt).
+
+- **Las reglas son de `booktabs`** — `\toprule`, `\midrule`, `\bottomrule` — sin reglas
+  verticales; una columna de prosa es una columna `X` de `tabularx`, de modo que la
+  tabla toma el ancho del texto en lugar de excederlo.
+- **La tabla va al tamaño del cuerpo.** `\small` es la mayor reducción, y solo cuando el
+  cuerpo es de 11 pt o más; `\footnotesize`, `\scriptsize` y `\tiny` nunca se usan
+  dentro de una tabla cuando quedan por debajo del mínimo.
+- **Una tabla nunca se escala para que quepa.** Ni `\resizebox`, ni `\scalebox`, ni
+  `adjustbox` por debajo de un factor de 0,85, ni escalar un `tabular` a
+  `width=\textwidth`: escalar encoge el texto junto con la caja.
+- **Una tabla más ancha que `\textwidth` se divide, se transpone o se traslada** a un
+  `table*` o a una página apaisada cuando la revista permite cualquiera de los dos —
+  nunca se encoge por debajo del mínimo.
+- **La leyenda va encima de la tabla.**
+
 ## Estilo de la casa LIA
 
 Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025), primero Elsevier y después MDPI: los ítems A008, A017, A018, A003, A006, A007, A009, A021, A022 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
@@ -414,3 +434,8 @@ ablación — el resto los presenta en los resultados, lo que este contrato proh
 - Cualquier elemento de ejecución en el diagrama de cierre distinto de la unidad de repetición.
 - La tabla completa de parámetros en el cuerpo cuando solo se razonó sobre algunos valores, o
   una tabla de apéndice que contradice el cuerpo.
+- Una tabla que excede `\textwidth`, o cuyo texto se imprime por debajo de 0,70 veces el
+  tamaño de la fuente del cuerpo.
+- Una tabla escalada con `\resizebox`, `\scalebox` o `adjustbox` por debajo de 0,85, o
+  escalada a `\textwidth`.
+- Una tabla con reglas verticales, o una tabla cuya leyenda queda debajo de ella.

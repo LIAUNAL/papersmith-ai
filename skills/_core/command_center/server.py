@@ -598,7 +598,24 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
         graph = manuscript_graph.refresh(root)
         if graph is not None:
             body = {**body, "manuscript_graph": graph}
+        # ...and the visual QA of the compiled PDF (spec S6), under the same
+        # rule: an error is a warning, never a failed compile.
+        qa = _manuscript_qa_refresh(root)
+        if qa is not None:
+            body = {**body, "manuscript_qa": qa}
     return body, status
+
+
+def _manuscript_qa_refresh(root: Path) -> dict[str, Any] | None:
+    """`manuscript_qa.refresh`, or a warning when the module itself cannot
+    load (pypdfium2 missing): never raises."""
+    if not (root / "papersmith.yaml").is_file() or not (root / "paper" / "main.pdf").is_file():
+        return None
+    try:
+        return _manuscript_qa_module().refresh(root)
+    except Exception as exc:  # noqa: BLE001 - a trigger never fails its command
+        return {"ok": False, "status": "error", "path": "paper/.qa/qa.json",
+                "warning": f"manuscript QA not run: {type(exc).__name__}: {exc}"[:300]}
 
 
 #: The only variables a venue's `compile_env` may set: where TeX looks for a
@@ -656,6 +673,11 @@ JOURNAL_CLI = _SKILLS / "journal-finder" / "scripts" / "journal_cli.py"
 PAPER_VENUE = _SKILLS / "paper-writing" / "scripts" / "paper_venue.py"
 #: The writing-quality style metrics module (cadence, overused phrasing, lexical diversity).
 PAPER_AI_METRICS = _SKILLS / "paper-writing" / "scripts" / "paper_ai_metrics.py"
+#: The visual QA of the compiled manuscript (pypdfium2 geometry, pdftoppm pages).
+MANUSCRIPT_QA = _SKILLS / "_core" / "figure" / "manuscript_qa.py"
+#: `paper/.qa/pages/page-<n>.png`, as pdftoppm names them (zero-padded
+#: when the document has ten pages or more).
+_QA_PAGE_RE = re.compile(r"^page-0*(\d+)\.png$")
 SJR_DOWNLOAD_URL = "https://www.scimagojr.com/journalrank.php"
 #: The CLI's own search deadline is 300 s; the child is killed shortly after.
 JOURNAL_SEARCH_TIMEOUT_SECONDS = 330.0
@@ -701,6 +723,25 @@ def _venue_module():
         spec = importlib.util.spec_from_file_location(name, PAPER_VENUE)
         if spec is None or spec.loader is None:
             raise ImportError(f"cannot load {PAPER_VENUE}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return module
+
+
+def _manuscript_qa_module():
+    """manuscript_qa, loaded once from its file (it imports pypdfium2, so
+    only a compile or a QA read pays for it)."""
+    name = "papersmith_manuscript_qa"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, MANUSCRIPT_QA)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {MANUSCRIPT_QA}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
         try:
@@ -2039,6 +2080,43 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # Read-only: bounded, containment-checked reads (see paper_preview).
         return JSONResponse(paper_preview.build_preview(root_path),
                             headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/paper/qa")
+    def api_paper_qa() -> JSONResponse:
+        # Read-only: the last manuscript QA report and whether main.pdf has
+        # changed since it was measured (stdlib JSON read, no pypdfium2).
+        qa_json = root_path / "paper" / ".qa" / "qa.json"
+        if not qa_json.is_file():
+            return JSONResponse({"status": "absent", "stale": None, "report": None},
+                                headers=dict(_PAPER_HEADERS))
+        try:
+            report = json.loads(qa_json.read_text(encoding="utf-8"))
+            if not isinstance(report, dict):
+                raise ValueError("not an object")
+        except (OSError, ValueError):
+            return JSONResponse({"status": "invalid", "stale": None, "report": None},
+                                headers=dict(_PAPER_HEADERS))
+        pdf = root_path / "paper" / "main.pdf"
+        try:
+            stale = hashlib.sha256(pdf.read_bytes()).hexdigest() != report.get("pdf_sha256")
+        except OSError:
+            stale = True
+        return JSONResponse({"status": "ok", "stale": stale, "report": report},
+                            headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/paper/qa/page")
+    def api_paper_qa_page(n: int = 0) -> Response:
+        # One rendered page of the last QA pass, by page number only: the
+        # name is matched against the directory listing, never joined from
+        # the request.
+        pages = root_path / "paper" / ".qa" / "pages"
+        if n >= 1 and pages.is_dir():
+            for path in pages.iterdir():
+                match = _QA_PAGE_RE.match(path.name)
+                if match and int(match.group(1)) == n and path.is_file() and not path.is_symlink():
+                    return Response(path.read_bytes(), media_type="image/png",
+                                    headers=dict(_PAPER_HEADERS))
+        return JSONResponse({"detail": "page image not found"}, status_code=404)
 
     @app.get("/api/model/math")
     def api_model_math() -> JSONResponse:
