@@ -142,10 +142,12 @@ class MatplotlibExportTests(unittest.TestCase):
     verdict `place` checks."""
 
     def test_a_styled_plot_meets_s2_s3_s4(self) -> None:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError:  # optional: matplotlib lives in experiment repos
+            self.skipTest(NO_MATPLOTLIB)
         import print_scale
 
         holder = tempfile.TemporaryDirectory()
