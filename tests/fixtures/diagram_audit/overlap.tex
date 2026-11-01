@@ -1,0 +1,13 @@
+% Two labels placed on top of each other, and a label running across the
+% frame of a neighbouring node.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\begin{document}
+\begin{tikzpicture}[font=\fontsize{9}{10.8}\selectfont]
+\node at (0,0) {Alpha};
+\node at (0.25,0) {Gamma};
+\node[draw, minimum width=1cm, minimum height=0.8cm] at (2,0) {};
+\node at (1.5,0) {Crossing};
+\end{tikzpicture}
+\end{document}
