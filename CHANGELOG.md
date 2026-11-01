@@ -11,6 +11,36 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.51.0
+
+### Changed
+
+- **Methods, set-up and results contracts re-measured on the group's papers**
+  (`sections/01-materials-and-methods.md`, `02-experimental-setup.md`,
+  `03-results-and-discussion.md`): the three contracts follow the pattern of ten
+  Q1 method papers of 2025-2026 from the lab's bank, Elsevier first and MDPI
+  after, and stay general for any domain or kind of method.
+  - Methods: the preamble is optional; the formal part opens on the problem
+    setup; each pillar gets one borrowed subsection, and the machinery closes on
+    the gap of the piece the proposal modifies; the proposal is the last block,
+    one to three subsections, and defines an interpretability mechanism when
+    the paper claims one. The evaluation is never described there.
+  - Set-up: declares the whole evaluation, adding the statistical test with
+    the unit it runs over, one ablation variant per contribution, the
+    sensitivity sweeps, and a faithfulness measure for an interpretability
+    contribution; the preamble is optional and every block applies only when
+    the paper has what it covers.
+  - Results: reads only what the set-up declared, in a fixed order (controlled
+    scenario, general task closed by its test, one block per contribution,
+    ablation and sensitivity, cost, limitations); interpretability is read
+    qualitatively and by its faithfulness measure; blocks may close on a
+    synthesis paragraph, the section never does.
+
+### Fixed
+
+- **Spanish copies of the section contracts** for 01, 02, 03, 05, 06 and 09
+  were brought back in sync with their English originals.
+
 ## 0.50.1
 
 ### Fixed
