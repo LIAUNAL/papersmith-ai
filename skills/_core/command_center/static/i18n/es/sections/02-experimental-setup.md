@@ -116,7 +116,7 @@
 ---
 # Configuración Experimental
 
-**Extensión** 800–2500 palabras · un preámbulo opcional y dos subsecciones
+**Extensión** 800–3500 palabras · un preámbulo opcional y dos subsecciones
 **Contiene** todo el protocolo de evaluación — los datos tal como se usan, las métricas, los métodos comparados, la prueba estadística, el diseño de ablación y de sensibilidad, las medidas de interpretabilidad — y un diagrama de cierre
 **No contiene** ningún resultado
 

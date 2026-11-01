@@ -40,7 +40,7 @@
           "value": "results",
           "source": {
             "file": "sections/07-conclusions.md",
-            "quote": "Los resultados, y el número de escenarios experimentales, que decide si es un párrafo o dos"
+            "quote": "Los resultados, un hallazgo por contribución o hipótesis, en el orden en que los presentan los métodos y los resultados"
           }
         }
       ],
@@ -81,7 +81,7 @@
 ---
 # Conclusiones
 
-**Extensión** 375–500 palabras · 3 o 4 párrafos
+**Extensión** 350–950 palabras · 3 a 6 párrafos
 **No contiene** ecuaciones, figuras ni tablas
 **Contiene** citas en un solo lugar: el bloque de trabajo futuro
 
@@ -93,11 +93,13 @@ por sí solas. No añaden nada — toda afirmación aquí ya existe antes, con m
 | Bloque | Párrafos | Palabras |
 |---|---|---|
 | 1 — La propuesta y sus componentes | 1, siempre el primero | 60–226 |
-| 2 — La recapitulación de resultados | 1 o 2 | 100–180 cada uno |
-| 3 — La consecuencia más allá del método | párrafo propio, o el cierre del bloque 2 | ~50–120 |
+| 2 — Los hallazgos, uno por contribución | 1 por contribución o hipótesis | 80–180 cada uno |
+| 3 — La consecuencia más allá del método (opcional) | párrafo propio, o el cierre del bloque 2 | ~50–120 |
 | 4 — Trabajo futuro | 1, siempre el último | 55–180 |
 
 Los bloques 2 y 3 pueden compartir un párrafo; los bloques 1 y 4 nunca se fusionan con nada.
+El número de párrafos sigue al número de contribuciones: tres contribuciones con un
+párrafo de implicación suman seis.
 
 ## Bloque 1 — La propuesta y sus componentes
 
@@ -106,7 +108,7 @@ componentes reformulados, en una de tres formas:
 
 - **`First / Second / Third`** como oraciones separadas, tras anunciar el número;
 - **una lista en línea** dentro de una sola oración, la forma más compacta;
-- **prosa con conectores**: *integrando A … la incorporación de B permite … 
+- **prosa con conectores**: *integrando A … la incorporación de B permite …
   además C*.
 
 **Mismo número, mismo orden, mismos nombres** que la lista de contribuciones de la introducción y
@@ -116,31 +118,39 @@ las subsecciones de la sección de métodos.
 el número. Lo que no requiere, lo que no necesita modificar, aquello de lo que no
 depende.
 
-## Bloque 2 — La recapitulación de resultados
+## Bloque 2 — Los hallazgos, uno por contribución
 
-Competidores con nombre, ejes con nombre y el hallazgo específico con las condiciones bajo las
-cuales se cumplió.
+**Un párrafo por contribución, en el orden en que la presentan los métodos y los
+resultados.** Cada párrafo responde a su contribución —o a la hipótesis que esa
+contribución puso a prueba— con el hallazgo que los resultados reportaron para ella:
+competidores con nombre, ejes con nombre y las condiciones bajo las cuales se cumplió
+el hallazgo. Una contribución sin párrafo de hallazgo es una contribución que las
+conclusiones olvidaron; un párrafo de hallazgo que no responde a ninguna contribución
+es un resultado que el artículo no prometió.
 
-**Uno o dos párrafos, y el número de escenarios experimentales lo decide.** Dos
-escenarios disímiles llevan un párrafo cada uno. Un único escenario aún puede dividirse en
-resultado y mecanismo: cuáles fueron los números y con qué era consistente el
-patrón.
+**Como máximo una cifra principal por contribución, idéntica a la de los resultados.**
+Cite un valor solo cuando el valor es lo importante; de lo contrario, manténgase en
+comparativos. Una cifra citada lleva su dispersión cuando los resultados la dieron, y
+debe coincidir carácter por carácter con la sección de resultados: mismo valor, misma
+unidad, misma precisión.
 
-**Se permiten cifras, con dispersión, pero no son la norma.** Cite un valor
-solo cuando el valor es lo importante; de lo contrario, manténgase en comparativos. Una cifra citada
-debe coincidir exactamente con la sección de resultados.
+**Nada nuevo.** Ningún experimento, figura, comparación o interpretación que la
+sección de resultados no contenga ya. Las conclusiones comprimen la evidencia; nunca
+le añaden nada.
 
-## Bloque 3 — La consecuencia más allá del método
+## Bloque 3 — La consecuencia más allá del método (opcional)
 
 Lo que el lector se lleva, más allá del hecho de que el método funcionó. No es un resultado ni
-una contribución: es una consecuencia. Responde a *y qué*.
+una contribución: es una consecuencia. Responde a *y qué*. Cerca de la mitad de los
+artículos del grupo la incluyen; escríbala cuando la consecuencia es real y omítala en
+caso contrario.
 
 Dos variantes; el artículo elige según de quién sea el problema:
 
 - **Para quien lo implementa**: el costo de adopción es bajo: no hay que
-  modificar nada, la arquitectura se integra en los flujos existentes, el tiempo de predicción disminuye.
+  modificar nada, el método se integra en los flujos existentes, el tiempo de ejecución disminuye.
 - **Para quien vive el problema**: algo se vuelve posible que antes no lo era: el
-  factor detrás de una predicción puede rastrearse, la ruta de decisión es auditable donde
+  factor detrás de una decisión puede rastrearse, el proceso es auditable donde
   la regulación lo exige.
 
 Puede ser su propio párrafo o las oraciones de cierre del bloque 2. Es la única parte
@@ -153,7 +163,11 @@ dirección, que muestra que la dirección está viva en la literatura. Todo lo a
 no cita nada.
 
 **El trabajo futuro es el subconjunto pertinente de las limitaciones, con una referencia por
-dirección.** Cada dirección responde a una limitación declarada.
+dirección.** Cada dirección responde a una limitación declarada: una dirección por
+limitación pertinente, cada una con su cita.
+
+**Las limitaciones mismas no se desarrollan aquí.** Viven en la sección de
+limitaciones; este bloque nombra solo las direcciones que motivan.
 
 **La reducción va en un solo sentido.** Una limitación puede quedar sin dirección:
 no todo está pensado para repararse. Pero ninguna dirección queda sin una limitación
@@ -174,15 +188,22 @@ disciplina de atribución que una cifra citada: indicar a qué pertenece la afir
 
 ## Estilo de la casa LIA
 
-Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025): ítems A003, A006, A007, A009, A012, A013, A021, A022, A023 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo la meta.
+Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025): ítems A008, A017, A018 (Elsevier), luego A003, A006, A007, A009, A021, A022 y A026 (MDPI) del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo la meta.
 
-**Tamaño medido.** 2–4–10 párrafos; 252–482–950 palabras, unas 22–43–85 líneas;
-95–127–158 palabras por párrafo; sin ecuaciones, figuras ni tablas; 0–3–4 citas, en
-las oraciones de trabajo futuro.
+**Tamaño medido.** 2–4,5–10 párrafos; unas 255–610–952 palabras; sin ecuaciones,
+figuras ni tablas; 0–4–9 citas, en su mayoría en las oraciones de trabajo futuro.
+
+**Forma medida.** 10/10 abren reformulando la propuesta y 10/10 cierran con el trabajo
+futuro; 5/10 repiten cifras principales de los resultados; 7/10 ponen limitaciones
+dentro de las conclusiones, lo que este contrato no sigue: las limitaciones permanecen
+en su propia sección y las conclusiones solo extraen de ellas el trabajo futuro; cerca
+de la mitad incluyen un párrafo de implicación; solo uno introdujo evidencia que los
+resultados no contenían.
 
 **Forma.** Titulada *Conclusions*, o *Concluding Remarks and Future Work*. Abre
-reformulando el método en pasado (*This work introduced …, a …*), repite las cifras
-clave y cierra con el trabajo futuro enumerado como *First*, *Second*, *Third*.
+reformulando el método en pasado (*This work introduced …, a …*), recorre los
+hallazgos en el orden de las contribuciones y cierra con el trabajo futuro enumerado
+como *First*, *Second*, *Third*.
 
 **Redacción.**
 
@@ -200,7 +221,7 @@ sección, porque la comprime.
 
 | Entrada | Desbloquea |
 |---|---|
-| Los **resultados**, y el número de escenarios experimentales, que decide si es un párrafo o dos | `concl-block-2` |
+| Los **resultados**, un hallazgo por contribución o hipótesis, en el orden en que los presentan los métodos y los resultados | `concl-block-2` |
 
 ### Cadena interna
 
@@ -223,16 +244,20 @@ una fila de cadena interna.
 ## Descalificadores
 
 - Una afirmación, un número o una propiedad que no aparece en ninguna parte anterior del artículo.
+- Evidencia nueva: un experimento, una figura, una comparación o una interpretación que
+  la sección de resultados no contiene ya.
 - Una lista de componentes que discrepa de la introducción o de la sección de métodos en número,
   orden o nombres.
+- Una contribución sin párrafo de hallazgo en el bloque 2.
 - El bloque 1 que no va primero, o el bloque 4 que no va al final.
 - El bloque 1 que cierra con un número en lugar de con la propiedad distintiva.
-- Una cifra citada que no coincide exactamente con la sección de resultados.
+- Un número que difiere de la sección de resultados, en valor, unidad o precisión.
+- Más de una cifra principal para una misma contribución.
 - Una dirección de trabajo futuro que no responde a ninguna limitación declarada.
 - Una cita en cualquier lugar fuera del bloque de trabajo futuro.
 - Una dirección de trabajo futuro sin referencia.
 - Una dirección de trabajo futuro demasiado vaga para ser un artículo.
 - Una ecuación, una figura o una tabla.
-- Limitaciones desarrolladas aquí en lugar de en la sección de resultados.
-- Más de 500 o menos de 375 palabras.
+- Limitaciones desarrolladas aquí en lugar de en la sección de limitaciones.
+- Más de 950 o menos de 350 palabras.
 - Una sección que no puede leerse sin haber leído el artículo.

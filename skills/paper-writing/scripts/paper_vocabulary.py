@@ -39,6 +39,11 @@ DECLARATIONS: tuple[str, ...] = (
     "repository-url",
     "keyword-bounds",
     "classification-line",
+    # The ethics committee's approval (committee, code, date) and the consent
+    # route, or "Not applicable." for public data -- copied from the approval
+    # record like a grant code, never derived from a fact. Read by the
+    # back-matter ethics and informed-consent blocks.
+    "ethics-approval",
 )
 
 #: A block's `citations` value — exactly one of these three.
@@ -121,7 +126,7 @@ def validate_fact(fact_id: str) -> None:
 
 def validate_declaration(declaration_id: str) -> None:
     """Refuses `UNKNOWN_DECLARATION` (work-state) when `declaration_id` is
-    not one of the six declared declarations."""
+    not one of the seven declared declarations."""
     if declaration_id not in DECLARATIONS:
         raise Refused(
             "UNKNOWN_DECLARATION",
