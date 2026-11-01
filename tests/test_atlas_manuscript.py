@@ -91,6 +91,148 @@ class CitedSystemsTests(_Workspace):
         self.assertEqual([s["id"] for s in joined["systems"] if s["cited"]], ["sys-a", "sys-b"])
 
 
+_BIB_ONLY_REFS = """@article{alpha2024,
+  title={Attention Pooling for Sets},
+  eprint={2401.00001},
+  archivePrefix={arXiv},
+  year={2024}
+}
+
+@article{beta2023,
+  title={Graph Priors},
+  journal={Neural Journal},
+  doi={10.1000/B},
+  year={2023}
+}
+
+@article{kernels2021,
+  title={Kernel Baselines},
+  url={https://doi.org/10.1000/c},
+  year={2021}
+}
+
+@article{reupload2019,
+  title={Data re-uploading},
+  journal={arXiv preprint arXiv:1905.13311},
+  year={2019}
+}
+
+@article{amini2024adhdeepnet,
+  title={{ADHDeepNet} From Raw {EEG} to Diagnosis: Improving {ADHD} Diagnosis},
+  author={Amini, Ali},
+  journal={Cognitive Computation},
+  year={2024}
+}
+
+@article{schuld2021effect,
+  title={Effect of data encoding on the expressive power},
+  year={2021}
+}
+
+@article{twin2020,
+  title={Twin Title},
+  year={2020}
+}
+
+@article{lost2020,
+  title={Nothing In The Pool},
+  year={2020}
+}
+
+@article{versioned2024,
+  title={ADHDeepNet From Raw EEG to Diagnosis: Improving ADHD Diagnosis},
+  doi={10.5555/elsewhere},
+  year={2024}
+}
+"""
+
+_BIB_ONLY_TEX = (
+    "\\documentclass{article}\n\\begin{document}\n"
+    "\\cite{alpha2024,beta2023,kernels2021,reupload2019,amini2024adhdeepnet,"
+    "schuld2021effect,twin2020,lost2020,versioned2024}\n\\end{document}\n")
+
+
+def _planet(origin: str) -> dict:
+    return {"id": "sun", "slot": "sun", "orbit": 0, "provenance": "stated", "label": "x",
+            "detail": "d", "evidence": {"origin": origin, "quote": "q", "retrieved": "2026-01-02"}}
+
+
+class BibliographyJoinTests(_Workspace):
+    """A manuscript written without evidence records still joins its cite keys
+    to atlas systems through the identifiers and titles of ``refs.bib``."""
+
+    def bib_only_workspace(self) -> Path:
+        root = self.workspace()
+        shutil.rmtree(root / "paper" / ".paper-writing")
+        (root / "paper" / "refs.bib").write_text(_BIB_ONLY_REFS, encoding="utf-8")
+        (root / "paper" / "main.tex").write_text(_BIB_ONLY_TEX, encoding="utf-8")
+        atlas = json.loads((root / "sota-pool" / "atlas.json").read_text("utf-8"))
+        candidates = json.loads((root / "sota-pool" / "candidates.json").read_text("utf-8"))
+        extra = [
+            ("sys-d", "Re-uploading", "1905.13311", "arxiv", "Data re-uploading for a classifier"),
+            ("sys-e", "adhdeepnet", "2509.08779", "arxiv",
+             "ADHDeepNet From Raw EEG to Diagnosis: Improving ADHD Diagnosis"),
+            ("sys-f", "Twin one", "10.2000/f", "crossref", "Twin Title"),
+            ("sys-g", "Twin two", "10.2000/g", "crossref", "Twin title"),
+            ("sys-h", "Encoding", "2008.08605", "arxiv",
+             "The effect of data encoding on the expressive power"),
+        ]
+        for sid, title, identifier, resolver, paper_title in extra:
+            atlas["systems"].append({"id": sid, "title": title, "planets": [_planet(identifier)]})
+            candidates.append({"identifier": identifier, "resolver": resolver,
+                               "title": paper_title, "abstract": "q"})
+        (root / "sota-pool" / "atlas.json").write_text(json.dumps(atlas), encoding="utf-8")
+        (root / "sota-pool" / "candidates.json").write_text(json.dumps(candidates),
+                                                            encoding="utf-8")
+        return root
+
+    def test_bibliography_identifiers_join_cited_keys_without_evidence(self) -> None:
+        joined = atlas_manuscript.cited_systems(self.bib_only_workspace())
+        by_id = {s["id"]: s for s in joined["systems"]}
+        expected = {
+            "sys-a": [{"cite_key": "alpha2024", "via": "bib"}],
+            "sys-b": [{"cite_key": "beta2023", "via": "bib"}],
+            "sys-c": [{"cite_key": "kernels2021", "via": "bib"}],
+            "sys-d": [{"cite_key": "reupload2019", "via": "bib"}],
+            "sys-e": [{"cite_key": "amini2024adhdeepnet", "via": "title"}],
+            "sys-f": [], "sys-g": [],
+            # a leading article does not make two titles different
+            "sys-h": [{"cite_key": "schuld2021effect", "via": "title"}],
+        }
+        self.assertEqual({sid: s["matches"] for sid, s in by_id.items()}, expected)
+        for sid, matches in expected.items():
+            self.assertEqual(by_id[sid]["cited"], bool(matches), sid)
+            self.assertEqual(by_id[sid]["cite_keys"], [m["cite_key"] for m in matches], sid)
+            self.assertEqual((by_id[sid]["blocks"], by_id[sid]["claims"]), ([], []), sid)
+
+    def test_ambiguous_unknown_and_identified_elsewhere_keys_stay_extra(self) -> None:
+        extra = atlas_manuscript.cited_systems(self.bib_only_workspace())["extra_systems"]
+        self.assertEqual(
+            [(e["cite_key"], e["identifier"], e["resolver"]) for e in extra],
+            [("lost2020", None, None), ("twin2020", None, None),
+             ("versioned2024", "10.5555/elsewhere", "crossref")])
+
+    def test_evidence_identifiers_win_over_the_bibliography(self) -> None:
+        joined = atlas_manuscript.cited_systems(self.workspace())
+        by_id = {s["id"]: s for s in joined["systems"]}
+        self.assertEqual(by_id["sys-a"]["matches"], [{"cite_key": "alpha2024", "via": "evidence"}])
+        # beta2023 carries the DOI in both its evidence and its bib entry.
+        self.assertEqual(by_id["sys-b"]["matches"], [{"cite_key": "beta2023", "via": "evidence"}])
+        self.assertEqual(by_id["sys-c"]["matches"], [])
+
+    def test_smith_atlas_cited_json_reports_the_bibliography_join(self) -> None:
+        root = self.bib_only_workspace()
+        CommandLineTests._with_kit(self, root)
+        args = build_parser("smith").parse_args(["atlas", "cited", "--json", str(root)])
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            code = args.handler(args)
+        self.assertEqual(code, 0, out.getvalue())
+        summary = json.loads(out.getvalue())["summary"]
+        self.assertEqual((summary["systems_total"], summary["cited_systems"],
+                          summary["extra_cited"]), (8, 6, 3))
+
+
 class LayerTests(_Workspace):
     def test_build_writes_the_layer_and_leaves_atlas_json_byte_identical(self) -> None:
         root = self.workspace()

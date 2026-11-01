@@ -12,8 +12,16 @@ The join, in one direction only:
   ``source_url`` or ``url``, exactly as ``check_atlas.py`` requires);
 * an evidence record (``paper/.paper-writing/evidence/<block>.jsonl``) names
   the source it quotes by ``identifier`` + ``resolver``;
+* a cite key without such a record falls back to its ``paper/refs.bib``
+  entry: its ``doi``, its ``eprint``, an ``arXiv:<id>`` named in its
+  ``journal``/``note``/``howpublished``, and its ``url``;
 * both sides are compared through ``paper_bib.source_identity`` (DOI and
-  arXiv normalization), plus the raw lower-cased strings;
+  arXiv normalization), plus the raw lower-cased strings; evidence
+  identifiers are tried first;
+* a cite key with no identifier at all (no evidence identifier, none in its
+  bib entry) joins by its normalized bib ``title`` when exactly one system
+  carries that title (its own or a linked pool candidate's); an ambiguous or
+  unknown title stays an extra system;
 * a cite key counts as cited when ``paper/main.tex`` cites it
   (``paper_bib.cited_keys``); without ``main.tex``, when ``paper/refs.bib``
   holds it (``paper_bib.entry_keys``).
@@ -22,10 +30,13 @@ Public functions (stable shapes; ``manuscript_graph`` and others reuse them):
 
 ``cited_systems(root) -> dict``
     Pure read. ``{"cite_source": "main.tex" | "refs.bib" | "none",
-    "systems": [{"id", "title", "cited", "cite_keys", "blocks", "claims"}],
+    "systems": [{"id", "title", "cited", "cite_keys", "matches", "blocks",
+    "claims"}],
     "extra_systems": [{"cite_key", "identifier", "resolver", "title",
     "blocks", "claims"}], "cited_keys": [...]}``. ``claims`` items are ``{"block", "cite_key",
     "claim", "verdict"}``, latest record per (block, cite key, claim), sorted.
+    ``matches`` items are ``{"cite_key", "via"}``, ``via`` naming the join
+    that held: ``evidence``, ``bib`` (a bib identifier) or ``title``.
     Raises on unreadable inputs (callers that must not fail use ``refresh``).
 ``build_layer(root) -> dict``
     The document written to disk: ``cited_systems`` plus ``schema``,
@@ -62,6 +73,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +85,12 @@ _HERE = Path(__file__).resolve()
 _PAPER_SCRIPTS = _HERE.parents[2] / "paper-writing" / "scripts"
 _IMPLEMENTATION = _HERE.parents[1] / "implementation"
 
-_BIB_FIELD_RE = re.compile(r"^\s*(title|doi)\s*=\s*\{(.*)\},?\s*$", re.IGNORECASE)
+_BIB_FIELDS = ("title", "doi", "eprint", "archiveprefix", "journal", "note", "howpublished", "url")
+_BIB_FIELD_RE = re.compile(r"^\s*(\w+)\s*=\s*[{\"](.*)[}\"],?\s*$")
+# An arXiv id named inside free text: "arXiv preprint arXiv:1905.13311".
+_ARXIV_IN_TEXT_RE = re.compile(
+    r"arxiv\s*:\s*(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[a-z]{2})?/\d{7}(?:v\d+)?)", re.IGNORECASE)
+_ARXIV_ID_RE = re.compile(r"^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$", re.IGNORECASE)
 _BIB_HEAD_RE = re.compile(r"^\s*@\w+\{([^,]+),")
 
 
@@ -125,7 +142,9 @@ def _digests(root: Path, paper: Path) -> dict[str, str | None]:
 
 
 def _bib_fields(refs: bytes | None) -> dict[str, dict[str, str]]:
-    """``{cite_key: {"title", "doi"}}`` from the lines ``paper_bib`` writes."""
+    """``{cite_key: {field: value}}`` for ``_BIB_FIELDS``, one ``field =
+    {value}`` (or ``"value"``) per line, as ``paper_bib`` and common
+    exporters write them."""
     fields: dict[str, dict[str, str]] = {}
     current = None
     for line in (refs or b"").decode("utf-8", errors="replace").splitlines():
@@ -134,7 +153,7 @@ def _bib_fields(refs: bytes | None) -> dict[str, dict[str, str]]:
             current = fields.setdefault(head.group(1).strip(), {})
             continue
         match = _BIB_FIELD_RE.match(line)
-        if match and current is not None:
+        if match and current is not None and match.group(1).lower() in _BIB_FIELDS:
             current[match.group(1).lower()] = match.group(2).strip()
     return fields
 
@@ -163,29 +182,80 @@ def _keys(paper_bib: Any, value: Any, resolver: Any = None) -> set[str]:
     return keys
 
 
+def _bib_identifiers(entry: dict[str, str]) -> list[tuple[str, str]]:
+    """``(identifier, resolver)`` pairs a bib entry names, DOI first."""
+    found: list[tuple[str, str]] = []
+    if entry.get("doi"):
+        found.append((entry["doi"], "crossref"))
+    eprint = entry.get("eprint", "")
+    prefix = entry.get("archiveprefix", "").lower()
+    if eprint and (prefix == "arxiv" or (not prefix and _ARXIV_ID_RE.match(eprint))):
+        found.append((eprint, "arxiv"))
+    for field in ("journal", "note", "howpublished", "url"):
+        for match in _ARXIV_IN_TEXT_RE.finditer(entry.get(field, "")):
+            found.append((match.group(1), "arxiv"))
+    return found
+
+
+def _bib_keys(paper_bib: Any, entry: dict[str, str]) -> set[str]:
+    keys: set[str] = set()
+    for identifier, resolver in _bib_identifiers(entry):
+        keys |= _keys(paper_bib, identifier, resolver)
+    keys |= _keys(paper_bib, entry.get("url"))  # doi.org / arxiv.org URLs, or the raw URL
+    return keys
+
+
+def _title_key(value: Any) -> str:
+    """A title reduced to its lower-cased words: LaTeX commands, braces,
+    accents, punctuation and one leading article dropped."""
+    if not isinstance(value, str):
+        return ""
+    text = re.sub(r"\\[a-zA-Z]+\s*|\\.", "", value)
+    text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+    words = re.findall(r"[a-z0-9]+", text.casefold())
+    if len(words) > 1 and words[0] in ("a", "an", "the"):
+        words = words[1:]
+    return " ".join(words)
+
+
 def _candidate_list(pool: Any) -> list[dict]:
     candidates = pool.get("candidates") if isinstance(pool, dict) else pool
     return [c for c in candidates if isinstance(c, dict)] if isinstance(candidates, list) else []
 
 
-def _system_keys(paper_bib: Any, system: dict, candidates: list[dict]) -> set[str]:
+def _system_origins(system: dict) -> set[str]:
     origins: set[str] = set()
     for planet in system.get("planets") or []:
         evidence = planet.get("evidence") if isinstance(planet, dict) else None
         origin = evidence.get("origin") if isinstance(evidence, dict) else None
         if isinstance(origin, str) and origin.strip():
             origins.add(origin.strip())
+    return origins
+
+
+def _system_candidates(origins: set[str], candidates: list[dict]) -> list[dict]:
+    """The pool candidates a system's planets name."""
+    return [c for c in candidates
+            if {str(c.get(k)).strip() for k in ("identifier", "source_url", "url")
+                if isinstance(c.get(k), str)} & origins]
+
+
+def _system_titles(system: dict, candidates: list[dict]) -> set[str]:
+    titles = {_title_key(system.get("title"))}
+    titles |= {_title_key(c.get("title"))
+               for c in _system_candidates(_system_origins(system), candidates)}
+    return titles - {""}
+
+
+def _system_keys(paper_bib: Any, system: dict, candidates: list[dict]) -> set[str]:
+    origins = _system_origins(system)
     keys: set[str] = set()
     for origin in origins:
         keys |= _keys(paper_bib, origin)
-    for candidate in candidates:
-        named = {str(candidate.get(k)).strip() for k in ("identifier", "source_url", "url")
-                 if isinstance(candidate.get(k), str)}
-        if named & origins:
-            resolver = candidate.get("resolver")
-            keys |= _keys(paper_bib, candidate.get("identifier"), resolver)
-            keys |= _keys(paper_bib, candidate.get("source_url"))
-            keys |= _keys(paper_bib, candidate.get("url"))
+    for candidate in _system_candidates(origins, candidates):
+        keys |= _keys(paper_bib, candidate.get("identifier"), candidate.get("resolver"))
+        keys |= _keys(paper_bib, candidate.get("source_url"))
+        keys |= _keys(paper_bib, candidate.get("url"))
     return keys
 
 
@@ -232,24 +302,44 @@ def cited_systems(root: Path | str, *, paper_dir: Path | str | None = None) -> d
     by_key: dict[str, list[dict]] = {}
     for record in records:
         by_key.setdefault(record["cite_key"], []).append(record)
-    key_ids: dict[str, set[str]] = {}
+    evidence_ids: dict[str, set[str]] = {}
+    bib_ids: dict[str, set[str]] = {}
     for key in cited:
         ids: set[str] = set()
         for record in by_key.get(key, []):
             ids |= _keys(paper_bib, record.get("identifier"), record.get("resolver"))
-        ids |= _keys(paper_bib, bib.get(key, {}).get("doi"), "crossref")
-        key_ids[key] = ids
+        evidence_ids[key] = ids
+        bib_ids[key] = _bib_keys(paper_bib, bib.get(key, {}))
+
+    # A key with no identifier at all joins by title, only when one system holds it.
+    system_titles = [_system_titles(s, candidates) for s in systems]
+    title_owner: dict[str, int] = {}
+    for key in cited:
+        title = _title_key(bib.get(key, {}).get("title"))
+        if evidence_ids[key] or bib_ids[key] or not title:
+            continue
+        owners = [i for i, titles in enumerate(system_titles) if title in titles]
+        if len(owners) == 1:
+            title_owner[key] = owners[0]
 
     matched: set[str] = set()
     out_systems = []
-    for system in systems:
+    for index, system in enumerate(systems):
         keys = _system_keys(paper_bib, system, candidates)
-        cite_keys = sorted(k for k, ids in key_ids.items() if ids & keys)
+        matches = []
+        for key in sorted(cited):
+            if evidence_ids[key] & keys:
+                matches.append({"cite_key": key, "via": "evidence"})
+            elif bib_ids[key] & keys:
+                matches.append({"cite_key": key, "via": "bib"})
+            elif title_owner.get(key) == index:
+                matches.append({"cite_key": key, "via": "title"})
+        cite_keys = [m["cite_key"] for m in matches]
         matched.update(cite_keys)
         sys_records = [r for k in cite_keys for r in by_key.get(k, [])]
         out_systems.append({
             "id": str(system.get("id") or ""), "title": str(system.get("title") or ""),
-            "cited": bool(cite_keys), "cite_keys": cite_keys,
+            "cited": bool(cite_keys), "cite_keys": cite_keys, "matches": matches,
             "blocks": sorted({str(r.get("block_id") or "") for r in sys_records}),
             "claims": _claims(sys_records),
         })
@@ -258,8 +348,9 @@ def cited_systems(root: Path | str, *, paper_dir: Path | str | None = None) -> d
     for key in sorted(cited - matched):
         key_records = by_key.get(key, [])
         last = key_records[-1] if key_records else {}
-        identifier = last.get("identifier") or bib.get(key, {}).get("doi")
-        resolver = last.get("resolver") or ("crossref" if bib.get(key, {}).get("doi") else None)
+        named = _bib_identifiers(bib.get(key, {}))
+        identifier = last.get("identifier") or (named[0][0] if named else None)
+        resolver = last.get("resolver") or (named[0][1] if named else None)
         extra.append({
             "cite_key": key, "identifier": identifier, "resolver": resolver,
             "title": bib.get(key, {}).get("title"),

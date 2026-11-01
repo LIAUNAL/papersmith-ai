@@ -11,6 +11,17 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+### Fixed
+
+- **Atlas citation join without evidence records**: `smith atlas cited` now
+  joins cite keys to atlas systems through `paper/refs.bib` when a block has
+  no evidence record (its `doi`, `eprint`, an `arXiv:<id>` in `journal`/`note`,
+  or its `url`), and by normalized title when the entry names no identifier
+  and exactly one system carries that title. Evidence identifiers still win;
+  each system lists `matches` with `via: evidence|bib|title`.
+
 ## 0.52.0
 
 ### Added
