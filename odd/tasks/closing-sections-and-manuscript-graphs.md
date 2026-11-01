@@ -19,7 +19,7 @@ Branch: feat/closing-sections-and-manuscript-graphs. Delivery: ask-on-risk (merg
 - [x] T2 [S4] style metrics reorientation — delegated writer (worktree) — cd34b0cb; callers migrated in 66bd2841
 - [x] T3 [S5] cited atlas layer and triggers — delegated writer — 93f66306
 - [x] T4 [S6] manuscript summary graph — delegated writer — dea4829e
-- [ ] T5 [S7] version bump (264b7234), full suite, independent verifier (Risk item 3), review, merge, smith reinstall, QMLEEG upgrade — inline
+- [x] T5 [S7] version bump (264b7234), full suite (8775 passed, 3 known failures), independent verifier (S1-S6 PASS, no blockers), review in three slices (approved: review-35058e9844a16ff4, review-8781b499f22657e7, review-0f04953e3dbee9df), merge, smith reinstall, QMLEEG upgrade — inline
 
 ## Log
 
@@ -27,3 +27,8 @@ Branch: feat/closing-sections-and-manuscript-graphs. Delivery: ask-on-risk (merg
 - L2 (2026-11-01): "si, implementalo en ese orden, mergea y actualiza qmleeg" — approves the four-step plan presented in the analysis (contracts 07/10 + AI declaration; ai_metrics reorientation; cited atlas; manuscript graph).
 - L3: evidence of the analysis in the session scratchpad (`cb/`, `sr/`, `mm/` per paper notes).
 - L4: T1-T4 delivered; RDD reviews approved for main+T2 (review-b9bba0cb087a225f); review of the full candidate pending. Open: summary view opened in a new tab stays English (server-es.json not wired to that render).
+- L5: the whole-feature review hit lens_context_budget_exceeded; the user chose "revisa en tres partes". All three slices approved with advisories only.
+- L6: follow-up advisories (non-blocking) to address in a later hardening pass:
+  - T1: conclusions paragraph cap contradiction (sections/07-conclusions.md:101-102); paper_ai_usage drafting attribution hardcoded, misleading code flag, methods sentence on any event, drafted-only refusal (paper_ai_usage.py:71-108); packet reads the HOME harness (paper_cli.py:2414); venue journal non-dict (paper_venue.py:1937).
+  - T3: bib refresh trigger untested and unguarded recheck (paper_cli.py:1580-1613); panel masks fetch errors (atlas-manuscript-panel.js:69-78); unbounded evidence digest on poll (atlas_manuscript.py:105-113); tests after the main guard (tests/test_paper_ai_metrics.py:560); private paper_bib internals used (atlas_manuscript.py:155).
+  - T4: dropped pillar refusal (manuscript_graph.py:312-334); number-mention edges (533-539); sys.path mutation (168-174); panel bypasses apiUrl and polls with a full rescan (manuscript-graph-panel.js:49,112); view route unguarded (server.py:2494); English-only new-tab view.
