@@ -15,6 +15,7 @@
       "requires_facts": [],
       "requires_declarations": [],
       "citations": "none",
+      "optional": true,
       "after": [
         {
           "target": "materials-and-methods.mm-proposal",
@@ -88,7 +89,7 @@
           "target": "materials-and-methods.mm-dataset",
           "source": {
             "file": "sections/01-materials-and-methods.md",
-            "quote": "La propuesta es siempre la última subsección. Sin excepción."
+            "quote": "La propuesta es siempre el último bloque de la sección. Sin excepción."
           }
         }
       ],
@@ -106,9 +107,9 @@
 ---
 # Materiales y métodos
 
-**Extensión** 560–3950 palabras · 2 a 5 subsecciones
-**Contiene** la maquinaria prestada, la propuesta y un diagrama de síntesis
-**No contiene** ningún resultado, número medido ni comparación
+**Extensión** 1000–3950 palabras · 2 a 6 subsecciones
+**Contiene** el planteamiento del problema, la maquinaria prestada, la propuesta (incluido su mecanismo de interpretabilidad) y un diagrama de síntesis
+**No contiene** ningún resultado, número medido, comparación ni protocolo de evaluación
 
 Esta sección define las contribuciones. Aquí nombra cada una y le da su
 definición formal, en la notación que reutiliza todo lo que viene después; la introducción
@@ -122,18 +123,27 @@ parece estar decidiendo algo, está informando una decisión tomada en otro luga
 
 ## Preámbulo
 
-Un párrafo de unas 40 palabras, dos oraciones, sin citas. Nombra las
-subsecciones que siguen y su orden. Nada más.
+Opcional: siete de los diez artículos medidos del grupo no lo tienen, y su primera
+subsección empieza de inmediato. Cuando se escribe, es un párrafo de 60–120 palabras, sin
+citas, que nombra el método una vez. Nombra las subsecciones que siguen y su orden. Nada más: ni motivación,
+ni problema, ni resultado.
 
 ## Orden de las subsecciones
 
-Tres posiciones. La tercera es invariante.
+Tres posiciones, con el planteamiento del problema abriendo la parte formal. La tercera posición es
+invariante. Cada posición está ligada a un elemento que la introducción ya enunció, y
+ese vínculo es lo que impide que la sección vuelva a argumentar el artículo.
 
-| Posición | Subsecciones | Palabras cada una |
-|---|---|---|
-| 1 — El conjunto de datos, cuando esta sección es su dueña | 1 | 550–1000 |
-| 2 — La maquinaria prestada | 1 a 3 | 180–1480 |
-| 3 — **La propuesta** | 1 | 380–1420 |
+| Posición | Subsecciones | Párrafos | Palabras cada una | Realiza de la introducción |
+|---|---|---|---|---|
+| 1 — El conjunto de datos, cuando esta sección es su dueña | 1 o 2 | 3–12 | 300–1000 | la aplicación nombrada en la motivación; los conjuntos de datos que nombró |
+| Planteamiento del problema (abre la parte formal) | 0 o 1 | 1–4 | 80–350 | el problema, formalizado |
+| 2 — La maquinaria prestada | 1 a 3, una por pilar | 3–12 cada una | 180–1480 | los pilares, uno a uno, en el orden de la introducción |
+| 3 — **La propuesta** | 1 a 3, una por contribución o una con el listado | 3–12 cada una | 380–1420 | la novedad: cada contribución, bajo la propiedad que aporta |
+
+**Lo que nunca aparece aquí:** la motivación (cero oraciones), la evaluación de la
+propuesta y cualquier cosa medida. El entrenamiento, la búsqueda de hiperparámetros, las métricas, las líneas base,
+el protocolo de validación y la estadística pertenecen a la configuración experimental, siempre.
 
 **La ubicación del conjunto de datos es una decisión estructural, y se toma una sola vez.** Si el
 conjunto de datos pertenece a esta sección, va primero, y la sección abre con los datos. Si
@@ -142,12 +152,25 @@ maquinaria y se mantiene puramente formal, sin ninguna figura distinta del diagr
 de la propuesta. La decisión cambia el contrato de ambas secciones, por lo que se registra en lugar
 de improvisarse.
 
-**La propuesta es siempre la última subsección.** Sin excepción.
+**La propuesta es siempre el último bloque de la sección. Sin excepción.** Cuando
+abarca varias subsecciones, estas son consecutivas y nada las sigue.
 
 ## Posición 1 — El conjunto de datos
 
-De 6 a 12 párrafos. Una o dos figuras: protocolo de adquisición o muestras
-representativas. Cero a dos tablas: listas de variables. Pocas o ninguna ecuación.
+De 3 a 12 párrafos, en una subsección o en dos (sintéticos y reales, o una por fuente).
+Una o dos figuras: protocolo de adquisición o muestras representativas. Cero a dos
+tablas: listas de variables o estadísticas descriptivas. Pocas ecuaciones: la segmentación o
+el ventaneo que define una muestra es la habitual.
+
+Secuencia de párrafos:
+
+1. Por qué estos datos responden a la pregunta, y su procedencia.
+2. Un párrafo por conjunto de datos o sitio, cuando hay varios.
+3. La adquisición (protocolo, sensores, tarea), remitiendo a su figura.
+4. Lo que se descartó, y luego el preprocesamiento conservado.
+5. Cómo se construye una muestra, con su notación.
+6. Cuando los sujetos o las fuentes se repiten, cómo se mantienen juntos para que nada se filtre
+   entre particiones; la partición en sí corresponde a la configuración experimental.
 
 Se abre según de quién sean los datos:
 
@@ -162,10 +185,29 @@ de calidad, registros eliminados.
 **Aquí se paga la deuda de crédito de la introducción.** Un conjunto de datos nombrado en
 la introducción sin referencia se nombra aquí con una.
 
+## Planteamiento del problema
+
+La parte formal abre con el problema, enunciado en símbolos: de uno a cuatro párrafos,
+como subsección propia o como párrafos iniciales de la primera subsección de
+maquinaria. Los espacios de entrada y de salida, las etiquetas o anotaciones, y el objetivo formal:
+el estimador, el objetivo o el `\arg\min` al que responderá la propuesta. Cada propiedad que
+nombra el planteamiento del problema de la introducción recibe aquí el mismo nombre que lleva allí.
+No se necesita cita salvo que el planteamiento mismo sea prestado.
+
 ## Posición 2 — La maquinaria prestada
 
-De una a tres subsecciones, cada una un cuerpo de teoría existente que la propuesta necesita. Aquí
+De una a tres subsecciones, cada una un cuerpo de teoría existente que la propuesta necesita: **una
+por pilar que nombra la introducción, en el orden de la introducción.** Aquí
 reside el grueso de las matemáticas del artículo.
+
+Secuencia de párrafos de cada subsección: la notación, luego un párrafo por ecuación
+con su cláusula *donde*, y luego la lectura en la que se apoya la propuesta.
+
+**La maquinaria cierra con la brecha.** El último párrafo de la subsección que la propuesta
+modifica enuncia, en una o dos oraciones, la limitación de esa pieza prestada con las
+palabras que usa el planteamiento del problema: *este término es una entropía cruzada, por lo que se degrada
+con ruido en las etiquetas*. Es técnica, nunca la motivación de la aplicación, y es el
+único lugar donde el problema reaparece antes de la propuesta.
 
 **Ordenada de modo que cada subsección use solo símbolos que las anteriores declararon.** Es
 una cadena de notación, no una lista de temas.
@@ -179,12 +221,21 @@ que se filtra.
 
 ## Posición 3 — La propuesta
 
-Siempre al final. La subsección menos citada del artículo.
+Siempre al final. La parte menos citada del artículo. De una a tres subsecciones: una por
+contribución, o una que las contiene todas y cierra con el listado.
+
+**La interpretabilidad es una contribución de esta sección cuando el artículo la reivindica.** Su
+mecanismo (el mapa de atribución, la puntuación de relevancia, el parámetro legible) se
+define aquí con su ecuación, como cualquier otra contribución. Lo que revela sobre los datos
+es un resultado.
+
+**La evaluación de la propuesta nunca es una contribución de esta sección.** El protocolo,
+las métricas, las líneas base y la estadística son de la configuración experimental, siempre.
 
 **1. Apertura: nombrar el método y enunciar su contexto.** Donde sea posible, enunciar la
 propuesta como un delta sobre la maquinaria prestada, con una referencia explícita a la
 ecuación anterior por su número, para que el lector sepa exactamente qué cambió respecto de
-lo que acaba de leer.
+lo que acaba de leer. Una oración puede recordar la brecha con la que cerró la maquinaria; no más.
 
 **2. Su propia notación**, si la propuesta introduce símbolos que la maquinaria no
 tenía.
@@ -227,6 +278,9 @@ estructuras lo cumplen, y solo una de ellas se necesita en cada caso:
 
 En cualquier caso, lo que el propio Components Check de la sección contrasta con el diagrama es
 esa lista ordenada de nombres, sea cual sea de las dos la que la contenga.
+
+**Inferencia, cuando el modelo es probabilístico.** La distribución predictiva o sus
+momentos cierran la formulación, después de la combinación general y antes del puntero.
 
 **5. El cierre: puntero y diagrama de síntesis.** Obligatorio. La última oración en prosa
 remite a la figura por su número y dice qué sintetiza; la figura sigue
@@ -368,17 +422,25 @@ que explique por qué importa el problema es material repetido.
 
 ## Estilo de la casa LIA
 
-Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025): los ítems A003, A006, A007, A009, A012, A013, A021, A022, A023 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
+Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025), primero Elsevier y después MDPI: los ítems A008, A017, A018, A003, A006, A007, A009, A021, A022 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
 
-**Tamaño medido.** 11–26–46 párrafos; 939–2007–2955 palabras, unas 84–173–266 líneas;
-51–81–143 palabras por párrafo; 3–4–6 subsecciones; 8–22–35 ecuaciones destacadas;
-4–12–21 citas, 0.2–0.9 por párrafo; 0–2–4 figuras, por lo general la arquitectura.
+**Tamaño medido.** 14–25–46 párrafos; unas 1010–2210–5900 palabras, el máximo un caso
+atípico que genera su propio conjunto de datos; 50–200 palabras por párrafo; 2–4–6
+subsecciones; 5–21–35 ecuaciones destacadas; 4–10–28 citas; 0–2–3 figuras, por lo general
+la arquitectura.
 
-**Forma.** La sección se titula *Materials and Methods*. Abre con el planteamiento del
-problema y su notación, o con el conjunto de datos cuando el conjunto de datos forma parte de la
-contribución; luego cada componente de la propuesta recibe su propia subsección, con su
-nombre (*The proposed method's architecture*, *Loss function*, *Optimization*), y
-la función de pérdida y su optimización van al final.
+**Ubicación medida.** Siete de diez no tienen preámbulo. Seis de diez son dueños de su conjunto de datos.
+Cada pilar que nombra la introducción recibe su propia subsección prestada, y la propuesta
+va al final, con una subsección por contribución en la mitad de ellos. La motivación nunca se
+repite; el problema reaparece en una a tres oraciones técnicas, como la brecha de una
+pieza prestada justo antes de la propuesta.
+
+**Forma.** La sección se titula *Materials and Methods*. Abre con el conjunto de datos
+cuando la sección es su dueña, o con el planteamiento del problema y su notación; sigue la
+maquinaria prestada, una subsección por pilar, y luego cada componente de la propuesta
+recibe su propia subsección, con su nombre (*The proposed method's architecture*, *Loss
+function*), con la combinación general y, para un modelo probabilístico, la
+distribución predictiva al final. El entrenamiento y la evaluación son de la configuración experimental.
 
 **Notación.**
 
@@ -442,7 +504,7 @@ Nada aquí espera a un experimento. Pero sí espera a que exista el código.
 | Bloque | Depende de |
 |---|---|
 | `materials-and-methods.mm-proposal` — enunciada como un delta sobre la maquinaria prestada, con una referencia explícita a la ecuación anterior por su número | `materials-and-methods.mm-borrowed-machinery` — la teoría prestada cuyas ecuaciones declaradas referencia la propuesta |
-| `materials-and-methods.mm-proposal` — siempre la última subsección, sin excepción | `materials-and-methods.mm-dataset` — la subsección del conjunto de datos, cuando esta sección es su dueña |
+| `materials-and-methods.mm-proposal` — siempre el último bloque de la sección, sin excepción | `materials-and-methods.mm-dataset` — la subsección del conjunto de datos, cuando esta sección es su dueña |
 | `materials-and-methods.mm-preamble` — nombra las subsecciones que siguen y su orden | `materials-and-methods.mm-proposal` — la última de las subsecciones que debe nombrar, por lo que el preámbulo se escribe una vez que existe cada subsección que anuncia |
 
 ### Decisiones estructurales
@@ -458,7 +520,18 @@ Nada aquí espera a un experimento. Pero sí espera a que exista el código.
 - Dos cantidades distintas que comparten una letra sin un diacrítico que las separe, o un
   diacrítico que no marca ninguna relación con un objeto ya declarado.
 - Un símbolo en la combinación general que no se remonta a ninguna declaración previa.
-- Que la propuesta no sea la última subsección.
+- Que la propuesta no sea el último bloque de la sección, o que sus subsecciones no sean
+  consecutivas.
+- Una subsección prestada para un pilar que la introducción nunca nombró, o un pilar nombrado
+  sin subsección.
+- Que la maquinaria pase a la propuesta sin enunciar la brecha de la pieza que la
+  propuesta modifica.
+- Más de dos oraciones que repitan el problema antes de una contribución, o cualquier
+  oración sobre la motivación de la aplicación.
+- Una contribución de interpretabilidad nombrada en la introducción cuyo mecanismo no se
+  define aquí.
+- Un protocolo de evaluación, métrica, línea base, partición o prueba estadística descritos aquí,
+  o presentados como contribución.
 - Una contribución definida aquí que la introducción no nombró, o nombrada allí y
   no definida aquí.
 - Contribuciones en un orden distinto del que les dio la introducción.

@@ -59,7 +59,7 @@
 ---
 # Título y palabras clave
 
-**Extensión** título 10–13 palabras · palabras clave 4–8
+**Extensión** título 10–13 palabras · palabras clave 3–5
 **Incluye** ningún número, ningún porcentaje, ninguna afirmación de superioridad
 
 El título es la única afirmación irrevocable del artículo: es lo que se cita, se indexa y se
@@ -111,7 +111,7 @@ Mayúsculas de título (Title Case), con preposiciones y artículos en minúscul
 
 ## Palabras clave
 
-**De cuatro a ocho, separadas por punto y coma.** En minúscula por defecto; los acrónimos en mayúsculas;
+**De tres a cinco, separadas por punto y coma.** En minúscula por defecto; los acrónimos en mayúsculas;
 los nombres propios conservan sus mayúsculas.
 
 **No son una reformulación del título.** Aproximadamente un tercio repite un término que el título
@@ -132,6 +132,18 @@ luego la maquinaria.
 
 **Cada palabra clave aparece en el cuerpo.** Una palabra clave ausente del artículo es una palabra clave
 inventada para el motor de búsqueda.
+
+## Formato de revisión del manuscrito y anonimato de los autores
+
+### Modo de revisión a una columna
+El manuscrito canónico se presenta y compone en **formato de revisión, a una columna** (`onecolumn`, por ejemplo, `\documentclass[11pt,onecolumn,a4paper]{article}` con márgenes de revisión estándar e interlineado de 1.5). Los formatos a dos columnas o finales de la editorial se reservan para la adaptación a la revista tras la aceptación, mediante la habilidad `venue`.
+
+### Metadatos de autoría anonimizados en los borradores iniciales
+En la redacción inicial del manuscrito **no se incluyen nombres de autores, afiliaciones institucionales ni correos de contacto**. Todos los metadatos de autoría permanecen anonimizados y se fijan explícitamente como marcadores de posición (*por definir* / suprimidos para la revisión por pares):
+```latex
+\author{Por definir \\ \textit{Afiliaciones y correos por definir}}
+```
+Solo cuando todo el manuscrito ha sido redactado, compilado y supera todas las verificaciones con el usuario se pide al operador que aporte las identidades de los autores, sus afiliaciones y los datos de correspondencia.
 
 ## La línea de clasificación
 
@@ -180,7 +192,9 @@ acrónimo aparece en el resumen y en el cuerpo.
 - Un acrónimo en el título sin dos puntos, o uno que el resumen no desarrolla.
 - Un dominio o lugar nombrado cuando el trabajo no está ligado a él.
 - Un guion corto donde los términos de igual rango en una serie necesitan una raya media.
-- Menos de 4 o más de 8 palabras clave, o un número que la revista destino no permite.
+- Menos de 3 o más de 5 palabras clave, o un número que la revista destino no permite.
 - Una lista de palabras clave que solo repite términos del título.
 - Una palabra clave ausente del cuerpo.
 - Una línea de clasificación faltante cuando la revista destino la exige.
+- Nombres reales de autores, afiliaciones o correos de contacto incluidos en la redacción inicial antes de la verificación completa del manuscrito con el usuario.
+- Un manuscrito compuesto a dos columnas en lugar del modo de revisión a una columna (`onecolumn`).

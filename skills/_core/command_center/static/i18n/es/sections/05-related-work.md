@@ -184,6 +184,17 @@ Cinco bloques. El tercero se repite — una vez por cada problema enunciado.
 4. cierre: frentes abiertos y la brecha
 5. artefacto de síntesis
 
+### Directivas: correspondencia con las familias de la introducción y tríada de cada subsección
+Se organiza en correspondencia directa con las 3 a 5 familias metodológicas o alternativas establecidas en los párrafos 3 y 4 de la introducción:
+- **Párrafo de contexto inicial:** un primer párrafo que da contexto a los problemas y métodos estudiados, enmarcando directamente las familias que siguen.
+- **Una subsección por familia:** cada familia presentada en el estado del arte de la introducción recibe su propia subsección (`\subsection{...}`).
+- **Tríada interna de cada subsección (2 a 3 párrafos cada una):**
+  1. *Fundamentos*: raíces teóricas, formulación matemática y supuestos operativos.
+  2. *Métodos principales*: arquitecturas primarias, algoritmos representativos clave y trabajos de referencia.
+  3. *Principales desafíos*: cuellos de botella críticos, modos de falla abiertos y cuestiones sin resolver.
+- **Volumen de citas:** cada subsección de familia debe citar entre 5 y 10 trabajos alternativos distintos.
+- **Horizonte de referencias:** entre la introducción y el trabajo relacionado, el manuscrito debe citar en conjunto entre 30 y 40 referencias.
+
 **El principio organizador es una unidad por cada problema enunciado**, el mismo principio que
 gobierna el bloque de estado del arte de la introducción. Lo que cambia es de qué está
 hecha la unidad: un párrafo en la introducción, un bloque de párrafos aquí.
@@ -400,3 +411,8 @@ mismo a distintas profundidades.
   cuando esta sección existe, ese bloque es un resumen.
 - Una variante nombrada en la introducción: las variantes pertenecen aquí.
 - La brecha de esta sección y la brecha de la introducción en desacuerdo.
+- Un trabajo relacionado sin el párrafo de contexto inicial que enmarca los problemas y métodos estudiados.
+- Cualquier familia metodológica presentada en el estado del arte de la introducción sin su subsección propia.
+- Una subsección de familia con menos de 2 o más de 3 párrafos, o que omita los fundamentos, los métodos principales o los principales desafíos.
+- Menos de 5 o más de 10 alternativas citadas por familia.
+- Un total combinado de referencias entre la introducción y el trabajo relacionado fuera del rango de 30 a 40.

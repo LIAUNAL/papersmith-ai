@@ -97,9 +97,9 @@
 ---
 # Results and Discussion
 
-**Extent** 1170–4150 words · two or three content blocks, plus limitations last
+**Extent** 1170–4150 words · two to five content blocks, plus limitations last
 **Input** the results of the experiments
-**Carries** 5–14 figures and 0–4 tables — the artefact-densest section of the paper
+**Carries** 3–12 figures and 0–8 tables — the artefact-densest section of the paper
 **Does not carry** a preamble, a closing artefact, or a single numbered equation
 
 ## One section, never two
@@ -109,20 +109,50 @@ discussion is **the third beat of every artefact reading, in the same paragraph 
 the number it explains**. That is why the two are one section and why they cannot be
 split.
 
+## Nothing is introduced here
+
+**Every scenario, split, metric, baseline, statistical test, ablation variant,
+sensitivity sweep and interpretability measure read in this section was declared in
+the experimental setup.** This section applies the protocol and reads what it
+produced; it never chooses a test, adds a baseline, or improvises an ablation after
+seeing the numbers.
+
 ## The blocks
+
+Each block is present when the setup declared what it reads, and only then — the
+order below holds for any kind of paper, whatever its domain.
+
+**0. The controlled scenario**, when the setup declared one. First: the proposal on
+data whose ground truth is known — synthetic or simulated — showing the property the
+problem names under conditions where it can be checked. It is short, and it is what
+makes the real-data blocks credible.
 
 **1. The general task.** The evidence that the proposal works on the task it was
 built for: the main metric, on the main data, against the baselines. This block
-carries the bulk of the section — 40% to 66% of it.
+carries the bulk of the section — 40% to 66% of it — and closes on the statistical
+test the setup declared.
 
 **2. One block per contribution.** Each validates the property that contribution
-promised, using the instrument the experimental setup named for it.
+promised, using the instrument the experimental setup named for it, in the order the
+contributions were defined. **An interpretability contribution is read twice**: what
+its explanations show — maps, filters, weights, recovered structure — and how faithful
+they are, by the measure the setup declared against the competing explanation
+methods. A qualitative reading alone is an illustration, not evidence.
 
-**3. Cost, when cost is claimed.** One or two paragraphs, one figure. Measured on the
+**3. Ablation and sensitivity**, when the setup declared them. One reading per
+ablation variant, in the setup's order, each stating what removing that contribution
+costs; then each sweep, stating where the proposal is stable and where it is not. This
+is the block that shows each contribution earns its place.
+
+**4. Cost, when cost is claimed.** One or two paragraphs, one figure. Measured on the
 most demanding configuration, and stated as such so the estimate reads as
 conservative.
 
-**4. Limitations.** Last, always, under its own contract.
+**5. Limitations.** Last, always, under its own contract.
+
+**A block may close on one synthesis paragraph** — *Taken together*, *Overall* — that
+states what the block established and points to its artefacts. The section itself
+never closes on one; that is the conclusions' job.
 
 ### Organizing by scenario instead
 
@@ -253,18 +283,19 @@ to read the data, or a **behaviour already established** that the result agrees 
 
 ## LIA house style
 
-Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025): items A003, A006, A007, A009, A012, A013, A021, A022, A023 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
+Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025), Elsevier first and MDPI after: items A008, A017, A018, A003, A006, A007, A009, A021, A022 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
 
-**Measured size.** 9–17–38 paragraphs; 1024–2463–3495 words, about 91–213–305 lines;
-85–124–189 words per paragraph; 0–4–7 subsections; no displayed equations; 0–5–21
-citations, 0–1.3 per paragraph, used only to anchor an interpretation; 2–6–12 figures
-and 1–2–6 tables.
+**Measured size.** 5–17–45 paragraphs; about 1080–2890–5750 words; 0–4–7
+subsections; no displayed equations; 1–5–31 citations, used only to anchor an
+interpretation; 2–6–12 figures and 0–2–8 tables.
 
-**Subsections, one per analysis, in this order when present:** comparison with the
-state of the art (mean ± standard deviation over the folds); statistical significance;
-sensitivity to the hyperparameters; ablation; interpretability (embeddings, attention
-or relevance maps, connectivity patterns); limitations, last. Ten of ten papers report a
-significance test, and nine of ten an interpretability analysis.
+**Subsections, one per analysis, in this order when present:** the controlled or
+synthetic scenario; comparison with the state of the art (mean ± standard deviation
+over the repetitions) closed by its significance test; one block per contribution,
+interpretability included; ablation and sensitivity; limitations, last. Eight of ten
+merge results and discussion; six open on a controlled scenario; seven report a
+significance test and seven an interpretability analysis, but only two an explicit
+ablation. Subsections close on a *Taken together* synthesis; no section closes on one.
 
 **Writing.**
 
@@ -339,4 +370,10 @@ significance test, and nine of ten an interpretability analysis.
 - Limitations placed anywhere but last.
 - Interpretation of a result no artefact contains.
 - A comparison against the baselines with no statistical significance test.
+- A scenario, split, metric, baseline, test, ablation variant, sweep, or
+  interpretability measure that the experimental setup did not declare.
+- An ablation variant or sweep declared in the setup with no reading here.
+- An interpretability contribution read only qualitatively when the setup declared a
+  faithfulness measure for it.
+- The section closing on a synthesis paragraph.
 - A table with values in bold whose caption does not say what the bold marks.

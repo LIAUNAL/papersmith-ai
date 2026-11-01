@@ -6,7 +6,7 @@
     "value": "argument",
     "source": {
       "file": "sections/06-introduction.md",
-      "quote": "Seis funciones argumentativas, en orden fijo, distribuidas en 7–13 párrafos."
+      "quote": "Seis funciones argumentativas, en orden fijo, distribuidas en siete párrafos canónicos."
     }
   },
   "blocks": [
@@ -202,14 +202,15 @@
 ---
 # Introducción
 
-**Extensión** 900–1650 palabras · 7–13 párrafos
+**Extensión** 750–1380 palabras · 7 párrafos
 **No incluye** ecuaciones, figuras ni tablas
 **Incluye** 18–41 referencias distintas, concentradas en los bloques 1 a 3
 
 ## Regla estructural global
 
-Seis **funciones argumentativas**, en orden fijo, distribuidas en 7–13 párrafos.
-Función y párrafo no son la misma unidad: los bloques 2 y 3 se expanden.
+Seis **funciones argumentativas**, en orden fijo, distribuidas en siete párrafos canónicos.
+Función y párrafo no son la misma unidad: la función de estado del arte ocupa dos
+párrafos (3 y 4), y cada una de las demás funciones ocupa uno.
 
 1. por qué importa el tema
 2. qué problemas concretos deben resolverse
@@ -217,6 +218,20 @@ Función y párrafo no son la misma unidad: los bloques 2 y 3 se expanden.
 4. una propuesta cuyas contribuciones responden a esos problemas
 5. cómo se valida cada propiedad prometida
 6. cómo se organiza el resto del artículo
+
+### Estructura canónica de siete párrafos
+La introducción tiene exactamente siete párrafos. El número de párrafos es fijo; las
+extensiones de los bloques que siguen están escritas para ajustarse a él, y ningún bloque añade un párrafo propio.
+
+1. **Párrafo 1 (contexto general de la aplicación)** — `block-1`, 145–200 palabras: contexto general del dominio de aplicación y del fenómeno que lo motiva.
+2. **Párrafo 2 (contexto de IA y planteamiento del problema)** — `block-2`, 130–220 palabras: contexto de las técnicas de IA en dicha aplicación, que termina con dos o tres oraciones que declaran el problema técnico y sus causas de fondo (tomadas del mapa conceptual y panel del modelo y de los pilares fundamentales; estrictamente en texto corrido continuo, sin viñetas, sin resaltados en negrita y sin preguntas numeradas).
+3. **Párrafo 3 (estado del arte, primeras familias)** — `block-3`, 130–300 palabras: las primeras familias metodológicas del estado del arte, con sus métodos principales, sus fortalezas principales y sus problemas o limitaciones.
+4. **Párrafo 4 (estado del arte, familias restantes y brecha conjunta)** — `block-3`, 130–300 palabras: las familias restantes, de la misma forma, cerrando con la brecha conjunta. Los párrafos 3 y 4 presentan en conjunto de 3 a 5 familias.
+5. **Párrafo 5 (propuesta y contribuciones)** — `block-4a` + `block-4b`, 120–180 palabras: la presentación de la propuesta, que termina en dos puntos, seguida de sus contribuciones descritas en 3 a 4 elementos breves. La lista continúa el párrafo; no se cuenta como un párrafo propio.
+6. **Párrafo 6 (evaluación, resultados e impacto)** — `block-5`, 65–135 palabras: resumen de los experimentos realizados, los métodos de comparación y los criterios de evaluación, los resultados empíricos más significativos obtenidos y el impacto potencial del trabajo.
+7. **Párrafo 7 (hoja de ruta)** — `block-6`, 32–42 palabras: la agenda del artículo, que especifica la organización de las secciones con una fórmula fija de hoja de ruta.
+
+La extensión en palabras al inicio de este contrato es la suma de estos siete rangos, redondeada.
 
 **Correspondencia buscada:** `problem i → state-of-the-art limitation i →
 contribution i → property i → instrument i → evidence i`. La cadena comienza en el
@@ -269,10 +284,10 @@ del diseño y se completan a partir de la medición.
   sección de Trabajos Relacionados ya escrita** cuando existe una sección de Trabajos
   Relacionados — el caso condicional entre secciones que expresa la segunda arista
   `after` de este mismo bloque hacia `related-work`.
-- **`introduction.block-4a` / `block-4b` son dos bloques, no uno.** La
-  propia línea de extensión del contrato lo dice — "Dos párrafos físicos, 120-180
-  palabras en total" — y los nombra `Paragraph 4a - the prose` y
-  `Paragraph 4b - the list`. Son ids separados porque se redactan
+- **`introduction.block-4a` / `block-4b` son dos bloques, no uno.** Comparten
+  el párrafo canónico 5 — la prosa (`Paragraph 4a - the prose`)
+  que termina en dos puntos, y luego su lista (`Paragraph 4b - the list`), 120–180
+  palabras en total. Son ids separados porque se redactan
   a partir de insumos distintos: la cláusula de propósito de 4a depende del bloque 2, mientras que la
   lista de contribuciones de 4b se hereda directamente de
   `materials-and-methods.mm-proposal`, nunca del bloque 2. El propio 4a también
@@ -327,8 +342,7 @@ trabajo, su relevancia y la necesidad general que justifica estudiarlo.
 
 **Secuencia.** dominio → fenómeno de interés → relevancia → necesidad general.
 
-**Extensión.** Un párrafo, 145–200 palabras. Se admite un segundo solo bajo la
-condición indicada más abajo. Nunca tres.
+**Extensión.** Un párrafo (párrafo canónico 1), 145–200 palabras. Nunca dos.
 
 **El fenómeno lo fijan los datos, no el método.** Ancle el contexto en la
 condición, población o proceso que el conjunto de datos realmente contiene. Cambiar el
@@ -340,11 +354,11 @@ saber de qué trata el trabajo.
 **No nombre aquí el conjunto de datos.** Lo que ancla el contexto es la condición,
 población o proceso, no el nombre del conjunto de datos — el nombre pertenece al bloque 5.
 
-**Cuándo se divide en dos.** El párrafo debe recorrer las cuatro dimensiones y cerrar
-conduciendo hacia el problema técnico. Divídalo solo cuando el paso del dominio amplio
-al escenario específico requiera un cambio explícito de escala — del campo general a
-la población, institución o territorio concretos del estudio — y forzarlo en
-un solo párrafo produzca una oración de transición artificial. Fuera de ese caso, uno.
+**Cambio de escala dentro de un párrafo.** El párrafo debe recorrer las cuatro
+dimensiones y cerrar conduciendo hacia el problema técnico. Cuando el paso del dominio amplio
+al escenario específico requiere un cambio explícito de escala — del campo general a
+la población, institución o territorio concretos del estudio — hágalo
+con una oración de transición dentro del párrafo, nunca dividiéndolo.
 
 **No pertenece aquí.** La propuesta, su nombre, sus componentes, sus contribuciones
 ni ningún detalle experimental.
@@ -354,10 +368,12 @@ ni ningún detalle experimental.
 **Función.** Convertir la necesidad general en un problema técnico concreto, y descomponerlo
 en los problemas específicos que la propuesta resuelve.
 
+**Directivas del párrafo 2 (contexto de IA y planteamiento del problema):** contexto de las técnicas de IA usadas en el dominio de aplicación, que termina en dos o tres oraciones que declaran el problema concreto y sus causas (tomadas del mapa conceptual, el panel del modelo y los pilares). Debe redactarse sin ítems ni viñetas, en prosa corrida coherente, sin resaltados en negrita y sin preguntas numeradas (texto estrictamente continuo).
+
 **Secuencia.** problema general → específico 1 → específico 2 → [específico 3] →
 requisitos que una solución adecuada debería satisfacer.
 
-**Extensión.** 1–3 párrafos, 130–365 palabras.
+**Extensión.** Un párrafo (párrafo canónico 2), 130–220 palabras.
 
 **Anide los problemas: uno general que nombra el paradigma, y los específicos dentro
 de él.** El problema general es el nombre del campo o de la tarea, no una dificultad; los
@@ -385,43 +401,43 @@ medirá: enúncielos con las mismas palabras que el bloque 5 usará más adelant
 bloque 2, organizadas **en torno a esos problemas y no como una enumeración de trabajos o
 autores**.
 
+**Directivas de los párrafos 3 y 4 (estado del arte en 3 a 5 familias):** indique entre 3 y 5 familias metodológicas o alternativas del estado del arte. Para cada familia, presente los métodos representativos principales junto con sus fortalezas clave y sus problemas o limitaciones críticas.
+
 **Por familia:** qué problema aborda → qué ventaja aporta → qué
 limitación conserva.
 **En conjunto:** soluciones existentes → avances → limitaciones → brecha conjunta.
 
-**La extensión depende de si el artículo tiene su propia sección de Trabajos Relacionados.** Esa
-es una decisión sobre la estructura del manuscrito, y se toma antes de redactar
-el bloque.
+**Extensión. Siempre dos párrafos — los párrafos canónicos 3 y 4 — de 130–300 palabras cada uno,
+260–600 palabras en total.** Que el artículo tenga su propia sección de Trabajos Relacionados cambia
+lo que contienen los dos párrafos, nunca cuántos son. Esa es una decisión sobre la
+estructura del manuscrito, y se toma antes de redactar el bloque.
 
-**El principio organizador es el mismo en ambos casos: una unidad por problema enunciado.** Lo que
-difiere es de qué está hecha la unidad — un párrafo aquí, un bloque de párrafos en la
-sección dedicada.
+**La unidad es la familia, ligada a los problemas.** Las 3 a 5 familias se distribuyen
+entre los dos párrafos en el orden de los problemas del bloque 2, y cada familia
+indica cuál de esos problemas aborda: eso es lo que mantiene explícita la correspondencia con
+el bloque 2. El párrafo 3 contiene las primeras familias; el párrafo 4 contiene las
+restantes y cierra con la brecha conjunta. Desarrolle la nomenclatura de cada método en su primera
+aparición.
 
-**Con una sección de Trabajos Relacionados — un solo párrafo, 230–380 palabras.** Este párrafo es
-el resumen de esa sección. Por problema, una o dos oraciones: la familia cuya
-limitación motiva la contribución, y esa limitación. Las variantes y las estrategias
-alternativas no se nombran aquí — viven en la sección. El párrafo cierra con la
-brecha conjunta.
+**Con una sección de Trabajos Relacionados, los dos párrafos la resumen.** Por familia: sus
+métodos principales, su fortaleza principal y la limitación que motiva la contribución.
+Las familias son las mismas, en el mismo orden, que las subsecciones de esa sección.
+Las variantes y las estrategias alternativas no se nombran aquí — viven en la sección.
 
 **Cuando existe una sección de Trabajos Relacionados, este bloque se redacta después de ella.** Resume
 la sección, y un resumen no puede preceder a lo que resume. Sin esa sección,
 el bloque depende solo del planteamiento del problema.
 
-**El corte entre los dos lugares:** este bloque conserva, por problema, la familia cuya
-limitación motiva la contribución. Todo lo demás que atacó ese mismo
+**El corte entre los dos lugares:** este bloque conserva, por familia, sus métodos principales
+y la limitación que motiva la contribución. Todo lo demás que atacó el mismo
 problema es una variante, y pertenece a la sección dedicada.
 
-**Sin una sección de Trabajos Relacionados — un párrafo por problema enunciado, 130–300 palabras
-cada uno, 550–990 palabras en total.** Cada problema recibe su propio párrafo, que recorre
-las familias que lo han atacado en progresión y termina en lo que ninguna de ellas
-resolvió. Desarrolle la nomenclatura de cada método en su primera aparición. Organizar por
-problema y no cronológicamente es lo que hace explícita la correspondencia con el bloque 2.
+**Sin una sección de Trabajos Relacionados, los dos párrafos contienen todo el estado del
+arte.** Por familia: sus métodos representativos recorridos en progresión, sus fortalezas y
+lo que dejó sin resolver.
 
-**Dos aclaraciones, para que nada se agregue aquí por analogía con la sección
-dedicada.** No se agrega a la introducción ningún párrafo panorámico: los bloques 1 y 2 ya
-hacen ese trabajo, y duplicarlo es ruido. Y las formas cronológica y taxonómica
-de recorrer un problema no aplican donde la unidad es un párrafo — aquí hay una
-familia y su limitación, sin taxonomía que desplegar.
+**No se agrega a la introducción ningún párrafo panorámico:** los bloques 1 y 2 ya hacen ese
+trabajo, y duplicarlo es ruido.
 
 **La progresión se encadena.** Cada párrafo, y cada familia dentro de un párrafo,
 parte de la limitación de la anterior, y ese encadenamiento es explícito en la
@@ -439,9 +455,9 @@ esa simultaneidad debe estar presente.
 lo mismo con distinta profundidad.** Son una sola afirmación enunciada dos veces, y deben
 concordar.
 
-**Excepción de orden.** El bloque puede dividirse, adelantando una mitad antes del bloque 2,
-cuando el problema no puede enunciarse sin presentar primero la tecnología habilitadora.
-En ese caso el orden es: habilitador → problema → familias.
+**Sin excepción de orden.** Cuando el problema no puede enunciarse sin presentar primero
+la tecnología habilitadora, el párrafo 2 la presenta como parte de su contexto de IA; el bloque 3
+nunca se divide alrededor del bloque 2.
 
 ## Bloque 4 — Propuesta y contribuciones (`block-4a`, `block-4b`)
 
@@ -450,14 +466,18 @@ componentes, y enumerar las contribuciones.
 
 **Secuencia.** presentación → objetivo general → idea central → contribución 1 → 2 → …
 
-**Extensión. Dos párrafos físicos, 120–180 palabras en total.**
+**Extensión. Un párrafo canónico (párrafo 5), 120–180 palabras en total:** la prosa
+de 4a que termina en dos puntos, seguida de la lista de 4b, que continúa el párrafo.
 
 ### Párrafo 4a — la prosa. Tres movimientos, dos o tres oraciones.
 
 1. **Presentación y objetivo.** Nombre completo, acrónimo entre paréntesis, la categoría del
    artefacto, y una cláusula de propósito **que refleja los problemas específicos del bloque 2 en
-   el mismo orden**. El verbo va en primera persona del plural y aparece **exactamente una vez en
-   toda la introducción**: todo lo anterior es trabajo de otros.
+   el mismo orden**. Introdúzcala con el giro en la única voz del artículo — impersonal,
+   *To address these limitations, this work introduces* (el valor por defecto de LIA), o
+   en primera persona del plural, *we propose*, cuando el artículo eligió esa voz — y use ese giro
+   **exactamente una vez en toda la introducción**: todo lo anterior es trabajo
+   de otros.
 2. **La idea central.** Una oración, un mecanismo, sin matemáticas y sin
    símbolos. Es lo que hace nueva a la propuesta, no lo que hace.
 3. **El anuncio.** Cierre el párrafo enunciando el número de componentes y
@@ -466,9 +486,14 @@ componentes, y enumerar las contribuciones.
 
 ### Párrafo 4b — la lista.
 
-**El número de elementos es el número de contribuciones que tiene la propuesta.** Se hereda, nunca es un objetivo de redacción. Lo que la redacción exige es solo que el conteo se
-anuncie en 4a antes de enumerarse aquí, y que la lista concuerde en número,
-orden y denominación con los componentes de la sección de métodos.
+**Las contribuciones se describen en 3 a 4 elementos breves.**
+El número de elementos es el número de contribuciones que tiene la propuesta. Se
+hereda, nunca es un objetivo de redacción. El rango de 3 a 4 es un requisito sobre la
+propuesta, que se verifica donde se definen las contribuciones: cuando la sección de métodos
+define menos de tres o más de cuatro, la corrección se hace allí — fusionando o
+dividiendo componentes —, nunca rellenando o recortando esta lista. Lo que la redacción exige
+aquí es solo que el conteo se anuncie en 4a antes de enumerarse, y que la
+lista concuerde en número, orden y denominación con los componentes de la sección de métodos.
 
 Abra cada elemento con **el nombre del componente seguido de dos puntos**, y continúe
 con una sola oración que indique qué hace y qué problema enunciado previamente
@@ -489,8 +514,10 @@ efecto que se afirma que logra proviene de la medición.
 **Función.** Resumir cómo se valida la propuesta, en correspondencia directa con
 las contribuciones enunciadas.
 
+**Directivas del párrafo 6 (evaluación, resultados e impacto):** resuma los experimentos realizados, los métodos de comparación y los criterios de evaluación, los resultados más significativos obtenidos y el impacto potencial del trabajo.
+
 **Secuencia.** escenario de evaluación → datos o tareas → métodos de comparación → criterios o
-métricas → análisis complementarios → evidencia general.
+métricas → análisis complementarios → evidencia general → impacto potencial.
 
 **Extensión.** Un párrafo, 65–135 palabras.
 
@@ -592,7 +619,7 @@ es el sujeto de una oración.
   de datos.
 - El conjunto de datos nombrado en el bloque 1.
 - Un conjunto de datos nombrado en el bloque 5 y dejado sin referencia donde se describe.
-- Tres párrafos de contextualización.
+- Más de un párrafo de contextualización.
 - Un problema específico al que no responde ni un componente de la propuesta ni un análisis
   en la evaluación.
 - Un problema nombrado con vocabulario propio en lugar de la terminología aceptada del
@@ -602,8 +629,7 @@ es el sujeto de una oración.
 - El bloque 3 sin un cierre de brecha conjunta, o con una brecha enunciada como suma de
   limitaciones separadas.
 - La brecha de este bloque y la brecha de cierre de la sección de Trabajos Relacionados en desacuerdo.
-- El bloque 3 con más de aproximadamente 400 palabras cuando existe una sección de Trabajos Relacionados, o con menos de
-  aproximadamente 500 cuando no existe.
+- El bloque 3 en un número de párrafos distinto de dos, o fuera de 260–600 palabras.
 - Una variante o estrategia alternativa nombrada en el bloque 3 cuando existe una sección de Trabajos
   Relacionados: estas pertenecen a esa sección.
 - El bloque 3 escrito como resumen de una sección de Trabajos Relacionados que todavía no existe.
@@ -622,3 +648,8 @@ es el sujeto de una oración.
 - El bloque 6 ausente, o que nombra secciones que no existen, o que repite una.
 - Un 4b completado cuyos efectos logrados no se verificaron de vuelta contra el bloque 2 y,
   a través de él, contra el bloque 3.
+- Viñetas, listas (`itemize`, `enumerate`), resaltados en negrita o preguntas numeradas en el bloque 2 (párrafo 2).
+- El bloque 3 presentando menos de 3 o más de 5 familias metodológicas o alternativas, u omitiendo sus fortalezas y problemas.
+- El bloque 4 presentando menos de 3 o más de 4 elementos de contribución.
+- El bloque 5 omitiendo los métodos de comparación, los criterios de evaluación o el impacto potencial.
+- Una introducción que se desvía de la secuencia canónica de siete párrafos.

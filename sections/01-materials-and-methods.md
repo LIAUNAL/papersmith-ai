@@ -15,6 +15,7 @@
       "requires_facts": [],
       "requires_declarations": [],
       "citations": "none",
+      "optional": true,
       "after": [
         {
           "target": "materials-and-methods.mm-proposal",
@@ -88,7 +89,7 @@
           "target": "materials-and-methods.mm-dataset",
           "source": {
             "file": "sections/01-materials-and-methods.md",
-            "quote": "The proposal is always the last subsection. Without exception."
+            "quote": "The proposal is always the last block of the section. Without exception."
           }
         }
       ],
@@ -106,9 +107,9 @@
 ---
 # Materials and Methods
 
-**Extent** 560–3950 words · 2 to 5 subsections
-**Carries** the borrowed machinery, the proposal, and one summary diagram
-**Does not carry** any result, measured number, or comparison
+**Extent** 1000–3950 words · 2 to 6 subsections
+**Carries** the problem setup, the borrowed machinery, the proposal (its interpretability mechanism included), and one summary diagram
+**Does not carry** any result, measured number, comparison, or evaluation protocol
 
 This section defines the contributions. It names each one here and gives it its
 formal definition, in the notation everything downstream reuses; the introduction
@@ -122,18 +123,27 @@ looks like it is deciding something, it is reporting a decision taken elsewhere.
 
 ## Preamble
 
-One paragraph of about 40 words, two sentences, no citations. It names the
-subsections that follow and their order. Nothing else.
+Optional: seven of the group's ten measured papers have none, and their first
+subsection starts at once. When written, it is one paragraph of 60–120 words, no
+citations, naming the method once. It names the subsections that follow and their order. Nothing else — no motivation,
+no problem, no result.
 
 ## Subsection order
 
-Three slots. The third is invariant.
+Three slots, with the problem setup opening the formal part. The third slot is
+invariant. Each slot is tied to one element the introduction already stated, and
+that tie is what keeps the section from re-arguing the paper.
 
-| Slot | Subsections | Words each |
-|---|---|---|
-| 1 — The dataset, when this section owns it | 1 | 550–1000 |
-| 2 — The borrowed machinery | 1 to 3 | 180–1480 |
-| 3 — **The proposal** | 1 | 380–1420 |
+| Slot | Subsections | Paragraphs | Words each | Realizes from the introduction |
+|---|---|---|---|---|
+| 1 — The dataset, when this section owns it | 1 or 2 | 3–12 | 300–1000 | the application named in the motivation; the datasets it named |
+| Problem setup (opens the formal part) | 0 or 1 | 1–4 | 80–350 | the problem, formalized |
+| 2 — The borrowed machinery | 1 to 3, one per pillar | 3–12 each | 180–1480 | the pillars, one to one, in the introduction's order |
+| 3 — **The proposal** | 1 to 3, one per contribution or one with the roster | 3–12 each | 380–1420 | the novelty: each contribution, under the property it delivers |
+
+**What never appears here:** the motivation (zero sentences), the evaluation of the
+proposal, and anything measured. Training, hyperparameter search, metrics, baselines,
+validation protocol and statistics belong to the experimental setup, always.
 
 **The dataset placement is a structural decision, and it is taken once.** If the
 dataset belongs to this section it goes first, and the section opens on the data. If
@@ -142,12 +152,25 @@ machinery and stays purely formal — carrying no figure other than the proposal
 diagram. The decision changes the contract of both sections, so it is recorded rather
 than improvised.
 
-**The proposal is always the last subsection.** Without exception.
+**The proposal is always the last block of the section. Without exception.** When it
+spans several subsections, they are consecutive and nothing follows them.
 
 ## Slot 1 — The dataset
 
-6 to 12 paragraphs. One or two figures — acquisition protocol, or representative
-samples. Zero to two tables — variable lists. Few or no equations.
+3 to 12 paragraphs, in one subsection or two (synthetic and real, or one per source).
+One or two figures — acquisition protocol, or representative samples. Zero to two
+tables — variable lists or summary statistics. Few equations: the segmentation or
+windowing that defines a sample is the usual one.
+
+Paragraph sequence:
+
+1. Why these data answer the question, and their provenance.
+2. One paragraph per dataset or site, when there are several.
+3. Acquisition — protocol, sensors, task — pointing to its figure.
+4. What was discarded, then the preprocessing kept.
+5. How a sample is built, with its notation.
+6. When subjects or sources repeat, how they stay together so nothing leaks across
+   a split; the split itself is the experimental setup's.
 
 Open according to whose data it is:
 
@@ -162,10 +185,29 @@ filters, removed records.
 **This is where the credit debt from the introduction is paid.** A dataset named in
 the introduction without a reference is named here with one.
 
+## Problem setup
+
+The formal part opens on the problem, stated in symbols: one to four paragraphs,
+either as their own subsection or as the opening paragraphs of the first machinery
+subsection. Input and output spaces, the labels or annotations, and the formal goal —
+the estimator, objective, or `\arg\min` the proposal will answer. Each property the
+introduction's problem statement names is given here the same name it carries there.
+No citation is needed unless the setup itself is borrowed.
+
 ## Slot 2 — The borrowed machinery
 
-One to three subsections, each a body of existing theory the proposal needs. This is
-where the bulk of the paper's mathematics lives.
+One to three subsections, each a body of existing theory the proposal needs — **one
+per pillar the introduction names, in the introduction's order.** This is where the
+bulk of the paper's mathematics lives.
+
+Paragraph sequence of each subsection: notation, then one paragraph per equation
+with its *where* clause, then the reading the proposal relies on.
+
+**The machinery closes on the gap.** The last paragraph of the subsection the proposal
+modifies states, in one or two sentences, the limitation of that borrowed piece in the
+words the problem statement uses — *this term is a cross-entropy, so it degrades
+under label noise*. It is technical, never the application's motivation, and it is the
+only place the problem returns before the proposal.
 
 **Ordered so that each subsection uses only symbols the previous ones declared.** It
 is a chain of notation, not a list of topics.
@@ -179,12 +221,21 @@ leaking in.
 
 ## Slot 3 — The proposal
 
-Always last. The least cited subsection of the paper.
+Always last. The least cited part of the paper. One to three subsections: one per
+contribution, or one that carries them all and closes on the roster.
+
+**Interpretability is a contribution of this section when the paper claims it.** Its
+mechanism — the attribution map, the relevance score, the readable parameter — is
+defined here with its equation, like any other contribution. What it reveals on data
+is a result.
+
+**The evaluation of the proposal is never a contribution of this section.** Protocol,
+metrics, baselines and statistics are the experimental setup's, always.
 
 **1. Opening: name the method and state its setting.** Where possible, state the
 proposal as a delta on the borrowed machinery, with an explicit reference to the
 previous equation by number — so the reader knows exactly what changed relative to
-what was just read.
+what was just read. One sentence may recall the gap the machinery closed on; no more.
 
 **2. Its own notation**, if the proposal introduces symbols the machinery did not
 have.
@@ -227,6 +278,9 @@ structures satisfy that, and only one of them is ever needed:
 
 Either way, what the section's own Components Check reads back against the diagram is
 that ordered list of names — whichever of the two carries it.
+
+**Inference, when the model is probabilistic.** The predictive distribution or its
+moments close the formulation, after the general combination and before the pointer.
 
 **5. The closing: pointer and summary diagram.** Mandatory. The last prose sentence
 points to the figure by number and says what it summarizes; the figure follows
@@ -368,17 +422,25 @@ explaining why the problem matters is repeated material.
 
 ## LIA house style
 
-Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025): items A003, A006, A007, A009, A012, A013, A021, A022, A023 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
+Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025), Elsevier first and MDPI after: items A008, A017, A018, A003, A006, A007, A009, A021, A022 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
 
-**Measured size.** 11–26–46 paragraphs; 939–2007–2955 words, about 84–173–266 lines;
-51–81–143 words per paragraph; 3–4–6 subsections; 8–22–35 displayed equations;
-4–12–21 citations, 0.2–0.9 per paragraph; 0–2–4 figures, usually the architecture.
+**Measured size.** 14–25–46 paragraphs; about 1010–2210–5900 words, the maximum an
+outlier that generates its own dataset; 50–200 words per paragraph; 2–4–6
+subsections; 5–21–35 displayed equations; 4–10–28 citations; 0–2–3 figures, usually
+the architecture.
 
-**Shape.** The section is titled *Materials and Methods*. It opens on the problem
-setup and its notation, or on the dataset when the dataset is part of the
-contribution; each component of the proposal then gets its own subsection, named
-after it (*The proposed method's architecture*, *Loss function*, *Optimization*), with
-the loss and its optimization last.
+**Measured placement.** Seven of ten have no preamble. Six of ten own their dataset.
+Each pillar the introduction names gets its own borrowed subsection, and the proposal
+comes last, one subsection per contribution in half of them. The motivation is never
+restated; the problem returns in one to three technical sentences, as the gap of a
+borrowed piece just before the proposal.
+
+**Shape.** The section is titled *Materials and Methods*. It opens on the dataset
+when the section owns it, or on the problem setup and its notation; the borrowed
+machinery follows, one subsection per pillar, and each component of the proposal then
+gets its own subsection, named after it (*The proposed method's architecture*, *Loss
+function*), with the general combination and, for a probabilistic model, the
+predictive distribution last. Training and evaluation are the experimental setup's.
 
 **Notation.**
 
@@ -442,7 +504,7 @@ Nothing here waits for an experiment. But it does wait for the code to exist.
 | Block | Depends on |
 |---|---|
 | `materials-and-methods.mm-proposal` — stated as a delta on the borrowed machinery, with an explicit reference to the previous equation by number | `materials-and-methods.mm-borrowed-machinery` — the borrowed theory whose declared equations the proposal references |
-| `materials-and-methods.mm-proposal` — always the last subsection, without exception | `materials-and-methods.mm-dataset` — the dataset subsection, when this section owns it |
+| `materials-and-methods.mm-proposal` — always the last block of the section, without exception | `materials-and-methods.mm-dataset` — the dataset subsection, when this section owns it |
 | `materials-and-methods.mm-preamble` — it names the subsections that follow and their order | `materials-and-methods.mm-proposal` — the last of the subsections it must name, so the preamble is written once every subsection it announces exists |
 
 ### Structural decisions
@@ -458,7 +520,18 @@ Nothing here waits for an experiment. But it does wait for the code to exist.
 - Two distinct quantities sharing a letter with no diacritic separating them, or a
   diacritic that marks no relation to an already-declared object.
 - A symbol in the general combination that traces to no prior declaration.
-- The proposal not being the last subsection.
+- The proposal not being the last block of the section, or its subsections not
+  consecutive.
+- A borrowed subsection for a pillar the introduction never named, or a named pillar
+  with no subsection.
+- The machinery handing over to the proposal without stating the gap of the piece the
+  proposal modifies.
+- More than two sentences of problem restatement before a contribution, or any
+  sentence of the application's motivation.
+- An interpretability contribution named in the introduction whose mechanism is not
+  defined here.
+- An evaluation protocol, metric, baseline, split, or statistical test described here,
+  or presented as a contribution.
 - A contribution defined here that the introduction did not name, or named there and
   not defined here.
 - Contributions in a different order than the introduction named them.

@@ -1006,10 +1006,17 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: blocks 4a+4b one), the 4a hinge follows the paper's one voice, and the
 #: 3-to-4 contribution range is enforced in the methods section.
 #: `09` re-captured (keywords-3-5): keyword count narrowed from 4-8 to 3-5.
+#: `01` re-captured (mm-contract-lia-pattern): re-measured on ten Q1 papers
+#: (Elsevier first, then MDPI); optional preamble, problem setup, one borrowed
+#: subsection per pillar closing on the gap, a 1-3 subsection proposal that
+#: defines the interpretability mechanism, evaluation always in the setup.
+#: `02` and `03` re-captured (same feature): the setup declares the whole
+#: evaluation (statistical test, ablation and sensitivity design, interpretability
+#: faithfulness) and the results read it in a fixed block order, never adding to it.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "4a4d5078955ba64d77e9b45b1f4d116bf072ac011069e2ad57e100d77927405e"[:64],
-    "02-experimental-setup.md": "8974689bc11ce955e707b14502aeaf974be7d69959df28f82e9f016cca1d8ce5"[:64],
-    "03-results-and-discussion.md": "1f232a64dd277d10da2e47ed3436acb58137f77ac2f5de32cc22da8e8cf974b1"[:64],
+    "01-materials-and-methods.md": "4a4a2de1f6a8701af6f1c6ceb62eaa68b768ead8633ae1cf61cdf0decc76ad54"[:64],
+    "02-experimental-setup.md": "a7d187d5e3ada3787df033583f391606dbd4754f7799d50b4fc614eb5ed871fd"[:64],
+    "03-results-and-discussion.md": "522ac2d7cee130f4fe463d963f964747c02d9206edcfac6949d3c4a4f3e2b39f"[:64],
     "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
     "05-related-work.md": "d1e6ec50d24063c7cfa618e59fb75d1ba1d5dc4155b76e01ac918e96d4e53ea9",
     "06-introduction.md": "fdb4847f869e44480895fab4bf2b1fa7a199ad851a372ee1841dee856ee398ab",

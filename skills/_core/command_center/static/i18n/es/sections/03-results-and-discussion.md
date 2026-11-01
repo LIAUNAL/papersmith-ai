@@ -97,9 +97,9 @@
 ---
 # Resultados y Discusión
 
-**Extensión** 1170–4150 palabras · dos o tres bloques de contenido, más las limitaciones al final
+**Extensión** 1170–4150 palabras · de dos a cinco bloques de contenido, más las limitaciones al final
 **Entrada** los resultados de los experimentos
-**Contiene** 5–14 figuras y 0–4 tablas — la sección del artículo con mayor densidad de artefactos
+**Contiene** 3–12 figuras y 0–8 tablas — la sección del artículo con mayor densidad de artefactos
 **No contiene** un preámbulo, un artefacto de cierre ni una sola ecuación numerada
 
 ## Una sección, nunca dos
@@ -109,20 +109,50 @@ discusión es **el tercer tiempo de cada lectura de artefacto, en el mismo párr
 el número que explica**. Por eso ambas son una sola sección y por eso no pueden
 separarse.
 
+## Aquí no se introduce nada
+
+**Cada escenario, partición, métrica, línea base, prueba estadística, variante de ablación,
+barrido de sensibilidad y medida de interpretabilidad que se lee en esta sección fue declarado en
+la configuración experimental.** Esta sección aplica el protocolo y lee lo que este
+produjo; nunca elige una prueba, añade una línea base ni improvisa una ablación después de
+ver los números.
+
 ## Los bloques
+
+Cada bloque está presente cuando la configuración declaró lo que el bloque lee, y solo entonces — el
+orden siguiente vale para cualquier tipo de artículo, sea cual sea su dominio.
+
+**0. El escenario controlado**, cuando la configuración declaró uno. Primero: la propuesta sobre
+datos cuya verdad de referencia se conoce — sintéticos o simulados — mostrando la propiedad que el
+problema nombra en condiciones en las que puede verificarse. Es breve, y es lo que
+hace creíbles los bloques sobre datos reales.
 
 **1. La tarea general.** La evidencia de que la propuesta funciona en la tarea para la que fue
 construida: la métrica principal, sobre los datos principales, contra las líneas base. Este bloque
-contiene el grueso de la sección — entre el 40% y el 66% de ella.
+contiene el grueso de la sección — entre el 40% y el 66% de ella — y cierra con la prueba
+estadística que declaró la configuración.
 
 **2. Un bloque por contribución.** Cada uno valida la propiedad que esa contribución
-prometió, usando el instrumento que la configuración experimental nombró para ella.
+prometió, usando el instrumento que la configuración experimental nombró para ella, en el orden en que
+se definieron las contribuciones. **Una contribución de interpretabilidad se lee dos veces**: lo que
+muestran sus explicaciones — mapas, filtros, pesos, estructura recuperada — y cuán fieles
+son, según la medida que declaró la configuración frente a los métodos de explicación
+competidores. Una lectura cualitativa por sí sola es una ilustración, no evidencia.
 
-**3. Costo, cuando se afirma el costo.** Uno o dos párrafos, una figura. Medido en la
+**3. Ablación y sensibilidad**, cuando la configuración las declaró. Una lectura por
+variante de ablación, en el orden de la configuración, cada una indicando lo que cuesta eliminar esa
+contribución; luego cada barrido, indicando dónde la propuesta es estable y dónde no lo es. Este
+es el bloque que muestra que cada contribución se gana su lugar.
+
+**4. Costo, cuando se afirma el costo.** Uno o dos párrafos, una figura. Medido en la
 configuración más exigente, y enunciado como tal para que la estimación se lea como
 conservadora.
 
-**4. Limitaciones.** Al final, siempre, bajo su propio contrato.
+**5. Limitaciones.** Al final, siempre, bajo su propio contrato.
+
+**Un bloque puede cerrar con un párrafo de síntesis** — *Taken together*, *Overall* — que
+enuncia lo que el bloque estableció y remite a sus artefactos. La sección en sí
+nunca cierra con uno; esa es la tarea de las conclusiones.
 
 ### Organizar por escenario en su lugar
 
@@ -252,18 +282,19 @@ para leer los datos, o un **comportamiento ya establecido** con el que el result
 
 ## Estilo de la casa LIA
 
-Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025): los ítems A003, A006, A007, A009, A012, A013, A021, A022, A023 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
+Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025), primero Elsevier y después MDPI: los ítems A008, A017, A018, A003, A006, A007, A009, A021, A022 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
 
-**Tamaño medido.** 9–17–38 párrafos; 1024–2463–3495 palabras, unas 91–213–305 líneas;
-85–124–189 palabras por párrafo; 0–4–7 subsecciones; sin ecuaciones destacadas; 0–5–21
-citas, 0–1.3 por párrafo, usadas solo para anclar una interpretación; 2–6–12 figuras
-y 1–2–6 tablas.
+**Tamaño medido.** 5–17–45 párrafos; unas 1080–2890–5750 palabras; 0–4–7
+subsecciones; sin ecuaciones destacadas; 1–5–31 citas, usadas solo para anclar una
+interpretación; 2–6–12 figuras y 0–2–8 tablas.
 
-**Subsecciones, una por análisis, en este orden cuando están presentes:** comparación con el
-estado del arte (media ± desviación estándar sobre las particiones); significancia estadística;
-sensibilidad a los hiperparámetros; ablación; interpretabilidad (embeddings, mapas de atención
-o de relevancia, patrones de conectividad); limitaciones, al final. Diez de diez artículos reportan una
-prueba de significancia, y nueve de diez un análisis de interpretabilidad.
+**Subsecciones, una por análisis, en este orden cuando están presentes:** el escenario
+controlado o sintético; comparación con el estado del arte (media ± desviación estándar
+sobre las repeticiones) cerrada por su prueba de significancia; un bloque por contribución,
+incluida la interpretabilidad; ablación y sensibilidad; limitaciones, al final. Ocho de diez
+fusionan resultados y discusión; seis abren con un escenario controlado; siete reportan una
+prueba de significancia y siete un análisis de interpretabilidad, pero solo dos una ablación
+explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna sección cierra con una.
 
 **Redacción.**
 
@@ -338,4 +369,10 @@ prueba de significancia, y nueve de diez un análisis de interpretabilidad.
 - Las limitaciones ubicadas en cualquier lugar que no sea el final.
 - La interpretación de un resultado que ningún artefacto contiene.
 - Una comparación contra las líneas base sin prueba de significancia estadística.
+- Un escenario, partición, métrica, línea base, prueba, variante de ablación, barrido o
+  medida de interpretabilidad que la configuración experimental no declaró.
+- Una variante de ablación o un barrido declarado en la configuración sin lectura aquí.
+- Una contribución de interpretabilidad leída solo cualitativamente cuando la configuración declaró una
+  medida de fidelidad para ella.
+- La sección cerrando con un párrafo de síntesis.
 - Una tabla con valores en negrita cuya leyenda no dice qué marca la negrita.

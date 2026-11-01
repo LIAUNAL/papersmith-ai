@@ -14,7 +14,8 @@
       "id": "es-preamble",
       "requires_facts": [],
       "requires_declarations": [],
-      "citations": "none"
+      "citations": "none",
+      "optional": true
     },
     {
       "id": "es-dataset",
@@ -115,8 +116,8 @@
 ---
 # Configuración Experimental
 
-**Extensión** 1020–4140 palabras · un preámbulo y dos subsecciones
-**Contiene** las definiciones de las métricas, los métodos comparados y un diagrama de cierre
+**Extensión** 800–2500 palabras · un preámbulo opcional y dos subsecciones
+**Contiene** todo el protocolo de evaluación — los datos tal como se usan, las métricas, los métodos comparados, la prueba estadística, el diseño de ablación y de sensibilidad, las medidas de interpretabilidad — y un diagrama de cierre
 **No contiene** ningún resultado
 
 Esta sección responde *¿obtendría yo sus números si ejecutara esto por mi cuenta?*. Convierte
@@ -125,6 +126,23 @@ condiciones exactas. Cada número de la sección de resultados debe poder rastre
 declarado aquí.
 
 La sección de métodos dice lo que el modelo **es**. Esta dice lo que se le **hizo**. Nada aquí se descubre: cada condición que esta sección enuncia ya estaba fijada cuando se ejecutaron los experimentos.
+
+## La evaluación vive aquí, toda ella
+
+**Cada elemento de la evaluación se declara en esta sección y en ninguna otra**: los
+escenarios y los datos tal como se usan, la partición, las métricas, los métodos comparados, la
+prueba estadística, las variantes de ablación, los barridos de sensibilidad y las medidas que
+evalúan una contribución de interpretabilidad. La sección de métodos define la propuesta
+y nunca la evalúa; la sección de resultados lee lo que se declaró aquí y nunca
+introduce un elemento de protocolo propio. En los artículos medidos del grupo, la
+prueba, la ablación e incluso las líneas base aparecieron a menudo por primera vez en los
+resultados — el defecto que esta regla elimina.
+
+**Cada bloque aplica cuando el artículo tiene lo que el bloque cubre, y solo entonces.** Un método
+sin parámetros aprendidos no tiene búsqueda de hiperparámetros; una propuesta de un solo componente
+no tiene nada que ablacionar; un artículo que no afirma interpretabilidad no declara ninguna
+medida de interpretabilidad. El contrato fija dónde va cada elemento y cómo se
+escribe, nunca que todo artículo deba llevarlos todos.
 
 ## Las dos subsecciones separan el diseño de la ejecución
 
@@ -138,14 +156,22 @@ métodos, son el primer bloque de Evaluación y no una tercera subsección.
 
 ## Preámbulo
 
-Un párrafo de 33–41 palabras, sin citas. Nombra los bloques que la sección
-especifica, en orden.
+Opcional: cuatro de las diez configuraciones medidas del grupo no tienen preámbulo. Cuando se escribe, un
+párrafo de 30–80 palabras, sin citas: el propósito del protocolo y luego los bloques
+que la sección especifica, en orden. Puede remitir al diagrama de cierre.
 
 ## Subsección 1 — Evaluación y Comparación de Métodos
 
-Siete bloques. El primero y los dos últimos son condicionales.
+Nueve bloques. Cada uno es condicional a que el artículo tenga lo que cubre, salvo las
+métricas.
 
-**1. Los conjuntos de datos** — solo cuando la sección de métodos no los posee. Primero.
+**1. Los conjuntos de datos** — solo cuando la sección de métodos no los posee. Primero. Cuando
+hay varios escenarios, los controlados van primero — sintético, luego
+semisintético, luego real — y **cada escenario se nombra según la propiedad del
+problema que exige** (un nivel de ruido, un nivel de dispersión, un cambio de dominio), para que el lector
+sepa qué parte del problema prueba cada uno. Una corrupción o simulación aplicada a
+los datos — anotadores simulados, ruido inyectado, entradas enmascaradas — se define aquí, con
+su ecuación.
 
 **2. El anuncio de la división** — cuando el marco tiene dos mitades disímiles.
 Cada mitad hace entonces su propio recorrido por los bloques que siguen.
@@ -171,9 +197,27 @@ la cadena que va del problema a la evidencia.
 que respaldan las afirmaciones que ninguna métrica mide, cada una con su cita. Estas
 son las que responden a las propiedades que una contribución prometió y que una métrica no puede alcanzar.
 
+**Cuando la interpretabilidad es una contribución, se evalúa dos veces**: mediante la
+lectura cualitativa nombrada aquí, y mediante una medida de fidelidad — una puntuación de eliminación,
+de perturbación o de recuperación de una estructura conocida — frente a los métodos de atribución o de
+explicación con los que compite, cada uno citado. La sección de métodos definió el
+mecanismo; este bloque nombra cómo se juzgan sus explicaciones.
+
 **7. El corpus de evaluación construido a propósito** — solo cuando ninguna referencia estándar mide
 lo que se afirma. Descríbalo aquí: su tamaño, su composición y una tabla de
 ejemplos. Sin él, la métrica de esa mitad no significa nada.
+
+**8. La prueba estadística** — siempre que la propuesta se compare con algo. La
+prueba, el procedimiento post hoc y la corrección por comparaciones múltiples, el nivel de
+significancia y **la unidad sobre la que se ejecuta la prueba** (particiones, semillas, sujetos, conjuntos de datos). Los
+resultados la aplican; no la eligen.
+
+**9. El diseño de ablación y de sensibilidad** — cuando la propuesta tiene componentes que
+pueden eliminarse o perillas que pueden barrerse. **Una variante de ablación por contribución**,
+en el orden de la sección de métodos, cada una eliminando esa contribución o reemplazándola por
+la pieza prestada que modifica, bajo el mismo protocolo. Luego los barridos de sensibilidad:
+cada perilla que expone la sección de métodos y que se varía, con su rango. Cada variante y
+cada barrido se nombra aquí para que los resultados solo puedan leerlo.
 
 ### Qué se cita aquí
 
@@ -193,7 +237,9 @@ por qué. Indique lo que se desechó antes de indicar lo que se conservó.
 **2. El protocolo de partición.** Las divisiones, la estrategia de validación cruzada, la
 estratificación.
 
-**3. El optimizador y el calendario.**
+**3. El optimizador y el calendario.** Cuando el método no se entrena — un estimador
+analítico, una simulación, un resolvedor — este espacio y el siguiente contienen en su lugar sus
+ajustes numéricos: tolerancias, iteraciones, discretización, presupuesto de muestreo.
 
 **4. La búsqueda de hiperparámetros.** La herramienta, el muestreador, **la semilla**, el objetivo
 que se minimiza y el rango de búsqueda por modelo. Nombrar la semilla y la configuración
@@ -262,12 +308,16 @@ caja que aparece en ambos significa que uno de ellos está mal.
 
 ## Estilo de la casa LIA
 
-Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025): los ítems A003, A006, A007, A009, A012, A013, A021, A022, A023 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
+Medido sobre los diez artículos de método Q1 del grupo de 2025–2026 (SJR 2025), primero Elsevier y después MDPI: los ítems A008, A017, A018, A003, A006, A007, A009, A021, A022 y A026 del banco de artículos del laboratorio. Los rangos son mínimo–mediana–máximo entre los artículos que tienen la sección; una línea compuesta tiene unas 12 palabras en un formato de una sola columna. Los rangos describen cómo escribe el grupo; la extensión indicada al inicio de este contrato sigue siendo el objetivo.
 
-**Tamaño medido.** 7–10–16 párrafos; 767–985–1318 palabras, unas 67–86–119 líneas;
-72–103–140 palabras por párrafo; 0–3–5 subsecciones; 0–0–7 ecuaciones destacadas, solo
-para una métrica que no puede suponerse conocida por el lector; 1–4–10 citas; 0–1–3 figuras y
-0–1–2 tablas.
+**Tamaño medido.** 7–10–24 párrafos; unas 810–1190–3480 palabras, siendo el máximo un
+caso atípico con su propio protocolo de simulación; 0–3–4 subsecciones; 0–2–8 ecuaciones
+destacadas; 4–9–17 citas; 0–1–3 figuras y 0–1–2 tablas.
+
+**Ubicación medida.** Ocho de diez tienen una configuración propia después de los métodos; seis
+abren con un párrafo de propósito y hoja de ruta. Solo tres definen sus métricas mediante
+ecuación, solo dos declaran aquí la prueba estadística y solo uno declara aquí su
+ablación — el resto los presenta en los resultados, lo que este contrato prohíbe.
 
 **Lo que enuncian las configuraciones del grupo, en este orden:**
 
@@ -351,6 +401,13 @@ para una métrica que no puede suponerse conocida por el lector; 1–4–10 cita
 - Hardware omitido mientras se reportan tiempos.
 - Ninguna declaración de control de fuga de información.
 - Un resultado, una comparación medida o una cifra de desempeño.
+- Una comparación con métodos competidores sin prueba estadística declarada, o una prueba
+  declarada sin la unidad sobre la que se ejecuta.
+- Una contribución que puede eliminarse sin variante de ablación declarada, o una perilla
+  barrida en los resultados sin un barrido declarado aquí.
+- Una contribución de interpretabilidad sin instrumento cualitativo o sin medida de
+  fidelidad declarada aquí.
+- Un escenario que no dice qué propiedad del problema exige.
 - La ausencia del diagrama de cierre.
 - Una tabla o figura de resultados que no puede ubicarse en el diagrama de cierre.
 - Una caja compartida entre el diagrama de cierre y el diagrama de métodos.

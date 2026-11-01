@@ -14,7 +14,8 @@
       "id": "es-preamble",
       "requires_facts": [],
       "requires_declarations": [],
-      "citations": "none"
+      "citations": "none",
+      "optional": true
     },
     {
       "id": "es-dataset",
@@ -115,8 +116,8 @@
 ---
 # Experimental Set-Up
 
-**Extent** 1020–4140 words · a preamble and two subsections
-**Carries** the metric definitions, the compared methods, and one closing diagram
+**Extent** 800–2500 words · an optional preamble and two subsections
+**Carries** the whole evaluation protocol — data as used, metrics, compared methods, statistical test, ablation and sensitivity design, interpretability measures — and one closing diagram
 **Does not carry** any result
 
 This section answers *would I get your numbers if I ran this myself*. It turns the
@@ -125,6 +126,23 @@ exactly what conditions. Every number in the results section must trace to somet
 declared here.
 
 The methods section says what the model **is**. This one says what was **done** to it. Nothing here is discovered: every condition this section states was already fixed when the experiments ran.
+
+## The evaluation lives here, all of it
+
+**Every element of the evaluation is declared in this section and nowhere else**: the
+scenarios and data as used, the partition, the metrics, the compared methods, the
+statistical test, the ablation variants, the sensitivity sweeps, and the measures that
+evaluate an interpretability contribution. The methods section defines the proposal
+and never evaluates it; the results section reads what was declared here and never
+introduces a protocol element of its own. Across the group's measured papers, the
+test, the ablation and even the baselines often surfaced for the first time in the
+results — the defect this rule removes.
+
+**Each block applies when the paper has what it covers, and only then.** A method
+with no learned parameters has no hyperparameter search; a single-component proposal
+has nothing to ablate; a paper that claims no interpretability declares no
+interpretability measure. The contract fixes where each element goes and how it is
+written, never that every paper must carry all of them.
 
 ## The two subsections split design from execution
 
@@ -138,14 +156,22 @@ section, they are the first block of Assessment rather than a third subsection.
 
 ## Preamble
 
-One paragraph of 33–41 words, no citations. It names the blocks the section
-specifies, in order.
+Optional: four of the group's ten measured setups have none. When written, one
+paragraph of 30–80 words, no citations: the purpose of the protocol, then the blocks
+the section specifies, in order. It may point to the closing diagram.
 
 ## Subsection 1 — Assessment and Method Comparison
 
-Seven blocks. The first and the last two are conditional.
+Nine blocks. Each one is conditional on the paper having what it covers, except the
+metrics.
 
-**1. The datasets** — only when the methods section does not own them. First.
+**1. The datasets** — only when the methods section does not own them. First. When
+there are several scenarios, the controlled ones come first — synthetic, then
+semi-synthetic, then real — and **each scenario is named after the property of the
+problem it stresses** (a noise level, a sparsity level, a domain shift), so the reader
+knows which part of the problem each one tests. A corruption or simulation applied to
+the data — simulated annotators, injected noise, masked inputs — is defined here, with
+its equation.
 
 **2. The announcement of the split** — when the framework has two dissimilar halves.
 Each half then makes its own pass through the blocks that follow.
@@ -171,9 +197,27 @@ the chain that runs from the problem to the evidence.
 techniques that support the claims no metric measures, each with its citation. These
 are what answer the properties a contribution promised and a metric cannot reach.
 
+**When interpretability is a contribution, it is evaluated twice**: by the
+qualitative reading named here, and by a measure of faithfulness — a deletion,
+perturbation, or recovery-of-known-structure score — against the attribution or
+explanation methods it competes with, each cited. The methods section defined the
+mechanism; this block names how its explanations are judged.
+
 **7. The purpose-built evaluation corpus** — only when no standard reference measures
 what is claimed. Describe it here: its size, its composition, and a table of
 examples. Without it the metric for that half means nothing.
+
+**8. The statistical test** — whenever the proposal is compared with anything. The
+test, the post hoc procedure and the multiple-comparison correction, the significance
+level, and **the unit the test runs over** (folds, seeds, subjects, datasets). The
+results apply it; they do not choose it.
+
+**9. The ablation and sensitivity design** — when the proposal has components that
+can be removed or knobs that can be swept. **One ablation variant per contribution**,
+in the methods section's order, each removing that contribution or replacing it with
+the borrowed piece it modifies, under the same protocol. Then the sensitivity sweeps:
+each knob the methods section exposes that is varied, with its range. Each variant and
+each sweep is named here so the results can only read it.
 
 ### What is cited here
 
@@ -194,7 +238,9 @@ why. State what was thrown away before stating what was kept.
 **2. The partition protocol.** The splits, the cross-validation strategy, the
 stratification.
 
-**3. The optimizer and the schedule.**
+**3. The optimizer and the schedule.** When the method is not trained — an analytic
+estimator, a simulation, a solver — this slot and the next carry its numerical
+settings instead: tolerances, iterations, discretization, sampling budget.
 
 **4. The hyperparameter search.** The tool, the sampler, **the seed**, the objective
 being minimized, and the search range per model. Naming the seed and the pruner's
@@ -263,12 +309,16 @@ box appearing in both means one of them is wrong.
 
 ## LIA house style
 
-Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025): items A003, A006, A007, A009, A012, A013, A021, A022, A023 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
+Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025), Elsevier first and MDPI after: items A008, A017, A018, A003, A006, A007, A009, A021, A022 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
 
-**Measured size.** 7–10–16 paragraphs; 767–985–1318 words, about 67–86–119 lines;
-72–103–140 words per paragraph; 0–3–5 subsections; 0–0–7 displayed equations, only
-for a metric the reader cannot be assumed to know; 1–4–10 citations; 0–1–3 figures and
-0–1–2 tables.
+**Measured size.** 7–10–24 paragraphs; about 810–1190–3480 words, the maximum an
+outlier with its own simulation protocol; 0–3–4 subsections; 0–2–8 displayed
+equations; 4–9–17 citations; 0–1–3 figures and 0–1–2 tables.
+
+**Measured placement.** Eight of ten have a set-up of their own after the methods; six
+open with a purpose-and-roadmap paragraph. Only three define their metrics by
+equation, only two declare the statistical test here, and only one declares its
+ablation here — the rest surface them in the results, which this contract forbids.
 
 **What the group's setups state, in this order:**
 
@@ -352,6 +402,13 @@ for a metric the reader cannot be assumed to know; 1–4–10 citations; 0–1�
 - Hardware omitted while timing is reported.
 - No leakage-control statement.
 - A result, a measured comparison, or a performance figure.
+- A comparison with competing methods and no statistical test declared, or a test
+  declared without the unit it runs over.
+- A contribution that can be removed with no ablation variant declared, or a knob
+  swept in the results with no sweep declared here.
+- An interpretability contribution with no qualitative instrument or no faithfulness
+  measure declared here.
+- A scenario that does not say which property of the problem it stresses.
 - The closing diagram missing.
 - A results table or figure that cannot be located in the closing diagram.
 - A box shared between the closing diagram and the methods diagram.
