@@ -41,6 +41,7 @@ Public surface:
     strip_directives_and_comments(tex) -> str        -> never drops "% node:" / "%!"
     factor_styles(tex) -> (str, tuple[str, ...])     -> conservative \\tikzset
     scan_memory_guards(tex) -> tuple[str, ...]       -> static, toolchain-independent
+    scan_font_switches(tex) -> tuple[str, ...]       -> relative size switches, as warnings
     optimize(tex, *, strip_comments=False) -> OptimizeResult
 """
 from __future__ import annotations
@@ -403,6 +404,35 @@ def factor_styles(tex: str) -> tuple:
     return rewritten, tuple(styles)
 
 
+def scan_font_switches(tex: str) -> tuple:
+    """Every relative size switch (`\\small`, `\\footnotesize`, ...) outside
+    a comment, as warnings.
+
+    A diagram sets every size with an explicit `\\fontsize{<pt>}{<1.2 pt>}`
+    computed from the manuscript body size and the width it is included at,
+    so each label prints at >= 0.70 x the body size (spec S3). A relative
+    switch means "whatever this class calls small" and cannot be checked
+    from the source. The rule and its scanner live in
+    `_core/figure/diagram_audit.find_size_switches`, the same one
+    `paper_figure.render`'s post-compile audit fails on; this only reports
+    it before a compile is spent. Rewriting the size is the author's call.
+    """
+    import sys
+    from pathlib import Path
+
+    core = Path(__file__).resolve().parents[2] / "_core" / "figure"
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import diagram_audit  # noqa: E402  (resolved above)
+
+    return tuple(
+        f"relative size switch {item['switch']} on line {item['line']}: use an explicit "
+        "\\fontsize{<pt>}{<1.2 pt>}\\selectfont sized for the printed width "
+        "(render's audit fails on it)"
+        for item in diagram_audit.find_size_switches(tex)
+    )
+
+
 def scan_memory_guards(tex: str) -> tuple:
     """Static, toolchain-independent guards, as warnings.
 
@@ -505,6 +535,7 @@ def optimize(tex: str, *, strip_comments: bool = False) -> OptimizeResult:
        `% node:` markers are load-bearing.
     """
     warnings = list(scan_memory_guards(tex))
+    warnings.extend(scan_font_switches(tex))
     changes: list = []
 
     current, header_notes = normalize_header(tex)

@@ -228,6 +228,64 @@ def _package_diagnostic(diagnostics: tuple) -> object | None:
     return None
 
 
+def _diagram_audit():
+    """`_core/figure/diagram_audit`, the audit `experiment-diagrams` runs
+    too (one place, so the two diagram producers cannot drift). Loaded on
+    first use: it reads PDFs through pypdfium2."""
+    core = Path(__file__).resolve().parents[2] / "_core" / "figure"
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import diagram_audit  # noqa: E402  (resolved above)
+
+    return diagram_audit
+
+
+def print_width(paper_dir: Path, manifest: dict) -> dict:
+    """The size a diagram prints at: the manuscript body size
+    (`paper/main.tex`'s class option, 10 pt without one), the text width
+    (the manifest's `textWidthPt`, else the A4 article width for that body
+    size) and the inclusion fraction (the manifest's `widthFraction`, the
+    `width=<f>\\textwidth` its `\\includegraphics` uses; 1.0 by default)."""
+    audit = _diagram_audit()
+    main_tex = Path(paper_dir) / "main.tex"
+    if main_tex.is_file():
+        body, source = audit.print_scale.body_font_pt(main_tex)
+    else:
+        body, source = audit.print_scale.FALLBACK_BODY_PT, "fallback"
+    text_width = manifest.get("textWidthPt")
+    if not isinstance(text_width, (int, float)) or isinstance(text_width, bool) or text_width <= 0:
+        text_width = audit.default_text_width_pt(body)
+    fraction = manifest.get("widthFraction")
+    if not isinstance(fraction, (int, float)) or isinstance(fraction, bool) or not 0 < fraction <= 1:
+        fraction = 1.0
+    return {
+        "body_pt": float(body), "body_source": source, "text_width_pt": float(text_width),
+        "width_fraction": float(fraction),
+        "printed_width_pdf_pt": audit.print_scale.declared_width_pt(text_width, fraction),
+        "fonts": audit.role_font_pt(body),
+    }
+
+
+def audit_compiled(paper_dir: Path, manifest: dict, tex_text: str, pdf: Path, log_path: Path) -> dict:
+    """`diagram_audit.audit_diagram` on one compiled diagram at its declared
+    print width: no overfull box, no relative size switch, no text overlap,
+    every span >= 0.70 x body when printed, no background or wasted margin.
+    A stub or unreadable PDF reads `unmeasured`, never `pass`."""
+    settings = print_width(paper_dir, manifest)
+    log_text = None
+    if log_path is not None and Path(log_path).is_file():
+        log_text = Path(log_path).read_text(encoding="utf-8", errors="replace")
+    report = _diagram_audit().audit_diagram(
+        pdf, body_pt=settings["body_pt"], printed_width_pt=settings["printed_width_pdf_pt"],
+        tex_text=tex_text, log_text=log_text)
+    report["print"] = settings
+    return report
+
+
+def _audit_messages(report: dict) -> list:
+    return _diagram_audit().failure_messages(report)
+
+
 def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
     """The whole `render` pipeline for one figure id: layout resolution,
     the manifest cross-check, stop A, the compile, and the budget ledger.
@@ -241,6 +299,15 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
     plain dict (never `Refused`) for a clean success OR an ordinary
     repairable failure within budget — the latter IS the loop's ordinary
     cost, not a guard blocking anything (module docstring).
+
+    A compile that succeeds is then audited (`audit_compiled`, the shared
+    `_core/figure/diagram_audit`): an overfull box, a relative size switch,
+    overlapping text, a span printing below 0.70 x the body size at the
+    manifest's `widthFraction`, or a background/wasted margin turns it into
+    a repairable `failure` carrying those diagnostics and the `audit`, and
+    the PDF stays in scratch (`preview`) instead of `Figures/<id>.pdf`. An
+    audit that cannot measure (an unreadable PDF) reads `unmeasured` and
+    does not block; every success carries its `audit`.
     """
     paths = figure_paths(paper_dir, figure_id)
     manifest = read_manifest(paths)
@@ -279,12 +346,31 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
         )
 
     if result.verdict == "success":
-        pdf_bytes = (paths["scratch"] / f"{figure_id}.pdf").read_bytes()
+        scratch_pdf = paths["scratch"] / f"{figure_id}.pdf"
+        audit = audit_compiled(paper_dir, manifest, tex_text, scratch_pdf, result.log_path)
+        if audit["verdict"] == "fail":
+            # A compile that overflows, overlaps, prints below the floor or
+            # paints a background is a repairable outcome like any other:
+            # it spends one attempt and never reaches `Figures/<id>.pdf`.
+            attempts.append({
+                "sourceDigest": source_digest,
+                "diagnostics": _audit_messages(audit),
+                "at": datetime.now(timezone.utc).isoformat(),
+            })
+            _write_ledger(paths["ledger"], {"attempts": attempts})
+            return {
+                "figureId": figure_id, "verdict": "failure", "attemptsUsed": len(attempts),
+                "budgetRemaining": REPAIR_BUDGET - len(attempts),
+                "diagnostics": _audit_messages(audit), "audit": audit,
+                "preview": str(scratch_pdf),
+            }
+        pdf_bytes = scratch_pdf.read_bytes()
         paths["pdf"].parent.mkdir(parents=True, exist_ok=True)
         paths["pdf"].write_bytes(pdf_bytes)
         return {
             "figureId": figure_id, "pdf": str(paths["pdf"]), "verdict": "success",
             "ledgerCreated": bool(attempts), "attemptsUsed": len(attempts),
+            "audit": audit,
         }
 
     # result.verdict == "failure": a repairable outcome, or a package

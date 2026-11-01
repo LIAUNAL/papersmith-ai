@@ -137,7 +137,8 @@ The Introduction has exactly seven paragraphs; the full contract, with the exten
 
 Each stretch this skill delegates is defined in full by its own agent file:
 `.claude/agents/contract-auditor.md`, `.claude/agents/diagram-author.md`,
-`.claude/agents/figure-auditor.md`, `.claude/agents/insumos-observer.md`,
+`.claude/agents/figure-auditor.md`, `.claude/agents/figure-visual-reviewer.md`,
+`.claude/agents/insumos-observer.md`,
 `.claude/agents/paper-reviewer.md`, `.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
 `.claude/agents/style-sampler.md`, `.claude/agents/venue-adapter.md`. When an agent cannot be spawned — the
 harness has no sub-agent mechanism, the agent is not registered in this
@@ -150,7 +151,7 @@ workaround. Say in the reply that the stretch ran inline and why the agent
 could not be spawned.
 
 An auditor run inline (`contract-auditor`, `section-grounding-auditor`,
-`figure-auditor`, `paper-reviewer`, `venue-adapter`) is not independent of the session that drafted what it
+`figure-auditor`, `figure-visual-reviewer`, `paper-reviewer`, `venue-adapter`) is not independent of the session that drafted what it
 judges. The verbs still reconcile its account against the real bytes, but say
 in the reply that the audit was not separated from the draft.
 
@@ -1583,6 +1584,27 @@ repairable compile failure as the loop's ordinary cost. `unmeasured` exists so
 declares no `components_from`, or a call that omits `--block`, reports
 `unmeasured` rather than a vacuous pass.
 
+**Every successful compile is audited at print size.** `render` runs the
+shared diagram audit (`skills/_core/figure/diagram_audit.py`, the same one
+`experiment-diagrams` runs) on the compiled PDF, its log and its source:
+no `Overfull \hbox`/`\vbox` in the log; no relative size switch
+(`\tiny` ... `\Huge`, `\small`, `\footnotesize`) — every size is an
+explicit `\fontsize{<pt>}{<1.2 pt>}\selectfont`; no two text spans
+intersecting and no span crossing a drawn frame it is not inside; every
+span printing at >= 0.70 x the manuscript body size (`paper/main.tex`'s
+class option, 10 pt without one) once the figure is scaled to its declared
+inclusion width — the manifest's optional `widthFraction` (the
+`width=<f>\textwidth` its `\includegraphics` uses, 1.0 by default) and
+`textWidthPt` (the A4 article width for the body size by default); and no
+background canvas or content margin wider than 4 pt. A failing audit is a
+repairable `failure` like any other: it spends one attempt, returns the
+`audit` and one diagnostic per finding, and leaves the PDF in scratch
+(`preview`) instead of `Figures/<id>.pdf`. Size each font for the width
+the figure prints at (`diagram_audit.role_font_pt(body_pt, scale)` gives
+the sizes per role); when a label does not fit, shorten it or widen its
+box, never shrink the font. `figure optimize` reports a relative switch as
+a warning before a compile is spent.
+
 **A repairable failure is an ordinary outcome, not a refusal.** `render`
 returns `"status": "ok"`, `"verdict": "failure"` with the parsed
 diagnostics and `attemptsUsed`/`budgetRemaining` for a compile that failed
@@ -1659,6 +1681,21 @@ checklist when the probe resolves a rasterizer link, and reporting them
 checks typographic parity between the figure's preamble and the paper's own
 font setup. It never repairs the figure and never reports a visual verdict it
 did not measure.
+
+**Judging a rendered diagram by eye delegates to the `figure-visual-reviewer` agent.**
+After `render` reports `success` (its audit reads `pass`), one read-only
+pass over a preview of at most 1400 px judges what no script can: legibility
+at print scale, centring and balance, overlaps and crowding a reader would
+see, and whether labels and arrows read correctly. It returns `PASS`, or
+`FAIL` with concrete fixes for `diagram-author`, and adds an `UNCERTAINTY:`
+line instead of failing when it cannot decide. It never edits anything and
+runs once per drawing.
+
+**Measure this before delegating (figure-visual-reviewer):** confirm
+`render`'s last reply for the id reads `"verdict": "success"` with
+`audit.verdict` `pass` and that `paper/Figures/<id>.pdf` exists; a visual
+pass over a figure the mechanical audit already fails spends a model call
+on what the diagnostics already say.
 
 **Measure this before delegating (figure-auditor):** confirm the block's
 `figure:` declaration is readable (`contract --file <path>`) and that the
