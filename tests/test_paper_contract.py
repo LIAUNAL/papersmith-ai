@@ -102,6 +102,12 @@ class VocabularyTests(unittest.TestCase):
     def test_a_listed_declaration_parses(self) -> None:
         paper_vocabulary.validate_declaration("author-roles")  # raises nothing
 
+    def test_the_ethics_approval_declaration_parses(self) -> None:
+        # The back-matter ethics and informed-consent blocks read the
+        # approval record as an operator declaration, never as a fact.
+        paper_vocabulary.validate_declaration("ethics-approval")  # raises nothing
+        self.assertNotIn("ethics-approval", paper_vocabulary.FACTS)
+
     def test_every_declared_declaration_id_is_accepted(self) -> None:
         for declaration in paper_vocabulary.DECLARATIONS:
             paper_vocabulary.validate_declaration(declaration)  # raises nothing
@@ -135,7 +141,8 @@ class VocabularyTests(unittest.TestCase):
         self.assertIsInstance(paper_vocabulary.DECLARATIONS, tuple)
         self.assertIsInstance(paper_vocabulary.CITATIONS_REGIMES, tuple)
         self.assertEqual(len(paper_vocabulary.FACTS), 10)
-        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 6)
+        # Seven since closing-sections T1 added `ethics-approval`.
+        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 7)
         self.assertEqual(len(paper_vocabulary.CITATIONS_REGIMES), 3)
         self.assertEqual(
             set(paper_vocabulary.FACTS) & set(paper_vocabulary.DECLARATIONS), set()
@@ -1013,17 +1020,25 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: `02` and `03` re-captured (same feature): the setup declares the whole
 #: evaluation (statistical test, ablation and sensitivity design, interpretability
 #: faithfulness) and the results read it in a fixed block order, never adding to it.
+#: `07` and `10` re-captured (closing-sections-and-manuscript-graphs T1): the
+#: conclusions re-measured on the group's ten Q1 papers (350-950 words, 3-6
+#: paragraphs, one finding paragraph per contribution, at most one headline
+#: number each); the back matter gained venue-aware code availability, ethics,
+#: informed consent, supplementary materials, abbreviations, highlights,
+#: graphical abstract and the always-present AI-use declaration. `01` aligned
+#: its extent line with the slot table (2 to 9 subsections) and `02` raised its
+#: upper extent to 3500 words for the evaluation blocks.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "4a4a2de1f6a8701af6f1c6ceb62eaa68b768ead8633ae1cf61cdf0decc76ad54"[:64],
-    "02-experimental-setup.md": "a7d187d5e3ada3787df033583f391606dbd4754f7799d50b4fc614eb5ed871fd"[:64],
+    "01-materials-and-methods.md": "bceddb15a3514b0ee355abe24a0ac6c59f78a15ad900921d8b10e72104718d90"[:64],
+    "02-experimental-setup.md": "0f66d68b0d02718f8f45c9b6bf34c45b8a81f7ea4fea1ff56cb8e13eb32e8b51"[:64],
     "03-results-and-discussion.md": "522ac2d7cee130f4fe463d963f964747c02d9206edcfac6949d3c4a4f3e2b39f"[:64],
     "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
     "05-related-work.md": "d1e6ec50d24063c7cfa618e59fb75d1ba1d5dc4155b76e01ac918e96d4e53ea9",
     "06-introduction.md": "fdb4847f869e44480895fab4bf2b1fa7a199ad851a372ee1841dee856ee398ab",
-    "07-conclusions.md": "5b400628d6d7f783172a0546cb3fa92b973d471b34001f58fb8ff9277d25aeec"[:64],
+    "07-conclusions.md": "8247cc07798423cac2b0f52390a79d54d0c1c9e11000b97fd7ab9f397751a87a"[:64],
     "08-abstract.md": "e5e2d180ad612c99c2f779d669956405c56f9744645ca9e229a57c1bc605ba94"[:64],
     "09-title-and-keywords.md": "fd563a4b96e5aeb8cd952d748c6961863ba094837a8ea5a374e3d2d9eaff4fe8",
-    "10-back-matter.md": "b1cd44fe7c00d8eca92d979be5780a97a6cd815faba9ab3890442f2286316cbb"[:64],
+    "10-back-matter.md": "e8f6156a55b9358231fd9986b923c738c5672629f5049e68ef4e055c69b3481c"[:64],
 }
 
 

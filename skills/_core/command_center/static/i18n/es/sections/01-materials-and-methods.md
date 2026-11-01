@@ -107,7 +107,7 @@
 ---
 # Materiales y métodos
 
-**Extensión** 1000–3950 palabras · 2 a 6 subsecciones
+**Extensión** 1000–3950 palabras · 2 a 9 subsecciones
 **Contiene** el planteamiento del problema, la maquinaria prestada, la propuesta (incluido su mecanismo de interpretabilidad) y un diagrama de síntesis
 **No contiene** ningún resultado, número medido, comparación ni protocolo de evaluación
 

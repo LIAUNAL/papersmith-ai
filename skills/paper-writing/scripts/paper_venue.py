@@ -1883,6 +1883,64 @@ def status(paper_dir: Path, slug: str) -> dict:
     return result
 
 
+#: Publisher families whose back-matter placement `sections/10-back-matter.md`
+#: states; every other publisher (or none recorded) is `neutral`.
+PUBLISHER_FAMILIES = (
+    ("elsevier", ("elsevier", "cell press")),
+    ("mdpi", ("mdpi", "multidisciplinary digital publishing")),
+    ("ieee", ("ieee", "institute of electrical and electronics engineers")),
+)
+
+#: Where the AI-use declaration and the funding statement go, per family --
+#: the placement rules of `sections/10-back-matter.md`, as data.
+BACK_MATTER_PLACEMENT = {
+    "elsevier": {
+        "ai_declaration": "own-section-before-references",
+        "ai_declaration_title": ("Declaration of generative AI and AI-assisted technologies "
+                                 "in the manuscript preparation process"),
+        "funding": "inside-acknowledgments", "highlights": True,
+    },
+    "mdpi": {"ai_declaration": "inside-acknowledgments", "ai_declaration_title": None,
+             "funding": "own-block", "highlights": False},
+    "ieee": {"ai_declaration": "inside-acknowledgments-naming-sections", "ai_declaration_title": None,
+             "funding": "inside-acknowledgments", "highlights": False},
+    "neutral": {"ai_declaration": "own-section-before-references",
+                "ai_declaration_title": "Declaration of AI use",
+                "funding": "own-block", "highlights": False},
+}
+
+
+def publisher_family(publisher) -> str:
+    """`elsevier`, `mdpi`, `ieee`, or `neutral` (unknown or unrecorded)."""
+    lowered = publisher.lower() if isinstance(publisher, str) else ""
+    for family, needles in PUBLISHER_FAMILIES:
+        if any(needle in lowered for needle in needles):
+            return family
+    return "neutral"
+
+
+def back_matter_placement(paper_dir: Path) -> list:
+    """Read-only: every selected venue with its publisher, family and the
+    back-matter placement that family takes. `[]` when no venue exists."""
+    root = paper_dir / "venues"
+    placements = []
+    if not root.is_dir():
+        return placements
+    for entry in sorted(root.iterdir()):
+        record_path = entry / "venue.json"
+        if not (entry.is_dir() and SLUG_RE.match(entry.name) and record_path.is_file()):
+            continue
+        try:
+            journal = (_read_json(record_path) or {}).get("journal") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        family = publisher_family(journal.get("publisher"))
+        placements.append({"slug": entry.name, "journal": journal.get("name"),
+                           "publisher": journal.get("publisher"), "family": family,
+                           **BACK_MATTER_PLACEMENT[family]})
+    return placements
+
+
 def list_venues(paper_dir: Path) -> dict:
     _require_paper_dir(paper_dir)
     root = paper_dir / "venues"

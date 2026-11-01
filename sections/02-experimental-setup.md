@@ -116,7 +116,7 @@
 ---
 # Experimental Set-Up
 
-**Extent** 800–2500 words · an optional preamble and two subsections
+**Extent** 800–3500 words · an optional preamble and two subsections
 **Carries** the whole evaluation protocol — data as used, metrics, compared methods, statistical test, ablation and sensitivity design, interpretability measures — and one closing diagram
 **Does not carry** any result
 

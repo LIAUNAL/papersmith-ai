@@ -107,7 +107,7 @@
 ---
 # Materials and Methods
 
-**Extent** 1000–3950 words · 2 to 6 subsections
+**Extent** 1000–3950 words · 2 to 9 subsections
 **Carries** the problem setup, the borrowed machinery, the proposal (its interpretability mechanism included), and one summary diagram
 **Does not carry** any result, measured number, comparison, or evaluation protocol
 

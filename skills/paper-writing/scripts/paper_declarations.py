@@ -2,7 +2,7 @@
 declarations and fact resolutions, collected progressively, fixed once
 recorded, reopened only by name.
 
-Two record kinds, `declaration` (six operator-input ids, field `value`) and
+Two record kinds, `declaration` (seven operator-input ids, field `value`) and
 `fact` (ten fact ids, field `resolution`) — deliberately different field
 names, so the two vocabularies can never share a code path by accident
 (design.md, `JSON region bodies, comment-prefixed, canonically serialized`:
@@ -259,7 +259,7 @@ def set_declaration(
 
     Refuses `UNKNOWN_DECLARATION` (Phase 2's own code, reused verbatim —
     `paper_vocabulary.validate_declaration`) when `declaration_id` is a fact
-    id rather than one of the six declared declarations. Refuses
+    id rather than one of the seven declared declarations. Refuses
     `DECLARATION_FIXED` when it was already recorded and `--reopen` was not
     run first.
     """

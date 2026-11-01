@@ -40,7 +40,7 @@
           "value": "results",
           "source": {
             "file": "sections/07-conclusions.md",
-            "quote": "The results, and the number of experimental scenarios, which decides one paragraph or two"
+            "quote": "The results, one finding per contribution or hypothesis, in the order the methods and results present them"
           }
         }
       ],
@@ -81,7 +81,7 @@
 ---
 # Conclusions
 
-**Extent** 375–500 words · 3 or 4 paragraphs
+**Extent** 350–950 words · 3 to 6 paragraphs
 **Does not carry** equations, figures, or tables
 **Carries** citations in one place only: the future-work block
 
@@ -93,11 +93,13 @@ alone. They add nothing — every claim here already exists earlier, in more det
 | Block | Paragraphs | Words |
 |---|---|---|
 | 1 — The proposal and its components | 1, always the first | 60–226 |
-| 2 — The results recap | 1 or 2 | 100–180 each |
-| 3 — The consequence beyond the method | own paragraph, or the close of block 2 | ~50–120 |
+| 2 — The findings, one per contribution | 1 per contribution or hypothesis | 80–180 each |
+| 3 — The consequence beyond the method (optional) | own paragraph, or the close of block 2 | ~50–120 |
 | 4 — Future work | 1, always last | 55–180 |
 
 Blocks 2 and 3 may share a paragraph; blocks 1 and 4 never merge with anything.
+The paragraph count follows the contribution count: three contributions with an
+implication paragraph make six.
 
 ## Block 1 — The proposal and its components
 
@@ -116,31 +118,36 @@ the methods section's subsections.
 the number. What it does not require, what it does not need modified, what it does
 not depend on.
 
-## Block 2 — The results recap
+## Block 2 — The findings, one per contribution
 
-Named competitors, named axes, and the specific finding with the conditions under
-which it held.
+**One paragraph per contribution, in the order the methods and the results present
+them.** Each paragraph answers its contribution — or the hypothesis that contribution
+tested — with the finding the results reported for it: named competitors, named axes,
+and the conditions under which the finding held. A contribution with no finding
+paragraph is a contribution the conclusions forgot; a finding paragraph that answers
+no contribution is a result the paper did not promise.
 
-**One or two paragraphs, and the number of experimental scenarios decides.** Two
-dissimilar scenarios take one paragraph each. A single scenario may still split into
-result and mechanism — what the numbers were, and what the pattern was consistent
-with.
+**At most one headline number per contribution, identical to the results.** Quote a
+value only when the value is the point; otherwise stay in comparatives. A quoted
+figure carries its dispersion when the results gave one, and it must match the
+results section character for character — same value, same unit, same precision.
 
-**Figures are permitted, with dispersion, but they are not the norm.** Quote a value
-only when the value is the point; otherwise stay in comparatives. A quoted figure
-must match the results section exactly.
+**Nothing new.** No experiment, figure, comparison, or interpretation that the results
+section does not already hold. The conclusions compress the evidence; they never add
+to it.
 
-## Block 3 — The consequence beyond the method
+## Block 3 — The consequence beyond the method (optional)
 
 What the reader takes away, past the fact that the method worked. Not a result and
-not a contribution — a consequence. It answers *so what*.
+not a contribution — a consequence. It answers *so what*. About half of the group's
+papers carry it; write it when the consequence is real, omit it otherwise.
 
 Two flavours; the paper picks by whose problem it is:
 
 - **For whoever implements it** — the cost of adoption is low: nothing needs
-  modifying, the architecture drops into existing pipelines, prediction time falls.
+  modifying, the method drops into existing pipelines, the run time falls.
 - **For whoever lives the problem** — something becomes possible that was not: the
-  factor behind a prediction can be traced back, the decision path is auditable where
+  factor behind a decision can be traced back, the process is auditable where
   regulation demands it.
 
 It may be its own paragraph or the closing sentences of block 2. It is the only part
@@ -153,7 +160,11 @@ direction, showing the direction is live in the literature. Everything before it
 cites nothing.
 
 **Future work is the relevant subset of the limitations, with a reference per
-direction.** Each direction answers a stated limitation.
+direction.** Each direction answers a stated limitation: one direction per relevant
+limitation, each with its citation.
+
+**The limitations themselves are not developed here.** They live in the limitations
+section; this block names only the directions they motivate.
 
 **The reduction goes one way only.** A limitation may be left without a direction —
 not everything is meant to be repaired. But no direction is left without a limitation
@@ -174,15 +185,21 @@ attribution discipline as a quoted figure: state what the claim belongs to.
 
 ## LIA house style
 
-Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025): items A003, A006, A007, A009, A012, A013, A021, A022, A023 and A026 of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
+Measured on the group's ten Q1 method papers of 2025–2026 (SJR 2025): items A008, A017, A018 (Elsevier), then A003, A006, A007, A009, A021, A022 and A026 (MDPI) of the lab's bank of articles. Ranges are minimum–median–maximum across the papers that have the section; a typeset line is about 12 words in a single-column layout. The ranges describe how the group writes; the extent at the top of this contract stays the target.
 
-**Measured size.** 2–4–10 paragraphs; 252–482–950 words, about 22–43–85 lines;
-95–127–158 words per paragraph; no equations, figures or tables; 0–3–4 citations, in
-the future-work sentences.
+**Measured size.** 2–4.5–10 paragraphs; about 255–610–952 words; no equations,
+figures or tables; 0–4–9 citations, mostly in the future-work sentences.
+
+**Measured shape.** 10/10 open by restating the proposal and 10/10 close on future
+work; 5/10 repeat headline numbers from the results; 7/10 put limitations inside the
+conclusions, which this contract does not follow — the limitations stay in their own
+section and the conclusions only draw future work from them; about half carry an
+implication paragraph; only one introduced evidence the results did not hold.
 
 **Shape.** Titled *Conclusions*, or *Concluding Remarks and Future Work*. It opens by
-restating the method in the past tense (*This work introduced …, a …*), repeats the
-key numbers, and closes on future work enumerated as *First*, *Second*, *Third*.
+restating the method in the past tense (*This work introduced …, a …*), walks the
+findings in the order of the contributions, and closes on future work enumerated as
+*First*, *Second*, *Third*.
 
 **Writing.**
 
@@ -200,7 +217,7 @@ section, because it compresses it.
 
 | Input | Unblocks |
 |---|---|
-| The **results**, and the number of experimental scenarios, which decides one paragraph or two | `concl-block-2` |
+| The **results**, one finding per contribution or hypothesis, in the order the methods and results present them | `concl-block-2` |
 
 ### Internal chain
 
@@ -223,16 +240,20 @@ an internal-chain row.
 ## Disqualifiers
 
 - A claim, number, or property that appears nowhere earlier in the paper.
+- New evidence: an experiment, figure, comparison, or interpretation the results
+  section does not already hold.
 - A component list disagreeing with the introduction or the methods section in count,
   order, or naming.
+- A contribution with no finding paragraph in block 2.
 - Block 1 not first, or block 4 not last.
 - Block 1 closing on a number instead of on the distinguishing property.
-- A quoted figure that does not match the results section exactly.
+- A number that differs from the results section — in value, unit, or precision.
+- More than one headline number for a single contribution.
 - A future-work direction that answers no stated limitation.
 - A citation anywhere outside the future-work block.
 - A future-work direction with no reference.
 - A future-work direction too vague to be a paper.
 - An equation, a figure, or a table.
-- Limitations developed here instead of in the results section.
-- Over 500 or under 375 words.
+- Limitations developed here instead of in the limitations section.
+- Over 950 or under 350 words.
 - A section that cannot be read without having read the paper.

@@ -286,9 +286,9 @@ sole producer from `introduction.block-4b` to
 **The three closed vocabularies** a header may draw from: ten
 `requires_facts` ids (`formulation`, `contributions`, `problem-statement`,
 `gap`, `dataset`, `experimental-design`, `implementation`, `results`,
-`limitations`, `skeleton`), six `requires_declarations` ids (`author-roles`,
+`limitations`, `skeleton`), seven `requires_declarations` ids (`author-roles`,
 `grant-title`, `grant-code`, `repository-url`, `keyword-bounds`,
-`classification-line`), and three `citations` regimes (`discovery`,
+`classification-line`, `ethics-approval`), and three `citations` regimes (`discovery`,
 `resolution`, `none`). A value outside any of the three refuses
 immediately — this is deliberately closed, not a convention.
 
@@ -417,9 +417,10 @@ readable by Phase 1's block scanner: both markers share the `%% paper-writing
 `MARKER_PREFIX`'s own `startswith` check skips them (proven in
 `tests/test_paper_decisions.py::DisjointGrammarTests`).
 
-`declare` records two kinds of value: a `declaration` (one of the six
+`declare` records two kinds of value: a `declaration` (one of the seven
 operator-input ids — `author-roles`, `grant-title`, `grant-code`,
-`repository-url`, `keyword-bounds`, `classification-line`) or a `fact`
+`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`)
+or a `fact`
 resolution (one of the ten fact ids). Recording either fixes it immediately
 — a further `declare` on the same id refuses `DECLARATION_FIXED` until
 `--reopen <id>` clears exactly that entry.
@@ -964,6 +965,26 @@ three packet keys (`block`, `section`, `contract`, `references`) stay
 byte-identical to a packet assembled with no `--paper` at all — the fifth
 key only ever WIDENS what a `transposition`-mode block's packet carries,
 never anything else.
+
+**The AI-use record (`ai_usage`).** The packet of
+`back-matter.bm-ai-use-declaration`, and of
+`experimental-setup.es-training-details` (which holds the Methods sentence),
+carries one more key, `ai_usage`, built read-only by
+`paper_ai_usage.build` when the packet resolves a paper: `pipeline` (per
+phase, from `command_center.ai_history.build_ai_usage`: the agent roles, the
+harnesses whose chat sessions worked on it, and the counts of sessions,
+commands, operator follow-ups, approvals, agent replies, revisions,
+decisions and errors; `model` is always `null`, the operator supplies tool
+versions), `drafted` (every written block, drafted by `redactor` and audited
+by `contract-auditor`, with its write attempts and whether it has an
+evidence ledger), `tools`, `code_or_experiments_by_agents` and
+`methods_sentence_required` (true when the proof-of-concept and experiments
+phase shows agent sessions), and `venues` (each selected venue's publisher
+family and where it places the AI-use declaration and funding:
+`paper_venue.back_matter_placement`). An unreadable source degrades to
+`{"status": "unavailable"}`; the key never refuses, and every other block's
+packet keeps its previous keys. The declaration states what the record shows
+(`sections/10-back-matter.md`, "AI-use declaration").
 
 ### Corpus codes newly reachable from `packet` (`transposition`-mode blocks only)
 
