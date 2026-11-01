@@ -244,9 +244,10 @@ def _sort_key(event: dict[str, Any]) -> tuple[int, str]:
     return (0, event["ts"]) if event.get("ts") else (1, "")
 
 
-def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
-                     sessions: dict[str, Path | None] | None = None) -> dict[str, Any]:
-    """``sessions`` overrides each harness's store (see :func:`ai_transcripts.read_all`)."""
+def _collect(root: Path | str, sessions: dict[str, Path | None] | None
+             ) -> tuple[Path, dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    """Every phase's events (decisions, revisions, chats) and each source's
+    status: the one read both the pane and the AI-usage record build on."""
     original = Path(root).expanduser().absolute()
     root = original.resolve()
     by_stage: dict[str, list[dict[str, Any]]] = {}
@@ -270,7 +271,13 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
     chats, sources["chats"] = ai_transcripts.read_all(root, sessions, original)
     for stage, items in chats.items():
         by_stage.setdefault(stage, []).extend(items)
+    return root, by_stage, sources
 
+
+def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
+                     sessions: dict[str, Path | None] | None = None) -> dict[str, Any]:
+    """``sessions`` overrides each harness's store (see :func:`ai_transcripts.read_all`)."""
+    root, by_stage, sources = _collect(root, sessions)
     phases = []
     totals = dict.fromkeys(OUTCOMES, 0)
     pending = []
@@ -306,4 +313,54 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
                      "(Claude Code, Pi, OpenCode) of this workspace.")}
 
 
-__all__ = ["build_ai_history"]
+def _harness_of(ref: Any) -> str | None:
+    """``claude-code:1a2b3c4d`` -> ``claude-code``; ``None`` for a non-chat ref."""
+    if not isinstance(ref, str) or ":" not in ref:
+        return None
+    harness = ref.split(":", 1)[0]
+    return harness if harness in ai_transcripts.HARNESSES else None
+
+
+def build_ai_usage(root: Path | str,
+                   sessions: dict[str, Path | None] | None = None) -> dict[str, Any]:
+    """What the pipeline record shows about AI use, per phase, for a paper's
+    AI-use declaration. Read-only; same sources as :func:`build_ai_history`.
+
+    Each phase with any recorded event reports its agent roles
+    (``phase_actions.ACTIONS``), the harnesses (tools) whose chat sessions
+    worked on it and how many sessions, the operator's commands, follow-up
+    messages and approvals, the revisions, the persisted decisions and the
+    errors. Phases with nothing recorded are omitted. The harness model or
+    version is not part of the record: ``model`` is always ``None`` so a
+    declaration never invents one."""
+    root, by_stage, sources = _collect(root, sessions)
+    phases = []
+    harnesses: set[str] = set()
+    for stage in phase_actions.STAGES:
+        events = by_stage.get(stage, [])
+        if not events:
+            continue
+        refs = {e.get("ref") for e in events if e.get("source") == "chats"}
+        tools = sorted({h for h in map(_harness_of, refs) if h})
+        harnesses.update(tools)
+        counts = {
+            "sessions": len({r for r in refs if _harness_of(r)}),
+            "commands": sum(1 for e in events if e.get("kind") == "command"),
+            "user_messages": sum(1 for e in events if e.get("kind") == "user_message"
+                                 and not _is_approval(e)),
+            "approvals": sum(1 for e in events if _is_approval(e)),
+            "agent_replies": sum(1 for e in events if e.get("kind") == "agent_reply"),
+            "revisions": sum(1 for e in events if e.get("kind") == "revision"),
+            "decisions": sum(1 for e in events if e.get("source") in SOURCE_STAGES),
+            "errors": sum(1 for e in events if _is_error(e)),
+        }
+        phases.append({
+            "stage_id": stage,
+            "label": phase_actions.PHASE_LABELS.get(stage, stage),
+            "agent": (phase_actions.ACTIONS.get(stage) or {}).get("agent"),
+            "harnesses": tools, "model": None, "counts": counts,
+        })
+    return {"phases": phases, "harnesses": sorted(harnesses), "sources": sources}
+
+
+__all__ = ["build_ai_history", "build_ai_usage"]

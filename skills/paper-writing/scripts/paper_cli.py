@@ -110,6 +110,7 @@ import paper_figure_audit  # noqa: E402,F401 -- a-diagram-that-compiles-or-says-
 import paper_coupling_evidence  # noqa: E402 -- the-couplings-hold-or-they-do-not: every disk read `verify` needs (named to avoid colliding with `paper_evidence.py`, WU1's own claim<->source module)
 import paper_verify  # noqa: E402 -- the-couplings-hold-or-they-do-not: the seven pure coupling checks and the report they assemble; raises no `Refused` of its own (every refusal a `verify` run can report is `DECLARATION_RECORD_ABSENT`, from `paper_coupling_evidence.py`)
 import paper_couplings  # noqa: E402 -- the-skill-stops-trusting-memory, item 4: the producer `paper/couplings.json` never had; `couplings` verb
+import paper_ai_usage  # noqa: E402 -- closing-sections T1: the pipeline's read-only AI-usage record, attached by `packet` to the AI-use declaration block and the set-up block holding the Methods sentence
 import paper_full_text  # noqa: E402 -- the-pdf-arrives-or-the-operator-is-told: fills the full-text role; `full_text` verb
 import paper_lifecycle  # noqa: E402 -- a-leftover-paper-is-offered-before-it-is-lost: the reuse and exhaustion reports over the ingested-papers lifecycle; `reuse`/`exhaustion` verbs; raises no `Refused` of its own
 import paper_venue  # noqa: E402 -- journal-finder, S9-S11: the `venue` verb group (select, requirements, acquire, diff, plan, approve, build, status, list)
@@ -2400,7 +2401,7 @@ def assemble_packet(
         sections_dir, header, block, qualified_id, corpus=corpus, paper_dir=paper_dir,
     )
 
-    return {
+    packet = {
         "block": block_id,
         "section": section,
         "contract": body.decode("utf-8"),
@@ -2408,6 +2409,11 @@ def assemble_packet(
         "source_sections": source_sections,
         "source_sections_state": source_sections_state,
     }
+    # The AI-use declaration states what the pipeline record shows; only the
+    # blocks that declare AI use carry it, so every other packet is unchanged.
+    if qualified_id in paper_ai_usage.AI_USAGE_BLOCKS and paper_dir is not None:
+        packet["ai_usage"] = paper_ai_usage.build(paper_dir)
+    return packet
 
 
 def cmd_packet(args: argparse.Namespace) -> dict:

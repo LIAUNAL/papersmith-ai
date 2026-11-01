@@ -128,6 +128,7 @@ def canonical_tex(
         "data-availability": ("bm-data-availability", "\\textbf{Data Availability:} On request.\n"),
         "conflicts": ("bm-conflicts-of-interest", "\\textbf{Conflicts of Interest:} None.\n"),
         "acknowledgments": ("bm-acknowledgments", "\\textbf{Acknowledgments:} Thanks.\n"),
+        "ai-use": ("bm-ai-use-declaration", "\\textbf{Declaration of AI use:} The authors used a tool.\n"),
     }
     for name in declarations:
         block_id, text = texts[name]
@@ -1098,6 +1099,25 @@ class BuildTests(VenueCase):
         self.ok("build", "--slug", "eswa")
         text = (self.venue_dir() / "main.tex").read_text()
         self.assertLess(text.index("\\section{Material and methods}"), text.index("\\section{Introduction}"))
+
+    def test_a_venue_requiring_an_ai_use_declaration_finds_smiths_declaration_block(self) -> None:
+        # closing-sections T1: the back matter's always-present AI-use
+        # declaration answers a venue's `ai-use` requirement; its absence is
+        # still a blocker, exactly like every other required declaration.
+        declarations = json.loads((FIXTURES / "requirements-elsevier.json").read_text())["declarations_required"]
+        declarations.append({"id": "ai-use", "quote": "Declare generative AI use before the references.",
+                             "url": "https://example.org/g"})
+        names = ("author-contributions", "funding", "data-availability", "conflicts")
+        for present in (True, False):
+            with self.subTest(present=present):
+                self.write_canonical(canonical_tex(declarations=names + (("ai-use",) if present else ())))
+                audit = self.audited("eswa" if present else "eswb",
+                                     declarations_required=declarations, extras=[])
+                ids = [finding["id"] for finding in audit["findings"]]
+                if present:
+                    self.assertNotIn("missing-declaration:ai-use", ids)
+                else:
+                    self.assertEqual(self.finding(audit, "missing-declaration:ai-use")["severity"], "blocker")
 
     def test_sections_the_venue_does_not_list_are_kept_and_the_ones_smith_lacks_are_not_invented(self) -> None:
         sections = json.loads((FIXTURES / "requirements-elsevier.json").read_text())["sections"]
