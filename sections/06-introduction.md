@@ -6,7 +6,7 @@
     "value": "argument",
     "source": {
       "file": "sections/06-introduction.md",
-      "quote": "Six argumentative functions, in fixed order, distributed across 7–13 paragraphs."
+      "quote": "Six argumentative functions, in fixed order, distributed across seven canonical paragraphs."
     }
   },
   "blocks": [
@@ -202,14 +202,15 @@
 ---
 # Introduction
 
-**Extent** 900–1650 words · 7–13 paragraphs
+**Extent** 750–1380 words · 7 paragraphs
 **Does not carry** equations, figures, or tables
 **Carries** 18–41 distinct references, concentrated in blocks 1 to 3
 
 ## Global structural rule
 
-Six **argumentative functions**, in fixed order, distributed across 7–13 paragraphs.
-Function and paragraph are not the same unit: blocks 2 and 3 expand.
+Six **argumentative functions**, in fixed order, distributed across seven canonical paragraphs.
+Function and paragraph are not the same unit: the state-of-the-art function takes two
+paragraphs (3 and 4), every other function takes one.
 
 1. why the topic matters
 2. which concrete problems must be solved
@@ -219,13 +220,18 @@ Function and paragraph are not the same unit: blocks 2 and 3 expand.
 6. how the rest of the article is organized
 
 ### Canonical Seven-Paragraph Structure
-In the manuscript's initial review draft, the introduction unfolds across exactly seven canonical paragraphs:
-1. **Paragraph 1 (General Application Context):** General context of the application domain and motivating phenomenon.
-2. **Paragraph 2 (AI Context & Problem Statement):** Context of AI techniques in said application, ending with two or three sentences declaring the technical problem and its root causes (taken from the conceptual map & model panel and foundational pillars; strictly continuous running text, with no bullet items, no bold text highlights, and no numbered questions).
-3. **Paragraphs 3 & 4 (State of the Art across 3–5 Families):** Presents the state of the art in two paragraphs, indicating 3 to 5 methodological families or alternatives of the state of the art, and presenting their primary methods alongside their main strengths and issues/limitations.
-4. **Paragraph 5 (Proposal & Contributions):** Proposal presentation with its primary contributions described in 3 to 4 short items.
-5. **Paragraph 6 (Evaluation, Results & Impact):** Summary of experiments conducted, comparison methods and evaluation criteria, most significant empirical results obtained, and potential impact of the work.
-6. **Paragraph 7 (Roadmap/Agenda):** Agenda of the paper specifying section organization in a fixed roadmap formula.
+The introduction has exactly seven paragraphs. The paragraph count is fixed; the
+block extents below are written to fit it, and no block adds a paragraph of its own.
+
+1. **Paragraph 1 (General Application Context)** — `block-1`, 145–200 words: general context of the application domain and motivating phenomenon.
+2. **Paragraph 2 (AI Context & Problem Statement)** — `block-2`, 130–220 words: context of AI techniques in said application, ending with two or three sentences declaring the technical problem and its root causes (taken from the conceptual map & model panel and foundational pillars; strictly continuous running text, with no bullet items, no bold text highlights, and no numbered questions).
+3. **Paragraph 3 (State of the Art, first families)** — `block-3`, 130–300 words: the first methodological families of the state of the art, with their primary methods, main strengths and issues/limitations.
+4. **Paragraph 4 (State of the Art, remaining families and joint gap)** — `block-3`, 130–300 words: the remaining families, in the same form, closing on the joint gap. Paragraphs 3 and 4 together present 3 to 5 families.
+5. **Paragraph 5 (Proposal & Contributions)** — `block-4a` + `block-4b`, 120–180 words: the proposal presentation ending in a colon, followed by its contributions described in 3 to 4 short items. The list continues the paragraph; it is not counted as a paragraph of its own.
+6. **Paragraph 6 (Evaluation, Results & Impact)** — `block-5`, 65–135 words: summary of experiments conducted, comparison methods and evaluation criteria, most significant empirical results obtained, and potential impact of the work.
+7. **Paragraph 7 (Roadmap/Agenda)** — `block-6`, 32–42 words: agenda of the paper specifying section organization in a fixed roadmap formula.
+
+The word extent at the top of this contract is the sum of these seven ranges, rounded.
 
 **Intended correspondence:** `problem i → state-of-the-art limitation i →
 contribution i → property i → instrument i → evidence i`. The chain starts at the
@@ -278,10 +284,10 @@ the design and completed from the measurement.
   Related Work section** when a Related Work section exists — the
   conditional cross-section case this block's own second `after` edge to
   `related-work` carries.
-- **`introduction.block-4a` / `block-4b` are two blocks, not one.** The
-  contract's own extent line says so — "Two physical paragraphs, 120-180
-  words in total" — and names them `Paragraph 4a - the prose` and
-  `Paragraph 4b - the list`. They are separate ids because they are drafted
+- **`introduction.block-4a` / `block-4b` are two blocks, not one.** They
+  share canonical paragraph 5 — the prose (`Paragraph 4a - the prose`)
+  ending in a colon, then its list (`Paragraph 4b - the list`), 120–180
+  words in total. They are separate ids because they are drafted
   from different inputs: 4a's purpose clause depends on block 2, while 4b's
   contribution list is inherited directly from
   `materials-and-methods.mm-proposal`, never from block 2. 4a itself also
@@ -336,8 +342,7 @@ work, its relevance, and the general need that justifies studying it.
 
 **Sequence.** domain → phenomenon of interest → relevance → general need.
 
-**Extent.** One paragraph, 145–200 words. A second is admitted only under the
-condition below. Never three.
+**Extent.** One paragraph (canonical paragraph 1), 145–200 words. Never two.
 
 **The phenomenon is fixed by the data, not by the method.** Anchor the context in the
 condition, population, or process that the dataset actually contains. Changing the
@@ -349,11 +354,11 @@ knowing what the work is about.
 **Do not name the dataset here.** What anchors the context is the condition,
 population, or process, not the dataset's name — the name belongs to block 5.
 
-**When it splits in two.** The paragraph must traverse all four dimensions and close
-by leading into the technical problem. Split it only when the move from broad domain
-to specific scenario requires an explicit change of scale — from the general field to
-the concrete population, institution, or territory of the study — and forcing it into
-one paragraph produces an artificial transition sentence. Outside that case, one.
+**Scale change inside one paragraph.** The paragraph must traverse all four
+dimensions and close by leading into the technical problem. When the move from broad
+domain to specific scenario requires an explicit change of scale — from the general
+field to the concrete population, institution, or territory of the study — make it
+with one transition sentence inside the paragraph, never by splitting it.
 
 **Does not belong here.** The proposal, its name, its components, its contributions,
 or any experimental detail.
@@ -368,7 +373,7 @@ it into the specific problems the proposal resolves.
 **Sequence.** general problem → specific 1 → specific 2 → [specific 3] →
 requirements an adequate solution should satisfy.
 
-**Extent.** 1–3 paragraphs, 130–365 words.
+**Extent.** One paragraph (canonical paragraph 2), 130–220 words.
 
 **Nest the problems: a general one naming the paradigm, and the specific ones inside
 it.** The general problem is the name of the field or the task, not a difficulty; the
@@ -402,40 +407,37 @@ authors**.
 limitation it retains.
 **Overall:** existing solutions → advances → limitations → joint gap.
 
-**The extent depends on whether the article has its own Related Work section.** That
-is a decision about the structure of the manuscript, and it is taken before drafting
-the block.
+**Extent. Always two paragraphs — canonical paragraphs 3 and 4 — 130–300 words each,
+260–600 words in total.** Whether the article has its own Related Work section changes
+what the two paragraphs contain, never how many there are. That is a decision about the
+structure of the manuscript, and it is taken before drafting the block.
 
-**The organizing principle is the same either way: one unit per stated problem.** What
-differs is what the unit is made of — a paragraph here, a block of paragraphs in the
-dedicated section.
+**The unit is the family, tied to the problems.** The 3 to 5 families are distributed
+across the two paragraphs in the order of the problems of block 2, and each family
+states which of those problems it addresses: that is what keeps the correspondence with
+block 2 explicit. Paragraph 3 carries the first families; paragraph 4 carries the
+remaining ones and closes on the joint gap. Expand each method's nomenclature on first
+appearance.
 
-**With a Related Work section — a single paragraph, 230–380 words.** This paragraph is
-the summary of that section. Per problem, one or two sentences: the family whose
-limitation motivates the contribution, and that limitation. Variants and alternative
-strategies are not named here — they live in the section. The paragraph closes on the
-joint gap.
+**With a Related Work section, the two paragraphs summarize it.** Per family: its
+primary methods, its main strength, and the limitation that motivates the contribution.
+The families are the same ones, in the same order, as that section's subsections.
+Variants and alternative strategies are not named here — they live in the section.
 
 **When a Related Work section exists, this block is written after it.** It summarizes
 the section, and a summary cannot precede what it summarizes. Without that section,
 the block depends only on the problem statement.
 
-**The cut between the two places:** this block retains, per problem, the family whose
-limitation motivates the contribution. Everything else that attacked that same
-problem is a variant, and it belongs to the dedicated section.
+**The cut between the two places:** this block retains, per family, its primary methods
+and the limitation that motivates the contribution. Everything else that attacked the
+same problem is a variant, and it belongs to the dedicated section.
 
-**Without a Related Work section — one paragraph per stated problem, 130–300 words
-each, 550–990 words in total.** Each problem receives its own paragraph, which walks
-the families that have attacked it in progression and ends in what none of them
-resolved. Expand each method's nomenclature on first appearance. Organizing by
-problem rather than chronologically is what makes the correspondence with block 2
-explicit.
+**Without a Related Work section, the two paragraphs carry the whole state of the
+art.** Per family: its representative methods walked in progression, its strengths, and
+what it left unresolved.
 
-**Two clarifications, so that nothing is added here by analogy with the dedicated
-section.** No panorama paragraph is added to the introduction: blocks 1 and 2 already
-do that work, and duplicating it is noise. And the chronological and taxonomic ways
-of walking a problem do not apply where the unit is a paragraph — here there is one
-family and its limitation, with no taxonomy to lay out.
+**No panorama paragraph is added to the introduction:** blocks 1 and 2 already do that
+work, and duplicating it is noise.
 
 **The progression chains.** Each paragraph, and each family within a paragraph,
 starts from the limitation of the previous one, and that chaining is explicit in the
@@ -453,9 +455,9 @@ that simultaneity must be present.
 same thing at different depths.** They are one claim stated twice, and they must
 agree.
 
-**Ordering exception.** The block may be split, advancing one half before block 2,
-when the problem cannot be stated without first presenting the enabling technology.
-In that case the order is: enabler → problem → families.
+**No ordering exception.** When the problem cannot be stated without first presenting
+the enabling technology, paragraph 2 presents it as part of its AI context; block 3 is
+never split around block 2.
 
 ## Block 4 — Proposal and contributions (`block-4a`, `block-4b`)
 
@@ -464,14 +466,18 @@ components, and enumerate the contributions.
 
 **Sequence.** presentation → overall objective → core idea → contribution 1 → 2 → …
 
-**Extent. Two physical paragraphs, 120–180 words in total.**
+**Extent. One canonical paragraph (paragraph 5), 120–180 words in total:** the prose
+of 4a ending in a colon, followed by the list of 4b, which continues the paragraph.
 
 ### Paragraph 4a — the prose. Three movements, two or three sentences.
 
 1. **Presentation and objective.** Full name, acronym in parentheses, the category of
    the artefact, and a purpose clause **mirroring the specific problems of block 2 in
-   the same order**. The verb is first-person plural and appears **exactly once in the
-   whole introduction**: everything before it is other people's work.
+   the same order**. Introduce it with the hinge in the paper's one voice — impersonal
+   *To address these limitations, this work introduces* (the LIA default) or
+   first-person plural *we propose* when the paper chose that voice — and use that hinge
+   **exactly once in the whole introduction**: everything before it is other people's
+   work.
 2. **The core idea.** One sentence, one mechanism, without mathematics and without
    symbols. It is what makes the proposal new, not what it does.
 3. **The announcement.** Close the paragraph by stating the number of components and
@@ -482,9 +488,12 @@ components, and enumerate the contributions.
 
 **The contributions are described in 3 to 4 short items.**
 The number of items is the number of contributions the proposal has. It is
-inherited, never a drafting target. What drafting requires is only that the count be
-announced in 4a before being enumerated here, and that the list agree in count,
-order, and naming with the components of the methods section.
+inherited, never a drafting target. The 3-to-4 range is a requirement on the
+proposal, checked where the contributions are defined: when the methods section
+defines fewer than three or more than four, the fix is made there — merging or
+splitting components — never by padding or trimming this list. What drafting requires
+here is only that the count be announced in 4a before being enumerated, and that the
+list agree in count, order, and naming with the components of the methods section.
 
 Open each item with **the name of the component followed by a colon**, and continue
 with a single sentence stating what it does and which previously stated problem it
@@ -508,7 +517,7 @@ the stated contributions.
 **Paragraph 6 Directives (Evaluation, Results & Impact):** Summarize the experiments conducted, comparison methods and evaluation criteria, the most significant results obtained, and the potential impact of the work.
 
 **Sequence.** evaluation scenario → data or tasks → comparison methods → criteria or
-metrics → complementary analyses → general evidence.
+metrics → complementary analyses → general evidence → potential impact.
 
 **Extent.** One paragraph, 65–135 words.
 
@@ -611,7 +620,7 @@ the subject of a sentence.
   contains.
 - The dataset named in block 1.
 - A dataset named in block 5 and left unreferenced where it is described.
-- Three paragraphs of contextualization.
+- More than one paragraph of contextualization.
 - A specific problem answered by neither a component of the proposal nor an analysis
   in the evaluation.
 - A problem named in private vocabulary instead of the accepted terminology of the
@@ -621,8 +630,7 @@ the subject of a sentence.
 - Block 3 without a joint-gap closing, or with a gap stated as a sum of separate
   limitations.
 - This block's gap and the Related Work section's closing gap disagreeing.
-- Block 3 over roughly 400 words when a Related Work section exists, or under roughly
-  500 when it does not.
+- Block 3 in other than two paragraphs, or outside 260–600 words.
 - A variant or alternative strategy named in block 3 when a Related Work section
   exists: those belong to that section.
 - Block 3 written as a summary of a Related Work section that does not yet exist.

@@ -84,11 +84,12 @@ transcript, never a live call.
 When drafting canonical paper blocks, you must strictly uphold the following rules:
 - **Manuscript Presentation:** Format is single-column review mode (`onecolumn`).
 - **Initial Author Blinding:** Never populate real author names, affiliations, or emails in initial drafting. Leave author metadata blinded as placeholders (`\author{Por definir \\ \textit{Afiliaciones y correos por definir}}`). Only after the full manuscript passes all verifications with the user are real details queried and inserted.
-- **Introduction Canon (7 Paragraphs):**
+- **Introduction Canon (7 Paragraphs, contract `sections/06-introduction.md`):**
   - *Paragraph 1:* General application context and motivating phenomenon.
   - *Paragraph 2:* Context of AI techniques in said application, ending with 2 to 3 sentences declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; continuous running prose, no bullet items, no bold text, no numbered questions).
-  - *Paragraphs 3 & 4:* State of the art across 2 paragraphs, presenting 3 to 5 methodological families or alternatives, detailing their main methods, strengths, and issues/limitations.
-  - *Paragraph 5:* Proposal presentation with main contributions described in 3 to 4 short items.
+  - *Paragraph 3:* State of the art, first methodological families: main methods, strengths, and issues/limitations.
+  - *Paragraph 4:* State of the art, remaining families in the same form, closing on the joint gap (3 to 5 families across paragraphs 3 and 4).
+  - *Paragraph 5:* Proposal presentation in the paper's one voice (*this work introduces* by default, *we propose* when the paper chose first person), ending in a colon and followed by its main contributions in 3 to 4 short items; the list continues the paragraph. The count is inherited from the methods section, never padded or trimmed here.
   - *Paragraph 6:* Summary of experiments performed, comparison methods and criteria, key empirical results, and potential impact.
   - *Paragraph 7:* Paper agenda and roadmap.
 - **Related Work Canon:**

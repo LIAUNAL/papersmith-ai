@@ -117,13 +117,14 @@ During the initial drafting and refinement of the manuscript, **no author names,
 Only when the complete manuscript passes all verification gates with the user is the operator prompted to provide the author identities, affiliations, and correspondence details.
 
 ### Seven-Paragraph Introduction Structure
-The Introduction is strictly structured across seven canonical paragraphs:
+The Introduction has exactly seven paragraphs; the full contract, with the extent of each one, is `sections/06-introduction.md`:
 1. **Paragraph 1 (Application Context):** General context of the application domain and motivating phenomenon.
 2. **Paragraph 2 (AI Context & Problem Statement):** Context of AI techniques in said application, concluding with 2 to 3 sentences explicitly declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; strictly running text, no bullet items, no bold text, no numbered questions).
-3. **Paragraphs 3 & 4 (State of the Art across 3–5 Families):** Presents the state of the art in two paragraphs, identifying 3 to 5 methodological families or alternatives, detailing their principal methods, strengths, and issues/limitations.
-4. **Paragraph 5 (Proposal & Contributions):** Proposal presentation with its main contributions described in 3 to 4 short items.
-5. **Paragraph 6 (Evaluation, Results & Impact):** Summary of experiments conducted, comparison methods and criteria, most important empirical results obtained, and potential impact.
-6. **Paragraph 7 (Roadmap/Agenda):** Agenda of the paper (`The remainder of this paper is organized as follows: ...`).
+3. **Paragraph 3 (State of the Art, first families):** The first methodological families, with their principal methods, strengths, and issues/limitations.
+4. **Paragraph 4 (State of the Art, remaining families and joint gap):** The remaining families in the same form, closing on the joint gap. Paragraphs 3 and 4 together present 3 to 5 families.
+5. **Paragraph 5 (Proposal & Contributions):** Proposal presentation, introduced once in the paper's one voice (*this work introduces* by default, *we propose* when the paper chose first person), ending in a colon and followed by its main contributions in 3 to 4 short items; the list continues the paragraph. The count is inherited from the methods section: a proposal outside 3 to 4 contributions is fixed there, never by padding or trimming the list.
+6. **Paragraph 6 (Evaluation, Results & Impact):** Summary of experiments conducted, comparison methods and criteria, most important empirical results obtained, and potential impact.
+7. **Paragraph 7 (Roadmap/Agenda):** Agenda of the paper (`The remainder of this paper is organized as follows: ...`).
 
 ### Related Work Structure and Citation Density
 1. **Opening Context Paragraph:** First paragraph establishes the overarching context of problems and methods studied, framing the families introduced in the Introduction.

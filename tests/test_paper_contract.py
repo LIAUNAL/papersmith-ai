@@ -1001,13 +1001,17 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: group's ten Q1 method articles (2025-2026); `01` changed the equation
 #: numbering rule and `09` the title range to 10-13 words; `01` and `03`
 #: added notation and reporting disqualifiers.
+#: `06` re-captured (intro-canon-contradictions): the seven-paragraph canon
+#: now fixes the block extents (block 2 one paragraph, block 3 always two,
+#: blocks 4a+4b one), the 4a hinge follows the paper's one voice, and the
+#: 3-to-4 contribution range is enforced in the methods section.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "4a4d5078955ba64d77e9b45b1f4d116bf072ac011069e2ad57e100d77927405e"[:64],
     "02-experimental-setup.md": "8974689bc11ce955e707b14502aeaf974be7d69959df28f82e9f016cca1d8ce5"[:64],
     "03-results-and-discussion.md": "1f232a64dd277d10da2e47ed3436acb58137f77ac2f5de32cc22da8e8cf974b1"[:64],
     "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
     "05-related-work.md": "d1e6ec50d24063c7cfa618e59fb75d1ba1d5dc4155b76e01ac918e96d4e53ea9",
-    "06-introduction.md": "3f25f3ac568e4dd872106f784d35e9595e953471f88b73d1444602b38c64b08f",
+    "06-introduction.md": "fdb4847f869e44480895fab4bf2b1fa7a199ad851a372ee1841dee856ee398ab",
     "07-conclusions.md": "5b400628d6d7f783172a0546cb3fa92b973d471b34001f58fb8ff9277d25aeec"[:64],
     "08-abstract.md": "e5e2d180ad612c99c2f779d669956405c56f9744645ca9e229a57c1bc605ba94"[:64],
     "09-title-and-keywords.md": "0d6f332d5786930eb74d53318a9ceebae110c196f01cb2734ab09a20cfcc1ffe",
@@ -1736,9 +1740,10 @@ class InputPartitionTests(unittest.TestCase):
 
     def test_introduction_block_4_is_two_blocks_not_one_composite(self) -> None:
         """`introduction.block-4` is TWO blocks, not one node with glosses.
-        The contract's own extent line says so -- "Two physical paragraphs,
-        120-180 words in total" -- and it names them `Paragraph 4a - the
-        prose` and `Paragraph 4b - the list`.
+        The contract names them `Paragraph 4a - the prose` and `Paragraph
+        4b - the list`; since intro-canon-contradictions they share
+        canonical paragraph 5 (the list continues the prose), but they stay
+        two drafting ids.
 
         Collapsing them manufactures a cycle the writing order does not
         have: block 2 depends on 4b (each contribution read backwards as
@@ -1750,7 +1755,7 @@ class InputPartitionTests(unittest.TestCase):
         _header, body = paper_contract.parse((SECTIONS_DIR / "06-introduction.md").read_bytes())
         text = body.decode("utf-8")
 
-        self.assertIn("Two physical paragraphs", text)
+        self.assertIn("One canonical paragraph (paragraph 5)", text)
         self.assertIn("Paragraph 4a", text)
         self.assertIn("Paragraph 4b", text)
 
