@@ -1,0 +1,16 @@
+{
+  "systems": [
+    {"id": "sys-a", "title": "Attention pooling", "planets": [
+      {"id": "sun", "slot": "sun", "orbit": 0, "provenance": "stated", "label": "Attention pooling", "detail": "d",
+       "evidence": {"origin": "arXiv:2401.00001", "quote": "q", "retrieved": "2026-01-02"}}]},
+    {"id": "sys-b", "title": "Graph priors", "planets": [
+      {"id": "sun", "slot": "sun", "orbit": 0, "provenance": "stated", "label": "Graph priors", "detail": "d",
+       "evidence": {"origin": "https://doi.org/10.1000/B", "quote": "q", "retrieved": "2026-01-02"}},
+      {"id": "res", "slot": "result", "orbit": 3, "provenance": "stated", "label": "Result", "detail": "d",
+       "evidence": {"origin": "10.1000/b", "quote": "q", "retrieved": "2026-01-02"}}]},
+    {"id": "sys-c", "title": "Kernel baselines", "planets": [
+      {"id": "sun", "slot": "sun", "orbit": 0, "provenance": "stated", "label": "Kernel baselines", "detail": "d",
+       "evidence": {"origin": "10.1000/c", "quote": "q", "retrieved": "2026-01-02"}}]}
+  ],
+  "links": [{"from_system": "sys-a", "from": "sun", "to_system": "sys-b", "to": "sun", "rel": "extends"}]
+}

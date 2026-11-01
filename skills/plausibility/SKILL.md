@@ -204,6 +204,19 @@ the data already says. Exit 1 on a
 red atlas — the renderer never draws what the checker refused; exit 2 is usage,
 unreadable input or a missing viewer bundle.
 
+**The manuscript layer.** `atlas.json` stays the phase-2 record. Once the paper
+cites sources, `sota-pool/atlas.manuscript.json` is derived beside it, never
+written into it: each system `cited` or not, its `cite_keys`, the `blocks` and
+`claims` (with verdicts) citing it, and `extra_systems` for cited papers the pool
+does not hold. The join is planet `evidence.origin` → candidate `identifier`/
+`source_url`/`url` → evidence record `identifier` (DOIs and arXiv ids normalized
+by `paper_bib.source_identity`). `generated_from` holds the SHA-256 of
+`atlas.json`, `candidates.json`, `main.tex`, `refs.bib` and the evidence stores,
+so `GET /api/atlas/manuscript` reports `stale`. It is rebuilt by `bib build`,
+`verify` and a compile (see `skills/paper-writing/SKILL.md`), or with
+`smith atlas cited`; the dashboard's atlas tab lists it under **📚 Cited in
+manuscript**.
+
 `--title <text>` names the page in both the tab title and the heading, because a
 caller who names it means both places it is read. Stage 3 is that caller: it
 renders this constellation with a proposal inside it, and a page headed "SOTA

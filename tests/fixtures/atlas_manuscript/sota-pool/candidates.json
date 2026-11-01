@@ -1,0 +1,5 @@
+[
+  {"identifier": "arXiv:2401.00001", "resolver": "arxiv", "title": "Attention pooling", "source_url": "https://arxiv.org/abs/2401.00001", "abstract": "q"},
+  {"identifier": "10.1000/b", "resolver": "crossref", "title": "Graph priors", "source_url": "https://doi.org/10.1000/B", "abstract": "q"},
+  {"identifier": "10.1000/c", "resolver": "crossref", "title": "Kernel baselines", "url": "https://example.org/c", "abstract": "q"}
+]

@@ -91,6 +91,20 @@ class WorkspaceWatcherTests(unittest.TestCase):
 
         assert names == {"sections", "papersmith.yaml"}
 
+    def test_watch_paths_cover_the_sota_pool(self) -> None:
+        """The atlas and its manuscript layer live in `sota-pool/`: a rebuilt
+        layer must wake the dashboard."""
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        root = Path(holder.name).resolve()
+        (root / "sota-pool").mkdir()
+
+        workspace_watcher = watcher.WorkspaceWatcher(root, lambda paths: None)
+
+        assert "sota-pool" in watcher.WATCH_TARGETS
+        assert workspace_watcher.watch_paths() == [root / "sota-pool"]
+        assert not watcher.is_ignored(root / "sota-pool" / "atlas.manuscript.json", root)
+
     def test_watch_paths_fall_back_to_the_root(self) -> None:
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)

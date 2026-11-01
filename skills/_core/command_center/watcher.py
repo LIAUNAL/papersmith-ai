@@ -23,8 +23,10 @@ from typing import Any, Callable, Iterable
 #: because the drafting stage, the word counts, the citation signals and the
 #: figure gate all read `paper/main.tex`, `paper/refs.bib` and
 #: `paper/Figures/`; without it the live channel is blind to the one artifact
-#: the drafting stage is about.
-WATCH_TARGETS = ("sections", "openspec", "experiments", "paper", "papersmith.yaml")
+#: the drafting stage is about. ``sota-pool/`` carries the SOTA atlas and its
+#: manuscript layer (``atlas.manuscript.json``), rebuilt after ``bib build``,
+#: ``verify`` and a compile, so the atlas tab refreshes with the citations.
+WATCH_TARGETS = ("sections", "openspec", "experiments", "paper", "sota-pool", "papersmith.yaml")
 
 #: Health surfaces watched in addition to the state targets. These are the
 #: concrete projections whose drift the health payload reports -- targeted at

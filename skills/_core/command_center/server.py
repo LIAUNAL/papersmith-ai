@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -587,7 +587,14 @@ def _compile_tex(root: Path, workdir: Path, pdf: Path,
 def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
     """The canonical paper/main.tex. Blocking: the caller runs it off the
     event loop, holding _PAPER_LOCK."""
-    return _compile_tex(root, root / "paper", root / "paper" / "main.pdf")
+    body, status = _compile_tex(root, root / "paper", root / "paper" / "main.pdf")
+    if body.get("ok"):
+        # A compiled manuscript refreshes the atlas manuscript layer. Never fails
+        # the compile: a builder error rides along as a warning.
+        layer = atlas_manuscript.refresh(root)
+        if layer is not None:
+            body = {**body, "atlas_manuscript": layer}
+    return body, status
 
 
 #: The only variables a venue's `compile_env` may set: where TeX looks for a
@@ -2438,6 +2445,27 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # Read-only. Validation loads the workspace's own check_atlas.py from one
         # fixed path (workspace Python runs in this process; see atlas.py).
         return JSONResponse(atlas.build_atlas(root_path), headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/atlas/manuscript")
+    def api_atlas_manuscript() -> JSONResponse:
+        # Read-only: the manuscript layer (sota-pool/atlas.manuscript.json) and
+        # whether its inputs changed since it was written. Written by `bib build`,
+        # `verify`, a successful compile, or `smith atlas cited`.
+        return JSONResponse(atlas_manuscript.read_layer(root_path), headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/atlas/manuscript/build")
+    def api_atlas_manuscript_build(request: Request) -> JSONResponse:
+        # Writes only sota-pool/atlas.manuscript.json (never atlas.json).
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "status": "origin",
+                                 "detail": "cross-origin request rejected"},
+                                status_code=403, headers=dict(_PAPER_HEADERS))
+        try:
+            result = atlas_manuscript.write_layer(root_path)
+        except Exception as exc:  # noqa: BLE001 - reported to the panel
+            result = {"ok": False, "status": "error", "detail": f"{type(exc).__name__}: {exc}"[:300]}
+        code = 200 if result["ok"] else (404 if result["status"] == "absent" else 422)
+        return JSONResponse(result, status_code=code, headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/candidates")
     def api_candidates() -> JSONResponse:

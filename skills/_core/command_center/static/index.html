@@ -30,6 +30,7 @@
   <script src="./ai-history-panel.js?v=0.51.0"></script>
   <script src="./phase-console.js?v=0.51.0"></script>
   <script src="./phase-run.js?v=0.51.0"></script>
+  <script src="./atlas-manuscript-panel.js?v=0.51.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -3218,10 +3219,13 @@
             <button id="btnGraphPapers" class="btn" onclick="switchGraph('papers')" data-i18n="atlas.btn.papers">📊 Candidate Matrix</button>
             <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
             <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
+            <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
             <a id="linkOpenGraph" href="/api/atlas/view" target="_blank" class="btn" data-i18n="common.openInNewTab">Open in a new tab ↗</a>
           </div>
         </div>
         <div id="graphBuildBadge" style="display: none; padding: 0.35rem 0.8rem; font-size: 0.76rem; border-bottom: 1px solid var(--border-subtle);"></div>
+        <!-- Manuscript layer: atlas systems the paper cites (atlas-manuscript-panel.js) -->
+        <div id="atlasManuscriptPanel" style="display: none; padding: 0.5rem 0.8rem; font-size: 0.78rem; border-bottom: 1px solid var(--border-subtle); max-height: 40vh; overflow: auto;"></div>
 
         <!-- Graph selection: links the node to the PDF and to its artifact -->
         <div id="atlasSelectionCard" style="display: none; padding: 0.5rem 0.8rem; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); font-size: 0.8rem; gap: 0.6rem; align-items: center; flex-wrap: wrap;">

@@ -754,6 +754,17 @@ cached resolved metadata — never appended, never hand-typed:
 | `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from the cached, resolved AND ingested evidence records of the keys `main.tex` cites; a key dropped from the text leaves the bibliography while its records stay in the append-only store; checks both `\cite{}`/entry directions | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY` |
 | `bib refresh --cite-key <key> --metadata-digest <digest> [--resolver <r>] [--guidance <dir>]` | Relinks the record `bib build` reads for `<key>` to fresher cached metadata of the same work: appends one copy changing only `resolver` and `metadata_digest` | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED` |
 
+**The SOTA atlas follows the citations.** When the workspace holding
+`paper/` also holds `sota-pool/atlas.json`, a `bib build` (or a `bib
+refresh` that leaves both `\cite{}`/entry directions clean), a `verify` whose
+`citations` check passes, and a successful dashboard compile each rebuild
+`sota-pool/atlas.manuscript.json` (`skills/_core/command_center/atlas_manuscript.py`):
+every atlas system marked cited or not, with the blocks and claims that cite it,
+plus the cited papers absent from the pool. `atlas.json` is never modified. The
+result rides in the verb's JSON under `atlas_manuscript`; a builder error is a
+`warning` there and never changes the verb's status or exit code. Without an
+atlas the output is unchanged. On demand: `smith atlas cited`.
+
 **`bib refresh` relinks metadata; it never judges support.** After a
 re-`resolve` caches better metadata (a year, a venue) for a DOI or arXiv id
 already cited, `bib refresh` points the citation at it without re-quoting

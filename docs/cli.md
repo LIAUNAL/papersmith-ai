@@ -910,7 +910,13 @@ itself (a fixed path, never derived from the request) and calls its validator
 inside the server process, writing no bytecode; it is a code-execution surface, so
 the dashboard should not be pointed at a workspace you do not trust. If the script
 is missing, cannot be loaded or fails, `validation.status` is `unavailable` with
-the reason. The `Host` protection (421) covers these routes only on a loopback
+the reason. `GET /api/atlas/manuscript` returns the manuscript layer
+(`sota-pool/atlas.manuscript.json`, see `smith atlas cited`) as `{status: ok |
+absent | invalid, stale, layer}`, where `stale` is true when an input digest
+changed since it was written; `POST /api/atlas/manuscript/build` (same-origin only)
+rewrites it and answers `200`, `404` (no `atlas.json`) or `422`. The atlas tab's
+**📚 Cited in manuscript** button lists it, and the file watcher covers
+`sota-pool/`. The `Host` protection (421) covers these routes only on a loopback
 bind; on a non-loopback bind there is no `Host` filtering.
 
 **The Atlas tab.** `#atlas` consumes the routes above. On the left, a native
@@ -1076,6 +1082,29 @@ never replaces a good page. Exit `0` when the page was written, `1` otherwise.
 The route answers `200`, `404` (no `atlas.json` or no scripts), `422` (the
 checker or renderer refused) or `504` (timeout), always with
 `{ok, stage, detail}` plus the system, planet and link counts on success.
+
+### `smith atlas cited [<dir>]`
+
+```bash
+smith atlas cited
+smith atlas cited ~/papers/sparse-ae --json
+```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints the result object instead of one line |
+
+Writes the manuscript layer of the SOTA atlas, `sota-pool/atlas.manuscript.json`,
+through the workspace's `skills/_core/command_center/atlas_manuscript.py`. It joins
+`sota-pool/atlas.json` and `candidates.json` with `paper/main.tex`,
+`paper/refs.bib` and the per-block evidence records: every system `cited` or not,
+with its `cite_keys`, `blocks` and `claims` (claim and verdict), plus
+`extra_systems` (cited papers outside the pool), a `summary` and the
+`generated_from` digests. It never modifies `atlas.json`. Exit `0` when the layer
+was written, `1` otherwise (no `atlas.json`, or an unreadable input). The same
+layer is rebuilt by `paper_cli.py bib build`, by `verify` when its `citations`
+check passes and by a successful dashboard compile; those report it under
+`atlas_manuscript` and never fail because of it.
 
 ### `smith mcp {serve,inspect,print-config,kaggle}`
 

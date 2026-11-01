@@ -1,4 +1,10 @@
-"""``smith atlas build``: regenerate a workspace's SOTA atlas page.
+"""``smith atlas build|cited``: the workspace's SOTA atlas actions.
+
+``smith atlas cited`` writes the manuscript layer
+(``sota-pool/atlas.manuscript.json``: which atlas systems the paper cites)
+through ``skills/_core/command_center/atlas_manuscript.py``, the same way.
+
+``smith atlas build`` regenerates the SOTA atlas page.
 
 The same action as the dashboard's "Regenerar grafo" button. The rebuild lives
 in the workspace's command center (``skills/_core/command_center/atlas_build.py``)
@@ -19,16 +25,19 @@ from . import fs
 #: The workspace module that performs the rebuild.
 ATLAS_BUILD_MODULE = "skills._core.command_center.atlas_build"
 ATLAS_BUILD_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_build.py"
+#: The workspace module that writes the manuscript layer.
+ATLAS_MANUSCRIPT_MODULE = "skills._core.command_center.atlas_manuscript"
+ATLAS_MANUSCRIPT_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_manuscript.py"
 
 
-def run_build(args) -> int:
+def _run_module(args, module: str, entry: Path) -> int:
     workspace = Path(args.directory).expanduser().resolve()
     if not fs.is_dir(workspace):
         raise UserError(f"not a directory: {workspace}")
-    if not fs.is_regular_file(workspace / ATLAS_BUILD_ENTRY):
-        raise UserError(f"{ATLAS_BUILD_ENTRY} not found in {workspace}: "
+    if not fs.is_regular_file(workspace / entry):
+        raise UserError(f"{entry} not found in {workspace}: "
                         "run `smith upgrade` to refresh the workspace kit")
-    argv = [sys.executable, "-B", "-m", ATLAS_BUILD_MODULE, "--root", str(workspace)]
+    argv = [sys.executable, "-B", "-m", module, "--root", str(workspace)]
     if args.json:
         argv.append("--json")
     completed = subprocess.run(argv, cwd=str(workspace), capture_output=True, text=True,
@@ -36,6 +45,14 @@ def run_build(args) -> int:
     sys.stdout.write(completed.stdout)
     sys.stderr.write(completed.stderr)
     return 0 if completed.returncode == 0 else 1
+
+
+def run_build(args) -> int:
+    return _run_module(args, ATLAS_BUILD_MODULE, ATLAS_BUILD_ENTRY)
+
+
+def run_cited(args) -> int:
+    return _run_module(args, ATLAS_MANUSCRIPT_MODULE, ATLAS_MANUSCRIPT_ENTRY)
 
 
 def register(subparsers) -> None:
@@ -57,6 +74,20 @@ def register(subparsers) -> None:
     build.add_argument("--json", action="store_true", help="print the result as JSON")
     build.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     build.set_defaults(handler=run_build)
+    cited = actions.add_parser(
+        "cited",
+        help="write sota-pool/atlas.manuscript.json: the atlas systems the paper cites",
+        description=("Join sota-pool/atlas.json and candidates.json with paper/main.tex, "
+                     "paper/refs.bib and the per-block evidence records, and write "
+                     "sota-pool/atlas.manuscript.json (each system cited or not, with its "
+                     "citing blocks and claims, plus cited papers outside the pool). "
+                     "Never modifies atlas.json. Exit 0 when the layer was written, 1 "
+                     "otherwise."),
+    )
+    cited.add_argument("--json", action="store_true", help="print the result as JSON")
+    cited.add_argument("directory", nargs="?", default=".", metavar="<dir>")
+    cited.set_defaults(handler=run_cited)
 
 
-__all__ = ["register", "run_build", "ATLAS_BUILD_MODULE", "ATLAS_BUILD_ENTRY"]
+__all__ = ["register", "run_build", "run_cited", "ATLAS_BUILD_MODULE", "ATLAS_BUILD_ENTRY",
+           "ATLAS_MANUSCRIPT_MODULE", "ATLAS_MANUSCRIPT_ENTRY"]

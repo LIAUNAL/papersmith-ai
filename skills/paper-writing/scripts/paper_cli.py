@@ -1565,14 +1565,52 @@ def cmd_full_text(args: argparse.Namespace) -> dict:
     )
 
 
+#: The command center's manuscript-layer builder (closing-sections-and-
+#: manuscript-graphs S5), loaded by path: it derives
+#: `sota-pool/atlas.manuscript.json` and never touches `atlas.json`.
+ATLAS_MANUSCRIPT = Path(__file__).resolve().parents[2] / "_core" / "command_center" / "atlas_manuscript.py"
+
+
+def _refresh_atlas_manuscript(paper_dir: Path, result: dict) -> dict:
+    """Rebuild the atlas manuscript layer after a clean `bib build`/`refresh`
+    or a `verify` whose citation check passed. The layer lives in the
+    workspace holding `paper/` (`<paper_dir>/../sota-pool/`); a workspace
+    with no atlas gets nothing and `result` comes back unchanged. Never
+    refuses: a builder error rides along as `atlas_manuscript.warning`."""
+    root = Path(paper_dir).resolve().parent
+    if not (root / "sota-pool" / "atlas.json").is_file() or not ATLAS_MANUSCRIPT.is_file():
+        return result
+    try:
+        import importlib.util  # noqa: PLC0415
+
+        spec = importlib.util.spec_from_file_location("papersmith_atlas_manuscript", ATLAS_MANUSCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        layer = module.refresh(root, paper_dir=paper_dir)
+    except Exception as exc:  # noqa: BLE001 - a trigger never fails the verb
+        layer = {"ok": False, "status": "error",
+                 "warning": f"atlas manuscript layer not rebuilt: {type(exc).__name__}: {exc}"[:300]}
+    return result if layer is None else {**result, "atlas_manuscript": layer}
+
+
 def cmd_bib(args: argparse.Namespace) -> dict:
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
     guidance_dir = paper_guidance.resolve_guidance_dir(args.guidance)
     if args.bib_command == "refresh":
-        return paper_bib.refresh_metadata(
+        refreshed = paper_bib.refresh_metadata(
             paper_dir, args.cite_key, args.metadata_digest, guidance_dir=guidance_dir,
             resolver=args.resolver,
         )
+        if not refreshed.get("refreshed"):
+            return refreshed
+        refs_path, tex_path = paper_dir / "refs.bib", paper_dir / "main.tex"
+        if not (refs_path.is_file() and tex_path.is_file()):
+            return refreshed
+        try:
+            paper_bib.check_reciprocal(tex_path.read_bytes(), refs_path.read_bytes())
+        except Refused:
+            return refreshed  # the layer waits for a clean bibliography
+        return _refresh_atlas_manuscript(paper_dir, refreshed)
     # The evidence store is append-only, so a citation dropped from the text
     # keeps its records. The bibliography follows the text: only cited keys
     # are written, each still required to carry sourced, ingested evidence.
@@ -1584,7 +1622,7 @@ def cmd_bib(args: argparse.Namespace) -> dict:
     reciprocal = paper_bib.check_reciprocal(
         tex_bytes, (paper_dir / "refs.bib").read_bytes(),
     )
-    return {**result, "reciprocal": reciprocal}
+    return _refresh_atlas_manuscript(paper_dir, {**result, "reciprocal": reciprocal})
 
 
 def _round_for_new_record(existing_records: list[dict]) -> int:
@@ -2888,9 +2926,11 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     """`verify`: a pure, read-only report over the five cross-section
     couplings, citation integrity, and contract currency
     (`coupling-verification`/`citation-integrity`/`contract-currency`
-    specs). Never writes a byte, under any input, including a refusal
-    (`block-substitution` spec, `Requirement: verify Verb Is Registered
-    And Read-Only`) -- `paper_coupling_evidence.gather` performs every
+    specs). Never writes a byte under `paper/`, under any input, including
+    a refusal (`block-substitution` spec, `Requirement: verify Verb Is
+    Registered And Read-Only`); the one write outside it is the derived
+    `sota-pool/atlas.manuscript.json`, rebuilt only when the citation
+    check passes and the workspace has an atlas (`_refresh_atlas_manuscript`) -- `paper_coupling_evidence.gather` performs every
     disk read this needs; `paper_verify.run` is pure over the result.
 
     `optional_block_ids` (`_resolve_optional_block_ids`, tasks.md Work Unit
@@ -2903,7 +2943,11 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     sections_dir = paper_contract.resolve_sections_dir(args.sections)
     evidence = paper_coupling_evidence.gather(paper_dir, sections_dir)
     optional_block_ids = _resolve_optional_block_ids(sections_dir)
-    return paper_verify.run(evidence, optional_block_ids=optional_block_ids)
+    report = paper_verify.run(evidence, optional_block_ids=optional_block_ids)
+    citations = next((c for c in report["checks"] if c.get("check") == "citations"), None)
+    if citations is not None and citations.get("verdict") == "pass":
+        return _refresh_atlas_manuscript(paper_dir, report)
+    return report
 
 
 def cmd_reuse(args: argparse.Namespace) -> dict:
