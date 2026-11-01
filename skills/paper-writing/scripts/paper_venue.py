@@ -871,6 +871,21 @@ _CITE_KEYS_RE = re.compile(r"\\cite[a-zA-Z]*\*?(?:\[[^\]]*\])*\{([^}]*)\}")
 _DOCUMENTCLASS_RE = re.compile(
     r"^[ \t]*\\documentclass(?:\[(?P<options>[^\]]*)\])?\{(?P<name>[^}]+)\}", re.MULTILINE
 )
+
+
+def parse_documentclass(tex: str) -> tuple:
+    """`(class_name, options)` of the first uncommented `\\documentclass`
+    in `tex`, or `(None, [])` when there is none. Options are split on
+    commas and stripped, in source order. Public so other shelves (for
+    example `_core/figure/print_scale.py`) read the class the same way
+    `Manuscript` does instead of re-deriving the pattern."""
+    found = _DOCUMENTCLASS_RE.search(strip_comments(tex))
+    if not found:
+        return None, []
+    options = [item.strip() for item in (found.group("options") or "").split(",") if item.strip()]
+    return found.group("name").strip(), options
+
+
 _BIBSTYLE_RE = re.compile(r"^[ \t]*\\bibliographystyle\{(?P<name>[^}]+)\}", re.MULTILINE)
 _SECTION_COMMAND_RE = re.compile(r"^[ \t]*\\section\*?\{")
 
@@ -912,12 +927,7 @@ class Manuscript:
         outside = paper_block.project(self.data).decode("utf-8")
         self.outside = outside
         preamble = outside.split("\\begin{document}", 1)[0]
-        found = _DOCUMENTCLASS_RE.search(strip_comments(preamble))
-        self.document_class = found.group("name").strip() if found else None
-        self.options = (
-            [item.strip() for item in (found.group("options") or "").split(",") if item.strip()]
-            if found else []
-        )
+        self.document_class, self.options = parse_documentclass(preamble)
         style = _BIBSTYLE_RE.search(strip_comments(outside))
         self.bibliography_style = style.group("name").strip() if style else None
         self.preamble = preamble
