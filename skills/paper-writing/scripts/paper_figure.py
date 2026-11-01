@@ -347,7 +347,10 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
 
     if result.verdict == "success":
         scratch_pdf = paths["scratch"] / f"{figure_id}.pdf"
-        audit = audit_compiled(paper_dir, manifest, tex_text, scratch_pdf, result.log_path)
+        try:
+            audit = audit_compiled(paper_dir, manifest, tex_text, scratch_pdf, result.log_path)
+        except Exception as exc:  # a crashed checker is unmeasured, never a lost render
+            audit = {"verdict": "unmeasured", "error": f"{type(exc).__name__}: {exc}"}
         if audit["verdict"] == "fail":
             # A compile that overflows, overlaps, prints below the floor or
             # paints a background is a repairable outcome like any other:

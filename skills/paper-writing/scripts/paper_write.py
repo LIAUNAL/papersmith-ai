@@ -179,7 +179,10 @@ def write_block(
     # Spec S5 (figure-and-table-quality): a table that shrinks to fit is a
     # warning in both envelopes, never a refusal -- the same standing an
     # `Overfull` box has in `paper_latex.parse_log`.
-    table_lint = paper_latex.table_lint_report(draft["latex"], Path(paper_dir) / "main.tex")
+    try:
+        table_lint = paper_latex.table_lint_report(draft["latex"], Path(paper_dir) / "main.tex")
+    except Exception as exc:  # a lint failure never blocks a write
+        table_lint = {"status": "unmeasured", "warning": f"table lint failed: {type(exc).__name__}: {exc}"}
 
     if audit_result["blocks"]:
         fired = [{"bullet": entry["bullet"], "span": entry["span"]} for entry in audit_result["fired"]]

@@ -65,10 +65,10 @@ def audit_line(workspace: Path) -> str | None:
         report = json.loads(path.read_text(encoding="utf-8"))
         summary = report["summary"]
         count = int(summary["findings"])
-    except (OSError, ValueError, KeyError, TypeError):
+        kinds = ", ".join(f"{kind} {n}" for kind, n in sorted((summary.get("by_kind") or {}).items()))
+        stale = hashlib.sha256(pdf.read_bytes()).hexdigest() != report.get("pdf_sha256")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return "manuscript qa: report unreadable: run smith paper qa"
-    kinds = ", ".join(f"{kind} {n}" for kind, n in sorted((summary.get("by_kind") or {}).items()))
-    stale = hashlib.sha256(pdf.read_bytes()).hexdigest() != report.get("pdf_sha256")
     head = f"manuscript qa: {count} finding(s)" + (f" ({kinds})" if kinds and count else "")
     return head + (", stale (main.pdf changed): run smith paper qa" if stale else ", current")
 
