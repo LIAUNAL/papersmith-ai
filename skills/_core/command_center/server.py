@@ -2151,9 +2151,11 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             payload = None
         if not isinstance(payload, dict):
             return JSONResponse({"ok": False, "error": "expected {repo, name, kind}"}, status_code=422)
+        override = payload.get("auditOverride")
         status, body = experiments_view.validate_diagram(
             root_path, str(payload.get("repo", "")), str(payload.get("name", "")),
-            str(payload.get("kind", "")))
+            str(payload.get("kind", "")),
+            audit_override=override if isinstance(override, str) else None)
         return JSONResponse(body, status_code=status)
 
     @app.get("/api/model")

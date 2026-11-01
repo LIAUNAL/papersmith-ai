@@ -892,6 +892,7 @@ def _diagrams(root: Path, repo: str, folder: Path, reader: _Reader) -> list[dict
                    f"{' --force' if files['png'] else ''} && "
                    f"python3 {DIAGRAM_CLI} render --spec {shlex.quote(spec)}")
         validation = diagram_cli().validation_state(folder, kind) if files["png"] else "absent"
+        audit = diagram_cli().audit_state(folder, kind) if files["png"] else None
         provenance = (diagram_cli().validation_provenance(folder, kind)
                       if validation == "validated" else None)
         out.append({"kind": kind, "approved": True, "marker": marker, "png": files["png"],
@@ -900,7 +901,11 @@ def _diagrams(root: Path, repo: str, folder: Path, reader: _Reader) -> list[dict
                     "validation": validation,
                     # `chat` (the operator approved it in an agent conversation)
                     # or `dashboard` ("Validar diagrama"); `None` until validated.
-                    "validatedVia": provenance["via"] if provenance else None})
+                    "validatedVia": provenance["via"] if provenance else None,
+                    # The mechanical audit of the PNG drawn now (`pass`, `fail`,
+                    # `unmeasured`, `stale`, `absent`) and what it found.
+                    "audit": ({"verdict": audit["verdict"], "messages": audit["messages"]}
+                              if audit else None)})
     return out
 
 
@@ -917,9 +922,16 @@ def diagram_cli():
     return sys.modules[name]
 
 
-def validate_diagram(root: Path, repo: str, name: str, kind: str) -> tuple[int, dict[str, Any]]:
+def validate_diagram(root: Path, repo: str, name: str, kind: str,
+                     audit_override: str | None = None) -> tuple[int, dict[str, Any]]:
     """The dashboard's "Validar diagrama": record the operator's validation of
-    one drawn diagram of one listed product. Returns ``(http status, body)``."""
+    one drawn diagram of one listed product. Returns ``(http status, body)``.
+
+    Same gate as `diagram_cli.py validate`: a diagram whose mechanical audit
+    (`diagrams/<kind>.audit.json`, bound to the PNG drawn now) does not read
+    `pass` is refused with `AUDIT_NOT_PASSED` and its findings, unless the
+    operator typed their own words accepting it, which the record keeps as
+    `audit_override`."""
     markers = dict(DIAGRAM_KINDS)
     if kind not in markers:
         return 422, {"ok": False, "error": f"unknown diagram kind: {kind!r}"}
@@ -933,11 +945,28 @@ def validate_diagram(root: Path, repo: str, name: str, kind: str) -> tuple[int, 
     if not png.is_file() or not reader.contained(png):
         return 409, {"ok": False, "error": "the diagram has not been drawn yet"}
     cli = diagram_cli()
+    override = (audit_override or "").strip()
+    if audit_override is not None and not override:
+        return 422, {"ok": False, "code": "STATEMENT_EMPTY",
+                     "error": "the audit override must carry the operator's own words"}
+    drawn = cli._sha256(png)
+    audit = cli.audit_state(folder, kind)
+    public_audit = {key: audit[key] for key in ("verdict", "failures", "messages")}
+    if audit["verdict"] != "pass" and not override:
+        return 409, {"ok": False, "code": "AUDIT_NOT_PASSED",
+                     "error": f"the mechanical audit of diagrams/{png.name} reads "
+                              f"{audit['verdict']!r}; draw it again or accept it as it is "
+                              "in your own words",
+                     "audit": public_audit}
     try:
-        record = cli.write_validation(folder, kind)
+        record = cli.write_validation(folder, kind, audit_override=override or None)
     except cli.Refusal as exc:
         return 409, {"ok": False, "error": str(exc)}
-    return 200, {"ok": True, "validation": "validated", "record": record}
+    if record["png_sha256"] != drawn:  # drawn again between the audit check and the write
+        cli.validation_path(folder, kind).unlink(missing_ok=True)
+        return 409, {"ok": False, "code": "PNG_HASH_MISMATCH",
+                     "error": f"diagrams/{png.name} changed while it was being validated"}
+    return 200, {"ok": True, "validation": "validated", "record": record, "audit": public_audit}
 
 
 STAGE_DURATIONS_FULL: dict[str, int] = {

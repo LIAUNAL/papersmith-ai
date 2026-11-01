@@ -53,12 +53,26 @@ class DiagramWorkspace:
 DIAGRAM_CLI_SCRIPT = REPO / "skills" / "experiment-diagrams" / "scripts" / "diagram_cli.py"
 
 
+def _audit(product: Path, kind: str, verdict: str = "pass", messages=()) -> Path:
+    """A mechanical audit record bound to the PNG drawn now, in the format
+    `diagram_cli.run_audit` writes to `diagrams/<kind>.audit.json`."""
+    import hashlib
+    png = product / "diagrams" / f"{kind}.png"
+    return _write(product / "diagrams" / f"{kind}.audit.json", json.dumps({
+        "kind": kind, "verdict": verdict,
+        "failures": [{"check": "overlap"}] if verdict == "fail" else [],
+        "messages": list(messages),
+        "png_sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
+        "audited_at": "2026-11-01T00:00:00+00:00"}) + "\n")
+
+
 def _chat_validate(product: Path, kind: str) -> dict:
     """Validate through the public CLI verb, the agent-chat route."""
     import hashlib
     import sys
     diagrams = product / "diagrams"
     _write(diagrams / f"{kind}.json", "{}\n")
+    _audit(product, kind)
     sha = hashlib.sha256((diagrams / f"{kind}.png").read_bytes()).hexdigest()
     proc = subprocess.run([sys.executable, str(DIAGRAM_CLI_SCRIPT), "validate",
                            "--target", str(product.parent), "--name", product.name, "--kind", kind,
@@ -133,6 +147,7 @@ class DiagramValidationRouteTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.ws = DiagramWorkspace(self)
+        _audit(self.ws.poc, "poc")
         app = server.create_app(self.ws.root, history_store=None)
         self.route = next(r.endpoint for r in app.routes
                           if getattr(r, "path", None) == "/api/experiments/diagrams/validate")
@@ -186,6 +201,61 @@ class DiagramValidationRouteTests(unittest.TestCase):
         code, payload = self.post({"repo": "repo", "name": "FullModel", "kind": "poc"})
         self.assertEqual(code, 409, payload)
         self.assertFalse((self.ws.full / "diagrams" / "poc.validated.json").exists())
+
+    def test_a_diagram_whose_audit_did_not_pass_is_refused_with_its_findings(self) -> None:
+        record = self.ws.poc / "diagrams" / "poc.validated.json"
+        for verdict in ("fail", "absent", "stale"):
+            with self.subTest(verdict=verdict):
+                audit = self.ws.poc / "diagrams" / "poc.audit.json"
+                if verdict == "absent":
+                    audit.unlink()
+                else:
+                    _audit(self.ws.poc, "poc", "fail" if verdict == "fail" else "pass",
+                           messages=["text overlap: 'Encoder' and 'Decoder'"])
+                    if verdict == "stale":
+                        (self.ws.poc / "diagrams" / "poc.png").write_text("drawn again")
+                code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc"})
+                self.assertEqual(code, 409, payload)
+                self.assertEqual(payload["code"], "AUDIT_NOT_PASSED")
+                self.assertEqual(payload["audit"]["verdict"], verdict)
+                if verdict != "absent":
+                    self.assertEqual(payload["audit"]["messages"],
+                                     ["text overlap: 'Encoder' and 'Decoder'"])
+                self.assertNotIn(str(self.ws.root), payload["error"])
+                self.assertFalse(record.exists())
+                self.assertEqual(self.state("PocModel"), "pending")
+
+    def test_the_operators_words_validate_a_failed_audit_and_are_recorded(self) -> None:
+        _audit(self.ws.poc, "poc", "fail", messages=["overfull box"])
+        code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc",
+                                   "auditOverride": "  lo acepto así  "})
+        self.assertEqual(code, 200, payload)
+        self.assertEqual(payload["audit"]["verdict"], "fail")
+        record = json.loads((self.ws.poc / "diagrams" / "poc.validated.json").read_text())
+        self.assertEqual(record["audit_override"], "lo acepto así")
+        self.assertEqual(self.state("PocModel"), "validated")
+
+    def test_a_blank_override_is_refused(self) -> None:
+        _audit(self.ws.poc, "poc", "fail")
+        for words in ("", "   "):
+            with self.subTest(words=words):
+                code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc",
+                                           "auditOverride": words})
+                self.assertEqual(code, 422, payload)
+                self.assertEqual(payload["code"], "STATEMENT_EMPTY")
+        self.assertFalse((self.ws.poc / "diagrams" / "poc.validated.json").exists())
+
+    def test_a_passing_audit_records_no_override(self) -> None:
+        code, payload = self.post({"repo": "repo", "name": "PocModel", "kind": "poc"})
+        self.assertEqual(code, 200, payload)
+        record = json.loads((self.ws.poc / "diagrams" / "poc.validated.json").read_text())
+        self.assertNotIn("audit_override", record)
+
+    def test_the_view_carries_the_audit_of_the_drawn_png(self) -> None:
+        _audit(self.ws.poc, "poc", "fail", messages=["overfull box"])
+        view = experiments_view.get_experiments_view(self.ws.root)
+        entry = next(p for p in view["products"] if p["name"] == "PocModel")["diagrams"][0]
+        self.assertEqual(entry["audit"], {"verdict": "fail", "messages": ["overfull box"]})
 
     def test_an_unknown_product_or_kind_is_refused(self) -> None:
         for body in ({"repo": "repo", "name": "Nobody", "kind": "poc"},
@@ -275,6 +345,23 @@ class DiagramRenderTests(unittest.TestCase):
         out = self.render(view)
         self.assertIn("VALIDADO", out)
         self.assertIn("Regenerar diagrama", out)
+
+    def test_a_failed_audit_shows_its_findings_and_asks_for_the_operators_words(self) -> None:
+        ws = DiagramWorkspace(self)
+        _audit(ws.poc, "poc", "fail", messages=["text overlap: <Encoder> and Decoder"])
+        out = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn("Auditoría mecánica: fail", out)
+        self.assertIn("text overlap: &lt;Encoder&gt; and Decoder", out)
+        self.assertIn('data-diagram-override="poc"', out)
+        self.assertIn('data-diagram-needs-override="1"', out)
+
+    def test_a_passing_audit_asks_for_no_override(self) -> None:
+        ws = DiagramWorkspace(self)
+        _audit(ws.poc, "poc")
+        out = self.render(experiments_view.get_experiments_view(ws.root))
+        self.assertIn('data-diagram-validate="poc"', out)
+        self.assertNotIn("data-diagram-override", out)
+        self.assertNotIn("data-diagram-needs-override", out)
 
     def test_the_panel_says_a_diagram_was_validated_by_chat(self) -> None:
         ws = DiagramWorkspace(self)

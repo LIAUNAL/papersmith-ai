@@ -341,13 +341,27 @@
       const files = [d.png, d.pdf].filter(Boolean);
       const state = d.png ? (d.validation || 'pending') : 'absent';
       const [label, tone] = DIAGRAM_STATES[state] || DIAGRAM_STATES.pending;
-      const validate = state === 'pending' || state === 'stale'
+      const canValidate = state === 'pending' || state === 'stale';
+      // Same gate as `diagram_cli.py validate`: a diagram whose mechanical
+      // audit does not read `pass` validates only with the operator's own
+      // words accepting it, recorded as the override.
+      const auditVerdict = d.audit && d.audit.verdict;
+      const auditBlocks = canValidate && auditVerdict && auditVerdict !== 'pass';
+      const auditFindings = auditBlocks
+        ? `<div class="exp-diagram-audit" data-diagram-audit-for="${esc(d.kind)}">
+             <p class="exp-intro">${esc(t('exp.diagram.audit.failed', { verdict: auditVerdict }))}</p>
+             ${(d.audit.messages || []).length
+               ? `<ul>${d.audit.messages.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+             <input type="text" class="exp-input" data-diagram-override="${esc(d.kind)}"
+               placeholder="${esc(t('exp.diagram.audit.overridePlaceholder'))}">
+           </div>` : '';
+      const validate = canValidate
         ? `<button type="button" class="btn" data-diagram-validate="${esc(d.kind)}" data-diagram-repo="${esc(p.repo || '')}"
-            data-diagram-name="${esc(p.name || '')}">${esc(t('exp.diagram.validate'))}</button>` : '';
+            data-diagram-name="${esc(p.name || '')}"${auditBlocks ? ' data-diagram-needs-override="1"' : ''}>${esc(t('exp.diagram.validate'))}</button>` : '';
       const body = d.png
         ? `<div class="exp-gallery">${files.map(artifact).join('')}</div>
            <p class="exp-intro">${t('exp.diagram.reviewHtml', { marker: esc(d.marker || ''), slash: `<code>${esc(d.slash || '')}</code>` })}</p>
-           <div class="exp-chips">${validate}${cliButton(d.command || '', t('exp.diagram.regenerate'))}</div>`
+           ${auditFindings}<div class="exp-chips">${validate}${cliButton(d.command || '', t('exp.diagram.regenerate'))}</div>`
         : `<p class="exp-intro">${t('exp.diagram.missingHtml', { marker: esc(d.marker || ''), slash: `<code>${esc(d.slash || '')}</code>` })}</p>
            <div class="exp-chips">${cliButton(d.command || '', t('exp.diagram.generate'))}</div>`;
       const via = state === 'validated' && d.validatedVia
@@ -359,19 +373,35 @@
   }
 
   async function validateDiagram(button) {
+    const kind = button.getAttribute('data-diagram-validate');
+    const payload = {
+      repo: button.getAttribute('data-diagram-repo'),
+      name: button.getAttribute('data-diagram-name'),
+      kind,
+    };
+    if (button.getAttribute('data-diagram-needs-override') === '1') {
+      const holder = button.closest ? button.closest('.exp-diagram') : null;
+      const input = holder ? holder.querySelector(`[data-diagram-override="${kind}"]`) : null;
+      const words = input ? input.value.trim() : '';
+      if (!words) {
+        button.textContent = t('exp.diagram.audit.overrideRequired');
+        return;
+      }
+      payload.auditOverride = words;
+    }
     button.disabled = true;
     try {
       const response = await fetch('/api/experiments/diagrams/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo: button.getAttribute('data-diagram-repo'),
-          name: button.getAttribute('data-diagram-name'),
-          kind: button.getAttribute('data-diagram-validate'),
-        }),
+        body: JSON.stringify(payload),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+      if (!response.ok) {
+        const findings = body.audit && (body.audit.messages || []).length
+          ? ` (${body.audit.messages.join('; ')})` : '';
+        throw new Error((body.error || `HTTP ${response.status}`) + findings);
+      }
     } catch (err) {
       button.disabled = false;
       button.textContent = t('exp.diagram.validateFailed', { error: err.message });

@@ -9643,6 +9643,12 @@ class ConsentGateTests(unittest.TestCase):
             for kind, marker in (("poc", "AGREED.md"), ("experiments", "Experimental_AGREED.md")):
                 png = self._diagram(product, kind, marker=marker, validated=False)
                 (png.parent / f"{kind}.json").write_text("{}\n", encoding="utf-8")
+                # `validate` refuses AUDIT_NOT_PASSED without a passing
+                # mechanical audit bound to this PNG, in `run_audit`'s format.
+                (png.parent / f"{kind}.audit.json").write_text(json.dumps({
+                    "kind": kind, "verdict": "pass", "failures": [], "messages": [],
+                    "png_sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
+                    "audited_at": "2026-11-01T00:00:00+00:00"}) + "\n", encoding="utf-8")
                 proc = subprocess.run(
                     [sys.executable, str(REPOSITORY_ROOT / "skills/experiment-diagrams/scripts/diagram_cli.py"),
                      "validate", "--target", str(target), "--name", "FEM-TOLLA", "--kind", kind,
