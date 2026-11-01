@@ -8870,8 +8870,16 @@ class RefusalRosterTests(unittest.TestCase):
         194 -> 201 in `ai-stylometry-and-humanization`: `ai_audit` and
         `humanize` add 7 codes (TARGET_REQUIRED, TARGET_UNREADABLE,
         BLOCK_REQUIRED, DRAFT_REQUIRED, BLOCK_UNKNOWN, F5_INVARIANT_VIOLATION,
-        TARGET_SCORE_UNMET)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 201)
+        TARGET_SCORE_UNMET).
+
+        201 -> 209 in `figure-and-table-quality`: `place` measures the plot
+        it places and adds 8 codes (FIGURE_PDF_UNREADABLE,
+        FIGURE_PROVENANCE_INVALID, FIGURE_MEASUREMENT_UNAVAILABLE,
+        FIGURE_NO_TEXT_LAYER, FIGURE_FULL_PAGE_BACKGROUND,
+        FIGURE_MARGIN_WASTE, FIGURE_TEXT_BELOW_PRINT_FLOOR,
+        FIGURE_IN_FIGURE_TITLE), measured against
+        `reachable_paper_refusal_codes()`."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 209)
 
 
 class ObjectiveNorthTests(unittest.TestCase):
