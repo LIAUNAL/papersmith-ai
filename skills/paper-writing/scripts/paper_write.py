@@ -29,6 +29,7 @@ import paper_audit  # noqa: E402
 import paper_bindings  # noqa: E402
 import paper_block  # noqa: E402
 import paper_evidence  # noqa: E402
+import paper_latex  # noqa: E402
 import paper_vocabulary  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
@@ -175,6 +176,10 @@ def write_block(
         attempt = ledger.get("attempts", 0) + 1
 
     audit_result = _stage_contract_audit(contract, draft, audit_account)
+    # Spec S5 (figure-and-table-quality): a table that shrinks to fit is a
+    # warning in both envelopes, never a refusal -- the same standing an
+    # `Overfull` box has in `paper_latex.parse_log`.
+    table_lint = paper_latex.table_lint_report(draft["latex"], Path(paper_dir) / "main.tex")
 
     if audit_result["blocks"]:
         fired = [{"bullet": entry["bullet"], "span": entry["span"]} for entry in audit_result["fired"]]
@@ -191,6 +196,7 @@ def write_block(
             "attempt": attempt,
             "fired": fired,
             "verdicts": audit_result["verdicts"],
+            "tableLint": table_lint,
         }
 
     if contract.style_set:
@@ -315,6 +321,7 @@ def write_block(
         "styleQuality": style_quality,
         # Deprecated alias of `styleQuality`, removed in the next release.
         "aiStylometry": style_quality,
+        "tableLint": table_lint,
         **result,
     }
 
