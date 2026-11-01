@@ -11,6 +11,22 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.50.1
+
+### Fixed
+
+- **Introduction canon contradictions** (`sections/06-introduction.md`): the
+  seven-paragraph canon now fixes the paragraph count, and the block extents fit
+  it (paragraph 2 is one paragraph, the state of the art is always paragraphs 3
+  and 4, and blocks 4a and 4b share paragraph 5). The canon is numbered 1-7, the
+  3-to-4 contribution range is enforced where the methods section defines the
+  contributions, and the 4a hinge follows the paper's one voice. Mirrored in
+  `skills/paper-writing/SKILL.md` and the `redactor` agent.
+
+### Changed
+
+- **Keywords: 3 to 5** (`sections/09-title-and-keywords.md`), down from 4 to 8.
+
 ## 0.50.0
 
 ### Added
