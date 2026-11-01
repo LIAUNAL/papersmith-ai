@@ -116,6 +116,7 @@ import paper_lifecycle  # noqa: E402 -- a-leftover-paper-is-offered-before-it-is
 import paper_venue  # noqa: E402 -- journal-finder, S9-S11: the `venue` verb group (select, requirements, acquire, diff, plan, approve, build, status, list)
 import paper_separation  # noqa: E402 -- the-whole-cut-is-argued-before-any-section-is-claimed, U1: the pure claimable-section/score-cut core; wired to the `separate` verb in U2 (`compute_separation`/`cmd_separate` below); raises no `Refused` of its own
 import paper_ai_metrics  # noqa: E402 -- closing-sections-and-manuscript-graphs S4: writing-quality metrics (cadence, overused phrasing, lexical diversity) and F5 invariant checks; never an AI-detection score
+import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -423,6 +424,17 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     # own design introduces for behaviour the spec described without
     # naming a code (`LATEX_LOG_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED`) -----
     "DIAGRAM_SOURCE_ABSENT": WORK_STATE,
+    # --- figure-and-table-quality T2: `place`'s print-quality gate
+    # (paper_place.py, S2-S4). The figure itself must change, so each is
+    # work state; an out-of-domain provenance field is the caller's -----
+    "FIGURE_PDF_UNREADABLE": WORK_STATE,
+    "FIGURE_NO_TEXT_LAYER": WORK_STATE,
+    "FIGURE_FULL_PAGE_BACKGROUND": WORK_STATE,
+    "FIGURE_MARGIN_WASTE": WORK_STATE,
+    "FIGURE_IN_FIGURE_TITLE": WORK_STATE,
+    "FIGURE_TEXT_BELOW_PRINT_FLOOR": WORK_STATE,
+    "FIGURE_MEASUREMENT_UNAVAILABLE": WORK_STATE,
+    "FIGURE_PROVENANCE_INVALID": INVOCATION_DEFECT,
     "LATEX_TOOLCHAIN_ABSENT": WORK_STATE,
     "LATEX_PACKAGE_ABSENT": WORK_STATE,
     "REPAIR_BUDGET_SPENT": WORK_STATE,
@@ -3050,8 +3062,12 @@ def cmd_venue(args: argparse.Namespace) -> dict:
 def cmd_place(args: argparse.Namespace) -> dict:
     """`place`: places an already-measured figure's PDF — compiles nothing,
     requires provenance naming the run (`authored-diagram` spec,
-    `Requirement: Data-Figure Boundary`)."""
+    `Requirement: Data-Figure Boundary`). Before the copy,
+    `paper_place.gate` refuses a figure that would print badly (S2-S4 of
+    `odd/tasks/figure-and-table-quality.md`); a compliant figure places
+    exactly as before."""
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    paper_place.gate(paper_dir, Path(args.pdf), Path(args.provenance))
     return paper_figure.place_figure(
         paper_dir, args.figure_id, Path(args.pdf), Path(args.provenance),
     )
