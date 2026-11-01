@@ -1,0 +1,14 @@
+% The old dashboard canvas: an opaque background rectangle drawn first,
+% 14 pt of frame around the picture inside a 2 pt page border.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usetikzlibrary{backgrounds}
+\definecolor{psCanvas}{HTML}{F7F3E8}
+\begin{document}
+\begin{tikzpicture}[show background rectangle, inner frame sep=14pt,
+  background rectangle/.style={fill=psCanvas, draw=none},
+  font=\fontsize{9}{10.8}\selectfont]
+\node[draw, text width=2cm, align=center] at (0,0) {Train every arm};
+\end{tikzpicture}
+\end{document}

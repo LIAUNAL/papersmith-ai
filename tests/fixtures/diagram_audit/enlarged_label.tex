@@ -1,0 +1,10 @@
+% The same label enlarged to 8 pt: it prints above 7.7 pt in an 11 pt
+% manuscript at natural size.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\begin{document}
+\begin{tikzpicture}
+\node[draw, font=\fontsize{8}{9.6}\selectfont] at (0,0) {Pilot tables};
+\end{tikzpicture}
+\end{document}

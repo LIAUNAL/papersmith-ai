@@ -1,0 +1,10 @@
+% One word wider than its box: TeX reports an overfull \hbox.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\hyphenpenalty=10000 \exhyphenpenalty=10000
+\begin{document}
+\begin{tikzpicture}[font=\fontsize{9}{10.8}\selectfont]
+\node[draw, text width=1.2cm, align=center] at (0,0) {Convergenceplots};
+\end{tikzpicture}
+\end{document}
