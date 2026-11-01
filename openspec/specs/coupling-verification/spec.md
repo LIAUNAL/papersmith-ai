@@ -163,7 +163,7 @@ declarations` region wording** (`sdd-apply`, `the-couplings-hold-or-they-
 do-not`): design.md's own decision reads the declaration record from
 `paper/couplings.json`, read-only, never from the `declarations` region
 `paper_declarations.py` already owns for a different, unrelated vocabulary
-(the six operator-supplied declarations and ten fact resolutions,
+(the seven operator-supplied declarations and ten fact resolutions,
 `the-paper-carries-its-own-decisions`) — that region's own payload shape
 was never fixed for per-block coupling data, and reading it here would
 define another change's record from downstream. `paper/couplings.json` is

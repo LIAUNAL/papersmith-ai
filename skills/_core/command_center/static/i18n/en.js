@@ -138,6 +138,7 @@ window.PAPERSMITH_I18N.en = {
   "contract.term.limitations": "limitations",
   "contract.term.problem-statement": "problem statement",
   "contract.term.repository-url": "repository URL",
+  "contract.term.ethics-approval": "ethics approval",
   "contract.term.results": "results",
   "section.file": "File:",
   "section.pdfPage": "PDF page:",

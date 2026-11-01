@@ -6,9 +6,9 @@
 operator-supplied declarations and fact resolutions — collected
 progressively, fixed once recorded, and reopened only by name. Neither
 record kind ever widens the other's closed vocabulary, both of which
-Phase 2 (`section-contract`) already fixes: six declaration ids
+Phase 2 (`section-contract`) already fixes: seven declaration ids
 (`author-roles`, `grant-title`, `grant-code`, `repository-url`,
-`keyword-bounds`, `classification-line`) and ten fact ids (`formulation`,
+`keyword-bounds`, `classification-line`, `ethics-approval`) and ten fact ids (`formulation`,
 `contributions`, `problem-statement`, `gap`, `dataset`,
 `experimental-design`, `implementation`, `results`, `limitations`,
 `skeleton`).
