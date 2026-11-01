@@ -1,0 +1,12 @@
+% A figure whose labels are set at 5 pt and whose natural width is close to
+% half the manuscript's \linewidth: placed at width=0.5\linewidth it prints
+% its labels near 5 pt, below the 0.70 x 11 pt = 7.7 pt floor.
+\documentclass[border=1pt]{standalone}
+\begin{document}
+\begin{minipage}{170pt}
+\fontsize{5}{6}\selectfont
+Axis label of the measured response and its unit\par
+Tick 0.0 0.2 0.4 0.6 0.8 1.0\par
+\rule{170pt}{40pt}
+\end{minipage}
+\end{document}

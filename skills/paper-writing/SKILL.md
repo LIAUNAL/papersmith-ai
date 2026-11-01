@@ -765,6 +765,23 @@ result rides in the verb's JSON under `atlas_manuscript`; a builder error is a
 `warning` there and never changes the verb's status or exit code. Without an
 atlas the output is unchanged. On demand: `smith atlas cited`.
 
+**The compiled manuscript gets a visual QA pass.** A successful dashboard
+compile (and `smith paper qa [--json] [<dir>]` on demand) runs
+`skills/_core/figure/manuscript_qa.py` over `paper/main.pdf`: the text block of
+each page is inferred from its body lines (running headers, footers and page
+numbers set apart), and any text span, image, figure or drawn path passing it by
+more than 1 pt is an `overflow` finding; text inside a figure placement or a
+ruled table region printing below 0.70 × body is `figure-font`/`table-font`; each
+`Overfull \hbox` of `main.log` is `overfull`, with its source lines and page. It
+writes `paper/.qa/qa.json` (with the sha256 of the `main.pdf` it measured, so
+staleness is detectable) and 100 dpi page images under `paper/.qa/pages/`; the
+dashboard's PDF preview tab lists the findings with page thumbnails
+(`GET /api/paper/qa`), and `smith audit` prints the stored count and staleness.
+A QA error is a `warning` under `manuscript_qa` and never fails the compile.
+**Why not Playwright:** it renders HTML, not PDFs, so it cannot see where
+pdfTeX placed a glyph; the check reads the PDF itself (pypdfium2 geometry,
+poppler rasters). Playwright stays for the dashboard UI (`ui/e2e`).
+
 **The manuscript summary graph follows the same events.** In a workspace
 (`papersmith.yaml` present) the same `bib build`/`bib refresh`, `verify` and
 compile also rebuild `.papersmith/manuscript_graph.json`
@@ -1305,6 +1322,19 @@ block (`packet`'s own assembly, above) as a gate in its own right: a
 `style-reference` root whose ingested markdown cannot be read refuses
 `GUIDANCE_MARKDOWN_UNREADABLE` here, before the draft/audit stage is ever
 reached.
+
+**A table that shrinks to fit is a warning, never a refusal.** Every `write`
+envelope (`written` and `audit-fired`) carries `tableLint`
+(`paper_latex.table_lint_report`): the body size read from `main.tex`
+(`print_scale.body_font_pt`), the floor (0.70 × body), and one finding per
+`\resizebox` or `adjustbox` width scaling of a tabular
+(`table-scaled-to-width`), `\scalebox`/`adjustbox scale=` below 0.85
+(`table-scaled-below-floor`), and `\tiny`/`\scriptsize`/`\footnotesize`/`\small`
+inside a table that prints below the floor (`table-font-below-floor`). It warns
+for the same reason an `Overfull` box is a non-blocking diagnostic: the source
+cannot prove what prints (the body size may be a fallback), and the compiled
+manuscript's QA measures it. Contracts 02 and 03 carry the rule
+(`## Tables stay inside the text block`).
 
 ### The shuttle procedure — this CLI never invokes an agent
 

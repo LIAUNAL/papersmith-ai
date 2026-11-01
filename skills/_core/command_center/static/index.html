@@ -32,6 +32,7 @@
   <script src="./phase-run.js?v=0.52.0"></script>
   <script src="./atlas-manuscript-panel.js?v=0.52.0"></script>
   <script src="./manuscript-graph-panel.js?v=0.52.0"></script>
+  <script src="./manuscript-qa-panel.js?v=0.52.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -2767,6 +2768,16 @@
     .journals-details { margin-bottom: 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-lg);
       background: var(--surface); padding: 0.5rem 0.85rem; }
     .journals-details > summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+    #manuscriptQaDetails { min-width: 0; overflow-wrap: anywhere; }
+    .qa-sub, .qa-status__meta, .qa-warning { font-size: 0.76rem; color: var(--text-muted); }
+    .qa-page { border-top: 1px solid var(--border); padding: 0.5rem 0; min-width: 0; }
+    .qa-page__head { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem; }
+    .qa-page__body { display: flex; gap: 0.75rem; align-items: flex-start; min-width: 0; }
+    .qa-page__thumb { width: 120px; max-width: 30%; height: auto; flex: none;
+      border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; }
+    .qa-page__list { margin: 0; padding-left: 1rem; font-size: 0.78rem; min-width: 0; flex: 1; }
+    .qa-finding { margin-bottom: 0.25rem; }
+    .qa-finding__snippet { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.72rem; }
     .journals-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; margin: 0.5rem 0; }
     .journals-form label, .journals-sjr label, .journals-approve label { display: flex; flex-direction: column;
       gap: 0.2rem; font-size: 0.72rem; color: var(--text-muted); }
@@ -3336,6 +3347,12 @@
           <details id="journalsDetails" class="journals-details" ontoggle="if (this.open) window.refreshJournalsPanel?.()">
             <summary data-i18n="journals.title">Suggested journals</summary>
             <div id="journalsPanel"></div>
+          </details>
+
+          <details id="manuscriptQaDetails" class="journals-details" ontoggle="if (this.open) window.refreshManuscriptQa?.()">
+            <summary data-i18n="qa.title">Visual QA of the manuscript</summary>
+            <p class="qa-sub" data-i18n="qa.sub">Measured on the compiled PDF after every compile: text past the text block, figure and table text below 0.70 times the body size, and Overfull boxes.</p>
+            <div id="manuscriptQaPanel"></div>
           </details>
 
           <div class="pdf-viewer-topbar">
