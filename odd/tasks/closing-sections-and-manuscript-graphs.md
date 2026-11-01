@@ -15,14 +15,15 @@ Branch: feat/closing-sections-and-manuscript-graphs. Delivery: ask-on-risk (merg
 
 ## Tasks
 
-- T1 [S1,S2,S3] contracts 07 and 10, AI declaration from the pipeline record, advisories — delegated writer (context backstop; parallel with T2 in a worktree)
-- T2 [S4] style metrics reorientation — delegated writer (parallel with T1 in a worktree)
-- T3 [S5] cited atlas layer and triggers — delegated writer (after T1/T2 merge)
-- T4 [S6] manuscript summary graph — delegated writer (depends on T3's citation join)
-- T5 [S7] version bump, merge, smith reinstall, QMLEEG upgrade — inline
+- [x] T1 [S1,S2,S3] contracts 07 and 10, AI declaration from the pipeline record, advisories — delegated writer (worktree) — b9dcf5fe, 9870f837, 1a54dd76
+- [x] T2 [S4] style metrics reorientation — delegated writer (worktree) — cd34b0cb; callers migrated in 66bd2841
+- [x] T3 [S5] cited atlas layer and triggers — delegated writer — 93f66306
+- [x] T4 [S6] manuscript summary graph — delegated writer — dea4829e
+- [ ] T5 [S7] version bump (264b7234), full suite, independent verifier (Risk item 3), review, merge, smith reinstall, QMLEEG upgrade — inline
 
 ## Log
 
 - L1 (2026-11-01): "realiza el mismo tipo de analisis para conclousiones, agradecimientos, y explora la opciones de inlcuir uso de la ia, y que otras secciones deberiamos incluir. explora tambien en el flujo de smith que se actualice el grafo sota del tablero al depurar el manuscrito y completar todas las citas, y explora la construccion de un grafo mas que permita resumir el manuscrito: con el topic, el problema definido con sus pilares, sus hipotesis, el sota principal, la matematica y concetos relevantes base y de la novedad, los experientos planteados, los hallazgos obtenidos, y las conclusiones principales"
 - L2 (2026-11-01): "si, implementalo en ese orden, mergea y actualiza qmleeg" — approves the four-step plan presented in the analysis (contracts 07/10 + AI declaration; ai_metrics reorientation; cited atlas; manuscript graph).
 - L3: evidence of the analysis in the session scratchpad (`cb/`, `sr/`, `mm/` per paper notes).
+- L4: T1-T4 delivered; RDD reviews approved for main+T2 (review-b9bba0cb087a225f); review of the full candidate pending. Open: summary view opened in a new tab stays English (server-es.json not wired to that render).
