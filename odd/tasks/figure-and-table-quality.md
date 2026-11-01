@@ -14,14 +14,16 @@ Branch: feat/figure-and-table-quality. Delivery: ask-on-risk (merge pending the 
 
 ## Tasks
 
-- T0 [S3] shared print-scale helper (body size from main.tex, span sizes from a PDF via pypdfium2, printed-size verdict) — delegated writer (unblocks T1–T3)
-- T1 [S1,S3] diagrams: experiment-diagrams + paper diagrams + visual reviewer agent — delegated writer (worktree, parallel)
-- T2 [S2,S3,S4] experiment plots: style helper, place checks, figure-review vector measures — delegated writer (worktree, parallel)
-- T3 [S5,S6] tables + manuscript QA after compile — delegated writer (worktree, parallel)
-- T4 version, full suite, verifier, review, report — inline
+- [x] T0 [S3] shared print-scale helper — delegated writer — 10dc819b
+- [x] T1 [S1,S3] diagrams + figure-visual-reviewer — delegated writer (worktree) — 445cf625, 713fc767, d85f01b4
+- [x] T2 [S2,S3,S4] ps_figures, place gate, figure-review dimensions — delegated writer (worktree) — 47c029a7, 0bb3c1a7, 6d8febd8
+- [x] T3 [S5,S6] table rules + lint, manuscript QA — delegated writer (worktree) — b72b674a, aee5da64, 9fd59b01; cross-surface fixes 7bdc5dfe..8e378189
+- [x] T4 full suite (8906 passed, 2 known failures), verifier (S1–S6 PASS), review in four slices approved (review-7ee068ec1e8e650d, review-e604b3ae76ec51bd, review-40df8d1d1d3b2e19, review-060b8a4c1dfbf545), release 0.53.0 — inline
 
 ## Log
 
 - L1 (2026-11-01): "corrije el cruce del atlas. luego, explora el agente creador y revisor de figuras de morfeo, para los diagrmaas de concepto, experimentos, propuesta etc explora y aprovecha estos agentes o crea unos que construyan esos diagrmaas, eviten sobreflujo de textos, desborde, traslape, etc. para las figuras que salen de expeirmentos, asegurate de exportarlas en pdf para compilar en el maniscrito, con boedes tighlayout, evitando dejar fondos o desperdicio de espacio. asegurte de que los textos de las figuras, incluidas de diagramas y de experimentos, no sean mas pequeñas al 70% del tamño del texto principal del manuscrito, incluido labels, ticks. evita usar titulos en las mismas figuras del experimento, estos deben describirse en el caption de las mismas. aplica la misma filosofia para las tablas del manuscrito respecto al tamaño, evita que las tablas se desborden de las margebes del manuscrito. explora si puedes usar playwrigth l algo similar para verificar calidad visial del mansucrito, con sus figuras y tablas"
 - L2: atlas join fixed in 8d33cae2 (merged to main): QMLEEG 0→4 of 18 cited systems; the rest lack identifiers in refs.bib.
 - L3: exploration map (MORFEO `/Users/andresalvarez/Documents/RedaccionPropuestas`: `.claude/agents/disenador-tikz.md`, `tikz-optimizer.md`, `revisor-figuras.md`; `plantilla/scripts/render_tikz.py`, `compile_tikz.py`, `figura.py`, `audit_tikz.py`, `tests/ui/dashboard_audit.py`). SMITH: `skills/experiment-diagrams/scripts/diagram_cli.py` (relative fonts 460-481, opaque psCanvas 535-543, log deleted 649-650), `skills/figure-review/` (`geometry.py` ink overlap without containment filter; `legibility` unmeasured in `skills/_core/figure/figure_dimensions.py:28-55`), `skills/paper-writing/scripts/paper_tikz.py`, `.claude/agents/diagram-author.md`, `figure-auditor.md`; no plot or table rules anywhere.
+- L4 (2026-11-01): "cuando termines, asegurate de comit, mergea y push, saca rlease, actualiza smith en local, actualiza smith en proyecto qmleeg, y reconstruye manuscrito, grafos, lo que falte, segun lo que actualizamos en smith, sobre qmleeg"
+- L5: 42 non-blocking review advisories remain for a later pass (unit naming in figure_dimensions/manuscript_qa, duplicated body-size parsers, IEEE column width estimate, synchronous QA on compile, diagram fit-pass no-op, group false background); the three crash-prone call sites were guarded before release.
