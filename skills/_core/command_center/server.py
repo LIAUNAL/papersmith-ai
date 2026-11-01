@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec
+from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -594,6 +594,10 @@ def _compile_paper(root: Path) -> tuple[dict[str, Any], int]:
         layer = atlas_manuscript.refresh(root)
         if layer is not None:
             body = {**body, "atlas_manuscript": layer}
+        # ...and the manuscript summary graph, under the same rule.
+        graph = manuscript_graph.refresh(root)
+        if graph is not None:
+            body = {**body, "manuscript_graph": graph}
     return body, status
 
 
@@ -2479,6 +2483,33 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             result = {"ok": False, "status": "error", "detail": f"{type(exc).__name__}: {exc}"[:300]}
         code = 200 if result["ok"] else (404 if result["status"] == "absent" else 422)
         return JSONResponse(result, status_code=code, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/atlas/manuscript-graph")
+    def api_atlas_manuscript_graph() -> JSONResponse:
+        # Read-only: .papersmith/manuscript_graph.json and whether its inputs
+        # changed since it was written. Written by `bib build`, `verify`, a
+        # successful compile, `smith atlas summary` or the build route below.
+        return JSONResponse(manuscript_graph.read_graph(root_path), headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/atlas/manuscript-graph/view")
+    def api_atlas_manuscript_graph_view(lang: str = "en") -> Response:
+        # Offline HTML (no CDN): the stored graph, else a live reading.
+        html = manuscript_graph.view_html(root_path, lang)
+        return Response(html, media_type="text/html; charset=utf-8", headers=dict(_PAPER_HEADERS))
+
+    @app.post("/api/atlas/manuscript-graph/build")
+    def api_atlas_manuscript_graph_build(request: Request) -> JSONResponse:
+        # Writes only .papersmith/manuscript_graph.json.
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "status": "origin",
+                                 "detail": "cross-origin request rejected"},
+                                status_code=403, headers=dict(_PAPER_HEADERS))
+        try:
+            result = manuscript_graph.write_graph(root_path)
+        except Exception as exc:  # noqa: BLE001 - reported to the panel
+            result = {"ok": False, "status": "error", "detail": f"{type(exc).__name__}: {exc}"[:300]}
+        return JSONResponse(result, status_code=200 if result["ok"] else 422,
+                            headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/candidates")
     def api_candidates() -> JSONResponse:

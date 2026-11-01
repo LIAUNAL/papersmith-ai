@@ -916,7 +916,13 @@ absent | invalid, stale, layer}`, where `stale` is true when an input digest
 changed since it was written; `POST /api/atlas/manuscript/build` (same-origin only)
 rewrites it and answers `200`, `404` (no `atlas.json`) or `422`. The atlas tab's
 **📚 Cited in manuscript** button lists it, and the file watcher covers
-`sota-pool/`. The `Host` protection (421) covers these routes only on a loopback
+`sota-pool/`. `GET /api/atlas/manuscript-graph` returns the manuscript summary graph
+(`.papersmith/manuscript_graph.json`, see `smith atlas summary`) as `{status: ok |
+absent | invalid, stale, graph}`; `GET /api/atlas/manuscript-graph/view` draws it as
+offline HTML (no CDN) in eight columns, a stored graph when there is one and a live,
+unwritten reading otherwise; `POST /api/atlas/manuscript-graph/build` (same-origin
+only) rewrites it and answers `200` or `422`. The atlas tab's **🧭 Manuscript
+summary** button shows that view. The `Host` protection (421) covers these routes only on a loopback
 bind; on a non-loopback bind there is no `Host` filtering.
 
 **The Atlas tab.** `#atlas` consumes the routes above. On the left, a native
@@ -1105,6 +1111,40 @@ was written, `1` otherwise (no `atlas.json`, or an unreadable input). The same
 layer is rebuilt by `paper_cli.py bib build`, by `verify` when its `citations`
 check passes and by a successful dashboard compile; those report it under
 `atlas_manuscript` and never fail because of it.
+
+### `smith atlas summary [<dir>]`
+
+```bash
+smith atlas summary
+smith atlas summary ~/papers/sparse-ae --json
+```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints the result object instead of one line |
+
+Writes the manuscript summary graph, `.papersmith/manuscript_graph.json`, through
+the workspace's `skills/_core/command_center/manuscript_graph.py`. Its typed nodes
+are `topic` (`papersmith.yaml`, else the proposal sky's `sun`), `problem` (fact
+`problem-statement`, else the sky's `problem` planet), `pillar` and `hypothesis`
+(the latest proposal `.sky.json`'s `pillars`/`hypotheses`; else
+`.papersmith/model_spec.json` pillars and the protocol's `Hypothesis` bullets),
+`sota` (only the systems and papers the manuscript cites, from `smith atlas
+cited`'s join), `base_concept` and `novelty_concept` (displayed equations of
+`materials-and-methods.mm-borrowed-machinery` and `mm-proposal`, the latter falling
+back to the latest proposal's `$$ … \tag{N} $$` blocks, plus the declared
+contributions), `experiment` (the protocol's `[exp:<id>]` entries), `finding` (each
+`Results/discussion.json` verdict, folded to `supported`, `refuted` or
+`inconclusive`) and `conclusion` (the first sentence of each
+`conclusions.concl-block-*`). Each node carries `label`, `detail`, `source` (path
+and locator), `paper_blocks` and `status`; a source that does not exist yet is one
+node with `status.state: missing`, its `reason` and the `phase` that fills it.
+Edges are drawn only from explicit references (sky links, `\eqref`, names,
+experiment ids, observed numbers), never inferred. `generated_from` holds the
+SHA-256 of every input, so staleness is detectable. Exit `0` when the graph was
+written, `1` otherwise. `paper_cli.py bib build`, `verify` (citations passing) and a
+successful dashboard compile rebuild it in a workspace (`papersmith.yaml` present)
+and report it under `manuscript_graph`, never failing because of it.
 
 ### `smith mcp {serve,inspect,print-config,kaggle}`
 

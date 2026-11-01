@@ -1,0 +1,23 @@
+{
+  "system": {"id": "proposal", "title": "Research concept r01", "planets": [
+    {"id": "p-sun", "slot": "sun", "orbit": 0, "label": "Calibrated set pooling", "detail": "d", "provenance": "stated"},
+    {"id": "p-app", "slot": "topic_app", "orbit": 1, "label": "Whole-slide pathology", "detail": "d", "provenance": "stated"},
+    {"id": "p-ai", "slot": "topic_ai", "orbit": 1, "label": "Attention-based multiple-instance learning", "detail": "d", "provenance": "stated"},
+    {"id": "p-problem", "slot": "problem", "orbit": 1, "label": "Attention weights are uncalibrated", "detail": "Sky problem detail.", "provenance": "stated"},
+    {"id": "p-novelty", "slot": "novelty", "orbit": 1, "label": "Calibrated attention", "detail": "d", "provenance": "stated"},
+    {"id": "p-c1", "slot": "contribution", "orbit": 1, "label": "Calibrated attention", "detail": "d", "provenance": "stated"},
+    {"id": "p-c2", "slot": "contribution", "orbit": 1, "label": "Graph prior", "detail": "d", "provenance": "stated"},
+    {"id": "p-c3", "slot": "contribution", "orbit": 1, "label": "Benchmark", "detail": "d", "provenance": "stated"}
+  ]},
+  "links": [
+    {"from": "p-c1", "to_system": "sys-a", "to": "sun", "rel": "extends"},
+    {"from": "p-c2", "to_system": "sys-c", "to": "sun", "rel": "contradicts"}
+  ],
+  "pillars": [
+    {"id": "P1", "label": "Calibrated attention", "detail": "Weights that match instance relevance.", "contribution": "p-c1"},
+    {"id": "P2", "label": "Graph prior", "detail": "Neighbouring instances share relevance.", "contribution": "p-c2"}
+  ],
+  "hypotheses": [
+    {"id": "H1", "statement": "Calibrated attention improves AUC over mean pooling.", "pillar": "P1", "experiments": ["e1"]}
+  ]
+}

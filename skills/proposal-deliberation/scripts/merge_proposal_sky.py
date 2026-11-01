@@ -28,6 +28,22 @@ Overlay shape::
 starts at the proposal, so a field that can only ever hold one value is a way to
 be wrong rather than a way to be expressive. The written link carries it.
 
+Optional, for every revision written from this contract on (an older overlay
+without them still merges)::
+
+    "pillars": [{"id": "P1", "label": ..., "detail": ...,
+                 "contribution": <a contribution planet id of this overlay>}],
+    "hypotheses": [{"id": "H1", "statement": ..., "pillar": "P1",
+                    "experiments": ["e1", ...]}]
+
+The pillars are what the problem decomposes into; each hypothesis is the
+testable prediction one pillar makes, and ``experiments`` names the protocol's
+``[exp:<id>]`` entries that test it once the protocol exists. They stay in the
+overlay -- the merged atlas never carries them, so ``check_atlas.py`` is
+untouched -- and the manuscript summary graph reads them from there.
+``pillars_and_hypotheses`` holds them to that shape; the merge refuses an
+overlay that fails it.
+
 Exit 0 on a written file, 1 when the overlay cannot be merged into a coherent
 atlas, 2 on usage, unreadable input or invalid JSON. Stdlib only.
 """
@@ -58,6 +74,59 @@ def _known_planets(systems: list[dict]) -> set[str]:
             if isinstance(pid, str):
                 known.add(f"{sid}.{pid}")
     return known
+
+
+def _text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def pillars_and_hypotheses(overlay: object) -> tuple[dict | None, str | None]:
+    """``({"pillars": [...], "hypotheses": [...]}, None)`` or ``(None, refusal)``.
+
+    Pure. Absent keys are empty lists: an overlay written before this
+    contract is valid as it stands.
+    """
+    if not isinstance(overlay, dict):
+        return None, "OVERLAY_NOT_AN_OBJECT"
+    pillars = overlay.get("pillars", [])
+    hypotheses = overlay.get("hypotheses", [])
+    if not isinstance(pillars, list):
+        return None, "OVERLAY_PILLARS_MALFORMED: pillars must be a list"
+    if not isinstance(hypotheses, list):
+        return None, "OVERLAY_HYPOTHESES_MALFORMED: hypotheses must be a list"
+    contributions = {p.get("id") for p in _planets_of(overlay.get("system"))
+                     if p.get("slot") == "contribution"}
+    pillar_ids: set[str] = set()
+    for index, pillar in enumerate(pillars):
+        if not isinstance(pillar, dict) or not _text(pillar.get("id")) or not _text(pillar.get("label")):
+            return None, f"PILLAR_MALFORMED: pillars[{index}] needs a non-empty id and label"
+        if pillar["id"] in pillar_ids:
+            return None, f"PILLAR_ID_DUPLICATED: {pillar['id']}"
+        pillar_ids.add(pillar["id"])
+        for key in ("detail", "contribution"):
+            if key in pillar and not isinstance(pillar[key], str):
+                return None, f"PILLAR_MALFORMED: pillars[{index}].{key} must be a string"
+        if "contribution" in pillar and pillar["contribution"] not in contributions:
+            return None, (f"PILLAR_CONTRIBUTION_UNKNOWN: {pillar['contribution']} is not a "
+                          "contribution planet of this overlay")
+    if hypotheses and not pillars:
+        return None, "HYPOTHESES_WITHOUT_PILLARS: every hypothesis belongs to a pillar"
+    hypothesis_ids: set[str] = set()
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, dict) or not all(
+                _text(hypothesis.get(k)) for k in ("id", "statement", "pillar")):
+            return None, (f"HYPOTHESIS_MALFORMED: hypotheses[{index}] needs a non-empty id, "
+                          "statement and pillar")
+        if hypothesis["id"] in hypothesis_ids:
+            return None, f"HYPOTHESIS_ID_DUPLICATED: {hypothesis['id']}"
+        hypothesis_ids.add(hypothesis["id"])
+        if hypothesis["pillar"] not in pillar_ids:
+            return None, f"HYPOTHESIS_PILLAR_UNKNOWN: {hypothesis['id']} names {hypothesis['pillar']}"
+        experiments = hypothesis.get("experiments", [])
+        if not isinstance(experiments, list) or not all(_text(e) for e in experiments):
+            return None, (f"HYPOTHESIS_EXPERIMENTS_MALFORMED: {hypothesis['id']}.experiments must "
+                          "be a list of experiment ids")
+    return {"pillars": pillars, "hypotheses": hypotheses}, None
 
 
 def merge(atlas: dict, overlay: object) -> tuple[dict | None, str | None]:
@@ -100,6 +169,10 @@ def merge(atlas: dict, overlay: object) -> tuple[dict | None, str | None]:
     if not 3 <= contributions <= 5:
         return None, (f"OVERLAY_CONTRIBUTIONS_OUTSIDE_3_5: the proposal carries "
                       f"{contributions} contribution concept(s); the contract names 3 to 5")
+
+    _found, refusal = pillars_and_hypotheses(overlay)
+    if refusal is not None:
+        return None, refusal
 
     merged_systems = [s for s in systems]
     merged_systems.append(system)

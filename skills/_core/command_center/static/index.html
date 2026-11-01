@@ -31,6 +31,7 @@
   <script src="./phase-console.js?v=0.51.0"></script>
   <script src="./phase-run.js?v=0.51.0"></script>
   <script src="./atlas-manuscript-panel.js?v=0.51.0"></script>
+  <script src="./manuscript-graph-panel.js?v=0.51.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -3217,6 +3218,7 @@
             <button id="btnGraphAtlas" class="btn btn--primary" onclick="switchGraph('atlas')" data-i18n="atlas.btn.atlas">🌌 3D Constellation (Solar Atlas)</button>
             <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
             <button id="btnGraphPapers" class="btn" onclick="switchGraph('papers')" data-i18n="atlas.btn.papers">📊 Candidate Matrix</button>
+            <button id="btnGraphSummary" class="btn" onclick="switchGraph('summary')" title="Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)" data-i18n-attr="title:atlas.btn.summaryTitle" data-i18n="atlas.btn.summary">🧭 Manuscript summary</button>
             <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
             <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
             <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
@@ -3957,6 +3959,10 @@
       btn.textContent = t('atlas.regenerating');
       const stamp = () => new Date().toLocaleTimeString();
       try {
+        if (currentGraphKind === 'summary') {
+          await rebuildManuscriptGraph();
+          return;
+        }
         if (currentGraphKind === 'novelty') {
           // The novelty graph is built on every request: a reload regenerates it.
           iframe.src = apiUrl(`/api/atlas/novelty/view?v=${Date.now()}`);
@@ -4058,6 +4064,7 @@
       const btnAtlas = document.getElementById('btnGraphAtlas');
       const btnNovelty = document.getElementById('btnGraphNovelty');
       const btnPapers = document.getElementById('btnGraphPapers');
+      const btnSummary = document.getElementById('btnGraphSummary');
       const atlas3d = document.getElementById('atlas3dContainer');
       const matrixCont = document.getElementById('candidatesMatrixContainer');
       const titleEl = document.getElementById('atlasPanelTitle');
@@ -4067,6 +4074,8 @@
       if (btnAtlas) btnAtlas.className = kind === 'atlas' ? 'btn btn--primary' : 'btn';
       if (btnNovelty) btnNovelty.className = kind === 'novelty' ? 'btn btn--primary' : 'btn';
       if (btnPapers) btnPapers.className = kind === 'papers' ? 'btn btn--primary' : 'btn';
+      if (btnSummary) btnSummary.className = kind === 'summary' ? 'btn btn--primary' : 'btn';
+      if (kind !== 'summary' && typeof hideManuscriptGraph === 'function') hideManuscriptGraph();
 
       if (kind === 'atlas') {
         if (atlas3d) atlas3d.style.display = 'block';
@@ -4085,6 +4094,13 @@
         }
         if (titleEl) titleEl.textContent = t('atlas.title.novelty');
         if (openLink) openLink.href = apiUrl('/api/atlas/novelty/view');
+      } else if (kind === 'summary') {
+        // Offline layered view of .papersmith/manuscript_graph.json (manuscript-graph-panel.js).
+        if (atlas3d) atlas3d.style.display = 'block';
+        if (matrixCont) matrixCont.style.display = 'none';
+        if (titleEl) titleEl.textContent = t('atlas.title.summary');
+        if (openLink) openLink.href = apiUrl('/api/atlas/manuscript-graph/view');
+        if (typeof showManuscriptGraph === 'function') showManuscriptGraph();
       } else {
         if (atlas3d) atlas3d.style.display = 'none';
         if (matrixCont) matrixCont.style.display = 'block';

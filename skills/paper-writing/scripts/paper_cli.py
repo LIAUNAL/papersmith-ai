@@ -1578,6 +1578,7 @@ def _refresh_atlas_manuscript(paper_dir: Path, result: dict) -> dict:
     with no atlas gets nothing and `result` comes back unchanged. Never
     refuses: a builder error rides along as `atlas_manuscript.warning`."""
     root = Path(paper_dir).resolve().parent
+    result = _refresh_manuscript_graph(root, paper_dir, result)
     if not (root / "sota-pool" / "atlas.json").is_file() or not ATLAS_MANUSCRIPT.is_file():
         return result
     try:
@@ -1591,6 +1592,32 @@ def _refresh_atlas_manuscript(paper_dir: Path, result: dict) -> dict:
         layer = {"ok": False, "status": "error",
                  "warning": f"atlas manuscript layer not rebuilt: {type(exc).__name__}: {exc}"[:300]}
     return result if layer is None else {**result, "atlas_manuscript": layer}
+
+
+#: The command center's manuscript summary graph (S6). It imports its sibling
+#: readers as a package, so it is loaded as `skills._core.command_center`
+#: from the kit root that holds this script.
+MANUSCRIPT_GRAPH = ATLAS_MANUSCRIPT.with_name("manuscript_graph.py")
+
+
+def _refresh_manuscript_graph(root: Path, paper_dir: Path, result: dict) -> dict:
+    """Rebuild `.papersmith/manuscript_graph.json` next to the atlas layer, in
+    a workspace (`papersmith.yaml` present); otherwise `result` is unchanged.
+    Never refuses: a builder error rides along as `manuscript_graph.warning`."""
+    if not (root / "papersmith.yaml").is_file() or not MANUSCRIPT_GRAPH.is_file():
+        return result
+    try:
+        import importlib  # noqa: PLC0415
+
+        kit_root = str(MANUSCRIPT_GRAPH.parents[3])
+        if kit_root not in sys.path:
+            sys.path.insert(0, kit_root)
+        module = importlib.import_module("skills._core.command_center.manuscript_graph")
+        graph = module.refresh(root, paper_dir=paper_dir)
+    except Exception as exc:  # noqa: BLE001 - a trigger never fails the verb
+        graph = {"ok": False, "status": "error",
+                 "warning": f"manuscript graph not rebuilt: {type(exc).__name__}: {exc}"[:300]}
+    return result if graph is None else {**result, "manuscript_graph": graph}
 
 
 def cmd_bib(args: argparse.Namespace) -> dict:

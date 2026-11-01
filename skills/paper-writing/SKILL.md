@@ -765,6 +765,19 @@ result rides in the verb's JSON under `atlas_manuscript`; a builder error is a
 `warning` there and never changes the verb's status or exit code. Without an
 atlas the output is unchanged. On demand: `smith atlas cited`.
 
+**The manuscript summary graph follows the same events.** In a workspace
+(`papersmith.yaml` present) the same `bib build`/`bib refresh`, `verify` and
+compile also rebuild `.papersmith/manuscript_graph.json`
+(`skills/_core/command_center/manuscript_graph.py`): topic, problem and pillars,
+hypotheses, the cited SOTA, the base mathematics
+(`materials-and-methods.mm-borrowed-machinery`) apart from the novelty
+mathematics (`materials-and-methods.mm-proposal`), experiments, findings and the
+first sentence of each `conclusions.concl-block-*`, each node naming its source
+and blocks, and a missing source marked `missing` with the phase that fills it.
+It rides under `manuscript_graph` with the same warning-only rule. So the graph
+reads well, keep each displayed equation `\label`ed and reference the borrowed
+equation the proposal builds on with `\eqref`. On demand: `smith atlas summary`.
+
 **`bib refresh` relinks metadata; it never judges support.** After a
 re-`resolve` caches better metadata (a year, a venue) for a DOI or arXiv id
 already cited, `bib refresh` points the citation at it without re-quoting

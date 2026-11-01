@@ -1,0 +1,38 @@
+\documentclass{article}
+\begin{document}
+%% paper-writing block materials-and-methods.mm-borrowed-machinery begin sha256=0000000000000000000000000000000000000000000000000000000000000000
+Mean pooling averages the instance embeddings:
+\begin{equation}
+\bar h = \frac{1}{n}\sum_i h_i \label{eq:mean}
+\end{equation}
+%% paper-writing block materials-and-methods.mm-borrowed-machinery end
+%% paper-writing block materials-and-methods.mm-proposal begin sha256=0000000000000000000000000000000000000000000000000000000000000000
+Building on Eq.~\eqref{eq:mean}, attention weights each instance \cite{alpha2024} and graph priors share them \citep{beta2023}:
+\begin{equation}
+z = \sum_i a_i h_i \label{eq:calibrated}
+\end{equation}
+%% paper-writing block materials-and-methods.mm-proposal end
+%% paper-writing block conclusions.concl-block-1 begin sha256=0000000000000000000000000000000000000000000000000000000000000000
+We proposed calibrated set pooling. It has two components.
+%% paper-writing block conclusions.concl-block-1 end
+%% paper-writing block conclusions.concl-block-2 begin sha256=0000000000000000000000000000000000000000000000000000000000000000
+% a comment that is not prose
+Calibrated attention reached an AUC of 0.91 on the toy set. The rest follows.
+%% paper-writing block conclusions.concl-block-2 end
+\bibliography{refs}
+\end{document}
+%% paper-writing declarations begin sha256=73e3dbcf038553dc4b002322adea7486dd8b710a4b393300969c44a37ac6c44c
+%% {
+%%   "generation": 1,
+%%   "records": [
+%%     {
+%%       "fixed": true,
+%%       "generation": 1,
+%%       "id": "problem-statement",
+%%       "kind": "fact",
+%%       "recorded": "2026-11-01T18:55:54.027302+00:00",
+%%       "resolution": "Attention pooling assigns uncalibrated instance weights."
+%%     }
+%%   ]
+%% }
+%% paper-writing declarations end

@@ -1,4 +1,8 @@
-"""``smith atlas build|cited``: the workspace's SOTA atlas actions.
+"""``smith atlas build|cited|summary``: the workspace's SOTA atlas actions.
+
+``smith atlas summary`` writes the manuscript summary graph
+(``.papersmith/manuscript_graph.json``) through
+``skills/_core/command_center/manuscript_graph.py``, the same way.
 
 ``smith atlas cited`` writes the manuscript layer
 (``sota-pool/atlas.manuscript.json``: which atlas systems the paper cites)
@@ -28,6 +32,9 @@ ATLAS_BUILD_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_build.p
 #: The workspace module that writes the manuscript layer.
 ATLAS_MANUSCRIPT_MODULE = "skills._core.command_center.atlas_manuscript"
 ATLAS_MANUSCRIPT_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_manuscript.py"
+#: The workspace module that writes the manuscript summary graph.
+MANUSCRIPT_GRAPH_MODULE = "skills._core.command_center.manuscript_graph"
+MANUSCRIPT_GRAPH_ENTRY = Path("skills") / "_core" / "command_center" / "manuscript_graph.py"
 
 
 def _run_module(args, module: str, entry: Path) -> int:
@@ -53,6 +60,10 @@ def run_build(args) -> int:
 
 def run_cited(args) -> int:
     return _run_module(args, ATLAS_MANUSCRIPT_MODULE, ATLAS_MANUSCRIPT_ENTRY)
+
+
+def run_summary(args) -> int:
+    return _run_module(args, MANUSCRIPT_GRAPH_MODULE, MANUSCRIPT_GRAPH_ENTRY)
 
 
 def register(subparsers) -> None:
@@ -87,7 +98,20 @@ def register(subparsers) -> None:
     cited.add_argument("--json", action="store_true", help="print the result as JSON")
     cited.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     cited.set_defaults(handler=run_cited)
+    summary = actions.add_parser(
+        "summary",
+        help="write .papersmith/manuscript_graph.json: the manuscript summary graph",
+        description=("Read the topic, problem, pillars, hypotheses, cited SOTA, base and "
+                     "novelty mathematics, experiments, findings and conclusions from the "
+                     "artifacts each phase wrote, and write .papersmith/manuscript_graph.json "
+                     "(typed nodes and edges; a missing source is a node marked missing with "
+                     "the phase that fills it). Exit 0 when the graph was written, 1 otherwise."),
+    )
+    summary.add_argument("--json", action="store_true", help="print the result as JSON")
+    summary.add_argument("directory", nargs="?", default=".", metavar="<dir>")
+    summary.set_defaults(handler=run_summary)
 
 
-__all__ = ["register", "run_build", "run_cited", "ATLAS_BUILD_MODULE", "ATLAS_BUILD_ENTRY",
+__all__ = ["register", "run_build", "run_cited", "run_summary",
+           "MANUSCRIPT_GRAPH_MODULE", "MANUSCRIPT_GRAPH_ENTRY", "ATLAS_BUILD_MODULE", "ATLAS_BUILD_ENTRY",
            "ATLAS_MANUSCRIPT_MODULE", "ATLAS_MANUSCRIPT_ENTRY"]

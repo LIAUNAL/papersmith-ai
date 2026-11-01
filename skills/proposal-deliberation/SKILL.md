@@ -126,6 +126,20 @@ system, the proposal, plus its links into the constellation:
   `shares-family-with` — the last one only between the two systems' own
   `family` planets). `from_system` is deliberately absent: every overlay link
   starts at the proposal, and the merger writes it.
+- `pillars`, the pillars the problem decomposes into, each `{id, label, detail,
+  contribution}` where `contribution` names one of this overlay's `contribution`
+  planets; and `hypotheses`, the testable prediction each pillar makes, each
+  `{id, statement, pillar, experiments}` where `pillar` names a pillar id and
+  `experiments` lists the protocol's `[exp:<id>]` ids once the protocol exists
+  (empty until then). Write both for every revision the deliberation accepts,
+  from the pillars and hypotheses discussed with the operator, verbatim; never
+  invent one the revision does not argue. They stay in the overlay (the merged
+  atlas never carries them); the merger refuses a malformed list by name
+  (`PILLAR_MALFORMED`, `PILLAR_ID_DUPLICATED`, `PILLAR_CONTRIBUTION_UNKNOWN`,
+  `HYPOTHESIS_MALFORMED`, `HYPOTHESIS_PILLAR_UNKNOWN`, `HYPOTHESIS_ID_DUPLICATED`,
+  `HYPOTHESIS_EXPERIMENTS_MALFORMED`, `HYPOTHESES_WITHOUT_PILLARS`). An older
+  overlay without them still merges; the manuscript summary graph
+  (`smith atlas summary`) then shows the pillars as missing.
 
 The checker runs on the merged file because it is the only authority on the
 constellation's shape; the merger refuses only what makes the merge incoherent

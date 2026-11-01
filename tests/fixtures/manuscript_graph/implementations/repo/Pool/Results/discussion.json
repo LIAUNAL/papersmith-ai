@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "stage": "poc",
+  "summary": "Calibrated attention helps on the toy set. The graph prior did not reduce variance.",
+  "hypotheses": [
+    {"id": "H1", "experiment": "exp:e1", "statement": "Calibrated attention improves AUC over mean pooling.", "verdict": "supported", "observed": "AUC 0.91 versus 0.88"},
+    {"id": "H2", "experiment": "exp:e2", "statement": "The graph prior reduces fold variance.", "verdict": "not_supported", "observed": "standard deviation unchanged"}
+  ],
+  "novelty": {"claim": "Calibration is new for attention pooling.", "verdict": "justified"}
+}
