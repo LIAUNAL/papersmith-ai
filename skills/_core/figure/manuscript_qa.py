@@ -153,7 +153,7 @@ def _page_objects(page) -> list[dict]:
         elif kind == pdfium_c.FPDF_PAGEOBJ_PATH:
             # `print_scale`'s own visibility test (fill mode or stroke),
             # shared so a path invisible to one measure is invisible to all.
-            filled, stroked = print_scale._path_is_drawn(obj)
+            filled, stroked = print_scale.path_is_drawn(obj)
             if filled or stroked:
                 objects.append({"kind": "drawing", "bbox": box})
     return objects

@@ -49,6 +49,15 @@ Public API (stable; later writers import it, never copy it):
          "margins": {"left", "right", "bottom", "top"} | None,
          "full_page_background": bool,
          "counts": {"text": int, "image": int, "path": int, "other": int}}
+        Top-level page objects only: a form XObject (an included PDF)
+        counts once, as "other", by its page-space bounds.
+    drawn_path_boxes(pdf: Path, page_index: int = 0) -> list[list[float]]
+        [l, b, r, t] of every drawn (filled or stroked) top-level path, in
+        drawing order, without the full-page background `content_bbox`
+        reports.
+    path_is_drawn(obj) -> tuple[bool, bool]
+        (filled, stroked) of a pypdfium2 path object; (False, False) for a
+        path neither filled nor stroked.
 
 How the text layer is read (pypdfium2, Apache-2.0/BSD-3; PyMuPDF is not
 used: AGPL and undeclared):
@@ -294,6 +303,10 @@ def _path_is_drawn(obj) -> tuple:
     return fill_mode.value != 0, bool(stroke.value)
 
 
+#: Public name of the visibility test every measure shares.
+path_is_drawn = _path_is_drawn
+
+
 def _coverage(box, mediabox) -> float:
     width = min(box[2], mediabox[2]) - max(box[0], mediabox[0])
     height = min(box[3], mediabox[3]) - max(box[1], mediabox[1])
@@ -308,7 +321,10 @@ def content_bbox(pdf: Path, page_index: int = 0) -> dict:
     MediaBox. A filled path covering >= 98 % of the page as the first drawn
     object is reported as `full_page_background` and left out of the union,
     so the margins describe the real content. Paths neither filled nor
-    stroked (invisible) are ignored; form XObjects count by their bounds."""
+    stroked (invisible) are ignored; form XObjects count by their bounds.
+
+    Only top-level objects are walked (`max_depth=0`): the children of a
+    form XObject report bounds in the form's own space, not the page's."""
     document = pdfium.PdfDocument(str(pdf))
     try:
         page = document[page_index]
@@ -317,7 +333,7 @@ def content_bbox(pdf: Path, page_index: int = 0) -> dict:
         boxes = []
         background = False
         first = True
-        for obj in page.get_objects():
+        for obj in page.get_objects(max_depth=0):
             kind = obj.type
             if kind == pdfium_c.FPDF_PAGEOBJ_PATH:
                 filled, stroked = _path_is_drawn(obj)
@@ -361,3 +377,33 @@ def content_bbox(pdf: Path, page_index: int = 0) -> dict:
             "top": round(mediabox[3] - union[3], 3),
         }
     return result
+
+
+def drawn_path_boxes(pdf: Path, page_index: int = 0) -> list:
+    """Bounds of every drawn (filled or stroked) top-level path on the page,
+    in drawing order, skipping a first filled path that covers the page
+    (the background `content_bbox` reports). The walk `content_bbox` does,
+    kept per object for rules that need one drawing's place, such as the
+    top of a plot's axes."""
+    document = pdfium.PdfDocument(str(pdf))
+    try:
+        page = document[page_index]
+        mediabox = [float(value) for value in page.get_mediabox()]
+        boxes = []
+        first = True
+        for obj in page.get_objects(max_depth=0):
+            if obj.type != pdfium_c.FPDF_PAGEOBJ_PATH:
+                first = False
+                continue
+            filled, stroked = _path_is_drawn(obj)
+            if not (filled or stroked):
+                continue
+            box = [float(value) for value in obj.get_bounds()]
+            if first and filled and _coverage(box, mediabox) >= _BACKGROUND_COVERAGE:
+                first = False
+                continue
+            first = False
+            boxes.append(box)
+    finally:
+        document.close()
+    return boxes

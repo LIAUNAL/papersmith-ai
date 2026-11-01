@@ -108,35 +108,6 @@ def text_width_pt(main_tex: Path, print_scale) -> tuple:
     return table["article-a4-10pt"], "fallback"
 
 
-def _drawn_path_boxes(pdf: Path, print_scale) -> list:
-    """Bounds of every drawn (filled or stroked) path on page 0, skipping a
-    first filled path that covers the page (the background
-    `content_bbox` already reports). The same walk `content_bbox` does,
-    kept per object because the title rule needs the plotting area's top."""
-    document = print_scale.pdfium.PdfDocument(str(pdf))
-    try:
-        page = document[0]
-        mediabox = [float(value) for value in page.get_mediabox()]
-        boxes = []
-        first = True
-        for obj in page.get_objects():
-            if obj.type != print_scale.pdfium_c.FPDF_PAGEOBJ_PATH:
-                first = False
-                continue
-            filled, stroked = print_scale._path_is_drawn(obj)
-            if not (filled or stroked):
-                continue
-            box = [float(value) for value in obj.get_bounds()]
-            if first and filled and print_scale._coverage(box, mediabox) >= print_scale._BACKGROUND_COVERAGE:
-                first = False
-                continue
-            first = False
-            boxes.append(box)
-    finally:
-        document.close()
-    return boxes
-
-
 def _provenance_fields(provenance: dict) -> tuple:
     kind = provenance.get("figureKind", "plot")
     if kind not in FIGURE_KINDS:
@@ -204,7 +175,7 @@ def check_figure(paper_dir: Path, pdf: Path, provenance: dict) -> dict:
         bounds = print_scale.content_bbox(pdf)
         spans = print_scale.pdf_text_spans(pdf)
         font = print_scale.printed_font_report(pdf, printed_width, body_pt)
-        path_boxes = _drawn_path_boxes(pdf, print_scale)
+        path_boxes = print_scale.drawn_path_boxes(pdf)
     except print_scale.pdfium.PdfiumError as exc:
         raise Refused("FIGURE_PDF_UNREADABLE", f"{pdf} cannot be read as a PDF: {exc}") from exc
 

@@ -59,34 +59,6 @@ def _unmeasured(reason: str) -> dict:
     return {name: {"verdict": "unmeasured", "reason": reason} for name in VECTOR_DIMENSIONS}
 
 
-def _drawn_path_boxes(pdf: Path, print_scale) -> list:
-    """Bounds of every drawn path on page 0 except a first filled path that
-    covers the page: the walk `print_scale.content_bbox` does, kept per
-    object because the title rule needs the plotting area's top."""
-    document = print_scale.pdfium.PdfDocument(str(pdf))
-    try:
-        page = document[0]
-        mediabox = [float(value) for value in page.get_mediabox()]
-        boxes = []
-        first = True
-        for obj in page.get_objects():
-            if obj.type != print_scale.pdfium_c.FPDF_PAGEOBJ_PATH:
-                first = False
-                continue
-            filled, stroked = print_scale._path_is_drawn(obj)
-            if not (filled or stroked):
-                continue
-            box = [float(value) for value in obj.get_bounds()]
-            if first and filled and print_scale._coverage(box, mediabox) >= print_scale._BACKGROUND_COVERAGE:
-                first = False
-                continue
-            first = False
-            boxes.append(box)
-    finally:
-        document.close()
-    return boxes
-
-
 def measure_pdf(pdf: Path, *, body_pt: float, body_source: str,
                 printed_width_pt: float | None) -> dict:
     """The four vector dimensions for `pdf`, keyed by roster name."""
@@ -98,7 +70,7 @@ def measure_pdf(pdf: Path, *, body_pt: float, body_source: str,
         bounds = print_scale.content_bbox(pdf)
         spans = print_scale.pdf_text_spans(pdf)
         font = print_scale.printed_font_report(pdf, printed_width_pt, body_pt)
-        path_boxes = _drawn_path_boxes(pdf, print_scale)
+        path_boxes = print_scale.drawn_path_boxes(pdf)
     except (print_scale.pdfium.PdfiumError, OSError):
         return _unmeasured("PDF_UNREADABLE")
     floor = figure_dimensions.min_printed_font_verdict(font)

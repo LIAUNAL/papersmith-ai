@@ -77,6 +77,16 @@ RASTER_TEX = r"""\documentclass[border=0pt]{standalone}
 \end{document}
 """
 
+#: `tight.pdf` (a 2 cm x 1 cm rectangle, no border) placed 4 cm from the left
+#: edge as a form XObject. Its rectangle sits at the form's own origin, so a
+#: walk that descends into the form would see it at x = 0 of the page.
+FORM_TEX = r"""\documentclass[border=0pt]{standalone}
+\usepackage{graphicx}
+\begin{document}
+\hspace*{4cm}\includegraphics[scale=0.5]{tight.pdf}
+\end{document}
+"""
+
 
 def _compile(directory: Path, name: str, source: str) -> Path:
     (directory / f"{name}.tex").write_text(source, encoding="utf-8")
@@ -143,6 +153,7 @@ class PdfMeasurementTests(unittest.TestCase):
         cls.loose = _compile(directory, "loose", _border_tex(10))
         (directory / "dot.png").write_bytes(_png_bytes())
         cls.raster = _compile(directory, "raster", RASTER_TEX)
+        cls.form = _compile(directory, "form", FORM_TEX)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -208,6 +219,26 @@ class PdfMeasurementTests(unittest.TestCase):
             with self.subTest(side=side):
                 self.assertAlmostEqual(tight[side], 0.0, delta=0.5)
                 self.assertAlmostEqual(loose[side], border_pdf, delta=0.5)
+
+    def test_a_form_xobject_counts_by_its_page_bounds_not_its_children(self) -> None:
+        # The children of a form XObject report bounds in the form's own
+        # space; counted, the rectangle would land at the page's left edge.
+        result = print_scale.content_bbox(self.form)
+        offset = 4 * 72.27 / 2.54 * print_scale.TEX_PT_TO_PDF_PT
+        self.assertAlmostEqual(result["margins"]["left"], offset, delta=1.0)
+        self.assertAlmostEqual(result["margins"]["right"], 0.0, delta=1.0)
+        self.assertEqual(result["counts"], {"text": 0, "image": 0, "path": 0, "other": 1})
+        self.assertEqual(print_scale.drawn_path_boxes(self.form), [])
+
+    def test_drawn_path_boxes_skip_the_background_and_keep_each_path(self) -> None:
+        boxes = print_scale.drawn_path_boxes(self.background)
+        self.assertEqual(len(boxes), 1)
+        left, bottom, right, top = boxes[0]
+        self.assertGreater(left, 20.0)
+        self.assertEqual(len(print_scale.drawn_path_boxes(self.tight)), 1)
+
+    def test_path_is_drawn_is_public(self) -> None:
+        self.assertIs(print_scale.path_is_drawn, print_scale._path_is_drawn)
 
 
 if __name__ == "__main__":
