@@ -3394,7 +3394,7 @@
                 </div>
               </div>
 
-              <button class="btn btn--sm" id="btnAuditAi" onclick="auditManuscriptAi()" title="Audit manuscript for AI markers and stylometric burstiness" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">🤖 AI Audit</button>
+              <button class="btn btn--sm" id="btnAuditAi" onclick="auditManuscriptAi()" title="Audit the writing style: sentence cadence, overused phrasing and lexical diversity" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">✍️ Style audit</button>
               <button class="btn btn--sm" onclick="toggleNativeViewer()" id="btnToggleNative" title="Switch between PDF.js and the browser's native viewer" data-i18n-attr="title:pdf.toggleViewerTitle">Native Viewer</button>
               <a href="/api/pdf" download class="btn btn--sm" title="Download the compiled main.pdf" data-i18n-attr="title:pdf.downloadTitle" data-i18n="pdf.download">⬇ Download</a>
             </div>
@@ -3473,7 +3473,7 @@
                   <button class="btn btn--xs btn--comment" onclick="triggerAddComment()" data-i18n="changes.quick.comment">💬 Comment</button>
                   <button class="btn btn--xs btn--strikethrough" onclick="triggerStrikethrough()" data-i18n="annot.card.strike">✂️ Strike through</button>
                   <button class="btn btn--xs btn--humanize" onclick="triggerHumanize()" data-i18n="annot.card.humanize">✨ Humanize</button>
-                  <button class="btn btn--xs btn--info" id="btnAuditSelectionAi" onclick="auditCurrentSelectionAi()" title="Audit manuscript for AI markers and stylometric burstiness" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">🤖 AI Audit</button>
+                  <button class="btn btn--xs btn--info" id="btnAuditSelectionAi" onclick="auditCurrentSelectionAi()" title="Audit the writing style: sentence cadence, overused phrasing and lexical diversity" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">✍️ Style audit</button>
                 </div>
               </div>
             </div>
@@ -5927,17 +5927,17 @@
         });
         const data = await res.json();
         if (data.ok && badge) {
-          const score = (data.composite_score * 100).toFixed(0);
+          const score = (data.style_score * 100).toFixed(0);
           badge.style.display = 'inline-block';
-          if (data.verdict === 'ai_flagged') {
+          if (data.style_verdict === 'needs_revision') {
             badge.className = 'badge badge--bad';
-            badge.textContent = `${t('pdf.aiRiskHigh')} (${score}%)`;
-          } else if (data.verdict === 'mixed') {
+            badge.textContent = `${t('pdf.styleNeedsRevision')} (${score}%)`;
+          } else if (data.style_verdict === 'uneven') {
             badge.className = 'badge badge--warn';
-            badge.textContent = `${t('pdf.aiRiskMixed')} (${score}%)`;
+            badge.textContent = `${t('pdf.styleUneven')} (${score}%)`;
           } else {
             badge.className = 'badge badge--ok';
-            badge.textContent = `${t('pdf.aiRiskLow')} (${score}%)`;
+            badge.textContent = `${t('pdf.styleClear')} (${score}%)`;
           }
           if (clichesEl && data.cliches && data.cliches.findings && data.cliches.findings.length) {
             clichesEl.style.display = 'block';
@@ -5945,7 +5945,7 @@
           }
         }
       } catch (err) {
-        console.error('AI audit error:', err);
+        console.error('Style audit error:', err);
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -5963,16 +5963,16 @@
         });
         const data = await res.json();
         if (data.ok) {
-          const score = (data.composite_score * 100).toFixed(0);
-          const verdictLabel = data.risk === 'ai_flagged' ? t('pdf.aiRiskHigh') : (data.risk === 'mixed' ? t('pdf.aiRiskMixed') : t('pdf.aiRiskLow'));
+          const score = (data.style_score * 100).toFixed(0);
+          const verdictLabel = data.style_verdict === 'needs_revision' ? t('pdf.styleNeedsRevision') : (data.style_verdict === 'uneven' ? t('pdf.styleUneven') : t('pdf.styleClear'));
           const msg = `${t('pdf.auditManuscriptResult')}: ${verdictLabel} (${score}%, ${data.blocks_analyzed} blocks)`;
           showToast(msg);
-          alert(`${msg}\n\n• Burstiness CV: ${data.burstiness && data.burstiness.cv != null ? data.burstiness.cv.toFixed(2) : 'N/A'}\n• Cliches: ${data.cliches ? data.cliches.total_count : 0}\n• Lexical diversity (TTR): ${data.lexical_diversity && data.lexical_diversity.ttr != null ? data.lexical_diversity.ttr.toFixed(2) : 'N/A'}`);
+          alert(`${msg}\n\n• Burstiness CV: ${data.burstiness && data.burstiness.cv != null ? data.burstiness.cv.toFixed(2) : 'N/A'}\n• Overused phrasing: ${data.cliches ? data.cliches.total_count : 0}\n• Lexical diversity (TTR): ${data.lexical_diversity && data.lexical_diversity.ttr != null ? data.lexical_diversity.ttr.toFixed(2) : 'N/A'}`);
         } else {
-          showToast(`AI audit error: ${data.error || 'unknown'}`);
+          showToast(`Style audit error: ${data.error || 'unknown'}`);
         }
       } catch (err) {
-        showToast(`AI audit failed: ${err.message}`);
+        showToast(`Style audit failed: ${err.message}`);
       } finally {
         if (btn) btn.disabled = false;
       }

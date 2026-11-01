@@ -650,7 +650,7 @@ _SKILLS = Path(__file__).resolve().parents[2]
 JOURNAL_CLI = _SKILLS / "journal-finder" / "scripts" / "journal_cli.py"
 #: The venue verbs, imported by file path so `approve` can record `via=dashboard`.
 PAPER_VENUE = _SKILLS / "paper-writing" / "scripts" / "paper_venue.py"
-#: The stylometric and AI-risk quantification metrics module.
+#: The writing-quality style metrics module (cadence, overused phrasing, lexical diversity).
 PAPER_AI_METRICS = _SKILLS / "paper-writing" / "scripts" / "paper_ai_metrics.py"
 SJR_DOWNLOAD_URL = "https://www.scimagojr.com/journalrank.php"
 #: The CLI's own search deadline is 300 s; the child is killed shortly after.
@@ -2219,6 +2219,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                         "ok": True,
                         "scope": "manuscript",
                         "blocks_analyzed": 0,
+                        "style_score": 0.0,
+                        "style_verdict": "clear",
+                        # Deprecated aliases, removed in the next release.
                         "composite_score": 0.0,
                         "risk": "low",
                         "blocks": {},
@@ -2235,11 +2238,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     b_id = match.group("id")
                     b_text = match.group("body").strip()
                     if b_text:
-                        b_res = mod.analyze_ai_signatures(b_text)
+                        b_res = mod.analyze_style(b_text)
                         blocks_data[b_id] = {
-                            "composite_score": b_res["composite_score"],
+                            "style_score": b_res["style_score"],
+                            "style_verdict": b_res["style_verdict"],
+                            "cliches": b_res.get("overused_phrasing", {}).get("total_count", 0),
+                            # Deprecated aliases, removed in the next release.
+                            "composite_score": b_res["style_score"],
                             "risk": b_res.get("verdict", "low"),
-                            "cliches": b_res.get("cliches", {}).get("total_count", 0),
                         }
                         all_blocks_text.append(b_text)
 
@@ -2249,16 +2255,23 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                         "ok": True,
                         "scope": "manuscript",
                         "blocks_analyzed": 0,
+                        "style_score": 0.0,
+                        "style_verdict": "clear",
+                        # Deprecated aliases, removed in the next release.
                         "composite_score": 0.0,
                         "risk": "low",
                         "blocks": {},
                     })
-                manuscript_res = mod.analyze_ai_signatures(full_text)
+                manuscript_res = mod.analyze_style(full_text)
                 return JSONResponse({
                     "ok": True,
                     "scope": "manuscript",
                     "blocks_analyzed": len(blocks_data),
-                    "composite_score": manuscript_res["composite_score"],
+                    "style_score": manuscript_res["style_score"],
+                    "style_verdict": manuscript_res["style_verdict"],
+                    "disclosure_notice": manuscript_res.get("disclosure_notice"),
+                    # Deprecated aliases, removed in the next release.
+                    "composite_score": manuscript_res["style_score"],
                     "risk": manuscript_res.get("verdict", "low"),
                     "burstiness": manuscript_res.get("burstiness"),
                     "cliches": manuscript_res.get("cliches"),
@@ -2271,7 +2284,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
         try:
             mod = _ai_metrics_module()
-            results = mod.analyze_ai_signatures(text)
+            results = mod.analyze_style(text)
             return JSONResponse({"ok": True, **results})
         except Exception as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)

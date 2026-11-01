@@ -387,7 +387,9 @@ class ServerEndpointTests(unittest.TestCase):
         try:
             res = paper_write.write_block(paper_dir, contract, draft, audit)
             self.assertEqual(res["status"], "written")
-            self.assertIn("aiStylometry", res)
+            self.assertIn("styleQuality", res)
+            self.assertIn("style_score", res["styleQuality"])
+            self.assertIs(res["aiStylometry"], res["styleQuality"])  # deprecated alias
             self.assertIn("composite_score", res["aiStylometry"])
             self.assertIn("burstiness", res["aiStylometry"])
             self.assertIn("cliches", res["aiStylometry"])
@@ -553,3 +555,41 @@ class StyleQualityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StyleCallerMigrationTests(unittest.TestCase):
+    """The callers outside the module speak the style vocabulary."""
+
+    def test_manuscript_audit_route_reports_style_keys_with_aliases(self) -> None:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        root = Path(holder.name)
+        (root / "paper").mkdir()
+        body = _OVERUSED_DRAFT + "\n"
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        (root / "paper" / "main.tex").write_text(
+            f"%% paper-writing block b1 begin sha256={digest}\n{body}%% paper-writing block b1 end\n",
+            encoding="utf-8")
+        client = TestClient(server.create_app(root))
+        data = client.post("/api/pdf/ai-audit", json={}).json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["style_verdict"], "needs_revision")
+        self.assertEqual(data["style_score"], data["composite_score"])
+        self.assertEqual(data["risk"], "ai_flagged")
+        self.assertEqual(data["blocks"]["b1"]["style_verdict"], "needs_revision")
+        self.assertEqual(data["blocks"]["b1"]["style_score"], data["blocks"]["b1"]["composite_score"])
+
+    def test_server_and_writer_call_analyze_style(self) -> None:
+        for path in (REPO / "skills" / "_core" / "command_center" / "server.py",
+                     REPO / "skills" / "paper-writing" / "scripts" / "paper_write.py"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("analyze_ai_signatures", path.read_text(encoding="utf-8"))
+
+    def test_dashboard_labels_are_style_wording(self) -> None:
+        static = REPO / "skills" / "_core" / "command_center" / "static"
+        for path in (static / "index.html", static / "i18n" / "en.js", static / "i18n" / "es.js"):
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn("pdf.aiRisk", text)
+                self.assertNotIn("AI Risk", text)
+        self.assertIn("pdf.styleNeedsRevision", (static / "index.html").read_text(encoding="utf-8"))

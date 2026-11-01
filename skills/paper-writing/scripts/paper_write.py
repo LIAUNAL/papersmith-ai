@@ -303,7 +303,7 @@ def write_block(
     paper_evidence.append_grounding_run(paper_dir, contract.block_id, source_grounding)
 
     import paper_ai_metrics  # noqa: PLC0415
-    ai_report = paper_ai_metrics.analyze_ai_signatures(draft["latex"])
+    style_quality = paper_ai_metrics.analyze_style(draft["latex"])
 
     return {
         "status": "written",
@@ -312,7 +312,9 @@ def write_block(
         "styleChannel": style_report,
         "sourceFidelity": source_fidelity,
         "sourceGrounding": source_grounding,
-        "aiStylometry": ai_report,
+        "styleQuality": style_quality,
+        # Deprecated alias of `styleQuality`, removed in the next release.
+        "aiStylometry": style_quality,
         **result,
     }
 
