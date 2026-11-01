@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """diagram_cli: the deterministic half of `experiment-diagrams`.
 
-Four subcommands, each printing exactly one JSON object on stdout:
+Five subcommands, each printing exactly one JSON object on stdout:
 
     derive --target <repo> --name <Name> --kind poc|experiments
     render --spec <path/to/diagrams/<kind>.json>
+    audit --spec <path/to/diagrams/<kind>.json>
     status --target <repo> --name <Name>
     validate --target <repo> --name <Name> --kind poc|experiments
              --png-sha256 <hex> --operator-statement "<the operator's words>"
+             [--audit-override "<the operator's words>"]
+
+`render` designs the figure at the width it prints (explicit `\\fontsize`
+sizes, never below 0.70 x the manuscript body size), refuses any overfull
+box, and runs the mechanical audit (`skills/_core/figure/diagram_audit.py`)
+into `diagrams/<kind>.audit.json`; `validate` requires that audit to read
+`pass` for the PNG drawn now, unless the operator's own words override it.
 
 `--target` is the cloned repository under `implementations/<repo>/` (a path,
 or the bare `<repo>` name resolved under the forge's own `implementations/`);
@@ -17,11 +25,12 @@ implementation engine uses. Every file this script writes lands inside
 
 A refusal prints `{"ok": false, "error": <CODE>, "message": ...}` and exits
 non-zero. Codes: `APPROVAL_ABSENT`, `PRODUCT_ABSENT`, `DIAGRAMS_OUTSIDE_PRODUCT`,
-`SPEC_INVALID`, `TEX_TOOLCHAIN_ABSENT`, `TEX_COMPILE_FAILED`,
+`SPEC_INVALID`, `TEX_TOOLCHAIN_ABSENT`, `TEX_COMPILE_FAILED`, `TEX_OVERFULL`,
 `RASTER_TOOLCHAIN_ABSENT`, and for `validate`: `SPEC_ABSENT`, `DIAGRAM_ABSENT`,
-`PNG_HASH_INVALID`, `PNG_HASH_MISMATCH`, `STATEMENT_EMPTY`.
+`PNG_HASH_INVALID`, `PNG_HASH_MISMATCH`, `STATEMENT_EMPTY`, `AUDIT_NOT_PASSED`.
 
-Standard library only. TeX runs with shell escape disabled; every process is
+`derive`, `status` and `validate` use the standard library only; `render`
+and `audit` load `_core/figure/diagram_audit` (pypdfium2). TeX runs with shell escape disabled; every process is
 spawned from an argument list, never a shell string.
 """
 from __future__ import annotations
@@ -170,9 +179,11 @@ def validation_provenance(product: Path, kind: str) -> dict | None:
 
 
 def write_validation(product: Path, kind: str, *, via: str | None = None,
-                     statement: str | None = None) -> dict:
+                     statement: str | None = None, audit_override: str | None = None) -> dict:
     """Record that the operator validated the PNG drawn now. The dashboard
-    calls it bare; `validate` passes `via="chat"` and the operator's words."""
+    calls it bare; `validate` passes `via="chat"` and the operator's words,
+    plus `audit_override` (the operator's words) when it validated a diagram
+    whose mechanical audit does not read `pass`."""
     if kind not in KINDS:
         raise Refusal("USAGE", f"kind must be one of {KINDS}, not {kind!r}")
     png = diagram_paths(product, kind)["png"]
@@ -183,6 +194,8 @@ def write_validation(product: Path, kind: str, *, via: str | None = None,
     if via is not None:
         record["via"] = via
         record["statement"] = statement
+    if audit_override:
+        record["audit_override"] = audit_override
     # A temporary file renamed over the record replaces a link planted there
     # instead of writing through it to wherever it points.
     target = validation_path(product, kind)
@@ -443,13 +456,46 @@ def validate_spec(spec) -> list[str]:
             errors.append(f"{where}.label: at most 24 characters")
     if not primaries:
         errors.append("edges: the reading spine needs at least one primary edge")
+    errors += _validate_print(spec.get("print"))
+    return errors
+
+
+#: The optional `print` block: how the manuscript includes the figure.
+PRINT_BOUNDS = {"body_pt": (6.0, 14.0), "text_width_pt": (100.0, 700.0), "width_fraction": (0.2, 1.0)}
+
+
+def _validate_print(block) -> list[str]:
+    if block is None:
+        return []
+    if not isinstance(block, dict):
+        return ["print: must be an object (body_pt, text_width_pt, width_fraction)"]
+    errors = []
+    for key, value in block.items():
+        if key not in PRINT_BOUNDS:
+            errors.append(f"print.{key}: unknown key; use {', '.join(PRINT_BOUNDS)}")
+            continue
+        low, high = PRINT_BOUNDS[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            errors.append(f"print.{key}: a number from {low:g} to {high:g}")
     return errors
 
 
 # -- TeX ------------------------------------------------------------------------
+#
+# The figure is designed at the size it prints. Its content width is the
+# declared inclusion width (`print.width_fraction` x `\textwidth`, default
+# the full text width of the manuscript's body size), so it is included at
+# scale ~1 and every font prints at the explicit `\fontsize` written here:
+# never a relative switch (`\small`, `\footnotesize`), never below
+# 0.70 x the body size (`_core/figure/diagram_audit.role_font_pt`). Boxes
+# take their width from the space the layout has; a label that does not fit
+# is a spec problem (shorten it), never a reason to shrink a font.
 
 #: papersmith's own figure library. Written from Sivia's design rules
-#: (github.com/exsinger-hub/Sivia), not copied from it.
+#: (github.com/exsinger-hub/Sivia), not copied from it. Font sizes are the
+#: `\ps...Font` macros `font_macros()` defines per render. `psCanvas` stays
+#: defined for callers that paint their own preview; the paper export draws
+#: no background.
 TIKZ_LIBRARY = r"""
 \definecolor{psCanvas}{HTML}{F7F3E8}
 \definecolor{psInk}{HTML}{20252B}
@@ -457,28 +503,26 @@ TIKZ_LIBRARY = r"""
 \definecolor{psWarm}{HTML}{E09F3E}
 \definecolor{psAlert}{HTML}{D96855}
 \tikzset{
-  ps base/.style={align=center, text=psInk, font=\small, inner sep=5pt},
+  ps base/.style={align=center, text=psInk, font=\psSpineFont, inner sep=4pt},
   ps operator/.style={ps base, rectangle, rounded corners=3pt, draw=psCool,
-    fill=psCool!14, line width=1.5pt, text width=2.6cm, minimum height=1.25cm},
-  ps state/.style={ps base, rounded rectangle, draw=psInk!60, fill=psInk!7,
-    line width=1.3pt, text width=2.2cm, minimum height=0.8cm},
-  ps focal/.style={ps base, ellipse, draw=psAlert, fill=psWarm!32,
-    line width=1.8pt, text width=2.6cm, minimum width=3.4cm, minimum height=2.1cm,
-    inner sep=1pt, font=\small\bfseries},
+    fill=psCool!14, line width=1.5pt},
+  ps state/.style={ps base, rectangle, rounded corners=8pt, draw=psInk!60, fill=psInk!7,
+    line width=1.3pt},
+  ps focal/.style={ps base, rectangle, rounded corners=5pt, draw=psAlert, fill=psWarm!32,
+    line width=1.8pt, font=\psFocalFont},
   ps evidence/.style={ps base, rectangle, draw=psInk!45, fill=white,
-    line width=1.3pt, text width=2.6cm, minimum height=1.0cm, font=\footnotesize},
-  ps context/.style={ps base, font=\footnotesize, text=psInk!75, text width=5.2cm,
-    align=left, inner sep=2pt},
+    line width=1.3pt, font=\psNoteFont},
+  ps context/.style={ps base, font=\psNoteFont, text=psInk!75, align=left, inner sep=2pt},
   ps group/.style={rectangle, rounded corners=6pt, fill=psCool!7, draw=psCool!30,
-    line width=0.8pt, inner sep=10pt},
-  ps claim/.style={font=\large\bfseries, text=psInk, align=left, inner sep=0pt},
-  ps primary/.style={draw=psInk, line width=1.9pt, -{Stealth[length=3.4mm, width=2.8mm]}},
-  ps secondary/.style={draw=psInk!50, line width=1.4pt, -{Stealth[length=2.6mm, width=2.2mm]}},
+    line width=0.8pt, inner sep=5pt},
+  ps claim/.style={font=\psClaimFont, text=psInk, align=left, inner sep=0pt},
+  ps primary/.style={draw=psInk, line width=1.9pt, -{Stealth[length=3.0mm, width=2.6mm]}},
+  ps secondary/.style={draw=psInk!50, line width=1.4pt, -{Stealth[length=2.4mm, width=2.1mm]}},
   ps data/.style={},
   ps supervision/.style={dash pattern=on 5pt off 3pt},
   ps feedback/.style={bend left=40},
   ps inhibition/.style={-{Bar[width=3.4mm]}},
-  ps edge label/.style={font=\footnotesize, text=psInk!80, fill=psCanvas, inner sep=1.5pt},
+  ps edge label/.style={font=\psNoteFont, text=psInk!80, fill=white, inner sep=1.5pt},
 }
 """.strip("\n")
 
@@ -492,91 +536,256 @@ def tex_escape(text: str) -> str:
     return "".join(_SPECIALS.get(ch, ch) for ch in text)
 
 
-SPINE_STEP = 4.0
-EVIDENCE_Y = -3.2
-CONTEXT_Y = 2.1
+#: TeX points per centimetre.
+PT_PER_CM = 72.27 / 2.54
+#: `standalone` border (TeX pt): the page margin around the drawn content.
+BORDER_PT = 2.0
+#: Content width kept free of the page edge for strokes and arrow tips.
+STROKE_ALLOWANCE_PT = 2.0
+#: Defaults when neither the spec nor a manuscript says otherwise.
+DEFAULT_BODY_PT = 10.0
+#: Horizontal gap between neighbouring boxes (cm): room for an arrow tip.
+GAP_CM = 0.6
+#: The narrowest gap the fit pass may use when a label overflows its box.
+MIN_GAP_CM = 0.45
+#: The widest a spine box grows on a short spine (cm).
+MAX_BOX_CM = 3.4
+#: Vertical gap between the spine row and the evidence row (cm), holding
+#: the shared lane the branch connectors run along.
+ROW_GAP_CM = 0.9
+#: Vertical gap between the spine and the context row, and above it the claim.
+CONTEXT_GAP_CM = 0.35
+#: Horizontal padding inside a box (TeX pt), the `inner sep` of `ps base`.
+INNER_SEP_PT = 4.0
 
 
-def layout(spec: dict) -> dict[str, tuple[float, float]]:
-    """Coordinates in cm: the spine left to right at y=0, evidence below,
-    context above."""
+def font_macros(sizes: dict) -> list[str]:
+    """The four `\\ps...Font` macros, each an explicit `\\fontsize`."""
+    fontsize = _diagram_audit().fontsize_command
+    return [
+        f"\\newcommand{{\\psClaimFont}}{{{fontsize(sizes['claim'])}\\bfseries}}",
+        f"\\newcommand{{\\psSpineFont}}{{{fontsize(sizes['spine'])}}}",
+        f"\\newcommand{{\\psFocalFont}}{{{fontsize(sizes['spine'])}\\bfseries}}",
+        f"\\newcommand{{\\psNoteFont}}{{{fontsize(sizes['note'])}}}",
+    ]
+
+
+def _diagram_audit():
+    """`_core/figure/diagram_audit` (pypdfium2 behind it), loaded only by the
+    verbs that draw or audit, so `derive`, `status` and `validate` stay
+    standard-library only."""
+    core = FORGE_ROOT / "skills" / "_core" / "figure"
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import diagram_audit  # noqa: E402  (resolved above)
+
+    return diagram_audit
+
+
+def find_manuscript(product: Path) -> Path | None:
+    """`paper/main.tex` of the workspace the product lives in, if any."""
+    for ancestor in [product, *list(product.parents)[:5]]:
+        candidate = ancestor / "paper" / "main.tex"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def print_settings(spec: dict, product: Path | None = None) -> dict:
+    """The size the figure prints at: the manuscript body size (the spec's
+    `print.body_pt`, else `paper/main.tex`'s class option, else 10 pt), the
+    text width (`print.text_width_pt`, else the A4 article width for that
+    body size) and the inclusion fraction (`print.width_fraction`, else 1).
+    Every length here is in TeX points except `printed_width_pdf_pt`."""
+    audit = _diagram_audit()
+    declared = spec.get("print") if isinstance(spec.get("print"), dict) else {}
+    if "body_pt" in declared:
+        body, source = float(declared["body_pt"]), "spec"
+    else:
+        manuscript = find_manuscript(product) if product is not None else None
+        if manuscript is not None:
+            body, source = audit.print_scale.body_font_pt(manuscript)
+            source = f"{manuscript.name}:{source}"
+        else:
+            body, source = DEFAULT_BODY_PT, "default"
+    text_width = float(declared.get("text_width_pt") or audit.default_text_width_pt(body))
+    fraction = float(declared.get("width_fraction") or 1.0)
+    printed = text_width * fraction
+    return {
+        "body_pt": body, "body_source": source, "text_width_pt": text_width,
+        "width_fraction": fraction, "printed_width_pt": printed,
+        "printed_width_pdf_pt": audit.print_scale.declared_width_pt(text_width, fraction),
+        "fonts": audit.role_font_pt(body),
+    }
+
+
+def _wrap_lines(text: str, width_pt: float, font_pt: float, bold: bool = False) -> int:
+    """Lines a centred label needs at `font_pt` in `width_pt` (a generous
+    estimate: 0.56 em per character, 0.6 em bold)."""
+    per_char = font_pt * (0.6 if bold else 0.56)
+    lines, current = 1, 0.0
+    for word in text.split():
+        size = len(word) * per_char
+        if current and current + per_char + size > width_pt:
+            lines += 1
+            current = size
+        else:
+            current = current + (per_char if current else 0.0) + size
+    return lines
+
+
+def _box_height_cm(label: str, text_width_cm: float, font_pt: float, bold: bool = False) -> float:
+    lines = _wrap_lines(label, text_width_cm * PT_PER_CM, font_pt, bold)
+    return (lines * 1.2 * font_pt + 2 * INNER_SEP_PT + 2.0) / PT_PER_CM
+
+
+def plan_layout(spec: dict, settings: dict, gap_cm: float = GAP_CM) -> dict:
+    """Every box's position (cm) and width, inside the content width.
+
+    The spine runs left to right at y = 0 with one width for every box; the
+    evidence row hangs below it (anchor north), the context row sits above
+    it (anchor south west). Free evidence boxes share the full width; a
+    box pinned `under` a spine node takes that node's column."""
+    width_cm = (settings["printed_width_pt"] - 2 * BORDER_PT - STROKE_ALLOWANCE_PT) / PT_PER_CM
+    fonts = settings["fonts"]
     nodes = [n for n in spec["nodes"] if n["role"] != "group"]
+    inset = 0.25 if any(n["role"] == "group" for n in spec["nodes"]) else 0.0
+    inner = width_cm - 2 * inset
     spine = [n for n in nodes if n.get("row", "spine") == "spine"]
-    pos = {n["id"]: (i * SPINE_STEP, 0.0) for i, n in enumerate(spine)}
-    span = (len(spine) - 1) * SPINE_STEP
-    sources = {e["to"]: e["from"] for e in spec["edges"]}
-    for row, y in (("evidence", EVIDENCE_Y), ("context", CONTEXT_Y)):
+    count = max(len(spine), 1)
+    box = min(MAX_BOX_CM, (inner - gap_cm * (count - 1)) / count)
+    used = count * box + gap_cm * (count - 1)
+    start = inset + (inner - used) / 2
+    text_cm = max(box - 2 * INNER_SEP_PT / PT_PER_CM - 0.07, 0.5)
+    place = {}
+    for index, node in enumerate(spine):
+        place[node["id"]] = {"x": start + box / 2 + index * (box + gap_cm), "y": 0.0,
+                             "row": "spine", "anchor": "center", "text_cm": text_cm}
+    spine_h = max([_box_height_cm(n["label"], text_cm, fonts["spine"], n["role"] == "focal")
+                   for n in spine] or [1.0])
+    spine_h = max(spine_h, 1.0)
+    evidence_top = -(spine_h / 2 + ROW_GAP_CM)
+    context_bottom = spine_h / 2 + CONTEXT_GAP_CM
+    targets = {e["to"]: e["from"] for e in spec["edges"]}
+
+    for row in ("evidence", "context"):
         members = [n for n in nodes if n.get("row") == row]
-        anchored = {n["id"]: pos[n.get("under") or n.get("near")][0] for n in members
-                    if (n.get("under") or n.get("near")) in pos}
+        anchored = {}
+        for node in members:
+            pin = node.get("under") or node.get("near")
+            if pin in place and place[pin]["row"] == "spine":
+                anchored[node["id"]] = place[pin]["x"]
         free = [n for n in members if n["id"] not in anchored]
-        if len(free) == 1 and sources.get(free[0]["id"]) in pos:
-            anchored[free[0]["id"]] = pos[sources[free[0]["id"]]][0]
+        if row == "evidence" and len(free) == 1 and targets.get(free[0]["id"]) in place:
+            anchored[free[0]["id"]] = place[targets[free[0]["id"]]]["x"]
             free = []
-        if free:
-            gap = max(span / max(len(free) - 1, 1), 3.2) if len(free) > 1 else 0.0
-            start = span / 2 - gap * (len(free) - 1) / 2
-            for i, node in enumerate(free):
-                anchored[node["id"]] = start + i * gap
-        for node_id, x in anchored.items():
-            pos[node_id] = (x, y)
-    return pos
+        if row == "evidence":
+            k = len(free)
+            free_box = min(box, (inner - gap_cm * (k - 1)) / k) if k else box
+            free_used = k * free_box + gap_cm * (k - 1)
+            free_start = inset + (inner - free_used) / 2
+            for index, node in enumerate(free):
+                anchored[node["id"]] = free_start + free_box / 2 + index * (free_box + gap_cm)
+            for node in members:
+                width = free_box if node in free else box
+                place[node["id"]] = {
+                    "x": anchored[node["id"]], "y": evidence_top, "row": "evidence",
+                    "anchor": "north",
+                    "text_cm": max(width - 2 * INNER_SEP_PT / PT_PER_CM - 0.07, 0.5)}
+        else:
+            note_cm = min(inner * 0.6, 7.0)
+            for index, node in enumerate(members):
+                left = anchored.get(node["id"], inset + box / 2) - box / 2
+                left = max(inset, min(left, inset + inner - note_cm))
+                place[node["id"]] = {"x": left, "y": context_bottom, "row": "context",
+                                     "anchor": "south west", "text_cm": note_cm}
+    return {"width_cm": width_cm, "spine_h_cm": spine_h, "evidence_top_cm": evidence_top,
+            "context_bottom_cm": context_bottom, "place": place, "gap_cm": gap_cm}
 
 
-def _anchors(a: tuple[float, float], b: tuple[float, float]) -> tuple[str, str]:
-    if abs(a[1] - b[1]) < 1e-6:
-        return ("east", "west") if b[0] > a[0] else ("west", "east")
-    return ("south", "north") if b[1] < a[1] else ("north", "south")
+def layout(spec: dict, settings: dict | None = None) -> dict[str, tuple[float, float]]:
+    """Box centres in cm (row anchors for the evidence and context rows)."""
+    plan = plan_layout(spec, settings or default_settings())
+    return {node_id: (p["x"], p["y"]) for node_id, p in plan["place"].items()}
 
 
-def build_tex(spec: dict) -> str:
-    pos = layout(spec)
+def default_settings() -> dict:
+    """`print_settings` with no manuscript: a 10 pt article at full width."""
+    return print_settings({})
+
+
+def _anchors(a: dict, b: dict) -> tuple[str, str]:
+    if a["row"] == b["row"]:
+        return ("east", "west") if b["x"] > a["x"] else ("west", "east")
+    order = {"context": 1, "spine": 0, "evidence": -1}
+    return ("south", "north") if order[b["row"]] < order[a["row"]] else ("north", "south")
+
+
+def _lane_y(plan: dict, a: dict, b: dict) -> float:
+    """The one horizontal lane shared by every branch between two rows."""
+    rows = {a["row"], b["row"]}
+    if rows == {"spine", "evidence"}:
+        return -(plan["spine_h_cm"] / 2 + ROW_GAP_CM * 0.5)
+    if rows == {"spine", "context"}:
+        return plan["spine_h_cm"] / 2 + CONTEXT_GAP_CM * 0.5
+    return (a["y"] + b["y"]) / 2
+
+
+def build_tex(spec: dict, settings: dict | None = None, *, gap_cm: float = GAP_CM) -> str:
+    settings = settings or default_settings()
+    plan = plan_layout(spec, settings, gap_cm)
+    place = plan["place"]
+    spine_min_h = plan["spine_h_cm"]
     lines = [
-        r"\documentclass[border=0pt]{standalone}",
+        f"\\documentclass[border={BORDER_PT:g}pt]{{standalone}}",
+        r"\usepackage[T1]{fontenc}",
+        r"\usepackage{lmodern}",
         r"\usepackage{tikz}",
         r"\usetikzlibrary{arrows.meta,shapes.misc,shapes.geometric,positioning,fit,backgrounds,calc}",
         r"\renewcommand{\familydefault}{\sfdefault}",
         r"\hyphenpenalty=10000 \exhyphenpenalty=10000",
+        *font_macros(settings["fonts"]),
         TIKZ_LIBRARY,
         r"\begin{document}",
-        r"\begin{tikzpicture}[show background rectangle, inner frame sep=14pt,",
-        r"  background rectangle/.style={fill=psCanvas, draw=none}]",
+        r"\begin{tikzpicture}",
         f"% figure claim: {tex_escape(spec['claim'])}",
+        f"% printed width: {settings['printed_width_pt']:.1f}pt of a {settings['body_pt']:g}pt body "
+        f"({settings['body_source']}); fonts {settings['fonts']}",
     ]
-    ys = [y for _, y in pos.values()]
-    top = max(ys) + (1.2 if max(ys) > 0 else 2.2)
-    xs = [x for x, _ in pos.values()]
-    width = max(max(xs) - min(xs) + 3.0, 9.0)
-    lines.append(f"\\node[ps claim, anchor=south west, text width={width:.1f}cm] "
-                 f"at ({min(xs) - 1.5:.2f},{top:.2f}) {{{tex_escape(spec['claim'])}}};")
     for node in spec["nodes"]:
         if node["role"] == "group":
             continue
-        x, y = pos[node["id"]]
-        lines.append(f"\\node[ps {node['role']}] ({node['id']}) at ({x:.2f},{y:.2f}) "
-                     f"{{{tex_escape(node['label'])}}};")
+        p = place[node["id"]]
+        extra = f"text width={p['text_cm']:.2f}cm"
+        if p["row"] == "spine":
+            extra += f", minimum height={spine_min_h:.2f}cm"
+        lines.append(f"\\node[ps {node['role']}, {extra}, anchor={p['anchor']}] ({node['id']}) "
+                     f"at ({p['x']:.2f},{p['y']:.2f}) {{{tex_escape(node['label'])}}};")
     for node in spec["nodes"]:
         if node["role"] == "group":
             fit = "".join(f"({m})" for m in node["members"])
             lines.append(r"\begin{scope}[on background layer]")
             lines.append(f"\\node[ps group, fit={fit}] ({node['id']}) {{}};")
+            lines.append(r"\end{scope}")
             lines.append(f"\\node[ps context, anchor=south west, text width=3cm] at ({node['id']}.north west) "
                          f"{{{tex_escape(node['label'])}}};")
-            lines.append(r"\end{scope}")
+    lines.append(r"\coordinate (ps top) at (current bounding box.north);")
+    lines.append(f"\\node[ps claim, anchor=south west, text width={plan['width_cm']:.2f}cm] "
+                 f"at ($(0,0 |- ps top)+(0,{CONTEXT_GAP_CM:.2f})$) {{{tex_escape(spec['claim'])}}};")
     for edge in spec["edges"]:
-        a, b = pos[edge["from"]], pos[edge["to"]]
+        a, b = place[edge["from"]], place[edge["to"]]
         styles = [f"ps {edge['prominence']}", f"ps {edge['semantics']}"]
         if edge["semantics"] == "feedback":
-            start, end = ("south", "south") if abs(a[1] - b[1]) < 1e-6 else _anchors(a, b)
+            start, end = ("south", "south") if a["row"] == b["row"] else _anchors(a, b)
             path = f"({edge['from']}.{start}) to"
         else:
             start, end = _anchors(a, b)
             path = f"({edge['from']}.{start}) --"
-            if start in ("south", "north") and abs(a[0] - b[0]) > 1e-6:
-                # Orthogonal: leave vertically, run along a shared lane
-                # halfway between the rows, enter the target from its facing side.
-                lane_y = a[1] + (b[1] - a[1]) * 0.6   # one lane per row pair, shared by every edge
-                path = f"({edge['from']}.{start}) -- ({edge['from']}.{start} |- 0,{lane_y:.2f}) -|"
+            if start in ("south", "north") and abs(a["x"] - b["x"]) > 1e-6:
+                # Orthogonal: leave vertically, run along the lane shared by
+                # every edge between these two rows, enter from the facing side.
+                lane = _lane_y(plan, a, b)
+                path = f"({edge['from']}.{start}) -- ({edge['from']}.{start} |- 0,{lane:.2f}) -|"
         label = ""
         if edge.get("label"):
             side = "above" if start in ("east", "west") else "right"
@@ -646,9 +855,11 @@ def compile_tex(tex: Path) -> dict:
     pdf = tex.with_suffix(".pdf")
     if failed or not pdf.is_file():
         raise Refusal("TEX_COMPILE_FAILED", f"{name} could not compile {tex.name}: {tail}", tex=str(tex))
-    for ext in (".aux", ".log", ".fls", ".fdb_latexmk"):
+    # The log stays: `render` reads its overfull boxes and `audit` re-reads it.
+    for ext in (".aux", ".fls", ".fdb_latexmk"):
         tex.with_suffix(ext).unlink(missing_ok=True)
-    return {"engine": name, "pdf": str(pdf)}
+    log = tex.with_suffix(".log")
+    return {"engine": name, "pdf": str(pdf), "log": str(log) if log.is_file() else None}
 
 
 def _raster_argv(name: str, binary: str, pdf: Path, out_dir: Path) -> tuple[list[str], Path]:
@@ -709,8 +920,8 @@ def cmd_derive(args) -> dict:
     return {"ok": True, "kind": args.kind, "spec": str(paths["json"]), "written": True}
 
 
-def cmd_render(args) -> dict:
-    spec_path = Path(args.spec).expanduser().resolve()
+def _read_spec(raw: str) -> tuple[Path, dict]:
+    spec_path = Path(raw).expanduser().resolve()
     try:
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -720,16 +931,127 @@ def cmd_render(args) -> dict:
     problems = validate_spec(spec)
     if problems:
         raise Refusal("SPEC_INVALID", "; ".join(problems))
+    return spec_path, spec
+
+
+def _product_of(spec_path: Path) -> Path:
+    """`<product>/diagrams/<kind>.json` -> `<product>`."""
+    return spec_path.parent.parent
+
+
+def audit_path(product: Path, kind: str) -> Path:
+    return product / "diagrams" / f"{kind}.audit.json"
+
+
+def _overfull(log: str | None) -> list[str]:
+    if not log or not Path(log).is_file():
+        return []
+    text = Path(log).read_text(encoding="utf-8", errors="replace")
+    return _diagram_audit().parse_overfull(text)
+
+
+def run_audit(spec_path: Path, spec: dict) -> dict:
+    """The mechanical audit of the drawn diagram (`_core/figure/diagram_audit`),
+    written to `diagrams/<kind>.audit.json` and bound to the PNG it audited."""
+    kind = spec["kind"]
+    product = _product_of(spec_path)
+    folder = spec_path.parent
+    pdf, tex, png = (folder / f"{kind}.{ext}" for ext in ("pdf", "tex", "png"))
+    if not pdf.is_file():
+        raise Refusal("DIAGRAM_ABSENT", f"diagrams/{pdf.name} has not been drawn yet")
+    settings = print_settings(spec, product)
+    log = tex.with_suffix(".log")
+    audit = _diagram_audit()
+    report = audit.audit_diagram(
+        pdf, body_pt=settings["body_pt"], printed_width_pt=settings["printed_width_pdf_pt"],
+        tex_text=tex.read_text(encoding="utf-8") if tex.is_file() else None,
+        log_text=log.read_text(encoding="utf-8", errors="replace") if log.is_file() else None)
+    record = {
+        "kind": kind,
+        "verdict": report["verdict"],
+        "failures": report["failures"],
+        "messages": audit.failure_messages(report),
+        "png_sha256": _sha256(png) if png.is_file() else None,
+        "pdf_sha256": _sha256(pdf),
+        "print": {key: settings[key] for key in ("body_pt", "body_source", "text_width_pt",
+                                                 "width_fraction", "printed_width_pdf_pt", "fonts")},
+        "audited_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "report": report,
+    }
+    folder.joinpath(f"{kind}.audit.json").write_text(
+        json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return record
+
+
+def _audit_summary(record: dict, path: Path) -> dict:
+    return {"verdict": record["verdict"], "failures": record["failures"],
+            "messages": record["messages"], "path": str(path)}
+
+
+def cmd_render(args) -> dict:
+    """Write .tex, compile, refuse any overfull box, rasterize, audit.
+
+    The fit pass: when the first compile leaves an overfull box, the boxes
+    are widened once (the gap between them shrinks to `MIN_GAP_CM`); fonts
+    never shrink. A box still overfull refuses `TEX_OVERFULL` naming it,
+    and the Corrector shortens that label in the spec."""
+    spec_path, spec = _read_spec(args.spec)
+    product = _product_of(spec_path)
     tex = spec_path.with_name(f"{spec['kind']}.tex")
-    tex.write_text(build_tex(spec), encoding="utf-8")
-    for stale in (tex.with_suffix(".pdf"), tex.with_suffix(".png"),
-                  tex.with_name(f"{spec['kind']}.validated.json")):
+    settings = print_settings(spec, product)
+    for stale in (tex.with_suffix(".pdf"), tex.with_suffix(".png"), tex.with_suffix(".log"),
+                  tex.with_name(f"{spec['kind']}.validated.json"),
+                  tex.with_name(f"{spec['kind']}.audit.json")):
         stale.unlink(missing_ok=True)
-    compiled = compile_tex(tex)
+    passes = []
+    overfull: list[str] = []
+    compiled: dict = {}
+    for gap in (GAP_CM, MIN_GAP_CM):
+        tex.write_text(build_tex(spec, settings, gap_cm=gap), encoding="utf-8")
+        compiled = compile_tex(tex)
+        overfull = _overfull(compiled.get("log"))
+        passes.append({"gap_cm": gap, "overfull": len(overfull)})
+        if not overfull:
+            break
+    if overfull:
+        raise Refusal("TEX_OVERFULL",
+                      f"{len(overfull)} overfull box(es) in the picture after widening the boxes; "
+                      "shorten the label TeX names (Corrector): " + " | ".join(overfull[:5]),
+                      tex=str(tex), log=compiled.get("log"), fit=passes)
     raster = rasterize(Path(compiled["pdf"]))
+    record = run_audit(spec_path, spec)
     return {"ok": True, "kind": spec["kind"], "spec": str(spec_path), "tex": str(tex),
             "pdf": compiled["pdf"], "png": raster["png"], "engine": compiled["engine"],
-            "rasterizer": raster["rasterizer"]}
+            "rasterizer": raster["rasterizer"], "log": compiled.get("log"), "fit": passes,
+            "audit": _audit_summary(record, audit_path(product, spec["kind"]))}
+
+
+def cmd_audit(args) -> dict:
+    """Re-run the mechanical audit on the diagram drawn now. A failing audit
+    is a finding, not a refused call: it exits 0 with `verdict: fail`."""
+    spec_path, spec = _read_spec(args.spec)
+    record = run_audit(spec_path, spec)
+    summary = _audit_summary(record, audit_path(_product_of(spec_path), spec["kind"]))
+    return {"ok": True, "kind": spec["kind"], **summary, "report": record["report"]}
+
+
+def audit_state(product: Path, kind: str) -> dict:
+    """The audit of the PNG drawn now: `verdict` is `pass`, `fail` or
+    `unmeasured` from `diagrams/<kind>.audit.json`, `absent` without a
+    record, or `stale` when the record audited another drawing."""
+    path = audit_path(product, kind)
+    png = product / "diagrams" / f"{kind}.png"
+    empty = {"failures": [], "messages": [], "path": str(path)}
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"verdict": "absent", **empty}
+    if not isinstance(record, dict) or record.get("kind") != kind:
+        return {"verdict": "absent", **empty}
+    current = _sha256(png) if png.is_file() and not png.is_symlink() else None
+    verdict = record.get("verdict") if current and record.get("png_sha256") == current else "stale"
+    return {"verdict": verdict, "failures": record.get("failures", []),
+            "messages": record.get("messages", []), "path": str(path)}
 
 
 def cmd_status(args) -> dict:
@@ -739,7 +1061,8 @@ def cmd_status(args) -> dict:
         paths = diagram_paths(product, kind)
         entry = {"approved": (product / MARKERS[kind]).is_file(), "marker": MARKERS[kind],
                  "validation": validation_state(product, kind),
-                 "provenance": validation_provenance(product, kind)}
+                 "provenance": validation_provenance(product, kind),
+                 "audit": audit_state(product, kind)["verdict"]}
         for ext, key in (("json", "spec"), ("tex", "tex"), ("pdf", "pdf"), ("png", "png")):
             entry[key] = paths[ext].is_file()
         entry["paths"] = {key: str(paths[ext]) for ext, key in
@@ -779,12 +1102,24 @@ def cmd_validate(args) -> dict:
         raise Refusal("PNG_HASH_MISMATCH",
                       f"diagrams/{paths['png'].name} is not the image the operator approved; "
                       "show the operator the current PNG and ask again")
-    record = write_validation(product, args.kind, via="chat", statement=statement)
+    audit = audit_state(product, args.kind)
+    override = (args.audit_override or "").strip()
+    if args.audit_override is not None and not override:
+        raise Refusal("STATEMENT_EMPTY",
+                      "--audit-override must carry the operator's own words, verbatim")
+    if audit["verdict"] != "pass" and not override:
+        raise Refusal("AUDIT_NOT_PASSED",
+                      f"the mechanical audit of diagrams/{paths['png'].name} reads {audit['verdict']!r}"
+                      + (": " + "; ".join(audit["messages"][:6]) if audit["messages"] else "")
+                      + "; fix the spec and render again (or run `audit`), or pass --audit-override "
+                        "with the operator's explicit words accepting it as it is", audit=audit)
+    record = write_validation(product, args.kind, via="chat", statement=statement,
+                              audit_override=override or None)
     if record["png_sha256"] != actual:  # drawn again between the check and the write
         validation_path(product, args.kind).unlink(missing_ok=True)
         raise Refusal("PNG_HASH_MISMATCH",
                       f"diagrams/{paths['png'].name} changed while it was being validated")
-    return {"ok": True, "kind": args.kind, "validation": "validated",
+    return {"ok": True, "kind": args.kind, "validation": "validated", "audit": audit,
             "record": record, "path": str(validation_path(product, args.kind))}
 
 
@@ -801,8 +1136,12 @@ def build_parser() -> argparse.ArgumentParser:
     derive.add_argument("--name", required=True)
     derive.add_argument("--kind", required=True, choices=KINDS)
     derive.add_argument("--force", action="store_true", help="draft again over an existing spec")
-    render = sub.add_parser("render", help="validate a spec, write .tex, compile .pdf, rasterize .png")
+    render = sub.add_parser("render", help="validate a spec, write .tex, compile .pdf (refusing any "
+                                           "overfull box), rasterize .png, audit it")
     render.add_argument("--spec", required=True)
+    audit = sub.add_parser("audit", help="re-run the mechanical audit on the drawn diagram and "
+                                         "write diagrams/<kind>.audit.json")
+    audit.add_argument("--spec", required=True)
     status = sub.add_parser("status", help="which diagrams and approvals exist for a product")
     status.add_argument("--target", required=True)
     status.add_argument("--name", required=True)
@@ -818,14 +1157,17 @@ def build_parser() -> argparse.ArgumentParser:
                                f"least {MIN_HASH_PREFIX} characters")
     validate.add_argument("--operator-statement", required=True,
                           help="the operator's approval, verbatim")
+    validate.add_argument("--audit-override", default=None,
+                          help="only when the mechanical audit does not read pass: the operator's "
+                               "explicit words accepting the diagram as it is, verbatim")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
-        result = {"derive": cmd_derive, "render": cmd_render, "status": cmd_status,
-                  "validate": cmd_validate}[args.command](args)
+        result = {"derive": cmd_derive, "render": cmd_render, "audit": cmd_audit,
+                  "status": cmd_status, "validate": cmd_validate}[args.command](args)
     except Refusal as refusal:
         print(json.dumps({"ok": False, "error": refusal.code, "message": refusal.message, **refusal.extra},
                          ensure_ascii=False))
