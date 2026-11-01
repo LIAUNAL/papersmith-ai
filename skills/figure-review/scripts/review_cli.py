@@ -18,7 +18,9 @@ already-compiled PDF — it compiles nothing, and it never opens a
 repair-budget ledger.
 
 `measure` turns an already-produced raster into computed findings
-(out-of-bounds, overlap, canvas occupancy): it reads the PNG and
+(out-of-bounds, overlap, canvas occupancy), and reads the figure PDF itself
+for the vector verdicts (`min-printed-font`, `background`, `whitespace`,
+`in-figure-title`; see `typeset.py`): it reads the PNG and
 `raster-provenance.json` a prior `raster` call already wrote, decodes
 and measures via `png_read`/`geometry`/`findings`, and writes a
 plain-data `visual-report.json` beside them. It refuses
@@ -42,6 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import findings  # noqa: E402
 import raster  # noqa: E402
+import typeset  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -85,9 +88,18 @@ def cmd_measure(args: argparse.Namespace) -> dict:
         )
     raster_provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
     tex_path = Path(args.tex) if args.tex else pdf.with_suffix(".tex")
+    if args.body_pt is not None:
+        body_pt, body_source = float(args.body_pt), "flag"
+    else:
+        main_tex = Path(args.main_tex) if args.main_tex else pdf.resolve().parent.parent / "main.tex"
+        body_pt, body_source = typeset.body_pt_from_main_tex(main_tex if main_tex.is_file() else None)
+    vector = typeset.measure_pdf(
+        pdf, body_pt=body_pt, body_source=body_source, printed_width_pt=args.printed_width_pt,
+    )
     visual = findings.measure_figure(
         png_path, raster_provenance,
         tex_path=tex_path if tex_path.is_file() else None,
+        vector=vector,
     )
     report_path = out_dir / "visual-report.json"
     raster._atomic_write_json(report_path, visual)
@@ -137,6 +149,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_measure.add_argument(
         "--tex", default=None, metavar="path",
         help="override the sibling .tex path used for the border precondition")
+    p_measure.add_argument(
+        "--body-pt", type=float, default=None, metavar="pt",
+        help="manuscript body size in TeX points (default: read from --main-tex)")
+    p_measure.add_argument(
+        "--main-tex", default=None, metavar="path",
+        help="the manuscript whose \\documentclass[<N>pt] sets the body size "
+             "(default: <paper>/main.tex two levels above --pdf; 10 pt when absent)")
+    p_measure.add_argument(
+        "--printed-width-pt", type=float, default=None, metavar="pt",
+        help="the width the figure prints at, in PDF points (e.g. 0.8\\textwidth of 345 pt = "
+             "0.8 * 345 * 72/72.27); default: natural size")
     p_measure.add_argument("--json", action="store_true", help="machine-readable output")
     p_measure.set_defaults(func=cmd_measure)
 
