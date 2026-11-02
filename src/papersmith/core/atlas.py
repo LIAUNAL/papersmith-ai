@@ -35,6 +35,9 @@ ATLAS_MANUSCRIPT_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_ma
 #: The workspace module that writes the manuscript summary graph.
 MANUSCRIPT_GRAPH_MODULE = "skills._core.command_center.manuscript_graph"
 MANUSCRIPT_GRAPH_ENTRY = Path("skills") / "_core" / "command_center" / "manuscript_graph.py"
+#: The workspace module that builds the 3D novelty solar constellation.
+NOVELTY_GRAPH_MODULE = "skills._core.command_center.novelty_graph"
+NOVELTY_GRAPH_ENTRY = Path("skills") / "_core" / "command_center" / "novelty_graph.py"
 
 
 def _run_module(args, module: str, entry: Path) -> int:
@@ -47,6 +50,8 @@ def _run_module(args, module: str, entry: Path) -> int:
     argv = [sys.executable, "-B", "-m", module, "--root", str(workspace)]
     if args.json:
         argv.append("--json")
+    if getattr(args, "sync", False):
+        argv.append("--sync")
     completed = subprocess.run(argv, cwd=str(workspace), capture_output=True, text=True,
                                check=False)
     sys.stdout.write(completed.stdout)
@@ -64,6 +69,10 @@ def run_cited(args) -> int:
 
 def run_summary(args) -> int:
     return _run_module(args, MANUSCRIPT_GRAPH_MODULE, MANUSCRIPT_GRAPH_ENTRY)
+
+
+def run_novelty(args) -> int:
+    return _run_module(args, NOVELTY_GRAPH_MODULE, NOVELTY_GRAPH_ENTRY)
 
 
 def register(subparsers) -> None:
@@ -96,6 +105,7 @@ def register(subparsers) -> None:
                      "otherwise."),
     )
     cited.add_argument("--json", action="store_true", help="print the result as JSON")
+    cited.add_argument("--sync", action="store_true", help="synchronize the 3D constellation with all citations")
     cited.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     cited.set_defaults(handler=run_cited)
     summary = actions.add_parser(
@@ -110,8 +120,19 @@ def register(subparsers) -> None:
     summary.add_argument("--json", action="store_true", help="print the result as JSON")
     summary.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     summary.set_defaults(handler=run_summary)
+    novelty = actions.add_parser(
+        "novelty",
+        help="render .papersmith/novelty_graph.html: 3D novelty solar constellation",
+        description=("Read .papersmith/novelty_graph.json and proposals, build the 3D novelty "
+                     "solar constellation with one solar system per contribution node, and "
+                     "render .papersmith/novelty_graph.html. Exit 0 when the page was written, "
+                     "1 otherwise."),
+    )
+    novelty.add_argument("--json", action="store_true", help="print the constellation JSON")
+    novelty.add_argument("directory", nargs="?", default=".", metavar="<dir>")
+    novelty.set_defaults(handler=run_novelty)
 
 
-__all__ = ["register", "run_build", "run_cited", "run_summary",
+__all__ = ["register", "run_build", "run_cited", "run_summary", "run_novelty",
            "MANUSCRIPT_GRAPH_MODULE", "MANUSCRIPT_GRAPH_ENTRY", "ATLAS_BUILD_MODULE", "ATLAS_BUILD_ENTRY",
-           "ATLAS_MANUSCRIPT_MODULE", "ATLAS_MANUSCRIPT_ENTRY"]
+           "ATLAS_MANUSCRIPT_MODULE", "ATLAS_MANUSCRIPT_ENTRY", "NOVELTY_GRAPH_MODULE", "NOVELTY_GRAPH_ENTRY"]
