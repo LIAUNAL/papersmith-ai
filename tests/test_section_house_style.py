@@ -80,6 +80,22 @@ class HouseStyleTests(unittest.TestCase):
                       body(SECTIONS / "01-materials-and-methods.md"))
         self.assertEqual(state_extractor._extent(body(SECTIONS / "02-experimental-setup.md")), (800, 3500))
 
+    def test_transitions_come_from_the_relation_not_from_a_connective_list(self) -> None:
+        """S5 (manuscript-polish-0-54): the guide no longer hands the redactor a
+        list of connectives to reuse; it bounds stock connectors, because and where."""
+        for path in GUIDED:
+            guide = body(path).split(HEADING, 1)[1].split("\n## ", 1)[0]
+            if "**Writing.**" not in guide or path.name.startswith("09-"):
+                continue
+            with self.subTest(contract=path.name):
+                self.assertNotIn("Connectives the group uses", guide)
+                self.assertIn("**Transitions come from the relation between claims, not from a list.**", guide)
+                self.assertIn("never the same one twice within five sentences", guide)
+                self.assertIn("***because* and *where* keep their jobs.**", guide)
+        discussion = body(SECTIONS / "03-results-and-discussion.md")
+        self.assertIn("*because, due to, stems from, is attributed to*", discussion)
+        self.assertIn("**The forms are a range, not a refrain.**", discussion)
+
 
 class BackMatterTests(unittest.TestCase):
     def setUp(self) -> None:

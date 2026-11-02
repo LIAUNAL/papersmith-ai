@@ -233,6 +233,14 @@ three explanations say what the number is *consistent with*, not what *caused* i
 discussion written entirely in the assertive register is claiming causal knowledge
 the experiment did not produce.
 
+**The forms are a range, not a refrain.** Each register lists several forms so the
+discussion can vary them: no form opens or links two explanations in a row, and
+*because* — the bluntest assertive form — is used at most once per paragraph, never
+stacked (*because …, and because …*). An assertive explanation can also be carried by
+a verb (*stems from*, *follows from*) or by a colon that introduces the mechanism; an
+inferential one can make the evaluation its own sentence rather than a trailing
+*, which indicates …*.
+
 **It is anchored.** The explanation sits in the same paragraph as the number it
 explains. It never floats.
 
@@ -320,7 +328,8 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 
 - **Sentences average 21–27 words.** Long enough to carry one claim and its qualifier, never a chain of three clauses.
 - **One voice for the whole paper.** First person plural (*we propose*) or impersonal (*this work introduces*), chosen once; procedures that were run go in the passive past (*was evaluated using*).
-- **Connectives the group uses** to move between claims: *However*, *Specifically*, *In particular*, *Moreover*, *Notably*, *Overall*. Each opens a sentence and does one job: contrast, narrowing, addition, emphasis, synthesis.
+- **Transitions come from the relation between claims, not from a list.** Name the relation first (contrast, cause, consequence, elaboration, example) and carry it with the sentence's own content: a clause (*yet*, *so*, *although*), a subject that points back (*that gap*, *this cost*), or no connector at all when the order of the sentences already says it. A stock connector (*However*, *Moreover*, *Notably*, *Specifically*, *In particular*, *Overall*, *Taken together*) is the exception: never the same one twice within five sentences, never most of a paragraph's openings, and a synthesis opener (*Overall*, *Taken together*) at most once per section.
+- ***because* and *where* keep their jobs.** *because* states a cause the method or the data establish, at most once every few sentences and never stacked (*because …, and because …*); *where* opens the clause after an equation that defines its symbols, and nowhere else in prose (use *in which*, *when*, or two sentences). An evaluation is its own sentence, not a trailing *, which indicates …*.
 - **The method has one name.** Expanded with its acronym at first use in each of the abstract and the body, then *the proposed* followed by the acronym.
 - **Results are in the past tense, their reading in the present.** *The proposed
   model reached*; *this suggests that*.

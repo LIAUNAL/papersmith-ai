@@ -19,6 +19,14 @@ Computes:
 4. Style score: 0.0 (clear, varied prose) to 1.0 (needs revision).
 5. F5 invariant verification: citations, numbers, statistics, and math
    formulas stay untouched during a style revision.
+6. Flow and redundancy (``analyze_flow``, reported under the ``flow`` key):
+   stock-connector density and repetition, repeated sentence openings,
+   "because" / "where" / ", which" density outside the symbol-defining
+   "where" that follows an equation, cross-paragraph repeated phrases and
+   near-duplicate sentences, and template phrasing. Every finding names its
+   sentence and paragraph and quotes its span; ``flow_score`` runs from 0.0
+   (varied, non-redundant) to 1.0 (needs revision). The style score above is
+   unchanged by this pass.
 """
 from __future__ import annotations
 
@@ -244,6 +252,334 @@ def compute_lexical_diversity(tokens: list[str]) -> dict[str, float]:
     }
 
 
+# --- flow and redundancy ------------------------------------------------------
+
+#: Stock connectors that open a sentence. Each is legitimate once; the pass
+#: flags density and repetition, never a single use.
+STOCK_CONNECTORS: tuple[str, ...] = (
+    "taken together", "in particular", "in addition", "in contrast", "as a result",
+    "to this end", "in this context", "in this regard", "on the other hand",
+    "in summary", "in conclusion", "to summarize", "in short", "all in all",
+    "however", "moreover", "furthermore", "additionally", "notably", "specifically",
+    "overall", "importantly", "consequently", "therefore", "thus", "hence", "indeed",
+    "conversely", "finally", "interestingly", "crucially", "accordingly",
+    "nevertheless", "nonetheless", "similarly", "likewise", "subsequently", "ultimately",
+)
+#: Connectors that announce a synthesis; repeated, they close every paragraph alike.
+SYNTHESIS_CONNECTORS: tuple[str, ...] = (
+    "overall", "taken together", "in summary", "in conclusion", "to summarize",
+    "in short", "all in all",
+)
+
+#: Template phrasing that reads as filler in academic prose (label, regex).
+ROBOTIC_TEMPLATES: tuple[tuple[str, str], ...] = (
+    ("it_is_worth_noting", r"\bit (?:is|should be) (?:worth noting|important to note|noted|noteworthy) that\b"),
+    ("plays_a_role", r"\bplay(?:s|ed|ing)? an? (?:crucial|key|pivotal|vital|central|significant|critical|fundamental|important) role\b"),
+    ("in_this_context", r"\bin this (?:context|regard|sense)\b"),
+    ("serves_as", r"\bserv(?:e|es|ed|ing) as\b"),
+    ("this_highlights", r"\b(?:this|these|which) (?:highlights?|underscores?|demonstrates?|emphasizes?|showcases?)\b"),
+    ("findings_suggest", r"\bthese (?:findings|results) (?:highlight|underscore|demonstrate|suggest|indicate|confirm|reveal)\b"),
+    ("participle_tail", r",\s+(?:highlighting|underscoring|demonstrating|showcasing|emphasizing|showing|yielding|enabling|paving)\b"),
+    ("evaluative_which_tail", r",\s+which (?:indicates|suggests|highlights|demonstrates|underscores|shows|confirms|reflects|makes)\b"),
+    ("growing_attention", r"\b(?:a growing body of|in recent years|has (?:garnered|gained) (?:significant |considerable |increasing )?attention)\b"),
+    ("paves_the_way", r"\b(?:pav(?:e|es|ed|ing) the way|open(?:s|ed|ing)? (?:up )?new avenues)\b"),
+    ("it_is_clear", r"\bit is (?:clear|evident|apparent) that\b"),
+    ("by_leveraging", r"\bleverag(?:e|es|ed|ing)\b"),
+    ("in_order_to", r"\bin order to\b"),
+)
+
+#: Thresholds of the flow pass; reported with every result so a reader can
+#: re-derive each finding.
+FLOW_THRESHOLDS: dict[str, float] = {
+    "connector_window_sentences": 5,          # same connector twice within N sentences
+    "connector_opener_share": 0.25,           # share of sentences opened by a stock connector
+    "connector_overuse_per_1000": 3.0,        # one connector, at least 3 uses, above this rate
+    "synthesis_per_1000": 0.5,                # synthesis connectors in texts of 1000+ words
+    "opening_dominant_share": 0.15,           # one opening bigram opening this share of sentences
+    "demonstrative_opener_share": 0.15,       # "This/These + noun" openers
+    "because_per_1000": 4.0,
+    "where_prose_per_1000": 2.0,
+    "which_tail_per_1000": 3.0,
+    "clause_window_sentences": 3,             # same subordinator twice within N sentences
+    "ngram_size": 5,
+    "ngram_min_paragraphs": 2,                # with at least 3 sentences
+    "near_duplicate_jaccard": 0.6,
+    "near_duplicate_min_words": 6,
+}
+
+#: Rewrite instruction per finding category, emitted beside the findings.
+FLOW_GUIDANCE: dict[str, str] = {
+    "connector_repeat": "Do not open two nearby sentences with the same connector. Name the relation "
+        "(contrast, cause, consequence, elaboration, example) and express it with the sentence's own "
+        "content, or drop the connector when the order of the sentences already carries it.",
+    "connector_density": "Too many sentences open with a stock connector. Remove most of them; keep a "
+        "connector only where the logical relation would otherwise be lost.",
+    "connector_overuse": "One connector carries most transitions. Vary the means: a subordinate clause "
+        "(although, since, so that), a subject that points back (that gap, this cost), or no connector.",
+    "synthesis_repeat": "Several paragraphs close with a synthesis connector (Overall, Taken together). "
+        "State the conclusion directly, once, where it is earned.",
+    "opening_repeat": "Consecutive sentences start with the same words. Reorder so the new information "
+        "or the subject that changed comes first.",
+    "opening_dominant": "One opening dominates the passage. Vary sentence openings: subject, "
+        "a short clause, a figure or table as subject, or an object fronted for emphasis.",
+    "demonstrative_opener": "Too many sentences open with This/These + noun. Name the referent "
+        "precisely or merge the sentence into the one before it.",
+    "because_density": "\"because\" recurs. Keep it for causes the method or data establish; express "
+        "other causal links with a verb (stems from, follows from) or by sentence order.",
+    "where_prose": "\"where\" is used outside equations. Keep \"where\" for the clause that defines "
+        "symbols after an equation; elsewhere use \"in which\", \"when\", or two sentences.",
+    "which_tail": "Sentences trail off in \", which ...\" clauses. Promote the evaluation to its own "
+        "sentence or make it the main verb.",
+    "clause_repeat": "The same subordinator recurs in nearby sentences. Vary the construction or split "
+        "the sentence.",
+    "repeated_phrase": "The same multi-word phrase recurs across paragraphs. After its first full use, "
+        "refer to it by its short name or by what changed.",
+    "near_duplicate": "Two sentences say nearly the same thing. Keep the stronger one and cut or merge "
+        "the other.",
+    "robotic_template": "Template phrasing adds words without content. Replace it with the specific "
+        "claim, or delete it.",
+}
+#: Always emitted with the guidance: the boundaries of a style revision.
+FLOW_INVARIANTS = (
+    "Keep every fact, number, statistic, citation, label, and equation byte-identical (F5); "
+    "change wording and order only. The revision improves readability; it never aims to hide "
+    "AI assistance, and the manuscript's AI-use declaration stays as written."
+)
+
+_STOPWORDS = frozenset(
+    "a an the of in on at to for from by with and or but nor so as is are was were be been being "
+    "this that these those it its their they them we our which who whom whose than then there "
+    "into onto over under between across not no all each every any both per via also only".split()
+)
+_COMMENT_RE = re.compile(r"(?m)(?<!\\)%.*$")
+_DISPLAY_TOKEN = "DISPLAYMATHTOKEN"
+_DISPLAY_WHERE_RE = re.compile(_DISPLAY_TOKEN + r"[\s,.;:]*where\b", re.IGNORECASE)
+_SYMBOL_WHERE_RE = re.compile(r"\bwhere\s*(?:\$|\\\()", re.IGNORECASE)
+_WHERE_RE = re.compile(r"\bwhere\b", re.IGNORECASE)
+_BECAUSE_RE = re.compile(r"\bbecause\b", re.IGNORECASE)
+_WHICH_TAIL_RE = re.compile(r",\s+which\b", re.IGNORECASE)
+_DEMONSTRATIVE_RE = re.compile(r"^(this|these)\s+([a-z][a-z-]*)\b", re.IGNORECASE)
+_VERBS_AFTER_DEMONSTRATIVE = frozenset(
+    "is are was were has have shows show suggests suggest indicates indicate means".split()
+)
+
+
+def _flow_units(text: str) -> tuple[list[dict[str, Any]], int]:
+    """Splits text into sentences with their paragraph, keeping a marker where a
+    displayed equation stood so the symbol-defining "where" can be told apart."""
+    text = _COMMENT_RE.sub("", text)
+    text = _MATH_DISPLAY_RE.sub(f" {_DISPLAY_TOKEN} ", text)
+    paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+    units: list[dict[str, Any]] = []
+    for p_idx, para in enumerate(paragraphs, start=1):
+        flat = re.sub(r"\s+", " ", para).strip()
+        for raw in _SENTENCE_SPLIT_RE.split(flat):
+            raw = raw.strip()
+            prose = re.sub(r"\s+", " ", strip_latex_markup(raw).replace(_DISPLAY_TOKEN, " ")).strip()
+            words = _TOKEN_RE.findall(prose.lower())
+            if not words:
+                continue
+            units.append({"index": len(units) + 1, "paragraph": p_idx, "raw": raw,
+                          "prose": prose, "words": words})
+    return units, len(paragraphs)
+
+
+def _opening_connector(prose: str) -> str | None:
+    head = prose.lstrip(" ([{\"'").lower()
+    for conn in STOCK_CONNECTORS:
+        if head.startswith(conn) and (len(head) == len(conn) or not head[len(conn)].isalnum()):
+            return conn
+    return None
+
+
+def _finding(category: str, unit: dict[str, Any], span: str, **extra: Any) -> dict[str, Any]:
+    return {"category": category, "sentence": unit["index"], "paragraph": unit["paragraph"],
+            "span": span, **extra}
+
+
+def analyze_flow(text: str) -> dict[str, Any]:
+    """Measures transitions, sentence openings, subordinate-clause density,
+    redundancy, and template phrasing. Every finding carries its sentence and
+    paragraph index (1-based, counted by this pass) and the quoted span."""
+    th = FLOW_THRESHOLDS
+    units, paragraph_count = _flow_units(text)
+    words = sum(len(u["words"]) for u in units)
+    per_1000 = (lambda k: round(1000.0 * k / words, 2)) if words else (lambda k: 0.0)
+    n = len(units)
+
+    # 1. Connectors.
+    connector_findings: list[dict[str, Any]] = []
+    openers = [(u, _opening_connector(u["prose"])) for u in units]
+    counts: dict[str, int] = {}
+    last_seen: dict[str, int] = {}
+    for u, conn in openers:
+        if not conn:
+            continue
+        counts[conn] = counts.get(conn, 0) + 1
+        prev = last_seen.get(conn)
+        if prev is not None and u["index"] - prev < th["connector_window_sentences"]:
+            connector_findings.append(_finding("connector_repeat", u, conn, previous_sentence=prev))
+        last_seen[conn] = u["index"]
+    opened = sum(counts.values())
+    opener_share = round(opened / n, 3) if n else 0.0
+    if n >= 4 and opener_share > th["connector_opener_share"]:
+        connector_findings.append({"category": "connector_density", "sentence": None, "paragraph": None,
+                                   "span": f"{opened} of {n} sentences open with a stock connector"})
+    for conn, k in sorted(counts.items()):
+        if k >= 3 and per_1000(k) > th["connector_overuse_per_1000"]:
+            first = next(u for u, c in openers if c == conn)
+            connector_findings.append(_finding("connector_overuse", first, conn, count=k))
+    synth = [(u, c) for u, c in openers if c in SYNTHESIS_CONNECTORS]
+    if len(synth) >= 2 and (words < 1000 or per_1000(len(synth)) > th["synthesis_per_1000"]):
+        for u, c in synth[1:]:
+            connector_findings.append(_finding("synthesis_repeat", u, c, count=len(synth)))
+
+    # 2. Sentence openings.
+    opening_findings: list[dict[str, Any]] = []
+    bigrams = [" ".join(u["words"][:2]) for u in units]
+    for i in range(1, n):
+        if len(units[i]["words"]) >= 2 and bigrams[i] == bigrams[i - 1]:
+            opening_findings.append(_finding("opening_repeat", units[i], bigrams[i],
+                                             previous_sentence=units[i - 1]["index"]))
+    bigram_counts: dict[str, int] = {}
+    for b in bigrams:
+        bigram_counts[b] = bigram_counts.get(b, 0) + 1
+    for b, k in sorted(bigram_counts.items()):
+        if n >= 6 and k >= 3 and k / n > th["opening_dominant_share"]:
+            first = units[bigrams.index(b)]
+            opening_findings.append(_finding("opening_dominant", first, b, count=k))
+    demonstratives = []
+    for u in units:
+        m = _DEMONSTRATIVE_RE.match(u["prose"])
+        if m and m.group(2).lower() not in _VERBS_AFTER_DEMONSTRATIVE:
+            demonstratives.append((u, m.group(0)))
+    if n >= 4 and len(demonstratives) >= 3 and len(demonstratives) / n > th["demonstrative_opener_share"]:
+        for u, span in demonstratives:
+            opening_findings.append(_finding("demonstrative_opener", u, span, count=len(demonstratives)))
+
+    # 3. Subordinate clauses: because, prose where, ", which" tails.
+    clause_findings: list[dict[str, Any]] = []
+    because_hits, where_hits, which_hits = [], [], []
+    exempt_where = 0
+    for u in units:
+        raw = u["raw"]
+        exempt = {m.end() for m in _DISPLAY_WHERE_RE.finditer(raw)} | {
+            m.start() + 5 for m in _SYMBOL_WHERE_RE.finditer(raw)}
+        for m in _WHERE_RE.finditer(raw):
+            if m.end() in exempt or raw[: m.start()].strip() == "" and u["prose"].lower().startswith("where"):
+                exempt_where += 1
+            else:
+                where_hits.append(u)
+        because_hits += [u] * len(_BECAUSE_RE.findall(u["prose"]))
+        which_hits += [u] * len(_WHICH_TAIL_RE.findall(u["prose"]))
+    clause_stats = {
+        "because": {"count": len(because_hits), "per_1000_words": per_1000(len(because_hits))},
+        "where_prose": {"count": len(where_hits), "per_1000_words": per_1000(len(where_hits)),
+                        "exempt_equation_where": exempt_where},
+        "which_tail": {"count": len(which_hits), "per_1000_words": per_1000(len(which_hits))},
+    }
+    for key, hits, category, word, limit in (
+        ("because", because_hits, "because_density", "because", th["because_per_1000"]),
+        ("where_prose", where_hits, "where_prose", "where", th["where_prose_per_1000"]),
+        ("which_tail", which_hits, "which_tail", ", which", th["which_tail_per_1000"]),
+    ):
+        if len(hits) >= 2 and clause_stats[key]["per_1000_words"] > limit:
+            for u in {h["index"]: h for h in hits}.values():
+                clause_findings.append(_finding(category, u, word))
+        seen: int | None = None
+        for u in hits:
+            if seen is not None and 0 < u["index"] - seen < th["clause_window_sentences"]:
+                clause_findings.append(_finding("clause_repeat", u, word, previous_sentence=seen))
+            seen = u["index"]
+
+    # 4. Redundancy: repeated phrases across paragraphs, near-duplicate sentences.
+    redundancy_findings: list[dict[str, Any]] = []
+    size = int(th["ngram_size"])
+    where_gram: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for u in units:
+        w = u["words"]
+        for i in range(len(w) - size + 1):
+            gram = tuple(w[i:i + size])
+            if sum(1 for t in gram if t not in _STOPWORDS) >= 3:
+                where_gram.setdefault(gram, []).append(u)
+    min_paras = th["ngram_min_paragraphs"] if paragraph_count >= 2 else 1
+    reported: list[str] = []
+    for gram, hits in sorted(where_gram.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        sentences = sorted({h["index"] for h in hits})
+        paragraphs = sorted({h["paragraph"] for h in hits})
+        if len(sentences) < 3 or len(paragraphs) < min_paras:
+            continue
+        phrase = " ".join(gram)
+        if any(" ".join(gram[:-1]) in r or " ".join(gram[1:]) in r for r in reported):
+            continue
+        reported.append(phrase)
+        redundancy_findings.append(_finding("repeated_phrase", hits[0], phrase, count=len(sentences),
+                                            sentences=sentences, paragraphs=paragraphs))
+    content = [frozenset(t for t in u["words"] if t not in _STOPWORDS and not t.isdigit()) for u in units]
+    for i in range(n):
+        if len(content[i]) < th["near_duplicate_min_words"]:
+            continue
+        for j in range(i + 1, n):
+            if len(content[j]) < th["near_duplicate_min_words"]:
+                continue
+            jac = len(content[i] & content[j]) / len(content[i] | content[j])
+            if jac >= th["near_duplicate_jaccard"]:
+                redundancy_findings.append(_finding("near_duplicate", units[j], units[j]["prose"][:160],
+                                                    duplicate_of=units[i]["index"], jaccard=round(jac, 2)))
+
+    # 5. Template phrasing.
+    template_findings: list[dict[str, Any]] = []
+    for u in units:
+        for label, regex in ROBOTIC_TEMPLATES:
+            for m in re.finditer(regex, u["prose"], re.IGNORECASE):
+                template_findings.append(_finding("robotic_template", u, m.group(0).strip(", "), template=label))
+    template_density = round(100.0 * len(template_findings) / words, 2) if words else 0.0
+
+    # Score: each family 0..1, weighted.
+    def clip(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    families = {
+        "connectors": clip(len(connector_findings) / 3.0),
+        "openings": clip(len(opening_findings) / 4.0),
+        "clauses": clip(len(clause_findings) / 4.0),
+        "redundancy": clip(len(redundancy_findings) / 3.0),
+        "templates": clip(template_density / 1.0),
+    }
+    weights = {"connectors": 0.25, "openings": 0.15, "clauses": 0.15, "redundancy": 0.25, "templates": 0.20}
+    flow_score = round(sum(weights[k] * v for k, v in families.items()), 3) if n else 0.0
+    flow_verdict = next(style for bound, style, _ in _STYLE_VERDICTS if flow_score <= bound)
+
+    findings = connector_findings + opening_findings + clause_findings + redundancy_findings + template_findings
+    fired = list(dict.fromkeys(f["category"] for f in findings))
+    return {
+        "flow_score": flow_score,
+        "flow_verdict": flow_verdict,
+        "word_count": words,
+        "sentence_count": n,
+        "paragraph_count": paragraph_count,
+        "family_penalties": {k: round(v, 3) for k, v in families.items()},
+        "connectors": {
+            "opening_counts": counts,
+            "opener_share": opener_share,
+            "per_1000_words": {c: per_1000(k) for c, k in counts.items()},
+            "findings": connector_findings,
+        },
+        "sentence_openings": {
+            "demonstrative_openers": len(demonstratives),
+            "findings": opening_findings,
+        },
+        "clauses": {**clause_stats, "findings": clause_findings},
+        "redundancy": {"findings": redundancy_findings},
+        "robotic_templates": {"count": len(template_findings),
+                              "density_per_100_words": template_density,
+                              "findings": template_findings},
+        "findings": findings,
+        "guidance": [FLOW_GUIDANCE[c] for c in fired if c in FLOW_GUIDANCE] + [FLOW_INVARIANTS],
+        "thresholds": dict(FLOW_THRESHOLDS),
+    }
+
+
 #: Quality verdict per style-score band, beside the deprecated label the
 #: ``verdict`` key carried before (kept for one release so existing readers,
 #: e.g. the command center, keep working).
@@ -315,6 +651,7 @@ def analyze_style(text: str) -> dict[str, Any]:
         "cliches": overused,
         "lexical_diversity": lexical,
         "sentences": sentence_reports,
+        "flow": analyze_flow(text),
         "disclosure_notice": DISCLOSURE_NOTICE,
         # Deprecated aliases, removed in the next release.
         "composite_score": score,

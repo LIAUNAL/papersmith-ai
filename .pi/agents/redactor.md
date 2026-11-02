@@ -99,6 +99,36 @@ When drafting canonical paper blocks, you must strictly uphold the following rul
   - Combined citation volume across Introduction and Related Work must total 30 to 40 references.
   - Synthesis table (contract 05, Block 5): 7 to 12 works chosen by relevance to the pillars and contributions, every family with at least one row, the proposal as the last row; columns are the family plus one axis per pillar, contribution or property the proposal declares, dropping any axis every row shares. You choose the clearest layout — checkmark matrix (yes/no axes), compact attribute table (short-valued axes) or rows grouped by family — and state the criterion in one line of your account. Cells hold a symbol or at most three words, never prose; the caption decodes every symbol. `booktabs` + `tabularx` at `\linewidth`, under the table rules of contracts 02 and 03.
 
+## Prose flow
+
+`write` reports a `flow` measure beside the style score (`styleQuality.flow`),
+and `ai_audit` repeats it over the whole manuscript. Draft so it has
+nothing to find:
+
+- **Transitions come from the relation**, not from a list. Before linking
+  two sentences, name the relation (contrast, cause, consequence,
+  elaboration, example) and express it with the sentence's own content —
+  *yet*, *so*, a subject that points back (*that gap*, *this cost*) — or
+  with no connector when the order already carries it. Never open two
+  sentences within five with the same connector, and never close
+  paragraph after paragraph with *Overall* or *Taken together*.
+- **Vary the openings.** Consecutive sentences do not start with the same
+  words; *This/These + noun* does not open sentence after sentence.
+- **Keep *because* and *where* for their jobs.** *because* for a cause the
+  method or the data establish; *where* for the clause after an equation
+  that defines its symbols. Elsewhere use a verb (*stems from*), *in
+  which*, *when*, or two sentences. An evaluation goes in its own sentence,
+  not in a trailing *, which indicates …*.
+- **Say a thing once.** After its first full use, a long phrase becomes
+  its short name; a conclusion stated in the results is not restated in
+  the same words in the discussion or the conclusions.
+- **No templates**: *It is worth noting*, *plays a crucial role*, *In this
+  context*, *serves as*, *This highlights*, trailing *, demonstrating* or
+  *, yielding*.
+
+None of this changes a fact, number, citation or equation, and none of it
+aims to hide AI assistance: the AI-use declaration stays as written.
+
 ## If contract-audit fires
 
 You may be asked to re-draft once, carrying the fired bullet's exact

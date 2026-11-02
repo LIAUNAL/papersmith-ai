@@ -3274,6 +3274,9 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
                     "style_score": m["style_score"],
                     "style_verdict": m["style_verdict"],
                     "overused_phrasing_count": m["overused_phrasing"]["total_count"],
+                    "flow_score": m["flow"]["flow_score"],
+                    "flow_verdict": m["flow"]["flow_verdict"],
+                    "flow_findings_count": len(m["flow"]["findings"]),
                     # Deprecated aliases, removed in the next release.
                     "composite_score": m["composite_score"],
                     "verdict": m["verdict"],
@@ -3304,6 +3307,9 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
             "burstiness": results.get("burstiness"),
             "cliches": results.get("cliches"),
             "lexical_diversity": results.get("lexical_diversity"),
+            # Across blocks: the redundancy findings (repeated phrases,
+            # near-duplicate sentences) are only visible on the whole text.
+            "flow": results["flow"],
             "disclosure_notice": results["disclosure_notice"],
             "composite_score": results["composite_score"],
             "verdict": results["verdict"],
@@ -3349,6 +3355,12 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
     metrics_report = paper_ai_metrics.analyze_style(draft_body)
     style_target = args.style_target if args.style_target is not None else 0.20
     meets_target = metrics_report["style_score"] <= style_target
+    # Flow and redundancy: a draft whose transitions, openings or repetition
+    # still need revision is not applied either (the same refusal, the same
+    # --force override); the findings and their rewrite guidance travel with
+    # the report so the next draft can address them.
+    flow = metrics_report["flow"]
+    meets_flow_target = flow["flow_verdict"] != "needs_revision"
 
     applied = False
     if args.apply:
@@ -3357,6 +3369,13 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
                 "TARGET_SCORE_UNMET",
                 f"Draft style score {metrics_report['style_score']} exceeds the style target "
                 f"{style_target}; revise the overused phrasing or cadence, or use --force to override.",
+            )
+        if not meets_flow_target and not args.force:
+            categories = sorted({f["category"] for f in flow["findings"]})
+            raise Refused(
+                "TARGET_SCORE_UNMET",
+                f"Draft flow score {flow['flow_score']} needs revision ({', '.join(categories)}); "
+                "rebuild the transitions and cut the repetition the findings locate, or use --force to override.",
             )
         contract = Path(args.contract) if args.contract else None
         paper_block.substitute(paper_dir, args.block, new_body=draft_body.encode("utf-8"), contract=contract)
@@ -3369,6 +3388,11 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         "meets_style_target": meets_target,
         "applied": applied,
         "metrics": metrics_report,
+        "flow_score": flow["flow_score"],
+        "flow_verdict": flow["flow_verdict"],
+        "meets_flow_target": meets_flow_target,
+        "flow_findings": flow["findings"],
+        "revision_guidance": flow["guidance"],
         "disclosure_notice": paper_ai_metrics.DISCLOSURE_NOTICE,
         # Deprecated aliases, removed in the next release.
         "target_score": style_target,
@@ -4138,7 +4162,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_ai_audit = sub.add_parser(
         "ai_audit",
-        help="measure writing style (cadence, overused academic phrasing, lexical diversity) "
+        help="measure writing style (cadence, overused academic phrasing, lexical diversity, "
+             "connector use, sentence openings, redundancy) "
              "of a text, draft, block, or the manuscript; a style check, not an AI detector",
     )
     p_ai_audit.add_argument("--file", default=None, help="path to a text or LaTeX file")
@@ -4149,7 +4174,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_humanize = sub.add_parser(
         "humanize",
-        help="style revision of one block: verify F5 invariants and the style score of a revised draft "
+        help="style revision of one block: verify F5 invariants, the style score and the flow findings of a revised draft "
              "(readability only; the AI-use declaration still applies)",
     )
     p_humanize.add_argument("--block", required=True, help="the block id being revised")
