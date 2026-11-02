@@ -44,6 +44,23 @@ data-figure boundary's source-side stop, and it refuses before a single
 never a measured result.** Placing a measured figure is `place`, a
 different verb this agent never calls.
 
+## The contribution diagram: read its guide first
+
+When the figure is the one that closes Materials and Methods (block
+`mm-proposal`, `components_from: contributions`), read
+`skills/paper-writing/references/contribution-diagram.md` in full before
+writing a line of TikZ. It fixes what that figure must summarize and how: the
+inputs as mathematical objects, the representation, the core stages (a network
+architecture or a flowchart), one numbered panel per contribution with its key
+equation, the losses meeting in the total objective, the outputs, the auxiliary
+flows and the legend, under the visual grammar and size budget below.
+
+Only the contribution panels carry `% node:` markers and enter the manifest's
+`components`; everything around them is context, drawn without a marker, so the
+obligation checks read the roster and nothing else. Take every symbol and every
+equation from the section's own prose: a figure symbol the text never declares
+is a defect you introduced, not a detail you added.
+
 ## Size every font for the width it prints at
 
 The audit `render` runs after every successful compile fails the figure, and

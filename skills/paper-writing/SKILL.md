@@ -1739,7 +1739,11 @@ carries no diagram obligation at all when the operator's choice leaves no
 It authors the `.tex`/`.diagram.json` pair and drives its own `render`
 loop up to the repair budget, stopping at `REPAIR_BUDGET_SPENT` or an
 unrecoverable refusal for the operator to resolve — it never clears a spent
-ledger itself.
+ledger itself. For the figure that closes Materials and Methods, the agent first
+reads `skills/paper-writing/references/contribution-diagram.md`: the parts that
+figure summarizes (inputs as mathematical objects, representation, core stages,
+numbered contribution panels with their equations, losses and total objective,
+outputs, legend), its visual grammar and its size budget.
 
 **Auditing a diagram against its own prose delegates to the `figure-auditor` agent.**
 It runs `figure audit` and reports that JSON as the authoritative
