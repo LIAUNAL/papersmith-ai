@@ -1606,6 +1606,8 @@ def _refresh_atlas_manuscript(paper_dir: Path, result: dict) -> dict:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         layer = module.refresh(root, paper_dir=paper_dir)
+        if hasattr(module, "sync_constellation_citations"):
+            module.sync_constellation_citations(root, paper_dir=paper_dir)
     except Exception as exc:  # noqa: BLE001 - a trigger never fails the verb
         layer = {"ok": False, "status": "error",
                  "warning": f"atlas manuscript layer not rebuilt: {type(exc).__name__}: {exc}"[:300]}
@@ -1783,9 +1785,13 @@ def cmd_validate(args: argparse.Namespace) -> dict:
         explicit_min_sources if explicit_min_sources is not None
         else paper_validate.DEFAULT_MIN_SOURCES_PER_CLAIM
     )
-    return paper_validate.finalize_block(
+    res = paper_validate.finalize_block(
         paper_dir, args.block, claims, records, body, min_sources=min_sources,
     )
+    block_id_str = str(args.block or "").lower()
+    if any(prefix in block_id_str for prefix in ("introduction", "related-work", "materials-and-methods")):
+        return _refresh_atlas_manuscript(paper_dir, res)
+    return res
 
 
 def _compute_provenance_report(
@@ -2728,9 +2734,16 @@ def cmd_write(args: argparse.Namespace) -> dict:
         style_set=style_set,
         source_sections=paper_source_span.resolve_bound_sections(corpus, qualified_id),
     )
-    return paper_write.write_block(
+    res = paper_write.write_block(
         paper_dir, contract, draft, audit_account, grounding_account=grounding_account,
     )
+    sec_name = str(getattr(args, "section", "") or "").lower()
+    block_name = str(getattr(args, "block", "") or "").lower()
+    if sec_name in ("introduction", "related-work", "materials-and-methods") or any(
+        p in block_name for p in ("introduction", "related-work", "materials-and-methods")
+    ):
+        return _refresh_atlas_manuscript(paper_dir, res)
+    return res
 
 
 def cmd_render(args: argparse.Namespace) -> dict:

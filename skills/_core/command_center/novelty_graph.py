@@ -9,8 +9,10 @@ framework; the test suite carries one worked example under ``tests/fixtures/``.
 
 from __future__ import annotations
 
+import argparse
 import html
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -145,14 +147,220 @@ def build_novelty_graph(root_path: Path | None = None) -> dict[str, Any]:
     }
 
 
-def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -> str:
-    """Generate the full responsive 3D WebGL viewer for the novelty graph,
-    matching the exact style, typography, libraries, and constellation aesthetics of SOTA Atlas.
+def _load_render_atlas():
+    for candidate in (
+        Path(__file__).resolve().parents[1] / "plausibility" / "scripts" / "render_atlas.py",
+        Path(__file__).resolve().parents[2] / "plausibility" / "scripts" / "render_atlas.py",
+    ):
+        if candidate.is_file():
+            import importlib.util  # noqa: PLC0415
+            spec = importlib.util.spec_from_file_location("render_atlas", candidate)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
 
-    English, or Spanish with ``lang="es"``: the page's labels and the graph's
-    display fields go through ``localize`` (the graph's ids and links do not).
+
+def build_novelty_constellation(data: dict[str, Any]) -> dict[str, Any]:
+    """Convert a novelty graph (nodes, links) into a rich 3D Solar Constellation.
+
+    Each node becomes a full solar system with:
+      - Orbit 0 (sun): Concept name, description, badge and main paragraph.
+      - Orbit 1 (quest): Rhetorical question and research hypothesis (slot: topic_ai).
+      - Orbit 1 (claim): Specific novelty claim and scientific delta (slot: novelty).
+      - Orbit 1 (challenge): Scientific gap, problem or bottleneck (slot: problem).
+      - Orbit 1 (app): Target domain, clinical scope and application (slot: topic_app).
+      - Orbit 2 (fam): Conceptual family / pillar category (slot: family).
+      - Orbit 2 (blocks): Associated paper blocks and sections (slot: branch).
+      - Orbit 3 (metric): Formal equations, benchmark metrics, empirical results (slot: result).
+      - Orbit 3 (ref): Deliverable / proposal / thesis ref and PDF page (slot: conclusion).
     """
-    data = localize.localize(build_novelty_graph(root_path), lang, NOVELTY_FIELDS)
+    systems = []
+    links = []
+    nodes = data.get("nodes", [])
+
+    for node in nodes:
+        nid = str(node.get("id", ""))
+        if not nid:
+            continue
+        label = str(node.get("label", nid))
+        category = str(node.get("category", node.get("group", "Novelty")))
+        badge = str(node.get("badge", ""))
+        desc = str(node.get("desc", ""))
+        question = str(node.get("rhetorical_question", ""))
+        paragraph = str(node.get("paragraph_text", ""))
+        metrics = str(node.get("metrics", ""))
+        claim = str(node.get("novelty_claim", ""))
+        thesis_ref = str(node.get("thesis_ref", ""))
+        pdf_page = node.get("pdf_page", 1)
+        section_ref = str(node.get("section_ref", ""))
+        paper_blocks = node.get("paper_blocks") or []
+        blocks_text = ", ".join(paper_blocks) if paper_blocks else section_ref or "manuscript"
+
+        sun_parts = []
+        if badge:
+            sun_parts.append(f"[{badge}]")
+        if desc:
+            sun_parts.append(desc)
+        if paragraph:
+            sun_parts.append(f"\n\n{paragraph}")
+        sun_detail = " ".join(sun_parts) if sun_parts else label
+
+        planets = [
+            {
+                "id": "sun",
+                "slot": "sun",
+                "orbit": 0,
+                "label": label,
+                "detail": sun_detail,
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": question or label}
+            },
+            {
+                "id": "fam",
+                "slot": "family",
+                "orbit": 2,
+                "label": category.title(),
+                "detail": f"Family Cluster: {category} ({badge})" if badge else f"Family Cluster: {category}",
+                "provenance": "grouped",
+                "evidence": {"origin": thesis_ref or nid, "quote": category}
+            },
+            {
+                "id": "blocks",
+                "slot": "branch",
+                "orbit": 2,
+                "label": f"📄 Sections: {section_ref or 'manuscript'}",
+                "detail": f"Manuscript Sections & Blocks:\nSections: {section_ref}\nBlocks: {blocks_text}",
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": blocks_text}
+            },
+            {
+                "id": "quest",
+                "slot": "topic_ai",
+                "orbit": 1,
+                "label": f"❓ {question[:45]}..." if question else "❓ Scientific Hypothesis",
+                "detail": f"Rhetorical Question:\n{question}\n\nHypothesis & Formulation:\n{paragraph}" if question else paragraph,
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": question or paragraph}
+            },
+            {
+                "id": "claim",
+                "slot": "novelty",
+                "orbit": 1,
+                "label": f"✨ {claim[:45]}..." if claim else "✨ Novelty Claim",
+                "detail": f"Novelty Claim:\n{claim}\n\nCategory: {category}",
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": claim or desc}
+            },
+            {
+                "id": "challenge",
+                "slot": "problem",
+                "orbit": 1,
+                "label": f"🎯 Gap: {category}",
+                "detail": f"Scientific Gap & Challenge:\n{desc}",
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": desc or label}
+            },
+            {
+                "id": "app",
+                "slot": "topic_app",
+                "orbit": 1,
+                "label": f"🔬 Scope: {blocks_text[:40]}",
+                "detail": f"Domain & Scope:\n{paragraph}\n\nBlocks: {blocks_text}",
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": paragraph or desc}
+            },
+            {
+                "id": "metric",
+                "slot": "result",
+                "orbit": 3,
+                "label": f"📊 Metrics: {metrics[:40]}..." if metrics else "📊 Formal Verification",
+                "detail": f"Measured Metrics / Formal Math:\n{metrics}",
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": metrics or label}
+            },
+            {
+                "id": "ref",
+                "slot": "conclusion",
+                "orbit": 3,
+                "label": f"🏷️ Ref: {thesis_ref[:35]}..." if thesis_ref else f"🏷️ Section: {section_ref}",
+                "detail": f"Artifact / Proposal Reference:\n{thesis_ref}\n\nSection: {section_ref}\nPDF Page: {pdf_page}",
+                "provenance": "stated",
+                "evidence": {"origin": thesis_ref or nid, "quote": thesis_ref or section_ref}
+            }
+        ]
+
+        for pid in ("fam", "blocks", "quest", "claim", "challenge", "app", "metric", "ref"):
+            links.append({
+                "from_system": nid, "from": "sun",
+                "to_system": nid, "to": pid,
+                "rel": "supports"
+            })
+
+        systems.append({
+            "id": nid,
+            "title": label,
+            "year": node.get("year", 2026),
+            "identifier": thesis_ref or nid,
+            "source_url": thesis_ref or "",
+            "planets": planets
+        })
+
+    system_ids = {s["id"] for s in systems}
+    for raw_link in data.get("links", []):
+        src = str(raw_link.get("source", ""))
+        tgt = str(raw_link.get("target", ""))
+        if src in system_ids and tgt in system_ids:
+            rel_label = str(raw_link.get("label", "relates-to")).lower()
+            if "extend" in rel_label:
+                rel = "extends"
+            elif "address" in rel_label or "solve" in rel_label:
+                rel = "addresses"
+            elif "support" in rel_label:
+                rel = "supports"
+            elif "yield" in rel_label or "produc" in rel_label:
+                rel = "yields"
+            elif "contradict" in rel_label or "conflict" in rel_label:
+                rel = "contradicts"
+            else:
+                rel = "extends"
+            links.append({
+                "from_system": src, "from": "claim",
+                "to_system": tgt, "to": "challenge",
+                "rel": rel
+            })
+
+    return {
+        "systems": systems,
+        "links": links
+    }
+
+
+def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -> str:
+    """Generate the full responsive 3D celestial constellation viewer for the novelty graph,
+    matching the exact Three.js solar-system aesthetics of the SOTA Atlas.
+    """
+    raw_data = build_novelty_graph(root_path)
+    data = localize.localize(raw_data, lang, NOVELTY_FIELDS)
+    render_atlas = _load_render_atlas()
+    if render_atlas is not None:
+        constellation = build_novelty_constellation(data)
+        proj_name = data.get("project") or "Paper"
+        title = f"3D Novelty Constellation — {proj_name}"
+        heading = f"3D Constellation of Novelty and Scientific Contributions — {proj_name}"
+        html_out = render_atlas.render(constellation, title=title, heading=heading)
+        if root_path is not None:
+            try:
+                ps_dir = Path(root_path) / ".papersmith"
+                if ps_dir.is_dir():
+                    (ps_dir / "novelty_graph.html").write_text(html_out, encoding="utf-8")
+            except Exception:
+                pass
+        return html_out
+    return _build_fallback_viewer_html(data, lang)
+
+
+def _build_fallback_viewer_html(data: dict[str, Any], lang: str = "en") -> str:
     page_lang = "es" if lang in localize.LANGUAGES else "en"
     # Escaped so the JSON can never close the page's <script>.
     graph_json = (json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
@@ -899,3 +1107,49 @@ def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -
   </script>
 </body>
 </html>"""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m skills._core.command_center.novelty_graph",
+        description="Build and render the 3D novelty solar constellation to .papersmith/novelty_graph.html."
+    )
+    parser.add_argument("--root", default=".", help="workspace root (default: cwd)")
+    parser.add_argument("--json", action="store_true", help="print the constellation JSON")
+    args = parser.parse_args(argv)
+
+    root = Path(args.root).expanduser().resolve()
+    try:
+        raw_data = build_novelty_graph(root)
+        constellation = build_novelty_constellation(raw_data)
+        html_out = build_novelty_viewer_html(root)
+
+        target = root / ".papersmith" / "novelty_graph.html"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(html_out, encoding="utf-8")
+
+        systems_count = len(constellation.get("systems", []))
+        links_count = len(constellation.get("links", []))
+
+        if args.json:
+            result = {
+                "ok": True,
+                "path": str(target.relative_to(root)),
+                "systems": systems_count,
+                "links": links_count,
+                "constellation": constellation,
+            }
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            print(f"novelty solar constellation: {systems_count} contribution systems, {links_count} semantic links -> {target.relative_to(root)}")
+        return 0
+    except Exception as exc:
+        if args.json:
+            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        else:
+            print(f"novelty graph error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

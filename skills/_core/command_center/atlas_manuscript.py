@@ -85,7 +85,7 @@ _HERE = Path(__file__).resolve()
 _PAPER_SCRIPTS = _HERE.parents[2] / "paper-writing" / "scripts"
 _IMPLEMENTATION = _HERE.parents[1] / "implementation"
 
-_BIB_FIELDS = ("title", "doi", "eprint", "archiveprefix", "journal", "note", "howpublished", "url")
+_BIB_FIELDS = ("title", "doi", "eprint", "archiveprefix", "journal", "note", "howpublished", "url", "year", "author", "booktitle", "publisher")
 _BIB_FIELD_RE = re.compile(r"^\s*(\w+)\s*=\s*[{\"](.*)[}\"],?\s*$")
 # An arXiv id named inside free text: "arXiv preprint arXiv:1905.13311".
 _ARXIV_IN_TEXT_RE = re.compile(
@@ -398,13 +398,229 @@ def write_layer(root: Path | str, *, paper_dir: Path | str | None = None) -> dic
     return {"ok": True, "status": "written", "path": LAYER_REL, "summary": layer["summary"]}
 
 
+def _load_render_atlas():
+    for candidate in (
+        _HERE.parents[1] / "plausibility" / "scripts" / "render_atlas.py",
+        _HERE.parents[2] / "plausibility" / "scripts" / "render_atlas.py",
+    ):
+        if candidate.is_file():
+            import importlib.util  # noqa: PLC0415
+            spec = importlib.util.spec_from_file_location("render_atlas", candidate)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+def build_constellation_with_citations(root: Path | str, *, paper_dir: Path | str | None = None) -> dict[str, Any]:
+    """Merge the SOTA pool atlas with all cited references in the manuscript.
+
+    In-pool systems cited by the manuscript are marked with cited=True and their
+    citing blocks. Extra cited references outside the pool are added as valid
+    solar systems in the 'Manuscript Citations' family, complete with planets
+    for citing blocks, literature topics, claims, and BibTeX identifiers.
+    """
+    root = Path(root).expanduser().resolve()
+    pool = root / "sota-pool"
+    atlas_path = pool / "atlas.json"
+    if not atlas_path.is_file():
+        raise FileNotFoundError(f"atlas.json not found in {pool}")
+
+    base_atlas = json.loads(atlas_path.read_text(encoding="utf-8"))
+    layer_data = build_layer(root, paper_dir=paper_dir)
+    paper = _paper_dir(root, paper_dir)
+    refs_bytes = _read(paper / "refs.bib")
+    bib_map = _bib_fields(refs_bytes)
+
+    cited_by_id = {s["id"]: s for s in layer_data.get("systems", []) if s.get("cited")}
+
+    out_systems = []
+    existing_ids = set()
+    for sys_entry in base_atlas.get("systems", []):
+        entry = dict(sys_entry)
+        sid = entry.get("id", "")
+        existing_ids.add(sid)
+        if sid in cited_by_id:
+            info = cited_by_id[sid]
+            entry["cited"] = True
+            entry["citing_blocks"] = info.get("blocks", [])
+            entry["claims"] = info.get("claims", [])
+            planets = []
+            blocks_label = ", ".join(info.get("blocks", [])) or "manuscript"
+            for p in entry.get("planets", []):
+                p_copy = dict(p)
+                if p_copy.get("slot") == "sun":
+                    cur_detail = p_copy.get("detail", "")
+                    if "[📚 Cited in:" not in cur_detail:
+                        p_copy["detail"] = f"{cur_detail} [📚 Cited in: {blocks_label}]"
+                planets.append(p_copy)
+            entry["planets"] = planets
+        out_systems.append(entry)
+
+    extra_systems = layer_data.get("extra_systems", [])
+    new_links = list(base_atlas.get("links", []))
+    prev_extra_id = None
+
+    for extra in extra_systems:
+        ckey = extra.get("cite_key", "")
+        if not ckey or ckey in existing_ids:
+            continue
+        existing_ids.add(ckey)
+
+        b_entry = bib_map.get(ckey, {})
+        title = extra.get("title") or b_entry.get("title") or ckey
+        raw_year = b_entry.get("year", "2024")
+        try:
+            year_match = re.search(r"\b(19\d\d|20\d\d)\b", str(raw_year))
+            year = int(year_match.group(1)) if year_match else 2024
+        except Exception:
+            year = 2024
+
+        identifier = extra.get("identifier") or b_entry.get("doi") or f"cite:{ckey}"
+        source_url = b_entry.get("url") or (f"https://doi.org/{b_entry['doi']}" if b_entry.get("doi") else "")
+        blocks = extra.get("blocks", [])
+        claims = extra.get("claims", [])
+        blocks_text = ", ".join(blocks) if blocks else "manuscript"
+
+        planets = [
+            {
+                "id": "sun", "slot": "sun", "orbit": 0, "provenance": "stated",
+                "label": f"{ckey} ({year})",
+                "detail": f"{title} [📚 Cited in: {blocks_text}]",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "fam", "slot": "family", "orbit": 2, "provenance": "grouped",
+                "label": "Manuscript Citations",
+                "detail": f"Cited in manuscript: {blocks_text}",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "app", "slot": "topic_app", "orbit": 1, "provenance": "stated",
+                "label": f"Cited in: {blocks_text}",
+                "detail": f"Sections citing {ckey}: {blocks_text}",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "ai", "slot": "topic_ai", "orbit": 1, "provenance": "stated",
+                "label": "Referenced Literature",
+                "detail": f"Cited literature: {ckey} ({year})",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "prob", "slot": "problem", "orbit": 1, "provenance": "stated",
+                "label": "Theoretical Context",
+                "detail": f"Contextual foundation for manuscript: {title}",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "nov", "slot": "novelty", "orbit": 1, "provenance": "stated",
+                "label": "Literature Foundation",
+                "detail": f"Prior work cited in {blocks_text}",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "res", "slot": "result", "orbit": 3, "provenance": "stated",
+                "label": f"Claims: {len(claims)}" if claims else "Cited in manuscript",
+                "detail": " · ".join(c.get("claim", "") for c in claims) if claims else title,
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            },
+            {
+                "id": "concl", "slot": "conclusion", "orbit": 3, "provenance": "stated",
+                "label": f"Key: {ckey}",
+                "detail": f"BibTeX key: {ckey} (Year: {year})",
+                "evidence": {"origin": identifier, "quote": title[:120], "retrieved": "2026-11-02"}
+            }
+        ]
+
+        for pid in ("fam", "app", "ai", "prob", "nov", "res", "concl"):
+            new_links.append({
+                "from_system": ckey, "from": "sun",
+                "to_system": ckey, "to": pid,
+                "rel": "supports"
+            })
+
+        if prev_extra_id:
+            new_links.append({
+                "from_system": prev_extra_id, "from": "fam",
+                "to_system": ckey, "to": "fam",
+                "rel": "shares-family-with"
+            })
+        prev_extra_id = ckey
+
+        out_systems.append({
+            "id": ckey,
+            "title": title,
+            "year": year,
+            "identifier": identifier,
+            "source_url": source_url,
+            "cited": True,
+            "citing_blocks": blocks,
+            "claims": claims,
+            "planets": planets
+        })
+
+    return {
+        "pool": base_atlas.get("pool", "sota-pool/candidates.json"),
+        "retrieved": base_atlas.get("retrieved", "2026-11-02"),
+        "systems": out_systems,
+        "links": new_links,
+    }
+
+
+def sync_constellation_citations(root: Path | str, *, paper_dir: Path | str | None = None) -> dict[str, Any]:
+    """Synchronize the 3D constellation HTML with all manuscript citations."""
+    root = Path(root).expanduser().resolve()
+    pool = root / "sota-pool"
+    if not (pool / "atlas.json").is_file():
+        return {"ok": False, "status": "absent", "detail": "sota-pool/atlas.json not found"}
+
+    try:
+        layer_res = write_layer(root, paper_dir=paper_dir)
+        constellation = build_constellation_with_citations(root, paper_dir=paper_dir)
+
+        with_manuscript_path = pool / "atlas.with-manuscript.json"
+        with_manuscript_path.write_text(
+            json.dumps(constellation, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8"
+        )
+
+        render_atlas = _load_render_atlas()
+        if render_atlas is not None:
+            html = render_atlas.render(
+                constellation,
+                title="SOTA constellation",
+                heading="SOTA constellation — with manuscript citations"
+            )
+            (pool / "atlas.html").write_text(html, encoding="utf-8")
+
+        summary = dict(layer_res.get("summary", {})) if isinstance(layer_res, dict) else {}
+        summary["systems_total"] = len(constellation["systems"])
+        summary["cited_systems"] = sum(1 for s in constellation["systems"] if s.get("cited"))
+        summary["html_path"] = "sota-pool/atlas.html"
+
+        return {
+            "ok": True,
+            "status": "synchronized",
+            "path": "sota-pool/atlas.html",
+            "systems_total": summary["systems_total"],
+            "cited_systems": summary["cited_systems"],
+            "extra_cited": summary.get("extra_cited", 0),
+            "summary": summary,
+        }
+    except Exception as exc:
+        return {"ok": False, "status": "error", "detail": str(exc)[:300]}
+
+
 def refresh(root: Path | str, *, paper_dir: Path | str | None = None) -> dict[str, Any] | None:
     """Rebuild after a manuscript event; ``None`` when there is no atlas."""
     try:
         root = Path(root).expanduser().resolve()
         if not (root / "sota-pool" / "atlas.json").is_file():
             return None
-        return write_layer(root, paper_dir=paper_dir)
+        res = write_layer(root, paper_dir=paper_dir)
+        sync_res = sync_constellation_citations(root, paper_dir=paper_dir)
+        return {**res, "constellation_sync": sync_res}
     except Exception as exc:  # noqa: BLE001 - a trigger never fails its command
         return {"ok": False, "status": "error", "path": LAYER_REL,
                 "warning": f"atlas manuscript layer not rebuilt: {type(exc).__name__}: {exc}"[:300]}
@@ -443,9 +659,13 @@ def main(argv: list[str] | None = None) -> int:
         description="Write sota-pool/atlas.manuscript.json: atlas systems cited by the manuscript.")
     parser.add_argument("--root", default=".", help="workspace root (default: cwd)")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument("--sync", action="store_true", help="synchronize the 3D constellation HTML with all citations")
     args = parser.parse_args(argv)
     try:
-        result = write_layer(args.root)
+        if args.sync:
+            result = sync_constellation_citations(args.root)
+        else:
+            result = write_layer(args.root)
     except Exception as exc:  # noqa: BLE001 - reported, exit 1
         result = {"ok": False, "status": "error", "path": LAYER_REL,
                   "detail": f"{type(exc).__name__}: {exc}"[:300]}

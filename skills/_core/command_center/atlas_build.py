@@ -91,6 +91,12 @@ def build(root: Path | str) -> dict[str, Any]:
     if rendered.returncode != 0:
         lines = [l for l in (rendered.stdout + rendered.stderr).splitlines() if l.strip()]
         return _result(False, "render", lines[0] if lines else "render_atlas.py refused")
+    if (root / "paper" / "refs.bib").is_file() or (pool / "atlas.manuscript.json").is_file():
+        try:
+            from . import atlas_manuscript
+            atlas_manuscript.sync_constellation_citations(root)
+        except Exception:
+            pass
     return _result(True, "rendered", checked.stdout.strip() or "atlas rendered",
                    **_counts(atlas_json))
 
