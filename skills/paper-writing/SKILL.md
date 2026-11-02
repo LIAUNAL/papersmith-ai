@@ -110,9 +110,9 @@ in favor of an incoming body. The only exit from a hand-edited block is
 The canonical manuscript is presented in **review mode, single column** (`onecolumn`, e.g., `\documentclass[11pt,onecolumn,a4paper]{article}` with standard review margins and line spacing). Multi-column or journal-specific publication styles are deferred to the `venue` adaptation workflow once a journal is selected.
 
 ### Blinded Author Metadata on Initial Drafts
-During the initial drafting and refinement of the manuscript, **no author names, affiliations, or emails are included**. All author metadata remains blinded and marked as placeholders (*Por definir*):
+During the initial drafting and refinement of the manuscript, **no author names, affiliations, or emails are included**. All author metadata remains blinded and marked as English placeholders:
 ```latex
-\author{Por definir \\ \textit{Afiliaciones y correos por definir}}
+\author{Author names withheld \\ \textit{Affiliations and contact e-mails to be provided}}
 ```
 Only when the complete manuscript passes all verification gates with the user is the operator prompted to provide the author identities, affiliations, and correspondence details.
 
@@ -1190,6 +1190,8 @@ either command's own `--help`.
 
 | Situation | Action |
 | --- | --- |
+| `write` refuses `DRAFT_NOT_ENGLISH` | The draft carries Spanish prose (the refusal names each line) — redraft it in English; only a paper that declares another main language in `main.tex` (babel/polyglossia) is written in it. No attempt is spent |
+| `write` refuses `DRAFT_PLACEHOLDER_TEXT` | The draft still carries `por definir`, `TODO`, `TBD`, `FIXME` or `\todo` — write the content, or leave the block unwritten. No attempt is spent |
 | `write` refuses `SECTION_BINDING_ABSENT` | Run `separate --proposal <path>` naming a whole cut for the missing claim's lineage, then the exact `bind` invocation the settled cut licenses |
 | `separate` refuses `SEPARATION_SECTION_OVERLAP` / `SEPARATION_SECTION_ORPHANED` / `SEPARATION_NOTATION_GAP` | One code by fixed precedence overlap → orphan → gap; the detail names every instance of every class present — fix the cut and resubmit the same proposal file |
 | `separate` refuses `SEPARATION_SECTION_UNCLAIMABLE` | A named title resolves to a real heading outside the claimable set (the document's own title, or a subsection), or the document's claimable set could not be measured at all — `--file`/`contract` the section, or re-check the title against the document's own headings |
@@ -1223,6 +1225,18 @@ citation keys and the strings a contract quotes stay byte-identical — they wer
 never prose. The `style` channel's samples keep whatever language they were
 ingested in: a style reference is evidence about rhythm and register, and
 `STYLE_OVERLAP` already refuses a draft that borrows its words.
+
+**The rule is enforced, not only stated.** `paper_language.py` is the one
+detector: `write` refuses a draft carrying Spanish prose (`DRAFT_NOT_ENGLISH`)
+or placeholder text — `por definir`, `TODO`, `TBD`, `FIXME`, `\todo`
+(`DRAFT_PLACEHOLDER_TEXT`) — before evidence-audit runs, so no attempt is
+spent and `main.tex` stays byte-identical; `verify`'s `language` check and the
+manuscript QA report (`language`/`placeholder` findings) scan the whole
+`main.tex`. Math, comments, markers, citations, the bibliography and
+capitalized accented words (names, institutions) are never read as Spanish.
+A paper that declares another main language in `main.tex` (babel's `main=`
+or last option, polyglossia's `\setmainlanguage`) is exempt from the Spanish
+check, never from the placeholder check.
 
 ## The prose pass: what it may not touch
 
@@ -1313,7 +1327,7 @@ anything itself.**
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -1817,7 +1831,7 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
-| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`; plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
+| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`; plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
 **Three values, never two.** Every check's own `verdict` is `pass`, `fail`
 or `unmeasured` — `unmeasured` is never folded into `pass`. Two new modules
@@ -1841,6 +1855,14 @@ audit could not compare reports `unmeasured`, reason
 `FIGURE_SEMANTICS_UNMEASURED`. The dependency direction is one-way:
 `paper_coupling_evidence.py` may import `paper_figure_audit.py`; the auditor
 may not import the reader or `paper_verify.py`.
+
+**The ninth check, `language`, reads a scan `cmd_verify` hands in.**
+`cmd_verify` runs `paper_language.scan` over the `main.tex` bytes `gather()`
+already read and passes the result to `paper_verify.run(..., language=)`,
+the same way it resolves `optional_block_ids`. A Spanish prose line or a
+placeholder marker (`por definir`, `TODO`, `TBD`, `FIXME`, `\todo`) fails
+the check and names its line; a `run()` handed no scan reports
+`unmeasured`, reason `LANGUAGE_NOT_SCANNED`, never a silent pass.
 
 **`verify` reads its own declaration record, `paper/couplings.json` —
 read-only, untracked like `main.tex` itself.** `couplings` is its producer:

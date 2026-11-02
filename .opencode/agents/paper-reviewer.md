@@ -126,7 +126,7 @@ Fill the fields in this order, with these exact labels.
     (author names, acknowledgements, self-identifying links, page limit,
     missing checklist). Verify that the manuscript is presented in single-column
     review mode (`onecolumn`) and that initial author metadata is blinded
-    ("Por definir" for authors, affiliations, emails until complete manuscript
+    ("Author names withheld" and "Affiliations and contact e-mails to be provided", in English, until complete manuscript
     user verification). Check also the 7-paragraph Introduction and subsection-structured
     Related Work with 30–40 citations. Report them here only; they never lower a rating.
 
