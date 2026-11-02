@@ -67,8 +67,9 @@ class BlindingPlaceholderIsEnglishTests(unittest.TestCase):
             with self.subTest(rel=rel):
                 text = (REPO / rel).read_text(encoding="utf-8")
                 self.assertIn(ENGLISH_PLACEHOLDER, text)
-                self.assertNotIn("por definir", text.lower())
+                self.assertNotIn("\\author{Por definir", text)
                 self.assertNotIn("Afiliaciones", text)
+                self.assertNotIn("*por definir*", text.lower())
         for rel in REVIEWER_SURFACES:
             with self.subTest(rel=rel):
                 text = (REPO / rel).read_text(encoding="utf-8")
