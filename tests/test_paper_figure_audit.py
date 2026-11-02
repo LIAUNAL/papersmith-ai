@@ -513,7 +513,7 @@ class VerifyWiringTests(unittest.TestCase):
             [entry["check"] for entry in report["checks"]],
             [
                 "contribution-list", "chain", "gap", "artefacts",
-                "future-work", "citations", "contract-currency", "figure-semantics",
+                "future-work", "citations", "contract-currency", "figure-semantics", "language",
             ],
         )
 
