@@ -14,12 +14,12 @@ Branch: feat/manuscript-polish-0-54. Delivery: merge, push and release authorize
 
 ## Tasks
 
-- U1 [S1] related-work synthesis table rule (contract 05, redactor) — delegated writer (worktree)
-- U2 [S2] text size range 0.70–0.90 × body in figures and tables (print_scale, figure-review, place, diagram audit, diagram_cli, ps_figures, table lint, manuscript QA, agents) — delegated writer (worktree)
-- U3 [S3] declarations/back matter before the references (contract 10, manuscript assembly, venue placement) — delegated writer (worktree)
-- U4 [S4] English-only manuscript: no Spanish and no placeholders (contract 09 blinding placeholder, a checker in write/verify/QA) — delegated writer (worktree)
-- U5 [S5] humanization and redundancy: metrics, ai-auditor agent, humanize skill, writing rules in contracts — delegated writer (worktree)
-- U6 [S6] integrate: Spanish copies + digests, consistency pass across contracts, full suite, verifier, review, release, QMLEEG rebuild — inline/delegated
+- [x] U1 [S1] related-work synthesis table — 31360a02 — review approved (review-4a19e20a724a5ea3)
+- [x] U2 [S2] text range 0.70–0.90 × body — e9016b2d, 65d32a84 — review approved (review-05bf8a90611c13f5)
+- [x] U3 [S3] back matter before the references + verify structure check — a79bf608 — review approved (review-205475751418fb13)
+- [x] U4 [S4] English-only manuscript — 10a41b17, 42468786 — review abandoned by the operator (its single critical finding was refuted: the language guard passes at the reviewed commit and at HEAD)
+- [x] U5 [S5] flow and redundancy metrics, ai-auditor, writing bullets — e090707b — review approved (review-69aff1e2b3e9a85e)
+- [x] U6 [S6] integration (b58bbb22..529b3854), full suite 8985 passed (2 known + version), review approved (review-d657428a94907ed3); release 0.54.0 and QMLEEG rebuild
 
 ## Log
 
