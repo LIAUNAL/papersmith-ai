@@ -41,11 +41,16 @@ class NeutralDefaultsTests(unittest.TestCase):
 
     def test_the_viewer_names_the_project_and_escapes_its_title(self) -> None:
         (self.root / ".papersmith").mkdir()
+        # The viewer is the solar constellation: it names the project in its
+        # title and heading, and no workspace text reaches the page unescaped.
         (self.root / ".papersmith" / "novelty_graph.json").write_text(json.dumps({
-            "title": "<script>x</script>", "project": "Fresh", "nodes": [], "links": []}), encoding="utf-8")
+            "title": "<script>x</script>", "project": "Fresh</title><script>p()</script>",
+            "nodes": [{"id": "n1", "type": "contribution", "label": "</script><script>a()</script>",
+                       "desc": "<img src=x onerror=b()>"}], "links": []}), encoding="utf-8")
         page = novelty_graph.build_novelty_viewer_html(self.root)
-        self.assertIn("&lt;script&gt;x&lt;/script&gt;", page)
-        self.assertIn("{ id: 'core', label: \"Fresh\"", page)
+        self.assertIn("3D Novelty Constellation — Fresh&lt;/title&gt;", page)
+        for raw in ("<script>x", "<script>p()", "<script>a()", "<img src=x"):
+            self.assertNotIn(raw, page)
 
 
 if __name__ == "__main__":
