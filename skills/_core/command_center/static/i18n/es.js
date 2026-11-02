@@ -1418,7 +1418,7 @@ window.PAPERSMITH_I18N.es = {
   "qa.invalid": "El informe de control no se puede leer: ejecuta smith paper qa de nuevo.",
   "qa.clean": "Sin hallazgos",
   "qa.findings": "{count} hallazgos",
-  "qa.meta": "{pages} páginas · cuerpo {body} pt · mínimo {floor} pt",
+  "qa.meta": "{pages} páginas · cuerpo {body} pt · rango {floor}–{cap} pt",
   "qa.stale": "Desactualizado: main.pdf cambió después de este informe",
   "qa.page": "Página {page}",
   "qa.pageFindings": "{count} en esta página",
@@ -1429,5 +1429,6 @@ window.PAPERSMITH_I18N.es = {
   "qa.kind.overfull": "Caja Overfull",
   "qa.detail.overflow": "{object} excede la caja de texto en {excess} pt",
   "qa.detail.font": "se imprime a {printed} pt, por debajo del mínimo de {floor} pt",
+  "qa.detail.fontCap": "se imprime a {printed} pt, por encima del máximo de {cap} pt",
   "qa.detail.overfull": "{excess} pt de más, líneas fuente {start}–{end}"
 };

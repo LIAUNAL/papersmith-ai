@@ -1419,7 +1419,7 @@ window.PAPERSMITH_I18N.en = {
   "qa.invalid": "The QA report is unreadable: run smith paper qa again.",
   "qa.clean": "No findings",
   "qa.findings": "{count} findings",
-  "qa.meta": "{pages} pages · body {body} pt · floor {floor} pt",
+  "qa.meta": "{pages} pages · body {body} pt · range {floor}–{cap} pt",
   "qa.stale": "Stale: main.pdf changed after this report",
   "qa.page": "Page {page}",
   "qa.pageFindings": "{count} on this page",
@@ -1430,5 +1430,6 @@ window.PAPERSMITH_I18N.en = {
   "qa.kind.overfull": "Overfull box",
   "qa.detail.overflow": "{object} passes the text block by {excess} pt",
   "qa.detail.font": "prints at {printed} pt, below the {floor} pt floor",
+  "qa.detail.fontCap": "prints at {printed} pt, above the {cap} pt cap",
   "qa.detail.overfull": "{excess} pt too wide, source lines {start}–{end}"
 };

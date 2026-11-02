@@ -1953,7 +1953,8 @@ they are here and not in the contract.
   drawing code and use `apply_style(body_pt, printed_width_fraction)` and
   `save_figure(fig, path_pdf)`: a vector PDF with embedded text, tight and
   transparent, no in-figure title (the caption carries it), and every label,
-  tick and legend at least 0.70 x the manuscript body at its printed size.
+  tick and legend between 0.70 and 0.90 x the manuscript body at its printed
+  size.
   `paper_cli.py place` refuses a figure that breaks any of these.
 - **Decoration appears once.** Axis labels shared by every panel collapse into one
   for the whole figure; tick labels stay at the border. But whether an axis really
