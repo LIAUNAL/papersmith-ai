@@ -27,7 +27,7 @@ stays a property of the Python renderer, and the starfield uses a fixed-seed
 generator, never `Math.random`.
 
 The one client-side rearrangement is opt-in: `setLayout('groups')` (the page's
-"Disposición de grupos" button) rigidly translates each whole system — planets,
+"Group layout" button) rigidly translates each whole system — planets,
 rings and label together, its orbital plane untouched — so systems of one
 family (its family planet's label, the rule `_family_of` uses) pack around a
 family center, and family centers sit on a flat grid (`z = 0`), ordered by
@@ -77,7 +77,7 @@ is drawn only when something changed or the camera moved by about a tenth of a
 pixel, so an idle sky with rotation off costs no rendering.
 
 The page's inline script owns the modal, the family chips, the toolbar (zoom,
-turn, tilt, rotation, names, reset, the "Disposición de grupos" toggle with
+turn, tilt, rotation, names, reset, the "Group layout" toggle with
 class `on` while grouped, and the 2D/3D view button) and the system names.
 System names are not sprites: the page places them in an HTML layer (3D) or
 on the canvas (2D), by priority, skipping any that would overlap one already

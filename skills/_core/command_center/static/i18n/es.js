@@ -657,6 +657,7 @@ window.PAPERSMITH_I18N.es = {
   "math.level.1": "reconoce",
   "math.level.2": "explica",
   "math.level.3": "deriva",
+  "modelPanel.languageNotice": "Esta especificación ({file}) no está escrita en inglés (campos: {fields}). El dashboard muestra los archivos del workspace tal como están escritos; pide a /proposal-deliberation que la reescriba en inglés.",
   "math.level.4": "justifica",
   "math.viewRendered": "∑ Ver compilado",
   "math.viewSource": "TeX Ver LaTeX",

@@ -3003,6 +3003,7 @@
             <div id="modelProblemStatementText" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-left: 4px solid var(--bad); border-radius: var(--radius); padding: 0.9rem 1.15rem; font-size: 0.86rem; color: var(--text); line-height: 1.55;" data-i18n="model.problemDefault">The research problem and the technical gap are formalized during Phase 4, proposal deliberation.</div>
           </div>
 
+        <div id="modelLanguageNotice" class="model-language-notice" role="status" hidden></div>
           <!-- Novelty pillars (model-panel.js) -->
           <div style="margin-bottom: 1.25rem;">
             <h4 id="modelPillarsTitle" style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;" data-i18n="model.pillarsTitle">✨ Novelty Pillars of the Proposal</h4>
@@ -4192,8 +4193,7 @@
           c.venue,
           c.identifier,
           c.family,
-          c.abstract,
-          c.plausibility_note
+          c.abstract
         ].join(' ').toLowerCase();
         return hay.includes(query);
       });
@@ -6696,6 +6696,8 @@
   </button>
   <div id="smithTerminalWindow" class="smith-term" role="dialog" aria-label="Smith CLI Assistant" data-i18n-attr="aria-label:cli.title" aria-hidden="true">
     <div class="smith-term__header">
+      // The server localizes the neutral model spec's labels: fetch it again.
+      if (modelDataCache) refreshModelData();
       <img src="./smith-face.png" alt="" class="smith-term__logo">
       <span class="smith-term__title" data-i18n="cli.title">Smith CLI Assistant</span>
       <span id="terminalStatusDot" class="smith-term__dot"></span>

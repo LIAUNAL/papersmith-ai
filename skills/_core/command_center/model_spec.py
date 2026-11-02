@@ -7,11 +7,56 @@ A workspace that wants its own specification writes it to
 ``.papersmith/model_spec.json``; otherwise this module answers a neutral
 specification built only from ``papersmith.yaml``. No project's data ships with
 the framework; the test suite carries one worked example under ``tests/fixtures/``.
+
+The workspace's file is English, like every artifact an agent writes, and the
+dashboard shows it as written: it is never translated nor dropped. A file whose
+prose reads as Spanish gets a ``language_notice`` naming the fields that do, so
+the panel can say so in the dashboard's language instead of passing it off as
+the English view. The detector is the manuscript's own (``paper_language``).
 """
 
+import importlib.util
 import json
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+SPEC_REL = ".papersmith/model_spec.json"
+_PAPER_LANGUAGE = Path(__file__).resolve().parents[2] / "paper-writing" / "scripts" / "paper_language.py"
+#: Machine values: identifiers, colours and symbols are never prose.
+_MACHINE_KEYS = frozenset({"id", "color", "colour", "symbol", "status", "badge", "tag"})
+
+
+@lru_cache(maxsize=1)
+def _spanish_detector():
+    """``paper_language.is_spanish_prose``, or None when the skill is absent."""
+    if not _PAPER_LANGUAGE.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("papersmith_paper_language", _PAPER_LANGUAGE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.is_spanish_prose
+
+
+def _strings(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key not in _MACHINE_KEYS:
+                yield from _strings(item, f"{path}.{key}" if path else str(key))
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item, path)
+    elif isinstance(value, str):
+        yield path, value
+
+
+def language_notice(spec: dict[str, Any]) -> dict[str, Any] | None:
+    """The fields of a workspace specification whose prose is not English."""
+    detector = _spanish_detector()
+    if detector is None:
+        return None
+    fields = list(dict.fromkeys(path for path, text in _strings(spec) if detector(text)))
+    return {"expected": "en", "file": SPEC_REL, "fields": fields} if fields else None
 
 
 def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
@@ -22,9 +67,14 @@ def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
         spec_json = root / ".papersmith" / "model_spec.json"
         if spec_json.is_file():
             try:
-                return json.loads(spec_json.read_text(encoding="utf-8"))
+                spec = json.loads(spec_json.read_text(encoding="utf-8"))
             except Exception:
                 pass
+            else:
+                notice = language_notice(spec) if isinstance(spec, dict) else None
+                if notice:
+                    spec["language_notice"] = notice
+                return spec
 
         yaml_file = root / "papersmith.yaml"
         title = ""

@@ -168,6 +168,46 @@ it invents — every planet and link in that file is a claim about which SOTA
 papers this proposal takes from and why, and that claim belongs to the
 deliberation, not to the stretch that publishes it.
 
+## The concept map: `.papersmith/model_spec.json`
+
+The dashboard's Concept Map & Model tab, the math panel's novelty card and the
+manuscript summary graph read `.papersmith/model_spec.json`. This skill owns
+that file: after the operator accepts a revision, write it (you, not the
+publish stretch, which has no `Write`) from that revision and the pillars and
+hypotheses discussed, and name the revision in `trl`. Without the file the tab
+shows a neutral placeholder built from `papersmith.yaml`.
+
+**It is written in English**, like every artifact, whatever language the
+deliberation was held in. The dashboard shows the file as written; its language
+selector translates the dashboard's own labels, never this file. A file whose
+prose reads as Spanish is still shown, under a notice that names its fields
+and asks for this rewrite.
+
+```json
+{
+  "title": "<paper title>",
+  "target_journal": "<venue>",
+  "authors": "<names>",
+  "trl": "Phase 4 complete (proposal r02)",
+  "executive_summary": "<two or three sentences>",
+  "novelty": {
+    "problem_statement": "<the problem and the gap>",
+    "pillars": [{"id": "pillar-1", "name": "...", "badge": "...", "color": "#38bdf8",
+                 "summary": "...", "details": "..."}],
+    "hypotheses": [{"id": "H1", "title": "...", "statement": "...",
+                     "status": "...", "evidence": "..."}]
+  },
+  "conceptual_map": {
+    "layers": [{"name": "Layer 1: ...", "color": "#38bdf8", "tag": "...",
+                 "description": "...", "nodes": [{"name": "...", "desc": "..."}]}]
+  }
+}
+```
+
+Every prose field may carry `$…$` math. Take each pillar, hypothesis and layer
+from the accepted revision and the deliberation, verbatim in meaning; never
+invent one the revision does not argue.
+
 ## You are the tutor
 
 For the rest of this deliberation:
