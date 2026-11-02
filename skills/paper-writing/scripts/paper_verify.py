@@ -37,8 +37,12 @@ Public surface:
                              `check_gap`'s own front extraction and
                              `paper_cli._resolve_expected_components`'s
                              produced-fact route)
+    STRUCTURE_CHECKS     -> structural checks reported apart, under `structure`
+    check_back_matter_order(evidence) -> dict -- declarations before the
+                             references, appendices after them
     run(evidence) -> dict  {"checks": [...], "clean": bool,
-                             "holds": int, "fails": int, "unmeasured": int}
+                             "holds": int, "fails": int, "unmeasured": int,
+                             "structure": [...]}
 """
 from __future__ import annotations
 
@@ -80,7 +84,16 @@ UNMEASURED_REASONS: tuple[str, ...] = (
     "NO_FIGURE_DECLARED",
     "FIGURE_SEMANTICS_UNMEASURED",
     "OPTIONAL_BLOCK_ABSENT",
+    # `back-matter-order`'s own reason: `main.tex` carries no bibliography
+    # command yet, so there is no reference list to place the back matter
+    # against -- reported, never read as a correct order.
+    "NO_BIBLIOGRAPHY",
 )
+
+#: The structural checks `run()` reports under its own `structure` key,
+#: apart from the closed `CHECKS` roster of couplings (whose count and
+#: arithmetic stay exactly what `ReportShapeTests` pins).
+STRUCTURE_CHECKS: tuple[str, ...] = ("back-matter-order",)
 
 _VERDICTS = ("pass", "fail", "unmeasured")
 
@@ -627,6 +640,66 @@ def check_figure_semantics(evidence, *, optional_block_ids: frozenset = frozense
     )
 
 
+_BACK_MATTER_BEGIN_RE = re.compile(
+    rb"^%% paper-writing block (back-matter\.[A-Za-z0-9._-]+) begin\b", re.MULTILINE
+)
+#: Where the reference list is typeset: a BibTeX `\bibliography{...}`, a
+#: hand-written `thebibliography` environment, or biblatex's
+#: `\printbibliography`. Anchored at the line start (after indentation), so
+#: a commented-out command never counts.
+_REFERENCES_RE = re.compile(
+    rb"^[ \t]*\\(?:bibliography\{|begin\{thebibliography\}|printbibliography\b)", re.MULTILINE
+)
+#: The back-matter blocks that follow the references; every other
+#: back-matter block is a declaration and precedes them
+#: (`sections/10-back-matter.md`, "Placement follows the venue").
+APPENDIX_BLOCKS: frozenset = frozenset({"back-matter.bm-appendices"})
+
+
+def check_back_matter_order(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
+    """`back-matter-order` (`odd/tasks/manuscript-polish-0-54.md`, S3): back
+    matter renders after the conclusions and BEFORE the references, and
+    appendices AFTER them. Both sides are derived from `main.tex` itself:
+    the begin marker of every `back-matter.*` block, and the first line that
+    typesets the references. A declaration block beginning after that line
+    fails, and so does an appendix block beginning before it. No
+    bibliography at all is `unmeasured`, `NO_BIBLIOGRAPHY` -- never `pass`.
+
+    Reports; never repairs: the canonical file is reordered by moving the
+    blocks, and `venue build` always emits this order whatever the
+    canonical file holds.
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity."""
+    data = evidence.main_tex_bytes
+    blocks = [(m.group(1).decode("ascii"), m.start()) for m in _BACK_MATTER_BEGIN_RE.finditer(data)]
+    references = _REFERENCES_RE.search(data)
+    if references is None:
+        return _unmeasured("back-matter-order", "mechanical", "NO_BIBLIOGRAPHY",
+                           evidence={"back_matter_blocks": [block_id for block_id, _ in blocks]})
+    at = references.start()
+    late = [block_id for block_id, start in blocks if block_id not in APPENDIX_BLOCKS and start > at]
+    early = [block_id for block_id, start in blocks if block_id in APPENDIX_BLOCKS and start < at]
+    return _entry(
+        "back-matter-order", classification="mechanical",
+        verdict="fail" if late or early else "pass",
+        sides=[
+            {"name": "back-matter block begin markers", "source": "derived", "origin": "main.tex"},
+            {"name": "reference list", "source": "derived",
+             "origin": "main.tex \\bibliography / thebibliography / \\printbibliography"},
+        ],
+        evidence={
+            "references_line": data.count(b"\n", 0, at) + 1,
+            "declarations_after_references": late,
+            "appendices_before_references": early,
+        },
+        limits=[], unmeasured_reason=None,
+    )
+
+
+_STRUCTURE_FUNCTIONS = {"back-matter-order": check_back_matter_order}
+assert set(_STRUCTURE_FUNCTIONS) == set(STRUCTURE_CHECKS), "every STRUCTURE_CHECKS member needs one function"
+
+
 _CHECK_FUNCTIONS = {
     "contribution-list": check_contribution_list,
     "chain": check_chain,
@@ -661,7 +734,13 @@ def run(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
     fails = sum(1 for entry in entries if entry["verdict"] == "fail")
     unmeasured = sum(1 for entry in entries if entry["verdict"] == "unmeasured")
     assert holds + fails + unmeasured == len(CHECKS)
+    # Structural checks sit apart from the coupling roster and its counts;
+    # a manuscript is clean only when every one of them passes as well.
+    structure = [_STRUCTURE_FUNCTIONS[check](evidence, optional_block_ids=optional_block_ids)
+                 for check in STRUCTURE_CHECKS]
+    structure_clean = all(entry["verdict"] == "pass" for entry in structure)
     return {
-        "checks": entries, "clean": (fails == 0 and unmeasured == 0),
+        "checks": entries, "clean": (fails == 0 and unmeasured == 0 and structure_clean),
         "holds": holds, "fails": fails, "unmeasured": unmeasured,
+        "structure": structure,
     }
