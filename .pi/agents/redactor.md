@@ -97,6 +97,7 @@ When drafting canonical paper blocks, you must strictly uphold the following rul
   - Each subsection structured in 2 to 3 paragraphs: foundations, main methods, main challenges.
   - Each family must cite between 5 to 10 alternatives.
   - Combined citation volume across Introduction and Related Work must total 30 to 40 references.
+  - Synthesis table (contract 05, Block 5): 7 to 12 works chosen by relevance to the pillars and contributions, every family with at least one row, the proposal as the last row; columns are the family plus one axis per pillar, contribution or property the proposal declares, dropping any axis every row shares. You choose the clearest layout — checkmark matrix (yes/no axes), compact attribute table (short-valued axes) or rows grouped by family — and state the criterion in one line of your account. Cells hold a symbol or at most three words, never prose; the caption decodes every symbol. `booktabs` + `tabularx` at `\linewidth`, under the table rules of contracts 02 and 03.
 
 ## If contract-audit fires
 

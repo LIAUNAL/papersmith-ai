@@ -146,7 +146,7 @@
 
 **Extent** 820–1700 words
 **Does not carry** equations
-**Carries** one block per stated problem, and one synthesis figure or table
+**Carries** one block per stated problem, and one synthesis table (or figure) of 7–12 works
 
 Every claim here belongs to someone else's work, and the section argues what those works together leave unsolved.
 
@@ -283,7 +283,9 @@ reader who knows that work will otherwise wonder why it did not already suffice.
 
 ## Block 5 — Synthesis artefact
 
-An evolution figure or a comparison table.
+A comparison table by default; an evolution figure only when the lineage, not the
+comparison, is the point. Either form places **7 to 12 works**, the proposal's row
+not counted.
 
 **Its dimensions are the properties on which the proposal wins** — they are derived
 from the contributions, not from whatever is easy to tabulate. The proposal's row is
@@ -292,9 +294,41 @@ the only one holding every column.
 It goes after the closing, preceded by **a one-sentence pointer paragraph that names
 the dimensions in the body** before the table appears. The variant is one artefact
 per block of block 3, placed at that block's close; in that case the pointer is the
-block's last sentence.
+block's last sentence, and the 7 to 12 works are counted across those artefacts.
 
 Name the dimensions in the body, never only in the table header.
+
+### The synthesis table
+
+**Rows: 7 to 12 works, then the proposal as the last row.** A work earns a row by its
+relevance to the paper's pillars and contributions — the strongest representative of
+its family on the properties the proposal claims, not the most cited or the most
+recent. Every family this section develops has at least one row; a family with
+several rows keeps them adjacent.
+
+**Columns: the family, then the comparison axes.** Each axis is one pillar,
+contribution or property the proposal declares, named in the body's pointer sentence.
+An axis every row satisfies separates nothing and is dropped; so is an axis no
+contribution claims.
+
+**The redactor chooses the layout that reads fastest and states why in one line of
+its account:**
+
+- a **checkmark matrix** when every axis is a yes/no property;
+- a **compact attribute table** when an axis takes a short value (a data regime, a
+  model class, a validation scheme);
+- **rows grouped by family** — a `\multicolumn` label row per family, or a family
+  column — when several works share a family and the grouping is itself the argument.
+
+**Cells are concise and exact:** a symbol (`\checkmark`, `--`, a partial mark) or at
+most three words. No sentence, no clause, no citation-only cell. The caption is the
+legend: it decodes every symbol and abbreviation the cells use, so the table reads
+without the body. The citation goes in the work's own cell, once.
+
+**It fits the text block.** `booktabs` rules and a `tabularx` at `\linewidth`, under
+the table rules of contracts 02 and 03 (*Tables stay inside the text block*): the same
+font floor, no scaling to fit, and a table too wide is split or transposed, never
+shrunk.
 
 ## Every artefact is referenced before it appears
 
@@ -346,7 +380,8 @@ the sentence it supports, or follows the name of the method it credits; it is ne
 the subject of a sentence (*ref. [29] presents*).
 
 **The section can close on a comparison table** that sets the proposal's properties
-against the families reviewed, one row per family.
+against the works reviewed: 7 to 12 representative works, every family with at least
+one row (Block 5).
 
 **Writing.**
 
@@ -402,6 +437,10 @@ same thing at different depths.
 - The synthesis artefact missing.
 - An artefact whose dimensions are not the properties the proposal declares.
 - Dimensions named only in the table header and not in the body.
+- Fewer than 7 or more than 12 works in the synthesis table, the proposal's row not counted.
+- A family of this section with no row in the synthesis table.
+- A synthesis-table column not tied to a pillar, contribution or property the proposal declares, or one every row shares.
+- A sentence or clause as prose in a synthesis-table cell, or a symbol the caption does not decode.
 - An artefact that appears before any reference to it, or that nothing references at
   all.
 - A citation used as a noun phrase.

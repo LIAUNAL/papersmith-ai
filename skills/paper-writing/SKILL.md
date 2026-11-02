@@ -132,6 +132,7 @@ The Introduction has exactly seven paragraphs; the full contract, with the exten
 3. **Three-part internal structure (2 to 3 paragraphs per subsection):** Foundations (fundamentos), Main methods (métodos principales), and Main challenges/issues (principales desafíos).
 4. **Citation volume per family:** Each family subsection must cite between 5 to 10 distinct alternative works.
 5. **Reference Horizon:** Between the Introduction and Related Work, the bibliography must collectively cite between 30 and 40 references.
+6. **Synthesis table (Block 5):** 7 to 12 works selected by relevance to the pillars and contributions, every family with at least one row, the proposal as the last row. Columns are the family plus one axis per pillar, contribution or property the proposal declares; an axis every row shares is dropped. The redactor picks the clearest layout (checkmark matrix, compact attribute table, or rows grouped by family) and states why; cells are a symbol or at most three words, the caption decodes every symbol, and the table follows the table rules of contracts 02 and 03. The contract-audit stage counts the works deterministically (`paper_audit.count_table_works`): a `clear` verdict on the row-count disqualifier over a table outside 7–12 is reported `undecidable` with the measured count under `deterministic`, never blocking by itself.
 
 ## When a delegated agent cannot be spawned
 
