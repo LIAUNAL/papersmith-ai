@@ -177,3 +177,73 @@ test("plugin degrades loudly when a declared surface fails to load", { skip: UNA
   assert.equal(errors.mock.callCount(), 1, "a non-empty-but-incomplete surface set must not pass");
   assert.match(String(errors.mock.calls[0].arguments[0]), /degraded/);
 });
+
+test("plugin exports an OpenCode v2 default definition with id, server, and setup()", { skip: UNAVAILABLE }, async () => {
+  const url = pathToFileURL(path.join(WORKSPACE, PLUGIN_RELATIVE)).href;
+  const module = await import(url);
+  assert.equal(typeof module.default, "object", "OpenCode v2 requires a default export object");
+  assert.notEqual(module.default, null);
+  assert.equal(module.default.id, "papersmith.refuse-offpath-push");
+  assert.equal(module.default.server, module.server);
+  assert.equal(typeof module.default.setup, "function");
+});
+
+test("OpenCode v2 setup(ctx) registers execute.before hook, enforces the tripwire, and disposes cleanly", { skip: UNAVAILABLE }, async () => {
+  const root = copyWorkspace(WORKSPACE);
+  plantAdapters(root, {
+    "zz_surface.py": `PUSH_SURFACE = ("${SURFACE_TOKEN}",)\n`,
+  });
+  const url = pathToFileURL(path.join(root, PLUGIN_RELATIVE)).href;
+  const module = await import(url);
+
+  let registeredStage = null;
+  let registeredHandler = null;
+  let disposed = false;
+
+  const ctx = {
+    location: { directory: root, worktree: root },
+    tool: {
+      hook: async (stage, handler) => {
+        registeredStage = stage;
+        registeredHandler = handler;
+        return {
+          dispose: async () => {
+            disposed = true;
+          },
+        };
+      },
+    },
+  };
+
+  const cleanup = await module.default.setup(ctx);
+  assert.equal(registeredStage, "execute.before");
+  assert.equal(typeof registeredHandler, "function");
+
+  // Clean bash command passes
+  await registeredHandler({ tool: "bash", input: { command: "echo ok" } });
+
+  // Non-bash tool is ignored even if input mentions the surface
+  await registeredHandler({ tool: "read", input: { command: `x ${SURFACE_TOKEN}` } });
+
+  // Off-path push throws
+  await assert.rejects(
+    () => registeredHandler({ tool: "bash", input: { command: `python3 zz_runner.py --call ${SURFACE_TOKEN}` } }),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, new RegExp(SURFACE_TOKEN));
+      assert.match(error.message, /refuse-offpath-push/);
+      return true;
+    },
+  );
+
+  // Route through remote_cli.py passes
+  await registeredHandler({
+    tool: "bash",
+    input: { command: `python3 remote_cli.py submit --note ${SURFACE_TOKEN}` },
+  });
+
+  // Cleanup disposes the hook registration
+  assert.equal(typeof cleanup, "function");
+  await cleanup();
+  assert.equal(disposed, true);
+});
