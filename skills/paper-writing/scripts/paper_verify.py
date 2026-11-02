@@ -9,7 +9,8 @@ a side can be derived, publish the provenance of every side that cannot,
 report, never repair.
 
 `CHECKS` is one closed roster (contribution-list, chain, gap, artefacts,
-future-work, citations, contract-currency, figure-semantics); `run()` is
+future-work, citations, contract-currency, figure-semantics, language);
+`language` reads a scan the caller hands in (`run(..., language=)`); `run()` is
 held to producing
 exactly one report object per member, in both directions
 (`ReportShapeTests`). `UNMEASURED_REASONS` is a second closed roster; every
@@ -53,6 +54,7 @@ CHECKS: tuple[str, ...] = (
     "citations",
     "contract-currency",
     "figure-semantics",
+    "language",
 )
 
 #: Every reason a check's `unmeasured_reason` may carry. Closed: a check
@@ -80,6 +82,9 @@ UNMEASURED_REASONS: tuple[str, ...] = (
     "NO_FIGURE_DECLARED",
     "FIGURE_SEMANTICS_UNMEASURED",
     "OPTIONAL_BLOCK_ABSENT",
+    # `language`'s own reason: the caller handed `run()` no language scan
+    # (`cmd_verify` always does; a direct `run(evidence)` does not).
+    "LANGUAGE_NOT_SCANNED",
 )
 
 _VERDICTS = ("pass", "fail", "unmeasured")
@@ -627,6 +632,41 @@ def check_figure_semantics(evidence, *, optional_block_ids: frozenset = frozense
     )
 
 
+def check_language(evidence, *, optional_block_ids: frozenset = frozenset(),
+                   language: dict | None = None) -> dict:
+    """Check D (spec S4 of `odd/tasks/manuscript-polish-0-54.md`): the
+    manuscript is English unless the paper declares another language, and
+    carries no placeholder text.
+
+    `language` is `paper_language.scan` over `evidence.main_tex_bytes`,
+    resolved one level up in `cmd_verify` -- this module imports nothing
+    beyond `re` (`ReadOnlyTests`' allowlist), the same reason
+    `optional_block_ids` is resolved there. Absent, the check reports
+    `unmeasured`/`LANGUAGE_NOT_SCANNED`, never a silent pass. A Spanish
+    line or a placeholder marker fails; a paper declaring a non-English
+    main language is judged on placeholders only.
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity.
+    """
+    if language is None:
+        return _unmeasured("language", "mechanical", "LANGUAGE_NOT_SCANNED")
+    spanish = list(language.get("spanish", []))
+    placeholders = list(language.get("placeholders", []))
+    return _entry(
+        "language", classification="mechanical",
+        verdict="fail" if spanish or placeholders else "pass",
+        sides=[
+            {"name": "main.tex prose", "source": "derived",
+             "origin": "main.tex outside math, comments, markers and non-prose environments"},
+            {"name": "manuscript language", "source": "derived",
+             "origin": "babel/polyglossia main language, English when undeclared"},
+        ],
+        evidence={"language": language.get("language", "english"),
+                  "spanish": spanish, "placeholders": placeholders},
+        limits=[], unmeasured_reason=None,
+    )
+
+
 _CHECK_FUNCTIONS = {
     "contribution-list": check_contribution_list,
     "chain": check_chain,
@@ -636,11 +676,12 @@ _CHECK_FUNCTIONS = {
     "citations": check_citations,
     "contract-currency": check_contract_currency,
     "figure-semantics": check_figure_semantics,
+    "language": check_language,
 }
 assert set(_CHECK_FUNCTIONS) == set(CHECKS), "every CHECKS member needs exactly one function, and the reverse"
 
 
-def run(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
+def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None) -> dict:
     """Assemble the full report: one object per `CHECKS` member, in both
     directions (`ReportShapeTests`). `holds + fails + unmeasured ==
     len(CHECKS)` always; `unmeasured` is never counted in `holds` — held by
@@ -655,8 +696,16 @@ def run(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
     corpus read; this module touches disk never, by its own AST lock), so
     behaviour is byte-identical to before this parameter existed until a
     caller passes real values.
+
+    `language`: `paper_language.scan` over `main.tex`, handed only to
+    `check_language` (spec S4); `None` reports that check `unmeasured`.
     """
-    entries = [_CHECK_FUNCTIONS[check](evidence, optional_block_ids=optional_block_ids) for check in CHECKS]
+    entries = [
+        check_language(evidence, optional_block_ids=optional_block_ids, language=language)
+        if check == "language"
+        else _CHECK_FUNCTIONS[check](evidence, optional_block_ids=optional_block_ids)
+        for check in CHECKS
+    ]
     holds = sum(1 for entry in entries if entry["verdict"] == "pass")
     fails = sum(1 for entry in entries if entry["verdict"] == "fail")
     unmeasured = sum(1 for entry in entries if entry["verdict"] == "unmeasured")

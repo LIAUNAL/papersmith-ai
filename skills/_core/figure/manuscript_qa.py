@@ -20,6 +20,12 @@ Spec S6 of `odd/tasks/figure-and-table-quality.md`. Given `paper/main.pdf`,
   so the size measured is the printed size.
 - **overfull**: every `Overfull \\hbox` of `main.log`, with its source lines
   and the page it was shipped on.
+- **language** / **placeholder**: Spanish prose and placeholder markers
+  (`por definir`, `TODO`, `TBD`, `FIXME`) in `main.tex`'s prose, through
+  `paper-writing/scripts/paper_language.py` (spec S4 of
+  `odd/tasks/manuscript-polish-0-54.md`): the manuscript is English unless
+  it declares another language. Each names its source line and, when found
+  in the compiled text, its page.
 
 Why the PDF and not a browser: Playwright renders HTML, not PDFs, so it
 cannot see where pdfTeX put a glyph. The geometry comes from pypdfium2
@@ -266,6 +272,50 @@ def _keep(findings: list[dict], counts: Counter, finding: dict) -> None:
         findings.append(finding)
 
 
+# ---------------------------------------------------------------------------
+# language (spec S4 of odd/tasks/manuscript-polish-0-54.md)
+# ---------------------------------------------------------------------------
+
+def _paper_language():
+    """`paper-writing/scripts/paper_language.py`, imported on demand: one
+    detector for the write gate, `verify` and this report."""
+    scripts = Path(__file__).resolve().parents[2] / "paper-writing" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import paper_language  # noqa: PLC0415
+    return paper_language
+
+
+def _fold(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def language_findings(tex_text: str, page_texts: list[str] | None = None) -> list[dict]:
+    """A `language` finding per Spanish prose line and a `placeholder`
+    finding per placeholder marker of `main.tex` (`paper_language.scan`:
+    English unless the paper declares another language). Each finding
+    names its `main.tex` line and, when `page_texts` (the compiled text of
+    each page) holds the line's opening words, the page it printed on;
+    otherwise `page` is `None`."""
+    report = _paper_language().scan(tex_text)
+    folded = [_fold(text) for text in (page_texts or [])]
+
+    def page_of(text: str) -> int | None:
+        probe = _fold(" ".join(text.split()[:4]))
+        for index, page in enumerate(folded):
+            if probe and probe in page:
+                return index + 1
+        return None
+
+    findings = [{"kind": "language", "page": page_of(hit["text"]), "line": hit["line"],
+                 "object": "text", "language": report["language"], "snippet": hit["text"][:80]}
+                for hit in report["spanish"]]
+    findings += [{"kind": "placeholder", "page": page_of(hit["text"]), "line": hit["line"],
+                  "object": "text", "marker": hit["marker"], "snippet": hit["text"][:80]}
+                 for hit in report["placeholders"]]
+    return findings
+
+
 def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
     """Measure `paper_dir/main.pdf` and return the report (not written)."""
     paper_dir = Path(paper_dir)
@@ -367,6 +417,16 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         for finding in overfull_boxes(log.read_text(encoding="utf-8", errors="replace")):
             _keep(findings, counts, finding)
 
+    language_warning = None
+    if tex.is_file():
+        try:
+            page_texts = [" ".join(span["text"] for span in page["spans"]) for page in pages]
+            for finding in language_findings(tex.read_text(encoding="utf-8", errors="replace"),
+                                             page_texts):
+                _keep(findings, counts, finding)
+        except Exception as exc:  # noqa: BLE001 - a language scan failure never fails the pass
+            language_warning = f"language scan not run: {type(exc).__name__}: {exc}"[:300]
+
     rendered, render_warning = ({}, None)
     if render:
         rendered, render_warning = render_pages(pdf, paper_dir / ".qa" / PAGES_DIR_NAME)
@@ -393,7 +453,7 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         "findings": findings,
         "summary": {"findings": sum(counts.values()), "by_kind": dict(sorted(by_kind.items())),
                     "pages": len(page_rows)},
-        "warnings": [render_warning] if render_warning else [],
+        "warnings": [w for w in (render_warning, language_warning) if w],
     }
 
 

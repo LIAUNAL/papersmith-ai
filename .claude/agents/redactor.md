@@ -79,7 +79,8 @@ transcript, never a live call.
 
 When drafting canonical paper blocks, you must strictly uphold the following rules:
 - **Manuscript Presentation:** Format is single-column review mode (`onecolumn`).
-- **Initial Author Blinding:** Never populate real author names, affiliations, or emails in initial drafting. Leave author metadata blinded as placeholders (`\author{Por definir \\ \textit{Afiliaciones y correos por definir}}`). Only after the full manuscript passes all verifications with the user are real details queried and inserted.
+- **Initial Author Blinding:** Never populate real author names, affiliations, or emails in initial drafting. Leave author metadata blinded as placeholders (`\author{Author names withheld \\ \textit{Affiliations and contact e-mails to be provided}}`). Only after the full manuscript passes all verifications with the user are real details queried and inserted.
+- **English Only:** Every draft is English unless `main.tex` declares another main language (babel/polyglossia): no Spanish word and no placeholder text (`por definir`, `TODO`, `TBD`, `FIXME`). `write` refuses `DRAFT_NOT_ENGLISH` or `DRAFT_PLACEHOLDER_TEXT` otherwise.
 - **Introduction Canon (7 Paragraphs, contract `sections/06-introduction.md`):**
   - *Paragraph 1:* General application context and motivating phenomenon.
   - *Paragraph 2:* Context of AI techniques in said application, ending with 2 to 3 sentences declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; continuous running prose, no bullet items, no bold text, no numbered questions).

@@ -116,6 +116,7 @@ import paper_lifecycle  # noqa: E402 -- a-leftover-paper-is-offered-before-it-is
 import paper_venue  # noqa: E402 -- journal-finder, S9-S11: the `venue` verb group (select, requirements, acquire, diff, plan, approve, build, status, list)
 import paper_separation  # noqa: E402 -- the-whole-cut-is-argued-before-any-section-is-claimed, U1: the pure claimable-section/score-cut core; wired to the `separate` verb in U2 (`compute_separation`/`cmd_separate` below); raises no `Refused` of its own
 import paper_ai_metrics  # noqa: E402 -- closing-sections-and-manuscript-graphs S4: writing-quality metrics (cadence, overused phrasing, lexical diversity) and F5 invariant checks; never an AI-detection score
+import paper_language  # noqa: E402 -- manuscript-polish-0-54 S4: the English-only manuscript scan `write` refuses on and `verify`'s `language` check reports; raises no `Refused` of its own
 import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
@@ -412,6 +413,9 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "AUDIT_EXHAUSTED": WORK_STATE,
     "DRAFT_UNREADABLE": INVOCATION_DEFECT,
     "AUDIT_UNREADABLE": INVOCATION_DEFECT,
+    # manuscript-polish-0-54 S4: `paper_write._stage_language`
+    "DRAFT_NOT_ENGLISH": WORK_STATE,
+    "DRAFT_PLACEHOLDER_TEXT": WORK_STATE,
     # --- the eight-token tripwire (paper_leak.py; WU2) ---------------------
     "STYLE_OVERLAP": WORK_STATE,
     # --- a-diagram-that-compiles-or-says-why: `render`/`place`, the sole
@@ -2961,6 +2965,13 @@ def cmd_couplings(args: argparse.Namespace) -> dict:
     return paper_couplings.write_couplings(paper_dir, record)
 
 
+def _scan_manuscript_language(main_tex_bytes: bytes) -> dict:
+    """Spec S4: `verify`'s `language` check, resolved here because
+    `paper_verify.py` imports nothing beyond `re` (the same reason
+    `_resolve_optional_block_ids` lives here). Pure over bytes already read."""
+    return paper_language.scan(main_tex_bytes.decode("utf-8", errors="replace"))
+
+
 def cmd_verify(args: argparse.Namespace) -> dict:
     """`verify`: a pure, read-only report over the five cross-section
     couplings, citation integrity, and contract currency
@@ -2982,8 +2993,9 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     sections_dir = paper_contract.resolve_sections_dir(args.sections)
     evidence = paper_coupling_evidence.gather(paper_dir, sections_dir)
     optional_block_ids = _resolve_optional_block_ids(sections_dir)
-    report = paper_verify.run(evidence, optional_block_ids=optional_block_ids)
-    citations = next((c for c in report["checks"] if c.get("check") == "citations"), None)
+    report = paper_verify.run(evidence, optional_block_ids=optional_block_ids,
+                              language=_scan_manuscript_language(evidence.main_tex_bytes))
+    citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)
     return report

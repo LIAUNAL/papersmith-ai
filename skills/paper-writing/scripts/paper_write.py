@@ -29,6 +29,7 @@ import paper_audit  # noqa: E402
 import paper_bindings  # noqa: E402
 import paper_block  # noqa: E402
 import paper_evidence  # noqa: E402
+import paper_language  # noqa: E402
 import paper_latex  # noqa: E402
 import paper_vocabulary  # noqa: E402
 
@@ -131,6 +132,37 @@ def _stage_evidence_audit(contract: BlockContract, draft: dict) -> list:
     return bindings
 
 
+def _stage_language(paper_dir: Path, draft: dict) -> dict:
+    """Spec S4 (`odd/tasks/manuscript-polish-0-54.md`): the manuscript is
+    English unless the paper declares another language, and no draft
+    carries placeholder text. The declaration is read from the paper's own
+    `main.tex` (`paper_language.declared_language`); a block body declares
+    nothing itself. Runs before evidence-audit and before the attempt
+    ledger is read, so a refused draft burns no judge-cycle attempt and
+    leaves `main.tex` byte-identical."""
+    main_tex = Path(paper_dir) / "main.tex"
+    declared = None
+    if main_tex.is_file():
+        declared = paper_language.declared_language(
+            main_tex.read_bytes().decode("utf-8", errors="replace"))
+    report = paper_language.scan(draft["latex"], language=declared or "english")
+    if report["spanish"]:
+        lines = ", ".join(f"line {hit['line']}: {hit['text'][:60]!r}" for hit in report["spanish"][:5])
+        raise Refused(
+            "DRAFT_NOT_ENGLISH",
+            f"the manuscript is written in English and this draft carries Spanish prose ({lines}); "
+            "redraft it in English, or declare the paper's language in main.tex (babel/polyglossia)",
+        )
+    if report["placeholders"]:
+        lines = ", ".join(f"line {hit['line']}: {hit['marker']}" for hit in report["placeholders"][:5])
+        raise Refused(
+            "DRAFT_PLACEHOLDER_TEXT",
+            f"the draft still carries placeholder text ({lines}); write the content or leave the "
+            "block unwritten",
+        )
+    return {"status": "pass", "language": report["language"]}
+
+
 def _stage_contract_audit(contract: BlockContract, draft: dict, audit_account: dict) -> dict:
     return paper_audit.audit(
         contract.contract_prose, draft["latex"], audit_account["verdicts"],
@@ -167,6 +199,7 @@ def write_block(
         raise Refused("DRAFT_UNREADABLE", "draft must be a dict with list 'bindings'")
     if not isinstance(audit_account, dict) or "verdicts" not in audit_account or not isinstance(audit_account["verdicts"], list):
         raise Refused("AUDIT_UNREADABLE", "audit_account must be a dict with list 'verdicts'")
+    language = _stage_language(paper_dir, draft)
     bindings = _stage_evidence_audit(contract, draft)
 
     key = _attempt_key(contract)
@@ -325,6 +358,7 @@ def write_block(
         # Deprecated alias of `styleQuality`, removed in the next release.
         "aiStylometry": style_quality,
         "tableLint": table_lint,
+        "language": language,
         **result,
     }
 
