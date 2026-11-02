@@ -84,10 +84,13 @@ Never infer a visual verdict from the TikZ source: source that *should* render
 cleanly is not the rendered figure, and claiming otherwise is a conclusion
 where a measurement belongs.
 
-Text size is no longer a judgement: the threshold is a declared rule (every
-text span, labels and ticks included, prints at least 0.70 x the manuscript
-body), so `measure` reads it from the figure PDF's own text layer as the
-`min-printed-font` verdict. Run it with the width the manuscript includes the
+Text size is no longer a judgement: the range is a declared rule (every
+text span, labels, ticks and legends included, prints between 0.70 and 0.90
+x the manuscript body), so `measure` reads it from the figure PDF's own text
+layer as the `printed-font-range` verdict (named `min-printed-font` before
+0.54). A `fail` names `TEXT_BELOW_PRINT_FLOOR` or `TEXT_ABOVE_PRINT_CAP`
+and every offending span carries its `bound`: text at the body size is as
+much a defect as text too small to read. Run it with the width the manuscript includes the
 figure at, `--printed-width-pt <fraction x \textwidth x 72/72.27>` (natural
 size when omitted), and the body size from `--body-pt` or `paper/main.tex`.
 `measure` also reads three more verdicts from the PDF: `background` (a filled
@@ -95,7 +98,7 @@ rectangle covering the page), `whitespace` (a margin wider than 4 pt) and
 `in-figure-title` (a title row above the plotting area; the caption carries
 the title). Each `fail` names its offending spans, sides or title text: quote
 them. When the PDF has no text layer (raster, or text converted to outlines),
-`min-printed-font` is `unmeasured` with `NO_TEXT_LAYER`, and an unreadable
+`printed-font-range` is `unmeasured` with `NO_TEXT_LAYER`, and an unreadable
 PDF leaves all four `unmeasured` with `PDF_UNREADABLE`; report those reasons
 exactly, never a `pass`.
 

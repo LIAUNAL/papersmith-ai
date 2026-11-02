@@ -56,12 +56,14 @@ spends an attempt, on any of these — so write it this way from the start:
 
 - **Explicit sizes only**: `\fontsize{<pt>}{<1.2 pt>}\selectfont`, never
   `\tiny`, `\scriptsize`, `\footnotesize`, `\small`, `\large` or any other
-  relative switch. Pick each size so it prints at >= 0.70 x the manuscript
-  body size (`paper/main.tex`'s class option) once the figure is scaled to
-  the width it is included at: declare that width in the manifest as
-  `widthFraction` (the `width=<f>\textwidth` of its `\includegraphics`).
+  relative switch. Pick each size so it prints between 0.70 and 0.90 x the
+  manuscript body size (`paper/main.tex`'s class option) once the figure is
+  scaled to the width it is included at: declare that width in the manifest
+  as `widthFraction` (the `width=<f>\textwidth` of its `\includegraphics`).
   Design the picture at about that width so the scale stays near 1; at
-  scale `s` a label needs `0.70 x body / s` points.
+  scale `s` a label needs between `0.70 x body / s` and `0.90 x body / s`
+  points. A small picture stretched to the text width prints its labels
+  above the cap; the render fails on that as on a label too small.
 - **Hyphenation off** in the preamble (`\hyphenpenalty=10000
   \exhyphenpenalty=10000`), and a box wide enough for its longest word: an
   `Overfull \hbox` in the log fails the audit. When a label does not fit,
@@ -77,7 +79,7 @@ spends an attempt, on any of these — so write it this way from the start:
 Run `render --figure-id <id>` after every edit. On `"verdict": "failure"`,
 read the returned diagnostics (each naming a source line where the parser
 could explain it, or the audit check that failed: `overfull`,
-`size_switches`, `text_overlap`, `font_floor`, `margins`), fix the source,
+`size_switches`, `text_overlap`, `font_range`, `margins`), fix the source,
 and run `render` again — up to four
 times per id, `attemptsUsed`/`budgetRemaining` in every reply telling you
 exactly where you stand. The fifth attempt is never yours to make:

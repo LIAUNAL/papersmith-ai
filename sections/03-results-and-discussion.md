@@ -283,16 +283,19 @@ to read the data, or a **behaviour already established** that the result agrees 
 
 ## Tables stay inside the text block
 
-A table prints inside `\textwidth` at a legible size, by the same rule as a figure:
-**no text in a table prints below 0.70 times the body font size** (7 pt in a 10 pt
-document).
+A table prints inside `\textwidth` at a legible size, by the same rule as a figure
+(labels, ticks, legends and annotations included): **every text in a table or a
+figure prints between 0.70 and 0.90 times the body font size** (7 to 9 pt in a 10 pt
+document): never smaller, and never at the body size.
 
 - **Rules are `booktabs`** — `\toprule`, `\midrule`, `\bottomrule` — with no vertical
   rules; a column of prose is a `tabularx` `X` column, so the table takes the text width
   instead of running past it.
-- **The table runs at the body size.** `\small` is the most it is reduced, and only
-  when the body is 11 pt or larger; `\footnotesize`, `\scriptsize` and `\tiny` are
-  never used inside a table when they fall below the floor.
+- **The table runs below the body size, inside the range.** `\footnotesize` fits it
+  at 10, 11 and 12 pt; `\small` only with a 10 pt body (above 0.90 at 11 and 12 pt);
+  never `\normalsize`, the default when the table declares no size; `\scriptsize`
+  and `\tiny` never when they fall below the floor (`\scriptsize` meets it only at
+  10 pt).
 - **A table is never scaled to fit.** No `\resizebox`, `\scalebox` or `adjustbox`
   below a factor of 0.85, and no `width=\textwidth` scaling of a `tabular`: scaling
   shrinks the text with the box.
@@ -396,8 +399,8 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
   faithfulness measure for it.
 - The section closing on a synthesis paragraph.
 - A table with values in bold whose caption does not say what the bold marks.
-- A table that runs past `\textwidth`, or whose text prints below 0.70 times the body
-  font size.
+- A table that runs past `\textwidth`, or whose text prints below 0.70 or above 0.90
+  times the body font size (a table left at the body size included).
 - A table scaled with `\resizebox`, `\scalebox` or `adjustbox` below 0.85, or scaled
   to `\textwidth`.
 - A table with vertical rules, or a table whose caption sits below it.

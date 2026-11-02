@@ -202,11 +202,12 @@ save_figure(fig, "Results/figures/accuracy.pdf", png_preview=True)
   `savefig(pdf, bbox_inches="tight", pad_inches=0.02, transparent=True)`;
   `place` refuses a full-page background (`FIGURE_FULL_PAGE_BACKGROUND`) and a
   margin wider than 4 pt (`FIGURE_MARGIN_WASTE`).
-- **Text at least 70 % of the body, at printed size.** `apply_style` makes
-  the figure its printed size (scale 1) and sets every text role (axis
-  labels, ticks, legend, annotations) to at least 0.80 x the body;
-  `place` refuses a span below 0.70 x body
-  (`FIGURE_TEXT_BELOW_PRINT_FLOOR`) at the width the figure's provenance
+- **Text between 70 % and 90 % of the body, at printed size.** `apply_style`
+  makes the figure its printed size (scale ~1) and sets axis labels to 0.80 x
+  the body and ticks, legend and annotations to 0.75 x the body, leaving
+  room for the ~10 % enlargement a tight crop causes; `place` refuses a span
+  below 0.70 x body (`FIGURE_TEXT_BELOW_PRINT_FLOOR`) or above 0.90 x body
+  (`FIGURE_TEXT_ABOVE_PRINT_CAP`) at the width the figure's provenance
   declares as `"printedWidthFraction"` (default 1.0, the full text width).
 - **No title in the figure.** The caption carries it. `save_figure` refuses
   a figure with `set_title`/`suptitle`, and `place` refuses a title row above
