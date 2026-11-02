@@ -62,6 +62,9 @@ class PhaseActionCatalogueTests(unittest.TestCase):
                         self.assertIn(action["tab"], TABS)
                         if action["section"] and action["tab"] == "modelo":
                             self.assertIn(action["section"], SECTIONS)
+                        elif action["section"] and action["tab"] == "atlas":
+                            # On the graph panel a section is one of its views.
+                            self.assertIn(f"switchGraph('{action['section']}')", PAGE)
                         elif action["section"]:
                             self.assertIn(f'id="{action["section"]}Panel"', PAGE)
 

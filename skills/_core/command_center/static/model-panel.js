@@ -7,6 +7,10 @@
  * of showing anybody else's content. Every value is escaped before insertion;
  * prose fields go through math-panel.js's richText, so $…$ compiles with KaTeX.
  *
+ * A specification the server flags with `language_notice` (its prose is not
+ * English) is still drawn as written, under a notice in the dashboard's
+ * language. A language switch repaints the panel from the last spec.
+ *
  * Public surface (window): renderModelModules(spec).
  */
 (function () {
@@ -74,12 +78,33 @@
     }).join('');
   }
 
+  function languageNotice(spec) {
+    const notice = spec.language_notice;
+    if (!notice) return '';
+    return esc(t('modelPanel.languageNotice', {
+      file: notice.file || '.papersmith/model_spec.json',
+      fields: (notice.fields || []).join(', '),
+    }));
+  }
+
+  let lastSpec = null;
+
   function renderModelModules(spec) {
+    lastSpec = spec || {};
     const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-    put('modelPillarGrid', pillars(spec || {}));
-    put('modelHypothesisGrid', hypotheses(spec || {}));
-    put('modelConceptLayers', layers(spec || {}));
+    put('modelPillarGrid', pillars(lastSpec));
+    put('modelHypothesisGrid', hypotheses(lastSpec));
+    put('modelConceptLayers', layers(lastSpec));
+    const notice = document.getElementById('modelLanguageNotice');
+    if (notice) {
+      notice.innerHTML = languageNotice(lastSpec);
+      notice.hidden = !notice.innerHTML;
+    }
   }
 
   window.renderModelModules = renderModelModules;
+  // The empty states and the notice come from the catalogue: repaint them.
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('languagechange', () => { if (lastSpec) renderModelModules(lastSpec); });
+  }
 })();

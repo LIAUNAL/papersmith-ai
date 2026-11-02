@@ -191,7 +191,7 @@ overlap, and the page draws nothing while it is hidden.
 Drag orbits the sky and the wheel zooms. Clicking a planet shows its detail
 and abstract quote; a family filter dims what does not belong; hovering a
 planet highlights its links across systems; double-clicking flies to it.
-The "Disposición de grupos" button regroups the sky live — each whole system
+The "Group layout" button regroups the sky live — each whole system
 slides so a family's systems cluster together on a flat grid — and pressing it
 again restores the precomputed sky; it is presentation only and never changes
 `atlas.json` or the data island. Framed by the dashboard, the page accepts its

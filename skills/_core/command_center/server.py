@@ -317,14 +317,45 @@ def _block_count(root: Path) -> int:
     return len(re.findall(r"%% paper-writing block [\w.-]+ begin", text))
 
 
-def _candidate_count(root: Path) -> int:
+def candidate_pool(root: Path) -> dict[str, Any]:
+    """``sota-pool/candidates.json`` in one shape, whichever the file holds.
+
+    `/plausibility` writes an object (``candidates`` beside the pool's
+    ``families``, ``excluded``, ``plausibility_note``, ``owed`` and
+    ``retrieved``); a bare list of candidates is the older shape. Both are what
+    ``check_atlas.py --pool`` accepts. A missing or unreadable file is an empty
+    pool; ``error`` says which, and no candidate is ever invented.
+    """
+    pool: dict[str, Any] = {"candidates": [], "families": [], "excluded": 0,
+                            "plausibility_note": "", "owed": [], "retrieved": "", "error": ""}
+    path = root / "sota-pool" / "candidates.json"
+    if not path.is_file():
+        return pool
     try:
-        data = json.loads((root / "sota-pool" / "candidates.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return 0
-    if isinstance(data, dict):
-        data = data.get("candidates", [])
-    return len(data) if isinstance(data, list) else 0
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        pool["error"] = f"sota-pool/candidates.json cannot be read ({exc})"
+        return pool
+    meta = data if isinstance(data, dict) else {}
+    listed = meta.get("candidates") if isinstance(data, dict) else data
+    if not isinstance(listed, list):
+        pool["error"] = "sota-pool/candidates.json holds no list of candidates"
+        return pool
+    candidates = [c for c in listed if isinstance(c, dict)]
+    pool["candidates"] = candidates
+    pool["families"] = sorted({str(c["family"]) for c in candidates if c.get("family")})
+    excluded = meta.get("excluded")
+    pool["excluded"] = len(excluded) if isinstance(excluded, list) else 0
+    for key in ("plausibility_note", "retrieved"):
+        if isinstance(meta.get(key), str):
+            pool[key] = meta[key]
+    owed = meta.get("owed")
+    pool["owed"] = [str(item) for item in owed] if isinstance(owed, list) else []
+    return pool
+
+
+def _candidate_count(root: Path) -> int:
+    return len(candidate_pool(root)["candidates"])
 
 
 AUDIT_TIMEOUT_SECONDS = 120
@@ -2593,20 +2624,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.get("/api/candidates")
     def api_candidates() -> JSONResponse:
-        cand_file = root_path / "sota-pool" / "candidates.json"
-        if not cand_file.is_file():
-            return JSONResponse({"count": 0, "candidates": [], "families": []}, headers=dict(_PAPER_HEADERS))
-        try:
-            with open(cand_file, "r", encoding="utf-8") as f:
-                candidates = json.load(f)
-            families = sorted(list({c.get("family", "general") for c in candidates if c.get("family")}))
-            return JSONResponse({
-                "count": len(candidates),
-                "candidates": candidates,
-                "families": families
-            }, headers=dict(_PAPER_HEADERS))
-        except Exception as exc:
-            return JSONResponse({"error": str(exc), "count": 0, "candidates": [], "families": []}, status_code=500)
+        pool = candidate_pool(root_path)
+        return JSONResponse({"count": len(pool["candidates"]), **pool}, headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/atlas/candidates/view")
     def api_atlas_candidates_view(lang: str = "en") -> Response:
@@ -2618,16 +2637,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         def J(text: str) -> str:
             return json.dumps(localize.translate(text, lang), ensure_ascii=False).replace("<", "\\u003c")
 
-        cand_file = root_path / "sota-pool" / "candidates.json"
-        candidates = []
-        families = []
-        if cand_file.is_file():
-            try:
-                with open(cand_file, "r", encoding="utf-8") as f:
-                    candidates = json.load(f)
-                families = sorted(list({c.get("family", "general") for c in candidates if c.get("family")}))
-            except Exception:
-                pass
+        pool = candidate_pool(root_path)
+        candidates, families = pool["candidates"], pool["families"]
         
         # Candidates come from scouted literature (titles, abstracts, URLs), so
         # nothing from them reaches the page unescaped: the JSON cannot close

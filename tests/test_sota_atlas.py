@@ -448,7 +448,7 @@ class RenderAtlasTests(unittest.TestCase):
 
 
 class GroupLayoutAndBridgeTests(unittest.TestCase):
-    """The group layout ("Disposición de grupos") and the dashboard bridge are
+    """The group layout ("Group layout") and the dashboard bridge are
     additions: the default sky the Python renderer precomputes stays the same
     bytes, and the page only gains one button and a postMessage contract."""
 
@@ -495,7 +495,7 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
 
     def test_page_has_the_group_layout_button_beside_the_zoom_buttons(self):
         page = self.page()
-        self.assertIn('<button id="grouplayout">Disposición de grupos</button>', page)
+        self.assertIn('<button id="grouplayout">Group layout</button>', page)
         toolbar = page[page.index('<div id="toolbar">'):]
         toolbar = toolbar[:toolbar.index("</div>")]
         for button in ('id="zoomin"', 'id="zoomout"', 'id="zoomreset"', 'id="grouplayout"'):

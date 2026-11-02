@@ -13,7 +13,7 @@ three.js viewer (``assets/atlas3d.bundle.js``, rebuilt with
 no network at view time. Clicking a planet shows its detail and abstract
 quote; a family filter dims what does not belong; hovering a planet
 highlights its cross-system links; drag orbits, wheel zooms. An opt-in
-"Disposición de grupos" toggle regroups whole systems by family in the browser
+"Group layout" toggle regroups whole systems by family in the browser
 and restores this precomputed sky when pressed again; framed by the dashboard,
 the page exchanges ``atlas-command`` / ``atlas-layout`` /
 ``atlas-planet-selected`` messages with its parent (see the viewer README).
@@ -258,7 +258,7 @@ h1{font-size:18px;font-weight:600;margin:0 0 8px;letter-spacing:.02em}
 <div id="overlay"><div id="modal"><button id="modalclose">close</button><div id="modalbody"></div></div></div>
 <div id="famlegend"><em>Families:</em> <span id="famchips"></span></div>
 <div id="rellegend"><em>Links:</em> <span class="dot" style="border-color:#2ecc71"></span>extends <span class="dot" style="border-color:#5aa9e6"></span>supports <span class="dot" style="border-color:#e65a5a"></span>contradicts <span class="dot" style="border-color:#8a93ad"></span>addresses <span class="dot" style="border-color:#9b7ede;border-top-style:dashed"></span>shared family <span class="dot" style="border-color:#e8b339"></span>yields <span class="dot" style="border-color:#4a5a80"></span>about</div>
-<div id="toolbar"><button id="zoomin">zoom +</button><button id="zoomout">zoom −</button><span class="sep"></span><button id="spinleft" title="Turn left">⟲ turn</button><button id="spinright" title="Turn right">turn ⟳</button><button id="tiltup" title="Tilt up">▲ tilt</button><button id="tiltdown" title="Tilt down">▼ tilt</button><button id="autorotate" class="on" title="Automatic rotation">⏸ rotation</button><button id="names" class="on" title="Show or hide system names; only names that do not overlap are drawn, and zooming in shows more">names</button><span class="sep"></span><button id="zoomreset">reset view</button><button id="grouplayout">Disposición de grupos</button><span class="sep"></span><button id="viewmode" title="Switch between the 3D sky and the lighter 2D constellation">2D view</button></div>
+<div id="toolbar"><button id="zoomin">zoom +</button><button id="zoomout">zoom −</button><span class="sep"></span><button id="spinleft" title="Turn left">⟲ turn</button><button id="spinright" title="Turn right">turn ⟳</button><button id="tiltup" title="Tilt up">▲ tilt</button><button id="tiltdown" title="Tilt down">▼ tilt</button><button id="autorotate" class="on" title="Automatic rotation">⏸ rotation</button><button id="names" class="on" title="Show or hide system names; only names that do not overlap are drawn, and zooming in shows more">names</button><span class="sep"></span><button id="zoomreset">reset view</button><button id="grouplayout">Group layout</button><span class="sep"></span><button id="viewmode" title="Switch between the 3D sky and the lighter 2D constellation">2D view</button></div>
 <div id="sky" class="sky"></div>
 <script type="application/json" id="atlas-data">@@DATA@@</script>
 <script>
