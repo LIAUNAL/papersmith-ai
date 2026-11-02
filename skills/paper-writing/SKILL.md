@@ -1260,6 +1260,26 @@ equation changed, and with `--apply` it substitutes the block only when the draf
 meets `--style-target` (default 0.20) unless `--force`, refusing
 `TARGET_SCORE_UNMET` otherwise. The audit delegates to the `ai-auditor` agent.
 
+**Flow and redundancy.** Every style report also carries a `flow` key
+(`flow_score`, `flow_verdict` in the same three bands, and `findings`, each
+naming its sentence, its paragraph and the quoted span; `thresholds` states
+every limit). It measures stock connectors (the same one opening two
+sentences within five, more than a quarter of the sentences opening with
+one, synthesis openers such as *Overall* or *Taken together* repeated),
+sentence openings (consecutive repeats, one dominant opening, *This/These +
+noun* in series), *because*, *where* and *, which* density (the *where*
+that follows an equation and defines its symbols is exempt), repeated
+five-word phrases across paragraphs and near-duplicate sentences, and
+template phrasing (*It is worth noting*, *plays a crucial role*, *In this
+context*, *serves as*, *This highlights*). `ai_audit --all` reports it over
+the whole manuscript, where cross-block repetition shows, and per block.
+`humanize` returns `flow_findings` and `revision_guidance`, and `--apply`
+also refuses `TARGET_SCORE_UNMET` while `flow_verdict` is `needs_revision`
+(unless `--force`). The guidance rebuilds each transition from the logical
+relation (contrast, cause, consequence, elaboration, example) instead of
+swapping one stock connector for another, drops a connector the sentence
+order already carries, and cuts repetition — always under the F5 gate.
+
 These are readability checks, never an AI detector: no step aims to make
 machine-assisted prose pass as human-written, and a passing style score does not
 change the obligation to declare AI use (every report carries that

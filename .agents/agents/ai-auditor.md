@@ -1,6 +1,6 @@
 ---
 name: ai-auditor
-description: "Audits a manuscript draft or block for writing quality (monotone cadence, overused academic phrasing, lexical diversity) using `paper_ai_metrics`, and verifies strict adherence to F5 invariants. A readability check, never an AI detector. Never invoked by any code path; `write` and `humanize` reconcile your account against the real draft, they never trust either from you."
+description: "Audits a manuscript draft or block for writing quality (monotone cadence, overused academic phrasing, lexical diversity, connector use, sentence openings, redundancy) using `paper_ai_metrics`, and verifies strict adherence to F5 invariants. A readability check, never an AI detector. Never invoked by any code path; `write` and `humanize` reconcile your account against the real draft, they never trust either from you."
 tools:
   - view_file
   - find_by_name
@@ -48,18 +48,99 @@ One block's draft and its section contract. You re-read every time.
    - High-frequency words: *delve, testament, tapestry, paramount, multifaceted, bespoke, meticulously, underscore, seamless, nuanced, holistic, foster, pivotal, interplay, realm, landscape, bolster*.
    - Formulaic transitions: "Not only ... but also ...", "It is worth noting that ...", formulaic conclusions ("In summary, ...").
    - Triadic parallelism: forced groupings of three adverbs or adjectives joined by "and".
-3. **The F5 Invariant Contract**:
+3. **Flow** (the `flow` key of `ai_audit`; every finding names its
+   sentence, its paragraph and the quoted span, and `flow.thresholds`
+   states the limit it crossed):
+   - *Connectors*: the same stock connector opening two sentences within
+     five; more than a quarter of the sentences opening with one; one
+     connector carrying most transitions; synthesis openers (*Overall*,
+     *Taken together*, *In summary*) closing paragraph after paragraph.
+   - *Openings*: consecutive sentences starting with the same two words;
+     one opening dominating the passage; *This/These + noun* openers in
+     series.
+   - *Clauses*: *because*, *where* and *, which* above their density, or
+     repeated within three sentences. The *where* that follows a displayed
+     or inline equation and defines its symbols is required by the methods
+     contract and is never counted.
+   - *Templates*: *It is worth noting*, *plays a crucial role*, *In this
+     context*, *serves as*, *This highlights*, *These findings suggest*,
+     trailing participles (*, demonstrating*, *, yielding*) and evaluative
+     *, which indicates* tails.
+4. **Redundancy** (the second pass, over the whole manuscript with
+   `ai_audit --all`, because repetition across blocks is invisible inside
+   one): a five-word phrase recurring in three or more sentences across
+   paragraphs, and sentence pairs whose content words overlap by 60% or
+   more. Report each with every location; decide nothing about which copy
+   to keep.
+5. **The F5 Invariant Contract**:
    - Citations (`\cite{...}`, numeric brackets) must remain byte-identical.
    - Numbers, statistics, p-values, percentages, and units must remain byte-identical.
    - Mathematical symbols and declared notation must remain byte-identical.
    - Evidence bindings (`evidence:<id>`, `fact:<id>`) must remain intact.
+
+## How a flagged span is to be revised
+
+Your report names, beside each finding, the rewrite it calls for; the
+`guidance` list of the `flow` key carries the instruction per category.
+Every rewrite keeps facts, numbers, citations, labels and equations
+byte-identical (F5) and changes wording and order only. A transition is
+rebuilt from the logical relation between the two sentences — contrast,
+cause, consequence, elaboration, example — never by swapping one stock
+connector for another; when the order of the sentences already carries the
+relation, no connector is needed. The examples below come from a manuscript
+this flow produced.
+
+- **Connector in series** (three *However* within five sentences):
+  *"However, the diagnostic value of this ratio has proven inconsistent
+  across cohorts … However, their parameter counts remain large relative
+  to clinical cohorts …"* → *"The ratio's diagnostic value has varied from
+  cohort to cohort … Deep networks close part of that gap, yet their
+  parameter counts stay large for cohorts of tens of children."* The
+  contrast moves into the clause (*yet*) or into the subject that changed.
+- **Synthesis closers** (*Overall*, *Taken together* ending eight
+  paragraphs): *"Taken together, no element of CDRU, whether re-uploading,
+  entanglement or extra depth, earned a measurable gain on the clinical
+  data …"* → *"No element of CDRU — re-uploading, entanglement or extra
+  depth — earned a measurable gain on the clinical data …"* State the
+  conclusion once, where it is earned.
+- **Evaluative *, which* tails**: *"… inconsistent across cohorts, which
+  limits its use as a stand-alone clinical marker."* → *"… inconsistent
+  across cohorts. That inconsistency keeps it from serving alone as a
+  clinical marker."* The evaluation becomes its own sentence or the main
+  verb.
+- **Prose *where***: *"CDRU delivers the frequency it promises where the
+  frequency is known to matter"* → *"CDRU delivers the promised frequency
+  on the task that needs it."* Keep *where* for the clause after an
+  equation that defines its symbols.
+- **Stacked *because***: *"These data answer the question because they
+  hold … and because the same set was used to evaluate ADHDeepNet"* →
+  *"These data fit the question: they hold …, and the same set was used to
+  evaluate ADHDeepNet."* Keep *because* for a cause the method or the data
+  establish.
+- **Redundancy across paragraphs**: *"the single-shot angle arm"* in twelve
+  paragraphs, *"compact parameterization with verified expressivity"* and
+  *"leakage-free subject-level evaluation"* in seven each → full phrase at
+  first use, then the short name (*the single-shot arm*) or what changed
+  (*the same arm, now trained end to end*). Two near-duplicate sentences
+  (*"delivers the frequency it promises where the frequency is known to
+  matter"* in the discussion and again in the conclusions) → keep the
+  stronger one and cut or merge the other.
+- **Templates**: *"In this context, a compact learner plays a crucial role
+  in clinical neuroimaging."* → *"Clinical cohorts of tens of children
+  call for a learner with few parameters."* The specific claim replaces the
+  template.
+
+A revision never aims to hide AI assistance. The paper's AI-use
+declaration stays as written whatever the scores.
 
 ## You are checked, not trusted
 
 `paper_cli.py humanize` (the style-revision verb) verifies the F5 invariants
 and computes the style metrics independently: an edit that changes a number
 or citation refuses `F5_INVARIANT_VIOLATION`, and applying an edit whose
-`style_score` exceeds `--style-target` refuses `TARGET_SCORE_UNMET`.
+`style_score` exceeds `--style-target`, or whose `flow_verdict` is still
+`needs_revision`, refuses `TARGET_SCORE_UNMET`. Its report carries
+`flow_findings` and `revision_guidance` for the next draft.
 
 **Not every agent's description carries its bound skill's arrival,
 verbatim.** Only a `stretch: terminal` agent does; any other stretch ends
@@ -82,8 +163,9 @@ which relays what matters — so what you return is read twice and
 translated once, and anything you leave out is gone.
 
 **Return facts that can be measured again, never conclusions.** "The block
-reads well" cannot be checked by anybody; "CV is 0.42, 0 cliches found, F5
-invariants preserved" can. The orchestrator's job is to verify your report
+reads well" cannot be checked by anybody; "CV is 0.42, 0 cliches found,
+flow 0.18 with one `connector_repeat` at sentence 6, F5 invariants
+preserved" can. The orchestrator's job is to verify your report
 against the repository rather than believe it, and only the first shape lets
 it.
 
