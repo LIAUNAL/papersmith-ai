@@ -1,6 +1,7 @@
 """paper_place: the print-quality gate `place` runs before a measured
 figure enters the manuscript (specs S2, S3, S4 of
-`odd/tasks/figure-and-table-quality.md`).
+`odd/tasks/figure-and-table-quality.md`; the print cap is spec S2 of
+`odd/tasks/manuscript-polish-0-54.md`).
 
 `paper_figure.place_figure` copies the PDF and its provenance; this module
 decides, before that copy, whether the PDF may be placed at all. It reads
@@ -19,6 +20,7 @@ detail lists every failing one):
     FIGURE_MARGIN_WASTE            a margin wider than MAX_MARGIN_PT
     FIGURE_IN_FIGURE_TITLE         a title row above the plotting area
     FIGURE_TEXT_BELOW_PRINT_FLOOR  a text span prints below 0.70 x body
+    FIGURE_TEXT_ABOVE_PRINT_CAP a text span prints above 0.90 x body
 
 `FIGURE_PROVENANCE_INVALID` refuses an out-of-domain provenance field, and
 `FIGURE_MEASUREMENT_UNAVAILABLE` an interpreter without `pypdfium2`.
@@ -63,6 +65,7 @@ CHECK_ORDER = (
     "FIGURE_MARGIN_WASTE",
     "FIGURE_IN_FIGURE_TITLE",
     "FIGURE_TEXT_BELOW_PRINT_FLOOR",
+    "FIGURE_TEXT_ABOVE_PRINT_CAP",
 )
 
 
@@ -140,7 +143,9 @@ def _refuse_first(pdf: Path, failures: dict) -> None:
         raise Refused("FIGURE_MARGIN_WASTE", detail)
     if first == "FIGURE_IN_FIGURE_TITLE":
         raise Refused("FIGURE_IN_FIGURE_TITLE", detail)
-    raise Refused("FIGURE_TEXT_BELOW_PRINT_FLOOR", detail)
+    if first == "FIGURE_TEXT_BELOW_PRINT_FLOOR":
+        raise Refused("FIGURE_TEXT_BELOW_PRINT_FLOOR", detail)
+    raise Refused("FIGURE_TEXT_ABOVE_PRINT_CAP", detail)
 
 
 def gate(paper_dir: Path, pdf_source: Path, provenance_source: Path) -> dict | None:
@@ -160,7 +165,8 @@ def gate(paper_dir: Path, pdf_source: Path, provenance_source: Path) -> dict | N
 
 
 def check_figure(paper_dir: Path, pdf: Path, provenance: dict) -> dict:
-    """Measure `pdf` and refuse when it breaks S2/S3/S4; return the
+    """Measure `pdf` and refuse when it breaks S2/S3/S4 or the print
+    range; return the
     measurements when it passes. Writes nothing."""
     kind, fraction = _provenance_fields(provenance)
     print_scale = _print_scale()
@@ -207,14 +213,24 @@ def check_figure(paper_dir: Path, pdf: Path, provenance: dict) -> dict:
             f"in-figure title {texts}: remove it (no set_title/suptitle) and say it in the "
             "caption, which carries the figure's title"
         )
-    floor = figure_dimensions.min_printed_font_verdict(font)
-    if floor["verdict"] == "fail":
-        worst = sorted(floor["offending"], key=lambda item: item["printed_pt"])[:5]
+    font_range = figure_dimensions.printed_font_range_verdict(font)
+    placed = f"{fraction:g}\\textwidth ({printed_width:.1f} pt, scale {font_range['scale']:.3f})"
+    below = [item for item in font_range["offending"] if item.get("bound") == "floor"]
+    above = [item for item in font_range["offending"] if item.get("bound") == "cap"]
+    if below:
+        worst = sorted(below, key=lambda item: item["printed_pt"])[:5]
         listed = ", ".join(f"{item['text']!r} {item['printed_pt']:.2f} pt" for item in worst)
         failures["FIGURE_TEXT_BELOW_PRINT_FLOOR"] = (
-            f"text prints below 0.70 x the {body_pt:g} pt body ({floor['minPrintedPt']:g} pt) at "
-            f"{fraction:g}\\textwidth ({printed_width:.1f} pt, scale {floor['scale']:.3f}): {listed}; "
-            "enlarge the fonts (ps_figures.apply_style) or include the figure wider"
+            f"text prints below 0.70 x the {body_pt:g} pt body ({font_range['minPrintedPt']:g} pt) at "
+            f"{placed}: {listed}; enlarge the fonts (ps_figures.apply_style) or include the figure wider"
+        )
+    if above:
+        worst = sorted(above, key=lambda item: -item["printed_pt"])[:5]
+        listed = ", ".join(f"{item['text']!r} {item['printed_pt']:.2f} pt" for item in worst)
+        failures["FIGURE_TEXT_ABOVE_PRINT_CAP"] = (
+            f"text prints above 0.90 x the {body_pt:g} pt body ({font_range['maxPrintedPt']:g} pt) at "
+            f"{placed}: {listed}; reduce the fonts (ps_figures.apply_style sizes every role inside "
+            "[0.70, 0.90] x body) or include the figure narrower"
         )
     if failures:
         _refuse_first(pdf, failures)
@@ -226,7 +242,7 @@ def check_figure(paper_dir: Path, pdf: Path, provenance: dict) -> dict:
         "textWidthSource": width_source,
         "printedWidthFraction": fraction,
         "dimensions": {
-            "min-printed-font": floor,
+            "printed-font-range": font_range,
             "background": background,
             "whitespace": whitespace,
             "in-figure-title": title,

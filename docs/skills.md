@@ -2221,7 +2221,7 @@ is the order in which those groups enable one another.
 | The paper's own decisions | `declare`, `observe`, `plan` | What the paper decides about itself. `observe` validates a report from `insumos-observer` against the schema **before** a person runs `declare` |
 | The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it** |
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
-| Style audit & style revision | `ai_audit`, `humanize` | Measures writing quality — cadence (sentence-length $CV \ge 0.38$), overused academic phrasing, lexical diversity — as a `style_score`, and applies a revised block only when it meets `--style-target` (or `--force`) under the untouchable F5 invariant gate (citations, statistics, and formulas). A readability check, never an AI detector: it does not change the obligation to declare AI use |
+| Style audit & style revision | `ai_audit`, `humanize` | Measures writing quality — cadence (sentence-length $CV \ge 0.38$), overused academic phrasing, lexical diversity — as a `style_score`, plus a located `flow` report (connector density and repetition, repeated sentence openings, *because*/*where*/*, which* density with the equation *where* exempt, cross-paragraph repeated phrases and near-duplicate sentences, template phrasing) whose `needs_revision` verdict also blocks `--apply`, and applies a revised block only when it meets `--style-target` (or `--force`) under the untouchable F5 invariant gate (citations, statistics, and formulas). A readability check, never an AI detector: it does not change the obligation to declare AI use |
 | Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads |
 | Structure, sources and reuse | `phases`, `skeleton`, `bind`, `separate`, `mark`, `packet`, `full_text`, `reuse`, `exhaustion` | The derived "what can I write now" report and the one-time opening of the empty section/block structure; the source-section binding loop and the revision/class declarations of a source root or `guidance/` folder; the redactor's own context; one already-resolved identifier's PDF placed under `guidance/<section>/`; and the read-only reports of which ingested papers carry no verdict yet and of the exhaustion state of the evidence papers |
 | Venue adaptation | `venue select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` | Measures the manuscript against a chosen journal's guidelines and template and builds the journal's own `main.tex` under `paper/venues/<slug>/`, never touching the canonical one (below) |
@@ -2449,11 +2449,13 @@ that is too much is a composition judgement this skill does not make.
 live in `skills/_core/figure/figure_dimensions.py`, the same ones `place`
 refuses with):
 
-- `min-printed-font` — every text span (labels, ticks, legends,
-  annotations), at its printed size, is at least 0.70 x the manuscript body
-  font (`skills/_core/figure/print_scale.py`). It replaces the former
-  `legibility` silence: the threshold is now a declared rule, measured
-  whenever the PDF carries a text layer (`NO_TEXT_LAYER` otherwise).
+- `printed-font-range` — every text span (labels, ticks, legends,
+  annotations), at its printed size, is between 0.70 and 0.90 x the
+  manuscript body font (`skills/_core/figure/print_scale.py`); a `fail`
+  names `TEXT_BELOW_PRINT_FLOOR` or `TEXT_ABOVE_PRINT_CAP`. It replaces
+  the former `legibility` silence and, since 0.54, the floor-only
+  `min-printed-font`: the range is a declared rule, measured whenever the
+  PDF carries a text layer (`NO_TEXT_LAYER` otherwise).
 - `background` — no filled rectangle covering the page.
 - `whitespace` — no margin wider than 4 pt between the drawn content and
   the page.

@@ -21,8 +21,8 @@ from __future__ import annotations
 import ast
 import fnmatch
 import io
-import re
 import subprocess
+import sys
 import tempfile
 import tokenize
 import unittest
@@ -45,18 +45,11 @@ EXCLUDED = ("skills/_core/command_center/*", "*node_modules/*", "vendor/*", "*/v
 ENTRYPOINTS = ("CLAUDE.md", "OPENCODE.md", ".pi/APPEND_SYSTEM.md", ".agents/AGENTS.md")
 LANGUAGE = package_template_path("language.md.tpl").read_text(encoding="utf-8").strip()
 
-ACCENTED = re.compile(r"[áéíóúñÁÉÍÓÚÑ]")
-INVERTED = re.compile(r"[¿¡]\w")
-WORD = re.compile(r"[a-záéíóúñü]+", re.IGNORECASE)
-#: Spanish function words that are not English words either.
-STRONG = frozenset(
-    "que los las una para pero como esta este esto cuando donde porque desde "
-    "hasta entre sus cada hay muy nunca siempre todos toda puede tiene también "
-    "más está nada nadie algo eso ese esa así mismo otro otra poder ser igual "
-    "parte ya".split())
-#: Short Spanish words that collide with English or code on their own, so they
-#: only count next to an accented letter.
-WEAK = STRONG | frozenset("de la el en y es se lo un al su no del con por sin".split())
+#: The detector and its lexicon live in `paper_language.py`, shared with the
+#: manuscript's own English-only check (spec S4 of
+#: `odd/tasks/manuscript-polish-0-54.md`): one heuristic keeps both English.
+sys.path.insert(0, str(REPO / "skills" / "paper-writing" / "scripts"))
+from paper_language import is_spanish  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -103,19 +96,12 @@ ALLOWLIST = (
     Allow("skills/_core/deliberation/engine/smoke-runner.ts",
           "Spanish instructions the smoke run feeds the resolver", ("execute({instruction:",)),
     Allow("tests/fixtures/*", "fixture data fed to the code under test"),
+    Allow("skills/paper-writing/scripts/paper_language.py",
+          "the Spanish lexicon this detector recognizes",
+          ('"que los', '"hasta entre', '"más está')),
     Allow("tests/test_experimental_implementation.py",
           "quotes a past engine refusal verbatim", ("no declara qué reescribiría",)),
 )
-
-
-def is_spanish(line: str) -> bool:
-    if INVERTED.search(line):
-        return True
-    words = {word.lower() for word in WORD.findall(line)}
-    if ACCENTED.search(line) and words & WEAK:
-        return True
-    strong = len(words & STRONG)
-    return strong >= 3 or (strong >= 1 and len(words & WEAK) >= 4)
 
 
 def _tracked_files() -> list[str]:

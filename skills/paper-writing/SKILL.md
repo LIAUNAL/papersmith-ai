@@ -110,9 +110,9 @@ in favor of an incoming body. The only exit from a hand-edited block is
 The canonical manuscript is presented in **review mode, single column** (`onecolumn`, e.g., `\documentclass[11pt,onecolumn,a4paper]{article}` with standard review margins and line spacing). Multi-column or journal-specific publication styles are deferred to the `venue` adaptation workflow once a journal is selected.
 
 ### Blinded Author Metadata on Initial Drafts
-During the initial drafting and refinement of the manuscript, **no author names, affiliations, or emails are included**. All author metadata remains blinded and marked as placeholders (*Por definir*):
+During the initial drafting and refinement of the manuscript, **no author names, affiliations, or emails are included**. All author metadata remains blinded and marked as English placeholders:
 ```latex
-\author{Por definir \\ \textit{Afiliaciones y correos por definir}}
+\author{Author names withheld \\ \textit{Affiliations and contact e-mails to be provided}}
 ```
 Only when the complete manuscript passes all verification gates with the user is the operator prompted to provide the author identities, affiliations, and correspondence details.
 
@@ -132,6 +132,7 @@ The Introduction has exactly seven paragraphs; the full contract, with the exten
 3. **Three-part internal structure (2 to 3 paragraphs per subsection):** Foundations (fundamentos), Main methods (métodos principales), and Main challenges/issues (principales desafíos).
 4. **Citation volume per family:** Each family subsection must cite between 5 to 10 distinct alternative works.
 5. **Reference Horizon:** Between the Introduction and Related Work, the bibliography must collectively cite between 30 and 40 references.
+6. **Synthesis table (Block 5):** 7 to 12 works selected by relevance to the pillars and contributions, every family with at least one row, the proposal as the last row. Columns are the family plus one axis per pillar, contribution or property the proposal declares; an axis every row shares is dropped. The redactor picks the clearest layout (checkmark matrix, compact attribute table, or rows grouped by family) and states why; cells are a symbol or at most three words, the caption decodes every symbol, and the table follows the table rules of contracts 02 and 03. The contract-audit stage counts the works deterministically (`paper_audit.count_table_works`): a `clear` verdict on the row-count disqualifier over a table outside 7–12 is reported `undecidable` with the measured count under `deterministic`, never blocking by itself.
 
 ## When a delegated agent cannot be spawned
 
@@ -772,7 +773,8 @@ compile (and `smith paper qa [--json] [<dir>]` on demand) runs
 each page is inferred from its body lines (running headers, footers and page
 numbers set apart), and any text span, image, figure or drawn path passing it by
 more than 1 pt is an `overflow` finding; text inside a figure placement or a
-ruled table region printing below 0.70 × body is `figure-font`/`table-font`; each
+ruled table region printing outside [0.70, 0.90] × body is
+`figure-font`/`table-font`, each naming its `bound` (`floor` or `cap`); each
 `Overfull \hbox` of `main.log` is `overfull`, with its source lines and page. It
 writes `paper/.qa/qa.json` (with the sha256 of the `main.pdf` it measured, so
 staleness is detectable) and 100 dpi page images under `paper/.qa/pages/`; the
@@ -1189,6 +1191,8 @@ either command's own `--help`.
 
 | Situation | Action |
 | --- | --- |
+| `write` refuses `DRAFT_NOT_ENGLISH` | The draft carries Spanish prose (the refusal names each line) — redraft it in English; only a paper that declares another main language in `main.tex` (babel/polyglossia) is written in it. No attempt is spent |
+| `write` refuses `DRAFT_PLACEHOLDER_TEXT` | The draft still carries `por definir`, `TODO`, `TBD`, `FIXME` or `\todo` — write the content, or leave the block unwritten. No attempt is spent |
 | `write` refuses `SECTION_BINDING_ABSENT` | Run `separate --proposal <path>` naming a whole cut for the missing claim's lineage, then the exact `bind` invocation the settled cut licenses |
 | `separate` refuses `SEPARATION_SECTION_OVERLAP` / `SEPARATION_SECTION_ORPHANED` / `SEPARATION_NOTATION_GAP` | One code by fixed precedence overlap → orphan → gap; the detail names every instance of every class present — fix the cut and resubmit the same proposal file |
 | `separate` refuses `SEPARATION_SECTION_UNCLAIMABLE` | A named title resolves to a real heading outside the claimable set (the document's own title, or a subsection), or the document's claimable set could not be measured at all — `--file`/`contract` the section, or re-check the title against the document's own headings |
@@ -1222,6 +1226,18 @@ citation keys and the strings a contract quotes stay byte-identical — they wer
 never prose. The `style` channel's samples keep whatever language they were
 ingested in: a style reference is evidence about rhythm and register, and
 `STYLE_OVERLAP` already refuses a draft that borrows its words.
+
+**The rule is enforced, not only stated.** `paper_language.py` is the one
+detector: `write` refuses a draft carrying Spanish prose (`DRAFT_NOT_ENGLISH`)
+or placeholder text — `por definir`, `TODO`, `TBD`, `FIXME`, `\todo`
+(`DRAFT_PLACEHOLDER_TEXT`) — before evidence-audit runs, so no attempt is
+spent and `main.tex` stays byte-identical; `verify`'s `language` check and the
+manuscript QA report (`language`/`placeholder` findings) scan the whole
+`main.tex`. Math, comments, markers, citations, the bibliography and
+capitalized accented words (names, institutions) are never read as Spanish.
+A paper that declares another main language in `main.tex` (babel's `main=`
+or last option, polyglossia's `\setmainlanguage`) is exempt from the Spanish
+check, never from the placeholder check.
 
 ## The prose pass: what it may not touch
 
@@ -1260,6 +1276,26 @@ equation changed, and with `--apply` it substitutes the block only when the draf
 meets `--style-target` (default 0.20) unless `--force`, refusing
 `TARGET_SCORE_UNMET` otherwise. The audit delegates to the `ai-auditor` agent.
 
+**Flow and redundancy.** Every style report also carries a `flow` key
+(`flow_score`, `flow_verdict` in the same three bands, and `findings`, each
+naming its sentence, its paragraph and the quoted span; `thresholds` states
+every limit). It measures stock connectors (the same one opening two
+sentences within five, more than a quarter of the sentences opening with
+one, synthesis openers such as *Overall* or *Taken together* repeated),
+sentence openings (consecutive repeats, one dominant opening, *This/These +
+noun* in series), *because*, *where* and *, which* density (the *where*
+that follows an equation and defines its symbols is exempt), repeated
+five-word phrases across paragraphs and near-duplicate sentences, and
+template phrasing (*It is worth noting*, *plays a crucial role*, *In this
+context*, *serves as*, *This highlights*). `ai_audit --all` reports it over
+the whole manuscript, where cross-block repetition shows, and per block.
+`humanize` returns `flow_findings` and `revision_guidance`, and `--apply`
+also refuses `TARGET_SCORE_UNMET` while `flow_verdict` is `needs_revision`
+(unless `--force`). The guidance rebuilds each transition from the logical
+relation (contrast, cause, consequence, elaboration, example) instead of
+swapping one stock connector for another, drops a connector the sentence
+order already carries, and cuts repetition — always under the F5 gate.
+
 These are readability checks, never an AI detector: no step aims to make
 machine-assisted prose pass as human-written, and a passing style score does not
 change the obligation to declare AI use (every report carries that
@@ -1292,7 +1328,7 @@ anything itself.**
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -1327,11 +1363,15 @@ reached.
 **A table that shrinks to fit is a warning, never a refusal.** Every `write`
 envelope (`written` and `audit-fired`) carries `tableLint`
 (`paper_latex.table_lint_report`): the body size read from `main.tex`
-(`print_scale.body_font_pt`), the floor (0.70 × body), and one finding per
+(`print_scale.body_font_pt`), the printed range (`minPrintedPt` 0.70 × body,
+`maxPrintedPt` 0.90 × body), and one finding per
 `\resizebox` or `adjustbox` width scaling of a tabular
 (`table-scaled-to-width`), `\scalebox`/`adjustbox scale=` below 0.85
 (`table-scaled-below-floor`), and `\tiny`/`\scriptsize`/`\footnotesize`/`\small`
-inside a table that prints below the floor (`table-font-below-floor`). It warns
+(or `\fontsize{<pt>}`) inside a table that prints below the floor
+(`table-font-below-floor`), and a size inside a table that prints above the
+cap, or a table that declares no size and so prints at the body size
+(`table-font-above-cap`, command `\normalsize (default)`). It warns
 for the same reason an `Overfull` box is a non-blocking diagnostic: the source
 cannot prove what prints (the body size may be a fallback), and the compiled
 manuscript's QA measures it. Contracts 02 and 03 carry the rule
@@ -1593,7 +1633,7 @@ existing `substitute` verb's `\includegraphics`; no TikZ byte ever enters
 | `render --figure-id <id> [--paper <dir>]` | Compiles `<id>.tex` standalone via exactly one `latexmk` call, cross-checks the manifest both directions, and scans stop A before ever spawning the compiler | `DIAGRAM_SOURCE_ABSENT`, `MANIFEST_SOURCE_MISMATCH`, `DIAGRAM_PLOTS_DATA`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_LOG_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED`, `LATEX_PACKAGE_ABSENT`, `REPAIR_BUDGET_SPENT` |
 | `render --figure-id <id> --section <section-id> --block <id> [--sections <dir>] [--paper <dir>]` | The same compile, and then the full obligation suite (components — only when the block declares `components_from`, excludes, caption, mandatory, cross-diagram separation) against the block's own `figure:` declaration | adds `MALFORMED_FIGURE_OBLIGATION`, `COMPONENT_MISMATCH`, `COMPONENTS_FACT_UNRESOLVED`, `COMPONENTS_FACT_NOT_A_LIST`, `EXCLUDED_COMPONENT`, `SHARED_COMPONENT`, `CAPTION_INCOMPLETE`, `MANDATORY_DIAGRAM_ABSENT` |
 | `render --figure-id <id> --acknowledge-reset [--paper <dir>]` | The explicit operator acknowledgement that clears a spent ledger — compiles nothing, never combined with a compile in the same call | (none beyond `render`'s own) |
-| `place --figure-id <id> --pdf <path> --provenance <path> [--paper <dir>]` | Places an already-measured figure's PDF — compiles nothing, requires a provenance record naming the run that produced it, and measures the PDF first (`paper_place.py`, the same rules `figure-review measure` reports): a plot carries a text layer, no full-page background, no margin wider than 4 pt, no in-figure title, and every text span prints at >= 0.70 x the body at the provenance's `printedWidthFraction` of `\textwidth` (1.0 by default; `figureKind: image` exempts a photograph from the text-layer rule only). No override: the fix is the figure or its declared width | `DIAGRAM_SOURCE_ABSENT` (reused: the named artifact this call needs is absent), `FIGURE_PDF_UNREADABLE`, `FIGURE_PROVENANCE_INVALID`, `FIGURE_MEASUREMENT_UNAVAILABLE`, `FIGURE_NO_TEXT_LAYER`, `FIGURE_FULL_PAGE_BACKGROUND`, `FIGURE_MARGIN_WASTE`, `FIGURE_IN_FIGURE_TITLE`, `FIGURE_TEXT_BELOW_PRINT_FLOOR` |
+| `place --figure-id <id> --pdf <path> --provenance <path> [--paper <dir>]` | Places an already-measured figure's PDF — compiles nothing, requires a provenance record naming the run that produced it, and measures the PDF first (`paper_place.py`, the same rules `figure-review measure` reports): a plot carries a text layer, no full-page background, no margin wider than 4 pt, no in-figure title, and every text span prints between 0.70 and 0.90 x the body at the provenance's `printedWidthFraction` of `\textwidth` (1.0 by default; `figureKind: image` exempts a photograph from the text-layer rule only). No override: the fix is the figure or its declared width | `DIAGRAM_SOURCE_ABSENT` (reused: the named artifact this call needs is absent), `FIGURE_PDF_UNREADABLE`, `FIGURE_PROVENANCE_INVALID`, `FIGURE_MEASUREMENT_UNAVAILABLE`, `FIGURE_NO_TEXT_LAYER`, `FIGURE_FULL_PAGE_BACKGROUND`, `FIGURE_MARGIN_WASTE`, `FIGURE_IN_FIGURE_TITLE`, `FIGURE_TEXT_BELOW_PRINT_FLOOR`, `FIGURE_TEXT_ABOVE_PRINT_CAP` |
 | `figure optimize --figure-id <id> [--in-place \| --output <path>] [--strip-comments] [--no-compile] [--paper <dir>]` | Rewrites one diagram's TikZ source: prunes the libraries it can **prove** unused, adds the ones it detects as missing, factors repeated option lists into one `\tikzset`, then compiles the candidate and commits it only on a `success` verdict. `background=2pt` headers, relative positioning, and `% node:` markers are preserved by construction | `DIAGRAM_SOURCE_ABSENT`, `DIAGRAM_PLOTS_DATA`, `MANIFEST_SOURCE_MISMATCH`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_PACKAGE_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED` |
 | `figure optimize --file <path.tex> [--strip-comments]` | Dry run: prints the optimized candidate for one source path and writes nothing (no manifest, so no cross-check applies) | `DIAGRAM_SOURCE_ABSENT` |
 | `figure audit --figure-id <id> --section <id> [--block <id>] [--sections <dir>] [--paper <dir>]` | Compares the manifest's declared components — **not** every `\node{}` string — against the section prose, and the `components_from` fact's list against both. Emits `verdict` (`pass`/`fail`/`unmeasured`) plus `unmatched_nodes`, `missing_pipeline_steps`, `label_mismatches`, `warnings`, `remediation`, and writes `figure_audit.json` beside the figure's ledger | `DIAGRAM_SOURCE_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `SECTION_UNKNOWN`, `BLOCK_ABSENT` |
@@ -1621,7 +1661,7 @@ no `Overfull \hbox`/`\vbox` in the log; no relative size switch
 (`\tiny` ... `\Huge`, `\small`, `\footnotesize`) — every size is an
 explicit `\fontsize{<pt>}{<1.2 pt>}\selectfont`; no two text spans
 intersecting and no span crossing a drawn frame it is not inside; every
-span printing at >= 0.70 x the manuscript body size (`paper/main.tex`'s
+span printing between 0.70 and 0.90 x the manuscript body size (`paper/main.tex`'s
 class option, 10 pt without one) once the figure is scaled to its declared
 inclusion width — the manifest's optional `widthFraction` (the
 `width=<f>\textwidth` its `\includegraphics` uses, 1.0 by default) and
@@ -1796,7 +1836,7 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
-| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics` | `DECLARATION_RECORD_ABSENT` |
+| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`; plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
 **Three values, never two.** Every check's own `verdict` is `pass`, `fail`
 or `unmeasured` — `unmeasured` is never folded into `pass`. Two new modules
@@ -1820,6 +1860,14 @@ audit could not compare reports `unmeasured`, reason
 `FIGURE_SEMANTICS_UNMEASURED`. The dependency direction is one-way:
 `paper_coupling_evidence.py` may import `paper_figure_audit.py`; the auditor
 may not import the reader or `paper_verify.py`.
+
+**The ninth check, `language`, reads a scan `cmd_verify` hands in.**
+`cmd_verify` runs `paper_language.scan` over the `main.tex` bytes `gather()`
+already read and passes the result to `paper_verify.run(..., language=)`,
+the same way it resolves `optional_block_ids`. A Spanish prose line or a
+placeholder marker (`por definir`, `TODO`, `TBD`, `FIXME`, `\todo`) fails
+the check and names its line; a `run()` handed no scan reports
+`unmeasured`, reason `LANGUAGE_NOT_SCANNED`, never a silent pass.
 
 **`verify` reads its own declaration record, `paper/couplings.json` —
 read-only, untracked like `main.tex` itself.** `couplings` is its producer:
@@ -1972,7 +2020,7 @@ exits 2 having written nothing.
 | `diff --slug <s> [--sections <dir>]` | Writes `audit.json`: smith's section contracts (`paper_contract.parse`: ids, `position`, the `**Extent**` prose read best-effort) and the written `main.tex` (blocks, declarations, keyword count, abstract/title/main-text word counts, figures, tables, cited references, the class and bibliography-style lines) against `requirements.json`. Findings: `missing-section`, `extra-section`, `out-of-order`, `over-limit`, `under-limit`, `missing-declaration`, `class-mismatch`, `reference-style-mismatch`, `missing-extra`, `undecidable`; each with a `severity` (`blocker`, `major`, `minor`), the smith side, the venue side with its quote and url, the affected block ids, and `resolved_by` (`build`, `text-change`, `operator-decision`). The audit records the sha256 of `main.tex` and of `requirements.json` it was computed from | `VENUE_ABSENT`, `REQUIREMENTS_ABSENT`, `TEMPLATE_ABSENT`, `PAPER_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `MALFORMED_HEADER` and the marker codes |
 | `plan --slug <s> --file <md>` | Stores the agent's plan as `plan.md` and returns its sha256. The plan must cite at least one finding id from the audit; storing it **resets any earlier approval** | `AUDIT_ABSENT`, `PLAN_UNREADABLE`, `PLAN_REFERENCES_NO_FINDING` |
 | `approve --slug <s> --statement "<words>" --plan-sha256 <hex>` | Records `approval.json` with the operator's statement verbatim, bound to the current plan's hash (the dashboard button writes the same record with `via: dashboard`) | `STATEMENT_EMPTY`, `PLAN_ABSENT`, `PLAN_HASH_MISMATCH` |
-| `build --slug <s>` | Assembles `paper/venues/<slug>/main.tex`: the venue's class line, the canonical preamble minus the packages the class owns (reported as `preamble.skipped`), front matter mapped from the title, abstract and keyword blocks for `elsarticle`/`IEEEtran`/`llncs` (any other class keeps the canonical title block and `\maketitle`), every canonical block copied **verbatim with its markers** in the venue's section order, `\bibliographystyle` from the requirements and `\bibliography{../../refs}`. Sections the venue does not list are kept after its own; sections smith lacks are reported, never invented. Writes `build.json` | `PLAN_NOT_APPROVED`, `AUDIT_STALE`, `AUDIT_ABSENT`, `TEMPLATE_ABSENT`, `REQUIREMENTS_ABSENT`, `BLOCK_HAND_EDITED` |
+| `build --slug <s>` | Assembles `paper/venues/<slug>/main.tex`: the venue's class line, the canonical preamble minus the packages the class owns (reported as `preamble.skipped`), front matter mapped from the title, abstract and keyword blocks for `elsarticle`/`IEEEtran`/`llncs` (any other class keeps the canonical title block and `\maketitle`), every canonical block copied **verbatim with its markers** in the venue's section order, `\bibliographystyle` from the requirements and `\bibliography{../../refs}`. Sections the venue does not list are kept after its own; sections smith lacks are reported, never invented. The back matter always renders after the content sections and before the bibliography, the AI-use declaration last, and `bm-appendices` after the bibliography, whatever order the venue lists or the canonical file holds (`sections.appendices_after_references`). Writes `build.json` | `PLAN_NOT_APPROVED`, `AUDIT_STALE`, `AUDIT_ABSENT`, `TEMPLATE_ABSENT`, `REQUIREMENTS_ABSENT`, `BLOCK_HAND_EDITED` |
 | `status --slug <s>`, `list` | Read-only: the state, the step flags, the finding counts, whether the audit is stale, and the next action | `VENUE_ABSENT`, `VENUE_SLUG_INVALID` |
 
 **The approval gate.** `build` refuses `PLAN_NOT_APPROVED` while the audit holds

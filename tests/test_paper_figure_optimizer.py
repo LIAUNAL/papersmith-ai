@@ -430,8 +430,13 @@ class OptimizerRealToolchainTests(unittest.TestCase):
         self.figures.mkdir(parents=True)
         self.figure_id = "real"
         (self.figures / f"{self.figure_id}.tex").write_text(BLOATED, encoding="utf-8")
+        # The optimized picture is about 112 pt wide with 10 pt labels: at the
+        # full text width they would print near 30 pt, above the 0.90 x body
+        # cap. Declared at its inclusion width (0.26 \textwidth) they print
+        # near 7.9 pt, inside the 0.70-0.90 range `render` enforces.
         (self.figures / f"{self.figure_id}.diagram.json").write_text(
-            json.dumps({"components": ["alpha", "beta", "gamma"], "encodings": [], "caption": "Figure."}),
+            json.dumps({"components": ["alpha", "beta", "gamma"], "encodings": [], "caption": "Figure.",
+                        "widthFraction": 0.26}),
             encoding="utf-8",
         )
 

@@ -1,6 +1,6 @@
 ---
 name: figure-review
-description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints at least 0.70 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension."
+description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints between 0.70 and 0.90 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension."
 ---
 
 # Figure Review
@@ -35,9 +35,12 @@ rules read from the figure PDF itself — it never repairs a figure.
 `skills/_core/figure/figure_dimensions.py`, the same ones `paper-writing`'s
 `place` refuses with):
 
-- `min-printed-font` — every text span (labels, ticks, legends, annotations),
-  at its printed size, is at least 0.70 x the manuscript body
-  (`skills/_core/figure/print_scale.py`). The printed size is the span size
+- `printed-font-range` — every text span (labels, ticks, legends,
+  annotations), at its printed size, is between 0.70 and 0.90 x the
+  manuscript body (`skills/_core/figure/print_scale.py`); a `fail` names
+  `TEXT_BELOW_PRINT_FLOOR` or `TEXT_ABOVE_PRINT_CAP` and each offending
+  span its `bound`. It was the floor-only `min-printed-font` before 0.54
+  (`figure_dimensions.DEPRECATED_DIMENSION_ALIASES` maps the old key). The printed size is the span size
   times `--printed-width-pt` / the PDF width (natural size when omitted); the
   body comes from `--body-pt`, else `--main-tex` (default `<paper>/main.tex`),
   else 10 pt. A PDF without a text layer is `unmeasured` (`NO_TEXT_LAYER`).

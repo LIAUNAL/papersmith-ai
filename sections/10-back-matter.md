@@ -203,6 +203,14 @@ the most likely to be wrong at submission, because nobody treats it as writing.
 The block list is the same for every paper; where each block lands and what it is
 titled follow the publisher of the selected venue (`venue select` records it).
 
+**Back matter renders after the conclusions and before the references, for every venue.**
+In `main.tex` every declaration block sits above the `\bibliography` line (or the
+`thebibliography` environment); the AI-use declaration, when it is a section of its
+own, is the last of them, immediately before the references.
+**Appendices follow the references**, unless the venue's guidelines say otherwise; no
+publisher family below does. `verify` reports the order (`back-matter-order`), and `venue build` always emits
+it, whatever order the canonical file holds.
+
 - **Elsevier.** Highlights and a graphical abstract are submitted with the manuscript.
   CRediT author contributions, a declaration of competing interest, and **funding
   inside the Acknowledgements**. The AI-use declaration is **its own section,
@@ -307,7 +315,8 @@ experimental setup carries only the values that were reasoned about.
 Lettered, with subsections numbered under their letter. **Each appendix is referenced
 from the body section that needs it**; one that nothing references is dead weight.
 
-Whether the paper has appendices at all is decided per paper.
+Whether the paper has appendices at all is decided per paper. When it has them, they
+come after the references, never among the declarations.
 
 ## Highlights
 
@@ -380,7 +389,7 @@ Claude); none carries an Abbreviations list.
 Every block here is an external fact, not a decision. None of it is derived from the
 paper, except the highlights, which compress what the conclusions already state —
 they are written last, once the conclusions exist, and carry no cross-section edge
-because back matter renders last and constrains no other section.
+because back matter renders after every body section and constrains no other section.
 
 ### External inputs
 
@@ -420,6 +429,7 @@ because back matter renders last and constrains no other section.
 - Code availability folded into the data statement.
 - An approval code or consent claim not copied from the approval record.
 - A known interested affiliation left undeclared.
+- A declaration placed after the references, or an appendix placed before them.
 - An appendix or supplementary item that no body section references.
 - Appendix content that contradicts the experimental setup.
 - A highlight that states something the conclusions do not, or a number differing from

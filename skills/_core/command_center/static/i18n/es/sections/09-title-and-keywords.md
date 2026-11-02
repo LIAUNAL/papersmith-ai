@@ -139,9 +139,9 @@ inventada para el motor de búsqueda.
 El manuscrito canónico se presenta y compone en **formato de revisión, a una columna** (`onecolumn`, por ejemplo, `\documentclass[11pt,onecolumn,a4paper]{article}` con márgenes de revisión estándar e interlineado de 1.5). Los formatos a dos columnas o finales de la editorial se reservan para la adaptación a la revista tras la aceptación, mediante la habilidad `venue`.
 
 ### Metadatos de autoría anonimizados en los borradores iniciales
-En la redacción inicial del manuscrito **no se incluyen nombres de autores, afiliaciones institucionales ni correos de contacto**. Todos los metadatos de autoría permanecen anonimizados y se fijan explícitamente como marcadores de posición (*por definir* / suprimidos para la revisión por pares):
+En la redacción inicial del manuscrito **no se incluyen nombres de autores, afiliaciones institucionales ni correos de contacto**. Todos los metadatos de autoría permanecen anonimizados y se fijan explícitamente como marcadores de posición (escritos en inglés y suprimidos para la revisión por pares; nunca un marcador en español):
 ```latex
-\author{Por definir \\ \textit{Afiliaciones y correos por definir}}
+\author{Author names withheld \\ \textit{Affiliations and contact e-mails to be provided}}
 ```
 Solo cuando todo el manuscrito ha sido redactado, compilado y supera todas las verificaciones con el usuario se pide al operador que aporte las identidades de los autores, sus afiliaciones y los datos de correspondencia.
 

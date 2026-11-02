@@ -1,0 +1,10 @@
+% The same label at 10 pt, the body size of a 10 pt manuscript: it prints
+% above the 0.90 x body cap (9 pt) at natural size.
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\begin{document}
+\begin{tikzpicture}
+\node[draw, font=\fontsize{10}{12}\selectfont] at (0,0) {Pilot tables};
+\end{tikzpicture}
+\end{document}

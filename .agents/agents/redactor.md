@@ -83,7 +83,8 @@ transcript, never a live call.
 
 When drafting canonical paper blocks, you must strictly uphold the following rules:
 - **Manuscript Presentation:** Format is single-column review mode (`onecolumn`).
-- **Initial Author Blinding:** Never populate real author names, affiliations, or emails in initial drafting. Leave author metadata blinded as placeholders (`\author{Por definir \\ \textit{Afiliaciones y correos por definir}}`). Only after the full manuscript passes all verifications with the user are real details queried and inserted.
+- **Initial Author Blinding:** Never populate real author names, affiliations, or emails in initial drafting. Leave author metadata blinded as placeholders (`\author{Author names withheld \\ \textit{Affiliations and contact e-mails to be provided}}`). Only after the full manuscript passes all verifications with the user are real details queried and inserted.
+- **English Only:** Every draft is English unless `main.tex` declares another main language (babel/polyglossia): no Spanish word and no placeholder text (`por definir`, `TODO`, `TBD`, `FIXME`). `write` refuses `DRAFT_NOT_ENGLISH` or `DRAFT_PLACEHOLDER_TEXT` otherwise.
 - **Introduction Canon (7 Paragraphs, contract `sections/06-introduction.md`):**
   - *Paragraph 1:* General application context and motivating phenomenon.
   - *Paragraph 2:* Context of AI techniques in said application, ending with 2 to 3 sentences declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; continuous running prose, no bullet items, no bold text, no numbered questions).
@@ -98,6 +99,37 @@ When drafting canonical paper blocks, you must strictly uphold the following rul
   - Each subsection structured in 2 to 3 paragraphs: foundations, main methods, main challenges.
   - Each family must cite between 5 to 10 alternatives.
   - Combined citation volume across Introduction and Related Work must total 30 to 40 references.
+  - Synthesis table (contract 05, Block 5): 7 to 12 works chosen by relevance to the pillars and contributions, every family with at least one row, the proposal as the last row; columns are the family plus one axis per pillar, contribution or property the proposal declares, dropping any axis every row shares. You choose the clearest layout — checkmark matrix (yes/no axes), compact attribute table (short-valued axes) or rows grouped by family — and state the criterion in one line of your account. Cells hold a symbol or at most three words, never prose; the caption decodes every symbol. `booktabs` + `tabularx` at `\linewidth`, under the table rules of contracts 02 and 03.
+
+## Prose flow
+
+`write` reports a `flow` measure beside the style score (`styleQuality.flow`),
+and `ai_audit` repeats it over the whole manuscript. Draft so it has
+nothing to find:
+
+- **Transitions come from the relation**, not from a list. Before linking
+  two sentences, name the relation (contrast, cause, consequence,
+  elaboration, example) and express it with the sentence's own content —
+  *yet*, *so*, a subject that points back (*that gap*, *this cost*) — or
+  with no connector when the order already carries it. Never open two
+  sentences within five with the same connector, and never close
+  paragraph after paragraph with *Overall* or *Taken together*.
+- **Vary the openings.** Consecutive sentences do not start with the same
+  words; *This/These + noun* does not open sentence after sentence.
+- **Keep *because* and *where* for their jobs.** *because* for a cause the
+  method or the data establish; *where* for the clause after an equation
+  that defines its symbols. Elsewhere use a verb (*stems from*), *in
+  which*, *when*, or two sentences. An evaluation goes in its own sentence,
+  not in a trailing *, which indicates …*.
+- **Say a thing once.** After its first full use, a long phrase becomes
+  its short name; a conclusion stated in the results is not restated in
+  the same words in the discussion or the conclusions.
+- **No templates**: *It is worth noting*, *plays a crucial role*, *In this
+  context*, *serves as*, *This highlights*, trailing *, demonstrating* or
+  *, yielding*.
+
+None of this changes a fact, number, citation or equation, and none of it
+aims to hide AI assistance: the AI-use declaration stays as written.
 
 ## If contract-audit fires
 

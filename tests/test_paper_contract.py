@@ -1032,17 +1032,23 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: contracts that carry tables gained `## Tables stay inside the text block`
 #: (booktabs rules, tabularx, no scaling below 0.85, no text below 0.70 times
 #: the body size, caption above) and three matching disqualifiers.
+#: All ten re-captured (manuscript-polish-0-54): the Writing bullets replace the
+#: fixed connective list with relation-driven transitions and keep *because* and
+#: *where* to their jobs (03 also varies its explanation forms); 02, 03 and 05 state
+#: the 0.70-0.90 x body text range for tables and figures; 05 sizes the synthesis
+#: table at 7-12 works; 09 writes the blinded author placeholder in English; 10
+#: places the back matter before the references and the appendices after them.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "bceddb15a3514b0ee355abe24a0ac6c59f78a15ad900921d8b10e72104718d90"[:64],
-    "02-experimental-setup.md": "6afe354371c1b466ea8eb95b72a7a7fb2276219dc6877d635b43b30d1c6c9fae",
-    "03-results-and-discussion.md": "51d4b9a933b34956e6300d5d88e44cb1e36fc067cd9cb5caf8e77a83687c3cd0",
-    "04-limitations.md": "9175dfeb1d8375439aa9430027464bafe4ddfa477e25efa5d9192b7e74212ed4"[:64],
-    "05-related-work.md": "d1e6ec50d24063c7cfa618e59fb75d1ba1d5dc4155b76e01ac918e96d4e53ea9",
-    "06-introduction.md": "fdb4847f869e44480895fab4bf2b1fa7a199ad851a372ee1841dee856ee398ab",
-    "07-conclusions.md": "8247cc07798423cac2b0f52390a79d54d0c1c9e11000b97fd7ab9f397751a87a"[:64],
-    "08-abstract.md": "e5e2d180ad612c99c2f779d669956405c56f9744645ca9e229a57c1bc605ba94"[:64],
-    "09-title-and-keywords.md": "fd563a4b96e5aeb8cd952d748c6961863ba094837a8ea5a374e3d2d9eaff4fe8",
-    "10-back-matter.md": "e8f6156a55b9358231fd9986b923c738c5672629f5049e68ef4e055c69b3481c"[:64],
+    "01-materials-and-methods.md": "3fb21138a3f1d8a3730e2c75d4666228fdc32bad0806a01c9e3c8c8261572a20",
+    "02-experimental-setup.md": "6315bcf3f7fc3a853f4ed2a843647bf48fcf7c36c941573888fcdf5822e14320",
+    "03-results-and-discussion.md": "e46a7ba7adf695892f67298db54eef3ee03965a00fb730a8656eb93f71f0aa9e",
+    "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
+    "05-related-work.md": "614b1e054feb9fa962ce932158ef94e2fcb358f79c168e9ba87e5a91b19f0f74",
+    "06-introduction.md": "d26e38f934852c250d90c58d628e56707b46aadf104d91c719536cfe7855f337",
+    "07-conclusions.md": "2e6b63d044e3e7b4261e3bf9985dbc250863f8d2d10168c97345770bdf90ee58",
+    "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
+    "09-title-and-keywords.md": "da815396e1dfa2a673fe3f29ba37ffff08da3a6f80bb4691fdd1a2784229aef5",
+    "10-back-matter.md": "c6960551711521fae9359e01c9eb43074595adf6ca0982543e816ddd9b9fdd0f",
 }
 
 

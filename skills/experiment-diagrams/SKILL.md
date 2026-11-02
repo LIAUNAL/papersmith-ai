@@ -50,9 +50,9 @@ manuscript, so it prints at scale ~1: the body size comes from the spec's
 optional `print.body_pt`, else `paper/main.tex`'s class option, else 10 pt;
 the width is `print.width_fraction` (default 1) x `print.text_width_pt`
 (default: the A4 article text width for that body size). Every font is an
-explicit `\fontsize` per role (claim = body, spine = 0.9 x body, notes and
-evidence = 0.8 x body), never a relative switch and never below 0.70 x the
-body size. Boxes share the width the layout has; fonts never shrink to fit.
+explicit `\fontsize` per role (claim = 0.88 x body, spine = 0.82 x body,
+notes and evidence = 0.76 x body), never a relative switch and always
+between 0.70 and 0.90 x the body size at the printed width. Boxes share the width the layout has; fonts never shrink to fit.
 The export draws no background (the PNG rasterizes on white) and keeps a
 2 pt border.
 
@@ -64,8 +64,8 @@ label. Then it runs the shared mechanical audit
 `render` runs) and writes `diagrams/<kind>.audit.json`, bound to the PNG:
 overfull boxes = 0, no relative size switch, no overlapping text (from the
 PDF's vector text layer: spans intersecting each other, or a span crossing a
-drawn frame it is not inside), every span >= 0.70 x body at the declared
-width, no background and every margin <= 4 pt. `audit` re-runs it on the
+drawn frame it is not inside), every span within [0.70, 0.90] x body at the
+declared width (`font_range`), no background and every margin <= 4 pt. `audit` re-runs it on the
 drawing as it is (a failing audit exits 0 with `"verdict": "fail"`).
 `status` reports each kind's `audit` (`pass`, `fail`, `unmeasured`,
 `absent`, or `stale` when it audited an earlier drawing).
@@ -211,8 +211,8 @@ template or asset of Sivia is copied here, and the TikZ library in
 - **Arrows enter from the side that faces their source** and never run
   through a label. Branches to a row leave vertically and share one lane.
 - **Sentence case everywhere**, no Title Case labels (the validator refuses
-  them). Two font weights and three explicit sizes, nothing more, none below
-  0.70 x the manuscript body size.
+  them). Two font weights and three explicit sizes, nothing more, all
+  between 0.70 and 0.90 x the manuscript body size.
 - **Not a dashboard.** A wall of equal-size cards says nothing about what
   matters. If the evidence row grows past five frames, group them or keep
   only the ones the claim needs.

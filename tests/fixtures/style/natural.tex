@@ -1,0 +1,5 @@
+The theta/beta ratio was once proposed as a marker of ADHD, yet its diagnostic value has varied from cohort to cohort \cite{arns2013}. Deep networks close part of that gap. They still carry thousands of parameters for cohorts of tens of children, and the features they learn are hard to read in physiological terms.
+
+We therefore trained a circuit with fewer than one hundred parameters. On the held-out children it reached a balanced accuracy of 0.71, close to the convolutional baseline at 0.73. The difference was not significant ($p = 0.42$).
+
+Label noise told a different story. With a fixed front end, accuracy fell by 0.12 per ten points of flipped labels; trained end to end, it fell almost twice as fast. A compact model does not protect against noisy diagnoses unless its encoder is frozen.

@@ -14,10 +14,14 @@ Public surface:
     extract_disqualifiers(body_text, source_name=...) -> list[str]  (raises DISQUALIFIERS_ABSENT)
     reconcile_verdicts(bullets, verdict_entries, draft_latex) -> list[dict]  (raises VERDICT_MISSING, VERDICT_BULLET_UNKNOWN)
     compute_outcome(reconciled) -> dict
+    cross_check_measurable(reconciled, draft_latex) -> list[dict]
     audit(contract_body, draft_latex, verdict_entries, source_name=...) -> dict
+    count_table_works(latex) -> int | None
+    row_count_finding(latex) -> str | None
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -119,4 +123,85 @@ def audit(
     """The whole-file entry point: extract, reconcile, decide."""
     bullets = extract_disqualifiers(contract_body, source_name=source_name)
     reconciled = reconcile_verdicts(bullets, verdict_entries, draft_latex)
-    return compute_outcome(reconciled)
+    return compute_outcome(cross_check_measurable(reconciled, draft_latex))
+
+
+def cross_check_measurable(reconciled: list[dict], draft_latex: str) -> list[dict]:
+    """Bullets whose breach a cheap deterministic measure can see are not
+    taken on the auditor's word: a `clear` verdict the measure contradicts
+    becomes `undecidable` carrying the measured finding under
+    `deterministic`. It never turns a verdict into `fires` -- the measure
+    reports, the auditor's quoted span still decides blocking (`Requirement:
+    Undecidable Is Reported, Not Blocking On Its Own`). Today the only such
+    bullet is contract 05's synthesis-table row count (spec S1 of
+    `odd/tasks/manuscript-polish-0-54.md`)."""
+    checked: list[dict] = []
+    for entry in reconciled:
+        if entry["bullet"] == ROW_COUNT_BULLET and entry["verdict"] == "clear":
+            finding = row_count_finding(draft_latex)
+            if finding is not None:
+                entry = {**entry, "verdict": "undecidable", "deterministic": finding}
+        checked.append(entry)
+    return checked
+
+
+# --- Section 05 synthesis table: deterministic work count -------------------
+# Spec S1 of `odd/tasks/manuscript-polish-0-54.md`: contract 05 requires the
+# synthesis table to place 7 to 12 works, the proposal's row not counted.
+# Counting rule, per `tabular`/`tabular*`/`tabularx` environment in the draft:
+# rows split on `\\`; rule commands dropped; rows before the first
+# `\midrule` are the header; a row made of a single `\multicolumn` is a
+# family group label; the last remaining row is the proposal. Works are the
+# remaining rows, summed over every table in the draft.
+
+MIN_WORKS = 7
+MAX_WORKS = 12
+
+# Verbatim bullet in `sections/05-related-work.md` `## Disqualifiers`.
+ROW_COUNT_BULLET = (
+    "Fewer than 7 or more than 12 works in the synthesis table, the proposal's row not counted."
+)
+
+_TABLE_RE = re.compile(
+    r"\\begin\{(tabularx|tabular\*|tabular)\}(.*?)\\end\{\1\}", re.DOTALL,
+)
+_RULE_RE = re.compile(
+    r"\\(?:toprule|bottomrule|hline|addlinespace|midrule)(?:\[[^\]]*\])?"
+    r"|\\cmidrule(?:\([^)]*\))?(?:\[[^\]]*\])?\{[^}]*\}"
+)
+_GROUP_ROW_RE = re.compile(r"^\\multicolumn\{\d+\}\{[^}]*\}\{.*\}$", re.DOTALL)
+
+
+def _table_works(body: str) -> int:
+    if "\\midrule" in body:
+        body = body.split("\\midrule", 1)[1]
+    else:
+        # No header rule: the first row is the header.
+        parts = body.split("\\\\", 1)
+        body = parts[1] if len(parts) == 2 else ""
+    rows = []
+    for raw in body.split("\\\\"):
+        row = _RULE_RE.sub("", raw).strip()
+        if not row or _GROUP_ROW_RE.match(row):
+            continue
+        rows.append(row)
+    return max(len(rows) - 1, 0)  # the last row is the proposal
+
+
+def count_table_works(latex: str) -> int | None:
+    """Works placed by every table in `latex`; `None` when it has no table."""
+    tables = _TABLE_RE.findall(latex)
+    if not tables:
+        return None
+    return sum(_table_works(body) for _, body in tables)
+
+
+def row_count_finding(latex: str) -> str | None:
+    """A one-line finding when the measured count is outside 7..12, else `None`."""
+    works = count_table_works(latex)
+    if works is None or MIN_WORKS <= works <= MAX_WORKS:
+        return None
+    return (
+        f"synthesis table places {works} works, outside {MIN_WORKS}-{MAX_WORKS} "
+        "(proposal row not counted)"
+    )

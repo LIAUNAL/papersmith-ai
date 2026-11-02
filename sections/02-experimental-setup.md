@@ -309,16 +309,19 @@ box appearing in both means one of them is wrong.
 
 ## Tables stay inside the text block
 
-A table prints inside `\textwidth` at a legible size, by the same rule as a figure:
-**no text in a table prints below 0.70 times the body font size** (7 pt in a 10 pt
-document).
+A table prints inside `\textwidth` at a legible size, by the same rule as a figure
+(labels, ticks, legends and annotations included): **every text in a table or a
+figure prints between 0.70 and 0.90 times the body font size** (7 to 9 pt in a 10 pt
+document): never smaller, and never at the body size.
 
 - **Rules are `booktabs`** — `\toprule`, `\midrule`, `\bottomrule` — with no vertical
   rules; a column of prose is a `tabularx` `X` column, so the table takes the text width
   instead of running past it.
-- **The table runs at the body size.** `\small` is the most it is reduced, and only
-  when the body is 11 pt or larger; `\footnotesize`, `\scriptsize` and `\tiny` are
-  never used inside a table when they fall below the floor.
+- **The table runs below the body size, inside the range.** `\footnotesize` fits it
+  at 10, 11 and 12 pt; `\small` only with a 10 pt body (above 0.90 at 11 and 12 pt);
+  never `\normalsize`, the default when the table declares no size; `\scriptsize`
+  and `\tiny` never when they fall below the floor (`\scriptsize` meets it only at
+  10 pt).
 - **A table is never scaled to fit.** No `\resizebox`, `\scalebox` or `adjustbox`
   below a factor of 0.85, and no `width=\textwidth` scaling of a `tabular`: scaling
   shrinks the text with the box.
@@ -357,7 +360,8 @@ ablation here — the rest surface them in the results, which this contract forb
 
 - **Sentences average 21–27 words.** Long enough to carry one claim and its qualifier, never a chain of three clauses.
 - **One voice for the whole paper.** First person plural (*we propose*) or impersonal (*this work introduces*), chosen once; procedures that were run go in the passive past (*was evaluated using*).
-- **Connectives the group uses** to move between claims: *However*, *Specifically*, *In particular*, *Moreover*, *Notably*, *Overall*. Each opens a sentence and does one job: contrast, narrowing, addition, emphasis, synthesis.
+- **Transitions come from the relation between claims, not from a list.** Name the relation first (contrast, cause, consequence, elaboration, example) and carry it with the sentence's own content: a clause (*yet*, *so*, *although*), a subject that points back (*that gap*, *this cost*), or no connector at all when the order of the sentences already says it. A stock connector (*However*, *Moreover*, *Notably*, *Specifically*, *In particular*, *Overall*, *Taken together*) is the exception: never the same one twice within five sentences, never most of a paragraph's openings, and a synthesis opener (*Overall*, *Taken together*) at most once per section.
+- ***because* and *where* keep their jobs.** *because* states a cause the method or the data establish, at most once every few sentences and never stacked (*because …, and because …*); *where* opens the clause after an equation that defines its symbols, and nowhere else in prose (use *in which*, *when*, or two sentences). An evaluation is its own sentence, not a trailing *, which indicates …*.
 - **The method has one name.** Expanded with its acronym at first use in each of the abstract and the body, then *the proposed* followed by the acronym.
 - **What ran is in the past tense; what a table holds is in the present.** *Each model
   was trained for*; *Table 3 lists the search ranges*.
@@ -434,8 +438,8 @@ ablation here — the rest surface them in the results, which this contract forb
 - Any element of execution in the closing diagram other than the repetition unit.
 - The full parameter table in the body when only some values were reasoned about, or
   an appendix table contradicting the body.
-- A table that runs past `\textwidth`, or whose text prints below 0.70 times the body
-  font size.
+- A table that runs past `\textwidth`, or whose text prints below 0.70 or above 0.90
+  times the body font size (a table left at the body size included).
 - A table scaled with `\resizebox`, `\scalebox` or `adjustbox` below 0.85, or scaled
   to `\textwidth`.
 - A table with vertical rules, or a table whose caption sits below it.

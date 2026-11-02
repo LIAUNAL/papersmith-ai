@@ -129,6 +129,7 @@ def canonical_tex(
         "conflicts": ("bm-conflicts-of-interest", "\\textbf{Conflicts of Interest:} None.\n"),
         "acknowledgments": ("bm-acknowledgments", "\\textbf{Acknowledgments:} Thanks.\n"),
         "ai-use": ("bm-ai-use-declaration", "\\textbf{Declaration of AI use:} The authors used a tool.\n"),
+        "appendices": ("bm-appendices", "\\appendix\n\\section{Parameters}\nThe full table.\n"),
     }
     for name in declarations:
         block_id, text = texts[name]
@@ -1078,7 +1079,9 @@ class BuildTests(VenueCase):
             "\\section{Conclusions}\\label{sec:conclusions}",
             "\\section*{Declarations}",
         ])
-        self.assertLess(text.index("\\bibliography{../../refs}"), text.index("\\section*{Declarations}"))
+        # back matter renders after the conclusions and before the references (S3)
+        self.assertLess(text.index("\\section{Conclusions}"), text.index("\\section*{Declarations}"))
+        self.assertLess(text.index("\\section*{Declarations}"), text.index("\\bibliography{../../refs}"))
         order = [bid for bid in parsed.order]
         self.assertEqual(order.index("introduction.block-1") < order.index("related-work.rw-preamble")
                          < order.index("materials-and-methods.mm-preamble"), True)
@@ -1087,6 +1090,61 @@ class BuildTests(VenueCase):
         self.assertEqual(manifest["canonical_sha256"], sha(self.paper / "main.tex"))
         self.assertEqual(manifest["output_sha256"], sha(venue_tex))
         self.assertEqual(manifest["document_class"], "elsarticle")
+
+    def built_order(self, text: str, sections=None, slug: str = "eswa") -> tuple:
+        """Build `text` (with every required declaration) and return the
+        venue file plus the positions of its back matter, bibliography and
+        appendix markers."""
+        self.write_canonical(text)
+        self.audited(slug, extras=[], **({"sections": sections} if sections is not None else {}))
+        self.ok("build", "--slug", slug)
+        out = (self.venue_dir(slug) / "main.tex").read_text()
+        return out, {
+            "conclusions": out.index("\\section{Conclusions}"),
+            "declarations": out.index("\\section*{Declarations}"),
+            "author": out.index("back-matter.bm-author-contributions begin"),
+            "ai": out.index("back-matter.bm-ai-use-declaration begin"),
+            "bibliography": out.index("\\bibliography{../../refs}"),
+            "appendix": out.index("back-matter.bm-appendices begin"),
+        }
+
+    def assert_back_matter_between_conclusions_and_references(self, at: dict) -> None:
+        self.assertLess(at["conclusions"], at["declarations"])
+        self.assertLess(at["declarations"], at["author"])
+        self.assertLess(at["author"], at["ai"], "the AI-use declaration is the last declaration")
+        self.assertLess(at["ai"], at["bibliography"], "the declarations come before the references")
+        self.assertLess(at["bibliography"], at["appendix"], "appendices follow the references")
+
+    def test_build_moves_declarations_written_after_the_bibliography_before_it(self) -> None:
+        names = ("author-contributions", "funding", "data-availability", "conflicts", "ai-use", "appendices")
+        out, at = self.built_order(canonical_tex(declarations=names))
+        self.assert_back_matter_between_conclusions_and_references(at)
+        self.assertEqual(out.count("\\bibliography{"), 1)
+        self.assertEqual(out.count("\\section*{Declarations}"), 1)
+
+    def test_build_keeps_the_ai_declaration_last_when_it_was_written_before_the_references(self) -> None:
+        # the QMLEEG shape: the AI declaration alone before the bibliography,
+        # the other declarations and the appendix after it
+        canonical = canonical_tex(declarations=("author-contributions", "funding", "data-availability",
+                                                "conflicts", "appendices"))
+        ai = block_bytes("back-matter.bm-ai-use-declaration",
+                         "\\section*{Declaration of AI use}\nThe authors used a tool.\n")
+        canonical = canonical.replace("\n\\bibliographystyle{", "\n" + ai + "\\bibliographystyle{", 1)
+        out, at = self.built_order(canonical)
+        self.assert_back_matter_between_conclusions_and_references(at)
+        self.assertEqual(out.count("\\bibliography{"), 1)
+
+    def test_build_keeps_back_matter_before_the_references_whatever_order_the_venue_lists(self) -> None:
+        sections = json.loads((FIXTURES / "requirements-elsevier.json").read_text())["sections"]
+        by_id = {s["id"]: s for s in sections}
+        listed = [dict(by_id["introduction"], order=1), dict(by_id["materials-and-methods"], order=2),
+                  dict(by_id["results-and-discussion"], order=3), dict(by_id["conclusions"], order=4),
+                  dict(by_id["back-matter"], order=5), dict(by_id["references"], order=6)]
+        names = ("author-contributions", "funding", "data-availability", "conflicts", "ai-use", "appendices")
+        for slug, venue_sections in (("eswa", listed), ("eswb", sections)):
+            with self.subTest(back_matter_order=next(s["order"] for s in venue_sections if s["id"] == "back-matter")):
+                _out, at = self.built_order(canonical_tex(declarations=names), sections=venue_sections, slug=slug)
+                self.assert_back_matter_between_conclusions_and_references(at)
 
     def test_the_venue_section_order_is_followed_not_the_canonical_one(self) -> None:
         sections = json.loads((FIXTURES / "requirements-elsevier.json").read_text())["sections"]
@@ -1136,7 +1194,10 @@ class BuildTests(VenueCase):
         self.assertLess(text.index("results-and-discussion.rd-general-task begin"),
                         text.index("\\bibliography{../../refs}"),
                         "sections the venue does not list stay ahead of the bibliography")
-        self.assertLess(text.index("\\bibliography{../../refs}"), text.index("\\section*{Declarations}"))
+        self.assertLess(text.index("results-and-discussion.rd-general-task begin"),
+                        text.index("\\section*{Declarations}"),
+                        "sections the venue does not list stay ahead of the back matter")
+        self.assertLess(text.index("\\section*{Declarations}"), text.index("\\bibliography{../../refs}"))
 
     def test_build_without_blockers_needs_no_plan(self) -> None:
         self.write_contracts(abstract_extent="**Extent** 200–240 words")

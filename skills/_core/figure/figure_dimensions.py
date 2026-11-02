@@ -25,10 +25,11 @@ Dimension Is Classified Into Exactly One Tier`):
                             answer is a judgement, not a pixel property.
 
 The vector verdicts (specs S2-S4 of `odd/tasks/figure-and-table-quality.md`)
-read the figure PDF itself, not its raster: `min-printed-font` (every text
-span, at its printed size, is at least 0.70 x the body font; the verdict is
-`print_scale.printed_font_report`'s), `background` (no filled rectangle
-covering the page), `whitespace` (no margin wider than `MAX_MARGIN_PT`
+read the figure PDF itself, not its raster: `printed-font-range` (every
+text span, at its printed size, is between 0.70 and 0.90 x the body font;
+the verdict is `print_scale.printed_font_report`'s; it was the floor-only
+`min-printed-font` before spec S2 of `odd/tasks/manuscript-polish-0-54.md`),
+`background` (no filled rectangle covering the page), `whitespace` (no margin wider than `MAX_MARGIN_PT`
 between the drawn content and the MediaBox) and `in-figure-title` (no title
 row above the plotting area: the caption carries it). The rule functions at
 the end of this module decide those verdicts from plain data (spans, path
@@ -40,7 +41,7 @@ the PDF stays with each caller.
 VERDICT_DIMENSIONS = (
     "out-of-bounds",
     "overlap",
-    "min-printed-font",
+    "printed-font-range",
     "background",
     "whitespace",
     "in-figure-title",
@@ -60,12 +61,13 @@ ALL_DIMENSIONS = VERDICT_DIMENSIONS + EVIDENCE_DIMENSIONS + SILENT_DIMENSIONS
 #: The reason a dimension is `unmeasured` by default. The former
 #: `legibility` silence (`LEGIBILITY_IS_A_THRESHOLD_JUDGEMENT`) is gone:
 #: spec S3 turned the threshold into a declared rule (0.70 x body at the
-#: printed size), so `min-printed-font` is a computed verdict whenever the
-#: figure PDF carries a text layer.
+#: printed size, widened to [0.70, 0.90] x body by S2 of
+#: `manuscript-polish-0-54`), so `printed-font-range` is a computed verdict
+#: whenever the figure PDF carries a text layer.
 DEFAULT_REASONS = {
     "out-of-bounds": "RASTER_NOT_MEASURED",
     "overlap": "RASTER_NOT_MEASURED",
-    "min-printed-font": "PDF_NOT_MEASURED",
+    "printed-font-range": "PDF_NOT_MEASURED",
     "background": "PDF_NOT_MEASURED",
     "whitespace": "PDF_NOT_MEASURED",
     "in-figure-title": "PDF_NOT_MEASURED",
@@ -74,6 +76,12 @@ DEFAULT_REASONS = {
     "style-quality": "VISUAL_JUDGEMENT_NOT_MEASURED",
     "overlap-ownership": "UNATTRIBUTED_INK",
 }
+
+
+#: Former dimension names, mapped to the one that replaced them. Kept for one
+#: release (0.54) so a reader holding a stored report can translate the key;
+#: no producer emits an alias, and the roster never lists one.
+DEPRECATED_DIMENSION_ALIASES = {"min-printed-font": "printed-font-range"}
 
 
 def default_visual():
@@ -208,22 +216,33 @@ def in_figure_title(spans, path_boxes, mediabox):
     }
 
 
-def min_printed_font_verdict(report):
-    """`min-printed-font` (S3), from a `print_scale.printed_font_report`
-    dict: its verdict, with the numbers that decided it."""
+def printed_font_range_verdict(report):
+    """`printed-font-range`, from a `print_scale.printed_font_report` dict:
+    its verdict, with the numbers that decided it. A failing verdict names
+    `TEXT_BELOW_PRINT_FLOOR` when any span prints below the floor (the
+    worse defect: unreadable), else `TEXT_ABOVE_PRINT_CAP`; every
+    offending span carries its `bound`."""
     verdict = report["verdict"]
+    offending = list(report["offending"])
     reason = None
     if verdict == "unmeasured":
         reason = "NO_TEXT_LAYER"
     elif verdict == "fail":
-        reason = "TEXT_BELOW_PRINT_FLOOR"
+        below = any(item.get("bound", "floor") == "floor" for item in offending)
+        reason = "TEXT_BELOW_PRINT_FLOOR" if below else "TEXT_ABOVE_PRINT_CAP"
     return {
         "verdict": verdict,
         "reason": reason,
         "bodyPt": report["body_pt"],
         "minPrintedPt": report["min_printed_pt"],
+        "maxPrintedPt": report["max_printed_pt"],
         "scale": report["scale"],
         "printedWidthPt": report["printed_width_pt"],
         "smallestPrintedPt": report["smallest_printed_pt"],
-        "offending": list(report["offending"]),
+        "largestPrintedPt": report["largest_printed_pt"],
+        "offending": offending,
     }
+
+
+#: Deprecated name of `printed_font_range_verdict` (until 0.55).
+min_printed_font_verdict = printed_font_range_verdict

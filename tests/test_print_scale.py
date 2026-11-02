@@ -36,6 +36,20 @@ SIZES_TEX = r"""\documentclass[border=4pt]{standalone}
 \end{document}
 """
 
+#: Two spans inside the 10 pt range [7, 9]: a 7.5 pt tick and an 8.5 pt label
+#: (Latin Modern scales freely; Computer Modern would round to 7 and 8 pt).
+IN_RANGE_TEX = r"""\documentclass[border=4pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{tikz}
+\begin{document}
+\begin{tikzpicture}
+\node at (0,0) {\fontsize{7.5}{9}\selectfont Tick};
+\node at (0,1) {\fontsize{8.5}{10}\selectfont Label eight};
+\end{tikzpicture}
+\end{document}
+"""
+
 BACKGROUND_TEX = r"""\documentclass[border=0pt]{standalone}
 \usepackage{tikz}
 \begin{document}
@@ -135,6 +149,11 @@ class ThresholdTests(unittest.TestCase):
         self.assertAlmostEqual(print_scale.min_printed_pt(11.0), 7.7)
         self.assertAlmostEqual(print_scale.min_printed_pt(10.0), 7.0)
 
+    def test_max_ratio_and_cap(self) -> None:
+        self.assertEqual(print_scale.MAX_RATIO, 0.90)
+        self.assertAlmostEqual(print_scale.max_printed_pt(11.0), 9.9)
+        self.assertAlmostEqual(print_scale.max_printed_pt(10.0), 9.0)
+
     def test_declared_width_converts_tex_points_to_pdf_points(self) -> None:
         width = print_scale.declared_width_pt(print_scale.TEXTWIDTH_PT["article-a4-10pt"], 0.5)
         self.assertAlmostEqual(width, 172.5 * 72 / 72.27, places=6)
@@ -148,6 +167,7 @@ class PdfMeasurementTests(unittest.TestCase):
         cls._dir = tempfile.TemporaryDirectory(prefix="print_scale_pdf_")
         directory = Path(cls._dir.name)
         cls.sizes = _compile(directory, "sizes", SIZES_TEX)
+        cls.in_range = _compile(directory, "in_range", IN_RANGE_TEX)
         cls.background = _compile(directory, "background", BACKGROUND_TEX)
         cls.tight = _compile(directory, "tight", _border_tex(0))
         cls.loose = _compile(directory, "loose", _border_tex(10))
@@ -178,15 +198,37 @@ class PdfMeasurementTests(unittest.TestCase):
         left, bottom, right, top = span["bbox"]
         self.assertGreater(top - bottom, right - left)
 
-    def test_six_point_span_passes_at_scale_one_and_a_half_for_an_eleven_point_body(self) -> None:
+    def test_six_point_span_meets_the_floor_at_scale_one_and_a_half_for_an_eleven_point_body(self) -> None:
         width = print_scale.content_bbox(self.sizes)["mediabox"][2] * 1.5
         report = print_scale.printed_font_report(self.sizes, width, 11.0)
-        self.assertEqual(report["verdict"], "pass", report)
         self.assertAlmostEqual(report["scale"], 1.5, places=4)
         self.assertAlmostEqual(report["smallest_printed_pt"], 9.0, delta=0.3)
         self.assertGreaterEqual(report["smallest_printed_pt"], report["min_printed_pdf_pt"])
         self.assertAlmostEqual(report["min_printed_pt"], 7.7)
+        self.assertEqual([item for item in report["offending"] if item["bound"] == "floor"], [])
+
+    def test_nine_point_labels_enlarged_by_one_and_a_half_fail_the_cap(self) -> None:
+        width = print_scale.content_bbox(self.sizes)["mediabox"][2] * 1.5
+        report = print_scale.printed_font_report(self.sizes, width, 11.0)
+        self.assertEqual(report["verdict"], "fail")
+        self.assertAlmostEqual(report["max_printed_pt"], 9.9)
+        self.assertAlmostEqual(report["max_printed_pdf_pt"], 9.9 * print_scale.TEX_PT_TO_PDF_PT, places=3)
+        self.assertAlmostEqual(report["largest_printed_pt"], 13.5, delta=0.3)
+        self.assertEqual(sorted(item["text"] for item in report["offending"]), ["Nine", "Rotated", "label"])
+        self.assertEqual({item["bound"] for item in report["offending"]}, {"cap"})
+
+    def test_every_span_inside_the_range_passes(self) -> None:
+        report = print_scale.printed_font_report(self.in_range, None, 10.0)
+        self.assertEqual(report["verdict"], "pass", report["offending"])
         self.assertEqual(report["offending"], [])
+        self.assertGreaterEqual(report["smallest_printed_pt"], report["min_printed_pdf_pt"])
+        self.assertLessEqual(report["largest_printed_pt"], report["max_printed_pdf_pt"])
+
+    def test_a_span_above_ninety_percent_of_the_body_fails_the_cap(self) -> None:
+        report = print_scale.printed_font_report(self.in_range, None, 9.0)
+        self.assertEqual(report["verdict"], "fail")
+        self.assertEqual(sorted(item["text"] for item in report["offending"]), ["Label", "eight"])
+        self.assertEqual({item["bound"] for item in report["offending"]}, {"cap"})
 
     def test_six_point_span_fails_at_natural_size(self) -> None:
         report = print_scale.printed_font_report(self.sizes, None, 11.0)

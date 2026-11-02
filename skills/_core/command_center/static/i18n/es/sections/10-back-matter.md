@@ -203,6 +203,15 @@ que con más probabilidad estará mal en el envío, porque nadie la trata como e
 La lista de bloques es la misma para todo artículo; dónde queda cada bloque y cómo se
 titula lo decide la editorial de la revista seleccionada (`venue select` la registra).
 
+**El material final se presenta después de las conclusiones y antes de las referencias, en toda revista.**
+En `main.tex` cada bloque de declaración queda por encima de la línea `\bibliography` (o del
+entorno `thebibliography`); la declaración de uso de IA, cuando es una sección propia, es
+la última de ellas, inmediatamente antes de las referencias.
+**Los apéndices siguen a las referencias**, salvo que las guías de la revista indiquen otra
+cosa; ninguna familia editorial de las siguientes lo hace. `verify` informa el orden
+(`back-matter-order`), y `venue build` siempre lo emite, sea cual sea el orden del archivo
+canónico.
+
 - **Elsevier.** Los highlights y un resumen gráfico se envían con el manuscrito.
   Contribuciones de los autores CRediT, una declaración de intereses en competencia y
   **el financiamiento dentro de los Agradecimientos**. La declaración de uso de IA es
@@ -309,7 +318,8 @@ configuración experimental contiene solo los valores que se razonaron.
 Identificados con letras, con subsecciones numeradas bajo su letra. **Cada apéndice se referencia
 desde la sección del cuerpo que lo necesita**; uno que nada referencia es peso muerto.
 
-Si el artículo tiene apéndices o no se decide para cada artículo.
+Si el artículo tiene apéndices o no se decide para cada artículo. Cuando los tiene, van
+después de las referencias, nunca entre las declaraciones.
 
 ## Highlights
 
@@ -386,8 +396,8 @@ de Abreviaturas.
 Cada bloque aquí es un hecho externo, no una decisión. Nada de ello se deriva del
 artículo, salvo los highlights, que comprimen lo que las conclusiones ya enuncian:
 se escriben al final, una vez que existen las conclusiones, y no llevan ninguna arista
-entre secciones porque el material final se presenta al último y no restringe ninguna
-otra sección.
+entre secciones porque el material final se presenta después de toda sección del cuerpo y no
+restringe ninguna otra sección.
 
 ### Entradas externas
 
@@ -427,6 +437,7 @@ otra sección.
 - La disponibilidad del código incorporada a la declaración de datos.
 - Un código de aprobación o una afirmación de consentimiento no copiados del registro de aprobación.
 - Una afiliación interesada conocida sin declarar.
+- Una declaración ubicada después de las referencias, o un apéndice ubicado antes de ellas.
 - Un apéndice o un elemento suplementario que ninguna sección del cuerpo referencia.
 - Contenido de un apéndice que contradice la configuración experimental.
 - Un highlight que afirma algo que las conclusiones no contienen, o un número que difiere

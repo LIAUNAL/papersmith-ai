@@ -79,7 +79,9 @@ a suggested change in words. You never write the change.
    `skills/experimental-implementation/assets/kit/ps_figures.py`
    (`apply_style(body_pt, printed_width_fraction)` then `save_figure(fig,
    path_pdf)`), which sets the printed size so every label, tick and legend
-   prints at least 0.70 x the manuscript body.
+   prints between 0.70 and 0.90 x the manuscript body (`place` refuses text
+   above the cap too: `FIGURE_TEXT_ABOVE_PRINT_CAP`). A plotting
+   script that sets its own font sizes is checked against that range.
 2. **Optimisation.** Look for per-sample Python loops where a batched or
    vectorised call exists; quantum-circuit simulation run with the
    parameter-shift rule when an exact-gradient simulator is available (for

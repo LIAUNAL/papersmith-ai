@@ -15,11 +15,20 @@ Spec S6 of `odd/tasks/figure-and-table-quality.md`. Given `paper/main.pdf`,
 - **figure-font** / **table-font**: the printed size of every text span
   inside a figure placement (an image or form XObject, i.e. an
   `\\includegraphics`) or a table region (a stack of horizontal rules:
-  booktabs or `\\hline`) against `print_scale.min_printed_pt(body)`.
-  Spans read from the compiled page already carry the placement transform,
-  so the size measured is the printed size.
+  booktabs or `\\hline`) against the printed range
+  [`print_scale.min_printed_pt(body)`, `print_scale.max_printed_pt(body)`]
+  = [0.70, 0.90] x body (the cap is spec S2 of
+  `odd/tasks/manuscript-polish-0-54.md`). Each finding names its `bound`
+  (`floor` or `cap`). Spans read from the compiled page already carry
+  the placement transform, so the size measured is the printed size.
 - **overfull**: every `Overfull \\hbox` of `main.log`, with its source lines
   and the page it was shipped on.
+- **language** / **placeholder**: Spanish prose and placeholder markers
+  (`por definir`, `TODO`, `TBD`, `FIXME`) in `main.tex`'s prose, through
+  `paper-writing/scripts/paper_language.py` (spec S4 of
+  `odd/tasks/manuscript-polish-0-54.md`): the manuscript is English unless
+  it declares another language. Each names its source line and, when found
+  in the compiled text, its page.
 
 Why the PDF and not a browser: Playwright renders HTML, not PDFs, so it
 cannot see where pdfTeX put a glyph. The geometry comes from pypdfium2
@@ -60,6 +69,9 @@ RENDER_DPI = 100
 SCHEMA_VERSION = 1
 #: An object may pass the inferred text block by this much (PDF points).
 OVERFLOW_TOLERANCE_PT = 1.0
+#: Span sizes carry 3 decimals; a span set exactly at the 0.90 x body
+#: cap must not fail on that rounding (PDF points).
+CAP_TOLERANCE_PT = 1e-3
 #: The first body glyph sits below the block top by the ascender gap
 #: (`\topskip` minus the cap height); a float flush with the block top
 #: must not read as an overflow, so the top edge allows half a body size.
@@ -266,6 +278,50 @@ def _keep(findings: list[dict], counts: Counter, finding: dict) -> None:
         findings.append(finding)
 
 
+# ---------------------------------------------------------------------------
+# language (spec S4 of odd/tasks/manuscript-polish-0-54.md)
+# ---------------------------------------------------------------------------
+
+def _paper_language():
+    """`paper-writing/scripts/paper_language.py`, imported on demand: one
+    detector for the write gate, `verify` and this report."""
+    scripts = Path(__file__).resolve().parents[2] / "paper-writing" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import paper_language  # noqa: PLC0415
+    return paper_language
+
+
+def _fold(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def language_findings(tex_text: str, page_texts: list[str] | None = None) -> list[dict]:
+    """A `language` finding per Spanish prose line and a `placeholder`
+    finding per placeholder marker of `main.tex` (`paper_language.scan`:
+    English unless the paper declares another language). Each finding
+    names its `main.tex` line and, when `page_texts` (the compiled text of
+    each page) holds the line's opening words, the page it printed on;
+    otherwise `page` is `None`."""
+    report = _paper_language().scan(tex_text)
+    folded = [_fold(text) for text in (page_texts or [])]
+
+    def page_of(text: str) -> int | None:
+        probe = _fold(" ".join(text.split()[:4]))
+        for index, page in enumerate(folded):
+            if probe and probe in page:
+                return index + 1
+        return None
+
+    findings = [{"kind": "language", "page": page_of(hit["text"]), "line": hit["line"],
+                 "object": "text", "language": report["language"], "snippet": hit["text"][:80]}
+                for hit in report["spanish"]]
+    findings += [{"kind": "placeholder", "page": page_of(hit["text"]), "line": hit["line"],
+                  "object": "text", "marker": hit["marker"], "snippet": hit["text"][:80]}
+                 for hit in report["placeholders"]]
+    return findings
+
+
 def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
     """Measure `paper_dir/main.pdf` and return the report (not written)."""
     paper_dir = Path(paper_dir)
@@ -278,6 +334,8 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
     body_pdf = body_pt * print_scale.TEX_PT_TO_PDF_PT
     floor_tex = print_scale.min_printed_pt(body_pt)
     floor_pdf = floor_tex * print_scale.TEX_PT_TO_PDF_PT
+    cap_tex = print_scale.max_printed_pt(body_pt)
+    cap_pdf = cap_tex * print_scale.TEX_PT_TO_PDF_PT
 
     document = pdfium.PdfDocument(str(pdf))
     pages: list[dict] = []
@@ -349,23 +407,42 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
                               ("table", tables_here)):
             for region in regions:
                 inside = [s for s in page["spans"] if _inside(s["bbox"], region)]
-                small = [s for s in inside if s["size_pt"] + 1e-6 < floor_pdf]
+                outside = []
+                for span in inside:
+                    if span["size_pt"] + 1e-6 < floor_pdf:
+                        outside.append((span, "floor"))
+                    elif span["size_pt"] - CAP_TOLERANCE_PT > cap_pdf:
+                        outside.append((span, "cap"))
                 smallest = min((s["size_pt"] for s in inside), default=None)
+                largest = max((s["size_pt"] for s in inside), default=None)
                 row = {"page": number, "bbox": _round_box(region), "span_count": len(inside),
                        "smallest_printed_pt": None if smallest is None else round(smallest, 2),
-                       "verdict": "unmeasured" if not inside else ("fail" if small else "pass")}
+                       "largest_printed_pt": None if largest is None else round(largest, 2),
+                       "verdict": "unmeasured" if not inside else ("fail" if outside else "pass")}
                 (figures if kind == "figure" else tables).append(row)
-                for span in small:
+                for span, bound in outside:
                     _keep(findings, counts, {"kind": f"{kind}-font", "page": number, "object": "text",
                                              "bbox": _round_box(span["bbox"]),
                                              "printed_pt": round(span["size_pt"], 2),
                                              "min_printed_pt": round(floor_pdf, 2),
+                                             "max_printed_pt": round(cap_pdf, 2),
+                                             "bound": bound,
                                              "snippet": span["text"][:80]})
 
     log = paper_dir / "main.log"
     if log.is_file():
         for finding in overfull_boxes(log.read_text(encoding="utf-8", errors="replace")):
             _keep(findings, counts, finding)
+
+    language_warning = None
+    if tex.is_file():
+        try:
+            page_texts = [" ".join(span["text"] for span in page["spans"]) for page in pages]
+            for finding in language_findings(tex.read_text(encoding="utf-8", errors="replace"),
+                                             page_texts):
+                _keep(findings, counts, finding)
+        except Exception as exc:  # noqa: BLE001 - a language scan failure never fails the pass
+            language_warning = f"language scan not run: {type(exc).__name__}: {exc}"[:300]
 
     rendered, render_warning = ({}, None)
     if render:
@@ -386,6 +463,8 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         "body_source": body_source,
         "min_printed_pt": floor_tex,
         "min_printed_pdf_pt": round(floor_pdf, 3),
+        "max_printed_pt": cap_tex,
+        "max_printed_pdf_pt": round(cap_pdf, 3),
         "tolerance_pt": OVERFLOW_TOLERANCE_PT,
         "pages": page_rows,
         "figures": figures,
@@ -393,7 +472,7 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         "findings": findings,
         "summary": {"findings": sum(counts.values()), "by_kind": dict(sorted(by_kind.items())),
                     "pages": len(page_rows)},
-        "warnings": [render_warning] if render_warning else [],
+        "warnings": [w for w in (render_warning, language_warning) if w],
     }
 
 

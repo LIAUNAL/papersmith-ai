@@ -36,6 +36,11 @@
     if (finding.kind === 'overflow') {
       return t('qa.detail.overflow', { object: finding.object, excess: finding.excess_pt });
     }
+    // A text span outside [0.70, 0.90] x body names the bound it violated:
+    // a span above the cap is shown against the cap, never the floor.
+    if (finding.bound === 'cap') {
+      return t('qa.detail.fontCap', { printed: finding.printed_pt, cap: finding.max_printed_pt });
+    }
     return t('qa.detail.font', { printed: finding.printed_pt, floor: finding.min_printed_pt });
   }
 
@@ -79,7 +84,10 @@
     status.appendChild(el('span', { class: `badge ${summary.findings ? 'badge--bad' : 'badge--ok'}` },
       summary.findings ? t('qa.findings', { count: summary.findings }) : t('qa.clean')));
     status.appendChild(el('span', { class: 'qa-status__meta' },
-      ` ${t('qa.meta', { pages: summary.pages || 0, body: report.body_pt, floor: report.min_printed_pt })}`));
+      ` ${t('qa.meta', {
+        pages: summary.pages || 0, body: report.body_pt,
+        floor: report.min_printed_pt, cap: report.max_printed_pt,
+      })}`));
     if (data.stale) status.appendChild(el('span', { class: 'badge badge--warn' }, t('qa.stale')));
     container.appendChild(status);
     (report.warnings || []).forEach((warning) => {

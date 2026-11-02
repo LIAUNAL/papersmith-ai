@@ -75,7 +75,7 @@ class VerifyAtlasLayerTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         out = json.loads(proc.stdout)
         self.assertEqual(sorted(out), ["checks", "clean", "command", "fails", "holds",
-                                       "status", "unmeasured"])
+                                       "status", "structure", "unmeasured"])
 
 
 if __name__ == "__main__":

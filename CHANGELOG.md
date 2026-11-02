@@ -11,6 +11,70 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.54.0
+
+### Added
+
+- **Related-work synthesis table of 7 to 12 works**: contract 05 Block 5 fixes
+  the table — 7 to 12 works chosen by relevance to the pillars and
+  contributions, every family with a row, the proposal as the last row,
+  columns tied to declared pillars, contributions or properties, and concise
+  symbol cells the caption decodes. The redactor chooses the layout
+  (checkmark matrix, attribute table or rows grouped by family) and states
+  why. Four new disqualifiers; `paper_audit` cross-checks the row count.
+- **English-only manuscript**: `paper_language.py` detects Spanish text and
+  placeholder markers (`por definir`, `TODO`, `TBD`, `FIXME`, `\todo`).
+  `write` refuses `DRAFT_NOT_ENGLISH` and `DRAFT_PLACEHOLDER_TEXT`, `verify`
+  gains a `language` check, and manuscript QA reports both. A paper that
+  declares another main language is exempt from the Spanish check only.
+- **Flow and redundancy measures**: `paper_ai_metrics.analyze_flow` reports
+  stock-connector density and repetition, repeated sentence openings,
+  *because*/*where*/*, which* density (the symbol-defining *where* after an
+  equation is exempt), repeated phrases across paragraphs, near-duplicate
+  sentences and template phrasing, each located by sentence and paragraph.
+  `write` shows it under `styleQuality.flow`, `ai_audit` per block and
+  manuscript-wide, and `humanize` returns rewrite guidance and refuses
+  `--apply` while the flow verdict needs revision.
+- **`back-matter-order` structural check**: `verify` reports it under its own
+  `structure` key and `clean` requires it to pass.
+
+### Changed
+
+- **Figure and table text prints between 0.70 and 0.90 x body**: the printed
+  size is a range, not a floor. `figure-review measure` reports
+  `printed-font-range` (`min-printed-font` kept as a deprecated alias) with
+  the violated `bound`; `place` refuses `FIGURE_TEXT_ABOVE_PRINT_CAP`; the
+  diagram audit checks `font_range`; `ps_figures` sizes labels at 0.80 and
+  ticks and legends at 0.75 x body; the table lint warns on a table left at
+  the body size; contracts 02, 03 and 05, the figure and diagram agents and
+  the skills state the range. The manuscript QA panel shows an above-cap
+  finding against the cap and its summary shows the whole range.
+- **Back matter before the references**: declarations (the AI-use
+  declaration last) render after the conclusions and before the
+  bibliography for every venue, and appendices after it; `venue build` emits
+  that order whatever the venue lists or the canonical file holds
+  (contract 10).
+- **Writing rules for transitions**: contracts 01-08 replace the fixed
+  connective list with transitions taken from the relation between claims,
+  and keep *because* for established causes and *where* for the clause after
+  an equation; contract 03 varies its explanation forms. The ai-auditor and
+  redactor agents carry before/after examples and a redundancy pass.
+- **English author placeholder**: contract 09, the paper-writing skill and
+  the redactor and paper-reviewer agents blind the authors with an English
+  placeholder.
+- **Spanish contract copies** in the command center mirror every contract
+  change of this release.
+
+### Fixed
+
+- Contract 03 allowed a synthesis opener once per section while closing each
+  subsection on a *Taken together* synthesis; it now allows one per
+  subsection.
+- Contract 05 sent its synthesis table to the table rules with floor-only
+  wording; it now names the 0.70-0.90 x body range.
+- `proposal-implementation`, `docs/cli.md` and the `visual-finding-boundary`
+  spec still stated the 0.70 floor or the `min-printed-font` name.
+
 ## 0.53.0
 
 ### Added

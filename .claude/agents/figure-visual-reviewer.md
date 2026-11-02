@@ -44,8 +44,8 @@ correct rather than incomplete.
 1. **The audit summary** the caller passes: `verdict`, `failures`,
    `messages`, and for paper figures `audit.print` (body size, printed
    width, role font sizes). It already answered overfull boxes, relative
-   size switches, overlapping text spans, the 0.70 x body font floor at the
-   printed width, background and margins. Do **not** re-derive any of them,
+   size switches, overlapping text spans, the [0.70, 0.90] x body font
+   range at the printed width, background and margins. Do **not** re-derive any of them,
    and never contradict a measured `pass` by eye.
 2. **One image, once.** If the caller gave a PNG of at most 1400 px, read
    it. If it gave a PDF, make the preview yourself, in a temporary folder,

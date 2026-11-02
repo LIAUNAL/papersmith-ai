@@ -1316,8 +1316,13 @@ class EndToEndCompileTests(unittest.TestCase):
             return
         source = (FIXTURES_DIR / "success" / "success.tex").read_text(encoding="utf-8")
         (self.paper_dir / "Figures" / "diagE2E.tex").write_text(source, encoding="utf-8")
+        # The fixture is a two-node picture about 114 pt wide with 10 pt
+        # labels: placed at the full text width its labels would print near
+        # 30 pt, above the 0.90 x body cap. Declared at the width it is
+        # included at (0.26 \textwidth) they print near 7.8 pt, inside range.
         (self.paper_dir / "Figures" / "diagE2E.diagram.json").write_text(
-            json.dumps({"components": ["encoder", "decoder"]}), encoding="utf-8",
+            json.dumps({"components": ["encoder", "decoder"], "widthFraction": 0.26}),
+            encoding="utf-8",
         )
         result = paper_figure.render(self.paper_dir, "diagE2E")
         report = {"endToEnd": "ok" if result["verdict"] == "success" else "unmeasured"}

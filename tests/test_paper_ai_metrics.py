@@ -593,3 +593,156 @@ class StyleCallerMigrationTests(unittest.TestCase):
                 self.assertNotIn("pdf.aiRisk", text)
                 self.assertNotIn("AI Risk", text)
         self.assertIn("pdf.styleNeedsRevision", (static / "index.html").read_text(encoding="utf-8"))
+
+
+_STYLE_FIXTURES = REPO / "tests" / "fixtures" / "style"
+
+
+def _fixture(name: str) -> str:
+    return (_STYLE_FIXTURES / name).read_text(encoding="utf-8")
+
+
+def _categories(flow: dict) -> set[str]:
+    return {f["category"] for f in flow["findings"]}
+
+
+class FlowAndRedundancyTests(unittest.TestCase):
+    """S5 (manuscript-polish-0-54): transitions, openings, because/where,
+    redundancy and template phrasing are measured, located and quoted; the
+    symbol-defining "where" after an equation stays exempt."""
+
+    def setUp(self) -> None:
+        self.robotic = metrics.analyze_style(_fixture("robotic.tex"))["flow"]
+
+    def test_repeated_and_dense_stock_connectors_are_flagged_with_locations(self) -> None:
+        repeats = [f for f in self.robotic["findings"] if f["category"] == "connector_repeat"]
+        self.assertEqual({f["span"] for f in repeats}, {"however", "moreover", "notably", "overall"})
+        first = next(f for f in repeats if f["span"] == "however")
+        self.assertEqual((first["sentence"], first["paragraph"], first["previous_sentence"]), (2, 1, 1))
+        self.assertIn("connector_density", _categories(self.robotic))
+        self.assertIn("synthesis_repeat", _categories(self.robotic))
+        self.assertEqual(self.robotic["connectors"]["opening_counts"]["however"], 3)
+
+    def test_repeated_openings_and_demonstrative_openers_are_flagged(self) -> None:
+        flow = metrics.analyze_flow(
+            "This result holds on every fold. This pattern is stable across seeds. "
+            "This gap closes with depth. Accuracy rose with depth. The model was small. "
+            "The model was fast. These findings extend to noise."
+        )
+        self.assertIn("opening_repeat", _categories(flow))
+        demo = [f for f in flow["findings"] if f["category"] == "demonstrative_opener"]
+        self.assertEqual([f["span"] for f in demo],
+                         ["This result", "This pattern", "This gap", "These findings"])
+
+    def test_because_and_prose_where_density_is_flagged(self) -> None:
+        cats = _categories(self.robotic)
+        self.assertIn("because_density", cats)
+        self.assertIn("where_prose", cats)
+        self.assertIn("which_tail", cats)
+        self.assertEqual(self.robotic["clauses"]["because"]["count"], 3)
+        self.assertEqual(self.robotic["clauses"]["where_prose"]["count"], 3)
+
+    def test_the_symbol_defining_where_after_an_equation_is_exempt(self) -> None:
+        flow = metrics.analyze_flow(_fixture("equation_where.tex"))
+        self.assertEqual(flow["clauses"]["where_prose"]["count"], 0)
+        self.assertEqual(flow["clauses"]["where_prose"]["exempt_equation_where"], 3)
+        self.assertFalse({"where_prose", "clause_repeat"} & _categories(flow))
+
+    def test_cross_paragraph_repetition_and_near_duplicates_are_flagged(self) -> None:
+        phrases = [f for f in self.robotic["findings"] if f["category"] == "repeated_phrase"]
+        self.assertTrue(any("single shot angle arm" in f["span"] for f in phrases))
+        self.assertTrue(all(len(f["paragraphs"]) >= 2 and f["count"] >= 3 for f in phrases))
+        dups = [f for f in self.robotic["findings"] if f["category"] == "near_duplicate"]
+        self.assertEqual(len(dups), 1)
+        self.assertIn("expressivity it promises", dups[0]["span"])
+
+    def test_template_phrasing_is_flagged(self) -> None:
+        labels = {f["template"] for f in self.robotic["robotic_templates"]["findings"]}
+        self.assertTrue({"in_this_context", "plays_a_role", "this_highlights", "serves_as",
+                         "evaluative_which_tail"} <= labels)
+
+    def test_robotic_text_needs_revision_and_natural_text_is_clear(self) -> None:
+        self.assertEqual(self.robotic["flow_verdict"], "needs_revision")
+        natural = metrics.analyze_flow(_fixture("natural.tex"))
+        self.assertEqual(natural["findings"], [])
+        self.assertEqual(natural["flow_verdict"], "clear")
+        legacy_clean = metrics.analyze_flow(
+            "We evaluated the proposed classifier on 54 subjects from the public PhysioNet dataset. "
+            "All recordings were acquired at 160 Hz using a standard 64-channel montage. "
+            "Specifically, artifacts caused by ocular movements were removed using independent component analysis. "
+            "The filtered signals were subsequently segmented into 3-second non-overlapping epochs. "
+            "Overall, the median classification accuracy reached 84.5% across five cross-validation folds."
+        )
+        self.assertEqual(legacy_clean["flow_verdict"], "clear")
+
+    def test_guidance_names_the_relation_and_keeps_facts_and_the_declaration(self) -> None:
+        guidance = " ".join(self.robotic["guidance"])
+        for word in ("contrast, cause, consequence, elaboration, example", "F5", "AI-use declaration"):
+            self.assertIn(word, guidance)
+
+    def test_existing_style_keys_and_score_are_unchanged(self) -> None:
+        text = _fixture("robotic.tex")
+        result = metrics.analyze_style(text)
+        for key in ("style_score", "style_verdict", "monotone_cadence", "overused_phrasing", "burstiness",
+                    "cliches", "lexical_diversity", "sentences", "disclosure_notice", "composite_score",
+                    "verdict", "deprecated_keys"):
+            self.assertIn(key, result)
+        result.pop("flow")
+        with mock.patch.object(metrics, "analyze_flow", return_value={}):
+            again = metrics.analyze_style(text)
+        again.pop("flow")
+        self.assertEqual(result, again)
+
+
+class FlowCliTests(unittest.TestCase):
+    """ai_audit and humanize carry the flow findings; previous keys and
+    refusals hold."""
+
+    def test_ai_audit_file_reports_flow_beside_previous_keys(self) -> None:
+        rel = (_STYLE_FIXTURES / "robotic.tex").relative_to(REPO)
+        code, payload = _run_cli(["ai_audit", "--file", str(rel)])
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["flow"]["flow_verdict"], "needs_revision")
+        for key in ("style_score", "style_verdict", "overused_phrasing", "composite_score", "verdict"):
+            self.assertIn(key, payload)
+
+    def test_ai_audit_all_reports_manuscript_and_block_flow(self) -> None:
+        paper_dir, _ = _style_paper("style_flow_all", _fixture("robotic.tex"))
+        self.addCleanup(shutil.rmtree, paper_dir, True)
+        code, payload = _run_cli(["ai_audit", "--all", "--paper", str(paper_dir.relative_to(REPO))])
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["flow"]["flow_verdict"], "needs_revision")
+        self.assertEqual(payload["blocks"]["b1"]["flow_verdict"], "needs_revision")
+        for key in ("style_score", "overused_phrasing_count", "cliches_count", "composite_score"):
+            self.assertIn(key, payload["blocks"]["b1"])
+
+    def test_humanize_reports_flow_and_refuses_to_apply_a_draft_that_needs_revision(self) -> None:
+        body = _fixture("robotic.tex")
+        paper_dir, main_tex = _style_paper("style_flow_humanize", body)
+        self.addCleanup(shutil.rmtree, paper_dir, True)
+        rel = str(paper_dir.relative_to(REPO))
+        code, payload = _run_cli(["humanize", "--block", "b1", "--replacement", body, "--paper", rel])
+        self.assertEqual(code, 0)
+        self.assertFalse(payload["meets_flow_target"])
+        self.assertEqual(payload["flow_verdict"], "needs_revision")
+        self.assertIn("AI-use declaration", " ".join(payload["revision_guidance"]))
+        for key in ("block", "f5_invariants_preserved", "style_target", "meets_style_target", "applied",
+                    "metrics", "disclosure_notice", "target_score", "meets_target"):
+            self.assertIn(key, payload)
+        before = main_tex.read_bytes()
+        code, payload = _run_cli(["humanize", "--block", "b1", "--replacement", body, "--paper", rel,
+                                  "--apply", "--style-target", "1.0"])
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["code"], "TARGET_SCORE_UNMET")
+        self.assertIn("flow", payload["detail"])
+        self.assertEqual(main_tex.read_bytes(), before)
+
+    def test_humanize_f5_still_refuses_a_changed_number(self) -> None:
+        body = _fixture("robotic.tex")
+        paper_dir, _ = _style_paper("style_flow_f5", body)
+        self.addCleanup(shutil.rmtree, paper_dir, True)
+        draft = body.replace("0.71", "0.81")
+        code, payload = _run_cli(["humanize", "--block", "b1", "--replacement", draft,
+                                  "--paper", str(paper_dir.relative_to(REPO)), "--apply", "--force"])
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["code"], "F5_INVARIANT_VIOLATION")

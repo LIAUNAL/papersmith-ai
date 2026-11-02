@@ -1,8 +1,9 @@
 """diagram_audit: the one mechanical audit every TikZ diagram passes.
 
-Specs S1 and S3 of `odd/tasks/figure-and-table-quality.md`: a diagram never
-overflows, never overlaps, never prints text below 70 % of the manuscript
-body size, and exports without a background or wasted margin. Both diagram
+Specs S1 and S3 of `odd/tasks/figure-and-table-quality.md` (and S2 of
+`odd/tasks/manuscript-polish-0-54.md`): a diagram never overflows, never
+overlaps, prints every text between 70 % and 90 % of the manuscript body
+size, and exports without a background or wasted margin. Both diagram
 producers call this module, so the rules cannot drift between them:
 
 * `skills/experiment-diagrams/scripts/diagram_cli.py` (`render`, `audit`,
@@ -24,8 +25,10 @@ Checks, each `pass` | `fail` | `unmeasured` (with a reason):
     text_overlap    no two text spans intersect, and no span crosses the
                     boundary of a drawn closed shape (a node frame, an arrow
                     tip) unless it lies wholly inside it
-    font_floor      every span prints at >= 0.70 x the body size at the
-                    declared inclusion width (`print_scale.printed_font_report`)
+    font_range      every span prints within [0.70, 0.90] x the body size at
+                    the declared inclusion width
+                    (`print_scale.printed_font_report`); `font_floor` before
+                    0.54
     margins         no background canvas (a full-page fill, or a first-drawn filled
                     shape enclosing every other shape), no content past the
                     page edge, and every content margin to the MediaBox
@@ -71,8 +74,14 @@ RELATIVE_SIZE_SWITCHES = (
 _SWITCH_RE = re.compile(r"\\(" + "|".join(RELATIVE_SIZE_SWITCHES) + r")(?![A-Za-z@])")
 _OVERFULL_RE = re.compile(r"Overfull \\[hv]box \([^)]*\)[^\n]*")
 
-#: Ratio of each diagram role to the body size, before the 0.70 floor.
-ROLE_RATIOS = {"claim": 1.0, "spine": 0.9, "note": 0.8}
+#: Ratio of each diagram role to the body size, inside the print range
+#: [`print_scale.MIN_RATIO`, `print_scale.MAX_RATIO`] = [0.70, 0.90]. The
+#: claim line is the largest (it is read first), the spine boxes one step
+#: below, notes and edge labels one more. Each keeps >= 2 % of headroom from
+#: both bounds, so the `standalone` border's ~1 % difference between the
+#: drawn width and the declared inclusion width never pushes a role out of
+#: range, and the steps (~0.6 pt at 10 pt) stay visible.
+ROLE_RATIOS = {"claim": 0.88, "spine": 0.82, "note": 0.76}
 
 #: Glyph boxes are tight but anti-aliasing-free; this much interior
 #: penetration is the least that counts as a collision (PDF points).
@@ -97,14 +106,17 @@ def default_text_width_pt(body_pt: float) -> float:
 
 def role_font_pt(body_pt: float, scale: float = 1.0) -> dict:
     """Explicit font sizes (TeX points) per diagram role so that each prints
-    at >= `print_scale.MIN_RATIO` x body once the figure is scaled by
-    `scale` (printed width / natural width). Never below the floor; sizes
-    grow when `scale < 1`, they never shrink to fit."""
+    at `ROLE_RATIOS[role]` x body, inside [`print_scale.MIN_RATIO`,
+    `print_scale.MAX_RATIO`] x body, once the figure is scaled by `scale`
+    (printed width / natural width): sizes grow when `scale < 1` and shrink
+    when `scale > 1`, so the printed size, not the source size, is fixed."""
     scale = max(float(scale), 1e-6)
-    floor = print_scale.min_printed_pt(body_pt) / scale
+    floor = print_scale.min_printed_pt(body_pt)
+    cap = print_scale.max_printed_pt(body_pt)
     sizes = {}
     for role, ratio in ROLE_RATIOS.items():
-        sizes[role] = round(max(ratio * float(body_pt), floor) + 1e-9, 2)
+        printed = min(max(ratio * float(body_pt), floor), cap)
+        sizes[role] = round(printed / scale + 1e-9, 2)
     return sizes
 
 
@@ -257,11 +269,11 @@ def audit_diagram(pdf: Path, *, body_pt: float, printed_width_pt: float | None,
     pdf = Path(pdf)
     try:
         collisions = text_collisions(pdf)
-        floor = print_scale.printed_font_report(pdf, printed_width_pt, body_pt)
+        font = print_scale.printed_font_report(pdf, printed_width_pt, body_pt)
         box = print_scale.content_bbox(pdf)
     except Exception as exc:  # an unreadable PDF measures nothing, never passes
         reason = f"PDF_UNREADABLE: {type(exc).__name__}: {exc}"
-        for name in ("text_overlap", "font_floor", "margins"):
+        for name in ("text_overlap", "font_range", "margins"):
             checks[name] = _check("unmeasured", reason)
     else:
         if collisions["span_count"] == 0:
@@ -269,8 +281,8 @@ def audit_diagram(pdf: Path, *, body_pt: float, printed_width_pt: float | None,
         else:
             failed = collisions["span_collisions"] or collisions["boundary_crossings"]
             checks["text_overlap"] = _check("fail" if failed else "pass", **collisions)
-        checks["font_floor"] = _check(floor["verdict"], floor["reason"],
-                                      **{k: v for k, v in floor.items() if k not in ("verdict", "reason")})
+        checks["font_range"] = _check(font["verdict"], font["reason"],
+                                      **{k: v for k, v in font.items() if k not in ("verdict", "reason")})
         margins = box["margins"]
         if margins is None:
             checks["margins"] = _check("unmeasured", "EMPTY_PAGE", **box, max_margin_pt=max_margin_pt)
@@ -296,6 +308,7 @@ def audit_diagram(pdf: Path, *, body_pt: float, printed_width_pt: float | None,
         "body_pt": float(body_pt),
         "printed_width_pt": None if printed_width_pt is None else round(float(printed_width_pt), 3),
         "min_printed_pt": print_scale.min_printed_pt(body_pt),
+        "max_printed_pt": print_scale.max_printed_pt(body_pt),
         "checks": checks,
     }
 
@@ -315,9 +328,14 @@ def failure_messages(report: dict) -> list:
             messages += [f"text_overlap: {' / '.join(item['texts'])}" for item in check.get("span_collisions", [])]
             messages += [f"text_overlap: {item['text']!r} crosses a drawn shape {item['shape']}"
                          for item in check.get("boundary_crossings", [])]
-        elif name == "font_floor":
-            messages += [f"font_floor: {item['text']!r} prints at {item['printed_pt']} pt < "
-                         f"{check.get('min_printed_pdf_pt')} pt" for item in check.get("offending", [])]
+        elif name == "font_range":
+            for item in check.get("offending", []):
+                if item.get("bound") == "cap":
+                    messages.append(f"font_range: {item['text']!r} prints at {item['printed_pt']} pt > "
+                                    f"{check.get('max_printed_pdf_pt')} pt")
+                else:
+                    messages.append(f"font_range: {item['text']!r} prints at {item['printed_pt']} pt < "
+                                    f"{check.get('min_printed_pdf_pt')} pt")
         elif name == "margins":
             if check.get("full_page_background") or check.get("background_shape"):
                 messages.append("margins: a background canvas is drawn behind the picture; export without one")

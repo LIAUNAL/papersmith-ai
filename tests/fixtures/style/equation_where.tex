@@ -1,0 +1,18 @@
+Each window is re-referenced to the common average:
+\begin{equation}
+\tilde{e}_{c}(t) = e_{c}(t) - \frac{1}{C}\sum_{c'=1}^{C} e_{c'}(t),
+\label{eq:car}
+\end{equation}
+where $e_{c}(t)$ and $\tilde{e}_{c}(t)$ denote the filtered and re-referenced signals of channel $c$, and $C$ is the number of channels.
+The decision is taken per child from the mean posterior of its windows:
+\begin{equation}
+\bar{p}_{s} = \frac{1}{n_{s}} \sum_{i} p_{i},
+\label{eq:subject}
+\end{equation}
+where $\bar{p}_{s}$ is the subject posterior and $n_{s}$ the number of windows of child $s$.
+The readout is linear in the expectation values,
+\begin{equation}
+z = \mathbf{w}^{\top}\mathbf{q} + b,
+\label{eq:readout}
+\end{equation}
+where $\mathbf{w}$ and $b$ are trained jointly with the circuit.

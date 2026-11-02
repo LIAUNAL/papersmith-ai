@@ -1165,7 +1165,7 @@ Runs the visual QA of the compiled manuscript through the workspace's
 interpreter (it needs pypdfium2). It infers the text block of each page of
 `paper/main.pdf` from its body lines and reports every text span, image, figure
 or drawing passing it by more than 1 pt (`overflow`), text inside a figure or a
-ruled table that prints below 0.70 × the body size (`figure-font`,
+ruled table that prints outside 0.70–0.90 × the body size (`figure-font`,
 `table-font`), and every `Overfull \hbox` of `paper/main.log` with its source
 lines and page (`overfull`). It writes `paper/.qa/qa.json`, holding the sha256
 of the `main.pdf` it measured, and 100 dpi page images under `paper/.qa/pages/`
