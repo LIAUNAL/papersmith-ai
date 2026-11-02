@@ -11,6 +11,29 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.56.0
+
+### Added
+
+- **Constellation synced with the manuscript's citations**:
+  `atlas_manuscript.sync_constellation_citations` updates `sota-pool/atlas.json`
+  and `atlas.html` with every reference the manuscript cites. Systems already in
+  the pool are marked cited with their citing blocks; cited works outside the
+  pool join as full solar systems in a "Manuscript Citations" family. The sync
+  runs when blocks of the introduction, related work or Materials and Methods
+  are validated or written, from `smith atlas build` and `smith atlas cited`,
+  and from the dashboard's atlas build.
+- **Novelty graph as solar systems**: each novelty node becomes a solar system
+  (the contribution as the star; question, claim, gap and domain; family and
+  blocks; metrics and references on outer orbits), drawn by the offline
+  Three.js renderer the SOTA constellation uses.
+
+### Fixed
+
+- The dashboard's script and stylesheet cache tokens still named 0.54.0 in
+  0.55.0; they name the release again, and `docs/releasing.md` lists them as a
+  step of the release commit.
+
 ## 0.55.0
 
 ### Added

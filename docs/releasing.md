@@ -44,9 +44,14 @@ own:
 git switch -c chore/release-X.Y.Z main
 ```
 
-Three edits belong to that commit: the version literals, the `## X.Y.Z` section
-at the top of `CHANGELOG.md` (the release body is copied from it), and the pinned
-example in the manual's install section, which should name the newest tag. Merge
+Four edits belong to that commit: the version literals, the `## X.Y.Z` section
+at the top of `CHANGELOG.md` (the release body is copied from it), the pinned
+example in the manual's install section, which should name the newest tag, and
+the dashboard's cache tokens: every `?v=X.Y.Z` on a script or stylesheet of
+`skills/_core/command_center/static/index.html` (and the one
+`tests/test_dashboard_i18n.py` pins) names the new version, so a browser never
+pairs the new page with an old panel script. `tests/test_command_center_journals.py`
+fails while they lag. Merge
 it with `--no-ff`; its merge commit is what the tag will point at.
 
 Tag the merge commit, in the shape the earlier tags use:
