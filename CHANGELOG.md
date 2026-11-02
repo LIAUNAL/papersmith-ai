@@ -11,6 +11,51 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.55.0
+
+### Added
+
+- **Detailed contribution diagram**: the figure that closes Materials and
+  Methods now summarizes the contribution in detail. A new guide,
+  `skills/paper-writing/references/contribution-diagram.md`, fixes its parts
+  in reading order (the inputs as mathematical objects, the representation,
+  the core stages as a network architecture or a flowchart, one numbered panel
+  per contribution with its key equation, the losses meeting in the total
+  objective, the outputs, the auxiliary flows and the legend), its visual
+  grammar, the configured size and overlap rules, a size budget and what never
+  enters the figure. `diagram-author` loads it first. Only the contribution
+  panels carry `% node:` markers, so the Components, excluded-class and
+  caption checks still read the roster alone.
+- **Candidate matrix from the phase**: the Plausibility phase gains "View the
+  candidate matrix", which opens the graph panel on that view.
+- **Model specification language notice**: `/api/model` flags a
+  `.papersmith/model_spec.json` whose prose is not English with a
+  `language_notice` naming the fields, and the Concept Map & Model panel shows
+  it in the dashboard's language.
+
+### Changed
+
+- The Language rule of every entrypoint names the dashboard's data files under
+  `.papersmith/` and `sota-pool/` as English artifacts; only the conversation
+  with an agent follows the human's language.
+- `proposal-deliberation` owns `.papersmith/model_spec.json`: its schema, its
+  refresh after each accepted revision, and English as its language.
+- Contract 01 states the richer summary diagram and points to the guide.
+
+### Fixed
+
+- **Empty Candidate Matrix**: `/api/candidates` answered 500 on the pool
+  `/plausibility` writes (an object, not a bare list). One normalizer now reads
+  both shapes for the matrix, the candidates view and the phase counter.
+- The matrix no longer invents values: a fixed retrieval date, "OpenAlex",
+  2022, "Q1 Journal", "Q1/Q2" and "Methodological plausibility validated" are
+  replaced by what the pool records (retrieval date, resolver, anchor, family
+  provenance, publication years, anchor count, the pool's note, owed items and
+  excluded count).
+- The 3D atlas's group-layout button read "Disposición de grupos" under
+  English; it reads "Group layout".
+- The Concept Map & Model panel did not repaint on a language switch.
+
 ## 0.54.0
 
 ### Added
