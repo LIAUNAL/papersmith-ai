@@ -8878,8 +8878,11 @@ class RefusalRosterTests(unittest.TestCase):
         FIGURE_NO_TEXT_LAYER, FIGURE_FULL_PAGE_BACKGROUND,
         FIGURE_MARGIN_WASTE, FIGURE_TEXT_BELOW_PRINT_FLOOR,
         FIGURE_IN_FIGURE_TITLE), measured against
-        `reachable_paper_refusal_codes()`."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 209)
+        `reachable_paper_refusal_codes()`.
+
+        209 -> 210 in `manuscript-polish-0-54` (S2): `place` refuses text
+        printing above 0.90 x body (FIGURE_TEXT_ABOVE_PRINT_CAP)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 210)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

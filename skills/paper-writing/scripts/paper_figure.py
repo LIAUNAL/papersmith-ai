@@ -269,7 +269,8 @@ def print_width(paper_dir: Path, manifest: dict) -> dict:
 def audit_compiled(paper_dir: Path, manifest: dict, tex_text: str, pdf: Path, log_path: Path) -> dict:
     """`diagram_audit.audit_diagram` on one compiled diagram at its declared
     print width: no overfull box, no relative size switch, no text overlap,
-    every span >= 0.70 x body when printed, no background or wasted margin.
+    every span within [0.70, 0.90] x body when printed, no background or
+    wasted margin.
     A stub or unreadable PDF reads `unmeasured`, never `pass`."""
     settings = print_width(paper_dir, manifest)
     log_text = None
@@ -302,7 +303,7 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
 
     A compile that succeeds is then audited (`audit_compiled`, the shared
     `_core/figure/diagram_audit`): an overfull box, a relative size switch,
-    overlapping text, a span printing below 0.70 x the body size at the
+    overlapping text, a span printing outside [0.70, 0.90] x the body size at the
     manifest's `widthFraction`, or a background/wasted margin turns it into
     a repairable `failure` carrying those diagnostics and the `audit`, and
     the PDF stays in scratch (`preview`) instead of `Figures/<id>.pdf`. An
@@ -352,7 +353,7 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
         except Exception as exc:  # a crashed checker is unmeasured, never a lost render
             audit = {"verdict": "unmeasured", "error": f"{type(exc).__name__}: {exc}"}
         if audit["verdict"] == "fail":
-            # A compile that overflows, overlaps, prints below the floor or
+            # A compile that overflows, overlaps, prints outside the range or
             # paints a background is a repairable outcome like any other:
             # it spends one attempt and never reaches `Figures/<id>.pdf`.
             attempts.append({

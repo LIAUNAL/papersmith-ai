@@ -34,9 +34,15 @@ def _source(body: str) -> str:
             + body + "\n\\end{tikzpicture}\n\\end{document}\n")
 
 
-CLEAN = _source(r"\node[draw, font=\fontsize{9}{10.8}\selectfont] (box) {Train every arm};")
-RELATIVE = _source(r"\node[draw, font=\tiny] (box) {Train every arm};")
-OVERLAP = _source(r"\node[draw, font=\fontsize{9}{10.8}\selectfont] (box) {Train every arm};"
+#: Each picture is drawn at the printed size: a 12.5 cm frame plus the 2 pt
+#: border is the 11 pt article text width (~360 pt), so `render`'s default
+#: full-width inclusion prints it at scale ~1 and the 9 pt label lands
+#: inside [0.70, 0.90] x 11 pt. A tiny picture stretched to the text width
+#: would print above the 0.90 x body cap.
+WIDE = "draw, minimum width=12.5cm"
+CLEAN = _source(r"\node[" + WIDE + r", font=\fontsize{9}{10.8}\selectfont] (box) {Train every arm};")
+RELATIVE = _source(r"\node[" + WIDE + r", font=\small] (box) {Train every arm};")
+OVERLAP = _source(r"\node[" + WIDE + r", font=\fontsize{9}{10.8}\selectfont] (box) {Train every arm};"
                   "\n" r"\node[font=\fontsize{9}{10.8}\selectfont] at (0.2,0) {Overlap};")
 
 
@@ -70,8 +76,8 @@ class OptimizeWarningTests(unittest.TestCase):
         result = paper_tikz.optimize(RELATIVE)
         warnings = [w for w in result.warnings if "relative size switch" in w]
         self.assertEqual(len(warnings), 1)
-        self.assertIn("\\tiny on line 7", warnings[0])
-        self.assertIn("\\tiny", result.text)
+        self.assertIn("\\small on line 7", warnings[0])
+        self.assertIn("\\small", result.text)
 
     def test_an_explicit_fontsize_is_not_warned(self) -> None:
         self.assertEqual([w for w in paper_tikz.optimize(CLEAN).warnings if "size switch" in w], [])
@@ -108,10 +114,10 @@ class RealCompileAuditTests(_Paper):
         self.write("relative", RELATIVE)
         result = paper_figure.render(self.paper_dir, "relative")
         self.assertEqual((result["verdict"], result["attemptsUsed"]), ("failure", 1))
-        # Only the switch: placed at the full text width this tiny picture is
-        # scaled up, so its printed size alone would pass the floor.
+        # Only the switch: `\small` prints 9 pt here, inside the range, so the
+        # source rule alone fails it.
         self.assertEqual(result["audit"]["failures"], ["size_switches"])
-        self.assertTrue(any(d.startswith("size_switches: \\tiny") for d in result["diagnostics"]))
+        self.assertTrue(any(d.startswith("size_switches: \\small") for d in result["diagnostics"]))
         self.assertFalse((self.paper_dir / "Figures" / "relative.pdf").exists())
         self.assertTrue(Path(result["preview"]).is_file())
 
@@ -122,13 +128,12 @@ class RealCompileAuditTests(_Paper):
         self.assertEqual(result["audit"]["failures"], ["text_overlap"])
 
     def test_the_floor_is_read_at_the_manifests_width_fraction(self) -> None:
-        """A natural-size 9 pt label passes; the same figure stretched across
-        the text width would print larger, and squeezed to 5 % of it, far
-        smaller than 0.70 x 11 pt."""
+        """A 9 pt label drawn at the printed width passes; squeezed to 5 % of
+        the text width it prints far smaller than 0.70 x 11 pt."""
         self.write("narrow", CLEAN, widthFraction=0.05)
         result = paper_figure.render(self.paper_dir, "narrow")
         self.assertEqual(result["verdict"], "failure")
-        self.assertIn("font_floor", result["audit"]["failures"])
+        self.assertIn("font_range", result["audit"]["failures"])
 
 
 if __name__ == "__main__":

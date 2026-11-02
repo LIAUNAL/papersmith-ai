@@ -12,7 +12,7 @@ Five subcommands, each printing exactly one JSON object on stdout:
              [--audit-override "<the operator's words>"]
 
 `render` designs the figure at the width it prints (explicit `\\fontsize`
-sizes, never below 0.70 x the manuscript body size), refuses any overfull
+sizes, between 0.70 and 0.90 x the manuscript body size), refuses any overfull
 box, and runs the mechanical audit (`skills/_core/figure/diagram_audit.py`)
 into `diagrams/<kind>.audit.json`; `validate` requires that audit to read
 `pass` for the PNG drawn now, unless the operator's own words override it.
@@ -486,8 +486,9 @@ def _validate_print(block) -> list[str]:
 # declared inclusion width (`print.width_fraction` x `\textwidth`, default
 # the full text width of the manuscript's body size), so it is included at
 # scale ~1 and every font prints at the explicit `\fontsize` written here:
-# never a relative switch (`\small`, `\footnotesize`), never below
-# 0.70 x the body size (`_core/figure/diagram_audit.role_font_pt`). Boxes
+# never a relative switch (`\small`, `\footnotesize`), always between
+# 0.70 and 0.90 x the body size (`_core/figure/diagram_audit.role_font_pt`:
+# claim 0.88, spine 0.82, notes 0.76). Boxes
 # take their width from the space the layout has; a label that does not fit
 # is a spec problem (shorten it), never a reason to shrink a font.
 

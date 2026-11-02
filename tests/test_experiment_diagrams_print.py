@@ -57,20 +57,21 @@ class _Base(unittest.TestCase):
 
 class SourceTests(_Base):
 
-    def test_every_size_is_an_explicit_fontsize_at_or_above_the_floor(self) -> None:
+    def test_every_size_is_an_explicit_fontsize_inside_the_print_range(self) -> None:
         tex = self.tex_without_toolchain(self.spec())
         self.assertEqual(diagram_audit.find_size_switches(tex), [])
         sizes = [float(size) for size in re.findall(r"\\fontsize\{([\d.]+)\}", tex)]
         self.assertEqual(len(sizes), 4)
         self.assertGreaterEqual(min(sizes), 7.0)  # 0.70 x the 10 pt default body
+        self.assertLessEqual(max(sizes), 9.0)  # 0.90 x the 10 pt default body
 
     def test_the_body_size_is_read_from_the_manuscript(self) -> None:
         (self.ws.root / "paper").mkdir()
         (self.ws.root / "paper" / "main.tex").write_text(
             "\\documentclass[11pt]{article}\n\\begin{document}\n\\end{document}\n", encoding="utf-8")
         tex = self.tex_without_toolchain(self.spec())
-        self.assertIn(r"\newcommand{\psSpineFont}{\fontsize{9.90}{11.88}\selectfont}", tex)
-        self.assertIn(r"\newcommand{\psNoteFont}{\fontsize{8.80}{10.56}\selectfont}", tex)
+        self.assertIn(r"\newcommand{\psSpineFont}{\fontsize{9.02}{10.82}\selectfont}", tex)
+        self.assertIn(r"\newcommand{\psNoteFont}{\fontsize{8.36}{10.03}\selectfont}", tex)
 
     def test_the_paper_export_draws_no_background(self) -> None:
         tex = self.tex_without_toolchain(self.spec())
@@ -163,7 +164,7 @@ class RenderAuditTests(_Base):
                 record = json.loads(spec_path.with_name(f"{kind}.audit.json").read_text(encoding="utf-8"))
                 self.assertEqual(record["png_sha256"],
                                  hashlib.sha256(spec_path.with_suffix(".png").read_bytes()).hexdigest())
-                for check in ("overfull", "size_switches", "text_overlap", "font_floor", "margins"):
+                for check in ("overfull", "size_switches", "text_overlap", "font_range", "margins"):
                     self.assertEqual(record["report"]["checks"][check]["verdict"], "pass", check)
 
     def test_a_label_too_long_for_its_box_is_refused_overfull(self) -> None:

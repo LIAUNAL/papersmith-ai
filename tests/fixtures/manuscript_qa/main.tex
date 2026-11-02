@@ -1,7 +1,11 @@
 % Manuscript QA fixture (spec S6 of odd/tasks/figure-and-table-quality.md).
-% Page 1 is clean (body text and a booktabs table at body size); page 2
-% carries a tabular wider than \textwidth; page 3 a table set in \tiny with
-% an 11 pt body; page 4 a figure whose 5 pt labels print below the floor.
+% Page 1 is clean (body text and a booktabs table in \footnotesize, inside
+% the [0.70, 0.90] x body range); page 2 carries a tabular wider than
+% \textwidth; page 3 a table set in \tiny with an 11 pt body; page 4 a figure
+% whose 5 pt labels print below the floor. Spec S2 of
+% odd/tasks/manuscript-polish-0-54.md adds, on page 3, a table left at the
+% body size and, on page 4, the same figure stretched to the full
+% \linewidth: both print above the 0.90 x body cap.
 \documentclass[11pt]{article}
 \usepackage[a4paper,margin=30mm]{geometry}
 \usepackage{booktabs}
@@ -18,7 +22,8 @@ reflects the method rather than the configuration that produced it.\par}
 
 \begin{table}[h!]
 \centering
-\caption{Clean table at body size.}
+\footnotesize
+\caption{Clean table inside the printed range.}
 \begin{tabular}{lcc}
 \toprule
 Method & Accuracy & Recall \\
@@ -65,7 +70,21 @@ Proposed & 84.6 & 82.9 \\
 \end{tabular}
 \end{table}
 
-\para\para
+\para
+
+\begin{table}[h!]
+\centering
+\caption{A table left at the body size.}
+\begin{tabular}{lcc}
+\toprule
+Method & Precision & Recall \\
+\midrule
+Baseline & 80.1 & 78.4 \\
+Proposed & 84.6 & 82.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \clearpage
 
 \para\para
@@ -76,6 +95,12 @@ Proposed & 84.6 & 82.9 \\
 \caption{A figure whose labels print below the floor.}
 \end{figure}
 
-\para\para
+\para
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=\linewidth]{small-text-figure.pdf}
+\caption{The same figure stretched to the full line width.}
+\end{figure}
 
 \end{document}

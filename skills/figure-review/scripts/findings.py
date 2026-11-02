@@ -79,7 +79,7 @@ def build_visual(
     `geometry.ink_regions`.
 
     `vector` carries the PDF-read verdicts (`typeset.measure_pdf`:
-    `min-printed-font`, `background`, `whitespace`, `in-figure-title`);
+    `printed-font-range`, `background`, `whitespace`, `in-figure-title`);
     when omitted they stay `unmeasured` with the roster's
     `PDF_NOT_MEASURED`, the way the raster dimensions do without a raster.
     """
@@ -87,7 +87,7 @@ def build_visual(
         name: {"verdict": "unmeasured", "reason": figure_dimensions.DEFAULT_REASONS[name]}
         for name in figure_dimensions.SILENT_DIMENSIONS
     }
-    for name in ("min-printed-font", "background", "whitespace", "in-figure-title"):
+    for name in ("printed-font-range", "background", "whitespace", "in-figure-title"):
         dimensions[name] = (vector or {}).get(name) or {
             "verdict": "unmeasured", "reason": figure_dimensions.DEFAULT_REASONS[name],
         }
