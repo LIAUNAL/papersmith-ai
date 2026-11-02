@@ -327,7 +327,7 @@ without the body. The citation goes in the work's own cell, once.
 
 **It fits the text block.** `booktabs` rules and a `tabularx` at `\linewidth`, under
 the table rules of contracts 02 and 03 (*Tables stay inside the text block*): the same
-font floor, no scaling to fit, and a table too wide is split or transposed, never
+text range (0.70 to 0.90 times the body size), no scaling to fit, and a table too wide is split or transposed, never
 shrunk.
 
 ## Every artefact is referenced before it appears

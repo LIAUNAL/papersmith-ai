@@ -233,6 +233,14 @@ tres explicaciones dicen con qué es *consistente* el número, no qué lo *caus�
 discusión escrita enteramente en el registro asertivo afirma un conocimiento causal
 que el experimento no produjo.
 
+**Las formas son un repertorio, no un estribillo.** Cada registro enumera varias formas
+para que la discusión pueda variarlas: ninguna forma abre ni enlaza dos explicaciones
+seguidas, y *because* — la forma asertiva más directa — se usa como máximo una vez por
+párrafo, nunca encadenada (*because …, and because …*). Una explicación asertiva también
+puede expresarse con un verbo (*stems from*, *follows from*) o con dos puntos que
+introducen el mecanismo; una inferencial puede hacer de la valoración una oración propia
+en lugar de un *, which indicates …* final.
+
 **Está anclada.** La explicación se ubica en el mismo párrafo que el número que
 explica. Nunca queda flotando.
 
@@ -283,15 +291,19 @@ para leer los datos, o un **comportamiento ya establecido** con el que el result
 ## Las tablas quedan dentro de la caja de texto
 
 Una tabla se imprime dentro de `\textwidth` a un tamaño legible, con la misma regla que
-una figura: **ningún texto de una tabla se imprime por debajo de 0,70 veces el tamaño
-de la fuente del cuerpo** (7 pt en un documento de 10 pt).
+una figura (etiquetas, marcas de eje, leyendas y anotaciones incluidas): **todo texto de
+una tabla o de una figura se imprime entre 0,70 y 0,90 veces el tamaño de la fuente del
+cuerpo** (de 7 a 9 pt en un documento de 10 pt): nunca más pequeño, y nunca al tamaño
+del cuerpo.
 
 - **Las reglas son de `booktabs`** — `\toprule`, `\midrule`, `\bottomrule` — sin reglas
   verticales; una columna de prosa es una columna `X` de `tabularx`, de modo que la
   tabla toma el ancho del texto en lugar de excederlo.
-- **La tabla va al tamaño del cuerpo.** `\small` es la mayor reducción, y solo cuando el
-  cuerpo es de 11 pt o más; `\footnotesize`, `\scriptsize` y `\tiny` nunca se usan
-  dentro de una tabla cuando quedan por debajo del mínimo.
+- **La tabla va por debajo del tamaño del cuerpo, dentro del rango.** `\footnotesize`
+  lo cumple a 10, 11 y 12 pt; `\small` solo con un cuerpo de 10 pt (supera 0,90 a 11 y
+  12 pt); nunca `\normalsize`, el tamaño por defecto cuando la tabla no declara ninguno;
+  `\scriptsize` y `\tiny` nunca cuando quedan por debajo del mínimo (`\scriptsize` lo
+  alcanza solo a 10 pt).
 - **Una tabla nunca se escala para que quepa.** Ni `\resizebox`, ni `\scalebox`, ni
   `adjustbox` por debajo de un factor de 0,85, ni escalar un `tabular` a
   `width=\textwidth`: escalar encoge el texto junto con la caja.
@@ -320,7 +332,8 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 
 - **Las oraciones promedian 21–27 palabras.** Lo bastante largas para llevar una afirmación y su matiz, nunca una cadena de tres cláusulas.
 - **Una sola voz para todo el artículo.** Primera persona del plural (*we propose*) o impersonal (*this work introduces*), elegida una vez; los procedimientos que se ejecutaron van en pasiva en pasado (*was evaluated using*).
-- **Conectores que usa el grupo** para pasar de una afirmación a otra: *However*, *Specifically*, *In particular*, *Moreover*, *Notably*, *Overall*. Cada uno abre una oración y cumple una sola función: contraste, acotación, adición, énfasis, síntesis.
+- **Las transiciones salen de la relación entre afirmaciones, no de una lista.** Primero se nombra la relación (contraste, causa, consecuencia, desarrollo, ejemplo) y se expresa con el propio contenido de la oración: una cláusula (*yet*, *so*, *although*), un sujeto que remite a lo anterior (*that gap*, *this cost*), o ningún conector cuando el orden de las oraciones ya lo dice. Un conector de repertorio (*However*, *Moreover*, *Notably*, *Specifically*, *In particular*, *Overall*, *Taken together*) es la excepción: nunca el mismo dos veces en cinco oraciones, nunca la mayoría de las aperturas de un párrafo, y un conector de síntesis (*Overall*, *Taken together*) como máximo una vez por sección (aquí, una vez por subsección: la síntesis que la cierra).
+- ***because* y *where* conservan su función.** *because* enuncia una causa que el método o los datos establecen, como máximo una vez cada varias oraciones y nunca encadenado (*because …, and because …*); *where* abre la cláusula que sigue a una ecuación y define sus símbolos, y en ningún otro lugar de la prosa (se usa *in which*, *when* o dos oraciones). Una valoración es una oración propia, no un *, which indicates …* final.
 - **El método tiene un solo nombre.** Se desarrolla con su acrónimo en el primer uso tanto en el resumen como en el cuerpo, y después se escribe *the proposed* seguido del acrónimo.
 - **Los resultados van en pasado, su lectura en presente.** *The proposed
   model reached*; *this suggests that*.
@@ -396,8 +409,9 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
   medida de fidelidad para ella.
 - La sección cerrando con un párrafo de síntesis.
 - Una tabla con valores en negrita cuya leyenda no dice qué marca la negrita.
-- Una tabla que excede `\textwidth`, o cuyo texto se imprime por debajo de 0,70 veces el
-  tamaño de la fuente del cuerpo.
+- Una tabla que excede `\textwidth`, o cuyo texto se imprime por debajo de 0,70 o por
+  encima de 0,90 veces el tamaño de la fuente del cuerpo (incluida una tabla dejada al
+  tamaño del cuerpo).
 - Una tabla escalada con `\resizebox`, `\scalebox` o `adjustbox` por debajo de 0,85, o
   escalada a `\textwidth`.
 - Una tabla con reglas verticales, o una tabla cuya leyenda queda debajo de ella.

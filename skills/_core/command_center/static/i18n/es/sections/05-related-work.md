@@ -146,7 +146,7 @@
 
 **Extensión** 820–1700 palabras
 **No contiene** ecuaciones
-**Contiene** un bloque por cada problema enunciado, y una figura o tabla de síntesis
+**Contiene** un bloque por cada problema enunciado, y una tabla (o figura) de síntesis de 7–12 trabajos
 
 Cada afirmación aquí pertenece al trabajo de otros, y la sección argumenta qué dejan sin resolver esos trabajos en conjunto.
 
@@ -283,7 +283,9 @@ lector que conoce ese trabajo, de lo contrario, se preguntará por qué no basta
 
 ## Bloque 5 — Artefacto de síntesis
 
-Una figura de evolución o una tabla comparativa.
+Una tabla comparativa por defecto; una figura de evolución solo cuando el punto es el
+linaje, no la comparación. Cualquiera de las dos formas ubica **de 7 a 12 trabajos**,
+sin contar la fila de la propuesta.
 
 **Sus dimensiones son las propiedades en las que gana la propuesta** — se derivan
 de las contribuciones, no de lo que resulte fácil de tabular. La fila de la propuesta es
@@ -292,9 +294,43 @@ la única que cubre todas las columnas.
 Va después del cierre, precedido por **un párrafo de referencia de una oración que nombra
 las dimensiones en el cuerpo** antes de que aparezca la tabla. La variante es un artefacto
 por cada bloque del bloque 3, ubicado al cierre de ese bloque; en ese caso la referencia es la
-última oración del bloque.
+última oración del bloque, y los 7 a 12 trabajos se cuentan entre esos artefactos.
 
 Nombre las dimensiones en el cuerpo, nunca solo en el encabezado de la tabla.
+
+### La tabla de síntesis
+
+**Filas: de 7 a 12 trabajos, y luego la propuesta como última fila.** Un trabajo gana una
+fila por su relevancia para los pilares y las contribuciones del artículo — el
+representante más fuerte de su familia en las propiedades que reclama la propuesta, no el
+más citado ni el más reciente. Cada familia que desarrolla esta sección tiene al menos una
+fila; una familia con varias filas las mantiene contiguas.
+
+**Columnas: la familia y luego los ejes de comparación.** Cada eje es un pilar, una
+contribución o una propiedad que declara la propuesta, nombrado en la oración de
+referencia del cuerpo. Un eje que todas las filas cumplen no distingue nada y se elimina;
+también se elimina un eje que ninguna contribución reclama.
+
+**El redactor elige la disposición que se lee más rápido y explica por qué en una línea
+de su informe:**
+
+- una **matriz de marcas** cuando todos los ejes son propiedades de sí/no;
+- una **tabla compacta de atributos** cuando un eje toma un valor breve (un régimen de
+  datos, una clase de modelo, un esquema de validación);
+- **filas agrupadas por familia** — una fila de etiqueta `\multicolumn` por familia, o una
+  columna de familia — cuando varios trabajos comparten familia y la agrupación es en sí
+  misma el argumento.
+
+**Las celdas son concisas y exactas:** un símbolo (`\checkmark`, `--`, una marca parcial) o
+como máximo tres palabras. Ninguna oración, ninguna cláusula, ninguna celda que sea solo
+una cita. La leyenda es la clave: decodifica cada símbolo y abreviatura que usan las
+celdas, de modo que la tabla se lee sin el cuerpo. La cita va en la celda del propio
+trabajo, una sola vez.
+
+**Cabe en la caja de texto.** Reglas de `booktabs` y un `tabularx` a `\linewidth`, bajo
+las reglas de tablas de los contratos 02 y 03 (*Las tablas quedan dentro de la caja de
+texto*): el mismo rango de texto (de 0,70 a 0,90 veces el tamaño del cuerpo), sin escalar
+para que quepa, y una tabla demasiado ancha se divide o se transpone, nunca se encoge.
 
 ## Todo artefacto se referencia antes de aparecer
 
@@ -346,13 +382,15 @@ la oración que respalda, o sigue al nombre del método que acredita; nunca es
 el sujeto de una oración (*ref. [29] presents*).
 
 **La sección puede cerrar con una tabla comparativa** que contrasta las propiedades de la propuesta
-con las familias revisadas, una fila por familia.
+con los trabajos revisados: de 7 a 12 trabajos representativos, cada familia con al menos
+una fila (Bloque 5).
 
 **Redacción.**
 
 - **Las oraciones promedian 21–27 palabras.** Lo bastante largas para llevar una afirmación y su matiz, nunca una cadena de tres cláusulas.
 - **Una sola voz para todo el artículo.** Primera persona del plural (*we propose*) o impersonal (*this work introduces*), elegida una vez; los procedimientos que se ejecutaron van en pasiva en pasado (*was evaluated using*).
-- **Conectores que usa el grupo** para pasar de una afirmación a otra: *However*, *Specifically*, *In particular*, *Moreover*, *Notably*, *Overall*. Cada uno abre una oración y cumple una sola función: contraste, acotación, adición, énfasis, síntesis.
+- **Las transiciones salen de la relación entre afirmaciones, no de una lista.** Primero se nombra la relación (contraste, causa, consecuencia, desarrollo, ejemplo) y se expresa con el propio contenido de la oración: una cláusula (*yet*, *so*, *although*), un sujeto que remite a lo anterior (*that gap*, *this cost*), o ningún conector cuando el orden de las oraciones ya lo dice. Un conector de repertorio (*However*, *Moreover*, *Notably*, *Specifically*, *In particular*, *Overall*, *Taken together*) es la excepción: nunca el mismo dos veces en cinco oraciones, nunca la mayoría de las aperturas de un párrafo, y un conector de síntesis (*Overall*, *Taken together*) como máximo una vez por sección.
+- ***because* y *where* conservan su función.** *because* enuncia una causa que el método o los datos establecen, como máximo una vez cada varias oraciones y nunca encadenado (*because …, and because …*); *where* abre la cláusula que sigue a una ecuación y define sus símbolos, y en ningún otro lugar de la prosa (se usa *in which*, *when* o dos oraciones). Una valoración es una oración propia, no un *, which indicates …* final.
 - **El método tiene un solo nombre.** Se desarrolla con su acrónimo en el primer uso tanto en el resumen como en el cuerpo, y después se escribe *the proposed* seguido del acrónimo.
 
 ## Insumos por bloque
@@ -402,6 +440,10 @@ mismo a distintas profundidades.
 - La ausencia del artefacto de síntesis.
 - Un artefacto cuyas dimensiones no son las propiedades que declara la propuesta.
 - Dimensiones nombradas solo en el encabezado de la tabla y no en el cuerpo.
+- Menos de 7 o más de 12 trabajos en la tabla de síntesis, sin contar la fila de la propuesta.
+- Una familia de esta sección sin fila en la tabla de síntesis.
+- Una columna de la tabla de síntesis no vinculada a un pilar, contribución o propiedad que declara la propuesta, o una que comparten todas las filas.
+- Una oración o una cláusula como prosa en una celda de la tabla de síntesis, o un símbolo que la leyenda no decodifica.
 - Un artefacto que aparece antes de cualquier referencia a él, o que nada referencia en
   absoluto.
 - Una cita usada como sintagma nominal.
