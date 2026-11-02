@@ -294,14 +294,28 @@ sobre la formulación.
 
 ### El diagrama de síntesis
 
-- **Es la forma visual de la lista de contribuciones**: contiene exactamente los mismos
-  componentes, en el mismo orden, con los mismos nombres que les da la propia lista
-  de esta sección.
-- **La leyenda los enumera en ese orden** y decodifica todo lo que la figura
+- **Resume la contribución en detalle.** Quien vea solo esta figura y su leyenda puede
+  decir qué entra al método, qué hace cada etapa, qué es nuevo, qué se optimiza y qué
+  sale. Sus partes, en orden de lectura: las entradas como objetos matemáticos
+  (símbolos y formas, nunca un conjunto de datos con nombre); la representación a la
+  que se llevan; las etapas centrales, dibujadas como arquitectura de red cuando el
+  método es una red y como diagrama de flujo en otro caso; un panel numerado por
+  contribución, con su mecanismo y su ecuación clave; las pérdidas, que confluyen en el
+  objetivo total que enuncia la combinación general; las salidas, por símbolo y
+  significado; y una leyenda para sus flechas y colores. La guía
+  `skills/paper-writing/references/contribution-diagram.md` describe cada parte, la
+  gramática visual y el presupuesto de tamaño.
+- **Sus paneles de contribución son la lista de contribuciones**: exactamente los mismos
+  componentes, en el mismo orden, con los mismos nombres que les da la propia lista de
+  esta sección. Cada panel lleva en la fuente la marca `% node:`; las entradas, etapas,
+  pérdidas y salidas que los rodean son contexto y no llevan ninguna.
+- **La leyenda enumera los paneles en ese orden** y decodifica todo lo que la figura
   codifica: si hay colores, la leyenda dice qué significa cada uno.
-- **Muestra el método, no el experimento.** En él no aparece ningún conjunto de datos ni ninguna línea base;
-  esos pertenecen al propio diagrama de la configuración experimental. Un recuadro que aparece en ambos
-  significa que uno de los dos está mal.
+- **Muestra el método, no el experimento.** En él no aparece ningún conjunto de datos ni
+  ninguna línea base, ni como panel ni como contexto; esos pertenecen al propio diagrama
+  de la configuración experimental. Un recuadro que aparece en ambos significa que uno
+  de los dos está mal. Tampoco aparece una métrica ni un valor medido: la figura lleva la
+  matemática básica del método, nunca un resultado.
 - **El Components Check al que se somete este diagrama lo compara con la propia lista
   de este mismo bloque.** Es una deriva interna del bloque, nunca una corroboración
   entre secciones: no se consulta nada fuera de este bloque.

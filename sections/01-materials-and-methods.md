@@ -294,14 +294,28 @@ about the formulation.
 
 ### The summary diagram
 
-- **It is the visual form of the contribution list**: it contains exactly the same
-  components, in the same order, under the same names this section's own roster
-  gives them.
-- **The caption enumerates them in that order** and decodes anything the figure
+- **It summarizes the contribution in detail.** A reader who sees only this figure and
+  its caption can say what enters the method, what each stage does, what is new, what
+  is optimized and what comes out. Its parts, in reading order: the inputs as
+  mathematical objects (symbols and shapes, never a named dataset); the representation
+  they are mapped into; the core stages, drawn as a network architecture when the
+  method is a network and as a flowchart otherwise; one numbered panel per
+  contribution, holding its mechanism and its key equation; the losses, meeting in the
+  total objective that the general combination states; the outputs, by symbol and
+  meaning; and a legend for its arrows and colours. The guide
+  `skills/paper-writing/references/contribution-diagram.md` gives each part, the
+  visual grammar and the size budget.
+- **Its contribution panels are the contribution list**: exactly the same components,
+  in the same order, under the same names this section's own roster gives them. Each
+  panel carries the source's `% node:` marker; the inputs, stages, losses and outputs
+  around them are context and carry none.
+- **The caption enumerates the panels in that order** and decodes anything the figure
   encodes — if there are colours, the caption says what each one means.
 - **It shows the method, not the experiment.** No dataset and no baseline appears in
-  it; those belong to the experimental setup's own diagram. A box appearing in both
-  means one of the two is wrong.
+  it, as a panel or as context; those belong to the experimental setup's own diagram.
+  A box appearing in both means one of the two is wrong. Neither does a metric or a
+  measured value: the figure carries the basic mathematics of the method, never a
+  result.
 - **The Components Check this diagram undergoes compares it against this same
   block's own roster.** That is intra-block drift, never cross-section
   corroboration — nothing outside this block is consulted.

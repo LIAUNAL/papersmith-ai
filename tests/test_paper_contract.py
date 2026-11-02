@@ -1039,7 +1039,7 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: table at 7-12 works; 09 writes the blinded author placeholder in English; 10
 #: places the back matter before the references and the appendices after them.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "3fb21138a3f1d8a3730e2c75d4666228fdc32bad0806a01c9e3c8c8261572a20",
+    "01-materials-and-methods.md": "82f699bc02e8337eebb534920e99f86f22bfae8ee72eb7369accbf60451270ee",
     "02-experimental-setup.md": "6315bcf3f7fc3a853f4ed2a843647bf48fcf7c36c941573888fcdf5822e14320",
     "03-results-and-discussion.md": "e46a7ba7adf695892f67298db54eef3ee03965a00fb730a8656eb93f71f0aa9e",
     "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
