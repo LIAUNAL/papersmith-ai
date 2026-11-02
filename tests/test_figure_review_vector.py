@@ -1,7 +1,9 @@
 """figure-review `measure`: the vector verdicts read from the figure PDF
 (specs S2, S3, S4 of `odd/tasks/figure-and-table-quality.md`).
 
-`min-printed-font` replaces the old `legibility: unmeasured
+`printed-font-range` (formerly `min-printed-font`; spec S2 of
+`odd/tasks/manuscript-polish-0-54.md` added the 0.90 x body cap)
+replaces the old `legibility: unmeasured
 (LEGIBILITY_IS_A_THRESHOLD_JUDGEMENT)` silence; `background`,
 `whitespace` and `in-figure-title` are new verdict dimensions. Every case
 runs the public verb (`review_cli.py measure`) as a subprocess against a
@@ -32,7 +34,7 @@ import figure_dimensions  # noqa: E402
 PDFLATEX = shutil.which("pdflatex")
 NO_PDFLATEX = "pdflatex is not on PATH; the figure PDFs are compiled at test time"
 
-VECTOR = ("min-printed-font", "background", "whitespace", "in-figure-title")
+VECTOR = ("printed-font-range", "background", "whitespace", "in-figure-title")
 
 
 def _gray_png(width: int = 6, height: int = 6) -> bytes:
@@ -99,6 +101,11 @@ class RosterTests(unittest.TestCase):
             self.assertIn(name, figure_dimensions.VERDICT_DIMENSIONS)
             self.assertEqual(figure_dimensions.DEFAULT_REASONS[name], "PDF_NOT_MEASURED")
 
+    def test_min_printed_font_is_a_deprecated_alias_of_the_range(self) -> None:
+        self.assertNotIn("min-printed-font", figure_dimensions.ALL_DIMENSIONS)
+        self.assertEqual(figure_dimensions.DEPRECATED_DIMENSION_ALIASES,
+                         {"min-printed-font": "printed-font-range"})
+
 
 class UnreadablePdfTests(_MeasureCase):
     """Prior behavior: `measure` still answers from the raster when the PDF
@@ -144,28 +151,44 @@ class VectorVerdictTests(_MeasureCase):
         self.assertEqual(whitespace["verdict"], "fail")
         self.assertEqual(whitespace["wide"], ["bottom", "left", "right", "top"])
 
-    def test_tiny_ticks_fail_min_printed_font_at_the_declared_width(self) -> None:
+    def test_tiny_ticks_fail_the_floor_at_the_declared_width(self) -> None:
         pdf = self._figure("tiny-ticks")
-        font = self._measure(pdf, "--printed-width-pt", "343.7", "--body-pt", "10")["min-printed-font"]
+        font = self._measure(pdf, "--printed-width-pt", "343.7", "--body-pt", "10")["printed-font-range"]
         self.assertEqual(font["verdict"], "fail")
         self.assertEqual(font["reason"], "TEXT_BELOW_PRINT_FLOOR")
         self.assertEqual(font["minPrintedPt"], 7.0)
-        self.assertTrue(font["offending"])
+        self.assertEqual(font["maxPrintedPt"], 9.0)
+        self.assertIn("floor", {item["bound"] for item in font["offending"]})
+
+    def test_body_size_axis_labels_fail_the_cap(self) -> None:
+        font = self._measure(self._figure("large-labels"), "--body-pt", "10")["printed-font-range"]
+        self.assertEqual(font["verdict"], "fail")
+        self.assertEqual(font["reason"], "TEXT_ABOVE_PRINT_CAP")
+        self.assertEqual(font["maxPrintedPt"], 9.0)
+        self.assertGreater(font["largestPrintedPt"], 9.0)
+        self.assertEqual({item["text"] for item in font["offending"]}, {"Training", "epoch", "Accuracy"})
+        self.assertEqual({item["bound"] for item in font["offending"]}, {"cap"})
+
+    def test_a_plot_inside_the_range_reports_both_bounds(self) -> None:
+        font = self._measure(self._figure("compliant"), "--body-pt", "10")["printed-font-range"]
+        self.assertEqual(font["verdict"], "pass", font)
+        self.assertGreaterEqual(font["smallestPrintedPt"], 7.0 * 72 / 72.27)
+        self.assertLessEqual(font["largestPrintedPt"], 9.0 * 72 / 72.27)
 
     def test_the_body_size_is_read_from_the_paper_main_tex(self) -> None:
-        # 9 pt ticks at natural size pass a 10 pt body (floor 7 pt) and fail a
-        # 14 pt one (floor 9.8 pt) declared by `paper/main.tex`.
+        # 7.5 pt ticks at natural size pass a 10 pt body (floor 7 pt) and fail
+        # a 14 pt one (floor 9.8 pt) declared by `paper/main.tex`.
         (self.tmp / "paper" / "main.tex").write_text(
             "\\documentclass[14pt]{extarticle}\n\\begin{document}\n\\end{document}\n", encoding="utf-8",
         )
-        font = self._measure(self._figure("compliant"))["min-printed-font"]
+        font = self._measure(self._figure("compliant"))["printed-font-range"]
         self.assertEqual(font["bodyPt"], 14.0)
         self.assertEqual(font["verdict"], "fail")
 
     def test_a_raster_only_pdf_cannot_measure_printed_text(self) -> None:
         dimensions = self._measure(self._figure("raster"))
-        self.assertEqual(dimensions["min-printed-font"]["verdict"], "unmeasured")
-        self.assertEqual(dimensions["min-printed-font"]["reason"], "NO_TEXT_LAYER")
+        self.assertEqual(dimensions["printed-font-range"]["verdict"], "unmeasured")
+        self.assertEqual(dimensions["printed-font-range"]["reason"], "NO_TEXT_LAYER")
         self.assertEqual(dimensions["in-figure-title"]["verdict"], "unmeasured")
 
 

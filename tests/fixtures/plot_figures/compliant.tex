@@ -1,13 +1,17 @@
-%% A plot that meets S2-S4: tight border, no title, 9 pt ticks.
+%% A plot that meets S2-S4: tight border, no title, drawn at the printed size
+%% of a full 10 pt article text width (~345 pt), 7.5 pt ticks and 8.5 pt axis
+%% labels: inside [0.70, 0.90] x body. Latin Modern scales to any size.
 \documentclass[border=0pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage{tikz}
 \begin{document}
-\begin{tikzpicture}[every node/.style={font=\fontsize{9}{11}\selectfont}]
+\begin{tikzpicture}[x=1.33cm, every node/.style={font=\fontsize{7.5}{9}\selectfont}]
 \draw (0,0) rectangle (8,4);
 \draw[thick] (0,0.5) -- (2,1.5) -- (4,2.2) -- (6,3) -- (8,3.4);
 \foreach \x in {0,2,4,6,8} {\draw (\x,0) -- (\x,-0.1); \node[below] at (\x,-0.1) {\x};}
 \foreach \y in {0,1,2,3,4} {\draw (0,\y) -- (-0.1,\y); \node[left] at (-0.1,\y) {\y};}
-\node[below] at (4,-0.7) {\fontsize{10}{12}\selectfont Training epoch};
-\node[rotate=90] at (-1.0,2) {\fontsize{10}{12}\selectfont Accuracy};
+\node[below] at (4,-0.7) {\fontsize{8.5}{10}\selectfont Training epoch};
+\node[rotate=90] at (-0.6,2) {\fontsize{8.5}{10}\selectfont Accuracy};
 \end{tikzpicture}
 \end{document}

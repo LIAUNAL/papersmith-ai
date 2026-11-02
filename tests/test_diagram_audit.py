@@ -1,7 +1,8 @@
 """The shared diagram audit (`skills/_core/figure/diagram_audit.py`), specs S1
 and S3 of `odd/tasks/figure-and-table-quality.md`: no relative size switch,
-no overfull box, no overlapping text, every label >= 0.70 x the body size at
-the printed width, no background and no wasted margin.
+no overfull box, no overlapping text, every label within [0.70, 0.90] x the
+body size at the printed width (the cap is spec S2 of
+`odd/tasks/manuscript-polish-0-54.md`), no background and no wasted margin.
 
 Each crafted TikZ source under `tests/fixtures/diagram_audit/` is compiled
 with the machine's `pdflatex` into a temporary directory; the PDF checks are
@@ -96,12 +97,22 @@ class SourceRuleTests(unittest.TestCase):
             "Overfull \\vbox (2.0pt too high) detected at line 9",
         ])
 
-    def test_role_fonts_never_fall_below_the_floor_and_grow_when_shrunk(self) -> None:
-        sizes = diagram_audit.role_font_pt(11.0)
-        self.assertEqual(sizes, {"claim": 11.0, "spine": 9.9, "note": 8.8})
-        self.assertTrue(all(size >= print_scale.min_printed_pt(11.0) for size in sizes.values()))
-        shrunk = diagram_audit.role_font_pt(10.0, scale=0.5)
-        self.assertGreaterEqual(min(shrunk.values()) * 0.5, print_scale.min_printed_pt(10.0) - 1e-6)
+    def test_every_role_font_lies_inside_the_print_range(self) -> None:
+        self.assertEqual(diagram_audit.ROLE_RATIOS, {"claim": 0.88, "spine": 0.82, "note": 0.76})
+        for body in (10.0, 11.0, 12.0):
+            sizes = diagram_audit.role_font_pt(body)
+            for role, size in sizes.items():
+                with self.subTest(body=body, role=role):
+                    self.assertGreaterEqual(size, print_scale.min_printed_pt(body))
+                    self.assertLessEqual(size, print_scale.max_printed_pt(body))
+        self.assertEqual(diagram_audit.role_font_pt(11.0), {"claim": 9.68, "spine": 9.02, "note": 8.36})
+
+    def test_role_fonts_print_in_range_when_the_figure_is_shrunk_or_enlarged(self) -> None:
+        for scale in (0.5, 1.25):
+            sizes = diagram_audit.role_font_pt(10.0, scale=scale)
+            with self.subTest(scale=scale):
+                self.assertGreaterEqual(min(sizes.values()) * scale, print_scale.min_printed_pt(10.0) - 0.01)
+                self.assertLessEqual(max(sizes.values()) * scale, print_scale.max_printed_pt(10.0) + 0.01)
         self.assertEqual(diagram_audit.fontsize_command(9), r"\fontsize{9.00}{10.80}\selectfont")
 
     def test_an_unreadable_pdf_measures_nothing_and_never_passes(self) -> None:
@@ -111,7 +122,7 @@ class SourceRuleTests(unittest.TestCase):
             report = diagram_audit.audit_diagram(stub, body_pt=10, printed_width_pt=None,
                                                  tex_text="% node: box\n", log_text="")
         self.assertEqual(report["verdict"], "unmeasured")
-        for name in ("text_overlap", "font_floor", "margins"):
+        for name in ("text_overlap", "font_range", "margins"):
             self.assertEqual(report["checks"][name]["verdict"], "unmeasured")
             self.assertTrue(report["checks"][name]["reason"].startswith("PDF_UNREADABLE"))
 
@@ -123,7 +134,7 @@ class CompiledDiagramTests(unittest.TestCase):
         report = _audit("clean")
         self.assertEqual(report["verdict"], "pass", report["failures"])
         self.assertEqual(set(report["checks"]),
-                         {"overfull", "size_switches", "text_overlap", "font_floor", "margins"})
+                         {"overfull", "size_switches", "text_overlap", "font_range", "margins"})
 
     def test_a_relative_switch_fails_the_audit(self) -> None:
         report = _audit("relative_switch")
@@ -150,22 +161,33 @@ class CompiledDiagramTests(unittest.TestCase):
         self.assertEqual(check["boundary_crossings"], [])
 
     def test_a_six_point_label_fails_the_floor_of_an_eleven_point_manuscript(self) -> None:
-        check = _audit("small_label", body_pt=11)["checks"]["font_floor"]
+        check = _audit("small_label", body_pt=11)["checks"]["font_range"]
         self.assertEqual(check["verdict"], "fail")
         self.assertEqual(check["min_printed_pt"], 7.7)
         self.assertEqual({item["text"] for item in check["offending"]}, {"Pilot", "tables"})
 
     def test_the_same_label_enlarged_passes_the_floor(self) -> None:
-        check = _audit("enlarged_label", body_pt=11)["checks"]["font_floor"]
+        check = _audit("enlarged_label", body_pt=11)["checks"]["font_range"]
         self.assertEqual(check["verdict"], "pass")
         self.assertGreaterEqual(check["smallest_printed_pt"], 7.7 * print_scale.TEX_PT_TO_PDF_PT)
+        self.assertLessEqual(check["largest_printed_pt"], 9.9 * print_scale.TEX_PT_TO_PDF_PT)
+
+    def test_a_body_size_label_fails_the_cap_of_a_ten_point_manuscript(self) -> None:
+        report = _audit("large_label", body_pt=10)
+        check = report["checks"]["font_range"]
+        self.assertEqual(check["verdict"], "fail")
+        self.assertEqual(report["failures"], ["font_range"])
+        self.assertEqual(check["max_printed_pt"], 9.0)
+        self.assertEqual({item["bound"] for item in check["offending"]}, {"cap"})
+        self.assertIn("font_range: 'Pilot' prints at 9.963 pt > 8.9664 pt",
+                      diagram_audit.failure_messages(report))
 
     def test_the_floor_is_read_at_the_declared_width(self) -> None:
         """Placed at a third of its natural width, the 8 pt label prints at
         about 2.7 pt: the declared inclusion width decides, not the source."""
         pdf, _, _ = _Compiled.get("enlarged_label")
         natural = print_scale.content_bbox(pdf)["mediabox"][2]
-        check = _audit("enlarged_label", body_pt=11, printed_width_pt=natural / 3)["checks"]["font_floor"]
+        check = _audit("enlarged_label", body_pt=11, printed_width_pt=natural / 3)["checks"]["font_range"]
         self.assertEqual(check["verdict"], "fail")
 
     def test_a_background_canvas_fails_the_margins(self) -> None:

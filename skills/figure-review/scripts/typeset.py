@@ -2,8 +2,8 @@
 not from its raster (specs S2, S3, S4 of
 `odd/tasks/figure-and-table-quality.md`).
 
-    min-printed-font  every text span, at its printed size, is at least
-                      0.70 x the manuscript body (`print_scale`)
+    printed-font-range  every text span, at its printed size, is between
+                        0.70 and 0.90 x the manuscript body (`print_scale`)
     background        no filled rectangle covering the page
     whitespace        no margin wider than `figure_dimensions.MAX_MARGIN_PT`
     in-figure-title   no title row above the plotting area
@@ -31,7 +31,7 @@ import findings  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "figure"))
 import figure_dimensions  # noqa: E402
 
-VECTOR_DIMENSIONS = ("min-printed-font", "background", "whitespace", "in-figure-title")
+VECTOR_DIMENSIONS = ("printed-font-range", "background", "whitespace", "in-figure-title")
 DEFAULT_BODY_PT = 10.0
 _SIZE_OPTION_RE = re.compile(r"^(\d+(?:\.\d+)?)pt$")
 
@@ -73,10 +73,10 @@ def measure_pdf(pdf: Path, *, body_pt: float, body_source: str,
         path_boxes = print_scale.drawn_path_boxes(pdf)
     except (print_scale.pdfium.PdfiumError, OSError):
         return _unmeasured("PDF_UNREADABLE")
-    floor = figure_dimensions.min_printed_font_verdict(font)
-    floor["bodySource"] = body_source
+    font_range = figure_dimensions.printed_font_range_verdict(font)
+    font_range["bodySource"] = body_source
     return {
-        "min-printed-font": floor,
+        "printed-font-range": font_range,
         "background": figure_dimensions.background_verdict(bounds["full_page_background"]),
         "whitespace": figure_dimensions.whitespace_verdict(bounds["margins"]),
         "in-figure-title": figure_dimensions.in_figure_title(spans, path_boxes, bounds["mediabox"]),

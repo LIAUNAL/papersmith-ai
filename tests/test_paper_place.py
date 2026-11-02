@@ -195,7 +195,8 @@ class PlaceRefusalTests(_PlaceCase):
 
 @unittest.skipUnless(PDFLATEX, NO_PDFLATEX)
 class PrintedFontFloorTests(_PlaceCase):
-    """S3: every text span at its printed size >= 0.70 x body. The printed
+    """S3, widened by S2 of `manuscript-polish-0-54`: every text span at its
+    printed size within [0.70, 0.90] x body. The printed
     width is `printedWidthFraction` (default 1.0) x the class text width,
     the body size comes from `paper/main.tex`."""
 
@@ -203,9 +204,15 @@ class PrintedFontFloorTests(_PlaceCase):
         payload = self.assertRefused(COMPILED.pdf("tiny-ticks"), "FIGURE_TEXT_BELOW_PRINT_FLOOR")
         self.assertIn("0.70", payload["detail"])
 
+    def test_body_size_axis_labels_refuse_above_the_print_cap(self) -> None:
+        payload = self.assertRefused(COMPILED.pdf("large-labels"), "FIGURE_TEXT_ABOVE_PRINT_CAP")
+        self.assertIn("0.90", payload["detail"])
+        self.assertIn("'Accuracy'", payload["detail"])
+        self.assertNotIn("FIGURE_TEXT_BELOW_PRINT_FLOOR", payload["detail"])
+
     def test_the_declared_inclusion_width_decides_the_printed_size(self) -> None:
-        # 9 pt ticks on a 268 pt-wide figure print at ~11.5 pt across the full
-        # 345 pt text width, but at ~5.7 pt when included at 0.5\textwidth.
+        # 7.5 pt ticks on a ~337 pt-wide figure print at ~7.7 pt across the
+        # full 345 pt text width, but at ~3.8 pt when included at 0.5\textwidth.
         code, payload = self._place(
             COMPILED.pdf("compliant"), self._provenance(printedWidthFraction=1.0), figure_id="full-width",
         )

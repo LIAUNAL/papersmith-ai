@@ -15,8 +15,9 @@ in the papersmith environment. Two calls:
 
 `apply_style` sets the figure to its printed size (the fraction of
 `\\textwidth` the manuscript's `\\includegraphics[width=...]` will use), so
-the inclusion scale is 1 and every text role (axis labels, ticks, legend,
-annotations) prints at least 0.70 x the body size; TrueType fonts are
+the inclusion scale is ~1 and every text role (axis labels, ticks, legend,
+annotations) prints between 0.70 and 0.90 x the body size (spec S2 of
+`odd/tasks/manuscript-polish-0-54.md`); TrueType fonts are
 embedded so the PDF keeps a text layer (`place` measures it).
 `save_figure` writes `savefig(pdf, bbox_inches="tight", pad_inches=0.02,
 transparent=True)`: no background, no wasted margin. It refuses a
@@ -34,12 +35,20 @@ from pathlib import Path
 #: column), keyed by body size. Pass `text_width_pt` for any other class.
 TEXT_WIDTH_PT = {10: 345.0, 11: 360.0, 12: 390.0}
 
+#: The printed text range, as a fraction of the body size; the same values
+#: as papersmith's `_core/figure/print_scale.py` (this file is copied into
+#: experiment repositories, so it cannot import it).
 MIN_RATIO = 0.70
+MAX_RATIO = 0.90
 TEX_PT_TO_PDF_PT = 72.0 / 72.27
 
-#: Text role sizes as a fraction of the body size, all >= MIN_RATIO.
-LABEL_RATIO = 0.90
-SMALL_RATIO = 0.80
+#: Text role sizes as a fraction of the body size, inside
+#: [MIN_RATIO, MAX_RATIO]. `bbox_inches="tight"` crops the saved figure a
+#: little, so `place` enlarges it (up to ~10 %) to fill the declared width:
+#: axis labels at 0.80 still print below 0.90 x body after that, ticks and
+#: legend at 0.75 stay above the 0.70 floor.
+LABEL_RATIO = 0.80
+SMALL_RATIO = 0.75
 
 PAD_INCHES = 0.02
 GOLDEN = 0.618

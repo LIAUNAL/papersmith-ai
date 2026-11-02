@@ -76,6 +76,23 @@ class RcParamsTests(unittest.TestCase):
             for role in TEXT_ROLES:
                 self.assertGreaterEqual(params[role], floor, (body, role))
 
+    def test_every_text_role_prints_inside_the_range_with_crop_headroom(self) -> None:
+        """S2 of `manuscript-polish-0-54`: every role within [0.70, 0.90] x
+        body. `bbox_inches="tight"` crops the figure a little, so `place`
+        enlarges it by up to ~10 % to fill the declared width: each role
+        still prints below the cap at that enlargement."""
+        self.assertEqual((ps_figures.MIN_RATIO, ps_figures.MAX_RATIO), (0.70, 0.90))
+        for body in (9, 10, 11, 12):
+            params = ps_figures.rc_params(body, 0.5)
+            floor = 0.70 * body * 72 / 72.27
+            cap = 0.90 * body * 72 / 72.27
+            for role in TEXT_ROLES:
+                with self.subTest(body=body, role=role):
+                    self.assertGreaterEqual(params[role], floor)
+                    self.assertLessEqual(params[role] * 1.10, cap)
+        params = ps_figures.rc_params(10, 1.0)
+        self.assertEqual((params["axes.labelsize"], params["xtick.labelsize"]), (7.97, 7.47))
+
     def test_the_figure_width_is_the_declared_printed_width(self) -> None:
         width, height = ps_figures.rc_params(10, 0.8)["figure.figsize"]
         self.assertAlmostEqual(width, 0.8 * 345 / 72.27, places=3)

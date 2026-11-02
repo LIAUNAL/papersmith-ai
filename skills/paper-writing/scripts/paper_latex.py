@@ -350,16 +350,25 @@ TABLE_MIN_SCALE = 0.85
 #: standard classes' 10/11/12 pt bodies (`size10.clo`, `size11.clo`,
 #: `size12.clo`). Other bodies scale the 10 pt row proportionally.
 _SIZE_SWITCH_PT = {
-    10.0: {"tiny": 5.0, "scriptsize": 7.0, "footnotesize": 8.0, "small": 9.0},
-    11.0: {"tiny": 6.0, "scriptsize": 8.0, "footnotesize": 9.0, "small": 10.0},
-    12.0: {"tiny": 6.0, "scriptsize": 8.0, "footnotesize": 10.0, "small": 10.95},
+    10.0: {"tiny": 5.0, "scriptsize": 7.0, "footnotesize": 8.0, "small": 9.0,
+           "normalsize": 10.0, "large": 12.0, "Large": 14.4, "LARGE": 17.28,
+           "huge": 20.74, "Huge": 24.88},
+    11.0: {"tiny": 6.0, "scriptsize": 8.0, "footnotesize": 9.0, "small": 10.0,
+           "normalsize": 10.95, "large": 12.0, "Large": 14.4, "LARGE": 17.28,
+           "huge": 20.74, "Huge": 24.88},
+    12.0: {"tiny": 6.0, "scriptsize": 8.0, "footnotesize": 10.0, "small": 10.95,
+           "normalsize": 12.0, "large": 14.4, "Large": 17.28, "LARGE": 20.74,
+           "huge": 24.88, "Huge": 24.88},
 }
 
 _TABLE_ENV_RE = re.compile(
     r"\\begin\{(?P<env>table\*?|sidewaystable\*?|tabular[x*]?|tabulary|longtable)\}"
 )
 _TABULAR_RE = re.compile(r"\\begin\{(?:tabular[x*]?|tabulary|longtable)\}")
-_SIZE_SWITCH_RE = re.compile(r"\\(?P<name>tiny|scriptsize|footnotesize|small)(?![A-Za-z])")
+_SIZE_SWITCH_RE = re.compile(
+    r"\\(?P<name>tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)(?![A-Za-z])"
+    r"|\\fontsize\s*\{\s*(?P<fontsize>[0-9]*\.?[0-9]+)\s*(?:pt)?\s*\}"
+)
 _SCALEBOX_RE = re.compile(r"\\scalebox\s*\{")
 _RESIZEBOX_RE = re.compile(r"\\resizebox\*?\s*\{")
 _ADJUSTBOX_ENV_RE = re.compile(r"\\begin\{adjustbox\}\s*\{")
@@ -369,6 +378,8 @@ _ADJUST_WIDTH_RE = re.compile(r"(?:^|,)\s*(?:max\s+)?(?:width|totalheight|height
 
 
 def _size_switch_pt(name: str, body_pt: float) -> float:
+    if name == "normalsize":
+        return float(body_pt)
     row = _SIZE_SWITCH_PT.get(float(body_pt))
     if row is not None:
         return row[name]
@@ -441,14 +452,24 @@ def lint_tables(latex: str, body_pt: float) -> list[dict]:
       source and the text shrinks with the box);
     - `table-scaled-below-floor`: `\\scalebox` or `adjustbox` `scale=`
       below `TABLE_MIN_SCALE` wrapping a tabular;
-    - `table-font-below-floor`: `\\tiny`/`\\scriptsize`/`\\footnotesize`/
-      `\\small` inside a table that prints below
-      `print_scale.min_printed_pt(body_pt)`.
+    - `table-font-below-floor`: a size switch (`\\tiny` ... `\\small`, or
+      `\\fontsize{<pt>}`) inside a table that prints below
+      `print_scale.min_printed_pt(body_pt)`;
+    - `table-font-above-cap` (spec S2 of
+      `odd/tasks/manuscript-polish-0-54.md`): a size switch inside a table
+      that prints above `print_scale.max_printed_pt(body_pt)` (0.90 x body:
+      `\\normalsize` and larger always, `\\small` at 11/12 pt), or a table
+      that declares no size at all and so prints at the body size (one
+      finding at its opening, command `\\normalsize (default)`). A float
+      resets its font to `\\normalsize`, so only a switch inside the
+      outermost table environment counts.
 
     Each finding: `{"rule", "line" (1-based in `latex`), "command",
-    "snippet"}` plus `factor` or `size_pt`/`min_printed_pt`."""
+    "snippet"}` plus `factor`, `size_pt`/`min_printed_pt` or
+    `size_pt`/`max_printed_pt`."""
     findings: list[dict] = []
     floor = _print_scale().min_printed_pt(body_pt)
+    cap = _print_scale().max_printed_pt(body_pt)
 
     for match in _SCALEBOX_RE.finditer(latex):
         factor_group = _brace_group(latex, match.end() - 1)
@@ -491,13 +512,31 @@ def lint_tables(latex: str, body_pt: float) -> list[dict]:
                 findings.append(_finding(latex, match.start(), "table-scaled-to-width", command))
 
     regions = _table_regions(latex)
+    outermost = [region for region in regions
+                 if not any(other != region and other[0] <= region[0] and region[1] <= other[1]
+                            for other in regions)]
+    declared = set()
     for match in _SIZE_SWITCH_RE.finditer(latex):
         if not any(start <= match.start() < end for start, end in regions):
             continue
-        size = _size_switch_pt(match.group("name"), body_pt)
+        declared.update(region for region in outermost if region[0] <= match.start() < region[1])
+        if match.group("fontsize") is not None:
+            size = float(match.group("fontsize"))
+            command = "\\fontsize{" + match.group("fontsize") + "}"
+        else:
+            size = _size_switch_pt(match.group("name"), body_pt)
+            command = "\\" + match.group("name")
         if size < floor - 1e-9:
             findings.append(_finding(latex, match.start(), "table-font-below-floor",
-                                     "\\" + match.group("name"), size_pt=size, min_printed_pt=floor))
+                                     command, size_pt=size, min_printed_pt=floor))
+        elif size > cap + 1e-9:
+            findings.append(_finding(latex, match.start(), "table-font-above-cap",
+                                     command, size_pt=size, max_printed_pt=cap))
+    for region in outermost:
+        if region not in declared:
+            findings.append(_finding(latex, region[0], "table-font-above-cap",
+                                     "\\normalsize (default)", size_pt=float(body_pt),
+                                     max_printed_pt=cap))
 
     findings.sort(key=lambda finding: finding["line"])
     return findings
@@ -505,8 +544,8 @@ def lint_tables(latex: str, body_pt: float) -> list[dict]:
 
 def table_lint_report(latex: str, main_tex: Path) -> dict:
     """The write envelope's `tableLint`: the body size read from `main_tex`
-    (the 10 pt fallback when it is absent), the floor, and `lint_tables`'s
-    findings. `status` is `"clean"` or `"warnings"`; never a refusal."""
+    (the 10 pt fallback when it is absent), the floor and the cap of
+    the printed range, and `lint_tables`'s findings. `status` is `"clean"` or `"warnings"`; never a refusal."""
     print_scale = _print_scale()
     if Path(main_tex).is_file():
         body, source = print_scale.body_font_pt(Path(main_tex))
@@ -518,5 +557,6 @@ def table_lint_report(latex: str, main_tex: Path) -> dict:
         "bodyPt": body,
         "bodySource": source,
         "minPrintedPt": print_scale.min_printed_pt(body),
+        "maxPrintedPt": print_scale.max_printed_pt(body),
         "findings": findings,
     }

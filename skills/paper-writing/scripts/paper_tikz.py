@@ -410,7 +410,8 @@ def scan_font_switches(tex: str) -> tuple:
 
     A diagram sets every size with an explicit `\\fontsize{<pt>}{<1.2 pt>}`
     computed from the manuscript body size and the width it is included at,
-    so each label prints at >= 0.70 x the body size (spec S3). A relative
+    so each label prints between 0.70 and 0.90 x the body size (spec S3 of
+    `figure-and-table-quality`, S2 of `manuscript-polish-0-54`). A relative
     switch means "whatever this class calls small" and cannot be checked
     from the source. The rule and its scanner live in
     `_core/figure/diagram_audit.find_size_switches`, the same one

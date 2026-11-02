@@ -19,7 +19,7 @@ repair-budget ledger.
 
 `measure` turns an already-produced raster into computed findings
 (out-of-bounds, overlap, canvas occupancy), and reads the figure PDF itself
-for the vector verdicts (`min-printed-font`, `background`, `whitespace`,
+for the vector verdicts (`printed-font-range`, `background`, `whitespace`,
 `in-figure-title`; see `typeset.py`): it reads the PNG and
 `raster-provenance.json` a prior `raster` call already wrote, decodes
 and measures via `png_read`/`geometry`/`findings`, and writes a

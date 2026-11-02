@@ -15,9 +15,12 @@ Spec S6 of `odd/tasks/figure-and-table-quality.md`. Given `paper/main.pdf`,
 - **figure-font** / **table-font**: the printed size of every text span
   inside a figure placement (an image or form XObject, i.e. an
   `\\includegraphics`) or a table region (a stack of horizontal rules:
-  booktabs or `\\hline`) against `print_scale.min_printed_pt(body)`.
-  Spans read from the compiled page already carry the placement transform,
-  so the size measured is the printed size.
+  booktabs or `\\hline`) against the printed range
+  [`print_scale.min_printed_pt(body)`, `print_scale.max_printed_pt(body)`]
+  = [0.70, 0.90] x body (the cap is spec S2 of
+  `odd/tasks/manuscript-polish-0-54.md`). Each finding names its `bound`
+  (`floor` or `cap`). Spans read from the compiled page already carry
+  the placement transform, so the size measured is the printed size.
 - **overfull**: every `Overfull \\hbox` of `main.log`, with its source lines
   and the page it was shipped on.
 - **language** / **placeholder**: Spanish prose and placeholder markers
@@ -66,6 +69,9 @@ RENDER_DPI = 100
 SCHEMA_VERSION = 1
 #: An object may pass the inferred text block by this much (PDF points).
 OVERFLOW_TOLERANCE_PT = 1.0
+#: Span sizes carry 3 decimals; a span set exactly at the 0.90 x body
+#: cap must not fail on that rounding (PDF points).
+CAP_TOLERANCE_PT = 1e-3
 #: The first body glyph sits below the block top by the ascender gap
 #: (`\topskip` minus the cap height); a float flush with the block top
 #: must not read as an overflow, so the top edge allows half a body size.
@@ -328,6 +334,8 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
     body_pdf = body_pt * print_scale.TEX_PT_TO_PDF_PT
     floor_tex = print_scale.min_printed_pt(body_pt)
     floor_pdf = floor_tex * print_scale.TEX_PT_TO_PDF_PT
+    cap_tex = print_scale.max_printed_pt(body_pt)
+    cap_pdf = cap_tex * print_scale.TEX_PT_TO_PDF_PT
 
     document = pdfium.PdfDocument(str(pdf))
     pages: list[dict] = []
@@ -399,17 +407,26 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
                               ("table", tables_here)):
             for region in regions:
                 inside = [s for s in page["spans"] if _inside(s["bbox"], region)]
-                small = [s for s in inside if s["size_pt"] + 1e-6 < floor_pdf]
+                outside = []
+                for span in inside:
+                    if span["size_pt"] + 1e-6 < floor_pdf:
+                        outside.append((span, "floor"))
+                    elif span["size_pt"] - CAP_TOLERANCE_PT > cap_pdf:
+                        outside.append((span, "cap"))
                 smallest = min((s["size_pt"] for s in inside), default=None)
+                largest = max((s["size_pt"] for s in inside), default=None)
                 row = {"page": number, "bbox": _round_box(region), "span_count": len(inside),
                        "smallest_printed_pt": None if smallest is None else round(smallest, 2),
-                       "verdict": "unmeasured" if not inside else ("fail" if small else "pass")}
+                       "largest_printed_pt": None if largest is None else round(largest, 2),
+                       "verdict": "unmeasured" if not inside else ("fail" if outside else "pass")}
                 (figures if kind == "figure" else tables).append(row)
-                for span in small:
+                for span, bound in outside:
                     _keep(findings, counts, {"kind": f"{kind}-font", "page": number, "object": "text",
                                              "bbox": _round_box(span["bbox"]),
                                              "printed_pt": round(span["size_pt"], 2),
                                              "min_printed_pt": round(floor_pdf, 2),
+                                             "max_printed_pt": round(cap_pdf, 2),
+                                             "bound": bound,
                                              "snippet": span["text"][:80]})
 
     log = paper_dir / "main.log"
@@ -446,6 +463,8 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         "body_source": body_source,
         "min_printed_pt": floor_tex,
         "min_printed_pdf_pt": round(floor_pdf, 3),
+        "max_printed_pt": cap_tex,
+        "max_printed_pdf_pt": round(cap_pdf, 3),
         "tolerance_pt": OVERFLOW_TOLERANCE_PT,
         "pages": page_rows,
         "figures": figures,

@@ -357,8 +357,8 @@ class DiagramCliTests(unittest.TestCase):
         if audit is not None:
             (png.parent / f"{kind}.audit.json").write_text(json.dumps({
                 "kind": kind, "verdict": audit, "png_sha256": sha,
-                "failures": [] if audit == "pass" else ["font_floor"],
-                "messages": [] if audit == "pass" else ["font_floor: 'x' prints at 5.0 pt < 6.97 pt"],
+                "failures": [] if audit == "pass" else ["font_range"],
+                "messages": [] if audit == "pass" else ["font_range: 'x' prints at 5.0 pt < 6.97 pt"],
             }), encoding="utf-8")
         return png, sha
 

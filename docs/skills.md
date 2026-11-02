@@ -2449,11 +2449,13 @@ that is too much is a composition judgement this skill does not make.
 live in `skills/_core/figure/figure_dimensions.py`, the same ones `place`
 refuses with):
 
-- `min-printed-font` — every text span (labels, ticks, legends,
-  annotations), at its printed size, is at least 0.70 x the manuscript body
-  font (`skills/_core/figure/print_scale.py`). It replaces the former
-  `legibility` silence: the threshold is now a declared rule, measured
-  whenever the PDF carries a text layer (`NO_TEXT_LAYER` otherwise).
+- `printed-font-range` — every text span (labels, ticks, legends,
+  annotations), at its printed size, is between 0.70 and 0.90 x the
+  manuscript body font (`skills/_core/figure/print_scale.py`); a `fail`
+  names `TEXT_BELOW_PRINT_FLOOR` or `TEXT_ABOVE_PRINT_CAP`. It replaces
+  the former `legibility` silence and, since 0.54, the floor-only
+  `min-printed-font`: the range is a declared rule, measured whenever the
+  PDF carries a text layer (`NO_TEXT_LAYER` otherwise).
 - `background` — no filled rectangle covering the page.
 - `whitespace` — no margin wider than 4 pt between the drawn content and
   the page.

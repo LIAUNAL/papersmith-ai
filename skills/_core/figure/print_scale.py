@@ -1,10 +1,17 @@
 """print_scale: how large a figure's text prints in the manuscript.
 
-One measured rule (spec S3 of `odd/tasks/figure-and-table-quality.md`):
-every text span of a figure, at its printed scale, is at least
-`MIN_RATIO` (0.70) times the manuscript's body font size. Diagrams,
-experiment plots and the manuscript QA pass all read the rule from here,
-so the threshold, the units and the measurement cannot drift apart.
+One measured rule (spec S3 of `odd/tasks/figure-and-table-quality.md`,
+widened to a range by spec S2 of `odd/tasks/manuscript-polish-0-54.md`):
+every text span of a figure or table, at its printed scale, is between
+`MIN_RATIO` (0.70) and `MAX_RATIO` (0.90) times the manuscript's body font
+size. Diagrams, experiment plots, `place`, `figure-review measure` and the
+manuscript QA pass all read the range from here, so the thresholds, the
+units and the measurement cannot drift apart.
+
+No glyph class is exempt from the cap: TeX's math size variants
+(sub/superscripts) only ever print smaller than the surrounding text, and a
+display operator from `cmex` is set with the same `Tf` size as its line, so
+a figure set at in-range sizes measures in range.
 
 Units. LaTeX sizes (`10pt`, `\\textwidth = 345pt`) are TeX points
 (1/72.27 in); everything read from a PDF (MediaBox, glyph sizes, bounding
@@ -15,6 +22,7 @@ exactly 70 %.
 Public API (stable; later writers import it, never copy it):
 
     MIN_RATIO: float = 0.70
+    MAX_RATIO: float = 0.90
     TEX_PT_TO_PDF_PT: float = 72 / 72.27
     TEXTWIDTH_PT: dict[str, float]
         `\\textwidth` / `\\columnwidth` in TeX points for common setups.
@@ -28,6 +36,8 @@ Public API (stable; later writers import it, never copy it):
         `\\documentclass`, or an unknown class without a size option).
     min_printed_pt(body_pt: float) -> float
         MIN_RATIO * body_pt, in TeX points.
+    max_printed_pt(body_pt: float) -> float
+        MAX_RATIO * body_pt, in TeX points.
     declared_width_pt(text_width_pt: float, fraction: float) -> float
         An inclusion width such as `0.8\\textwidth`, given the text width
         in TeX points, returned in PDF points (comparable to a MediaBox).
@@ -42,8 +52,12 @@ Public API (stable; later writers import it, never copy it):
          "scale": float, "mediabox_width_pt": float,
          "printed_width_pt": float | None, "body_pt": float,
          "min_printed_pt": float, "min_printed_pdf_pt": float,
-         "smallest_printed_pt": float | None, "span_count": int,
-         "offending": [{"text", "size_pt", "printed_pt", "bbox"}]}
+         "max_printed_pt": float, "max_printed_pdf_pt": float,
+         "smallest_printed_pt": float | None,
+         "largest_printed_pt": float | None, "span_count": int,
+         "offending": [{"text", "size_pt", "printed_pt", "bbox",
+                        "bound": "floor" | "cap"}]}
+        `fail` when any span prints below the floor or above the cap.
     content_bbox(pdf: Path, page_index: int = 0) -> dict
         {"mediabox": [l, b, r, t], "bbox": [l, b, r, t] | None,
          "margins": {"left", "right", "bottom", "top"} | None,
@@ -101,6 +115,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
 MIN_RATIO = 0.70
+MAX_RATIO = 0.90
 TEX_PT_TO_PDF_PT = 72.0 / 72.27
 FALLBACK_BODY_PT = 10.0
 
@@ -137,6 +152,9 @@ TEXTWIDTH_PT = {
 _SIZE_OPTION_RE = re.compile(r"^(\d+(?:\.\d+)?)pt$")
 _BACKGROUND_COVERAGE = 0.98
 _EPSILON = 1e-6
+#: Span sizes are rounded to 3 decimals (`_read_spans`); a span set exactly
+#: at the cap must not fail on that rounding.
+_CAP_TOLERANCE_PT = 1e-3
 
 
 def _parse_documentclass():
@@ -168,6 +186,11 @@ def body_font_pt(main_tex: Path) -> tuple[float, str]:
 def min_printed_pt(body_pt: float) -> float:
     """The smallest printed text size allowed, in TeX points."""
     return round(MIN_RATIO * float(body_pt), 6)
+
+
+def max_printed_pt(body_pt: float) -> float:
+    """The largest printed text size allowed, in TeX points."""
+    return round(MAX_RATIO * float(body_pt), 6)
 
 
 def declared_width_pt(text_width_pt: float, fraction: float) -> float:
@@ -246,7 +269,8 @@ def pdf_text_spans(pdf: Path, page_index: int = 0) -> list[dict]:
 
 
 def printed_font_report(figure_pdf: Path, printed_width_pt: float | None, body_pt: float) -> dict:
-    """The S3 verdict for one figure placed at `printed_width_pt`."""
+    """The printed-size range verdict for one figure placed at
+    `printed_width_pt`: every span within [floor, cap]."""
     document = pdfium.PdfDocument(str(figure_pdf))
     try:
         page = document[0]
@@ -258,6 +282,8 @@ def printed_font_report(figure_pdf: Path, printed_width_pt: float | None, body_p
     scale = 1.0 if printed_width_pt is None else float(printed_width_pt) / mediabox_width
     floor_tex = min_printed_pt(body_pt)
     floor_pdf = floor_tex * TEX_PT_TO_PDF_PT
+    cap_tex = max_printed_pt(body_pt)
+    cap_pdf = cap_tex * TEX_PT_TO_PDF_PT
     report = {
         "verdict": "unmeasured",
         "reason": None,
@@ -267,7 +293,10 @@ def printed_font_report(figure_pdf: Path, printed_width_pt: float | None, body_p
         "body_pt": float(body_pt),
         "min_printed_pt": floor_tex,
         "min_printed_pdf_pt": round(floor_pdf, 4),
+        "max_printed_pt": cap_tex,
+        "max_printed_pdf_pt": round(cap_pdf, 4),
         "smallest_printed_pt": None,
+        "largest_printed_pt": None,
         "span_count": len(spans),
         "offending": [],
     }
@@ -279,17 +308,26 @@ def printed_font_report(figure_pdf: Path, printed_width_pt: float | None, body_p
         return report
     offending = []
     smallest = None
+    largest = None
     for span in spans:
         printed = span["size_pt"] * scale
         smallest = printed if smallest is None else min(smallest, printed)
+        largest = printed if largest is None else max(largest, printed)
+        bound = None
         if printed + _EPSILON < floor_pdf:
+            bound = "floor"
+        elif printed - _CAP_TOLERANCE_PT > cap_pdf:
+            bound = "cap"
+        if bound is not None:
             offending.append({
                 "text": span["text"],
                 "size_pt": span["size_pt"],
                 "printed_pt": round(printed, 3),
                 "bbox": span["bbox"],
+                "bound": bound,
             })
     report["smallest_printed_pt"] = round(smallest, 3)
+    report["largest_printed_pt"] = round(largest, 3)
     report["offending"] = offending
     report["verdict"] = "fail" if offending else "pass"
     return report

@@ -4,7 +4,9 @@
 The fixture manuscript is compiled with pdflatex at test time: page 1 is
 clean, page 2 carries a tabular wider than the text block, page 3 a table in
 `\\tiny` under an 11 pt body, page 4 a figure whose 5 pt labels are placed at
-`0.5\\linewidth`.
+`0.5\\linewidth`. Spec S2 of `odd/tasks/manuscript-polish-0-54.md` adds a
+table left at the body size on page 3 and the same figure at the full
+`\\linewidth` on page 4, both above the 0.90 x body cap.
 """
 from __future__ import annotations
 
@@ -74,23 +76,44 @@ class ManuscriptQaTests(unittest.TestCase):
         self.assertIn("Sixth", {f["snippet"] for f in overflow})
         overfull = self.on_page(2, "overfull")
         self.assertEqual(len(overfull), 1)
-        self.assertEqual(overfull[0]["lines"], [40, 47])
+        self.assertEqual(overfull[0]["lines"], [45, 52])
         self.assertGreater(overfull[0]["excess_pt"], 100)
 
     def test_a_tiny_table_under_an_eleven_point_body_prints_below_the_floor(self) -> None:
         self.assertEqual(self.report["body_pt"], 11.0)
-        fonts = self.on_page(3, "table-font")
+        fonts = [f for f in self.on_page(3, "table-font") if f["bound"] == "floor"]
         self.assertIn("Accuracy", {f["snippet"] for f in fonts})
+        self.assertNotIn("Precision", {f["snippet"] for f in fonts})
         self.assertTrue(all(f["printed_pt"] < f["min_printed_pt"] for f in fonts))
         self.assertEqual(self.on_page(3, "overflow"), [])
 
     def test_a_figure_with_five_point_labels_prints_below_the_floor(self) -> None:
-        fonts = self.on_page(4, "figure-font")
+        fonts = [f for f in self.on_page(4, "figure-font") if f["bound"] == "floor"]
         self.assertIn("Axis", {f["snippet"] for f in fonts})
         self.assertTrue(all(f["printed_pt"] < 7.7 for f in fonts))
         figure = [f for f in self.report["figures"] if f["page"] == 4]
-        self.assertEqual([f["verdict"] for f in figure], ["fail"])
+        self.assertEqual([f["verdict"] for f in figure], ["fail", "fail"])
         self.assertEqual(self.on_page(4, "overflow"), [])
+
+    def test_the_report_states_both_bounds_of_the_printed_range(self) -> None:
+        self.assertEqual((self.report["min_printed_pt"], self.report["max_printed_pt"]), (7.7, 9.9))
+        self.assertAlmostEqual(self.report["max_printed_pdf_pt"], 9.9 * 72 / 72.27, places=3)
+        clean = [t for t in self.report["tables"] if t["page"] == 1]
+        self.assertLessEqual(clean[0]["largest_printed_pt"], 9.9 * 72 / 72.27)
+
+    def test_a_table_at_the_body_size_prints_above_the_cap(self) -> None:
+        fonts = [f for f in self.on_page(3, "table-font") if f["bound"] == "cap"]
+        self.assertIn("Precision", {f["snippet"] for f in fonts})
+        self.assertNotIn("Accuracy", {f["snippet"] for f in fonts})
+        self.assertTrue(all(f["printed_pt"] > f["max_printed_pt"] for f in fonts))
+        table = [t for t in self.report["tables"] if t["page"] == 3]
+        self.assertEqual([t["verdict"] for t in table], ["fail", "fail"])
+
+    def test_a_figure_stretched_past_the_cap_fails(self) -> None:
+        fonts = [f for f in self.on_page(4, "figure-font") if f["bound"] == "cap"]
+        self.assertIn("Axis", {f["snippet"] for f in fonts})
+        self.assertTrue(all(f["printed_pt"] > 9.9 for f in fonts))
+        self.assertEqual(len({tuple(f["bbox"]) for f in fonts}), len(fonts))
 
     def test_the_report_is_written_with_the_pdf_digest_and_page_images(self) -> None:
         written = json.loads((self.root / "paper" / ".qa" / "qa.json").read_text(encoding="utf-8"))
