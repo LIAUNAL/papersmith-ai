@@ -362,6 +362,9 @@
       const btn = Array.from(document.querySelectorAll('.model-subnav-btn'))
         .find((b) => (b.getAttribute('onclick') || '').includes(`'${a.section}'`));
       window.filterModelView(a.section, btn);
+    } else if (a.tab === 'atlas' && a.section && window.switchGraph) {
+      // On the graph panel the section names its view (atlas, novelty, papers…).
+      window.switchGraph(a.section);
     } else if (a.section) {
       // On any other tab the section names a panel to scroll to.
       document.getElementById(`${a.section}Panel`)?.scrollIntoView({ behavior: 'smooth' });

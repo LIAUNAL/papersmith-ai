@@ -2098,6 +2098,31 @@
     /* =========================================================
        CONCEPT MAP AND MATHEMATICAL MODEL
        ========================================================= */
+    .candidate-pool-note {
+      margin: 0 0 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .candidate-pool-note[hidden] { display: none; }
+    .candidate-pool-note ul { margin: 0.25rem 0 0.4rem 1.1rem; }
+    .candidate-pool-note__badges { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+    .candidate-pool-note summary { cursor: pointer; font-weight: 600; color: var(--text); }
+    .model-language-notice {
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border: 1px solid var(--warn);
+      border-left: 4px solid var(--warn);
+      border-radius: var(--radius);
+      background: rgba(245, 158, 11, 0.08);
+      font-size: 0.8rem;
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .model-language-notice[hidden] { display: none; }
     .model-header-banner {
       background: linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(31, 41, 55, 0.85));
       border: 1px solid rgba(56, 189, 248, 0.25);
@@ -2978,6 +3003,7 @@
           <span>👤 <strong data-i18n="model.authors">Authors:</strong> <span id="modelAuthorsVal" data-i18n="model.noAuthor">No author assigned</span></span>
           <span id="modelMetaExtra">⚡ <strong data-i18n="model.status">Status:</strong> <span data-i18n="model.statusValue">Deliberation and formal scaffolding</span></span>
         </div>
+        <div id="modelLanguageNotice" class="model-language-notice" role="status" hidden></div>
       </div>
 
       <!-- Sub-navigation Filter Bar -->
@@ -3003,7 +3029,6 @@
             <div id="modelProblemStatementText" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-left: 4px solid var(--bad); border-radius: var(--radius); padding: 0.9rem 1.15rem; font-size: 0.86rem; color: var(--text); line-height: 1.55;" data-i18n="model.problemDefault">The research problem and the technical gap are formalized during Phase 4, proposal deliberation.</div>
           </div>
 
-        <div id="modelLanguageNotice" class="model-language-notice" role="status" hidden></div>
           <!-- Novelty pillars (model-panel.js) -->
           <div style="margin-bottom: 1.25rem;">
             <h4 id="modelPillarsTitle" style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;" data-i18n="model.pillarsTitle">✨ Novelty Pillars of the Proposal</h4>
@@ -3268,7 +3293,7 @@
           <div class="matrix-stats-grid">
             <div class="matrix-stat-card">
               <span class="matrix-stat-val" id="candStatTotal">0</span>
-              <span class="matrix-stat-lbl" data-i18n="candidates.stat.total">Q1/Q2 Candidate Articles</span>
+              <span class="matrix-stat-lbl" data-i18n="candidates.stat.total">Candidate articles</span>
             </div>
             <div class="matrix-stat-card">
               <span class="matrix-stat-val" id="candStatFamilies">0</span>
@@ -3276,11 +3301,11 @@
             </div>
             <div class="matrix-stat-card">
               <span class="matrix-stat-val" id="candStatWindow">—</span>
-              <span class="matrix-stat-lbl" data-i18n="candidates.stat.window">SOTA Time Window</span>
+              <span class="matrix-stat-lbl" data-i18n="candidates.stat.window">Publication years</span>
             </div>
             <div class="matrix-stat-card">
               <span class="matrix-stat-val" id="candStatPlausible">—</span>
-              <span class="matrix-stat-lbl" data-i18n="candidates.stat.plausible">Validated Plausibility</span>
+              <span class="matrix-stat-lbl" data-i18n="candidates.stat.plausible">Anchor articles</span>
             </div>
           </div>
 
@@ -3310,7 +3335,8 @@
           </div>
 
           <!-- Friendly candidates table -->
-          <div class="table-responsive" style="max-height: 680px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius);">
+          <div id="candidatePoolNote" class="candidate-pool-note" hidden></div>
+            <div class="table-responsive" style="max-height: 680px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius);">
             <table class="table matrix-table">
               <thead>
                 <tr>
@@ -3319,7 +3345,7 @@
                   <th style="min-width: 320px;" data-i18n="candidates.col.article">Article &amp; Authors</th>
                   <th style="width: 170px;" data-i18n="candidates.col.venue">Journal / Venue</th>
                   <th style="width: 160px;" data-i18n="candidates.col.family">Family / Cluster</th>
-                  <th style="min-width: 260px;" data-i18n="candidates.col.contribution">Contribution &amp; Plausibility</th>
+                  <th style="min-width: 260px;" data-i18n="candidates.col.contribution">Role in the pool</th>
                   <th style="width: 110px; text-align: center;">Abstract</th>
                 </tr>
               </thead>
@@ -3924,6 +3950,7 @@
 
     let candidatesData = [];
     let candidatesFamilies = [];
+    let candidatesPool = null;
     let candidatesLoaded = false;
 
     // ---- Graph toolbar: regenerate, cluster layout and node selection ----
@@ -4150,6 +4177,7 @@
         const json = await res.json();
         candidatesData = json.candidates || [];
         candidatesFamilies = json.families || [];
+        candidatesPool = json;
         candidatesLoaded = true;
 
         // Populate family filter dropdown
@@ -4169,11 +4197,40 @@
         if (statTotal) statTotal.textContent = candidatesData.length;
         const statFam = document.getElementById('candStatFamilies');
         if (statFam) statFam.textContent = candidatesFamilies.length;
+        // The window and the anchors come from the pool itself, never a default.
+        const years = candidatesData.map((c) => Number(c.year)).filter((y) => Number.isFinite(y) && y > 0);
+        const statWindow = document.getElementById('candStatWindow');
+        if (statWindow) {
+          const lo = years.length ? Math.min(...years) : null;
+          const hi = years.length ? Math.max(...years) : null;
+          statWindow.textContent = lo === null ? '—' : (lo === hi ? String(lo) : `${lo}–${hi}`);
+        }
+        const statAnchors = document.getElementById('candStatPlausible');
+        if (statAnchors) statAnchors.textContent = candidatesData.filter((c) => c.anchor === true).length;
+        renderCandidatePoolNote();
 
         filterCandidatesMatrix();
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--bad);">${escapeHtml(t('candidates.loadError', { error: err.message }))}</td></tr>`;
       }
+    }
+
+    // What the pool says of itself: its note, what it still owes, what it left out.
+    function renderCandidatePoolNote() {
+      const box = document.getElementById('candidatePoolNote');
+      if (!box) return;
+      const pool = candidatesPool || {};
+      const parts = [];
+      if (pool.retrieved) parts.push(`<span class="badge">${escapeHtml(t('candidates.retrievedOn', { date: pool.retrieved }))}</span>`);
+      if (pool.excluded) parts.push(`<span class="badge badge--warn">${escapeHtml(t('candidates.excluded', { n: pool.excluded }))}</span>`);
+      const owed = (pool.owed || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+      let html = parts.length ? `<div class="candidate-pool-note__badges">${parts.join(' ')}</div>` : '';
+      if (owed) html += `<div><strong>${escapeHtml(t('candidates.owed'))}</strong><ul>${owed}</ul></div>`;
+      if (pool.plausibility_note) {
+        html += `<details><summary>${escapeHtml(t('candidates.poolNote'))}</summary><p>${escapeHtml(pool.plausibility_note)}</p></details>`;
+      }
+      box.innerHTML = html;
+      box.hidden = !html;
     }
 
     function filterCandidatesMatrix() {
@@ -4232,11 +4289,13 @@
               ${c.identifier ? `<a href="${doiUrl}" target="_blank" class="badge badge--info" style="text-transform: none; font-size: 0.7rem;" title="${escapeHtml(t('candidates.openDoi'))}">🔗 ${escapeHtml(c.identifier)} ↗</a>` : ''}
             </div>
           </td>
-          <td><span style="font-style: italic; color: var(--text-dim); font-size: 0.8rem;">${escapeHtml(c.venue || t('candidates.defaultVenue'))}</span></td>
+          <td><span style="font-style: italic; color: var(--text-dim); font-size: 0.8rem;">${escapeHtml(c.venue || '—')}</span></td>
           <td><span class="badge ${getFamilyBadgeClass(c.family)}">${escapeHtml(c.family || 'general')}</span></td>
           <td>
-            <div style="font-size: 0.78rem; color: var(--text); background: rgba(56, 189, 248, 0.05); padding: 0.45rem 0.65rem; border-radius: 4px; border-left: 2px solid var(--accent); line-height: 1.4;">
-              ${escapeHtml(c.plausibility_note || t('candidates.defaultPlausibility'))}
+            <div style="font-size: 0.78rem; color: var(--text); display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;">
+              ${c.anchor === true ? `<span class="badge badge--ok">${escapeHtml(t('candidates.anchor'))}</span>` : ''}
+              ${c.family_provenance ? `<span class="badge">${escapeHtml(t('candidates.provenance', { provenance: c.family_provenance }))}</span>` : ''}
+              ${c.anchor !== true && !c.family_provenance ? '—' : ''}
             </div>
           </td>
           <td style="text-align: center;">
@@ -4258,7 +4317,7 @@
               <strong style="color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em;">${t('candidates.fullAbstract')}</strong>
               <div style="display: flex; gap: 0.5rem;">
                 ${doiUrl ? `<a href="${doiUrl}" target="_blank" class="btn btn--sm" style="font-size: 0.72rem;">${t('candidates.openPublication')}</a>` : ''}
-                <button class="btn btn--sm" style="font-size: 0.72rem;" onclick="copyCandidateBibtex(${JSON.stringify(c.title).replace(/"/g, '&quot;')}, ${c.year || 2022}, ${JSON.stringify(c.venue || '').replace(/"/g, '&quot;')}, ${JSON.stringify(c.identifier || '').replace(/"/g, '&quot;')}, this)">${t('candidates.copyCitation')}</button>
+                <button class="btn btn--sm" style="font-size: 0.72rem;" onclick="copyCandidateBibtex(${JSON.stringify(c.title).replace(/"/g, '&quot;')}, ${JSON.stringify(c.year || '').replace(/"/g, '&quot;')}, ${JSON.stringify(c.venue || '').replace(/"/g, '&quot;')}, ${JSON.stringify(doiUrl || '').replace(/"/g, '&quot;')}, this)">${t('candidates.copyCitation')}</button>
               </div>
             </div>
             <div class="candidate-abstract-box">
@@ -4267,8 +4326,8 @@
             <div style="font-size: 0.75rem; color: var(--text-dim); display: flex; gap: 1.5rem; flex-wrap: wrap; padding-top: 0.25rem;">
               <span><strong>${t('candidates.allAuthors')}</strong> ${escapeHtml(authorsList.join(', '))}</span>
               <span><strong>${t('candidates.cluster')}</strong> <code>${escapeHtml(c.family || 'general')}</code></span>
-              <span><strong>${t('candidates.retrieved')}</strong> ${c.retrieval_date || '2026-10-14'}</span>
-              <span><strong>${t('candidates.resolver')}</strong> ${c.resolver || 'OpenAlex'}</span>
+              <span><strong>${t('candidates.retrieved')}</strong> ${escapeHtml(c.retrieved || c.retrieval_date || '—')}</span>
+              <span><strong>${t('candidates.resolver')}</strong> ${escapeHtml(c.resolver || '—')}</span>
             </div>
           </td>
         `;
@@ -4297,8 +4356,8 @@
       filterCandidatesMatrix();
     }
 
-    function copyCandidateBibtex(title, year, venue, doi, btnEl) {
-      const text = `${title}. (${year}). ${venue}. DOI: https://doi.org/${doi}`;
+    function copyCandidateBibtex(title, year, venue, url, btnEl) {
+      const text = [title, year ? `(${year})` : '', venue, url].filter(Boolean).join('. ');
       navigator.clipboard.writeText(text).then(() => {
         const orig = btnEl.textContent;
         btnEl.textContent = t('common.copied');
@@ -6637,6 +6696,8 @@
       const titleEl = document.getElementById('atlasPanelTitle');
       if (titleEl && titleKey) titleEl.textContent = t(titleKey);
       if (candidatesLoaded) filterCandidatesMatrix();
+      // The server localizes the neutral model spec's labels: fetch it again.
+      if (modelDataCache) refreshModelData();
       // The novelty view and the candidate link are drawn by the server: reload them.
       if (currentGraphKind === 'novelty' && graphFramePath() === '/api/atlas/novelty/view') {
         document.getElementById('graphIframe').src = apiUrl('/api/atlas/novelty/view');
@@ -6696,8 +6757,6 @@
   </button>
   <div id="smithTerminalWindow" class="smith-term" role="dialog" aria-label="Smith CLI Assistant" data-i18n-attr="aria-label:cli.title" aria-hidden="true">
     <div class="smith-term__header">
-      // The server localizes the neutral model spec's labels: fetch it again.
-      if (modelDataCache) refreshModelData();
       <img src="./smith-face.png" alt="" class="smith-term__logo">
       <span class="smith-term__title" data-i18n="cli.title">Smith CLI Assistant</span>
       <span id="terminalStatusDot" class="smith-term__dot"></span>

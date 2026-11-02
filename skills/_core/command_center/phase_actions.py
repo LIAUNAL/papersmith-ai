@@ -97,6 +97,8 @@ ACTIONS: dict[str, dict[str, Any]] = {
             ], "E.g.: Current models lose accuracy outside their training domain. I propose …",
                 min_sentences=2, keyword_help=True),
             _redirect("View the SOTA constellation", "atlas", "3D atlas of the candidate pool."),
+            _redirect("View the candidate matrix", "atlas",
+                      "Every scouted article with its family, year, venue and abstract.", "papers"),
         ],
     },
     "ingestion": {

@@ -37,6 +37,8 @@
   "E.g.: Current models lose accuracy outside their training domain. I propose …": "Ej.: Los modelos actuales pierden precisión fuera de su dominio de entrenamiento. Propongo …",
   "View the SOTA constellation": "Ver la constelación SOTA",
   "3D atlas of the candidate pool.": "Atlas 3D del pool de candidatos.",
+  "View the candidate matrix": "Ver la matriz de candidatos",
+  "Every scouted article with its family, year, venue and abstract.": "Cada artículo explorado con su familia, año, revista y resumen.",
   "Ingest references": "Ingerir referencias",
   "Give the path or URL of the PDFs to ingest (usually the top 5 accepted in plausibility).": "Indica la ruta o URL de los PDF a ingerir (normalmente el top 5 aceptado en plausibilidad).",
   "Each PDF is filed in its topic folder and converted to Markdown: equations in LaTeX, tables in Markdown, figures as files.": "Cada PDF se archiva en su carpeta de tema y se convierte a Markdown: ecuaciones en LaTeX, tablas en Markdown, figuras como archivos.",
