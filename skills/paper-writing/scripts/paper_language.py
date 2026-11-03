@@ -216,6 +216,7 @@ _LEAD_IN = re.compile(
     r"(?:\\textbf\s*\{|\{\s*\\bf\b|\\(?:sub)?paragraph\*?\s*\{)"
 )
 _DESCRIPTION_LABEL = re.compile(r"^\s*\\item\s*\[")
+_SECTIONING = re.compile(r"\\(?:chapter|section|subsection|subsubsection)\*?\s*[\[{]")
 _TABULAR_BEGIN = re.compile(r"\\begin\{(?:tabular\*?|tabularx|longtable|array)\}")
 _TABULAR_END = re.compile(r"\\end\{(?:tabular\*?|tabularx|longtable|array)\}")
 
@@ -230,19 +231,25 @@ def bold_lead_ins(tex: str) -> list[dict]:
     in_table = 0
     paragraph_start = True
     for number, line in enumerate(tex.splitlines(), 1):
-        stripped = _COMMENT.sub("", line).strip()
-        if _TABULAR_BEGIN.search(stripped):
-            in_table += 1
-        if not stripped:
+        if not line.strip():
+            # Only a blank line ends a paragraph; a comment-only line does not.
             paragraph_start = True
             continue
+        stripped = _COMMENT.sub("", line).strip()
+        if not stripped:
+            continue
+        if _TABULAR_BEGIN.search(stripped):
+            in_table += 1
         starts = paragraph_start or stripped.startswith("\\item")
         if not in_table and starts and not stripped.startswith("\\begin") \
                 and (_LEAD_IN.match(stripped) or _DESCRIPTION_LABEL.match(stripped)):
             hits.append({"line": number, "text": stripped[:80]})
         if _TABULAR_END.search(stripped):
             in_table = max(0, in_table - 1)
-        paragraph_start = stripped.startswith("\\begin") or stripped.startswith("\\end")
+        # The line after an environment boundary or a sectioning command
+        # starts a paragraph of its own.
+        paragraph_start = (stripped.startswith(("\\begin", "\\end"))
+                           or bool(_SECTIONING.match(stripped)))
     return hits
 
 

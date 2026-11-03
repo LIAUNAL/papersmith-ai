@@ -61,6 +61,17 @@ class DetectorTests(unittest.TestCase):
             with self.subTest(form=name):
                 self.assertEqual(paper_language.bold_lead_ins(latex), [], latex)
 
+    def test_a_comment_line_does_not_split_a_paragraph(self) -> None:
+        # LaTeX ends a paragraph only on a blank line; a comment-only line
+        # keeps the next line inside the same paragraph.
+        tex = "The split was stratified by label.\n% reviewer note\n\\textbf{subjects} stayed apart."
+        self.assertEqual(paper_language.bold_lead_ins(tex), [])
+
+    def test_a_paragraph_right_after_a_heading_is_checked(self) -> None:
+        tex = "\\subsection{Data}\n\\textbf{Partition.} The data were split by subject."
+        hits = paper_language.bold_lead_ins(tex)
+        self.assertEqual([hit["line"] for hit in hits], [2])
+
     def test_a_hit_names_its_line(self) -> None:
         hits = paper_language.bold_lead_ins("First paragraph.\n\n\\textbf{Partition.} Second one.")
         self.assertEqual(hits[0]["line"], 3)
