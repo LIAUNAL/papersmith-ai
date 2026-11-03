@@ -162,6 +162,12 @@ Siempre al final. **El único bloque de la sección que cita**: una referencia p
 dirección, que muestra que la dirección está viva en la literatura. Todo lo anterior
 no cita nada.
 
+**Es el último párrafo de la sección, y un párrafo propio.** Abre tras un punto y
+aparte, nunca como una oración que continúa el párrafo anterior. `write` y
+`humanize --apply` abren el cuerpo de este bloque con una línea en blanco, y `verify`
+reporta un bloque de trabajo futuro que se funde con el párrafo de arriba
+(`own-paragraph`).
+
 **El trabajo futuro es el subconjunto pertinente de las limitaciones, con una referencia por
 dirección.** Cada dirección responde a una limitación declarada: una dirección por
 limitación pertinente, cada una con su cita.
@@ -255,6 +261,7 @@ una fila de cadena interna.
 - Un número que difiere de la sección de resultados, en valor, unidad o precisión.
 - Más de una cifra principal para una misma contribución.
 - Una dirección de trabajo futuro que no responde a ninguna limitación declarada.
+- Un bloque de trabajo futuro que continúa el párrafo anterior en lugar de abrir el suyo.
 - Una cita en cualquier lugar fuera del bloque de trabajo futuro.
 - Una dirección de trabajo futuro sin referencia.
 - Una dirección de trabajo futuro demasiado vaga para ser un artículo.

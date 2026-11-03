@@ -1045,10 +1045,10 @@ PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
     "05-related-work.md": "614b1e054feb9fa962ce932158ef94e2fcb358f79c168e9ba87e5a91b19f0f74",
     "06-introduction.md": "9a81434de6c2cc2f35021d5d8318680570e8d8df788defc021a530177eb74db4",
-    "07-conclusions.md": "2e6b63d044e3e7b4261e3bf9985dbc250863f8d2d10168c97345770bdf90ee58",
+    "07-conclusions.md": "c956d406bc200361379e61c8730e9a28ca728a64aa79639b49a0914980b688d0",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
     "09-title-and-keywords.md": "da815396e1dfa2a673fe3f29ba37ffff08da3a6f80bb4691fdd1a2784229aef5",
-    "10-back-matter.md": "c6960551711521fae9359e01c9eb43074595adf6ca0982543e816ddd9b9fdd0f",
+    "10-back-matter.md": "f7bae759819b6e72a385a43a58acb1179102003f5959f8bf9bfe919c5ef0b89b",
 }
 
 

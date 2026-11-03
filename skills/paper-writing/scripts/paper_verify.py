@@ -98,7 +98,7 @@ UNMEASURED_REASONS: tuple[str, ...] = (
 #: The structural checks `run()` reports under its own `structure` key,
 #: apart from the closed `CHECKS` roster of couplings (whose count and
 #: arithmetic stay exactly what `ReportShapeTests` pins).
-STRUCTURE_CHECKS: tuple[str, ...] = ("back-matter-order",)
+STRUCTURE_CHECKS: tuple[str, ...] = ("back-matter-order", "own-paragraph", "appendix-length")
 
 _VERDICTS = ("pass", "fail", "unmeasured")
 
@@ -736,7 +736,117 @@ def check_language(evidence, *, optional_block_ids: frozenset = frozenset(),
     )
 
 
-_STRUCTURE_FUNCTIONS = {"back-matter-order": check_back_matter_order}
+#: Blocks that open a paragraph of their own: the future-work block closes the
+#: conclusions as their last paragraph, and every declaration is a paragraph.
+#: Their markers are comments, so a block that follows another with no blank
+#: line in between would run into its last paragraph.
+OWN_PARAGRAPH_BLOCKS: frozenset = frozenset({
+    "conclusions.concl-block-4",
+    "back-matter.bm-author-contributions", "back-matter.bm-funding",
+    "back-matter.bm-data-availability", "back-matter.bm-code-availability",
+    "back-matter.bm-ethics-statement", "back-matter.bm-informed-consent",
+    "back-matter.bm-conflicts-of-interest", "back-matter.bm-acknowledgments",
+})
+_ANY_BEGIN_RE = re.compile(rb"^%% paper-writing block ([\w.-]+) begin[^\n]*\n", re.M)
+_SECTIONING_LINE_RE = re.compile(rb"^\s*\\(?:part|chapter|section|subsection|subsubsection)\*?\s*[\[{]")
+
+
+def _opens_paragraph(data: bytes, begin: int, body_start: int) -> bool:
+    """Whether the body starting at `body_start` opens a paragraph: its own
+    first line is blank, or the last non-comment line before the begin marker
+    is blank, a sectioning command, or the start of the file."""
+    if data[body_start:body_start + 1] == b"\n":
+        return True
+    before = data[:begin].split(b"\n")[:-1]
+    for line in reversed(before):
+        stripped = line.strip()
+        if stripped.startswith(b"%"):
+            continue
+        return not stripped or bool(_SECTIONING_LINE_RE.match(line))
+    return True
+
+
+def check_own_paragraph(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
+    """`own-paragraph`: every block in `OWN_PARAGRAPH_BLOCKS` present in
+    `main.tex` opens a paragraph of its own. Reports the blocks that run into
+    the paragraph before them; never repairs (`write` and `humanize --apply`
+    open those bodies on a blank line).
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity."""
+    data = evidence.main_tex_bytes
+    checked, run_on = [], []
+    for match in _ANY_BEGIN_RE.finditer(data):
+        block_id = match.group(1).decode("ascii")
+        if block_id not in OWN_PARAGRAPH_BLOCKS:
+            continue
+        checked.append(block_id)
+        if not _opens_paragraph(data, match.start(), match.end()):
+            run_on.append(block_id)
+    return _entry(
+        "own-paragraph", classification="mechanical",
+        verdict="fail" if run_on else "pass",
+        sides=[{"name": "own-paragraph block begin markers", "source": "derived", "origin": "main.tex"}],
+        evidence={"checked": checked, "run_on": run_on},
+        limits=[], unmeasured_reason=None,
+    )
+
+
+#: One printed page of the body, in words of prose; a display equation counts
+#: as `_EQUATION_WORDS` and a table row as `_ROW_WORDS`. An appendix at or
+#: under one page belongs in the body section that needs it.
+PAGE_WORDS = 550
+_EQUATION_WORDS = 40
+_ROW_WORDS = 15
+_APPENDIX_BLOCK = b"back-matter.bm-appendices"
+_DISPLAY_RE = re.compile(rb"\\begin\{(?:equation|align|gather|multline|eqnarray)\*?\}|\\\[|\$\$")
+_TABULAR_RE = re.compile(rb"\\begin\{(?:tabular|tabularx|longtable)\*?\}(.*?)\\end\{(?:tabular|tabularx|longtable)\*?\}", re.S)
+_MATH_RE = re.compile(rb"\\begin\{(equation|align|gather|multline|eqnarray)\*?\}.*?\\end\{\1\*?\}|\\\[.*?\\\]|\$\$.*?\$\$|\$[^$]*\$", re.S)
+_WORD_RE = re.compile(rb"[A-Za-z][A-Za-z'-]+")
+_COMMAND_RE = re.compile(rb"\\[A-Za-z@]+\*?")
+
+
+def check_appendix_length(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
+    """`appendix-length`: an appendix that prints in one page or less is not an
+    appendix -- its content goes into the body section that needs it,
+    Materials and Methods for a derivation or a formal detail, the
+    experimental set-up for a table of settings. The extent is estimated
+    from the source: prose words, plus `_EQUATION_WORDS` per display
+    equation and `_ROW_WORDS` per table row, against `PAGE_WORDS`. No
+    appendix, or an empty one, passes.
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity."""
+    data = evidence.main_tex_bytes
+    begin = re.search(rb"^%% paper-writing block " + re.escape(_APPENDIX_BLOCK) + rb" begin[^\n]*\n", data, re.M)
+    end = re.search(rb"^%% paper-writing block " + re.escape(_APPENDIX_BLOCK) + rb" end", data, re.M)
+    body = data[begin.end():end.start()] if begin and end and end.start() > begin.end() else b""
+    body = b"\n".join(line for line in body.split(b"\n") if not line.strip().startswith(b"%"))
+    tables = _TABULAR_RE.findall(body)
+    rows = sum(table.count(b"\\\\") for table in tables)
+    equations = len(_DISPLAY_RE.findall(body))
+    prose = _COMMAND_RE.sub(b" ", _TABULAR_RE.sub(b" ", _MATH_RE.sub(b" ", body)))
+    words = len(_WORD_RE.findall(prose))
+    extent = words + _EQUATION_WORDS * equations + _ROW_WORDS * rows
+    present = bool(words or equations or rows)
+    short = present and extent <= PAGE_WORDS
+    move_to = None
+    if short:
+        move_to = "experimental-setup" if rows and not equations else "materials-and-methods"
+    return _entry(
+        "appendix-length", classification="mechanical",
+        verdict="fail" if short else "pass",
+        sides=[{"name": "appendix block body", "source": "derived", "origin": "main.tex"},
+               {"name": "one printed page", "source": "derived", "origin": f"{PAGE_WORDS} words"}],
+        evidence={"present": present, "words": words, "display_equations": equations,
+                  "table_rows": rows, "estimated_words": extent, "page_words": PAGE_WORDS,
+                  "move_to": move_to},
+        limits=["the extent is estimated from the source; the compiled PDF is the final measure"],
+        unmeasured_reason=None,
+    )
+
+
+_STRUCTURE_FUNCTIONS = {"back-matter-order": check_back_matter_order,
+                        "own-paragraph": check_own_paragraph,
+                        "appendix-length": check_appendix_length}
 assert set(_STRUCTURE_FUNCTIONS) == set(STRUCTURE_CHECKS), "every STRUCTURE_CHECKS member needs one function"
 
 
