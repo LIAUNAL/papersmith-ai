@@ -3405,8 +3405,10 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
                 f"Draft flow score {flow['flow_score']} needs revision ({', '.join(categories)}); "
                 "rebuild the transitions and cut the repetition the findings locate, or use --force to override.",
             )
+        paper_write.check_lead_ins(args.block, draft_body)
         contract = Path(args.contract) if args.contract else None
-        paper_block.substitute(paper_dir, args.block, new_body=draft_body.encode("utf-8"), contract=contract)
+        body = paper_write.own_paragraph_body(args.block, draft_body)
+        paper_block.substitute(paper_dir, args.block, new_body=body.encode("utf-8"), contract=contract)
         applied = True
 
     return {

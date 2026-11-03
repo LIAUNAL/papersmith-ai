@@ -31,6 +31,7 @@ import paper_block  # noqa: E402
 import paper_evidence  # noqa: E402
 import paper_language  # noqa: E402
 import paper_latex  # noqa: E402
+import paper_verify  # noqa: E402
 import paper_vocabulary  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
@@ -138,12 +139,23 @@ def _stage_evidence_audit(contract: BlockContract, draft: dict) -> list:
 NO_BOLD_LEAD_IN_SECTIONS = frozenset({"introduction", "experimental-setup"})
 
 
-def _stage_lead_ins(contract: BlockContract, draft: dict) -> None:
-    """Refuse `DRAFT_BOLD_LEAD_IN` before any attempt is spent."""
-    section = contract.block_id.split(".", 1)[0] if "." in contract.block_id else ""
+def own_paragraph_body(block_id: str, body: str) -> str:
+    """The body as written, opened on a blank line when the block must start
+    a paragraph of its own (`paper_verify.OWN_PARAGRAPH_BLOCKS`): its begin
+    marker is a comment, so without the blank line it would run into the
+    paragraph before it."""
+    if block_id in paper_verify.OWN_PARAGRAPH_BLOCKS and not body.startswith("\n"):
+        return "\n" + body
+    return body
+
+
+def check_lead_ins(block_id: str, latex: str) -> None:
+    """Refuse `DRAFT_BOLD_LEAD_IN` for the sections that forbid it; shared by
+    `write` and `humanize --apply`."""
+    section = block_id.split(".", 1)[0] if "." in block_id else ""
     if section not in NO_BOLD_LEAD_IN_SECTIONS:
         return
-    hits = paper_language.bold_lead_ins(draft["latex"])
+    hits = paper_language.bold_lead_ins(latex)
     if hits:
         lines = ", ".join(f"line {hit['line']}: {hit['text'][:50]!r}" for hit in hits[:5])
         raise Refused(
@@ -222,7 +234,7 @@ def write_block(
     if not isinstance(audit_account, dict) or "verdicts" not in audit_account or not isinstance(audit_account["verdicts"], list):
         raise Refused("AUDIT_UNREADABLE", "audit_account must be a dict with list 'verdicts'")
     language = _stage_language(paper_dir, draft)
-    _stage_lead_ins(contract, draft)
+    check_lead_ins(contract.block_id, draft["latex"])
     bindings = _stage_evidence_audit(contract, draft)
 
     key = _attempt_key(contract)
@@ -347,7 +359,8 @@ def write_block(
         )
         source_grounding = paper_grounding.source_grounding_report(subjects, reconciled)
 
-    result = paper_block.substitute(paper_dir, contract.block_id, new_body=draft["latex"].encode("utf-8"))
+    body = own_paragraph_body(contract.block_id, draft["latex"])
+    result = paper_block.substitute(paper_dir, contract.block_id, new_body=body.encode("utf-8"))
 
     # `the-block-asserts-only-what-its-section-carries` skill's own
     # falsifier ("over ten or more recorded real `write` runs...") needs a

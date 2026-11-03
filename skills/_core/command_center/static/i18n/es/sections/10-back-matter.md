@@ -227,6 +227,16 @@ canónico.
   más abajo, como sección propia sin número antes de las referencias, salvo que las
   instrucciones para autores indiquen otra cosa.
 
+## Cada declaración es un párrafo propio
+
+Las contribuciones de los autores, la financiación, las declaraciones de disponibilidad
+de datos y de código, las declaraciones de ética y de consentimiento, los conflictos de
+interés y los agradecimientos abren cada uno un párrafo propio, tras un punto y aparte:
+nunca dos declaraciones seguidas como oraciones consecutivas de un mismo párrafo. Sus
+bloques van uno tras otro en `main.tex` y sus marcadores son comentarios, así que
+`write` y `humanize --apply` abren cada uno de estos cuerpos con una línea en blanco, y
+`verify` reporta una declaración que se funde con la anterior (`own-paragraph`).
+
 ## Contribuciones de los autores
 
 Una fórmula, por eso su extensión apenas varía. Los roles CRediT, separados por
@@ -320,6 +330,15 @@ desde la sección del cuerpo que lo necesita**; uno que nada referencia es peso 
 
 Si el artículo tiene apéndices o no se decide para cada artículo. Cuando los tiene, van
 después de las referencias, nunca entre las declaraciones.
+
+**Un apéndice que ocupa una página o menos no es un apéndice.** Su contenido va a la
+sección del cuerpo que lo necesita, donde se lee en contexto y no a una vuelta de
+página: Materiales y Métodos para una derivación, una demostración o un detalle formal
+del método, y la configuración experimental para una tabla de parámetros, un detalle de
+protocolo o una configuración. Solo el material de más de una página queda después de
+las referencias. `verify` estima la extensión impresa de cada apéndice a partir de la
+fuente y reporta uno que cabe en una página (`appendix-length`), nombrando la sección a
+la que pertenece.
 
 ## Highlights
 
@@ -439,6 +458,8 @@ restringe ninguna otra sección.
 - Una afiliación interesada conocida sin declarar.
 - Una declaración ubicada después de las referencias, o un apéndice ubicado antes de ellas.
 - Un apéndice o un elemento suplementario que ninguna sección del cuerpo referencia.
+- Un apéndice que cabe en una página en lugar de estar en la sección del cuerpo que lo necesita.
+- Dos declaraciones fundidas en un mismo párrafo.
 - Contenido de un apéndice que contradice la configuración experimental.
 - Un highlight que afirma algo que las conclusiones no contienen, o un número que difiere
   de los resultados.

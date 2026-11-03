@@ -224,6 +224,16 @@ it, whatever order the canonical file holds.
 - **Any other venue.** The publisher-neutral template below, as its own unnumbered
   section before the references, unless the author guidelines say otherwise.
 
+## Each declaration is a paragraph of its own
+
+Author contributions, funding, the data and code availability statements, the ethics
+and consent statements, the conflicts of interest and the acknowledgments each open a
+paragraph of their own, after a paragraph break: never two declarations run together
+as consecutive sentences of one paragraph. Their blocks sit back to back in
+`main.tex` and their markers are comments, so `write` and `humanize --apply` open
+each of these bodies on a blank line, and `verify` reports a declaration that runs
+into the one before it (`own-paragraph`).
+
 ## Author Contributions
 
 A formula, which is why its length barely varies. The CRediT roles, semicolon
@@ -317,6 +327,14 @@ from the body section that needs it**; one that nothing references is dead weigh
 
 Whether the paper has appendices at all is decided per paper. When it has them, they
 come after the references, never among the declarations.
+
+**An appendix that prints in one page or less is not an appendix.** Its content goes
+into the body section that needs it, where it is read in context instead of a page
+turn away: Materials and Methods for a derivation, a proof or a formal detail of the
+method, and the experimental set-up for a table of settings, a protocol detail or a
+configuration. Only material longer than one page stays after the references.
+`verify` estimates each appendix's printed extent from the source and reports one
+that fits in a page (`appendix-length`), naming the section it belongs in.
 
 ## Highlights
 
@@ -431,6 +449,8 @@ because back matter renders after every body section and constrains no other sec
 - A known interested affiliation left undeclared.
 - A declaration placed after the references, or an appendix placed before them.
 - An appendix or supplementary item that no body section references.
+- An appendix that fits in one page instead of sitting in the body section that needs it.
+- Two declarations run together in one paragraph.
 - Appendix content that contradicts the experimental setup.
 - A highlight that states something the conclusions do not, or a number differing from
   the results.

@@ -82,6 +82,10 @@ class GuideTests(unittest.TestCase):
         paper_obligation.check_caption(figure, manifest["components"], manifest["encodings"],
                                        manifest["caption"])
         self.assertGreaterEqual(manifest["widthFraction"], 0.9)
+        # A source marking each panel by its roster name crosses the manifest.
+        import paper_figure
+        source = "\n".join(f"% node: {name}" for name in manifest["components"])
+        paper_figure.cross_check_manifest(manifest, source)
 
 
 class ContractTests(unittest.TestCase):

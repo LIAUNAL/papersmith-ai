@@ -68,7 +68,10 @@ _COORDINATE_SERIES_THRESHOLD = 4
 #: skill's own, deliberately simple grammar for "what this source declares
 #: as a component," analogous to how `paper_block.py` never parses LaTeX
 #: either and instead reads its own marker comments.
-_NODE_MARKER_RE = re.compile(r"%\s*node:\s*(\S+)")
+#: The marker takes the rest of its line, so a component is marked by its
+#: real name ("Circular Data Re-Uploading (CDRU)"), the one the Components
+#: and caption checks read; a one-word id still reads as before.
+_NODE_MARKER_RE = re.compile(r"%\s*node:[ \t]*(\S(?:[^\n]*\S)?)[ \t\r]*$", re.M)
 
 
 def figure_paths(paper_dir: Path, figure_id: str) -> dict:

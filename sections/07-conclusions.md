@@ -159,6 +159,11 @@ Always last. **The only block in the section that cites** — one reference per
 direction, showing the direction is live in the literature. Everything before it
 cites nothing.
 
+**It is the section's last paragraph, and a paragraph of its own.** It opens after a
+paragraph break, never as a sentence continuing the paragraph before it. `write` and
+`humanize --apply` open this block's body on a blank line, and `verify` reports a
+future-work block that runs into the paragraph above it (`own-paragraph`).
+
 **Future work is the relevant subset of the limitations, with a reference per
 direction.** Each direction answers a stated limitation: one direction per relevant
 limitation, each with its citation.
@@ -251,6 +256,7 @@ an internal-chain row.
 - A number that differs from the results section — in value, unit, or precision.
 - More than one headline number for a single contribution.
 - A future-work direction that answers no stated limitation.
+- A future-work block that continues the paragraph before it instead of opening its own.
 - A citation anywhere outside the future-work block.
 - A future-work direction with no reference.
 - A future-work direction too vague to be a paper.

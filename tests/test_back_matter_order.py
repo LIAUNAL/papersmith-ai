@@ -112,14 +112,15 @@ class VerifyReportTests(unittest.TestCase):
         self.assertEqual([entry["check"] for entry in report["checks"]], list(paper_verify.CHECKS))
         self.assertNotIn("back-matter-order", paper_verify.CHECKS)
         self.assertEqual(report["holds"] + report["fails"] + report["unmeasured"], len(paper_verify.CHECKS))
-        [entry] = report["structure"]
-        self.assertEqual(entry["check"], "back-matter-order")
+        self.assertEqual([entry["check"] for entry in report["structure"]], list(paper_verify.STRUCTURE_CHECKS))
+        [entry] = [entry for entry in report["structure"] if entry["check"] == "back-matter-order"]
         self.assertEqual(entry["verdict"], "fail")
         self.assertFalse(report["clean"])
 
     def test_a_correct_order_adds_no_failure(self) -> None:
         report = paper_verify.run(evidence(manuscript(DECLARATIONS, BIBLIOGRAPHY, APPENDIX)))
-        self.assertEqual([entry["verdict"] for entry in report["structure"]], ["pass"])
+        verdicts = {entry["check"]: entry["verdict"] for entry in report["structure"]}
+        self.assertEqual(verdicts["back-matter-order"], "pass")
 
 
 class RuleTextTests(unittest.TestCase):
