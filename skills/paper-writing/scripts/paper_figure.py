@@ -246,8 +246,9 @@ def _diagram_audit():
 def print_width(paper_dir: Path, manifest: dict) -> dict:
     """The size a diagram prints at: the manuscript body size
     (`paper/main.tex`'s class option, 10 pt without one), the text width
-    (the manifest's `textWidthPt`, else the A4 article width for that body
-    size) and the inclusion fraction (the manifest's `widthFraction`, the
+    (the manifest's `textWidthPt`, else the width `main.tex`'s `geometry`
+    sets, else the A4 article width for that body size; `text_width_source`
+    names which) and the inclusion fraction (the manifest's `widthFraction`, the
     `width=<f>\\textwidth` its `\\includegraphics` uses; 1.0 by default)."""
     audit = _diagram_audit()
     main_tex = Path(paper_dir) / "main.tex"
@@ -255,15 +256,18 @@ def print_width(paper_dir: Path, manifest: dict) -> dict:
         body, source = audit.print_scale.body_font_pt(main_tex)
     else:
         body, source = audit.print_scale.FALLBACK_BODY_PT, "fallback"
-    text_width = manifest.get("textWidthPt")
+    text_width, width_source = manifest.get("textWidthPt"), "manifest"
     if not isinstance(text_width, (int, float)) or isinstance(text_width, bool) or text_width <= 0:
-        text_width = audit.default_text_width_pt(body)
+        text_width = audit.print_scale.geometry_text_width_pt(main_tex) if main_tex.is_file() else None
+        width_source = "geometry"
+        if text_width is None or text_width <= 0:
+            text_width, width_source = audit.default_text_width_pt(body), "default"
     fraction = manifest.get("widthFraction")
     if not isinstance(fraction, (int, float)) or isinstance(fraction, bool) or not 0 < fraction <= 1:
         fraction = 1.0
     return {
         "body_pt": float(body), "body_source": source, "text_width_pt": float(text_width),
-        "width_fraction": float(fraction),
+        "text_width_source": width_source, "width_fraction": float(fraction),
         "printed_width_pdf_pt": audit.print_scale.declared_width_pt(text_width, fraction),
         "fonts": audit.role_font_pt(body),
     }

@@ -70,13 +70,24 @@ _GENERATED_STYLE_RE = re.compile(r"ps-[0-9a-f]{8}\Z")
 #: one can never become a shared style without changing where things land.
 _POSITIONAL_KEY_RE = re.compile(r"^(?:at|below|above|left|right|anchor|shift)\b")
 
+#: arrows.meta tip names distinctive enough to recognise unbraced.
+_META_TIPS = (r"Stealth|Latex|Triangle|Kite|Square|Circle|Ellipse|Rectangle|Diamond"
+              r"|Straight Barb|Arc Barb|Tee Barb|Hooks|Rays|Implies|Bar"
+              r"|Classical TikZ Rightarrow|Computer Modern Rightarrow")
+
 #: Syntax -> library. Every entry is a library this module can both DETECT
 #: and therefore PRUNE when absent; anything outside this map is only ever
 #: added, never removed.
 _SYNTAX_LIBRARIES: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"\b(?:below|above|left|right)\s*=[^,\]]*\bof\b"), "positioning"),
     (re.compile(r"\(\s*\$|\$\s*\)"), "calc"),
-    (re.compile(r"-\{\s*[A-Za-z][A-Za-z.]*\s*\}"), "arrows.meta"),
+    # A braced tip after the dash, with or without options:
+    # `-{Stealth}`, `-{Stealth[length=2mm]}`, `-{Latex[round] Bar}`.
+    (re.compile(r"-\{\s*[A-Za-z]"), "arrows.meta"),
+    # A bare arrows.meta tip beside a dash: `-Stealth`, `Latex-Latex`,
+    # `Stealth[length=2mm]-`.
+    (re.compile(r"-\s*(?:" + _META_TIPS + r")\b|\b(?:" + _META_TIPS + r")(?:\[[^\]]*\])?\s*-"),
+     "arrows.meta"),
     (re.compile(r">=\s*[A-Za-z][A-Za-z.]*"), "arrows.meta"),
     (re.compile(r"\bshape\s*="), "shapes.geometric"),
     (re.compile(r"\bfit\s*="), "fit"),
