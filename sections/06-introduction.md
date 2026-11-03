@@ -500,6 +500,13 @@ with a single sentence stating what it does and which previously stated problem 
 resolves. Those names are the methods section's own contract — this list uses the
 same ones, in the same order.
 
+**The name is written in plain text, never in bold** and never as a description
+label: `\item Circular data re-uploading: …`, not `\item \textbf{Circular data
+re-uploading:} …` or `\item[Circular data re-uploading:] …`. The list already sets
+each item apart; a bold name on top of it reads as a generated outline. `write`
+refuses a draft of this section whose paragraph or item opens on emphasis
+(`DRAFT_BOLD_LEAD_IN`).
+
 Do not open items with a first-person verb instead of a component name: without a
 name, the component cannot be referred to again later.
 
@@ -653,5 +660,6 @@ the subject of a sentence.
 - Bullet items, lists (`itemize`, `enumerate`), bold text highlighting, or numbered questions in Block 2 (Paragraph 2).
 - Block 3 presenting fewer than 3 or more than 5 methodological families or alternatives, or omitting their strengths and issues.
 - Block 4 presenting fewer than 3 or more than 4 contribution items.
+- A contribution item that opens in bold or as a description label.
 - Block 5 omitting the comparison methods, evaluation criteria, or potential impact.
 - An introduction deviating from the canonical seven-paragraph sequence.

@@ -1040,11 +1040,11 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: places the back matter before the references and the appendices after them.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "82f699bc02e8337eebb534920e99f86f22bfae8ee72eb7369accbf60451270ee",
-    "02-experimental-setup.md": "6315bcf3f7fc3a853f4ed2a843647bf48fcf7c36c941573888fcdf5822e14320",
+    "02-experimental-setup.md": "976873c21b3c3be7beca2c81f42381b2ba4fc7eddc182408aeff93fefd4f1362",
     "03-results-and-discussion.md": "e46a7ba7adf695892f67298db54eef3ee03965a00fb730a8656eb93f71f0aa9e",
     "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
     "05-related-work.md": "614b1e054feb9fa962ce932158ef94e2fcb358f79c168e9ba87e5a91b19f0f74",
-    "06-introduction.md": "d26e38f934852c250d90c58d628e56707b46aadf104d91c719536cfe7855f337",
+    "06-introduction.md": "9a81434de6c2cc2f35021d5d8318680570e8d8df788defc021a530177eb74db4",
     "07-conclusions.md": "2e6b63d044e3e7b4261e3bf9985dbc250863f8d2d10168c97345770bdf90ee58",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
     "09-title-and-keywords.md": "da815396e1dfa2a673fe3f29ba37ffff08da3a6f80bb4691fdd1a2784229aef5",

@@ -207,6 +207,45 @@ def prose_lines(tex: str) -> list[tuple[int, str]]:
     return out
 
 
+#: A paragraph or list item that opens on emphasis: a bold run-in label
+#: (`\textbf{Partition.}`, `{\bf …}`), a run-in heading (`\paragraph{…}`),
+#: a bold item (`\item \textbf{Name:}`) or a description label
+#: (`\item[Name:]`, which LaTeX sets in bold).
+_LEAD_IN = re.compile(
+    r"^\s*(?:\\noindent\s*)?(?:\\item\s*)?"
+    r"(?:\\textbf\s*\{|\{\s*\\bf\b|\\(?:sub)?paragraph\*?\s*\{)"
+)
+_DESCRIPTION_LABEL = re.compile(r"^\s*\\item\s*\[")
+_TABULAR_BEGIN = re.compile(r"\\begin\{(?:tabular\*?|tabularx|longtable|array)\}")
+_TABULAR_END = re.compile(r"\\end\{(?:tabular\*?|tabularx|longtable|array)\}")
+
+
+def bold_lead_ins(tex: str) -> list[dict]:
+    """Paragraphs and list items that open on emphasis, outside tables.
+
+    A paragraph starts on the first line of the text or after a blank line;
+    every `\\item` starts an item. Emphasis inside a sentence and every table
+    cell are free. Each hit is `{line, text}`, 1-based."""
+    hits: list[dict] = []
+    in_table = 0
+    paragraph_start = True
+    for number, line in enumerate(tex.splitlines(), 1):
+        stripped = _COMMENT.sub("", line).strip()
+        if _TABULAR_BEGIN.search(stripped):
+            in_table += 1
+        if not stripped:
+            paragraph_start = True
+            continue
+        starts = paragraph_start or stripped.startswith("\\item")
+        if not in_table and starts and not stripped.startswith("\\begin") \
+                and (_LEAD_IN.match(stripped) or _DESCRIPTION_LABEL.match(stripped)):
+            hits.append({"line": number, "text": stripped[:80]})
+        if _TABULAR_END.search(stripped):
+            in_table = max(0, in_table - 1)
+        paragraph_start = stripped.startswith("\\begin") or stripped.startswith("\\end")
+    return hits
+
+
 def scan(tex: str, *, language: str | None = None) -> dict:
     """Every Spanish line and placeholder marker of `tex`'s prose.
 

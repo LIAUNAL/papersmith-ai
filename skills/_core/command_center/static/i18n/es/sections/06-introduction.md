@@ -500,6 +500,13 @@ con una sola oración que indique qué hace y qué problema enunciado previament
 resuelve. Esos nombres son el contrato propio de la sección de métodos — esta lista usa los
 mismos, en el mismo orden.
 
+**El nombre va en texto plano, nunca en negrita** ni como etiqueta de descripción:
+`\item Circular data re-uploading: …`, no `\item \textbf{Circular data
+re-uploading:} …` ni `\item[Circular data re-uploading:] …`. La lista ya separa cada
+elemento; un nombre en negrita encima se lee como un esquema generado. `write` rechaza
+un borrador de esta sección cuyo párrafo o elemento abra con énfasis
+(`DRAFT_BOLD_LEAD_IN`).
+
 No abra los elementos con un verbo en primera persona en lugar del nombre de un componente: sin un
 nombre, no es posible volver a referirse al componente más adelante.
 
@@ -652,5 +659,6 @@ es el sujeto de una oración.
 - Viñetas, listas (`itemize`, `enumerate`), resaltados en negrita o preguntas numeradas en el bloque 2 (párrafo 2).
 - El bloque 3 presentando menos de 3 o más de 5 familias metodológicas o alternativas, u omitiendo sus fortalezas y problemas.
 - El bloque 4 presentando menos de 3 o más de 4 elementos de contribución.
+- Un elemento de contribución que abre en negrita o como etiqueta de descripción.
 - El bloque 5 omitiendo los métodos de comparación, los criterios de evaluación o el impacto potencial.
 - Una introducción que se desvía de la secuencia canónica de siete párrafos.
