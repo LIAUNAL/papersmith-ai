@@ -11,6 +11,18 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.58.1
+
+### Fixed
+
+- **`figure-semantics` reads the manuscript.** `verify`'s figure-semantics
+  check and `figure audit --section` compared a figure's components against
+  the section contract's text only, so a component named the way the paper
+  names it (a contribution's roster name, as the contribution-diagram guide
+  asks) always reported unmatched. Both now add the prose of that section's
+  blocks in `paper/main.tex`; without a readable `main.tex` they keep the
+  contract text alone, as before.
+
 ## 0.58.0
 
 ### Changed
