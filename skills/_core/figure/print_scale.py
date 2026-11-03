@@ -34,6 +34,10 @@ Public API (stable; later writers import it, never copy it):
         `10pt`/`11pt`/`12pt`... class option), "class-default" (a known
         class without a size option) or "fallback" (10.0: no
         `\\documentclass`, or an unknown class without a size option).
+    geometry_text_width_pt(main_tex: Path) -> float | None
+        `\\textwidth` in TeX points as `main.tex`'s `geometry` options
+        set it (textwidth/width, else paper width minus the margins);
+        None when no geometry fixes it.
     min_printed_pt(body_pt: float) -> float
         MIN_RATIO * body_pt, in TeX points.
     max_printed_pt(body_pt: float) -> float
@@ -181,6 +185,87 @@ def body_font_pt(main_tex: Path) -> tuple[float, str]:
     if name in CLASS_DEFAULT_BODY_PT:
         return CLASS_DEFAULT_BODY_PT[name], "class-default"
     return FALLBACK_BODY_PT, "fallback"
+
+
+#: Paper widths in TeX points (`\paperwidth`), by geometry/class option.
+PAPER_WIDTH_PT = {
+    "a4paper": 210 / 25.4 * 72.27,
+    "letterpaper": 8.5 * 72.27,
+    "a5paper": 148 / 25.4 * 72.27,
+    "b5paper": 176 / 25.4 * 72.27,
+    "legalpaper": 8.5 * 72.27,
+    "executivepaper": 7.25 * 72.27,
+}
+#: TeX points per unit for the lengths geometry keys take.
+_UNIT_PT = {"pt": 1.0, "mm": 72.27 / 25.4, "cm": 72.27 / 2.54, "in": 72.27,
+            "bp": 72.27 / 72.0, "pc": 12.0}
+_LENGTH_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?|-?\.\d+)\s*(pt|mm|cm|in|bp|pc)\s*$")
+_GEOMETRY_PACKAGE_RE = re.compile(r"\\usepackage\s*(?:\[([^\]]*)\])?\s*\{[^}]*\bgeometry\b[^}]*\}")
+_GEOMETRY_CMD_RE = re.compile(r"\\geometry\s*\{([^}]*)\}")
+
+
+def _length_pt(value: str):
+    match = _LENGTH_RE.match(value)
+    return None if match is None else float(match.group(1)) * _UNIT_PT[match.group(2)]
+
+
+def _strip_comments(text: str) -> str:
+    return "\n".join(re.split(r"(?<!\\)%", line, maxsplit=1)[0] for line in text.splitlines())
+
+
+def geometry_text_width_pt(main_tex: Path):
+    """`\\textwidth` in TeX points as `geometry` sets it in `main.tex`, or
+    `None` when the preamble loads no geometry or does not fix the width.
+
+    Reads the package options and every `\\geometry{...}` (later keys win):
+    `textwidth`/`width` directly, else the paper width minus the left and
+    right margins (`left`/`right`, `lmargin`/`rmargin`, `hmargin`, `margin`;
+    one missing margin mirrors the other, as geometry does). The paper is
+    the geometry or class paper option, A4 when none is given -- the same
+    assumption `TEXTWIDTH_PT` makes."""
+    text = Path(main_tex).read_text(encoding="utf-8", errors="replace")
+    preamble = _strip_comments(text.split("\\begin{document}", 1)[0])
+    chunks = [m.group(1) or "" for m in _GEOMETRY_PACKAGE_RE.finditer(preamble)]
+    if not chunks and "\\geometry" not in preamble:
+        return None
+    chunks += [m.group(1) for m in _GEOMETRY_CMD_RE.finditer(preamble)]
+    keys: dict = {}
+    flags: list = []
+    for chunk in chunks:
+        for item in chunk.split(","):
+            if "=" in item:
+                key, value = item.split("=", 1)
+                keys[key.strip()] = value.strip().strip("{}")
+            elif item.strip():
+                flags.append(item.strip())
+    for key in ("textwidth", "width"):
+        if key in keys and _length_pt(keys[key]) is not None:
+            return round(_length_pt(keys[key]), 5)
+    name, class_options = _parse_documentclass()(preamble)
+    paper = "a4paper"
+    for option in list(class_options) + flags:
+        if option in PAPER_WIDTH_PT:
+            paper = option
+    if "paper" in keys and keys["paper"] in PAPER_WIDTH_PT:
+        paper = keys["paper"]
+    left = right = None
+    for key in ("margin", "hmargin"):
+        if key in keys:
+            parts = keys[key].split(",") if key == "hmargin" else [keys[key]]
+            left = _length_pt(parts[0])
+            right = _length_pt(parts[-1])
+    for key, side in (("left", "l"), ("lmargin", "l"), ("inner", "l"),
+                      ("right", "r"), ("rmargin", "r"), ("outer", "r")):
+        if key in keys and _length_pt(keys[key]) is not None:
+            if side == "l":
+                left = _length_pt(keys[key])
+            else:
+                right = _length_pt(keys[key])
+    if left is None and right is None:
+        return None
+    left = right if left is None else left
+    right = left if right is None else right
+    return round(PAPER_WIDTH_PT[paper] - left - right, 5)
 
 
 def min_printed_pt(body_pt: float) -> float:

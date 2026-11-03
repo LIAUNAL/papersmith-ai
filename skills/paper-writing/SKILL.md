@@ -1683,7 +1683,8 @@ span printing between 0.70 and 0.90 x the manuscript body size (`paper/main.tex`
 class option, 10 pt without one) once the figure is scaled to its declared
 inclusion width — the manifest's optional `widthFraction` (the
 `width=<f>\textwidth` its `\includegraphics` uses, 1.0 by default) and
-`textWidthPt` (the A4 article width for the body size by default); and no
+`textWidthPt` (by default the width `paper/main.tex`'s `geometry` margins
+leave, else the A4 article width for the body size); and no
 background canvas or content margin wider than 4 pt. A failing audit is a
 repairable `failure` like any other: it spends one attempt, returns the
 `audit` and one diagnostic per finding, and leaves the PDF in scratch
