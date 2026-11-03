@@ -11,6 +11,18 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.56.1
+
+### Fixed
+
+- **Novelty graph language notice**: the 3D novelty view draws the workspace's
+  `.papersmith/novelty_graph.json` as written, so a graph an agent wrote in
+  Spanish showed Spanish under English. `build_novelty_graph` now attaches the
+  same `language_notice` as the model specification, and the viewer states it
+  under its heading in the dashboard's language. `proposal-deliberation` owns
+  the file in English, with its shape and the rule that `metrics` only quote
+  sources and a novelty node never claims more than the accepted revision.
+
 ## 0.56.0
 
 ### Added
