@@ -236,6 +236,18 @@
       "issues": [
         13
       ]
+    },
+    {
+      "key": "experiment-disclosure",
+      "tier": 2,
+      "state": "open",
+      "title": "Protocol hypotheses are buried and disclosures collapse on repaint",
+      "fix": "Show the protocol after launch warnings and retain open/closed disclosures by stable experiment and product keys.",
+      "issues": [151],
+      "evidence": {
+        "151": "72900d70: skills/_core/command_center/static/experiments-panel.js:1030,1038"
+      },
+      "proof": "test_experiments_disclosure_visibility.py: 6 RED/1 existing-behavior pass on main, 96 focused GREEN; real Chromium refresh, tab and language checks at desktop and narrow viewports"
     }
   ]
 }
