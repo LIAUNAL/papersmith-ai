@@ -230,9 +230,49 @@ def _compute_contract_drift(main_tex_bytes: bytes, provenance: dict | None) -> d
     return result
 
 
-def _figure_prose(sections_dir: Path) -> str:
-    """The bodies of every section that declares at least one `figure:`
-    obligation.
+def manuscript_prose(paper_dir: Path, section_ids) -> str:
+    """The manuscript bodies of every block belonging to `section_ids`.
+
+    A block's id in `paper/main.tex` is section-qualified
+    (`<section>.<block-id>`, `paper_graph`'s `qualified_id`), so a section's
+    blocks are the ones whose marker id starts with `<section>.`. Only the
+    bytes BETWEEN a block's begin and end markers are returned — the marker
+    lines themselves carry a digest, never prose.
+
+    **Why this exists:** a section contract (`sections/*.md`) is the plan for
+    a section, not its prose. A paper-specific component such as "Circular
+    Data Re-Uploading (CDRU)" is named in the manuscript block that realises
+    the section (often as a `\\subsection` title) and never in the contract,
+    so a figure audit that only reads the contract reports it as an
+    unmatched node however faithfully the manuscript names it.
+
+    **Absence is not a refusal:** a `main.tex` that is missing, unreadable
+    or whose markers do not parse yields the empty string, so the caller
+    compares against the contract text alone — exactly what it did before
+    this read existed. The marker-grammar refusals belong to `gather()`
+    (which reads `main.tex` for every other check) and to `block status`;
+    this auxiliary read must not add a second place that raises them.
+    """
+    prefixes = tuple(f"{section_id}." for section_id in section_ids)
+    if not prefixes:
+        return ""
+    try:
+        data = (paper_dir / "main.tex").read_bytes()
+        parsed = paper_block.parse(data)
+    except (Refused, OSError):
+        return ""
+    chunks: list = []
+    for block_id in parsed.order:
+        if not block_id.startswith(prefixes):
+            continue
+        begin, end = parsed.pairs[block_id]
+        chunks.append(data[begin["end"]:end["start"]].decode("utf-8", errors="replace"))
+    return "\n".join(chunks)
+
+
+def _figure_prose(paper_dir: Path, sections_dir: Path) -> str:
+    """The prose of every section that declares at least one `figure:`
+    obligation: its contract body plus its manuscript blocks.
 
     **Why this is coarse, and why that is stated rather than hidden:**
     binding a figure id to a section is not declared anywhere — the
@@ -243,10 +283,18 @@ def _figure_prose(sections_dir: Path) -> str:
     which takes `--section` explicitly, is the precise path; this one is
     deliberately wider and says so instead of inventing a binding nobody
     declared.
+
+    **Contract text plus manuscript text:** the contract body alone never
+    names a paper-specific component (see `manuscript_prose`), so each
+    figure-bearing section's blocks in `paper_dir/main.tex` join the union.
+    The contract text stays in it, so nothing that matched before stops
+    matching; an absent or unparseable `main.tex` leaves the contract text
+    alone, the previous behaviour.
     """
     if not sections_dir.is_dir():
         return ""
     chunks: list = []
+    section_ids: list = []
     for path in sorted(sections_dir.glob("*.md")):
         try:
             header, body = paper_contract.parse(path.read_bytes())
@@ -254,6 +302,10 @@ def _figure_prose(sections_dir: Path) -> str:
             continue
         if any(block.get("figure") is not None for block in header.blocks):
             chunks.append(body.decode("utf-8", errors="replace"))
+            section_ids.append(header.section)
+    manuscript = manuscript_prose(paper_dir, section_ids)
+    if manuscript:
+        chunks.append(manuscript)
     return "\n".join(chunks)
 
 
@@ -279,7 +331,7 @@ def _figure_semantics(paper_dir: Path, sections_dir: Path) -> dict | None:
     if not manifests:
         return None
 
-    prose = _figure_prose(sections_dir)
+    prose = _figure_prose(paper_dir, sections_dir)
     reports: dict = {}
     for manifest_path in manifests:
         figure_id = manifest_path.name[: -len(".diagram.json")]

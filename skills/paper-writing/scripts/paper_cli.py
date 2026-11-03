@@ -3241,10 +3241,26 @@ def _cmd_figure_audit(args: argparse.Namespace) -> dict:
                 f"{visual_report_path} is not a readable visual report",
             )
 
+    # The contract body is the section's plan, never its prose: a paper-
+    # specific component is named in the manuscript blocks that realise the
+    # section, so those join the union. `--file` mode never needed a paper
+    # directory before, so an unresolvable one (no `main.tex`, or `--paper`
+    # outside the repository) adds no refusal here: the audit simply keeps
+    # the contract text alone, as it did before this read existed.
+    section_text = body.decode("utf-8", errors="replace")
+    try:
+        manuscript = paper_coupling_evidence.manuscript_prose(
+            paper_dir or paper_scaffold.resolve_paper_dir(args.paper), [header.section],
+        )
+    except Refused:
+        manuscript = ""
+    if manuscript:
+        section_text = section_text + "\n" + manuscript
+
     report = paper_figure_audit.audit_semantics(
         tex=tex_text,
         manifest=manifest,
-        section_text=body.decode("utf-8", errors="replace"),
+        section_text=section_text,
         contract_figure=contract_figure,
         expected_components=expected_components,
         visual=visual,
