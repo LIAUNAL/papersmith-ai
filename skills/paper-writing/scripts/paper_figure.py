@@ -71,7 +71,7 @@ _COORDINATE_SERIES_THRESHOLD = 4
 #: The marker takes the rest of its line, so a component is marked by its
 #: real name ("Circular Data Re-Uploading (CDRU)"), the one the Components
 #: and caption checks read; a one-word id still reads as before.
-_NODE_MARKER_RE = re.compile(r"%\s*node:[ \t]*(\S(?:[^\n]*\S)?)[ \t]*$", re.M)
+_NODE_MARKER_RE = re.compile(r"%\s*node:[ \t]*(\S(?:[^\n]*\S)?)[ \t\r]*$", re.M)
 
 
 def figure_paths(paper_dir: Path, figure_id: str) -> dict:

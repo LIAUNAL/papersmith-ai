@@ -102,6 +102,11 @@ class AppendixLengthTests(unittest.TestCase):
         report = paper_verify.check_appendix_length(Evidence(self.appendix(body)))
         self.assertEqual(report["evidence"]["move_to"], "experimental-setup")
 
+    def test_a_dollar_display_counts_once(self) -> None:
+        body = "\\appendix\n\\section{Rule}\nThe rule is\n$$ a = b $$\nfor every angle.\n"
+        report = paper_verify.check_appendix_length(Evidence(self.appendix(body)))
+        self.assertEqual(report["evidence"]["display_equations"], 1)
+
     def test_a_long_appendix_and_no_appendix_pass(self) -> None:
         long_body = "\\appendix\n\\section{Proof}\n" + ("word " * 900) + "\n"
         self.assertEqual(paper_verify.check_appendix_length(Evidence(self.appendix(long_body)))["verdict"], "pass")
@@ -165,6 +170,10 @@ class DiagramMarkerTests(unittest.TestCase):
         self.assertEqual(paper_figure._tex_nodes(tex), {"Circular Data Re-Uploading (CDRU)", "data"})
         paper_figure.cross_check_manifest(
             {"components": ["Circular Data Re-Uploading (CDRU)", "data"]}, tex)
+
+    def test_a_windows_line_ending_does_not_hide_a_marker(self) -> None:
+        tex = "% node: Circular Data Re-Uploading (CDRU)\r\n% node: data\r\n"
+        self.assertEqual(paper_figure._tex_nodes(tex), {"Circular Data Re-Uploading (CDRU)", "data"})
 
 
 if __name__ == "__main__":

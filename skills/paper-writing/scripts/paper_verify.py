@@ -798,7 +798,10 @@ PAGE_WORDS = 550
 _EQUATION_WORDS = 40
 _ROW_WORDS = 15
 _APPENDIX_BLOCK = b"back-matter.bm-appendices"
-_DISPLAY_RE = re.compile(rb"\\begin\{(?:equation|align|gather|multline|eqnarray)\*?\}|\\\[|\$\$")
+#: One whole display: an equation-like environment, `\[ … \]` or `$$ … $$`,
+#: so each counts once whatever its delimiters.
+_DISPLAY_RE = re.compile(rb"\\begin\{(equation|align|gather|multline|eqnarray)\*?\}.*?\\end\{\1\*?\}"
+                         rb"|\\\[.*?\\\]|\$\$.*?\$\$", re.S)
 _TABULAR_RE = re.compile(rb"\\begin\{(?:tabular|tabularx|longtable)\*?\}(.*?)\\end\{(?:tabular|tabularx|longtable)\*?\}", re.S)
 _MATH_RE = re.compile(rb"\\begin\{(equation|align|gather|multline|eqnarray)\*?\}.*?\\end\{\1\*?\}|\\\[.*?\\\]|\$\$.*?\$\$|\$[^$]*\$", re.S)
 _WORD_RE = re.compile(rb"[A-Za-z][A-Za-z'-]+")
