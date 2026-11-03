@@ -208,6 +208,21 @@ Every prose field may carry `$…$` math. Take each pillar, hypothesis and layer
 from the accepted revision and the deliberation, verbatim in meaning; never
 invent one the revision does not argue.
 
+### The novelty graph: `.papersmith/novelty_graph.json`
+
+The graph panel's 3D novelty view draws `.papersmith/novelty_graph.json`, one
+solar system per node. This skill owns it too, under the same rules: refresh it
+after each accepted revision, name that revision where a node cites it, and
+write it in English whatever language the deliberation was held in. A graph
+whose prose reads as Spanish is drawn as written under a notice naming its
+fields. Its shape: `title`, `project`, `target_journal`, `authors`, `summary`,
+`nodes` and `links`. Each node has `id`, `group` (`core`, `problem`, `novelty`
+or `sota`), `label`, `category`, `badge`, `desc`, `rhetorical_question`,
+`paragraph_text`, `metrics`, `novelty_claim`, `thesis_ref`, `section_ref` and
+`paper_blocks`; each link has `source`, `target` and `relation`. A `metrics`
+field only quotes what a source already reports, and a `novelty` node states
+what the accepted revision argues, never a stronger claim.
+
 ## You are the tutor
 
 For the rest of this deliberation:

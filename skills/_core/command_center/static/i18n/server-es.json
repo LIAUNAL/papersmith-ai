@@ -38,6 +38,7 @@
   "View the SOTA constellation": "Ver la constelación SOTA",
   "3D atlas of the candidate pool.": "Atlas 3D del pool de candidatos.",
   "View the candidate matrix": "Ver la matriz de candidatos",
+  "This graph ({file}) is not written in English (fields: {fields}). The dashboard shows workspace files as written; ask /proposal-deliberation to rewrite it in English.": "Este grafo ({file}) no está escrito en inglés (campos: {fields}). El dashboard muestra los archivos del workspace tal como están escritos; pide a /proposal-deliberation que lo reescriba en inglés.",
   "Every scouted article with its family, year, venue and abstract.": "Cada artículo explorado con su familia, año, revista y resumen.",
   "Ingest references": "Ingerir referencias",
   "Give the path or URL of the PDFs to ingest (usually the top 5 accepted in plausibility).": "Indica la ruta o URL de los PDF a ingerir (normalmente el top 5 aceptado en plausibilidad).",
