@@ -11,6 +11,29 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.57.0
+
+### Changed
+
+- **No bold lead-ins in the introduction and the experimental set-up.**
+  Drafts copied the contracts' block names into the manuscript as run-in
+  labels (`\textbf{Scenarios.}`, `\textbf{Partition.}`,
+  `\item \textbf{Name:}`), which reads as a generated outline. Contract 06
+  now names each contribution item in plain text, never in bold or as a
+  description label. Contract 02 turns each block into paragraphs that open
+  on a sentence carrying the transition from the previous one, with
+  domain-neutral examples, and names a stock connector at every paragraph
+  head as the same outline in other words. Both gain a disqualifier.
+
+### Added
+
+- `paper_language.bold_lead_ins` finds a paragraph or list item that opens on
+  `\textbf`, a `{\bf …}` group, `\paragraph`/`\subparagraph` or `\item[…]`,
+  outside tables; only a blank line or a sectioning command starts a
+  paragraph. `write` refuses `DRAFT_BOLD_LEAD_IN` for the introduction and
+  the experimental set-up before any attempt is spent, leaving `main.tex`
+  untouched.
+
 ## 0.56.1
 
 ### Fixed
