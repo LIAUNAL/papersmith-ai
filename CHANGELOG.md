@@ -11,6 +11,19 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.58.2
+
+### Fixed
+
+- **The revealed author header wraps.** When blinding is lifted, the title
+  contract (`sections/09-title-and-keywords.md`, mirrored in the
+  `paper-writing` skill and its Spanish translation) now prescribes one
+  author-header template: a `minipage` of the text width inside `\author`,
+  lines separated by `\\`, never `\par`. `article` sets `\author` in a
+  non-wrapping column, so long affiliation or e-mail lines written as bare
+  `\\` lines overflowed the margin. A test compiles the template against
+  long affiliations and requires no `Overfull \hbox`.
+
 ## 0.58.1
 
 ### Fixed
