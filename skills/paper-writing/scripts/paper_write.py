@@ -132,6 +132,28 @@ def _stage_evidence_audit(contract: BlockContract, draft: dict) -> list:
     return bindings
 
 
+#: Sections whose contracts forbid opening a paragraph or a contribution item
+#: on emphasis: the introduction's contribution list names each component in
+#: plain text, and the set-up introduces each topic with a sentence.
+NO_BOLD_LEAD_IN_SECTIONS = frozenset({"introduction", "experimental-setup"})
+
+
+def _stage_lead_ins(contract: BlockContract, draft: dict) -> None:
+    """Refuse `DRAFT_BOLD_LEAD_IN` before any attempt is spent."""
+    section = contract.block_id.split(".", 1)[0] if "." in contract.block_id else ""
+    if section not in NO_BOLD_LEAD_IN_SECTIONS:
+        return
+    hits = paper_language.bold_lead_ins(draft["latex"])
+    if hits:
+        lines = ", ".join(f"line {hit['line']}: {hit['text'][:50]!r}" for hit in hits[:5])
+        raise Refused(
+            "DRAFT_BOLD_LEAD_IN",
+            f"the {section} section opens no paragraph or item on bold or a run-in heading ({lines}); "
+            "start the paragraph with a sentence that carries the transition from the previous one, "
+            "and name a contribution item in plain text",
+        )
+
+
 def _stage_language(paper_dir: Path, draft: dict) -> dict:
     """Spec S4 (`odd/tasks/manuscript-polish-0-54.md`): the manuscript is
     English unless the paper declares another language, and no draft
@@ -200,6 +222,7 @@ def write_block(
     if not isinstance(audit_account, dict) or "verdicts" not in audit_account or not isinstance(audit_account["verdicts"], list):
         raise Refused("AUDIT_UNREADABLE", "audit_account must be a dict with list 'verdicts'")
     language = _stage_language(paper_dir, draft)
+    _stage_lead_ins(contract, draft)
     bindings = _stage_evidence_audit(contract, draft)
 
     key = _attempt_key(contract)

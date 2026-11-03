@@ -416,6 +416,7 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     # manuscript-polish-0-54 S4: `paper_write._stage_language`
     "DRAFT_NOT_ENGLISH": WORK_STATE,
     "DRAFT_PLACEHOLDER_TEXT": WORK_STATE,
+    "DRAFT_BOLD_LEAD_IN": WORK_STATE,
     # --- the eight-token tripwire (paper_leak.py; WU2) ---------------------
     "STYLE_OVERLAP": WORK_STATE,
     # --- a-diagram-that-compiles-or-says-why: `render`/`place`, the sole

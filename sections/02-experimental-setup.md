@@ -264,6 +264,29 @@ the methods section.
 values that were reasoned about. That is the correct use of an appendix: the body
 carries what has a reason, the appendix carries what must be consultable.
 
+## Paragraphs open on a sentence, never on a label
+
+The numbered blocks above are this contract's names, never the paper's. Each block
+becomes one or more paragraphs that open on a sentence, **never as a bold label**
+(`\textbf{Partition.}`), a run-in heading (`\paragraph{Metrics}`) or a bold list item.
+A paragraph's first sentence introduces its topic and carries the transition from
+the paragraph before it, through the relation between the two: the scenarios lead to
+how their data are split, the split to what is compared on it, the comparison to how
+it is scored and tested.
+
+- *The real data were split by subject, so that no subject contributed samples to
+  both the training and the test folds.* — opens the partition by what it guarantees.
+- *Three published methods were trained on those same folds, each formalized by the
+  objective it minimizes.* — opens the competing methods on the protocol they share.
+- *Every comparison was scored per subject, the unit the application decides on.* —
+  opens the metrics on the unit the previous paragraph fixed.
+
+Let the sentence's own content carry the relation, as the house style asks: a stock
+connector at the head of every paragraph (*Moreover*, *Furthermore*, *In addition*)
+is the same outline in other words. The competing methods may still form a list; its
+items open on each method's name in plain text. `write` refuses a draft of this
+section that opens a paragraph or an item on emphasis (`DRAFT_BOLD_LEAD_IN`).
+
 ## Every artefact is referenced before it appears
 
 Any numbered object — figure, table, or panel — is referenced in the body **before**
@@ -432,6 +455,7 @@ ablation here — the rest surface them in the results, which this contract forb
 - An interpretability contribution with no qualitative instrument or no faithfulness
   measure declared here.
 - A scenario that does not say which property of the problem it stresses.
+- A paragraph or list item that opens on a bold label or a run-in heading.
 - The closing diagram missing.
 - A results table or figure that cannot be located in the closing diagram.
 - A box shared between the closing diagram and the methods diagram.

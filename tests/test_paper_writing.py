@@ -8884,8 +8884,11 @@ class RefusalRosterTests(unittest.TestCase):
         _stage_language` refuses a Spanish draft (DRAFT_NOT_ENGLISH) and a
         draft carrying placeholder text (DRAFT_PLACEHOLDER_TEXT).
         211 -> 212 in `manuscript-polish-0-54` (S2): `place` refuses text
-        printing above 0.90 x body (FIGURE_TEXT_ABOVE_PRINT_CAP)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 212)
+        printing above 0.90 x body (FIGURE_TEXT_ABOVE_PRINT_CAP).
+        212 -> 213: `paper_write._stage_lead_ins` refuses a draft of the
+        introduction or the experimental set-up that opens a paragraph or an
+        item on bold or a run-in heading (DRAFT_BOLD_LEAD_IN)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 213)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

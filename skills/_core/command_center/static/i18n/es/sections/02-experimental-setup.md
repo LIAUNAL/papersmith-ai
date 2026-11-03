@@ -263,6 +263,30 @@ la sección de métodos.
 valores sobre los que se razonó. Ese es el uso correcto de un apéndice: el cuerpo
 contiene lo que tiene una razón, el apéndice contiene lo que debe poder consultarse.
 
+## Los párrafos abren con una oración, nunca con un rótulo
+
+Los bloques numerados de arriba son nombres de este contrato, nunca del artículo. Cada
+bloque se vuelve uno o más párrafos que abren con una oración, **nunca como un rótulo en
+negrita** (`\textbf{Partition.}`), un encabezado en línea (`\paragraph{Metrics}`) ni un
+elemento de lista en negrita. La primera oración de un párrafo presenta su tema y lleva
+la transición desde el párrafo anterior mediante la relación entre ambos: los escenarios
+llevan a cómo se dividen sus datos, la división a qué se compara sobre ella, la
+comparación a cómo se puntúa y se prueba.
+
+- *The real data were split by subject, so that no subject contributed samples to
+  both the training and the test folds.* — abre la partición por lo que garantiza.
+- *Three published methods were trained on those same folds, each formalized by the
+  objective it minimizes.* — abre los métodos en competencia por el protocolo que comparten.
+- *Every comparison was scored per subject, the unit the application decides on.* —
+  abre las métricas por la unidad que fijó el párrafo anterior.
+
+Deje que el propio contenido de la oración lleve la relación, como pide el estilo de la
+casa: un conector de repertorio al inicio de cada párrafo (*Moreover*, *Furthermore*,
+*In addition*) es el mismo esquema con otras palabras. Los métodos en competencia pueden
+seguir formando una lista; sus elementos abren con el nombre de cada método en texto
+plano. `write` rechaza un borrador de esta sección que abra un párrafo o un elemento con
+énfasis (`DRAFT_BOLD_LEAD_IN`).
+
 ## Cada artefacto se referencia antes de aparecer
 
 Cualquier objeto numerado — figura, tabla o panel — se referencia en el cuerpo **antes**
@@ -433,6 +457,7 @@ ablación — el resto los presenta en los resultados, lo que este contrato proh
 - Una contribución de interpretabilidad sin instrumento cualitativo o sin medida de
   fidelidad declarada aquí.
 - Un escenario que no dice qué propiedad del problema exige.
+- Un párrafo o elemento de lista que abre con un rótulo en negrita o un encabezado en línea.
 - La ausencia del diagrama de cierre.
 - Una tabla o figura de resultados que no puede ubicarse en el diagrama de cierre.
 - Una caja compartida entre el diagrama de cierre y el diagrama de métodos.
