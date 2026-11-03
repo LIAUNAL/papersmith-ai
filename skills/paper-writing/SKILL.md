@@ -154,7 +154,7 @@ The Introduction has exactly seven paragraphs; the full contract, with the exten
 ## When a delegated agent cannot be spawned
 
 Each stretch this skill delegates is defined in full by its own agent file:
-`.claude/agents/contract-auditor.md`, `.claude/agents/diagram-author.md`,
+`.claude/agents/ai-auditor.md`, `.claude/agents/contract-auditor.md`, `.claude/agents/diagram-author.md`,
 `.claude/agents/figure-auditor.md`, `.claude/agents/figure-visual-reviewer.md`,
 `.claude/agents/insumos-observer.md`,
 `.claude/agents/paper-reviewer.md`, `.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
@@ -168,7 +168,7 @@ stretch: an act that would need a tool outside that list is a stop, not a
 workaround. Say in the reply that the stretch ran inline and why the agent
 could not be spawned.
 
-An auditor run inline (`contract-auditor`, `section-grounding-auditor`,
+An auditor run inline (`ai-auditor`, `contract-auditor`, `section-grounding-auditor`,
 `figure-auditor`, `figure-visual-reviewer`, `paper-reviewer`, `venue-adapter`) is not independent of the session that drafted what it
 judges. The verbs still reconcile its account against the real bytes, but say
 in the reply that the audit was not separated from the draft.

@@ -11,6 +11,44 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.59.0
+
+### Added
+
+- **Acquisition-protocol diagram.** When a paper describes a real dataset
+  (`mm-dataset` or `es-dataset`), its explanation closes on a figure the
+  `diagram-author` agent draws following
+  `skills/paper-writing/references/data-acquisition-diagram.md`: the capture
+  in the order it happened, illustrated with domain pictograms (a patient
+  wearing an EEG cap, a generator, a machine), never boxes alone. The new
+  `references/pictograms.tex` library ships eleven text-free TikZ `pic`s;
+  the guide's example passes the diagram audit.
+- **Cited protocol decisions.** The experimental set-up cites a paper or
+  reference book that uses or justifies each comparison criterion,
+  preprocessing step, partition protocol and statistical test.
+  `es-training-details` now runs under the `resolution` citation regime.
+- **Cited discussion.** Results and discussion cite interpretive
+  mechanisms, baseline analyses and qualitative-interpretability arguments;
+  the paper's own numbers are still never cited.
+- **General template panel.** The command center's Sections tab has a
+  "General template" button that opens a summary of every section's
+  structure and basic rules, in English and Spanish.
+
+### Changed
+
+- Contracts 01, 02 and 03 changed, so blocks already written under them
+  read as out of date until they are re-checked against the new rules.
+
+### Fixed
+
+- The Spanish copies of the 09 and 10 contracts were stale since 0.58.2,
+  so the dashboard fell back to English for them; their source hashes are
+  re-captured.
+- Two checks that already failed on 0.58.3 pass again: the paper-writing
+  skill's inline-fallback list now names the `ai-auditor` agent, and the
+  skill-audit roster for paper-writing counts its 31 verbs (with `ai_audit`
+  and `humanize`).
+
 ## 0.58.3
 
 ### Added
