@@ -109,7 +109,7 @@
         }
       ],
       "requires_declarations": [],
-      "citations": "none"
+      "citations": "resolution"
     }
   ]
 }
@@ -171,7 +171,12 @@ semi-synthetic, then real — and **each scenario is named after the property of
 problem it stresses** (a noise level, a sparsity level, a domain shift), so the reader
 knows which part of the problem each one tests. A corruption or simulation applied to
 the data — simulated annotators, injected noise, masked inputs — is defined here, with
-its equation.
+its equation. When the datasets live here and one of them is real, its explanation
+closes on its acquisition-protocol diagram, as the methods section's dataset slot
+prescribes: drawn by the `diagram-author` agent following
+`skills/paper-writing/references/data-acquisition-diagram.md`, its stages illustrated
+with domain pictograms from `skills/paper-writing/references/pictograms.tex`, never
+boxes alone, and the last artefact of the dataset explanation.
 
 **2. The announcement of the split** — when the framework has two dissimilar halves.
 Each half then makes its own pass through the blocks that follow.
@@ -228,6 +233,14 @@ metric.
 **Standard metrics carry an equation, not a citation.** The same asymmetry as the
 methods section: what is borrowed is cited, what is conventional is defined.
 
+**Every protocol decision carries the citation that justifies it.** The comparison
+criteria (why these metrics and these baselines measure the claimed property), the
+statistical test with its post hoc procedure and correction, and the faithfulness
+measure each cite a paper that uses or justifies that choice, or the reference book or
+foundational paper in machine learning, statistics, health or the application's
+field that establishes it. A protocol stated without the reason it is the right one
+reads as an arbitrary choice.
+
 ## Subsection 2 — Training Details
 
 The reproducibility block. Past tense, passive for procedure. Six slots.
@@ -259,6 +272,18 @@ the methods section; a value inside a fixed form is justified here.
 
 **Every knob traces back.** A hyperparameter named here must be a symbol declared in
 the methods section.
+
+### What is cited in the training details
+
+**Each protocol decision cites what justifies it.** The preprocessing (a filter band,
+a re-referencing, an artefact-removal method), the partition protocol (subject-wise
+or leave-one-out cross-validation, the stratification), the leakage control and the
+hyperparameter search method each carry a citation to a paper that uses or justifies
+that protocol in the same kind of data, or to the reference book or foundational
+paper in machine learning, statistics, health or the application's field that
+establishes it. The citation attaches to the protocol it credits. Software and
+library versions carry their own citation when the venue asks for one; a value
+chosen by the authors carries its reason, not a citation.
 
 **The full parameter table may go to an appendix**, keeping in the body only the
 values that were reasoned about. That is the correct use of an appendix: the body
@@ -428,6 +453,10 @@ ablation here — the rest surface them in the results, which this contract forb
 
 ## Disqualifiers
 
+- A real dataset described here whose explanation does not close on its
+  acquisition-protocol diagram, or whose diagram is boxes alone.
+- A preprocessing step, partition protocol, statistical test or comparison criterion
+  stated without a citation that uses or justifies it.
 - A metric named but not defined.
 - A metric glossary placed before its equation instead of after.
 - A citation on a standard metric, or a missing citation on a non-standard one.

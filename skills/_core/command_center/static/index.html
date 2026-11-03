@@ -3163,7 +3163,10 @@
       <div class="panel">
         <div class="panel__header">
           <div class="panel__title" data-i18n="sections.title">Canonical Section Structure of the Manuscript</div>
-          <span class="panel__meta" id="sectionsMetaCount">—</span>
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <button class="btn btn--sm" id="writingTemplateButton" type="button" onclick="openWritingTemplate()" data-i18n="sections.templateButton">General template</button>
+            <span class="panel__meta" id="sectionsMetaCount">—</span>
+          </div>
         </div>
         <div class="table-responsive">
           <table class="table">
@@ -4471,6 +4474,7 @@
     }
 
     function openDrawer(phaseIndex) {
+      writingTemplateOpen = false;
       const phases = (currentStatus && currentStatus.fases && currentStatus.fases.length > 0) ? currentStatus.fases : fallbackPhases();
       const p = phases[phaseIndex];
       if (!p) return;
@@ -4653,6 +4657,7 @@
     }
 
     function openSectionDrawer(secId) {
+      writingTemplateOpen = false;
       const sections = currentStatus?.sections || [];
       const s = sections.find(item => item.id === secId || item.id.startsWith(secId));
       if (!s) return;
@@ -4802,6 +4807,62 @@
 
     function closeDrawer(e) {
       document.getElementById('drawerOverlay').classList.remove('active');
+      writingTemplateOpen = false;
+    }
+
+    /* General writing template: a per-language summary of every section's
+       structure and basic rules, served from static/writing-template/. */
+    let writingTemplateOpen = false;
+    const writingTemplateCache = new Map();
+
+    function renderWritingTemplate(data) {
+      const list = (items) => items.map(text => `<li>${escapeHtml(text)}</li>`).join('');
+      const sections = data.sections.map((s, index) => `
+        <section class="writing-template__section" data-section="${escapeHtml(s.id)}">
+          <h4 style="margin: 0 0 0.25rem; font-size: 0.95rem; color: var(--accent);">${index + 1}. ${escapeHtml(s.name)}</h4>
+          <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.4rem;">
+            <strong>${t('writingTemplate.extent')}</strong> ${escapeHtml(s.extent)} · ${t('writingTemplate.contract')} <code>${escapeHtml(s.contract)}</code>
+          </div>
+          <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">${t('writingTemplate.structure')}</div>
+          <ol style="margin: 0.25rem 0 0.5rem 1.2rem; font-size: 0.85rem;">
+            ${s.structure.map(step => `<li><strong>${escapeHtml(step.label)}:</strong> ${escapeHtml(step.text)}</li>`).join('')}
+          </ol>
+          <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">${t('writingTemplate.rules')}</div>
+          <ul style="margin: 0.25rem 0 0 1.2rem; font-size: 0.85rem;">${list(s.rules)}</ul>
+        </section>`).join('<hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 0.8rem 0;">');
+      return `
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0;">${escapeHtml(data.intro)}</p>
+        ${sections}
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 1rem 0 0.8rem;">
+        <section class="writing-template__section" data-section="general">
+          <h4 style="margin: 0 0 0.25rem; font-size: 0.95rem; color: var(--accent);">${escapeHtml(data.general.heading)}</h4>
+          <ul style="margin: 0.25rem 0 0 1.2rem; font-size: 0.85rem;">${list(data.general.rules)}</ul>
+        </section>`;
+    }
+
+    async function openWritingTemplate() {
+      const lang = (window.i18n && window.i18n.getLanguage()) === 'es' ? 'es' : 'en';
+      const title = document.getElementById('drawerTitle');
+      const body = document.getElementById('drawerBody');
+      writingTemplateOpen = true;
+      title.textContent = t('writingTemplate.title');
+      body.innerHTML = `<p class="exp-empty">${t('writingTemplate.loading')}</p>`;
+      document.getElementById('drawerOverlay').classList.add('active');
+      try {
+        let data = writingTemplateCache.get(lang);
+        if (!data) {
+          const res = await fetch(`./writing-template/${lang}.json`, { cache: 'no-cache' });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          data = await res.json();
+          writingTemplateCache.set(lang, data);
+        }
+        if (!writingTemplateOpen) return;
+        title.textContent = data.title;
+        body.innerHTML = renderWritingTemplate(data);
+      } catch (err) {
+        if (!writingTemplateOpen) return;
+        body.innerHTML = `<p class="exp-empty">${t('writingTemplate.loadFailed', { error: escapeHtml(err.message) })}</p>`;
+      }
     }
 
 
@@ -6690,6 +6751,7 @@
     // listen for the same event and repaint themselves.
     document.addEventListener('languagechange', () => {
       renderThemeButton();
+      if (writingTemplateOpen && document.getElementById('drawerOverlay').classList.contains('active')) openWritingTemplate();
       renderNativeViewerButton();
       renderGraphToolbar();
       const titleKey = { atlas: 'atlas.title.atlas', novelty: 'atlas.title.novelty', papers: 'atlas.title.papers' }[currentGraphKind];

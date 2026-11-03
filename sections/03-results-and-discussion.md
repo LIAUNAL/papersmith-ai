@@ -286,8 +286,22 @@ takes figures and may carry no table.
 
 ## Citations
 
-Almost none — and never for a result. A citation here credits **an instrument** used
-to read the data, or a **behaviour already established** that the result agrees with.
+Never for a result: the paper's own numbers carry no citation. A citation here
+credits **an instrument** used to read the data, or **supports an idea the discussion
+relies on**, and those ideas are cited every time:
+
+- an **interpretive** explanation — the mechanism a result is *consistent with* or
+  *due to* — cites the work that established that mechanism or that behaviour;
+- an analysis of a **baseline** method — why a competitor wins, loses or fails under
+  a condition — cites the source of the property it invokes (the baseline's own paper
+  or the work that characterized it);
+- a **qualitative** interpretability argument — that an attribution map, a saliency
+  pattern or a learned structure is plausible — cites the domain knowledge it is
+  checked against (physiology, physics, the application's literature).
+
+The corroborative register always carries its citation: what the result *confirms*
+is named with its source. The citation attaches to the idea it supports, inside the
+sentence that states it.
 
 ## Tables stay inside the text block
 
@@ -376,6 +390,8 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 
 ## Disqualifiers
 
+- An interpretive mechanism, a baseline analysis or a qualitative-interpretability
+  argument stated without a citation that supports it.
 - A numbered equation.
 - A preamble, or a closing summary artefact.
 - A block that opens on prose with no artefact reference.

@@ -285,8 +285,21 @@ lleva figuras y puede no llevar ninguna tabla.
 
 ## Citas
 
-Casi ninguna — y nunca para un resultado. Una cita aquí acredita **un instrumento** usado
-para leer los datos, o un **comportamiento ya establecido** con el que el resultado concuerda.
+Nunca para un resultado: los números propios del artículo no llevan cita. Una cita aquí
+acredita **un instrumento** usado para leer los datos, o **sustenta una idea en la que se
+apoya la discusión**, y esas ideas se citan siempre:
+
+- una explicación **interpretativa** (el mecanismo con el que un resultado *es consistente* o
+  al que *se debe*) cita el trabajo que estableció ese mecanismo o ese comportamiento;
+- un análisis de un método **de línea base** (por qué un competidor gana, pierde o falla bajo
+  una condición) cita la fuente de la propiedad que invoca (el artículo del propio método o el
+  trabajo que la caracterizó);
+- un argumento de interpretabilidad **cualitativa** (que un mapa de atribución, un patrón de
+  saliencia o una estructura aprendida es plausible) cita el conocimiento del dominio contra
+  el que se contrasta (fisiología, física, la literatura de la aplicación).
+
+El registro corroborativo siempre lleva su cita: lo que el resultado *confirma* se nombra con
+su fuente. La cita se adjunta a la idea que sustenta, dentro de la oración que la enuncia.
 
 ## Las tablas quedan dentro de la caja de texto
 
@@ -377,6 +390,8 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 
 ## Descalificadores
 
+- Un mecanismo interpretativo, un análisis de línea base o un argumento de interpretabilidad
+  cualitativa enunciado sin una cita que lo sustente.
 - Una ecuación numerada.
 - Un preámbulo, o un artefacto de resumen de cierre.
 - Un bloque que abre con prosa sin referencia a un artefacto.

@@ -1,0 +1,215 @@
+{
+  "title": "Plantilla general de redacción",
+  "intro": "Resumen breve de la estructura y las reglas básicas de cada sección, en el orden en que el artículo las imprime. El contrato de cada sección en sections/ contiene el conjunto completo de reglas y sus descalificadores; este panel solo lo condensa.",
+  "sections": [
+    {
+      "id": "title-and-keywords",
+      "contract": "sections/09-title-and-keywords.md",
+      "name": "Título y palabras clave",
+      "extent": "Título de 10–13 palabras · 3–5 palabras clave",
+      "structure": [
+        {"label": "Ranuras del título", "text": "Acrónimo opcional seguido de dos puntos, artículo opcional y luego el adjetivo de propiedad obligatorio (primero), el mecanismo obligatorio, un sustantivo de artefacto opcional, la tarea obligatoria, y un dominio o lugar solo cuando el trabajo está ligado a él."},
+        {"label": "Origen de las ranuras", "text": "Propiedad, mecanismo y tarea provienen de la propuesta: la propiedad que aportan las contribuciones, el mecanismo que las realiza y la tarea que nombró el planteamiento del problema."},
+        {"label": "Palabras clave", "text": "De tres a cinco, separadas por punto y coma, ordenadas de la más general a la más específica: tarea o dominio, luego propiedad, luego maquinaria."},
+        {"label": "Encabezado de autores", "text": "Marcador anónimo durante la redacción; cuando el operador revela los autores, el encabezado usa la plantilla con minipage que ajusta el texto (sin desbordes)."}
+      ],
+      "rules": [
+        "Sin números, porcentajes, comparativos ni afirmaciones de superioridad.",
+        "Mayúscula inicial en las palabras principales, preposiciones y artículos en minúscula; el guion une un par modificador y la raya corta (en dash) une términos del mismo rango.",
+        "Un acrónimo en el título lleva dos puntos y el resumen lo expande.",
+        "Las palabras clave no repiten el título: cerca de un tercio repite un término del título y el resto añade mecanismos omitidos, la modalidad de datos o la población, y la propiedad en forma de sustantivo; toda palabra clave aparece en el cuerpo.",
+        "El manuscrito se compone en modo de revisión a una columna (onecolumn); sin nombres, afiliaciones ni correos reales de autores hasta verificar el manuscrito completo con el operador."
+      ]
+    },
+    {
+      "id": "abstract",
+      "contract": "sections/08-abstract.md",
+      "name": "Resumen",
+      "extent": "216–280 palabras · 7–14 oraciones · un solo párrafo",
+      "structure": [
+        {"label": "Ranura 1 — Contexto", "text": "1–2 oraciones: el campo y el fenómeno que contienen los datos, y por qué fallar allí es costoso."},
+        {"label": "Ranura 2 — Problema", "text": "1–2 oraciones que abren con una adversativa; nombra la carencia concreta y absorbe el estado del arte en media cláusula."},
+        {"label": "Ranura 3 — La propuesta, nombrada", "text": "Exactamente una oración: nombre completo, acrónimo, categoría del artefacto y el único mecanismo nuevo."},
+        {"label": "Ranura 4 — Anuncio y componentes", "text": "Se anuncia el número de contribuciones y luego se enumeran en línea (una oración de 49–85 palabras) o expandidas (una oración cada una); nunca mezcladas. Es la ranura más larga."},
+        {"label": "Ranura 5 — Validación", "text": "1–4 oraciones: escenario, datos o tareas, métodos comparados, criterios o métricas y análisis complementarios, en ese orden."},
+        {"label": "Ranura 6 — Resultado o contribución secundaria", "text": "1–2 oraciones; una cifra solo cuando es el hecho que se enmarca, indicando a qué pertenece y coincidiendo exactamente con los resultados."},
+        {"label": "Ranura 7 — Veredicto", "text": "Exactamente una oración, la última, de 11–28 palabras; no introduce nada nuevo."}
+      ],
+      "rules": [
+        "Sin citas, ecuaciones, figuras, tablas ni referencias a secciones.",
+        "Sin acrónimos sin expandir ni referencias hacia adelante: el resumen se sostiene por sí mismo.",
+        "Sin familias de métodos previos nombradas ni linajes recorridos; la organización del artículo nunca aparece.",
+        "El número, el orden y los nombres de los componentes coinciden con la introducción y la sección de métodos.",
+        "Toda propiedad afirmada tiene su instrumento nombrado en la ranura 5."
+      ]
+    },
+    {
+      "id": "introduction",
+      "contract": "sections/06-introduction.md",
+      "name": "Introducción",
+      "extent": "750–1380 palabras · exactamente 7 párrafos · 18–41 referencias distintas",
+      "structure": [
+        {"label": "Párrafo 1 — Contexto de la aplicación", "text": "145–200 palabras: el dominio de aplicación y el fenómeno motivador que contienen los datos, nunca la familia de métodos; no se nombra el conjunto de datos."},
+        {"label": "Párrafo 2 — Contexto de IA y problema", "text": "130–220 palabras: las técnicas de IA en esa aplicación, cerrando con dos o tres oraciones que declaran el problema técnico y sus causas raíz; texto corrido, sin viñetas, sin negritas y sin preguntas numeradas."},
+        {"label": "Párrafo 3 — Estado del arte, primeras familias", "text": "130–300 palabras: las primeras familias metodológicas con sus métodos principales, fortalezas y limitaciones; cada párrafo termina en una limitación."},
+        {"label": "Párrafo 4 — Familias restantes y brecha conjunta", "text": "130–300 palabras: las familias restantes con la misma forma, cerrando en la brecha conjunta; los párrafos 3 y 4 presentan de 3 a 5 familias."},
+        {"label": "Párrafo 5 — Propuesta y contribuciones", "text": "120–180 palabras: la presentación de la propuesta terminada en dos puntos, seguida de 3 a 4 contribuciones breves que continúan el párrafo."},
+        {"label": "Párrafo 6 — Evaluación, resultados e impacto", "text": "65–135 palabras: experimentos, métodos de comparación, criterios de evaluación e impacto potencial; sin cifras, porcentajes ni valores."},
+        {"label": "Párrafo 7 — Hoja de ruta", "text": "32–42 palabras: la organización del artículo con una fórmula fija, nombrando solo secciones que existen."}
+      ],
+      "rules": [
+        "Sin ecuaciones, figuras ni tablas.",
+        "La cadena problema → limitación → contribución → propiedad → instrumento → evidencia conserva el mismo nombre para cada propiedad en todos los eslabones, nunca un sinónimo.",
+        "Las citas cierran la oración que respaldan, nunca como sintagma nominal, y aparecen solo hasta el bloque 3, además de la cita de 4a al trabajo previo que la propuesta extiende.",
+        "Las contribuciones nunca abren en negrita ni como etiqueta descriptiva; su número, orden y nombres coinciden con la sección de métodos.",
+        "Sin párrafo de panorama y, cuando existe una sección de trabajo relacionado, sin variantes ni estrategias alternativas en el bloque 3."
+      ]
+    },
+    {
+      "id": "related-work",
+      "contract": "sections/05-related-work.md",
+      "name": "Trabajo relacionado",
+      "extent": "820–1700 palabras · párrafos de 130–300 palabras · una tabla de síntesis de 7–12 trabajos",
+      "structure": [
+        {"label": "Bloque 1 — Preámbulo", "text": "Un párrafo de unas 40 palabras, dos oraciones, sin citas, que nombra los bloques siguientes."},
+        {"label": "Bloque 2 — Panorama general", "text": "Un párrafo de unas 150 palabras: la trayectoria del problema general, sin desarrollar ninguna familia."},
+        {"label": "Bloque 3 — Un bloque por problema específico o familia", "text": "Una subsección por cada familia de la introducción, de 2 a 3 párrafos cada una (fundamentos, métodos principales, principales desafíos), cada párrafo cerrando en la limitación de su familia; de 5 a 10 trabajos distintos citados por familia."},
+        {"label": "Bloque 4 — Frentes abiertos y brecha", "text": "Un párrafo de 100–125 palabras, de 3 a 5 oraciones: recapitulación, los frentes abiertos (uno por bloque) y cuál ataca la propuesta, cerrando con su nombre."},
+        {"label": "Bloque 5 — Artefacto de síntesis", "text": "Una tabla comparativa de 7 a 12 trabajos cuyas dimensiones son las propiedades en las que gana la propuesta, presentada por una oración que las nombra; la propuesta es la última fila."}
+      ],
+      "rules": [
+        "La sección existe solo cuando el linaje de un problema necesita más de un párrafo o se quiere la tabla comparativa.",
+        "Temática, no catálogo: las oraciones tratan de familias, nunca una cita usada como sintagma nominal.",
+        "De dos a seis citas por párrafo, cada una al final de la oración que respalda; toda limitación de trabajos previos va citada.",
+        "Sin ecuaciones; ningún párrafo supera las 300 palabras.",
+        "Entre la introducción y el trabajo relacionado se citan de 30 a 40 referencias."
+      ]
+    },
+    {
+      "id": "materials-and-methods",
+      "contract": "sections/01-materials-and-methods.md",
+      "name": "Materiales y métodos",
+      "extent": "1000–3950 palabras · 2 a 9 subsecciones · un diagrama resumen",
+      "structure": [
+        {"label": "Preámbulo (opcional)", "text": "Un párrafo de 60–120 palabras, sin citas, que nombra el método una vez y las subsecciones en orden."},
+        {"label": "Ranura 1 — Los datos (cuando esta sección los contiene)", "text": "3–12 párrafos: por qué estos datos y su procedencia, un párrafo por conjunto de datos, protocolo de adquisición, lo descartado y luego el preprocesamiento conservado, cómo se construye una muestra, y cómo los sujetos permanecen juntos entre particiones. Cuando se describe un conjunto de datos real, su explicación cierra con un diagrama del protocolo de adquisición elaborado por el agente diagram-author, ilustrado con pictogramas (p. ej., un paciente con gorro de EEG, un generador o una máquina), no solo con cajas."},
+        {"label": "Planteamiento del problema", "text": "1–4 párrafos: espacios de entrada y salida, etiquetas y objetivo formal, con los mismos nombres del planteamiento del problema."},
+        {"label": "Ranura 2 — La maquinaria prestada", "text": "Una subsección por pilar que nombra la introducción, en su orden: primero la notación, un párrafo por ecuación con su cláusula de definición, cerrando en la brecha de la pieza que la propuesta modifica."},
+        {"label": "Ranura 3 — La propuesta", "text": "Siempre al final: el método como delta sobre la maquinaria, su notación, cada contribución definida bajo la propiedad que aporta, la combinación general y un señalador de cierre al diagrama resumen."}
+      ],
+      "rules": [
+        "Sin motivación, resultados, cifras medidas, comparaciones ni protocolo de evaluación: entrenamiento, métricas, líneas base, particiones y estadística pertenecen a la configuración experimental.",
+        "Cada subsección matemática abre con notación, nunca con una ecuación; toda ecuación destacada va numerada y se cita como Ecuación (n).",
+        "Las citas acompañan al objeto prestado que acreditan, antes de su ecuación; ninguna ecuación de la propuesta lleva cita.",
+        "Los paneles del diagrama resumen son la lista de contribuciones, con el mismo número, orden y nombres; en él no aparece ningún conjunto de datos ni línea base.",
+        "Todo artefacto se referencia en el cuerpo antes de aparecer."
+      ]
+    },
+    {
+      "id": "experimental-setup",
+      "contract": "sections/02-experimental-setup.md",
+      "name": "Configuración experimental",
+      "extent": "800–3500 palabras · preámbulo opcional y dos subsecciones · un diagrama de cierre",
+      "structure": [
+        {"label": "Preámbulo (opcional)", "text": "Un párrafo de 30–80 palabras, sin citas: el propósito del protocolo y los bloques en orden."},
+        {"label": "Subsección 1 — Evaluación y comparación de métodos", "text": "Los conjuntos de datos (cuando métodos no los contiene; cuando se describe un conjunto real, su explicación cierra con un diagrama del protocolo de adquisición elaborado por el agente diagram-author, ilustrado con pictogramas, no solo con cajas), los ejes de comparación, los métodos competidores formalizados y citados, las métricas definidas por ecuaciones numeradas, los instrumentos cualitativos, la prueba estadística y su unidad, y el diseño de ablación y sensibilidad."},
+        {"label": "Subsección 2 — Detalles de entrenamiento", "text": "En pasado: preprocesamiento y exclusiones, protocolo de partición, optimizador y calendario, búsqueda de hiperparámetros con su semilla, control de fuga de información, software y hardware."},
+        {"label": "Diagrama de cierre", "text": "El relevo hacia los resultados: datos, métodos comparados, ejes, métrica por cruce, instrumentos cualitativos y la unidad de repetición; ningún componente interno de la propuesta."}
+      ],
+      "rules": [
+        "Toda la evaluación se declara aquí y en ningún otro lugar; no se reporta ningún resultado.",
+        "Los criterios de comparación, el preprocesamiento, las particiones y las pruebas de hipótesis se respaldan cada uno con una cita a trabajos que emplean o justifican ese protocolo (artículos metodológicos o libros de referencia en IA, estadística, salud, etc.).",
+        "Una cita por método comparado, arquitectura barrida, instrumento cualitativo y métrica no estándar; las métricas estándar llevan una ecuación en su lugar.",
+        "Los párrafos abren con una oración, nunca con una etiqueta en negrita o un encabezado en línea; todo hiperparámetro es un símbolo declarado en la sección de métodos.",
+        "Las tablas usan booktabs dentro del ancho de texto, con texto entre 0,70 y 0,90 del tamaño del cuerpo, nunca escaladas por debajo de 0,85, con el título arriba."
+      ]
+    },
+    {
+      "id": "results-and-discussion",
+      "contract": "sections/03-results-and-discussion.md",
+      "name": "Resultados y discusión",
+      "extent": "1170–4150 palabras · 2 a 5 bloques de contenido · 3–12 figuras y 0–8 tablas",
+      "structure": [
+        {"label": "Bloque 0 — Escenario controlado", "text": "Cuando se declaró: la propuesta sobre datos con verdad de referencia conocida."},
+        {"label": "Bloque 1 — La tarea general", "text": "Del 40% al 66% de la sección: métrica principal, datos principales y líneas base, cerrando con la prueba estadística declarada."},
+        {"label": "Bloque 2 — Un bloque por contribución", "text": "Cada uno valida su propiedad con el instrumento que nombró la configuración; una contribución de interpretabilidad se lee dos veces, cualitativamente y con su medida de fidelidad."},
+        {"label": "Bloque 3 — Ablación y sensibilidad", "text": "Una lectura por variante de ablación y luego cada barrido."},
+        {"label": "Bloque 4 — Costo", "text": "Cuando se afirma el costo: uno o dos párrafos y una figura."},
+        {"label": "Bloque 5 — Limitaciones", "text": "Al final, siempre, bajo su propio contrato."}
+      ],
+      "rules": [
+        "Aquí no se introduce nada: todo escenario, métrica, línea base, prueba y ablación se declaró en la configuración experimental.",
+        "Por artefacto, tres tiempos en un mismo párrafo: señalarlo, leerlo en números y dar el mecanismo; el señalador apunta al panel, columna o fila exactos.",
+        "La discusión es inferencial por defecto (cerca del 57%), asertiva por excepción (cerca del 30%) y corroborativa en lo demás (cerca del 13%); ninguna afirmación sin artefacto y ninguna implicación para la práctica.",
+        "Las explicaciones interpretativas, los análisis de un método base y los argumentos de interpretabilidad cualitativa se respaldan con citas que sustentan la idea; una cita nunca reemplaza las cifras propias del artículo.",
+        "Sin preámbulo, sin artefacto de cierre y sin ecuaciones numeradas; todo artefacto se referencia antes de aparecer."
+      ]
+    },
+    {
+      "id": "limitations",
+      "contract": "sections/04-limitations.md",
+      "name": "Limitaciones",
+      "extent": "180–410 palabras · 1 párrafo, o 2 con un modo de falla · 3 a 5 ítems",
+      "structure": [
+        {"label": "Concesión inicial", "text": "Aunque / Si bien / A pesar de un logro concreto que los resultados respaldan, deben reconocerse varias limitaciones."},
+        {"label": "Cada ítem", "text": "Nombrar la decisión o el límite, conceder su beneficio, indicar su costo, indicar la consecuencia para la afirmación y, cuando sea posible, lo que daría la alternativa y lo que costaría."},
+        {"label": "Segundo párrafo (opcional)", "text": "El modo de falla cuantitativo: el régimen más débil, la peor celda de una tabla ya reportada, la evidencia de que el régimen es difícil y el mecanismo."},
+        {"label": "Cierre (opcional)", "text": "Lo que daría atender las limitaciones, o hacia dónde avanza el campo, con una cita."}
+      ],
+      "rules": [
+        "Cada ítem lleva al menos una cita, sobre la alternativa que lo resolvería o sobre el hecho de que el problema es conocido.",
+        "Dos barridos: la sección matemática para las brechas de la propuesta y el diseño experimental para las brechas de la validación.",
+        "Cada ítem nombra una decisión de la formulación o del diseño, nunca una impresión.",
+        "Sin figuras, tablas, ecuaciones ni mediciones nuevas."
+      ]
+    },
+    {
+      "id": "conclusions",
+      "contract": "sections/07-conclusions.md",
+      "name": "Conclusiones",
+      "extent": "350–950 palabras · 3 a 6 párrafos",
+      "structure": [
+        {"label": "Bloque 1 — La propuesta y sus componentes", "text": "Siempre primero, 60–226 palabras, en pasado: nombre completo, acrónimo, categoría y los componentes con el mismo número, orden y nombres de antes, cerrando en lo que distingue al método."},
+        {"label": "Bloque 2 — Los hallazgos", "text": "Un párrafo por contribución, de 80–180 palabras cada uno, con a lo sumo una cifra principal por contribución, idéntica a los resultados."},
+        {"label": "Bloque 3 — La consecuencia más allá del método (opcional)", "text": "Unas 50–120 palabras: lo que se lleva quien lo implementa o quien vive el problema."},
+        {"label": "Bloque 4 — Trabajo futuro", "text": "Siempre al final y en su propio párrafo, 55–180 palabras: una dirección por cada limitación relevante, cada una con una cita."}
+      ],
+      "rules": [
+        "Sin ecuaciones, figuras ni tablas.",
+        "Citas solo en el bloque de trabajo futuro.",
+        "Nada nuevo: ningún experimento, comparación ni interpretación que los resultados no contengan ya.",
+        "Ninguna dirección de trabajo futuro sin una limitación que la motive."
+      ]
+    },
+    {
+      "id": "back-matter",
+      "contract": "sections/10-back-matter.md",
+      "name": "Material final",
+      "extent": "Declaraciones después de las conclusiones y antes de las referencias",
+      "structure": [
+        {"label": "Bloques obligatorios", "text": "Contribuciones de los autores (37–44 palabras), financiación (unas 55 palabras por proyecto), disponibilidad de datos (7–22 palabras), disponibilidad de código (7–25 palabras), conflictos de interés (una oración) y la declaración de uso de IA (40–90 palabras, siempre)."},
+        {"label": "Bloques condicionales", "text": "Declaraciones del comité de ética y del consentimiento informado, agradecimientos, materiales suplementarios, abreviaturas, apéndices (después de las referencias), y aspectos destacados y resumen gráfico para revistas de Elsevier."},
+        {"label": "Ubicación", "text": "Dónde va cada bloque y su título siguen a la editorial de la revista seleccionada."}
+      ],
+      "rules": [
+        "Cada declaración es un párrafo propio, nunca unido al anterior.",
+        "Roles CRediT con las iniciales de los autores; una herramienta de IA nunca es autora.",
+        "La financiación lleva el título exacto registrado del proyecto, el financiador y el código de la subvención copiado de los registros.",
+        "La disponibilidad de datos y la de código son afirmaciones separadas, cada una con una URL que resuelve y la fecha en que se verificó.",
+        "La declaración de uso de IA indica lo que muestra el registro de uso de IA del flujo, ni menos ni más."
+      ]
+    }
+  ],
+  "general": {
+    "heading": "Reglas transversales",
+    "rules": [
+      "Una sola voz para todo el artículo: primera persona del plural o impersonal, elegida una vez; los procedimientos ejecutados van en pasado pasivo.",
+      "Las oraciones promedian 21–27 palabras: una afirmación y su matiz, nunca una cadena de tres cláusulas.",
+      "Toda figura, tabla o panel se referencia en el cuerpo antes de aparecer, y el señalador apunta al subelemento exacto.",
+      "Cada propiedad conserva el mismo nombre desde el planteamiento del problema hasta la evidencia: problema → contribución → propiedad → instrumento → evidencia.",
+      "Toda afirmación necesita una fuente que la sostenga; las citas se resuelven contra la bibliografía y nunca se inventan.",
+      "El texto de figuras y tablas se imprime entre 0,70 y 0,90 veces el tamaño de letra del cuerpo.",
+      "El manuscrito canónico está en modo de revisión a una columna con autores anónimos hasta que el operador lo verifica."
+    ]
+  }
+}
