@@ -11,6 +11,36 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.58.0
+
+### Changed
+
+- **Future work and every declaration open a paragraph of their own.** Blocks
+  sit back to back in `main.tex` and their markers are comments, so the
+  future-work block ran into the paragraph above it and the declarations
+  (author contributions, funding, data and code availability, ethics,
+  consent, conflicts of interest, acknowledgments) printed as one run-on
+  paragraph. `write` and `humanize --apply` now open those bodies on a blank
+  line, and contracts 07 and 10 state the rule.
+- **An appendix of one page or less belongs in the body.** Contract 10 moves
+  its content to Materials and Methods (a derivation or formal detail) or the
+  experimental set-up (a table of settings); only material longer than a
+  page stays after the references.
+- `humanize --apply` refuses `DRAFT_BOLD_LEAD_IN` like `write` does.
+
+### Added
+
+- `verify` reports two more structure checks, which `clean` requires:
+  `own-paragraph` (an own-paragraph block that runs into the one before it)
+  and `appendix-length` (an appendix whose estimated printed extent is one
+  page or less, naming where its content belongs).
+
+### Fixed
+
+- A `% node:` marker in a figure source takes the rest of its line, so a
+  diagram marks a contribution by its multi-word roster name; the manifest
+  cross-check no longer refuses `MANIFEST_SOURCE_MISMATCH` for it.
+
 ## 0.57.0
 
 ### Changed
