@@ -368,6 +368,14 @@ se usaron (las fases y las secciones que redactaron); indique que los autores re
 y editaron el resultado en las compuertas de aprobación registradas y asumen plena
 responsabilidad. Cuando una versión no está en el registro, la aporta el operador.
 
+Nombre el framework que ejecutó el flujo y cite su repositorio, a partir del campo
+`framework` del registro: papersmith, con su versión cuando está registrada, en
+https://github.com/LIAUNAL/papersmith-ai (en LaTeX, `\url{https://github.com/LIAUNAL/papersmith-ai}`).
+La cita va en la primera oración de la declaración, junto a los entornos que ejecutaron
+los agentes, por ejemplo "the authors used AI agents orchestrated by the papersmith
+framework (version 0.58.2, \url{https://github.com/LIAUNAL/papersmith-ai}) and run in
+[harnesses] to [uses]".
+
 Redacción por revista, con los corchetes completados a partir del registro (el texto
 va en el idioma del artículo):
 

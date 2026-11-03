@@ -13,6 +13,8 @@ Three sources, each read through its owner:
   written block, drafted by the `redactor` agent through `write` (the only
   route a block body gets written), with its write-attempt ledger and
   evidence ledger when they exist;
+* the workspace -- `.papersmith/version`: the papersmith release that ran
+  the pipeline, cited with its repository URL;
 * the selected venues -- `paper_venue.back_matter_placement`: where each
   venue's publisher puts the AI-use declaration and the funding statement.
 
@@ -51,6 +53,21 @@ DRAFTING_AGENT = "redactor"
 AUDITING_AGENT = "contract-auditor"
 
 _CORE = Path(__file__).resolve().parents[2] / "_core"
+
+#: The framework that ran the pipeline. The declaration cites its repository
+#: so a reader can find the workflow that produced the paper.
+FRAMEWORK_NAME = "papersmith"
+FRAMEWORK_URL = "https://github.com/LIAUNAL/papersmith-ai"
+
+
+def _framework(workspace: Path) -> dict:
+    """The framework's name, repository and the release the workspace records
+    in `.papersmith/version` (None when unreadable)."""
+    try:
+        version = (workspace / ".papersmith" / "version").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        version = None
+    return {"name": FRAMEWORK_NAME, "url": FRAMEWORK_URL, "version": version}
 
 
 def _pipeline(workspace: Path, sessions) -> dict:
@@ -101,6 +118,7 @@ def build(paper_dir: Path, *, sessions=None) -> dict:
     code_phases = [p["stage_id"] for p in pipeline.get("phases", []) if p.get("stage_id") in CODE_STAGES]
     return {
         "schema": 1,
+        "framework": _framework(paper_dir.parent),
         "pipeline": pipeline,
         "drafted": drafted,
         "tools": pipeline.get("harnesses", []),

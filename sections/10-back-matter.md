@@ -364,6 +364,14 @@ used for (the phases and the sections they drafted); state that the authors revi
 and edited the output at the recorded approval gates and take full responsibility.
 Where a version is not in the record, the operator supplies it.
 
+Name the framework that ran the pipeline and cite its repository, from the record's
+`framework` field: papersmith, with its release when recorded, at
+https://github.com/LIAUNAL/papersmith-ai (in LaTeX, `\url{https://github.com/LIAUNAL/papersmith-ai}`).
+The citation goes in the declaration's first sentence, beside the harnesses that ran
+the agents, for example "the authors used AI agents orchestrated by the papersmith
+framework (version 0.58.2, \url{https://github.com/LIAUNAL/papersmith-ai}) and run in
+[harnesses] to [uses]".
+
 Wording by venue, with the brackets filled from the record:
 
 - **Elsevier**, titled "Declaration of generative AI and AI-assisted technologies in
