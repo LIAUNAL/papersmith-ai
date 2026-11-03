@@ -9057,7 +9057,7 @@ class NewlyCoveredSubjectRosterTests(unittest.TestCase):
         # measured widening of `paper_cli.py`'s own argparse roster, not drift.
         # 28 -> 29: the `venue` group (journal-finder), which adapts the
         # manuscript to a chosen journal's template.
-        ("paper-writing", 29),
+        ("paper-writing", 31),
     )
 
     def test_each_new_recipe_derives_a_real_nonempty_roster(self):
