@@ -156,6 +156,29 @@ class PaperAiUsageTests(_Workspace):
         self.assertFalse(record["code_or_experiments_by_agents"])
         self.assertFalse(record["methods_sentence_required"])
 
+    def test_the_record_names_the_framework_with_its_repository_and_version(self) -> None:
+        (self.root / ".papersmith").mkdir(exist_ok=True)
+        (self.root / ".papersmith" / "version").write_text("0.58.2\n", encoding="utf-8")
+        record = paper_ai_usage.build(self.paper, sessions=self.sessions())
+        self.assertEqual(record["framework"], {
+            "name": "papersmith",
+            "url": "https://github.com/LIAUNAL/papersmith-ai",
+            "version": "0.58.2",
+        })
+
+    def test_without_a_recorded_version_the_framework_version_is_none(self) -> None:
+        version = self.root / ".papersmith" / "version"
+        if version.exists():
+            version.unlink()
+        record = paper_ai_usage.build(self.paper, sessions=self.sessions())
+        self.assertEqual(record["framework"]["url"], "https://github.com/LIAUNAL/papersmith-ai")
+        self.assertIsNone(record["framework"]["version"])
+
+    def test_the_declaration_contract_requires_citing_the_framework_repository(self) -> None:
+        contract = (REPO / "sections" / "10-back-matter.md").read_text(encoding="utf-8")
+        section = contract[contract.index("## AI-use declaration"):]
+        self.assertIn("https://github.com/LIAUNAL/papersmith-ai", section)
+
     def test_a_paper_without_main_tex_degrades_instead_of_refusing(self) -> None:
         record = paper_ai_usage.build(self.paper, sessions=self.sessions())
         self.assertEqual(record["drafted"]["status"], "unavailable")
