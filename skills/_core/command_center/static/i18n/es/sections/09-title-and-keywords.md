@@ -145,6 +145,23 @@ En la redacción inicial del manuscrito **no se incluyen nombres de autores, afi
 ```
 Solo cuando todo el manuscrito ha sido redactado, compilado y supera todas las verificaciones con el usuario se pide al operador que aporte las identidades de los autores, sus afiliaciones y los datos de correspondencia.
 
+### Metadatos de autoría revelados
+Cuando el operador levanta el anonimato, el bloque `title-and-keywords.title` reemplaza el marcador por esta plantilla, y solo por esta:
+```latex
+\author{%
+\begin{minipage}[t]{\dimexpr\textwidth-2\tabcolsep\relax}
+\centering
+First Author$^{1}$, Second Author$^{1,2}$, and Third Author$^{3,*}$\\[1ex]
+\small
+$^{1}$Departamento de Sistemas e Inform\'{a}tica, Universidad de Caldas, Manizales 170004, Colombia\\
+$^{2}$Departamento de Electr\'{o}nica y Automatizaci\'{o}n, Universidad Aut\'{o}noma de Manizales, Manizales 170001, Colombia\\
+$^{3}$AI-Lab, Signal Processing and Recognition Group, Universidad Nacional de Colombia, Sede Manizales, Manizales 170003, Colombia\\[1ex]
+E-mails: \texttt{first.author@ucaldas.edu.co}, \texttt{second.author@ucaldas.edu.co}, \texttt{third.author@unal.edu.co}\\
+$^{*}$Corresponding author: \texttt{third.author@unal.edu.co}
+\end{minipage}}
+```
+`article` compone `\author` en una columna `c` centrada que nunca parte línea, así que una afiliación o una lista de correos escrita como línea `\\` suelta más ancha que la caja de texto invade el margen (un `Overfull \hbox` en `main.log`). La `minipage` de ancho `\textwidth-2\tabcolsep` vuelve el encabezado texto que parte línea. Mantenga una línea de autores con índices de afiliación en superíndice, una afiliación por línea en `\small`, y luego los correos y el autor de correspondencia. Separe las líneas con `\\`, nunca con `\par` ni una línea en blanco: `\author` no es un comando largo y un salto de párrafo dentro de él aborta el preámbulo. Verifique que `main.log` no tenga `Overfull \hbox` en la línea de `\maketitle` antes de dar el encabezado por terminado.
+
 ## La línea de clasificación
 
 Algunas revistas exigen un código de clasificación temática después de las palabras clave. Ese es un

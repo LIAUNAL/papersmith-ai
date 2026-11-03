@@ -116,6 +116,23 @@ During the initial drafting and refinement of the manuscript, **no author names,
 ```
 Only when the complete manuscript passes all verification gates with the user is the operator prompted to provide the author identities, affiliations, and correspondence details.
 
+### Revealed Author Metadata
+When the operator lifts the blinding, the `title-and-keywords.title` block replaces the placeholder with this template, and only this one:
+```latex
+\author{%
+\begin{minipage}[t]{\dimexpr\textwidth-2\tabcolsep\relax}
+\centering
+First Author$^{1}$, Second Author$^{1,2}$, and Third Author$^{3,*}$\\[1ex]
+\small
+$^{1}$Departamento de Sistemas e Inform\'{a}tica, Universidad de Caldas, Manizales 170004, Colombia\\
+$^{2}$Departamento de Electr\'{o}nica y Automatizaci\'{o}n, Universidad Aut\'{o}noma de Manizales, Manizales 170001, Colombia\\
+$^{3}$AI-Lab, Signal Processing and Recognition Group, Universidad Nacional de Colombia, Sede Manizales, Manizales 170003, Colombia\\[1ex]
+E-mails: \texttt{first.author@ucaldas.edu.co}, \texttt{second.author@ucaldas.edu.co}, \texttt{third.author@unal.edu.co}\\
+$^{*}$Corresponding author: \texttt{third.author@unal.edu.co}
+\end{minipage}}
+```
+`article` sets `\author` in a centred `c` column that never wraps, so an affiliation or e-mail list written as a bare `\\` line wider than the text block runs into the margin (an `Overfull \hbox` in `main.log`). The `minipage` of width `\textwidth-2\tabcolsep` turns the header back into wrapping text. Keep one author line with superscript affiliation indices, one affiliation per line in `\small`, then the e-mails and the corresponding author. Separate lines with `\\`, never `\par` or a blank line: `\author` is not a long command, and a paragraph break inside it aborts the preamble. Verify that `main.log` has no `Overfull \hbox` at the `\maketitle` line before reporting the header done.
+
 ### Seven-Paragraph Introduction Structure
 The Introduction has exactly seven paragraphs; the full contract, with the extent of each one, is `sections/06-introduction.md`:
 1. **Paragraph 1 (Application Context):** General context of the application domain and motivating phenomenon.
