@@ -1,0 +1,112 @@
+% papersmith pictogram library for acquisition-protocol diagrams.
+%
+% Vector pictograms drawn as TikZ `pic`s: no text, no fonts, no external
+% images, so the diagram audit (overflow, overlap, font range, margins) reads
+% them as drawn shapes only. Copy the `\tikzset{...}` entries a figure uses
+% into its standalone source, after `\begin{document}` or in the preamble;
+% never `\input` this file from paper/Figures/.
+%
+% Every pic is drawn in a box about 1.6 x 1.6 units centred on its origin.
+% Place one with `\pic[scale=0.6] at (x,y) {pg eeg patient};` and size it
+% with `scale=`. Colours follow the diagram grammar: ink for strokes, the
+% cool and warm hues for accents; each pic reads in grayscale.
+%
+% Catalogue (domain -> pic):
+%   health / EEG / patients : pg eeg patient, pg seated subject,
+%                             pg amplifier, pg stimulus screen
+%   any signal acquisition  : pg signal traces, pg computer, pg database
+%   energy / machines       : pg wind turbine, pg generator,
+%                             pg electric machine, pg sensor probe
+
+\definecolor{pgink}{HTML}{20252B}
+\definecolor{pgcool}{HTML}{4F7CAC}
+\definecolor{pgwarm}{HTML}{D96855}
+
+\tikzset{
+  pg ink/.style={draw=pgink, line width=0.9pt, line cap=round, line join=round},
+  pg fill cool/.style={fill=pgcool!18},
+  pg fill warm/.style={fill=pgwarm!20},
+  % A head and shoulders wearing an EEG cap with electrodes and a lead bundle.
+  pics/pg eeg patient/.style={code={
+    \draw[pg ink, pg fill cool] (-0.75,-0.8) .. controls (-0.7,-0.25) and (-0.35,-0.15) .. (0,-0.15)
+      .. controls (0.35,-0.15) and (0.7,-0.25) .. (0.75,-0.8) -- cycle;
+    \draw[pg ink, fill=white] (0,0.3) circle (0.42);
+    \draw[pg ink, pg fill warm] (-0.42,0.3) arc (180:0:0.42) -- cycle;
+    \foreach \a in {25,55,90,125,155}{\fill[pgink] ([shift={(\a:0.33)}]0,0.3) circle (0.045);}
+    \fill[pgink] (0,0.42) circle (0.045);
+    \draw[pg ink] (0.42,0.32) .. controls (0.7,0.3) and (0.75,0.05) .. (0.82,-0.2);
+    \draw[pg ink] (0.4,0.42) .. controls (0.72,0.42) and (0.82,0.1) .. (0.9,-0.18);
+  }},
+  % A seated subject on a chair, seen from the side.
+  pics/pg seated subject/.style={code={
+    \draw[pg ink, fill=white] (0,0.55) circle (0.2);
+    \draw[pg ink, pg fill cool] (-0.12,0.3) -- (0.12,0.3) -- (0.15,-0.15) -- (-0.15,-0.15) -- cycle;
+    \draw[pg ink] (-0.12,-0.15) -- (0.45,-0.15) -- (0.45,-0.75);
+    \draw[pg ink] (-0.35,0.35) -- (-0.35,-0.25) -- (0.5,-0.25);
+    \draw[pg ink] (-0.3,-0.25) -- (-0.3,-0.8);
+    \draw[pg ink] (0.45,-0.25) -- (0.45,-0.8);
+  }},
+  % An amplifier or acquisition unit with a signal on its face.
+  pics/pg amplifier/.style={code={
+    \draw[pg ink, pg fill cool, rounded corners=2pt] (-0.7,-0.45) rectangle (0.7,0.45);
+    \draw[pg ink, pgwarm] (-0.5,0) sin (-0.375,0.2) cos (-0.25,0) sin (-0.125,-0.2) cos (0,0)
+      sin (0.125,0.2) cos (0.25,0) sin (0.375,-0.2) cos (0.5,0);
+    \foreach \x in {-0.45,-0.15,0.15,0.45}{\fill[pgink] (\x,-0.32) circle (0.04);}
+  }},
+  % A screen showing a fixation cross (stimulus presentation).
+  pics/pg stimulus screen/.style={code={
+    \draw[pg ink, fill=white, rounded corners=1.5pt] (-0.7,-0.35) rectangle (0.7,0.55);
+    \draw[pg ink] (0,-0.35) -- (0,-0.6) (-0.3,-0.6) -- (0.3,-0.6);
+    \draw[pg ink, pgwarm, line width=1.2pt] (-0.15,0.1) -- (0.15,0.1) (0,-0.05) -- (0,0.25);
+  }},
+  % Three stacked signal traces (multichannel recording).
+  pics/pg signal traces/.style={code={
+    \foreach \y/\h in {0.45/0.12,0/0.2,-0.45/0.08}{
+      \draw[pg ink] (-0.75,\y) sin (-0.56,\y+\h) cos (-0.375,\y) sin (-0.19,\y-\h) cos (0,\y)
+        sin (0.19,\y+\h) cos (0.375,\y) sin (0.56,\y-\h) cos (0.75,\y);}
+  }},
+  % A computer screen with a recorded trace.
+  pics/pg computer/.style={code={
+    \draw[pg ink, pg fill cool, rounded corners=1.5pt] (-0.75,-0.3) rectangle (0.75,0.6);
+    \draw[pg ink, pgwarm] (-0.55,0.15) sin (-0.37,0.35) cos (-0.18,0.15) sin (0,-0.05) cos (0.18,0.15)
+      sin (0.37,0.35) cos (0.55,0.15);
+    \draw[pg ink] (0,-0.3) -- (0,-0.55) (-0.35,-0.55) -- (0.35,-0.55);
+  }},
+  % A database cylinder (stored records).
+  pics/pg database/.style={code={
+    \draw[pg ink, pg fill cool] (-0.5,0.45) -- (-0.5,-0.45) arc (180:360:0.5 and 0.16) -- (0.5,0.45);
+    \draw[pg ink, fill=white] (0,0.45) ellipse (0.5 and 0.16);
+    \draw[pg ink] (-0.5,0.05) arc (180:360:0.5 and 0.16);
+  }},
+  % A three-blade wind turbine.
+  pics/pg wind turbine/.style={code={
+    \draw[pg ink, pg fill cool] (-0.07,-0.8) -- (-0.03,0.35) -- (0.03,0.35) -- (0.07,-0.8) -- cycle;
+    \foreach \a in {90,210,330}{
+      \draw[pg ink, pg fill warm, rotate around={\a:(0,0.4)}]
+        (0,0.4) .. controls (0.1,0.55) and (0.07,0.85) .. (0,0.95) .. controls (-0.06,0.8) and (-0.06,0.55) .. (0,0.4);}
+    \draw[pg ink, fill=white] (0,0.4) circle (0.07);
+  }},
+  % A rotating generator: housing, stator coil and shaft on a base.
+  pics/pg generator/.style={code={
+    \draw[pg ink, pg fill cool] (0,0.05) circle (0.55);
+    \draw[pg ink, fill=white] (0,0.05) circle (0.3);
+    \draw[pg ink, pgwarm] (-0.2,0.05) -- (-0.13,0.18) -- (-0.07,-0.08) -- (0,0.18) -- (0.07,-0.08) -- (0.13,0.18) -- (0.2,0.05);
+    \draw[pg ink] (0.55,0.05) -- (0.85,0.05);
+    \draw[pg ink] (-0.5,-0.7) -- (0.5,-0.7) (-0.3,-0.45) -- (-0.4,-0.7) (0.3,-0.45) -- (0.4,-0.7);
+  }},
+  % An electric machine (motor) with cooling fins, shaft and feet.
+  pics/pg electric machine/.style={code={
+    \draw[pg ink, pg fill cool, rounded corners=2pt] (-0.65,-0.35) rectangle (0.45,0.4);
+    \foreach \x in {-0.45,-0.25,-0.05,0.15,0.35}{\draw[pg ink] (\x,0.4) -- (\x,0.55);}
+    \draw[pg ink, pg fill warm] (0.45,-0.1) rectangle (0.62,0.15);
+    \draw[pg ink] (0.62,0.02) -- (0.85,0.02);
+    \draw[pg ink] (-0.55,-0.35) -- (-0.6,-0.6) -- (-0.3,-0.6) (0.35,-0.35) -- (0.4,-0.6) -- (0.1,-0.6);
+  }},
+  % A sensor probe with its cable (vibration, current or temperature).
+  pics/pg sensor probe/.style={code={
+    \draw[pg ink, pg fill warm, rounded corners=1.5pt] (-0.2,-0.2) rectangle (0.2,0.35);
+    \draw[pg ink] (-0.12,-0.2) -- (-0.12,-0.45) (0.12,-0.2) -- (0.12,-0.45);
+    \draw[pg ink] (0,0.35) .. controls (0,0.65) and (0.45,0.6) .. (0.7,0.75);
+    \draw[pg ink] (-0.45,-0.45) -- (0.45,-0.45);
+  }},
+}

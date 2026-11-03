@@ -158,7 +158,8 @@ abarca varias subsecciones, estas son consecutivas y nada las sigue.
 ## Posición 1 — El conjunto de datos
 
 De 3 a 12 párrafos, en una subsección o en dos (sintéticos y reales, o una por fuente).
-Una o dos figuras: protocolo de adquisición o muestras representativas. Cero a dos
+Una o dos figuras: el protocolo de adquisición, siempre, para un conjunto real, y muestras
+representativas cuando ayudan. Cero a dos
 tablas: listas de variables o estadísticas descriptivas. Pocas ecuaciones: la segmentación o
 el ventaneo que define una muestra es la habitual.
 
@@ -166,7 +167,8 @@ Secuencia de párrafos:
 
 1. Por qué estos datos responden a la pregunta, y su procedencia.
 2. Un párrafo por conjunto de datos o sitio, cuando hay varios.
-3. La adquisición (protocolo, sensores, tarea), remitiendo a su figura.
+3. La adquisición (protocolo, sensores, tarea), remitiendo a su diagrama del protocolo de
+   adquisición, que cierra la explicación del conjunto de datos.
 4. Lo que se descartó, y luego el preprocesamiento conservado.
 5. Cómo se construye una muestra, con su notación.
 6. Cuando los sujetos o las fuentes se repiten, cómo se mantienen juntos para que nada se filtre
@@ -181,6 +183,19 @@ Se abre según de quién sean los datos:
 
 **Indique lo que se descartó antes de indicar lo que se conservó**: exclusiones, filtros
 de calidad, registros eliminados.
+
+**Un conjunto de datos real cierra con su diagrama del protocolo de adquisición.** Cuando
+los datos se capturaron (registrados de pacientes, sujetos, máquinas, plantas o sitios, y no
+generados por un simulador), la explicación de cada conjunto real termina en una figura que
+el agente `diagram-author` dibuja siguiendo
+`skills/paper-writing/references/data-acquisition-diagram.md`: la captura en el orden en que
+ocurrió (quién o qué se mide, el montaje, la tarea o condición de operación, la cadena de
+adquisición, el registro almacenado, cómo se corta una muestra). Sus etapas se ilustran con
+pictogramas del dominio tomados de `skills/paper-writing/references/pictograms.tex` (un
+paciente con gorro de EEG, un generador o una máquina), nunca solo con cajas. Es el último
+artefacto de la explicación del conjunto de datos, y el párrafo de adquisición la referencia
+antes de que aparezca. Un conjunto sintético no tiene captura que mostrar y no lleva esta
+figura.
 
 **Aquí se paga la deuda de crédito de la introducción.** Un conjunto de datos nombrado en
 la introducción sin referencia se nombra aquí con una.
@@ -531,6 +546,8 @@ Nada aquí espera a un experimento. Pero sí espera a que exista el código.
 
 ## Descalificadores
 
+- Un conjunto de datos real cuya explicación no cierra con su diagrama del protocolo de
+  adquisición, o cuyo diagrama es solo de cajas, sin pictogramas del dominio.
 - Un símbolo usado sin haber sido declarado, o declarado dos veces con significados distintos.
 - Dos cantidades distintas que comparten una letra sin un diacrítico que las separe, o un
   diacrítico que no marca ninguna relación con un objeto ya declarado.

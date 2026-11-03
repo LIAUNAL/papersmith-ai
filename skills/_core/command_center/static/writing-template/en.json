@@ -1,0 +1,215 @@
+{
+  "title": "General writing template",
+  "intro": "A short summary of each section's structure and basic rules, in the order the paper prints them. Each section's contract in sections/ holds the full rule set and its disqualifiers; this panel only condenses it.",
+  "sections": [
+    {
+      "id": "title-and-keywords",
+      "contract": "sections/09-title-and-keywords.md",
+      "name": "Title and keywords",
+      "extent": "Title 10–13 words · 3–5 keywords",
+      "structure": [
+        {"label": "Title slots", "text": "Optional acronym with a colon, optional article, then the required property adjective (first), the required mechanism, an optional artefact noun, the required task, and a domain or place only when the work is bound to it."},
+        {"label": "Source of the slots", "text": "Property, mechanism and task come from the proposal: the property the contributions add, the mechanism that realizes them, the task the problem statement named."},
+        {"label": "Keywords", "text": "Three to five, separated by semicolons, ordered broadest to most specific: task or domain, then property, then machinery."},
+        {"label": "Author header", "text": "Blinded placeholder while drafting; when the operator reveals the authors, the author header uses the wrapping minipage template (no overflow)."}
+      ],
+      "rules": [
+        "No number, no percentage, no comparative, no claim of superiority.",
+        "Title case, prepositions and articles in lower case; a hyphen joins a modifier pair, an en dash joins co-equal terms.",
+        "An acronym in the title takes a colon and the abstract expands it.",
+        "Keywords are not a restatement of the title: about a third repeat a title term, the rest add omitted mechanisms, the data modality or population, and the property in its noun form; every keyword appears in the body.",
+        "The manuscript is typeset in single-column review mode (onecolumn); no real author names, affiliations or e-mails until the whole manuscript is verified with the operator."
+      ]
+    },
+    {
+      "id": "abstract",
+      "contract": "sections/08-abstract.md",
+      "name": "Abstract",
+      "extent": "216–280 words · 7–14 sentences · one paragraph",
+      "structure": [
+        {"label": "Slot 1 — Context", "text": "1–2 sentences: the field and the phenomenon the dataset contains, and why failure there is costly."},
+        {"label": "Slot 2 — Problem", "text": "1–2 sentences opening with an adversative; names the specific shortcoming, the state of the art absorbed as half a clause."},
+        {"label": "Slot 3 — The proposal, named", "text": "Exactly one sentence: full name, acronym, artefact category and the one new mechanism."},
+        {"label": "Slot 4 — Announcement and components", "text": "The count of contributions announced, then enumerated inline (one sentence of 49–85 words) or expanded (one sentence each); never mixed. The longest slot."},
+        {"label": "Slot 5 — Validation", "text": "1–4 sentences: scenario, data or tasks, compared methods, criteria or metrics, complementary analyses, in that order."},
+        {"label": "Slot 6 — Result or secondary contribution", "text": "1–2 sentences; a figure only when it is the fact being framed, stating what it belongs to and matching the results exactly."},
+        {"label": "Slot 7 — Verdict", "text": "Exactly one sentence, the last one, 11–28 words; introduces nothing new."}
+      ],
+      "rules": [
+        "No citation, equation, figure, table or section reference.",
+        "No unexpanded acronym and no forward reference: the abstract is self-contained.",
+        "No named family of prior methods and no walked lineage; the organization of the article never appears.",
+        "Component count, order and naming agree with the introduction and the methods section.",
+        "Every property claimed has its instrument named in slot 5."
+      ]
+    },
+    {
+      "id": "introduction",
+      "contract": "sections/06-introduction.md",
+      "name": "Introduction",
+      "extent": "750–1380 words · exactly 7 paragraphs · 18–41 distinct references",
+      "structure": [
+        {"label": "Paragraph 1 — Application context", "text": "145–200 words: the application domain and the motivating phenomenon the dataset contains, never the family of methods; no dataset named."},
+        {"label": "Paragraph 2 — AI context and problem", "text": "130–220 words: AI techniques in that application, closing with two or three sentences declaring the technical problem and its root causes; running text, no bullets, no bold, no numbered questions."},
+        {"label": "Paragraph 3 — State of the art, first families", "text": "130–300 words: the first methodological families with their primary methods, strengths and limitations; each paragraph ends on a limitation."},
+        {"label": "Paragraph 4 — Remaining families and joint gap", "text": "130–300 words: the remaining families in the same form, closing on the joint gap; paragraphs 3 and 4 present 3 to 5 families."},
+        {"label": "Paragraph 5 — Proposal and contributions", "text": "120–180 words: the proposal presentation ending in a colon, followed by 3 to 4 short contribution items that continue the paragraph."},
+        {"label": "Paragraph 6 — Evaluation, results and impact", "text": "65–135 words: experiments, comparison methods, evaluation criteria and potential impact; no figure, percentage or value."},
+        {"label": "Paragraph 7 — Roadmap", "text": "32–42 words: the organization of the paper in a fixed roadmap formula, naming only sections that exist."}
+      ],
+      "rules": [
+        "No equations, figures or tables.",
+        "The chain problem → limitation → contribution → property → instrument → evidence keeps the same name for each property through every link, never a synonym.",
+        "Citations close the sentence they support, never as a noun phrase, and appear only up to block 3, besides 4a's citation of the prior work the proposal extends.",
+        "Contribution items never open in bold or as a description label; their count, order and naming match the methods section.",
+        "No panorama paragraph and, when a Related Work section exists, no variants or alternative strategies in block 3."
+      ]
+    },
+    {
+      "id": "related-work",
+      "contract": "sections/05-related-work.md",
+      "name": "Related work",
+      "extent": "820–1700 words · paragraphs of 130–300 words · one synthesis table of 7–12 works",
+      "structure": [
+        {"label": "Block 1 — Preamble", "text": "One paragraph of about 40 words, two sentences, no citations, naming the blocks that follow."},
+        {"label": "Block 2 — General panorama", "text": "One paragraph of about 150 words: the trajectory of the general problem, without developing any family."},
+        {"label": "Block 3 — One block per specific problem or family", "text": "One subsection per family of the introduction, 2 to 3 paragraphs each (foundations, main methods, main challenges), each paragraph closing on its family's limitation; 5 to 10 distinct works cited per family."},
+        {"label": "Block 4 — Open fronts and the gap", "text": "One paragraph of 100–125 words, 3 to 5 sentences: recapitulation, the open fronts (one per block), and which the proposal attacks, closing on its name."},
+        {"label": "Block 5 — Synthesis artefact", "text": "A comparison table of 7 to 12 works whose dimensions are the properties the proposal wins on, introduced by a one-sentence pointer that names them; the proposal is the last row."}
+      ],
+      "rules": [
+        "The section exists only when a problem's lineage needs more than one paragraph or the comparison table is wanted.",
+        "Thematic, not catalogue: sentences are about families, never a citation used as a noun phrase.",
+        "Two to six citations per paragraph, each at the end of the sentence it supports; every limitation of prior work is cited.",
+        "No equations; no paragraph longer than 300 words.",
+        "Introduction and related work together cite 30 to 40 references."
+      ]
+    },
+    {
+      "id": "materials-and-methods",
+      "contract": "sections/01-materials-and-methods.md",
+      "name": "Materials and methods",
+      "extent": "1000–3950 words · 2 to 9 subsections · one summary diagram",
+      "structure": [
+        {"label": "Preamble (optional)", "text": "One paragraph of 60–120 words, no citations, naming the method once and the subsections in order."},
+        {"label": "Slot 1 — The dataset (when this section owns it)", "text": "3–12 paragraphs: why these data and their provenance, one paragraph per dataset, acquisition protocol, what was discarded then the preprocessing kept, how a sample is built, how subjects stay together across splits. When a real dataset is described, its explanation closes with an acquisition-protocol diagram drawn by the diagram-author agent, illustrated with pictograms (e.g. a patient wearing an EEG cap, a generator or machine), not boxes only."},
+        {"label": "Problem setup", "text": "1–4 paragraphs: input and output spaces, labels and the formal goal, in the problem statement's own names."},
+        {"label": "Slot 2 — The borrowed machinery", "text": "One subsection per pillar the introduction names, in its order: notation first, one paragraph per equation with its where clause, closing on the gap of the piece the proposal modifies."},
+        {"label": "Slot 3 — The proposal", "text": "Always last: the method as a delta on the machinery, its notation, each contribution defined under the property it delivers, the general combination, and a closing pointer to the summary diagram."}
+      ],
+      "rules": [
+        "No motivation, result, measured number, comparison or evaluation protocol: training, metrics, baselines, splits and statistics belong to the experimental set-up.",
+        "Each mathematical subsection opens on notation, never on an equation; every displayed equation is numbered and cited as Equation (n).",
+        "Citations attach to the borrowed object they credit, before its equation; no equation of the proposal carries a citation.",
+        "The summary diagram's panels are the contribution list, same count, order and names; no dataset or baseline appears in it.",
+        "Every artefact is referenced in the body before it appears."
+      ]
+    },
+    {
+      "id": "experimental-setup",
+      "contract": "sections/02-experimental-setup.md",
+      "name": "Experimental set-up",
+      "extent": "800–3500 words · optional preamble and two subsections · one closing diagram",
+      "structure": [
+        {"label": "Preamble (optional)", "text": "One paragraph of 30–80 words, no citations: the purpose of the protocol and the blocks in order."},
+        {"label": "Subsection 1 — Assessment and method comparison", "text": "The datasets (when methods does not own them; when a real dataset is described, its explanation closes with an acquisition-protocol diagram drawn by the diagram-author agent, illustrated with pictograms, not boxes only), the comparison axes, the competing methods each formalized and cited, the metrics each defined by a numbered equation, qualitative instruments, the statistical test and its unit, and the ablation and sensitivity design."},
+        {"label": "Subsection 2 — Training details", "text": "Past tense: preprocessing and exclusions, the partition protocol, optimizer and schedule, hyperparameter search with its seed, leakage control, software and hardware."},
+        {"label": "Closing diagram", "text": "The handoff to the results: data, compared methods, axes, metric per crossing, qualitative instruments and the repetition unit; no internal component of the proposal."}
+      ],
+      "rules": [
+        "The whole evaluation is declared here and nowhere else; no result is reported.",
+        "Comparison criteria, preprocessing, partitions and hypothesis tests are each backed by a citation to work that uses or justifies that protocol (methodological papers or reference books in AI, statistics, health, etc.).",
+        "One citation per compared method, swept architecture, qualitative instrument and non-standard metric; standard metrics carry an equation instead.",
+        "Paragraphs open on a sentence, never on a bold label or run-in heading; every hyperparameter is a symbol declared in the methods section.",
+        "Tables use booktabs inside the text width, with text at 0.70–0.90 of the body size, never scaled below 0.85, caption above."
+      ]
+    },
+    {
+      "id": "results-and-discussion",
+      "contract": "sections/03-results-and-discussion.md",
+      "name": "Results and discussion",
+      "extent": "1170–4150 words · 2 to 5 content blocks · 3–12 figures and 0–8 tables",
+      "structure": [
+        {"label": "Block 0 — Controlled scenario", "text": "When declared: the proposal on data with known ground truth."},
+        {"label": "Block 1 — The general task", "text": "40% to 66% of the section: main metric, main data, baselines, closing on the declared statistical test."},
+        {"label": "Block 2 — One block per contribution", "text": "Each validates its property with the instrument the set-up named; an interpretability contribution is read twice, qualitatively and by its faithfulness measure."},
+        {"label": "Block 3 — Ablation and sensitivity", "text": "One reading per ablation variant, then each sweep."},
+        {"label": "Block 4 — Cost", "text": "When cost is claimed: one or two paragraphs and one figure."},
+        {"label": "Block 5 — Limitations", "text": "Last, always, under its own contract."}
+      ],
+      "rules": [
+        "Nothing is introduced here: every scenario, metric, baseline, test and ablation was declared in the experimental set-up.",
+        "Per artefact, three beats in one paragraph: point at it, read it in numbers, give the mechanism; the pointer resolves to the exact panel, column or row.",
+        "The discussion is inferential by default (about 57%), assertive by exception (about 30%), corroborative otherwise (about 13%); no claim without an artefact, no implications for practice.",
+        "Interpretive explanations, analyses of a baseline method, and qualitative-interpretability arguments are backed by citations that support the idea; a citation never stands for the paper's own numbers.",
+        "No preamble, no closing artefact and no numbered equation; every artefact is referenced before it appears."
+      ]
+    },
+    {
+      "id": "limitations",
+      "contract": "sections/04-limitations.md",
+      "name": "Limitations",
+      "extent": "180–410 words · 1 paragraph, or 2 with a failure mode · 3 to 5 items",
+      "structure": [
+        {"label": "Opening concession", "text": "Although / While / Despite a concrete achievement the results support, several limitations must be acknowledged."},
+        {"label": "Each item", "text": "Name the decision or boundary, concede its benefit, state its cost, state the consequence for the claim, and where possible what the alternative would give and cost."},
+        {"label": "Second paragraph (optional)", "text": "The quantitative failure mode: the weakest regime, the worst cell of an already reported table, evidence the regime is hard, and the mechanism."},
+        {"label": "Closing (optional)", "text": "What addressing the limitations would give, or where the field is moving, with a citation."}
+      ],
+      "rules": [
+        "Every item carries at least one citation, on the alternative that would fix it or on the fact that the problem is known.",
+        "Two sweeps: the mathematical section for gaps in the proposal and the experimental design for gaps in the validation.",
+        "Every item names a decision in the formulation or in the design, never a feeling.",
+        "No figure, table, equation or new measurement."
+      ]
+    },
+    {
+      "id": "conclusions",
+      "contract": "sections/07-conclusions.md",
+      "name": "Conclusions",
+      "extent": "350–950 words · 3 to 6 paragraphs",
+      "structure": [
+        {"label": "Block 1 — The proposal and its components", "text": "Always first, 60–226 words, past tense: full name, acronym, category, and the components with the same count, order and names as before, closing on what distinguishes the method."},
+        {"label": "Block 2 — The findings", "text": "One paragraph per contribution, 80–180 words each, at most one headline number per contribution, identical to the results."},
+        {"label": "Block 3 — The consequence beyond the method (optional)", "text": "About 50–120 words: what an implementer or whoever lives the problem takes away."},
+        {"label": "Block 4 — Future work", "text": "Always last and its own paragraph, 55–180 words: one direction per relevant limitation, each with one citation."}
+      ],
+      "rules": [
+        "No equations, figures or tables.",
+        "Citations only in the future-work block.",
+        "Nothing new: no experiment, comparison or interpretation the results do not already hold.",
+        "No future-work direction without a limitation motivating it."
+      ]
+    },
+    {
+      "id": "back-matter",
+      "contract": "sections/10-back-matter.md",
+      "name": "Back matter",
+      "extent": "Declarations after the conclusions and before the references",
+      "structure": [
+        {"label": "Required blocks", "text": "Author contributions (37–44 words), funding (about 55 words per project), data availability (7–22 words), code availability (7–25 words), conflicts of interest (one sentence) and the AI-use declaration (40–90 words, always)."},
+        {"label": "Conditional blocks", "text": "Institutional review board and informed consent statements, acknowledgments, supplementary materials, abbreviations, appendices (after the references), and highlights and graphical abstract for Elsevier venues."},
+        {"label": "Placement", "text": "Where each block lands and its title follow the publisher of the selected venue."}
+      ],
+      "rules": [
+        "Each declaration is a paragraph of its own, never run together with the one before it.",
+        "CRediT roles with author initials; an AI tool is never an author.",
+        "Funding carries the project's exact registered title, the funder and the grant code copied from the records.",
+        "Data and code availability are separate claims, each with a resolving URL and the date it was checked.",
+        "The AI-use declaration states what the pipeline's AI-usage record shows, never less and never more."
+      ]
+    }
+  ],
+  "general": {
+    "heading": "Cross-cutting rules",
+    "rules": [
+      "One voice for the whole paper: first person plural or impersonal, chosen once; procedures that were run go in the passive past.",
+      "Sentences average 21–27 words: one claim and its qualifier, never a chain of three clauses.",
+      "Every figure, table or panel is referenced in the body before it appears, and the pointer resolves to the exact sub-element.",
+      "Each property keeps the same name from the problem statement to the evidence: problem → contribution → property → instrument → evidence.",
+      "Every claim needs a source that holds it; citations are resolved against the bibliography, never invented.",
+      "Text in figures and tables prints between 0.70 and 0.90 times the body font size.",
+      "The canonical manuscript is single-column review mode with blinded authors until the operator verifies it."
+    ]
+  }
+}

@@ -61,6 +61,17 @@ obligation checks read the roster and nothing else. Take every symbol and every
 equation from the section's own prose: a figure symbol the text never declares
 is a defect you introduced, not a detail you added.
 
+## The acquisition-protocol diagram: read its guide first
+
+When the figure closes the explanation of a real dataset (block `mm-dataset` or
+`es-dataset`), read `skills/paper-writing/references/data-acquisition-diagram.md` in
+full before writing a line of TikZ. It fixes what the figure shows — the capture in the
+order it happened, from who or what is measured to how a sample is cut — and requires
+domain pictograms, never boxes alone: copy the `\definecolor` lines and the `pics/...`
+entries you use from `skills/paper-writing/references/pictograms.tex` into the
+figure's own source (never `\input` it), and draw a new pictogram the same way when
+the domain has none. Every value in the figure comes from the dataset paragraphs.
+
 ## Size every font for the width it prints at
 
 The audit `render` runs after every successful compile fails the figure, and

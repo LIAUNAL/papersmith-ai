@@ -109,7 +109,7 @@
         }
       ],
       "requires_declarations": [],
-      "citations": "none"
+      "citations": "resolution"
     }
   ]
 }
@@ -171,7 +171,12 @@ semisintético, luego real — y **cada escenario se nombra según la propiedad 
 problema que exige** (un nivel de ruido, un nivel de dispersión, un cambio de dominio), para que el lector
 sepa qué parte del problema prueba cada uno. Una corrupción o simulación aplicada a
 los datos — anotadores simulados, ruido inyectado, entradas enmascaradas — se define aquí, con
-su ecuación.
+su ecuación. Cuando los conjuntos de datos viven aquí y uno de ellos es real, su explicación
+cierra con su diagrama del protocolo de adquisición, como prescribe la ranura del conjunto de
+datos de la sección de métodos: dibujado por el agente `diagram-author` siguiendo
+`skills/paper-writing/references/data-acquisition-diagram.md`, con sus etapas ilustradas con
+pictogramas del dominio tomados de `skills/paper-writing/references/pictograms.tex`, nunca
+solo con cajas, y como último artefacto de la explicación del conjunto de datos.
 
 **2. El anuncio de la división** — cuando el marco tiene dos mitades disímiles.
 Cada mitad hace entonces su propio recorrido por los bloques que siguen.
@@ -227,6 +232,14 @@ arquitectura barrida, una por instrumento cualitativo y una por métrica **no es
 **Las métricas estándar llevan una ecuación, no una cita.** La misma asimetría que en la
 sección de métodos: lo que se toma prestado se cita, lo que es convencional se define.
 
+**Cada decisión de protocolo lleva la cita que la justifica.** Los criterios de comparación
+(por qué estas métricas y estas líneas base miden la propiedad reivindicada), la prueba
+estadística con su procedimiento post hoc y su corrección, y la medida de fidelidad citan
+cada una un artículo que usa o justifica esa elección, o el libro de referencia o el artículo
+fundacional en aprendizaje de máquina, estadística, salud o el campo de la aplicación que la
+establece. Un protocolo enunciado sin la razón por la que es el correcto se lee como una
+elección arbitraria.
+
 ## Subsección 2 — Detalles de Entrenamiento
 
 El bloque de reproducibilidad. Tiempo pasado, voz pasiva para el procedimiento. Seis espacios.
@@ -258,6 +271,18 @@ la sección de métodos; un valor dentro de una forma fija se justifica aquí.
 
 **Cada parámetro ajustable tiene trazabilidad.** Un hiperparámetro nombrado aquí debe ser un símbolo declarado en
 la sección de métodos.
+
+### Qué se cita en los detalles de entrenamiento
+
+**Cada decisión de protocolo cita lo que la justifica.** El preprocesamiento (una banda de
+filtrado, una re-referenciación, un método de eliminación de artefactos), el protocolo de
+partición (validación cruzada por sujeto o dejando uno fuera, la estratificación), el control
+de fuga y el método de búsqueda de hiperparámetros llevan cada uno una cita a un artículo que
+usa o justifica ese protocolo en el mismo tipo de datos, o al libro de referencia o artículo
+fundacional en aprendizaje de máquina, estadística, salud o el campo de la aplicación que lo
+establece. La cita se adjunta al protocolo que acredita. Las versiones de software y
+bibliotecas llevan su propia cita cuando la revista lo pide; un valor elegido por los autores
+lleva su razón, no una cita.
 
 **La tabla completa de parámetros puede ir a un apéndice**, conservando en el cuerpo solo los
 valores sobre los que se razonó. Ese es el uso correcto de un apéndice: el cuerpo
@@ -430,6 +455,10 @@ ablación — el resto los presenta en los resultados, lo que este contrato proh
 
 ## Descalificadores
 
+- Un conjunto de datos real descrito aquí cuya explicación no cierra con su diagrama del
+  protocolo de adquisición, o cuyo diagrama es solo de cajas.
+- Un paso de preprocesamiento, protocolo de partición, prueba estadística o criterio de
+  comparación enunciado sin una cita que lo use o lo justifique.
 - Una métrica nombrada pero no definida.
 - Un glosario de métrica ubicado antes de su ecuación en lugar de después.
 - Una cita en una métrica estándar, o una cita faltante en una no estándar.

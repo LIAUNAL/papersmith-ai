@@ -1039,9 +1039,9 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: table at 7-12 works; 09 writes the blinded author placeholder in English; 10
 #: places the back matter before the references and the appendices after them.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "82f699bc02e8337eebb534920e99f86f22bfae8ee72eb7369accbf60451270ee",
-    "02-experimental-setup.md": "976873c21b3c3be7beca2c81f42381b2ba4fc7eddc182408aeff93fefd4f1362",
-    "03-results-and-discussion.md": "e46a7ba7adf695892f67298db54eef3ee03965a00fb730a8656eb93f71f0aa9e",
+    "01-materials-and-methods.md": "5a87e71dc4fb48256977b8e773c0cac478a16de6e5dd45a620bf20005fda683a",
+    "02-experimental-setup.md": "2d092c8555940a6b4cc6373f1ef8c0f42b55812960bb80911f8cd02296827207",
+    "03-results-and-discussion.md": "a84dfb8133dff360a3966bdfba8dfa8b874dc4b0c2787e7bfaa3670af3a32235",
     "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
     "05-related-work.md": "614b1e054feb9fa962ce932158ef94e2fcb358f79c168e9ba87e5a91b19f0f74",
     "06-introduction.md": "9a81434de6c2cc2f35021d5d8318680570e8d8df788defc021a530177eb74db4",
