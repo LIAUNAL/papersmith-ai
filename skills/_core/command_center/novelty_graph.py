@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import localize
+from . import localize, model_spec
 
 #: The display fields of the graph (localize.py): labels the framework wrote.
 #: Ids, groups, colours, links' ends, file references and page numbers are
@@ -27,14 +27,37 @@ NOVELTY_FIELDS = frozenset({
     "nodes.novelty_claim", "nodes.thesis_ref", "nodes.section_ref", "links.label",
 })
 
+GRAPH_REL = ".papersmith/novelty_graph.json"
+LANGUAGE_NOTICE = ("This graph ({file}) is not written in English (fields: {fields}). The dashboard "
+                   "shows workspace files as written; ask /proposal-deliberation to rewrite it in English.")
+
+
+def _language_banner(data: dict[str, Any], lang: str) -> str:
+    """The viewer's notice for a graph that is not English, or nothing."""
+    notice = data.get("language_notice")
+    if not isinstance(notice, dict):
+        return ""
+    text = LANGUAGE_NOTICE.format(file=notice.get("file", GRAPH_REL),
+                                  fields=", ".join(notice.get("fields") or []))
+    return ('<div id="langnote" role="status" style="margin:0 0 6px;font-size:12px;color:#e8b339">'
+            f"{html.escape(localize.translate(text, lang))}</div>")
+
+
 def build_novelty_graph(root_path: Path | None = None) -> dict[str, Any]:
     """The workspace's own ``.papersmith/novelty_graph.json`` when it holds a
-    graph, else a neutral initial graph named after the workspace."""
+    graph, else a neutral initial graph named after the workspace.
+
+    The workspace's graph is English like every artifact an agent writes and
+    is drawn as written; one whose prose reads as Spanish carries a
+    ``language_notice`` naming those fields (``model_spec.language_notice``)."""
     if root_path is not None:
         own = Path(root_path) / ".papersmith" / "novelty_graph.json"
         try:
             data = json.loads(own.read_text(encoding="utf-8"))
             if isinstance(data, dict) and isinstance(data.get("nodes"), list):
+                notice = model_spec.language_notice(data, GRAPH_REL)
+                if notice:
+                    data["language_notice"] = notice
                 return data
         except (OSError, ValueError):
             pass
@@ -349,6 +372,9 @@ def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -
         title = f"3D Novelty Constellation — {proj_name}"
         heading = f"3D Constellation of Novelty and Scientific Contributions — {proj_name}"
         html_out = render_atlas.render(constellation, title=title, heading=heading)
+        banner = _language_banner(raw_data, lang)
+        if banner:
+            html_out = html_out.replace("</h1>\n", f"</h1>\n{banner}\n", 1)
         if root_path is not None:
             try:
                 ps_dir = Path(root_path) / ".papersmith"

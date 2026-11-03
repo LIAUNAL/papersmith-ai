@@ -23,8 +23,9 @@ from typing import Any, Iterator
 
 SPEC_REL = ".papersmith/model_spec.json"
 _PAPER_LANGUAGE = Path(__file__).resolve().parents[2] / "paper-writing" / "scripts" / "paper_language.py"
-#: Machine values: identifiers, colours and symbols are never prose.
-_MACHINE_KEYS = frozenset({"id", "color", "colour", "symbol", "status", "badge", "tag"})
+#: Machine values: identifiers, colours, symbols and references are never prose.
+_MACHINE_KEYS = frozenset({"id", "color", "colour", "symbol", "status", "badge", "tag", "group",
+                           "source", "target", "thesis_ref", "paper_blocks"})
 
 
 @lru_cache(maxsize=1)
@@ -50,13 +51,14 @@ def _strings(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
         yield path, value
 
 
-def language_notice(spec: dict[str, Any]) -> dict[str, Any] | None:
-    """The fields of a workspace specification whose prose is not English."""
+def language_notice(spec: dict[str, Any], file: str = SPEC_REL) -> dict[str, Any] | None:
+    """The fields of a workspace data file whose prose is not English; ``file``
+    names it in the notice (the model specification by default)."""
     detector = _spanish_detector()
     if detector is None:
         return None
     fields = list(dict.fromkeys(path for path, text in _strings(spec) if detector(text)))
-    return {"expected": "en", "file": SPEC_REL, "fields": fields} if fields else None
+    return {"expected": "en", "file": file, "fields": fields} if fields else None
 
 
 def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
