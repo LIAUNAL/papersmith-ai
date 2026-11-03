@@ -11,6 +11,19 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.59.1
+
+### Fixed
+
+- `figure optimize` no longer prunes `arrows.meta` from a diagram whose arrow
+  tips carry options (`-{Stealth[length=2mm]}`) or are written unbraced
+  (`-Stealth`, `Latex-Latex`); the optimized source compiles again.
+- `render`'s diagram audit derives the text width from `paper/main.tex`'s
+  `geometry` options (`textwidth`/`width`, else the paper width minus the
+  margins) when the manifest carries no `textWidthPt`, instead of assuming
+  the A4 article width; `print_width` reports `text_width_source`
+  (`manifest`, `geometry` or `default`).
+
 ## 0.59.0
 
 ### Added
