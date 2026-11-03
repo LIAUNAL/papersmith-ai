@@ -11,6 +11,23 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.58.3
+
+### Added
+
+- **The AI-use declaration cites papersmith.** The AI-usage record that
+  `packet` attaches to `back-matter.bm-ai-use-declaration` now carries a
+  `framework` field (name, repository URL and the release recorded in
+  `.papersmith/version`), and the back-matter contract asks the declaration
+  to name the papersmith framework with its release and cite
+  https://github.com/LIAUNAL/papersmith-ai beside the harnesses.
+
+### Fixed
+
+- **Contract digests re-captured.** The 0.58.2 title-contract change left
+  the shipped-contract digest check stale; the `09` and `10` digests are
+  re-captured.
+
 ## 0.58.2
 
 ### Fixed
