@@ -30,20 +30,30 @@
  * the acceptance section governs -- and the legend still reads the edge as a
  * human gate.
  *
- * The component count is capped too, at 80, and that cap is the renderer's: the
- * grid search that routes an edge around unrelated nodes gives up on a scene
+ * The lanes are numbered by the eleven dashboard phases
+ * (`phase_actions.STAGES`), and a lettered lane is a sub-lane of the phase whose
+ * number it carries: 2a the optional thematic help; 4a the proposal's ordered
+ * steps (problem and pillars, hypotheses, mathematics), the paper-reviewer's
+ * NeurIPS contribution type and the math tutor; 5a to 5g Phase 5 in the order the
+ * harness entrypoints state it -- datasets, replication and proof of concept,
+ * the proof-of-concept verification gate (G-EXP-POC), the full experiments,
+ * credentials, the remote rehearsal and launch, and the findings with their
+ * contribution type and G-NOVELTY; 10a the journal choice and venue adaptation.
+ * `tests/test_flow_consistency.py` holds the numbering against the phases.
+ *
+ * The component count matters for one reason: Archify's grid search, which
+ * routes an edge around nodes it has no relationship with, gives up on a scene
  * with more than 80 obstacles (`maximumObstacleCount` in Archify's routing),
  * and an authored `via` cannot stand in for it, because only two automatic
  * routes may cross each other (with a halo); an authored crossing is a showcase
- * error. The flow stood at 78 components with exactly one edge that only the
- * grid can route -- the dashed `replication` -> `expBuild`, which has to cross
- * the five nodes of lane 5 -- so a lane of any size broke it. That arrow is
- * gone: the relation is carried by the `expBuild` tag and by the "Flow rules"
- * card. Lane 11a (journal choice and venue adaptation, after the PDF) takes
- * eleven nodes, merging consecutive steps where one node can honestly carry
- * both, in three rows laid out as a serpentine so every turn is a short
- * vertical edge. Any later edge that only the grid can route will fail at this
- * size, whatever lane it is in.
+ * error. The drawing is past 80 components, so every edge must be routable
+ * without the grid: between neighbours in a row, straight down a column, or
+ * through the corridor between two rows. The dashed `replication` ->
+ * `expBuild` arrow was dropped for that reason (its relation lives in the
+ * `expBuild` tag and the "Flow rules" card), and a label sits only on an edge
+ * that leaves its row, since a 24px gap between row neighbours cannot hold one.
+ * Lane 10a takes three rows laid out as a serpentine so every turn is a short
+ * vertical edge.
  */
 import fs from 'fs';
 import path from 'node:path';
@@ -88,17 +98,28 @@ const nodes=[
  n('delibPub','delib',3,'backend','deliberation-publish',agentMeta('deliberation-publish').sub,{...(agentMeta('deliberation-publish').tag?{tag:agentMeta('deliberation-publish').tag}:{}),sources:A('deliberation-publish')}),
  n('proposals','delib',4,'database','proposals/','rNN.md · rNN.graph.html',{sources:[{path:'README.md',line:78},{path:'skills/proposal-deliberation/SKILL.md',line:74,end_line:133}]}),
 
- n('tutor','dash',0,'frontend','/math-tutor','socratic · hand-written pages',{tag:'.pi/prompts',sources:K('math-tutor',54,74)}),
- n('tutorAgent','dash',1,'backend','math-tutor',agentMeta('math-tutor').sub,{...(agentMeta('math-tutor').tag?{tag:agentMeta('math-tutor').tag}:{}),sources:A('math-tutor')}),
- n('ui','dash',2,'external','smith ui','phase drawer → /<skill>',{tag:'command center',sources:S('skills/_core/command_center/phase_actions.py',1,15)}),
- n('mathApi','dash',3,'messagebus','/api/model/math','concept map · KaTeX cards',{sources:S('skills/_core/command_center/math_view.py',1,16)}),
- n('tutorStore','dash',4,'database','.papersmith/math-tutor/','thread + uploaded pages',{sources:S('skills/_core/command_center/tutor.py',1,12)}),
+ n('stepPP','steps',0,'external','Problem & pillars','step 1 · Generar y deliberar',{tag:'Mapa Conceptual',sources:[{path:'skills/_core/command_center/phase_steps.py',line:1,end_line:19},{path:'skills/_core/command_center/static/model-panel.js',line:139,end_line:186}]}),
+ n('stepHyp','steps',1,'external','Hypotheses','step 2 · locked until step 1',{sources:S('skills/_core/command_center/phase_steps.py',100,131)}),
+ n('stepMath','steps',2,'external','Mathematics','step 3 · $$ \\tag{N} in rNN.md',{sources:S('skills/_core/command_center/phase_steps.py',12,14)}),
+ n('tutor','steps',3,'frontend','/math-tutor','socratic · hand-written pages',{tag:'.pi/prompts',sources:K('math-tutor',54,74)}),
+ n('tutorAgent','steps',4,'backend','math-tutor',agentMeta('math-tutor').sub,{...(agentMeta('math-tutor').tag?{tag:agentMeta('math-tutor').tag}:{}),sources:A('math-tutor')}),
+ n('modelSpec','steps',0,'database','model_spec.json','.papersmith/ · contribution_type',{rowOff:1,sources:[{path:'skills/proposal-deliberation/SKILL.md',line:221,end_line:241}]}),
+ n('contribProp','steps',1,'backend','paper-reviewer','NeurIPS contribution type',{rowOff:1,tag:'after the hypotheses',sources:[{path:'skills/_core/results/contribution_type.py',line:1,end_line:16},...A('paper-reviewer')]}),
+ n('ui','steps',2,'external','smith ui','phase drawer → /<skill>',{rowOff:1,tag:'command center',sources:S('skills/_core/command_center/phase_actions.py',1,15)}),
+ n('mathApi','steps',3,'messagebus','/api/model/math','concept map · KaTeX cards',{rowOff:1,sources:S('skills/_core/command_center/math_view.py',1,16)}),
+ n('tutorStore','steps',4,'database','.papersmith/math-tutor/','thread + uploaded pages',{rowOff:1,sources:S('skills/_core/command_center/tutor.py',1,12)}),
 
  n('expDelib','expdelib',0,'frontend','/experimental-deliberation','requires data-paper/',{tag:'.pi/prompts',sources:K('experimental-deliberation',34,38)}),
  n('expVal','expdelib',1,'backend','experimental-validation',agentMeta('experimental-validation').sub,{...(agentMeta('experimental-validation').tag?{tag:agentMeta('experimental-validation').tag}:{}),sources:A('experimental-validation')}),
  n('expGate','expdelib',2,'security','Human acceptance','deliberated = operator',{sources:S('skills/experimental-deliberation/SKILL.md',35,65)}),
  n('expPub','expdelib',3,'backend','experimental-publish',agentMeta('experimental-publish').sub,{...(agentMeta('experimental-publish').tag?{tag:agentMeta('experimental-publish').tag}:{}),sources:A('experimental-publish')}),
- n('experiments','expdelib',4,'database','experiments/','experimental protocol',{sources:S('README.md',83)}),
+ n('experiments','expdelib',4,'database','experiments/','experimental protocol',{tag:'5.1–5.5',sources:S('README.md',83)}),
+
+ n('dataCmd','data',0,'frontend','/datasets','toy → published',{tag:'.pi/prompts',sources:K('datasets',18,32)}),
+ n('dataScout','data',1,'backend','dataset-scout',agentMeta('dataset-scout').sub,{tag:'sourced → licensed',sources:A('dataset-scout')}),
+ n('dataCurator','data',2,'backend','dataset-curator',agentMeta('dataset-curator').sub,{tag:'toy → published',sources:A('dataset-curator')}),
+ n('dataGate','data',3,'security','Upload consent','private · --consent <slug>',{sources:S('skills/datasets/SKILL.md',34,45)}),
+ n('dataStore','data',4,'database','datasets/','registry · splits.json',{tag:'5.6',sources:S('skills/datasets/SKILL.md',118,129)}),
 
  n('impl','impl',0,'frontend','/proposal-implementation','standing → full-scale',{tag:'.pi/prompts',sources:K('proposal-implementation',96,101)}),
  n('implBuild','impl',1,'backend','implementation-build',agentMeta('implementation-build').sub,{...(agentMeta('implementation-build').tag?{tag:agentMeta('implementation-build').tag}:{}),sources:A('implementation-build')}),
@@ -107,24 +128,22 @@ const nodes=[
  n('repo','impl',4,'database','implementations/<repo>','its own git + .venv',{sources:S('README.md',81)}),
  n('replicator','impl',1,'backend','paper-replicator',agentMeta('paper-replicator').sub,{rowOff:1,...(agentMeta('paper-replicator').tag?{tag:agentMeta('paper-replicator').tag}:{}),sources:[...A('paper-replicator'),{path:'skills/proposal-implementation/SKILL.md',line:166,end_line:178}]}),
  n('pubCode','impl',2,'messagebus','Published code?','adopt + audit, else rebuild',{rowOff:1,sources:S('skills/proposal-implementation/SKILL.md',166,176)}),
- n('replication','impl',3,'database','REPLICATION.md','equation → line provenance',{rowOff:1,sources:S('skills/proposal-implementation/SKILL.md',145,145)}),
+ n('replication','impl',3,'database','REPLICATION.md','equation → line provenance',{rowOff:1,tag:'5.7',sources:S('skills/proposal-implementation/SKILL.md',145,145)}),
+ n('discPoc','impl',4,'database','discussion.json','verdicts · tests · novelty',{rowOff:1,tag:'gates 5.8',sources:[{path:'skills/_core/results/discussion.py',line:1,end_line:14},{path:'skills/_core/results/discussion_cli.py',line:1,end_line:16},{path:'skills/_core/command_center/server.py',line:1587}]}),
 
- n('discPoc','impl',4,'database','discussion.json','verdicts · tests · novelty',{rowOff:1,tag:'gates 5.8',sources:[{path:'skills/_core/results/discussion.py',line:1,end_line:14},{path:'skills/_core/results/discussion_cli.py',line:1,end_line:16},{path:'skills/_core/command_center/server.py',line:1354}]}),
+ n('pocCli','pocv',1,'messagebus','smith novelty --gate poc','approve · iterate',{tag:'novelty_cli.py',sources:[{path:'src/papersmith/core/novelty.py',line:1,end_line:8},{path:'skills/_core/results/novelty_cli.py',line:1,end_line:12}]}),
+ n('pocRec','pocv',2,'database','novelty_gate.json · poc','beside the full decision',{sources:S('skills/_core/results/novelty_gate.py',195,216)}),
+ n('pocGate','pocv',3,'security','G-EXP-POC','results + contrasted hypotheses',{tag:'operator · 5.9',sources:[{path:'skills/_core/command_center/server.py',line:532,end_line:539},{path:'skills/_core/command_center/server.py',line:1931,end_line:1937}]}),
+ n('pocCard','pocv',4,'external','Verify the PoC','Novedad tab · Experimentos stepper',{tag:'command center',sources:[{path:'skills/_core/command_center/static/novelty-panel.js',line:166,end_line:180},{path:'skills/_core/command_center/static/experiments-panel.js',line:1045,end_line:1045}]}),
 
- n('dataCmd','data',0,'frontend','/datasets','toy → published',{tag:'.pi/prompts',sources:K('datasets',18,32)}),
- n('dataScout','data',1,'backend','dataset-scout',agentMeta('dataset-scout').sub,{tag:'sourced → licensed',sources:A('dataset-scout')}),
- n('dataCurator','data',2,'backend','dataset-curator',agentMeta('dataset-curator').sub,{tag:'toy → published',sources:A('dataset-curator')}),
- n('dataGate','data',3,'security','Upload consent','private · --consent <slug>',{sources:S('skills/datasets/SKILL.md',34,45)}),
- n('dataStore','data',4,'database','datasets/','registry · splits.json',{sources:S('skills/datasets/SKILL.md',118,129)}),
-
- n('expImpl','expimpl',0,'frontend','/experimental-implementation','binding → full-scale',{tag:'.pi/prompts',sources:K('experimental-implementation',116,120)}),
+ n('expImpl','expimpl',0,'frontend','/experimental-implementation','locked until G-EXP-POC',{tag:'.pi/prompts',sources:K('experimental-implementation',116,120)}),
  n('expBuild','expimpl',1,'backend','experiments-build',agentMeta('experiments-build').sub,{tag:'baselines: REPLICATION.md',sources:A('experiments-build')}),
  n('expRev','expimpl',2,'backend','experiments-reviewer',agentMeta('experiments-reviewer').sub,{...(agentMeta('experiments-reviewer').tag?{tag:agentMeta('experiments-reviewer').tag}:{}),sources:A('experiments-reviewer')}),
  n('expWalk','expimpl',3,'backend','experiments-walk',agentMeta('experiments-walk').sub,{...(agentMeta('experiments-walk').tag?{tag:agentMeta('experiments-walk').tag}:{}),sources:A('experiments-walk')}),
  n('expImplGate','expimpl',4,'security','Authorizes a launch','whole campaign',{sources:S('skills/experimental-implementation/SKILL.md',116,120)}),
 
- n('discFull','expimpl',1,'database','discussion.json','verdicts · tests · novelty',{rowOff:1,tag:'gates 5.11',sources:[{path:'skills/_core/results/discussion_cli.py',line:1,end_line:16},{path:'skills/experimental-implementation/SKILL.md',line:511,end_line:516},{path:'skills/_core/command_center/server.py',line:1357}]}),
- n('reviewRep','expimpl',2,'database','reviewer_report.json','blockers resolved',{rowOff:1,tag:'gates 5.12',sources:[{path:'.pi/agents/experiments-reviewer.md',line:98,end_line:100},{path:'skills/_core/command_center/server.py',line:1358}]}),
+ n('discFull','expimpl',1,'database','discussion.json','verdicts · tests · novelty',{rowOff:1,tag:'gates 5.12',sources:[{path:'skills/_core/results/discussion_cli.py',line:1,end_line:16},{path:'skills/experimental-implementation/SKILL.md',line:511,end_line:516},{path:'skills/_core/command_center/server.py',line:1591}]}),
+ n('reviewRep','expimpl',2,'database','reviewer_report.json','blockers resolved',{rowOff:1,tag:'gates 5.13',sources:[{path:'.pi/agents/experiments-reviewer.md',line:98,end_line:100},{path:'skills/_core/command_center/server.py',line:1592}]}),
 
  n('kaggle','creds',0,'frontend','/kaggle-accounts','taken-in → decided',{tag:'.pi/prompts',sources:K('kaggle-accounts',28,30)}),
  n('accCli','creds',1,'security','accounts_cli.py','validate --interactive',{tag:'TTY only',sources:S('skills/kaggle-accounts/SKILL.md',224,250)}),
@@ -132,39 +151,47 @@ const nodes=[
 
  n('guard','remote',4,'security','refuse-offpath-push.js','extension: watches bash',{tag:'tool_call',sources:[{path:'.pi/extensions/refuse-offpath-push.js',line:1,end_line:30},{path:'.pi/APPEND_SYSTEM.md',line:37,end_line:43}]}),
  n('remote','remote',0,'frontend','/remote-execution','reachable → returned',{tag:'.pi/prompts',sources:K('remote-execution',40,44)}),
- n('readiness','remote',1,'security','readiness + gate','single-use token',{sources:S('skills/remote-execution/SKILL.md',42)}),
+ n('readiness','remote',1,'security','readiness + gate','single-use token',{tag:'5.14',sources:S('skills/remote-execution/SKILL.md',42)}),
  n('remoteCli','remote',2,'messagebus','remote_cli.py','submit · poll · fetch',{tag:'12 subcommands',sources:S('skills/remote-execution/SKILL.md',1577,1595)}),
  n('inbox','remote',3,'database','kaggle-inbox/','ledger + results',{sources:S('README.md',89)}),
 
- n('novPanel','nov',1,'external','Novelty & Findings','Novedad & Hallazgos tab',{tag:'command center',sources:[{path:'skills/_core/command_center/static/novelty-panel.js',line:1,end_line:9},{path:'skills/_core/command_center/server.py',line:3256,end_line:3259}]}),
- n('novGate','nov',2,'security','G-NOVELTY','approve · iterate',{tag:'operator',sources:[{path:'skills/_core/results/novelty_gate.py',line:1,end_line:15},{path:'skills/_core/command_center/server.py',line:1696,end_line:1730}]}),
+ n('contribFind','nov',0,'backend','paper-reviewer','NeurIPS type of the findings',{tag:'discussion.json',sources:[{path:'skills/_core/results/contribution_type.py',line:1,end_line:16},{path:'skills/experimental-implementation/SKILL.md',line:579,end_line:579}]}),
+ n('novPanel','nov',1,'external','Novelty & Findings','Novedad & Hallazgos tab',{tag:'command center',sources:[{path:'skills/_core/command_center/static/novelty-panel.js',line:1,end_line:9},{path:'skills/_core/command_center/server.py',line:3659,end_line:3663}]}),
+ n('novGate','nov',2,'security','G-NOVELTY','approve · iterate',{tag:'operator',sources:[{path:'skills/_core/results/novelty_gate.py',line:1,end_line:15},{path:'skills/_core/command_center/server.py',line:1939,end_line:1946}]}),
  n('novStore','nov',3,'database','novelty_gate.json','.papersmith/ · history',{sources:S('skills/_core/results/novelty_gate.py',59,60)}),
- n('novCli','nov',4,'messagebus','smith novelty','status · approve · iterate',{tag:'novelty_cli.py',sources:[{path:'src/papersmith/core/novelty.py',line:1,end_line:6},{path:'skills/_core/results/novelty_cli.py',line:1,end_line:12}]}),
+ n('novCli','nov',4,'messagebus','smith novelty','status · approve · iterate',{tag:'--gate full',sources:[{path:'src/papersmith/core/novelty.py',line:1,end_line:8},{path:'skills/_core/results/novelty_cli.py',line:1,end_line:12}]}),
 
- n('pw','write',0,'frontend','/paper-writing','sections/*.md → paper/',{tag:'.pi/prompts',sources:K('paper-writing',14,16)}),
- n('insumos','write',1,'backend','insumos-observer',agentMeta('insumos-observer').sub,{...(agentMeta('insumos-observer').tag?{tag:agentMeta('insumos-observer').tag}:{}),sources:A('insumos-observer')}),
- n('redactor','write',2,'backend','redactor',agentMeta('redactor').sub,{...(agentMeta('redactor').tag?{tag:agentMeta('redactor').tag}:{}),sources:A('redactor')}),
- n('contract','write',3,'backend','contract-auditor',agentMeta('contract-auditor').sub,{...(agentMeta('contract-auditor').tag?{tag:agentMeta('contract-auditor').tag}:{}),sources:A('contract-auditor')}),
- n('style','write',4,'backend','style-sampler',agentMeta('style-sampler').sub,{...(agentMeta('style-sampler').tag?{tag:agentMeta('style-sampler').tag}:{}),sources:A('style-sampler')}),
- n('grounding','figs',4,'backend','section-grounding-auditor',agentMeta('section-grounding-auditor').sub,{...(agentMeta('section-grounding-auditor').tag?{tag:agentMeta('section-grounding-auditor').tag}:{}),sources:A('section-grounding-auditor')}),
+ n('pwSkel','scaf',0,'frontend','/paper-writing skeleton','paper/ tree + contracts',{tag:'.pi/prompts',sources:K('paper-writing',14,16)}),
+ n('sectionsDir','scaf',1,'database','sections/*.md','section contracts',{tag:'G1',sources:S('README.md',90)}),
+
+ n('pwMark','decl',0,'frontend','/paper-writing mark','authorship · funding · ethics',{tag:'.pi/prompts',sources:K('paper-writing',14,16)}),
+ n('insumos','decl',1,'backend','insumos-observer',agentMeta('insumos-observer').sub,{...(agentMeta('insumos-observer').tag?{tag:agentMeta('insumos-observer').tag}:{}),sources:A('insumos-observer')}),
+
+ n('pw','write',0,'frontend','/paper-writing','one named block at a time',{tag:'.pi/prompts',sources:K('paper-writing',14,16)}),
+ n('redactor','write',1,'backend','redactor',agentMeta('redactor').sub,{...(agentMeta('redactor').tag?{tag:agentMeta('redactor').tag}:{}),sources:A('redactor')}),
+ n('contract','write',2,'backend','contract-auditor',agentMeta('contract-auditor').sub,{...(agentMeta('contract-auditor').tag?{tag:agentMeta('contract-auditor').tag}:{}),sources:A('contract-auditor')}),
+ n('style','write',3,'backend','style-sampler',agentMeta('style-sampler').sub,{...(agentMeta('style-sampler').tag?{tag:agentMeta('style-sampler').tag}:{}),sources:A('style-sampler')}),
+ n('grounding','write',4,'backend','section-grounding-auditor',agentMeta('section-grounding-auditor').sub,{...(agentMeta('section-grounding-auditor').tag?{tag:agentMeta('section-grounding-auditor').tag}:{}),sources:A('section-grounding-auditor')}),
 
  n('paperCli','figs',0,'messagebus','paper_cli.py','write judges what comes back',{tag:'29 verbs',sources:S('skills/paper-writing/SKILL.md',14,16)}),
  n('diagram','figs',1,'backend','diagram-author',agentMeta('diagram-author').sub,{...(agentMeta('diagram-author').tag?{tag:agentMeta('diagram-author').tag}:{}),sources:A('diagram-author')}),
  n('figAud','figs',2,'backend','figure-auditor',agentMeta('figure-auditor').sub,{...(agentMeta('figure-auditor').tag?{tag:agentMeta('figure-auditor').tag}:{}),sources:A('figure-auditor')}),
  n('figRev','figs',3,'frontend','/figure-review','probe · raster, no changes',{tag:'.pi/prompts',sources:K('figure-review',1,12)}),
- n('paper','out',4,'database','paper/','main.tex · refs.bib',{sources:S('README.md',90)}),
+
+ n('styleRed','out',3,'external','Style & redundancy','PDF tab · 0–100 per section',{tag:'command center',sources:[{path:'skills/_core/command_center/static/index.html',line:3464,end_line:3464},{path:'skills/_core/command_center/server.py',line:2407}]}),
+ n('paper','out',4,'database','paper/','main.tex · main.pdf',{sources:S('README.md',90)}),
 
  n('jfCmd','jv',4,'frontend','/journal-finder','Q1-Q2 · --oa-only · --max-apc',{tag:'.pi/prompts',sources:[{path:'.pi/prompts/journal-finder.md',line:1,end_line:7,label:'template /journal-finder'},{path:'skills/journal-finder/SKILL.md',line:15,end_line:23}]}),
  n('jfCli','jv',3,'messagebus','journal_cli.py search','OpenAlex works + sources',{tag:'stdlib only',sources:S('skills/journal-finder/scripts/journal_cli.py',983,1125)}),
  n('jfQr','jv',2,'messagebus','Quartile + review time','SJR / proxy · Crossref→PubMed',{tag:'sjr-import',sources:[{path:'skills/journal-finder/scripts/journal_cli.py',line:821,end_line:895},{path:'skills/journal-finder/scripts/journal_cli.py',line:1449,end_line:1498},{path:'skills/journal-finder/SKILL.md',line:206,end_line:235}]}),
  n('jfJson','jv',1,'database','journal-candidates.json','paper/ · schema 1',{sources:[{path:'skills/journal-finder/scripts/journal_cli.py',line:1569},{path:'skills/journal-finder/scripts/journal_cli.py',line:1742}]}),
- n('jvPick','jv',1,'security','Operator picks a journal','PDF Preview → venue select',{rowOff:1,sources:[{path:'skills/_core/command_center/static/journals-panel.js',line:680,end_line:700},{path:'skills/_core/command_center/server.py',line:2875,end_line:2902},{path:'skills/paper-writing/scripts/paper_venue.py',line:193,end_line:269}]}),
+ n('jvPick','jv',1,'security','Operator picks a journal','PDF Preview → venue select',{rowOff:1,sources:[{path:'skills/_core/command_center/static/journals-panel.js',line:680,end_line:700},{path:'skills/_core/command_center/server.py',line:3278,end_line:3306},{path:'skills/paper-writing/scripts/paper_venue.py',line:193,end_line:269}]}),
  n('jvAgent','jv',2,'backend','venue-adapter',agentMeta('venue-adapter').sub,{rowOff:1,tag:'requirements · quote + url',sources:[...A('venue-adapter'),{path:'skills/paper-writing/scripts/paper_venue.py',line:308,end_line:478}]}),
  n('jvDiff','jv',3,'messagebus','venue acquire · diff','template · audit.json',{rowOff:1,sources:[{path:'skills/paper-writing/scripts/paper_venue.py',line:563,end_line:642},{path:'skills/paper-writing/scripts/paper_venue.py',line:1355,end_line:1378}]}),
- n('jvApprove','jv',3,'security','Operator approves plan','sha256-bound · approval.json',{rowOff:2,sources:[{path:'skills/paper-writing/scripts/paper_venue.py',line:1384,end_line:1440},{path:'skills/paper-writing/SKILL.md',line:1826,end_line:1857},{path:'skills/_core/command_center/server.py',line:2915,end_line:2934}]}),
+ n('jvApprove','jv',3,'security','Operator approves plan','sha256-bound · approval.json',{rowOff:2,sources:[{path:'skills/paper-writing/scripts/paper_venue.py',line:1384,end_line:1440},{path:'skills/paper-writing/SKILL.md',line:1826,end_line:1857},{path:'skills/_core/command_center/server.py',line:3318,end_line:3338}]}),
  n('jvWrite','jv',2,'messagebus','paper_cli.py write','text changes only here',{rowOff:2,tag:'redactor → audit',sources:S('skills/paper-writing/SKILL.md',1834,1840)}),
  n('jvBuild','jv',1,'messagebus','venue build','class · front matter · blocks',{rowOff:2,tag:'main.tex untouched',sources:S('skills/paper-writing/scripts/paper_venue.py',1653,1791)}),
- n('jvPdf','jv',0,'database','main.pdf','paper/venues/<slug>/',{rowOff:2,sources:[{path:'skills/_core/command_center/server.py',line:608,end_line:621},{path:'skills/_core/command_center/server.py',line:2957,end_line:2986}]}),
+ n('jvPdf','jv',0,'database','main.pdf','paper/venues/<slug>/',{rowOff:2,sources:[{path:'skills/_core/command_center/server.py',line:685,end_line:700},{path:'skills/_core/command_center/server.py',line:2318,end_line:2342}]}),
 
  n('audit','audit',0,'frontend','/skill-audit','subject: any skill',{tag:'.pi/prompts',sources:K('skill-audit',23,23)}),
  n('auditRep','audit',1,'backend','audit-report',agentMeta('audit-report').sub,{...(agentMeta('audit-report').tag?{tag:agentMeta('audit-report').tag}:{}),sources:A('audit-report')}),
@@ -175,12 +202,16 @@ const main={variant:'emphasis',role:'main'};
 const edges=[
  e('plaus','ingest','top-5 to ingest',main),
  e('ingest','delib','guidance/',main),
- e('delib','impl','revision rNN',main),
- e('impl','expDelib','proof of concept',main),
- e('expDelib','expImpl','protocol + repo',main),
+ e('delib','expDelib','revision rNN',main),
+ e('expDelib','impl','protocol',main),
+ e('discPoc','pocCard','complete discussion',main),
+ e('pocGate','expImpl','verified PoC',{variant:'security',role:'main'}),
  e('expImpl','kaggle','job ready',main),
  e('kaggle','remote','accounts proven',main),
- e('remote','pw','measured facts',main),
+ e('inbox','novPanel','measured results',main),
+ e('novGate','pwSkel','approved → writing',{variant:'security',role:'main',fromSide:'bottom',toSide:'top'}),
+ e('pwSkel','pwMark','section contracts',main),
+ e('pwMark','pw','declarations',main),
 
  e('piMd','plaus','/<skill>',main),
  e('canon','sync'), e('sync','piDir'), e('subagents','piDir',null,{variant:'dashed'}),
@@ -189,39 +220,41 @@ const edges=[
  e('ingest','ingestAgent'), e('ingestAgent','guidance'),
  e('delib','delibCli'), e('delibCli','delibGate'), e('delibGate','delibPub',null,{variant:'security'}), e('delibPub','proposals'),
  e('grapher','delibPub','atlas.json',{variant:'dashed'}),
- e('delib','tutor','concept + math',{variant:'dashed'}),
- e('tutor','tutorAgent'), e('ui','mathApi'), e('tutorAgent','tutorStore'),
- e('ui','tutorAgent','headless turn',{variant:'dashed'}),
- e('proposals','mathApi','$$ \\tag{N}',{variant:'dashed'}),
+ e('delib','stepPP','concept + math',{variant:'dashed'}),
+ e('stepPP','stepHyp'), e('stepHyp','stepMath'), e('stepMath','tutor',null,{variant:'dashed'}), e('tutor','tutorAgent'), e('tutorAgent','tutorStore'),
+ e('stepHyp','contribProp','classify'), e('contribProp','modelSpec'), e('ui','mathApi'),
  e('expDelib','expVal'), e('expVal','expGate'), e('expGate','expPub',null,{variant:'security'}), e('expPub','experiments'),
- e('impl','implBuild'), e('implBuild','implWalk'), e('implWalk','implGate'), e('implGate','repo',null,{variant:'security'}),
- e('expImpl','expBuild'), e('expBuild','expRev'), e('expRev','expWalk'), e('expWalk','expImplGate'),
- e('impl','replicator','fidelity'), e('replicator','pubCode'), e('pubCode','replication'),
- e('repo','discPoc','discussion_cli.py'),
- e('expBuild','discFull','discussion_cli.py'), e('expRev','reviewRep'),
  e('dataCmd','dataScout'), e('dataScout','dataCurator'), e('dataCurator','dataGate'), e('dataGate','dataStore',null,{variant:'security'}),
  e('dataStore','implBuild','toy set',{variant:'dashed',fromSide:'bottom',toSide:'top'}),
- e('dataStore','expBuild','official set · mounted by notebooks',{variant:'dashed',fromSide:'right',toSide:'top'}),
+ e('impl','implBuild'), e('implBuild','implWalk'), e('implWalk','implGate'), e('implGate','repo',null,{variant:'security'}),
+ e('impl','replicator','fidelity'), e('replicator','pubCode'), e('pubCode','replication'),
+ e('repo','discPoc','discussion_cli.py'),
+ e('pocCard','pocGate'), e('pocGate','pocRec',null,{variant:'security'}), e('pocCli','pocRec',null,{variant:'dashed'}),
+ e('expImpl','expBuild'), e('expBuild','expRev'), e('expRev','expWalk'), e('expWalk','expImplGate'),
+ e('expBuild','discFull','discussion_cli.py'), e('expRev','reviewRep'),
  e('kaggle','accCli'), e('accCli','store'),
  e('remote','readiness'), e('readiness','remoteCli',null,{variant:'security'}), e('remoteCli','inbox'),
  e('store','remoteCli','credentials',{variant:'dashed'}),
- e('inbox','novPanel','results to assess',{variant:'dashed'}), e('novPanel','novGate'), e('novGate','novStore',null,{variant:'security'}), e('novCli','novStore',null,{variant:'dashed'}),
- e('novGate','pw','approved → writing',{variant:'security'}),
- e('pw','insumos'), e('insumos','redactor'), e('redactor','contract'), e('contract','style'), e('style','grounding'),
+ e('contribFind','novPanel',null,{variant:'dashed'}), e('novPanel','novGate',null,{fromSide:'right',toSide:'left'}), e('novGate','novStore',null,{variant:'security'}), e('novCli','novStore',null,{variant:'dashed'}),
+ e('pwSkel','sectionsDir'), e('pwMark','insumos',null,{variant:'dashed'}),
+ e('pw','redactor'), e('redactor','contract'), e('contract','style'), e('style','grounding'),
  e('pw','paperCli','delegates',{variant:'dashed'}),
  e('paperCli','diagram'), e('diagram','figAud'), e('figAud','figRev'),
  e('grounding','paper','sections',{variant:'dashed'}),
+ e('paper','styleRed',null,{variant:'dashed'}),
  e('paper','jfCmd','compiled PDF',main),
  e('jfCmd','jfCli'), e('jfCli','jfQr'), e('jfQr','jfJson'),
  e('jfJson','jvPick','candidates'), e('jvPick','jvAgent',null,{variant:'security'}), e('jvAgent','jvDiff'),
  e('jvDiff','jvApprove','agent drafts plan.md'), e('jvApprove','jvWrite',null,{variant:'security'}), e('jvWrite','jvBuild'), e('jvBuild','jvPdf'),
  e('audit','auditRep'), e('auditRep','report'),
 ];
+// Lanes are numbered by the eleven dashboard phases (phase_actions.STAGES);
+// a lettered lane is a sub-lane of the phase it carries the number of.
 const lanes=[
- ['pi','0 · Pi harness'], ['help','1a · Thematic help (optional, before /plausibility)'], ['plaus','1 · Plausibility'],['ingest','2 · Ingestion'],['delib','3 · Proposal deliberation'],['dash','3b · Concept map and math (dashboard)'],
- ['data','4a · Datasets (toy set → official preparation)'],['impl','4 · Implementation (proof of concept + replication)'],['expdelib','5 · Experimental deliberation'],['expimpl','6 · Experimental implementation'],
- ['creds','7 · Credentials'],['remote','8 · Remote execution'],['nov','8a · Novelty and findings (dashboard, G-NOVELTY)'],['write','9 · Writing'],['figs','10 · Figures and grounding'],['out','11 · Paper'],['jv','11a · Journal choice and venue adaptation (after the PDF)'],
- ['audit','Transversal · Audit']].map(([id,label])=>({id,label}));
+ ['pi','1 · Harness (Pi)'], ['help','2a · Thematic help (optional, before /plausibility)'], ['plaus','2 · Plausibility'],['ingest','3 · Ingestion'],['delib','4 · Proposal deliberation'],['steps','4a · Problem & pillars → hypotheses → mathematics, contribution type (Mapa Conceptual)'],
+ ['expdelib','5 · Proof of concept and experiments: the protocol first'],['data','5a · Datasets (toy set → official preparation)'],['impl','5b · Replication and proof of concept'],['pocv','5c · Proof-of-concept verification (G-EXP-POC, operator)'],['expimpl','5d · Full experiments (after G-EXP-POC)'],
+ ['creds','5e · Credentials'],['remote','5f · Remote rehearsal and launch'],['nov','5g · Findings: contribution type and G-NOVELTY'],['scaf','6 · Scaffolding'],['decl','7 · Declarations'],['write','8 · Writing'],['figs','9 · Figures and grounding'],['out','10 · Paper (PDF preview)'],['jv','10a · Journal choice and venue adaptation (after the PDF)'],
+ ['audit','11 · Audit (transversal)']].map(([id,label])=>({id,label}));
 
 // A lane takes one grid row per row offset its nodes use (implementation draws
 // replication on a second row: five columns is the readability cap above).
@@ -234,16 +267,16 @@ const doc={schema_version:1,diagram_type:'architecture',meta:{
   title:'Papersmith AI in Pi — commands, skills and agents',
   quality_profile:'showcase',
   output:'docs/diagrams/papersmith-pi-flow.html',
-  repository:{url:'https://github.com/LIAUNAL/papersmith-ai',provider:'github',link_mode:'web',revision:'e83356d757ff6bd9bf8faba15c3d0d3cc6ffb0fa'},
+  repository:{url:'https://github.com/LIAUNAL/papersmith-ai',provider:'github',link_mode:'web',revision:'d1d3de2a59b603cfc6664bebfa20742c3f42dcde'},
   legend:{mode:'auto',entries:{frontend:{label:'Pi command /skill'},backend:{label:'Pi subagent'},messagebus:{label:'CLI'},security:{label:'Gate (human)'},database:{label:'Artifact on disk'},external:{label:'Pi harness'}}}
  },
  layout:{mode:'grid',origin:[30,48],cols:5,cellW:182,cellH:58,gapX:24,gapY:62},
  components, boundaries, connections,
  cards:[
   {dot:'cyan',title:'How Pi sees it',items:['.pi/APPEND_SYSTEM.md is the system prompt: Pi appends it to the project one','/<skill> = .pi/prompts/<skill>.md: it loads the SKILL.md and passes $ARGUMENTS',`The ${fs.readdirSync(`${REPO}/.pi/agents`).filter(f=>f.endsWith('.md')).length} .pi/agents/ are projected from .claude/agents/; Pi core has no subagents, so they need pi-subagents`,'Each agent declares tools (read, find, grep, write, edit, bash, mcp) and its stretch','refuse-offpath-push.js intercepts bash tool_call; it is a warning that fails open, not a gate']},
-  {dot:'emerald',title:'Harness commands',items:['npm run setup:harnesses — links .pi/skills -> ../skills','python scripts/sync-repo-harness.py — regenerates .pi/prompts, .pi/agents, .pi/extensions (--check detects drift)','smith init · status · ingest · deliberate · implement · run · remote · audit · ui','npm run test:all — the quality gate']},
+  {dot:'emerald',title:'Harness commands',items:['npm run setup:harnesses — links .pi/skills -> ../skills','python scripts/sync-repo-harness.py — regenerates .pi/prompts, .pi/agents, .pi/extensions (--check detects drift)','smith init · ui · status · ingest · deliberate · implement · run · remote · novelty · audit','npm run test:all — the quality gate']},
   {dot:'violet',title:'Per-skill CLIs',items:['paper-ingestion: python scripts/setup_env.py install','deliberation: node skills/<skill>/cli.mjs --serve','the proposal graph: merge_proposal_sky.py → check_atlas.py → render_atlas.py','implementation: implementation_cli.py materialize · verify · fidelity · audit · step','kaggle-accounts: accounts_cli.py list · discover · validate · remove · materialize','remote-execution: remote_cli.py submit · status · poll · fetch · readiness …','paper-writing: paper_cli.py status · plan · write · verify … (31 verbs)','journal-finder: journal_cli.py search · sjr-import · status','venue adaptation: paper_cli.py venue select · requirements · acquire · diff · plan · approve · build','datasets: datasets_cli.py synth · search · license · qc · prepare · publish','figure-review: review_cli.py probe · raster · skill-audit: audit_cli.py']},
-  {dot:'amber',title:'Flow rules',items:['The order is optional: each skill refuses with a code when its input is missing','Starting with /plausibility, before ingestion, is the recommendation','After a proposal revision, discuss its concept map and mathematics (dashboard Mapa Conceptual tab, /math-tutor) before implementing it','/datasets gives a seeded toy set first (dataset-scout: sourced → licensed; dataset-curator: toy → checked → prepared → published); publishing is private and only on the operator\'s consent','The proof of concept reads the toy set; the full experiments read the one official subject-wise preparation, mounted by remote notebooks','paper-replicator (implementation fidelity) searches for published code first: adopt it and audit its correspondence to the paper, else reimplement from the ingested paper; its baselines feed the experiments','experiments-reviewer reviews the instrumented code before any rehearsal or launch','No walk can launch a campaign: the operator authorizes it','contract-auditor, redactor and style-sampler have no code path: the orchestrator launches them and write judges','/figure-review and /skill-audit only report; they never repair','Once the paper compiles, /journal-finder ranks journals by quartile, access, APC and an estimated review time; nothing is submitted, and without an SJR file the quartile is a labelled OpenAlex proxy','The operator picks a journal in the PDF Preview tab; venue-adapter reads its guidelines and every requirement carries a quote and a url','The operator approves the adaptation plan by its sha256; text changes go only through write, and venue build never writes paper/main.tex','smith ui: each pipeline phase card sends its /<skill> with the rules as a guide, or opens the panel that owns the work']}
+  {dot:'amber',title:'Flow rules',items:['The order is optional: each skill refuses with a code when its input is missing','Starting with /plausibility, before ingestion, is the recommendation','The proposal is built in order: the central problem and its pillars, then the hypotheses, then the mathematics; each step stays locked until the one before it exists (Mapa Conceptual tab, one Generar y deliberar button per step)','paper-reviewer classifies the NeurIPS contribution type of the proposal (model_spec.json) and of each stage\'s findings (discussion.json)','Phase 5 runs protocol → toy set → replication → proof of concept → its verification (G-EXP-POC) → timing → optional search → full experiments → review → rehearsal → launch','The full experiments stay locked until the operator verifies the proof of concept (smith novelty approve --gate poc, or the Novedad tab card); the writing waits for G-NOVELTY','/datasets gives a seeded toy set first (dataset-scout: sourced → licensed; dataset-curator: toy → checked → prepared → published); publishing is private and only on the operator\'s consent','The proof of concept reads the toy set; the full experiments read the one official subject-wise preparation, mounted by remote notebooks','paper-replicator (implementation fidelity) searches for published code first: adopt it and audit its correspondence to the paper, else reimplement from the ingested paper; its baselines feed the experiments','experiments-reviewer reviews the instrumented code before any rehearsal or launch','No walk can launch a campaign: the operator authorizes it','contract-auditor, redactor and style-sampler have no code path: the orchestrator launches them and write judges','/figure-review and /skill-audit only report; they never repair','Once the paper compiles, /journal-finder ranks journals by quartile, access, APC and an estimated review time; nothing is submitted, and without an SJR file the quartile is a labelled OpenAlex proxy','The operator picks a journal in the PDF Preview tab; venue-adapter reads its guidelines and every requirement carries a quote and a url','The operator approves the adaptation plan by its sha256; text changes go only through write, and venue build never writes paper/main.tex','smith ui: each pipeline phase card sends its /<skill> with the rules as a guide, or opens the panel that owns the work']}
  ]};
 const out = path.resolve(process.argv[2] || fileURLToPath(new URL('./candidate.json', import.meta.url)));
 fs.mkdirSync(path.dirname(out), { recursive: true });

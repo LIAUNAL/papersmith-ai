@@ -16,19 +16,34 @@ skill refuses when its input is missing.
    turns the accepted top 5 into Markdown under `guidance/`, with equations
    as LaTeX.
 4. **Proposal deliberation**: `/proposal-deliberation` keeps managed revisions
-   `proposals/research-concept-<slug>-rNN.md`. Mathematics goes in
-   `$$ … \tag{N} $$` display blocks.
+   `proposals/research-concept-<slug>-rNN.md`, built in this order: the
+   central problem and its pillars, then the hypotheses each pillar predicts,
+   then the mathematics in `$$ … \tag{N} $$` display blocks. Each step stays
+   locked until the one before it exists on disk; the dashboard's
+   Mapa Conceptual & Modelo tab shows the three steps with a "Generar y
+   deliberar" button that types the step's `/proposal-deliberation` into the
+   agent.
    - **Concept map and mathematics**: before implementing a revision, discuss
-     its pillars, hypotheses and concept layers (dashboard: Mapa Conceptual &
-     Modelo) and its equations with `/math-tutor`, the Socratic tutor that
-     also reads hand-written pages.
+     its pillars, hypotheses and concept layers and its equations with
+     `/math-tutor`, the Socratic tutor that also reads hand-written pages.
+   - **Contribution type**: once the hypotheses are discussed and the
+     mathematics and the novelty proposed, the `paper-reviewer` agent
+     classifies the proposal's NeurIPS contribution type
+     (`contribution_type` in `.papersmith/model_spec.json`), shown right after
+     the hypotheses.
 5. **Proof of concept and experiments**, in this order:
    `/experimental-deliberation` writes the protocol in `experiments/`; a toy
    set (`/datasets synth`); replication of the comparison methods;
-   the proof of concept (`/proposal-implementation`); a timing estimate;
-   an optional hyperparameter search (`/hyperparameter-search`);
-   the full experiments (`/experimental-implementation`); the code review
-   (`experiments-reviewer`); the remote rehearsal; and the operator's launch.
+   the proof of concept (`/proposal-implementation`), done when its
+   `Results/discussion.json` is complete; the operator's verification of
+   that proof of concept (G-EXP-POC: its results and contrasted hypotheses,
+   in the Novedad & Hallazgos tab or with `smith novelty approve --gate
+   poc`); a timing estimate; an optional hyperparameter search
+   (`/hyperparameter-search`); the full experiments
+   (`/experimental-implementation`), locked until G-EXP-POC passes; the code
+   review (`experiments-reviewer`); the remote rehearsal; and the operator's
+   launch. The Experimentos tab steps through proof of concept → verify →
+   full experiment with one button each.
    - **Data**: `/datasets synth|search|license|qc|prepare|publish` gives both
      stages a seeded toy set always and one official dataset (agents
      `dataset-scout`, `dataset-curator`): license checked, quality measured,
@@ -71,7 +86,15 @@ skill refuses when its input is missing.
      (`smith team add … --attest`), `/kaggle-accounts validate`, then
      `/remote-execution`: generate-job → submit --smoke → fetch --smoke /
      smoke record → readiness → gate → submit → status / poll → fetch.
-   Only the operator authorizes a launch.
+   - **Findings and novelty**: once a stage's discussion is complete, the
+     `paper-reviewer` agent classifies the NeurIPS contribution type of its
+     findings (`contribution_type` in `Results/discussion.json`). The
+     Novedad & Hallazgos tab contrasts the hypothesis verdicts with the SOTA
+     pool and the operator records `G-NOVELTY` (`smith novelty approve` or
+     `iterate`) before the paper is written.
+   Only the operator authorizes a launch. The phase passes only with a
+   published protocol, a proof of concept discussed and verified, and a full
+   experiment discussed.
 6. **Scaffolding**: `/paper-writing` opens the `paper/` tree and its section
    contracts.
 7. **Declarations**: `/paper-writing mark …` records each decision of the
@@ -81,10 +104,12 @@ skill refuses when its input is missing.
 9. **Figures**: `/figure-review <figure id>` checks a compiled
    `paper/Figures/<id>.pdf`.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:
-    the PDF preview tab).
+    the PDF preview tab, whose style and redundancy panel scores each
+    section from 0 to 100).
 11. **Audit** (transversal): `smith audit .` and `/skill-audit <subject>`.
     Audits report; they never repair.
 
 The human gates are plausibility acceptance, proposal and experimental
-acceptance, and launch authorization. An agent never passes a gate on the
-operator's behalf.
+acceptance, the proof-of-concept verification (G-EXP-POC), the novelty
+decision (G-NOVELTY) and launch authorization. An agent never passes a gate
+on the operator's behalf.

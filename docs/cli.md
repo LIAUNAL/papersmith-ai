@@ -537,12 +537,44 @@ it, and lights each one up from what is on disk — `sota-pool/`, `guidance/`,
 `proposals/`, `implementations/`, `.experimental-deliberation/`, `experiments/`,
 the credentials store, the inbox, `paper/Figures/` and `sections/`. A phase with
 no artifact is reported inactive saying what is missing, never with an invented
-progress. Phase 5 passes on evidence the experiments leave behind: sub-phases 5.8
-(proof of concept) and 5.11 (full experiments) need a product of that stage with
-a complete `Results/discussion.json`, a bare `Results/` folder reads as active,
-and 5.12 reads `Results/reviewer_report.json`. Phase 2's console carries the
-optional thematic help described below. `/api/state` carries the diagram's edges
-(`pipeline_chain` and `gate_links`) in its payload instead of the frontend.
+progress. Each phase stays locked until the one before it passes (an explicit
+override is available), and its card's command is the phase's first real slash
+command or `smith` subcommand (Phase 10 compiles from its panel and names none).
+
+Two phases also order their own steps:
+
+- **Phase 4 (proposal deliberation)**: the central problem and its pillars, then
+  the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), each read from its
+  own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
+  overlay for the first two, a `$$ … \tag{N} $$` block in the latest
+  `proposals/research-concept-<slug>-rNN.md` for the third — and each locked until
+  the one before it passes. *Mapa Conceptual & Modelo* shows the three steps with
+  a *Generar y deliberar* button that types the step's `/proposal-deliberation`
+  into the agent terminal (the mathematics step also offers `/math-tutor`), and the
+  paper-reviewer's NeurIPS contribution type right after the hypotheses.
+- **Phase 5 (proof of concept and experiments)**: the experimental protocol
+  (5.1 to 5.5), the toy set (5.6), the replication of the comparison methods
+  (5.7), the proof of concept (5.8), its verification by the operator (5.9,
+  `G-EXP-POC`), the timing estimate (5.10), the optional hyperparameter search
+  (5.11), the full experiments (5.12, `LOCKED` until `G-EXP-POC` passes, like the
+  `/experimental-implementation` action), the code review (5.13) and the remote
+  rehearsal and launch (5.14). 5.8 and 5.12 need a product of that stage with a
+  complete `Results/discussion.json` (a bare `Results/` folder reads as active)
+  and 5.13 reads `Results/reviewer_report.json`. The phase passes only with a
+  published protocol, a proof of concept discussed and verified, and a full
+  experiment discussed, so no later phase unlocks over an unverified proof of
+  concept. *Experimentos* steps through proof of concept → verify → full
+  experiment with one button each.
+
+The gates follow the same order: `G-EXP-POC` passes once a proof of concept closes
+with a complete discussion and the operator verified it (`smith novelty approve
+--gate poc`, or the verification card of *Novedad & Hallazgos*); `G-NOVELTY` turns
+`ACTIVE` once Phase 5 passes and `PASS` when the operator approves the findings;
+`G1` to `G4` read Phases 6 to 9. Phase 2's console carries the optional thematic
+help described below. `/api/state` carries the diagram's edges (`pipeline_chain`
+and `gate_links`) in its payload instead of the frontend; its tramos follow the
+same order and map onto the eleven phases (Phase 5 as five tramos: protocol,
+proof of concept, full experiments, credentials, remote run).
 
 **Thematic help for `/plausibility`.** Clicking phase 2 opens its console. Under
 *Ayuda temática (palabras clave)* (*Thematic help (keywords)* in English), 3 to 5
@@ -577,13 +609,17 @@ same overview `smith novelty status --json` prints): the hypotheses of every
 discussion against their evidence and tests, the novelty claims contrasted with the
 `sota-pool/candidates.json` candidates, the reviewer-defense checklist (leakage-free
 partitioning, significance tests, empirical support, SOTA contrast) and the
-decision gate. The buttons *Aprobar Novedad & Proceder a Redacción*, *Iterar en
+decision gate. Once a proof of concept closes with a complete discussion, a
+*Verificar la prueba de concepto* card comes first: its approve and iterate buttons
+post the same decision with `"stage": "poc"`, which is what `G-EXP-POC` reads.
+The buttons *Aprobar Novedad & Proceder a Redacción*, *Iterar en
 Experimentos*, *Iterar en Propuesta / Modelo*, *Iterar en Plausibilidad / SOTA* and
 *Reiniciar a Pendiente* post `{"action", "notes", "actor"}` to
 `POST /api/novelty/decision` (`approve`, `iterate_experiments`, `iterate_proposal`,
 `iterate_plausibility`, `reset`; same-origin only, `422` with the refusal code for
-anything else). The gate `G-NOVELTY` is `PASS` once approved and `ACTIVE` while
-Phase 5 has passed and the decision is pending or iterating. It records the
+anything else; an optional `"stage"` of `poc` or `full`, default `full`). The gate
+`G-NOVELTY` is `PASS` once approved and `ACTIVE` while Phase 5 has passed (which
+needs the verified proof of concept) and the decision is pending or iterating. It records the
 operator's decision in `.papersmith/novelty_gate.json`; it does not change any
 phase's status by itself.
 
@@ -1028,17 +1064,29 @@ It is a development tool (it needs Chromium); it does not run in CI. The UI test
 ```bash
 smith novelty status
 smith novelty status --json
+smith novelty approve --gate poc --notes "PoC verdicts and contrasted hypotheses hold"
 smith novelty approve --notes "H1 and H2 supported with paired tests; novelty holds against the SOTA pool"
 smith novelty iterate --stage experiments --notes "H3 is inconclusive: add the missing ablation"
 smith novelty reset
 ```
 
 The novelty assessment and its gate (`G-NOVELTY`, the "Novelty & Findings Gate"),
-between the experiments and the manuscript. Every verb takes `--workspace <dir>` /
-`-w` (default: the current directory, which must be a workspace).
+between the experiments and the manuscript, and the proof-of-concept verification
+(`G-EXP-POC`) that comes before the full experiments. Every verb takes
+`--workspace <dir>` / `-w` (default: the current directory, which must be a
+workspace).
+
+`approve`, `iterate` and `reset` take `--gate {poc,full}` (default `full`).
+`--gate poc` records the operator's verification of the proof of concept — its
+results and contrasted hypotheses — in the `poc` record of the same file, beside
+the full decision and without touching it: `approve --gate poc` refuses
+`POC_DISCUSSION_INCOMPLETE` until a proof of concept holds a complete
+`Results/discussion.json`, and it is what unlocks the full experiments (sub-phase
+5.12 and `/experimental-implementation`). `--gate full` is the novelty decision
+below.
 
 - `status [--json]` — prints the gate (state, who decided and when, rationale,
-  target stage), the hypotheses read from every product's
+  target stage) and the proof-of-concept verification, the hypotheses read from every product's
   `Results/discussion.json` with their verdict, test and observed result, and the
   scientific-rigor checklist (leakage-free partitioning, significance tests,
   empirical support for the hypotheses, SOTA contrast). `--json` prints the whole
@@ -1077,7 +1125,7 @@ never overwrites an existing file; `check` validates it and exits non-zero when 
 is invalid or absent; `status` prints the same report but exits `0` whenever the
 product exists. Each prints one JSON object, and a refusal prints
 `{"ok": false, "error": <CODE>, "message": ...}`. The dashboard's sub-phases 5.8 and
-5.11 pass only when a product of the stage holds a complete discussion. The schema
+5.12 pass only when a product of the stage holds a complete discussion. The schema
 and the refusal codes are in
 [`skills/_core/results/README.md`](../skills/_core/results/README.md).
 

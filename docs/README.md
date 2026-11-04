@@ -21,7 +21,8 @@ document is the defect.
 | MCP server and tool catalogue | [mcp.md](mcp.md) |
 | The dashboard's thematic help for `/plausibility` (`banco-lia`, `uv`, offline behaviour) | [mcp.md](mcp.md#the-dashboards-thematic-help) |
 | The dashboard's tabs, including *Experimentos* (results discussion) and *Novedad & Hallazgos* | [cli.md](cli.md#smith-ui-dir) |
-| Novelty assessment, the `G-NOVELTY` gate and `smith novelty`; the results-discussion tool | [cli.md](cli.md#smith-novelty-statusapproveiteratereset) |
+| The eleven phases and their order: Phase 4's problem and pillars → hypotheses → mathematics, Phase 5's protocol → proof of concept → its verification (`G-EXP-POC`) → full experiments, and the gates | [cli.md](cli.md#smith-ui-dir) ("The phases"); the "Paper construction flow" of [`CLAUDE.md`](../CLAUDE.md) |
+| Novelty assessment, the proof-of-concept verification (`smith novelty --gate poc`, `G-EXP-POC`), the `G-NOVELTY` gate and `smith novelty`; the results-discussion tool | [cli.md](cli.md#smith-novelty-statusapproveiteratereset) |
 | Choosing a journal by quartile range, the quartile source, the OpenAlex key and its budget, the free fallback providers when OpenAlex is unavailable (`--source`, unknown quartiles), the fit formula and facets, the review-time estimate and the response cache | [README](../README.md#choosing-and-adapting-to-a-journal); [skills.md](skills.md#19-journal-finder--a-journal-chosen-on-evidence-a-template-adapted-on-approval) |
 | Adapting the manuscript to a chosen journal: the `venue` verbs, the `venue-adapter` agent and the approval gate | [skills.md](skills.md#9-paper-writing--from-the-section-contracts-to-the-pdf-with-nothing-assumed); `skills/paper-writing/SKILL.md` ("Venue adaptation") |
 | The PDF Preview tab's journal block and its `/api/journals*`, `/api/venues*`, venue compile and `/api/pdf?venue=` routes | [cli.md](cli.md#smith-ui-dir) |
