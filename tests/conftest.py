@@ -27,8 +27,13 @@ if str(ROOT) not in sys.path:
 # that override for the test process and the CLI children it spawns. The tests
 # that pin the refusal itself (tests/test_kit_provenance.py) remove it first.
 import os  # noqa: E402
+import tempfile  # noqa: E402
 
 os.environ.setdefault("PAPERSMITH_ALLOW_DIRTY_KIT", "1")
+# `smith ui` installs the dashboard runtime into `$XDG_CACHE_HOME/papersmith`
+# when no interpreter can import the backend. The suite must never touch the
+# operator's own cache, so it gets a throwaway one for the whole run.
+os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="papersmith-test-cache-")
 
 
 # --- Process-state isolation (X8b) -----------------------------------------

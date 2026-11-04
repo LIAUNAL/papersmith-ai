@@ -45,6 +45,49 @@ FALLBACK_INTERPRETERS = (
     Path(".venv") / "Scripts" / "python.exe",
 )
 
+#: The dashboard's own runtime, installed once into a shared cache environment
+#: when no interpreter can import the backend (a fresh `smith init` defers the
+#: workspace environment, and the pipx install declares no dependency). Each
+#: spec is the one `requirements.txt` declares.
+UI_ENV_PACKAGES = ("fastapi>=0.110", "uvicorn>=0.27", "watchfiles>=0.21", "PyYAML>=6.0")
+
+
+def ui_env_dir() -> Path:
+    """The shared environment the dashboard runs from when the workspace has
+    none: outside every workspace, one per Python minor version."""
+    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    version = f"{sys.version_info.major}{sys.version_info.minor}"
+    return Path(cache) / "papersmith" / f"ui-env-py{version}"
+
+
+def ui_env_interpreter() -> Path:
+    env_dir = ui_env_dir()
+    if os.name == "nt":
+        return env_dir / "Scripts" / "python.exe"
+    return env_dir / "bin" / "python"
+
+
+def provision_ui_env(report=print) -> Path | None:
+    """Create the shared dashboard environment and install `UI_ENV_PACKAGES`.
+
+    Returns its interpreter, or None when the venv or the install failed
+    (offline, no `venv` module); the caller then refuses with both remedies."""
+    env_dir = ui_env_dir()
+    report(f"smith ui: installing the dashboard runtime ({', '.join(UI_ENV_PACKAGES)}) "
+           f"into {env_dir}, once")
+    try:
+        env_dir.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run([sys.executable, "-m", "venv", str(env_dir)], check=True,
+                       capture_output=True, text=True, timeout=600)
+        subprocess.run([str(ui_env_interpreter()), "-m", "pip", "install", "--quiet",
+                        *UI_ENV_PACKAGES], check=True, capture_output=True, text=True,
+                       timeout=1800)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    interpreter = ui_env_interpreter()
+    return interpreter if interpreter.is_file() else None
+
+
 #: The modules the backend imports at module scope, asked of the interpreter
 #: itself rather than restated as a dependency list. `fastapi` is the one whose
 #: absence produces the raw traceback this preflight replaces.
@@ -93,11 +136,12 @@ def workspace_interpreter(workspace: Path) -> str:
     ``pipx install .`` installs ``papersmith-ai`` with no runtime dependencies,
     so the CLI's own ``sys.executable`` cannot import the dashboard backend.
     The environment the workspace's own provisioning script builds holds those
-    dependencies, so it is preferred; a hand-made ``.venv`` is honored next, and
-    the running interpreter is the last resort.
+    dependencies, so it is preferred; a hand-made ``.venv`` is honored next,
+    then the shared dashboard environment (`ui_env_dir`), and the running
+    interpreter is the last resort.
     """
     for candidate in provisioned_interpreters(workspace) + tuple(
-            workspace / relative for relative in FALLBACK_INTERPRETERS):
+            workspace / relative for relative in FALLBACK_INTERPRETERS) + (ui_env_interpreter(),):
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
     return sys.executable
@@ -117,7 +161,7 @@ def backend_is_importable(interpreter: str) -> bool:
     return done.returncode == 0
 
 
-def require_runnable_backend(workspace: Path, interpreter: str) -> None:
+def require_runnable_backend(workspace: Path, interpreter: str) -> str:
     """Refuse with a papersmith-level diagnostic, never a child traceback.
 
     A child that dies on ``ModuleNotFoundError`` reports a Python fact to a
@@ -126,13 +170,20 @@ def require_runnable_backend(workspace: Path, interpreter: str) -> None:
     that provisions the environment the workspace's own kit ships.
     """
     if backend_is_importable(interpreter):
-        return
+        return interpreter
+    cached = ui_env_interpreter()
+    if str(cached) != interpreter and cached.is_file() and backend_is_importable(str(cached)):
+        return str(cached)
+    installed = provision_ui_env()
+    if installed is not None and backend_is_importable(str(installed)):
+        return str(installed)
     provisioned = provisioned_interpreters(workspace)
     expected = str(provisioned[0]) if provisioned else \
         f"the environment {PROVISIONING_SCRIPT} builds"
     raise UserError(
         f"no interpreter in {workspace} can run the command center: "
-        f"{interpreter} cannot import fastapi.\n"
+        f"{interpreter} cannot import fastapi, and installing the dashboard runtime "
+        f"into {ui_env_dir()} failed (offline?).\n"
         f"Provision the workspace's environment and run this again:\n"
         f"  smith env install  (or python3 {PROVISIONING_SCRIPT} install)\n"
         f"That creates {expected}. `smith init` defers environment provisioning by "
@@ -290,7 +341,7 @@ def run_cli(args) -> int:
         print(f"{prog} ui: port {args.port} is busy; using {port}", file=sys.stderr)
 
     url = f"http://{args.host}:{port}/"
-    require_runnable_backend(workspace, interpreter)
+    interpreter = require_runnable_backend(workspace, interpreter)
     print(f"{prog} ui: serving {workspace} at {url}")
     print(f"{prog} ui: press Ctrl+C to stop")
     argv = build_server_argv(workspace, args.host, port, no_browser=args.no_browser,

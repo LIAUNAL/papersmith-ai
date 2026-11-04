@@ -385,6 +385,9 @@ class WorkspaceInterpreterTests(unittest.TestCase):
         root = self.new_dir()
         self.seed_provisioning(root)
 
+        original = ui_command.provision_ui_env
+        ui_command.provision_ui_env = lambda report=None: None
+        self.addCleanup(setattr, ui_command, "provision_ui_env", original)
         with self.assertRaises(UserError) as caught:
             ui_command.require_runnable_backend(root, "/bin/false")
 

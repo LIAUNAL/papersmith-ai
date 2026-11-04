@@ -1,0 +1,26 @@
+Objective: `smith init` then `smith ui` works on a fresh folder; Phases 4 and 5 force their steps in order with in-panel "generate and deliberate" buttons; phase flows, archify diagrams, README and docs consistent with the dashboard.
+Branch: feat/flow-gating. Delivery: ask-on-risk. Test runner: `.micromamba/envs/papersmith/bin/pytest` (`npm run test:py`), `npm run test:node`.
+
+## Specs
+
+- **S1** — "cuando intento construir un proyecto nuevo con smith init y luego sobre ese folder creado doy smith ui, saca un error, verifica que init y luego ui estan funcionando, sino ajusta para que funcionen". Reproduced: `smith ui` refuses "cannot import fastapi" because `init` defers the workspace environment and the pipx install declares no dependency. Accepted: `smith ui` installs the dashboard runtime (fastapi, uvicorn, watchfiles, PyYAML) once into `$XDG_CACHE_HOME/papersmith/ui-env-py<ver>` and serves; the zero-runtime-dependency policy of the package stays.
+- **S2** — "en el panel mapa conceptual y problema, debe obligarse a generar el problema central y pilares, y luego las hipotesis, y luego la matematci". Phase 4 sub-steps read their own evidence (problem + pillars, then hypotheses, then mathematics) and each is locked until the previous exists.
+- **S3** — "en experimetnos igual, debe obligarse a definir prueba de concepto. luego, verificar lso resutlados y las hipotesis contrastas, y luego si permitir el experimento completo". Phase 5: the full experiment is locked until the proof of concept has a complete discussion and the operator verified its results and contrasted hypotheses (assumption: an operator decision recorded for the PoC stage in the novelty gate record).
+- **S4** — "explora se puedes poner botones en esas fases claves donde al usuario se le oblige e indique que de generar esos bloques y deliberar con el agente antes de seguir con otras fases". Buttons in the concept-map/math panels and the experiments/novelty panels that type the step's slash command into the agent terminal (`window.sendToCli`), disabled with a reason until the previous step exists.
+- **S5** — "explora tambien, que no tengamos inconsistencias en el flujo de cada fase". Fix the mismatches the map found: Phase 5 order (CLAUDE.md/template vs `state_extractor.py`, README), G-NOVELTY label "Fase 5.5", non-existent `smith deliberate` cli_command, README revision filename, 12 vs 11, stale source path in `state_extractor.py`.
+- **S6** — "que los diagramas archifyy esten actualizados en smith ui". Regenerate `docs/diagrams/papersmith-pi-flow.*` from its build script with the current flow and copy to `skills/_core/command_center/static/papersmith-flow.html`.
+- **S7** — "que el reamde, docs, diagramas del readme y todo la informacino del repo en tablero ui, readme y docuemntacion este actualizada". README tab table, docs/cli.md, docs/README.md, CLAUDE.md flow, template `paper-flow.md.tpl` reflect 0.53–0.60 features and S2–S4.
+
+## Tasks
+
+- T1 [S1] inline — `smith ui` bootstraps the dashboard runtime. Status: done, tests green, e2e verified (fresh `init` + `ui` → 200). Commit: pending.
+- T2 [S2, S4-phase4] — Phase 4 sub-step evidence, order locks and panel buttons. Route: delegated (context backstop). Status: open.
+- T3 [S3, S4-phase5] — PoC verification decision, full-experiment lock, panel buttons. Route: delegated (context backstop). Status: open.
+- T4 [S5] — flow inconsistencies. Status: open.
+- T5 [S6, S7] — archify diagram and docs refresh after T2–T4. Status: open.
+
+## Log
+
+- L1 (2026-11-04, user, verbatim): "revisa el flujo de smith, cuando intento construir un proyecto nuevo con smith init y luego sobre ese folder creado doy smith ui, saca un error, verifica que init y luego ui estan funcionando, sino ajusta para que funcionen. luego, explora en los paneles y fases de todo smith, que el flujo sea consistente, por ejemplo, en el panel mapa conceptual y problema, debe obligarse a generar el problema central y pilares, y luego las hipotesis, y luego la matematci, en experimetnos igual, debe obligarse a definir prueba de concepto. luego, verificar lso resutlados y las hipotesis contrastas, y luego si permitir el experimento completo. explora se puedes poner botones en esas fases claves donde al usuario se le oblige e indique que de generar esos bloques y deliberar con el agente antes de seguir con otras fases. explora tambien, que no tengamos inconsistencias en el flujo de cada fase, que los diagramas archifyy esten actualizados en smith ui, que el reamde, docs, diagramas del readme y todo la informacino del repo en tablero ui, readme y docuemntacion este actualizada"
+- L2: map (explorer): phase locks exist only between phases (`phase_actions.attach`), enforced client-side; 4.1–4.6 share `fase4_status`; G-NOVELTY is ACTIVE only after full experiments; archify flow embeds revision e83356d7 (pre-0.47).
+- L3: T1 decision — keep `dependencies = []` (pinned by `test_mcp_dependencies.py`); install the four UI packages into a shared cache env on first `smith ui`; tests isolate `XDG_CACHE_HOME` in `conftest.py`.

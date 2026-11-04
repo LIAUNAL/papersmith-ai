@@ -41,7 +41,7 @@ smith init ~/papers/sparse-ae \
 | `<dir>` | Where the workspace goes; omitted, it is the current directory (`smith init` alone sets up the folder you are in, on every operating system) |
 | `--import-existing` | Explicitly initialize a nonempty directory while preserving existing files: keeps its `README.md`, merges papersmith's block into its `.gitignore`, and refuses any other file or symlink collision before copying |
 | `--no-npm` | Skips the best-effort `npm install` (offline/hermetic use) |
-| `--no-env` | Skips provisioning the workspace's Python environment; `smith ui` refuses until `python3 scripts/setup_env.py install` is run |
+| `--no-env` | Skips provisioning the workspace's Python environment; `smith ui` still opens, from the shared dashboard runtime it installs on first use (see `smith ui` below) |
 | `--progress` | Forces a plain-text progress log with an estimate of the time left; useful in CI, where the bar is noise and the log is what matters |
 | `--no-progress` | Draws no progress even when the output is a terminal |
 | `--allow-dirty-kit` | Initializes even when the kit has uncommitted changes in its distributed paths, or when its git state cannot be read; the workspace records that it came from such a kit (see [Kit provenance](#kit-provenance)) |
@@ -498,6 +498,15 @@ smith ui --export-static ./dashboard-static
 | `--allowed-host HOST:PORT` | Also accepts that `Host` header (repeatable); only forwarded to the backend when supplied |
 | `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
 | `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
+
+**Right after `smith init`.** The dashboard runs from the workspace's environment
+when it exists (`.micromamba/envs/papersmith`, then a hand-made `.venv`). A fresh
+`smith init` defers that environment and the pipx install declares no runtime
+dependency, so on its first run `smith ui` installs the dashboard's own four
+packages (`fastapi`, `uvicorn`, `watchfiles`, `PyYAML`, as `requirements.txt`
+pins them) once into `$XDG_CACHE_HOME/papersmith/ui-env-py<version>`
+(`~/.cache/...` by default), outside every workspace, and serves from it. Only
+when that install fails (offline) does it refuse, naming `smith env install`.
 
 Serves the **Paper Command Center**: a local dashboard inside the workspace with
 its twelve tabs, the eleven phases of the paper flow, the gates (`G-EXP-POC`,
