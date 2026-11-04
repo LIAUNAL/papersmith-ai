@@ -11,8 +11,12 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.60.0
 
+- **Style and redundancy panel.** The PDF viewer's audit button now scores the
+  manuscript's writing style and redundancy from 0 to 100, breaks the score down by
+  section, and lists the passages that raise it most, each naming its block and
+  section.
 - **NeurIPS contribution type per phase.** After the hypotheses are checked, the
   `paper-reviewer` agent classifies the phase's ideas as one of the five NeurIPS
   2026 contribution types (`General`, `Theory`, `Use-Inspired`,
