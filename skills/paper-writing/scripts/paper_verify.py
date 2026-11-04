@@ -93,6 +93,10 @@ UNMEASURED_REASONS: tuple[str, ...] = (
     # `language`'s own reason: the caller handed `run()` no language scan
     # (`cmd_verify` always does; a direct `run(evidence)` does not).
     "LANGUAGE_NOT_SCANNED",
+    # `chain`'s own reason: no block requiring the problem statement carries
+    # a role-labeled line (`Problem:` ... `Evidence:`), so there is no chain
+    # to compare -- the labeled form is optional prose, never required.
+    "CHAIN_ROLES_ABSENT",
 )
 
 #: The structural checks `run()` reports under its own `structure` key,
@@ -250,6 +254,14 @@ def check_contribution_list(evidence, *, optional_block_ids: frozenset = frozens
     (`Requirement: Declared-Name Literal Presence Limit`) — both are
     reported, either alone flips the verdict to `fail`.
 
+    Only a block that **enumerates** the contributions is held to the list:
+    one whose bytes name at least one declared contribution literally. A
+    block that requires the fact but names none of them (a title, an
+    abstract's background, a related-work synthesis) only reads it, and is
+    listed under `reading_blocks` instead of failing. A block naming some
+    but not all of them still fails, and so does a paper in which no block
+    enumerates the list at all.
+
     `optional_block_ids`: see `_optional_block_absence_reason`. Checked
     before `BLOCK_NOT_DECLARED` — a block absent because the paper never
     took that optional branch is a more precise explanation than "not
@@ -273,6 +285,8 @@ def check_contribution_list(evidence, *, optional_block_ids: frozenset = frozens
     per_block_order = {}
     mismatched = []
     absent_from_bytes = []
+    enumerating = []
+    reading = []
     for block_id in block_ids:
         body = evidence.block_bodies.get(block_id, b"")
         order = _first_occurrence_order(body, list(declared))
@@ -281,18 +295,23 @@ def check_contribution_list(evidence, *, optional_block_ids: frozenset = frozens
             "name": f"{block_id}:first-occurrence-order", "source": "derived",
             "origin": "main.tex block bytes",
         })
+        if not order:
+            reading.append(block_id)
+            continue
+        enumerating.append(block_id)
         for name in declared:
             if name not in order:
                 absent_from_bytes.append({"block": block_id, "name": name})
         if order != list(declared):
             mismatched.append(block_id)
 
-    verdict = "fail" if (mismatched or absent_from_bytes) else "pass"
+    verdict = "fail" if (mismatched or absent_from_bytes or not enumerating) else "pass"
     return _entry(
         "contribution-list", classification="mechanical", verdict=verdict, sides=sides,
         evidence={
             "declared": list(declared), "per_block_order": per_block_order,
             "mismatched_blocks": mismatched, "absent_from_bytes": absent_from_bytes,
+            "enumerating_blocks": enumerating, "reading_blocks": reading,
         },
         limits=["ORDER_FROM_FIRST_OCCURRENCE"], unmeasured_reason=None,
     )
@@ -309,6 +328,11 @@ def check_chain(evidence, *, optional_block_ids: frozenset = frozenset()) -> dic
     the declared contribution set (set closure against coupling 1's own
     declared list).
 
+    The role-labeled form is optional prose: when no block requiring the
+    fact carries any of the five labels, there is no chain to read and the
+    check reports `unmeasured` with `CHAIN_ROLES_ABSENT` rather than failing
+    every link. One label anywhere is enough to hold the whole chain to it.
+
     `optional_block_ids`: see `_optional_block_absence_reason`.
     """
     block_ids, reason = evidence.blocks_by_fact.get("problem-statement", ((), "SECTION_CONTRACTS_UNREADABLE"))
@@ -324,6 +348,10 @@ def check_chain(evidence, *, optional_block_ids: frozenset = frozenset()) -> dic
     if undeclared or not links:
         return _unmeasured("chain", "mechanical", "BLOCK_NOT_DECLARED",
                             evidence={"undeclared_blocks": undeclared})
+
+    if not any(any(_parse_chain_roles(evidence.block_bodies.get(block_id, b"")).values())
+               for block_id in block_ids):
+        return _unmeasured("chain", "mechanical", "CHAIN_ROLES_ABSENT")
 
     declared_contributions = set(evidence.record.get("facts", {}).get("contributions") or [])
     sides = [{"name": "chain.links", "source": "declared", "origin": "couplings.json"}]

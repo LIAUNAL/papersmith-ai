@@ -6865,6 +6865,30 @@ class EvidenceTests(unittest.TestCase):
             ("abstract-contrib", "conclusions-contrib", "intro-contrib", "methods-contrib"),
         )
 
+    def test_section_qualified_markers_key_bodies_by_their_raw_block_id(self) -> None:
+        """A manuscript `paper_cli` writes names each block `<section>.<id>`
+        in its markers; the checks look bodies up by the raw id the
+        contracts and `couplings.json` use, so both must find the body."""
+        _build_coupling_paper(self.paper_dir, self.sections_dir)
+        section_of = {block["id"]: header["section"]
+                      for header in _COUPLING_SECTIONS.values() for block in header["blocks"]}
+        main = self.paper_dir / "main.tex"
+        main.write_text(re.sub(
+            r"(%% paper-writing block )([\w-]+)( (?:begin|end))",
+            lambda m: f"{m.group(1)}{section_of[m.group(2)]}.{m.group(2)}{m.group(3)}"
+            if m.group(2) in section_of else m.group(0),
+            main.read_text(encoding="utf-8")), encoding="utf-8")
+
+        evidence = paper_coupling_evidence.gather(self.paper_dir, self.sections_dir)
+
+        self.assertEqual(evidence.block_bodies["intro-contrib"], _COUPLING_BODIES["intro-contrib"])
+        self.assertEqual(evidence.block_bodies[f"{section_of['intro-contrib']}.intro-contrib"],
+                         _COUPLING_BODIES["intro-contrib"])
+        for check in (paper_verify.check_contribution_list, paper_verify.check_chain,
+                      paper_verify.check_future_work):
+            with self.subTest(check=check.__name__):
+                self.assertEqual(check(evidence)["verdict"], "pass")
+
     def test_gather_without_provenance_reports_it_absent(self) -> None:
         _build_coupling_paper(self.paper_dir, self.sections_dir, provenance_blocks=())
 
@@ -7196,6 +7220,33 @@ class CouplingOneTests(unittest.TestCase):
             result["evidence"]["absent_from_bytes"],
         )
 
+    def test_a_block_that_names_no_contribution_only_reads_the_fact(self) -> None:
+        reader = b"In brief: the system cuts overhead under load.\n"
+        mutated = dataclasses.replace(
+            self.evidence,
+            block_bodies={**self.evidence.block_bodies, "abstract-contrib": reader},
+        )
+
+        result = paper_verify.check_contribution_list(mutated)
+
+        self.assertEqual(result["verdict"], "pass")
+        self.assertEqual(result["evidence"]["absent_from_bytes"], [])
+        self.assertIn("abstract-contrib", result["evidence"]["reading_blocks"])
+        self.assertNotIn("abstract-contrib", result["evidence"]["enumerating_blocks"])
+
+    def test_no_block_enumerating_the_contributions_fails(self) -> None:
+        reader = b"The system cuts overhead under load.\n"
+        blocks, _ = self.evidence.blocks_by_fact["contributions"]
+        mutated = dataclasses.replace(
+            self.evidence,
+            block_bodies={**self.evidence.block_bodies, **{block: reader for block in blocks}},
+        )
+
+        result = paper_verify.check_contribution_list(mutated)
+
+        self.assertEqual(result["verdict"], "fail")
+        self.assertEqual(result["evidence"]["enumerating_blocks"], [])
+
     def test_an_undeclared_block_reports_unmeasured_not_pass(self) -> None:
         record = _coupling_record()
         del record["blocks"]["abstract-contrib"]
@@ -7243,6 +7294,27 @@ class CouplingTwoTests(unittest.TestCase):
 
         self.assertEqual(result["verdict"], "fail")
         self.assertFalse(result["evidence"]["links"][0]["roles_present"]["contribution"])
+
+    def test_a_block_without_role_labelled_lines_is_unmeasured(self) -> None:
+        prose = b"Bounded Retry addresses cascading failures, as the profiler shows.\n"
+        mutated = dataclasses.replace(
+            self.evidence,
+            block_bodies={**self.evidence.block_bodies, "methods-chain": prose},
+        )
+
+        result = paper_verify.check_chain(mutated)
+
+        self.assertEqual(result["verdict"], "unmeasured")
+        self.assertEqual(result["unmeasured_reason"], "CHAIN_ROLES_ABSENT")
+
+    def test_one_role_label_is_enough_to_check_the_whole_chain(self) -> None:
+        partial = b"Problem: Bounded Retry addresses cascading failures under load.\n"
+        mutated = dataclasses.replace(
+            self.evidence,
+            block_bodies={**self.evidence.block_bodies, "methods-chain": partial},
+        )
+
+        self.assertEqual(paper_verify.check_chain(mutated)["verdict"], "fail")
 
     def test_closure_against_an_undeclared_word_fails(self) -> None:
         record = _coupling_record()

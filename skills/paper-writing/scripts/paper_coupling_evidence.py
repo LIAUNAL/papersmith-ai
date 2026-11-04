@@ -77,7 +77,8 @@ class Evidence:
     record-declared fallback (design.md, `which blocks a check reads is
     derived, not hardcoded, and has exactly one source`).
 
-    `block_bodies`: raw (unqualified) block id -> that block's body bytes,
+    `block_bodies`: block id -> that block's body bytes, under the id its
+    markers carry and, for a section-qualified marker, under its raw id too,
     sliced from `main_tex_bytes` via `paper_block.parse` — the one place
     this module calls the block grammar's own parser, so `paper_verify.py`
     never has to (design.md, `verify never parses a marker: it calls
@@ -393,6 +394,17 @@ def gather(paper_dir: Path, sections_dir: Path) -> Evidence:
         block_id: main_tex_bytes[begin["end"]:end["start"]]
         for block_id, (begin, end) in parsed.pairs.items()
     }
+    # A manuscript `paper_cli` writes names each block `<section>.<id>` in its
+    # markers, while the contracts, `couplings.json` and every check speak the
+    # raw id. Alias each qualified body under its raw id too, unless two
+    # sections share that raw id (then only the qualified keys stay).
+    raw_ids: dict = {}
+    for block_id in block_bodies:
+        if "." in block_id:
+            raw_ids.setdefault(block_id.split(".", 1)[1], []).append(block_id)
+    for raw, qualified in raw_ids.items():
+        if len(qualified) == 1 and raw not in block_bodies:
+            block_bodies[raw] = block_bodies[qualified[0]]
 
     blocks_by_fact = _blocks_by_fact(sections_dir)
     figure_semantics = _figure_semantics(paper_dir, sections_dir)

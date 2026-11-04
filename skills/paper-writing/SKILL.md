@@ -1861,6 +1861,16 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
 | `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`; plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (the future-work block and every declaration open a paragraph of their own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
+**`contribution-list` holds only the blocks that enumerate.** A block that
+requires the contributions fact and names at least one declared contribution
+literally must name all of them in the declared order; a block that names
+none of them (a title, an abstract's background, a related-work synthesis)
+only reads the fact and is listed under `reading_blocks`. No enumerating
+block at all is a `fail`. **`chain` needs its role labels:** when no block
+requiring the problem statement carries a `Problem:` ... `Evidence:` line,
+it reports `unmeasured`, reason `CHAIN_ROLES_ABSENT`, instead of failing a
+paper written in plain prose.
+
 **Three values, never two.** Every check's own `verdict` is `pass`, `fail`
 or `unmeasured` — `unmeasured` is never folded into `pass`. Two new modules
 carry this: `paper_coupling_evidence.py` (every disk read `verify`
