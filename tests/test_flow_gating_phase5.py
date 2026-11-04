@@ -3,7 +3,7 @@
 The operator verifies a proof of concept whose discussion is complete (its
 results and contrasted hypotheses) by recording a PoC-stage decision in the
 novelty gate record; G-EXP-POC passes only then, and the full experiments
-(sub-phase 5.11, the /experimental-implementation action and the Experiments
+(sub-phase 5.12, the /experimental-implementation action and the Experiments
 tab's "Full experiment" button) stay locked until it does."""
 
 from __future__ import annotations
@@ -98,6 +98,27 @@ class PocDecisionTests(_Workspace):
         self.assertEqual(novelty.run_approve(Args()), 0)
         self.assertEqual(novelty_gate.read_gate(self.root)["poc"]["status"], "approved")
         self.assertEqual(novelty_gate.read_gate(self.root)["status"], "pending")
+
+    def test_a_poc_iteration_keeps_the_stage_the_operator_named(self) -> None:
+        for stage, target in (("proposal", "proposal"), ("plausibility", "plausibility"),
+                              ("experiments", "poc_experiments")):
+            with self.subTest(cli="skill", stage=stage):
+                self.assertEqual(novelty_cli.main(["iterate", "--root", str(self.root), "--gate", "poc",
+                                                   "--stage", stage]), 0)
+                self.assertEqual(novelty_gate.read_gate(self.root)["poc"]["target_stage"], target)
+        (self.root / ".papersmith").mkdir(exist_ok=True)
+
+        class Args:
+            workspace = str(self.root)
+            notes = "back to the proposal"
+            gate = "poc"
+            stage = "proposal"
+        self.assertEqual(novelty.run_iterate(Args()), 0)
+        poc = novelty_gate.read_gate(self.root)["poc"]
+        self.assertEqual((poc["status"], poc["target_stage"]), ("iterating", "proposal"))
+        self.poc()
+        novelty_gate.record_decision(self.root, "approve", stage="poc")
+        self.assertEqual(novelty_gate.read_gate(self.root)["poc"]["target_stage"], "full_experiments")
 
     def test_the_decision_route_takes_the_stage(self) -> None:
         client = TestClient(self.app)

@@ -1411,17 +1411,24 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         p4_published = "PASS" if has_deliberated_prop else ("ACTIVE" if prop_files else "PENDING")
         p4_sub = {key: phase_steps.sub_phase_status(step) for key, step in p4_step.items()}
 
-        # Phase 5: a published protocol revision, a proof of concept and a full
-        # experiment that each close with a complete Results/discussion.json;
-        # never a file name or a bare Results/ folder.
-        p5_done = [p5["revisions"] > 0, p5["poc_discussed"] > 0, p5["full_discussed"] > 0]
+        # Phase 5: a published protocol revision, a proof of concept with a
+        # complete Results/discussion.json, the operator's verification of that
+        # proof of concept (G-EXP-POC) and a full experiment with its own
+        # complete discussion; never a file name or a bare Results/ folder. The
+        # phase never passes over an unverified proof of concept, so no later
+        # phase unlocks over one.
+        poc_decision = (_novelty_gate().read_gate(root_path).get("poc") or {}).get("status", "pending")
+        g_exp_poc_status = _poc_gate_status(p5, poc_decision)
+        p5_done = [p5["revisions"] > 0, p5["poc_discussed"] > 0, g_exp_poc_status == "PASS",
+                   p5["full_discussed"] > 0]
         fase5_det = (f"Protocol published: {'yes' if p5_done[0] else 'no'}"
                      f" · PoC with a complete discussion: {p5['poc_discussed']} of {p5['poc']}"
+                     f" · PoC verified (G-EXP-POC): {'yes' if p5_done[2] else 'no'}"
                      f" · full experiments with a complete discussion: {p5['full_discussed']} of {p5['full']}")
         if all(p5_done):
             fase5_status, fase5_prog = "PASS", 1.0
         elif any(p5_done) or p5["files"] or p5["poc"] or p5["full"]:
-            fase5_status, fase5_prog = "ACTIVE", round(sum(p5_done) / 3, 3)
+            fase5_status, fase5_prog = "ACTIVE", round(sum(p5_done) / len(p5_done), 3)
         else:
             fase5_status, fase5_prog = "PENDING", 0.0
 
@@ -1429,9 +1436,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return "PASS" if done else ("ACTIVE" if started else "PENDING")
 
         # The full experiments start only after the operator verified the
-        # proof of concept (G-EXP-POC); until then sub-phase 5.11 is locked.
-        poc_decision = (_novelty_gate().read_gate(root_path).get("poc") or {}).get("status", "pending")
-        g_exp_poc_status = _poc_gate_status(p5, poc_decision)
+        # proof of concept (G-EXP-POC); until then their sub-phase is locked.
         full_detail = (f"/experimental-implementation (experiments-build): a folder with Experimental_AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts backed by tests, novelty, qualitative analysis): {p5['full_discussed']} of {p5['full']}; check with `{DISCUSSION_CLI} check --product <path>`")
         if g_exp_poc_status == "PASS":
             full_status = _p5(p5["full_discussed"] > 0, p5["full"] > 0)
@@ -1482,17 +1487,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "The last audit failed: check .papersmith/audit.json"
                 if _audit_verdict(root_path) is False else "Cross-cutting audit pending")
 
+        # Each card's agent, skills and command come from phase_actions.attach,
+        # the one place that knows what a phase really runs.
         fases = [
             {
                 "id": "Fase 1",
                 "stage_id": "harness",
                 "name": "Phase 1: Environment Setup & Harness",
                 "gate": "G-HARNESS",
-                "agent": "ecosystem-orchestrator",
                 "desc": "Workspace structure, harness projections (.claude, .opencode, .pi, .agents), the micromamba environment and runtime validation.",
                 "tools": ["read", "bash"],
-                "skills": ["harness-setup", "workspace-verifier"],
-                "cli_command": "smith init --harness-only",
                 "outputs": [".papersmith/", "papersmith.yaml", "pyproject.toml"],
                 "status": fase1_status,
                 "progress": 1.0 if fase1_status == "PASS" else 0.0,
@@ -1509,11 +1513,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "plausibility",
                 "name": "Phase 2: Plausibility & 3D SOTA Atlas",
                 "gate": "G-SOTA",
-                "agent": "sota-scout & sota-grapher & novelty-screener",
                 "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional thematic help turns 3 to 5 keywords into a proposed idea from the Banco LIA, which the operator edits, approves and launches.",
                 "tools": ["read", "write", "mcp"],
-                "skills": ["sota-scout", "semantic-scholar", "pubmed-search"],
-                "cli_command": "smith run --stage plausibility",
                 "outputs": ["sota-pool/atlas.json", "sota-pool/atlas.html", "sota-pool/candidates.json"],
                 "status": fase2_status,
                 "progress": fase2_prog,
@@ -1530,11 +1531,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "ingestion",
                 "name": "Phase 3: Reference & Literature Ingestion",
                 "gate": "G-INGEST",
-                "agent": "paper-ingestion",
                 "desc": "Markdown ingestion of reference articles, BibTeX normalization of the bibliography and extraction of base inputs.",
                 "tools": ["read", "write", "marker"],
-                "skills": ["paper-ingestion", "pdf-extractor", "bibtex-parser"],
-                "cli_command": "smith ingest guidance/reference-papers/",
                 "outputs": ["guidance/reference-papers/", "paper/refs.bib", "paper/Figures/"],
                 "status": fase3_status,
                 "progress": fase3_prog,
@@ -1551,20 +1549,17 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "proposal",
                 "name": "Phase 4: Proposal Deliberation & Conceptual Model",
                 "gate": "G-PROP",
-                "agent": "deliberation-publish & mathematical-tutor",
                 "desc": "Formal scientific deliberation of the proposal (rNN), novelty definition, and discussion of the concept map and the mathematics with the Socratic tutor.",
                 "tools": ["read", "write", "deliberate"],
-                "skills": ["proposal-deliberation", "peer-review-simulator"],
-                "cli_command": "smith deliberate proposals/",
                 "outputs": ["proposals/"],
                 "status": fase4_status,
                 "progress": fase4_prog,
                 "detail": fase4_det,
                 "steps": p4_steps,
                 "subfases": [
-                    {"id": "4.1", "name": "Stage bound: Delimitation & Locus", "status": p4_sub["problem_pillars"], "detail": "Problem definition and anchoring of the conceptual locus"},
-                    {"id": "4.2", "name": "Stage deliberated: Novelty & Consensus", "status": p4_sub["hypotheses"], "detail": "Discussion of hypotheses and innovation pillars"},
-                    {"id": "4.3", "name": "Stage composed: Basic Mathematical Model", "status": p4_sub["mathematics"], "detail": "Mathematical formalization and key equations"},
+                    {"id": "4.1", "name": "Step 1: Problem and pillars", "status": p4_sub["problem_pillars"], "detail": "The central problem and at least one pillar, in .papersmith/model_spec.json or the revision's .sky.json overlay"},
+                    {"id": "4.2", "name": "Step 2: Hypotheses", "status": p4_sub["hypotheses"], "detail": "The hypotheses each pillar predicts; locked until step 1 passes"},
+                    {"id": "4.3", "name": "Step 3: Mathematics", "status": p4_sub["mathematics"], "detail": "At least one $$ … \\tag{N} $$ block in the latest revision; locked until step 2 passes"},
                     {"id": "4.4", "name": "Stage published: Publication & Cryptographic Receipt", "status": p4_published, "detail": "Revision sealed with a SHA-256 hash"},
                     {"id": "4.5", "name": "Concept map discussion", "status": p4_sub["hypotheses"], "detail": "Pillars, hypotheses and layers of the concept (Concept Map tab)"},
                     {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": p4_sub["mathematics"], "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"}
@@ -1575,11 +1570,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "poc_experiments",
                 "name": f"Phase 5: {phase_actions.PHASE_LABELS['poc_experiments']}",
                 "gate": "G-EXP-POC",
-                "agent": phase_actions.ACTIONS["poc_experiments"]["agent"],
-                "desc": "Experimental protocol deliberation, toy set, replication of the comparison methods, proof of concept, time estimation, optional hyperparameter search, full experiments, code review, remote rehearsal and an operator-authorized launch, locally or on a remote service (CLI or MCP).",
+                "desc": "Experimental protocol deliberation, toy set, replication of the comparison methods, proof of concept, the operator's verification of the proof of concept (G-EXP-POC), time estimation, optional hyperparameter search, full experiments, code review, remote rehearsal and an operator-authorized launch, locally or on a remote service (CLI or MCP).",
                 "tools": ["read", "write", "validate"],
-                "skills": ["experimental-deliberation", "datasets", "proposal-implementation", "experimental-implementation"],
-                "cli_command": "/experimental-deliberation <texto>",
                 "outputs": ["experiments/", "datasets/registry.json", "implementations/"],
                 "status": fase5_status,
                 "progress": fase5_prog,
@@ -1593,11 +1585,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "5.6", "name": "Data: always a toy set, plus the official dataset", "status": _p5(p5["toy"], p5["registry"]), "detail": "/datasets synth|search|license|qc|prepare|publish with dataset-scout and dataset-curator; passes with a toy set in datasets/registry.json; private publishing only with the operator's consent"},
                     {"id": "5.7", "name": "Replication of comparison methods", "status": _p5(p5["replications"] > 0), "detail": f"/proposal-implementation → paper-replicator: the published code first, adopted and audited; when there is none, a reimplementation ({p5['replications']} REPLICATION.md)"},
                     {"id": "5.8", "name": "Proof of concept", "status": _p5(p5["poc_discussed"] > 0, p5["poc"] > 0), "detail": f"/proposal-implementation (implementation-build): a folder with AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts, tests, novelty, qualitative analysis): {p5['poc_discussed']} of {p5['poc']}; check with `{DISCUSSION_CLI} check --product <path>`"},
-                    {"id": "5.9", "name": "Estimate the time and choose where to run", "status": _p5(p5["timing"] > 0), "detail": "Before the pilot and again before the full run: a short timing probe (one epoch of one fold per arm) in Results/timing.json; the Experiments tab estimates the PoC and the full run (±20%) and lists the local and remote options"},
-                    {"id": "5.10", "name": "Hyperparameter search (Optuna, optional)", "status": _p5(p5["hpo"] > 0), "detail": f"Only when the deliberation judged it worthwhile: /hyperparameter-search plan|report|status, nested inside each outer fold, the same budget per arm, a declared importance evaluator; contours and importances in Results/hpo/ ({p5['hpo']} product(s) with studies)"},
-                    {"id": "5.11", "name": "Full experiments", "status": full_status, "detail": full_detail},
-                    {"id": "5.12", "name": "Code review (experiments-reviewer) before the rehearsal", "status": _p5(p5["reviewed"] > 0, p5["review_reports"] > 0), "detail": f"Code quality, optimization, GPU use and declared statistical tests; it reads Results/reviewer_report.json (status resolved, or every blocker resolved): {p5['reviewed']} resolved of {p5['review_reports']} report(s)"},
-                    {"id": "5.13", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"}
+                    {"id": "5.9", "name": "Proof-of-concept verification (G-EXP-POC, operator)", "status": g_exp_poc_status, "detail": "The operator verifies the proof of concept's results and contrasted hypotheses once its discussion is complete: the Novelty tab's verification card, or smith novelty approve --gate poc (iterate --gate poc sends it back); the full experiments stay locked until then"},
+                    {"id": "5.10", "name": "Estimate the time and choose where to run", "status": _p5(p5["timing"] > 0), "detail": "Before the pilot and again before the full run: a short timing probe (one epoch of one fold per arm) in Results/timing.json; the Experiments tab estimates the PoC and the full run (±20%) and lists the local and remote options"},
+                    {"id": "5.11", "name": "Hyperparameter search (Optuna, optional)", "status": _p5(p5["hpo"] > 0), "detail": f"Only when the deliberation judged it worthwhile: /hyperparameter-search plan|report|status, nested inside each outer fold, the same budget per arm, a declared importance evaluator; contours and importances in Results/hpo/ ({p5['hpo']} product(s) with studies)"},
+                    {"id": "5.12", "name": "Full experiments", "status": full_status, "detail": full_detail},
+                    {"id": "5.13", "name": "Code review (experiments-reviewer) before the rehearsal", "status": _p5(p5["reviewed"] > 0, p5["review_reports"] > 0), "detail": f"Code quality, optimization, GPU use and declared statistical tests; it reads Results/reviewer_report.json (status resolved, or every blocker resolved): {p5['reviewed']} resolved of {p5['review_reports']} report(s)"},
+                    {"id": "5.14", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"}
                 ]
             },
             {
@@ -1605,11 +1598,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "scaffolding",
                 "name": "Phase 6: Manuscript Scaffolding & Contracts",
                 "gate": "G-SCAFFOLD",
-                "agent": "contract-auditor",
                 "desc": "Scaffolding of paper/main.tex with canonical blocks and section contracts under the journal's document class.",
                 "tools": ["read", "write"],
-                "skills": ["scaffold-generator", "latex-contract-indexer"],
-                "cli_command": "smith implement scaffold",
                 "outputs": ["paper/main.tex", "paper/refs.bib", "sections/*.md"],
                 "status": fase6_status,
                 "progress": fase6_prog,
@@ -1626,11 +1616,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "declarations",
                 "name": "Phase 7: Operational Declarations & Co-authorship",
                 "gate": "G-DECLARATIONS",
-                "agent": "declarations-recorder",
                 "desc": "Recording of the operational declarations: CRediT authorship, funding, open repository and ethical considerations.",
                 "tools": ["read", "write"],
-                "skills": ["credit-taxonomy", "ethics-compliance"],
-                "cli_command": "smith implement declarations",
                 "outputs": ["paper/main.tex (declarations)"],
                 "status": fase7_status,
                 "progress": fase7_prog,
@@ -1647,11 +1634,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "writing",
                 "name": "Phase 8: Technical Writing & Transposition",
                 "gate": "G-WRITING",
-                "agent": "redactor & style-sampler & insumos-observer",
                 "desc": "Technical writing, in waves, of the manuscript's canonical blocks from the experimental data.",
                 "tools": ["read", "write", "substitute"],
-                "skills": ["technical-writing", "facts-coupler", "style-shield"],
-                "cli_command": "python3 scripts/build_manuscript.py",
                 "outputs": ["paper/main.tex", "sections/*.md"],
                 "status": fase8_status,
                 "progress": fase8_prog,
@@ -1669,11 +1653,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "figures",
                 "name": "Phase 9: Technical Diagrams & Grounding",
                 "gate": "G-FIGURES",
-                "agent": "diagram-author & figure-auditor",
                 "desc": "Architecture diagrams, vector figures, schemes and grounding in the text.",
                 "tools": ["read", "write", "latexmk"],
-                "skills": ["vector-graphics", "sips-optimizer", "figure-grounding"],
-                "cli_command": "smith audit --figures",
                 "outputs": ["paper/Figures/"],
                 "status": fase9_status,
                 "progress": fase9_prog,
@@ -1690,11 +1671,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "paper",
                 "name": "Phase 10: Compilation & PDF Manuscript",
                 "gate": "G-PDF",
-                "agent": "latex-compiler",
                 "desc": "Compilation of the LaTeX manuscript to PDF with editorial layout, BibTeX reference checks and an interactive viewer.",
                 "tools": ["read", "bash"],
-                "skills": ["pdflatex-engine", "bibtex-linker", "pdfjs-viewer"],
-                "cli_command": "cd paper && pdflatex -interaction=nonstopmode main.tex && bibtex main && pdflatex main.tex",
                 "outputs": ["paper/main.pdf"],
                 "status": fase10_status,
                 "progress": fase10_prog,
@@ -1712,11 +1690,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "audit",
                 "name": "Phase 11: Cross-cutting Audit & Gates",
                 "gate": "G-AUDIT",
-                "agent": "audit-report",
                 "desc": "Strict verification of the framework's 4 gates: readiness, fact coupling, style shielding and figures.",
                 "tools": ["read", "bash"],
-                "skills": ["cross-auditor", "gate-checker", "hash-verifier"],
-                "cli_command": "smith audit",
                 "outputs": [".papersmith/audit.json"],
                 "status": fase11_status,
                 "progress": fase11_prog,

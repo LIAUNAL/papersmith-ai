@@ -60,6 +60,12 @@ POC_STATUSES = ("pending", "approved", "iterating")
 POC_ACTIONS = {"approve": "approved", "iterate": "iterating", "reset": "pending",
                "iterate_experiments": "iterating", "iterate_proposal": "iterating",
                "iterate_plausibility": "iterating"}
+#: Where a PoC decision sends the work: an iteration returns to the stage the
+#: operator named (bare `iterate` stays in the experiments), an approval opens
+#: the full experiments.
+POC_TARGETS = {"approve": "full_experiments", "iterate": "poc_experiments",
+               "iterate_experiments": "poc_experiments", "iterate_proposal": "proposal",
+               "iterate_plausibility": "plausibility", "reset": None}
 
 MAX_RATIONALE_LENGTH = 4000
 MAX_HISTORY_ENTRIES = 50
@@ -80,7 +86,8 @@ def gate_path(root: Path) -> Path:
 
 
 def default_poc() -> dict[str, Any]:
-    return {"status": "pending", "decided_at": None, "actor": None, "rationale": ""}
+    return {"status": "pending", "decided_at": None, "actor": None, "rationale": "",
+            "target_stage": None}
 
 
 def _read_poc(raw: Any) -> dict[str, Any]:
@@ -88,7 +95,8 @@ def _read_poc(raw: Any) -> dict[str, Any]:
         return default_poc()
     status = raw.get("status") if raw.get("status") in POC_STATUSES else "pending"
     return {"status": status, "decided_at": raw.get("decided_at"), "actor": raw.get("actor"),
-            "rationale": str(raw.get("rationale") or "")[:MAX_RATIONALE_LENGTH]}
+            "rationale": str(raw.get("rationale") or "")[:MAX_RATIONALE_LENGTH],
+            "target_stage": raw.get("target_stage") if raw.get("target_stage") in POC_TARGETS.values() else None}
 
 
 def default_gate() -> dict[str, Any]:
@@ -211,6 +219,7 @@ def _record_poc(root: Path, action: str, rationale: str, actor: str) -> dict[str
         "decided_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "actor": actor,
         "rationale": str(rationale or "").strip()[:MAX_RATIONALE_LENGTH],
+        "target_stage": POC_TARGETS[action],
     }
     _write(root, record)
     return record

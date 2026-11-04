@@ -306,13 +306,14 @@ def stage_for(phase_id: str) -> str | None:
 
 
 def primary_command(stage: str) -> str:
-    """The text the drawer shows as the phase's command."""
+    """The text the drawer shows as the phase's command: its first slash
+    command or ``smith`` subcommand, or ``""`` when only a panel runs it."""
     for action in ACTIONS.get(stage, {}).get("actions", []):
         if action["kind"] == "prompt":
             return f"{action['slash']} <text>" if not action["optional"] else action["slash"]
         if action["kind"] == "command":
             return action["command"]
-    return "Compile from the dashboard (pdflatex + bibtex)" if stage == "paper" else ""
+    return ""
 
 
 # The files that show a phase's work, as (label, glob) pairs relative to the
@@ -387,7 +388,13 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
                     action["locked"] = gates.get(action["requires"]) != "PASS"
             phase["skills"] = list(entry["skills"])
             phase["agent"] = entry["agent"]
-            phase["cli_command"] = primary_command(stage)
+            command = primary_command(stage)
+            if command:
+                phase["cli_command"] = command
+            else:
+                # No slash command or smith subcommand runs this phase (the PDF
+                # compiles from its panel), so the card names none.
+                phase.pop("cli_command", None)
         if root is not None:
             phase["evidence"] = evidence(root, stage)
         gated = stage not in UNGATED and previous is not None

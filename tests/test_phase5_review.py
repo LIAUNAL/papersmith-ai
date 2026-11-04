@@ -131,10 +131,13 @@ class Phase5StatusFromEvidenceTests(_Status):
         self.product("Full", "Experimental_AGREED.md")
         self.assertEqual(self.fase5()["status"], "ACTIVE")
 
-    def test_revision_poc_and_full_discussions_pass(self) -> None:
+    def test_revision_verified_poc_and_full_discussions_pass(self) -> None:
         self.protocol()
         self.product("Poc", "AGREED.md", discussion="complete")
         self.product("Full", "Experimental_AGREED.md", discussion="complete")
+        # The phase never passes over an unverified proof of concept (G-EXP-POC).
+        self.assertEqual(self.fase5()["status"], "ACTIVE")
+        novelty_gate.record_decision(self.root, "approve", stage="poc")
         fase = self.fase5()
         self.assertEqual((fase["status"], fase["progress"]), ("PASS", 1.0))
 
@@ -144,7 +147,8 @@ class Phase5StatusFromEvidenceTests(_Status):
         self.product("Full", "Experimental_AGREED.md")
         fase = self.fase5()
         self.assertEqual(fase["status"], "ACTIVE")
-        self.assertAlmostEqual(fase["progress"], 0.333, places=3)
+        # One of four checks: protocol, PoC discussion, PoC verification, full discussion.
+        self.assertAlmostEqual(fase["progress"], 0.25, places=3)
 
     def test_a_product_without_results_does_not_count(self) -> None:
         self.protocol()

@@ -99,9 +99,9 @@ class StateExtractorTests(unittest.TestCase):
         ]
         assert [stage["id"] for stage in state["pipeline_stages"]] == [
             "harness", "plausibility", "ingestion", "proposal",
-            "implementation", "experimental-deliberation",
+            "experimental-deliberation", "implementation",
             "experimental-implementation", "credentials", "remote",
-            "writing", "figures", "paper", "audit",
+            "scaffolding", "declarations", "writing", "figures", "paper", "audit",
         ]
 
     def test_a_missing_workspace_is_empty_not_an_error(self) -> None:
@@ -357,8 +357,10 @@ class PipelineFlowTests(unittest.TestCase):
     """The dashboard's flows are the architecture diagram's flows.
 
     The diagram (``docs/diagrams/papersmith-pi-flow.html``, built from
-    ``docs/diagrams/papersmith-pi-flow.build.mjs``) fixes twelve numbered tramos
-    and the main chain between them. The extractor used
+    ``docs/diagrams/papersmith-pi-flow.build.mjs``) numbers its lanes by the
+    eleven dashboard phases; the board's tramos map onto them in order, Phase 5
+    as five tramos (protocol, proof of concept, full experiments, credentials,
+    remote run) and every other phase as one. The extractor used
     to ship six stages invented in this directory -- ``ingestion``,
     ``deliberation``, ``experiments``, ``drafting``, ``auditing``,
     ``publishing`` -- and nothing compared the two, so the board drew a project
@@ -367,25 +369,27 @@ class PipelineFlowTests(unittest.TestCase):
     """
 
     TRAMOS = [
-        "harness", "plausibility", "ingestion", "proposal", "implementation",
-        "experimental-deliberation", "experimental-implementation", "credentials",
-        "remote", "writing", "figures", "paper",
+        "harness", "plausibility", "ingestion", "proposal", "experimental-deliberation",
+        "implementation", "experimental-implementation", "credentials",
+        "remote", "scaffolding", "declarations", "writing", "figures", "paper",
     ]
 
-    #: The diagram draws the audit lane beside the twelve tramos rather than
-    #: numbering it among them, and the board follows: it is a stage so the four
+    #: The diagram draws the audit lane beside the numbered phases as the
+    #: transversal one, and the board follows: it is a stage so the four
     #: gates have somewhere to land, and no chain edge touches it.
     AUDIT = "audit"
 
     CHAIN = [
         ("plausibility", "ingestion", "top-5 to ingest"),
         ("ingestion", "proposal", "guidance/"),
-        ("proposal", "implementation", "rNN revision"),
-        ("implementation", "experimental-deliberation", "proof of concept"),
-        ("experimental-deliberation", "experimental-implementation", "protocol + repo"),
+        ("proposal", "experimental-deliberation", "rNN revision"),
+        ("experimental-deliberation", "implementation", "protocol"),
+        ("implementation", "experimental-implementation", "verified PoC (G-EXP-POC)"),
         ("experimental-implementation", "credentials", "job ready"),
         ("credentials", "remote", "accounts validated"),
-        ("remote", "writing", "measured facts"),
+        ("remote", "scaffolding", "findings approved (G-NOVELTY)"),
+        ("scaffolding", "declarations", "section contracts"),
+        ("declarations", "writing", "declarations"),
         ("writing", "figures", "sections"),
         ("figures", "paper", "anchors"),
     ]
@@ -569,14 +573,22 @@ class PipelineFlowTests(unittest.TestCase):
             ("credentials", credentials, {"credentials"}),
             ("remote", remote, {"remote"}),
             # A drafted block requires paper/main.tex to exist, so this case
-            # legitimately lights the paper tramo too.
-            ("writing", writing, {"writing", "paper"}),
+            # legitimately lights the scaffolding tramo too.
+            ("writing", writing, {"writing", "scaffolding"}),
             ("figures",
              lambda root: self.write(root / "paper" / "Figures" / "arch.pdf", "%PDF-1.7\n"),
              {"figures"}),
-            ("paper",
+            ("scaffolding",
              lambda root: (root / "paper" / "main.tex").write_text(
                  "\\documentclass{article}\n", encoding="utf-8"),
+             {"scaffolding"}),
+            ("declarations",
+             lambda root: (root / "paper" / "main.tex").write_text(
+                 "\\documentclass{article}\n%% paper-writing declarations begin sha256="
+                 + "b" * 64 + "\n%% paper-writing declarations end\n", encoding="utf-8"),
+             {"scaffolding", "declarations"}),
+            ("paper",
+             lambda root: self.write(root / "paper" / "main.pdf", "%PDF-1.7\n"),
              {"paper"}),
         ]
 
