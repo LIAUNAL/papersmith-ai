@@ -11,6 +11,20 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.60.1
+
+- **`verify` reads the manuscript's real blocks.** `paper_cli` writes each block
+  marker section-qualified (`abstract.slot-2`) while the checks looked bodies up by
+  the raw id (`slot-2`), so `contribution-list`, `chain` and `future-work` read empty
+  bytes and failed on every paper. Bodies are now keyed under both ids.
+- **`contribution-list` holds only the blocks that enumerate.** A block naming at
+  least one declared contribution must name them all, in order; a block that only
+  reads the fact (a title, an abstract's background) is listed under
+  `reading_blocks`. No enumerating block at all still fails.
+- **`chain` without role labels is `unmeasured`.** A manuscript in plain prose, with
+  no `Problem:` ... `Evidence:` lines, reports `CHAIN_ROLES_ABSENT` instead of failing
+  every link.
+
 ## 0.60.0
 
 - **Style and redundancy panel.** The PDF viewer's audit button now scores the
