@@ -30,6 +30,13 @@
  * side. The significance table gains Hypothesis and Experiment columns when
  * any row carries them. Every value is escaped before insertion.
  *
+ * Above the PoC and full groups, the stepper the server derives in view.flow: proof of
+ * concept → verification → full experiment. "Proof of concept" types
+ * `/proposal-implementation …` into the agent terminal (window.sendToCli),
+ * "Verify" opens the Novelty tab where the operator approves the PoC, and
+ * "Full experiment" types `/experimental-implementation …`, disabled with its
+ * reason until the PoC verification gate (G-EXP-POC) passes.
+ *
  * Public surface (window): refreshExperimentsPanel(), ExperimentsPanel.render(view),
  * ExperimentsPanel.discussion(product), ExperimentsPanel.stageComparison(view).
  */
@@ -1005,6 +1012,57 @@
       <tbody>${rows}</tbody></table></div>${searches}</section>`;
   }
 
+  // ---------------------------------------------------------------- flow
+  // What each step's button types into the agent terminal (agent input stays English).
+  const FLOW_COMMANDS = {
+    poc: '/proposal-implementation Implement the proof of concept of the latest proposal revision on the toy set '
+      + 'and close it with a complete Results/discussion.json (hypothesis verdicts, tests, novelty).',
+    full: '/experimental-implementation Implement and measure the full experiments of the current protocol; '
+      + 'the proof of concept is verified (G-EXP-POC).',
+  };
+  const FLOW_STATE_KEYS = { done: 'exp.flow.state.done', next: 'exp.flow.state.next', locked: 'exp.flow.state.locked' };
+
+  function flowSteps(flow) {
+    const f = flow || {};
+    const discussed = Number(f.poc_discussed) > 0;
+    const verified = f.gate === 'PASS';
+    const steps = [
+      { id: 'poc', title: 'exp.flow.poc', body: 'exp.flow.pocBody', button: 'exp.flow.pocButton',
+        state: discussed ? 'done' : 'next', locked: false },
+      { id: 'verify', title: 'exp.flow.verify', body: 'exp.flow.verifyBody', button: 'exp.flow.verifyButton',
+        state: verified ? 'done' : (discussed ? 'next' : 'locked'), locked: !discussed, reason: 'exp.flow.requiresDiscussion' },
+      { id: 'full', title: 'exp.flow.full', body: 'exp.flow.fullBody', button: 'exp.flow.fullButton',
+        state: verified ? 'next' : 'locked', locked: !verified, reason: 'exp.flow.requiresPoc' },
+    ];
+    const cards = steps.map((step, i) => {
+      const tone = step.state === 'done' ? 'ok' : (step.state === 'locked' ? 'warn' : 'info');
+      const off = step.locked ? ' disabled aria-disabled="true"' : '';
+      return `<div class="model-step model-step--${step.state === 'done' ? 'pass' : (step.locked ? 'locked' : 'active')}">
+          <div class="model-step__head"><strong>${i + 1}. ${esc(t(step.title))}</strong>
+            <span class="badge badge--${tone}">${esc(t(FLOW_STATE_KEYS[step.state]))}</span></div>
+          <p class="model-step__evidence">${esc(t(step.body))}</p>
+          ${step.locked ? `<p class="model-step__reason">🔒 ${esc(t(step.reason))}</p>` : ''}
+          <div class="model-step__actions"><button type="button" class="btn btn--primary btn--sm" data-exp-step="${step.id}"${off}>${esc(t(step.button))}</button></div>
+        </div>`;
+    }).join('');
+    return `<section class="panel exp-flow-steps"><h3 class="panel__title">${esc(t('exp.flow.title'))}</h3>
+        <p class="exp-intro">${esc(t('exp.flow.intro', { done: Number(f.poc_discussed) || 0, total: Number(f.poc) || 0 }))}</p>
+        <div class="model-steps__row">${cards}</div></section>`;
+  }
+
+  function runFlowStep(id) {
+    const f = (lastView && lastView.flow) || {};
+    if (id === 'poc') {
+      if (typeof window.sendToCli === 'function') window.sendToCli(FLOW_COMMANDS.poc, false, { kind: 'slash' });
+    } else if (id === 'verify') {
+      if (Number(f.poc_discussed) > 0 && typeof window.navigateTab === 'function') window.navigateTab('novelty');
+    } else if (id === 'full') {
+      if (f.gate === 'PASS' && typeof window.sendToCli === 'function') {
+        window.sendToCli(FLOW_COMMANDS.full, false, { kind: 'slash' });
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- page
   function render(view) {
     const v = view || {};
@@ -1012,6 +1070,7 @@
     const poc = products.filter((p) => p.kind === 'poc');
     const full = products.filter((p) => p.kind === 'full');
     const other = products.filter((p) => p.kind !== 'poc' && p.kind !== 'full');
+    lastView = v;
     return [
       attention(v),
       mcpActivation(v.remote_mcp),
@@ -1022,6 +1081,7 @@
       team(v.remote_services && v.remote_services.team),
       help(v.remote_accounts),
       datasets(v.datasets),
+      flowSteps(v.flow),
       group(t('exp.group.poc'), t('exp.group.pocIntro'), poc, t('exp.group.pocEmpty')),
       group(t('exp.group.full'), t('exp.group.fullIntro'), full, t('exp.group.fullEmpty')),
       stageComparison(v),
@@ -1064,6 +1124,8 @@
         return;
       }
       if (closest('[data-exp-refresh]')) { refreshExperimentsPanel(); return; }
+      const step = closest('[data-exp-step]');
+      if (step) { runFlowStep(step.getAttribute('data-exp-step')); return; }
       const validate = closest('[data-diagram-validate]');
       if (validate) { validateDiagram(validate); return; }
       const button = closest('[data-exp-log]');

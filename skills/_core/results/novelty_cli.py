@@ -3,9 +3,14 @@
 
 Usage:
     novelty_cli.py status  [--root <dir>]
-    novelty_cli.py approve [--root <dir>] [--notes "..."] [--actor <name>]
-    novelty_cli.py iterate [--root <dir>] --stage {experiments,proposal,plausibility} [--notes "..."] [--actor <name>]
-    novelty_cli.py reset   [--root <dir>]
+    novelty_cli.py approve [--root <dir>] [--gate {poc,full}] [--notes "..."] [--actor <name>]
+    novelty_cli.py iterate [--root <dir>] [--gate {poc,full}] --stage {experiments,proposal,plausibility} [--notes "..."] [--actor <name>]
+    novelty_cli.py reset   [--root <dir>] [--gate {poc,full}]
+
+``--gate full`` (the default) is the novelty gate before writing; ``--gate poc``
+records the proof-of-concept verification that unlocks the full experiments
+(G-EXP-POC), and its approval refuses ``POC_DISCUSSION_INCOMPLETE`` until a
+proof of concept has a complete ``Results/discussion.json``.
 
 Prints JSON on stdout. Refusals emit ``{"ok": false, "error": <CODE>, "message": ...}``
 and exit non-zero.
@@ -44,12 +49,16 @@ def main(argv: list[str] | None = None) -> int:
     # approve
     p_approve = sub.add_parser("approve", help="Approve novelty and authorize paper writing")
     p_approve.add_argument("--root", default=".", help="Workspace root")
+    p_approve.add_argument("--gate", choices=["poc", "full"], default="full",
+                        help="Decision stage: poc (PoC verification) or full (novelty gate, default)")
     p_approve.add_argument("--notes", default="", help="Rationale or justification notes")
     p_approve.add_argument("--actor", default="operator", help="Deciding actor")
 
     # iterate
     p_iterate = sub.add_parser("iterate", help="Record iteration decision and target stage")
     p_iterate.add_argument("--root", default=".", help="Workspace root")
+    p_iterate.add_argument("--gate", choices=["poc", "full"], default="full",
+                        help="Decision stage: poc (PoC verification) or full (novelty gate, default)")
     p_iterate.add_argument(
         "--stage",
         required=True,
@@ -62,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     # reset
     p_reset = sub.add_parser("reset", help="Reset gate status to pending")
     p_reset.add_argument("--root", default=".", help="Workspace root")
+    p_reset.add_argument("--gate", choices=["poc", "full"], default="full",
+                        help="Decision stage: poc (PoC verification) or full (novelty gate, default)")
 
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
@@ -72,7 +83,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "approve":
         try:
-            record = novelty_gate.record_decision(root, "approve", rationale=args.notes, actor=args.actor)
+            record = novelty_gate.record_decision(root, "approve", rationale=args.notes, actor=args.actor,
+                                                 stage=args.gate)
             return _emit({"ok": True, "action": "approve", "gate": record})
         except novelty_gate.NoveltyRefusal as ref:
             return _refuse(ref.code, ref.message)
@@ -80,14 +92,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "iterate":
         action = f"iterate_{args.stage}"
         try:
-            record = novelty_gate.record_decision(root, action, rationale=args.notes, actor=args.actor)
+            record = novelty_gate.record_decision(root, action, rationale=args.notes, actor=args.actor,
+                                                 stage=args.gate)
             return _emit({"ok": True, "action": action, "gate": record})
         except novelty_gate.NoveltyRefusal as ref:
             return _refuse(ref.code, ref.message)
 
     if args.command == "reset":
         try:
-            record = novelty_gate.record_decision(root, "reset", rationale="Gate reset to pending", actor="operator")
+            record = novelty_gate.record_decision(root, "reset", rationale="Gate reset to pending", actor="operator",
+                                                 stage=args.gate)
             return _emit({"ok": True, "action": "reset", "gate": record})
         except novelty_gate.NoveltyRefusal as ref:
             return _refuse(ref.code, ref.message)

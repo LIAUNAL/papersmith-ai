@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph
+from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -527,6 +527,24 @@ def _phase5_evidence(root: Path) -> dict[str, Any]:
                 out["hpo"] += 1
     out.update(remote_services.launch_evidence(root))
     return out
+
+
+def _poc_gate_status(p5: dict[str, Any], poc_decision: str) -> str:
+    """G-EXP-POC, the proof-of-concept verification: ``PASS`` once a proof of
+    concept closes with a complete discussion and the operator approved it
+    (the ``poc`` record of ``.papersmith/novelty_gate.json``), ``ACTIVE`` while
+    such a proof of concept awaits that decision, else ``PENDING``."""
+    if p5.get("poc_discussed", 0) > 0:
+        return "PASS" if poc_decision == "approved" else "ACTIVE"
+    return "PENDING"
+
+
+def _poc_flow(root: Path) -> dict[str, Any]:
+    """The Experiments tab's stepper: proof of concept → verification → full."""
+    p5 = _phase5_evidence(root)
+    decision = (_novelty_gate().read_gate(root).get("poc") or {}).get("status", "pending")
+    return {"poc": p5["poc"], "poc_discussed": p5["poc_discussed"], "poc_decision": decision,
+            "gate": _poc_gate_status(p5, decision)}
 
 
 def _run_audit(root: Path) -> dict[str, Any] | None:
@@ -1370,13 +1388,28 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         else:
             fase3_status, fase3_prog, fase3_det = "PENDING", 0.0, "No reference articles in guidance/"
 
-        # Phase 4
-        if has_deliberated_prop:
+        # Phase 4: a published revision and its three steps in order (the
+        # problem and its pillars, the hypotheses, the mathematics), each read
+        # from its own evidence on disk (phase_steps).
+        p4_steps = phase_steps.proposal_steps(root_path)
+        p4_step = {step["id"]: step for step in p4_steps}
+        p4_passed = sum(1 for step in p4_steps if step["status"] == "PASS")
+        if has_deliberated_prop and p4_passed == len(p4_steps):
             fase4_status, fase4_prog, fase4_det = "PASS", 1.0, f"Proposal deliberated ({active_prop})"
-        elif prop_files:
-            fase4_status, fase4_prog, fase4_det = "ACTIVE", 0.5, f"Draft in progress ({prop_files[0]})"
+        elif has_deliberated_prop:
+            fase4_status, fase4_prog = "ACTIVE", round((1 + p4_passed) / (1 + len(p4_steps)), 3)
+            fase4_det = (f"Revision {active_prop} published; steps passed: {p4_passed} of {len(p4_steps)}"
+                         " (problem and pillars, hypotheses, mathematics)")
+        elif prop_files or any(step["started"] for step in p4_steps):
+            fase4_status = "ACTIVE"
+            fase4_prog = round(p4_passed / (1 + len(p4_steps)), 3)
+            fase4_det = (f"Draft in progress ({prop_files[0]})" if prop_files
+                         else f"No published revision yet; steps passed: {p4_passed} of {len(p4_steps)}"
+                              " (problem and pillars, hypotheses, mathematics)")
         else:
             fase4_status, fase4_prog, fase4_det = "PENDING", 0.0, "No proposal in proposals/"
+        p4_published = "PASS" if has_deliberated_prop else ("ACTIVE" if prop_files else "PENDING")
+        p4_sub = {key: phase_steps.sub_phase_status(step) for key, step in p4_step.items()}
 
         # Phase 5: a published protocol revision, a proof of concept and a full
         # experiment that each close with a complete Results/discussion.json;
@@ -1394,6 +1427,17 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
         def _p5(done: bool, started: bool = False) -> str:
             return "PASS" if done else ("ACTIVE" if started else "PENDING")
+
+        # The full experiments start only after the operator verified the
+        # proof of concept (G-EXP-POC); until then sub-phase 5.11 is locked.
+        poc_decision = (_novelty_gate().read_gate(root_path).get("poc") or {}).get("status", "pending")
+        g_exp_poc_status = _poc_gate_status(p5, poc_decision)
+        full_detail = (f"/experimental-implementation (experiments-build): a folder with Experimental_AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts backed by tests, novelty, qualitative analysis): {p5['full_discussed']} of {p5['full']}; check with `{DISCUSSION_CLI} check --product <path>`")
+        if g_exp_poc_status == "PASS":
+            full_status = _p5(p5["full_discussed"] > 0, p5["full"] > 0)
+        else:
+            full_status = "LOCKED"
+            full_detail = f"Locked until the proof of concept is verified (G-EXP-POC). {full_detail}"
 
         p5_protocol = _p5(p5["revisions"] > 0, p5["files"] > 0)
 
@@ -1516,13 +1560,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "status": fase4_status,
                 "progress": fase4_prog,
                 "detail": fase4_det,
+                "steps": p4_steps,
                 "subfases": [
-                    {"id": "4.1", "name": "Stage bound: Delimitation & Locus", "status": fase4_status, "detail": "Problem definition and anchoring of the conceptual locus"},
-                    {"id": "4.2", "name": "Stage deliberated: Novelty & Consensus", "status": fase4_status, "detail": "Discussion of hypotheses and innovation pillars"},
-                    {"id": "4.3", "name": "Stage composed: Basic Mathematical Model", "status": fase4_status, "detail": "Mathematical formalization and key equations"},
-                    {"id": "4.4", "name": "Stage published: Publication & Cryptographic Receipt", "status": fase4_status, "detail": "Revision sealed with a SHA-256 hash"},
-                    {"id": "4.5", "name": "Concept map discussion", "status": fase4_status, "detail": "Pillars, hypotheses and layers of the concept (Concept Map tab)"},
-                    {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": fase4_status, "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"}
+                    {"id": "4.1", "name": "Stage bound: Delimitation & Locus", "status": p4_sub["problem_pillars"], "detail": "Problem definition and anchoring of the conceptual locus"},
+                    {"id": "4.2", "name": "Stage deliberated: Novelty & Consensus", "status": p4_sub["hypotheses"], "detail": "Discussion of hypotheses and innovation pillars"},
+                    {"id": "4.3", "name": "Stage composed: Basic Mathematical Model", "status": p4_sub["mathematics"], "detail": "Mathematical formalization and key equations"},
+                    {"id": "4.4", "name": "Stage published: Publication & Cryptographic Receipt", "status": p4_published, "detail": "Revision sealed with a SHA-256 hash"},
+                    {"id": "4.5", "name": "Concept map discussion", "status": p4_sub["hypotheses"], "detail": "Pillars, hypotheses and layers of the concept (Concept Map tab)"},
+                    {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": p4_sub["mathematics"], "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"}
                 ]
             },
             {
@@ -1550,7 +1595,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "5.8", "name": "Proof of concept", "status": _p5(p5["poc_discussed"] > 0, p5["poc"] > 0), "detail": f"/proposal-implementation (implementation-build): a folder with AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts, tests, novelty, qualitative analysis): {p5['poc_discussed']} of {p5['poc']}; check with `{DISCUSSION_CLI} check --product <path>`"},
                     {"id": "5.9", "name": "Estimate the time and choose where to run", "status": _p5(p5["timing"] > 0), "detail": "Before the pilot and again before the full run: a short timing probe (one epoch of one fold per arm) in Results/timing.json; the Experiments tab estimates the PoC and the full run (±20%) and lists the local and remote options"},
                     {"id": "5.10", "name": "Hyperparameter search (Optuna, optional)", "status": _p5(p5["hpo"] > 0), "detail": f"Only when the deliberation judged it worthwhile: /hyperparameter-search plan|report|status, nested inside each outer fold, the same budget per arm, a declared importance evaluator; contours and importances in Results/hpo/ ({p5['hpo']} product(s) with studies)"},
-                    {"id": "5.11", "name": "Full experiments", "status": _p5(p5["full_discussed"] > 0, p5["full"] > 0), "detail": f"/experimental-implementation (experiments-build): a folder with Experimental_AGREED.md, Results/ and a complete Results/discussion.json (hypothesis verdicts backed by tests, novelty, qualitative analysis): {p5['full_discussed']} of {p5['full']}; check with `{DISCUSSION_CLI} check --product <path>`"},
+                    {"id": "5.11", "name": "Full experiments", "status": full_status, "detail": full_detail},
                     {"id": "5.12", "name": "Code review (experiments-reviewer) before the rehearsal", "status": _p5(p5["reviewed"] > 0, p5["review_reports"] > 0), "detail": f"Code quality, optimization, GPU use and declared statistical tests; it reads Results/reviewer_report.json (status resolved, or every blocker resolved): {p5['reviewed']} resolved of {p5['review_reports']} report(s)"},
                     {"id": "5.13", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"}
                 ]
@@ -1688,7 +1733,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         for phase in fases:
             for sub in phase.get("subfases") or []:
                 sub.setdefault("desc", sub.get("detail", ""))
-        phase_actions.attach(fases, root_path)
+        phase_actions.attach(fases, root_path, gates={"G-EXP-POC": g_exp_poc_status})
 
         artifacts = []
         for p in (root_path / "proposals").glob("*.md"):
@@ -1909,9 +1954,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         gates_list = [
             {
                 "id": "G-EXP-POC",
-                "name": "Proof-of-Concept & Experimental Design Gate",
-                "status": "PASS" if fase5_status == "PASS" else ("ACTIVE" if fase5_status == "ACTIVE" else "PENDING"),
-                "criteria": "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria; hypothesis verdicts backed by hypothesis tests, novelty justification, qualitative or interpretability analysis where it applies and a summarized discussion per stage.",
+                "name": "Proof-of-Concept Verification Gate",
+                "status": g_exp_poc_status,
+                "criteria": "Empirical validation and experimental design: test reproducibility, baseline specification and quantitative success criteria; hypothesis verdicts backed by hypothesis tests, novelty justification, qualitative or interpretability analysis where it applies and a summarized discussion per stage. It passes when a proof of concept closes with a complete discussion and the operator verified its results and contrasted hypotheses (smith novelty approve --gate poc, or the Novelty tab); the full experiments start only after it.",
                 "reviewer": "experiments-reviewer",
                 "phase": "Fase 5"
             },
@@ -1921,7 +1966,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "status": g_nov_status,
                 "criteria": "Scientific novelty assessment and empirical evidence support: hypothesis contrast vs SOTA, reviewer defense audit, and explicit operator authorization before manuscript scaffolding and drafting.",
                 "reviewer": "novelty-screener & operator",
-                "phase": "Fase 5.5 (Novedad)"
+                "phase": "Fase 5"
             },
             {
                 "id": "G1",
@@ -2234,6 +2279,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # The experiments tab: protocol, products, convergence, figures,
         # tables, significance and remote runs (read-only, bounded, contained).
         view = experiments_view.get_experiments_view(root_path)
+        view["flow"] = _poc_flow(root_path)
         workspace_version = _framework_version(root_path)
         view["dashboard"] = {"startedVersion": started_version,
                              "workspaceVersion": workspace_version,
@@ -2263,6 +2309,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             str(payload.get("kind", "")),
             audit_override=override if isinstance(override, str) else None)
         return JSONResponse(body, status_code=status)
+
+    @app.get("/api/model/steps")
+    def api_model_steps() -> JSONResponse:
+        # Phase 4's ordered steps (problem and pillars, hypotheses,
+        # mathematics), each read from its own evidence on disk.
+        return JSONResponse({"steps": phase_steps.proposal_steps(root_path)}, headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/model")
     def api_model() -> JSONResponse:
@@ -3646,8 +3698,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         action = str(payload.get("action", "") or "")
         notes = str(payload.get("notes", "") or "")
         actor = str(payload.get("actor", "operator") or "operator")
+        # "poc" records the proof-of-concept verification (G-EXP-POC); "full",
+        # the default, the novelty gate before writing.
+        stage = str(payload.get("stage", "full") or "full")
         try:
-            record = _novelty_gate().record_decision(root_path, action, rationale=notes, actor=actor)
+            record = _novelty_gate().record_decision(root_path, action, rationale=notes, actor=actor,
+                                                     stage=stage)
             return JSONResponse({"ok": True, "action": action, "gate": record},
                                 headers=dict(_PAPER_HEADERS))
         except _novelty_gate().NoveltyRefusal as ref:

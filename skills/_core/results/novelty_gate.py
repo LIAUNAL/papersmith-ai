@@ -10,6 +10,17 @@ conducts an adversarial reviewer audit, and commits a gate decision:
     - "iterating_proposal": mathematical formulation or claims need revision; return to proposal.
     - "iterating_plausibility": literature landscape or core framing shifted; return to plausibility.
 
+Before the full experiments start, the operator also verifies the proof of
+concept: its results and the hypotheses it contrasted. That PoC-stage decision
+is the ``poc`` sub-record beside the top-level (full-stage) decision,
+``{"status": "approved" | "iterating" | "pending", "decided_at", "actor",
+"rationale"}``; approving it refuses ``POC_DISCUSSION_INCOMPLETE`` unless at
+least one proof-of-concept product (a folder with ``AGREED.md`` and no
+``Experimental_AGREED.md``) has a ``complete`` ``Results/discussion.json``
+(``discussion.py``). The dashboard's G-EXP-POC gate passes on that approval and
+the full experiments unlock after it. A file without the sub-record reads as a
+pending PoC decision, and each stage's write keeps the other's record.
+
 This module owns reading, writing, and auditing the novelty gate file and
 synthesizing the novelty evaluation overview for the dashboard and CLI.
 """
@@ -42,6 +53,14 @@ VALID_ACTIONS = {
     "reset": "pending",
 }
 
+#: The two decision stages: the PoC verification and the full-stage novelty gate.
+STAGES = ("poc", "full")
+POC_STATUSES = ("pending", "approved", "iterating")
+#: PoC-stage actions; the full-stage ``iterate_*`` names read as ``iterate``.
+POC_ACTIONS = {"approve": "approved", "iterate": "iterating", "reset": "pending",
+               "iterate_experiments": "iterating", "iterate_proposal": "iterating",
+               "iterate_plausibility": "iterating"}
+
 MAX_RATIONALE_LENGTH = 4000
 MAX_HISTORY_ENTRIES = 50
 MAX_LIMITATIONS = 50
@@ -60,6 +79,18 @@ def gate_path(root: Path) -> Path:
     return root / ".papersmith" / GATE_FILENAME
 
 
+def default_poc() -> dict[str, Any]:
+    return {"status": "pending", "decided_at": None, "actor": None, "rationale": ""}
+
+
+def _read_poc(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return default_poc()
+    status = raw.get("status") if raw.get("status") in POC_STATUSES else "pending"
+    return {"status": status, "decided_at": raw.get("decided_at"), "actor": raw.get("actor"),
+            "rationale": str(raw.get("rationale") or "")[:MAX_RATIONALE_LENGTH]}
+
+
 def default_gate() -> dict[str, Any]:
     return {
         "schema": SCHEMA,
@@ -69,6 +100,7 @@ def default_gate() -> dict[str, Any]:
         "rationale": "",
         "target_stage": None,
         "history": [],
+        "poc": default_poc(),
     }
 
 
@@ -93,9 +125,95 @@ def read_gate(root: Path) -> dict[str, Any]:
             "rationale": str(data.get("rationale") or "")[:MAX_RATIONALE_LENGTH],
             "target_stage": data.get("target_stage"),
             "history": data.get("history", [])[:MAX_HISTORY_ENTRIES],
+            "poc": _read_poc(data.get("poc")),
         }
     except (OSError, ValueError):
         return default_gate()
+
+
+def _discussion_module():
+    """The results-discussion contract (``discussion.py``), loaded by path: the
+    one owner of what a ``complete`` ``Results/discussion.json`` is."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_results_discussion"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parent / "discussion.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
+
+
+def _products(root: Path) -> list[Path]:
+    folder = Path(root) / "implementations"
+    out: list[Path] = []
+    try:
+        for repo in sorted(folder.iterdir()) if folder.is_dir() else []:
+            if repo.is_dir() and not repo.name.startswith("."):
+                out.extend(p for p in sorted(repo.iterdir()) if p.is_dir() and not p.name.startswith("."))
+    except OSError:
+        pass
+    return out
+
+
+def complete_poc_discussions(root: Path) -> int:
+    """How many proof-of-concept products (``AGREED.md``, no
+    ``Experimental_AGREED.md``) close with a ``complete`` discussion; never raises."""
+    count = 0
+    for product in _products(root):
+        if not (product / "AGREED.md").is_file() or (product / "Experimental_AGREED.md").is_file():
+            continue
+        try:
+            if _discussion_module().load_and_check(product).get("status") == "complete":
+                count += 1
+        except Exception:  # noqa: BLE001 - an unreadable discussion is not complete
+            continue
+    return count
+
+
+def _write(root: Path, record: dict[str, Any]) -> None:
+    target = gate_path(root)
+    folder = target.parent
+    folder.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(record, indent=2, ensure_ascii=False) + "\n"
+    fd, tmp_path = tempfile.mkstemp(prefix=".novelty-", suffix=".json", dir=str(folder))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp_path, target)
+    except OSError as exc:
+        raise NoveltyRefusal("WRITE_FAILED", f"could not write {GATE_FILENAME}: {exc}") from exc
+
+
+def _record_poc(root: Path, action: str, rationale: str, actor: str) -> dict[str, Any]:
+    if action not in POC_ACTIONS:
+        raise NoveltyRefusal(
+            "INVALID_ACTION",
+            f"a PoC-stage action must be one of {sorted(POC_ACTIONS)}, got {action!r}",
+        )
+    status = POC_ACTIONS[action]
+    if status == "approved" and complete_poc_discussions(root) == 0:
+        raise NoveltyRefusal(
+            "POC_DISCUSSION_INCOMPLETE",
+            "no proof of concept has a complete Results/discussion.json yet; verify its results and "
+            "hypotheses with `python skills/_core/results/discussion_cli.py check --product <path>` first",
+        )
+    record = read_gate(root)
+    record["poc"] = {
+        "status": status,
+        "decided_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "actor": actor,
+        "rationale": str(rationale or "").strip()[:MAX_RATIONALE_LENGTH],
+    }
+    _write(root, record)
+    return record
 
 
 def record_decision(
@@ -103,8 +221,17 @@ def record_decision(
     action: str,
     rationale: str = "",
     actor: str = "operator",
+    stage: str = "full",
 ) -> dict[str, Any]:
-    """Record a novelty gate decision atomically. Refuses invalid actions."""
+    """Record a novelty gate decision atomically. Refuses invalid actions.
+
+    ``stage="full"`` (the default) is the novelty gate before writing;
+    ``stage="poc"`` records the proof-of-concept verification in the ``poc``
+    sub-record and refuses an approval without a complete PoC discussion."""
+    if stage not in STAGES:
+        raise NoveltyRefusal("INVALID_STAGE", f"stage must be one of {list(STAGES)}, got {stage!r}")
+    if stage == "poc":
+        return _record_poc(root, action, rationale, actor)
     if action not in VALID_ACTIONS:
         raise NoveltyRefusal(
             "INVALID_ACTION",
@@ -147,21 +274,9 @@ def record_decision(
         "rationale": clean_rationale,
         "target_stage": target_stage,
         "history": history,
+        "poc": current.get("poc") or default_poc(),
     }
-
-    target = gate_path(root)
-    folder = target.parent
-    folder.mkdir(parents=True, exist_ok=True)
-
-    text = json.dumps(record, indent=2, ensure_ascii=False) + "\n"
-    fd, tmp_path = tempfile.mkstemp(prefix=".novelty-", suffix=".json", dir=str(folder))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(tmp_path, target)
-    except OSError as exc:
-        raise NoveltyRefusal("WRITE_FAILED", f"could not write {GATE_FILENAME}: {exc}") from exc
-
+    _write(root, record)
     return record
 
 
@@ -338,4 +453,8 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
         },
         "rigor_audit": rigor_audit,
         "ready_to_approve": bool(discussions) and has_supported_hypotheses,
+        "poc_verification": {
+            "discussed": complete_poc_discussions(root),
+            "decision": gate.get("poc") or default_poc(),
+        },
     }

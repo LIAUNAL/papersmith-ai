@@ -97,9 +97,19 @@ def _paragraph_after(lines: list[str], start: int) -> str:
 
 def equations_from_markdown(text: str) -> list[dict[str, Any]]:
     """Every closed ``$$`` display block, in order, with its context."""
+    return [equation for equation, _ in _display_equations(text)]
+
+
+def tagged_equation_count(text: str) -> int:
+    """How many closed ``$$`` display blocks carry an explicit ``\\tag{N}``:
+    the proposal's canonical numbered equations (Phase 4's mathematics step)."""
+    return sum(1 for _, tagged in _display_equations(text) if tagged)
+
+
+def _display_equations(text: str) -> list[tuple[dict[str, Any], bool]]:
     lines = text.splitlines()
     heading = ""
-    found: list[dict[str, Any]] = []
+    found: list[tuple[dict[str, Any], bool]] = []
     index = 0
     fence: str | None = None
     while index < len(lines) and len(found) < MAX_EQUATIONS:
@@ -126,14 +136,14 @@ def equations_from_markdown(text: str) -> list[dict[str, Any]]:
         tag_match = _TAG.search(body)
         latex = _TAG.sub("", body).strip()
         if latex:
-            found.append({
+            found.append(({
                 "id": f"eq-{len(found) + 1}",
                 "tag": tag_match.group(1).strip() if tag_match else str(len(found) + 1),
                 "heading": heading,
                 "latex": latex,
                 "connection": _first_sentence(_paragraph_after(lines, end + 1)),
                 "variables": [],
-            })
+            }, tag_match is not None))
         index = end + 1
     return found
 
@@ -262,4 +272,4 @@ def build(root: Path | str) -> dict[str, Any]:
     }
 
 
-__all__ = ["build", "equations_from_markdown", "equations_from_spec"]
+__all__ = ["build", "equations_from_markdown", "equations_from_spec", "tagged_equation_count"]

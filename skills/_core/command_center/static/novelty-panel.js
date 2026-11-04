@@ -97,10 +97,13 @@
     }
   }
 
-  async function sendGateDecision(action) {
-    const notesEl = document.getElementById('noveltyGateNotes');
+  // `stage` "poc" records the proof-of-concept verification (G-EXP-POC) from
+  // its own card; without it, the full-stage novelty gate.
+  async function sendGateDecision(action, stage) {
+    const poc = stage === 'poc';
+    const notesEl = document.getElementById(poc ? 'noveltyPocNotes' : 'noveltyGateNotes');
     const notes = notesEl ? notesEl.value.trim() : '';
-    const statusEl = document.getElementById('noveltyGateActionStatus');
+    const statusEl = document.getElementById(poc ? 'noveltyPocActionStatus' : 'noveltyGateActionStatus');
     if (statusEl) {
       statusEl.textContent = 'Recording decision…';
       statusEl.style.color = 'var(--text-muted)';
@@ -110,7 +113,7 @@
       const res = await fetch('/api/novelty/decision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, notes, actor: 'operator' }),
+        body: JSON.stringify({ action, notes, actor: 'operator', stage: poc ? 'poc' : 'full' }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -142,6 +145,43 @@
     'Negative Results': 'contribution.type.Negative Results',
   };
 
+  // Literal catalogue keys per PoC decision state (never a composed key).
+  const POC_STATE_KEYS = {
+    approved: 'novelty.poc.state.approved',
+    iterating: 'novelty.poc.state.iterating',
+    pending: 'novelty.poc.state.pending',
+  };
+
+  // Before the full experiments: the operator verifies a proof of concept
+  // whose discussion is complete (its results and the hypotheses it
+  // contrasted, listed below) and approves it or asks for another iteration.
+  function pocVerificationCard(data) {
+    const verification = data.poc_verification || {};
+    if (!(Number(verification.discussed) > 0)) return '';
+    const decision = verification.decision || {};
+    const state = POC_STATE_KEYS[decision.status] ? decision.status : 'pending';
+    const tone = state === 'approved' ? 'ok' : (state === 'iterating' ? 'info' : 'warn');
+    const pocHypotheses = (data.hypotheses || []).filter((h) => h && h.stage === 'poc');
+    return `
+      <section id="noveltyPocVerify" class="panel" style="border: 2px solid var(--${state === 'approved' ? 'ok' : 'accent'}); margin-bottom: 1.5rem; background: var(--surface);">
+        <div class="panel__header">
+          <div class="panel__title" style="font-size:1.05rem; font-weight:700; color:var(--text);">🧪 ${esc(t('novelty.poc.title', 'Verify the proof of concept'))}</div>
+          <span class="badge badge--${tone}">${esc(t(POC_STATE_KEYS[state]))}</span>
+        </div>
+        <div style="padding: 1rem 0;">
+          <p style="font-size:0.9rem; line-height:1.5; margin-bottom:0.75rem;">${esc(t('novelty.poc.desc'))}</p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">${esc(t('novelty.poc.count'))} ${esc(String(verification.discussed))} · ${esc(t('novelty.poc.hypotheses'))} ${esc(String(pocHypotheses.length))}</p>
+          ${decision.rationale ? `<p style="font-size:0.85rem; margin-bottom:0.75rem;"><strong>${esc(t('novelty.gate.current_rationale', 'Current rationale:'))}</strong> ${esc(decision.rationale)}</p>` : ''}
+          <textarea id="noveltyPocNotes" rows="2" class="form-control" style="width:100%; font-size:0.85rem; padding:0.5rem; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; margin-bottom:0.6rem;" placeholder="${esc(t('novelty.poc.notes_placeholder'))}"></textarea>
+          <div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:center;">
+            <button type="button" class="btn btn--primary" onclick="window.sendNoveltyDecision('approve', 'poc')">✓ ${esc(t('novelty.poc.approve'))}</button>
+            <button type="button" class="btn" onclick="window.sendNoveltyDecision('iterate', 'poc')">🔄 ${esc(t('novelty.poc.iterate'))}</button>
+            <span id="noveltyPocActionStatus" style="font-size:0.85rem; font-weight:600; margin-left:auto;"></span>
+          </div>
+        </div>
+      </section>`;
+  }
+
   function renderNoveltyPanel(data) {
     const root = document.getElementById('noveltyRoot');
     if (!root) return;
@@ -168,6 +208,8 @@
         </div>
       </div>
     `;
+
+    html += pocVerificationCard(data);
 
     // ----------------------------------------------------
     // SUBSECTION 4: DECISION GATE CARD (Highlighted at top)
