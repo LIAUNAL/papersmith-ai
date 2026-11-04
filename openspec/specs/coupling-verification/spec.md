@@ -44,12 +44,31 @@ abstract slot 4, conclusions block 1) for count, order and naming equality.
 - WHEN coupling 1 runs
 - THEN it reports `fail`
 
+Only a block that enumerates the contributions — one whose bytes name at
+least one declared contribution literally — is held to the list. A block
+that requires the fact but names none of them only reads it, is reported
+under `reading_blocks`, and never fails the check. A paper in which no
+dependent block enumerates the list at all fails.
+
+#### Scenario: a block that only reads the fact
+
+- GIVEN a title or an abstract background block requires the contributions
+  fact and names none of the declared contributions
+- WHEN coupling 1 runs
+- THEN that block is listed under `reading_blocks` and the check does not
+  fail because of it
+
 ### Requirement: Coupling 2 — Chain Word Identity
 
 MUST test literal string equality per chain link
 (problem→contribution→property→instrument→evidence) and set closure over
 declared problems/contributions/blocks. Identity, never synonymy, is the
 contract's own test.
+
+The role-labeled form is optional: when no block requiring the problem
+statement carries any of the five role labels, the check reports
+`unmeasured` with reason `CHAIN_ROLES_ABSENT`. One label anywhere holds the
+whole chain to the identity test.
 
 #### Scenario: M2 — synonym breaks identity
 
