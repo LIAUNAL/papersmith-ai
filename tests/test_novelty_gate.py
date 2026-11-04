@@ -117,6 +117,25 @@ class TestNoveltyOverviewSobrietyData(unittest.TestCase):
         )
         self.assertEqual({e["stage"] for e in overview["limitations"]}, {"poc"})
 
+    def test_overview_carries_the_reviewer_contribution_type_preferring_the_full_stage(self) -> None:
+        self.assertIsNone(novelty_gate.get_novelty_overview(self.root)["contribution_type"])
+        _write_discussion(self.root, "Pilot", {"contribution_type": {"type": "Concept & Feasibility",
+                                                                     "why": "pilot only"}})
+        overview = novelty_gate.get_novelty_overview(self.root)
+        self.assertEqual(overview["contribution_type"],
+                         {"type": "Concept & Feasibility", "why": "pilot only", "product": "Pilot", "stage": "poc"})
+        _write_discussion(self.root, "Full", {"contribution_type": {"type": "Negative Results",
+                                                                    "why": "H1 not supported"}})
+        (self.root / "implementations" / "repo" / "Full" / "Experimental_AGREED.md").write_text("ok")
+        overview = novelty_gate.get_novelty_overview(self.root)
+        self.assertEqual(overview["contribution_type"]["type"], "Negative Results")
+        self.assertEqual(overview["contribution_type"]["stage"], "full")
+        self.assertEqual(overview["discussions"][0]["contribution_type"]["type"], "Negative Results")
+
+    def test_an_unknown_contribution_type_is_ignored(self) -> None:
+        _write_discussion(self.root, "P", {"contribution_type": {"type": "Survey", "why": "x"}})
+        self.assertIsNone(novelty_gate.get_novelty_overview(self.root)["contribution_type"])
+
     def test_overview_without_discussions_has_no_limitations(self) -> None:
         self.assertEqual(novelty_gate.get_novelty_overview(self.root)["limitations"], [])
 

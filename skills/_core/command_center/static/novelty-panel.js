@@ -2,7 +2,8 @@
  * novelty-panel.js: Novelty & Findings Assessment Panel and Decision Gate.
  *
  * Renders the 4 core subsections:
- *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts).
+ *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts), followed by
+ *      the paper-reviewer's NeurIPS contribution type for the findings.
  *   2. Novelty Assessment & Scientific Sobriety vs SOTA (claims, limits, unsupported findings).
  *   3. Scientific Rigor & Reviewer Defense Audit checklist.
  *   4. Novelty Decision Gate with interactive action buttons (Approve, Iterate).
@@ -131,6 +132,15 @@
       }
     }
   }
+
+  // The five NeurIPS 2026 contribution types and their catalogue keys.
+  const CONTRIBUTION_TYPE_KEYS = {
+    'General': 'contribution.type.General',
+    'Theory': 'contribution.type.Theory',
+    'Use-Inspired': 'contribution.type.Use-Inspired',
+    'Concept & Feasibility': 'contribution.type.Concept & Feasibility',
+    'Negative Results': 'contribution.type.Negative Results',
+  };
 
   function renderNoveltyPanel(data) {
     const root = document.getElementById('noveltyRoot');
@@ -270,6 +280,23 @@
             </tbody>
           </table>
         </div>
+      </section>
+    `;
+
+    // NeurIPS contribution type the paper-reviewer read from the checked findings
+    const ct = data.contribution_type;
+    html += `
+      <section id="noveltyContributionType" class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel__header">
+          <div class="panel__title">${esc(t('contribution.title', 'NeurIPS contribution type'))}</div>
+          ${ct && ct.product ? `<span class="panel__meta">${esc(ct.product)} · ${esc(ct.stage)}</span>` : ''}
+        </div>
+        ${ct && CONTRIBUTION_TYPE_KEYS[ct.type] ? `
+          <div style="margin-top:0.75rem; font-size:0.9rem; line-height:1.5;">
+            <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type], ct.type))}</span>
+            <p style="margin-top:0.5rem;"><strong>${esc(t('contribution.why', 'Why:'))}</strong> ${esc(ct.why)}</p>
+          </div>` : `
+          <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">${esc(t('contribution.owed', 'paper-reviewer').replace('{artifact}', 'Results/discussion.json'))}</p>`}
       </section>
     `;
 

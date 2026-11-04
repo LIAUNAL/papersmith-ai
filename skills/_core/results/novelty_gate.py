@@ -165,6 +165,21 @@ def record_decision(
     return record
 
 
+def _contribution_type():
+    """The shared contribution-type contract (``contribution_type.py``), loaded by path."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_contribution_type"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parent / "contribution_type.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
 def get_novelty_overview(root: Path) -> dict[str, Any]:
     """Synthesize the full novelty assessment overview from discussion records,
     hypotheses, SOTA pool, and rigor checklists."""
@@ -177,6 +192,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
     hypotheses: list[dict[str, Any]] = []
     novelty_claims: list[dict[str, Any]] = []
     limitations: list[dict[str, Any]] = []
+    normalize_type = _contribution_type().normalize
 
     if products_dir.is_dir():
         for repo in sorted(products_dir.iterdir()):
@@ -199,6 +215,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
                                 "verdict": disc_data.get("novelty", {}).get("verdict", "pending") if isinstance(disc_data.get("novelty"), dict) else "pending",
                                 "claim": disc_data.get("novelty", {}).get("claim", "") if isinstance(disc_data.get("novelty"), dict) else "",
                                 "rationale": disc_data.get("novelty", {}).get("rationale", "") if isinstance(disc_data.get("novelty"), dict) else "",
+                                "contribution_type": normalize_type(disc_data.get("contribution_type")),
                             }
                             discussions.append(disc_summary)
 
@@ -300,8 +317,16 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
         },
     ]
 
+    # 4. The paper-reviewer's NeurIPS contribution type for the findings:
+    # the full stage's over the pilot's, the first product in order otherwise.
+    typed = [d for d in discussions if d["contribution_type"]]
+    typed.sort(key=lambda d: d["stage"] != "full")
+    contribution_type = ({**typed[0]["contribution_type"], "product": typed[0]["product"],
+                          "stage": typed[0]["stage"]} if typed else None)
+
     return {
         "gate": gate,
+        "contribution_type": contribution_type,
         "discussions": discussions,
         "hypotheses": hypotheses,
         "novelty_claims": novelty_claims,

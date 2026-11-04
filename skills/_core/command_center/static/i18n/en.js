@@ -1460,5 +1460,13 @@ window.PAPERSMITH_I18N.en = {
   "qa.detail.overflow": "{object} passes the text block by {excess} pt",
   "qa.detail.font": "prints at {printed} pt, below the {floor} pt floor",
   "qa.detail.fontCap": "prints at {printed} pt, above the {cap} pt cap",
-  "qa.detail.overfull": "{excess} pt too wide, source lines {start}–{end}"
+  "qa.detail.overfull": "{excess} pt too wide, source lines {start}–{end}",
+  "contribution.title": "NeurIPS contribution type",
+  "contribution.why": "Why:",
+  "contribution.owed": "Not classified yet: after the hypotheses are checked, the paper-reviewer agent reads this phase's ideas and records the contribution type in {artifact}.",
+  "contribution.type.General": "General",
+  "contribution.type.Theory": "Theory",
+  "contribution.type.Use-Inspired": "Use-Inspired",
+  "contribution.type.Concept & Feasibility": "Concept & Feasibility",
+  "contribution.type.Negative Results": "Negative Results"
 };

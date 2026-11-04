@@ -1459,5 +1459,13 @@ window.PAPERSMITH_I18N.es = {
   "qa.detail.overflow": "{object} excede la caja de texto en {excess} pt",
   "qa.detail.font": "se imprime a {printed} pt, por debajo del mínimo de {floor} pt",
   "qa.detail.fontCap": "se imprime a {printed} pt, por encima del máximo de {cap} pt",
-  "qa.detail.overfull": "{excess} pt de más, líneas fuente {start}–{end}"
+  "qa.detail.overfull": "{excess} pt de más, líneas fuente {start}–{end}",
+  "contribution.title": "Tipo de contribución NeurIPS",
+  "contribution.why": "Por qué:",
+  "contribution.owed": "Aún sin clasificar: tras cotejar las hipótesis, el agente paper-reviewer lee las ideas de esta fase y registra el tipo de contribución en {artifact}.",
+  "contribution.type.General": "General",
+  "contribution.type.Theory": "Teórica (Theory)",
+  "contribution.type.Use-Inspired": "Inspirada en un uso (Use-Inspired)",
+  "contribution.type.Concept & Feasibility": "Concepto y factibilidad (Concept & Feasibility)",
+  "contribution.type.Negative Results": "Resultados negativos (Negative Results)"
 };
