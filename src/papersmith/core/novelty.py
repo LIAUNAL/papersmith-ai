@@ -146,10 +146,11 @@ def run_iterate(args) -> int:
     action = f"iterate_{args.stage}"
     if _gate(args) == "poc":
         try:
-            record = gate_mod.record_decision(root, "iterate", rationale=args.notes, stage="poc")
+            record = gate_mod.record_decision(root, action, rationale=args.notes, stage="poc")
         except gate_mod.NoveltyRefusal as exc:
             raise UserError(f"could not record the PoC iteration: {exc.message}") from exc
-        print("Proof of concept: ITERATE -> the full experiments stay locked (G-EXP-POC).")
+        print(f"Proof of concept: ITERATE -> returned to {record['poc']['target_stage']}; "
+              "the full experiments stay locked (G-EXP-POC).")
         print(f"Recorded at: {record['poc']['decided_at']}")
         return SUCCESS
     try:

@@ -13,14 +13,15 @@ Branch: feat/flow-gating. Delivery: ask-on-risk. Test runner: `.micromamba/envs/
 
 ## Tasks
 
-- T1 [S1] inline — `smith ui` bootstraps the dashboard runtime. Status: done, tests green, e2e verified (fresh `init` + `ui` → 200). Commit: pending.
-- T2 [S2, S4-phase4] — Phase 4 sub-step evidence, order locks and panel buttons. Route: delegated (context backstop). Status: open.
-- T3 [S3, S4-phase5] — PoC verification decision, full-experiment lock, panel buttons. Route: delegated (context backstop). Status: open.
-- T4 [S5] — flow inconsistencies. Status: open.
-- T5 [S6, S7] — archify diagram and docs refresh after T2–T4. Status: open.
+- T1 [S1] inline — `smith ui` bootstraps the dashboard runtime. Status: done, e2e verified (fresh `init` + `ui` → 200); RDD review approved and acknowledged; warnings fixed. Commits: 895d60bd, 90994e46.
+- T2 [S2, S4-phase4] — Phase 4 sub-step evidence, order locks and panel buttons. Route: delegated (context backstop). Status: done. Commit: ab67c41c.
+- T3 [S3, S4-phase5] — PoC verification decision (`smith novelty --gate poc`), G-EXP-POC = PoC verified, 5.11 and `/experimental-implementation` locked, panel buttons. Route: delegated. Status: done. Commit: ab67c41c.
+- T4 [S5] — flow inconsistencies, incl. Phase 5 PASS requiring G-EXP-POC. Route: delegated (context backstop). Status: in progress.
+- T5 [S6, S7] — archify diagram and docs refresh. Route: delegated with T4. Status: in progress.
 
 ## Log
 
 - L1 (2026-11-04, user, verbatim): "revisa el flujo de smith, cuando intento construir un proyecto nuevo con smith init y luego sobre ese folder creado doy smith ui, saca un error, verifica que init y luego ui estan funcionando, sino ajusta para que funcionen. luego, explora en los paneles y fases de todo smith, que el flujo sea consistente, por ejemplo, en el panel mapa conceptual y problema, debe obligarse a generar el problema central y pilares, y luego las hipotesis, y luego la matematci, en experimetnos igual, debe obligarse a definir prueba de concepto. luego, verificar lso resutlados y las hipotesis contrastas, y luego si permitir el experimento completo. explora se puedes poner botones en esas fases claves donde al usuario se le oblige e indique que de generar esos bloques y deliberar con el agente antes de seguir con otras fases. explora tambien, que no tengamos inconsistencias en el flujo de cada fase, que los diagramas archifyy esten actualizados en smith ui, que el reamde, docs, diagramas del readme y todo la informacino del repo en tablero ui, readme y docuemntacion este actualizada"
 - L2: map (explorer): phase locks exist only between phases (`phase_actions.attach`), enforced client-side; 4.1–4.6 share `fase4_status`; G-NOVELTY is ACTIVE only after full experiments; archify flow embeds revision e83356d7 (pre-0.47).
 - L3: T1 decision — keep `dependencies = []` (pinned by `test_mcp_dependencies.py`); install the four UI packages into a shared cache env on first `smith ui`; tests isolate `XDG_CACHE_HOME` in `conftest.py`.
+- L4: T2/T3 verified on QMLEEG data with the branch server: Phase 4 steps PASS; 5.11 LOCKED, G-EXP-POC ACTIVE until the operator approves the PoC verification. Writer deviations: flag `--gate poc|full` (`--stage` already taken), only `/experimental-implementation` gated, Phase 5 PASS ignored G-EXP-POC (fixed in T4).
