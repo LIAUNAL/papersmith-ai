@@ -73,13 +73,28 @@ _BULLET_FIELDS = {"hypothesis": "statement", "success criterion": "criterion"}
 _KNOWN_KEYS = {
     "top": {"schema", "stage", "protocol", "generated_at", "summary", "discussion_type", "metrics",
             "hypotheses", "novelty", "qualitative", "qualitative_not_applicable", "limitations",
-            "next_steps", "available_evidence"},
+            "next_steps", "available_evidence", "contribution_type"},
     "metric": {"name", "role", "why", "source"},
     "hypothesis": {"id", "experiment", "statement", "metric", "test", "criterion", "observed",
                    "evidence", "verdict", "rationale"},
     "novelty": {"claim", "verdict", "evidence", "rationale"},
     "qualitative": {"title", "kind", "method", "figure", "reading"},
 }
+
+
+def _contribution_type():
+    """The shared contribution-type contract (``contribution_type.py``), loaded by path."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_contribution_type"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parent / "contribution_type.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
 
 
 class DiscussionRefusal(Exception):
@@ -452,6 +467,9 @@ def _run_check(product: Path, data: Any, holder: str | None) -> _Check:
     verdicts = _check_hypotheses(ctx, data)
     novelty = _check_novelty(ctx, data)
     _check_qualitative(ctx, data)
+    if "contribution_type" in data:
+        for problem in _contribution_type().problems(data["contribution_type"]):
+            ctx.error(problem)
     ctx.unknown_keys("discussion", data, "top")
     ctx.pending = "pending" in verdicts or novelty == "pending"
     return ctx

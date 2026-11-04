@@ -3,7 +3,8 @@
  * GET /api/model answers `.papersmith/model_spec.json` when the workspace has
  * one, else a neutral specification named after `papersmith.yaml`. This file
  * renders its novelty pillars, hypotheses, concept-map layers and proof-of-
- * concept experiments; when a part is absent it says what produces it instead
+ * concept experiments, and the NeurIPS contribution type the paper-reviewer
+ * assigned to the proposal (`contribution_type`); when a part is absent it says what produces it instead
  * of showing anybody else's content. Every value is escaped before insertion;
  * prose fields go through math-panel.js's richText, so $…$ compiles with KaTeX.
  *
@@ -58,6 +59,27 @@
       </div>`).join('');
   }
 
+  // The five NeurIPS 2026 contribution types and their catalogue keys.
+  const CONTRIBUTION_TYPE_KEYS = {
+    'General': 'contribution.type.General',
+    'Theory': 'contribution.type.Theory',
+    'Use-Inspired': 'contribution.type.Use-Inspired',
+    'Concept & Feasibility': 'contribution.type.Concept & Feasibility',
+    'Negative Results': 'contribution.type.Negative Results',
+  };
+
+  // The paper-reviewer's NeurIPS contribution type for the proposal, after
+  // the hypotheses it was read from.
+  function contributionType(spec) {
+    const ct = spec.contribution_type;
+    const head = `<h4 style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;">${esc(t('contribution.title'))}</h4>`;
+    if (!ct || !CONTRIBUTION_TYPE_KEYS[ct.type]) return head + empty(t('contribution.owed', { artifact: '.papersmith/model_spec.json' }));
+    return `${head}<div class="model-hypothesis-card">
+        <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type]))}</span>
+        <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;"><strong>${esc(t('contribution.why'))}</strong> ${esc(ct.why)}</p>
+      </div>`;
+  }
+
   function layers(spec) {
     const source = spec.concept_map || spec.conceptual_map || {};
     const list = (source.layers || []).filter(Boolean);
@@ -94,6 +116,7 @@
     const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
     put('modelPillarGrid', pillars(lastSpec));
     put('modelHypothesisGrid', hypotheses(lastSpec));
+    put('modelContributionType', contributionType(lastSpec));
     put('modelConceptLayers', layers(lastSpec));
     const notice = document.getElementById('modelLanguageNotice');
     if (notice) {

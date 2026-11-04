@@ -474,6 +474,31 @@ class RuleTest(CheckCase):
         self.assertInvalid(self.mutated(mutate), "hypotheses")
 
 
+class ContributionTypeTest(CheckCase):
+    """The optional NeurIPS contribution type the paper-reviewer assigns to the findings."""
+
+    def test_a_named_type_with_a_reason_is_complete(self) -> None:
+        for kind in ("General", "Theory", "Use-Inspired", "Concept & Feasibility", "Negative Results"):
+            data = self.mutated(lambda d, k=kind: d.update(contribution_type={"type": k, "why": "because"}))
+            result = self.check(data)
+            self.assertEqual(result["status"], "complete", result)
+            self.assertFalse(any("contribution_type" in w for w in result["warnings"]), result)
+
+    def test_it_stays_optional(self) -> None:
+        self.assertEqual(self.check(good())["status"], "complete")
+
+    def test_an_unknown_type_or_missing_reason_is_invalid(self) -> None:
+        self.assertInvalid(self.mutated(lambda d: d.update(contribution_type={"type": "Survey", "why": "x"})),
+                           "contribution_type.type")
+        self.assertInvalid(self.mutated(lambda d: d.update(contribution_type={"type": "Theory", "why": " "})),
+                           "contribution_type.why")
+        self.assertInvalid(self.mutated(lambda d: d.update(contribution_type={"type": "Theory", "why": "x" * 601})),
+                           "contribution_type.why")
+        self.assertInvalid(self.mutated(lambda d: d.update(contribution_type="Theory")), "contribution_type")
+        self.assertInvalid(self.mutated(lambda d: d.update(
+            contribution_type={"type": "Theory", "why": "x", "score": 3})), "contribution_type")
+
+
 class NeverRaisesTest(CheckCase):
     def test_garbage_inputs(self) -> None:
         garbage = [None, [], "text", 3, 1.5, True, {}, [1, 2], {"schema": []}, {"hypotheses": "x"},

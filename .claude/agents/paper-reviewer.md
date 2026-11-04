@@ -51,6 +51,34 @@ and `guidance/`. The `deliberated` stage is not yours: nothing measures it,
 and only the operator's acceptance closes it. Your review is advisory input to
 that decision, never the decision.
 
+In proposal mode, field 2 (**Contribution Type**) is classified from the
+ideas this phase produced: the revision's hypotheses as discussed, its
+mathematics (the `$$ … \tag{N} $$` blocks) and the novelty it claims. Return
+it as `contribution_type: {"type": <one of the five>, "why": <one to three
+sentences, at most 600 characters, naming the hypothesis, equation or claim
+that decides it>}`. `proposal-deliberation` writes that object into
+`.papersmith/model_spec.json`, and the dashboard's Concept Map & Model tab
+shows it right after the hypotheses.
+
+## Findings mode — after the hypotheses are checked against the results
+
+`proposal-implementation` (proof of concept) and `experimental-implementation`
+(full run) may hand you one product,
+`implementations/<repo>/<Name>/Results/discussion.json`, once
+`discussion_cli.py check` reports it `complete`. You begin at that checked
+discussion and end at field 2 alone, the **Contribution Type** of the paper the
+verified findings support, not the one the proposal hoped for: read the
+hypothesis verdicts and their rationales, the novelty verdict, and the
+accepted proposal for what was promised. A central hypothesis the evidence
+reports `not_supported` with a deeper analysis behind it points to `Negative
+Results`; an idea shown to work only at pilot scale points to `Concept &
+Feasibility`. Return `contribution_type: {"type", "why"}` in the same shape as
+proposal mode, the `why` quoting the verdict ids that decide it. You never
+write the file: the skill that handed it to you writes the object into the
+discussion's top level and re-runs `check`, and the dashboard's Novelty &
+Findings tab shows it right after the hypotheses matrix. Every other field of
+the form is out of this mode's stretch.
+
 ## What you read, and in which order
 
 1. The paper: `paper/main.pdf` text (or `paper/main.tex` and every rendered
@@ -220,5 +248,8 @@ Return, always and in this order:
 - **`state`** — the review: all thirteen fields above, each rating with its
   quoted evidence, plus a `pertinence`, `novelty`, `coherence` and
   `adjusted_novelty_concordance` block with one entry per claim and its quotes.
+  In proposal mode and findings mode, `state` also carries the
+  `contribution_type` object `{"type", "why"}` exactly as the caller writes it;
+  in findings mode it carries only that object.
 - **`owed`** — the questions (field 8) that the operator must answer or the
   revisions that would raise the overall score, or nothing.

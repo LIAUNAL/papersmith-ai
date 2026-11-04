@@ -783,6 +783,81 @@ def _manuscript_qa_module():
     return module
 
 
+#: How many passages the style-and-redundancy panel lists.
+STYLE_PANEL_FINDINGS = 12
+
+
+def _panel_score(style_score: float, flow_score: float) -> int:
+    """0 (clear) to 100 (needs revision): the mean of the style and flow
+    scores, both 0-1. A writing-quality reading, never an AI-detection one."""
+    return round(100 * (float(style_score) + float(flow_score)) / 2)
+
+
+def _contract_sections(root: Path) -> list:
+    """`[(section title, [block ids])]` in contract order, read from each
+    `sections/NN-*.md` header's `"id"` entries."""
+    out = []
+    for path in sorted((Path(root) / "sections").glob("[0-9][0-9]-*.md")):
+        head = path.read_text(encoding="utf-8", errors="replace").split("\n# ", 1)[0]
+        ids = re.findall(r'"id"\s*:\s*"([A-Za-z0-9._-]+)"', head)
+        title = path.stem.split("-", 1)[1].replace("-", " ").capitalize()
+        out.append((title, [i.split(".")[-1] for i in ids]))
+    return out
+
+
+def _style_redundancy_panel(root, mod, style, flow, blocks, block_findings) -> dict:
+    """What the PDF viewer's style-and-redundancy panel draws: the 0-100
+    score and its band, a per-section breakdown and the passages that raise
+    the score most, each naming its block and section."""
+    score = _panel_score(style["style_score"], flow["flow_score"])
+    verdict = next(name for bound, name, _ in mod._STYLE_VERDICTS if score / 100 <= bound)
+    section_of = {}
+    sections = []
+    for title, ids in _contract_sections(root):
+        by_suffix = {key.split(".")[-1]: key for key in blocks}
+        present = [by_suffix[b] for b in ids if b in by_suffix]
+        for b in present:
+            section_of[b] = title
+        if present:
+            scores = [_panel_score(blocks[b]["style_score"], blocks[b]["flow_score"]) for b in present]
+            sections.append({"section": title, "blocks": present,
+                             "score": round(sum(scores) / len(scores))})
+    findings = []
+    rank = {"near_duplicate": 0, "repeated_phrase": 0, "synthesis_repeat": 0, "robotic_template": 1}
+    for b_id, flow_found, phrasing, sentences in block_findings:
+        for item in flow_found:
+            findings.append((rank.get(item.get("category"), 2), {
+                "block": b_id, "section": section_of.get(b_id, ""),
+                "category": item.get("category", ""), "span": str(item.get("span", "")),
+                "sentence": sentences.get(item.get("sentence"), "")}))
+        for item in phrasing:
+            span = item.get("target") or ""
+            if span:
+                findings.append((3, {"block": b_id, "section": section_of.get(b_id, ""),
+                                     "category": "overused_phrasing", "span": str(span),
+                                     "sentence": str(item.get("context", "")).strip(". ")}))
+    findings.sort(key=lambda pair: pair[0])
+    # Round-robin over blocks, most severe first, so one block cannot fill
+    # the whole list.
+    picked, seen = [], {}
+    for _, finding in findings:
+        if seen.get(finding["block"], 0) < 2:
+            picked.append(finding)
+            seen[finding["block"]] = seen.get(finding["block"], 0) + 1
+    for _, finding in findings:
+        if finding not in picked:
+            picked.append(finding)
+    return {
+        "score": score,
+        "score_verdict": verdict,
+        "flow_score": flow["flow_score"],
+        "redundancy_count": len(flow.get("redundancy", {}).get("findings", []))
+        if isinstance(flow.get("redundancy"), dict) else 0,
+        "sections": sections,
+        "findings": picked[:STYLE_PANEL_FINDINGS],
+    }
+
+
 def _ai_metrics_module():
     """paper_ai_metrics, loaded once from its file."""
     name = "papersmith_paper_ai_metrics"
@@ -2348,20 +2423,27 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 )
                 blocks_data = {}
                 all_blocks_text = []
+                block_findings = []
                 mod = _ai_metrics_module()
                 for match in pattern.finditer(content):
                     b_id = match.group("id")
                     b_text = match.group("body").strip()
                     if b_text:
                         b_res = mod.analyze_style(b_text)
+                        b_flow = mod.analyze_flow(b_text)
                         blocks_data[b_id] = {
                             "style_score": b_res["style_score"],
                             "style_verdict": b_res["style_verdict"],
+                            "flow_score": b_flow["flow_score"],
                             "cliches": b_res.get("overused_phrasing", {}).get("total_count", 0),
                             # Deprecated aliases, removed in the next release.
                             "composite_score": b_res["style_score"],
                             "risk": b_res.get("verdict", "low"),
                         }
+                        units, _ = mod._flow_units(b_text)
+                        block_findings.append((b_id, b_flow.get("findings", []),
+                                               b_res.get("overused_phrasing", {}).get("findings", []),
+                                               {u["index"]: u["prose"] for u in units}))
                         all_blocks_text.append(b_text)
 
                 full_text = "\n\n".join(all_blocks_text)
@@ -2378,9 +2460,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                         "blocks": {},
                     })
                 manuscript_res = mod.analyze_style(full_text)
+                manuscript_flow = mod.analyze_flow(full_text)
+                panel = _style_redundancy_panel(root_path, mod, manuscript_res, manuscript_flow,
+                                                blocks_data, block_findings)
                 return JSONResponse({
                     "ok": True,
                     "scope": "manuscript",
+                    **panel,
                     "blocks_analyzed": len(blocks_data),
                     "style_score": manuscript_res["style_score"],
                     "style_verdict": manuscript_res["style_verdict"],

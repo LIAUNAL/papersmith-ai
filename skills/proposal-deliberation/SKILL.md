@@ -197,6 +197,7 @@ and asks for this rewrite.
     "hypotheses": [{"id": "H1", "title": "...", "statement": "...",
                      "status": "...", "evidence": "..."}]
   },
+  "contribution_type": {"type": "Theory", "why": "<one to three sentences>"},
   "conceptual_map": {
     "layers": [{"name": "Layer 1: ...", "color": "#38bdf8", "tag": "...",
                  "description": "...", "nodes": [{"name": "...", "desc": "..."}]}]
@@ -207,6 +208,17 @@ and asks for this rewrite.
 Every prose field may carry `$…$` math. Take each pillar, hypothesis and layer
 from the accepted revision and the deliberation, verbatim in meaning; never
 invent one the revision does not argue.
+
+**`contribution_type` is the paper-reviewer's, never yours.** Once the
+hypotheses are discussed and the mathematics and the possible novelty are
+proposed, hand the revision to the `paper-reviewer` agent in its proposal mode
+(or run that stretch inline, as above) and copy its returned
+`contribution_type` object verbatim: `type` is one of `General`, `Theory`,
+`Use-Inspired`, `Concept & Feasibility`, `Negative Results`; `why` is one to
+three sentences, at most 600 characters, naming what decides it. The Concept
+Map & Model tab shows it right after the hypotheses; a missing or malformed
+object shows as not classified yet. Re-classify whenever an accepted revision
+changes a hypothesis, an equation or the claimed novelty.
 
 ### The novelty graph: `.papersmith/novelty_graph.json`
 

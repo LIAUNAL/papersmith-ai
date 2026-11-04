@@ -53,9 +53,13 @@ The stage comes from the holder (`Experimental_AGREED.md` → `full`, else `AGRE
   "qualitative": [{"title": "", "kind": "qualitative | interpretability | explainability",
                    "method": "", "figure": "Results/qualitative/x.png", "reading": ""}],
   "qualitative_not_applicable": "reason, when no qualitative analysis applies",
-  "limitations": [], "next_steps": []
+  "limitations": [], "next_steps": [],
+  "contribution_type": {"type": "General | Theory | Use-Inspired | Concept & Feasibility | Negative Results",
+                        "why": "at most 600 characters"}
 }
 ```
+
+`contribution_type` is optional and is the `paper-reviewer` agent's, in its findings mode: once `check` reports `complete`, the implementation skill hands the discussion to that agent, copies the NeurIPS contribution type it returns into the top level and runs `check` again. The Novelty & Findings tab shows it right after the hypotheses matrix, preferring a `full` product over a `poc` one (`contribution_type` in `GET /api/novelty/status`). The same shape lives in `.papersmith/model_spec.json` for the proposal phase (`contribution_type.py` holds the shared contract).
 
 Evidence is either a path relative to the product folder or `significance:<comparison>`, matched against the `comparison` values of the product's `Results/**/significance*.json` (a list, or a dict wrapping a list under `tests`, `comparisons` or `results`).
 
@@ -74,6 +78,7 @@ Errors:
 - **At stage `full`**, a `supported`/`partially_supported`/`not_supported` verdict cites no `significance:` evidence (the hypothesis test is mandatory). At `poc` this is only a warning.
 - `novelty` is missing or not an object, its verdict is outside the enum, or a non-pending verdict has no evidence.
 - Neither a non-empty `qualitative` list nor a non-empty `qualitative_not_applicable`; a qualitative entry has a `kind` outside the enum or a `figure` that does not exist.
+- `contribution_type`, when present, is not an object, has a `type` outside the five NeurIPS types, an empty `why` or one longer than 600 characters, or a key other than `type` and `why`.
 - Too many entries (200 hypotheses, 100 metrics, 100 qualitative entries, 50 evidence entries per item).
 
 Warnings (never errors): unknown keys, duplicate hypothesis ids, `discussion_type` values outside the enum, a metric `role` outside `primary`/`secondary`, and the PoC significance gap above.

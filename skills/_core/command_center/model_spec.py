@@ -61,6 +61,21 @@ def language_notice(spec: dict[str, Any], file: str = SPEC_REL) -> dict[str, Any
     return {"expected": "en", "file": file, "fields": fields} if fields else None
 
 
+def _contribution_type():
+    """The shared contribution-type contract (``contribution_type.py``), loaded by path."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_contribution_type"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parents[1] / "results" / "contribution_type.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
 def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
     """Return the structured specification of conceptual architecture,
     mathematical modeling, and proof-of-concept plan for a workspace."""
@@ -76,6 +91,12 @@ def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
                 notice = language_notice(spec) if isinstance(spec, dict) else None
                 if notice:
                     spec["language_notice"] = notice
+                if isinstance(spec, dict) and "contribution_type" in spec:
+                    kind = _contribution_type().normalize(spec["contribution_type"])
+                    if kind:
+                        spec["contribution_type"] = kind
+                    else:
+                        del spec["contribution_type"]
                 return spec
 
         yaml_file = root / "papersmith.yaml"

@@ -11,6 +11,18 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **NeurIPS contribution type per phase.** After the hypotheses are checked, the
+  `paper-reviewer` agent classifies the phase's ideas as one of the five NeurIPS
+  2026 contribution types (`General`, `Theory`, `Use-Inspired`,
+  `Concept & Feasibility`, `Negative Results`) with a short reason. The proposal's
+  type (from its hypotheses, mathematics and claimed novelty) is written to
+  `.papersmith/model_spec.json` and shown in the Concept Map & Model tab right after
+  the hypotheses. The findings' type, from the new findings mode, is written to
+  each product's `Results/discussion.json`, checked by `discussion_cli.py check`,
+  and shown in the Novelty & Findings tab right after the hypotheses matrix.
+
 ## 0.59.1
 
 ### Fixed

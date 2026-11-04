@@ -1033,7 +1033,8 @@ between the experiments and the manuscript. Every verb takes `--workspace <dir>`
   `Results/discussion.json` with their verdict, test and observed result, and the
   scientific-rigor checklist (leakage-free partitioning, significance tests,
   empirical support for the hypotheses, SOTA contrast). `--json` prints the whole
-  overview, the same one the dashboard's *Novedad & Hallazgos* tab reads from
+  overview, including the paper-reviewer's NeurIPS `contribution_type` for the
+  findings (`{type, why, product, stage}`, or `null` until it is classified), the same one the dashboard's *Novedad & Hallazgos* tab reads from
   `GET /api/novelty/status`.
 - `approve [--notes TEXT]` — records that the empirical evidence supports the
   novelty (`approved`, target stage `scaffolding`).
