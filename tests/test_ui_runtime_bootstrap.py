@@ -45,10 +45,28 @@ class UiRuntimeBootstrapTests(unittest.TestCase):
         self.assertTrue(str(env_dir).startswith(str(self.root / "cache" / "papersmith")))
         self.assertFalse(str(env_dir).startswith(str(self.workspace)))
 
-    def test_an_existing_cache_environment_is_chosen_before_the_cli_interpreter(self) -> None:
+    def test_an_existing_cache_environment_serves_when_the_cli_interpreter_cannot(self) -> None:
         cached = _fake_python(ui.ui_env_interpreter(), importable=True)
+        with mock.patch.object(ui, "provision_ui_env") as provision:
+            self.assertEqual(ui.require_runnable_backend(self.workspace, self.broken), str(cached))
+        provision.assert_not_called()
+
+    def test_a_working_cli_interpreter_is_never_shadowed_by_the_cache(self) -> None:
+        _fake_python(ui.ui_env_interpreter(), importable=True)
         with mock.patch.object(ui.sys, "executable", self.broken):
-            self.assertEqual(ui.workspace_interpreter(self.workspace), str(cached))
+            self.assertEqual(ui.workspace_interpreter(self.workspace), self.broken)
+
+    def test_a_failed_install_names_the_failing_output(self) -> None:
+        import subprocess
+        def run(argv, **kwargs):
+            if "-c" in argv:  # the backend probe: cannot import
+                return subprocess.CompletedProcess(argv, 1)
+            raise subprocess.CalledProcessError(1, argv, output="", stderr="ERROR: no network\n")
+
+        with mock.patch.object(ui.subprocess, "run", side_effect=run):
+            with self.assertRaises(UserError) as caught:
+                ui.require_runnable_backend(self.workspace, self.broken)
+        self.assertIn("ERROR: no network", str(caught.exception))
 
     def test_a_workspace_environment_still_wins_over_the_cache(self) -> None:
         _fake_python(ui.ui_env_interpreter(), importable=True)
