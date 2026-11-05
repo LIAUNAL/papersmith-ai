@@ -11,6 +11,17 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.61.2
+
+- **OpenCode v2 loads the push guard.** The generated `refuse-offpath-push` plugin now
+  exports the default definition OpenCode v2 requires, and keeps working on v1.
+- **A malformed position witness refuses.** `position --sequence` with a `witness` that
+  is not a mapping now refuses `POSITION_SEQUENCE_UNREADABLE`. It used to crash and record
+  a forge defect that blocked `step`, `gate`, `offer`, `close`, `settle`, `apply` and
+  `admit`. Upgrading to this release clears such a defect, because the engine file it
+  names changes.
+- **Artifact sizes.** The Artifacts explorer shows each file's size instead of "NaN KB".
+
 ## 0.61.1
 
 - **The experiment protocol stays in view.** In the Experiments tab the protocol and
