@@ -178,8 +178,8 @@ panel's buttons or from the terminal with
 `smith novelty {status,approve,iterate,reset}`: *approve* records that the
 evidence supports the novelty, and *iterate* records that the work returns to
 experiments, proposal or plausibility. The decision and its history go to
-`.papersmith/novelty_gate.json`. The gate records your decision; it does not
-lock a later phase on its own.
+`.papersmith/novelty_gate.json`. Phase 6 stays locked until you approve it,
+so nothing is written over an undecided novelty.
 
 **Phase 5 gating.** The sub-phases that close the experiments read the results
 discussion, not just a folder. 5.8 (proof of concept) and 5.12 (full

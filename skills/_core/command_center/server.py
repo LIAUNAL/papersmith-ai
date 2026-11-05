@@ -1708,7 +1708,25 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         for phase in fases:
             for sub in phase.get("subfases") or []:
                 sub.setdefault("desc", sub.get("detail", ""))
-        phase_actions.attach(fases, root_path, gates={"G-EXP-POC": g_exp_poc_status})
+        gate_mod = _novelty_gate()
+        nov_gate_data = gate_mod.read_gate(root_path)
+        nov_status = nov_gate_data.get("status", "pending")
+        g_nov_status = (
+            "PASS"
+            if nov_status == "approved"
+            else (
+                "ACTIVE"
+                if fase5_status == "PASS" and nov_status == "pending"
+                else (
+                    "ACTIVE"
+                    if nov_status.startswith("iterating_")
+                    else "PENDING"
+                )
+            )
+        )
+
+        phase_actions.attach(fases, root_path,
+                             gates={"G-EXP-POC": g_exp_poc_status, "G-NOVELTY": g_nov_status})
 
         artifacts = []
         for p in (root_path / "proposals").glob("*.md"):
@@ -1908,23 +1926,6 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "canonical_blocks": sec_meta.get("blocks", []),
                 "cross_relations": sec_meta.get("cross_relations", "Cross traceability with the rest of the manuscript.")
             })
-
-        gate_mod = _novelty_gate()
-        nov_gate_data = gate_mod.read_gate(root_path)
-        nov_status = nov_gate_data.get("status", "pending")
-        g_nov_status = (
-            "PASS"
-            if nov_status == "approved"
-            else (
-                "ACTIVE"
-                if fase5_status == "PASS" and nov_status == "pending"
-                else (
-                    "ACTIVE"
-                    if nov_status.startswith("iterating_")
-                    else "PENDING"
-                )
-            )
-        )
 
         gates_list = [
             {

@@ -342,6 +342,9 @@ EVIDENCE: dict[str, tuple[tuple[str, str], ...]] = {
 #: Phases that need nothing before them: the harness starts everything and the
 #: audit is transversal. Every other phase needs the one before it.
 UNGATED = frozenset({"harness", "audit"})
+#: A phase that also waits for an operator gate, on top of the previous phase:
+#: writing starts only after the novelty decision.
+PHASE_GATES = {"scaffolding": "G-NOVELTY"}
 MAX_MATCHES = 500
 
 
@@ -399,11 +402,13 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
             phase["evidence"] = evidence(root, stage)
         gated = stage not in UNGATED and previous is not None
         blocked = gated and previous.get("status") != "PASS"
-        phase["unlocked"] = not blocked
-        phase["blocked_by"] = previous.get("id") if blocked else None
+        gate = PHASE_GATES.get(stage)
+        gate_blocked = gated and not blocked and gate is not None and gates.get(gate) != "PASS"
+        phase["unlocked"] = not (blocked or gate_blocked)
+        phase["blocked_by"] = previous.get("id") if blocked else (gate if gate_blocked else None)
         if stage != "audit":
             previous = phase
     return fases
 
 
-__all__ = ["ACTIONS", "EVIDENCE", "STAGES", "UNGATED", "attach", "evidence", "primary_command", "stage_for"]
+__all__ = ["ACTIONS", "EVIDENCE", "PHASE_GATES", "STAGES", "UNGATED", "attach", "evidence", "primary_command", "stage_for"]

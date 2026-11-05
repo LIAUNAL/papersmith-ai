@@ -620,8 +620,8 @@ Experimentos*, *Iterar en Propuesta / Modelo*, *Iterar en Plausibilidad / SOTA* 
 anything else; an optional `"stage"` of `poc` or `full`, default `full`). The gate
 `G-NOVELTY` is `PASS` once approved and `ACTIVE` while Phase 5 has passed (which
 needs the verified proof of concept) and the decision is pending or iterating. It records the
-operator's decision in `.papersmith/novelty_gate.json`; it does not change any
-phase's status by itself.
+operator's decision in `.papersmith/novelty_gate.json`. It changes no phase's
+status, but Phase 6 stays locked until it passes.
 
 Endpoints: `/api/state`, `/api/health/wiring`, `/api/health/run-wiring-smoke`
 (POST) and `/api/events` (SSE); the dashboard build is served at `/`. The frontend
@@ -1103,8 +1103,9 @@ below.
 
 The decision, its actor, timestamp and rationale are written atomically to
 `.papersmith/novelty_gate.json`, together with the history of earlier decisions (the
-last 50). The gate records the operator's decision; it does not change the status of
-any phase. The dashboard shows `G-NOVELTY` as `PASS` once approved, and as `ACTIVE`
+last 50). The gate records the operator's decision; it changes no phase's status, but
+Phase 6 stays locked until it is approved (the dashboard names `G-NOVELTY` as
+the lock, with the same override as any other phase lock). The dashboard shows `G-NOVELTY` as `PASS` once approved, and as `ACTIVE`
 while Phase 5 has passed and the decision is pending or iterating. The engine is
 `skills/_core/results/novelty_gate.py`; `smith novelty` locates it in the workspace
 kit, the installed kit or a papersmith-ai clone.

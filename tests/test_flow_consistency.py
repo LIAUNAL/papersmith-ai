@@ -157,3 +157,33 @@ class DocsStateTheSameFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoveltyGateLocksWritingTests(unittest.TestCase):
+    """G-NOVELTY is the operator's decision before writing: Phase 6 stays locked
+    until it passes, on top of the previous-phase rule."""
+
+    @staticmethod
+    def attach(previous: str, gate: str | None) -> dict:
+        from skills._core.command_center import phase_actions
+        fases = [{"id": "Fase 5", "stage_id": "poc_experiments", "status": previous},
+                 {"id": "Fase 6", "stage_id": "scaffolding", "status": "PENDING"}]
+        gates = {"G-EXP-POC": "PASS"}
+        if gate:
+            gates["G-NOVELTY"] = gate
+        return phase_actions.attach(fases, None, gates=gates)[1]
+
+    def test_scaffolding_waits_for_the_novelty_decision(self) -> None:
+        for gate in ("ACTIVE", "PENDING", None):
+            with self.subTest(gate=gate):
+                phase = self.attach("PASS", gate)
+                self.assertFalse(phase["unlocked"])
+                self.assertEqual(phase["blocked_by"], "G-NOVELTY")
+
+    def test_an_approved_novelty_decision_opens_scaffolding(self) -> None:
+        phase = self.attach("PASS", "PASS")
+        self.assertTrue(phase["unlocked"])
+        self.assertIsNone(phase["blocked_by"])
+
+    def test_the_previous_phase_is_named_first(self) -> None:
+        self.assertEqual(self.attach("ACTIVE", "PASS")["blocked_by"], "Fase 5")
