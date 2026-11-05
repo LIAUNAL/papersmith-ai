@@ -651,6 +651,9 @@ the next three paragraphs — clickable diagram and deep links, the in-memory *H
 tab and the *Decisions* tab — describe that frontend. In the shipped dashboard the
 same `/api/decisions` events feed *Historia con IA*.
 
+`npm --prefix ui run test:e2e` covers both: `ui/e2e/shipped/` drives the shipped
+dashboard, and the other specs drive a throwaway build of the Vite frontend.
+
 **Clickable diagram and deep links.** Every node (stage, gate, section) and every
 edge of the pipeline diagram can be selected with the mouse or the keyboard
 (Enter or Space on the focused element, Escape to close) and opens a detail panel
