@@ -23,6 +23,9 @@ number is `0`, breaking changes can still arrive without a major bump.
 - **NeurIPS judge is a required step with stage-specific buttons.** `neurips_review` is
   required before Phase 5 unlocks, and contribution type is validated. The Concept Map,
   Mathematics and Novelty panels offer dedicated buttons aimed at what each stage owes.
+- **Multiple remote accounts with distinct emails.** `smith team add` now accepts
+  `--email <address>` and allows multiple Kaggle or Colab accounts to join the project flow,
+  provided each account for the same service is associated with a distinct registered email.
 - **Novelty deep links and dashboard E2E coverage.** Deep links to the Novelty tab open
   reliably, and Playwright covers the shipped dashboard end-to-end.
 
