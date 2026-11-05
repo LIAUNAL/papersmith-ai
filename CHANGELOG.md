@@ -11,6 +11,32 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.61.0
+
+- **`smith ui` works right after `smith init`.** A fresh workspace defers its
+  environment and the package declares no runtime dependency, so `smith ui` used to
+  refuse. It now installs the dashboard's four packages once into
+  `$XDG_CACHE_HOME/papersmith/ui-env-py<version>`, outside every workspace, and serves
+  from there; a failed install refuses with pip's own output.
+- **Phase 4 is built in order.** The Concept Map tab steps through the central problem
+  and its pillars, the hypotheses and the mathematics (`GET /api/model/steps`). Each
+  step has a "Generate & deliberate" button that types its command into the agent, and
+  stays locked until the one before it exists on disk. Phase 4 passes only with all
+  three, and its sub-phases read their own evidence.
+- **Phase 5 verifies the proof of concept before the full run.** `G-EXP-POC` now means
+  the operator verified the PoC's results and contrasted hypotheses, in the Novelty tab
+  or with `smith novelty approve --gate poc`, which refuses without a complete PoC
+  discussion; an iteration keeps the stage it returns to. The new sub-phase 5.9 records
+  it (timing, search, full experiments, review and launch move to 5.10-5.14), the full
+  experiments and `/experimental-implementation` stay locked until it passes, and
+  Phase 5 passes only with it. The Experiments tab steps through PoC, verify and full.
+- **`G-NOVELTY` locks writing.** Phase 6 stays locked until the novelty decision is
+  approved, and the phase drawer names the gate.
+- **The flow agrees with itself.** Phase order, gate labels, phase-card commands and
+  the board's stages now match across the dashboard, `CLAUDE.md`, the workspace flow
+  template, the README and the docs, and the Archify flow diagram is regenerated with
+  lanes numbered by the eleven phases.
+
 ## 0.60.1
 
 - **`verify` reads the manuscript's real blocks.** `paper_cli` writes each block
