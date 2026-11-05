@@ -11,6 +11,21 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.61.3
+
+- **Every idea requires 2 to 5 SOTA pool citations.** Pillars, hypotheses, concept-map
+  layers, numbered equations and experiments are justified in `.papersmith/citations.json`
+  against the SOTA pool. A new Phase 4 step precedes the NeurIPS judge, uncited experiments
+  lock implementation actions and Phase 5, and `G-EXP-POC` approval refuses
+  `SOTA_CITATIONS_OWED`. Panels show citation counts, justifications and owe-status, and offer
+  buttons to trigger agent deliberation. A CLI check (`citations_cli.py check`) reports missing
+  citations.
+- **NeurIPS judge is a required step with stage-specific buttons.** `neurips_review` is
+  required before Phase 5 unlocks, and contribution type is validated. The Concept Map,
+  Mathematics and Novelty panels offer dedicated buttons aimed at what each stage owes.
+- **Novelty deep links and dashboard E2E coverage.** Deep links to the Novelty tab open
+  reliably, and Playwright covers the shipped dashboard end-to-end.
+
 ## 0.61.2
 
 - **OpenCode v2 loads the push guard.** The generated `refuse-offpath-push` plugin now
