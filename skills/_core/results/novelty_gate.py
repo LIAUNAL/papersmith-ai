@@ -203,15 +203,22 @@ def _write(root: Path, record: dict[str, Any]) -> None:
 def judge_state(root: Path) -> dict[str, dict[str, Any]]:
     """Per stage, how many products close with a ``complete`` discussion and
     which of them still lack the paper-reviewer's valid ``contribution_type``
-    (the NeurIPS judge); never raises. A malformed type makes the discussion
-    fail its check, so it counts here too: otherwise it would skip the judge."""
+    (the NeurIPS judge); never raises. A malformed type alone makes a discussion
+    fail its check, so a discussion is judged here without that field: one that
+    is complete apart from its type owes the judge, a draft owes nothing."""
     state: dict[str, dict[str, Any]] = {stage: {"complete": 0, "owed": []} for stage in STAGES}
     for product in _products(root):
         try:
-            data = json.loads((product / "Results" / "discussion.json").read_text(encoding="utf-8"))
+            result = _discussion_module().load_and_check(product)
+            data = result["data"]
+            if not isinstance(data, dict):
+                continue
             malformed = ("contribution_type" in data
                          and bool(_contribution_type().problems(data["contribution_type"])))
-            if not malformed and _discussion_module().load_and_check(product).get("status") != "complete":
+            if malformed:
+                bare = {key: value for key, value in data.items() if key != "contribution_type"}
+                result = _discussion_module().check_discussion(product, bare)
+            if result["status"] != "complete":
                 continue
             kind = None if malformed else _contribution_type().normalize(data.get("contribution_type"))
         except Exception:  # noqa: BLE001 - an unreadable discussion is not complete
