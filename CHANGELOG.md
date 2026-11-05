@@ -11,6 +11,13 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.61.1
+
+- **The experiment protocol stays in view.** In the Experiments tab the protocol and
+  its hypotheses now come right after any launch-blocking warnings, before service and
+  environment setup. Open and closed protocol, run, worker and HPO disclosures survive
+  panel refreshes, tab returns and language changes within the page.
+
 ## 0.61.0
 
 - **`smith ui` works right after `smith init`.** A fresh workspace defers its
