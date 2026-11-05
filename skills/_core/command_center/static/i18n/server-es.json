@@ -765,8 +765,8 @@
   "the project": "el proyecto",
   "It starts only after the proof of concept is verified (G-EXP-POC): a complete PoC discussion and the operator's approval in the Novelty tab or with smith novelty approve --gate poc.": "Empieza solo después de verificar la prueba de concepto (G-EXP-POC): una discusión de la PoC completa y la aprobación del operador en la pestaña Novedad o con smith novelty approve --gate poc.",
   "Locked until the proof of concept is verified (G-EXP-POC). {detail}": "Bloqueado hasta verificar la prueba de concepto (G-EXP-POC). {detail}",
-  "Revision {file} published; steps passed: {done} of {total} (problem and pillars, hypotheses, mathematics)": "Revisión {file} publicada; pasos superados: {done} de {total} (problema y pilares, hipótesis, matemática)",
-  "No published revision yet; steps passed: {done} of {total} (problem and pillars, hypotheses, mathematics)": "Aún sin revisión publicada; pasos superados: {done} de {total} (problema y pilares, hipótesis, matemática)",
+  "Revision {file} published; steps passed: {done} of {total} (problem and pillars, hypotheses, mathematics, NeurIPS judge)": "Revisión {file} publicada; pasos superados: {done} de {total} (problema y pilares, hipótesis, matemática, juez NeurIPS)",
+  "No published revision yet; steps passed: {done} of {total} (problem and pillars, hypotheses, mathematics, NeurIPS judge)": "Aún sin revisión publicada; pasos superados: {done} de {total} (problema y pilares, hipótesis, matemática, juez NeurIPS)",
   "Proof-of-concept verification (G-EXP-POC, operator)": "Verificación de la prueba de concepto (G-EXP-POC, operador)",
   "The operator verifies the proof of concept's results and contrasted hypotheses once its discussion is complete: the Novelty tab's verification card, or smith novelty approve --gate poc (iterate --gate poc sends it back); the full experiments stay locked until then": "El operador verifica los resultados y las hipótesis contrastadas de la prueba de concepto cuando su discusión está completa: la tarjeta de verificación de la pestaña Novedad, o smith novelty approve --gate poc (iterate --gate poc la devuelve); los experimentos completos quedan bloqueados hasta entonces",
   "Step 1: Problem and pillars": "Paso 1: Problema y pilares",
@@ -774,5 +774,7 @@
   "Step 2: Hypotheses": "Paso 2: Hipótesis",
   "The hypotheses each pillar predicts; locked until step 1 passes": "Las hipótesis que predice cada pilar; bloqueado hasta que pase el paso 1",
   "Step 3: Mathematics": "Paso 3: Matemática",
+  "Step 4: NeurIPS judge": "Paso 4: Juez NeurIPS",
+  "The paper-reviewer classifies the proposal's NeurIPS contribution type (contribution_type in .papersmith/model_spec.json); Phase 5 stays locked until it does.": "El paper-reviewer clasifica el tipo de contribución NeurIPS de la propuesta (contribution_type en .papersmith/model_spec.json); la Fase 5 sigue bloqueada hasta entonces.",
   "At least one $$ … \\tag{N} $$ block in the latest revision; locked until step 2 passes": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2"
 }

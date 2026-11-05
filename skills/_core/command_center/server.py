@@ -1388,9 +1388,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         else:
             fase3_status, fase3_prog, fase3_det = "PENDING", 0.0, "No reference articles in guidance/"
 
-        # Phase 4: a published revision and its three steps in order (the
-        # problem and its pillars, the hypotheses, the mathematics), each read
-        # from its own evidence on disk (phase_steps).
+        # Phase 4: a published revision and its four steps in order (the
+        # problem and its pillars, the hypotheses, the mathematics, the NeurIPS
+        # judge), each read from its own evidence on disk (phase_steps).
         p4_steps = phase_steps.proposal_steps(root_path)
         p4_step = {step["id"]: step for step in p4_steps}
         p4_passed = sum(1 for step in p4_steps if step["status"] == "PASS")
@@ -1399,13 +1399,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         elif has_deliberated_prop:
             fase4_status, fase4_prog = "ACTIVE", round((1 + p4_passed) / (1 + len(p4_steps)), 3)
             fase4_det = (f"Revision {active_prop} published; steps passed: {p4_passed} of {len(p4_steps)}"
-                         " (problem and pillars, hypotheses, mathematics)")
+                         " (problem and pillars, hypotheses, mathematics, NeurIPS judge)")
         elif prop_files or any(step["started"] for step in p4_steps):
             fase4_status = "ACTIVE"
             fase4_prog = round(p4_passed / (1 + len(p4_steps)), 3)
             fase4_det = (f"Draft in progress ({prop_files[0]})" if prop_files
                          else f"No published revision yet; steps passed: {p4_passed} of {len(p4_steps)}"
-                              " (problem and pillars, hypotheses, mathematics)")
+                              " (problem and pillars, hypotheses, mathematics, NeurIPS judge)")
         else:
             fase4_status, fase4_prog, fase4_det = "PENDING", 0.0, "No proposal in proposals/"
         p4_published = "PASS" if has_deliberated_prop else ("ACTIVE" if prop_files else "PENDING")
@@ -1562,7 +1562,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "4.3", "name": "Step 3: Mathematics", "status": p4_sub["mathematics"], "detail": "At least one $$ … \\tag{N} $$ block in the latest revision; locked until step 2 passes"},
                     {"id": "4.4", "name": "Stage published: Publication & Cryptographic Receipt", "status": p4_published, "detail": "Revision sealed with a SHA-256 hash"},
                     {"id": "4.5", "name": "Concept map discussion", "status": p4_sub["hypotheses"], "detail": "Pillars, hypotheses and layers of the concept (Concept Map tab)"},
-                    {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": p4_sub["mathematics"], "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"}
+                    {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": p4_sub["mathematics"], "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"},
+                    {"id": "4.7", "name": "Step 4: NeurIPS judge", "status": p4_sub["neurips_review"], "detail": "The paper-reviewer classifies the proposal's NeurIPS contribution type (contribution_type in .papersmith/model_spec.json); Phase 5 stays locked until it does."}
                 ]
             },
             {

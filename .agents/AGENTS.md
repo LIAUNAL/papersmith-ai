@@ -79,7 +79,9 @@ skill refuses when its input is missing.
      mathematics and the novelty proposed, the `paper-reviewer` agent
      classifies the proposal's NeurIPS contribution type
      (`contribution_type` in `.papersmith/model_spec.json`), shown right after
-     the hypotheses.
+     the hypotheses. This NeurIPS judge is the phase's fourth step: the
+     "Lanzar el juez NeurIPS" button, on that card and in the stepper, launches
+     it, and Phase 5 stays locked until it records a type.
 5. **Proof of concept and experiments**, in this order:
    `/experimental-deliberation` writes the protocol in `experiments/`; a toy
    set (`/datasets synth`); replication of the comparison methods;
@@ -138,7 +140,10 @@ skill refuses when its input is missing.
    - **Findings and novelty**: once a stage's discussion is complete, the
      `paper-reviewer` agent classifies the NeurIPS contribution type of its
      findings (`contribution_type` in `Results/discussion.json`). The
-     Novedad & Hallazgos tab contrasts the hypothesis verdicts with the SOTA
+     Novedad & Hallazgos tab launches that judge from a button on its
+     contribution-type card, and G-EXP-POC and G-NOVELTY refuse their approval
+     (`NEURIPS_JUDGE_OWED`) while a complete discussion of that stage has no
+     type. The tab contrasts the hypothesis verdicts with the SOTA
      pool and the operator records `G-NOVELTY` (`smith novelty approve` or
      `iterate`) before the paper is written.
    Only the operator authorizes a launch. The phase passes only with a

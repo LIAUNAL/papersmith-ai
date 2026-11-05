@@ -239,7 +239,9 @@ proposed, hand the revision to the `paper-reviewer` agent in its proposal mode
 three sentences, at most 600 characters, naming what decides it. The Concept
 Map & Model tab shows it right after the hypotheses; a missing or malformed
 object shows as not classified yet. Re-classify whenever an accepted revision
-changes a hypothesis, an equation or the claimed novelty.
+changes a hypothesis, an equation or the claimed novelty. This is Phase 4's
+last step: the dashboard's "Launch the NeurIPS judge" button asks for it, and
+Phase 5 stays locked until the type is recorded.
 
 ### The novelty graph: `.papersmith/novelty_graph.json`
 

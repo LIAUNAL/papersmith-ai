@@ -635,7 +635,9 @@ button that types the step's `/proposal-deliberation` into the agent. Once the
 hypotheses are discussed and the mathematics and novelty proposed, the
 `paper-reviewer` agent classifies the proposal's NeurIPS contribution type
 (`General`, `Theory`, `Use-Inspired`, `Concept & Feasibility` or `Negative
-Results`), shown right after the hypotheses. Discuss the concept map and the
+Results`), shown right after the hypotheses. This NeurIPS judge is the fourth
+step: the *Lanzar el juez NeurIPS* button on that card launches it, and Phase 5
+stays locked until it records a type. Discuss the concept map and the
 equations with `/math-tutor` before implementing the revision.
 
 Proposals live in `proposals/`, one per managed revision
@@ -711,7 +713,9 @@ The proof of concept is done when its `Results/discussion.json` is complete
 (`python skills/_core/results/discussion_cli.py scaffold|check --product
 implementations/<repo>/<Name>`): a verdict per hypothesis backed by its test,
 the novelty and the qualitative analysis. The `paper-reviewer` agent then
-classifies the NeurIPS contribution type of those findings.
+classifies the NeurIPS contribution type of those findings: launch it with the
+judge button in the *Novedad & Hallazgos* tab, because `G-EXP-POC` and
+`G-NOVELTY` refuse their approval until each complete discussion has its type.
 
 ### Step 8 — Verify the proof of concept (`G-EXP-POC`)
 

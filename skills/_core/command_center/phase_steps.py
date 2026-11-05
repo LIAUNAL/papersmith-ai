@@ -1,8 +1,9 @@
 """Phase 4's ordered steps, read from the workspace's own files.
 
 The proposal is built in one order: the central problem and its pillars, then
-the hypotheses each pillar predicts, then the mathematics. Each step passes
-from evidence on disk, never from the dashboard's placeholder specification:
+the hypotheses each pillar predicts, then the mathematics, then the NeurIPS
+judge. Each step passes from evidence on disk, never from the dashboard's
+placeholder specification:
 
 * ``problem_pillars``: a problem statement and at least one pillar, from
   ``.papersmith/model_spec.json`` (``novelty.problem_statement`` and
@@ -11,7 +12,9 @@ from evidence on disk, never from the dashboard's placeholder specification:
 * ``hypotheses``: at least one hypothesis, from ``novelty.hypotheses`` or the
   overlay's ``hypotheses`` list;
 * ``mathematics``: at least one ``$$ … \\tag{N} $$`` display block in the
-  latest revision ``proposals/research-concept-<slug>-rNN.md``.
+  latest revision ``proposals/research-concept-<slug>-rNN.md``;
+* ``neurips_review``: the paper-reviewer's valid ``contribution_type`` in
+  ``.papersmith/model_spec.json``.
 
 A step is ``LOCKED`` while the one before it has not passed, ``ACTIVE`` when it
 is unlocked and its evidence is missing, and ``PASS`` once its own evidence
@@ -24,10 +27,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from . import math_view
+from . import math_view, model_spec
 
-#: The three steps in their one order; each requires the one before it.
-STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics")
+#: The four steps in their one order; each requires the one before it.
+STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics", "neurips_review")
 SPEC_REL = ".papersmith/model_spec.json"
 
 
@@ -84,7 +87,10 @@ def _evidence(root: Path) -> dict[str, Any]:
     for key, found in (("problem", problem), ("pillars", pillars), ("hypotheses", hypotheses)):
         if found and key not in sources:
             sources[key] = sky_rel
+    verdict = spec.get("contribution_type") if isinstance(spec, dict) else None
+    kind = model_spec._contribution_type().normalize(verdict)
     return {
+        "contribution_type": kind["type"] if kind else "",
         "problem": bool(problem),
         "pillars": pillars,
         "hypotheses": hypotheses,
@@ -95,7 +101,7 @@ def _evidence(root: Path) -> dict[str, Any]:
 
 
 def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
-    """The three Phase 4 steps in order, each ``{id, status, done, started,
+    """The four Phase 4 steps in order, each ``{id, status, done, started,
     evidence, requires}``; ``evidence`` holds counts and file paths only, so
     the dashboard words it in its own language."""
     try:
@@ -103,7 +109,7 @@ def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
         found = _evidence(root)
     except OSError:
         found = {"problem": False, "pillars": 0, "hypotheses": 0, "equations": 0,
-                 "revision": "", "sources": {}}
+                 "revision": "", "sources": {}, "contribution_type": ""}
     own = {
         "problem_pillars": (found["problem"] and found["pillars"] > 0,
                             found["problem"] or found["pillars"] > 0,
@@ -113,6 +119,8 @@ def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
                        {"hypotheses": found["hypotheses"], "source": found["sources"].get("hypotheses", "")}),
         "mathematics": (found["equations"] > 0, bool(found["revision"]),
                         {"equations": found["equations"], "revision": found["revision"]}),
+        "neurips_review": (bool(found["contribution_type"]), bool(found["contribution_type"]),
+                           {"type": found["contribution_type"]}),
     }
     steps: list[dict[str, Any]] = []
     previous_passed = True
