@@ -531,6 +531,13 @@ Pipeline and Progress, Concept Map & Model, Experiments, Novelty & Findings, Pap
 Sections, Graph Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and
 Smith Doctor.
 
+**Experiment protocol visibility.** In *Experiments*, the protocol and its
+hypotheses appear immediately after any launch-blocking warnings, before service
+and environment setup. Expand an experiment to inspect its hypothesis, success
+criterion and planned reports. Open and closed protocol, run, worker and HPO
+study disclosures survive panel refreshes, tab returns and language changes
+within the current page; a full browser reload starts a new disclosure state.
+
 **The phases.** *Pipeline y Avance* draws the eleven phases the server reports
 under `fases` in `/api/status`, each with its sub-phases and the gate that guards
 it, and lights each one up from what is on disk — `sota-pool/`, `guidance/`,

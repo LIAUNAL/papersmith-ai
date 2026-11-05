@@ -51,6 +51,8 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
   const empty = (text) => `<p class="exp-empty">${esc(text)}</p>`;
+  // Machine identities survive translated labels and changing product order.
+  const disclosure = (...identity) => `data-exp-disclosure="${esc(JSON.stringify(identity))}"`;
   const artifactUrl = (path) => `/api/artifact?path=${encodeURIComponent(path)}`;
   const PALETTE = ['#38bdf8', '#f59e0b', '#10b981', '#ef4444', '#a78bfa', '#f472b6', '#14b8a6', '#eab308',
     '#60a5fa', '#fb923c', '#4ade80', '#f87171'];
@@ -235,7 +237,7 @@
         <td>${esc(h.complete ?? '—')} / ${esc(h.pruned ?? '—')}${h.failed ? ` <small>${esc(t('exp.hpo.failed', { n: h.failed }))}</small>` : ''}${h.nTrials ? ` <small>${esc(t('exp.hpo.ofTrials', { n: h.nTrials }))}</small>` : ''}</td>
         <td>${best}</td><td>${params}</td></tr>`;
     }).join('');
-    const details = list.map((h) => `<details class="exp-hpo-study"><summary><code>${esc(h.study)}</code> · ${esc(h.file)}</summary>
+    const details = list.map((h) => `<details class="exp-hpo-study" ${disclosure('hpo', product.path, h.study, h.file)}><summary><code>${esc(h.study)}</code> · ${esc(h.file)}</summary>
       ${importanceBars(h.importance)}${h.importanceCheck ? importanceBars(h.importanceCheck) : ''}
       ${hpoFigures(h)}</details>`).join('');
     return `<h4 class="exp-h4">${esc(t('exp.hpo.title'))}</h4>
@@ -259,7 +261,7 @@
         ${e.worker ? `· ${esc(e.worker)}` : ''} ${e.ts ? `· <small>${esc(e.ts)}</small>` : ''}
         ${e.reason ? `<div class="exp-reason">${esc(e.reason)}</div>` : ''}</li>`;
     }).join('');
-    return `${chips}<details class="exp-runs"><summary>${esc(t('exp.latestRuns', { n: r.count }))}</summary><ul>${latest}</ul></details>`;
+    return `${chips}<details class="exp-runs" ${disclosure('runs', product.path)}><summary>${esc(t('exp.latestRuns', { n: r.count }))}</summary><ul>${latest}</ul></details>`;
   }
 
   // Remote runs per worker (S6): each worker's lanes -- entrypoint and
@@ -282,7 +284,7 @@
           <td><small>${units}</small></td><td><code>${esc(lane.submission_id)}</code></td><td><small>${esc(lane.ts)}</small></td></tr>`;
       }).join('') + more;
     }).join('');
-    return `<details class="exp-runs exp-workers"><summary>${esc(t('exp.workers', { n: workers.length }))}</summary>
+    return `<details class="exp-runs exp-workers" ${disclosure('workers', product.path)}><summary>${esc(t('exp.workers', { n: workers.length }))}</summary>
       <div class="table-responsive"><table class="table exp-table">
       <thead><tr><th>${esc(t('exp.workers.worker'))}</th><th>Entrypoint / slot</th><th>${esc(t('exp.col.state'))}</th><th>${esc(t('exp.workers.units'))}</th><th>${esc(t('exp.workers.submission'))}</th><th>${esc(t('exp.workers.updated'))}</th></tr></thead>
       <tbody>${body}</tbody></table></div></details>`;
@@ -669,7 +671,7 @@
     const exps = (proto.experiments || []).map((e) => {
       const reports = (e.expected_reports || []).map((r) => `<div class="exp-file">${esc(r.title)} <span class="badge badge--warn">${esc(t('exp.diagram.state.absent'))}</span></div>${table(r.headers || [], r.rows || [], { pending: true })}`).join('')
         || empty(t('exp.noReport'));
-      return `<details class="exp-protocol-item">
+      return `<details class="exp-protocol-item" ${disclosure('protocol', e.id)}>
         <summary><strong>${esc(e.id)}</strong> ${esc(e.title)} ${e.priority ? `<span class="badge badge--info">${esc(e.priority)}</span>` : ''}</summary>
         ${e.hypothesis ? `<p><strong>${esc(t('exp.hypothesis'))}</strong> ${esc(e.hypothesis)}</p>` : ''}
         ${e.success_criterion ? `<p><strong>${esc(t('exp.successCriterion'))}</strong> ${esc(e.success_criterion)}</p>` : ''}
@@ -1073,6 +1075,7 @@
     lastView = v;
     return [
       attention(v),
+      protocol(v.protocol),
       mcpActivation(v.remote_mcp),
       colabActivation(v.remote_colab),
       remoteServices(v.remote_services),
@@ -1086,14 +1089,23 @@
       group(t('exp.group.full'), t('exp.group.fullIntro'), full, t('exp.group.fullEmpty')),
       stageComparison(v),
       other.length ? group(t('exp.group.other'), t('exp.group.otherIntro'), other, '') : '',
-      protocol(v.protocol),
     ].join('');
   }
 
   function paint() {
     const host = typeof document !== 'undefined' && document.getElementById
       ? document.getElementById('experimentsRoot') : null;
-    if (host && lastView) host.innerHTML = render(lastView);
+    if (host && lastView) {
+      // Refresh, tab return, language change and chart repaint all replace this
+      // subtree. Capture both open and closed state before replacing its nodes.
+      const selector = 'details[data-exp-disclosure]';
+      const state = new Map(Array.from(host.querySelectorAll(selector),
+        (item) => [item.dataset.expDisclosure, item.open]));
+      host.innerHTML = render(lastView);
+      host.querySelectorAll(selector).forEach((item) => {
+        if (state.has(item.dataset.expDisclosure)) item.open = state.get(item.dataset.expDisclosure);
+      });
+    }
   }
 
   async function refreshExperimentsPanel() {
