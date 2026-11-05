@@ -41,8 +41,9 @@ refusal prints the flow, so a blocked session knows which stage it is behind.
 1. **The launch.** Nothing here submits. The launch stays behind
    `remote-execution`'s consent token and the implementation skills' `gate`;
    a `parallelize` verdict authorizes nothing.
-2. **Which owners take part.** One account per person per service: each
-   participating account is owned and operated by a distinct team member
+2. **Which owners take part.** Multiple accounts per service are accepted
+   provided each is associated with a distinct email address: each
+   participating account is owned and operated under a team owner
    registered with `smith team add --attest`, and only distinct owners count
    toward `--owners`. Kaggle accounts are also validated through the
    `kaggle-accounts` skill; Colab owners sign in with `smith colab login`.
@@ -349,9 +350,9 @@ A split that misses any item is several experiments that share a table:
 
 ## Accounts and terms
 
-The team rule: **one account per person per service.** Several accounts take
-part only when each one is owned and operated by a distinct team member, who
-attests it with `smith team add --owner <slug> --attest` (the registry,
+The team rule: **one account per person per service**, where multiple accounts per service are accepted provided each account is associated with a distinct email address. Several accounts take
+part when each one is owned and operated under a team owner, who
+registers it with `smith team add --owner <slug> [--email <email>] --attest` (the registry,
 `.papersmith/team.json`, is git-ignored and holds no secret). Parallelism
 therefore counts **distinct owners**, never accounts: `--owners` is the
 input, and `--accounts` beyond one per owner never add a session.

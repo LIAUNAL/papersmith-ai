@@ -143,6 +143,43 @@ class AddTests(_Env):
         self.assertEqual(lines.count(".papersmith/team.json"), 1)
         self.assertIn("node_modules/", lines)
 
+    def test_add_with_email_records_email_and_validates_format(self) -> None:
+        code, out = self.add("--owner", "ana", "--name", "Ana", "--email", "bad-email",
+                             "--kaggle-username", "a1", "--attest")
+        self.assertNotEqual(code, 0)
+        self.assertIn("not a valid email address", out)
+        code, out = self.add("--owner", "ana", "--name", "Ana", "--email", "ana@example.com",
+                             "--kaggle-username", "a1", "--attest")
+        self.assertEqual(code, 0, out)
+        [member] = self.members()
+        self.assertEqual(member.get("email"), "ana@example.com")
+
+    def test_multiple_accounts_for_same_service_allowed_with_distinct_emails(self) -> None:
+        code, out = self.add("--owner", "ana-work", "--name", "Ana Work", "--email", "ana@work.org",
+                             "--kaggle-username", "ana_work", "--attest")
+        self.assertEqual(code, 0, out)
+        code, out = self.add("--owner", "ana-personal", "--name", "Ana Personal", "--email", "ana@personal.com",
+                             "--kaggle-username", "ana_pers", "--attest")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.members()), 2)
+
+    def test_duplicate_email_for_same_service_refuses(self) -> None:
+        self.add("--owner", "ana-work", "--name", "Ana Work", "--email", "ana@shared.org",
+                 "--kaggle-username", "ana_work", "--attest")
+        code, out = self.add("--owner", "ana-other", "--name", "Ana Other", "--email", "ana@shared.org",
+                             "--kaggle-username", "ana_other", "--attest")
+        self.assertNotEqual(code, 0)
+        self.assertIn("already belongs to owner 'ana-work' for Kaggle", out)
+        self.assertEqual(len(self.members()), 1)
+
+    def test_same_email_across_different_services_allowed(self) -> None:
+        self.add("--owner", "ana-k", "--name", "Ana", "--email", "ana@shared.org",
+                 "--kaggle-username", "ana_work", "--attest")
+        code, out = self.add("--owner", "ana-c", "--name", "Ana", "--email", "ana@shared.org",
+                             "--colab", "--colab-tier", "pro", "--attest")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.members()), 2)
+
     def test_add_outside_a_workspace_refuses(self) -> None:
         other = self.tmp / "plain"
         other.mkdir()
@@ -167,6 +204,16 @@ class ListTests(_Env):
         payload = json.loads(out)
         self.assertEqual(payload["members"][0]["owner"], "ana")
         self.assertNotIn("token", out.lower())
+
+    def test_list_includes_email_when_present(self) -> None:
+        self.add("--owner", "ana", "--name", "Ana", "--email", "ana@example.com",
+                 "--kaggle-username", "ana-k", "--attest")
+        code, out = self.run_cli("list")
+        self.assertEqual(code, 0, out)
+        self.assertIn("ana@example.com", out)
+        code, out = self.run_cli("list", "--json")
+        payload = json.loads(out)
+        self.assertEqual(payload["members"][0]["email"], "ana@example.com")
 
     def test_list_on_an_empty_registry(self) -> None:
         code, out = self.run_cli("list")

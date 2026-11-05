@@ -38,6 +38,7 @@ TEAM_FILE = ".papersmith/team.json"
 SCHEMA = 1
 ATTESTATION = "owns and operates exactly one account per service listed here"
 OWNER_PATTERN = re.compile(r"^[a-z0-9-]{1,40}$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 COLAB_TIERS = ("free", "pro", "payg", "enterprise")
 #: Tiers whose compute may run a campaign split across owners. The Colab FAQ
 #: disallows "running distributed computing workers" on free runtimes without
@@ -146,7 +147,7 @@ def _make_private_dir(path: Path) -> None:
 
 def add_member(root: Path, *, owner: str, name: str, kaggle: str | None = None,
                colab: bool = False, tier: str | None = None, attest: bool = False,
-               today: str | None = None) -> dict[str, Any]:
+               email: str | None = None, today: str | None = None) -> dict[str, Any]:
     if not attest:
         raise UserError("pass --attest to confirm this person owns and operates exactly one "
                         "account per service listed here (one account per person per service)")
@@ -154,6 +155,10 @@ def add_member(root: Path, *, owner: str, name: str, kaggle: str | None = None,
         raise UserError(f"--owner {owner!r} must be 1-40 characters of a-z, 0-9 and '-'")
     if not name or not name.strip():
         raise UserError("--name must not be empty")
+    if email is not None:
+        email = email.strip()
+        if not EMAIL_PATTERN.match(email):
+            raise UserError(f"--email {email!r} is not a valid email address")
     if tier is not None and not colab:
         raise UserError("--colab-tier needs --colab")
     if colab and tier is None:
@@ -178,6 +183,15 @@ def add_member(root: Path, *, owner: str, name: str, kaggle: str | None = None,
                 os.path.realpath(account["configDir"]) == os.path.realpath(config_dir):
             raise UserError(f"Colab configDir {config_dir} already belongs to owner "
                             f"{member.get('owner')!r}: one account per person per service")
+        if email:
+            other_email = member.get("email")
+            if other_email and other_email.strip().lower() == email.strip().lower():
+                if kaggle and other:
+                    raise UserError(f"email {email!r} already belongs to owner {member.get('owner')!r} for Kaggle: "
+                                    "each account for the same service must be associated with a distinct email address")
+                if colab and account:
+                    raise UserError(f"email {email!r} already belongs to owner {member.get('owner')!r} for Colab: "
+                                    "each account for the same service must be associated with a distinct email address")
     accounts: dict[str, Any] = {}
     if kaggle:
         accounts["kaggle"] = {"username": kaggle}
@@ -187,6 +201,8 @@ def add_member(root: Path, *, owner: str, name: str, kaggle: str | None = None,
     member = {"owner": owner, "displayName": name.strip(),
               "attestedAt": today or datetime.date.today().isoformat(),
               "attestation": ATTESTATION, "accounts": accounts}
+    if email:
+        member["email"] = email
     data["members"] = [*existing, member]
     ensure_ignored(root)
     save(root, data)
@@ -229,6 +245,8 @@ def stored_kaggle_usernames(root: Path) -> list[str]:
 def _public(member: dict[str, Any]) -> dict[str, Any]:
     row: dict[str, Any] = {"owner": member.get("owner"), "displayName": member.get("displayName"),
                            "attestedAt": member.get("attestedAt"), "accounts": {}}
+    if member.get("email"):
+        row["email"] = member["email"]
     if kaggle_username(member):
         row["accounts"]["kaggle"] = {"username": kaggle_username(member)}
     account = colab_account(member)
@@ -243,21 +261,22 @@ def _public(member: dict[str, Any]) -> dict[str, Any]:
 
 def register(subparsers) -> None:
     parser = subparsers.add_parser(
-        "team", help="the team registry: one remote account per person per service")
+        "team", help="the team registry: remote accounts associated with distinct emails")
     commands = parser.add_subparsers(dest="team_command", required=True)
     listing = commands.add_parser("list", help="list team members and their accounts (never a secret)")
     listing.add_argument("--json", action="store_true", help="machine-readable output")
     listing.add_argument("--workspace", default=None, help="workspace root (default: current directory)")
     listing.set_defaults(handler=run_list)
-    add = commands.add_parser("add", help="add one person and the accounts they own and operate")
+    add = commands.add_parser("add", help="add one account owner associated with a distinct email")
     add.add_argument("--owner", required=True, help="slug, 1-40 characters of a-z, 0-9 and '-'")
     add.add_argument("--name", required=True, help="the person's display name")
-    add.add_argument("--kaggle-username", default=None, help="this person's own Kaggle username")
-    add.add_argument("--colab", action="store_true", help="this person has their own Colab account")
+    add.add_argument("--email", default=None, help="distinct email address for this account")
+    add.add_argument("--kaggle-username", default=None, help="this owner's Kaggle username")
+    add.add_argument("--colab", action="store_true", help="register a Colab account")
     add.add_argument("--colab-tier", choices=COLAB_TIERS, default=None,
                      help="the Colab account's compute tier; free never joins a split campaign")
     add.add_argument("--attest", action="store_true",
-                     help="confirm the person owns and operates exactly one account per listed service")
+                     help="confirm the account is associated with a distinct email and operated validly")
     add.add_argument("--workspace", default=None, help="workspace root (default: current directory)")
     add.set_defaults(handler=run_add)
     remove = commands.add_parser("remove", help="remove one person (never deletes credential files)")
@@ -277,9 +296,9 @@ def run_list(args) -> int:
         return 0
     if not rows:
         print(f"No team members in {TEAM_FILE}; add one with `smith team add --owner <slug> "
-              "--name \"<display>\" [--kaggle-username U] [--colab --colab-tier T] --attest`.")
+              "--name \"<display>\" [--email E] [--kaggle-username U] [--colab --colab-tier T] --attest`.")
     else:
-        print(f"{len(rows)} team member(s), one account per person per service:")
+        print(f"{len(rows)} team member(s), accounts associated with distinct emails:")
         for row in rows:
             parts = []
             if "kaggle" in row["accounts"]:
@@ -288,7 +307,8 @@ def run_list(args) -> int:
                 colab = row["accounts"]["colab"]
                 parts.append(f"colab tier {colab['tier']}"
                              + ("" if colab["splitCampaignEligible"] else " (interactive only, no split campaigns)"))
-            print(f"  {row['owner']} — {row['displayName']} (attested {row['attestedAt']}): "
+            email_part = f" <{row['email']}>" if row.get("email") else ""
+            print(f"  {row['owner']} — {row['displayName']}{email_part} (attested {row['attestedAt']}): "
                   + "; ".join(parts))
     for name in unmapped:
         print(f"warning: Kaggle account {name} is in the kaggle-accounts store but no owner claims it; "
@@ -301,8 +321,10 @@ def run_add(args) -> int:
     # Existence only: nothing inside the state directory is listed or read.
     reused = bool(args.colab) and colab_config_dir(args.owner).exists()
     member = add_member(root, owner=args.owner, name=args.name, kaggle=args.kaggle_username,
-                        colab=args.colab, tier=args.colab_tier, attest=args.attest)
-    print(f"added: {member['owner']} — {member['displayName']} ({TEAM_FILE}, git-ignored)")
+                        colab=args.colab, tier=args.colab_tier, email=getattr(args, "email", None),
+                        attest=args.attest)
+    email_note = f" <{member['email']}>" if member.get("email") else ""
+    print(f"added: {member['owner']} — {member['displayName']}{email_note} ({TEAM_FILE}, git-ignored)")
     account = colab_account(member)
     if account:
         print(f"Colab state directory: {account['configDir']} (0700)")
