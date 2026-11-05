@@ -551,14 +551,17 @@ command or `smith` subcommand (Phase 10 compiles from its panel and names none).
 Two phases also order their own steps:
 
 - **Phase 4 (proposal deliberation)**: the central problem and its pillars, then
-  the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), each read from its
-  own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
+  the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), then the NeurIPS
+  judge (4.7), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
   overlay for the first two, a `$$ … \tag{N} $$` block in the latest
-  `proposals/research-concept-<slug>-rNN.md` for the third — and each locked until
-  the one before it passes. *Mapa Conceptual & Modelo* shows the three steps with
-  a *Generar y deliberar* button that types the step's `/proposal-deliberation`
+  `proposals/research-concept-<slug>-rNN.md` for the third, a valid
+  `contribution_type` in `.papersmith/model_spec.json` for the fourth — and each
+  locked until the one before it passes, so Phase 5 waits for the judge.
+  *Mapa Conceptual & Modelo* shows the four steps with a *Generar y deliberar*
+  button that types the step's `/proposal-deliberation`
   into the agent terminal (the mathematics step also offers `/math-tutor`), and the
-  paper-reviewer's NeurIPS contribution type right after the hypotheses.
+  paper-reviewer's NeurIPS contribution type right after the hypotheses, with the
+  *Lanzar el juez NeurIPS* button on that card.
 - **Phase 5 (proof of concept and experiments)**: the experimental protocol
   (5.1 to 5.5), the toy set (5.6), the replication of the comparison methods
   (5.7), the proof of concept (5.8), its verification by the operator (5.9,
@@ -650,6 +653,9 @@ and checks the contrast (WCAG AA) of the token pairs.
 the next three paragraphs — clickable diagram and deep links, the in-memory *History*
 tab and the *Decisions* tab — describe that frontend. In the shipped dashboard the
 same `/api/decisions` events feed *Historia con IA*.
+
+`npm --prefix ui run test:e2e` covers both: `ui/e2e/shipped/` drives the shipped
+dashboard, and the other specs drive a throwaway build of the Vite frontend.
 
 **Clickable diagram and deep links.** Every node (stage, gate, section) and every
 edge of the pipeline diagram can be selected with the mouse or the keyboard
@@ -1101,7 +1107,9 @@ below.
   findings (`{type, why, product, stage}`, or `null` until it is classified), the same one the dashboard's *Novedad & Hallazgos* tab reads from
   `GET /api/novelty/status`.
 - `approve [--notes TEXT]` — records that the empirical evidence supports the
-  novelty (`approved`, target stage `scaffolding`).
+  novelty (`approved`, target stage `scaffolding`). With either `--gate`, it refuses
+  `NEURIPS_JUDGE_OWED` while a complete discussion of that stage has no
+  `contribution_type`.
 - `iterate [--stage {experiments,proposal,plausibility}] [--notes TEXT]` — records
   that the work returns to Phase 5 (default), Phase 4 or Phase 2
   (`iterating_experiments`, `iterating_proposal`, `iterating_plausibility`), with

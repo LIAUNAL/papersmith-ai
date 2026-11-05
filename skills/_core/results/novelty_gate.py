@@ -200,6 +200,38 @@ def _write(root: Path, record: dict[str, Any]) -> None:
         raise NoveltyRefusal("WRITE_FAILED", f"could not write {GATE_FILENAME}: {exc}") from exc
 
 
+def judge_state(root: Path) -> dict[str, dict[str, Any]]:
+    """Per stage, how many products close with a ``complete`` discussion and
+    which of them still lack the paper-reviewer's valid ``contribution_type``
+    (the NeurIPS judge); never raises."""
+    state: dict[str, dict[str, Any]] = {stage: {"complete": 0, "owed": []} for stage in STAGES}
+    for product in _products(root):
+        try:
+            if _discussion_module().load_and_check(product).get("status") != "complete":
+                continue
+            data = json.loads((product / "Results" / "discussion.json").read_text(encoding="utf-8"))
+            kind = _contribution_type().normalize(data.get("contribution_type"))
+        except Exception:  # noqa: BLE001 - an unreadable discussion is not complete
+            continue
+        stage = state["full" if (product / "Experimental_AGREED.md").is_file() else "poc"]
+        stage["complete"] += 1
+        if not kind:
+            stage["owed"].append(product.name)
+    return state
+
+
+def _require_judge(root: Path, stage: str) -> None:
+    """Refuse an approval while a product of ``stage`` still owes the NeurIPS judge."""
+    owed = judge_state(root)[stage]["owed"]
+    if owed:
+        raise NoveltyRefusal(
+            "NEURIPS_JUDGE_OWED",
+            f"run the NeurIPS judge first: {', '.join(owed)} has a complete discussion and no "
+            "contribution_type; launch it from the Novelty & Findings tab, or hand the discussion "
+            "to the paper-reviewer agent in its findings mode",
+        )
+
+
 def _record_poc(root: Path, action: str, rationale: str, actor: str) -> dict[str, Any]:
     if action not in POC_ACTIONS:
         raise NoveltyRefusal(
@@ -213,6 +245,8 @@ def _record_poc(root: Path, action: str, rationale: str, actor: str) -> dict[str
             "no proof of concept has a complete Results/discussion.json yet; verify its results and "
             "hypotheses with `python skills/_core/results/discussion_cli.py check --product <path>` first",
         )
+    if status == "approved":
+        _require_judge(root, "poc")
     record = read_gate(root)
     record["poc"] = {
         "status": status,
@@ -236,7 +270,9 @@ def record_decision(
 
     ``stage="full"`` (the default) is the novelty gate before writing;
     ``stage="poc"`` records the proof-of-concept verification in the ``poc``
-    sub-record and refuses an approval without a complete PoC discussion."""
+    sub-record and refuses an approval without a complete PoC discussion. An
+    approval of either stage refuses while one of its products owes the NeurIPS
+    judge."""
     if stage not in STAGES:
         raise NoveltyRefusal("INVALID_STAGE", f"stage must be one of {list(STAGES)}, got {stage!r}")
     if stage == "poc":
@@ -246,6 +282,9 @@ def record_decision(
             "INVALID_ACTION",
             f"action must be one of {sorted(VALID_ACTIONS.keys())}, got {action!r}",
         )
+
+    if action == "approve":
+        _require_judge(root, "full")
 
     status = VALID_ACTIONS[action]
     target_stage = None
@@ -451,6 +490,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
     return {
         "gate": gate,
         "contribution_type": contribution_type,
+        "judge": judge_state(root),
         "discussions": discussions,
         "hypotheses": hypotheses,
         "novelty_claims": novelty_claims,

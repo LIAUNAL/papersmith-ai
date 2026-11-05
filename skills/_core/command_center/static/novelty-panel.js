@@ -3,7 +3,8 @@
  *
  * Renders the 4 core subsections:
  *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts), followed by
- *      the paper-reviewer's NeurIPS contribution type for the findings.
+ *      the paper-reviewer's NeurIPS contribution type for the findings, with the
+ *      button that launches that judge (a stage's approval waits for it).
  *   2. Novelty Assessment & Scientific Sobriety vs SOTA (claims, limits, unsupported findings).
  *   3. Scientific Rigor & Reviewer Defense Audit checklist.
  *   4. Novelty Decision Gate with interactive action buttons (Approve, Iterate).
@@ -97,6 +98,54 @@
     }
   }
 
+  // What the judge's buttons type into the agent terminal (agent input stays
+  // English). A stage's approval stays locked while one of its products owes it.
+  const JUDGE_COMMANDS = {
+    poc: '/proposal-implementation Run the NeurIPS judge now: hand each proof-of-concept discussion that is complete '
+      + 'and has no contribution_type to the paper-reviewer agent in its findings mode, write its contribution_type '
+      + 'into Results/discussion.json and re-run discussion_cli.py check.',
+    full: '/experimental-implementation Run the NeurIPS judge now: hand each full-experiment discussion that is complete '
+      + 'and has no contribution_type to the paper-reviewer agent in its findings mode, write its contribution_type '
+      + 'into Results/discussion.json and re-run discussion_cli.py check.',
+  };
+  const JUDGE_LABELS = {
+    poc: { launch: 'novelty.judge.launchPoc', again: 'novelty.judge.againPoc' },
+    full: { launch: 'novelty.judge.launchFull', again: 'novelty.judge.againFull' },
+  };
+  let judgeState = {};
+
+  function judgeOwed(stage) {
+    const owed = (judgeState[stage] || {}).owed;
+    return Array.isArray(owed) ? owed : [];
+  }
+
+  function launchNoveltyJudge(stage) {
+    if (!JUDGE_COMMANDS[stage] || !(Number((judgeState[stage] || {}).complete) > 0)) return;
+    if (typeof window.sendToCli === 'function') window.sendToCli(JUDGE_COMMANDS[stage], false, { kind: 'slash' });
+  }
+
+  // One button per stage with a complete discussion, on the card its verdict
+  // lands on; without any, one disabled button saying what it waits for.
+  function judgeActions() {
+    const stages = ['poc', 'full'].filter((stage) => Number((judgeState[stage] || {}).complete) > 0);
+    if (!stages.length) {
+      return `<p class="model-step__reason">🔒 ${esc(t('novelty.judge.needsDiscussion'))}</p>
+        <button type="button" class="btn btn--sm" data-novelty-judge="none" disabled aria-disabled="true">${esc(t('novelty.judge.launchPoc'))}</button>`;
+    }
+    return stages.map((stage) => {
+      const owed = judgeOwed(stage);
+      const note = owed.length
+        ? `<p style="font-size:0.85rem; color:var(--warn); margin:0.5rem 0 0.35rem;">${esc(t('novelty.judge.owed').replace('{products}', owed.join(', ')))}</p>` : '';
+      return `${note}<button type="button" class="btn ${owed.length ? 'btn--primary ' : ''}btn--sm" data-novelty-judge="${stage}" onclick="window.launchNoveltyJudge('${stage}')">${esc(t(owed.length ? JUDGE_LABELS[stage].launch : JUDGE_LABELS[stage].again))}</button>`;
+    }).join(' ');
+  }
+
+  function approvalLock(stage) {
+    return judgeOwed(stage).length
+      ? { attr: ' disabled aria-disabled="true"', note: `<p class="model-step__reason">🔒 ${esc(t('novelty.judge.approvalLocked'))}</p>` }
+      : { attr: '', note: '' };
+  }
+
   // `stage` "poc" records the proof-of-concept verification (G-EXP-POC) from
   // its own card; without it, the full-stage novelty gate.
   async function sendGateDecision(action, stage) {
@@ -173,8 +222,9 @@
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">${esc(t('novelty.poc.count'))} ${esc(String(verification.discussed))} · ${esc(t('novelty.poc.hypotheses'))} ${esc(String(pocHypotheses.length))}</p>
           ${decision.rationale ? `<p style="font-size:0.85rem; margin-bottom:0.75rem;"><strong>${esc(t('novelty.gate.current_rationale', 'Current rationale:'))}</strong> ${esc(decision.rationale)}</p>` : ''}
           <textarea id="noveltyPocNotes" rows="2" class="form-control" style="width:100%; font-size:0.85rem; padding:0.5rem; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; margin-bottom:0.6rem;" placeholder="${esc(t('novelty.poc.notes_placeholder'))}"></textarea>
+          ${approvalLock('poc').note}
           <div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:center;">
-            <button type="button" class="btn btn--primary" onclick="window.sendNoveltyDecision('approve', 'poc')">✓ ${esc(t('novelty.poc.approve'))}</button>
+            <button type="button" class="btn btn--primary"${approvalLock('poc').attr} onclick="window.sendNoveltyDecision('approve', 'poc')">✓ ${esc(t('novelty.poc.approve'))}</button>
             <button type="button" class="btn" onclick="window.sendNoveltyDecision('iterate', 'poc')">🔄 ${esc(t('novelty.poc.iterate'))}</button>
             <span id="noveltyPocActionStatus" style="font-size:0.85rem; font-weight:600; margin-left:auto;"></span>
           </div>
@@ -186,6 +236,7 @@
     const root = document.getElementById('noveltyRoot');
     if (!root) return;
 
+    judgeState = data.judge || {};
     const gate = data.gate || {};
     const status = gate.status || 'pending';
     const statusBadge = GATE_STATUS_BADGES[status] || `<span class="badge">${esc(status)}</span>`;
@@ -242,8 +293,9 @@
             <textarea id="noveltyGateNotes" rows="2" class="form-control" style="width:100%; font-family:var(--font-sans); font-size:0.85rem; padding:0.5rem; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px;" placeholder="${t('novelty.gate.notes_placeholder', 'Describe empirical justification, reasons for approval, or iteration guidelines…')}"></textarea>
           </div>
 
+          ${approvalLock('full').note}
           <div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:center;">
-            <button type="button" class="btn btn--primary" onclick="window.sendNoveltyDecision('approve')" style="background:var(--ok); border-color:var(--ok); color:#fff; font-weight:700;">
+            <button type="button" class="btn btn--primary"${approvalLock('full').attr} onclick="window.sendNoveltyDecision('approve')" style="background:var(--ok); border-color:var(--ok); color:#fff; font-weight:700;">
               ✓ ${t('novelty.actions.approve', 'Approve Novelty & Proceed to Writing')}
             </button>
             <button type="button" class="btn" onclick="window.sendNoveltyDecision('iterate_experiments')">
@@ -339,6 +391,7 @@
             <p style="margin-top:0.5rem;"><strong>${esc(t('contribution.why', 'Why:'))}</strong> ${esc(ct.why)}</p>
           </div>` : `
           <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">${esc(t('contribution.owed', 'paper-reviewer').replace('{artifact}', 'Results/discussion.json'))}</p>`}
+        <div style="margin-top:0.6rem;">${judgeActions()}</div>
       </section>
     `;
 
@@ -436,6 +489,7 @@
   // Export to window
   window.refreshNoveltyPanel = fetchNoveltyOverview;
   window.sendNoveltyDecision = sendGateDecision;
+  window.launchNoveltyJudge = launchNoveltyJudge;
   window.NoveltyPanel = {
     fetch: fetchNoveltyOverview,
     sendDecision: sendGateDecision,

@@ -1,7 +1,8 @@
 """Phase 4 forces its steps in order: the problem and its pillars, then the
-hypotheses, then the mathematics. Each step reads its own evidence on disk,
-each is locked until the one before it passed, the phase passes only with all
-three, and the Concept Map tab offers a "Generate & deliberate" button per
+hypotheses, then the mathematics, then the NeurIPS judge
+(`test_neurips_judge_gate.py`). Each step reads its own evidence on disk, each
+is locked until the one before it passed, the phase passes only with all four,
+and the Concept Map tab offers a "Generate & deliberate" button per
 step that types the step's slash command into the agent terminal."""
 
 from __future__ import annotations
@@ -58,9 +59,10 @@ class _Workspace(unittest.TestCase):
 class StepDerivationTests(_Workspace):
     def test_an_empty_workspace_opens_the_first_step_and_locks_the_rest(self) -> None:
         steps = phase_steps.proposal_steps(self.root)
-        self.assertEqual([s["id"] for s in steps], ["problem_pillars", "hypotheses", "mathematics"])
-        self.assertEqual([s["status"] for s in steps], ["ACTIVE", "LOCKED", "LOCKED"])
-        self.assertEqual([s["requires"] for s in steps], [None, "problem_pillars", "hypotheses"])
+        self.assertEqual([s["id"] for s in steps], ["problem_pillars", "hypotheses", "mathematics", "neurips_review"])
+        self.assertEqual([s["status"] for s in steps], ["ACTIVE", "LOCKED", "LOCKED", "LOCKED"])
+        self.assertEqual([s["requires"] for s in steps],
+                         [None, "problem_pillars", "hypotheses", "mathematics"])
 
     def test_the_placeholder_specification_is_not_evidence(self) -> None:
         _write(self.root / "papersmith.yaml", "title: A paper\ntopic: eeg\n")
@@ -76,13 +78,13 @@ class StepDerivationTests(_Workspace):
     def test_each_step_unlocks_the_next_in_order(self) -> None:
         self.spec(problem_statement="The gap.", pillars=[{"name": "P1"}])
         self.assertEqual([s["status"] for s in phase_steps.proposal_steps(self.root)],
-                         ["PASS", "ACTIVE", "LOCKED"])
+                         ["PASS", "ACTIVE", "LOCKED", "LOCKED"])
         self.spec(problem_statement="The gap.", pillars=[{"name": "P1"}], hypotheses=[{"statement": "H1"}])
         self.assertEqual([s["status"] for s in phase_steps.proposal_steps(self.root)],
-                         ["PASS", "PASS", "ACTIVE"])
+                         ["PASS", "PASS", "ACTIVE", "LOCKED"])
         self.revision("# Proposal\n" + EQUATION)
         self.assertEqual([s["status"] for s in phase_steps.proposal_steps(self.root)],
-                         ["PASS", "PASS", "PASS"])
+                         ["PASS", "PASS", "PASS", "ACTIVE"])
 
     def test_hypotheses_without_the_problem_stay_locked(self) -> None:
         self.spec(hypotheses=[{"statement": "H1"}])
@@ -103,14 +105,16 @@ class StepDerivationTests(_Workspace):
                "hypotheses": [{"id": "H1", "statement": "It improves", "pillar": "P1"}]}
         self.revision("# Proposal\n" + EQUATION, sky=sky)
         steps = self.steps()
-        self.assertEqual([steps[i]["status"] for i in phase_steps.STEP_IDS], ["PASS", "PASS", "PASS"])
+        self.assertEqual([steps[i]["status"] for i in phase_steps.STEP_IDS],
+                         ["PASS", "PASS", "PASS", "ACTIVE"])
         self.assertEqual(steps["hypotheses"]["evidence"]["source"], "proposals/research-concept-eeg-r01.sky.json")
         self.assertEqual(steps["mathematics"]["evidence"]["equations"], 1)
 
     def test_the_api_route_answers_the_steps(self) -> None:
         client = TestClient(server.create_app(self.root, history_store=None))
         body = client.get("/api/model/steps").json()
-        self.assertEqual([s["status"] for s in body["steps"]], ["ACTIVE", "LOCKED", "LOCKED"])
+        self.assertEqual([s["status"] for s in body["steps"]],
+                         ["ACTIVE", "LOCKED", "LOCKED", "LOCKED"])
 
 
 class Phase4StatusTests(_Workspace):
@@ -118,14 +122,17 @@ class Phase4StatusTests(_Workspace):
         self.revision()
         fase = self.fase4()
         self.assertEqual(fase["status"], "ACTIVE")
-        self.assertIn("0 of 3", fase["detail"])
+        self.assertIn("0 of 4", fase["detail"])
 
     def test_the_phase_passes_with_the_revision_and_every_step(self) -> None:
-        self.spec(problem_statement="The gap.", pillars=[{"name": "P1"}], hypotheses=[{"statement": "H1"}])
+        _write(self.root / ".papersmith" / "model_spec.json", json.dumps({
+            "novelty": {"problem_statement": "The gap.", "pillars": [{"name": "P1"}],
+                        "hypotheses": [{"statement": "H1"}]},
+            "contribution_type": {"type": "Theory", "why": "A bound."}}))
         self.revision("# Proposal\n" + EQUATION)
         fase = self.fase4()
         self.assertEqual((fase["status"], fase["progress"]), ("PASS", 1.0))
-        self.assertEqual([s["status"] for s in fase["steps"]], ["PASS", "PASS", "PASS"])
+        self.assertEqual([s["status"] for s in fase["steps"]], ["PASS", "PASS", "PASS", "PASS"])
 
     def test_phase_five_stays_locked_until_phase_four_passes(self) -> None:
         self.revision()
@@ -138,7 +145,7 @@ class Phase4StatusTests(_Workspace):
         self.revision()
         subs = {s["id"]: s["status"] for s in self.fase4()["subfases"]}
         self.assertEqual(subs, {"4.1": "PASS", "4.2": "PENDING", "4.3": "LOCKED", "4.4": "PASS",
-                                "4.5": "PENDING", "4.6": "LOCKED"})
+                                "4.5": "PENDING", "4.6": "LOCKED", "4.7": "LOCKED"})
 
 
 HARNESS = r"""
@@ -175,7 +182,7 @@ def render(steps: list[dict], lang: str = "en", clicks: list[str] | None = None)
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class ConceptMapStepperTests(_Workspace):
-    def test_the_stepper_names_the_three_steps_in_order(self) -> None:
+    def test_the_stepper_names_the_four_steps_in_order(self) -> None:
         html = render(phase_steps.proposal_steps(self.root))["html"]
         positions = [html.index(f'data-model-step="{i}"') for i in phase_steps.STEP_IDS]
         self.assertEqual(positions, sorted(positions))

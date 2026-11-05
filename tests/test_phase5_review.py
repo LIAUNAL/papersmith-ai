@@ -52,6 +52,7 @@ def _discussion(stage: str, verdict: str = "supported") -> dict:
         "novelty": {"claim": "Hybrid encoding is new.", "verdict": "justified",
                     "evidence": ["significance:hybrid vs linear"], "rationale": "It beats the baseline."},
         "qualitative_not_applicable": "No interpretable component in this stage.",
+        "contribution_type": {"type": "General", "why": "A comparative result."},
         "limitations": [], "next_steps": [],
     }
 

@@ -13,11 +13,12 @@
  * language. A language switch repaints the panel from the last spec.
  *
  * Above the modules, a stepper (GET /api/model/steps) forces Phase 4's order:
- * the problem and its pillars, then the hypotheses, then the mathematics. Each
- * step's "Generate & deliberate" button types `/proposal-deliberation <the
+ * the problem and its pillars, then the hypotheses, then the mathematics, then
+ * the NeurIPS judge. Each step's button types `/proposal-deliberation <the
  * step's instruction>` into the agent terminal (window.sendToCli); the
- * mathematics step also offers `/math-tutor`. A locked step's buttons are
- * disabled and say what the step requires.
+ * mathematics step also offers `/math-tutor`, and the judge's button repeats on
+ * the contribution-type card, where its verdict appears. A locked step's
+ * buttons are disabled and say what the step requires.
  *
  * Public surface (window): renderModelModules(spec), renderModelSteps(steps),
  * refreshModelSteps().
@@ -76,16 +77,29 @@
     'Negative Results': 'contribution.type.Negative Results',
   };
 
+  // The button that launches the judge, on the card its verdict lands on. Until
+  // the stepper answers, or while the mathematics is missing, it stays disabled.
+  function judgeButton(judged) {
+    const step = (lastSteps || []).find((s) => s.id === 'neurips_review');
+    const open = step && step.status !== 'LOCKED';
+    const off = open ? '' : ' disabled aria-disabled="true"';
+    const reason = step && !open
+      ? `<p class="model-step__reason">🔒 ${esc(t('modelSteps.requires', { step: t('modelSteps.mathematics') }))}</p>` : '';
+    return `${reason}<div class="model-step__actions" style="margin-top: 0.6rem;">
+        <button type="button" class="btn ${judged ? '' : 'btn--primary '}btn--sm" data-model-step="neurips_review"${off}>${esc(t(judged ? 'modelSteps.judgeAgain' : 'modelSteps.judge'))}</button>
+      </div>`;
+  }
+
   // The paper-reviewer's NeurIPS contribution type for the proposal, after
   // the hypotheses it was read from.
   function contributionType(spec) {
     const ct = spec.contribution_type;
     const head = `<h4 style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;">${esc(t('contribution.title'))}</h4>`;
-    if (!ct || !CONTRIBUTION_TYPE_KEYS[ct.type]) return head + empty(t('contribution.owed', { artifact: '.papersmith/model_spec.json' }));
+    if (!ct || !CONTRIBUTION_TYPE_KEYS[ct.type]) return head + empty(t('contribution.owed', { artifact: '.papersmith/model_spec.json' })) + judgeButton(false);
     return `${head}<div class="model-hypothesis-card">
         <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type]))}</span>
         <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;"><strong>${esc(t('contribution.why'))}</strong> ${esc(ct.why)}</p>
-      </div>`;
+      </div>${judgeButton(true)}`;
   }
 
   function layers(spec) {
@@ -118,6 +132,7 @@
   }
 
   let lastSpec = null;
+  let lastSteps = null;
 
   function renderModelModules(spec) {
     lastSpec = spec || {};
@@ -139,6 +154,7 @@
     problem_pillars: 'modelSteps.problemPillars',
     hypotheses: 'modelSteps.hypotheses',
     mathematics: 'modelSteps.mathematics',
+    neurips_review: 'modelSteps.neuripsReview',
   };
   const STATUS_LABELS = {
     PASS: 'modelSteps.status.pass',
@@ -153,11 +169,11 @@
       + 'and record them in the revision and in .papersmith/model_spec.json.',
     mathematics: '/proposal-deliberation Now the mathematics: formalize the agreed hypotheses as $$ ... \\tag{N} $$ '
       + 'display blocks in the next revision.',
+    neurips_review: '/proposal-deliberation Run the NeurIPS judge now: hand the latest revision to the paper-reviewer '
+      + 'agent in its proposal mode and record its contribution_type verbatim in .papersmith/model_spec.json.',
     'math-tutor': '/math-tutor Walk me through the equations of the latest proposal revision.',
   };
   const STEP_OF_BUTTON = { 'math-tutor': 'mathematics' };
-
-  let lastSteps = null;
 
   function stepEvidence(step) {
     const e = step.evidence || {};
@@ -166,11 +182,18 @@
         problem: t(e.problem ? 'modelSteps.evidence.yes' : 'modelSteps.evidence.no'), n: Number(e.pillars) || 0 });
     }
     if (step.id === 'hypotheses') return t('modelSteps.evidence.hypotheses', { n: Number(e.hypotheses) || 0 });
+    if (step.id === 'neurips_review') {
+      return e.type && CONTRIBUTION_TYPE_KEYS[e.type]
+        ? t('modelSteps.evidence.neuripsReview', { type: t(CONTRIBUTION_TYPE_KEYS[e.type]) })
+        : t('modelSteps.evidence.neuripsOwed');
+    }
     return t('modelSteps.evidence.mathematics', { n: Number(e.equations) || 0 });
   }
 
   function renderModelSteps(steps) {
     lastSteps = Array.isArray(steps) ? steps : [];
+    const card = document.getElementById('modelContributionType');
+    if (card && lastSpec) card.innerHTML = contributionType(lastSpec);
     const host = document.getElementById('modelFlowSteps');
     if (!host) return;
     if (!lastSteps.length) { host.innerHTML = ''; return; }
@@ -191,7 +214,7 @@
           <p class="model-step__evidence">${esc(stepEvidence(step))}</p>
           ${reason}
           <div class="model-step__actions">
-            <button type="button" class="btn btn--primary btn--sm" data-model-step="${esc(step.id)}"${off}>${esc(t('modelSteps.generate'))}</button>
+            <button type="button" class="btn btn--primary btn--sm" data-model-step="${esc(step.id)}"${off}>${esc(t(step.id === 'neurips_review' ? (step.done ? 'modelSteps.judgeAgain' : 'modelSteps.judge') : 'modelSteps.generate'))}</button>
             ${tutor}
           </div>
         </div>`;
