@@ -12,7 +12,7 @@ Branch: feat/sota-citations. Delivery: ask-on-risk. Test runner: `.micromamba/en
 
 ## Tasks
 
-- T1 [S1-S6] delegated (context backstop: the parent session is past the advisory context limit) — contract, checker, gates, buttons, panels, docs. Status: pending.
+- T1 [S1-S6] delegated (context backstop: the parent session is past the advisory context limit) — contract, checker, gates, buttons, panels, docs. Status: done; suite 9288 passed, 1 failed (release bump only), node 836. Parent added the approve-button lock, the phase-console text and the results README.
 
 ## Log
 

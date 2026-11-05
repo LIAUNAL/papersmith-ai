@@ -5,6 +5,16 @@ Each product folder (`implementations/<repo>/<Name>/`) closes its proof of conce
 - `discussion.py` is the contract (stdlib only). Import it **by file path** with `importlib.util.spec_from_file_location`; the folder has no package `__init__`.
 - `discussion_cli.py` is the command line over it.
 
+## SOTA citations
+
+`citations.py` is a second contract here, for the ideas rather than the results: every pillar, hypothesis, concept-map layer, numbered equation and experiment is justified by 2 to 5 entries of `sota-pool/candidates.json` in `.papersmith/citations.json`.
+
+```json
+{"schema": 1, "ideas": {"hypothesis:H1": [{"id": "2008.08605", "why": "How this reference supports the idea."}]}}
+```
+
+`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. It proves pool membership and a stated reason, not that the reference really supports the idea.
+
 ## CLI
 
 ```
