@@ -79,7 +79,7 @@ The full path, from a PDF to a compiled paper:
 |---|---------|----------|-------------------------|
 | 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, the dashboard's optional thematic help turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
 | 2 | `/paper-ingestion` | Converts the reference PDFs into readable Markdown (equations in LaTeX, tables as tables, figures as files) | `guidance/<folder>/` |
-| 3 | `/proposal-deliberation` | Builds the proposal with you in one order — the central problem and its pillars, then the hypotheses, then the mathematics, each locked until the one before it exists — and publishes each agreement as a managed revision, with the SOTA constellation alongside; the `paper-reviewer` agent then classifies its NeurIPS contribution type | `proposals/` (the revision and its `graph.html`); the contribution type in `.papersmith/model_spec.json` |
+| 3 | `/proposal-deliberation` | Builds the proposal with you in one order — the central problem and its pillars, then the hypotheses, then the mathematics, each locked until the one before it exists — and publishes each agreement as a managed revision, with the SOTA constellation alongside; every idea is then justified by 2 to 5 SOTA pool citations, and the `paper-reviewer` agent classifies its NeurIPS contribution type | `proposals/` (the revision and its `graph.html`); the citations in `.papersmith/citations.json`; the contribution type in `.papersmith/model_spec.json` |
 | 3b | `/math-tutor` | Before implementing a revision: a Socratic tutor that discusses its concept map and mathematics with you, reads the pages you draw by hand, and checks your understanding of why the novelty holds | nothing on disk but its thread (`.papersmith/math-tutor/`); used from the dashboard's Mapa Conceptual & Modelo tab |
 | 4 | `/experimental-deliberation` | Discusses the experimental design that will put that mathematics to the test | `experiments/` |
 | 4b | `/experiments-tutor` | Consults and iterates on each experiment decision with you — architecture, hyperparameters, ablations, significance tests, the toy set's purpose, training, upper bounds (*techos*), the methods compared and their implementation — reading the protocol, the approvals, the code and the results first; it never invents a number, and any change of decision goes back to `/experimental-deliberation` | nothing on disk but its thread (`.papersmith/experiments-tutor/`); used from the dashboard's Experimentos tab |
@@ -148,7 +148,7 @@ dashboard shows (the interface also has an English catalogue):
 |---|---|
 | **Flujo Archify** | The interactive flow diagram above and the table of every agent the workspace ships. It is the tab the dashboard opens on |
 | **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console |
-| **Mapa Conceptual & Modelo** | The proposal built in order: a stepper for the central problem and its pillars → the hypotheses → the mathematics, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the paper-reviewer's NeurIPS contribution type right after the hypotheses; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it |
+| **Mapa Conceptual & Modelo** | The proposal built in order: a stepper for the central problem and its pillars → the hypotheses → the mathematics, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the paper-reviewer's NeurIPS contribution type right after the hypotheses; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year and why) or a mark that it owes them |
 | **Experimentos** | A stepper proof of concept → verify → full experiment, one button each (the full-experiment button stays disabled until `G-EXP-POC` passes), then the proof-of-concept and full-experiment cards, run options and the `experiments-tutor`. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
 | **Novedad & Hallazgos** | The proof-of-concept verification card (`G-EXP-POC`), the novelty assessment with the paper-reviewer's NeurIPS contribution type of the findings, and the `G-NOVELTY` gate (below) |
 | **Secciones del Paper** | The canonical section structure of the manuscript: state, words and blocks of each section |
@@ -635,9 +635,24 @@ button that types the step's `/proposal-deliberation` into the agent. Once the
 hypotheses are discussed and the mathematics and novelty proposed, the
 `paper-reviewer` agent classifies the proposal's NeurIPS contribution type
 (`General`, `Theory`, `Use-Inspired`, `Concept & Feasibility` or `Negative
-Results`), shown right after the hypotheses. This NeurIPS judge is the fourth
+Results`), shown right after the hypotheses. This NeurIPS judge is the fifth
 step: the *Lanzar el juez NeurIPS* button on that card launches it, and Phase 5
-stays locked until it records a type. Discuss the concept map and the
+stays locked until it records a type.
+
+The fourth step comes before the judge, so it reads justified ideas: every
+pillar, hypothesis, concept-map layer and numbered equation names 2 to 5
+references of `sota-pool/candidates.json`, each with the reason it supports the
+idea, in `.papersmith/citations.json`. The same file justifies each experiment
+of the latest protocol: until they are cited, `/proposal-implementation` and
+`/experimental-implementation` stay locked, G-EXP-POC refuses its approval
+(`SOTA_CITATIONS_OWED`) and Phase 5 cannot pass. The buttons in the stepper and
+in the *Experimentos* tab ask the agent for them, and each panel shows them
+beside the idea. `python skills/_core/results/citations_cli.py check --root .`
+prints what is owed and exits non-zero. A valid citation is in the pool and
+states a reason; that does not prove the reference supports the idea, so
+existing workspaces lose their Phase 4 PASS until they are cited.
+
+Discuss the concept map and the
 equations with `/math-tutor` before implementing the revision.
 
 Proposals live in `proposals/`, one per managed revision

@@ -177,9 +177,9 @@ class FullActionRequiresTests(_Workspace):
         novelty_gate.record_decision(self.root, "approve", stage="poc")
         self.assertFalse(self.action()["locked"])
 
-    def test_the_poc_action_has_no_requirement(self) -> None:
+    def test_the_poc_action_needs_only_the_citations(self) -> None:
         poc = next(a for a in self.fase5()["actions"] if a.get("label") == "Implement the proof of concept")
-        self.assertNotIn("requires", poc)
+        self.assertEqual((poc["requires"], poc["locked"]), ("G-SOTA-CITATIONS", False))
 
 
 CONSOLE = r"""
@@ -303,7 +303,8 @@ class ExperimentsStepperTests(_Workspace):
 
     def test_the_view_carries_the_flow(self) -> None:
         self.assertEqual(self.view()["flow"], {"poc": 0, "poc_discussed": 0, "poc_decision": "pending",
-                                               "gate": "PENDING"})
+                                               "gate": "PENDING",
+                                               "citations": {"ideas": 0, "cited": 0, "owed": 0}})
 
     def test_the_stepper_orders_poc_verify_full_and_locks_full(self) -> None:
         self.poc()

@@ -117,6 +117,7 @@
     full: { launch: 'novelty.judge.launchFull', again: 'novelty.judge.againFull' },
   };
   let judgeState = {};
+  let experimentCitationsOwed = [];
 
   function judgeOwed(stage) {
     const owed = (judgeState[stage] || {}).owed;
@@ -145,8 +146,12 @@
   }
 
   function approvalLock(stage) {
-    return judgeOwed(stage).length
-      ? { attr: ' disabled aria-disabled="true"', note: `<p class="model-step__reason">🔒 ${esc(t('novelty.judge.approvalLocked'))}</p>` }
+    const keys = [];
+    if (judgeOwed(stage).length) keys.push('novelty.judge.approvalLocked');
+    if (stage === 'poc' && experimentCitationsOwed.length) keys.push('novelty.citations.approvalLocked');
+    return keys.length
+      ? { attr: ' disabled aria-disabled="true"',
+          note: keys.map((key) => `<p class="model-step__reason">🔒 ${esc(t(key))}</p>`).join('') }
       : { attr: '', note: '' };
   }
 
@@ -241,6 +246,7 @@
     if (!root) return;
 
     judgeState = data.judge || {};
+    experimentCitationsOwed = Array.isArray(data.experiment_citations_owed) ? data.experiment_citations_owed : [];
     const gate = data.gate || {};
     const status = gate.status || 'pending';
     const statusBadge = GATE_STATUS_BADGES[status] || `<span class="badge">${esc(status)}</span>`;

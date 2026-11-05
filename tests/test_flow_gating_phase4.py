@@ -1,7 +1,8 @@
 """Phase 4 forces its steps in order: the problem and its pillars, then the
-hypotheses, then the mathematics, then the NeurIPS judge
+hypotheses, then the mathematics, then the SOTA citations
+(`test_sota_citations.py`), then the NeurIPS judge
 (`test_neurips_judge_gate.py`). Each step reads its own evidence on disk, each
-is locked until the one before it passed, the phase passes only with all four,
+is locked until the one before it passed, the phase passes only with all five,
 and the Concept Map tab offers a "Generate & deliberate" button per
 step that types the step's slash command into the agent terminal."""
 
@@ -18,16 +19,30 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from skills._core.command_center import phase_steps, server
+from skills._core.results import citations
 
 STATIC = Path(server.__file__).resolve().parent / "static"
 EN_JS, ES_JS, I18N_JS = STATIC / "i18n" / "en.js", STATIC / "i18n" / "es.js", STATIC / "i18n.js"
 MARKER = "<!-- proposal-workspace:artifact:v1 -->\n"
 EQUATION = "$$\nL = \\sum_i \\ell_i\n\\tag{1}\n$$\n"
+POOL = [{"identifier": "10.1000/Alpha", "title": "Alpha bound", "authors": ["Ana"], "year": 2021, "venue": "V"},
+        {"identifier": "arXiv:2008.08605", "title": "Beta gap", "authors": ["Beto"], "year": 2020, "venue": "W"}]
 
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def cite_everything(root: Path) -> None:
+    """Justify every current idea of the workspace with two references of the
+    pool, written when the workspace has none."""
+    pool = root / "sota-pool" / "candidates.json"
+    if not pool.is_file():
+        _write(pool, json.dumps({"candidates": POOL}))
+    entries = [{"id": ref["identifier"], "why": "Cited for the test."} for ref in POOL]
+    ideas = {idea["key"]: entries for idea in citations.state(root)["ideas"]}
+    _write(root / ".papersmith" / "citations.json", json.dumps({"schema": 1, "ideas": ideas}))
 
 
 class _Workspace(unittest.TestCase):
@@ -59,10 +74,10 @@ class _Workspace(unittest.TestCase):
 class StepDerivationTests(_Workspace):
     def test_an_empty_workspace_opens_the_first_step_and_locks_the_rest(self) -> None:
         steps = phase_steps.proposal_steps(self.root)
-        self.assertEqual([s["id"] for s in steps], ["problem_pillars", "hypotheses", "mathematics", "neurips_review"])
-        self.assertEqual([s["status"] for s in steps], ["ACTIVE", "LOCKED", "LOCKED", "LOCKED"])
+        self.assertEqual([s["id"] for s in steps], ["problem_pillars", "hypotheses", "mathematics", "sota_citations", "neurips_review"])
+        self.assertEqual([s["status"] for s in steps], ["ACTIVE", "LOCKED", "LOCKED", "LOCKED", "LOCKED"])
         self.assertEqual([s["requires"] for s in steps],
-                         [None, "problem_pillars", "hypotheses", "mathematics"])
+                         [None, "problem_pillars", "hypotheses", "mathematics", "sota_citations"])
 
     def test_the_placeholder_specification_is_not_evidence(self) -> None:
         _write(self.root / "papersmith.yaml", "title: A paper\ntopic: eeg\n")
@@ -78,13 +93,13 @@ class StepDerivationTests(_Workspace):
     def test_each_step_unlocks_the_next_in_order(self) -> None:
         self.spec(problem_statement="The gap.", pillars=[{"name": "P1"}])
         self.assertEqual([s["status"] for s in phase_steps.proposal_steps(self.root)],
-                         ["PASS", "ACTIVE", "LOCKED", "LOCKED"])
+                         ["PASS", "ACTIVE", "LOCKED", "LOCKED", "LOCKED"])
         self.spec(problem_statement="The gap.", pillars=[{"name": "P1"}], hypotheses=[{"statement": "H1"}])
         self.assertEqual([s["status"] for s in phase_steps.proposal_steps(self.root)],
-                         ["PASS", "PASS", "ACTIVE", "LOCKED"])
+                         ["PASS", "PASS", "ACTIVE", "LOCKED", "LOCKED"])
         self.revision("# Proposal\n" + EQUATION)
         self.assertEqual([s["status"] for s in phase_steps.proposal_steps(self.root)],
-                         ["PASS", "PASS", "PASS", "ACTIVE"])
+                         ["PASS", "PASS", "PASS", "ACTIVE", "LOCKED"])
 
     def test_hypotheses_without_the_problem_stay_locked(self) -> None:
         self.spec(hypotheses=[{"statement": "H1"}])
@@ -106,7 +121,7 @@ class StepDerivationTests(_Workspace):
         self.revision("# Proposal\n" + EQUATION, sky=sky)
         steps = self.steps()
         self.assertEqual([steps[i]["status"] for i in phase_steps.STEP_IDS],
-                         ["PASS", "PASS", "PASS", "ACTIVE"])
+                         ["PASS", "PASS", "PASS", "ACTIVE", "LOCKED"])
         self.assertEqual(steps["hypotheses"]["evidence"]["source"], "proposals/research-concept-eeg-r01.sky.json")
         self.assertEqual(steps["mathematics"]["evidence"]["equations"], 1)
 
@@ -114,7 +129,7 @@ class StepDerivationTests(_Workspace):
         client = TestClient(server.create_app(self.root, history_store=None))
         body = client.get("/api/model/steps").json()
         self.assertEqual([s["status"] for s in body["steps"]],
-                         ["ACTIVE", "LOCKED", "LOCKED", "LOCKED"])
+                         ["ACTIVE", "LOCKED", "LOCKED", "LOCKED", "LOCKED"])
 
 
 class Phase4StatusTests(_Workspace):
@@ -122,7 +137,7 @@ class Phase4StatusTests(_Workspace):
         self.revision()
         fase = self.fase4()
         self.assertEqual(fase["status"], "ACTIVE")
-        self.assertIn("0 of 4", fase["detail"])
+        self.assertIn("0 of 5", fase["detail"])
 
     def test_the_phase_passes_with_the_revision_and_every_step(self) -> None:
         _write(self.root / ".papersmith" / "model_spec.json", json.dumps({
@@ -130,9 +145,10 @@ class Phase4StatusTests(_Workspace):
                         "hypotheses": [{"statement": "H1"}]},
             "contribution_type": {"type": "Theory", "why": "A bound."}}))
         self.revision("# Proposal\n" + EQUATION)
+        cite_everything(self.root)
         fase = self.fase4()
         self.assertEqual((fase["status"], fase["progress"]), ("PASS", 1.0))
-        self.assertEqual([s["status"] for s in fase["steps"]], ["PASS", "PASS", "PASS", "PASS"])
+        self.assertEqual([s["status"] for s in fase["steps"]], ["PASS", "PASS", "PASS", "PASS", "PASS"])
 
     def test_phase_five_stays_locked_until_phase_four_passes(self) -> None:
         self.revision()
@@ -145,7 +161,7 @@ class Phase4StatusTests(_Workspace):
         self.revision()
         subs = {s["id"]: s["status"] for s in self.fase4()["subfases"]}
         self.assertEqual(subs, {"4.1": "PASS", "4.2": "PENDING", "4.3": "LOCKED", "4.4": "PASS",
-                                "4.5": "PENDING", "4.6": "LOCKED", "4.7": "LOCKED"})
+                                "4.5": "PENDING", "4.6": "LOCKED", "4.7": "LOCKED", "4.8": "LOCKED"})
 
 
 HARNESS = r"""
@@ -182,7 +198,7 @@ def render(steps: list[dict], lang: str = "en", clicks: list[str] | None = None)
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class ConceptMapStepperTests(_Workspace):
-    def test_the_stepper_names_the_four_steps_in_order(self) -> None:
+    def test_the_stepper_names_the_five_steps_in_order(self) -> None:
         html = render(phase_steps.proposal_steps(self.root))["html"]
         positions = [html.index(f'data-model-step="{i}"') for i in phase_steps.STEP_IDS]
         self.assertEqual(positions, sorted(positions))

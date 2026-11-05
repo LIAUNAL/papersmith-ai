@@ -551,24 +551,29 @@ command or `smith` subcommand (Phase 10 compiles from its panel and names none).
 Two phases also order their own steps:
 
 - **Phase 4 (proposal deliberation)**: the central problem and its pillars, then
-  the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), then the NeurIPS
-  judge (4.7), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
+  the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), then the SOTA
+  citations (4.7), then the NeurIPS judge (4.8), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
   overlay for the first two, a `$$ … \tag{N} $$` block in the latest
-  `proposals/research-concept-<slug>-rNN.md` for the third, a valid
-  `contribution_type` in `.papersmith/model_spec.json` for the fourth — and each
+  `proposals/research-concept-<slug>-rNN.md` for the third, 2 to 5 valid citations
+  per pillar, hypothesis, layer and equation in `.papersmith/citations.json` for
+  the fourth, a valid `contribution_type` in `.papersmith/model_spec.json` for the
+  fifth — and each
   locked until the one before it passes, so Phase 5 waits for the judge.
-  *Mapa Conceptual & Modelo* shows the four steps with a *Generar y deliberar*
+  *Mapa Conceptual & Modelo* shows the five steps with a *Generar y deliberar*
   button that types the step's `/proposal-deliberation`
   into the agent terminal (the mathematics step also offers `/math-tutor`), and the
   paper-reviewer's NeurIPS contribution type right after the hypotheses, with the
-  *Lanzar el juez NeurIPS* button on that card.
+  *Lanzar el juez NeurIPS* button on that card. Each idea shows its citations
+  beside it (`GET /api/citations`), or a mark that it owes them.
 - **Phase 5 (proof of concept and experiments)**: the experimental protocol
   (5.1 to 5.5), the toy set (5.6), the replication of the comparison methods
   (5.7), the proof of concept (5.8), its verification by the operator (5.9,
   `G-EXP-POC`), the timing estimate (5.10), the optional hyperparameter search
   (5.11), the full experiments (5.12, `LOCKED` until `G-EXP-POC` passes, like the
   `/experimental-implementation` action), the code review (5.13) and the remote
-  rehearsal and launch (5.14). 5.8 and 5.12 need a product of that stage with a
+  rehearsal and launch (5.14). The SOTA citations of the experiments (5.15) hold
+  `/proposal-implementation`, `/experimental-implementation`, the `G-EXP-POC`
+  approval (`SOTA_CITATIONS_OWED`) and the phase. 5.8 and 5.12 need a product of that stage with a
   complete `Results/discussion.json` (a bare `Results/` folder reads as active)
   and 5.13 reads `Results/reviewer_report.json`. The phase passes only with a
   published protocol, a proof of concept discussed and verified, and a full

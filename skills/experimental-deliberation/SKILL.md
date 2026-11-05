@@ -312,6 +312,22 @@ Two experiments declaring the same identifier are a duplicate and fail the uniqu
 
 Put the declaration in the experiment's own heading. `experimental-implementation` locates an experiment only by a heading carrying the declaration, and takes its block to run to the next heading of the same or a higher level; a declaration placed in body text resolves citations here but is no locus there. An experiment headed `## Experiment [exp:E1] — …` resolves from a `RESOLVE_TARGET` query of `E1` (measured), which makes the identifier a usable locus handle as well as a citation target. `reference-experimental.ts` declares under the core's own `tag` kind rather than a domain word for the same reason: that is the half of the core's label/tag split that feeds the resolver's aliases and lets a citation resolve instead of reporting as dangling.
 
+### SOTA citations of each experiment: `.papersmith/citations.json`
+
+**Every experiment of the latest protocol is justified by 2 to 5 references of
+the SOTA pool**, under the key `experiment:<id>` of the `## Experiment [exp:<id>]`
+heading, in the file the proposal's ideas use: `{"schema": 1, "ideas":
+{"experiment:E1": [{"id": "<pool identifier>", "why": "<how this reference
+supports the experiment>"}]}}`. Keep the other keys of that file as they are.
+Each `id` is a distinct `candidates[].identifier` of `sota-pool/candidates.json`;
+`why` is non-blank, at most 300 characters, and never claims more than the
+reference states. Refresh the file with each new protocol version, then run
+`python skills/_core/results/citations_cli.py check --root .`, which prints what
+is owed and exits non-zero. Until every experiment is cited,
+`/proposal-implementation` and `/experimental-implementation` stay locked, the
+G-EXP-POC approval refuses `SOTA_CITATIONS_OWED` and Phase 5 cannot pass. The
+Experiments tab's "Justify with SOTA citations" button asks for it.
+
 ### A second, unrelated citation form: `[claims:N]`
 
 An experiment may also cite a claim the mathematical proposal declares, as `[claims:9]` — this document sustaining `\tag{9}` in the proposal's own numbered form. This is **not** a reference-integrity citation and `cites()` never recognizes it: `[claims:N]` is resolved by an entirely different engine, `_core/implementation/`'s own `crossing_state` (`the-agreement-nothing-computes`), against the proposal's own declared claims — never against anything `reference-experimental.ts` declares or cites. Adding it to `cites()` "for completeness" would make every crossing an unresolved reference in this document's own reference-integrity check, since `checkReferenceIntegrity` resolves `cited` against `declared` in the **same** document — the exact cost the operator's own citation-key ruling paid to avoid.

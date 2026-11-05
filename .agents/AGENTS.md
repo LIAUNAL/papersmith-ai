@@ -75,11 +75,17 @@ skill refuses when its input is missing.
    - **Concept map and mathematics**: before implementing a revision, discuss
      its pillars, hypotheses and concept layers and its equations with
      `/math-tutor`, the Socratic tutor that also reads hand-written pages.
+   - **SOTA citations**: every pillar, hypothesis, concept-map layer and
+     numbered equation is justified by 2 to 5 references of
+     `sota-pool/candidates.json`, each with its reason, in
+     `.papersmith/citations.json`, and shown beside the idea. This is the
+     phase's fourth step, launched from its button in the stepper; `python
+     skills/_core/results/citations_cli.py check --root .` says what is owed.
    - **Contribution type**: once the hypotheses are discussed and the
      mathematics and the novelty proposed, the `paper-reviewer` agent
      classifies the proposal's NeurIPS contribution type
      (`contribution_type` in `.papersmith/model_spec.json`), shown right after
-     the hypotheses. This NeurIPS judge is the phase's fourth step: the
+     the hypotheses. This NeurIPS judge is the phase's fifth step: the
      "Lanzar el juez NeurIPS" button, on that card and in the stepper, launches
      it, and Phase 5 stays locked until it records a type.
 5. **Proof of concept and experiments**, in this order:
@@ -93,8 +99,13 @@ skill refuses when its input is missing.
    (`/hyperparameter-search`); the full experiments
    (`/experimental-implementation`), locked until G-EXP-POC passes; the code
    review (`experiments-reviewer`); the remote rehearsal; and the operator's
-   launch. The Experimentos tab steps through proof of concept → verify →
-   full experiment with one button each.
+   launch. The Experimentos tab steps through SOTA citations → proof of
+   concept → verify → full experiment with one button each.
+   - **Experiment citations**: every experiment of the latest protocol carries
+     its 2 to 5 SOTA citations in `.papersmith/citations.json`, launched from
+     the Experimentos tab. Until then `/proposal-implementation` and
+     `/experimental-implementation` stay locked and G-EXP-POC refuses its
+     approval (`SOTA_CITATIONS_OWED`).
    - **Data**: `/datasets synth|search|license|qc|prepare|publish` gives both
      stages a seeded toy set always and one official dataset (agents
      `dataset-scout`, `dataset-curator`): license checked, quality measured,
@@ -147,7 +158,8 @@ skill refuses when its input is missing.
      pool and the operator records `G-NOVELTY` (`smith novelty approve` or
      `iterate`) before the paper is written.
    Only the operator authorizes a launch. The phase passes only with a
-   published protocol, a proof of concept discussed and verified, and a full
+   published protocol with every experiment cited, a proof of concept
+   discussed and verified, and a full
    experiment discussed.
 6. **Scaffolding**: `/paper-writing` opens the `paper/` tree and its section
    contracts.

@@ -56,15 +56,21 @@ def _command(command: str, label: str, desc: str) -> dict[str, Any]:
     return {"kind": "command", "command": command, "label": label, "desc": desc}
 
 
-def _requires(action: dict[str, Any], gate: str) -> dict[str, Any]:
-    """An action that stays locked until ``gate`` passes; ``attach`` sets its
-    ``locked`` flag from the gate's status and the drawer disables it."""
-    return {**action, "requires": gate}
+def _requires(action: dict[str, Any], *gates: str) -> dict[str, Any]:
+    """An action that stays locked until every gate passes; ``attach`` sets its
+    ``locked`` flag from their status, names the first one still open in
+    ``requires``, and the drawer disables it."""
+    return {**action, "requires": gates[0], "requires_all": list(gates)}
 
 
 def _redirect(label: str, tab: str, desc: str, section: str = "") -> dict[str, Any]:
     return {"kind": "redirect", "label": label, "tab": tab, "section": section, "desc": desc}
 
+
+#: Not an operator gate: it passes once every experiment of the latest protocol
+#: carries its SOTA citations (``results/citations.py``), and holds the actions
+#: that implement them.
+CITATIONS_GATE = "G-SOTA-CITATIONS"
 
 _WRITING_GUIDE = [
     "Name a block or an action: open the paper/ tree, see which writing phase is unlocked, or write a block.",
@@ -129,6 +135,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "Ask for the first version, a change to the current proposal or a revision operation (rNN).",
                 "The agent is a tutor: it discusses before deciding and applies no change without your approval.",
                 "The mathematics goes in $$ … \\tag{N} $$ blocks; the novelty is placed inside the SOTA sky.",
+                "Every pillar, hypothesis, layer and numbered equation is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json.",
                 "The domain guides in guidance/paper-guide/ load on their own.",
             ], "E.g.: let us discuss whether hypothesis H2 still stands against the Smith 2024 reference."),
             _redirect("Discuss the concept map", "modelo",
@@ -148,6 +155,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
             _prompt("/experimental-deliberation", "Deliberate the experimental design", [
                 "The question that governs every turn: what experiment would test this claim of the proposal?",
                 "Every experiment declares the claim it tests, its metric and its SOTA baseline.",
+                "Every experiment is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json; the implementation stays locked until then.",
                 "Ask for the first version, a change or a revision operation; nothing is applied without your approval.",
             ], "E.g.: design the experiment that tests claim C1 against the strongest SOTA baseline."),
             _prompt("/datasets", "Data: always a toy set, plus the official dataset", [
@@ -156,17 +164,19 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "dataset-curator measures the quality (qc) and writes one official subject-wise preparation that the PoC and the experiments read.",
                 "publish uploads a private dataset only with your explicit consent; making it public asks for a separate consent.",
             ], "E.g.: synth an 8-subject toy set and look for an official dataset for the task.", optional=True),
-            _prompt("/proposal-implementation", "Replication of comparison methods", [
+            _requires(_prompt("/proposal-implementation", "Replication of comparison methods", [
                 "The paper-replicator agent replicates every baseline or comparison paper ingested in guidance/.",
+                "It stays locked until every experiment of the latest protocol carries its 2 to 5 SOTA citations (G-SOTA-CITATIONS).",
                 "It first looks for the paper's published code: when it exists, it adopts it pinned to a commit with its license and audits that it matches the paper and is implemented correctly.",
                 "When there is no published code, it reimplements the method from the ingested Markdown; every hyperparameter cites its section or equation.",
                 "It ends with REPLICATION.md, invariant tests and a short run on the toy set; it never launches a remote run.",
-            ], "E.g.: replicate the guidance/smith-2024 baseline in ../my-poc", optional=True),
-            _prompt("/proposal-implementation", "Implement the proof of concept", [
+            ], "E.g.: replicate the guidance/smith-2024 baseline in ../my-poc", optional=True), CITATIONS_GATE),
+            _requires(_prompt("/proposal-implementation", "Implement the proof of concept", [
                 "Turns the latest proposal into Python against a target repository, or verifies an existing implementation.",
+                "It stays locked until every experiment of the latest protocol carries its 2 to 5 SOTA citations (G-SOTA-CITATIONS).",
                 "Give the target repository and whether it is a first pass or a later one.",
                 "It is done when Results/discussion.json is complete: hypothesis verdicts backed by tests, novelty and qualitative analysis (python skills/_core/results/discussion_cli.py scaffold|check --product <path>).",
-            ], "E.g.: implement the PoC of proposal r03 in ../my-poc", optional=True),
+            ], "E.g.: implement the PoC of proposal r03 in ../my-poc", optional=True), CITATIONS_GATE),
             _redirect("Estimate the time and choose where to run", "experiments",
                       "Before the pilot and again before the full run: a short timing probe (one epoch of "
                       "one fold per arm) in Results/timing.json; the Experiments tab estimates the PoC and "
@@ -186,7 +196,8 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "It is done when Results/discussion.json is complete (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); the full run needs a hypothesis test behind every verdict.",
                 "Before any remote rehearsal, experiments-reviewer reviews the code (quality, optimization, GPU use and statistical tests) and hands in its report.",
                 "It starts only after the proof of concept is verified (G-EXP-POC): a complete PoC discussion and the operator's approval in the Novelty tab or with smith novelty approve --gate poc.",
-            ], "E.g.: implement E1 and E2 and report the metrics.", optional=True), "G-EXP-POC"),
+                "It also waits for the 2 to 5 SOTA citations of every experiment of the latest protocol (G-SOTA-CITATIONS).",
+            ], "E.g.: implement E1 and E2 and report the metrics.", optional=True), "G-EXP-POC", CITATIONS_GATE),
             _prompt("/experiment-diagrams", "Diagrams of the PoC and of the experiments", [
                 "When the PoC is approved (AGREED.md) it draws the poc diagram; when the full experiments are approved (Experimental_AGREED.md), the experiments diagram.",
                 "Each one is a TikZ figure (PDF and PNG) in <product>/diagrams/; the \"Generate diagram\" button of the Experiments tab also produces it.",
@@ -377,8 +388,8 @@ def evidence(root: Path, stage: str) -> list[dict[str, Any]]:
 def attach(fases: list[dict[str, Any]], root: Path | None = None,
            gates: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Add each phase's actions, real skills, command, evidence and lock to
-    the status view. An action that ``requires`` a gate is ``locked`` until
-    that gate's status in ``gates`` is ``PASS``."""
+    the status view. An action that ``requires`` gates is ``locked`` until
+    each one's status in ``gates`` is ``PASS``."""
     gates = gates or {}
     previous: dict[str, Any] | None = None
     for phase in fases:
@@ -387,8 +398,11 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
         if entry:
             phase["actions"] = copy.deepcopy(entry["actions"])
             for action in phase["actions"]:
-                if action.get("requires"):
-                    action["locked"] = gates.get(action["requires"]) != "PASS"
+                needed = action.pop("requires_all", None)
+                if needed:
+                    open_gates = [gate for gate in needed if gates.get(gate) != "PASS"]
+                    action["locked"] = bool(open_gates)
+                    action["requires"] = open_gates[0] if open_gates else needed[0]
             phase["skills"] = list(entry["skills"])
             phase["agent"] = entry["agent"]
             command = primary_command(stage)
@@ -411,4 +425,4 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
     return fases
 
 
-__all__ = ["ACTIONS", "EVIDENCE", "PHASE_GATES", "STAGES", "UNGATED", "attach", "evidence", "primary_command", "stage_for"]
+__all__ = ["ACTIONS", "CITATIONS_GATE", "EVIDENCE", "PHASE_GATES", "STAGES", "UNGATED", "attach", "evidence", "primary_command", "stage_for"]
