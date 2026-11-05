@@ -16,8 +16,8 @@ Branch: feat/flow-gating. Delivery: ask-on-risk. Test runner: `.micromamba/envs/
 - T1 [S1] inline — `smith ui` bootstraps the dashboard runtime. Status: done, e2e verified (fresh `init` + `ui` → 200); RDD review approved and acknowledged; warnings fixed. Commits: 895d60bd, 90994e46.
 - T2 [S2, S4-phase4] — Phase 4 sub-step evidence, order locks and panel buttons. Route: delegated (context backstop). Status: done. Commit: ab67c41c.
 - T3 [S3, S4-phase5] — PoC verification decision (`smith novelty --gate poc`), G-EXP-POC = PoC verified, 5.11 and `/experimental-implementation` locked, panel buttons. Route: delegated. Status: done. Commit: ab67c41c.
-- T4 [S5] — flow inconsistencies, incl. Phase 5 PASS requiring G-EXP-POC. Route: delegated (context backstop). Status: in progress.
-- T5 [S6, S7] — archify diagram and docs refresh. Route: delegated with T4. Status: in progress.
+- T4 [S5] — flow inconsistencies, incl. Phase 5 PASS requiring G-EXP-POC. Route: delegated (context backstop). Status: done. Commit: 577eb256.
+- T5 [S6, S7] — archify diagram and docs refresh. Route: delegated with T4. Status: done. Commits: 167b23c2, 298f1248.
 
 ## Log
 
@@ -25,3 +25,4 @@ Branch: feat/flow-gating. Delivery: ask-on-risk. Test runner: `.micromamba/envs/
 - L2: map (explorer): phase locks exist only between phases (`phase_actions.attach`), enforced client-side; 4.1–4.6 share `fase4_status`; G-NOVELTY is ACTIVE only after full experiments; archify flow embeds revision e83356d7 (pre-0.47).
 - L3: T1 decision — keep `dependencies = []` (pinned by `test_mcp_dependencies.py`); install the four UI packages into a shared cache env on first `smith ui`; tests isolate `XDG_CACHE_HOME` in `conftest.py`.
 - L4: T2/T3 verified on QMLEEG data with the branch server: Phase 4 steps PASS; 5.11 LOCKED, G-EXP-POC ACTIVE until the operator approves the PoC verification. Writer deviations: flag `--gate poc|full` (`--stage` already taken), only `/experimental-implementation` gated, Phase 5 PASS ignored G-EXP-POC (fixed in T4).
+- L5: RDD: gating (ab67c41c + PoC target correction) approved after one bounded correction; code 577eb256 and docs 167b23c2 approved; generated diagram 298f1248 cannot be reviewed (`lens_context_budget_exceeded`, not splittable). Full suite on the final tree: 9195 passed, 1 failed (release version bump only); node 834 passed. Open: docs say G-NOVELTY releases the writing, but no phase lock reads it.
