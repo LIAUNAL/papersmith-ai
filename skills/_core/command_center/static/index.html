@@ -5558,7 +5558,7 @@
           div.onclick = () => loadArtifact(art.rel_path);
           div.innerHTML = `
             <span>📄 ${art.name}</span>
-            <small style="color: var(--text-dim);">${Math.round(art.size / 1024)} KB</small>
+            <small style="color: var(--text-dim);">${art.size_kb} KB</small>
           `;
           artList.appendChild(div);
         });

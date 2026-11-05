@@ -21838,6 +21838,26 @@ class PositionCommandTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, proc.stdout)
         self.assertEqual(json.loads(proc.stdout)["code"], "POSITION_HOLDER_ABSENT")
 
+    def test_refuses_a_witness_that_is_not_a_mapping_without_recording_a_defect(self):
+        """Issue 153: a `witness` written as anything but `{kind, operand}`
+        is the caller's mistake. It refuses cleanly, because a crash here
+        is recorded as a forge defect that then blocks every later command
+        until a framework file changes."""
+        box = self._box()
+        for witness in ("rehearsal job1", ["rehearsal"], 7, ""):
+            with self.subTest(witness=witness):
+                sequence = json.dumps([
+                    {"text": "Rehearse.", "witness": {"kind": "rehearsal", "operand": "job1"}},
+                    {"text": "Run.", "witness": witness}])
+                proc = self.run_cli("position", "--target", str(box), "--name", "Method",
+                                    "--revision", "r1.md", "--session", "s1",
+                                    "--sequence", "-", stdin=sequence, proposals=self._proposals())
+                self.assertEqual(proc.returncode, 2, proc.stdout)
+                payload = json.loads(proc.stdout)
+                self.assertEqual(payload["code"], "POSITION_SEQUENCE_UNREADABLE")
+                self.assertIn("--sequence[1]", payload["detail"])
+                self.assertFalse((box / "Method" / ".implementation" / "position.jsonl").exists())
+
     def test_refuses_installing_into_an_item_holding_candidate_not_declared_by_name(self):
         """D3's middle row (spec `implementation-declared-holder`, "Write
         Refuses Into A Holder Not Found By The Declared Name, Naming Both

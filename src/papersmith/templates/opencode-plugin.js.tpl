@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HOOK_RELATIVE = "skills/remote-execution/scripts/hooks/refuse_offpath_push.py";
 const ADAPTERS_RELATIVE = "skills/remote-execution/scripts/adapters";
@@ -226,4 +227,34 @@ export const server = async ({ directory, worktree }) => {
       }
     },
   };
+};
+
+function projectRoot() {
+  // This file lives at <root>/.opencode/plugins/refuse-offpath-push.js. Anchor on
+  // the file, never on the process cwd.
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
+async function setupRefuseOffpathPushV2(ctx) {
+  const location = ctx && ctx.location ? ctx.location : {};
+  const directory = location.directory || projectRoot();
+  const worktree = location.worktree || directory;
+  const hooks = await server({ directory, worktree });
+  const registration = await ctx.tool.hook("execute.before", async (call) => {
+    const args = call && call.input && typeof call.input === "object" ? call.input : {};
+    await hooks["tool.execute.before"]({ tool: call ? call.tool : "" }, { args });
+  });
+  return async () => {
+    if (registration && typeof registration.dispose === "function") {
+      await registration.dispose();
+    }
+  };
+}
+
+// OpenCode v1 calls `server({ directory, worktree })`; OpenCode v2 validates a
+// default export with `id` and `setup(ctx)`.
+export default {
+  id: "papersmith.refuse-offpath-push",
+  server,
+  setup: setupRefuseOffpathPushV2,
 };

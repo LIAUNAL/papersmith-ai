@@ -14149,7 +14149,13 @@ def cmd_position(args: argparse.Namespace) -> dict:
                 raise Refused("POSITION_SEQUENCE_UNREADABLE",
                               f"--sequence[{ordinal - 1}] is not a mapping "
                               "of {text, witness}.")
-            witness = entry.get("witness") or {}
+            witness = entry.get("witness", {})
+            if witness is None:
+                witness = {}
+            if not isinstance(witness, dict):
+                raise Refused("POSITION_SEQUENCE_UNREADABLE",
+                              f"--sequence[{ordinal - 1}].witness is not a "
+                              "mapping of {kind, operand}.")
             items.append({
                 "ordinal": ordinal, "mark": " ",
                 "text": str(entry.get("text", "")).strip(),
