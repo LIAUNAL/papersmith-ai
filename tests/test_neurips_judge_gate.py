@@ -89,21 +89,28 @@ class ConceptMapButtonTests(_Proposal):
     def test_the_verdict_card_carries_the_button_where_the_type_appears(self) -> None:
         self.ready()
         script = (
-            "const fs=require('fs');const els={};const ls={};"
+            "const fs=require('fs');const els={};const ls={};const calls=[];"
             "global.localStorage={getItem:()=>'en',setItem(){}};"
-            "global.window={localStorage:global.localStorage};"
+            "global.window={localStorage:global.localStorage,sendToCli:(x)=>{calls.push(x);return true;}};"
             "global.fetch=undefined;"
             "global.document={getElementById:(i)=>(els[i]=els[i]||{innerHTML:'',hidden:false}),"
-            "querySelectorAll:()=>[],addEventListener(){}};"
+            "querySelectorAll:()=>[],addEventListener:(k,f)=>{(ls[k]=ls[k]||[]).push(f);}};"
             f"for (const f of ['i18n/en.js','i18n/es.js','i18n.js','model-panel.js'])"
             f" eval(fs.readFileSync({json.dumps(str(STATIC))}+'/'+f,'utf8'));"
             "const steps=JSON.parse(fs.readFileSync(0,'utf8'));"
             "window.renderModelModules({title:'x'});window.renderModelSteps(steps);"
-            "console.log(els.modelContributionType.innerHTML);")
-        html = subprocess.run(["node", "-e", script], input=json.dumps(phase_steps.proposal_steps(self.root)),
-                              capture_output=True, text=True, cwd=tempfile.gettempdir(), check=True).stdout
-        button = re.search(r'<button[^>]*data-model-step="neurips_review"[^>]*>', html).group(0)
+            "const html=els.modelContributionType.innerHTML;"
+            "const id=/data-model-step=\"([^\"]+)\"/.exec(html)[1];"
+            "const button={dataset:{modelStep:id}};"
+            "ls.click.forEach((f)=>f({target:{closest:(s)=>(s==='[data-model-step]'?button:null)}}));"
+            "console.log(JSON.stringify({html,calls}));")
+        out = subprocess.run(["node", "-e", script], input=json.dumps(phase_steps.proposal_steps(self.root)),
+                             capture_output=True, text=True, cwd=tempfile.gettempdir(), check=True).stdout
+        result = json.loads(out)
+        button = re.search(r'<button[^>]*data-model-step="neurips_review"[^>]*>', result["html"]).group(0)
         self.assertNotIn("disabled", button)
+        self.assertEqual(len(result["calls"]), 1)
+        self.assertIn("paper-reviewer", result["calls"][0])
 
 
 class _Stages(_Status):
@@ -157,6 +164,14 @@ class ApprovalTests(_Stages):
                 with self.assertRaises(novelty_gate.NoveltyRefusal) as ctx:
                     novelty_gate.record_decision(self.root, "approve")
                 self.assertEqual(ctx.exception.code, "NEURIPS_JUDGE_OWED")
+
+    def test_a_draft_with_a_malformed_type_blocks_nothing(self) -> None:
+        self.poc(typed=True)
+        draft = self.product("Draft", "AGREED.md", discussion="draft")
+        self.set_type(draft, {"type": "Survey", "why": "x"})
+        self.assertEqual(novelty_gate.judge_state(self.root)["poc"], {"complete": 1, "owed": []})
+        self.assertEqual(novelty_gate.record_decision(self.root, "approve", stage="poc")["poc"]["status"],
+                         "approved")
 
     def test_an_iteration_never_needs_the_judge(self) -> None:
         self.poc()
@@ -231,6 +246,23 @@ class NoveltyButtonTests(_Stages):
         result = render_novelty(self.overview(), clicks=["full"])
         self.assertTrue(result["calls"][0][0].startswith("/experimental-implementation "))
         self.assertIn("disabled", _button(result["html"], "sendNoveltyDecision('approve')"))
+
+    def test_the_owed_command_also_reaches_a_malformed_type(self) -> None:
+        self.poc()
+        text = render_novelty(self.overview(), clicks=["poc"])["calls"][0][0]
+        self.assertIn("complete apart from a missing or invalid contribution_type", text)
+        self.assertIn("Leave drafts untouched", text)
+
+    def test_running_the_judge_again_reaches_every_complete_discussion(self) -> None:
+        self.poc(typed=True)
+        self.full(typed=True)
+        calls = render_novelty(self.overview(), clicks=["poc", "full"])["calls"]
+        self.assertEqual(len(calls), 2)
+        for text, _, _ in calls:
+            self.assertIn("every complete", text)
+            self.assertNotIn("missing or invalid", text)
+        self.assertTrue(calls[0][0].startswith("/proposal-implementation "))
+        self.assertTrue(calls[1][0].startswith("/experimental-implementation "))
 
     def test_a_judged_stage_keeps_its_approval_open(self) -> None:
         self.poc(typed=True)

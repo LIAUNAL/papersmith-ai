@@ -100,14 +100,18 @@
 
   // What the judge's buttons type into the agent terminal (agent input stays
   // English). A stage's approval stays locked while one of its products owes it.
-  const JUDGE_COMMANDS = {
-    poc: '/proposal-implementation Run the NeurIPS judge now: hand each proof-of-concept discussion that is complete '
-      + 'and has no contribution_type to the paper-reviewer agent in its findings mode, write its contribution_type '
-      + 'into Results/discussion.json and re-run discussion_cli.py check.',
-    full: '/experimental-implementation Run the NeurIPS judge now: hand each full-experiment discussion that is complete '
-      + 'and has no contribution_type to the paper-reviewer agent in its findings mode, write its contribution_type '
-      + 'into Results/discussion.json and re-run discussion_cli.py check.',
+  const JUDGE_SKILLS = {
+    poc: ['/proposal-implementation', 'proof-of-concept'],
+    full: ['/experimental-implementation', 'full-experiment'],
   };
+  const JUDGE_RECORD = 'to the paper-reviewer agent in its findings mode, write its contribution_type '
+    + 'into Results/discussion.json and re-run discussion_cli.py check.';
+  function judgeCommand(stage) {
+    const [skill, name] = JUDGE_SKILLS[stage];
+    return judgeOwed(stage).length
+      ? `${skill} Run the NeurIPS judge now: hand each ${name} discussion that is complete apart from a missing or invalid contribution_type ${JUDGE_RECORD} Leave drafts untouched.`
+      : `${skill} Run the NeurIPS judge again: hand every complete ${name} discussion ${JUDGE_RECORD}`;
+  }
   const JUDGE_LABELS = {
     poc: { launch: 'novelty.judge.launchPoc', again: 'novelty.judge.againPoc' },
     full: { launch: 'novelty.judge.launchFull', again: 'novelty.judge.againFull' },
@@ -120,8 +124,8 @@
   }
 
   function launchNoveltyJudge(stage) {
-    if (!JUDGE_COMMANDS[stage] || !(Number((judgeState[stage] || {}).complete) > 0)) return;
-    if (typeof window.sendToCli === 'function') window.sendToCli(JUDGE_COMMANDS[stage], false, { kind: 'slash' });
+    if (!JUDGE_SKILLS[stage] || !(Number((judgeState[stage] || {}).complete) > 0)) return;
+    if (typeof window.sendToCli === 'function') window.sendToCli(judgeCommand(stage), false, { kind: 'slash' });
   }
 
   // One button per stage with a complete discussion, on the card its verdict
