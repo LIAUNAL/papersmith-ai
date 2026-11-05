@@ -46,7 +46,7 @@ let pageUrl = '';
 test.beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'atlas-e2e-'));
   writeFileSync(join(dir, 'atlas.json'), JSON.stringify(syntheticAtlas()));
-  execFileSync(join(REPO_ROOT, '.venv/bin/python'), [
+  execFileSync(join(REPO_ROOT, '.micromamba/envs/papersmith/bin/python'), [
     join(REPO_ROOT, 'skills/plausibility/scripts/render_atlas.py'), join(dir, 'atlas.json'), '--out', join(dir, 'atlas.html'),
   ]);
   pageUrl = `file://${join(dir, 'atlas.html')}`;
