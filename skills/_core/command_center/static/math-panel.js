@@ -116,6 +116,7 @@
         <div class="eq-card__display">${tex(eq.latex, true)}</div>
         ${eq.connection ? `<div class="eq-card__conn"><strong>${escapeHtml(t('math.connection'))}</strong> ${richText(eq.connection).replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
         ${(eq.variables || []).length ? `<dl class="eq-card__vars">${eq.variables.map((v) => `<dt><code>${escapeHtml(v.symbol)}</code></dt><dd>${escapeHtml(v.meaning)}</dd>`).join('')}</dl>` : ''}
+        ${window.Citations ? window.Citations.block(`equation:${eq.tag}`) : ''}
       </article>`).join('');
   }
 
@@ -126,6 +127,7 @@
       state.view = await res.json();
       renderNovelty(state.view);
       renderEquations(state.view);
+      if (window.Citations) window.Citations.load();
     } catch (_) { /* offline: keep what is shown */ }
     loadThread();
   }
@@ -306,6 +308,7 @@
     else renderMeter(0);
   });
 
+  if (window.Citations) window.Citations.onChange(() => { if (state.view) renderEquations(state.view); });
   window.refreshMathPanel = refreshMathPanel;
   window.mathRichText = richText;
 })();

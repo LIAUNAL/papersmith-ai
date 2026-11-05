@@ -30,12 +30,17 @@
  * side. The significance table gains Hypothesis and Experiment columns when
  * any row carries them. Every value is escaped before insertion.
  *
- * Above the PoC and full groups, the stepper the server derives in view.flow: proof of
- * concept → verification → full experiment. "Proof of concept" types
- * `/proposal-implementation …` into the agent terminal (window.sendToCli),
- * "Verify" opens the Novelty tab where the operator approves the PoC, and
- * "Full experiment" types `/experimental-implementation …`, disabled with its
- * reason until the PoC verification gate (G-EXP-POC) passes.
+ * Each experiment of the protocol shows its SOTA citations (citations.js).
+ *
+ * Above the PoC and full groups, the stepper the server derives in view.flow: SOTA
+ * citations → proof of concept → verification → full experiment. "SOTA citations"
+ * types `/experimental-deliberation …` into the agent terminal
+ * (window.sendToCli), disabled until the protocol has experiments; "Proof of
+ * concept" types `/proposal-implementation …`, disabled with its reason while an
+ * experiment owes citations, "Verify" opens the Novelty tab where the operator
+ * approves the PoC, and "Full experiment" types `/experimental-implementation …`,
+ * disabled with its reason until the citations are complete and the PoC
+ * verification gate (G-EXP-POC) passes.
  *
  * Public surface (window): refreshExperimentsPanel(), ExperimentsPanel.render(view),
  * ExperimentsPanel.discussion(product), ExperimentsPanel.stageComparison(view).
@@ -672,10 +677,11 @@
       const reports = (e.expected_reports || []).map((r) => `<div class="exp-file">${esc(r.title)} <span class="badge badge--warn">${esc(t('exp.diagram.state.absent'))}</span></div>${table(r.headers || [], r.rows || [], { pending: true })}`).join('')
         || empty(t('exp.noReport'));
       return `<details class="exp-protocol-item" ${disclosure('protocol', e.id)}>
-        <summary><strong>${esc(e.id)}</strong> ${esc(e.title)} ${e.priority ? `<span class="badge badge--info">${esc(e.priority)}</span>` : ''}</summary>
+        <summary><strong>${esc(e.id)}</strong> ${esc(e.title)} ${e.priority ? `<span class="badge badge--info">${esc(e.priority)}</span>` : ''} ${window.Citations ? window.Citations.mark(`experiment:${e.id}`) : ''}</summary>
         ${e.hypothesis ? `<p><strong>${esc(t('exp.hypothesis'))}</strong> ${esc(e.hypothesis)}</p>` : ''}
         ${e.success_criterion ? `<p><strong>${esc(t('exp.successCriterion'))}</strong> ${esc(e.success_criterion)}</p>` : ''}
         ${e.cost ? `<p><strong>${esc(t('exp.estimatedCost'))}</strong> ${esc(e.cost)}</p>` : ''}
+        ${window.Citations ? window.Citations.block(`experiment:${e.id}`) : ''}
         ${reports}
       </details>`;
     }).join('');
@@ -1017,6 +1023,10 @@
   // ---------------------------------------------------------------- flow
   // What each step's button types into the agent terminal (agent input stays English).
   const FLOW_COMMANDS = {
+    cite: '/experimental-deliberation Justify the protocol with SOTA citations now: in .papersmith/citations.json, '
+      + 'give every experiment of the latest protocol 2 to 5 references of sota-pool/candidates.json, each with the '
+      + 'reason it supports the experiment, and fix what `python skills/_core/results/citations_cli.py check --root .` '
+      + 'still reports for them.',
     poc: '/proposal-implementation Implement the proof of concept of the latest proposal revision on the toy set '
       + 'and close it with a complete Results/discussion.json (hypothesis verdicts, tests, novelty).',
     full: '/experimental-implementation Implement and measure the full experiments of the current protocol; '
@@ -1024,17 +1034,27 @@
   };
   const FLOW_STATE_KEYS = { done: 'exp.flow.state.done', next: 'exp.flow.state.next', locked: 'exp.flow.state.locked' };
 
+  const flowCitations = (f) => {
+    const c = f.citations || {};
+    return { ideas: Number(c.ideas) || 0, owed: Number(c.owed) || 0 };
+  };
+
   function flowSteps(flow) {
     const f = flow || {};
     const discussed = Number(f.poc_discussed) > 0;
     const verified = f.gate === 'PASS';
+    const cited = flowCitations(f);
+    const owed = cited.owed > 0;
     const steps = [
+      { id: 'cite', title: 'exp.flow.cite', body: 'exp.flow.citeBody', button: 'exp.flow.citeButton',
+        state: cited.ideas ? (owed ? 'next' : 'done') : 'locked', locked: !cited.ideas, reason: 'exp.flow.requiresProtocol' },
       { id: 'poc', title: 'exp.flow.poc', body: 'exp.flow.pocBody', button: 'exp.flow.pocButton',
-        state: discussed ? 'done' : 'next', locked: false },
+        state: owed ? 'locked' : (discussed ? 'done' : 'next'), locked: owed, reason: 'exp.flow.requiresCitations' },
       { id: 'verify', title: 'exp.flow.verify', body: 'exp.flow.verifyBody', button: 'exp.flow.verifyButton',
         state: verified ? 'done' : (discussed ? 'next' : 'locked'), locked: !discussed, reason: 'exp.flow.requiresDiscussion' },
       { id: 'full', title: 'exp.flow.full', body: 'exp.flow.fullBody', button: 'exp.flow.fullButton',
-        state: verified ? 'next' : 'locked', locked: !verified, reason: 'exp.flow.requiresPoc' },
+        state: verified && !owed ? 'next' : 'locked', locked: !verified || owed,
+        reason: verified ? 'exp.flow.requiresCitations' : 'exp.flow.requiresPoc' },
     ];
     const cards = steps.map((step, i) => {
       const tone = step.state === 'done' ? 'ok' : (step.state === 'locked' ? 'warn' : 'info');
@@ -1054,12 +1074,15 @@
 
   function runFlowStep(id) {
     const f = (lastView && lastView.flow) || {};
-    if (id === 'poc') {
-      if (typeof window.sendToCli === 'function') window.sendToCli(FLOW_COMMANDS.poc, false, { kind: 'slash' });
+    const cited = flowCitations(f);
+    if (id === 'cite') {
+      if (cited.ideas && typeof window.sendToCli === 'function') window.sendToCli(FLOW_COMMANDS.cite, false, { kind: 'slash' });
+    } else if (id === 'poc') {
+      if (!cited.owed && typeof window.sendToCli === 'function') window.sendToCli(FLOW_COMMANDS.poc, false, { kind: 'slash' });
     } else if (id === 'verify') {
       if (Number(f.poc_discussed) > 0 && typeof window.navigateTab === 'function') window.navigateTab('novelty');
     } else if (id === 'full') {
-      if (f.gate === 'PASS' && typeof window.sendToCli === 'function') {
+      if (f.gate === 'PASS' && !cited.owed && typeof window.sendToCli === 'function') {
         window.sendToCli(FLOW_COMMANDS.full, false, { kind: 'slash' });
       }
     }
@@ -1116,6 +1139,7 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       lastView = await response.json();
       paint();
+      if (window.Citations) window.Citations.load();
     } catch (err) {
       host.innerHTML = empty(t('exp.readFailed', { error: err.message }));
     }
@@ -1153,6 +1177,7 @@
     document.addEventListener('languagechange', () => { if (lastView) refreshExperimentsPanel(); });
   }
 
+  if (window.Citations) window.Citations.onChange(paint);
   window.refreshExperimentsPanel = refreshExperimentsPanel;
   window.ExperimentsPanel = { render, mcpActivation, colabActivation, remoteServices, localEnvironment, runOptions, team, datasets, discussion, stageComparison };
 })();

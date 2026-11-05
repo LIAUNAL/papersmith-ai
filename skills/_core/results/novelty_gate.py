@@ -18,7 +18,9 @@ is the ``poc`` sub-record beside the top-level (full-stage) decision,
 least one proof-of-concept product (a folder with ``AGREED.md`` and no
 ``Experimental_AGREED.md``) has a ``complete`` ``Results/discussion.json``
 (``discussion.py``). The dashboard's G-EXP-POC gate passes on that approval and
-the full experiments unlock after it. A file without the sub-record reads as a
+the full experiments unlock after it. That approval also refuses
+``SOTA_CITATIONS_OWED`` while an experiment of the latest protocol lacks its
+2 to 5 SOTA citations (``citations.py``). A file without the sub-record reads as a
 pending PoC decision, and each stage's write keeps the other's record.
 
 This module owns reading, writing, and auditing the novelty gate file and
@@ -242,6 +244,37 @@ def _require_judge(root: Path, stage: str) -> None:
         )
 
 
+def _citations():
+    """The SOTA citations contract (``citations.py``), loaded by path."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_citations"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parent / "citations.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
+
+
+def _require_citations(root: Path) -> None:
+    """Refuse an approval while an experiment of the latest protocol owes its citations."""
+    owed = _citations().state(root)["stages"]["experiments"]["owed"]
+    if owed:
+        raise NoveltyRefusal(
+            "SOTA_CITATIONS_OWED",
+            f"justify every experiment with 2 to 5 SOTA citations first: {', '.join(owed[:10])} "
+            "owes them in .papersmith/citations.json; launch it from the Experiments tab, or run "
+            "`python skills/_core/results/citations_cli.py check --root .`",
+        )
+
+
 def _record_poc(root: Path, action: str, rationale: str, actor: str) -> dict[str, Any]:
     if action not in POC_ACTIONS:
         raise NoveltyRefusal(
@@ -257,6 +290,7 @@ def _record_poc(root: Path, action: str, rationale: str, actor: str) -> dict[str
         )
     if status == "approved":
         _require_judge(root, "poc")
+        _require_citations(root)
     record = read_gate(root)
     record["poc"] = {
         "status": status,
@@ -501,6 +535,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
         "gate": gate,
         "contribution_type": contribution_type,
         "judge": judge_state(root),
+        "experiment_citations_owed": _citations().state(root)["stages"]["experiments"]["owed"],
         "discussions": discussions,
         "hypotheses": hypotheses,
         "novelty_claims": novelty_claims,

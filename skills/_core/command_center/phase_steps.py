@@ -1,8 +1,8 @@
 """Phase 4's ordered steps, read from the workspace's own files.
 
 The proposal is built in one order: the central problem and its pillars, then
-the hypotheses each pillar predicts, then the mathematics, then the NeurIPS
-judge. Each step passes from evidence on disk, never from the dashboard's
+the hypotheses each pillar predicts, then the mathematics, then the SOTA
+citations that justify them, then the NeurIPS judge. Each step passes from evidence on disk, never from the dashboard's
 placeholder specification:
 
 * ``problem_pillars``: a problem statement and at least one pillar, from
@@ -13,6 +13,9 @@ placeholder specification:
   overlay's ``hypotheses`` list;
 * ``mathematics``: at least one ``$$ … \\tag{N} $$`` display block in the
   latest revision ``proposals/research-concept-<slug>-rNN.md``;
+* ``sota_citations``: 2 to 5 valid pool references for every pillar, hypothesis,
+  concept-map layer and numbered equation, in ``.papersmith/citations.json``
+  (``results/citations.py``), so the judge reads justified ideas;
 * ``neurips_review``: the paper-reviewer's valid ``contribution_type`` in
   ``.papersmith/model_spec.json``.
 
@@ -29,9 +32,35 @@ from typing import Any
 
 from . import math_view, model_spec
 
-#: The four steps in their one order; each requires the one before it.
-STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics", "neurips_review")
+#: The five steps in their one order; each requires the one before it.
+STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics", "sota_citations", "neurips_review")
 SPEC_REL = ".papersmith/model_spec.json"
+#: How many owed keys a step's evidence names; the check prints them all.
+MAX_OWED_SHOWN = 20
+
+
+def _citations():
+    """The shared citations contract (``citations.py``), loaded by path."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_citations"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parents[1] / "results" / "citations.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
+
+
+def citation_state(root: Path | str) -> dict[str, Any]:
+    """Each idea with its citations, and what each stage still owes."""
+    return _citations().state(root)
 
 
 def _json(path: Path, root: Path) -> Any:
@@ -94,6 +123,7 @@ def _evidence(root: Path) -> dict[str, Any]:
         "problem": bool(problem),
         "pillars": pillars,
         "hypotheses": hypotheses,
+        "citations": citation_state(root)["stages"]["proposal"],
         "equations": math_view.tagged_equation_count(text) if text else 0,
         "revision": proposal.relative_to(root).as_posix() if proposal else "",
         "sources": sources,
@@ -101,7 +131,7 @@ def _evidence(root: Path) -> dict[str, Any]:
 
 
 def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
-    """The four Phase 4 steps in order, each ``{id, status, done, started,
+    """The five Phase 4 steps in order, each ``{id, status, done, started,
     evidence, requires}``; ``evidence`` holds counts and file paths only, so
     the dashboard words it in its own language."""
     try:
@@ -109,7 +139,9 @@ def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
         found = _evidence(root)
     except OSError:
         found = {"problem": False, "pillars": 0, "hypotheses": 0, "equations": 0,
-                 "revision": "", "sources": {}, "contribution_type": ""}
+                 "revision": "", "sources": {}, "contribution_type": "",
+                 "citations": {"ideas": 0, "cited": 0, "owed": []}}
+    cited = found["citations"]
     own = {
         "problem_pillars": (found["problem"] and found["pillars"] > 0,
                             found["problem"] or found["pillars"] > 0,
@@ -119,6 +151,9 @@ def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
                        {"hypotheses": found["hypotheses"], "source": found["sources"].get("hypotheses", "")}),
         "mathematics": (found["equations"] > 0, bool(found["revision"]),
                         {"equations": found["equations"], "revision": found["revision"]}),
+        "sota_citations": (cited["ideas"] > 0 and not cited["owed"], cited["cited"] > 0,
+                           {"ideas": cited["ideas"], "cited": cited["cited"],
+                            "owed": cited["owed"][:MAX_OWED_SHOWN]}),
         "neurips_review": (bool(found["contribution_type"]), bool(found["contribution_type"]),
                            {"type": found["contribution_type"]}),
     }
@@ -144,4 +179,4 @@ def sub_phase_status(step: dict[str, Any]) -> str:
     return "ACTIVE" if step["started"] else "PENDING"
 
 
-__all__ = ["STEP_IDS", "proposal_steps", "sub_phase_status"]
+__all__ = ["STEP_IDS", "citation_state", "proposal_steps", "sub_phase_status"]

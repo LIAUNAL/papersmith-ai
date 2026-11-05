@@ -175,7 +175,10 @@
   // its run button is disabled and says why; ticking its own override, or the
   // phase override, enables it again, as with a locked phase.
   // Literal catalogue keys per gate (never a composed key).
-  const REQUIRES_KEYS = { 'G-EXP-POC': 'phaseConsole.requiresPocVerified' };
+  const REQUIRES_KEYS = {
+    'G-EXP-POC': 'phaseConsole.requiresPocVerified',
+    'G-SOTA-CITATIONS': 'phaseConsole.requiresSotaCitations',
+  };
   const requiresText = (a) => t(REQUIRES_KEYS[a.requires] || 'phaseConsole.requiresGate', { gate: a.requires || '' });
   function actionLock(a, i) {
     if (!a.locked) return '';

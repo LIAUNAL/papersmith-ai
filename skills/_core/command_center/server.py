@@ -543,8 +543,10 @@ def _poc_flow(root: Path) -> dict[str, Any]:
     """The Experiments tab's stepper: proof of concept → verification → full."""
     p5 = _phase5_evidence(root)
     decision = (_novelty_gate().read_gate(root).get("poc") or {}).get("status", "pending")
+    cited = phase_steps.citation_state(root)["stages"]["experiments"]
     return {"poc": p5["poc"], "poc_discussed": p5["poc_discussed"], "poc_decision": decision,
-            "gate": _poc_gate_status(p5, decision)}
+            "gate": _poc_gate_status(p5, decision),
+            "citations": {"ideas": cited["ideas"], "cited": cited["cited"], "owed": len(cited["owed"])}}
 
 
 def _run_audit(root: Path) -> dict[str, Any] | None:
@@ -1388,9 +1390,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         else:
             fase3_status, fase3_prog, fase3_det = "PENDING", 0.0, "No reference articles in guidance/"
 
-        # Phase 4: a published revision and its four steps in order (the
-        # problem and its pillars, the hypotheses, the mathematics, the NeurIPS
-        # judge), each read from its own evidence on disk (phase_steps).
+        # Phase 4: a published revision and its five steps in order (the
+        # problem and its pillars, the hypotheses, the mathematics, the SOTA
+        # citations, the NeurIPS judge), each read from its own evidence on disk (phase_steps).
         p4_steps = phase_steps.proposal_steps(root_path)
         p4_step = {step["id"]: step for step in p4_steps}
         p4_passed = sum(1 for step in p4_steps if step["status"] == "PASS")
@@ -1399,13 +1401,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         elif has_deliberated_prop:
             fase4_status, fase4_prog = "ACTIVE", round((1 + p4_passed) / (1 + len(p4_steps)), 3)
             fase4_det = (f"Revision {active_prop} published; steps passed: {p4_passed} of {len(p4_steps)}"
-                         " (problem and pillars, hypotheses, mathematics, NeurIPS judge)")
+                         " (problem and pillars, hypotheses, mathematics, SOTA citations, NeurIPS judge)")
         elif prop_files or any(step["started"] for step in p4_steps):
             fase4_status = "ACTIVE"
             fase4_prog = round(p4_passed / (1 + len(p4_steps)), 3)
             fase4_det = (f"Draft in progress ({prop_files[0]})" if prop_files
                          else f"No published revision yet; steps passed: {p4_passed} of {len(p4_steps)}"
-                              " (problem and pillars, hypotheses, mathematics, NeurIPS judge)")
+                              " (problem and pillars, hypotheses, mathematics, SOTA citations, NeurIPS judge)")
         else:
             fase4_status, fase4_prog, fase4_det = "PENDING", 0.0, "No proposal in proposals/"
         p4_published = "PASS" if has_deliberated_prop else ("ACTIVE" if prop_files else "PENDING")
@@ -1416,15 +1418,22 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # proof of concept (G-EXP-POC) and a full experiment with its own
         # complete discussion; never a file name or a bare Results/ folder. The
         # phase never passes over an unverified proof of concept, so no later
-        # phase unlocks over one.
+        # phase unlocks over one, nor while an experiment of the latest protocol
+        # owes its SOTA citations; a protocol with no experiments owes none.
         poc_decision = (_novelty_gate().read_gate(root_path).get("poc") or {}).get("status", "pending")
         g_exp_poc_status = _poc_gate_status(p5, poc_decision)
+        p5_cited = phase_steps.citation_state(root_path)["stages"]["experiments"]
+        p5_citations_status = "ACTIVE" if p5_cited["owed"] else "PASS"
         p5_done = [p5["revisions"] > 0, p5["poc_discussed"] > 0, g_exp_poc_status == "PASS",
                    p5["full_discussed"] > 0]
+        if p5_cited["ideas"]:
+            p5_done.append(not p5_cited["owed"])
         fase5_det = (f"Protocol published: {'yes' if p5_done[0] else 'no'}"
                      f" · PoC with a complete discussion: {p5['poc_discussed']} of {p5['poc']}"
                      f" · PoC verified (G-EXP-POC): {'yes' if p5_done[2] else 'no'}"
                      f" · full experiments with a complete discussion: {p5['full_discussed']} of {p5['full']}")
+        if p5_cited["ideas"]:
+            fase5_det += f" · experiments with SOTA citations: {p5_cited['cited']} of {p5_cited['ideas']}"
         if all(p5_done):
             fase5_status, fase5_prog = "PASS", 1.0
         elif any(p5_done) or p5["files"] or p5["poc"] or p5["full"]:
@@ -1563,7 +1572,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "4.4", "name": "Stage published: Publication & Cryptographic Receipt", "status": p4_published, "detail": "Revision sealed with a SHA-256 hash"},
                     {"id": "4.5", "name": "Concept map discussion", "status": p4_sub["hypotheses"], "detail": "Pillars, hypotheses and layers of the concept (Concept Map tab)"},
                     {"id": "4.6", "name": "Mathematics and Socratic tutor", "status": p4_sub["mathematics"], "detail": "Equations in LaTeX, the novelty card and a tutor with hand-drawn images (math-tutor)"},
-                    {"id": "4.7", "name": "Step 4: NeurIPS judge", "status": p4_sub["neurips_review"], "detail": "The paper-reviewer classifies the proposal's NeurIPS contribution type (contribution_type in .papersmith/model_spec.json); Phase 5 stays locked until it does."}
+                    {"id": "4.7", "name": "Step 4: SOTA citations", "status": p4_sub["sota_citations"], "detail": "Every pillar, hypothesis, concept-map layer and numbered equation is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json; locked until step 3 passes"},
+                    {"id": "4.8", "name": "Step 5: NeurIPS judge", "status": p4_sub["neurips_review"], "detail": "The paper-reviewer classifies the proposal's NeurIPS contribution type (contribution_type in .papersmith/model_spec.json); Phase 5 stays locked until it does."}
                 ]
             },
             {
@@ -1591,7 +1601,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "5.11", "name": "Hyperparameter search (Optuna, optional)", "status": _p5(p5["hpo"] > 0), "detail": f"Only when the deliberation judged it worthwhile: /hyperparameter-search plan|report|status, nested inside each outer fold, the same budget per arm, a declared importance evaluator; contours and importances in Results/hpo/ ({p5['hpo']} product(s) with studies)"},
                     {"id": "5.12", "name": "Full experiments", "status": full_status, "detail": full_detail},
                     {"id": "5.13", "name": "Code review (experiments-reviewer) before the rehearsal", "status": _p5(p5["reviewed"] > 0, p5["review_reports"] > 0), "detail": f"Code quality, optimization, GPU use and declared statistical tests; it reads Results/reviewer_report.json (status resolved, or every blocker resolved): {p5['reviewed']} resolved of {p5['review_reports']} report(s)"},
-                    {"id": "5.14", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"}
+                    {"id": "5.14", "name": "Remote rehearsal and launch authorization (operator)", "status": _p5(p5["launched"] > 0, p5["jobs"] > 0 or p5["smokes"] > 0), "detail": f"Only for remote runs (local runs directly). /kaggle-accounts validate and smith team add --attest (one account per person and service); then generate-job → submit --smoke → fetch --smoke and smoke record → readiness → gate (operator) → submit → status / poll → fetch. Passed rehearsals: {p5['rehearsals_passed']}; ledgers with submissions: {p5['launched']}"},
+                    {"id": "5.15", "name": "SOTA citations of the experiments", "status": _p5(p5_cited["ideas"] > 0 and not p5_cited["owed"], p5_cited["cited"] > 0), "detail": f"Every experiment of the latest protocol is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json; the implementation actions and G-EXP-POC wait for them ({p5_cited['cited']} of {p5_cited['ideas']} cited)"}
                 ]
             },
             {
@@ -1727,7 +1738,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         )
 
         phase_actions.attach(fases, root_path,
-                             gates={"G-EXP-POC": g_exp_poc_status, "G-NOVELTY": g_nov_status})
+                             gates={"G-EXP-POC": g_exp_poc_status, "G-NOVELTY": g_nov_status,
+                                    phase_actions.CITATIONS_GATE: p5_citations_status})
 
         artifacts = []
         for p in (root_path / "proposals").glob("*.md"):
@@ -2290,8 +2302,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/model/steps")
     def api_model_steps() -> JSONResponse:
         # Phase 4's ordered steps (problem and pillars, hypotheses,
-        # mathematics), each read from its own evidence on disk.
+        # mathematics, SOTA citations, NeurIPS judge), each read from its own
+        # evidence on disk.
         return JSONResponse({"steps": phase_steps.proposal_steps(root_path)}, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/citations")
+    def api_citations() -> JSONResponse:
+        # Each idea's SOTA citations and what each stage owes (read-only).
+        return JSONResponse(phase_steps.citation_state(root_path), headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/model")
     def api_model() -> JSONResponse:

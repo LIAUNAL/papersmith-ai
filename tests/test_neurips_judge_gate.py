@@ -1,6 +1,6 @@
 """The NeurIPS judge is a step the flow cannot skip.
 
-The paper-reviewer's contribution type is step 4 of Phase 4, so Phase 5 stays
+The paper-reviewer's contribution type is step 5 of Phase 4, so Phase 5 stays
 locked until the proposal carries one. A proof of concept or a full experiment
 with a complete discussion and no type refuses its approval, in the dashboard
 and in `smith novelty`. Each panel offers the button that launches the judge
@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from skills._core.command_center import phase_steps, server
 from skills._core.results import novelty_cli, novelty_gate
-from tests.test_flow_gating_phase4 import EQUATION, _Workspace as _Phase4, _write, render
+from tests.test_flow_gating_phase4 import EQUATION, _Workspace as _Phase4, _write, cite_everything, render
 from tests.test_phase5_review import _Status, _write_discussion
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -33,15 +33,16 @@ class _Proposal(_Phase4):
                             "hypotheses": [{"statement": "H1"}]}, **extra}
         _write(self.root / ".papersmith" / "model_spec.json", json.dumps(spec))
         self.revision(EQUATION)
+        cite_everything(self.root)
 
 
 class ProposalStepTests(_Proposal):
-    def test_the_judge_is_the_fourth_step_and_needs_the_mathematics(self) -> None:
+    def test_the_judge_is_the_last_step_and_needs_the_citations(self) -> None:
         steps = phase_steps.proposal_steps(self.root)
         self.assertEqual(steps[-1]["id"], "neurips_review")
-        self.assertEqual((steps[-1]["status"], steps[-1]["requires"]), ("LOCKED", "mathematics"))
+        self.assertEqual((steps[-1]["status"], steps[-1]["requires"]), ("LOCKED", "sota_citations"))
 
-    def test_it_opens_after_the_mathematics_and_passes_with_a_valid_type(self) -> None:
+    def test_it_opens_after_the_citations_and_passes_with_a_valid_type(self) -> None:
         self.ready()
         self.assertEqual(self.steps()["neurips_review"]["status"], "ACTIVE")
         self.ready(contribution_type={"type": "Survey", "why": "x"})
@@ -64,7 +65,7 @@ class ProposalStepTests(_Proposal):
     def test_the_phase_card_lists_the_judge_as_a_sub_phase(self) -> None:
         self.ready()
         sub = {s["id"]: s for s in self.fase4()["subfases"]}
-        self.assertEqual(sub["4.7"]["status"], "PENDING")
+        self.assertEqual(sub["4.8"]["status"], "PENDING")
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
@@ -82,7 +83,7 @@ class ConceptMapButtonTests(_Proposal):
     def test_a_locked_judge_sends_nothing_and_says_what_it_requires(self) -> None:
         result = render(phase_steps.proposal_steps(self.root), clicks=["neurips_review"])
         self.assertEqual(result["calls"], [])
-        self.assertIn("Requires: Mathematics", result["html"])
+        self.assertIn("Requires: SOTA citations", result["html"])
         button = re.search(r'<button[^>]*data-model-step="neurips_review"[^>]*>', result["html"]).group(0)
         self.assertIn("disabled", button)
 
