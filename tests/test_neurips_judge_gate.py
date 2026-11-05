@@ -118,7 +118,7 @@ class _Stages(_Status):
         return product
 
     @staticmethod
-    def set_type(product: Path, kind: dict | None) -> None:
+    def set_type(product: Path, kind: dict | str | None) -> None:
         path = product / "Results" / "discussion.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         data.pop("contribution_type", None)
@@ -147,6 +147,16 @@ class ApprovalTests(_Stages):
         self.assertEqual(novelty_gate.read_gate(self.root)["status"], "pending")
         self.set_type(product, TYPED)
         self.assertEqual(novelty_gate.record_decision(self.root, "approve")["status"], "approved")
+
+    def test_a_malformed_type_does_not_skip_the_judge(self) -> None:
+        for kind in ({"type": "Survey", "why": "x"}, {"type": "Theory", "why": " "}, "Theory"):
+            with self.subTest(kind=kind):
+                product = self.full()
+                self.set_type(product, kind)
+                self.assertEqual(novelty_gate.judge_state(self.root)["full"]["owed"], ["Full"])
+                with self.assertRaises(novelty_gate.NoveltyRefusal) as ctx:
+                    novelty_gate.record_decision(self.root, "approve")
+                self.assertEqual(ctx.exception.code, "NEURIPS_JUDGE_OWED")
 
     def test_an_iteration_never_needs_the_judge(self) -> None:
         self.poc()

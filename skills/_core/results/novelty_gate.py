@@ -203,14 +203,17 @@ def _write(root: Path, record: dict[str, Any]) -> None:
 def judge_state(root: Path) -> dict[str, dict[str, Any]]:
     """Per stage, how many products close with a ``complete`` discussion and
     which of them still lack the paper-reviewer's valid ``contribution_type``
-    (the NeurIPS judge); never raises."""
+    (the NeurIPS judge); never raises. A malformed type makes the discussion
+    fail its check, so it counts here too: otherwise it would skip the judge."""
     state: dict[str, dict[str, Any]] = {stage: {"complete": 0, "owed": []} for stage in STAGES}
     for product in _products(root):
         try:
-            if _discussion_module().load_and_check(product).get("status") != "complete":
-                continue
             data = json.loads((product / "Results" / "discussion.json").read_text(encoding="utf-8"))
-            kind = _contribution_type().normalize(data.get("contribution_type"))
+            malformed = ("contribution_type" in data
+                         and bool(_contribution_type().problems(data["contribution_type"])))
+            if not malformed and _discussion_module().load_and_check(product).get("status") != "complete":
+                continue
+            kind = None if malformed else _contribution_type().normalize(data.get("contribution_type"))
         except Exception:  # noqa: BLE001 - an unreadable discussion is not complete
             continue
         stage = state["full" if (product / "Experimental_AGREED.md").is_file() else "poc"]
