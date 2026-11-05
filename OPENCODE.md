@@ -151,8 +151,8 @@ skill refuses when its input is missing.
      upper bounds, baselines and their implementation) from the protocol,
      the approvals, the code and the results; it never invents a number, and
      a change of decision goes back to `/experimental-deliberation`.
-   - **Remote runs**: one account per person and service
-     (`smith team add … --attest`), `/kaggle-accounts validate`, then
+   - **Remote runs**: accounts associated with distinct emails
+     (`smith team add … [--email <email>] --attest`), `/kaggle-accounts validate`, then
      `/remote-execution`: generate-job → submit --smoke → fetch --smoke /
      smoke record → readiness → gate → submit → status / poll → fetch.
    - **Findings and novelty**: once a stage's discussion is complete, the
