@@ -247,6 +247,8 @@ class HarnessCommandProjectionTests(unittest.TestCase):
         workspace = make_workspace(new_tmp(self))
         text = (workspace / ".opencode/plugins/refuse-offpath-push.js").read_text(encoding="utf-8")
         self.assertIn("export const server", text)
+        self.assertIn("export default", text)
+        self.assertIn("papersmith.refuse-offpath-push", text)
         self.assertIn("tool.execute.before", text)
         self.assertIn("_load_push_surfaces", text)
 
