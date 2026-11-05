@@ -170,6 +170,29 @@
     if (button && last && !last.hidden) button.hidden = true;
   }
 
+  // An action that requires a gate (the full experiments need the verified
+  // proof of concept, G-EXP-POC) is locked until the server says it passed:
+  // its run button is disabled and says why; ticking its own override, or the
+  // phase override, enables it again, as with a locked phase.
+  // Literal catalogue keys per gate (never a composed key).
+  const REQUIRES_KEYS = { 'G-EXP-POC': 'phaseConsole.requiresPocVerified' };
+  const requiresText = (a) => t(REQUIRES_KEYS[a.requires] || 'phaseConsole.requiresGate', { gate: a.requires || '' });
+  function actionLock(a, i) {
+    if (!a.locked) return '';
+    return `<div class="phase-lock phase-lock--action">
+        <strong>🔒 ${esc(requiresText(a))}</strong>
+        <label><input type="checkbox" id="phaseActionOverride${i}" data-action-override="${i}"> ${esc(t('phaseConsole.override'))}</label>
+      </div>`;
+  }
+  const lockedAttr = (a) => (a.locked ? ' disabled aria-disabled="true"' : '');
+  function actionBlocked(a, i) {
+    if (!a || !a.locked) return false;
+    if (document.getElementById(`phaseActionOverride${i}`)?.checked) return false;
+    if (document.getElementById('phaseOverride')?.checked) return false;
+    showError(i, t('phaseConsole.actionBlockedError', { reason: requiresText(a) }));
+    return true;
+  }
+
   function promptCard(a, i) {
     const guide = (a.guide || []).map((g) => `<li>${esc(g)}</li>`).join('');
     const need = a.min_sentences ? t('phaseConsole.minSentences', { n: a.min_sentences }) : (a.optional ? t('phaseConsole.optionalText') : '');
@@ -178,6 +201,7 @@
           <strong>${esc(a.label)}</strong>
           <code>${esc(a.slash)}${a.prefix ? ' ' + esc(a.prefix.trim()) : ''}</code>
         </div>
+        ${actionLock(a, i)}
         <ul class="phase-action__guide">${guide}</ul>
         ${a.keyword_help ? kwBlock(i) : ''}
         <textarea class="phase-action__input" id="phaseInput${i}" rows="4"
@@ -190,7 +214,7 @@
         </div>
         <div class="phase-action__foot">
           <span class="phase-action__hint" id="phaseHint${i}">${esc(t('phaseConsole.sentToAgent'))}${esc(need)}</span>
-          <button class="btn btn--primary btn--sm" data-phase-action="${i}">${esc(t('phaseConsole.run'))}</button>
+          <button class="btn btn--primary btn--sm" data-phase-action="${i}"${lockedAttr(a)}>${esc(t('phaseConsole.run'))}</button>
         </div>
       </div>`;
   }
@@ -343,6 +367,7 @@
     const fail = (msg) => { showError(i, msg); input?.focus(); };
     clearError(i);
     if (blocked(i)) return;
+    if (actionBlocked(a, i)) return;
     if (!text && !a.optional) return fail(t('phaseConsole.writeFirst'));
     if (a.min_sentences && phaseSentenceCount(text) < a.min_sentences) {
       return fail(t('phaseConsole.needSentences', { n: a.min_sentences }));
@@ -404,6 +429,14 @@
     if (field) kwState(Number(field.dataset.kwInput));
   }, true);
   document.addEventListener('change', (event) => {
+    const override = event.target && event.target.closest && event.target.closest('[data-action-override]');
+    if (override) {
+      const i = Number(override.dataset.actionOverride);
+      const button = document.querySelector?.(`[data-phase-action="${i}"]`);
+      if (button) button.disabled = !override.checked;
+      clearError(i);
+      return;
+    }
     const el = event.target && event.target.closest && event.target.closest('[data-phase-agent]');
     if (el) refreshAgentInfo().then(() => agentNote(Number(el.dataset.phaseAgent)));
   }, true);

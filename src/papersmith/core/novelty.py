@@ -1,5 +1,10 @@
 """``smith novelty status|approve|iterate|reset`` — Novelty & Findings Gate CLI.
 
+``--gate poc`` records the proof-of-concept verification (results and
+contrasted hypotheses of a PoC with a complete discussion) that unlocks the
+full experiments (G-EXP-POC); ``--gate full``, the default, is the novelty gate
+before manuscript writing.
+
 Evaluates whether empirical results support the proposal's novelty claims,
 contrasts with SOTA, audits scientific rigor, and commits the gate decision
 before advancing to manuscript drafting.
@@ -74,6 +79,8 @@ def run_status(args) -> int:
     gate = overview.get("gate", {})
     status = gate.get("status", "pending").upper()
     print(f"=== Novelty & Findings Gate: [{status}] ===")
+    poc = gate.get("poc") or {}
+    print(f"Proof-of-concept verification: [{str(poc.get('status', 'pending')).upper()}]")
     if gate.get("decided_at"):
         print(f"Decided at: {gate['decided_at']} by {gate.get('actor', 'operator')}")
     if gate.get("rationale"):
@@ -98,15 +105,28 @@ def run_status(args) -> int:
         print(f"  [{mark}] {r.get('title')}: {r.get('detail')}")
 
     print("\nActions available:")
+    print("  smith novelty approve --gate poc [--notes '...']   (verify the proof of concept)")
     print("  smith novelty approve [--notes '...']")
     print("  smith novelty iterate --stage {experiments|proposal|plausibility} [--notes '...']")
     print("  smith novelty reset")
     return SUCCESS
 
 
+def _gate(args) -> str:
+    return getattr(args, "gate", None) or "full"
+
+
 def run_approve(args) -> int:
     root = workspace_root(args.workspace)
     gate_mod = _get_novelty_gate(root)
+    if _gate(args) == "poc":
+        try:
+            record = gate_mod.record_decision(root, "approve", rationale=args.notes, stage="poc")
+        except gate_mod.NoveltyRefusal as exc:
+            raise UserError(f"could not approve the proof of concept ({exc.code}): {exc.message}") from exc
+        print("Proof of concept VERIFIED: the full experiments are unlocked (G-EXP-POC).")
+        print(f"Recorded at: {record['poc']['decided_at']}")
+        return SUCCESS
     try:
         record = gate_mod.record_decision(root, "approve", rationale=args.notes)
     except gate_mod.NoveltyRefusal as exc:
@@ -124,6 +144,15 @@ def run_iterate(args) -> int:
     root = workspace_root(args.workspace)
     gate_mod = _get_novelty_gate(root)
     action = f"iterate_{args.stage}"
+    if _gate(args) == "poc":
+        try:
+            record = gate_mod.record_decision(root, action, rationale=args.notes, stage="poc")
+        except gate_mod.NoveltyRefusal as exc:
+            raise UserError(f"could not record the PoC iteration: {exc.message}") from exc
+        print(f"Proof of concept: ITERATE -> returned to {record['poc']['target_stage']}; "
+              "the full experiments stay locked (G-EXP-POC).")
+        print(f"Recorded at: {record['poc']['decided_at']}")
+        return SUCCESS
     try:
         record = gate_mod.record_decision(root, action, rationale=args.notes)
     except gate_mod.NoveltyRefusal as exc:
@@ -145,11 +174,16 @@ def run_iterate(args) -> int:
 def run_reset(args) -> int:
     root = workspace_root(args.workspace)
     gate_mod = _get_novelty_gate(root)
+    stage = _gate(args)
     try:
-        record = gate_mod.record_decision(root, "reset", rationale="Gate reset to pending")
+        record = gate_mod.record_decision(root, "reset", rationale="Gate reset to pending", stage=stage)
     except gate_mod.NoveltyRefusal as exc:
         raise UserError(f"could not reset gate: {exc.message}") from exc
 
+    if stage == "poc":
+        print("Proof-of-concept verification RESET: status is now [PENDING].")
+        print(f"Recorded at: {record['poc']['decided_at']}")
+        return SUCCESS
     print("Novelty gate RESET: status is now [PENDING].")
     print(f"Recorded at: {record['decided_at']}")
     return SUCCESS
@@ -173,6 +207,8 @@ def register(subparsers) -> None:
     p_approve.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
     p_approve.add_argument("--notes", "-n", default="Empirical evidence supports core claims",
                            help="justification / rationale for approval")
+    p_approve.add_argument("--gate", choices=["poc", "full"], default="full",
+                           help="decision stage: poc (proof-of-concept verification) or full (default)")
     p_approve.set_defaults(handler=run_approve)
 
     # iterate
@@ -181,9 +217,13 @@ def register(subparsers) -> None:
                            default="experiments", help="target stage to iterate on")
     p_iterate.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
     p_iterate.add_argument("--notes", "-n", default="", help="iteration guidelines and requested remedies")
+    p_iterate.add_argument("--gate", choices=["poc", "full"], default="full",
+                           help="decision stage: poc (proof-of-concept verification) or full (default)")
     p_iterate.set_defaults(handler=run_iterate)
 
     # reset
     p_reset = cmd_sub.add_parser("reset", help="reset gate status to pending")
     p_reset.add_argument("--workspace", "-w", help="target workspace root (defaults to cwd)")
+    p_reset.add_argument("--gate", choices=["poc", "full"], default="full",
+                           help="decision stage: poc (proof-of-concept verification) or full (default)")
     p_reset.set_defaults(handler=run_reset)

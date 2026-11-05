@@ -12,7 +12,15 @@
  * English) is still drawn as written, under a notice in the dashboard's
  * language. A language switch repaints the panel from the last spec.
  *
- * Public surface (window): renderModelModules(spec).
+ * Above the modules, a stepper (GET /api/model/steps) forces Phase 4's order:
+ * the problem and its pillars, then the hypotheses, then the mathematics. Each
+ * step's "Generate & deliberate" button types `/proposal-deliberation <the
+ * step's instruction>` into the agent terminal (window.sendToCli); the
+ * mathematics step also offers `/math-tutor`. A locked step's buttons are
+ * disabled and say what the step requires.
+ *
+ * Public surface (window): renderModelModules(spec), renderModelSteps(steps),
+ * refreshModelSteps().
  */
 (function () {
   'use strict';
@@ -125,9 +133,104 @@
     }
   }
 
-  window.renderModelModules = renderModelModules;
-  // The empty states and the notice come from the catalogue: repaint them.
+  // ---- Phase 4 stepper ------------------------------------------------------
+  // Literal catalogue keys per step (never a composed key).
+  const STEP_LABELS = {
+    problem_pillars: 'modelSteps.problemPillars',
+    hypotheses: 'modelSteps.hypotheses',
+    mathematics: 'modelSteps.mathematics',
+  };
+  const STATUS_LABELS = {
+    PASS: 'modelSteps.status.pass',
+    ACTIVE: 'modelSteps.status.active',
+    LOCKED: 'modelSteps.status.locked',
+  };
+  // What each button types into the agent terminal (agent input stays English).
+  const STEP_COMMANDS = {
+    problem_pillars: '/proposal-deliberation Let us define the central problem and its pillars first: '
+      + 'state the problem and the gap, and decompose it into the novelty pillars before any hypothesis.',
+    hypotheses: '/proposal-deliberation Now the hypotheses: for each agreed pillar, the testable prediction it makes, '
+      + 'and record them in the revision and in .papersmith/model_spec.json.',
+    mathematics: '/proposal-deliberation Now the mathematics: formalize the agreed hypotheses as $$ ... \\tag{N} $$ '
+      + 'display blocks in the next revision.',
+    'math-tutor': '/math-tutor Walk me through the equations of the latest proposal revision.',
+  };
+  const STEP_OF_BUTTON = { 'math-tutor': 'mathematics' };
+
+  let lastSteps = null;
+
+  function stepEvidence(step) {
+    const e = step.evidence || {};
+    if (step.id === 'problem_pillars') {
+      return t('modelSteps.evidence.problemPillars', {
+        problem: t(e.problem ? 'modelSteps.evidence.yes' : 'modelSteps.evidence.no'), n: Number(e.pillars) || 0 });
+    }
+    if (step.id === 'hypotheses') return t('modelSteps.evidence.hypotheses', { n: Number(e.hypotheses) || 0 });
+    return t('modelSteps.evidence.mathematics', { n: Number(e.equations) || 0 });
+  }
+
+  function renderModelSteps(steps) {
+    lastSteps = Array.isArray(steps) ? steps : [];
+    const host = document.getElementById('modelFlowSteps');
+    if (!host) return;
+    if (!lastSteps.length) { host.innerHTML = ''; return; }
+    const cards = lastSteps.map((step, i) => {
+      if (!STEP_LABELS[step.id]) return '';
+      const locked = step.status === 'LOCKED';
+      const tone = step.status === 'PASS' ? 'ok' : (locked ? 'warn' : 'info');
+      const off = locked ? ' disabled aria-disabled="true"' : '';
+      const reason = locked && STEP_LABELS[step.requires]
+        ? `<p class="model-step__reason">🔒 ${esc(t('modelSteps.requires', { step: t(STEP_LABELS[step.requires]) }))}</p>` : '';
+      const tutor = step.id === 'mathematics'
+        ? `<button type="button" class="btn btn--sm" data-model-step="math-tutor"${off}>${esc(t('modelSteps.tutor'))}</button>` : '';
+      return `<div class="model-step model-step--${esc(String(step.status || '').toLowerCase())}">
+          <div class="model-step__head">
+            <strong>${i + 1}. ${esc(t(STEP_LABELS[step.id]))}</strong>
+            <span class="badge badge--${tone}">${esc(t(STATUS_LABELS[step.status] || 'modelSteps.status.active'))}</span>
+          </div>
+          <p class="model-step__evidence">${esc(stepEvidence(step))}</p>
+          ${reason}
+          <div class="model-step__actions">
+            <button type="button" class="btn btn--primary btn--sm" data-model-step="${esc(step.id)}"${off}>${esc(t('modelSteps.generate'))}</button>
+            ${tutor}
+          </div>
+        </div>`;
+    }).join('');
+    host.innerHTML = `<div class="model-steps">
+        <h4 class="model-steps__title">${esc(t('modelSteps.title'))}</h4>
+        <p class="model-steps__hint">${esc(t('modelSteps.hint'))}</p>
+        <div class="model-steps__row">${cards}</div>
+      </div>`;
+  }
+
+  async function refreshModelSteps() {
+    if (typeof fetch !== 'function') return;
+    try {
+      const res = await fetch('/api/model/steps');
+      if (!res.ok) return;
+      const body = await res.json();
+      renderModelSteps(body.steps || []);
+    } catch (_) { /* the stepper stays as it was */ }
+  }
+
+  function onStepClick(event) {
+    const btn = event.target && event.target.closest && event.target.closest('[data-model-step]');
+    if (!btn) return;
+    const id = btn.dataset.modelStep;
+    const step = (lastSteps || []).find((s) => s.id === (STEP_OF_BUTTON[id] || id));
+    if (!step || step.status === 'LOCKED' || !STEP_COMMANDS[id]) return;
+    if (typeof window.sendToCli === 'function') window.sendToCli(STEP_COMMANDS[id], false, { kind: 'slash' });
+  }
+
+  window.renderModelModules = (spec) => { renderModelModules(spec); refreshModelSteps(); };
+  window.renderModelSteps = renderModelSteps;
+  window.refreshModelSteps = refreshModelSteps;
+  // The empty states, the notice and the stepper come from the catalogue: repaint them.
   if (typeof document.addEventListener === 'function') {
-    document.addEventListener('languagechange', () => { if (lastSpec) renderModelModules(lastSpec); });
+    document.addEventListener('languagechange', () => {
+      if (lastSpec) renderModelModules(lastSpec);
+      if (lastSteps) renderModelSteps(lastSteps);
+    });
+    document.addEventListener('click', onStepClick);
   }
 })();

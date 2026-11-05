@@ -221,6 +221,22 @@ The panel classifies a product folder by its checklist holder: one holding
 `Experimental_AGREED.md` is a full experiment (this skill), and one holding
 only `AGREED.md` is a proof of concept (`proposal-implementation`).
 
+## The full run waits for the verified proof of concept
+
+The full experiments start only after the operator verifies the proof of
+concept: a PoC product (`AGREED.md`) closes with a complete
+`Results/discussion.json`, and the operator approves its results and the
+hypotheses it contrasted in the dashboard's Novelty tab ("Verify the proof of
+concept") or with `smith novelty approve --gate poc` (an iteration is
+`smith novelty iterate --gate poc`). That decision is the `poc` record of
+`.papersmith/novelty_gate.json`; the approval refuses
+`POC_DISCUSSION_INCOMPLETE` until a PoC discussion is complete. Until it is
+approved, the gate G-EXP-POC is not passed, sub-phase 5.11 shows as locked and
+the dashboard disables this skill's action and the Experiments tab's "Full
+experiment" button. When invoked before that, say so and point the operator to
+the verification instead of starting the full run. Only the operator records
+that decision; an agent never approves it on the operator's behalf.
+
 ## The objective flow
 
 **Why this skill was invoked, and where it has to arrive.** Declared here and in

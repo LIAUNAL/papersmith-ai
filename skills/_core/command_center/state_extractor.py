@@ -46,23 +46,32 @@ SECTION_ORDER = (
     "10-back-matter",
 )
 
-#: The pipeline's stages, in the order the architecture diagram fixes them.
+#: The pipeline's stages, in the order the paper-construction flow fixes them.
 #:
 #: The diagram is `docs/diagrams/papersmith-pi-flow.html`, generated from
-#: `.archify/architecture-papersmith-pi-20261004-173559/build.mjs`; its twelve
-#: numbered tramos are these, lane for lane, followed by the transversal audit
-#: lane it draws beside them. The board used to ship six stages invented in this
+#: `docs/diagrams/papersmith-pi-flow.build.mjs`. Its numbered lanes are the
+#: eleven dashboard phases (`phase_actions.STAGES`), and every tramo here maps
+#: onto exactly one of them, in their order: a tramo whose id is a phase id is
+#: that phase, and the five tramos of Phase 5 (proof of concept and
+#: experiments) are that phase's sub-lanes in the order the harness entrypoints
+#: state it -- the experimental protocol first, then the proof of concept with
+#: its data and replications, then (after the operator verified the proof of
+#: concept, G-EXP-POC) the full experiments, the credentials and the remote
+#: run (`agents_view.TRAMO_PHASES` holds the mapping). The transversal audit
+#: lane closes the list. The board used to ship six stages invented in this
 #: directory, and nothing compared the two.
 PIPELINE_STAGES = (
     ("harness", "Harness"),
     ("plausibility", "Plausibility"),
     ("ingestion", "Ingestion"),
     ("proposal", "Proposal deliberation"),
-    ("implementation", "Proof of concept"),
     ("experimental-deliberation", "Experimental deliberation"),
+    ("implementation", "Proof of concept"),
     ("experimental-implementation", "Experimental implementation"),
     ("credentials", "Credentials"),
     ("remote", "Remote execution"),
+    ("scaffolding", "Scaffolding"),
+    ("declarations", "Declarations"),
     ("writing", "Writing"),
     ("figures", "Figures and grounding"),
     ("paper", "Paper"),
@@ -75,12 +84,14 @@ PIPELINE_STAGES = (
 PIPELINE_CHAIN = (
     ("plausibility", "ingestion", "top-5 to ingest"),
     ("ingestion", "proposal", "guidance/"),
-    ("proposal", "implementation", "rNN revision"),
-    ("implementation", "experimental-deliberation", "proof of concept"),
-    ("experimental-deliberation", "experimental-implementation", "protocol + repo"),
+    ("proposal", "experimental-deliberation", "rNN revision"),
+    ("experimental-deliberation", "implementation", "protocol"),
+    ("implementation", "experimental-implementation", "verified PoC (G-EXP-POC)"),
     ("experimental-implementation", "credentials", "job ready"),
     ("credentials", "remote", "accounts validated"),
-    ("remote", "writing", "measured facts"),
+    ("remote", "scaffolding", "findings approved (G-NOVELTY)"),
+    ("scaffolding", "declarations", "section contracts"),
+    ("declarations", "writing", "declarations"),
     ("writing", "figures", "sections"),
     ("figures", "paper", "anchors"),
 )
@@ -97,8 +108,8 @@ PIPELINE_CHAIN = (
 #: and "publishes nothing" and "files nothing." A `gate_links` entry for it could
 #: only ever report a verdict the board cannot compute.
 GATE_SOURCES = {
-    "writing-readiness": ("proposal", "contracts"),
-    "coupling-verification": ("writing", "facts"),
+    "writing-readiness": ("scaffolding", "contracts"),
+    "coupling-verification": ("declarations", "facts"),
     "grounding-style-leak": ("writing", "citations"),
     "diagram-raster": ("figures", "figures"),
 }
@@ -798,6 +809,18 @@ def _active_agents(root: Path) -> dict[str, list[str]]:
     return by_stage
 
 
+#: The line that opens the paper-writing declarations region of
+#: `paper/main.tex`; the dashboard's Phase 7 and `decisions.py` read the same one.
+DECLARATIONS_MARKER = "%% paper-writing declarations begin"
+
+
+def _has_declarations(main_tex: Path) -> bool:
+    try:
+        return DECLARATIONS_MARKER in main_tex.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+
+
 def _pipeline_stages(root: Path, sections: list[dict[str, Any]],
                      gates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One node per tramo, lit only by bytes the workspace actually holds.
@@ -826,6 +849,7 @@ def _pipeline_stages(root: Path, sections: list[dict[str, Any]],
     gates_passed = sum(1 for g in gates if g["state"] == "PASSED")
     pdf = (root / "paper" / "main.pdf").is_file()
     main_tex = (root / "paper" / "main.tex").is_file()
+    declarations = main_tex and _has_declarations(root / "paper" / "main.tex")
 
     def ratio(done: int, total: int) -> float:
         if total <= 0:
@@ -876,11 +900,13 @@ def _pipeline_stages(root: Path, sections: list[dict[str, Any]],
                     f"{blocks_written}/{blocks_total} blocks written"),
         "figures": (figures["count"] > 0, ratio(min(figures["count"], 1), 1),
                     f"{figures['count']} figure file(s)"),
-        "paper": (
-            main_tex, 1.0 if pdf else (0.5 if main_tex else 0.0),
-            "paper/main.tex + main.pdf" if pdf else (
-                "paper/main.tex present" if main_tex else "paper/main.tex absent"),
-        ),
+        "scaffolding": (main_tex, 1.0 if main_tex else 0.0,
+                        "paper/main.tex scaffolded" if main_tex else "paper/main.tex absent"),
+        "declarations": (declarations, 1.0 if declarations else 0.0,
+                         "declarations recorded in paper/main.tex" if declarations
+                         else "no declarations region in paper/main.tex"),
+        "paper": (pdf, 1.0 if pdf else 0.0,
+                  "paper/main.pdf compiled" if pdf else "paper/main.pdf not compiled"),
         "audit": (
             bool(gates) and gates_passed == len(gates),
             ratio(gates_passed, len(gates)),

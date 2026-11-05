@@ -400,7 +400,7 @@ integrity gate and the same audit as any other change. That the correction comes
 a measurement exempts it from nothing.
 
 *It hands to everything else:* two things. The published file
-(`proposals/research-concept-rNN.md`) and —just as important— the `STATUS` operation,
+(`proposals/research-concept-<slug>-rNN.md`) and —just as important— the `STATUS` operation,
 which is where **the whole forge** gets the answer to which revision is current.
 Nobody inspects the directory by eye. That is a hard rule, and it exists because the
 directory listing can show files the engine considers invalid.
@@ -499,12 +499,12 @@ be withdrawn, nor can a revision that has descendants.
 **What it writes to disk.**
 
 ```
-proposals/research-concept-rNN.md           the revision, with an artifact marker at the top
+proposals/research-concept-<slug>-rNN.md           the revision, with an artifact marker at the top
 .proposal-deliberation/
-├── state/research-concept-rNN.md.json      derived indexes + hashes
-├── receipts/research-concept-rNN.md.json   the receipt: sha before, sha after, which patches
-├── withdrawn/<uuid>/                       immutable quarantine of a withdrawn revision
-└── locks/initial-revision.lock             v1 creation lock
+├── state/research-concept-<slug>-rNN.md.json      derived indexes + hashes
+├── receipts/research-concept-<slug>-rNN.md.json   the receipt: sha before, sha after, which patches
+├── withdrawn/<uuid>/                              immutable quarantine of a withdrawn revision
+└── locks/initial-revision.lock                    v1 creation lock
 ```
 
 **The safeguards.**
@@ -831,7 +831,7 @@ worker would clone, and **authorizing a launch**. An agent that reads any of the
 blocker will stall on it or skip it — both are wrong.
 
 **The commands.** All with the same form:
-`python3 .../implementation_cli.py <command> --target implementations/<repo> [--name <Name>] [--revision research-concept-rNN.md]`.
+`python3 .../implementation_cli.py <command> --target implementations/<repo> [--name <Name>] [--revision research-concept-<slug>-rNN.md]`.
 **That `python3` has to be 3.10 or newer** — and it is not enforced: under an older one,
 `verify` reaches the `remote-execution` adapter, which evaluates `tuple[int, int] | None`
 at import, and the command dies with a `TypeError` instead of refusing. Worse: `main()`
@@ -1458,7 +1458,7 @@ results on disk (never a number without a source, each verdict from its declared
 and its significance row) and runs `check` until it reads `complete`. At the full stage
 every decided hypothesis cites a `significance:<comparison>`. Qualitative figures live
 under `Results/qualitative/`, and significance rows may carry `hypothesis` and
-`experiment` keys. The dashboard gates sub-phase 5.11 on a complete discussion.
+`experiment` keys. The dashboard gates sub-phase 5.12 (full experiments) on a complete discussion.
 
 **Then the novelty gate.** The discussions are what the dashboard's *Novedad &
 Hallazgos* tab and `smith novelty status` read to judge whether the evidence

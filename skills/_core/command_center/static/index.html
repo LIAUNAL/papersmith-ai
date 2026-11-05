@@ -2180,6 +2180,18 @@
     .model-section {
       margin-bottom: 2rem;
     }
+    /* Ordered build steps (Phase 4 concept map, Phase 5 experiments). */
+    .model-steps, .exp-flow-steps { margin-bottom: 1.5rem; }
+    .model-steps__title { font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin: 0 0 0.3rem; }
+    .model-steps__hint { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.6rem; }
+    .model-steps__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; }
+    .model-step { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; }
+    .model-step--pass { border-color: var(--ok); }
+    .model-step--locked { opacity: 0.75; }
+    .model-step__head { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; font-size: 0.85rem; }
+    .model-step__evidence, .model-step__reason { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+    .model-step__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .model-step__actions button[disabled] { cursor: not-allowed; opacity: 0.6; }
     .model-pillar-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
@@ -3013,6 +3025,9 @@
         <button class="model-subnav-btn" onclick="filterModelView('mapa', this)" data-i18n="model.sub.map">🗺️ 2. Concept Map (5 Layers)</button>
         <button class="model-subnav-btn" onclick="filterModelView('matematico', this)" data-i18n="model.sub.math">📐 3. Mathematics &amp; Tutor</button>
       </div>
+
+      <!-- Phase 4 steps in order: problem & pillars, hypotheses, mathematics (model-panel.js) -->
+      <div id="modelFlowSteps" class="model-flow-steps" aria-live="polite"></div>
 
       <!-- MODULE 1: PROPOSAL AND SCIENTIFIC NOVELTY -->
       <div id="modelSecPropuesta" class="model-section">
@@ -4569,7 +4584,7 @@
               const sfIsLit = (sf.status === 'PASS');
               const sfIsAct = (sf.status === 'IN_PROGRESS');
               const sfTone = sfIsLit ? 'ok' : (sfIsAct ? 'info' : 'warn');
-              const sfIcon = sfIsLit ? '✓' : (sfIsAct ? '⚡' : '○');
+              const sfIcon = sfIsLit ? '✓' : (sfIsAct ? '⚡' : (sf.status === 'LOCKED' ? '🔒' : '○'));
               return `
                 <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.65rem 0.85rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem;">
                   <div style="flex: 1;">

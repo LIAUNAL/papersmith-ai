@@ -56,6 +56,12 @@ def _command(command: str, label: str, desc: str) -> dict[str, Any]:
     return {"kind": "command", "command": command, "label": label, "desc": desc}
 
 
+def _requires(action: dict[str, Any], gate: str) -> dict[str, Any]:
+    """An action that stays locked until ``gate`` passes; ``attach`` sets its
+    ``locked`` flag from the gate's status and the drawer disables it."""
+    return {**action, "requires": gate}
+
+
 def _redirect(label: str, tab: str, desc: str, section: str = "") -> dict[str, Any]:
     return {"kind": "redirect", "label": label, "tab": tab, "section": section, "desc": desc}
 
@@ -174,12 +180,13 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "report writes the contours and importances the Experiments tab shows.",
                 "It runs remotely like the full run, and only the operator launches it.",
             ], "E.g.: plan for the hybrid and linear arms with 40 trials and fANOVA as the evaluator.", optional=True),
-            _prompt("/experimental-implementation", "Implement and measure the experiments", [
+            _requires(_prompt("/experimental-implementation", "Implement and measure the experiments", [
                 "Turns the current experimental protocol into Python and runs its declared measurements.",
                 "Give the target repository; the verification compares against the protocol and the proposal.",
                 "It is done when Results/discussion.json is complete (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); the full run needs a hypothesis test behind every verdict.",
                 "Before any remote rehearsal, experiments-reviewer reviews the code (quality, optimization, GPU use and statistical tests) and hands in its report.",
-            ], "E.g.: implement E1 and E2 and report the metrics.", optional=True),
+                "It starts only after the proof of concept is verified (G-EXP-POC): a complete PoC discussion and the operator's approval in the Novelty tab or with smith novelty approve --gate poc.",
+            ], "E.g.: implement E1 and E2 and report the metrics.", optional=True), "G-EXP-POC"),
             _prompt("/experiment-diagrams", "Diagrams of the PoC and of the experiments", [
                 "When the PoC is approved (AGREED.md) it draws the poc diagram; when the full experiments are approved (Experimental_AGREED.md), the experiments diagram.",
                 "Each one is a TikZ figure (PDF and PNG) in <product>/diagrams/; the \"Generate diagram\" button of the Experiments tab also produces it.",
@@ -299,13 +306,14 @@ def stage_for(phase_id: str) -> str | None:
 
 
 def primary_command(stage: str) -> str:
-    """The text the drawer shows as the phase's command."""
+    """The text the drawer shows as the phase's command: its first slash
+    command or ``smith`` subcommand, or ``""`` when only a panel runs it."""
     for action in ACTIONS.get(stage, {}).get("actions", []):
         if action["kind"] == "prompt":
             return f"{action['slash']} <text>" if not action["optional"] else action["slash"]
         if action["kind"] == "command":
             return action["command"]
-    return "Compile from the dashboard (pdflatex + bibtex)" if stage == "paper" else ""
+    return ""
 
 
 # The files that show a phase's work, as (label, glob) pairs relative to the
@@ -334,6 +342,9 @@ EVIDENCE: dict[str, tuple[tuple[str, str], ...]] = {
 #: Phases that need nothing before them: the harness starts everything and the
 #: audit is transversal. Every other phase needs the one before it.
 UNGATED = frozenset({"harness", "audit"})
+#: A phase that also waits for an operator gate, on top of the previous phase:
+#: writing starts only after the novelty decision.
+PHASE_GATES = {"scaffolding": "G-NOVELTY"}
 MAX_MATCHES = 500
 
 
@@ -363,27 +374,41 @@ def evidence(root: Path, stage: str) -> list[dict[str, Any]]:
     return items
 
 
-def attach(fases: list[dict[str, Any]], root: Path | None = None) -> list[dict[str, Any]]:
+def attach(fases: list[dict[str, Any]], root: Path | None = None,
+           gates: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Add each phase's actions, real skills, command, evidence and lock to
-    the status view."""
+    the status view. An action that ``requires`` a gate is ``locked`` until
+    that gate's status in ``gates`` is ``PASS``."""
+    gates = gates or {}
     previous: dict[str, Any] | None = None
     for phase in fases:
         stage = phase.get("stage_id", "")
         entry = ACTIONS.get(stage)
         if entry:
             phase["actions"] = copy.deepcopy(entry["actions"])
+            for action in phase["actions"]:
+                if action.get("requires"):
+                    action["locked"] = gates.get(action["requires"]) != "PASS"
             phase["skills"] = list(entry["skills"])
             phase["agent"] = entry["agent"]
-            phase["cli_command"] = primary_command(stage)
+            command = primary_command(stage)
+            if command:
+                phase["cli_command"] = command
+            else:
+                # No slash command or smith subcommand runs this phase (the PDF
+                # compiles from its panel), so the card names none.
+                phase.pop("cli_command", None)
         if root is not None:
             phase["evidence"] = evidence(root, stage)
         gated = stage not in UNGATED and previous is not None
         blocked = gated and previous.get("status") != "PASS"
-        phase["unlocked"] = not blocked
-        phase["blocked_by"] = previous.get("id") if blocked else None
+        gate = PHASE_GATES.get(stage)
+        gate_blocked = gated and not blocked and gate is not None and gates.get(gate) != "PASS"
+        phase["unlocked"] = not (blocked or gate_blocked)
+        phase["blocked_by"] = previous.get("id") if blocked else (gate if gate_blocked else None)
         if stage != "audit":
             previous = phase
     return fases
 
 
-__all__ = ["ACTIONS", "EVIDENCE", "STAGES", "UNGATED", "attach", "evidence", "primary_command", "stage_for"]
+__all__ = ["ACTIONS", "EVIDENCE", "PHASE_GATES", "STAGES", "UNGATED", "attach", "evidence", "primary_command", "stage_for"]

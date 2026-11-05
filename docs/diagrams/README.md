@@ -1,47 +1,58 @@
 # The Pi flow diagram
 
-`papersmith-pi-flow.html` is this repository's flow of record: the twelve
-numbered tramos plus the transversal audit lane, drawn from the repository's own
-files. Five sub-lanes sit beside the numbered ones without being
-tramos of their own: `1a` (the optional thematic help before `/plausibility`:
-keywords typed in the phase-2 box, the `banco-lia` MCP's `search_bank`, and the
-operator's approval of the proposed prompt, which is then launched as
-`/plausibility <draft>`), `3b` (the concept map and the math tutor), `4a`
-(datasets: `dataset-scout`, `dataset-curator`, the operator's upload consent and
-`datasets/`, feeding the toy set to the proof of concept and the official
-preparation to the experiments) and `8a` (the Novelty & Findings assessment
-between the measured results and the writing: the dashboard panel, the
-`G-NOVELTY` operator gate, `.papersmith/novelty_gate.json` and `smith novelty`)
-and `11a` (journal choice and venue adaptation, after the compiled PDF:
-`/journal-finder` ranks journals from OpenAlex works and sources, with the SJR
-quartile from an imported CSV or a labelled OpenAlex proxy and a review time
-estimated from Crossref and then PubMed, into `paper/journal-candidates.json`;
-the operator chooses a journal in the PDF Preview tab; `paper-writing venue`
-selects it, the `venue-adapter` agent reads the guidelines and states each
-requirement with a quote and a url, the template is acquired and the audit
-computed, and the agent drafts a plan; the operator approves the plan bound to
-its sha256, text changes go only through `write`, and `venue build` assembles
-`paper/venues/<slug>/main.pdf` without writing `paper/main.tex`). It is a
-serpentine of three rows, so that every turn between rows is a short vertical
-edge, and it has no stage of its own on the board: `venue-adapter` is mapped to
-`paper` in `AGENT_STAGES`.
-Two lanes take a second row, since a sixth column would break the width cap
-below: implementation, for `paper-replicator` -- published code first,
-reimplementation otherwise -- and for the proof of concept's
-`Results/discussion.json` (gates sub-phase 5.8); experimental implementation, for
-the full run's `Results/discussion.json` (5.11) and the
-`Results/reviewer_report.json` of `experiments-reviewer` (5.12). The dashboard's *Pipeline* tab transcribes it — `PIPELINE_STAGES`,
+`papersmith-pi-flow.html` is this repository's flow of record, drawn from the
+repository's own files. Its numbered lanes are the eleven phases the dashboard
+shows under *Pipeline y Avance* (`phase_actions.STAGES`), from `1 · Harness` to
+`11 · Audit (transversal)`, and a lettered lane is a sub-lane of the phase whose
+number it carries:
+
+- `2a`: the optional thematic help before `/plausibility` (keywords typed in the
+  phase-2 box, the `banco-lia` MCP's `search_bank`, and the operator's approval
+  of the proposed prompt, launched as `/plausibility <draft>`);
+- `4a`: the proposal's ordered steps on the *Mapa Conceptual* tab — the central
+  problem and its pillars, then the hypotheses, then the mathematics, each locked
+  until the one before it exists — with the `paper-reviewer`'s NeurIPS
+  contribution type classified after the hypotheses (`.papersmith/model_spec.json`)
+  and the `/math-tutor`;
+- `5` and `5a` to `5g`: Phase 5 in the order the harness entrypoints state it —
+  the protocol (`/experimental-deliberation`), the datasets (toy set, then the
+  official preparation), the replication of the comparison methods and the proof
+  of concept with its `Results/discussion.json` (gates sub-phase 5.8), the
+  proof-of-concept verification gate `G-EXP-POC` (the operator, in the Novedad
+  tab's card, the Experimentos stepper or `smith novelty --gate poc`; sub-phase
+  5.9), the full experiments that only start after it (their discussion gates
+  5.12 and `experiments-reviewer`'s `Results/reviewer_report.json` gates 5.13),
+  the credentials, the remote rehearsal and launch, and the findings: their
+  NeurIPS contribution type and the `G-NOVELTY` operator gate
+  (`.papersmith/novelty_gate.json`, `smith novelty`), which releases the writing;
+- `6` to `10`: scaffolding, declarations, writing, figures and the paper, whose
+  PDF preview carries the style and redundancy panel;
+- `10a`: journal choice and venue adaptation after the compiled PDF
+  (`/journal-finder` ranks journals from OpenAlex works and sources, with the SJR
+  quartile from an imported CSV or a labelled OpenAlex proxy and a review time
+  estimated from Crossref and then PubMed; the operator chooses a journal in the
+  PDF Preview tab; the `venue-adapter` agent states each requirement with a quote
+  and a url; the operator approves the plan bound to its sha256, text changes go
+  only through `write`, and `venue build` assembles
+  `paper/venues/<slug>/main.pdf` without writing `paper/main.tex`). It is a
+  serpentine of three rows, so that every turn between rows is a short vertical
+  edge; `venue-adapter` is mapped to `paper` in `AGENT_STAGES`.
+
+The dashboard's workspace board transcribes it — `PIPELINE_STAGES`,
 `PIPELINE_CHAIN`, `GATE_SOURCES` and `AGENT_STAGES` in
-`skills/_core/command_center/state_extractor.py` — and
-`tests/test_command_center_state.py` holds the transcription, so the drawing and
-the board cannot drift apart without a failing test. One family is drawn and
-deliberately not on the board: the human stops, which the drawing shows inline
-(the approval of the thematic-help draft, the plausibility report's acceptance,
-the two deliberation acceptances, the launch authorization, `G-NOVELTY`). An
-acceptance leaves no artifact to read -- `G-NOVELTY` does record its decision in
-`novelty_gate.json`, but it is the operator's decision, not a verdict computed
-from artifacts -- so `GATE_SOURCES` carries the verdict gates that land in the
-audit lane and none of the stops.
+`skills/_core/command_center/state_extractor.py` — with one tramo per phase and
+Phase 5 as five tramos (protocol, proof of concept, full experiments,
+credentials, remote run), in the same order. `tests/test_command_center_state.py`
+holds the transcription and `tests/test_flow_consistency.py` holds the lane
+numbering against the eleven phases, so the drawing and the board cannot drift
+apart without a failing test. The human stops are drawn inline and are not
+verdict gates on the board: the approval of the thematic-help draft, the
+plausibility report's acceptance, the two deliberation acceptances, the
+proof-of-concept verification, the launch authorization and `G-NOVELTY`. An
+acceptance is the operator's decision, not a verdict computed from artifacts —
+`G-EXP-POC` and `G-NOVELTY` do record theirs in `novelty_gate.json` — so
+`GATE_SOURCES` carries the verdict gates that land in the audit lane and none of
+the stops.
 
 | File | What it is |
 | --- | --- |
@@ -71,7 +82,11 @@ node ~/.claude/skills/archify/bin/archify.mjs finalize architecture \
   "$SCRATCH/candidate.json" "$SCRATCH/papersmith-pi-flow.html" \
   --repo-root . --quality showcase --out-dir "$SCRATCH/evidence" --json
 cp "$SCRATCH/papersmith-pi-flow.html" docs/diagrams/papersmith-pi-flow.html
+cp "$SCRATCH/papersmith-pi-flow.html" skills/_core/command_center/static/papersmith-flow.html
 ```
+
+The dashboard serves the second copy in its *Flujo Archify* tab, and
+`tests/test_command_center_neutral_defaults.py` holds the two byte-identical.
 
 `finalize` runs the four gates — showcase validation, delivery, strict
 provenance check, and a real-browser check — and a passing receipt means all
@@ -97,21 +112,20 @@ gate's: Archify's grid search, which routes an edge around nodes it has no
 relationship with, gives up on a scene of more than 80 obstacles
 (`maximumObstacleCount`), and an authored `via` cannot replace it, because only
 two automatic routes may cross (with a halo) -- an authored crossing is a
-showcase error. The flow was at 78 components with a single edge only the grid
-could route, the dashed `replication` -> `expBuild`, which has to cross the five
-nodes of lane 5. Lane `11a` took the count to 89, so that arrow was dropped (its
-relation lives in the `expBuild` tag and in the *Flow rules* card) and `11a`
-merges consecutive steps into one node where it can honestly. Probe it before
-adding nodes: 78 passes, 81 failed, and the failure names the one edge the grid
-could no longer route. Any new edge that only the grid can route fails at the
-current size.
+showcase error. The flow is at 103 components, so every edge has to be routable
+without the grid: between row neighbours, straight down a column, or through
+the corridor between two rows. That is why the dashed `replication` ->
+`expBuild` arrow is gone (its relation lives in the `expBuild` tag and in the
+*Flow rules* card), and why a label sits only on an edge that leaves its row:
+`composition/label-gap` refuses a label on the 24px gap between row neighbours.
+Any new edge that only the grid can route fails at the current size.
 
 ## The PNG
 
 The page draws at whatever width the viewport gives it, so the frame is a
 capture decision rather than part of the artifact. The committed PNG is 1400px
 wide at **device pixel ratio 1**, captured full-page with `?embed=1` (which is
-what drops the viewer's own chrome). A browser driver needs those three
+what drops the viewer's own chrome); it is 1400x4013 for the current drawing. A browser driver needs those three
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.

@@ -168,6 +168,27 @@ it invents — every planet and link in that file is a claim about which SOTA
 papers this proposal takes from and why, and that claim belongs to the
 deliberation, not to the stretch that publishes it.
 
+## The order the dashboard enforces
+
+Build the proposal in one order: **the central problem and its pillars first,
+then the hypotheses each pillar predicts, then the mathematics.** The
+dashboard's Concept Map tab shows these three steps and locks each one until
+the one before it exists on disk:
+
+1. **Problem and pillars**: `novelty.problem_statement` and at least one
+   `novelty.pillars` entry in `.papersmith/model_spec.json` (or a `problem`
+   planet and a `pillars` list in the latest revision's `.sky.json`).
+2. **Hypotheses**: at least one `novelty.hypotheses` entry (or the overlay's
+   `hypotheses` list).
+3. **Mathematics**: at least one `$$ … \tag{N} $$` display block in the latest
+   revision `proposals/research-concept-<slug>-rNN.md`.
+
+Each step's "Generate & deliberate" button types `/proposal-deliberation`
+with that step's instruction into the agent terminal (the mathematics step
+also offers `/math-tutor`). Phase 4 passes only with a published revision and
+the three steps. When asked for a later step while an earlier one is missing,
+say which one is missing and deliberate that one first.
+
 ## The concept map: `.papersmith/model_spec.json`
 
 The dashboard's Concept Map & Model tab, the math panel's novelty card and the

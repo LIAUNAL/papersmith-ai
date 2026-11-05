@@ -21,6 +21,7 @@ import unittest
 from pathlib import Path
 
 from skills._core.command_center import phase_actions, remote_services, run_options, server
+from skills._core.results import novelty_gate
 
 REPO = Path(__file__).resolve().parents[1]
 PANEL = REPO / "skills/_core/command_center/static/experiments-panel.js"
@@ -100,6 +101,13 @@ class _Status(unittest.TestCase):
             _write_discussion(folder, stage, "supported" if discussion == "complete" else "pending")
         return folder
 
+    def verify_poc(self) -> Path:
+        """A proof of concept with a complete discussion, approved by the
+        operator: the full experiments unlock only after it (G-EXP-POC)."""
+        folder = self.product("VerifiedPoc", "AGREED.md", discussion="complete")
+        novelty_gate.record_decision(self.root, "approve", stage="poc")
+        return folder
+
     def report(self, folder: Path, body: object, name: str = "reviewer_report.json") -> None:
         _write(folder / "Results" / name, json.dumps(body))
 
@@ -123,10 +131,13 @@ class Phase5StatusFromEvidenceTests(_Status):
         self.product("Full", "Experimental_AGREED.md")
         self.assertEqual(self.fase5()["status"], "ACTIVE")
 
-    def test_revision_poc_and_full_discussions_pass(self) -> None:
+    def test_revision_verified_poc_and_full_discussions_pass(self) -> None:
         self.protocol()
         self.product("Poc", "AGREED.md", discussion="complete")
         self.product("Full", "Experimental_AGREED.md", discussion="complete")
+        # The phase never passes over an unverified proof of concept (G-EXP-POC).
+        self.assertEqual(self.fase5()["status"], "ACTIVE")
+        novelty_gate.record_decision(self.root, "approve", stage="poc")
         fase = self.fase5()
         self.assertEqual((fase["status"], fase["progress"]), ("PASS", 1.0))
 
@@ -136,7 +147,8 @@ class Phase5StatusFromEvidenceTests(_Status):
         self.product("Full", "Experimental_AGREED.md")
         fase = self.fase5()
         self.assertEqual(fase["status"], "ACTIVE")
-        self.assertAlmostEqual(fase["progress"], 0.333, places=3)
+        # One of four checks: protocol, PoC discussion, PoC verification, full discussion.
+        self.assertAlmostEqual(fase["progress"], 0.25, places=3)
 
     def test_a_product_without_results_does_not_count(self) -> None:
         self.protocol()
@@ -167,6 +179,9 @@ class Phase5StatusFromEvidenceTests(_Status):
         self.assertEqual(self.sub("Estimate the time")["status"], "PENDING")
         _write(poc / "Results" / "timing.json", "{}")
         self.assertEqual(self.sub("Estimate the time")["status"], "PASS")
+        # The full experiments stay locked until the operator verifies the PoC.
+        self.assertEqual(self.sub("Full experiments")["status"], "LOCKED")
+        novelty_gate.record_decision(self.root, "approve", stage="poc")
         self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
         self.product("Full", "Experimental_AGREED.md", discussion="complete")
         self.assertEqual(self.sub("Full experiments")["status"], "PASS")
@@ -235,6 +250,7 @@ class Phase5DiscussionGatesTests(_Status):
         self.assertEqual(self.sub("Proof of concept")["status"], "PENDING")
 
     def test_the_full_stage_follows_the_same_rule(self) -> None:
+        self.verify_poc()
         self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
         folder = self.product("Full", "Experimental_AGREED.md")
         self.assertEqual(self.sub("Full experiments")["status"], "ACTIVE")
@@ -247,6 +263,7 @@ class Phase5DiscussionGatesTests(_Status):
         self.assertIn("Experimental_AGREED.md", sub["detail"])
 
     def test_a_full_discussion_without_a_significance_test_is_not_complete(self) -> None:
+        self.verify_poc()
         folder = self.product("Full", "Experimental_AGREED.md")
         _write_discussion(folder, "full")
         (folder / "Results" / "significance.json").unlink()
@@ -254,6 +271,8 @@ class Phase5DiscussionGatesTests(_Status):
 
     def test_a_poc_discussion_does_not_pass_the_full_sub_phase(self) -> None:
         self.product("Poc", "AGREED.md", discussion="complete")
+        self.assertEqual(self.sub("Full experiments")["status"], "LOCKED")
+        novelty_gate.record_decision(self.root, "approve", stage="poc")
         self.assertEqual(self.sub("Full experiments")["status"], "PENDING")
 
     def test_the_evidence_counts_discussed_drafts_and_reviews(self) -> None:
@@ -276,10 +295,14 @@ class Phase5DiscussionGatesTests(_Status):
             with self.subTest(needle=needle):
                 self.assertIn(needle, criteria)
 
-    def test_the_gate_follows_the_phase(self) -> None:
+    def test_the_gate_follows_the_poc_verification(self) -> None:
+        # G-EXP-POC is the proof-of-concept verification, no longer a mirror of the phase.
         self.protocol()
         self.product("Poc", "AGREED.md")
         self.product("Full", "Experimental_AGREED.md")
+        gate = next(g for g in self.status()["gates"] if g["id"] == "G-EXP-POC")
+        self.assertEqual(gate["status"], "PENDING")
+        self.product("Poc", "AGREED.md", discussion="complete")
         gate = next(g for g in self.status()["gates"] if g["id"] == "G-EXP-POC")
         self.assertEqual(gate["status"], "ACTIVE")
 

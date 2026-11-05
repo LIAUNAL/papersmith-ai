@@ -194,8 +194,32 @@ class ServerPhaseTests(unittest.TestCase):
         for phase in status["fases"]:
             with self.subTest(phase=phase["id"]):
                 self.assertTrue(phase["actions"])
-                self.assertNotIn("--stage", phase["cli_command"])
+                self.assertNotIn("--stage", phase.get("cli_command", ""))
         self.assertEqual(status["fases"][1]["cli_command"], "/plausibility <text>")
+
+    def test_every_card_command_is_a_real_slash_or_smith_command(self) -> None:
+        """The card's ``cli_command`` is the phase's primary action, never a
+        command the CLI does not have (``smith deliberate``, ``smith implement``)."""
+        known = _subcommands()
+        status = json.loads(bytes(self.route("/api/status")().body))
+        for phase in status["fases"]:
+            command = phase.get("cli_command")
+            with self.subTest(phase=phase["id"], command=command):
+                if phase["stage_id"] == "paper":
+                    self.assertNotIn("cli_command", phase)
+                    continue
+                self.assertTrue(command)
+                words = command.split()
+                if words[0].startswith("/"):
+                    name = words[0].lstrip("/")
+                    self.assertTrue((REPO / ".claude" / "commands" / f"{name}.md").is_file())
+                else:
+                    self.assertEqual(words[0], "smith")
+                    self.assertIn(words[1], known)
+
+    def test_the_server_leaves_agent_skills_and_command_to_attach(self) -> None:
+        source = Path(server.__file__).read_text(encoding="utf-8")
+        self.assertFalse('"cli_command":' in source, "server.py hard-codes a phase's cli_command")
 
     def test_phase_five_lists_data_and_replication_sub_phases_in_order(self) -> None:
         status = json.loads(bytes(self.route("/api/status")().body))
@@ -216,7 +240,7 @@ class ServerPhaseTests(unittest.TestCase):
         self.assertLess(estimate, full)
         self.assertLess(full, remote)
         self.assertIn("Results/timing.json", fase5["subfases"][estimate]["detail"])
-        self.assertEqual(fase5["subfases"][remote]["id"], "5.13")
+        self.assertEqual(fase5["subfases"][remote]["id"], "5.14")
         search = next(i for i, n in enumerate(names) if "optuna" in n.lower())
         self.assertLess(estimate, search)
         self.assertLess(search, full)
