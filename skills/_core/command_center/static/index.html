@@ -2113,6 +2113,13 @@
     .paper-explorer__count { padding: 0.4rem 0.8rem; font-size: 0.76rem; color: var(--text-muted); }
     .paper-explorer__note { padding: 0.4rem 0.8rem; font-size: 0.76rem; color: var(--warn, var(--text-muted)); border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
     .paper-explorer__note[hidden] { display: none; }
+    .paper-explorer__clusters { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border-subtle); }
+    .paper-explorer__clusters[hidden] { display: none; }
+    .paper-explorer__clusters-note { flex-basis: 100%; font-size: 0.72rem; color: var(--text-muted); }
+    .paper-explorer__cluster { padding: 0.15rem 0.55rem; font: inherit; font-size: 0.74rem; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: 999px; cursor: pointer; overflow-wrap: anywhere; }
+    .paper-explorer__cluster:hover { background: var(--surface-hover); }
+    .paper-explorer__cluster[aria-pressed="true"] { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); }
+    .paper-explorer__cluster-size { font-variant-numeric: tabular-nums; opacity: 0.75; }
     .paper-explorer__list { display: grid; gap: 0.6rem; padding: 0.6rem 0.8rem; max-height: 70vh; overflow: auto; }
     .paper-explorer__empty { padding: 2rem; text-align: center; color: var(--text-muted); }
     .paper-card { padding: 0.6rem 0.8rem; background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 0.8rem; }
@@ -3349,6 +3356,7 @@
             </div>
           </div>
           <div id="citedPapersNote" class="paper-explorer__note" hidden></div>
+          <div id="citedClustersBar" class="paper-explorer__clusters" role="group" aria-label="Idea clusters" data-i18n-attr="aria-label:explorer.clustersLabel" hidden></div>
           <div id="citedPapersCount" class="paper-explorer__count"></div>
           <div id="citedPapersList" class="paper-explorer__list"></div>
         </div>

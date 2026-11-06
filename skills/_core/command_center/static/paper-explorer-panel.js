@@ -5,6 +5,9 @@
  * is optional, so this view works at any phase of any paper. Search, filters
  * and sorting run in the page. Workspace text is always escaped, and a paper
  * only gets the http(s) link the server accepted. Offline: no CDN.
+ *
+ * The optional `clusters` of that answer (paper_clusters.py) are a computed
+ * reading, not a statement of the manuscript, and the bar above the list says so.
  */
 (function () {
   'use strict';
@@ -16,10 +19,20 @@
   const SOURCES = {
     modules: 'paper-writing scripts', manuscript: 'paper/main.tex', bibliography: 'paper/refs.bib',
     pool: 'sota-pool', graph: 'sota-pool/atlas.json', ideas: '.papersmith/citations.json',
-    evidence: 'paper/.paper-writing/evidence',
+    evidence: 'paper/.paper-writing/evidence', references: 'paper/.paper-writing/references.json',
+    paper: 'paper/refs.bib',
   };
+  const UNCLUSTERED = 'unclustered';
+  const MALFORMED = 'malformed';
+  const LOCATE_WAIT_MS = 5000;
+  const LOCATE_RETRY_MS = 100;
+  const COPY_LABEL_MS = 1200;
   let body = null;
   let failure = '';
+  let activeCluster = '';
+  let latestLoad = 0;
+  let locateTimer = 0;
+  const copyTimers = new WeakMap();
 
   const byId = (id) => document.getElementById(id);
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => (
@@ -34,25 +47,50 @@
       (paper.sections || []).map((s) => s.title).join(' '),
       (paper.claims || []).map((c) => c.claim).join(' '),
       (paper.ideas || []).map((i) => `${i.idea} ${i.why}`).join(' '),
+      paper.cluster ? (paper.cluster.terms || []).join(' ') : '',
     ].join(' '));
+  }
+
+  function clusterList(answer) {
+    const clusters = answer && answer.clusters && answer.clusters.clusters;
+    return Array.isArray(clusters) ? clusters : [];
+  }
+
+  // Refuses an answer with no paper list, and fills what the view reads from the rest.
+  function readAnswer(answer) {
+    if (!answer || !Array.isArray(answer.papers)) throw new Error(MALFORMED);
+    answer.papers = answer.papers.filter((paper) => paper && typeof paper === 'object');
+    answer.summary = { missing_entries: [], with_link: 0, with_abstract: 0, in_pool: 0, ...answer.summary };
+    const owner = new Map();
+    clusterList(answer).forEach((cluster) => (cluster.keys || []).forEach((key) => owner.set(key, cluster)));
+    answer.papers.forEach((paper) => {
+      paper.cluster = owner.get(paper.key) || null;
+      paper.haystack = searchable(paper);
+    });
+    return answer;
   }
 
   async function loadCitedPapers() {
     const list = byId('citedPapersList');
     if (!list) return;
     if (!body) list.innerHTML = `<p class="paper-explorer__empty">${esc(t('explorer.loading'))}</p>`;
+    // Only the newest request may answer: an older one can finish last.
+    const load = ++latestLoad;
+    let answer = null;
+    let problem = '';
     try {
       const res = await fetch(API);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      body = await res.json();
-      body.papers.forEach((paper) => { paper.haystack = searchable(paper); });
-      failure = '';
+      answer = readAnswer(await res.json());
     } catch (err) {
-      body = null;
-      failure = err.message;
+      problem = err.message;
     }
+    if (load !== latestLoad) return;
+    body = answer;
+    failure = problem;
     fillSections();
     renderNote();
+    renderClusters();
     filterCitedPapers();
   }
 
@@ -84,6 +122,33 @@
     note.hidden = lines.length === 0;
   }
 
+  function clusterChip(id, label, size, hint) {
+    return `<button type="button" class="paper-explorer__cluster" data-cluster="${esc(id)}"`
+      + ` aria-pressed="${id === activeCluster}" title="${esc(hint)}">${label}`
+      + ` <span class="paper-explorer__cluster-size">${esc(size)}</span></button>`;
+  }
+
+  function renderClusters() {
+    const clusters = clusterList(body);
+    const loose = clusters.length ? body.papers.filter((paper) => !paper.cluster).length : 0;
+    const known = activeCluster === UNCLUSTERED ? loose > 0 : clusters.some((c) => c.id === activeCluster);
+    if (!known) activeCluster = '';
+    const bar = byId('citedClustersBar');
+    if (!bar) return;
+    bar.hidden = clusters.length === 0;
+    const parts = clusters.map((cluster) => clusterChip(
+      cluster.id, esc(cluster.label), cluster.size, (cluster.terms || []).join(', ')));
+    if (loose) parts.push(clusterChip(UNCLUSTERED, esc(t('explorer.unclustered')), loose, ''));
+    bar.innerHTML = clusters.length
+      ? `<div class="paper-explorer__clusters-note">${esc(t('explorer.clustersNote'))}</div>${parts.join('')}` : '';
+  }
+
+  function toggleCluster(id) {
+    activeCluster = activeCluster === id ? '' : id;
+    renderClusters();
+    filterCitedPapers();
+  }
+
   const SORTS = {
     order: (a, b) => a.order - b.order,
     cites: (a, b) => b.cites - a.cites || a.order - b.order,
@@ -92,7 +157,14 @@
     title: (a, b) => fold(a.title || a.key).localeCompare(fold(b.title || b.key)),
   };
 
+  function inCluster(paper) {
+    if (!activeCluster) return true;
+    if (activeCluster === UNCLUSTERED) return !paper.cluster;
+    return Boolean(paper.cluster) && paper.cluster.id === activeCluster;
+  }
+
   function matches(paper, words, origin, section) {
+    if (!inCluster(paper)) return false;
     if (origin === 'pool' && !paper.in_pool) return false;
     if (origin === 'outside' && paper.in_pool) return false;
     if (section && !(paper.sections || []).some((s) => s.title === section)) return false;
@@ -101,6 +173,7 @@
 
   function chips(paper) {
     const parts = [`<code>${esc(paper.key)}</code>`];
+    if (paper.cluster) parts.push(`<span class="badge badge--info">${esc(paper.cluster.label)}</span>`);
     if (paper.family) parts.push(`<span class="badge">${esc(paper.family)}</span>`);
     parts.push(`<span class="badge">${esc(t(paper.in_pool ? 'explorer.inPool' : 'explorer.outsidePool'))}</span>`);
     if (!paper.has_entry) parts.push(`<span class="badge badge--warn">${esc(t('explorer.noEntry'))}</span>`);
@@ -153,7 +226,8 @@
     const count = byId('citedPapersCount');
     if (!list) return;
     if (failure) {
-      list.innerHTML = `<p class="paper-explorer__empty">${esc(t('explorer.loadError', { error: failure }))}</p>`;
+      const error = failure === MALFORMED ? t('explorer.badAnswer') : failure;
+      list.innerHTML = `<p class="paper-explorer__empty">${esc(t('explorer.loadError', { error }))}</p>`;
       if (count) count.textContent = '';
       return;
     }
@@ -182,30 +256,57 @@
     });
     const sort = byId('citedSortSelect');
     if (sort) sort.value = 'order';
+    activeCluster = '';
+    renderClusters();
     filterCitedPapers();
   }
 
-  // Opens the summary graph on this paper's node, loading the view when needed.
+  // The frame's `src` changes when navigation starts, so only its live document
+  // says whether the graph is there.
+  function graphDocument(frame) {
+    const doc = frame.contentDocument;
+    const ready = doc && doc.readyState === 'complete' && doc.location.pathname === GRAPH_VIEW;
+    return ready && doc.querySelector('.node') ? doc : null;
+  }
+
+  const selected = (doc, nodeId) => Array.from(doc.querySelectorAll('.node.sel'))
+    .some((node) => node.dataset.id === nodeId);
+
+  // Opens the summary graph on this paper's node. Tries until the node is selected
+  // or the wait ends, once per document, so a reload in between still gets the
+  // message. A newer locate or leaving the summary view ends the attempt.
   function locate(nodeId) {
     const frame = byId('graphIframe');
     if (!frame || typeof window.switchGraph !== 'function') return;
-    const loaded = new URL(frame.src, window.location.href).pathname === GRAPH_VIEW;
-    const send = () => frame.contentWindow.postMessage(
-      { type: 'manuscript-graph-locate', id: nodeId }, window.location.origin);
+    clearTimeout(locateTimer);
     window.switchGraph('summary');
-    if (loaded) send();
-    else frame.addEventListener('load', send, { once: true });
+    const deadline = Date.now() + LOCATE_WAIT_MS;
+    let told = null;
+    const attempt = () => {
+      if (currentGraphKind !== 'summary') return;
+      const doc = graphDocument(frame);
+      if (doc && selected(doc, nodeId)) return;
+      if (doc && doc !== told) {
+        told = doc;
+        frame.contentWindow.postMessage({ type: 'manuscript-graph-locate', id: nodeId }, window.location.origin);
+      }
+      if (Date.now() < deadline) locateTimer = setTimeout(attempt, LOCATE_RETRY_MS);
+    };
+    attempt();
   }
 
+  // The label comes from the catalogue, never from the button: a second click
+  // would otherwise keep "Copied" for good.
   async function copyCite(button) {
-    const label = button.textContent;
+    let done = true;
     try {
       await navigator.clipboard.writeText(`\\cite{${button.dataset.key}}`);
-      button.textContent = t('explorer.copied');
     } catch (_) {
-      button.textContent = t('explorer.copyFailed');
+      done = false;
     }
-    setTimeout(() => { button.textContent = label; }, 1200);
+    button.textContent = done ? t('explorer.copied') : t('explorer.copyFailed');
+    clearTimeout(copyTimers.get(button));
+    copyTimers.set(button, setTimeout(() => { button.textContent = t('explorer.copy'); }, COPY_LABEL_MS));
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -217,11 +318,16 @@
       if (button.dataset.action === 'copy') copyCite(button);
       else locate(button.dataset.node);
     });
+    byId('citedClustersBar')?.addEventListener('click', (event) => {
+      const chip = event.target.closest('button[data-cluster]');
+      if (chip) toggleCluster(chip.dataset.cluster);
+    });
   });
   document.addEventListener('languagechange', () => {
     if (!body && !failure) return;
     fillSections();
     renderNote();
+    renderClusters();
     filterCitedPapers();
   });
 
