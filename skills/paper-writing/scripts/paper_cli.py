@@ -1573,8 +1573,9 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
         )
     if args.force:
         args.usage_error("--force needs --references")
-    if not (args.identifier and args.resolver):
-        args.usage_error("the following arguments are required: --identifier, --resolver")
+    absent = [flag for flag, value in (("--identifier", args.identifier), ("--resolver", args.resolver)) if not value]
+    if absent:
+        args.usage_error(f"the following arguments are required: {', '.join(absent)}")
     if args.cache_dir is not None:
         cache_dir = _resolve_repo_path(args.cache_dir)
         paper_dir = None

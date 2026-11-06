@@ -61,6 +61,7 @@ import sys
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -456,13 +457,20 @@ def build_refs_bib(paper_dir: Path, records: list[dict], *, guidance_dir: Path,
             by_key[cite_key] = record
     refs_path = paper_dir / "refs.bib"
     existing = refs_path.read_bytes() if refs_path.is_file() else b""
-    lost = sorted((set(cited) & set(parse_bib(existing.decode("utf-8", errors="replace")))) - set(by_key))
+    held = set(parse_bib(existing.decode("utf-8", errors="replace")))
+    lost = sorted((set(cited) & held) - set(by_key))
     if lost:
         raise Refused(
             "ENTRY_UNSOURCED",
             f"refs.bib was left untouched: rebuilding it would drop the cited entries {lost}, which "
             "have no evidence record -- `bib build` writes only what `validate` recorded, so validate "
             "each key against an ingested paper first",
+        )
+    if held and not by_key:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"refs.bib was left untouched: no evidence record names a cited key, so rebuilding it "
+            f"would empty its {len(held)} entries -- `bib build` writes only what `validate` recorded",
         )
     entries = [
         entry_from_record(paper_dir, by_key[key], guidance_dir=guidance_dir) for key in sorted(by_key)
@@ -695,7 +703,7 @@ def _reference_record(status: str, retrieved: str, identifier: str | None, resul
         "resolver": found.get("resolver"),
         "identifier": found.get("identifier", identifier),
         "title": found.get("title"),
-        "abstract": found.get("abstract"),
+        "abstract": found.get("abstract") or None,
         "year": found.get("year"),
         "venue": found.get("venue"),
         "link": _reference_link(found) if result else None,
@@ -717,15 +725,26 @@ def _ask(call) -> tuple[object, bool]:
         if exc.code == "RESOLVER_UNREACHABLE":
             return None, True
         raise
-    except (OSError, ValueError, SyntaxError, http.client.HTTPException):
+    except (OSError, ValueError, SyntaxError, AttributeError, TypeError, http.client.HTTPException):
         return None, True
+
+
+def _years_agree(bib_year: str | None, work_year: object) -> bool:
+    try:
+        return abs(int(str(bib_year)) - int(str(work_year))) <= 1
+    except ValueError:
+        return True
 
 
 def _best_title_match(title: str, year: str | None, works: list[dict]) -> dict | None:
     """The work carrying exactly `title`, normalized, or `None`: a near title
-    is another paper. Among equals, the bib's year and then an abstract."""
+    is another paper, and so is an equal title more than a year from the bib's,
+    since normalizing drops symbols that can tell two titles apart. A preprint
+    and its journal version can sit one year apart. Among equals, the bib's
+    year and then an abstract."""
     wanted = title_key(title)
-    exact = [work for work in works if wanted and title_key(work.get("title")) == wanted]
+    exact = [work for work in works if wanted and title_key(work.get("title")) == wanted
+             and _years_agree(year, work.get("year"))]
     exact.sort(key=lambda work: (str(work.get("year")) != year, not work.get("abstract")))
     return exact[0] if exact else None
 
@@ -737,7 +756,12 @@ def _resolve_reference(entry: dict[str, str], *, connectors: list, role: str,
     was found. Crossref never carries an abstract, so a DOI asks OpenAlex
     first and Crossref only for a work OpenAlex does not hold."""
     found, failed = None, False
-    for identifier, resolver in bib_identifiers(identity_fields(entry)):
+    fields = identity_fields(entry)
+    identifiers = bib_identifiers(fields)
+    url = fields.get("url", "")
+    if url.lower().startswith(_DOI_PREFIXES) and not fields.get("doi"):
+        identifiers.insert(0, (url, "crossref"))
+    for identifier, resolver in identifiers:
         identity = source_identity(identifier, resolver)
         chain = ("openalex", "crossref") if resolver == "crossref" else (resolver,)
         for name in chain:

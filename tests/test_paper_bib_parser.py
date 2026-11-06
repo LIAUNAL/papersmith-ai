@@ -98,6 +98,16 @@ class BibBuildGuardTests(unittest.TestCase):
         self.assertIn("smith2024", out["detail"])
         self.assertEqual(self.refs.read_bytes(), HAND_WRITTEN)
 
+    def test_a_manuscript_that_only_uses_nocite_never_empties_the_bibliography(self) -> None:
+        self.refs.write_bytes(HAND_WRITTEN)
+        (self.paper_dir / "main.tex").write_text("\\nocite{*}\n", encoding="utf-8")
+
+        proc = self._build()
+
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertEqual(json.loads(proc.stdout)["code"], "ENTRY_UNSOURCED")
+        self.assertEqual(self.refs.read_bytes(), HAND_WRITTEN)
+
     def test_one_entry_without_evidence_refuses_the_whole_rebuild(self) -> None:
         self._evidence_for_smith()
         self.refs.write_bytes(HAND_WRITTEN)

@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import types
 import unittest
 import uuid
 from pathlib import Path
@@ -19,6 +20,8 @@ from pathlib import Path
 FORGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_paper_writing import CLI, _build_coupling_paper  # noqa: E402
+sys.path.insert(0, str(FORGE_ROOT / "skills" / "paper-writing" / "scripts"))
+import paper_verify  # noqa: E402
 
 
 class VerifyReferencesTests(unittest.TestCase):
@@ -86,6 +89,22 @@ class VerifyReferencesTests(unittest.TestCase):
     def test_verify_writes_no_sidecar(self) -> None:
         self.verify()
         self.assertFalse(self.sidecar.exists())
+
+
+class RemediationTests(unittest.TestCase):
+    def check(self, records: dict | None) -> dict:
+        evidence = types.SimpleNamespace(main_tex_bytes=b"\\cite{a}")
+        return paper_verify.check_references(evidence, references=records)
+
+    def test_a_missing_record_says_what_to_run(self) -> None:
+        report = self.check({})
+        self.assertEqual(report["verdict"], "fail")
+        self.assertTrue(any("resolve --references" in line for line in report["limits"]))
+
+    def test_a_resolved_paper_without_an_abstract_is_a_visible_note_and_passes(self) -> None:
+        report = self.check({"a": {"status": "resolved", "abstract": None}})
+        self.assertEqual(report["verdict"], "pass")
+        self.assertTrue(any("abstract" in line for line in report["limits"]))
 
 
 class NoCitationsTests(unittest.TestCase):

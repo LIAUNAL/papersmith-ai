@@ -177,6 +177,53 @@ class ResolveReferencesTests(unittest.TestCase):
         self.assertEqual({r["status"] for r in self.records().values()}, {"unreachable"})
         self.assertLess(len(transport.urls), 8 * 4)
 
+    def test_an_exact_title_from_another_period_is_another_paper(self) -> None:
+        self.workspace("\\cite{a}", "@misc{a, title={On $\\alpha$-divergence}, year={2001}}\n")
+        search = js({"results": [work("On β-divergence", abstract="wrong one", year=1999)]})
+
+        self.run_cli(Transport({"search=": search}))
+
+        self.assertEqual(self.records()["a"]["status"], "not_found")
+
+    def test_a_preprint_year_next_to_the_bib_year_still_matches(self) -> None:
+        self.workspace("\\cite{a}", "@misc{a, title={Quantum Signals}, year={2021}}\n")
+        search = js({"results": [work("Quantum Signals", abstract="right one", year=2020)]})
+
+        self.run_cli(Transport({"search=": search}))
+
+        self.assertEqual(self.records()["a"]["abstract"], "right one")
+
+    def test_an_empty_abstract_is_stored_as_none(self) -> None:
+        self.workspace("\\cite{a}", "@misc{a, doi={10.1/a}}\n")
+        answer = work("A", doi="10.1/a")
+        answer["abstract_inverted_index"] = {}
+
+        self.run_cli(Transport({"": js(answer)}))
+
+        self.assertEqual(self.records()["a"]["status"], "resolved")
+        self.assertIsNone(self.records()["a"]["abstract"])
+
+    def test_a_doi_held_only_in_the_url_is_used(self) -> None:
+        self.workspace("\\cite{a}", "@misc{a, url={https://doi.org/10.1/a}}\n")
+
+        self.run_cli(Transport({"doi.org/10.1/a": js(work("A", doi="10.1/a", abstract="from the doi"))}))
+
+        self.assertEqual(self.records()["a"]["abstract"], "from the doi")
+
+    def test_a_json_answer_of_the_wrong_shape_is_unreachable(self) -> None:
+        self.workspace("\\cite{a}", "@misc{a, doi={10.1/a}}\n")
+
+        code, out = self.run_cli(Transport({"": b"[]"}))
+
+        self.assertEqual((code, out["unreachable"]), (0, 1))
+
+    def test_each_missing_identifier_flag_is_named_alone(self) -> None:
+        for given, missing in ((("--identifier", "10.1/a"), "--resolver"), (("--resolver", "crossref"), "--identifier")):
+            with self.subTest(given=given), mock.patch("sys.stderr", new=io.StringIO()) as err:
+                with self.assertRaises(SystemExit):
+                    paper_cli.main(["resolve", *given, "--paper", str(self.paper)])
+                self.assertIn(f"required: {missing}\n", err.getvalue())
+
     def test_a_malformed_answer_is_unreachable_and_never_a_crash(self) -> None:
         self.workspace("\\cite{a}", "@misc{a, doi={10.1/a}}\n")
 

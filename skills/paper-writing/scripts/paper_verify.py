@@ -797,7 +797,11 @@ def check_references(evidence, *, optional_block_ids: frozenset = frozenset(),
         ],
         evidence={"cited": cited, "missing": missing, "not_found": not_found,
                   "unreachable": unreachable, "without_abstract": without_abstract},
-        limits=[f"{unresolved} cited key(s) have a record but no resolved metadata"] if unresolved else [],
+        limits=[line for line in (
+            f"{len(missing)} cited key(s) have no reference record: run `resolve --references`" if missing else "",
+            f"{unresolved} cited key(s) have a record but no resolved metadata" if unresolved else "",
+            f"{len(without_abstract)} resolved key(s) have no abstract at their source" if without_abstract else "",
+        ) if line],
         unmeasured_reason=None,
     )
 
