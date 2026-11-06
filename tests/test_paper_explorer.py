@@ -13,6 +13,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -112,6 +113,21 @@ class BibParsingTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(paper_explorer.plain_text(raw), expected)
 
+    def test_an_accent_keeps_the_space_after_its_letter(self) -> None:
+        for raw, expected in (
+            (r"Jos\'e Garc\'ia", "José García"),
+            (r"Universit\'e de Montr\'eal", "Université de Montréal"),
+            (r"Jos\'{e} Garc\'{ i }a", "José García"),
+            (r"M\"uller and Sons", "Müller and Sons"),
+            (r"\c c and \v s then", "ç and š then"),
+            (r"\c{c} and \v{s} then", "ç and š then"),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(paper_explorer.plain_text(raw), expected)
+
+    def test_raw_nul_digits_never_read_as_a_math_placeholder(self) -> None:
+        self.assertEqual(paper_explorer.plain_text("a\x007\x00b $x$"), "a7b x")
+
 
 class JoinTests(Workspace):
     def full_workspace(self) -> None:
@@ -149,7 +165,7 @@ class JoinTests(Workspace):
         self.assertFalse(ghost["has_entry"])
         self.assertIsNone(ghost["title"])
         self.assertEqual(paper_explorer.cited_papers(self.root)["summary"]["missing_entries"],
-                         ["commented2000", "ghost2019"])
+                         ["ghost2019"])
 
     def test_the_pool_fills_gaps_by_identifier_and_by_title(self) -> None:
         self.full_workspace()
@@ -203,6 +219,22 @@ class JoinTests(Workspace):
         self.assertEqual(papers["b"]["link"], "https://arxiv.org/abs/2001.00001")
 
 
+class ClusterTests(Workspace):
+    def test_the_answer_groups_papers_and_co_citation_counts(self) -> None:
+        write(self.root, "paper/main.tex", r"\cite{a,b} \cite{c} \cite{d}")
+        write(self.root, "paper/refs.bib", "".join(
+            f"@misc{{{key}, title={{{title}}}}}\n" for key, title in (
+                ("a", "Quantum circuit learning"), ("b", "Variational quantum circuit models"),
+                ("c", "Convolutional networks for image recognition"),
+                ("d", "Deep convolutional networks for vision"))))
+        clusters = paper_explorer.cited_papers(self.root)["clusters"]
+        self.assertEqual(sorted(sorted(c["keys"]) for c in clusters["clusters"]), [["a", "b"], ["c", "d"]])
+        self.assertTrue(clusters["method"])
+
+    def test_an_empty_workspace_has_no_clusters(self) -> None:
+        self.assertEqual(paper_explorer.cited_papers(self.root)["clusters"]["clusters"], [])
+
+
 class AnyWorkspaceTests(Workspace):
     def test_an_empty_workspace_is_an_empty_answer(self) -> None:
         body = paper_explorer.cited_papers(self.root)
@@ -250,6 +282,46 @@ class AnyWorkspaceTests(Workspace):
         (self.root / "paper" / "refs.bib").write_bytes("@misc{a, title={Caf\xe9 Study}}".encode("latin-1"))
         self.assertEqual(len(paper_explorer.cited_papers(self.root)["papers"]), 1)
 
+    def test_an_evidence_record_with_an_unhashable_cite_key_is_skipped(self) -> None:
+        write(self.root, "paper/main.tex", MAIN_TEX)
+        write(self.root, "paper/refs.bib", REFS)
+        write(self.root, "paper/.paper-writing/evidence/intro.jsonl",
+              json.dumps({"cite_key": ["alpha2020"], "claim": "bad"}) + "\n"
+              + json.dumps({"cite_key": "alpha2020", "block_id": "intro", "claim": "good", "verdict": "holds"}) + "\n")
+        papers = self.papers()
+        self.assertEqual([c["claim"] for c in papers["alpha2020"]["claims"]], ["good"])
+
+    def test_a_bib_value_with_nul_digits_does_not_stop_the_answer(self) -> None:
+        write(self.root, "paper/main.tex", MAIN_TEX)
+        write(self.root, "paper/refs.bib", REFS.replace("Beta Models", "Beta\x009\x00 Models"))
+        papers = self.papers()
+        self.assertEqual(papers["beta2021"]["title"], "Beta9 Models")
+
+    def test_a_paper_that_cannot_be_assembled_stays_listed_with_a_warning(self) -> None:
+        write(self.root, "paper/main.tex", MAIN_TEX)
+        write(self.root, "paper/refs.bib", REFS)
+        real = paper_explorer._paper
+
+        def explode(paper_bib, key, *rest):
+            if key == "beta2021":
+                raise TypeError("broken record")
+            return real(paper_bib, key, *rest)
+
+        with mock.patch.object(paper_explorer, "_paper", explode):
+            body = paper_explorer.cited_papers(self.root)
+        self.assertEqual([p["key"] for p in body["papers"]], ["alpha2020", "beta2021", "ghost2019"])
+        self.assertEqual({w["code"] for w in body["warnings"]}, {"paper"})
+        self.assertIsNone(body["papers"][1]["title"])
+        self.assertEqual(body["summary"]["total"], 3)
+
+    def test_a_key_cited_only_in_a_comment_is_not_listed(self) -> None:
+        write(self.root, "paper/main.tex", MAIN_TEX)
+        write(self.root, "paper/refs.bib", REFS)
+        body = paper_explorer.cited_papers(self.root)
+        self.assertNotIn("commented2000", [p["key"] for p in body["papers"]])
+        self.assertEqual(body["summary"]["missing_entries"], ["ghost2019"])
+        self.assertTrue(all(p["cites"] > 0 for p in body["papers"]))
+
     def test_the_answer_is_deterministic(self) -> None:
         write(self.root, "paper/main.tex", MAIN_TEX)
         write(self.root, "paper/refs.bib", REFS)
@@ -264,8 +336,55 @@ class RouteTests(Workspace):
         client = TestClient(server.create_app(self.root))
         response = client.get("/api/atlas/cited-papers")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["summary"]["total"], 4)
+        self.assertEqual(response.json()["summary"]["total"], 3)
         self.assertEqual(snapshot(self.root), before)
+
+
+class ReferenceSidecarTests(Workspace):
+    SIDECAR = "paper/.paper-writing/references.json"
+
+    def sidecar(self, **records: dict) -> None:
+        write(self.root, self.SIDECAR, json.dumps({"schema": "papersmith.references/v1", "references": records}))
+
+    def setUp(self) -> None:
+        super().setUp()
+        write(self.root, "paper/main.tex", "\\cite{bare2020}\n\\cite{alpha2020}\n")
+        write(self.root, "paper/refs.bib", "@misc{bare2020, note={x}}\n" + REFS)
+
+    def test_the_sidecar_fills_what_nothing_else_holds(self) -> None:
+        self.sidecar(bare2020={"status": "resolved", "title": "Side title", "abstract": "Side abstract",
+                               "year": 2020, "venue": "Side venue", "link": "https://doi.org/10.1/side"})
+        body = paper_explorer.cited_papers(self.root)
+        bare = next(p for p in body["papers"] if p["key"] == "bare2020")
+        self.assertEqual((bare["title"], bare["abstract"], bare["year"], bare["venue"], bare["link"]),
+                         ("Side title", "Side abstract", "2020", "Side venue", "https://doi.org/10.1/side"))
+        self.assertEqual(body["summary"]["with_abstract"], 2)
+        self.assertEqual(body["warnings"], [])
+
+    def test_the_bib_and_the_pool_win_over_the_sidecar(self) -> None:
+        self.sidecar(alpha2020={"status": "resolved", "abstract": "Side abstract", "venue": "Side venue"},
+                     bare2020={"status": "resolved", "abstract": "Side abstract"})
+        write(self.root, "sota-pool/candidates.json", json.dumps({"candidates": [
+            {"identifier": "pool-bare", "title": "Bare", "abstract": "Pool abstract"}]}))
+        write(self.root, "paper/refs.bib", "@misc{bare2020, title={Bare}}\n" + REFS)
+        papers = self.papers()
+        self.assertEqual(papers["alpha2020"]["abstract"], "We study alpha.")
+        self.assertEqual(papers["alpha2020"]["venue"], "Journal of Alpha")
+        self.assertEqual(papers["bare2020"]["abstract"], "Pool abstract")
+
+    def test_a_link_that_is_not_http_is_not_offered(self) -> None:
+        self.sidecar(bare2020={"status": "resolved", "link": "javascript:alert(1)"})
+        self.assertIsNone(self.papers()["bare2020"]["link"])
+
+    def test_only_a_resolved_record_is_read(self) -> None:
+        self.sidecar(bare2020={"status": "not_found", "abstract": "Stale"})
+        self.assertIsNone(self.papers()["bare2020"]["abstract"])
+
+    def test_a_bad_sidecar_is_a_warning_and_the_rest_survives(self) -> None:
+        write(self.root, self.SIDECAR, "{not json")
+        body = paper_explorer.cited_papers(self.root)
+        self.assertEqual([w["code"] for w in body["warnings"]], ["references"])
+        self.assertEqual(len(body["papers"]), 2)
 
 
 class DashboardWiringTests(unittest.TestCase):

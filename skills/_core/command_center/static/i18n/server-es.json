@@ -785,5 +785,6 @@
   "Every pillar, hypothesis, layer and numbered equation is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json.": "Cada pilar, hipótesis, capa y ecuación numerada se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json.",
   "Step 5: NeurIPS judge": "Paso 5: Juez NeurIPS",
   "The paper-reviewer classifies the proposal's NeurIPS contribution type (contribution_type in .papersmith/model_spec.json); Phase 5 stays locked until it does.": "El paper-reviewer clasifica el tipo de contribución NeurIPS de la propuesta (contribution_type en .papersmith/model_spec.json); la Fase 5 sigue bloqueada hasta entonces.",
-  "At least one $$ … \\tag{N} $$ block in the latest revision; locked until step 2 passes": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2"
+  "At least one $$ … \\tag{N} $$ block in the latest revision; locked until step 2 passes": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2",
+  "refs.bib comes from bib build; after citations change, run resolve --references to store each paper's abstract.": "refs.bib proviene de bib build; cuando cambien las citas, ejecute resolve --references para guardar el resumen de cada artículo."
 }

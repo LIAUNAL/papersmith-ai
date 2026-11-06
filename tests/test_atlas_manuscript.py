@@ -233,6 +233,34 @@ class BibliographyJoinTests(_Workspace):
                           summary["extra_cited"]), (8, 6, 3))
 
 
+class OneLineBibliographyTests(_Workspace):
+    def test_a_one_line_entry_reaches_the_atlas_join(self) -> None:
+        root = self.workspace()
+        systems = json.loads((root / "sota-pool" / "atlas.json").read_text(encoding="utf-8"))["systems"]
+        pool = json.loads((root / "sota-pool" / "candidates.json").read_text(encoding="utf-8"))
+        candidates = pool if isinstance(pool, list) else pool["candidates"]
+        target = next(c for c in candidates if str(c.get("identifier", "")).startswith("10."))
+        (root / "paper" / "main.tex").write_text("See \\cite{oneline2024}.\n", encoding="utf-8")
+        (root / "paper" / "refs.bib").write_text(
+            f"@article{{oneline2024, title={{Unrelated Words}}, doi={{{target['identifier']}}}, year={{2024}}}}\n",
+            encoding="utf-8")
+        for store in (root / "paper" / ".paper-writing" / "evidence").glob("*.jsonl"):
+            store.unlink()
+
+        joined = atlas_manuscript.cited_systems(root)
+
+        self.assertTrue(systems)
+        cited = [s for s in joined["systems"] if s["cited"]]
+        self.assertEqual([s["cite_keys"] for s in cited], [["oneline2024"]])
+        self.assertEqual(joined["extra_systems"], [])
+
+    def test_bib_fields_keep_only_the_declared_fields(self) -> None:
+        fields = atlas_manuscript._bib_fields(
+            b"@string{jn = \"Neural Journal\"}\n"
+            b"@article{a, title={A\n   Title}, journal=jn, abstract={Not kept}, year=2020}\n")
+        self.assertEqual(fields, {"a": {"title": "A Title", "journal": "Neural Journal", "year": "2020"}})
+
+
 class LayerTests(_Workspace):
     def test_build_writes_the_layer_and_leaves_atlas_json_byte_identical(self) -> None:
         root = self.workspace()

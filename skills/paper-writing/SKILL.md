@@ -65,6 +65,9 @@ Crossref and arXiv, behind a `papersmith.yaml` role the operator can empty.
 Every other verb remains exactly as offline as before; `resolve` refuses by
 name (`RESOLVER_UNREACHABLE`, `DISCOVERY_UNAVAILABLE`, `RESOLVER_ROLE_EMPTY`)
 rather than silently returning an empty result.
+`resolve --references` is the one exception to that refusal: it records an
+unreachable key as `unreachable` in its sidecar, so offline work carries on, and
+only an emptied role refuses.
 
 **Not shipped yet, on purpose.** Deriving a writing order and substituting a
 block by id are two capabilities that exist side by side and are not yet
@@ -741,6 +744,26 @@ by its own digest.
 | --- | --- | --- |
 | `resolve --identifier <id> --resolver {openalex,crossref,arxiv} [--role <role>] [--paper <dir> \| --cache-dir <dir>]` | Resolves one identifier's metadata through one named connector and caches it: under `<paper>/.paper-writing/metadata/` by default, or as `<dir>/<metadata_digest>.json` with `--cache-dir` | `PAPER_OUTSIDE_REPOSITORY`, `PAPERSMITH_CONFIG_UNREADABLE`, `UNKNOWN_ROLE`, `DISCOVERY_UNAVAILABLE`, `RESOLVER_ROLE_EMPTY`, `RESOLVER_UNREACHABLE`, `IDENTIFIER_UNRESOLVED` |
 
+| `resolve --references [--force] [--role <role>] [--paper <dir>]` | Resolves every key `main.tex` cites, or every `refs.bib` entry when the manuscript's citation commands are not ones `bib` reads, into `paper/.paper-writing/references.json`; prints how many were `resolved`, `not_found`, `unreachable`, `reused` and `with_abstract` | `PAPER_OUTSIDE_REPOSITORY`, `PAPER_ABSENT`, `PAPERSMITH_CONFIG_UNREADABLE`, `UNKNOWN_ROLE`, `RESOLVER_ROLE_EMPTY` |
+
+**`resolve --references` keeps what the paper cites beside `refs.bib`.** Run it
+after the citations change, because `bib build` rewrites `refs.bib` and carries
+no abstract. A key's DOI asks OpenAlex first, since Crossref never returns an
+abstract, then Crossref; an arXiv id asks arXiv; and while no abstract was found,
+an OpenAlex title search is accepted only on an exact normalized title (a near
+title is `not_found`). Each record is `{status, resolver, identifier, title,
+abstract, year, venue, link, digest, retrieved}`, with `status` one of `resolved`,
+`not_found` or `unreachable`, and the keys are sorted. A rerun reuses `resolved`
+records and asks again for the rest; `--force` asks again for all of them, and a
+failure never replaces a `resolved` record. Requests pause between each other, and
+after three consecutive unreachable keys the rest are recorded without asking. An
+identifier in the bib is trusted as it stands: only a title search compares titles.
+That title search confirms a paper the manuscript already cites, and never
+discovers one: finding new papers stays with the agent's MCP.
+The dashboard's cited-papers view reads the sidecar last, after the bib and the
+SOTA pool, and `verify`'s `references` check reads it. The manuscript graph does
+not, so it changes no layer's staleness.
+
 **`--cache-dir` is for callers that are not writing a paper.** `bib` and
 `full_text` look a resolution up only under `paper/.paper-writing/metadata/`,
 so paper-writing's own calls pass nothing. The plausibility agents borrow
@@ -770,7 +793,7 @@ cached resolved metadata — never appended, never hand-typed:
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from the cached, resolved AND ingested evidence records of the keys `main.tex` cites; a key dropped from the text leaves the bibliography while its records stay in the append-only store; checks both `\cite{}`/entry directions | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY` |
+| `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from the cached, resolved AND ingested evidence records of the keys `main.tex` cites; a key dropped from the text leaves the bibliography while its records stay in the append-only store; checks both `\cite{}`/entry directions; a cited entry already in `refs.bib` with no evidence record refuses `ENTRY_UNSOURCED` before writing, leaving the file byte for byte | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY` |
 | `bib refresh --cite-key <key> --metadata-digest <digest> [--resolver <r>] [--guidance <dir>]` | Relinks the record `bib build` reads for `<key>` to fresher cached metadata of the same work: appends one copy changing only `resolver` and `metadata_digest` | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED` |
 
 **The SOTA atlas follows the citations.** When the workspace holding
@@ -1859,7 +1882,7 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
-| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`; plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (the future-work block and every declaration open a paragraph of their own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
+| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (the future-work block and every declaration open a paragraph of their own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
 **`contribution-list` holds only the blocks that enumerate.** A block that
 requires the contributions fact and names at least one declared contribution

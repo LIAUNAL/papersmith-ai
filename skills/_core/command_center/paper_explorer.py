@@ -4,14 +4,16 @@
 read of what the workspace already holds, and every input is optional, so it
 works at any phase of any paper:
 
-* ``paper/main.tex``: which keys are cited (``paper_bib.cited_keys``, the same
-  definition the manuscript graph uses), in which sections and how often;
-* ``paper/refs.bib``: the metadata. ``parse_bib`` reads what exporters really
-  write (whole entries on one line, multi-line values, quotes, parentheses,
-  any field case, ``@string`` macros), which ``atlas_manuscript._bib_fields``
-  does not need to;
+* ``paper/main.tex``: which keys are cited (``paper_bib.cited_keys`` over the
+  text outside ``%`` comments, so a commented-out citation is not one), in
+  which sections and how often;
+* ``paper/refs.bib``: the metadata. ``paper_bib.parse_bib`` reads what exporters
+  really write (whole entries on one line, multi-line values, quotes,
+  parentheses, any field case, ``@string`` macros);
 * ``sota-pool/candidates.json``: fills the gaps of a paper it holds, joined by
   identifier and then by a title only one candidate carries; the bib wins;
+* ``paper/.paper-writing/references.json``: what ``resolve --references``
+  retrieved, the last fallback for a title, year, venue, abstract or link;
 * ``paper/.paper-writing/evidence/``: the claims each paper supports;
 * ``.papersmith/citations.json``: the ideas each paper justifies;
 * ``atlas_manuscript.cited_systems``: the id of the paper's node in the
@@ -22,7 +24,8 @@ no key; then, as without a ``main.tex``, the bibliography's entries are listed
 and ``cite_source`` says so. Nothing is invented: an absent value stays absent,
 and a cited key with no bib entry stays in the list with ``has_entry`` false.
 An unreadable input is a ``warnings`` item (``{"code", "detail"}``), never an
-exception. Only ``http`` and ``https`` links are offered, because a bib entry's
+exception, and a paper that cannot be assembled stays listed by its key with a
+``paper`` warning. Only ``http`` and ``https`` links are offered, because a bib entry's
 ``url`` is free text the dashboard renders.
 
 Stdlib only, plus the workspace's ``paper_bib`` and ``paper_evidence`` through
@@ -33,183 +36,33 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, urlsplit
 
 from . import atlas_manuscript
+from .paper_clusters import cluster_papers
 
 SCHEMA = "papersmith.cited-papers/v1"
 CITATIONS_REL = ".papersmith/citations.json"
 ABSTRACT_MAX = 4000
 CLAIM_MAX = 600
 
-_ENTRY_RE = re.compile(r"@\s*([A-Za-z]+)\s*([{(])")
-_FIELD_RE = re.compile(r"[\s,]*([^\s=,{}()\"#]+)\s*=\s*")
-_BARE_RE = re.compile(r"[^\s,#{}()\"]+")
-_NEXT_ENTRY_RE = re.compile(r"\n\s*@\s*[A-Za-z]+\s*[{(]")
-_NON_ENTRIES = {"comment", "preamble"}
-
-_ACCENTS = {"'": "\u0301", "`": "\u0300", "^": "\u0302", '"': "\u0308", "~": "\u0303",
-            "=": "\u0304", ".": "\u0307", "u": "\u0306", "v": "\u030c", "H": "\u030b",
-            "c": "\u0327", "k": "\u0328", "r": "\u030a"}
-_LETTERS = {"ss": "ß", "ae": "æ", "AE": "Æ", "oe": "œ", "OE": "Œ", "aa": "å", "AA": "Å",
-            "o": "ø", "O": "Ø", "l": "ł", "L": "Ł", "i": "ı", "j": "ȷ"}
-_MATH_RE = re.compile(r"(?<!\\)\$([^$]*)\$")
-_SYMBOL_ACCENT_RE = re.compile(r"\\(['`^\"~=.])\s*\{?\s*(?:\\([ij])(?![A-Za-z])|([A-Za-z]))\s*\}?")
-_LETTER_ACCENT_RE = re.compile(
-    r"\\([uvHckr])(?:\s*\{\s*(?:\\([ij])(?![A-Za-z])|([A-Za-z]))\s*\}|\s+(?:\\([ij])(?![A-Za-z])|([A-Za-z])))")
-_LETTER_RE = re.compile(r"\\(ss|ae|AE|oe|OE|aa|AA|o|O|l|L|i|j)(?![A-Za-z])\s*(?:\{\})?")
-_ESCAPED_RE = re.compile(r"\\([&%_#$])")
-_COMMAND_RE = re.compile(r"\\[a-zA-Z]+\*?\s*(?:\[[^\]]*\])?")
 _SECTION = r"\\section\*?\s*\{((?:[^{}]|\{[^{}]*\})*)\}"
 _COMMENT_RE = re.compile(r"(?<!\\)%.*")
 _YEAR_RE = re.compile(r"\b(\d{4})\b")
 
 
 # --------------------------------------------------------------------------
-# BibTeX
+# BibTeX: the parser and the text cleaner are `paper_bib`'s, shared with the
+# manuscript layer; these names stay so a caller of this module keeps working.
 # --------------------------------------------------------------------------
-def _balanced_end(text: str, start: int) -> int:
-    """Index of the delimiter closing the one at ``start``, or -1."""
-    opening = text[start]
-    closing = "}" if opening == "{" else ")"
-    depth, index = 0, start
-    while index < len(text):
-        char = text[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == opening:
-            depth += 1
-        elif char == closing:
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return -1
-
-
-def _quoted_end(text: str, start: int) -> int:
-    depth, index = 0, start + 1
-    while index < len(text):
-        char = text[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-        elif char == '"' and depth == 0:
-            return index
-        index += 1
-    return -1
-
-
-def _value(body: str, pos: int, macros: dict[str, str]) -> tuple[str | None, int]:
-    """One field value, ``#`` concatenation included, and where it ended."""
-    parts: list[str] = []
-    while True:
-        while pos < len(body) and body[pos].isspace():
-            pos += 1
-        char = body[pos] if pos < len(body) else ""
-        if char == "{" or char == '"':
-            end = _balanced_end(body, pos) if char == "{" else _quoted_end(body, pos)
-            if end < 0:
-                return None, len(body)
-            parts.append(body[pos + 1:end])
-            pos = end + 1
-        else:
-            bare = _BARE_RE.match(body, pos)
-            if bare is None:
-                return None, len(body)
-            parts.append(macros.get(bare.group(0).lower(), bare.group(0)))
-            pos = bare.end()
-        while pos < len(body) and body[pos].isspace():
-            pos += 1
-        if pos >= len(body) or body[pos] != "#":
-            return "".join(parts), pos
-        pos += 1
-
-
-def _fields(body: str, macros: dict[str, str]) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    pos = 0
-    while True:
-        match = _FIELD_RE.match(body, pos)
-        if match is None:
-            return fields
-        value, pos = _value(body, match.end(), macros)
-        if value is None:
-            return fields
-        fields.setdefault(match.group(1).lower(), value)
-
-
 def parse_bib(text: str) -> dict[str, dict[str, str]]:
-    """``{cite_key: {field: raw value, "_type": entry type}}``, field names
-    lower-cased, the first of two entries with one key kept. An unterminated
-    entry ends where the next one starts."""
-    entries: dict[str, dict[str, str]] = {}
-    macros: dict[str, str] = {}
-    pos = 0
-    while True:
-        head = _ENTRY_RE.search(text, pos)
-        if head is None:
-            return entries
-        kind, start = head.group(1).lower(), head.end() - 1
-        end = _balanced_end(text, start)
-        if end < 0:
-            following = _NEXT_ENTRY_RE.search(text, start)
-            end = following.start() if following else len(text)
-        body, pos = text[start + 1:end], end + 1
-        if kind in _NON_ENTRIES:
-            continue
-        if kind == "string":
-            macros.update(_fields(body, macros))
-            continue
-        key, comma, rest = body.partition(",")
-        key = key.strip()
-        if key and comma:
-            entries.setdefault(key, {**_fields(rest, macros), "_type": kind})
-
-
-def _accent(mark: str, dotless: str | None, letter: str | None) -> str:
-    base = dotless or letter or ""
-    return unicodedata.normalize("NFC", base + _ACCENTS[mark])
+    return atlas_manuscript._paper_modules()[0].parse_bib(text)
 
 
 def plain_text(value: Any) -> str:
-    """A BibTeX value as readable text. Accents and symbols become Unicode, and
-    formatting commands and protective braces go. A math span loses only its
-    dollars, because its commands have no plain form."""
-    if not isinstance(value, str):
-        return ""
-    math: list[str] = []
-
-    def hold(match: re.Match) -> str:
-        math.append(match.group(1))
-        return f"\0{len(math) - 1}\0"
-
-    text = _MATH_RE.sub(hold, value)
-    text = _SYMBOL_ACCENT_RE.sub(lambda m: _accent(m.group(1), m.group(2), m.group(3)), text)
-    text = _LETTER_ACCENT_RE.sub(
-        lambda m: _accent(m.group(1), m.group(2) or m.group(4), m.group(3) or m.group(5)), text)
-    text = _LETTER_RE.sub(lambda m: _LETTERS[m.group(1)], text)
-    text = _ESCAPED_RE.sub(r"\1", text)
-    text = _COMMAND_RE.sub("", text)
-    text = text.replace("---", "—").replace("--", "–").replace("``", "“").replace("''", "”")
-    text = text.replace("~", " ").replace("{", "").replace("}", "").replace("\\", "")
-    text = re.sub(r"\0(\d+)\0", lambda m: math[int(m.group(1))], text)
-    return unicodedata.normalize("NFC", " ".join(text.split()))
-
-
-def _literal(value: Any) -> str:
-    """An identifier or URL: braces and escapes go, every other byte stays."""
-    if not isinstance(value, str):
-        return ""
-    return "".join(_ESCAPED_RE.sub(r"\1", value).replace("{", "").replace("}", "").split())
+    return atlas_manuscript._paper_modules()[0].plain_text(value)
 
 
 def _split_top(value: str, separator: re.Pattern) -> list[str]:
@@ -247,13 +100,6 @@ def _authors(raw: Any) -> list[str]:
 def _keywords(raw: Any) -> list[str]:
     return [k for k in (plain_text(p) for p in re.split(r"[,;]", raw))
             if k] if isinstance(raw, str) else []
-
-
-def _identity_fields(entry: dict[str, str]) -> dict[str, str]:
-    """The shape ``atlas_manuscript``'s identity helpers read."""
-    fields = {name: _literal(entry.get(name)) for name in ("doi", "eprint", "archiveprefix", "url")}
-    fields.update({name: plain_text(entry.get(name)) for name in ("journal", "note", "howpublished")})
-    return fields
 
 
 # --------------------------------------------------------------------------
@@ -321,27 +167,26 @@ def _candidate_authors(candidate: dict | None) -> list[str]:
     return [str(a).strip() for a in authors if str(a).strip()] if isinstance(authors, list) else []
 
 
-def _citations_in_order(paper_bib: Any, tex: bytes | None) -> tuple[dict[str, dict[str, int]], list[str]]:
-    """``({key: {section: count}}, keys in first-citation order)``. Citations
-    before the first ``\\section`` count under an empty section title."""
+def _citations_in_order(paper_bib: Any, text: str) -> tuple[dict[str, dict[str, int]], list[str], list[list[str]]]:
+    """``({key: {section: count}}, keys in first-citation order, the keys of each
+    citation command)`` of a text outside comments. Citations before the first
+    ``\\section`` count under an empty section title."""
     counts: dict[str, dict[str, int]] = {}
     order: list[str] = []
-    if tex is None:
-        return counts, order
-    text = _COMMENT_RE.sub("", tex.decode("utf-8", errors="replace"))
+    cocited: list[list[str]] = []
     section = ""
     for match in re.finditer(f"{_SECTION}|{paper_bib._CITE_RE.pattern}", text):
         if match.group(2) is None:
             section = plain_text(match.group(1))
             continue
-        for key in (k.strip() for k in match.group(2).split(",")):
-            if not key:
-                continue
+        keys = [k.strip() for k in match.group(2).split(",") if k.strip()]
+        cocited.append(keys)
+        for key in keys:
             if key not in counts:
                 order.append(key)
             sections = counts.setdefault(key, {})
             sections[section] = sections.get(section, 0) + 1
-    return counts, order
+    return counts, order, cocited
 
 
 def _graph_nodes(root: Path, paper_dir: Path | str | None) -> dict[str, str]:
@@ -392,8 +237,9 @@ def cited_papers(root: Path | str, *, paper_dir: Path | str | None = None) -> di
 
     tex = attempt("manuscript", lambda: atlas_manuscript._read(paper / "main.tex"), None)
     refs = attempt("bibliography", lambda: atlas_manuscript._read(paper / "refs.bib"), None)
-    bib = parse_bib(refs.decode("utf-8", errors="replace")) if refs else {}
-    cited = paper_bib.cited_keys(tex) if tex else set()
+    bib = attempt("bibliography", lambda: parse_bib(refs.decode("utf-8", errors="replace")), {}) if refs else {}
+    text = _COMMENT_RE.sub("", tex.decode("utf-8", errors="replace")) if tex else ""
+    cited = paper_bib.cited_keys(text.encode("utf-8"))
     source = "main.tex" if cited else ("refs.bib" if bib else ("main.tex" if tex is not None else "none"))
     if not cited:
         cited = set(bib)
@@ -401,17 +247,25 @@ def cited_papers(root: Path | str, *, paper_dir: Path | str | None = None) -> di
     candidates = attempt("pool", lambda: _pool(root), [])
     nodes = attempt("graph", lambda: _graph_nodes(root, paper_dir), {})
     ideas = attempt("ideas", lambda: _idea_entries(root), [])
+    references = attempt("references", lambda: paper_bib.read_references(paper), {})
     records = attempt("evidence", lambda: paper_evidence.read_all_records(paper) if paper.is_dir() else [], [])
     claims: dict[str, list[dict]] = {}
     for record in records:
-        if isinstance(record, dict) and record.get("cite_key") in cited:
-            claims.setdefault(record["cite_key"], []).append(record)
+        key = record.get("cite_key") if isinstance(record, dict) else None
+        if isinstance(key, str) and key in cited:
+            claims.setdefault(key, []).append(record)
 
-    counts, order = _citations_in_order(paper_bib, tex)
+    counts, order, cocited = attempt("manuscript", lambda: _citations_in_order(paper_bib, text), ({}, [], []))
     ranked = order + sorted(cited - set(order))
-    papers = [_paper(paper_bib, key, bib.get(key), claims.get(key, []), counts.get(key, {}), candidates,
-                     ideas, nodes.get(key), position) for position, key in enumerate(k for k in ranked if k in cited)]
-    return _answer(source, papers, warnings)
+    papers = []
+    for position, key in enumerate(k for k in ranked if k in cited):
+        entry = bib.get(key)
+        papers.append(attempt(
+            "paper",
+            lambda: _paper(paper_bib, key, entry, claims.get(key, []), counts.get(key, {}), candidates,
+                           ideas, nodes.get(key), position, references.get(key)),
+            _bare_paper(key, entry, position)))
+    return _answer(source, papers, warnings, cocited)
 
 
 def _pool(root: Path) -> list[dict]:
@@ -421,8 +275,8 @@ def _pool(root: Path) -> list[dict]:
 
 def _paper(paper_bib: Any, key: str, entry: dict[str, str] | None, records: list[dict],
            sections: dict[str, int], candidates: list[dict], ideas: list[tuple[str, str, str]],
-           node_id: str | None, position: int) -> dict[str, Any]:
-    fields = _identity_fields(entry or {})
+           node_id: str | None, position: int, reference: dict | None = None) -> dict[str, Any]:
+    fields = paper_bib.identity_fields(entry or {})
     title = plain_text((entry or {}).get("title"))
     keys = atlas_manuscript._bib_keys(paper_bib, fields)
     for record in records:
@@ -434,21 +288,23 @@ def _paper(paper_bib: Any, key: str, entry: dict[str, str] | None, records: list
     bib = entry or {}
     venue = next((plain_text(bib[f]) for f in ("journal", "journaltitle", "booktitle") if bib.get(f)), "")
     year = _YEAR_RE.search(plain_text(bib.get("year") or bib.get("date")))
-    pool_year = pool.get("year")
+    side = reference if reference and reference.get("status") == "resolved" else {}
+    fallback_year = pool.get("year") or side.get("year")
+    fallback_title = pool.get("title") or side.get("title")
+    fallback_venue = pool.get("venue") or side.get("venue")
+    fallback_abstract = pool.get("abstract") or side.get("abstract")
     return {
-        "key": key,
-        "has_entry": entry is not None,
+        **_bare_paper(key, entry, position),
         "type": bib.get("_type"),
-        "title": title or (str(pool["title"]) if pool.get("title") else None),
+        "title": title or (str(fallback_title) if fallback_title else None),
         "authors": _authors(bib.get("author") or bib.get("editor")) or _candidate_authors(candidate),
-        "year": year.group(1) if year else (str(pool_year) if pool_year else None),
-        "venue": venue or (str(pool["venue"]) if pool.get("venue") else None),
-        "abstract": _clip(plain_text(bib.get("abstract")) or str(pool.get("abstract") or ""), ABSTRACT_MAX) or None,
+        "year": year.group(1) if year else (str(fallback_year) if fallback_year else None),
+        "venue": venue or (str(fallback_venue) if fallback_venue else None),
+        "abstract": _clip(plain_text(bib.get("abstract")) or str(fallback_abstract or ""), ABSTRACT_MAX) or None,
         "keywords": _keywords(bib.get("keywords")),
-        "link": _link(fields, candidate),
+        "link": _link(fields, candidate) or _web_link(side.get("link")),
         "family": str(pool["family"]) if pool.get("family") else None,
         "in_pool": candidate is not None,
-        "order": position,
         "cites": sum(sections.values()),
         "sections": [{"title": title_, "count": count} for title_, count in sections.items()],
         "claims": [{"block": c["block"], "claim": _clip(c["claim"], CLAIM_MAX), "verdict": c["verdict"]}
@@ -459,7 +315,16 @@ def _paper(paper_bib: Any, key: str, entry: dict[str, str] | None, records: list
     }
 
 
-def _answer(source: str, papers: list[dict], warnings: list[dict]) -> dict[str, Any]:
+def _bare_paper(key: str, entry: dict[str, str] | None, position: int) -> dict[str, Any]:
+    """A paper's shape with nothing joined: all a key alone can say."""
+    return {"key": key, "has_entry": entry is not None, "type": None, "title": None, "authors": [],
+            "year": None, "venue": None, "abstract": None, "keywords": [], "link": None, "family": None,
+            "in_pool": False, "order": position, "cites": 0, "sections": [], "claims": [], "ideas": [],
+            "node_id": None}
+
+
+def _answer(source: str, papers: list[dict], warnings: list[dict],
+            cocited: list[list[str]] | None = None) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
         "cite_source": source,
@@ -471,5 +336,6 @@ def _answer(source: str, papers: list[dict], warnings: list[dict]) -> dict[str, 
             "with_abstract": sum(1 for p in papers if p["abstract"]),
             "missing_entries": sorted(p["key"] for p in papers if not p["has_entry"]),
         },
+        "clusters": cluster_papers(papers, cocited),
         "warnings": warnings,
     }

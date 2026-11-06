@@ -76,6 +76,7 @@ _WRITING_GUIDE = [
     "Name a block or an action: open the paper/ tree, see which writing phase is unlocked, or write a block.",
     "A block is written on its own: the agent never touches another byte of paper/main.tex.",
     "Every claim needs a source that holds it (resolve); without a source, nothing is written.",
+    "refs.bib comes from bib build; after citations change, run resolve --references to store each paper's abstract.",
     "Write in the paper's language; the register and style come from the declarations.",
 ]
 

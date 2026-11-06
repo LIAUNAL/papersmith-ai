@@ -536,9 +536,13 @@ class LiteratureSearchAbsenceTests(unittest.TestCase):
         # be the mechanism a discovery search needs; none exists here.
         # `resolve_identifier` is identifier-based only. Derived from the
         # module's own public surface via `inspect`, not a hardcoded name.
+        # One named exception: `search_title` confirms a paper the manuscript
+        # already cites and is accepted only on an exact title, so it finds no
+        # new literature. Anything else with this shape is still discovery.
+        confirmation_only = {"search_title"}
         offenders = []
         for name, func in inspect.getmembers(paper_resolve, inspect.isfunction):
-            if func.__module__ != paper_resolve.__name__:
+            if func.__module__ != paper_resolve.__name__ or name in confirmation_only:
                 continue  # imported from elsewhere (paper_scaffold, Refused)
             params = list(inspect.signature(func).parameters)
             name_is_suspect = "query" in name.lower() or "search" in name.lower()

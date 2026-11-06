@@ -1557,7 +1557,24 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
     and `full_text` read it; under `--cache-dir` instead for a caller that is
     not writing a paper (the plausibility agents pass their own pool), so
     confirming a reference never starts a `paper/` tree. Both locations are
-    resolved, and refused if outside the repository, before any request."""
+    resolved, and refused if outside the repository, before any request.
+
+    `--references` is the batch form: every cited key of `main.tex` into the
+    sidecar `paper/.paper-writing/references.json` (`paper_bib.resolve_references`)."""
+    if args.references:
+        if args.identifier or args.resolver or args.cache_dir:
+            args.usage_error("--references takes none of --identifier, --resolver, --cache-dir")
+        paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+        tex_bytes = paper_block.resolve_main_tex(paper_dir).read_bytes()
+        refs_path = paper_dir / "refs.bib"
+        return paper_bib.resolve_references(
+            paper_dir, tex_bytes, refs_path.read_bytes() if refs_path.is_file() else b"",
+            config=paper_resolve.load_config(), role=args.role, force=args.force,
+        )
+    if args.force:
+        args.usage_error("--force needs --references")
+    if not (args.identifier and args.resolver):
+        args.usage_error("the following arguments are required: --identifier, --resolver")
     if args.cache_dir is not None:
         cache_dir = _resolve_repo_path(args.cache_dir)
         paper_dir = None
@@ -1666,7 +1683,7 @@ def cmd_bib(args: argparse.Namespace) -> dict:
     tex_bytes = tex_path.read_bytes()
     cited = paper_bib.cited_keys(tex_bytes)
     records = [r for r in paper_evidence.read_all_records(paper_dir) if r.get("cite_key") in cited]
-    result = paper_bib.build_refs_bib(paper_dir, records, guidance_dir=guidance_dir)
+    result = paper_bib.build_refs_bib(paper_dir, records, guidance_dir=guidance_dir, cited=cited)
     reciprocal = paper_bib.check_reciprocal(
         tex_bytes, (paper_dir / "refs.bib").read_bytes(),
     )
@@ -2997,7 +3014,8 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     Registered And Read-Only`); the one write outside it is the derived
     `sota-pool/atlas.manuscript.json`, rebuilt only when the citation
     check passes and the workspace has an atlas (`_refresh_atlas_manuscript`) -- `paper_coupling_evidence.gather` performs every
-    disk read this needs; `paper_verify.run` is pure over the result.
+    disk read this needs but the reference sidecar's, read here;
+    `paper_verify.run` is pure over the result.
 
     `optional_block_ids` (`_resolve_optional_block_ids`, tasks.md Work Unit
     9b) is resolved from the same `sections_dir` corpus and threaded
@@ -3009,8 +3027,13 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     sections_dir = paper_contract.resolve_sections_dir(args.sections)
     evidence = paper_coupling_evidence.gather(paper_dir, sections_dir)
     optional_block_ids = _resolve_optional_block_ids(sections_dir)
+    try:
+        references = paper_bib.read_references(paper_dir)
+    except ValueError:
+        references = {}  # an unreadable sidecar covers nothing; `resolve --references` replaces it
     report = paper_verify.run(evidence, optional_block_ids=optional_block_ids,
-                              language=_scan_manuscript_language(evidence.main_tex_bytes))
+                              language=_scan_manuscript_language(evidence.main_tex_bytes),
+                              references=references)
     citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)
@@ -3763,11 +3786,21 @@ def build_parser() -> argparse.ArgumentParser:
              "paper/, for a caller that is not writing a paper; must resolve inside "
              "the repository root",
     )
-    p_resolve.add_argument("--identifier", required=True, help="DOI or arXiv id to resolve")
+    p_resolve.add_argument("--identifier", default=None, help="DOI or arXiv id to resolve")
     p_resolve.add_argument(
-        "--resolver", required=True, choices=paper_resolve.RESOLVERS,
+        "--resolver", default=None, choices=paper_resolve.RESOLVERS,
         help="which connector to resolve through",
     )
+    p_resolve.add_argument(
+        "--references", action="store_true",
+        help="resolve every cited key of main.tex through the role's connectors into "
+             "paper/.paper-writing/references.json, instead of one --identifier",
+    )
+    p_resolve.add_argument(
+        "--force", action="store_true",
+        help="with --references, ask again for keys already resolved",
+    )
+    p_resolve.set_defaults(usage_error=p_resolve.error)
     p_resolve.add_argument(
         "--role", default="resolution", choices=paper_resolve.ROLES,
         help="which papersmith.yaml connector role this call is validated against",

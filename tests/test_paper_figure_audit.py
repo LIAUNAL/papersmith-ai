@@ -514,6 +514,7 @@ class VerifyWiringTests(unittest.TestCase):
             [
                 "contribution-list", "chain", "gap", "artefacts",
                 "future-work", "citations", "contract-currency", "figure-semantics", "language",
+                "references",
             ],
         )
 

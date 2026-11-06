@@ -1197,6 +1197,15 @@ layer is rebuilt by `paper_cli.py bib build`, by `verify` when its `citations`
 check passes and by a successful dashboard compile; those report it under
 `atlas_manuscript` and never fail because of it.
 
+The dashboard's cited-papers view (`GET /api/atlas/cited-papers`) fills each
+paper from `paper/refs.bib`, then the SOTA pool, then
+`paper/.paper-writing/references.json`. `paper_cli.py bib build` writes
+`refs.bib`, and `paper_cli.py resolve --references [--force]` writes that sidecar
+through the `resolution` role, the only step here that reaches the network.
+`paper_cli.py verify` fails its `references` check while a cited key has no
+record. A paper that could not be resolved, offline included, has one and passes
+with a note.
+
 ### `smith atlas summary [<dir>]`
 
 ```bash

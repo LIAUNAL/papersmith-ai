@@ -18,6 +18,19 @@ number is `0`, breaking changes can still arrive without a major bump.
   SOTA pool membership. Each paper offers its link, a Scholar search, a `\cite` copy and a jump
   to its node in the summary graph. `GET /api/atlas/cited-papers` reads any workspace: every
   input is optional, and its BibTeX parser accepts what exporters really write.
+- **Every cited paper carries its abstract.** `paper_cli.py resolve --references` stores the
+  metadata and abstract of each cited key in `paper/.paper-writing/references.json`, through the
+  same connectors and role as `resolve`; a title search is accepted only on an exact normalized
+  title. The cited-papers view reads it last, and `verify` gains a `references` check: a cited key
+  with no record fails, one that could not be resolved passes with a note, so offline work is
+  never blocked.
+- **One BibTeX parser.** `paper_bib.parse_bib` now serves the atlas layer too, so an entry on one
+  line, or with `@string` macros, reaches the citation join instead of being lost. An accent no
+  longer eats the space after its letter (`Jos\'e Garc\'ia`).
+- **`bib build` no longer destroys a bibliography.** A cited `refs.bib` entry with no evidence
+  record now refuses `ENTRY_UNSOURCED` before writing, and the file stays byte for byte.
+- **The cited-papers view keeps its promise never to fail.** A malformed evidence record or bib
+  value becomes a warning, and a citation only inside a `%` comment is no longer listed.
 
 ## 0.61.3
 

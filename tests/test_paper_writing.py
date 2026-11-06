@@ -7156,8 +7156,10 @@ class ReadOnlyTests(unittest.TestCase):
 
     def test_mutation_8_a_write_in_paper_verify_fails_the_manifest_guard(self) -> None:
         proc = _run_against_mutant(
-            "def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None) -> dict:",
-            'def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None) -> dict:\n'
+            "def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None,\n"
+            "        references: dict | None = None) -> dict:",
+            'def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None,\n'
+            '        references: dict | None = None) -> dict:\n'
             '    import pathlib as _pl\n'
             '    _pl.Path(evidence.paper_dir, "main.tex").write_bytes(b"x")',
             "tests.test_paper_writing.ReadOnlyTests.test_content_manifest_unchanged_by_a_real_verify_run",
