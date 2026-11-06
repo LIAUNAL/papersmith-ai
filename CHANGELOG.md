@@ -11,6 +11,14 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Cited papers view in the Graph Atlas.** Search everything the manuscript cites by title,
+  author, year, journal, section or abstract, ignoring accents, and filter by section or by
+  SOTA pool membership. Each paper offers its link, a Scholar search, a `\cite` copy and a jump
+  to its node in the summary graph. `GET /api/atlas/cited-papers` reads any workspace: every
+  input is optional, and its BibTeX parser accepts what exporters really write.
+
 ## 0.61.3
 
 - **Every idea requires 2 to 5 SOTA pool citations.** Pillars, hypotheses, concept-map
