@@ -13,6 +13,11 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+- **Preprints of accepted labs support the concept trees.** A preprint at most 4 years old now counts
+  when an author belongs to Google, Google DeepMind, OpenAI, Anthropic, Microsoft, Meta, NVIDIA, Apple,
+  IBM, Amazon, the Allen Institute for AI, Xanadu, Quantinuum or IonQ. `citations_cli.py rank` finds the
+  lab in OpenAlex, and `citations_cli.py lab` records the operator's confirmation, with a link, where
+  OpenAlex lacks the affiliation.
 - **Concept trees in the Concept Map & Model panel.** The problem now reads as a tree (effects,
   central problem, 2 to 3 direct causes) and a second tree links at least 2 novelty pillars to the
   hypotheses. The central problem, causes, pillars and hypotheses cite Q1 or Q2 journal articles at

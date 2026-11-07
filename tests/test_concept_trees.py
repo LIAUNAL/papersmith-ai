@@ -253,6 +253,47 @@ class References(Workspace):
         self.assertIn("pillar:C1: 6 citation(s), needs 2 to 5", found)
 
 
+class LabPreprints(Workspace):
+    def problems(self, state: dict, key: str = "pillar:C1") -> list[str]:
+        return next(idea["problems"] for idea in state["ideas"] if idea["key"] == key)
+
+    def preprint(self, **rank) -> dict:
+        self.ids = ["2005.14165", "2204.02311"]
+        base = {"work_type": "preprint", "quartile": None, "quartile_source": "unknown",
+                "lab": "OpenAI", "lab_source": "openalex"}
+        return self.write(novelty(), rank={**base, **rank})
+
+    def test_a_preprint_of_an_accepted_lab_is_accepted(self):
+        self.assertEqual(self.owed(self.preprint()), [])
+
+    def test_an_operator_confirmed_lab_is_accepted(self):
+        self.assertEqual(self.owed(self.preprint(lab="Anthropic", lab_source="operator")), [])
+
+    def test_an_unknown_lab_is_refused(self):
+        found = self.problems(self.preprint(lab="Some Startup"))
+        self.assertIn("pillar:C1: '2005.14165' has no SJR quartile and no accepted lab", found)
+
+    def test_a_lab_without_a_trusted_source_is_refused(self):
+        found = self.problems(self.preprint(lab_source="agent"))
+        self.assertIn("pillar:C1: '2005.14165' has no SJR quartile and no accepted lab", found)
+
+    def test_a_preprint_without_a_lab_is_refused(self):
+        found = self.problems(self.preprint(lab=None, lab_source=None))
+        self.assertIn("pillar:C1: '2005.14165' has no SJR quartile and no accepted lab", found)
+
+    def test_an_old_lab_preprint_is_refused(self):
+        self.ids = ["2005.14165", "2204.02311"]
+        state = self.write(novelty(), year=THIS_YEAR - 5, rank={"work_type": "preprint", "quartile": None,
+                                                                "quartile_source": "unknown", "lab": "OpenAI",
+                                                                "lab_source": "openalex"})
+        self.assertIn(f"pillar:C1: '2005.14165' is from {THIS_YEAR - 5}, needs {THIS_YEAR - 4} or later",
+                      self.problems(state))
+
+    def test_the_lab_is_shown_with_the_citation(self):
+        idea = next(i for i in self.preprint()["ideas"] if i["key"] == "pillar:C1")
+        self.assertEqual(idea["citations"][0]["lab"], "OpenAI")
+
+
 class ExistingBehavior(Workspace):
     def test_problems_without_ranks_keeps_its_answer(self):
         pool = {citations.normalize(i): {"identifier": i} for i in self.ids}
@@ -321,11 +362,14 @@ class Cli(Workspace):
         self.assertEqual((code, body["ranked"], body["unresolved"]), (0, 1, ["10.1000/b"]))
         self.assertNotIn("10.1000/b", written["ranks"])
 
-    def test_rank_skips_a_preprint_without_a_doi(self):
+    def test_rank_reports_a_preprint_openalex_did_not_answer(self):
         self.ids = ["10.1000/a", "arXiv:2008.08605"]
         self.write(novelty())
-        code, body, written = self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024}})
-        self.assertEqual((code, body["skipped"], body["unresolved"]), (0, ["arXiv:2008.08605"], []))
+        (self.root / "sota-pool" / "journal-ranks.json").unlink()
+        with mock.patch.object(citations_cli, "_openalex_institutions", return_value=None):
+            code, body, written = self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"],
+                                                           "year": 2024}})
+        self.assertEqual((code, body["unresolved"]), (0, ["arXiv:2008.08605"]))
         self.assertEqual(list(written["ranks"]), ["10.1000/a"])
 
     def test_rank_keeps_the_rank_of_what_crossref_did_not_answer(self):
@@ -355,6 +399,53 @@ class Cli(Workspace):
         (self.root / "experiments" / "experiments-x-v01.md").write_text("## Experiment [exp:E1]\n")
         _, body = self.run_cli("check")
         self.assertEqual(body["message"], "1 idea(s) owe 2 to 5 SOTA citations in .papersmith/citations.json")
+
+    def rank_preprints(self, works: dict) -> tuple[int, dict, dict]:
+        self.ids = ["10.1000/a", "2005.14165"]
+        self.write(novelty())
+        with mock.patch.object(citations_cli, "_openalex_institutions", side_effect=works.get):
+            return self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024}})
+
+    def test_rank_finds_the_lab_of_a_preprint_in_openalex(self):
+        code, body, written = self.rank_preprints({"2005.14165": {"rors": ["05wx9n238"], "year": 2020}})
+        self.assertEqual((code, body["skipped"]), (0, []))
+        self.assertEqual(written["ranks"]["2005.14165"],
+                         {"work_type": "preprint", "quartile": None, "quartile_source": "unknown", "year": 2020,
+                          "lab": "OpenAI", "lab_source": "openalex"})
+
+    def test_rank_skips_a_preprint_of_no_accepted_lab(self):
+        _, body, written = self.rank_preprints({"2005.14165": {"rors": ["03cve4549"], "year": 2025}})
+        self.assertEqual(body["skipped"], ["2005.14165"])
+        self.assertEqual(written["ranks"]["2005.14165"]["lab"], None)
+
+    def test_rank_keeps_an_operator_confirmed_lab(self):
+        self.ids = ["10.1000/a", "2212.08073"]
+        self.write(novelty())
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic",
+                                  "--evidence", "https://arxiv.org/abs/2212.08073")
+        self.assertEqual((code, body["ok"]), (0, True))
+        with mock.patch.object(citations_cli, "_openalex_institutions", return_value={"rors": [], "year": 2022}):
+            _, _, written = self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024}})
+        kept = written["ranks"]["2212.08073"]
+        self.assertEqual((kept["lab"], kept["lab_source"], kept["evidence"]),
+                         ("Anthropic", "operator", "https://arxiv.org/abs/2212.08073"))
+
+    def test_lab_refuses_a_lab_outside_the_list(self):
+        self.ids = ["2212.08073", "10.1000/b"]
+        self.write(novelty())
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Some Startup", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "LAB_NOT_ACCEPTED"))
+
+    def test_lab_refuses_a_reference_outside_the_pool(self):
+        self.write(novelty())
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "NOT_IN_POOL"))
+
+    def test_lab_requires_evidence(self):
+        self.ids = ["2212.08073", "10.1000/b"]
+        self.write(novelty())
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic", "--evidence", " ")
+        self.assertEqual((code, body["error"]), (1, "EVIDENCE_REQUIRED"))
 
     def test_rank_refuses_without_a_table(self):
         self.write(novelty())

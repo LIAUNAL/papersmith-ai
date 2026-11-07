@@ -41,7 +41,10 @@ cause are ideas too (``problem:central``, ``cause:DC1``), and the citations of
 those two kinds, of pillars and of hypotheses must be Q1 or Q2 journal articles
 at most 4 years old. Quartile, work type and published year come from
 ``sota-pool/journal-ranks.json``, written by ``citations_cli.py rank`` from the
-SJR table: a quartile from any other source does not count. Layers, equations
+SJR table: a quartile from any other source does not count. A preprint also
+counts when an author belongs to a lab of ``ACCEPTED_LABS``, found in OpenAlex or
+confirmed by the operator with ``citations_cli.py lab``; the age limit still holds.
+Layers, equations
 and experiments keep the plain rule, so a foundational reference stays citable
 there. What ``tree_findings`` reports owes under the proposal stage as
 ``tree:<node>: <reason>``, so Phase 4's citations step stays open on it.
@@ -80,6 +83,17 @@ MAX_CAUSES = 3
 MIN_PILLARS = 2
 MAX_REFERENCE_AGE = 4
 ACCEPTED_QUARTILES = ("Q1", "Q2")
+#: Research labs whose preprints support the concept trees, by ROR id.
+ACCEPTED_LABS = {
+    "00njsd438": "Google", "00971b260": "Google DeepMind", "05wx9n238": "OpenAI", "056y0v115": "Anthropic",
+    "00d0nc645": "Microsoft", "0300m5276": "Microsoft", "05k87vq12": "Microsoft",
+    "01zbnvs85": "Meta", "02388em19": "Meta", "020ye1821": "Meta",
+    "03jdj4y14": "NVIDIA", "02kr42612": "NVIDIA", "059hsda18": "Apple",
+    "05hh8d621": "IBM", "0265w5591": "IBM", "005w8dd04": "IBM", "04mv4n011": "Amazon",
+    "05w520734": "Allen Institute for AI", "05qj0n416": "Xanadu", "03ssvsv78": "Quantinuum",
+    "0507j3z22": "Quantinuum", "02ft1jb97": "IonQ",
+}
+LAB_SOURCES = ("openalex", "operator")
 #: The ideas of the two concept trees, whose references must pass the journal rule.
 TREE_KINDS = ("problem", "cause", "pillar", "hypothesis")
 
@@ -364,11 +378,22 @@ def _year(value: Any) -> int | None:
         return None
 
 
+def _lab(rank: dict[str, Any] | None) -> str:
+    """The accepted lab behind a preprint, ``""`` when it has none."""
+    rank = rank or {}
+    lab = rank.get("lab")
+    return lab if lab in ACCEPTED_LABS.values() and rank.get("lab_source") in LAB_SOURCES else ""
+
+
 def _journal_problems(key: str, label: str, record: dict[str, Any], rank: dict[str, Any] | None) -> list[str]:
     """Why a reference cannot support an idea of the concept trees."""
     rank = rank or {}
     found = []
-    if rank.get("quartile_source") != "sjr" or not rank.get("quartile"):
+    if _lab(rank):
+        pass
+    elif rank.get("work_type") == "preprint":
+        found.append(f"{key}: {label!r} has no SJR quartile and no accepted lab")
+    elif rank.get("quartile_source") != "sjr" or not rank.get("quartile"):
         found.append(f"{key}: {label!r} has no SJR quartile")
     elif rank.get("work_type") != "journal-article":
         found.append(f"{key}: {label!r} is not a journal article")
@@ -441,7 +466,8 @@ def _clip(value: Any) -> str:
     return value.strip()[:MAX_TEXT] if isinstance(value, str) else ""
 
 
-def _shown(entries: Any, pool: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def _shown(entries: Any, pool: dict[str, dict[str, Any]],
+           ranks: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """An idea's citations as the panels show them, joined to the pool's record."""
     shown = []
     for entry in (entries if isinstance(entries, list) else [])[:MAX_CITATIONS]:
@@ -450,7 +476,9 @@ def _shown(entries: Any, pool: dict[str, dict[str, Any]]) -> list[dict[str, Any]
         record = pool.get(normalize(entry["id"]), {})
         year = record.get("year")
         authors = record.get("authors")
-        shown.append({"id": _clip(entry["id"]), "why": _clip(entry.get("why")), "title": _clip(record.get("title")),
+        lab = _lab((ranks or {}).get(normalize(entry["id"])))
+        shown.append({**({"lab": lab} if lab else {}),
+                      "id": _clip(entry["id"]), "why": _clip(entry.get("why")), "title": _clip(record.get("title")),
                       "year": year if isinstance(year, int) and not isinstance(year, bool) else _clip(year),
                       "authors": ([_clip(a) for a in authors[:MAX_AUTHORS]] if isinstance(authors, list)
                                   else _clip(authors)),
@@ -475,7 +503,7 @@ def state(root: Path | str) -> dict[str, Any]:
         entries = recorded.get(key)
         found = list(file_problems) or problems(key, entries, pool, ranks)
         ideas.append({"key": key, "kind": kind, "id": ident, "owed": bool(found), "problems": found,
-                      "citations": _shown(entries, pool)})
+                      "citations": _shown(entries, pool, ranks)})
         stage = stages["experiments" if kind in STAGE_KINDS["experiments"] else "proposal"]
         stage["ideas"] += 1
         if found:
@@ -487,6 +515,6 @@ def state(root: Path | str) -> dict[str, Any]:
     return {"ideas": ideas, "stages": stages, "file_problems": file_problems, "trees": trees}
 
 
-__all__ = ["ACCEPTED_QUARTILES", "CITATIONS_REL", "MAX_CITATIONS", "MAX_REFERENCE_AGE", "MAX_WHY", "MIN_CITATIONS",
+__all__ = ["ACCEPTED_LABS", "ACCEPTED_QUARTILES", "CITATIONS_REL", "MAX_CITATIONS", "MAX_REFERENCE_AGE", "MAX_WHY", "MIN_CITATIONS",
            "POOL_REL", "RANKS_REL", "SCHEMA", "STAGE_KINDS", "TREE_KINDS", "normalize", "problems", "state",
            "tree_findings"]

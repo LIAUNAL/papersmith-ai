@@ -35,7 +35,9 @@ skill refuses when its input is missing.
      each hypothesis cite Q1 or Q2 journal articles at most 4 years old,
      checked against `sota-pool/journal-ranks.json`, which `python
      skills/_core/results/citations_cli.py rank --root .` writes from the SJR
-     table. The fourth step stays open until both trees hold.
+     table. A preprint also counts when an author belongs to an accepted lab,
+     found in OpenAlex or confirmed by the operator with `citations_cli.py lab`.
+     The fourth step stays open until both trees hold.
    - **SOTA citations**: every pillar, hypothesis, concept-map layer and
      numbered equation is justified by 2 to 5 references of
      `sota-pool/candidates.json`, each with its reason, in

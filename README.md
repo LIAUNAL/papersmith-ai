@@ -651,7 +651,10 @@ beside the idea. The problem tree (central problem, 2 to 3 direct causes and
 their effects) and the tree of pillars and hypotheses raise the bar: the problem,
 each cause, each pillar and each hypothesis cite Q1 or Q2 journal articles at most
 4 years old, and `python skills/_core/results/citations_cli.py rank --root .`
-records each reference's SJR quartile in `sota-pool/journal-ranks.json`.
+records each reference's SJR quartile in `sota-pool/journal-ranks.json`. Preprints
+from accepted labs (Google, Google DeepMind, OpenAI, Anthropic, Microsoft, Meta,
+NVIDIA, Apple, IBM, Amazon, Allen Institute for AI, Xanadu, Quantinuum, IonQ) count
+too, found in OpenAlex or confirmed by the operator with `citations_cli.py lab`.
 `python skills/_core/results/citations_cli.py check --root .`
 prints what is owed and exits non-zero. A valid citation is in the pool and
 states a reason; that does not prove the reference supports the idea, so
