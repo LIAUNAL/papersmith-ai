@@ -648,8 +648,9 @@ of the latest protocol: until they are cited, `/proposal-implementation` and
 (`SOTA_CITATIONS_OWED`) and Phase 5 cannot pass. The buttons in the stepper and
 in the *Experimentos* tab ask the agent for them, and each panel shows them
 beside the idea. Every conversation with an agent is kept in full in
-`.papersmith/ai-history/`, tracked by git, with common secrets redacted; review it
-before sharing a repository. The problem tree (central problem, 2 to 3 direct causes and
+`.papersmith/ai-history/`, tracked by git and committed by the dashboard, with common
+secrets and personal data masked; review it before sharing a repository, because a
+pattern cannot catch everything. The problem tree (central problem, 2 to 3 direct causes and
 their effects) and the tree of pillars and hypotheses raise the bar: the problem,
 each cause, each pillar and each hypothesis cite Q1 or Q2 journal articles at most
 4 years old, and `python skills/_core/results/citations_cli.py rank --root .`

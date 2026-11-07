@@ -259,6 +259,117 @@ class Resilience(Base):
         self.assertEqual(found, [])
 
 
+class Privacy(Base):
+    def test_personal_data_is_masked(self):
+        cases = {"write to amalvarezme@unal.edu.co now": "[EMAIL]", "cc: Someone.Else+x@gmail.com": "[EMAIL]",
+                 "ssh andresalvarez@100.66.178.111": "[USER]@[IP]", "server 192.168.1.20 is down": "[IP]",
+                 "host 10.0.0.7": "[IP]", "/Users/andresalvarez/Documents/QMLEEG/x.py": "/Users/[USER]/",
+                 "/home/andresmarino/.ssh/config": "/home/[USER]/", r"C:\Users\Ana\Desktop": r"C:\Users\[USER]",
+                 "call +57 300 123 4567 today": "[PHONE]",
+                 "key SHA256:Q6wckxDuKrZANF4wD7qFCFpb4/o0nlEY17B7lnF2zNY": "[FINGERPRINT]"}
+        for text, mask in cases.items():
+            with self.subTest(text=text):
+                clean = ai_archive.redact(text)
+                self.assertIn(mask, clean)
+                for private in ("amalvarezme", "andresalvarez", "andresmarino", "Someone", "192.168", "100.66",
+                                "300 123", "Q6wckx", "Ana"):
+                    self.assertNotIn(private, clean)
+
+    def test_technical_text_survives(self):
+        for text in ("install numpy@1.26.4 and @types/node", "version 1.2.3.4 of the tool", "see Eq. 2 and 0.683",
+                     "git@github.com:LIAUNAL/papersmith-ai.git", "the /home page and /Users guide",
+                     "sample rate of 256 Hz over 19 channels", "doi 10.3390/technologies14070392",
+                     "seed 1234567890 on 2026-11-07", "arXiv:2008.08605v2"):
+            with self.subTest(text=text):
+                self.assertEqual(ai_archive.redact(text), text)
+
+    def test_a_scrub_masks_what_is_already_archived(self):
+        folder = self.root / ".papersmith" / "ai-history"
+        folder.mkdir()
+        (folder / "pi-x.jsonl").write_text(json.dumps({"id": "a", "ts": None, "role": "user", "text": "me@site.org"}) + "\n")
+        self.assertEqual(ai_archive.scrub(self.root), 1)
+        self.assertNotIn("me@site.org", (folder / "pi-x.jsonl").read_text())
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout
+
+
+class AutoCommit(Base):
+    def setUp(self) -> None:
+        super().setUp()
+        _git(self.root, "init", "-q", "-b", "main")
+        _git(self.root, "config", "user.email", "t@example.org")
+        _git(self.root, "config", "user.name", "T")
+        (self.root / ".gitignore").write_text(".papersmith/cache/\n")
+        (self.root / "work.txt").write_text("one\n")
+        _git(self.root, "add", "work.txt", ".gitignore")
+        _git(self.root, "commit", "-q", "-m", "init")
+        self.session(_line("user", "hello", "2026-10-03T10:00:00Z"))
+        self.sync()
+
+    def count(self) -> int:
+        return int(_git(self.root, "rev-list", "--count", "HEAD"))
+
+    def test_new_conversations_are_committed(self):
+        report = ai_archive.commit(self.root)
+        self.assertEqual(report["status"], "committed")
+        self.assertEqual(self.count(), 2)
+        self.assertIn("chore(history)", _git(self.root, "log", "-1", "--format=%s"))
+        self.assertEqual(_git(self.root, "status", "--short"), "")
+
+    def test_nothing_new_makes_no_commit(self):
+        ai_archive.commit(self.root)
+        self.assertEqual(ai_archive.commit(self.root)["status"], "unchanged")
+        self.assertEqual(self.count(), 2)
+
+    def test_the_operators_staged_work_stays_out(self):
+        (self.root / "work.txt").write_text("two\n")
+        _git(self.root, "add", "work.txt")
+        (self.root / "other.txt").write_text("loose\n")
+        ai_archive.commit(self.root)
+        self.assertEqual(_git(self.root, "show", "--name-only", "--format=", "HEAD").split(),
+                         ["./.papersmith/ai-history/claude-code-abcdef12-session.jsonl"[2:]])
+        self.assertIn("M  work.txt", _git(self.root, "status", "--short"))
+
+    def test_a_merge_in_progress_is_left_alone(self):
+        (Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip()) / "MERGE_HEAD").write_text("x\n")
+        self.assertEqual(ai_archive.commit(self.root)["status"], "busy")
+        self.assertEqual(self.count(), 1)
+
+    def test_a_detached_head_is_left_alone(self):
+        _git(self.root, "checkout", "-q", "--detach")
+        self.assertEqual(ai_archive.commit(self.root)["status"], "busy")
+
+    def test_a_folder_outside_git_is_fine(self):
+        other = self.root.parent / "plain"
+        (other / ".papersmith" / "ai-history").mkdir(parents=True)
+        self.assertEqual(ai_archive.commit(other)["status"], "no-repository")
+
+    def test_the_operator_can_turn_it_off(self):
+        with mock.patch.dict("os.environ", {"PAPERSMITH_AI_HISTORY_COMMIT": "0"}):
+            self.assertEqual(ai_archive.commit(self.root)["status"], "disabled")
+        self.assertEqual(self.count(), 1)
+
+    def test_a_failing_hook_is_reported_not_raised(self):
+        hook = Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip()) / "hooks" / "pre-commit"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
+        self.assertEqual(ai_archive.commit(self.root)["status"], "failed")
+
+    def test_a_workspace_commits_after_its_sync(self):
+        (self.root / ".papersmith" / "version").write_text("0.61.3")
+        ai_archive._last_sync.clear()
+        ai_archive._last_commit.clear()
+        self.session(_line("user", "hello", "2026-10-03T10:00:00Z"), _line("user", "more", "2026-10-03T10:01:00Z"))
+        real = ai_archive.sync
+        with mock.patch.object(ai_archive, "sync", side_effect=lambda root: real(root, self.locations)):
+            ai_archive.sync_throttled(self.root)
+        self.assertEqual(self.count(), 2)
+        self.assertEqual(ai_archive.last_report(self.root)["commit"]["status"], "committed")
+
+
 class LostTurns(Base):
     def test_turns_before_a_phase_command_are_kept_unassigned(self):
         self.session(_line("user", "what does this repo do", "2026-10-03T10:00:00Z"),

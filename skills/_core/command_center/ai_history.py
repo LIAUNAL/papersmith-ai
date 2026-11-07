@@ -310,7 +310,8 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
                                            r if r.get("model") else None) for r in records)
         ai_transcripts.attribute(turns, ref, skills, chats)
         kept += 1
-    sources["archive"] = {"status": "ok" if kept else "absent", "sessions": kept}
+    sources["archive"] = {"status": "ok" if kept else "absent", "sessions": kept,
+                          "last_run": ai_archive.last_report(root)}
     for stage, items in chats.items():
         by_stage.setdefault(stage, []).extend(items)
     return root, by_stage, sources

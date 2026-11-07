@@ -19,6 +19,15 @@ from the turn's place in its session, never from its text, so it reveals nothing
 of what was redacted, and a new pattern rewrites the old records on the next sync
 of the session (or ``scrub``, for all of them) instead of doubling them.
 
+Personal data is masked the same way: email addresses, private and Tailscale IP
+addresses, the user name inside home paths, phone numbers and SSH fingerprints.
+A name or an institution in plain prose stays: no pattern can tell it from content.
+
+When the dashboard syncs a workspace it also commits the folder, at most every ten
+minutes, on the current branch and touching nothing else. It never pushes, and it
+waits while a merge, rebase or similar is under way. Set
+``PAPERSMITH_AI_HISTORY_COMMIT=0`` to turn it off.
+
 A subagent's session is ``<session>-sub-<name>``, and a tutor thread is
 ``tutor-<math-tutor|experiments-tutor>``. Harness-written turns (reminders,
 compaction summaries, interruptions, API errors) are not operator turns and stay
@@ -27,6 +36,7 @@ out. :func:`sync` skips a source that has not changed since the last run, using
 
     python -m skills._core.command_center.ai_archive sync --root .
     python -m skills._core.command_center.ai_archive scrub --root .
+    python -m skills._core.command_center.ai_archive commit --root .
 """
 
 from __future__ import annotations
@@ -34,8 +44,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sqlite3
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -47,6 +59,11 @@ ARCHIVE_REL = ".papersmith/ai-history"
 STATE_REL = ".papersmith/cache/ai-archive-state.json"
 TUTORS = ("math-tutor", "experiments-tutor")
 SYNC_INTERVAL_SECONDS = 60
+COMMIT_INTERVAL_SECONDS = 600
+GIT_TIMEOUT_SECONDS = 30
+COMMIT_MESSAGE = "chore(history): archive AI conversations"
+#: Markers under the git directory of an operation that must finish undisturbed.
+GIT_BUSY = ("MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
 MAX_LINE_BYTES = 8 * 1024 * 1024
 
 REDACTED = "[REDACTED]"
@@ -83,20 +100,38 @@ _SECRETS = (
 _ASSIGNED = re.compile(
     r"""(?i)(?<![\w-])(["']?)([\w-]{0,64}?(?:password|passwd|pwd|contrase\u00f1a|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|_key))\1"""
     r"""\s*[:=]\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s"',;]+))""")
+#: Personal data: the pattern and what replaces it.
+_PRIVATE = (
+    (re.compile(r"(?<![\w.+-])(?!git@)[\w.+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b"), "[EMAIL]"),
+    (re.compile(r"(?<![\d.])(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01])|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))"
+                r"\.\d{1,3}\.\d{1,3}(?:(?<=\.\d)|(?<=\.\d\d)|(?<=\.\d\d\d))(?![\d.]*\d)"), "[IP]"),
+    (re.compile(r"(?<![\w.+-])[\w.-]+@(?=\[IP\])"), "[USER]@"),
+    (re.compile(r"(/Users/|/home/)[A-Za-z0-9._-]+(?=/)"), r"\1[USER]"),
+    (re.compile(r"(-Users-|-home-)[A-Za-z0-9._]+(?=-)"), r"\1[USER]"),
+    (re.compile(r"([A-Za-z]:\\+Users\\+)[^\\\s]+"), r"\1[USER]"),
+    (re.compile(r"(?<![\w.])\+\d{1,3}[\s.-]?(?:\(?\d{1,4}\)?[\s.-]?){2,4}\d{2,4}(?!\w)"), "[PHONE]"),
+    (re.compile(r"\bSHA256:[A-Za-z0-9+/]{43}=?"), "[FINGERPRINT]"),
+)
 _PASSWORD_NAMES = ("password", "passwd", "pwd", "contrase\u00f1a")
 _NOT_A_VALUE = frozenset({"none", "null", "true", "false", "str", "string"})
 _UNSAFE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 _sync_lock = threading.Lock()
 _last_sync: dict[str, float] = {}
+_last_commit: dict[str, float] = {}
+_reports: dict[str, dict[str, Any]] = {}
 _syncing: set[str] = set()
 
 
 def redact(text: str) -> str:
-    """``text`` with what looks like a credential replaced by ``[REDACTED]``."""
+    """``text`` with what looks like a credential replaced by ``[REDACTED]`` and
+    personal data by its mask."""
     for pattern in _SECRETS:
         text = pattern.sub(REDACTED, text)
-    return _ASSIGNED.sub(_assigned, text)
+    text = _ASSIGNED.sub(_assigned, text)
+    for pattern, mask in _PRIVATE:
+        text = pattern.sub(mask, text)
+    return text
 
 
 def _assigned(match: re.Match[str]) -> str:
@@ -336,20 +371,65 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
     return {"added": added, "problems": problems, "folder": ARCHIVE_REL}
 
 
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
+                          timeout=GIT_TIMEOUT_SECONDS, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+
+
+def commit(root: Path | str) -> dict[str, Any]:
+    """Commit the archive folder alone. ``status`` says what happened: ``committed``,
+    ``unchanged``, ``disabled``, ``no-repository``, ``busy`` (an operation under way
+    or a detached HEAD: the next run tries again) or ``failed``, for example when a
+    hook refuses. It never pushes, and what the operator staged stays staged."""
+    root = Path(root).expanduser().resolve()
+    if os.environ.get("PAPERSMITH_AI_HISTORY_COMMIT") == "0":
+        return {"status": "disabled"}
+    try:
+        located = _git(root, "rev-parse", "--absolute-git-dir")
+        if located.returncode:
+            return {"status": "no-repository"}
+        git_dir = Path(located.stdout.strip())
+        if any((git_dir / marker).exists() for marker in GIT_BUSY) or _git(root, "symbolic-ref", "-q", "HEAD").returncode:
+            return {"status": "busy"}
+        if not (root / ARCHIVE_REL).is_dir():
+            return {"status": "unchanged"}
+        staged = _git(root, "add", "--", ARCHIVE_REL)
+        if staged.returncode:
+            return {"status": "failed", "detail": staged.stderr.strip()[:200]}
+        if not _git(root, "diff", "--cached", "--quiet", "--", ARCHIVE_REL).returncode:
+            return {"status": "unchanged"}
+        done = _git(root, "commit", "-q", "--only", "-m", COMMIT_MESSAGE, "--", ARCHIVE_REL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"status": "failed", "detail": type(exc).__name__}
+    if done.returncode:
+        return {"status": "failed", "detail": (done.stderr or done.stdout).strip()[:200]}
+    return {"status": "committed"}
+
+
+def last_report(root: Path | str) -> dict[str, Any] | None:
+    """What the last automatic run did, so a failure does not stay silent."""
+    return _reports.get(str(Path(root).expanduser().resolve()))
+
+
 def sync_throttled(root: Path | str) -> None:
-    """:func:`sync` at most once a minute per workspace, for a dashboard that polls."""
+    """:func:`sync` at most once a minute per workspace, for a dashboard that polls,
+    and :func:`commit` at most every ten minutes."""
     # The kit's own checkout and a test's fixture run the dashboard too: only a
     # real workspace records its conversations by itself.
     if not (Path(root) / ".papersmith" / "version").is_file():
         return
-    key = str(root)
+    key = str(Path(root).expanduser().resolve())
     with _sync_lock:
         if key in _syncing or time.monotonic() - _last_sync.get(key, -SYNC_INTERVAL_SECONDS) < SYNC_INTERVAL_SECONDS:
             return
         _last_sync[key] = time.monotonic()
         _syncing.add(key)
     try:
-        sync(root)
+        report = dict(sync(root))
+        if time.monotonic() - _last_commit.get(key, -COMMIT_INTERVAL_SECONDS) >= COMMIT_INTERVAL_SECONDS:
+            report["commit"] = commit(root)
+            _last_commit[key] = time.monotonic()
+        _reports[key] = report
     finally:
         with _sync_lock:
             _syncing.discard(key)
@@ -410,7 +490,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--pi-sessions", help="Read Pi sessions from this folder instead")
     clean = sub.add_parser("scrub", help="Apply today's secret patterns to the whole archive")
     clean.add_argument("--root", default=".", help="Workspace root (default: current dir)")
+    save = sub.add_parser("commit", help="Commit .papersmith/ai-history/ alone")
+    save.add_argument("--root", default=".", help="Workspace root (default: current dir)")
     args = parser.parse_args(argv)
+    if args.command == "commit":
+        print(json.dumps(commit(args.root)))
+        return 0
     if args.command == "scrub":
         print(json.dumps({"files_changed": scrub(args.root)}))
         return 0
@@ -424,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["ARCHIVE_REL", "archived_sessions", "main", "redact", "scrub", "session", "sync", "sync_in_background",
+__all__ = ["ARCHIVE_REL", "archived_sessions", "commit", "last_report", "main", "redact", "scrub", "session", "sync", "sync_in_background",
            "sync_throttled"]
 
 
