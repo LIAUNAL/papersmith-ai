@@ -95,7 +95,7 @@ _EXPANDED_RE = re.compile(
     r"^Read `skills/([\w.-]+)/SKILL\.md` and follow it.*?`\$ARGUMENTS`:\s*(.*)$", re.S)
 _SLASH_RE = re.compile(r"^/([\w:.-]+)(?:\s+(.*))?$", re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
-_CLAUDE_MODEL_RE = re.compile(r"^claude-([a-z]+)-(\d+)-(\d+)")
+_CLAUDE_MODEL_RE = re.compile(r"^claude-([a-z]+)-(\d{1,2})-(\d{1,2})(?!\d)")
 _LOG_LABEL_RE = re.compile(r"^I(\d{2})(\d{2}) (\d{2}:\d{2}:\d{2}).*Propagating selected model.*label[=:]?\s*\"?([^\",}\n]+)")
 _LOG_NAME_RE = re.compile(r"^cli-(\d{4})\d{4}_")
 _LABEL_EFFORT_RE = re.compile(r"^(.*?)\s*\(([^()]+)\)\s*$")
@@ -565,7 +565,8 @@ _antigravity_cache: dict[tuple[str, str], tuple[str, list[Compact]]] = {}
 
 
 def _in_workspace(uris_raw: Any, roots: set[str]) -> bool:
-    """Whether an Antigravity conversation ran in the workspace or under it."""
+    """Whether an Antigravity conversation ran in the workspace, under it, in a
+    sibling worktree or in a folder that holds it, but not in a look-alike name."""
     try:
         uris = json.loads(uris_raw)
     except (ValueError, TypeError):
@@ -573,7 +574,8 @@ def _in_workspace(uris_raw: Any, roots: set[str]) -> bool:
     if not isinstance(uris, list):
         return False
     cleaned = [u.removeprefix("file://").rstrip("/\\") for u in uris if isinstance(u, str)]
-    return any(c == r or c.startswith(r + "/") for c in cleaned for r in roots)
+    return any(c == r or c.startswith((r + "/", r + "-worktrees/")) or r.startswith(c + "/")
+               for c in cleaned for r in roots)
 
 
 def antigravity_models(base: Path, offset_minutes: int | None = None) -> list[tuple[str, str]]:
@@ -633,7 +635,10 @@ def antigravity_raw(db: Path, roots: set[str]) -> Iterator[tuple[str, list[Turn]
     for session_id, uris_raw in rows:
         path = db.parent / "brain" / session_id / ".system_generated" / "logs" / "transcript.jsonl"
         if _in_workspace(uris_raw, roots) and path.is_file():
-            lines = path.read_text(encoding="utf-8").splitlines()
+            try:
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
             yield session_id, list(_antigravity_turns(lines, antigravity_models(db.parent)))
 
 

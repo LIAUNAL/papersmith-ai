@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -152,6 +154,28 @@ class Secrets(Base):
                 self.assertIn("[REDACTED]", clean)
                 for secret in secrets:
                     self.assertNotIn(secret, clean)
+
+    def test_a_quoted_value_with_spaces_is_redacted(self):
+        for sample in ('DB_PASSWORD="my secret, phrase"', "password: 'open sesame now'", '"password": "a b;c"'):
+            with self.subTest(sample=sample):
+                clean = ai_archive.redact(sample)
+                self.assertIn("[REDACTED]", clean)
+                for word in ("secret", "sesame", "a b"):
+                    self.assertNotIn(word, clean)
+
+    def test_a_long_word_does_not_stall_the_filter(self):
+        started = time.monotonic()
+        ai_archive.redact("a" * 200000)
+        self.assertLess(time.monotonic() - started, 2)
+
+    def test_an_id_says_nothing_about_the_text(self):
+        self.session(_line("user", "password: weak1234", "2026-10-03T10:00:00Z"))
+        self.sync()
+        guess = "claude-code|abcdef12-session|2026-10-03T10:00:00Z|user|password: weak1234"
+        self.assertNotEqual(self.records()[0]["id"], hashlib.sha256(guess.encode()).hexdigest()[:16])
+        same = ai_archive._records("claude-code", "s", [("t", "user", "a"), ("t", "user", "b")])
+        other = ai_archive._records("claude-code", "s", [("t", "user", "x"), ("t", "user", "y")])
+        self.assertEqual([r["id"] for r in same], [r["id"] for r in other])
 
     def test_ordinary_text_is_left_alone(self):
         for text in ("The password rule of section 3 and the key result, 0.683 balanced accuracy.",
@@ -382,6 +406,17 @@ class Models(Base):
         record = self.records()[1]
         self.assertEqual((record["model"], record["effort"]), ("claude-opus-5-5", "medium"))
         self.assertNotIn("model", self.records()[0])
+
+    def test_antigravity_matches_the_workspace_its_worktrees_and_its_parent(self):
+        inside = ai_transcripts._in_workspace
+        for uri, expected in (("file:///a/QML", True), ("file:///a/QML/sub", True), ("file:///a/QML-worktrees/x", True),
+                              ("file:///a", True), ("file:///a/QML2", False), ("file:///b/QML", False)):
+            with self.subTest(uri=uri):
+                self.assertEqual(inside(json.dumps([uri]), {"/a/QML"}), expected)
+
+    def test_a_dated_model_id_is_not_read_as_a_version(self):
+        self.assertEqual(ai_transcripts.model_label("claude-code", {"model": "claude-sonnet-4-20250514"}),
+                         "Claude Code · claude-sonnet-4-20250514")
 
     def test_the_label_reads_like_the_operator_says_it(self):
         label = ai_transcripts.model_label

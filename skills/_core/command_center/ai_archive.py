@@ -15,8 +15,9 @@ The folder is tracked by git. One file per session is what lets two machines
 write at once without a merge conflict, and a file only ever grows. Secrets are
 redacted before anything is written: :func:`redact` holds the patterns, and it
 catches the common shapes, not every secret a prompt can hold. A record's id comes
-from the text before redaction, so a new pattern rewrites the old records on the
-next sync of the session (or ``scrub``, for all of them) instead of doubling them.
+from the turn's place in its session, never from its text, so it reveals nothing
+of what was redacted, and a new pattern rewrites the old records on the next sync
+of the session (or ``scrub``, for all of them) instead of doubling them.
 
 A subagent's session is ``<session>-sub-<name>``, and a tutor thread is
 ``tutor-<math-tutor|experiments-tutor>``. Harness-written turns (reminders,
@@ -80,14 +81,15 @@ _SECRETS = (
 #: ``name = value``, whose value decides: a code or prose assignment such as
 #: ``sort_key=lambda`` is not a credential.
 _ASSIGNED = re.compile(
-    r"""(?i)(["']?)([\w-]*(?:password|passwd|pwd|contrase\u00f1a|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|_key))\1"""
-    r"""\s*[:=]\s*(["']?)([^\s"',;]+)\3""")
+    r"""(?i)(?<![\w-])(["']?)([\w-]{0,64}?(?:password|passwd|pwd|contrase\u00f1a|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|_key))\1"""
+    r"""\s*[:=]\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s"',;]+))""")
 _PASSWORD_NAMES = ("password", "passwd", "pwd", "contrase\u00f1a")
 _NOT_A_VALUE = frozenset({"none", "null", "true", "false", "str", "string"})
 _UNSAFE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 _sync_lock = threading.Lock()
 _last_sync: dict[str, float] = {}
+_syncing: set[str] = set()
 
 
 def redact(text: str) -> str:
@@ -98,12 +100,14 @@ def redact(text: str) -> str:
 
 
 def _assigned(match: re.Match[str]) -> str:
-    name, value = match.group(2).lower(), match.group(4)
+    name, value = match.group(2).lower(), match.group(3) or match.group(4) or match.group(5)
     if value.lower() in _NOT_A_VALUE or value == REDACTED:
         return match.group(0)
     has_letter, has_digit = re.search(r"[A-Za-z]", value), re.search(r"\d", value)
+    quoted = bool(match.group(3) or match.group(4))
     secret = (len(value) >= 4 if any(word in name for word in _PASSWORD_NAMES)
-              else (len(value) >= 12 and has_letter and has_digit) or (len(value) >= 24 and value.isalnum()))
+              else (len(value) >= 12 and has_letter and has_digit) or (len(value) >= 24 and value.isalnum())
+              or (quoted and " " not in value and len(value) >= 16))
     return match.group(0).replace(value, REDACTED) if secret else match.group(0)
 
 
@@ -115,6 +119,7 @@ def _file_name(harness: str, session: str) -> str:
 def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -> Iterator[dict[str, Any]]:
     """What a session's raw turns leave in the archive, each with its stable id."""
     previous: tuple[str, str] | None = None
+    seen: dict[tuple[Any, str], int] = {}
     for turn in turns:
         ts, role, text = turn[:3]
         meta = turn[3] if len(turn) > 3 and isinstance(turn[3], dict) else {}
@@ -132,7 +137,8 @@ def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -
         # A lone surrogate can reach a transcript and cannot be written as UTF-8.
         text = text.encode("utf-8", "replace").decode("utf-8")
         stamp = ts if isinstance(ts, str) else None
-        ident = hashlib.sha256(f"{harness}|{session}|{stamp}|{role}|{text}".encode()).hexdigest()[:16]
+        place = seen[(stamp, role)] = seen.get((stamp, role), 0) + 1
+        ident = hashlib.sha256(f"{harness}|{session}|{stamp}|{role}|{place}".encode()).hexdigest()[:16]
         yield {"id": ident, "ts": stamp, "role": role, "text": redact(text), **meta}
 
 
@@ -338,10 +344,15 @@ def sync_throttled(root: Path | str) -> None:
         return
     key = str(root)
     with _sync_lock:
-        if time.monotonic() - _last_sync.get(key, -SYNC_INTERVAL_SECONDS) < SYNC_INTERVAL_SECONDS:
+        if key in _syncing or time.monotonic() - _last_sync.get(key, -SYNC_INTERVAL_SECONDS) < SYNC_INTERVAL_SECONDS:
             return
         _last_sync[key] = time.monotonic()
-    sync(root)
+        _syncing.add(key)
+    try:
+        sync(root)
+    finally:
+        with _sync_lock:
+            _syncing.discard(key)
 
 
 def sync_in_background(root: Path | str) -> None:

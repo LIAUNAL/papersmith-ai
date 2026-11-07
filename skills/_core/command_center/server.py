@@ -3732,10 +3732,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # The AI History pane: each phase's gate, colour and timeline, from
         # decisions, revisions and this workspace's transcripts. It first brings
         # the archive up to date, so what a harness later deletes is not lost.
-        try:
-            ai_archive.sync_throttled(root_path)
-        except Exception:  # noqa: BLE001 - the pane still answers without the archive
-            pass
+        ai_archive.sync_in_background(root_path)
         try:
             phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
         except Exception:  # noqa: BLE001 - the pane still answers without phases
