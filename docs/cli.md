@@ -982,7 +982,10 @@ absent | invalid, stale, layer}`, where `stale` is true when an input digest
 changed since it was written; `POST /api/atlas/manuscript/build` (same-origin only)
 rewrites it and answers `200`, `404` (no `atlas.json`) or `422`. The atlas tab's
 **📚 Cited in manuscript** button lists it, and the file watcher covers
-`sota-pool/`. `GET /api/atlas/manuscript-graph` returns the manuscript summary graph
+`sota-pool/`. `GET /api/atlas/cited-papers` returns every paper the manuscript cites, joined live
+and read-only from `paper/main.tex`, `paper/refs.bib`, the SOTA pool, the evidence
+ledger and `.papersmith/citations.json`; each input is optional, and the Graph Atlas
+tab's Cited papers view searches this list. `GET /api/atlas/manuscript-graph` returns the manuscript summary graph
 (`.papersmith/manuscript_graph.json`, see `smith atlas summary`) as `{status: ok |
 absent | invalid, stale, graph}`; `GET /api/atlas/manuscript-graph/view` draws it as
 offline HTML (no CDN) in eight columns, a stored graph when there is one and a live,
@@ -1193,6 +1196,15 @@ was written, `1` otherwise (no `atlas.json`, or an unreadable input). The same
 layer is rebuilt by `paper_cli.py bib build`, by `verify` when its `citations`
 check passes and by a successful dashboard compile; those report it under
 `atlas_manuscript` and never fail because of it.
+
+The dashboard's cited-papers view (`GET /api/atlas/cited-papers`) fills each
+paper from `paper/refs.bib`, then the SOTA pool, then
+`paper/.paper-writing/references.json`. `paper_cli.py bib build` writes
+`refs.bib`, and `paper_cli.py resolve --references [--force]` writes that sidecar
+through the `resolution` role, the only step here that reaches the network.
+`paper_cli.py verify` fails its `references` check while a cited key has no
+record. A paper that could not be resolved, offline included, has one and passes
+with a note.
 
 ### `smith atlas summary [<dir>]`
 

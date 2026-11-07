@@ -46,6 +46,12 @@ class PaperFlowRulesTests(unittest.TestCase):
                 self.assertIn(needle, phase5)
         self.assertIn("Mapa Conceptual", FLOW)
 
+    def test_the_writing_phase_names_where_references_come_from(self) -> None:
+        writing = FLOW[FLOW.index("8. **"):FLOW.index("9. **")]
+        for needle in ("`bib build`", "`resolve --references`", "references.json"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, writing)
+
 
 if __name__ == "__main__":
     unittest.main()

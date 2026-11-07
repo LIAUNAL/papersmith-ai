@@ -2219,7 +2219,7 @@ is the order in which those groups enable one another.
 | The document exists | `scaffold`, `status` | `paper/main.tex`, `refs.bib`, `Figures/`. `scaffold` is idempotent: a second run **never touches an existing byte**, hand edits included |
 | The section contract | `contract`, `readiness`, `order` | What every section has to satisfy. The contract is **data, not code** |
 | The paper's own decisions | `declare`, `observe`, `plan` | What the paper decides about itself. `observe` validates a report from `insumos-observer` against the schema **before** a person runs `declare` |
-| The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it** |
+| The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it**. `resolve --references` stores every cited paper's metadata and abstract in `paper/.paper-writing/references.json` after the citations change, because `refs.bib` comes from `bib build` and carries no abstract |
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
 | Style audit & style revision | `ai_audit`, `humanize` | Measures writing quality — cadence (sentence-length $CV \ge 0.38$), overused academic phrasing, lexical diversity — as a `style_score`, plus a located `flow` report (connector density and repetition, repeated sentence openings, *because*/*where*/*, which* density with the equation *where* exempt, cross-paragraph repeated phrases and near-duplicate sentences, template phrasing) whose `needs_revision` verdict also blocks `--apply`, and applies a revised block only when it meets `--style-target` (or `--force`) under the untouchable F5 invariant gate (citations, statistics, and formulas). A readability check, never an AI detector: it does not change the obligation to declare AI use |
 | Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads |
@@ -2403,7 +2403,8 @@ flowchart TD
     C -- No --> E{"Any citation pending?"}
     E -- Yes --> F["resolve against OpenAlex/Crossref/arXiv"]
     F --> G["bib build: refs.bib from the resolved cache"]
-    G --> H["validate: verdict + placement,\n3 bounded rounds"]
+    G --> G2["resolve --references: abstracts of every cited key"]
+    G2 --> H["validate: verdict + placement,\n3 bounded rounds"]
     H --> E
     E -- No --> I["order: derives the writing order from the graph"]
     I --> J["Shuttle procedure --\nthe CLI never invokes an agent"]

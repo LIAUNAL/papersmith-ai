@@ -18,6 +18,8 @@ Public surface:
     connectors_for_role(config, role)         -> list[str]
     require_role_connectors(config, role)     -> list[str]  (raises RESOLVER_ROLE_EMPTY / DISCOVERY_UNAVAILABLE)
     resolve_identifier(identifier, *, resolver, role, config) -> dict
+    search_title(title, *, role, config)      -> list[dict]
+    pause()                                   -- the wait before each request of a batch
     fetch_bytes(url, *, config)                -> bytes
     cache_metadata(paper_dir, result)         -> dict
     cache_metadata_in(directory, result)      -> dict
@@ -66,6 +68,10 @@ ROLES: tuple[str, ...] = ("discovery", "resolution", "full-text")
 
 _RETRY_DELAY_SECONDS = 1
 _TIMEOUT_SECONDS = 10
+#: The wait before each request of a batch: `resolve_identifier` has no rate
+#: limiter of its own, and one call per cited paper must stay polite.
+_REQUEST_PAUSE_SECONDS = 0.2
+_TITLE_SEARCH_RESULTS = 10
 
 _CONFIG_PATH = paper_scaffold.FORGE_ROOT / "papersmith.yaml"
 
@@ -233,7 +239,7 @@ def _get(url: str, *, config: dict) -> bytes:
 
 
 def _openalex_url(doi: str, config: dict) -> str:
-    base = f"https://api.openalex.org/works/https://doi.org/{doi}"
+    base = f"https://api.openalex.org/works/https://doi.org/{urllib.parse.quote(doi, safe='/:;()._-')}"
     contact = _contact(config)
     if contact:
         return base + "?" + urllib.parse.urlencode({"mailto": contact})
@@ -439,6 +445,44 @@ def resolve_identifier(identifier: str, *, resolver: str, role: str, config: dic
         "metadata_digest": digest,
         **metadata,
     }
+
+
+def pause() -> None:
+    """The wait a batch owes before each request (`_REQUEST_PAUSE_SECONDS`)."""
+    time.sleep(_REQUEST_PAUSE_SECONDS)
+
+
+def search_title(title: str, *, role: str, config: dict) -> list[dict]:
+    """The works OpenAlex ranks for `title`, each in `resolve_identifier`'s
+    shape, its digest taken over that one work. A ranking is no identification:
+    the caller accepts a work only by its own title. Refuses as
+    `resolve_identifier` does, and answers `[]` for nothing found.
+    """
+    connectors = require_role_connectors(config, role)
+    if "openalex" not in connectors:
+        raise Refused(
+            "RESOLVER_ROLE_EMPTY", f"'openalex' is not a connector configured for role {role!r} ({connectors})",
+        )
+    query = {"search": title, "per-page": _TITLE_SEARCH_RESULTS}
+    if _contact(config):
+        query["mailto"] = _contact(config)
+    url = "https://api.openalex.org/works?" + urllib.parse.urlencode(query)
+    try:
+        raw = _get(url, config=config)
+    except _Unreachable as exc:
+        raise Refused("RESOLVER_UNREACHABLE", f"title search: {exc}")
+    except _NoSuchWork:
+        return []
+    works = []
+    for work in json.loads(raw).get("results") or []:
+        encoded = json.dumps(work, sort_keys=True).encode("utf-8")
+        metadata = _parse_openalex(encoded)
+        doi = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", metadata.get("doi") or "", flags=re.IGNORECASE)
+        works.append({
+            "identifier": doi or work.get("id"), "resolver": "openalex",
+            "metadata_digest": hashlib.sha256(encoded).hexdigest(), **metadata,
+        })
+    return works
 
 
 def fetch_bytes(url: str, *, config: dict) -> bytes:

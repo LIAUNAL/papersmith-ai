@@ -769,6 +769,14 @@ body {{ margin: 0; background: #0b0f19; color: #e2e8f0; font: 13px/1.4 system-ui
     el.addEventListener('click', () => select(el));
     el.addEventListener('keydown', (ev) => {{ if (ev.key === 'Enter') select(el); }});
   }});
+  // The cited-papers view asks to show one paper's node.
+  window.addEventListener('message', (e) => {{
+    if (e.source !== window.parent || !e.data || e.data.type !== 'manuscript-graph-locate') return;
+    const el = Array.from(document.querySelectorAll('.node')).find((n) => n.dataset.id === e.data.id);
+    if (!el) return;
+    select(el);
+    el.scrollIntoView({{ block: 'center', inline: 'center' }});
+  }});
   window.addEventListener('resize', draw);
   window.addEventListener('wheel', (e) => {{
     if (window.parent !== window) window.parent.postMessage({{ type: 'page_scroll', deltaY: e.deltaY }}, '*');

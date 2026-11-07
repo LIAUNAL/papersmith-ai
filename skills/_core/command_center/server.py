@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph
+from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -2734,6 +2734,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # changed since it was written. Written by `bib build`, `verify`, a
         # successful compile, `smith atlas summary` or the build route below.
         return JSONResponse(manuscript_graph.read_graph(root_path), headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/atlas/cited-papers")
+    def api_atlas_cited_papers() -> JSONResponse:
+        # Read-only: every paper the manuscript cites, joined live from
+        # main.tex, refs.bib, the SOTA pool, evidence and citations.json.
+        return JSONResponse(paper_explorer.cited_papers(root_path), headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/atlas/manuscript-graph/view")
     def api_atlas_manuscript_graph_view(lang: str = "en") -> Response:

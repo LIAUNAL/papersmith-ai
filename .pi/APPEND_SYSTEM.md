@@ -173,7 +173,12 @@ skill refuses when its input is missing.
 7. **Declarations**: `/paper-writing mark …` records each decision of the
    paper (authorship, funding, data and code, ethics, language, style).
 8. **Writing**: `/paper-writing` writes one named block at a time. Every
-   claim needs a source that holds it (`resolve`).
+   claim needs a source that holds it (`resolve`). `refs.bib` comes from
+   `bib build`, never from hand edits. After the citations change, run
+   `resolve --references`: it stores each cited paper's metadata and abstract
+   in `paper/.paper-writing/references.json`, and `verify` fails while a cited
+   key has no record there. A paper it cannot resolve, offline included, keeps
+   a record and passes with a note.
 9. **Figures**: `/figure-review <figure id>` checks a compiled
    `paper/Figures/<id>.pdf`.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:

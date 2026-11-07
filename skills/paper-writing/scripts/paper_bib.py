@@ -46,14 +46,26 @@ Public surface:
     cited_keys(main_tex_bytes)           -> set[str]
     entry_keys(refs_bib_bytes)           -> set[str]
     check_reciprocal(main_tex_bytes, refs_bib_bytes) -> dict (raises CITE_WITHOUT_ENTRY / ENTRY_WITHOUT_CITE)
+    parse_bib(text) / plain_text(value)  -- the one tolerant reader, shared with the command center
+    title_key(value) / bib_identifiers(entry) / identity_fields(entry)
+    resolve_references(paper_dir, main_tex_bytes, refs_bib_bytes, *, config, role, force) -> dict
+        (the sidecar of `resolve --references`; every request goes through paper_resolve)
+    read_references(paper_dir)           -> dict
 """
 from __future__ import annotations
 
+import http.client
+import json
 import re
 import sys
+import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import paper_block  # noqa: E402 -- the atomic write of the reference sidecar
 import paper_evidence  # noqa: E402
 import paper_guidance  # noqa: E402 -- no-citation-before-its-paper-is-ingested, item 2: the ingestion check
 import paper_resolve  # noqa: E402
@@ -75,6 +87,225 @@ _CITE_RE = re.compile(
 _BIB_ENTRY_RE = re.compile(r"@\w+\{([^,]+),")
 _DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
 _ARXIV_PREFIX_RE = re.compile(r"^(?:https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/|arxiv:)", re.IGNORECASE)
+#: The sidecar `resolve --references` writes and `verify` and the dashboard
+#: read. It sits apart from `refs.bib` because `bib build` rewrites that file.
+REFERENCES_SCHEMA = "papersmith.references/v1"
+REFERENCE_STATUSES = ("resolved", "not_found", "unreachable")
+#: Consecutive keys that reached nothing before the rest stop asking: an
+#: offline run costs a few timeouts, not two per cited paper.
+_UNREACHABLE_STREAK = 3
+
+_ENTRY_RE = re.compile(r"@\s*([A-Za-z]+)\s*([{(])")
+_FIELD_RE = re.compile(r"[\s,]*([^\s=,{}()\"#]+)\s*=\s*")
+_BARE_RE = re.compile(r"[^\s,#{}()\"]+")
+_NEXT_ENTRY_RE = re.compile(r"\n\s*@\s*[A-Za-z]+\s*[{(]")
+_NON_ENTRIES = {"comment", "preamble"}
+
+_ACCENTS = {"'": "\u0301", "`": "\u0300", "^": "\u0302", '"': "\u0308", "~": "\u0303",
+            "=": "\u0304", ".": "\u0307", "u": "\u0306", "v": "\u030c", "H": "\u030b",
+            "c": "\u0327", "k": "\u0328", "r": "\u030a"}
+_LETTERS = {"ss": "ß", "ae": "æ", "AE": "Æ", "oe": "œ", "OE": "Œ", "aa": "å", "AA": "Å",
+            "o": "ø", "O": "Ø", "l": "ł", "L": "Ł", "i": "ı", "j": "ȷ"}
+_MATH_RE = re.compile(r"(?<!\\)\$([^$]*)\$")
+# Space inside the braces belongs to the accent; space after an unbraced
+# letter is the word break of the text, so neither regex may consume it.
+_ACCENT_BASE = r"(?:\\([ij])(?![A-Za-z])|([A-Za-z]))"
+_SYMBOL_ACCENT_RE = re.compile(
+    r"\\(['`^\"~=.])(?:\s*\{\s*" + _ACCENT_BASE + r"\s*\}|\s*" + _ACCENT_BASE + ")")
+_LETTER_ACCENT_RE = re.compile(
+    r"\\([uvHckr])(?:\s*\{\s*" + _ACCENT_BASE + r"\s*\}|\s+" + _ACCENT_BASE + ")")
+_LETTER_RE = re.compile(r"\\(ss|ae|AE|oe|OE|aa|AA|o|O|l|L|i|j)(?![A-Za-z])\s*(?:\{\})?")
+_ESCAPED_RE = re.compile(r"\\([&%_#$])")
+_COMMAND_RE = re.compile(r"\\[a-zA-Z]+\*?\s*(?:\[[^\]]*\])?")
+_YEAR_RE = re.compile(r"\b(\d{4})\b")
+# An arXiv id named inside free text: "arXiv preprint arXiv:1905.13311".
+_ARXIV_IN_TEXT_RE = re.compile(
+    r"arxiv\s*:\s*(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[a-z]{2})?/\d{7}(?:v\d+)?)", re.IGNORECASE)
+_ARXIV_ID_RE = re.compile(r"^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$", re.IGNORECASE)
+
+
+# --- reading a bibliography ---------------------------------------------
+#
+# The one tolerant reader: whole entries on one line, multi-line values,
+# quotes, parentheses, any field case and `@string` macros, as exporters
+# really write them. `atlas_manuscript` and `paper_explorer` both read through
+# it, and `atlas_manuscript` is loaded by path, which is why it lives here.
+
+def _balanced_end(text: str, start: int) -> int:
+    """Index of the delimiter closing the one at ``start``, or -1."""
+    opening = text[start]
+    closing = "}" if opening == "{" else ")"
+    depth, index = 0, start
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return -1
+
+
+def _quoted_end(text: str, start: int) -> int:
+    depth, index = 0, start + 1
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif char == '"' and depth == 0:
+            return index
+        index += 1
+    return -1
+
+
+def _value(body: str, pos: int, macros: dict[str, str]) -> tuple[str | None, int]:
+    """One field value, ``#`` concatenation included, and where it ended."""
+    parts: list[str] = []
+    while True:
+        while pos < len(body) and body[pos].isspace():
+            pos += 1
+        char = body[pos] if pos < len(body) else ""
+        if char == "{" or char == '"':
+            end = _balanced_end(body, pos) if char == "{" else _quoted_end(body, pos)
+            if end < 0:
+                return None, len(body)
+            parts.append(body[pos + 1:end])
+            pos = end + 1
+        else:
+            bare = _BARE_RE.match(body, pos)
+            if bare is None:
+                return None, len(body)
+            parts.append(macros.get(bare.group(0).lower(), bare.group(0)))
+            pos = bare.end()
+        while pos < len(body) and body[pos].isspace():
+            pos += 1
+        if pos >= len(body) or body[pos] != "#":
+            return "".join(parts), pos
+        pos += 1
+
+
+def _fields(body: str, macros: dict[str, str]) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    pos = 0
+    while True:
+        match = _FIELD_RE.match(body, pos)
+        if match is None:
+            return fields
+        value, pos = _value(body, match.end(), macros)
+        if value is None:
+            return fields
+        fields.setdefault(match.group(1).lower(), value)
+
+
+def parse_bib(text: str) -> dict[str, dict[str, str]]:
+    """``{cite_key: {field: raw value, "_type": entry type}}``, field names
+    lower-cased, the first of two entries with one key kept. An unterminated
+    entry ends where the next one starts."""
+    entries: dict[str, dict[str, str]] = {}
+    macros: dict[str, str] = {}
+    pos = 0
+    while True:
+        head = _ENTRY_RE.search(text, pos)
+        if head is None:
+            return entries
+        kind, start = head.group(1).lower(), head.end() - 1
+        end = _balanced_end(text, start)
+        if end < 0:
+            following = _NEXT_ENTRY_RE.search(text, start)
+            end = following.start() if following else len(text)
+        body, pos = text[start + 1:end], end + 1
+        if kind in _NON_ENTRIES:
+            continue
+        if kind == "string":
+            macros.update(_fields(body, macros))
+            continue
+        key, comma, rest = body.partition(",")
+        key = key.strip()
+        if key and comma:
+            entries.setdefault(key, {**_fields(rest, macros), "_type": kind})
+
+
+def _accent(mark: str, dotless: str | None, letter: str | None) -> str:
+    base = dotless or letter or ""
+    return unicodedata.normalize("NFC", base + _ACCENTS[mark])
+
+
+def plain_text(value: Any) -> str:
+    """A BibTeX value as readable text. Accents and symbols become Unicode, and
+    formatting commands and protective braces go. A math span loses only its
+    dollars, because its commands have no plain form."""
+    if not isinstance(value, str):
+        return ""
+    value = value.replace("\0", "")  # NUL delimits the held math spans below
+    math: list[str] = []
+
+    def hold(match: re.Match) -> str:
+        math.append(match.group(1))
+        return f"\0{len(math) - 1}\0"
+
+    text = _MATH_RE.sub(hold, value)
+    for accent_re in (_SYMBOL_ACCENT_RE, _LETTER_ACCENT_RE):
+        text = accent_re.sub(
+            lambda m: _accent(m.group(1), m.group(2) or m.group(4), m.group(3) or m.group(5)), text)
+    text = _LETTER_RE.sub(lambda m: _LETTERS[m.group(1)], text)
+    text = _ESCAPED_RE.sub(r"\1", text)
+    text = _COMMAND_RE.sub("", text)
+    text = text.replace("---", "—").replace("--", "–").replace("``", "“").replace("''", "”")
+    text = text.replace("~", " ").replace("{", "").replace("}", "").replace("\\", "")
+    text = re.sub(r"\0(\d+)\0", lambda m: math[int(m.group(1))], text)
+    return unicodedata.normalize("NFC", " ".join(text.split()))
+
+
+def literal_text(value: Any) -> str:
+    """An identifier or URL: braces and escapes go, every other byte stays."""
+    if not isinstance(value, str):
+        return ""
+    return "".join(_ESCAPED_RE.sub(r"\1", value).replace("{", "").replace("}", "").split())
+
+
+def identity_fields(entry: dict[str, str]) -> dict[str, str]:
+    """The shape ``atlas_manuscript``'s identity helpers read."""
+    fields = {name: literal_text(entry.get(name)) for name in ("doi", "eprint", "archiveprefix", "url")}
+    fields.update({name: plain_text(entry.get(name)) for name in ("journal", "note", "howpublished")})
+    return fields
+
+
+def title_key(value: object) -> str:
+    """A title reduced to its lower-cased words: LaTeX commands, braces,
+    accents, punctuation and one leading article dropped."""
+    if not isinstance(value, str):
+        return ""
+    text = re.sub(r"\\[a-zA-Z]+\s*|\\.|[{}]", "", value)
+    text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+    words = re.findall(r"[a-z0-9]+", text.casefold())
+    if len(words) > 1 and words[0] in ("a", "an", "the"):
+        words = words[1:]
+    return " ".join(words)
+
+
+def bib_identifiers(entry: dict[str, str]) -> list[tuple[str, str]]:
+    """`(identifier, resolver)` pairs a bib entry names, DOI first."""
+    found: list[tuple[str, str]] = []
+    if entry.get("doi"):
+        found.append((entry["doi"], "crossref"))
+    eprint = entry.get("eprint", "")
+    prefix = entry.get("archiveprefix", "").lower()
+    if eprint and (prefix == "arxiv" or (not prefix and _ARXIV_ID_RE.match(eprint))):
+        found.append((eprint, "arxiv"))
+    for field in ("journal", "note", "howpublished", "url"):
+        for match in _ARXIV_IN_TEXT_RE.finditer(entry.get(field, "")):
+            found.append((match.group(1), "arxiv"))
+    return found
 
 
 def _require_ingested(record: dict, guidance_dir: Path) -> None:
@@ -200,30 +431,51 @@ def _entry_text(entry: dict) -> str:
     # and a single-pass compile then resolved every \ref to `??` and every
     # \cite to `[?]`. BibTeX ignores bytes between entries, so a leading `%`
     # line keeps the provenance readable in the file and out of the page.
-    # Nothing reads this back: `_BIB_ENTRY_RE` is the only reader of
-    # `refs.bib` and it matches cite keys alone.
+    # Nothing reads this back: `parse_bib` skips bytes between entries, and
+    # `_BIB_ENTRY_RE` matches cite keys alone.
     comment = f"% resolver={entry['resolver']}; metadata_digest={entry['metadata_digest']}"
     return comment + "\n" + "\n".join(lines) + "\n"
 
 
-def build_refs_bib(paper_dir: Path, records: list[dict], *, guidance_dir: Path) -> dict:
+def build_refs_bib(paper_dir: Path, records: list[dict], *, guidance_dir: Path,
+                   cited: set[str] = frozenset()) -> dict:
     """Rebuilds `paper/refs.bib` WHOLE, sorted by cite key -- never appended
     in place (`design.md`, Decision 4). One entry per distinct `cite_key`
     among `records` (last-write-wins per key, oldest to newest). Every
     entry is checked via `entry_from_record` BEFORE a single byte is
     written, so one unsourced OR un-ingested record refuses the whole
     rebuild rather than leaving a partially-written file behind.
+
+    A key of `cited` that the existing file holds and `records` does not
+    would be lost by the rewrite, so it refuses `ENTRY_UNSOURCED` first and
+    the file stays byte for byte. An entry nobody cites still leaves.
     """
     by_key: dict[str, dict] = {}
     for record in records:
         cite_key = record.get("cite_key")
         if cite_key:
             by_key[cite_key] = record
+    refs_path = paper_dir / "refs.bib"
+    existing = refs_path.read_bytes() if refs_path.is_file() else b""
+    held = set(parse_bib(existing.decode("utf-8", errors="replace")))
+    lost = sorted((set(cited) & held) - set(by_key))
+    if lost:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"refs.bib was left untouched: rebuilding it would drop the cited entries {lost}, which "
+            "have no evidence record -- `bib build` writes only what `validate` recorded, so validate "
+            "each key against an ingested paper first",
+        )
+    if held and not by_key:
+        raise Refused(
+            "ENTRY_UNSOURCED",
+            f"refs.bib was left untouched: no evidence record names a cited key, so rebuilding it "
+            f"would empty its {len(held)} entries -- `bib build` writes only what `validate` recorded",
+        )
     entries = [
         entry_from_record(paper_dir, by_key[key], guidance_dir=guidance_dir) for key in sorted(by_key)
     ]
     text = "".join(_entry_text(entry) for entry in entries)
-    refs_path = paper_dir / "refs.bib"
     refs_path.write_text(text, encoding="utf-8")
     return {"path": str(refs_path), "entries": [entry["cite_key"] for entry in entries]}
 
@@ -411,3 +663,178 @@ def check_reciprocal(main_tex_bytes: bytes, refs_bib_bytes: bytes) -> dict:
     if unused_entries:
         raise Refused("ENTRY_WITHOUT_CITE", f"refs.bib entries never cited: {unused_entries}")
     return {"cited": sorted(cited), "entries": sorted(entries)}
+
+
+# --- reference metadata for every cited key -----------------------------
+
+def references_path(paper_dir: Path) -> Path:
+    return paper_dir / ".paper-writing" / "references.json"
+
+
+def read_references(paper_dir: Path) -> dict[str, dict]:
+    """`{cite_key: record}` of the sidecar, empty when there is none. Raises
+    `ValueError` for one that is not the document `resolve --references`
+    writes; each caller decides what that means to it."""
+    path = references_path(paper_dir)
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    records = data.get("references") if isinstance(data, dict) else None
+    if not isinstance(records, dict):
+        raise ValueError(f"{path.name} holds no `references` mapping")
+    return {key: record for key, record in records.items() if isinstance(record, dict)}
+
+
+def _reference_link(result: dict) -> str | None:
+    """A DOI's or arXiv id's page, else the OpenAlex work a search found."""
+    identifier = result.get("identifier") or ""
+    if result.get("resolver") == "arxiv":
+        return f"https://arxiv.org/abs/{quote(identifier, safe='/.-')}"
+    doi = source_identity(result.get("doi") or identifier, "crossref")
+    if doi is not None and doi[1].startswith("10."):
+        return f"https://doi.org/{quote(doi[1], safe='/:;()._-')}"
+    return identifier if identifier.startswith("https://") else None
+
+
+def _reference_record(status: str, retrieved: str, identifier: str | None, result: dict | None) -> dict:
+    found = result or {}
+    return {
+        "status": status,
+        "resolver": found.get("resolver"),
+        "identifier": found.get("identifier", identifier),
+        "title": found.get("title"),
+        "abstract": found.get("abstract") or None,
+        "year": found.get("year"),
+        "venue": found.get("venue"),
+        "link": _reference_link(found) if result else None,
+        "digest": found.get("metadata_digest"),
+        "retrieved": retrieved,
+    }
+
+
+def _ask(call) -> tuple[object, bool]:
+    """`(answer, failed)` of one paced request. An endpoint that names no such
+    work answers `None`; one that never answers, or answers something
+    unreadable, reports `failed` so the key can be retried."""
+    paper_resolve.pause()
+    try:
+        return call(), False
+    except Refused as exc:
+        if exc.code == "IDENTIFIER_UNRESOLVED":
+            return None, False
+        if exc.code == "RESOLVER_UNREACHABLE":
+            return None, True
+        raise
+    except (OSError, ValueError, SyntaxError, AttributeError, TypeError, http.client.HTTPException):
+        return None, True
+
+
+def _years_agree(bib_year: str | None, work_year: object) -> bool:
+    try:
+        return abs(int(str(bib_year)) - int(str(work_year))) <= 1
+    except ValueError:
+        return True
+
+
+def _best_title_match(title: str, year: str | None, works: list[dict]) -> dict | None:
+    """The work carrying exactly `title`, normalized, or `None`: a near title
+    is another paper, and so is an equal title more than a year from the bib's,
+    since normalizing drops symbols that can tell two titles apart. A preprint
+    and its journal version can sit one year apart. Among equals, the bib's
+    year and then an abstract."""
+    wanted = title_key(title)
+    exact = [work for work in works if wanted and title_key(work.get("title")) == wanted
+             and _years_agree(year, work.get("year"))]
+    exact.sort(key=lambda work: (str(work.get("year")) != year, not work.get("abstract")))
+    return exact[0] if exact else None
+
+
+def _resolve_reference(entry: dict[str, str], *, connectors: list, role: str,
+                       config: dict) -> tuple[str, dict | None]:
+    """`(status, result)` for one bib entry: its identifiers through the
+    configured connectors, then an OpenAlex title search while no abstract
+    was found. Crossref never carries an abstract, so a DOI asks OpenAlex
+    first and Crossref only for a work OpenAlex does not hold."""
+    found, failed = None, False
+    fields = identity_fields(entry)
+    identifiers = bib_identifiers(fields)
+    url = fields.get("url", "")
+    if url.lower().startswith(_DOI_PREFIXES) and not fields.get("doi"):
+        identifiers.insert(0, (url, "crossref"))
+    for identifier, resolver in identifiers:
+        identity = source_identity(identifier, resolver)
+        chain = ("openalex", "crossref") if resolver == "crossref" else (resolver,)
+        for name in chain:
+            if identity is None or name not in connectors or (found and name == "crossref"):
+                continue
+            result, down = _ask(lambda: paper_resolve.resolve_identifier(
+                identity[1], resolver=name, role=role, config=config))
+            failed = failed or down
+            if result and result.get("abstract"):
+                return "resolved", result
+            found = found or result
+    title = plain_text(entry.get("title"))
+    if title and "openalex" in connectors:
+        works, down = _ask(lambda: paper_resolve.search_title(title, role=role, config=config))
+        failed = failed or down
+        year = _YEAR_RE.search(plain_text(entry.get("year") or entry.get("date")))
+        match = _best_title_match(title, year.group(1) if year else None, works or [])
+        if match and (found is None or match.get("abstract")):
+            return "resolved", match
+    if found:
+        return "resolved", found
+    return ("unreachable" if failed else "not_found"), None
+
+
+def resolve_references(paper_dir: Path, main_tex_bytes: bytes, refs_bib_bytes: bytes, *,
+                       config: dict, role: str = "resolution", force: bool = False) -> dict:
+    """`resolve --references`: one sidecar record per cited key, every entry
+    of the bibliography when the manuscript's citation commands are not ones
+    `cited_keys` reads. A `resolved` record is reused unless `force`, and no
+    failure replaces one; every other key is asked again. Reaching nothing is
+    a recorded `unreachable`, never a refusal, so offline work carries on,
+    while an emptied role refuses before any request or write.
+    """
+    connectors = paper_resolve.require_role_connectors(config, role)
+    bib = parse_bib(refs_bib_bytes.decode("utf-8", errors="replace"))
+    keys = sorted(cited_keys(main_tex_bytes) or bib)
+    try:
+        previous = read_references(paper_dir)
+    except ValueError:
+        previous = {}  # derived data: this run replaces what cannot be read
+    retrieved = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    records: dict[str, dict] = {}
+    reused = streak = 0
+    for key in keys:
+        kept = previous.get(key) if previous.get(key, {}).get("status") == "resolved" else None
+        if kept is not None and not force:
+            records[key] = kept
+            reused += 1
+            continue
+        entry = bib.get(key)
+        named = bib_identifiers(identity_fields(entry)) if entry else []
+        if entry is None:
+            status, result = "not_found", None
+        elif streak >= _UNREACHABLE_STREAK:
+            status, result = "unreachable", None
+        else:
+            status, result = _resolve_reference(entry, connectors=connectors, role=role, config=config)
+            streak = streak + 1 if status == "unreachable" else 0
+        if status != "resolved" and kept is not None:
+            records[key] = kept
+            continue
+        records[key] = _reference_record(status, retrieved, named[0][0] if named else None, result)
+    path = references_path(paper_dir)
+    document = {"schema": REFERENCES_SCHEMA, "references": records}
+    text = json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    paper_block._atomic_replace(path, text.encode("utf-8"))
+    statuses = [record.get("status") for record in records.values()]
+    return {
+        "path": str(path),
+        "references": len(records),
+        "resolved": statuses.count("resolved"),
+        "not_found": statuses.count("not_found"),
+        "unreachable": statuses.count("unreachable"),
+        "with_abstract": sum(1 for record in records.values() if record.get("abstract")),
+        "reused": reused,
+    }

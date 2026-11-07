@@ -33,6 +33,7 @@
   <script src="./phase-run.js?v=0.61.3"></script>
   <script src="./atlas-manuscript-panel.js?v=0.61.3"></script>
   <script src="./manuscript-graph-panel.js?v=0.61.3"></script>
+  <script src="./paper-explorer-panel.js?v=0.61.3"></script>
   <script src="./manuscript-qa-panel.js?v=0.61.3"></script>
   <style>
     :root {
@@ -2109,6 +2110,26 @@
       line-height: 1.45;
     }
     .candidate-pool-note[hidden] { display: none; }
+    .paper-explorer__count { padding: 0.4rem 0.8rem; font-size: 0.76rem; color: var(--text-muted); }
+    .paper-explorer__note { padding: 0.4rem 0.8rem; font-size: 0.76rem; color: var(--warn, var(--text-muted)); border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+    .paper-explorer__note[hidden] { display: none; }
+    .paper-explorer__clusters { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border-subtle); }
+    .paper-explorer__clusters[hidden] { display: none; }
+    .paper-explorer__clusters-note { flex-basis: 100%; font-size: 0.72rem; color: var(--text-muted); }
+    .paper-explorer__cluster { padding: 0.15rem 0.55rem; font: inherit; font-size: 0.74rem; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: 999px; cursor: pointer; overflow-wrap: anywhere; }
+    .paper-explorer__cluster:hover { background: var(--surface-hover); }
+    .paper-explorer__cluster[aria-pressed="true"] { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); }
+    .paper-explorer__cluster-size { font-variant-numeric: tabular-nums; opacity: 0.75; }
+    .paper-explorer__list { display: grid; gap: 0.6rem; padding: 0.6rem 0.8rem; max-height: 70vh; overflow: auto; }
+    .paper-explorer__empty { padding: 2rem; text-align: center; color: var(--text-muted); }
+    .paper-card { padding: 0.6rem 0.8rem; background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 0.8rem; }
+    .paper-card__title { margin: 0 0 0.2rem; font-size: 0.88rem; overflow-wrap: anywhere; }
+    .paper-card__title a { color: var(--accent); }
+    .paper-card__meta { color: var(--text-muted); margin-bottom: 0.35rem; }
+    .paper-card__chips { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.35rem; }
+    .paper-card details { margin-bottom: 0.35rem; }
+    .paper-card details ul { margin: 0.2rem 0 0.4rem 1.1rem; }
+    .paper-card__actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
     .candidate-pool-note ul { margin: 0.25rem 0 0.4rem 1.1rem; }
     .candidate-pool-note__badges { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
     .candidate-pool-note summary { cursor: pointer; font-weight: 600; color: var(--text); }
@@ -3278,6 +3299,7 @@
             <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
             <button id="btnGraphPapers" class="btn" onclick="switchGraph('papers')" data-i18n="atlas.btn.papers">📊 Candidate Matrix</button>
             <button id="btnGraphSummary" class="btn" onclick="switchGraph('summary')" title="Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)" data-i18n-attr="title:atlas.btn.summaryTitle" data-i18n="atlas.btn.summary">🧭 Manuscript summary</button>
+            <button id="btnGraphCited" class="btn" onclick="switchGraph('cited')" title="Search every paper the manuscript cites, by title, author, year, journal, section or abstract" data-i18n-attr="title:explorer.btnTitle" data-i18n="explorer.btn">🔎 Cited papers</button>
             <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
             <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
             <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
@@ -3307,6 +3329,36 @@
         <!-- View 1: 3D Solar Atlas constellation iframe -->
         <div id="atlas3dContainer" style="display: block;">
           <iframe id="graphIframe" class="iframe-viewer" src="about:blank" onload="if (this.getAttribute('src') !== 'about:blank' &amp;&amp; activeTab !== 'atlas') postToGraph({ type: 'atlas-command', command: 'pause' })"></iframe>
+        </div>
+
+        <!-- View 3: every paper the manuscript cites (paper-explorer-panel.js) -->
+        <div id="citedPapersContainer" style="display: none;">
+          <div class="matrix-toolbar">
+            <div class="matrix-search-box">
+              <span class="matrix-search-icon">🔍</span>
+              <input type="text" id="citedSearchInput" class="matrix-search-input" placeholder="Search by title, author, year, journal, section or abstract..." data-i18n-attr="placeholder:explorer.search" oninput="filterCitedPapers()">
+            </div>
+            <div class="matrix-filters">
+              <select id="citedOriginFilter" class="matrix-select" onchange="filterCitedPapers()">
+                <option value="" data-i18n="explorer.origin.all">All origins</option>
+                <option value="pool" data-i18n="explorer.origin.pool">In the SOTA pool</option>
+                <option value="outside" data-i18n="explorer.origin.outside">Outside the pool</option>
+              </select>
+              <select id="citedSectionFilter" class="matrix-select" onchange="filterCitedPapers()"></select>
+              <select id="citedSortSelect" class="matrix-select" onchange="filterCitedPapers()">
+                <option value="order" data-i18n="explorer.sort.order">Manuscript order</option>
+                <option value="cites" data-i18n="explorer.sort.cites">Most cited</option>
+                <option value="year_desc" data-i18n="candidates.sort.year_desc">Year (newest)</option>
+                <option value="year_asc" data-i18n="candidates.sort.year_asc">Year (oldest)</option>
+                <option value="title" data-i18n="candidates.sort.title_asc">Title (A-Z)</option>
+              </select>
+              <button class="btn btn--sm" onclick="resetCitedFilters()" title="Reset filters" data-i18n-attr="title:candidates.resetTitle" data-i18n="candidates.reset">↺ Clear</button>
+            </div>
+          </div>
+          <div id="citedPapersNote" class="paper-explorer__note" hidden></div>
+          <div id="citedClustersBar" class="paper-explorer__clusters" role="group" aria-label="Idea clusters" data-i18n-attr="aria-label:explorer.clustersLabel" hidden></div>
+          <div id="citedPapersCount" class="paper-explorer__count"></div>
+          <div id="citedPapersList" class="paper-explorer__list"></div>
         </div>
 
         <!-- View 2: SOTA candidate matrix (friendly table) -->
@@ -4001,7 +4053,7 @@
         groupBtn.className = (currentGraphKind === 'atlas' && atlasLayoutMode === 'groups') ? 'btn btn--primary' : 'btn';
       }
       const buildBtn = document.getElementById('btnBuildGraph');
-      if (buildBtn) buildBtn.disabled = currentGraphKind === 'papers';
+      if (buildBtn) buildBtn.disabled = currentGraphKind === 'papers' || currentGraphKind === 'cited';
     }
 
     function toggleAtlasGroupLayout() {
@@ -4136,6 +4188,8 @@
       const btnNovelty = document.getElementById('btnGraphNovelty');
       const btnPapers = document.getElementById('btnGraphPapers');
       const btnSummary = document.getElementById('btnGraphSummary');
+      const btnCited = document.getElementById('btnGraphCited');
+      const citedCont = document.getElementById('citedPapersContainer');
       const atlas3d = document.getElementById('atlas3dContainer');
       const matrixCont = document.getElementById('candidatesMatrixContainer');
       const titleEl = document.getElementById('atlasPanelTitle');
@@ -4146,6 +4200,9 @@
       if (btnNovelty) btnNovelty.className = kind === 'novelty' ? 'btn btn--primary' : 'btn';
       if (btnPapers) btnPapers.className = kind === 'papers' ? 'btn btn--primary' : 'btn';
       if (btnSummary) btnSummary.className = kind === 'summary' ? 'btn btn--primary' : 'btn';
+      if (btnCited) btnCited.className = kind === 'cited' ? 'btn btn--primary' : 'btn';
+      if (citedCont) citedCont.style.display = kind === 'cited' ? 'block' : 'none';
+      if (openLink) openLink.style.display = kind === 'cited' ? 'none' : '';
       if (kind !== 'summary' && typeof hideManuscriptGraph === 'function') hideManuscriptGraph();
 
       if (kind === 'atlas') {
@@ -4172,6 +4229,11 @@
         if (titleEl) titleEl.textContent = t('atlas.title.summary');
         if (openLink) openLink.href = apiUrl('/api/atlas/manuscript-graph/view');
         if (typeof showManuscriptGraph === 'function') showManuscriptGraph();
+      } else if (kind === 'cited') {
+        if (atlas3d) atlas3d.style.display = 'none';
+        if (matrixCont) matrixCont.style.display = 'none';
+        if (titleEl) titleEl.textContent = t('explorer.title');
+        if (typeof loadCitedPapers === 'function') loadCitedPapers();
       } else {
         if (atlas3d) atlas3d.style.display = 'none';
         if (matrixCont) matrixCont.style.display = 'block';

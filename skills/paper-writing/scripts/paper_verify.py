@@ -9,8 +9,9 @@ a side can be derived, publish the provenance of every side that cannot,
 report, never repair.
 
 `CHECKS` is one closed roster (contribution-list, chain, gap, artefacts,
-future-work, citations, contract-currency, figure-semantics, language);
-`language` reads a scan the caller hands in (`run(..., language=)`); `run()` is
+future-work, citations, contract-currency, figure-semantics, language,
+references); `language` reads a scan the caller hands in (`run(..., language=)`)
+and `references` the sidecar's records (`run(..., references=)`); `run()` is
 held to producing
 exactly one report object per member, in both directions
 (`ReportShapeTests`). `UNMEASURED_REASONS` is a second closed roster; every
@@ -59,6 +60,7 @@ CHECKS: tuple[str, ...] = (
     "contract-currency",
     "figure-semantics",
     "language",
+    "references",
 )
 
 #: Every reason a check's `unmeasured_reason` may carry. Closed: a check
@@ -105,6 +107,8 @@ UNMEASURED_REASONS: tuple[str, ...] = (
 STRUCTURE_CHECKS: tuple[str, ...] = ("back-matter-order", "own-paragraph", "appendix-length")
 
 _VERDICTS = ("pass", "fail", "unmeasured")
+#: Restated from `paper_bib.REFERENCE_STATUSES`: this module imports only `re`.
+_REFERENCE_STATUSES = ("resolved", "not_found", "unreachable")
 
 # The same citation vocabulary as `paper_bib.CITE_COMMANDS` (#81). This module
 # may import nothing beyond its allowlist, so the tuple is restated here and
@@ -764,6 +768,44 @@ def check_language(evidence, *, optional_block_ids: frozenset = frozenset(),
     )
 
 
+def check_references(evidence, *, optional_block_ids: frozenset = frozenset(),
+                     references: dict | None = None) -> dict:
+    """Coverage of `paper/.paper-writing/references.json`: every cited key has
+    a record. `references` is that file's `{cite_key: record}`, read one level
+    up in `cmd_verify` for the reason `check_language` gives; absent means no
+    record at all. A key `resolve --references` could not resolve still has a
+    record, so it passes with a note in `limits`: offline work is never
+    blocked, and an abstract is never required.
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity.
+    """
+    records = references or {}
+    cited = sorted(_cite_keys(evidence.main_tex_bytes))
+    statuses = {key: records[key].get("status") for key in cited if isinstance(records.get(key), dict)}
+    missing = [key for key in cited if statuses.get(key) not in _REFERENCE_STATUSES]
+    not_found = [key for key in cited if statuses.get(key) == "not_found"]
+    unreachable = [key for key in cited if statuses.get(key) == "unreachable"]
+    without_abstract = [key for key in cited if statuses.get(key) == "resolved"
+                        and not records[key].get("abstract")]
+    unresolved = len(not_found) + len(unreachable)
+    return _entry(
+        "references", classification="mechanical", verdict="fail" if missing else "pass",
+        sides=[
+            {"name": "cite-keys", "source": "derived", "origin": "main.tex \\cite{...}"},
+            {"name": "reference-records", "source": "derived",
+             "origin": ".paper-writing/references.json, written by resolve --references"},
+        ],
+        evidence={"cited": cited, "missing": missing, "not_found": not_found,
+                  "unreachable": unreachable, "without_abstract": without_abstract},
+        limits=[line for line in (
+            f"{len(missing)} cited key(s) have no reference record: run `resolve --references`" if missing else "",
+            f"{unresolved} cited key(s) have a record but no resolved metadata" if unresolved else "",
+            f"{len(without_abstract)} resolved key(s) have no abstract at their source" if without_abstract else "",
+        ) if line],
+        unmeasured_reason=None,
+    )
+
+
 #: Blocks that open a paragraph of their own: the future-work block closes the
 #: conclusions as their last paragraph, and every declaration is a paragraph.
 #: Their markers are comments, so a block that follows another with no blank
@@ -891,11 +933,13 @@ _CHECK_FUNCTIONS = {
     "contract-currency": check_contract_currency,
     "figure-semantics": check_figure_semantics,
     "language": check_language,
+    "references": check_references,
 }
 assert set(_CHECK_FUNCTIONS) == set(CHECKS), "every CHECKS member needs exactly one function, and the reverse"
 
 
-def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None) -> dict:
+def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict | None = None,
+        references: dict | None = None) -> dict:
     """Assemble the full report: one object per `CHECKS` member, in both
     directions (`ReportShapeTests`). `holds + fails + unmeasured ==
     len(CHECKS)` always; `unmeasured` is never counted in `holds` — held by
@@ -913,11 +957,13 @@ def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict
 
     `language`: `paper_language.scan` over `main.tex`, handed only to
     `check_language` (spec S4); `None` reports that check `unmeasured`.
+
+    `references`: the sidecar's `{cite_key: record}`, handed only to
+    `check_references`; `None` is a paper with no sidecar.
     """
+    inputs = {"language": {"language": language}, "references": {"references": references}}
     entries = [
-        check_language(evidence, optional_block_ids=optional_block_ids, language=language)
-        if check == "language"
-        else _CHECK_FUNCTIONS[check](evidence, optional_block_ids=optional_block_ids)
+        _CHECK_FUNCTIONS[check](evidence, optional_block_ids=optional_block_ids, **inputs.get(check, {}))
         for check in CHECKS
     ]
     holds = sum(1 for entry in entries if entry["verdict"] == "pass")

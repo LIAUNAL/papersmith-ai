@@ -73,7 +73,6 @@ import os
 import re
 import sys
 import tempfile
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -86,12 +85,6 @@ _PAPER_SCRIPTS = _HERE.parents[2] / "paper-writing" / "scripts"
 _IMPLEMENTATION = _HERE.parents[1] / "implementation"
 
 _BIB_FIELDS = ("title", "doi", "eprint", "archiveprefix", "journal", "note", "howpublished", "url", "year", "author", "booktitle", "publisher")
-_BIB_FIELD_RE = re.compile(r"^\s*(\w+)\s*=\s*[{\"](.*)[}\"],?\s*$")
-# An arXiv id named inside free text: "arXiv preprint arXiv:1905.13311".
-_ARXIV_IN_TEXT_RE = re.compile(
-    r"arxiv\s*:\s*(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[a-z]{2})?/\d{7}(?:v\d+)?)", re.IGNORECASE)
-_ARXIV_ID_RE = re.compile(r"^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$", re.IGNORECASE)
-_BIB_HEAD_RE = re.compile(r"^\s*@\w+\{([^,]+),")
 
 
 def _paper_modules():
@@ -142,20 +135,11 @@ def _digests(root: Path, paper: Path) -> dict[str, str | None]:
 
 
 def _bib_fields(refs: bytes | None) -> dict[str, dict[str, str]]:
-    """``{cite_key: {field: value}}`` for ``_BIB_FIELDS``, one ``field =
-    {value}`` (or ``"value"``) per line, as ``paper_bib`` and common
-    exporters write them."""
-    fields: dict[str, dict[str, str]] = {}
-    current = None
-    for line in (refs or b"").decode("utf-8", errors="replace").splitlines():
-        head = _BIB_HEAD_RE.match(line)
-        if head:
-            current = fields.setdefault(head.group(1).strip(), {})
-            continue
-        match = _BIB_FIELD_RE.match(line)
-        if match and current is not None and match.group(1).lower() in _BIB_FIELDS:
-            current[match.group(1).lower()] = match.group(2).strip()
-    return fields
+    """``{cite_key: {field: value}}`` for ``_BIB_FIELDS``, read by the shared
+    ``paper_bib.parse_bib`` and each value on one line."""
+    parsed = _paper_modules()[0].parse_bib((refs or b"").decode("utf-8", errors="replace"))
+    return {key: {name: " ".join(value.split()) for name, value in entry.items() if name in _BIB_FIELDS}
+            for key, entry in parsed.items()}
 
 
 # --------------------------------------------------------------------------
@@ -184,17 +168,7 @@ def _keys(paper_bib: Any, value: Any, resolver: Any = None) -> set[str]:
 
 def _bib_identifiers(entry: dict[str, str]) -> list[tuple[str, str]]:
     """``(identifier, resolver)`` pairs a bib entry names, DOI first."""
-    found: list[tuple[str, str]] = []
-    if entry.get("doi"):
-        found.append((entry["doi"], "crossref"))
-    eprint = entry.get("eprint", "")
-    prefix = entry.get("archiveprefix", "").lower()
-    if eprint and (prefix == "arxiv" or (not prefix and _ARXIV_ID_RE.match(eprint))):
-        found.append((eprint, "arxiv"))
-    for field in ("journal", "note", "howpublished", "url"):
-        for match in _ARXIV_IN_TEXT_RE.finditer(entry.get(field, "")):
-            found.append((match.group(1), "arxiv"))
-    return found
+    return _paper_modules()[0].bib_identifiers(entry)
 
 
 def _bib_keys(paper_bib: Any, entry: dict[str, str]) -> set[str]:
@@ -206,16 +180,8 @@ def _bib_keys(paper_bib: Any, entry: dict[str, str]) -> set[str]:
 
 
 def _title_key(value: Any) -> str:
-    """A title reduced to its lower-cased words: LaTeX commands, braces,
-    accents, punctuation and one leading article dropped."""
-    if not isinstance(value, str):
-        return ""
-    text = re.sub(r"\\[a-zA-Z]+\s*|\\.", "", value)
-    text = "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
-    words = re.findall(r"[a-z0-9]+", text.casefold())
-    if len(words) > 1 and words[0] in ("a", "an", "the"):
-        words = words[1:]
-    return " ".join(words)
+    """``paper_bib.title_key``, the normalization ``resolve --references`` matches by."""
+    return _paper_modules()[0].title_key(value)
 
 
 def _candidate_list(pool: Any) -> list[dict]:
