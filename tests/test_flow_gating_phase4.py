@@ -8,6 +8,7 @@ step that types the step's slash command into the agent terminal."""
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import shutil
@@ -34,12 +35,39 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def rank_pool(root: Path, *extra: dict) -> None:
+    """Record every reference of POOL and ``extra`` as a recent Q1 journal article."""
+    rank = {"work_type": "journal-article", "quartile": "Q1", "quartile_source": "sjr",
+            "year": datetime.date.today().year}
+    _write(root / "sota-pool" / "journal-ranks.json",
+           json.dumps({"schema": 1, "ranks": {ref["identifier"]: rank for ref in [*POOL, *extra]}}))
+
+
+def with_trees(novelty: dict) -> dict:
+    """``novelty`` with a valid problem tree and every hypothesis on every pillar."""
+    pillars = list(novelty.get("pillars") or [{"name": "Pillar"}])
+    while len(pillars) < 2:
+        pillars.append({"id": f"P{len(pillars) + 1}", "name": "Second pillar"})
+    ids = [item.get("id") or f"P{n}" for n, item in enumerate(pillars, 1)]
+    return {**novelty, "pillars": pillars,
+            "hypotheses": [{**item, "pillars": ids} for item in novelty.get("hypotheses") or []],
+            "problem_tree": {"central": {"text": "Degraded accuracy in the target cohort."},
+                             "causes": [{"id": "DC1", "text": "Noisy features."},
+                                        {"id": "DC2", "text": "Unstable training."}],
+                             "effects": [{"id": "EF1", "text": "Unreliable output.", "caused_by": ["DC1", "DC2"]}]}}
+
+
 def cite_everything(root: Path) -> None:
     """Justify every current idea of the workspace with two references of the
-    pool, written when the workspace has none."""
+    pool, written when the workspace has none, after completing its trees."""
     pool = root / "sota-pool" / "candidates.json"
     if not pool.is_file():
         _write(pool, json.dumps({"candidates": POOL}))
+    rank_pool(root)
+    path = root / ".papersmith" / "model_spec.json"
+    spec = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    if spec.get("novelty"):
+        _write(path, json.dumps({**spec, "novelty": with_trees(spec["novelty"])}))
     entries = [{"id": ref["identifier"], "why": "Cited for the test."} for ref in POOL]
     ideas = {idea["key"]: entries for idea in citations.state(root)["ideas"]}
     _write(root / ".papersmith" / "citations.json", json.dumps({"schema": 1, "ideas": ideas}))
