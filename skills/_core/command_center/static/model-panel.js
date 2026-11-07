@@ -247,10 +247,11 @@
   // What each button types into the agent terminal (agent input stays English).
   const STEP_COMMANDS = {
     problem_pillars: '/proposal-deliberation Let us define the central problem and its pillars first: '
-      + 'build the problem tree in novelty.problem_tree (the central problem, 2 to 3 direct causes and their effects), '
+      + 'build the problem tree in novelty.problem_tree, in technical English (the central problem, 2 to 3 direct '
+      + 'causes and their effects), '
       + 'and decompose it into at least 2 novelty pillars before any hypothesis.',
     hypotheses: '/proposal-deliberation Now the hypotheses: for each agreed pillar, the testable prediction it makes, '
-      + 'naming its pillars, and record them in the revision and in .papersmith/model_spec.json.',
+      + 'naming its pillars, in technical English, and record them in the revision and in .papersmith/model_spec.json.',
     mathematics: '/proposal-deliberation Now the mathematics: formalize the agreed hypotheses as $$ ... \\tag{N} $$ '
       + 'display blocks in the next revision.',
     sota_citations: '/proposal-deliberation Justify the proposal with SOTA citations now: in .papersmith/citations.json, '
