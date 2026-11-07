@@ -115,13 +115,15 @@ _CAUSE_ID = re.compile(r"^DC\d+$")
 _WORD = re.compile(r"[^\W\d_]+")
 _FORMULA = re.compile(r"\$[^$]*\$")
 _ACCENT = re.compile(r"[áéíóúñ]")
-#: Words that never occur in English technical prose, and Spanish function words
-#: of which one alone can be English (``de novo``), so two are needed.
+#: Common words of these statements, outside English prose as lowercase words,
+#: and Spanish function words of which one alone can be English (``de novo``), so
+#: two are needed.
 _SPANISH_WORDS = frozenset({
-    "datos", "ruidosos", "baja", "bajo", "alta", "alto", "sujetos", "señal", "efecto", "efectos", "circuito",
-    "circuitos", "modelo", "modelos", "ganancia", "variabilidad", "profundidad", "entre", "para", "sobre",
-    "mediante", "según", "cuando", "muestra", "causa", "causas", "pilar", "pilares"})
-_SPANISH_GLUE = frozenset({"de", "del", "la", "las", "el", "los", "en", "que", "con", "por", "una", "un", "se", "y"})
+    "datos", "ruidosos", "baja", "bajo", "sujetos", "señal", "efecto", "efectos", "circuito", "circuitos",
+    "modelo", "modelos", "ganancia", "variabilidad", "profundidad", "entre", "sobre", "mediante", "según",
+    "cuando", "muestra", "causa", "causas", "pilar", "pilares"})
+_SPANISH_GLUE = frozenset({"de", "del", "la", "las", "el", "los", "en", "que", "con", "por", "para", "una", "un",
+                           "se", "y"})
 #: Openers that name an absent solution instead of a negative condition.
 _ABSENCE = re.compile(r"^(?:(?:(?:the|an?)\s+)?(?:(?:lack|absence|shortage|deficiency|nonexistence)\s+of\b"
                       r"|need(?:s|ed)?\b)|there\s+(?:is|are)\s+(?:no\b|an?\s+(?:lack|absence|shortage|need)\b)"
@@ -241,11 +243,17 @@ def _experiments(root: Path) -> list[str]:
 
 def _reads_spanish(text: str) -> bool:
     """Whether a short statement is Spanish. ``paper_language.is_spanish_prose``
-    is built for paragraphs and misses most short phrases, and a name keeps its
-    accent, so only a lowercase word counts."""
+    is built for paragraphs and misses most short phrases. It is a heuristic: a
+    capitalized word can be a name, so it counts only as the sentence's first
+    word, and the particles of a surname (``de la Cruz``) count as nothing."""
     words = _WORD.findall(_FORMULA.sub(" ", text))
-    lowered = [word.lower() for word in words]
-    return (any(word[0].islower() and _ACCENT.search(word) for word in words)
+    prose = [word for index, word in enumerate(words)
+             if (word[0].islower() or index == 0)
+             and not (index + 1 < len(words) and word.lower() in _SPANISH_GLUE
+                      and (words[index + 1][0].isupper() or words[index + 1].lower() in _SPANISH_GLUE
+                           and index + 2 < len(words) and words[index + 2][0].isupper()))]
+    lowered = [word.lower() for word in prose]
+    return (any(word[0].islower() and _ACCENT.search(word) for word in prose)
             or bool(_SPANISH_WORDS.intersection(lowered))
             or len(_SPANISH_GLUE.intersection(lowered)) >= 2)
 

@@ -165,7 +165,9 @@ class English(Workspace):
     ENGLISH = ("Degraded subject-level classification accuracy", "Noisy channel statistics",
                "Restricted expressivity of single-shot quantum encodings", "Unreliable output.",
                "Entanglement topology ablation", "Perez-Salinas re-uploading bounds", "Altered theta band power",
-               "Biased estimates in de novo cohorts", "Degraded Pérez-Salinas classifiers")
+               "Biased estimates in de novo cohorts", "Degraded Pérez-Salinas classifiers",
+               "Extends the de la Cruz bound", "Reproduces the Palo Alto cohort", "Follows Van der Waals and De La Torre",
+               "para-hydrogen spectra in the Alta dataset")
 
     def test_spanish_is_refused_in_every_node(self):
         for text in self.SPANISH:
@@ -483,6 +485,32 @@ class Cli(Workspace):
         self.write(novelty())
         code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Some Startup", "--evidence", "https://x.org")
         self.assertEqual((code, body["error"]), (1, "LAB_NOT_ACCEPTED"))
+
+    def test_lab_refuses_a_reference_that_is_not_a_preprint(self):
+        self.write(novelty())
+        ranks = (self.root / "sota-pool" / "journal-ranks.json").read_text()
+        code, body = self.run_cli("lab", "--id", "10.1000/a", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "NOT_A_PREPRINT"))
+        self.assertEqual((self.root / "sota-pool" / "journal-ranks.json").read_text(), ranks)
+
+    def test_lab_refuses_an_unreadable_ranks_file(self):
+        self.ids = ["2212.08073", "10.1000/b"]
+        self.write(novelty())
+        path = self.root / "sota-pool" / "journal-ranks.json"
+        path.write_text("not json")
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "RANKS_UNREADABLE"))
+        self.assertEqual(path.read_text(), "not json")
+
+    def test_lab_refuses_a_preprint_without_a_year(self):
+        self.ids = ["2212.08073", "10.1000/b"]
+        self.write(novelty())
+        pool = self.root / "sota-pool" / "candidates.json"
+        data = json.loads(pool.read_text())
+        del data["candidates"][0]["year"]
+        pool.write_text(json.dumps(data))
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "YEAR_UNKNOWN"))
 
     def test_lab_refuses_a_reference_outside_the_pool(self):
         self.write(novelty())
