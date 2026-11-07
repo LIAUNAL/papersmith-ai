@@ -34,6 +34,12 @@ stretch's own end and nothing more.
 
 ## How you work
 
+**Journal pass.** When `proposal-deliberation` hands you the statements of its
+concept trees, run one more bounded pass over the same steps, with its own
+budget of 10 searches and 25 resolutions: only peer-reviewed journal articles of
+the last 4 years, each with a DOI, added to the existing pool. For a preprint
+already in the pool, look for its published journal version.
+
 In this order, and inside these budgets:
 
 1. **Discovery (identifiers, not verdicts).** Turn the idea into candidate

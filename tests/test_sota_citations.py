@@ -24,7 +24,8 @@ from fastapi.testclient import TestClient
 
 from skills._core.command_center import experiments_view, math_view, phase_steps, server
 from skills._core.results import citations, citations_cli, novelty_cli, novelty_gate
-from tests.test_flow_gating_phase4 import EQUATION, POOL, _Workspace as _Phase4, _write, cite_everything, render
+from tests.test_flow_gating_phase4 import (EQUATION, POOL, _Workspace as _Phase4, _write, cite_everything,
+                                          rank_pool, render, with_trees)
 from tests.test_flow_gating_phase5 import render_panel
 from tests.test_neurips_judge_gate import TYPED
 from tests.test_phase5_review import MARKER, _Status
@@ -32,6 +33,7 @@ from tests.test_phase5_review import MARKER, _Status
 STATIC = Path(server.__file__).resolve().parent / "static"
 A, B = POOL[0]["identifier"], POOL[1]["identifier"]
 GOOD = [{"id": A, "why": "It states the bound."}, {"id": B, "why": "It measures the gap."}]
+TREE_IDEAS = ["problem:central", "cause:DC1", "cause:DC2", "pillar:P1", "pillar:P2", "hypothesis:H1"]
 PROTOCOL = MARKER + "# Protocol\n\n## Experiment [exp:E1] — First\n\n## Experiment [exp:E2] — Second\n"
 
 
@@ -49,10 +51,11 @@ class _Ideas(_Phase4):
     def setUp(self) -> None:
         super().setUp()
         _pool(self.root)
+        rank_pool(self.root)
 
     def ideas(self, **extra) -> None:
-        spec = {"novelty": {"problem_statement": "Gap.", "pillars": [{"id": "P1", "name": "Pillar"}],
-                            "hypotheses": [{"id": "H1", "statement": "It improves."}]},
+        spec = {"novelty": with_trees({"problem_statement": "Gap.", "pillars": [{"id": "P1", "name": "Pillar"}],
+                                       "hypotheses": [{"id": "H1", "statement": "It improves."}]}),
                 "conceptual_map": {"layers": [{"name": "Signal"}]}, **extra}
         _write(self.root / ".papersmith" / "model_spec.json", json.dumps(spec))
         self.revision(EQUATION)
@@ -69,6 +72,7 @@ class ContractTests(_Ideas):
     def test_two_to_five_citations_with_a_reason_are_valid(self) -> None:
         extra = [{"identifier": f"10.1000/x{i}", "title": "X"} for i in range(3)]
         _pool(self.root, *extra)
+        rank_pool(self.root, *extra)
         five = GOOD + [{"id": e["identifier"], "why": "Same task."} for e in extra]
         self.assertEqual(self.problems(GOOD), [])
         self.assertEqual(self.problems(five), [])
@@ -79,6 +83,7 @@ class ContractTests(_Ideas):
     def test_six_citations_refuse(self) -> None:
         extra = [{"identifier": f"10.1000/y{i}", "title": "Y"} for i in range(4)]
         _pool(self.root, *extra)
+        rank_pool(self.root, *extra)
         six = GOOD + [{"id": e["identifier"], "why": "Same task."} for e in extra]
         self.assertEqual(self.problems(six), ["pillar:P1: 6 citation(s), needs 2 to 5"])
 
@@ -112,7 +117,7 @@ class ContractTests(_Ideas):
         _file(self.root, {})
         state = citations.state(self.root)
         self.assertEqual(state["stages"]["proposal"]["owed"],
-                         ["pillar:P1", "hypothesis:H1", "layer:Signal", "equation:1"])
+                         TREE_IDEAS + ["layer:Signal", "equation:1"])
 
     def test_an_extra_key_is_ignored(self) -> None:
         self.ideas()
@@ -137,7 +142,7 @@ class ContractTests(_Ideas):
             with self.subTest(body=body):
                 _write(self.root / ".papersmith" / "citations.json", body)
                 state = citations.state(self.root)
-                self.assertEqual(len(state["stages"]["proposal"]["owed"]), 4)
+                self.assertEqual(len(state["stages"]["proposal"]["owed"]), 8)
                 self.assertTrue(state["file_problems"])
 
     def test_a_missing_or_broken_pool_cites_nothing(self) -> None:
@@ -149,12 +154,12 @@ class ContractTests(_Ideas):
                 path.unlink(missing_ok=True)
                 if body is not None:
                     path.write_text(body, encoding="utf-8")
-                self.assertEqual(len(citations.state(self.root)["stages"]["proposal"]["owed"]), 4)
+                self.assertEqual(len(citations.state(self.root)["stages"]["proposal"]["owed"]), 8)
 
     def test_a_citation_carries_the_pool_title_and_year(self) -> None:
         self.ideas()
         _file(self.root, {"pillar:P1": GOOD})
-        idea = citations.state(self.root)["ideas"][0]
+        idea = next(i for i in citations.state(self.root)["ideas"] if i["key"] == "pillar:P1")
         self.assertEqual(idea["citations"][0], {"id": A, "why": GOOD[0]["why"], "title": POOL[0]["title"],
                                                 "year": POOL[0]["year"], "authors": POOL[0]["authors"],
                                                 "venue": POOL[0]["venue"]})
@@ -219,7 +224,7 @@ class StepTests(_Ideas):
         self.ideas(contribution_type=TYPED)
         steps = self.steps()
         self.assertEqual(steps["sota_citations"]["status"], "ACTIVE")
-        self.assertEqual(steps["sota_citations"]["evidence"]["ideas"], 4)
+        self.assertEqual(steps["sota_citations"]["evidence"]["ideas"], 8)
         self.assertEqual(steps["sota_citations"]["evidence"]["cited"], 0)
         self.assertEqual(steps["neurips_review"]["status"], "LOCKED")
 
@@ -228,7 +233,7 @@ class StepTests(_Ideas):
         cite_everything(self.root)
         steps = self.steps()
         self.assertEqual(steps["sota_citations"]["status"], "PASS")
-        self.assertEqual(steps["sota_citations"]["evidence"]["cited"], 4)
+        self.assertEqual(steps["sota_citations"]["evidence"]["cited"], 8)
         self.assertEqual(steps["neurips_review"]["status"], "PASS")
 
     def test_an_uncited_experiment_does_not_hold_the_proposal_step(self) -> None:
@@ -260,7 +265,8 @@ class StepTests(_Ideas):
         before = sorted(p.as_posix() for p in self.root.rglob("*"))
         body = TestClient(server.create_app(self.root, history_store=None)).get("/api/citations").json()
         self.assertEqual(body["stages"]["proposal"]["cited"], 1)
-        self.assertEqual(body["ideas"][0]["citations"][1]["title"], POOL[1]["title"])
+        cited = next(i for i in body["ideas"] if i["key"] == "pillar:P1")
+        self.assertEqual(cited["citations"][1]["title"], POOL[1]["title"])
         self.assertEqual(sorted(p.as_posix() for p in self.root.rglob("*")), before)
 
 
@@ -402,17 +408,17 @@ class CliTests(_Ideas):
         code, body = self.run_cli("check", "--root", str(self.root))
         self.assertEqual(code, 1)
         self.assertEqual((body["ok"], body["error"]), (False, "SOTA_CITATIONS_OWED"))
-        self.assertEqual((body["ideas"], body["cited"]), (4, 0))
-        self.assertEqual(body["owed"][0], {"key": "pillar:P1", "problems": ["pillar:P1: 1 citation(s), needs 2 to 5"]})
+        self.assertEqual((body["ideas"], body["cited"]), (8, 0))
+        self.assertEqual(next(o for o in body["owed"] if o["key"] == "pillar:P1"), {"key": "pillar:P1", "problems": ["pillar:P1: 1 citation(s), needs 2 to 5"]})
         self.assertEqual([o["key"] for o in body["owed"]],
-                         ["pillar:P1", "hypothesis:H1", "layer:Signal", "equation:1"])
+                         TREE_IDEAS + ["layer:Signal", "equation:1"])
 
     def test_check_passes_with_every_idea_cited(self) -> None:
         self.ideas()
         cite_everything(self.root)
         code, body = self.run_cli("check", "--root", str(self.root))
         self.assertEqual(code, 0)
-        self.assertEqual((body["ok"], body["cited"], body["owed"]), (True, 4, []))
+        self.assertEqual((body["ok"], body["cited"], body["owed"]), (True, 8, []))
 
     def test_check_covers_the_experiments_too(self) -> None:
         self.ideas()
@@ -536,7 +542,8 @@ for (const f of ['i18n/en.js', 'i18n/es.js', 'i18n.js', 'citations.js', 'math-pa
   console.log(JSON.stringify({
     pillars: el('modelPillarGrid').innerHTML, hypotheses: el('modelHypothesisGrid').innerHTML,
     layers: el('modelConceptLayers').innerHTML, equations: el('mathStack').innerHTML,
-    experiments: el('experimentsRoot').innerHTML,
+    experiments: el('experimentsRoot').innerHTML, problemTree: el('modelProblemTree').innerHTML,
+    noveltyTree: el('modelNoveltyTree').innerHTML, statementHidden: el('modelProblemStatementText').hidden,
   }));
 })();
 """
@@ -572,6 +579,63 @@ class PanelTests(_Ideas):
                 self.assertIn("Cited for the test.", result[panel])
                 self.assertIn("SOTA citations", result[panel])
 
+    def test_the_problem_tree_draws_effects_problem_and_causes_with_citations(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        result = render_panels(self.payload())
+        tree = result["problemTree"]
+        for text in ("Degraded accuracy in the target cohort.", "Noisy features.", "Unstable training.",
+                     "Unreliable output.", "Caused by DC1, DC2", POOL[0]["title"], "Problem tree"):
+            with self.subTest(text=text):
+                self.assertIn(text, tree)
+        self.assertLess(tree.index("Unreliable output."), tree.index("Degraded accuracy"))
+        self.assertLess(tree.index("Degraded accuracy"), tree.index("Noisy features."))
+        self.assertTrue(result["statementHidden"])
+
+    def test_the_novelty_tree_links_each_hypothesis_to_its_pillars(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        tree = render_panels(self.payload())["noveltyTree"]
+        self.assertEqual(tree.count("<line"), 2)
+        for text in ("P1", "P2", "H1", "Second pillar", "It improves."):
+            with self.subTest(text=text):
+                self.assertIn(text, tree)
+
+    def test_a_workspace_without_trees_says_what_it_owes(self) -> None:
+        _write(self.root / ".papersmith" / "model_spec.json", json.dumps(
+            {"novelty": {"problem_statement": "Gap.", "pillars": [{"id": "P1", "name": "Pillar"}]}}))
+        result = render_panels(self.payload())
+        self.assertIn("tree:problem: novelty.problem_tree is missing", result["problemTree"])
+        self.assertFalse(result["statementHidden"])
+        self.assertEqual(result["noveltyTree"], "")
+
+    def test_a_tree_list_of_the_wrong_type_does_not_stop_the_panel(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        path = self.root / ".papersmith" / "model_spec.json"
+        spec = json.loads(path.read_text())
+        spec["novelty"]["problem_tree"]["effects"] = "not a list"
+        spec["novelty"]["problem_tree"]["causes"] = {"id": "DC1"}
+        path.write_text(json.dumps(spec))
+        self.assertIn("Pillar", render_panels(self.payload())["pillars"])
+
+    def test_tree_text_is_escaped(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        path = self.root / ".papersmith" / "model_spec.json"
+        spec = json.loads(path.read_text())
+        spec["novelty"]["problem_tree"]["causes"][0]["text"] = self.HOSTILE
+        spec["novelty"]["problem_tree"]["effects"][0]["caused_by"] = [self.HOSTILE]
+        path.write_text(json.dumps(spec))
+        self.assertNotIn("<img", render_panels(self.payload())["problemTree"])
+
+    def test_spanish_names_the_trees(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        result = render_panels(self.payload(), "es")
+        self.assertIn("Árbol de problemas", result["problemTree"])
+        self.assertIn("Árbol de pilares e hipótesis", result["noveltyTree"])
+
     def test_spanish_names_the_block(self) -> None:
         self.all_ideas()
         cite_everything(self.root)
@@ -602,6 +666,24 @@ class PanelTests(_Ideas):
             with self.subTest(panel=panel):
                 self.assertIn("&lt;img", result[panel])
                 self.assertNotIn("<img", result[panel])
+
+
+class TreeSourceTests(_Ideas):
+    def test_a_specification_that_is_not_an_object_still_answers(self) -> None:
+        self.ideas()
+        _write(self.root / ".papersmith" / "model_spec.json", "[1, 2]")
+        self.assertIn("problem", math_view.build(self.root)["novelty"])
+
+    def test_the_central_problem_answers_the_math_card_over_the_sky(self) -> None:
+        self.ideas()
+        self.revision(EQUATION, sky={"system": {"planets": [{"slot": "problem", "label": "Sky text."}]}})
+        self.assertEqual(math_view.build(self.root)["novelty"]["problem"], "Degraded accuracy in the target cohort.")
+
+    def test_the_central_problem_counts_as_the_problem_step(self) -> None:
+        tree = with_trees({"pillars": [{"id": "P1", "name": "Pillar"}], "hypotheses": []})
+        _write(self.root / ".papersmith" / "model_spec.json", json.dumps({"novelty": tree}))
+        steps = {s["id"]: s for s in phase_steps.proposal_steps(self.root)}
+        self.assertTrue(steps["problem_pillars"]["done"])
 
 
 class CatalogueTests(unittest.TestCase):

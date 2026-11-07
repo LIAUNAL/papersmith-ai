@@ -75,6 +75,16 @@ skill refuses when its input is missing.
    - **Concept map and mathematics**: before implementing a revision, discuss
      its pillars, hypotheses and concept layers and its equations with
      `/math-tutor`, the Socratic tutor that also reads hand-written pages.
+   - **Concept trees**: `novelty.problem_tree` in
+     `.papersmith/model_spec.json` holds the central problem, its 2 to 3
+     direct causes and their effects; at least 2 pillars each reach a
+     hypothesis through its `pillars` field. The central problem and the
+     causes state a negative condition, never "Lack of", "No", "Need for",
+     "Requires" or an infinitive. The problem, each cause, each pillar and
+     each hypothesis cite Q1 or Q2 journal articles at most 4 years old,
+     checked against `sota-pool/journal-ranks.json`, which `python
+     skills/_core/results/citations_cli.py rank --root .` writes from the SJR
+     table. The fourth step stays open until both trees hold.
    - **SOTA citations**: every pillar, hypothesis, concept-map layer and
      numbered equation is justified by 2 to 5 references of
      `sota-pool/candidates.json`, each with its reason, in

@@ -13,8 +13,9 @@ placeholder specification:
   overlay's ``hypotheses`` list;
 * ``mathematics``: at least one ``$$ … \\tag{N} $$`` display block in the
   latest revision ``proposals/research-concept-<slug>-rNN.md``;
-* ``sota_citations``: 2 to 5 valid pool references for every pillar, hypothesis,
-  concept-map layer and numbered equation, in ``.papersmith/citations.json``
+* ``sota_citations``: 2 to 5 valid pool references for the central problem and
+  every direct cause, pillar, hypothesis, concept-map layer and numbered
+  equation, in ``.papersmith/citations.json``, and both concept trees whole
   (``results/citations.py``), so the judge reads justified ideas;
 * ``neurips_review``: the paper-reviewer's valid ``contribution_type`` in
   ``.papersmith/model_spec.json``.
@@ -97,7 +98,9 @@ def _evidence(root: Path) -> dict[str, Any]:
     sky_problem = any(isinstance(p, dict) and p.get("slot") == "problem" and _text(p.get("label"))
                       for p in planets)
     sources: dict[str, str] = {}
-    problem = _text(novelty.get("problem_statement"))
+    tree = novelty.get("problem_tree") if isinstance(novelty.get("problem_tree"), dict) else {}
+    central = tree.get("central") if isinstance(tree.get("central"), dict) else {}
+    problem = _text(central.get("text")) or _text(novelty.get("problem_statement"))
     if problem:
         sources["problem"] = SPEC_REL
     elif sky_problem:

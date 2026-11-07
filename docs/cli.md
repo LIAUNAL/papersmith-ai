@@ -555,8 +555,10 @@ Two phases also order their own steps:
   citations (4.7), then the NeurIPS judge (4.8), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
   overlay for the first two, a `$$ … \tag{N} $$` block in the latest
   `proposals/research-concept-<slug>-rNN.md` for the third, 2 to 5 valid citations
-  per pillar, hypothesis, layer and equation in `.papersmith/citations.json` for
-  the fourth, a valid `contribution_type` in `.papersmith/model_spec.json` for the
+  per central problem, direct cause, pillar, hypothesis, layer and equation in
+  `.papersmith/citations.json` for the fourth, with both concept trees whole and
+  Q1 or Q2 journal articles of at most 4 years on the problem, causes, pillars and
+  hypotheses (`citations_cli.py rank` records them), a valid `contribution_type` in `.papersmith/model_spec.json` for the
   fifth — and each
   locked until the one before it passes, so Phase 5 waits for the judge.
   *Mapa Conceptual & Modelo* shows the five steps with a *Generar y deliberar*

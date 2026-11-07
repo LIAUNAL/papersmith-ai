@@ -647,7 +647,12 @@ of the latest protocol: until they are cited, `/proposal-implementation` and
 `/experimental-implementation` stay locked, G-EXP-POC refuses its approval
 (`SOTA_CITATIONS_OWED`) and Phase 5 cannot pass. The buttons in the stepper and
 in the *Experimentos* tab ask the agent for them, and each panel shows them
-beside the idea. `python skills/_core/results/citations_cli.py check --root .`
+beside the idea. The problem tree (central problem, 2 to 3 direct causes and
+their effects) and the tree of pillars and hypotheses raise the bar: the problem,
+each cause, each pillar and each hypothesis cite Q1 or Q2 journal articles at most
+4 years old, and `python skills/_core/results/citations_cli.py rank --root .`
+records each reference's SJR quartile in `sota-pool/journal-ranks.json`.
+`python skills/_core/results/citations_cli.py check --root .`
 prints what is owed and exits non-zero. A valid citation is in the pool and
 states a reason; that does not prove the reference supports the idea, so
 existing workspaces lose their Phase 4 PASS until they are cited.
