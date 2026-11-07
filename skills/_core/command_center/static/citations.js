@@ -29,7 +29,8 @@
 
   function entry(c) {
     const year = c.year ? ` <span style="color: var(--text-dim);">(${esc(c.year)})</span>` : '';
-    return `<li style="margin-top: 0.25rem;"><strong>${esc(c.title || c.id)}</strong>${year}
+    const lab = c.lab ? ` <span class="badge">${esc(c.lab)}</span>` : '';
+    return `<li style="margin-top: 0.25rem;"><strong>${esc(c.title || c.id)}</strong>${year}${lab}
         ${c.why ? `<span style="color: var(--text-muted);"> — ${esc(c.why)}</span>` : ''}</li>`;
   }
 

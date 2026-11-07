@@ -258,7 +258,12 @@ pillars to the hypotheses in a second one, in technical English:
 `pillar:C1` and `hypothesis:H1` take 2 to 5 Q1 or Q2 journal articles at most 4
 years old. Run `python skills/_core/results/citations_cli.py rank --root .` after
 the pool changes: a reference without an SJR quartile does not count, and neither
-do conference papers or preprints, so use the published journal version. When the
+do conference papers. A preprint counts only when an author belongs to a lab of
+`ACCEPTED_LABS` in `skills/_core/results/citations.py`: Google, Google DeepMind,
+OpenAI, Anthropic, Microsoft, Meta, NVIDIA, Apple, IBM, Amazon, Allen Institute for
+AI, Xanadu, Quantinuum or IonQ. `rank` finds it in OpenAlex. Where OpenAlex lacks the
+affiliation, ask the operator: only they run `citations_cli.py lab --id <id> --lab
+<name> --evidence <url>`, never you. Prefer the published journal version. When the
 pool lacks them, hand the tree's statements to `sota-scout` for its journal pass.
 Foundational references stay citable on layers, equations and experiments.
 
