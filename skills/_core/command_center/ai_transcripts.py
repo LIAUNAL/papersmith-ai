@@ -3,7 +3,9 @@
 Each reader turns one harness's local session store into ``(ts, role, text)``
 turns (``role`` is ``user``, ``assistant`` or ``error``); :func:`attribute`
 assigns them to phases the same way for every harness: a phase command opens
-its phase and the turns that follow belong to it until the next one.
+its phase and the turns that follow belong to it until the next one; what comes
+before the first one is ``unassigned``. These turns are clipped for the graph:
+:mod:`ai_archive` keeps them in full.
 
 Stores (read-only, bounded; a missing store is ``absent``, never an error):
 
@@ -62,7 +64,10 @@ HARNESSES = ("claude-code", "pi", "opencode", "antigravity")
 #: notice of a finished background task, a command's echoed output): never
 #: an operator turn.
 HARNESS_PREFIXES = ("<system-reminder>", "<task-notification>", "<local-command-caveat>",
-                    "<persisted-output>", "<bash-notification>")
+                    "<persisted-output>", "<bash-notification>", "<bash-input>", "<bash-stdout>",
+                    "<bash-stderr>", "[Request interrupted")
+#: The phase of the turns a session has before its first phase command.
+UNASSIGNED = "unassigned"
 
 Turn = tuple["str | None", str, str]
 #: ``(ts, role, text, command)``: what :func:`attribute` needs of a turn, with
@@ -80,6 +85,7 @@ _EXPANDED_RE = re.compile(
     r"^Read `skills/([\w.-]+)/SKILL\.md` and follow it.*?`\$ARGUMENTS`:\s*(.*)$", re.S)
 _SLASH_RE = re.compile(r"^/([\w:.-]+)(?:\s+(.*))?$", re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
+_INJECTED_RE = re.compile(r"^\s*(?:<system-reminder>.*?</system-reminder>\s*)+", re.S)
 
 
 def _clip(text: Any, limit: int = TEXT_MAX) -> str:
@@ -122,6 +128,16 @@ def _event(ts: Any, kind: str, summary: str, ref: str, actor: str) -> dict[str, 
             "summary": summary, "ref": ref, "actor": actor}
 
 
+def operator_text(text: str) -> str | None:
+    """What the operator wrote in a user turn, ``None`` when the harness wrote
+    it: a reminder in front of a real prompt goes, the prompt stays."""
+    cleaned = _INJECTED_RE.sub("", text)
+    if (not cleaned.strip() or "<local-command-stdout>" in cleaned
+            or cleaned.lstrip().startswith(HARNESS_PREFIXES)):
+        return None
+    return cleaned
+
+
 def compact(ts: Any, role: str, text: str) -> Compact | None:
     """One turn reduced to what attribution reads; ``None`` when it carries
     nothing (an empty or harness-injected user turn, an empty reply)."""
@@ -129,9 +145,10 @@ def compact(ts: Any, role: str, text: str) -> Compact | None:
         return (ts, role, _clip(text), None) if text.strip() else None
     if role == "error":
         return (ts, role, "", None)
-    if (not text.strip() or "<local-command-stdout>" in text
-            or text.lstrip().startswith(HARNESS_PREFIXES)):
+    kept = operator_text(text)
+    if kept is None:
         return None
+    text = kept
     command = command_of(text)
     if command is not None:
         return (ts, "user", "", (command[0], command[1][: TEXT_MAX * 2]))
@@ -142,24 +159,22 @@ def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
               events: dict[str, list[dict[str, Any]]]) -> None:
     """Assign one session's compacted turns to phases. Only the agent's last
     reply before the next user turn is kept."""
-    stage: str | None = None
+    stage: str = UNASSIGNED
     reply: dict[str, Any] | None = None
 
     def flush() -> None:
         nonlocal reply
-        if reply is not None and stage is not None:
+        if reply is not None:
             events.setdefault(stage, []).append(reply)
         reply = None
 
     for ts, role, text, command in turns:
         if role == "assistant":
-            if stage is not None:
-                reply = _event(ts, "agent_reply", text, ref, "agent")
+            reply = _event(ts, "agent_reply", text, ref, "agent")
             continue
         if role == "error":
-            if stage is not None:
-                events.setdefault(stage, []).append(
-                    _event(ts, "error", "A tool failed during the phase", ref, "tool"))
+            events.setdefault(stage, []).append(
+                _event(ts, "error", "A tool failed during the phase", ref, "tool"))
             continue
         target = stage_for(*command, skills) if command else None
         flush()
@@ -167,7 +182,7 @@ def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
             stage = target
             events.setdefault(stage, []).append(
                 _event(ts, "command", _clip(f"/{command[0]} {command[1]}".strip()), ref, "operator"))
-        elif stage is not None and command is None:
+        elif command is None:
             events.setdefault(stage, []).append(_event(ts, "user_message", text, ref, "operator"))
     flush()
 
@@ -227,11 +242,36 @@ def _locate(base: Path, slugs: Iterable[str], roots: set[str]) -> Path | None:
     return None
 
 
+def claude_projects() -> Path:
+    return _env_dir("CLAUDE_CONFIG_DIR", Path.home() / ".claude") / "projects"
+
+
+def pi_sessions_base() -> Path:
+    return _env_dir("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent") / "sessions"
+
+
+def related_dirs(base: Path, roots: set[str]) -> list[Path]:
+    """The session folders under ``base`` whose newest session ran in a
+    subdirectory of the workspace or in one of its sibling worktrees."""
+    prefixes = tuple(p for r in roots for p in (r + "/", r + "-worktrees/"))
+    try:
+        candidates = sorted(d for d in base.iterdir() if d.is_dir())[:MAX_SCAN_DIRS]
+    except OSError:
+        return []
+    found = []
+    for directory in candidates:
+        files = _newest(directory)
+        cwd = _first_cwd(files[0]) if files else None
+        if isinstance(cwd, str) and cwd.startswith(prefixes):
+            found.append(directory)
+    return found
+
+
 def claude_dir(roots: set[str]) -> Path | None:
     override = os.environ.get("PAPERSMITH_CLAUDE_CODE_SESSIONS")
     if override:
         return Path(override).expanduser()
-    base = _env_dir("CLAUDE_CONFIG_DIR", Path.home() / ".claude") / "projects"
+    base = claude_projects()
     return _locate(base, [re.sub(r"[^A-Za-z0-9]", "-", r) for r in sorted(roots)], roots)
 
 
@@ -239,7 +279,7 @@ def pi_dir(roots: set[str]) -> Path | None:
     override = os.environ.get("PAPERSMITH_PI_SESSIONS")
     if override:
         return Path(override).expanduser()
-    base = _env_dir("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent") / "sessions"
+    base = pi_sessions_base()
     slugs = ["--" + re.sub(r"[/\\:]", "-", r.lstrip("/\\")) + "--" for r in sorted(roots)]
     return _locate(base, slugs, roots)
 
@@ -300,7 +340,7 @@ def session_turns(path: Path, line_turn: Callable[[dict[str, Any]], Turn | None]
             continue
         turn = line_turn(line) if isinstance(line, dict) else None
         small = compact(*turn) if turn else None
-        if small is not None:
+        if small is not None and not (small[1] == "user" and turns and turns[-1][1:] == small[1:]):
             turns.append(small)
     with _cache_lock:
         _file_cache[key] = {"ident": ident, "offset": entry["offset"] + end,
@@ -316,9 +356,17 @@ def _blocks(content: Any, text_type: str = "text") -> tuple[str, list[dict[str, 
 
 
 def claude_line(line: dict[str, Any]) -> Turn | None:
-    if line.get("isSidechain") or line.get("isMeta"):
+    if (line.get("isSidechain") or line.get("isMeta") or line.get("isCompactSummary")
+            or line.get("isApiErrorMessage")):
         return None
     kind, message = line.get("type"), line.get("message")
+    attachment = line.get("attachment")
+    if kind == "attachment" and isinstance(attachment, dict):
+        # A prompt typed while the agent works waits here until it is delivered.
+        prompt = attachment.get("prompt")
+        if attachment.get("type") == "queued_command" and isinstance(prompt, str) and prompt.strip():
+            return attachment.get("timestamp") or line.get("timestamp"), "user", prompt
+        return None
     if kind not in ("user", "assistant") or not isinstance(message, dict):
         return None
     text, blocks = _blocks(message.get("content"))
@@ -343,7 +391,7 @@ def pi_line(line: dict[str, Any]) -> Turn | None:
 #: Per harness: how one JSONL line becomes a turn, and the bytes a line must
 #: contain to be worth parsing at all.
 LINE_READERS: dict[str, tuple[Callable[[dict[str, Any]], Turn | None], tuple[bytes, ...]]] = {
-    "claude-code": (claude_line, (b'"user"', b'"assistant"')),
+    "claude-code": (claude_line, (b'"user"', b'"assistant"', b'"queued_command"')),
     "pi": (pi_line, (b'"message"',)),
 }
 
@@ -379,13 +427,30 @@ def opencode_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[C
                 continue
             rows = connection.execute(
                 "SELECT m.data, p.data, p.time_created FROM part p JOIN message m ON m.id = p.message_id "
-                "WHERE p.session_id = ? ORDER BY p.time_created, p.id LIMIT ?",
+                "WHERE p.session_id = ? ORDER BY p.time_created DESC, p.id DESC LIMIT ?",
                 (session_id, MAX_DB_ROWS)).fetchall()
+            rows.reverse()
             turns = [t for t in (compact(*turn) for turn in _opencode_turns(rows)) if t is not None]
             with _cache_lock:
                 _opencode_cache[key] = (updated, turns)
             out.append((session_id, turns))
         return out, "ok" if sessions else "absent"
+    finally:
+        connection.close()
+
+
+def opencode_raw(db: Path, roots: set[str]) -> Iterator[tuple[str, list[Turn]]]:
+    """Every OpenCode session of the workspace with its uncut turns."""
+    connection = sqlite3.connect("file:" + db.resolve().as_posix() + "?mode=ro", uri=True, timeout=2)
+    try:
+        marks = ",".join("?" for _ in roots)
+        sessions = connection.execute(f"SELECT id FROM session WHERE directory IN ({marks}) AND parent_id IS NULL",
+                                      tuple(sorted(roots))).fetchall()
+        for (session_id,) in sessions:
+            rows = connection.execute(
+                "SELECT m.data, p.data, p.time_created FROM part p JOIN message m ON m.id = p.message_id "
+                "WHERE p.session_id = ? ORDER BY p.time_created, p.id", (session_id,)).fetchall()
+            yield session_id, list(_opencode_turns(rows))
     finally:
         connection.close()
 
@@ -410,6 +475,31 @@ def _opencode_turns(rows: Iterable[tuple[str, str, Any]]) -> Iterator[Turn]:
 _antigravity_cache: dict[tuple[str, str], tuple[str, list[Compact]]] = {}
 
 
+def _in_workspace(uris_raw: Any, roots: set[str]) -> bool:
+    """Whether an Antigravity conversation ran in the workspace or under it."""
+    try:
+        uris = json.loads(uris_raw)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(uris, list):
+        return False
+    cleaned = [u.removeprefix("file://").rstrip("/\\") for u in uris if isinstance(u, str)]
+    return any(c == r or c.startswith(r + "/") for c in cleaned for r in roots)
+
+
+def antigravity_raw(db: Path, roots: set[str]) -> Iterator[tuple[str, list[Turn]]]:
+    """Every Antigravity conversation of the workspace with its uncut turns."""
+    connection = sqlite3.connect("file:" + db.resolve().as_posix() + "?mode=ro", uri=True, timeout=2)
+    try:
+        rows = connection.execute("SELECT conversation_id, workspace_uris FROM conversation_summaries").fetchall()
+    finally:
+        connection.close()
+    for session_id, uris_raw in rows:
+        path = db.parent / "brain" / session_id / ".system_generated" / "logs" / "transcript.jsonl"
+        if _in_workspace(uris_raw, roots) and path.is_file():
+            yield session_id, list(_antigravity_turns(path.read_text(encoding="utf-8").splitlines()))
+
+
 def antigravity_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[Compact]]], str]:
     """``[(session id, turns)]`` of the workspace's Antigravity sessions."""
     if not db.is_file():
@@ -420,23 +510,12 @@ def antigravity_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, lis
     try:
         rows = connection.execute(
             "SELECT conversation_id, workspace_uris, datetime(last_modified_time) "
-            "FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT ?",
-            (MAX_SESSIONS,)).fetchall()
+            "FROM conversation_summaries ORDER BY last_modified_time DESC").fetchall()
         out = []
         for session_id, uris_raw, updated in rows:
-            try:
-                uris = json.loads(uris_raw)
-            except (ValueError, TypeError):
-                continue
-            if not isinstance(uris, list):
-                continue
-            matches = False
-            for u in uris:
-                clean = u.removeprefix("file://").rstrip("/\\")
-                if clean in roots or any(clean.startswith(r) or r.startswith(clean) for r in roots):
-                    matches = True
-                    break
-            if not matches:
+            if len(out) >= MAX_SESSIONS:
+                break
+            if not _in_workspace(uris_raw, roots):
                 continue
 
             key = (str(db), session_id)
@@ -573,5 +652,5 @@ def clear_cache() -> None:
         _antigravity_cache.clear()
 
 
-__all__ = ["HARNESSES", "attribute", "clear_cache", "command_of", "compact", "read_all",
-           "session_turns", "skill_stages", "stage_for"]
+__all__ = ["HARNESSES", "UNASSIGNED", "attribute", "clear_cache", "command_of", "compact", "operator_text",
+           "read_all", "related_dirs", "session_turns", "skill_stages", "stage_for"]

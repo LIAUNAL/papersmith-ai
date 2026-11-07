@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
+from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -3726,14 +3726,28 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.get("/api/ai-history")
     def api_ai_history() -> JSONResponse:
-        # The AI History pane: each phase's gate, colour and timeline,
-        # read-only from decisions, revisions and this workspace's transcripts.
+        # The AI History pane: each phase's gate, colour and timeline, from
+        # decisions, revisions and this workspace's transcripts. It first brings
+        # the archive up to date, so what a harness later deletes is not lost.
+        try:
+            ai_archive.sync_throttled(root_path)
+        except Exception:  # noqa: BLE001 - the pane still answers without the archive
+            pass
         try:
             phases = json.loads(bytes(api_status_adapter().body)).get("fases") or []
         except Exception:  # noqa: BLE001 - the pane still answers without phases
             phases = []
         return JSONResponse(ai_history.build_ai_history(root_path, phases),
                             headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/ai-history/session")
+    def api_ai_history_session(ref: str = "") -> JSONResponse:
+        # A whole conversation, in full, from the workspace's archive.
+        turns = ai_archive.session(Path(root_path), ref)
+        if turns is None:
+            return JSONResponse({"detail": "No archived session has that reference."}, status_code=404,
+                                headers=dict(_PAPER_HEADERS))
+        return JSONResponse({"ref": ref, "turns": turns}, headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/events")
     async def api_events(request: Request) -> StreamingResponse:
