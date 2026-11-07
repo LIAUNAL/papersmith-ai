@@ -9,7 +9,7 @@
  * this workspace, a placeholder of the neutral specification for instance, and
  * draws nothing. Every value is escaped before insertion.
  *
- * Public surface (window.Citations): load(), block(key), mark(key), onChange(fn).
+ * Public surface (window.Citations): load(), block(key), mark(key), trees(), onChange(fn).
  */
 (function () {
   'use strict';
@@ -21,6 +21,7 @@
   })[c]);
 
   let ideas = new Map();
+  let trees = [];
   let pending = null;
   const listeners = [];
 
@@ -54,6 +55,7 @@
       if (!res.ok) return;
       const body = await res.json();
       ideas = new Map((body.ideas || []).map((idea) => [idea.key, idea]));
+      trees = Array.isArray(body.trees) ? body.trees : [];
       listeners.forEach((fn) => fn());
     } catch (_) { /* offline: keep what is shown */ }
   }
@@ -65,5 +67,5 @@
     return pending;
   }
 
-  window.Citations = { load, block, mark, onChange: (fn) => { listeners.push(fn); } };
+  window.Citations = { load, block, mark, trees: () => trees, onChange: (fn) => { listeners.push(fn); } };
 })();

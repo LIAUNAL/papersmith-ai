@@ -212,10 +212,15 @@ and asks for this rewrite.
   "trl": "Phase 4 complete (proposal r02)",
   "executive_summary": "<two or three sentences>",
   "novelty": {
-    "problem_statement": "<the problem and the gap>",
-    "pillars": [{"id": "pillar-1", "name": "...", "badge": "...", "color": "#38bdf8",
+    "problem_statement": "<the central problem of the tree>",
+    "problem_tree": {
+      "central": {"text": "<negative state: qualifier + measurable variable + population or context>"},
+      "causes": [{"id": "DC1", "text": "<direct cause, a negative condition>"}],
+      "effects": [{"id": "EF1", "text": "<consequence of the problem>", "caused_by": ["DC1"]}]
+    },
+    "pillars": [{"id": "C1", "name": "...", "badge": "...", "color": "#38bdf8",
                  "summary": "...", "details": "..."}],
-    "hypotheses": [{"id": "H1", "title": "...", "statement": "...",
+    "hypotheses": [{"id": "H1", "title": "...", "statement": "...", "pillars": ["C1"],
                      "status": "...", "evidence": "..."}]
   },
   "contribution_type": {"type": "Theory", "why": "<one to three sentences>"},
@@ -229,6 +234,33 @@ and asks for this rewrite.
 Every prose field may carry `$…$` math. Take each pillar, hypothesis and layer
 from the accepted revision and the deliberation, verbatim in meaning; never
 invent one the revision does not argue.
+
+**The two concept trees.** The panel draws the problem as a tree and relates the
+pillars to the hypotheses in a second one, in technical English:
+
+- The central problem is the main visible effect, neither a root cause nor a
+  distant consequence: a negative state written as a negative qualifier, a
+  measurable variable and a population or context, such as "Degraded
+  subject-level balanced accuracy of shallow quantum encoders in pediatric EEG".
+- There are 2 to 3 direct causes, ids `DC1` to `DC3`, each with an immediate
+  relation to the problem and written in the negative. Test each one: if the
+  cause holds, does the problem follow?
+- No statement opens with "Lack of", "Absence of", "No", "Need for", "Requires",
+  "There is no" or "To <verb>": those name a missing solution, not a condition.
+- Effects hang from the central problem and name the causes behind them in
+  `caused_by`; every cause reaches an effect. An effect is never the solution.
+- At least 2 pillars, and every hypothesis names its `pillars`, so every pillar
+  reaches a hypothesis.
+
+`problem_statement` repeats the central text, the one problem of the proposal.
+
+**References of the trees.** The citation keys `problem:central`, `cause:DC1`,
+`pillar:C1` and `hypothesis:H1` take 2 to 5 Q1 or Q2 journal articles at most 4
+years old. Run `python skills/_core/results/citations_cli.py rank --root .` after
+the pool changes: a reference without an SJR quartile does not count, and neither
+do conference papers or preprints, so use the published journal version. When the
+pool lacks them, hand the tree's statements to `sota-scout` for its journal pass.
+Foundational references stay citable on layers, equations and experiments.
 
 **`contribution_type` is the paper-reviewer's, never yours.** Once the
 hypotheses are discussed and the mathematics and the possible novelty are

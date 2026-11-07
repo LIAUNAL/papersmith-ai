@@ -542,7 +542,8 @@ for (const f of ['i18n/en.js', 'i18n/es.js', 'i18n.js', 'citations.js', 'math-pa
   console.log(JSON.stringify({
     pillars: el('modelPillarGrid').innerHTML, hypotheses: el('modelHypothesisGrid').innerHTML,
     layers: el('modelConceptLayers').innerHTML, equations: el('mathStack').innerHTML,
-    experiments: el('experimentsRoot').innerHTML,
+    experiments: el('experimentsRoot').innerHTML, problemTree: el('modelProblemTree').innerHTML,
+    noveltyTree: el('modelNoveltyTree').innerHTML, statementHidden: el('modelProblemStatementText').hidden,
   }));
 })();
 """
@@ -578,6 +579,53 @@ class PanelTests(_Ideas):
                 self.assertIn("Cited for the test.", result[panel])
                 self.assertIn("SOTA citations", result[panel])
 
+    def test_the_problem_tree_draws_effects_problem_and_causes_with_citations(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        result = render_panels(self.payload())
+        tree = result["problemTree"]
+        for text in ("Degraded accuracy in the target cohort.", "Noisy features.", "Unstable training.",
+                     "Unreliable output.", "Caused by DC1, DC2", POOL[0]["title"], "Problem tree"):
+            with self.subTest(text=text):
+                self.assertIn(text, tree)
+        self.assertLess(tree.index("Unreliable output."), tree.index("Degraded accuracy"))
+        self.assertLess(tree.index("Degraded accuracy"), tree.index("Noisy features."))
+        self.assertTrue(result["statementHidden"])
+
+    def test_the_novelty_tree_links_each_hypothesis_to_its_pillars(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        tree = render_panels(self.payload())["noveltyTree"]
+        self.assertEqual(tree.count("<line"), 2)
+        for text in ("P1", "P2", "H1", "Second pillar", "It improves."):
+            with self.subTest(text=text):
+                self.assertIn(text, tree)
+
+    def test_a_workspace_without_trees_says_what_it_owes(self) -> None:
+        _write(self.root / ".papersmith" / "model_spec.json", json.dumps(
+            {"novelty": {"problem_statement": "Gap.", "pillars": [{"id": "P1", "name": "Pillar"}]}}))
+        result = render_panels(self.payload())
+        self.assertIn("tree:problem: novelty.problem_tree is missing", result["problemTree"])
+        self.assertFalse(result["statementHidden"])
+        self.assertEqual(result["noveltyTree"], "")
+
+    def test_tree_text_is_escaped(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        path = self.root / ".papersmith" / "model_spec.json"
+        spec = json.loads(path.read_text())
+        spec["novelty"]["problem_tree"]["causes"][0]["text"] = self.HOSTILE
+        spec["novelty"]["problem_tree"]["effects"][0]["caused_by"] = [self.HOSTILE]
+        path.write_text(json.dumps(spec))
+        self.assertNotIn("<img", render_panels(self.payload())["problemTree"])
+
+    def test_spanish_names_the_trees(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        result = render_panels(self.payload(), "es")
+        self.assertIn("Árbol de problemas", result["problemTree"])
+        self.assertIn("Árbol de pilares e hipótesis", result["noveltyTree"])
+
     def test_spanish_names_the_block(self) -> None:
         self.all_ideas()
         cite_everything(self.root)
@@ -608,6 +656,19 @@ class PanelTests(_Ideas):
             with self.subTest(panel=panel):
                 self.assertIn("&lt;img", result[panel])
                 self.assertNotIn("<img", result[panel])
+
+
+class TreeSourceTests(_Ideas):
+    def test_the_central_problem_answers_the_math_card_over_the_sky(self) -> None:
+        self.ideas()
+        self.revision(EQUATION, sky={"system": {"planets": [{"slot": "problem", "label": "Sky text."}]}})
+        self.assertEqual(math_view.build(self.root)["novelty"]["problem"], "Degraded accuracy in the target cohort.")
+
+    def test_the_central_problem_counts_as_the_problem_step(self) -> None:
+        tree = with_trees({"pillars": [{"id": "P1", "name": "Pillar"}], "hypotheses": []})
+        _write(self.root / ".papersmith" / "model_spec.json", json.dumps({"novelty": tree}))
+        steps = {s["id"]: s for s in phase_steps.proposal_steps(self.root)}
+        self.assertTrue(steps["problem_pillars"]["done"])
 
 
 class CatalogueTests(unittest.TestCase):

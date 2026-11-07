@@ -205,6 +205,14 @@ def equations_from_spec(spec: dict[str, Any]) -> list[dict[str, Any]]:
     return found
 
 
+def _central_problem(novelty: dict[str, Any]) -> str:
+    """The problem tree's central problem, the proposal's one problem text."""
+    tree = novelty.get("problem_tree") if isinstance(novelty.get("problem_tree"), dict) else {}
+    central = tree.get("central") if isinstance(tree.get("central"), dict) else {}
+    text = central.get("text")
+    return text.strip()[:TEXT_MAX] if isinstance(text, str) else ""
+
+
 def _novelty_from_spec(spec: dict[str, Any], fallback_title: str) -> dict[str, Any]:
     novelty = spec.get("novelty") if isinstance(spec.get("novelty"), dict) else {}
     pillars = [p for p in novelty.get("pillars") or [] if isinstance(p, dict)]
@@ -212,7 +220,7 @@ def _novelty_from_spec(spec: dict[str, Any], fallback_title: str) -> dict[str, A
         "central_idea": str(spec.get("title") or fallback_title)[:TEXT_MAX],
         "novelty": str(pillars[0].get("name") or "")[:TEXT_MAX] if pillars else "",
         "novelty_detail": str(pillars[0].get("summary") or "")[:TEXT_MAX] if pillars else "",
-        "problem": _first_sentence(novelty.get("problem_statement") or ""),
+        "problem": _central_problem(novelty) or _first_sentence(novelty.get("problem_statement") or ""),
         "problem_detail": "",
         "contributions": [str(p.get("name") or "")[:TEXT_MAX] for p in pillars[1:] if p.get("name")],
     }
@@ -243,6 +251,10 @@ def build(root: Path | str) -> dict[str, Any]:
             sky = None
         equations = equations_from_markdown(text)
         novelty = _novelty_from_sky(sky, title)
+        spec_novelty = model_spec.get_model_specification(root).get("novelty")
+        central = _central_problem(spec_novelty) if isinstance(spec_novelty, dict) else ""
+        if central:
+            novelty = {**novelty, "problem": central, "problem_detail": ""}
         source = f"proposal:{proposal.relative_to(root).as_posix()}"
         lema = novelty["novelty_detail"] or novelty["novelty"] or topic
     else:

@@ -13,6 +13,13 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+- **Concept trees in the Concept Map & Model panel.** The problem now reads as a tree (effects,
+  central problem, 2 to 3 direct causes) and a second tree links at least 2 novelty pillars to the
+  hypotheses. The central problem, causes, pillars and hypotheses cite Q1 or Q2 journal articles at
+  most 4 years old, and `citations_cli.py rank` records each reference's SJR quartile in
+  `sota-pool/journal-ranks.json`. **Existing workspaces now owe both trees:** the fourth Phase 4 step
+  and G-SOTA-CITATIONS stay open until `novelty.problem_tree`, `hypotheses[].pillars` and the
+  references exist. Nothing is migrated, because no tree can be derived without inventing content.
 - **Cited papers view in the Graph Atlas.** Search everything the manuscript cites by title,
   author, year, journal, section or abstract, ignoring accents, and filter by section or by
   SOTA pool membership. Each paper offers its link, a Scholar search, a `\cite` copy and a jump
