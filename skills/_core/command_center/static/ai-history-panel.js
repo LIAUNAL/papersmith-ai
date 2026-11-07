@@ -194,7 +194,7 @@
       + `${esc(OUTCOME_GLYPHS[r.outcome] || '')} ${esc(outcomeLabel(r.outcome))}</span>`
       + ` <span class="aih-ev__when">${stamp(r.ts)} · ${esc(r.reason)}</span></div>`
       + `<div class="aih-round__turn"><span class="aih-ev__kind">${esc(decision ? t('aih.decision') : t('aih.kind.user_message'))}</span>${esc(r.prompt)}</div>`
-      + `<div class="aih-round__turn"><span class="aih-ev__kind">${esc(decision ? t('aih.result') : t('aih.ai'))}</span>`
+      + `<div class="aih-round__turn"><span class="aih-ev__kind">${esc(decision ? t('aih.result') : (r.model_label || t('aih.ai')))}</span>`
       + `${r.reply ? esc(r.reply) : `<em>${esc(t('aih.noReply'))}</em>`}</div>`
       + '</div>';
   }
@@ -222,7 +222,8 @@
       [t('aih.metric.prompts'), m.prompts], [t('aih.metric.replies'), m.replies],
       [t('aih.metric.corrections'), m.corrections], [t('aih.metric.approvals'), m.approvals],
       [t('aih.metric.toolErrors'), m.tool_errors], [t('aih.metric.sessions'), m.sessions],
-    ].map(([k, v]) => `<span class="badge">${esc(k)}: ${Number(v) || 0}</span>`).join(' ')} ${rate}</div>`;
+    ].map(([k, v]) => `<span class="badge">${esc(k)}: ${Number(v) || 0}</span>`).join(' ')} ${rate}</div>`
+      + (list(m.models).length ? `<div class="aih-chips">${list(m.models).map((x) => `<span class="badge">🤖 ${esc(x.label)}: ${Number(x.replies) || 0}</span>`).join(' ')}</div>` : '');
   }
 
   // The conversations behind a phase, each opened in full from the archive.
@@ -243,7 +244,8 @@
       if (!res.ok) { view.innerHTML = `<p class="aih-hint">${esc(t('aih.notArchived'))}</p>`; return; }
       const body = await res.json();
       view.innerHTML = list(body.turns).filter((turn) => turn.text).map((turn) => `<div class="aih-turn aih-turn--${esc(turn.role)}">`
-        + `<span class="aih-ev__when">${stamp(turn.ts)} · ${esc(turn.role)}</span><div class="aih-turn__text">${esc(turn.text)}</div></div>`).join('');
+        + `<span class="aih-ev__when">${stamp(turn.ts)} · ${esc(turn.model_label || turn.role)}${turn.inferred ? ` (${esc(t('aih.inferredModel'))})` : ''}</span>`
+        + `<div class="aih-turn__text">${esc(turn.text)}</div></div>`).join('');
     } catch (err) {
       view.innerHTML = `<p class="aih-hint">${esc(t('aih.loadFailed', { error: err.message }))}</p>`;
     }
@@ -276,7 +278,7 @@
         + ` data-ev-round="${esc(e.round ?? '')}">`
         + (e.round ? `<span class="aih-ev__round" data-round="${esc(e.round)}" title="${esc(t('aih.round', { n: e.round }))}">R${esc(e.round)}</span>` : '')
         + `<span class="aih-ev__kind">${esc(kindLabel(e.kind))}</span>`
-        + `<span class="aih-ev__when">${stamp(e.ts)} · ${esc(e.actor || e.source)}</span>`
+        + `<span class="aih-ev__when">${stamp(e.ts)} · ${esc(e.model_label || e.actor || e.source)}</span>`
         + `<div class="aih-ev__text">${esc(e.summary)}</div>`
         + (e.path ? `<div class="aih-ev__ref">📄 ${fileLink(e.path)}${e.ref && e.ref !== e.path ? ` <code>${esc(e.ref.slice(e.path.length))}</code>` : ''}</div>`
           : e.ref ? `<code class="aih-ev__ref">${esc(e.ref)}</code>` : '')

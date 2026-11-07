@@ -23,6 +23,9 @@ number is `0`, breaking changes can still arrive without a major bump.
   and two different remote runs are no longer rework; an approval alone no longer paints friction. Each phase
   reports prompts, replies, corrections, approvals, tool errors, sessions and its share of rounds with no
   rework, and a button opens each conversation in full.
+- **Which agent and model wrote each reply.** The history shows it per reply, per round and per phase, as in
+  `Claude Code · opus 5.5 - medium`. Antigravity's is inferred from its logs and marked as such; what a harness
+  does not record stays empty.
 - **Preprints of accepted labs support the concept trees.** A preprint at most 4 years old now counts
   when an author belongs to Google, Google DeepMind, OpenAI, Anthropic, Microsoft, Meta, NVIDIA, Apple,
   IBM, Amazon, the Allen Institute for AI, Xanadu, Quantinuum or IonQ. `citations_cli.py rank` finds the

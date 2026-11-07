@@ -5,7 +5,11 @@ dashboard's history could lose them. :func:`sync` copies every operator prompt
 and every agent answer, in full, into ``.papersmith/ai-history/``:
 
     <harness>-<session>.jsonl    one JSON object per line
-    {"id": "<16 hex>", "ts": "<when>", "role": "user|assistant|error", "text": "..."}
+    {"id": "<16 hex>", "ts": "<when>", "role": "user|assistant|error|phase", "text": "...",
+     "model": "...", "effort": "...", "provider": "...", "inferred": true}
+
+The last four appear on an agent's reply as far as its harness records them;
+``inferred`` marks a model taken from a log rather than written with the reply.
 
 The folder is tracked by git. One file per session is what lets two machines
 write at once without a merge conflict, and a file only ever grows. Secrets are
@@ -111,7 +115,9 @@ def _file_name(harness: str, session: str) -> str:
 def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -> Iterator[dict[str, Any]]:
     """What a session's raw turns leave in the archive, each with its stable id."""
     previous: tuple[str, str] | None = None
-    for ts, role, text in turns:
+    for turn in turns:
+        ts, role, text = turn[:3]
+        meta = turn[3] if len(turn) > 3 and isinstance(turn[3], dict) else {}
         if role == "user":
             kept = ai_transcripts.operator_text(text)
             if kept is None:
@@ -127,7 +133,7 @@ def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -
         text = text.encode("utf-8", "replace").decode("utf-8")
         stamp = ts if isinstance(ts, str) else None
         ident = hashlib.sha256(f"{harness}|{session}|{stamp}|{role}|{text}".encode()).hexdigest()[:16]
-        yield {"id": ident, "ts": stamp, "role": role, "text": redact(text)}
+        yield {"id": ident, "ts": stamp, "role": role, "text": redact(text), **meta}
 
 
 def _append(root: Path, harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -> int:
@@ -136,17 +142,37 @@ def _append(root: Path, harness: str, session: str, turns: Iterable[ai_transcrip
     path = folder / _file_name(harness, session)
     if folder.is_symlink() or path.is_symlink():
         return 0
-    known: set[str] = set()
+    known: dict[str, dict[str, Any]] = {}
+    records = list(_records(harness, session, turns))
     if path.is_file():
         _scrub_file(path)
-        known = {r["id"] for r in _read(path)}
-    fresh = [r for r in _records(harness, session, turns) if r["id"] not in known]
+        known = {r["id"]: r for r in _read(path)}
+        _add_models(path, known, records)
+    fresh = [r for r in records if r["id"] not in known]
     if fresh:
         folder.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             for record in fresh:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return len(fresh)
+
+
+def _write_records(path: Path, records: Iterable[dict[str, Any]]) -> None:
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _add_models(path: Path, known: dict[str, dict[str, Any]], records: list[dict[str, Any]]) -> None:
+    """Give a record archived before its model was read the model it now has."""
+    changed = False
+    for record in records:
+        old = known.get(record["id"])
+        if old is not None and "model" in record and "model" not in old:
+            old.update({k: v for k, v in record.items() if k not in ("id", "ts", "role", "text")})
+            changed = True
+    if changed:
+        _write_records(path, known.values())
 
 
 def _scrub_file(path: Path) -> bool:
@@ -159,9 +185,7 @@ def _scrub_file(path: Path) -> bool:
             record["text"] = clean
             changed = True
     if changed:
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
-        temporary.replace(path)
+        _write_records(path, records)
     return changed
 
 
@@ -188,7 +212,9 @@ def _read(path: Path) -> list[dict[str, Any]]:
     return list(found.values())
 
 
-def _file_turns(path: Path, line_turn: Callable[[dict[str, Any]], Any]) -> Iterator[ai_transcripts.Turn]:
+def _file_turns(path: Path, line_turn: Callable[[dict[str, Any]], Any],
+                line_model: Callable[[dict[str, Any], dict[str, Any]], Any] | None = None) -> Iterator[tuple[Any, ...]]:
+    state: dict[str, Any] = {}
     with path.open("rb") as handle:
         for raw in handle:
             if len(raw) > MAX_LINE_BYTES:
@@ -198,8 +224,9 @@ def _file_turns(path: Path, line_turn: Callable[[dict[str, Any]], Any]) -> Itera
             except ValueError:
                 continue
             turn = line_turn(line) if isinstance(line, dict) else None
+            meta = line_model(line, state) if line_model and isinstance(line, dict) else None
             if turn:
-                yield turn
+                yield (*turn, meta)
 
 
 def _sub_line(line: dict[str, Any]) -> Any:
@@ -231,12 +258,13 @@ def _sync_file(root: Path, state: dict[str, list[int]], harness: str, session: s
 
 def _sync_directory(root: Path, state: dict[str, list[int]], harness: str, directory: Path) -> int:
     line_turn = ai_transcripts.LINE_READERS[harness][0]
+    line_model = ai_transcripts.LINE_MODELS.get(harness)
     added = 0
     for path in sorted(directory.glob("*.jsonl")):
-        added += _sync_file(root, state, harness, path.stem, path, lambda p: _file_turns(p, line_turn))
+        added += _sync_file(root, state, harness, path.stem, path, lambda p: _file_turns(p, line_turn, line_model))
         for sub in sorted((directory / path.stem / "subagents").glob("*.jsonl")):
             added += _sync_file(root, state, harness, f"{path.stem}-sub-{sub.stem}", sub,
-                                lambda p: _file_turns(p, _sub_line))
+                                lambda p: _file_turns(p, _sub_line, line_model))
     return added
 
 
@@ -357,7 +385,8 @@ def session(root: Path, ref: str) -> list[dict[str, Any]] | None:
         return None
     for name, stem, records in archived_sessions(root):
         if name == harness and stem.endswith(tail):
-            return records
+            return [{**r, "model_label": ai_transcripts.model_label(name, r)} if r.get("model") else r
+                    for r in records]
     return None
 
 

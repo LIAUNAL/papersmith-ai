@@ -32,6 +32,12 @@ replaced is read again from the start). Lines that cannot hold a turn are
 skipped before JSON parsing. OpenCode sessions are reused until their
 ``time_updated`` moves.
 
+Each reply carries the model that wrote it, as far as its harness records it:
+Claude Code's ``message.model`` and ``effort``, Pi's ``model`` and its last
+``thinking_level_change``, OpenCode's ``modelID`` and ``variant``. Antigravity does
+not write it in a transcript, so it is inferred from the selection its
+``cli-*.log`` logged last (``inferred``). What is not recorded stays absent.
+
 A command is recognised in the four shapes harnesses write it: Claude Code's
 ``<command-name>/x</command-name>``, Pi's ``<skill name="x">`` block, the
 expanded projected prompt ``Read `skills/x/SKILL.md` and follow it`` (Pi
@@ -45,7 +51,9 @@ import os
 import re
 import sqlite3
 import threading
-from datetime import datetime, timezone
+import time
+from bisect import bisect_right
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -87,12 +95,29 @@ _EXPANDED_RE = re.compile(
     r"^Read `skills/([\w.-]+)/SKILL\.md` and follow it.*?`\$ARGUMENTS`:\s*(.*)$", re.S)
 _SLASH_RE = re.compile(r"^/([\w:.-]+)(?:\s+(.*))?$", re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
+_CLAUDE_MODEL_RE = re.compile(r"^claude-([a-z]+)-(\d+)-(\d+)")
+_LOG_LABEL_RE = re.compile(r"^I(\d{2})(\d{2}) (\d{2}:\d{2}:\d{2}).*Propagating selected model.*label[=:]?\s*\"?([^\",}\n]+)")
+_LOG_NAME_RE = re.compile(r"^cli-(\d{4})\d{4}_")
+_LABEL_EFFORT_RE = re.compile(r"^(.*?)\s*\(([^()]+)\)\s*$")
+HARNESS_NAMES = {"claude-code": "Claude Code", "pi": "Pi", "opencode": "OpenCode", "antigravity": "Antigravity"}
 _INJECTED_RE = re.compile(r"^\s*(?:<system-reminder>.*?</system-reminder>\s*)+", re.S)
 
 
 def _clip(text: Any, limit: int = TEXT_MAX) -> str:
     value = " ".join(str(text or "").split())
     return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def model_label(harness: str, meta: dict[str, Any] | None) -> str:
+    """How a reply's agent reads: ``Claude Code · opus 5.5 - medium``."""
+    meta = meta or {}
+    model = str(meta.get("model") or "")
+    short = _CLAUDE_MODEL_RE.match(model)
+    if short:
+        model = f"{short.group(1)} {short.group(2)}.{short.group(3)}"
+    detail = " - ".join(str(part) for part in (model, meta.get("effort")) if part)
+    name = HARNESS_NAMES.get(harness, harness)
+    return f"{name} · {detail}" if detail else name
 
 
 def skill_stages() -> dict[str, str]:
@@ -172,9 +197,11 @@ def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
             events.setdefault(stage, []).append(reply)
         reply = None
 
-    for ts, role, text, command in turns:
+    for ts, role, text, command, *rest in turns:
         if role == "assistant":
             reply = _event(ts, "agent_reply", text, ref, "agent")
+            if rest and rest[0]:
+                reply["model_label"] = model_label(ref.split(":", 1)[0], rest[0])
             continue
         if role == "error":
             events.setdefault(stage, []).append(
@@ -312,7 +339,9 @@ def antigravity_db() -> Path:
 # --- per-harness turn readers ----------------------------------------------
 
 def session_turns(path: Path, line_turn: Callable[[dict[str, Any]], Turn | None],
-                  markers: tuple[bytes, ...]) -> list[Compact]:
+                  markers: tuple[bytes, ...],
+                  line_model: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None
+                  ) -> list[Compact]:
     """The compacted turns of one JSONL session, parsing only what was
     appended since the last call. A partial last line (still being written)
     waits for the next call."""
@@ -322,7 +351,7 @@ def session_turns(path: Path, line_turn: Callable[[dict[str, Any]], Turn | None]
         entry = _file_cache.get(key)
     if (entry is None or entry["ident"] != ident or stat.st_size < entry["offset"]
             or (stat.st_size == entry["offset"] and stat.st_mtime_ns != entry["mtime"])):
-        entry = {"ident": ident, "offset": 0, "mtime": 0, "turns": []}
+        entry = {"ident": ident, "offset": 0, "mtime": 0, "turns": [], "model": {}}
     if stat.st_size == entry["offset"]:
         return entry["turns"]
     with path.open("rb") as handle:
@@ -342,6 +371,7 @@ def session_turns(path: Path, line_turn: Callable[[dict[str, Any]], Turn | None]
             lines.append(tail)
             end = len(data)
     turns = list(entry["turns"])
+    state = dict(entry.get("model") or {})
     for raw in lines:
         if not raw or len(raw) > MAX_LINE_BYTES or not any(m in raw for m in markers):
             continue
@@ -350,12 +380,13 @@ def session_turns(path: Path, line_turn: Callable[[dict[str, Any]], Turn | None]
         except ValueError:
             continue
         turn = line_turn(line) if isinstance(line, dict) else None
+        meta = line_model(line, state) if line_model and isinstance(line, dict) else None
         small = compact(*turn) if turn else None
-        if small is not None and not (small[1] == "user" and turns and turns[-1][1:] == small[1:]):
-            turns.append(small)
+        if small is not None and not (small[1] == "user" and turns and turns[-1][1:4] == small[1:4]):
+            turns.append((*small, meta) if meta and small[1] == "assistant" else small)
     with _cache_lock:
         _file_cache[key] = {"ident": ident, "offset": entry["offset"] + end,
-                            "mtime": stat.st_mtime_ns, "turns": turns}
+                            "mtime": stat.st_mtime_ns, "turns": turns, "model": state}
     return turns
 
 
@@ -404,11 +435,37 @@ def pi_line(line: dict[str, Any]) -> Turn | None:
     return None
 
 
+def claude_model(line: dict[str, Any], _state: dict[str, Any]) -> dict[str, Any] | None:
+    message = line.get("message")
+    model = message.get("model") if isinstance(message, dict) and line.get("type") == "assistant" else None
+    if not isinstance(model, str) or model.startswith("<"):
+        return None
+    effort = line.get("effort")
+    return {"model": model, **({"effort": effort} if isinstance(effort, str) and effort else {})}
+
+
+def pi_model(line: dict[str, Any], state: dict[str, Any]) -> dict[str, Any] | None:
+    """A Pi reply's model; its thinking level is the last one the session set."""
+    if line.get("type") == "thinking_level_change" and isinstance(line.get("thinkingLevel"), str):
+        state["effort"] = line["thinkingLevel"]
+    message = line.get("message")
+    if line.get("type") != "message" or not isinstance(message, dict) or message.get("role") != "assistant":
+        return None
+    meta = {key: message[key] for key in ("model", "provider") if isinstance(message.get(key), str)}
+    if meta and state.get("effort"):
+        meta["effort"] = state["effort"]
+    return meta or None
+
+
+LINE_MODELS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None]] = {
+    "claude-code": claude_model, "pi": pi_model}
+
+
 #: Per harness: how one JSONL line becomes a turn, and the bytes a line must
 #: contain to be worth parsing at all.
 LINE_READERS: dict[str, tuple[Callable[[dict[str, Any]], Turn | None], tuple[bytes, ...]]] = {
     "claude-code": (claude_line, (b'"user"', b'"assistant"', b'"queued_command"')),
-    "pi": (pi_line, (b'"message"',)),
+    "pi": (pi_line, (b'"message"', b'"thinking_level_change"')),
 }
 
 
@@ -420,6 +477,16 @@ def _iso(ms: Any) -> str | None:
     except (OverflowError, OSError, ValueError):
         return None
     return stamp.strftime("%Y-%m-%dT%H:%M:%S.") + f"{stamp.microsecond // 1000:03d}Z"
+
+
+def _compacted(turns: Iterable[tuple[Any, ...]]) -> list[Compact]:
+    """Turns with an optional fourth item, the reply's model, compacted."""
+    found = []
+    for turn in turns:
+        small = compact(*turn[:3])
+        if small is not None:
+            found.append((*small, turn[3]) if len(turn) > 3 and turn[3] else small)
+    return found
 
 
 def opencode_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[Compact]]], str]:
@@ -446,7 +513,7 @@ def opencode_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[C
                 "WHERE p.session_id = ? ORDER BY p.time_created DESC, p.id DESC LIMIT ?",
                 (session_id, MAX_DB_ROWS)).fetchall()
             rows.reverse()
-            turns = [t for t in (compact(*turn) for turn in _opencode_turns(rows)) if t is not None]
+            turns = _compacted(_opencode_turns(rows))
             with _cache_lock:
                 _opencode_cache[key] = (updated, turns)
             out.append((session_id, turns))
@@ -471,7 +538,13 @@ def opencode_raw(db: Path, roots: set[str]) -> Iterator[tuple[str, list[Turn]]]:
         connection.close()
 
 
-def _opencode_turns(rows: Iterable[tuple[str, str, Any]]) -> Iterator[Turn]:
+def _opencode_model(message: dict[str, Any]) -> dict[str, Any] | None:
+    fields = {"model": "modelID", "provider": "providerID", "effort": "variant"}
+    meta = {name: message[key] for name, key in fields.items() if isinstance(message.get(key), str)}
+    return meta if meta.get("model") else None
+
+
+def _opencode_turns(rows: Iterable[tuple[str, str, Any]]) -> Iterator[tuple[Any, ...]]:
     for message_raw, part_raw, created in rows:
         try:
             message, part = json.loads(message_raw), json.loads(part_raw)
@@ -485,7 +558,7 @@ def _opencode_turns(rows: Iterable[tuple[str, str, Any]]) -> Iterator[Turn]:
         elif part.get("type") == "text" and not part.get("synthetic"):
             role = message.get("role")
             if role in ("user", "assistant") and part.get("text"):
-                yield ts, role, str(part["text"])
+                yield ts, role, str(part["text"]), _opencode_model(message) if role == "assistant" else None
 
 
 _antigravity_cache: dict[tuple[str, str], tuple[str, list[Compact]]] = {}
@@ -503,6 +576,53 @@ def _in_workspace(uris_raw: Any, roots: set[str]) -> bool:
     return any(c == r or c.startswith(r + "/") for c in cleaned for r in roots)
 
 
+def antigravity_models(base: Path, offset_minutes: int | None = None) -> list[tuple[str, str]]:
+    """``[(UTC time, label)]`` of the models Antigravity's logs say were selected,
+    oldest first. A log line has local time and no year: the year comes from its
+    file name and the offset from this machine, so logs copied from another time
+    zone need ``offset_minutes``."""
+    if offset_minutes is None:
+        offset_minutes = int((time.localtime().tm_gmtoff or 0) / 60)
+    found = []
+    try:
+        paths = sorted(base.rglob("cli-*.log"))
+    except OSError:
+        return []
+    for path in paths:
+        named = _LOG_NAME_RE.match(path.name)
+        if not named:
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            match = _LOG_LABEL_RE.match(line)
+            if not match:
+                continue
+            try:
+                local = datetime.strptime(f"{named.group(1)}-{match.group(1)}-{match.group(2)} {match.group(3)}",
+                                          "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+            stamp = (local - timedelta(minutes=offset_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            found.append((stamp, match.group(4).strip()))
+    return sorted(found)
+
+
+def antigravity_model_at(timeline: list[tuple[str, str]], ts: Any) -> dict[str, Any] | None:
+    """The model last selected before ``ts``, ``None`` when no log reaches back."""
+    if not isinstance(ts, str):
+        return None
+    index = bisect_right([stamp for stamp, _ in timeline], ts) - 1
+    if index < 0:
+        return None
+    label = timeline[index][1]
+    split = _LABEL_EFFORT_RE.match(label)
+    model = {"model": split.group(1), "effort": split.group(2)} if split else {"model": label}
+    return {**model, "inferred": True}
+
+
 def antigravity_raw(db: Path, roots: set[str]) -> Iterator[tuple[str, list[Turn]]]:
     """Every Antigravity conversation of the workspace with its uncut turns."""
     connection = sqlite3.connect("file:" + db.resolve().as_posix() + "?mode=ro", uri=True, timeout=2)
@@ -513,7 +633,8 @@ def antigravity_raw(db: Path, roots: set[str]) -> Iterator[tuple[str, list[Turn]
     for session_id, uris_raw in rows:
         path = db.parent / "brain" / session_id / ".system_generated" / "logs" / "transcript.jsonl"
         if _in_workspace(uris_raw, roots) and path.is_file():
-            yield session_id, list(_antigravity_turns(path.read_text(encoding="utf-8").splitlines()))
+            lines = path.read_text(encoding="utf-8").splitlines()
+            yield session_id, list(_antigravity_turns(lines, antigravity_models(db.parent)))
 
 
 def antigravity_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, list[Compact]]], str]:
@@ -548,7 +669,7 @@ def antigravity_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, lis
                 lines = tpath.read_text(encoding="utf-8").splitlines()
             except OSError:
                 continue
-            turns = [t for t in (compact(*turn) for turn in _antigravity_turns(lines)) if t is not None]
+            turns = _compacted(_antigravity_turns(lines, antigravity_models(db.parent)))
             with _cache_lock:
                 _antigravity_cache[key] = (updated, turns)
             out.append((session_id, turns))
@@ -557,7 +678,8 @@ def antigravity_sessions(db: Path, roots: set[str]) -> tuple[list[tuple[str, lis
         connection.close()
 
 
-def _antigravity_turns(lines: Iterable[str]) -> Iterator[Turn]:
+def _antigravity_turns(lines: Iterable[str],
+                       timeline: list[tuple[str, str]] | None = None) -> Iterator[tuple[Any, ...]]:
     for line in lines:
         if not line.strip():
             continue
@@ -576,7 +698,7 @@ def _antigravity_turns(lines: Iterable[str]) -> Iterator[Turn]:
                 c = c.split("<USER_REQUEST>")[1].split("</USER_REQUEST>")[0].strip()
             yield ts, "user", str(c)
         elif d.get("source") == "MODEL" and d.get("type") == "PLANNER_RESPONSE" and d.get("content"):
-            yield ts, "assistant", str(d["content"])
+            yield ts, "assistant", str(d["content"]), antigravity_model_at(timeline or [], ts)
 
 
 # --- the combined read -----------------------------------------------------
@@ -593,7 +715,7 @@ def _read_files(directory: Path | None, harness: str,
             if path.stat().st_size > SESSION_MAX_BYTES:
                 skipped += 1
                 continue
-            turns = session_turns(path, line_turn, markers)
+            turns = session_turns(path, line_turn, markers, LINE_MODELS.get(harness))
             attribute(turns, f"{harness}:{path.stem[-8:]}", skills, events)
             read += 1
         except OSError:
@@ -668,5 +790,6 @@ def clear_cache() -> None:
         _antigravity_cache.clear()
 
 
-__all__ = ["HARNESSES", "UNASSIGNED", "attribute", "clear_cache", "command_of", "compact", "operator_text",
-           "read_all", "related_dirs", "session_turns", "skill_stages", "stage_for"]
+__all__ = ["HARNESSES", "HARNESS_NAMES", "LINE_MODELS", "UNASSIGNED", "antigravity_model_at", "antigravity_models",
+           "attribute", "clear_cache", "command_of", "compact", "model_label",
+           "operator_text", "read_all", "related_dirs", "session_turns", "skill_stages", "stage_for"]

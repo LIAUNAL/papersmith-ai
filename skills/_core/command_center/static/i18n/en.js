@@ -991,6 +991,7 @@ window.PAPERSMITH_I18N.en = {
   "aih.loadingConversation": "Loading the conversation…",
   "aih.notArchived": "This conversation is not archived yet.",
   "aih.unassigned": "Outside any phase: {prompts} prompt(s) and {replies} reply(ies) in {sessions} session(s).",
+  "aih.inferredModel": "inferred from its log",
   "aih.count.errors": "Errors",
   "aih.recentEvents": "Showing the {n} most recent events of {total}.",
   "aih.mainOnly": "Main interactions only ({n} of {total})",

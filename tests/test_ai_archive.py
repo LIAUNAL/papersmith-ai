@@ -366,6 +366,97 @@ class Graph(Base):
         self.assertEqual(ai_history.decision_rounds("PASS", events)[0]["outcome"], "rework")
 
 
+class Models(Base):
+    def reply(self, text: str, ts: str, model: str = "claude-opus-5-5", effort: str = "medium") -> str:
+        line = json.loads(_line("assistant", _text(text), ts))
+        line["message"]["model"] = model
+        line["effort"] = effort
+        return json.dumps(line)
+
+    def view(self) -> dict:
+        return ai_history.build_ai_history(self.root, [_fase("proposal")], sessions=self.locations)["phases"][0]
+
+    def test_a_claude_reply_records_its_model_and_effort(self):
+        self.session(_line("user", "hello", "2026-10-03T10:00:00Z"), self.reply("Hi.", "2026-10-03T10:01:00Z"))
+        self.sync()
+        record = self.records()[1]
+        self.assertEqual((record["model"], record["effort"]), ("claude-opus-5-5", "medium"))
+        self.assertNotIn("model", self.records()[0])
+
+    def test_the_label_reads_like_the_operator_says_it(self):
+        label = ai_transcripts.model_label
+        self.assertEqual(label("claude-code", {"model": "claude-opus-5-5", "effort": "medium"}),
+                         "Claude Code · opus 5.5 - medium")
+        self.assertEqual(label("pi", {"model": "deepseek-v4", "effort": "high"}), "Pi · deepseek-v4 - high")
+        self.assertEqual(label("opencode", {"model": "glm-5.2"}), "OpenCode · glm-5.2")
+        self.assertEqual(label("antigravity", {}), "Antigravity")
+
+    def test_a_phase_shows_each_reply_with_its_model(self):
+        self.session(_line("user", "/proposal-deliberation idea", "2026-10-03T10:00:00Z"),
+                     self.reply("One.", "2026-10-03T10:01:00Z"),
+                     _line("user", "more", "2026-10-03T10:02:00Z"),
+                     self.reply("Two.", "2026-10-03T10:03:00Z", effort="high"))
+        phase = self.view()
+        self.assertEqual([r["model_label"] for r in phase["rounds"]],
+                         ["Claude Code · opus 5.5 - medium", "Claude Code · opus 5.5 - high"])
+        self.assertEqual(phase["metrics"]["models"], [{"label": "Claude Code · opus 5.5 - high", "replies": 1},
+                                                      {"label": "Claude Code · opus 5.5 - medium", "replies": 1}])
+
+    def test_the_model_survives_in_the_archive(self):
+        path = self.session(_line("user", "/proposal-deliberation idea", "2026-10-03T10:00:00Z"),
+                            self.reply("One.", "2026-10-03T10:01:00Z"))
+        self.sync()
+        path.unlink()
+        ai_transcripts.clear_cache()
+        self.assertEqual(self.view()["rounds"][0]["model_label"], "Claude Code · opus 5.5 - medium")
+
+    def test_an_older_record_gains_its_model(self):
+        plain = _line("assistant", _text("Hi."), "2026-10-03T10:01:00Z")
+        self.session(plain)
+        self.sync()
+        self.assertNotIn("model", self.records()[0])
+        self.session(self.reply("Hi.", "2026-10-03T10:01:00Z"))
+        ai_archive._forget_state(self.root)
+        self.assertEqual(self.sync()["added"], 0)
+        self.assertEqual(self.records()[0]["model"], "claude-opus-5-5")
+
+    def test_a_synthetic_message_names_no_model(self):
+        self.session(self.reply("Hi.", "2026-10-03T10:01:00Z", model="<synthetic>"))
+        self.sync()
+        self.assertNotIn("model", self.records()[0])
+
+    def test_pi_carries_the_thinking_level_forward(self):
+        lines = [json.dumps({"type": "thinking_level_change", "thinkingLevel": "high"}),
+                 json.dumps({"type": "message", "timestamp": "2026-10-03T10:00:00Z",
+                             "message": {"role": "assistant", "model": "deepseek-v4", "provider": "nan",
+                                         "content": _text("Hi.")}})]
+        (self.chats / "pi-session.jsonl").write_text("\n".join(lines) + "\n")
+        ai_archive.sync(self.root, {"pi": self.chats, "claude-code": None, "opencode": None, "antigravity": None})
+        found = self.records("pi-pi-session")[0]
+        self.assertEqual((found["model"], found["effort"], found["provider"]), ("deepseek-v4", "high", "nan"))
+
+    def test_opencode_reads_the_model_of_the_message(self):
+        message = json.dumps({"role": "assistant", "modelID": "glm-5.2", "providerID": "go", "variant": "high"})
+        part = json.dumps({"type": "text", "text": "Hi."})
+        turn = list(ai_transcripts._opencode_turns([(message, part, 1791000000000)]))[0]
+        self.assertEqual(turn[3], {"model": "glm-5.2", "provider": "go", "effort": "high"})
+
+    def test_antigravity_infers_the_model_from_its_log(self):
+        folder = self.chats / "ag"
+        folder.mkdir()
+        (folder / "cli-20261105_163024.log").write_text(
+            'I1105 16:30:26.187223     326 model_config_manager.go:363] Propagating selected model override to '
+            'backend: label: "Gemini 3.8 Flash (High)"\n'
+            'I1105 18:00:00.000000     326 model_config_manager.go:363] Propagating selected model override to '
+            'backend: label: "Gemini 4 Argon (Medium)"\n')
+        timeline = ai_transcripts.antigravity_models(folder, offset_minutes=-300)
+        pick = ai_transcripts.antigravity_model_at
+        self.assertEqual(pick(timeline, "2026-11-05T21:40:00Z"),
+                         {"model": "Gemini 3.8 Flash", "effort": "High", "inferred": True})
+        self.assertEqual(pick(timeline, "2026-11-05T23:10:00Z")["model"], "Gemini 4 Argon")
+        self.assertIsNone(pick(timeline, "2026-11-05T21:00:00Z"))
+
+
 class Interfaces(Base):
     def client(self) -> TestClient:
         return TestClient(server.create_app(self.root, history_store=None))

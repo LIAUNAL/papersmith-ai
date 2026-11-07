@@ -27,6 +27,7 @@ iterations (a follow-up message, a repeated command, a deliberation edit);
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -219,6 +220,8 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
         elif kind == "agent_reply" or current["kind"] == "decision":
             current["reply"] = event.get("summary", "")
             current["reply_event"] = event
+            if event.get("model_label"):
+                current["model_label"] = event["model_label"]
         if _is_error(event) or kind == "fact_declined":
             event["key"] = True
             current["tool_errors" if event.get("source") == "chats" else "errors"] += 1
@@ -262,6 +265,8 @@ def _metrics(events: list[dict[str, Any]], rounds: list[dict[str, Any]]) -> dict
                            and _CORRECTION_RE.search(str(e.get("summary") or ""))),
         "tool_errors": sum(r["tool_errors"] for r in rounds),
         "sessions": len({e.get("ref") for e in events if e.get("source") == "chats"}),
+        "models": [{"label": label, "replies": replies} for label, replies in sorted(Counter(
+            e["model_label"] for e in events if e.get("model_label")).items())],
         **outcomes,
         "first_pass_rate": round((len(rounds) - outcomes["rework"]) / len(rounds), 2) if rounds else None,
     }
@@ -301,8 +306,9 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
     kept = 0
     for harness, name, records in ai_archive.archived_sessions(root, live):
         ref = f"{harness}:{name[-8:]}"
-        turns = [ai_transcripts.compact(r.get("ts"), r.get("role", ""), r.get("text", "")) for r in records]
-        ai_transcripts.attribute([t for t in turns if t is not None], ref, skills, chats)
+        turns = ai_transcripts._compacted((r.get("ts"), r.get("role", ""), r.get("text", ""),
+                                           r if r.get("model") else None) for r in records)
+        ai_transcripts.attribute(turns, ref, skills, chats)
         kept += 1
     sources["archive"] = {"status": "ok" if kept else "absent", "sessions": kept}
     for stage, items in chats.items():
@@ -373,8 +379,8 @@ def build_ai_usage(root: Path | str,
     worked on it and how many sessions, the operator's commands, follow-up
     messages and approvals, the revisions, the persisted decisions and the
     errors. Phases with nothing recorded are omitted. The harness model or
-    version is not part of the record: ``model`` is always ``None`` so a
-    declaration never invents one."""
+    version comes from the pane's ``metrics``, not from here: ``model`` stays
+    ``None`` so a declaration never states what it has not checked."""
     root, by_stage, sources = _collect(root, sessions)
     phases = []
     harnesses: set[str] = set()
