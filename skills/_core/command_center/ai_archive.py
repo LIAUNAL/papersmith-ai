@@ -10,7 +10,9 @@ and every agent answer, in full, into ``.papersmith/ai-history/``:
 The folder is tracked by git. One file per session is what lets two machines
 write at once without a merge conflict, and a file only ever grows. Secrets are
 redacted before anything is written: :func:`redact` holds the patterns, and it
-catches the common shapes, not every secret a prompt can hold.
+catches the common shapes, not every secret a prompt can hold. A record's id comes
+from the text before redaction, so a new pattern rewrites the old records on the
+next sync of the session (or ``scrub``, for all of them) instead of doubling them.
 
 A subagent's session is ``<session>-sub-<name>``, and a tutor thread is
 ``tutor-<math-tutor|experiments-tutor>``. Harness-written turns (reminders,
@@ -19,6 +21,7 @@ out. :func:`sync` skips a source that has not changed since the last run, using
 ``.papersmith/cache/ai-archive-state.json``; the ids make it idempotent anyway.
 
     python -m skills._core.command_center.ai_archive sync --root .
+    python -m skills._core.command_center.ai_archive scrub --root .
 """
 
 from __future__ import annotations
@@ -42,18 +45,41 @@ SYNC_INTERVAL_SECONDS = 60
 MAX_LINE_BYTES = 8 * 1024 * 1024
 
 REDACTED = "[REDACTED]"
+#: Shapes that are a credential wherever they appear.
 _SECRETS = (
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
-    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
+    re.compile(r"\bsk-(?=[\w-]*\d)[A-Za-z0-9_-]{20,}"),
+    re.compile(r"\b[spr]k_(?:live|test)_[A-Za-z0-9]{10,}"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}"),
     re.compile(r"\bgithub_pat_\w{20,}"),
+    re.compile(r"\bglpat-[\w-]{12,}"),
+    re.compile(r"\bnpm_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bhf_[A-Za-z0-9]{20,}"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"\bKGAT_[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"),
+    re.compile(r"\bya29\.[\w.-]{12,}"),
+    re.compile(r"\bGOCSPX-[\w-]{12,}"),
+    re.compile(r"\bKGAT_[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\btskey-[\w-]{12,}"),
     re.compile(r"\bxox[abprs]-[0-9A-Za-z-]{10,}"),
-    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
-    re.compile(r"(?i)\b(?:password|passwd|secret|token|api[_-]?key|\w*_KEY)\b\s*[:=]\s*[\"']?[^\s\"']{6,}[\"']?"),
+    re.compile(r"\beyJ[\w-]{8,}\.eyJ[\w-]{8,}\.[\w-]{8,}"),
+    re.compile(r"hooks\.slack\.com/services/\S+"),
+    re.compile(r"(?i)\bbearer\s+(?=[\w.~+/=-]*\d)[A-Za-z0-9._~+/=-]{16,}"),
+    re.compile(r"(?i)\bbasic\s+[A-Za-z0-9+/]{12,}={0,2}"),
+    re.compile(r"(?<=://)[^\s/:@]+:[^\s/@]+(?=@)"),
+    re.compile(r"(?i)\blogin\s+\S+\s+password\s+\S+"),
+    re.compile(r"\bsshpass\s+-p\s*\S+"),
+    re.compile(r"(?<=\s)-u\s+[^\s:]+:\S+"),
+    re.compile(r"--(?:password|passwd|token|api-key|secret)[= ]\S+"),
+    re.compile(r"\"key\"\s*:\s*\"[0-9a-fA-F]{24,}\""),
 )
+#: ``name = value``, whose value decides: a code or prose assignment such as
+#: ``sort_key=lambda`` is not a credential.
+_ASSIGNED = re.compile(
+    r"""(?i)(["']?)([\w-]*(?:password|passwd|pwd|contrase\u00f1a|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|_key))\1"""
+    r"""\s*[:=]\s*(["']?)([^\s"',;]+)\3""")
+_PASSWORD_NAMES = ("password", "passwd", "pwd", "contrase\u00f1a")
+_NOT_A_VALUE = frozenset({"none", "null", "true", "false", "str", "string"})
 _UNSAFE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 _sync_lock = threading.Lock()
@@ -64,7 +90,17 @@ def redact(text: str) -> str:
     """``text`` with what looks like a credential replaced by ``[REDACTED]``."""
     for pattern in _SECRETS:
         text = pattern.sub(REDACTED, text)
-    return text
+    return _ASSIGNED.sub(_assigned, text)
+
+
+def _assigned(match: re.Match[str]) -> str:
+    name, value = match.group(2).lower(), match.group(4)
+    if value.lower() in _NOT_A_VALUE or value == REDACTED:
+        return match.group(0)
+    has_letter, has_digit = re.search(r"[A-Za-z]", value), re.search(r"\d", value)
+    secret = (len(value) >= 4 if any(word in name for word in _PASSWORD_NAMES)
+              else (len(value) >= 12 and has_letter and has_digit) or (len(value) >= 24 and value.isalnum()))
+    return match.group(0).replace(value, REDACTED) if secret else match.group(0)
 
 
 def _file_name(harness: str, session: str) -> str:
@@ -87,18 +123,22 @@ def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -
         if role == "user" and previous == (role, text):
             continue
         previous = (role, text)
-        clean = redact(text)
+        # A lone surrogate can reach a transcript and cannot be written as UTF-8.
+        text = text.encode("utf-8", "replace").decode("utf-8")
         stamp = ts if isinstance(ts, str) else None
-        ident = hashlib.sha256(f"{harness}|{session}|{stamp}|{role}|{clean}".encode()).hexdigest()[:16]
-        yield {"id": ident, "ts": stamp, "role": role, "text": clean}
+        ident = hashlib.sha256(f"{harness}|{session}|{stamp}|{role}|{text}".encode()).hexdigest()[:16]
+        yield {"id": ident, "ts": stamp, "role": role, "text": redact(text)}
 
 
 def _append(root: Path, harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -> int:
     """Add the turns the session's file does not hold yet; how many were added."""
     folder = root / ARCHIVE_REL
     path = folder / _file_name(harness, session)
+    if folder.is_symlink() or path.is_symlink():
+        return 0
     known: set[str] = set()
     if path.is_file():
+        _scrub_file(path)
         known = {r["id"] for r in _read(path)}
     fresh = [r for r in _records(harness, session, turns) if r["id"] not in known]
     if fresh:
@@ -109,19 +149,43 @@ def _append(root: Path, harness: str, session: str, turns: Iterable[ai_transcrip
     return len(fresh)
 
 
+def _scrub_file(path: Path) -> bool:
+    """Apply today's patterns to a session's records; whether anything changed."""
+    records = _read(path)
+    changed = False
+    for record in records:
+        clean = redact(str(record.get("text") or ""))
+        if clean != record.get("text"):
+            record["text"] = clean
+            changed = True
+    if changed:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
+        temporary.replace(path)
+    return changed
+
+
+def scrub(root: Path | str) -> int:
+    """Apply today's patterns to the whole archive; how many files changed."""
+    folder = Path(root).expanduser().resolve() / ARCHIVE_REL
+    return sum(1 for path in sorted(folder.glob("*.jsonl")) if not path.is_symlink() and _scrub_file(path))
+
+
 def _read(path: Path) -> list[dict[str, Any]]:
-    found = []
+    """A session's records, each once: one bad line never costs the others."""
+    found: dict[str, dict[str, Any]] = {}
     try:
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            try:
-                record = json.loads(raw)
-            except ValueError:
-                continue
-            if isinstance(record, dict) and isinstance(record.get("id"), str):
-                found.append(record)
-    except (OSError, UnicodeDecodeError):
+        lines = path.read_bytes().splitlines()
+    except OSError:
         return []
-    return found
+    for raw in lines:
+        try:
+            record = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            continue
+        if isinstance(record, dict) and isinstance(record.get("id"), str):
+            found.setdefault(record["id"], record)
+    return list(found.values())
 
 
 def _file_turns(path: Path, line_turn: Callable[[dict[str, Any]], Any]) -> Iterator[ai_transcripts.Turn]:
@@ -240,12 +304,27 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
 
 def sync_throttled(root: Path | str) -> None:
     """:func:`sync` at most once a minute per workspace, for a dashboard that polls."""
+    # The kit's own checkout and a test's fixture run the dashboard too: only a
+    # real workspace records its conversations by itself.
+    if not (Path(root) / ".papersmith" / "version").is_file():
+        return
     key = str(root)
     with _sync_lock:
         if time.monotonic() - _last_sync.get(key, -SYNC_INTERVAL_SECONDS) < SYNC_INTERVAL_SECONDS:
             return
         _last_sync[key] = time.monotonic()
     sync(root)
+
+
+def sync_in_background(root: Path | str) -> None:
+    """Keep the archive current from a route that must not wait for it."""
+    def run() -> None:
+        try:
+            sync_throttled(root)
+        except Exception:  # noqa: BLE001 - the next request tries again
+            pass
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def _harness_of(name: str) -> tuple[str, str] | None:
@@ -255,15 +334,18 @@ def _harness_of(name: str) -> tuple[str, str] | None:
     return None
 
 
-def archived_sessions(root: Path) -> Iterator[tuple[str, str, list[dict[str, Any]]]]:
-    """``(harness, session, records)`` of each archived main session."""
+def archived_sessions(root: Path, skip: Iterable[str] = ()) -> Iterator[tuple[str, str, list[dict[str, Any]]]]:
+    """``(harness, session, records)`` of each archived main session, in time
+    order, leaving out the event refs in ``skip`` without reading them."""
+    skipped = set(skip)
     try:
         paths = sorted((root / ARCHIVE_REL).glob("*.jsonl"))
     except OSError:
         return
     for path in paths:
         named = _harness_of(path.stem)
-        if named and named[0] != "tutor" and "-sub-" not in named[1]:
+        if (named and named[0] != "tutor" and "-sub-" not in named[1]
+                and f"{named[0]}:{named[1][-8:]}" not in skipped):
             # A file only grows, so a turn found later can sit after newer ones.
             yield named[0], named[1], sorted(_read(path), key=lambda r: r.get("ts") or "")
 
@@ -286,7 +368,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--root", default=".", help="Workspace root (default: current dir)")
     run.add_argument("--claude-sessions", help="Read Claude Code sessions from this folder instead")
     run.add_argument("--pi-sessions", help="Read Pi sessions from this folder instead")
+    clean = sub.add_parser("scrub", help="Apply today's secret patterns to the whole archive")
+    clean.add_argument("--root", default=".", help="Workspace root (default: current dir)")
     args = parser.parse_args(argv)
+    if args.command == "scrub":
+        print(json.dumps({"files_changed": scrub(args.root)}))
+        return 0
     locations: dict[str, Any] = {}
     if args.claude_sessions:
         locations.update({"claude-code": Path(args.claude_sessions), "pi": None, "opencode": None, "antigravity": None})
@@ -297,7 +384,8 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["ARCHIVE_REL", "archived_sessions", "main", "redact", "session", "sync", "sync_throttled"]
+__all__ = ["ARCHIVE_REL", "archived_sessions", "main", "redact", "scrub", "session", "sync", "sync_in_background",
+           "sync_throttled"]
 
 
 if __name__ == "__main__":

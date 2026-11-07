@@ -1287,6 +1287,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @app.get("/api/status")
     def api_status_adapter() -> JSONResponse:
+        # The dashboard polls this route, so conversations reach the archive
+        # without the AI History tab being opened.
+        ai_archive.sync_in_background(root_path)
         import re
         from datetime import datetime, timezone
 

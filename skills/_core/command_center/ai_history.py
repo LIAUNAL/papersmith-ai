@@ -299,10 +299,8 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
     live = {event.get("ref") for items in chats.values() for event in items}
     skills = ai_transcripts.skill_stages()
     kept = 0
-    for harness, name, records in ai_archive.archived_sessions(root):
+    for harness, name, records in ai_archive.archived_sessions(root, live):
         ref = f"{harness}:{name[-8:]}"
-        if ref in live:
-            continue
         turns = [ai_transcripts.compact(r.get("ts"), r.get("role", ""), r.get("text", "")) for r in records]
         ai_transcripts.attribute([t for t in turns if t is not None], ref, skills, chats)
         kept += 1

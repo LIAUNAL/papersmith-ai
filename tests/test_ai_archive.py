@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -125,14 +126,113 @@ class Secrets(Base):
                 self.assertIn("[REDACTED]", ai_archive.redact(f"before {sample} after"))
                 self.assertNotIn(sample, ai_archive.redact(f"before {sample} after"))
 
+    def test_every_shape_of_credential_is_redacted(self):
+        hexkey = "0123456789abcdef0123456789abcdef"
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        samples = [
+            f'{{"username":"amarino","key":"{hexkey}"}}', "export KAGGLE_API_TOKEN=Zx9Qw7Lm2Vb4Nc6Tr8Yp",
+            "GITHUB_TOKEN=ghx9Qw7Lm2Vb4Nc6Tr8Yp", "HF_TOKEN=Zx9Qw7Lm2Vb4Nc6Tr8Yp",
+            "AWS_SESSION_TOKEN=Zx9Qw7Lm2Vb4Nc6Tr8Yp", "DB_PASSWORD=hunter2", "CLIENT_SECRET=Zx9Qw7Lm2Vb4Nc6Tr8Yp",
+            '"password": "hunter2"', "contraseña: hunter2", jwt, "https://admin:s3cr3tpass@example.org/x",
+            "postgres://user:s3cr3tpass@db:5432/app", "mongodb+srv://user:s3cr3tpass@cluster/app",
+            "machine example.org login me password hunter2", "tskey-auth-kAbCdEf1CNTRL-abcdefghijkl",
+            "ya29.a0AfH6SMBabcdefghijklmnop", "GOCSPX-abcdefghijklmnopqrstuvwx", "hf_abcdefghijklmnopqrstuvwxyz012345",
+            "glpat-abcdefghij1234567890", "npm_abcdefghijklmnopqrstuvwxyz0123456789",
+            "sk_live_abcdefghijklmnop012345", "https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXX",
+            "Authorization: Basic dXNlcjpwYXNzd29yZA==", "curl -u admin:s3cr3tpass https://x.org",
+            "sshpass -p hunter2 ssh host", "tool --password hunter2", "tool --token Zx9Qw7Lm2Vb4Nc6Tr8Yp",
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nabcdef\nghijkl",
+        ]
+        secrets = [hexkey, "Zx9Qw7Lm2Vb4Nc6Tr8Yp", "ghx9Qw7Lm2Vb4Nc6Tr8Yp", "hunter2", "s3cr3tpass", jwt[:30],
+                   "tskey-auth", "ya29.a0", "GOCSPX-a", "hf_abc", "glpat-a", "npm_abc", "sk_live_a", "XXXXXXXXXXXX",
+                   "dXNlcjpwYXNzd29yZA", "abcdef\nghijkl"]
+        for sample in samples:
+            with self.subTest(sample=sample[:18]):
+                clean = ai_archive.redact(f"before {sample} after")
+                self.assertIn("[REDACTED]", clean)
+                for secret in secrets:
+                    self.assertNotIn(secret, clean)
+
     def test_ordinary_text_is_left_alone(self):
-        text = "The password rule of section 3 and the key result, 0.683 balanced accuracy."
-        self.assertEqual(ai_archive.redact(text), text)
+        for text in ("The password rule of section 3 and the key result, 0.683 balanced accuracy.",
+                     "token: embedding", "rng_key = jax.random.split(key)", "PRIMARY_KEY=subject_id",
+                     "sort_key=lambda r: r[0]", "sk-learn-compatible-pipeline-estimator",
+                     "The bearer electrophysiological signal", "x_key: 0.25000",
+                     "The token count is 4096 and the secret sauce is depth.", "https://arxiv.org/abs/2008.08605"):
+            with self.subTest(text=text):
+                self.assertEqual(ai_archive.redact(text), text)
+
+    def test_a_new_rule_scrubs_what_is_already_archived(self):
+        self.session(_line("user", "use NEWKIND-abcdef123456 now", "2026-10-03T10:00:00Z"))
+        self.sync()
+        rule = ai_archive.re.compile(r"NEWKIND-\w+")
+        with mock.patch.object(ai_archive, "_SECRETS", (*ai_archive._SECRETS, rule)):
+            ai_archive._forget_state(self.root)
+            self.assertEqual(self.sync()["added"], 0)
+        found = self.records()
+        self.assertEqual(len(found), 1)
+        self.assertNotIn("NEWKIND", found[0]["text"])
 
     def test_the_file_never_holds_the_secret(self):
         self.session(_line("user", "use ghp_abcdefghijklmnopqrstuvwxyz0123456789 please", "2026-10-03T10:00:00Z"))
         self.sync()
         self.assertNotIn("ghp_", self.records()[0]["text"])
+
+
+class Resilience(Base):
+    def test_a_broken_character_never_stops_the_other_sessions(self):
+        self.session(_line("user", "first", "2026-10-03T10:00:00Z"), name="a")
+        self.session(json.dumps({"type": "user", "timestamp": "2026-10-03T10:00:00Z",
+                                 "message": {"role": "user", "content": "bad \ud83d end"}}), name="b")
+        self.session(_line("user", "third", "2026-10-03T10:00:00Z"), name="c")
+        report = self.sync()
+        self.assertEqual((report["added"], report["problems"]), (3, {}))
+
+    def test_a_line_that_cannot_be_decoded_keeps_the_others(self):
+        self.session(_line("user", "kept", "2026-10-03T10:00:00Z"))
+        self.sync()
+        path = self.root / ".papersmith/ai-history/claude-code-abcdef12-session.jsonl"
+        path.write_bytes(path.read_bytes() + b'\xff\xfe{"id": "x"\n')
+        self.assertEqual([r["text"] for r in self.records_read(path)], ["kept"])
+
+    def records_read(self, path: Path) -> list[dict]:
+        return ai_archive._read(path)
+
+    def test_a_record_written_twice_is_read_once(self):
+        self.session(_line("user", "once", "2026-10-03T10:00:00Z"))
+        self.sync()
+        path = self.root / ".papersmith/ai-history/claude-code-abcdef12-session.jsonl"
+        path.write_text(path.read_text() * 2)
+        self.assertEqual(len(ai_archive._read(path)), 1)
+
+    def test_a_symlink_in_the_archive_is_not_followed(self):
+        outside = self.root.parent / "outside.jsonl"
+        outside.write_text("")
+        folder = self.root / ".papersmith" / "ai-history"
+        folder.mkdir()
+        (folder / "claude-code-abcdef12-session.jsonl").symlink_to(outside)
+        self.session(_line("user", "x", "2026-10-03T10:00:00Z"))
+        self.sync()
+        self.assertEqual(outside.read_text(), "")
+
+    def test_the_status_route_keeps_the_archive_current(self):
+        with mock.patch.object(server.ai_archive, "sync_in_background") as sync:
+            TestClient(server.create_app(self.root, history_store=None)).get("/api/status")
+        sync.assert_called_once()
+
+    def test_only_a_real_workspace_syncs_by_itself(self):
+        with mock.patch.object(ai_archive, "sync") as run:
+            ai_archive.sync_throttled(self.root)
+            run.assert_not_called()
+            (self.root / ".papersmith" / "version").write_text("0.61.3")
+            ai_archive.sync_throttled(self.root)
+            run.assert_called_once()
+
+    def test_a_live_session_is_not_parsed_from_the_archive(self):
+        self.session(_line("user", "/proposal-deliberation idea", "2026-10-03T10:00:00Z"))
+        self.sync()
+        found = list(ai_archive.archived_sessions(self.root, {"claude-code:-session"}))
+        self.assertEqual(found, [])
 
 
 class LostTurns(Base):
