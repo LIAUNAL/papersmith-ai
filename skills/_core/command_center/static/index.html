@@ -21,6 +21,7 @@
   <script src="./vendor/katex/katex.min.js"></script>
   <script src="./citations.js?v=0.62.0"></script>
   <script src="./math-panel.js?v=0.62.0"></script>
+  <script src="./contribution-affinity.js?v=0.62.0"></script>
   <script src="./model-panel.js?v=0.62.0"></script>
   <script src="./experiments-panel.js?v=0.62.0"></script>
   <script src="./experiments-tutor.js?v=0.62.0"></script>
@@ -2264,6 +2265,20 @@
       gap: 1rem;
       margin-top: 1rem;
     }
+    /* The NeurIPS judge's affinity per contribution type (contribution-affinity.js). */
+    .ct-affinity { margin-top: 0.75rem; }
+    .ct-affinity__title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); margin-bottom: 0.4rem; }
+    .ct-affinity__note { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.4rem; }
+    .ct-affinity__row { border-radius: var(--radius); }
+    .ct-affinity__row > summary { display: grid; grid-template-columns: minmax(9rem, 12rem) 1fr 3rem; gap: 0.6rem; align-items: center; cursor: pointer; padding: 0.3rem 0.35rem; list-style: none; font-size: 0.82rem; }
+    .ct-affinity__row > summary::-webkit-details-marker { display: none; }
+    .ct-affinity__row > summary:hover, .ct-affinity__row[open] > summary { background: var(--bg-elevated, rgba(127,127,127,0.08)); border-radius: var(--radius); }
+    .ct-affinity__row--chosen .ct-affinity__name { font-weight: 700; }
+    .ct-affinity__track { position: relative; height: 0.65rem; border-radius: 999px; background: rgba(127,127,127,0.18); overflow: hidden; }
+    .ct-affinity__fill { position: absolute; inset: 0 auto 0 0; background: var(--ok); border-radius: 999px; }
+    .ct-affinity__score { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+    .ct-affinity__box { margin: 0.25rem 0 0.5rem; padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-left: 3px solid var(--ok); border-radius: var(--radius); font-size: 0.8rem; line-height: 1.45; color: var(--text-muted); }
+    .ct-affinity__box p + p { margin-top: 0.35rem; }
     .model-hypothesis-card {
       background: var(--surface-2);
       border: 1px solid var(--border-subtle);

@@ -278,7 +278,9 @@ proposed, hand the revision to the `paper-reviewer` agent in its proposal mode
 (or run that stretch inline, as above) and copy its returned
 `contribution_type` object verbatim: `type` is one of `General`, `Theory`,
 `Use-Inspired`, `Concept & Feasibility`, `Negative Results`; `why` is one to
-three sentences, at most 600 characters, naming what decides it. The Concept
+three sentences, at most 600 characters, naming what decides it; `affinity` scores
+each of the five types from 0 to 100 with a reason of at most 300 characters, the
+chosen type on top. The Concept
 Map & Model tab shows it right after the hypotheses; a missing or malformed
 object shows as not classified yet. Re-classify whenever an accepted revision
 changes a hypothesis, an equation or the claimed novelty. This is Phase 4's

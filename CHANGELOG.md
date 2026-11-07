@@ -19,6 +19,11 @@ number is `0`, breaking changes can still arrive without a major bump.
 - **The manuscript summary diagram moved to Novelty & Findings.** The boxes-and-flow view from topic to
   conclusions now opens at the top of that tab, with its own rebuild button, and the Graph Atlas no longer shows
   it. The cited-papers explorer's locate button opens it there.
+- **The NeurIPS judge scores every contribution type.** `contribution_type` gains an optional `affinity`: a 0-100
+  score and a short reason for each of General, Theory, Use-Inspired, Concept & Feasibility and Negative Results,
+  the chosen type on top. Both judge cards (Concept Map & Model, Novelty & Findings) show a green bar per type;
+  clicking one opens the reviewer guide's definition of the type and the reason for its score. A verdict without
+  affinity stays valid and its card asks to run the judge again.
 
 ## 0.62.0
 

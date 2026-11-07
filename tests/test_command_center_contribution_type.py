@@ -47,7 +47,7 @@ def _preamble(lang: str) -> str:
         "global.CustomEvent=function(n,o){this.type=n;this.detail=o&&o.detail;};"
         "global.document={readyState:'complete',documentElement:{},addEventListener(){},dispatchEvent(){},"
         "querySelectorAll:()=>[],getElementById:(id)=>(els[id]=els[id]||{innerHTML:'',hidden:false})};"
-        "for (const f of ['i18n/en.js','i18n/es.js','i18n.js'])"
+        "for (const f of ['i18n/en.js','i18n/es.js','i18n.js','contribution-affinity.js'])"
         f"  eval(fs.readFileSync({json.dumps(str(STATIC))}+'/'+f,'utf8'));"
     )
 
@@ -128,6 +128,122 @@ class NoveltyPanelTests(unittest.TestCase):
         html = render_novelty({"hypotheses": [], "discussions": [], "limitations": []}, "en")
         card = html[html.index('id="noveltyContributionType"'):]
         self.assertIn("paper-reviewer", card)
+
+
+TYPES = ("General", "Theory", "Use-Inspired", "Concept & Feasibility", "Negative Results")
+
+
+def affinity(**scores: int) -> dict:
+    base = dict.fromkeys(TYPES, 10)
+    base.update({name.replace("_", " ").replace("Use Inspired", "Use-Inspired")
+                 .replace("Concept and Feasibility", "Concept & Feasibility"): value
+                 for name, value in scores.items()})
+    return {name: {"score": value, "why": f"Why {name} <b>scored</b> {value}."} for name, value in base.items()}
+
+
+def typed(kind: str = "Theory", **scores: int) -> dict:
+    return {"type": kind, "why": "The core is a bound.", "affinity": affinity(**(scores or {"Theory": 90}))}
+
+
+def load_contract():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ct_for_tests", REPO / "skills/_core/results/contribution_type.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class AffinityContractTests(unittest.TestCase):
+    """Every type gets a 0-100 affinity and a short reason; the chosen type leads."""
+
+    def setUp(self) -> None:
+        self.ct = load_contract()
+
+    def test_a_full_affinity_is_valid_and_kept(self) -> None:
+        value = typed()
+        self.assertEqual(self.ct.problems(value), [])
+        self.assertEqual(self.ct.normalize(value)["affinity"]["Theory"], {"score": 90, "why": "Why Theory <b>scored</b> 90."})
+
+    def test_a_verdict_without_affinity_stays_valid(self) -> None:
+        value = {"type": "Theory", "why": "A bound."}
+        self.assertEqual(self.ct.problems(value), [])
+        self.assertEqual(self.ct.normalize(value), value)
+
+    def test_a_broken_affinity_is_named(self) -> None:
+        cases = {
+            "missing": ({"type": "Theory", "why": "w", "affinity": {"Theory": {"score": 90, "why": "x"}}},
+                        "contribution_type.affinity: must score every type; missing General, Use-Inspired, "
+                        "Concept & Feasibility, Negative Results"),
+            "range": (typed(Theory=101), "contribution_type.affinity.Theory.score: must be an integer from 0 to 100"),
+            "float": (typed(Theory=90.5), "contribution_type.affinity.Theory.score: must be an integer from 0 to 100"),
+            "lead": (typed(Theory=40, General=80),
+                     "contribution_type.affinity: the chosen type Theory must hold the highest score"),
+        }
+        for name, (value, message) in cases.items():
+            with self.subTest(name):
+                self.assertIn(message, self.ct.problems(value))
+        long_why = typed()
+        long_why["affinity"]["General"]["why"] = "x" * 301
+        self.assertIn("contribution_type.affinity.General.why: required, at most 300 characters",
+                      self.ct.problems(long_why))
+
+    def test_readers_drop_a_broken_affinity_but_keep_the_type(self) -> None:
+        self.assertEqual(self.ct.normalize(typed(Theory=101)), {"type": "Theory", "why": "The core is a bound."})
+
+    def test_the_concept_map_tab_receives_the_affinity(self) -> None:
+        spec = model_spec.get_model_specification(_workspace(dict(SPEC, contribution_type=typed())))
+        self.assertEqual(spec["contribution_type"]["affinity"]["Theory"]["score"], 90)
+
+
+class AffinityBarsTests(unittest.TestCase):
+    def bars(self, html: str) -> list[tuple[str, str]]:
+        return re.findall(r'data-affinity-type="([^"]+)"[^>]*>.*?style="width: (\d+)%', html, re.S)
+
+    def test_the_concept_map_card_shows_a_bar_per_type(self) -> None:
+        for lang, heading in {"en": "Affinity by contribution type", "es": "Afinidad por tipo de contribución"}.items():
+            with self.subTest(lang=lang):
+                html = render_model(dict(SPEC, contribution_type=typed()), lang)["html"]
+                self.assertIn(heading, html)
+                self.assertEqual(self.bars(html), [("General", "10"), ("Theory", "90"), ("Use-Inspired", "10"),
+                                                   ("Concept & Feasibility", "10"), ("Negative Results", "10")])
+
+    def test_a_bar_opens_the_definition_and_the_reason(self) -> None:
+        html = render_model(dict(SPEC, contribution_type=typed()), "en")["html"]
+        theory = html[html.index('data-affinity-type="Theory"'):html.index('data-affinity-type="Use-Inspired"')]
+        self.assertIn("<details", html[:html.index('data-affinity-type="Theory"') + 40])
+        self.assertIn("rigor and correctness of the proofs come first", theory)
+        self.assertIn("Why Theory &lt;b&gt;scored&lt;/b&gt; 90.", theory)
+        self.assertNotIn("<b>scored", html)
+        es = render_model(dict(SPEC, contribution_type=typed()), "es")["html"]
+        self.assertIn("el rigor y la corrección de las demostraciones van primero", es)
+
+    def test_the_novelty_card_shows_the_bars_too(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        folder = root / "implementations" / "repo" / "Prod" / "Results"
+        folder.mkdir(parents=True)
+        (folder / "discussion.json").write_text(json.dumps({
+            "hypotheses": [{"id": "H1", "statement": "s", "verdict": "not_supported"}],
+            "contribution_type": typed("Negative Results", **{"Negative Results": 85, "Theory": 5}),
+        }), encoding="utf-8")
+        html = render_novelty(novelty_gate.get_novelty_overview(root), "en")
+        card = html[html.index('id="noveltyContributionType"'):]
+        self.assertIn(("Negative Results", "85"), self.bars(card))
+        self.assertIn(("Theory", "5"), self.bars(card))
+
+    def test_without_affinity_the_types_still_open_their_definitions(self) -> None:
+        html = render_model(SPEC, "en")["html"]
+        self.assertEqual(html.count("data-affinity-type="), 5)
+        self.assertEqual(self.bars(html), [])
+        self.assertIn("Run the judge again to score each type.", html)
+
+
+class AffinityDoctrineTests(unittest.TestCase):
+    def test_every_copy_of_the_reviewer_asks_for_the_affinity(self) -> None:
+        for folder in (".claude", ".agents", ".opencode", ".pi"):
+            with self.subTest(folder=folder):
+                text = (REPO / folder / "agents" / "paper-reviewer.md").read_text(encoding="utf-8")
+                self.assertIn('"affinity": {<each of the five types>: {"score": <integer 0', text)
+                self.assertIn("give the chosen type the\nhighest score", text)
 
 
 class CatalogueTests(unittest.TestCase):

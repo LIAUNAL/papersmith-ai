@@ -1592,5 +1592,14 @@ window.PAPERSMITH_I18N.en = {
   "contribution.type.Theory": "Theory",
   "contribution.type.Use-Inspired": "Use-Inspired",
   "contribution.type.Concept & Feasibility": "Concept & Feasibility",
-  "contribution.type.Negative Results": "Negative Results"
+  "contribution.type.Negative Results": "Negative Results",
+  "contribution.affinity.title": "Affinity by contribution type",
+  "contribution.affinity.definition": "Definition:",
+  "contribution.affinity.why": "Why this score:",
+  "contribution.affinity.unscored": "Run the judge again to score each type.",
+  "contribution.def.general": "Read with the four criteria as written: quality, clarity, significance and originality.",
+  "contribution.def.theory": "The rigor and correctness of the proofs come first; assumptions are judged against the literature, missing experiments are never penalised, rigor should come with intuition, and originality is a new proof technique or a novel synthesis of tools.",
+  "contribution.def.useInspired": "The use case must be real and the design must fit it; non-standard datasets are fine when the use case justifies them; it compares against relevant non-ML approaches as well as ML baselines, and explains domain jargon for an ML reader.",
+  "contribution.def.conceptFeasibility": "Claims are strongly supported (partial support is a workshop standard); the bar for significance and originality is high: the idea must change how a problem is approached.",
+  "contribution.def.negativeResults": "Grounded in deeper analysis, not a failed run; it must change how the community approaches a question and be surprising; it need not propose a fix."
 };
