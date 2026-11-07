@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.62.0
 
 - **Persistent AI history.** Every operator prompt and agent answer of every harness now lands in full in
   `.papersmith/ai-history/`, tracked by git, one file per session, with common secrets and personal data
