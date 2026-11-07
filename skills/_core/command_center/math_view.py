@@ -251,7 +251,8 @@ def build(root: Path | str) -> dict[str, Any]:
             sky = None
         equations = equations_from_markdown(text)
         novelty = _novelty_from_sky(sky, title)
-        spec_novelty = model_spec.get_model_specification(root).get("novelty")
+        current = model_spec.get_model_specification(root)
+        spec_novelty = current.get("novelty") if isinstance(current, dict) else None
         central = _central_problem(spec_novelty) if isinstance(spec_novelty, dict) else ""
         if central:
             novelty = {**novelty, "problem": central, "problem_detail": ""}

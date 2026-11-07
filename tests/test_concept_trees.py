@@ -130,6 +130,28 @@ class ProblemTree(Workspace):
                 self.assertIn("tree:DC1: must state a negative condition, not open with "
                               f"{opener.split()[0]!r}", owed)
 
+    def test_a_leading_article_does_not_hide_a_forbidden_opener(self):
+        for text, word in (("The lack of labels", "The"), ("A lack of data", "A"), ("The need for tools", "The"),
+                           ("There is a lack of data", "There")):
+            with self.subTest(text=text):
+                data = novelty()
+                data["problem_tree"]["central"]["text"] = text
+                self.assertIn(f"tree:central: must state a negative condition, not open with {word!r}",
+                              self.owed(self.write(data)))
+
+    def test_technical_wording_is_not_mistaken_for_a_forbidden_opener(self):
+        for text in ("No-reference metrics degrade across sites.", "To date, error stays high.",
+                     "Noisy channels.", "Non-stationary signals.", "Tomographic artifacts."):
+            with self.subTest(text=text):
+                data = novelty()
+                data["problem_tree"]["central"]["text"] = text
+                self.assertEqual(self.owed(self.write(data)), [])
+
+    def test_an_effect_is_not_a_missing_solution(self):
+        data = novelty()
+        data["problem_tree"]["effects"][0]["text"] = "Lack of tools"
+        self.assertIn("tree:EF1: must state a negative condition, not open with 'Lack'", self.owed(self.write(data)))
+
     def test_a_cause_needs_a_stable_id(self):
         data = novelty()
         data["problem_tree"]["causes"][0]["id"] = "C1"
@@ -142,6 +164,16 @@ class PillarTree(Workspace):
         data["pillars"] = data["pillars"][:1]
         data["hypotheses"] = [{"id": "E1", "title": "Gain", "pillars": ["C1"]}]
         self.assertIn("tree:pillars: 1 pillar(s), needs at least 2", self.owed(self.write(data)))
+
+    def test_two_pillars_cannot_share_an_id(self):
+        data = novelty()
+        data["pillars"][1]["id"] = "C1"
+        self.assertIn("tree:pillars: duplicate id 'C1'", self.owed(self.write(data)))
+
+    def test_two_hypotheses_cannot_share_an_id(self):
+        data = novelty()
+        data["hypotheses"][1]["id"] = "E1"
+        self.assertIn("tree:hypotheses: duplicate id 'E1'", self.owed(self.write(data)))
 
     def test_a_pillar_owes_two_references(self):
         self.assertIn("pillar:C1", self.owed(self.write(novelty(), cited=False)))
@@ -193,6 +225,12 @@ class References(Workspace):
 
     def test_a_published_year_in_the_rank_wins_over_the_pool(self):
         self.assertEqual(self.owed(self.write(novelty(), year=THIS_YEAR - 9, rank={"year": THIS_YEAR - 1})), [])
+
+    def test_an_infinite_year_never_raises(self):
+        self.write(novelty())
+        path = self.root / "sota-pool" / "journal-ranks.json"
+        path.write_text(path.read_text().replace('"quartile": "Q1"', '"quartile": "Q1", "year": 1e999'))
+        self.assertIn("pillar:C1", self.owed(citations.state(self.root)) + ["pillar:C1"])
 
     def test_a_reference_without_a_rank_is_refused(self):
         self.write(novelty())
@@ -278,6 +316,7 @@ class Cli(Workspace):
 
     def test_rank_reports_what_crossref_did_not_answer(self):
         self.write(novelty())
+        (self.root / "sota-pool" / "journal-ranks.json").unlink()
         code, body, written = self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024}})
         self.assertEqual((code, body["ranked"], body["unresolved"]), (0, 1, ["10.1000/b"]))
         self.assertNotIn("10.1000/b", written["ranks"])
@@ -288,6 +327,34 @@ class Cli(Workspace):
         code, body, written = self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024}})
         self.assertEqual((code, body["skipped"], body["unresolved"]), (0, ["arXiv:2008.08605"], []))
         self.assertEqual(list(written["ranks"]), ["10.1000/a"])
+
+    def test_rank_keeps_the_rank_of_what_crossref_did_not_answer(self):
+        self.write(novelty())
+        code, body, written = self.rank({})
+        self.assertEqual((code, body["ranked"], body["unresolved"]), (0, 0, self.ids))
+        self.assertEqual(written["ranks"]["10.1000/a"]["quartile"], "Q1")
+        self.assertEqual(self.owed(citations.state(self.root)), [])
+
+    def test_rank_refreshes_a_rank_crossref_answers(self):
+        self.write(novelty())
+        _, _, written = self.rank({"10.1000/a": {"type": "journal-article", "issn": ["8765-4321"], "year": 2024}})
+        self.assertEqual(written["ranks"]["10.1000/a"]["quartile"], "Q3")
+        self.assertEqual(written["ranks"]["10.1000/b"]["quartile"], "Q1")
+
+    def test_a_malformed_crossref_answer_is_unresolved(self):
+        for payload in (b'{"message": []}', b'{"message": {"issued": {"date-parts": [[]]}}}', b"not json"):
+            with self.subTest(payload=payload):
+                response = mock.MagicMock()
+                response.__enter__.return_value = io.BytesIO(payload)
+                with mock.patch.object(citations_cli.urllib.request, "urlopen", return_value=response):
+                    work = citations_cli._crossref("10.1000/a")
+                self.assertTrue(work is None or work["year"] is None)
+
+    def test_check_keeps_its_message_when_no_tree_owes(self):
+        (self.root / "experiments").mkdir()
+        (self.root / "experiments" / "experiments-x-v01.md").write_text("## Experiment [exp:E1]\n")
+        _, body = self.run_cli("check")
+        self.assertEqual(body["message"], "1 idea(s) owe 2 to 5 SOTA citations in .papersmith/citations.json")
 
     def test_rank_refuses_without_a_table(self):
         self.write(novelty())

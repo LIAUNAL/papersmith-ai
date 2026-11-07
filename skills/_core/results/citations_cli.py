@@ -13,13 +13,15 @@ node: ``{"ok": false, "error": "SOTA_CITATIONS_OWED", "owed": [{"key",
 ``rank`` writes ``sota-pool/journal-ranks.json``: for each pool reference with a
 DOI, its Crossref work type, ISSNs and issued year, and its quartile in the SJR
 table (``--sjr``, else the newest CSV imported with ``journal_cli.py sjr-import``).
-A reference without a DOI is skipped, and one Crossref does not answer is
-reported as unresolved: neither gets a rank, so neither passes the journal rule.
+A reference without a DOI is skipped. One Crossref does not answer is reported as
+unresolved and keeps the rank it had, so an outage never erases earlier ranks; a
+reference that never had a rank does not pass the journal rule.
 """
 
 from __future__ import annotations
 
 import argparse
+import http.client
 import importlib.util
 import json
 import os
@@ -54,7 +56,9 @@ def _check(root: Path) -> int:
     if not owed and not state["trees"]:
         return _emit({"ok": True, **summary})
     message = (f"{len(owed)} idea(s) owe {citations.MIN_CITATIONS} to {citations.MAX_CITATIONS} SOTA citations "
-               f"in {citations.CITATIONS_REL}; {len(state['trees'])} concept tree finding(s)")
+               f"in {citations.CITATIONS_REL}")
+    if state["trees"]:
+        message += f"; {len(state['trees'])} concept tree finding(s)"
     return _emit({"ok": False, "error": "SOTA_CITATIONS_OWED", "message": message, **summary}, 1)
 
 
@@ -65,10 +69,10 @@ def _crossref(doi: str) -> dict[str, Any] | None:
     try:
         with urllib.request.urlopen(request, timeout=CROSSREF_TIMEOUT) as response:
             message = json.load(response)["message"]
-    except (OSError, ValueError, KeyError, TypeError):
+        parts = (message.get("issued") or {}).get("date-parts") or [[None]]
+        return {"type": message.get("type"), "issn": message.get("ISSN") or [], "year": parts[0][0]}
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError, http.client.HTTPException):
         return None
-    parts = (message.get("issued") or {}).get("date-parts") or [[None]]
-    return {"type": message.get("type"), "issn": message.get("ISSN") or [], "year": parts[0][0]}
 
 
 def _journal_cli() -> Any:
@@ -104,6 +108,7 @@ def _rank(root: Path, sjr: str | None) -> int:
         return _emit({"ok": False, "error": "SJR_TABLE_INVALID", "message": str(exc)}, 1)
     root = root.expanduser().resolve()
     sjr_year = journal.year_from_name(table_path.name)
+    previous = citations._ranks(root)
     ranks: dict[str, dict[str, Any]] = {}
     skipped: list[str] = []
     unresolved: list[str] = []
@@ -115,6 +120,8 @@ def _rank(root: Path, sjr: str | None) -> int:
         work = _crossref(identity.removeprefix("doi:"))
         if work is None:
             unresolved.append(identifier)
+            if identity in previous:
+                ranks[identifier] = previous[identity]
             continue
         hit = table.lookup(work["issn"]) or {}
         quartile = hit.get("quartile")
@@ -122,7 +129,7 @@ def _rank(root: Path, sjr: str | None) -> int:
                              "quartile": quartile, "quartile_source": "sjr" if quartile else "unknown",
                              "sjr_year": sjr_year}
     _write_atomic(root / citations.RANKS_REL, {"schema": citations.SCHEMA, "ranks": ranks})
-    return _emit({"ok": True, "ranked": len(ranks), "skipped": skipped, "unresolved": unresolved,
+    return _emit({"ok": True, "ranked": len(ranks) - len([i for i in unresolved if i in ranks]), "skipped": skipped, "unresolved": unresolved,
                   "written": citations.RANKS_REL})
 
 

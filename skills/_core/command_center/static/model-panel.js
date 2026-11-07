@@ -74,12 +74,13 @@
     const central = centralText(spec);
     if (!central) return treeFindings();
     const tree = spec.novelty.problem_tree;
-    const effects = (tree.effects || []).filter((e) => e && e.text).map((e, i) => {
+    const entries = (value) => (Array.isArray(value) ? value : []);
+    const effects = entries(tree.effects).filter((e) => e && e.text).map((e, i) => {
       const from = listed(e.caused_by).join(', ');
       return treeNode('effect', ideaId(e, 'EF', i + 1), e.text, '',
         from ? `<small>${esc(t('conceptTree.causedBy', { ids: from }))}</small>` : '');
     }).join('');
-    const causes = (tree.causes || []).filter((c) => c && c.text).map((c, i) => {
+    const causes = entries(tree.causes).filter((c) => c && c.text).map((c, i) => {
       const id = ideaId(c, 'DC', i + 1);
       return treeNode('cause', id, c.text, `cause:${id}`);
     }).join('');

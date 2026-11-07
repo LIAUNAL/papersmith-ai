@@ -44,7 +44,7 @@ at most 4 years old. Quartile, work type and published year come from
 SJR table: a quartile from any other source does not count. Layers, equations
 and experiments keep the plain rule, so a foundational reference stays citable
 there. What ``tree_findings`` reports owes under the proposal stage as
-``tree:<node>: <reason>``, so G-SOTA-CITATIONS blocks on it.
+``tree:<node>: <reason>``, so Phase 4's citations step stays open on it.
 
 Read-only, bounded and never raises. This module has no dependencies, so the
 gates and the dashboard load it by path; the two small parsers below stay here
@@ -98,8 +98,9 @@ _TAG = re.compile(r"\\tag\{([^{}]*)\}")
 _FENCE = re.compile(r"^(```|~~~)")
 _CAUSE_ID = re.compile(r"^DC\d+$")
 #: Openers that name an absent solution instead of a negative condition.
-_ABSENCE = re.compile(r"^(?:(?:lack|absence|shortage|deficiency|nonexistence)\s+of\b|there\s+(?:is|are)\s+no\b"
-                      r"|no\b|not\b|need(?:s|ed)?\b|requires?\b|required\b|to\s+\w)", re.IGNORECASE)
+_ABSENCE = re.compile(r"^(?:(?:(?:the|an?)\s+)?(?:(?:lack|absence|shortage|deficiency|nonexistence)\s+of\b"
+                      r"|need(?:s|ed)?\b)|there\s+(?:is|are)\s+(?:no\b|an?\s+(?:lack|absence|shortage|need)\b)"
+                      r"|no\s|not\s|requires?\b|required\b|to\s+(?!date\b)\w)", re.IGNORECASE)
 
 
 def normalize(identifier: Any) -> str | None:
@@ -253,6 +254,7 @@ def _problem_tree_findings(tree: Any) -> list[str]:
         found.append("tree:effects: needs at least 1 effect")
     reached: set[str] = set()
     for position, effect in enumerate(effects, 1):
+        found += _wording(_id(effect, "EF", position), effect["text"])
         for name in _names(effect.get("caused_by")):
             if name in ids:
                 reached.add(name)
@@ -270,9 +272,14 @@ def tree_findings(novelty: dict[str, Any]) -> list[str]:
     if len(pillars) < MIN_PILLARS:
         found.append(f"tree:pillars: {len(pillars)} pillar(s), needs at least {MIN_PILLARS}")
     ids = [_id(item, "P", n) for n, item in enumerate(pillars, 1)]
+    found += [f"tree:pillars: duplicate id {ident!r}" for ident in sorted({i for i in ids if ids.count(i) > 1})]
     reached: set[str] = set()
+    seen: set[str] = set()
     for position, hypothesis in enumerate(_listed(novelty.get("hypotheses"), "title", "statement"), 1):
         ident = _id(hypothesis, "H", position)
+        if ident in seen:
+            found.append(f"tree:hypotheses: duplicate id {ident!r}")
+        seen.add(ident)
         names = _names(hypothesis.get("pillars"))
         if not names:
             found.append(f"tree:hypotheses: {ident} names no pillar")
@@ -353,7 +360,7 @@ def _year(value: Any) -> int | None:
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

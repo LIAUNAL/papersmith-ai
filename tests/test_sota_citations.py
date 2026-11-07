@@ -609,6 +609,16 @@ class PanelTests(_Ideas):
         self.assertFalse(result["statementHidden"])
         self.assertEqual(result["noveltyTree"], "")
 
+    def test_a_tree_list_of_the_wrong_type_does_not_stop_the_panel(self) -> None:
+        self.all_ideas()
+        cite_everything(self.root)
+        path = self.root / ".papersmith" / "model_spec.json"
+        spec = json.loads(path.read_text())
+        spec["novelty"]["problem_tree"]["effects"] = "not a list"
+        spec["novelty"]["problem_tree"]["causes"] = {"id": "DC1"}
+        path.write_text(json.dumps(spec))
+        self.assertIn("Pillar", render_panels(self.payload())["pillars"])
+
     def test_tree_text_is_escaped(self) -> None:
         self.all_ideas()
         cite_everything(self.root)
@@ -659,6 +669,11 @@ class PanelTests(_Ideas):
 
 
 class TreeSourceTests(_Ideas):
+    def test_a_specification_that_is_not_an_object_still_answers(self) -> None:
+        self.ideas()
+        _write(self.root / ".papersmith" / "model_spec.json", "[1, 2]")
+        self.assertIn("problem", math_view.build(self.root)["novelty"])
+
     def test_the_central_problem_answers_the_math_card_over_the_sky(self) -> None:
         self.ideas()
         self.revision(EQUATION, sky={"system": {"planets": [{"slot": "problem", "label": "Sky text."}]}})
