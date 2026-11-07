@@ -3227,6 +3227,20 @@
 
     <!-- TAB: NOVELTY & FINDINGS ASSESSMENT -->
     <div id="pane-novelty" class="tab-pane">
+      <!-- The manuscript summary diagram (manuscript-graph-panel.js): topic to conclusions. -->
+      <section class="panel" id="manuscriptSummaryPanel" style="margin-bottom: 1rem;">
+        <div class="panel__header">
+          <div class="panel__title">
+            <span data-i18n="atlas.title.summary" title="Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)" data-i18n-attr="title:atlas.btn.summaryTitle">🧭 Manuscript summary graph — from topic to conclusions</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <button class="btn" onclick="rebuildManuscriptGraph()" data-i18n="novelty.summary.rebuild">🔄 Rebuild summary</button>
+            <a class="btn" href="/api/atlas/manuscript-graph/view" target="_blank" data-i18n="common.openInNewTab">Open in a new tab ↗</a>
+          </div>
+        </div>
+        <p id="manuscriptSummaryBadge" style="font-size: 0.8rem; color: var(--text-muted); margin: 0.25rem 0 0.5rem;"></p>
+        <iframe id="manuscriptSummaryIframe" class="iframe-viewer" src="about:blank" title="Manuscript summary"></iframe>
+      </section>
       <div id="noveltyRoot"><p class="exp-empty" data-i18n="novelty.loading">Loading novelty and findings assessment…</p></div>
     </div>
 
@@ -3330,7 +3344,6 @@
             <button id="btnGraphAtlas" class="btn btn--primary" onclick="switchGraph('atlas')" data-i18n="atlas.btn.atlas">🌌 3D Constellation (Solar Atlas)</button>
             <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
             <button id="btnGraphPapers" class="btn" onclick="switchGraph('papers')" data-i18n="atlas.btn.papers">📊 Candidate Matrix</button>
-            <button id="btnGraphSummary" class="btn" onclick="switchGraph('summary')" title="Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)" data-i18n-attr="title:atlas.btn.summaryTitle" data-i18n="atlas.btn.summary">🧭 Manuscript summary</button>
             <button id="btnGraphCited" class="btn" onclick="switchGraph('cited')" title="Search every paper the manuscript cites, by title, author, year, journal, section or abstract" data-i18n-attr="title:explorer.btnTitle" data-i18n="explorer.btn">🔎 Cited papers</button>
             <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
             <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
@@ -3957,6 +3970,8 @@
       if (tabId === 'novelty') {
         window.refreshNoveltyPanel?.();
       }
+      if (tabId === 'novelty') window.showManuscriptGraph?.();
+      else window.hideManuscriptGraph?.();
       if (tabId === 'doctor') {
         window.refreshDoctorPanel?.();
       }
@@ -4110,10 +4125,6 @@
       btn.textContent = t('atlas.regenerating');
       const stamp = () => new Date().toLocaleTimeString();
       try {
-        if (currentGraphKind === 'summary') {
-          await rebuildManuscriptGraph();
-          return;
-        }
         if (currentGraphKind === 'novelty') {
           // The novelty graph is built on every request: a reload regenerates it.
           iframe.src = apiUrl(`/api/atlas/novelty/view?v=${Date.now()}`);
@@ -4219,7 +4230,6 @@
       const btnAtlas = document.getElementById('btnGraphAtlas');
       const btnNovelty = document.getElementById('btnGraphNovelty');
       const btnPapers = document.getElementById('btnGraphPapers');
-      const btnSummary = document.getElementById('btnGraphSummary');
       const btnCited = document.getElementById('btnGraphCited');
       const citedCont = document.getElementById('citedPapersContainer');
       const atlas3d = document.getElementById('atlas3dContainer');
@@ -4231,11 +4241,9 @@
       if (btnAtlas) btnAtlas.className = kind === 'atlas' ? 'btn btn--primary' : 'btn';
       if (btnNovelty) btnNovelty.className = kind === 'novelty' ? 'btn btn--primary' : 'btn';
       if (btnPapers) btnPapers.className = kind === 'papers' ? 'btn btn--primary' : 'btn';
-      if (btnSummary) btnSummary.className = kind === 'summary' ? 'btn btn--primary' : 'btn';
       if (btnCited) btnCited.className = kind === 'cited' ? 'btn btn--primary' : 'btn';
       if (citedCont) citedCont.style.display = kind === 'cited' ? 'block' : 'none';
       if (openLink) openLink.style.display = kind === 'cited' ? 'none' : '';
-      if (kind !== 'summary' && typeof hideManuscriptGraph === 'function') hideManuscriptGraph();
 
       if (kind === 'atlas') {
         if (atlas3d) atlas3d.style.display = 'block';
@@ -4254,13 +4262,6 @@
         }
         if (titleEl) titleEl.textContent = t('atlas.title.novelty');
         if (openLink) openLink.href = apiUrl('/api/atlas/novelty/view');
-      } else if (kind === 'summary') {
-        // Offline layered view of .papersmith/manuscript_graph.json (manuscript-graph-panel.js).
-        if (atlas3d) atlas3d.style.display = 'block';
-        if (matrixCont) matrixCont.style.display = 'none';
-        if (titleEl) titleEl.textContent = t('atlas.title.summary');
-        if (openLink) openLink.href = apiUrl('/api/atlas/manuscript-graph/view');
-        if (typeof showManuscriptGraph === 'function') showManuscriptGraph();
       } else if (kind === 'cited') {
         if (atlas3d) atlas3d.style.display = 'none';
         if (matrixCont) matrixCont.style.display = 'none';

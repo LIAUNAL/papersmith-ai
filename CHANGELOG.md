@@ -16,6 +16,9 @@ number is `0`, breaking changes can still arrive without a major bump.
 - **Concept-tree statements are short.** `citations_cli.py check` now refuses a central problem longer than four
   lines of 100 characters (400) and a cause, effect, pillar name or summary, or hypothesis title or statement
   longer than three (300). The English, wording and citation rules are unchanged.
+- **The manuscript summary diagram moved to Novelty & Findings.** The boxes-and-flow view from topic to
+  conclusions now opens at the top of that tab, with its own rebuild button, and the Graph Atlas no longer shows
+  it. The cited-papers explorer's locate button opens it there.
 
 ## 0.62.0
 

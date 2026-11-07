@@ -992,8 +992,8 @@ tab's Cited papers view searches this list. `GET /api/atlas/manuscript-graph` re
 absent | invalid, stale, graph}`; `GET /api/atlas/manuscript-graph/view` draws it as
 offline HTML (no CDN) in eight columns, a stored graph when there is one and a live,
 unwritten reading otherwise; `POST /api/atlas/manuscript-graph/build` (same-origin
-only) rewrites it and answers `200` or `422`. The atlas tab's **🧭 Manuscript
-summary** button shows that view. The `Host` protection (421) covers these routes only on a loopback
+only) rewrites it and answers `200` or `422`. The **✨ Novelty & Findings** tab
+shows that view at its top, with a rebuild button. The `Host` protection (421) covers these routes only on a loopback
 bind; on a non-loopback bind there is no `Host` filtering.
 
 **The Atlas tab.** `#atlas` consumes the routes above. On the left, a native

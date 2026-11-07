@@ -1,11 +1,12 @@
 /**
- * manuscript-graph-panel.js: the manuscript summary graph view of the atlas tab.
+ * manuscript-graph-panel.js: the manuscript summary diagram of the Novelty &
+ * Findings tab.
  *
  * The graph itself is drawn by GET /api/atlas/manuscript-graph/view (offline
- * HTML in the atlas iframe: topic | problem and pillars | hypotheses | SOTA |
+ * HTML in its own iframe: topic | problem and pillars | hypotheses | SOTA |
  * base and novelty math | experiments | findings | conclusions). This file
- * keeps the badge under the toolbar current: it polls
- * GET /api/atlas/manuscript-graph while the view is shown, reloads the iframe
+ * keeps the badge above it current: it polls
+ * GET /api/atlas/manuscript-graph while the tab is shown, reloads the iframe
  * when the stored graph changes, flags a stale graph, and rebuilds it on
  * demand through POST /api/atlas/manuscript-graph/build. Offline: no CDN.
  */
@@ -19,11 +20,14 @@
   let lastDigest = null;
 
   function badge(text, tone) {
-    if (typeof window.showGraphBadge === 'function') window.showGraphBadge(text, tone);
+    const el = document.getElementById('manuscriptSummaryBadge');
+    if (!el) return;
+    el.style.color = tone === 'ok' ? 'var(--ok)' : (tone === 'bad' ? 'var(--bad)' : 'var(--text-muted)');
+    el.textContent = text;
   }
 
   function iframe() {
-    return document.getElementById('graphIframe');
+    return document.getElementById('manuscriptSummaryIframe');
   }
 
   function reloadView() {
@@ -67,6 +71,12 @@
 
   function hideManuscriptGraph() {
     active = false;
+  }
+
+  // Shows the diagram from another tab, as the cited-papers explorer does.
+  function openManuscriptSummary() {
+    if (typeof window.navigateTab === 'function') window.navigateTab('novelty');
+    else showManuscriptGraph();
   }
 
   async function rebuildManuscriptGraph() {
@@ -120,4 +130,6 @@
   window.showManuscriptGraph = showManuscriptGraph;
   window.hideManuscriptGraph = hideManuscriptGraph;
   window.rebuildManuscriptGraph = rebuildManuscriptGraph;
+  window.openManuscriptSummary = openManuscriptSummary;
+  window.manuscriptSummaryShown = () => active;
 })();

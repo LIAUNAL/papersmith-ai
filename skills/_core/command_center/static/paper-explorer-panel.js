@@ -272,18 +272,19 @@
   const selected = (doc, nodeId) => Array.from(doc.querySelectorAll('.node.sel'))
     .some((node) => node.dataset.id === nodeId);
 
-  // Opens the summary graph on this paper's node. Tries until the node is selected
-  // or the wait ends, once per document, so a reload in between still gets the
-  // message. A newer locate or leaving the summary view ends the attempt.
+  // Opens the summary graph of Novelty & Findings on this paper's node. Tries
+  // until the node is selected or the wait ends, once per document, so a reload
+  // in between still gets the message. A newer locate or leaving that tab ends
+  // the attempt.
   function locate(nodeId) {
-    const frame = byId('graphIframe');
-    if (!frame || typeof window.switchGraph !== 'function') return;
+    const frame = byId('manuscriptSummaryIframe');
+    if (!frame || typeof window.openManuscriptSummary !== 'function') return;
     clearTimeout(locateTimer);
-    window.switchGraph('summary');
+    window.openManuscriptSummary();
     const deadline = Date.now() + LOCATE_WAIT_MS;
     let told = null;
     const attempt = () => {
-      if (currentGraphKind !== 'summary') return;
+      if (!window.manuscriptSummaryShown()) return;
       const doc = graphDocument(frame);
       if (doc && selected(doc, nodeId)) return;
       if (doc && doc !== told) {
