@@ -21,7 +21,9 @@ of the session (or ``scrub``, for all of them) instead of doubling them.
 
 Personal data is masked the same way: email addresses, private and Tailscale IP
 addresses, the user name inside home paths, phone numbers and SSH fingerprints.
-A name or an institution in plain prose stays: no pattern can tell it from content.
+Each workspace also masks its own people (:func:`private_terms`): the owners, names
+and usernames of ``.papersmith/team.json``, the system user and git's ``user.name``.
+Any other name in plain prose stays: no pattern can tell it from content.
 
 When the dashboard syncs a workspace it also commits the folder, at most every ten
 minutes, on the current branch and touching nothing else. It never pushes, and it
@@ -42,6 +44,7 @@ out. :func:`sync` skips a source that has not changed since the last run, using
 from __future__ import annotations
 
 import argparse
+import getpass
 import hashlib
 import json
 import os
@@ -67,6 +70,7 @@ GIT_BUSY = ("MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BIS
 MAX_LINE_BYTES = 8 * 1024 * 1024
 
 REDACTED = "[REDACTED]"
+MIN_TERM = 5
 #: Shapes that are a credential wherever they appear.
 _SECRETS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
@@ -103,6 +107,7 @@ _ASSIGNED = re.compile(
 #: Personal data: the pattern and what replaces it.
 _PRIVATE = (
     (re.compile(r"(?<![\w.+-])(?!git@)[\w.+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b"), "[EMAIL]"),
+    (re.compile(r"(?<![\w.+-])[\w.+-]+@(?:gmail|hotmail|outlook|yahoo|icloud|proton|protonmail|unal)\b"), "[EMAIL]"),
     (re.compile(r"(?<![\d.])(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01])|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))"
                 r"\.\d{1,3}\.\d{1,3}(?:(?<=\.\d)|(?<=\.\d\d)|(?<=\.\d\d\d))(?![\d.]*\d)"), "[IP]"),
     (re.compile(r"(?<![\w.+-])[\w.-]+@(?=\[IP\])"), "[USER]@"),
@@ -123,14 +128,41 @@ _reports: dict[str, dict[str, Any]] = {}
 _syncing: set[str] = set()
 
 
-def redact(text: str) -> str:
+def private_terms(root: Path) -> tuple[str, ...]:
+    """The people of this workspace, longest first: what no pattern can recognize."""
+    found: set[str] = set()
+    try:
+        team = json.loads((root / ".papersmith" / "team.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        team = None
+    for member in team.get("members") or [] if isinstance(team, dict) else []:
+        if not isinstance(member, dict):
+            continue
+        found.update(member.get(key) for key in ("owner", "displayName", "email"))
+        accounts = member.get("accounts") if isinstance(member.get("accounts"), dict) else {}
+        for account in accounts.values():
+            if isinstance(account, dict):
+                found.update(account.get(key) for key in ("username", "email"))
+    try:
+        found.add(getpass.getuser())
+        found.add(_git(root, "config", "user.name").stdout.strip())
+    except (OSError, KeyError, subprocess.SubprocessError):
+        pass
+    kept = {term.strip() for term in found if isinstance(term, str) and len(term.strip()) >= MIN_TERM}
+    return tuple(sorted(kept, key=lambda term: (-len(term), term)))
+
+
+def redact(text: str, terms: Iterable[str] = ()) -> str:
     """``text`` with what looks like a credential replaced by ``[REDACTED]`` and
-    personal data by its mask."""
+    personal data by its mask; ``terms`` are this workspace's people."""
     for pattern in _SECRETS:
         text = pattern.sub(REDACTED, text)
     text = _ASSIGNED.sub(_assigned, text)
     for pattern, mask in _PRIVATE:
         text = pattern.sub(mask, text)
+    for term in terms:
+        if len(term) >= MIN_TERM:
+            text = re.sub(rf"(?<![\w-]){re.escape(term)}(?![\w-])", "[ACCOUNT]", text, flags=re.IGNORECASE)
     return text
 
 
@@ -151,7 +183,8 @@ def _file_name(harness: str, session: str) -> str:
     return f"{harness}-{re.sub(r'-+', '-', safe).strip('-')}.jsonl"
 
 
-def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -> Iterator[dict[str, Any]]:
+def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn],
+             terms: Iterable[str] = ()) -> Iterator[dict[str, Any]]:
     """What a session's raw turns leave in the archive, each with its stable id."""
     previous: tuple[str, str] | None = None
     seen: dict[tuple[Any, str], int] = {}
@@ -174,19 +207,20 @@ def _records(harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -
         stamp = ts if isinstance(ts, str) else None
         place = seen[(stamp, role)] = seen.get((stamp, role), 0) + 1
         ident = hashlib.sha256(f"{harness}|{session}|{stamp}|{role}|{place}".encode()).hexdigest()[:16]
-        yield {"id": ident, "ts": stamp, "role": role, "text": redact(text), **meta}
+        yield {"id": ident, "ts": stamp, "role": role, "text": redact(text, terms), **meta}
 
 
-def _append(root: Path, harness: str, session: str, turns: Iterable[ai_transcripts.Turn]) -> int:
+def _append(root: Path, harness: str, session: str, turns: Iterable[ai_transcripts.Turn],
+            terms: Iterable[str] = ()) -> int:
     """Add the turns the session's file does not hold yet; how many were added."""
     folder = root / ARCHIVE_REL
     path = folder / _file_name(harness, session)
     if folder.is_symlink() or path.is_symlink():
         return 0
     known: dict[str, dict[str, Any]] = {}
-    records = list(_records(harness, session, turns))
+    records = list(_records(harness, session, turns, terms))
     if path.is_file():
-        _scrub_file(path)
+        _scrub_file(path, terms)
         known = {r["id"]: r for r in _read(path)}
         _add_models(path, known, records)
     fresh = [r for r in records if r["id"] not in known]
@@ -216,12 +250,12 @@ def _add_models(path: Path, known: dict[str, dict[str, Any]], records: list[dict
         _write_records(path, known.values())
 
 
-def _scrub_file(path: Path) -> bool:
+def _scrub_file(path: Path, terms: Iterable[str] = ()) -> bool:
     """Apply today's patterns to a session's records; whether anything changed."""
     records = _read(path)
     changed = False
     for record in records:
-        clean = redact(str(record.get("text") or ""))
+        clean = redact(str(record.get("text") or ""), terms)
         if clean != record.get("text"):
             record["text"] = clean
             changed = True
@@ -232,8 +266,10 @@ def _scrub_file(path: Path) -> bool:
 
 def scrub(root: Path | str) -> int:
     """Apply today's patterns to the whole archive; how many files changed."""
-    folder = Path(root).expanduser().resolve() / ARCHIVE_REL
-    return sum(1 for path in sorted(folder.glob("*.jsonl")) if not path.is_symlink() and _scrub_file(path))
+    root = Path(root).expanduser().resolve()
+    terms = private_terms(root)
+    return sum(1 for path in sorted((root / ARCHIVE_REL).glob("*.jsonl"))
+               if not path.is_symlink() and _scrub_file(path, terms))
 
 
 def _read(path: Path) -> list[dict[str, Any]]:
@@ -287,25 +323,27 @@ def _forget_state(root: Path) -> None:
 
 
 def _sync_file(root: Path, state: dict[str, list[int]], harness: str, session: str, path: Path,
-               reader: Callable[[Path], Iterable[ai_transcripts.Turn]]) -> int:
+               reader: Callable[[Path], Iterable[ai_transcripts.Turn]], terms: Iterable[str] = ()) -> int:
     stat = path.stat()
     mark = [stat.st_size, stat.st_mtime_ns]
     if state.get(str(path)) == mark:
         return 0
-    added = _append(root, harness, session, reader(path))
+    added = _append(root, harness, session, reader(path), terms)
     state[str(path)] = mark
     return added
 
 
-def _sync_directory(root: Path, state: dict[str, list[int]], harness: str, directory: Path) -> int:
+def _sync_directory(root: Path, state: dict[str, list[int]], harness: str, directory: Path,
+                    terms: Iterable[str] = ()) -> int:
     line_turn = ai_transcripts.LINE_READERS[harness][0]
     line_model = ai_transcripts.LINE_MODELS.get(harness)
     added = 0
     for path in sorted(directory.glob("*.jsonl")):
-        added += _sync_file(root, state, harness, path.stem, path, lambda p: _file_turns(p, line_turn, line_model))
+        added += _sync_file(root, state, harness, path.stem, path,
+                            lambda p: _file_turns(p, line_turn, line_model), terms)
         for sub in sorted((directory / path.stem / "subagents").glob("*.jsonl")):
             added += _sync_file(root, state, harness, f"{path.stem}-sub-{sub.stem}", sub,
-                                lambda p: _file_turns(p, _sub_line, line_model))
+                                lambda p: _file_turns(p, _sub_line, line_model), terms)
     return added
 
 
@@ -328,6 +366,7 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
     roots = {str(root)} | ({str(original).rstrip("/\\")} if original else set())
     overrides = locations or {}
     state = _state(root)
+    terms = private_terms(root)
     added = 0
     problems: dict[str, str] = {}
 
@@ -343,7 +382,7 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
         folders = [chosen] if chosen else []
         if harness not in overrides:
             folders += [d for d in ai_transcripts.related_dirs(base, roots) if d not in folders]
-        return sum(_sync_directory(root, state, harness, Path(d)) for d in folders if Path(d).is_dir())
+        return sum(_sync_directory(root, state, harness, Path(d), terms) for d in folders if Path(d).is_dir())
 
     guarded("claude-code", lambda: files("claude-code", ai_transcripts.claude_dir, ai_transcripts.claude_projects()))
     guarded("pi", lambda: files("pi", ai_transcripts.pi_dir, ai_transcripts.pi_sessions_base()))
@@ -353,7 +392,7 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
         db = overrides[harness] if harness in overrides else default()
         if db is None or not Path(db).is_file():
             return 0
-        return sum(_append(root, harness, session, turns) for session, turns in reader(Path(db), roots))
+        return sum(_append(root, harness, session, turns, terms) for session, turns in reader(Path(db), roots))
 
     guarded("opencode", lambda: database("opencode", ai_transcripts.opencode_db, ai_transcripts.opencode_raw))
     guarded("antigravity", lambda: database("antigravity", ai_transcripts.antigravity_db,
@@ -361,7 +400,7 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
     for tutor in TUTORS:
         thread = root / ".papersmith" / tutor / "thread.json"
         if thread.is_file():
-            guarded(tutor, lambda t=tutor, p=thread: _sync_file(root, state, "tutor", t, p, _tutor_turns))
+            guarded(tutor, lambda t=tutor, p=thread: _sync_file(root, state, "tutor", t, p, _tutor_turns, terms))
     try:
         path = root / STATE_REL
         path.parent.mkdir(parents=True, exist_ok=True)

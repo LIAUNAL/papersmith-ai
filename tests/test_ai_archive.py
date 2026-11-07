@@ -283,6 +283,36 @@ class Privacy(Base):
             with self.subTest(text=text):
                 self.assertEqual(ai_archive.redact(text), text)
 
+    def test_a_cut_off_email_is_masked(self):
+        self.assertEqual(ai_archive.redact('cuenta de colab andres07@gmail"'), 'cuenta de colab [EMAIL]"')
+
+    def test_the_accounts_of_the_workspace_are_masked(self):
+        (self.root / ".papersmith" / "team.json").write_text(json.dumps({"schema": 1, "members": [
+            {"owner": "amarino", "displayName": "Ana Marino", "accounts": {"kaggle": {"username": "anakaggle"}}}]}))
+        self.session(_line("user", "run on kaggle:anakaggle/data, owner amarino, by Ana Marino and ANAKAGGLE",
+                           "2026-10-03T10:00:00Z"))
+        self.sync()
+        text = self.records()[0]["text"]
+        for private in ("anakaggle", "ANAKAGGLE", "amarino", "Ana Marino"):
+            self.assertNotIn(private, text)
+        self.assertEqual(text.count("[ACCOUNT]"), 4)
+
+    def test_a_scrub_applies_the_accounts_too(self):
+        self.session(_line("user", "owner anakaggle runs it", "2026-10-03T10:00:00Z"))
+        self.sync()
+        (self.root / ".papersmith" / "team.json").write_text(json.dumps({"schema": 1, "members": [
+            {"owner": "x", "accounts": {"kaggle": {"username": "anakaggle"}}}]}))
+        self.assertEqual(ai_archive.scrub(self.root), 1)
+        self.assertNotIn("anakaggle", self.records()[0]["text"])
+
+    def test_a_short_or_part_word_term_changes_nothing(self):
+        self.assertEqual(ai_archive.redact("the banana model", ("ana", "nana1")), "the banana model")
+        self.assertEqual(ai_archive.redact("the banana1 model", ("banana",)), "the banana1 model")
+
+    def test_a_broken_team_file_masks_nothing_and_never_raises(self):
+        (self.root / ".papersmith" / "team.json").write_text("not json")
+        self.assertIsInstance(ai_archive.private_terms(self.root), tuple)
+
     def test_a_scrub_masks_what_is_already_archived(self):
         folder = self.root / ".papersmith" / "ai-history"
         folder.mkdir()
