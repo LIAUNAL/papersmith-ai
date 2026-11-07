@@ -382,6 +382,7 @@ window.PAPERSMITH_I18N.es = {
   "app.lab": "Laboratorio de Inteligencia Artificial · Universidad Nacional de Colombia",
   "header.loadingRuns": "Cargando corridas...",
   "theme.switch": "Cambiar tema",
+  "textSize.label": "Tamaño del texto",
   "header.refreshData": "Actualizar datos",
   "common.refreshButton": "⟳ Actualizar",
   "meta.proposal": "Propuesta:",

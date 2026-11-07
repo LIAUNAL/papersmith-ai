@@ -383,6 +383,7 @@ window.PAPERSMITH_I18N.en = {
   "app.lab": "Artificial Intelligence Laboratory · Universidad Nacional de Colombia",
   "header.loadingRuns": "Loading runs...",
   "theme.switch": "Switch theme",
+  "textSize.label": "Text size",
   "header.refreshData": "Refresh data",
   "common.refreshButton": "⟳ Refresh",
   "meta.proposal": "Proposal:",

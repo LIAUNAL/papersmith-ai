@@ -421,7 +421,7 @@
           <span class="panel__meta">${sota.candidates_count || 0} ${t('novelty.sota.candidates_meta', 'candidates in SOTA pool')}</span>
         </div>
         <div style="padding: 0.75rem 0;">
-          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:1rem; margin-bottom:1rem;">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap:1rem; margin-bottom:1rem;">
             <div style="background:var(--surface); border:1px solid var(--border); padding:1rem; border-radius:6px;">
               <div style="font-weight:700; color:var(--accent); margin-bottom:0.5rem;">🌟 ${t('novelty.sota.core_claim', 'Core Novelty Claims')}</div>
               ${noveltyClaims.length > 0 ? noveltyClaims.map(nc => `
@@ -460,7 +460,7 @@
           <span class="panel__meta">${t('novelty.rigor.meta', 'Adversarial defense')}</span>
         </div>
         <div style="padding: 0.75rem 0;">
-          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:0.75rem;">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap:0.75rem;">
             ${rigor.map(r => `
               <div style="background:var(--surface); border:1px solid ${r.passed ? 'var(--ok)' : 'var(--warn)'}; padding:0.85rem; border-radius:6px;">
                 <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
