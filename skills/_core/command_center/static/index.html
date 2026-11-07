@@ -2958,6 +2958,19 @@
     .pdf-main-column { max-width: 100%; overflow-x: auto; }
     .tutor__actions { flex-wrap: wrap; }
     #pane-experiments .exp-figure, #pane-experiments .exp-figure > * { min-width: 0; overflow-wrap: anywhere; }
+    /* Experiments in the order of the flow: each section folds behind a bar. */
+    .exp-fold { margin-bottom: 0.85rem; }
+    .exp-fold__summary { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; list-style: none; padding: 0.7rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-weight: 700; font-size: 0.95rem; color: var(--text); }
+    .exp-fold__summary::-webkit-details-marker { display: none; }
+    .exp-fold__summary::before { content: '▸'; color: var(--accent); transition: transform 0.15s; }
+    .exp-fold[open] > .exp-fold__summary::before { transform: rotate(90deg); }
+    .exp-fold[open] > .exp-fold__summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .exp-fold__body > section.panel, .exp-fold__body > .tutor { border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0; }
+    .exp-fold__body > section > .panel__header > .panel__title, .exp-fold__body > section > h3.panel__title { display: none; }
+    .exp-flow-steps__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+    #pane-experiments .exp-attention a { color: var(--accent); font-weight: 600; }
+    .exp-detail { margin-top: 0.75rem; }
+    .exp-detail__summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--accent); padding: 0.45rem 0; }
     /* Rows the panels build with inline flex styles wrap too. */
     .tab-pane [style*="justify-content: space-between"], .tab-pane [style*="justify-content:space-between"],
     .tutor__modes, #pane-experiments .exp-chart figcaption { flex-wrap: wrap; }
@@ -3277,6 +3290,11 @@
         <p class="exp-intro" data-i18n-html="exp.introHtml">Convergence, figures, tables, statistical significance and remote runs read from <code>implementations/&lt;repo&gt;/&lt;Name&gt;/Results/</code>, next to the current protocol in <code>experiments/</code>.</p>
       </div>
       <!-- Experiments tutor (experiments-tutor.js): outside #experimentsRoot, which experiments-panel.js repaints. -->
+
+      <div id="experimentsRoot"><p class="exp-empty" data-i18n="exp.loading">Loading experiments…</p></div>
+      <details id="xtutorFold" class="exp-fold" data-exp-fold="tutor">
+        <summary class="exp-fold__summary"><span class="exp-fold__title" data-i18n="xtutor.title">Experiments tutor</span></summary>
+        <div class="exp-fold__body">
       <section id="xtutorPanel" class="tutor xtutor" aria-label="Experiments tutor" data-i18n-attr="aria-label:xtutor.title">
         <header class="tutor__head">
           <div><strong data-i18n="xtutor.title">Experiments tutor</strong><span class="tutor__sub" data-i18n="xtutor.sub">experiments-tutor · consult and iterate the experimental design decisions</span></div>
@@ -3313,7 +3331,8 @@
           </div>
         </div>
       </section>
-      <div id="experimentsRoot"><p class="exp-empty" data-i18n="exp.loading">Loading experiments…</p></div>
+        </div>
+      </details>
     </div>
 
     <!-- TAB: NOVELTY & FINDINGS ASSESSMENT -->

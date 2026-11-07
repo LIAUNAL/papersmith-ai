@@ -17,6 +17,13 @@ number is `0`, breaking changes can still arrive without a major bump.
   dashboard's text to ×1.25, ×1.5 or ×2, remembered per browser. The header wraps instead of squeezing, and the
   panels' headers, grids, long paths and the PDF toolbar now fit a desktop, a tablet or a phone at every size;
   on a phone the header drops its subtitle and stops sticking to the top, and the totals scroll sideways.
+- **The Experiments tab follows the flow.** It opens on the proof of concept → verification → full experiment
+  stepper, which names the next action, and on any launch warning; then come the protocol, the datasets, the
+  proof of concept, the full experiments and their comparison, each behind a bar that folds and remembers its
+  state, and the execution infrastructure (Kaggle, Colab, local environment, run options, team and help) folded
+  at the end. Each product shows its discussion first and its figures, convergence, tables and significance on
+  demand, and the experiments tutor closes the tab. On a QMLEEG workspace the tab drops from about 39,000 px to
+  about 3,600.
 
 ## 0.63.0
 

@@ -275,7 +275,9 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("<img src=x", out)
         self.assertNotIn("<script>alert(2)", out)
         self.assertNotIn("<b>GPU</b>", out)
-        self.assertLess(out.index("Opciones de corrida"), out.index("Prueba de concepto"))
+        # The operator moved the infrastructure after the runs, in the order of the flow
+        # (odd/tasks/dashboard-readability.md, L7).
+        self.assertLess(out.index("[&quot;section&quot;,&quot;poc&quot;]"), out.index("Opciones de corrida"))
 
     def test_the_placement_rules_and_the_poc_budget_badge_render(self) -> None:
         big = json.loads(json.dumps(TIMING))
