@@ -236,7 +236,9 @@ from the accepted revision and the deliberation, verbatim in meaning; never
 invent one the revision does not argue.
 
 **The two concept trees.** The panel draws the problem as a tree and relates the
-pillars to the hypotheses in a second one, in technical English:
+pillars to the hypotheses in a second one. Every statement of both trees and every
+citation reason is technical English whatever language the conversation uses:
+`citations_cli.py check` refuses Spanish.
 
 - The central problem is the main visible effect, neither a root cause nor a
   distant consequence: a negative state written as a negative qualifier, a

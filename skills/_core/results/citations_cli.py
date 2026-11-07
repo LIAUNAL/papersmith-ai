@@ -45,7 +45,7 @@ except ImportError:
 
 
 CROSSREF_WORKS = "https://api.crossref.org/works/"
-CROSSREF_TIMEOUT = 15
+HTTP_TIMEOUT = 15
 OPENALEX_WORKS = "https://api.openalex.org/works/doi:10.48550/arxiv."
 
 
@@ -75,7 +75,7 @@ def _crossref(doi: str) -> dict[str, Any] | None:
     request = urllib.request.Request(CROSSREF_WORKS + urllib.parse.quote(doi, safe=""),
                                      headers={"User-Agent": "papersmith-ai"})
     try:
-        with urllib.request.urlopen(request, timeout=CROSSREF_TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
             message = json.load(response)["message"]
         parts = (message.get("issued") or {}).get("date-parts") or [[None]]
         return {"type": message.get("type"), "issn": message.get("ISSN") or [], "year": parts[0][0]}
@@ -88,7 +88,7 @@ def _openalex_institutions(arxiv_id: str) -> dict[str, Any] | None:
     url = OPENALEX_WORKS + urllib.parse.quote(arxiv_id, safe="") + "?select=publication_year,authorships"
     request = urllib.request.Request(url, headers={"User-Agent": "papersmith-ai"})
     try:
-        with urllib.request.urlopen(request, timeout=CROSSREF_TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
             work = json.load(response)
         rors = [(item.get("ror") or "").rsplit("/", 1)[-1] for author in work.get("authorships") or []
                 for item in author.get("institutions") or []]
@@ -187,11 +187,20 @@ def _confirm_lab(root: Path, identifier: str, lab: str, evidence: str) -> int:
         return _emit({"ok": False, "error": "LAB_NOT_ACCEPTED", "message": f"{lab!r} is not one of {accepted}"}, 1)
     if not evidence.strip():
         return _emit({"ok": False, "error": "EVIDENCE_REQUIRED", "message": "--evidence must link the affiliation"}, 1)
-    record = citations._pool(root).get(citations.normalize(identifier))
+    identity = citations.normalize(identifier)
+    record = citations._pool(root).get(identity)
     if record is None:
         return _emit({"ok": False, "error": "NOT_IN_POOL", "message": f"{identifier!r} is not in {citations.POOL_REL}"}, 1)
-    data = citations._json(root / citations.RANKS_REL, root, citations.MAX_POOL_BYTES)
-    ranks = data.get("ranks") if isinstance(data, dict) and isinstance(data.get("ranks"), dict) else {}
+    if not identity.startswith("arxiv:"):
+        return _emit({"ok": False, "error": "NOT_A_PREPRINT",
+                      "message": f"{identifier!r} has a DOI: its journal rank decides, not a lab"}, 1)
+    if citations._year(record.get("year")) is None:
+        return _emit({"ok": False, "error": "YEAR_UNKNOWN", "message": f"{identifier!r} has no year in the pool"}, 1)
+    path = root / citations.RANKS_REL
+    data = citations._json(path, root, citations.MAX_POOL_BYTES) if path.exists() else {"ranks": {}}
+    ranks = data.get("ranks") if isinstance(data, dict) else None
+    if not isinstance(ranks, dict):
+        return _emit({"ok": False, "error": "RANKS_UNREADABLE", "message": f"{citations.RANKS_REL} cannot be read"}, 1)
     ranks[record["identifier"]] = {"work_type": "preprint", "quartile": None, "quartile_source": "unknown",
                                    "year": record.get("year"), "lab": lab, "lab_source": "operator",
                                    "evidence": evidence.strip()}

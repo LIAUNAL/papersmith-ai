@@ -28,6 +28,8 @@ number is `0`, breaking changes can still arrive without a major bump.
 - **Which agent and model wrote each reply.** The history shows it per reply, per round and per phase, as in
   `Claude Code · opus 5.5 - medium`. Antigravity's is inferred from its logs and marked as such; what a harness
   does not record stays empty.
+- **Concept trees are always English.** `citations_cli.py check` now refuses a tree statement or a tree citation
+  reason it reads as Spanish. It is a heuristic built for short phrases, so an unusual Spanish phrase can pass.
 - **Preprints of accepted labs support the concept trees.** A preprint at most 4 years old now counts
   when an author belongs to Google, Google DeepMind, OpenAI, Anthropic, Microsoft, Meta, NVIDIA, Apple,
   IBM, Amazon, the Allen Institute for AI, Xanadu, Quantinuum or IonQ. `citations_cli.py rank` finds the

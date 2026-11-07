@@ -158,6 +158,56 @@ class ProblemTree(Workspace):
         self.assertIn("tree:causes: id 'C1' must look like DC1", self.owed(self.write(data)))
 
 
+class English(Workspace):
+    SPANISH = ("Baja precisión de clasificación en EEG pediátrico", "Alta variabilidad entre sujetos",
+               "Gradientes que se desvanecen en circuitos profundos", "Efecto de la profundidad del circuito",
+               "Datos ruidosos", "Hipótesis de ganancia", "Compresión espacial de las señales")
+    ENGLISH = ("Degraded subject-level classification accuracy", "Noisy channel statistics",
+               "Restricted expressivity of single-shot quantum encodings", "Unreliable output.",
+               "Entanglement topology ablation", "Perez-Salinas re-uploading bounds", "Altered theta band power",
+               "Biased estimates in de novo cohorts", "Degraded Pérez-Salinas classifiers",
+               "Extends the de la Cruz bound", "Reproduces the Palo Alto cohort", "Follows Van der Waals and De La Torre",
+               "para-hydrogen spectra in the Alta dataset")
+
+    def test_spanish_is_refused_in_every_node(self):
+        for text in self.SPANISH:
+            with self.subTest(text=text):
+                data = novelty()
+                tree = data["problem_tree"]
+                tree["central"]["text"] = tree["causes"][0]["text"] = tree["effects"][0]["text"] = text
+                data["pillars"][0]["name"] = data["hypotheses"][0]["title"] = text
+                owed = self.owed(self.write(data))
+                for node in ("central", "DC1", "EF1", "C1", "E1"):
+                    self.assertIn(f"tree:{node}: must be written in English", owed)
+
+    def test_technical_english_is_accepted(self):
+        for text in self.ENGLISH:
+            with self.subTest(text=text):
+                data = novelty()
+                data["problem_tree"]["central"]["text"] = text
+                data["pillars"][0]["name"] = text
+                self.assertEqual(self.owed(self.write(data)), [])
+
+    def test_formulas_are_not_read_as_language(self):
+        data = novelty()
+        data["hypotheses"][0]["statement"] = r"The readout follows $\sin(x) + y$ and $la + de$ at depth L."
+        self.assertEqual(self.owed(self.write(data)), [])
+
+    def test_a_hypothesis_statement_is_checked(self):
+        data = novelty()
+        data["hypotheses"][0]["statement"] = "La ganancia crece con la profundidad"
+        self.assertIn("tree:E1: must be written in English", self.owed(self.write(data)))
+
+    def test_the_reason_of_a_tree_citation_is_checked(self):
+        self.write(novelty())
+        path = self.root / ".papersmith" / "citations.json"
+        cited = json.loads(path.read_text())
+        cited["ideas"]["pillar:C1"][0]["why"] = "Muestra la variabilidad entre sujetos"
+        path.write_text(json.dumps(cited))
+        self.assertIn("pillar:C1: entry 1 why must be written in English",
+                      next(i for i in citations.state(self.root)["ideas"] if i["key"] == "pillar:C1")["problems"])
+
+
 class PillarTree(Workspace):
     def test_one_pillar_is_too_few(self):
         data = novelty()
@@ -435,6 +485,32 @@ class Cli(Workspace):
         self.write(novelty())
         code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Some Startup", "--evidence", "https://x.org")
         self.assertEqual((code, body["error"]), (1, "LAB_NOT_ACCEPTED"))
+
+    def test_lab_refuses_a_reference_that_is_not_a_preprint(self):
+        self.write(novelty())
+        ranks = (self.root / "sota-pool" / "journal-ranks.json").read_text()
+        code, body = self.run_cli("lab", "--id", "10.1000/a", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "NOT_A_PREPRINT"))
+        self.assertEqual((self.root / "sota-pool" / "journal-ranks.json").read_text(), ranks)
+
+    def test_lab_refuses_an_unreadable_ranks_file(self):
+        self.ids = ["2212.08073", "10.1000/b"]
+        self.write(novelty())
+        path = self.root / "sota-pool" / "journal-ranks.json"
+        path.write_text("not json")
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "RANKS_UNREADABLE"))
+        self.assertEqual(path.read_text(), "not json")
+
+    def test_lab_refuses_a_preprint_without_a_year(self):
+        self.ids = ["2212.08073", "10.1000/b"]
+        self.write(novelty())
+        pool = self.root / "sota-pool" / "candidates.json"
+        data = json.loads(pool.read_text())
+        del data["candidates"][0]["year"]
+        pool.write_text(json.dumps(data))
+        code, body = self.run_cli("lab", "--id", "2212.08073", "--lab", "Anthropic", "--evidence", "https://x.org")
+        self.assertEqual((code, body["error"]), (1, "YEAR_UNKNOWN"))
 
     def test_lab_refuses_a_reference_outside_the_pool(self):
         self.write(novelty())

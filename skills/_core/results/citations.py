@@ -34,7 +34,8 @@ the problem tree and each hypothesis names its ``pillars``:
                       "effects": [{"id": "EF1", "text": "...", "caused_by": ["DC1"]}]},
      "pillars": [{"id": "C1", ...}], "hypotheses": [{"id": "E1", "pillars": ["C1"]}]}
 
-``tree_findings`` checks their shape and wording: 2 to 3 direct causes, each
+``tree_findings`` checks their shape, language and wording: every statement in
+English, 2 to 3 direct causes, each
 reaching an effect; at least 2 pillars, each reaching a hypothesis; and a central
 problem and causes that state a negative condition. The central problem and each
 cause are ideas too (``problem:central``, ``cause:DC1``), and the citations of
@@ -111,6 +112,18 @@ _EXPERIMENT = re.compile(r"^##\s+Experiment\s+\[exp:([^\]]+)\]")
 _TAG = re.compile(r"\\tag\{([^{}]*)\}")
 _FENCE = re.compile(r"^(```|~~~)")
 _CAUSE_ID = re.compile(r"^DC\d+$")
+_WORD = re.compile(r"[^\W\d_]+")
+_FORMULA = re.compile(r"\$[^$]*\$")
+_ACCENT = re.compile(r"[áéíóúñ]")
+#: Common words of these statements, outside English prose as lowercase words,
+#: and Spanish function words of which one alone can be English (``de novo``), so
+#: two are needed.
+_SPANISH_WORDS = frozenset({
+    "datos", "ruidosos", "baja", "bajo", "sujetos", "señal", "efecto", "efectos", "circuito", "circuitos",
+    "modelo", "modelos", "ganancia", "variabilidad", "profundidad", "entre", "sobre", "mediante", "según",
+    "cuando", "muestra", "causa", "causas", "pilar", "pilares"})
+_SPANISH_GLUE = frozenset({"de", "del", "la", "las", "el", "los", "en", "que", "con", "por", "para", "una", "un",
+                           "se", "y"})
 #: Openers that name an absent solution instead of a negative condition.
 _ABSENCE = re.compile(r"^(?:(?:(?:the|an?)\s+)?(?:(?:lack|absence|shortage|deficiency|nonexistence)\s+of\b"
                       r"|need(?:s|ed)?\b)|there\s+(?:is|are)\s+(?:no\b|an?\s+(?:lack|absence|shortage|need)\b)"
@@ -228,6 +241,30 @@ def _experiments(root: Path) -> list[str]:
     return [match.group(1).strip()[:40] for match in matches if match]
 
 
+def _reads_spanish(text: str) -> bool:
+    """Whether a short statement is Spanish. ``paper_language.is_spanish_prose``
+    is built for paragraphs and misses most short phrases. It is a heuristic: a
+    capitalized word can be a name, so it counts only as the sentence's first
+    word, and the particles of a surname (``de la Cruz``) count as nothing."""
+    words = _WORD.findall(_FORMULA.sub(" ", text))
+    prose = [word for index, word in enumerate(words)
+             if (word[0].islower() or index == 0)
+             and not (index + 1 < len(words) and word.lower() in _SPANISH_GLUE
+                      and (words[index + 1][0].isupper() or words[index + 1].lower() in _SPANISH_GLUE
+                           and index + 2 < len(words) and words[index + 2][0].isupper()))]
+    lowered = [word.lower() for word in prose]
+    return (any(word[0].islower() and _ACCENT.search(word) for word in prose)
+            or bool(_SPANISH_WORDS.intersection(lowered))
+            or len(_SPANISH_GLUE.intersection(lowered)) >= 2)
+
+
+def _language(node: str, *texts: Any) -> list[str]:
+    """The tree's statements are English whatever the conversation's language."""
+    if any(isinstance(text, str) and _reads_spanish(text) for text in texts):
+        return [f"tree:{node}: must be written in English"]
+    return []
+
+
 def _names(value: Any) -> list[str]:
     """The non-blank strings of a list."""
     return [item.strip() for item in value if isinstance(item, str) and item.strip()] if isinstance(value, list) else []
@@ -248,7 +285,7 @@ def _problem_tree_findings(tree: Any) -> list[str]:
     central = tree.get("central") if isinstance(tree.get("central"), dict) else {}
     text = central.get("text")
     if isinstance(text, str) and text.strip():
-        found += _wording("central", text)
+        found += _wording("central", text) + _language("central", text)
     else:
         found.append("tree:central: has no text")
     causes = _listed(tree.get("causes"), "text")
@@ -262,13 +299,14 @@ def _problem_tree_findings(tree: Any) -> list[str]:
         if ident in ids:
             found.append(f"tree:causes: duplicate id {ident!r}")
         ids.append(ident)
-        found += _wording(ident, cause["text"])
+        found += _wording(ident, cause["text"]) + _language(ident, cause["text"])
     effects = _listed(tree.get("effects"), "text")
     if not effects:
         found.append("tree:effects: needs at least 1 effect")
     reached: set[str] = set()
     for position, effect in enumerate(effects, 1):
-        found += _wording(_id(effect, "EF", position), effect["text"])
+        found += (_wording(_id(effect, "EF", position), effect["text"])
+                  + _language(_id(effect, "EF", position), effect["text"]))
         for name in _names(effect.get("caused_by")):
             if name in ids:
                 reached.add(name)
@@ -286,6 +324,8 @@ def tree_findings(novelty: dict[str, Any]) -> list[str]:
     if len(pillars) < MIN_PILLARS:
         found.append(f"tree:pillars: {len(pillars)} pillar(s), needs at least {MIN_PILLARS}")
     ids = [_id(item, "P", n) for n, item in enumerate(pillars, 1)]
+    for ident, item in zip(ids, pillars):
+        found += _language(ident, item.get("name"))
     found += [f"tree:pillars: duplicate id {ident!r}" for ident in sorted({i for i in ids if ids.count(i) > 1})]
     reached: set[str] = set()
     seen: set[str] = set()
@@ -294,6 +334,7 @@ def tree_findings(novelty: dict[str, Any]) -> list[str]:
         if ident in seen:
             found.append(f"tree:hypotheses: duplicate id {ident!r}")
         seen.add(ident)
+        found += _language(ident, hypothesis.get("title"), hypothesis.get("statement"))
         names = _names(hypothesis.get("pillars"))
         if not names:
             found.append(f"tree:hypotheses: {ident} names no pillar")
@@ -459,6 +500,8 @@ def problems(key: str, entries: Any, pool: dict[str, dict[str, Any]],
             found.append(f"{key}: entry {position} has no why")
         elif len(why) > MAX_WHY:
             found.append(f"{key}: entry {position} why is longer than {MAX_WHY} characters")
+        elif ranks is not None and key.split(":", 1)[0] in TREE_KINDS and _reads_spanish(why):
+            found.append(f"{key}: entry {position} why must be written in English")
     return found
 
 
