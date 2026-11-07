@@ -388,6 +388,46 @@ class AutoCommit(Base):
         hook.chmod(0o755)
         self.assertEqual(ai_archive.commit(self.root)["status"], "failed")
 
+    def test_records_older_than_the_masks_are_masked_before_the_commit(self):
+        path = next((self.root / ai_archive.ARCHIVE_REL).glob("*.jsonl"))
+        record = {"id": "old", "role": "user", "text": "write to someone@example.org", "ts": "2026-10-01T10:00:00Z"}
+        path.write_text(path.read_text(encoding="utf-8") + json.dumps(record) + "\n", encoding="utf-8")
+        self.assertEqual(ai_archive.commit(self.root)["status"], "committed")
+        committed = _git(self.root, "show", "HEAD:" + path.relative_to(self.root).as_posix())
+        self.assertNotIn("someone@example.org", committed)
+        self.assertIn("[EMAIL]", committed)
+
+    def test_an_archive_that_cannot_be_masked_is_not_committed(self):
+        with mock.patch.object(ai_archive, "_scrub_file", side_effect=OSError("disk")):
+            report = ai_archive.commit(self.root)
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(self.count(), 1)
+        self.assertEqual(_git(self.root, "diff", "--cached", "--name-only"), "")
+
+    def test_a_commit_that_outlives_its_time_leaves_no_index_lock(self):
+        git_dir = Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip())
+        hook = git_dir / "hooks" / "pre-commit"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\nsleep 30\n")
+        hook.chmod(0o755)
+        with mock.patch.object(ai_archive, "GIT_TIMEOUT_SECONDS", 2), \
+                mock.patch.object(ai_archive, "GIT_GRACE_SECONDS", 1):
+            report = ai_archive.commit(self.root)
+        self.assertEqual(report, {"status": "failed", "detail": "TimeoutExpired"})
+        self.assertFalse((git_dir / "index.lock").exists())
+        self.assertEqual(self.count(), 1)
+
+    def test_a_signing_prompt_cannot_hold_the_commit(self):
+        _git(self.root, "config", "commit.gpgsign", "true")
+        _git(self.root, "config", "gpg.program", "/bin/false")
+        self.assertEqual(ai_archive.commit(self.root)["status"], "committed")
+
+    def test_a_name_git_cannot_decode_does_not_stop_the_archive(self):
+        config = Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip()) / "config"
+        config.write_bytes(config.read_bytes().replace(b"name = T", b"name = \xc1lvarez"))
+        self.assertIn("added", ai_archive.sync(self.root, self.locations))
+        self.assertEqual(ai_archive.commit(self.root)["status"], "committed")
+
     def test_a_workspace_commits_after_its_sync(self):
         (self.root / ".papersmith" / "version").write_text("0.61.3")
         ai_archive._last_sync.clear()

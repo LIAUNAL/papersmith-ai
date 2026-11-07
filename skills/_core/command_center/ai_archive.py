@@ -64,6 +64,8 @@ TUTORS = ("math-tutor", "experiments-tutor")
 SYNC_INTERVAL_SECONDS = 60
 COMMIT_INTERVAL_SECONDS = 600
 GIT_TIMEOUT_SECONDS = 30
+#: How long git gets to release its locks once told to stop.
+GIT_GRACE_SECONDS = 5
 COMMIT_MESSAGE = "chore(history): archive AI conversations"
 #: Markers under the git directory of an operation that must finish undisturbed.
 GIT_BUSY = ("MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
@@ -146,7 +148,7 @@ def private_terms(root: Path) -> tuple[str, ...]:
     try:
         found.add(getpass.getuser())
         found.add(_git(root, "config", "user.name").stdout.strip())
-    except (OSError, KeyError, subprocess.SubprocessError):
+    except (OSError, KeyError, ValueError, subprocess.SubprocessError):
         pass
     kept = {term.strip() for term in found if isinstance(term, str) and len(term.strip()) >= MIN_TERM}
     return tuple(sorted(kept, key=lambda term: (-len(term), term)))
@@ -411,12 +413,28 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
-                          timeout=GIT_TIMEOUT_SECONDS, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    """Run git, whose output is UTF-8 whatever the locale says. Past its time it is
+    asked to stop before it is killed: a killed git leaves ``index.lock`` behind, and
+    that blocks every later git command of the operator."""
+    command = ["git", "-C", str(root), *args]
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                          errors="replace", env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}) as process:
+        try:
+            out, err = process.communicate(timeout=GIT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(GIT_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            raise
+    return subprocess.CompletedProcess(command, process.returncode, out, err)
 
 
 def commit(root: Path | str) -> dict[str, Any]:
-    """Commit the archive folder alone. ``status`` says what happened: ``committed``,
+    """Mask the archive with today's rules, then commit that folder alone: records
+    older than a rule never reach history. Nobody is there to answer a signing prompt,
+    so this commit is not signed. ``status`` says what happened: ``committed``,
     ``unchanged``, ``disabled``, ``no-repository``, ``busy`` (an operation under way
     or a detached HEAD: the next run tries again) or ``failed``, for example when a
     hook refuses. It never pushes, and what the operator staged stays staged."""
@@ -432,12 +450,14 @@ def commit(root: Path | str) -> dict[str, Any]:
             return {"status": "busy"}
         if not (root / ARCHIVE_REL).is_dir():
             return {"status": "unchanged"}
+        scrub(root)
         staged = _git(root, "add", "--", ARCHIVE_REL)
         if staged.returncode:
             return {"status": "failed", "detail": staged.stderr.strip()[:200]}
         if not _git(root, "diff", "--cached", "--quiet", "--", ARCHIVE_REL).returncode:
             return {"status": "unchanged"}
-        done = _git(root, "commit", "-q", "--only", "-m", COMMIT_MESSAGE, "--", ARCHIVE_REL)
+        done = _git(root, "-c", "commit.gpgsign=false", "commit", "-q", "--only", "-m", COMMIT_MESSAGE,
+                    "--", ARCHIVE_REL)
     except (OSError, subprocess.SubprocessError) as exc:
         return {"status": "failed", "detail": type(exc).__name__}
     if done.returncode:

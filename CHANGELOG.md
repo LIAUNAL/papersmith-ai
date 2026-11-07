@@ -16,8 +16,8 @@ number is `0`, breaking changes can still arrive without a major bump.
 - **Persistent AI history.** Every operator prompt and agent answer of every harness now lands in full in
   `.papersmith/ai-history/`, tracked by git, one file per session, with common secrets and personal data
   (emails, private IPs, user names in paths, phones) masked before saving. The dashboard brings it up to date
-  and commits that folder alone at most every ten minutes, never pushing (`PAPERSMITH_AI_HISTORY_COMMIT=0`
-  turns it off), and `python -m skills._core.command_center.ai_archive sync
+  and commits that folder alone at most every ten minutes, masking every record again first, unsigned and
+  never pushing (`PAPERSMITH_AI_HISTORY_COMMIT=0` turns it off), and `python -m skills._core.command_center.ai_archive sync
   --root .` does it by hand. It also keeps prompts sent while the agent works, tutor threads, subagent
   answers and sessions of subdirectories, and a session survives its harness deleting it.
 - **A more honest AI History graph.** Turns before the first phase command are reported as unassigned instead
