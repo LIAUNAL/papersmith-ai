@@ -11,6 +11,12 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Concept-tree statements are short.** `citations_cli.py check` now refuses a central problem longer than four
+  lines of 100 characters (400) and a cause, effect, pillar name or summary, or hypothesis title or statement
+  longer than three (300). The English, wording and citation rules are unchanged.
+
 ## 0.62.0
 
 - **Persistent AI history.** Every operator prompt and agent answer of every harness now lands in full in

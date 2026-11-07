@@ -69,7 +69,8 @@ skill refuses when its input is missing.
      `.papersmith/model_spec.json` holds the central problem, its 2 to 3
      direct causes and their effects; at least 2 pillars each reach a
      hypothesis through its `pillars` field. Every statement and citation
-     reason is in English. The central problem and the
+     reason is in English; the central problem fits in 400
+     characters, every other statement in 300. The central problem and the
      causes state a negative condition, never "Lack of", "No", "Need for",
      "Requires" or an infinitive. The problem, each cause, each pillar and
      each hypothesis cite Q1 or Q2 journal articles at most 4 years old,
