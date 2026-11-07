@@ -417,6 +417,26 @@ class AutoCommit(Base):
         self.assertFalse((git_dir / "index.lock").exists())
         self.assertEqual(self.count(), 1)
 
+    def test_a_git_that_had_to_be_killed_leaves_no_index_lock(self):
+        git_dir = Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip())
+        hook = git_dir / "hooks" / "pre-commit"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\nsleep 5\n")
+        hook.chmod(0o755)
+        with mock.patch.object(ai_archive, "GIT_TIMEOUT_SECONDS", 1), \
+                mock.patch.object(ai_archive, "GIT_GRACE_SECONDS", 1), \
+                mock.patch.object(subprocess.Popen, "terminate", lambda process: None):
+            report = ai_archive.commit(self.root)
+        self.assertEqual(report, {"status": "failed", "detail": "TimeoutExpired"})
+        self.assertFalse((git_dir / "index.lock").exists())
+
+    def test_an_index_lock_of_someone_else_is_left_alone(self):
+        lock = Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip()) / "index.lock"
+        lock.write_text("")
+        self.assertEqual(ai_archive.commit(self.root)["status"], "busy")
+        self.assertTrue(lock.exists())
+        self.assertEqual(self.count(), 1)
+
     def test_a_signing_prompt_cannot_hold_the_commit(self):
         _git(self.root, "config", "commit.gpgsign", "true")
         _git(self.root, "config", "gpg.program", "/bin/false")

@@ -68,7 +68,7 @@ GIT_TIMEOUT_SECONDS = 30
 GIT_GRACE_SECONDS = 5
 COMMIT_MESSAGE = "chore(history): archive AI conversations"
 #: Markers under the git directory of an operation that must finish undisturbed.
-GIT_BUSY = ("MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
+GIT_BUSY = ("index.lock", "MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
 MAX_LINE_BYTES = 8 * 1024 * 1024
 
 REDACTED = "[REDACTED]"
@@ -431,6 +431,16 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(command, process.returncode, out, err)
 
 
+def _git_locking(root: Path, git_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """A git command that takes the index lock, which :func:`commit` found free. When
+    it runs out of time it is gone, and a killed git cannot release what it holds."""
+    try:
+        return _git(root, *args)
+    except subprocess.TimeoutExpired:
+        (git_dir / "index.lock").unlink(missing_ok=True)
+        raise
+
+
 def commit(root: Path | str) -> dict[str, Any]:
     """Mask the archive with today's rules, then commit that folder alone: records
     older than a rule never reach history. Nobody is there to answer a signing prompt,
@@ -451,13 +461,13 @@ def commit(root: Path | str) -> dict[str, Any]:
         if not (root / ARCHIVE_REL).is_dir():
             return {"status": "unchanged"}
         scrub(root)
-        staged = _git(root, "add", "--", ARCHIVE_REL)
+        staged = _git_locking(root, git_dir, "add", "--", ARCHIVE_REL)
         if staged.returncode:
             return {"status": "failed", "detail": staged.stderr.strip()[:200]}
         if not _git(root, "diff", "--cached", "--quiet", "--", ARCHIVE_REL).returncode:
             return {"status": "unchanged"}
-        done = _git(root, "-c", "commit.gpgsign=false", "commit", "-q", "--only", "-m", COMMIT_MESSAGE,
-                    "--", ARCHIVE_REL)
+        done = _git_locking(root, git_dir, "-c", "commit.gpgsign=false", "commit", "-q", "--only",
+                            "-m", COMMIT_MESSAGE, "--", ARCHIVE_REL)
     except (OSError, subprocess.SubprocessError) as exc:
         return {"status": "failed", "detail": type(exc).__name__}
     if done.returncode:
