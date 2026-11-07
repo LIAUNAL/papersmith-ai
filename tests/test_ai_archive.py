@@ -107,7 +107,7 @@ class Store(Base):
 class Secrets(Base):
     def test_secrets_are_redacted_before_saving(self):
         samples = ["sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345", "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-                   "AKIAABCDEFGHIJKLMNOP", "Authorization: Bearer abcdefghijklmnop1234567890",
+                   "AKIAABCDEFGHIJKLMNOP", "KGAT_0123456789abcdef0123456789abcdef", "Authorization: Bearer abcdefghijklmnop1234567890",
                    'password = "hunter2hunter2"', "KAGGLE_KEY=0123456789abcdef0123456789abcdef",
                    "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"]
         for sample in samples:
