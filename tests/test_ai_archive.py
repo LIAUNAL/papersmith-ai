@@ -437,6 +437,24 @@ class AutoCommit(Base):
         self.assertTrue(lock.exists())
         self.assertEqual(self.count(), 1)
 
+    def test_a_git_that_stopped_by_itself_leaves_any_later_lock_alone(self):
+        git_dir = Path(_git(self.root, "rev-parse", "--absolute-git-dir").strip())
+        hook = git_dir / "hooks" / "pre-commit"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\nsleep 30\n")
+        hook.chmod(0o755)
+        real, lock = subprocess.Popen.terminate, git_dir / "index.lock"
+
+        def stop_then_someone_locks(process):
+            real(process)
+            process.wait()
+            lock.write_text("")
+
+        with mock.patch.object(ai_archive, "GIT_TIMEOUT_SECONDS", 1), \
+                mock.patch.object(subprocess.Popen, "terminate", stop_then_someone_locks):
+            self.assertEqual(ai_archive.commit(self.root)["status"], "failed")
+        self.assertTrue(lock.exists())
+
     def test_a_signing_prompt_cannot_hold_the_commit(self):
         _git(self.root, "config", "commit.gpgsign", "true")
         _git(self.root, "config", "gpg.program", "/bin/false")

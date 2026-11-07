@@ -412,10 +412,12 @@ def sync(root: Path | str, locations: dict[str, Any] | None = None,
     return {"added": added, "problems": problems, "folder": ARCHIVE_REL}
 
 
-def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _git(root: Path, *args: str, lock: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Run git, whose output is UTF-8 whatever the locale says. Past its time it is
     asked to stop before it is killed: a killed git leaves ``index.lock`` behind, and
-    that blocks every later git command of the operator."""
+    that blocks every later git command of the operator. ``lock`` is that file, for a
+    command that takes it; only a git that could not clean up gets it removed, since
+    a git that stopped by itself released it and what is there now is someone else's."""
     command = ["git", "-C", str(root), *args]
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
                           errors="replace", env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}) as process:
@@ -423,22 +425,17 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
             out, err = process.communicate(timeout=GIT_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             process.terminate()
+            forced = os.name == "nt"  # where terminate is a kill
             try:
                 process.wait(GIT_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
                 process.kill()
+                process.wait()
+                forced = True
+            if forced and lock:
+                lock.unlink(missing_ok=True)
             raise
     return subprocess.CompletedProcess(command, process.returncode, out, err)
-
-
-def _git_locking(root: Path, git_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """A git command that takes the index lock, which :func:`commit` found free. When
-    it runs out of time it is gone, and a killed git cannot release what it holds."""
-    try:
-        return _git(root, *args)
-    except subprocess.TimeoutExpired:
-        (git_dir / "index.lock").unlink(missing_ok=True)
-        raise
 
 
 def commit(root: Path | str) -> dict[str, Any]:
@@ -461,13 +458,13 @@ def commit(root: Path | str) -> dict[str, Any]:
         if not (root / ARCHIVE_REL).is_dir():
             return {"status": "unchanged"}
         scrub(root)
-        staged = _git_locking(root, git_dir, "add", "--", ARCHIVE_REL)
+        staged = _git(root, "add", "--", ARCHIVE_REL, lock=git_dir / "index.lock")
         if staged.returncode:
             return {"status": "failed", "detail": staged.stderr.strip()[:200]}
         if not _git(root, "diff", "--cached", "--quiet", "--", ARCHIVE_REL).returncode:
             return {"status": "unchanged"}
-        done = _git_locking(root, git_dir, "-c", "commit.gpgsign=false", "commit", "-q", "--only",
-                            "-m", COMMIT_MESSAGE, "--", ARCHIVE_REL)
+        done = _git(root, "-c", "commit.gpgsign=false", "commit", "-q", "--only", "-m", COMMIT_MESSAGE,
+                    "--", ARCHIVE_REL, lock=git_dir / "index.lock")
     except (OSError, subprocess.SubprocessError) as exc:
         return {"status": "failed", "detail": type(exc).__name__}
     if done.returncode:
