@@ -134,6 +134,17 @@ class LostTurns(Base):
         self.assertEqual((view["unassigned"]["prompts"], view["unassigned"]["replies"]), (1, 1))
         self.assertEqual(view["phases"][0]["counts"]["commands"], 1)
 
+    def test_a_skill_the_agent_loads_opens_its_phase(self):
+        skill = [{"type": "tool_use", "name": "Skill", "input": {"skill": "proposal-deliberation"}}]
+        self.session(_line("user", "let us work on the proposal", "2026-10-03T10:00:00Z"),
+                     _line("assistant", skill, "2026-10-03T10:00:10Z"),
+                     _line("assistant", _text("Working."), "2026-10-03T10:01:00Z"),
+                     _line("user", "add H2", "2026-10-03T10:02:00Z"))
+        view = ai_history.build_ai_history(self.root, [_fase("proposal", "ACTIVE")], sessions=self.locations)
+        self.assertEqual(view["unassigned"]["prompts"], 1)
+        self.assertEqual(view["phases"][0]["metrics"]["prompts"], 1)
+        self.assertEqual(view["phases"][0]["metrics"]["replies"], 1)
+
     def test_a_prompt_queued_while_the_agent_works_is_kept(self):
         queued = json.dumps({"type": "attachment", "timestamp": "2026-10-03T10:00:00Z",
                              "attachment": {"type": "queued_command", "prompt": "and also this"}})

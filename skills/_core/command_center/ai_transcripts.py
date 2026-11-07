@@ -69,6 +69,8 @@ HARNESS_PREFIXES = ("<system-reminder>", "<task-notification>", "<local-command-
 #: The phase of the turns a session has before its first phase command.
 UNASSIGNED = "unassigned"
 
+#: ``role`` is ``user``, ``assistant``, ``error`` or ``phase`` (the agent loaded
+#: a skill, named by the text).
 Turn = tuple["str | None", str, str]
 #: ``(ts, role, text, command)``: what :func:`attribute` needs of a turn, with
 #: the text already clipped and the command (``(skill, args)``) already parsed.
@@ -145,6 +147,8 @@ def compact(ts: Any, role: str, text: str) -> Compact | None:
         return (ts, role, _clip(text), None) if text.strip() else None
     if role == "error":
         return (ts, role, "", None)
+    if role == "phase":
+        return (ts, role, text, None)
     kept = operator_text(text)
     if kept is None:
         return None
@@ -175,6 +179,13 @@ def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
         if role == "error":
             events.setdefault(stage, []).append(
                 _event(ts, "error", "A tool failed during the phase", ref, "tool"))
+            continue
+        if role == "phase":
+            # The agent loaded a phase's skill: no command was typed, but the
+            # work that follows belongs to that phase.
+            if text in skills:
+                flush()
+                stage = skills[text]
             continue
         target = stage_for(*command, skills) if command else None
         flush()
@@ -372,6 +383,11 @@ def claude_line(line: dict[str, Any]) -> Turn | None:
     text, blocks = _blocks(message.get("content"))
     if any(b.get("type") == "tool_result" and b.get("is_error") for b in blocks):
         return line.get("timestamp"), "error", ""
+    if not text:
+        for block in blocks:
+            skill = (block.get("input") or {}).get("skill") if block.get("name") == "Skill" else None
+            if block.get("type") == "tool_use" and isinstance(skill, str):
+                return line.get("timestamp"), "phase", skill.split(":")[-1]
     return (line.get("timestamp"), kind, text) if text else None
 
 
