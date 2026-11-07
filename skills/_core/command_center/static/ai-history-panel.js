@@ -194,7 +194,7 @@
       + `${esc(OUTCOME_GLYPHS[r.outcome] || '')} ${esc(outcomeLabel(r.outcome))}</span>`
       + ` <span class="aih-ev__when">${stamp(r.ts)} · ${esc(r.reason)}</span></div>`
       + `<div class="aih-round__turn"><span class="aih-ev__kind">${esc(decision ? t('aih.decision') : t('aih.kind.user_message'))}</span>${esc(r.prompt)}</div>`
-      + `<div class="aih-round__turn"><span class="aih-ev__kind">${esc(decision ? t('aih.result') : t('aih.ai'))}</span>`
+      + `<div class="aih-round__turn"><span class="aih-ev__kind">${esc(decision ? t('aih.result') : (r.model_label || t('aih.ai')))}</span>`
       + `${r.reply ? esc(r.reply) : `<em>${esc(t('aih.noReply'))}</em>`}</div>`
       + '</div>';
   }
@@ -204,8 +204,51 @@
     const chips = OUTCOMES.map((o) => `<span class="badge aih-dgbadge--${o}">${OUTCOME_GLYPHS[o]} ${esc(outcomeLabel(o))}: ${Number(totals[o]) || 0}</span>`).join(' ');
     const pending = list(view.pending).map((p) => `<button type="button" class="btn aih-pending" data-stage="${esc(p.stage_id)}"`
       + ` data-round="${esc(p.round)}" title="${esc(p.prompt)}">${esc(phaseName(p.id))} · R${esc(p.round)}</button>`).join(' ');
+    const loose = view.unassigned || {};
+    const unassigned = Number(loose.prompts) || Number(loose.replies)
+      ? `<p class="aih-hint">${esc(t('aih.unassigned', { prompts: Number(loose.prompts) || 0, replies: Number(loose.replies) || 0, sessions: Number(loose.sessions) || 0 }))}</p>` : '';
     return `<div class="aih-strip"><span class="aih-strip__title">${esc(t('aih.decisionsWithAi'))}</span> ${chips}`
-      + (pending ? ` <span class="aih-strip__title">${esc(t('aih.pending'))}</span> ${pending}` : '') + '</div>';
+      + (pending ? ` <span class="aih-strip__title">${esc(t('aih.pending'))}</span> ${pending}` : '') + `</div>${unassigned}`;
+  }
+
+  // How the phase went: the operator's work, the agent's, and the share of
+  // rounds that needed no rework.
+  function metricChips(phase) {
+    const m = phase.metrics || {};
+    if (!m.rounds) return '';
+    const rate = m.first_pass_rate === null || m.first_pass_rate === undefined
+      ? '' : `<span class="badge">${esc(t('aih.metric.firstPass'))}: ${Math.round(Number(m.first_pass_rate) * 100)}%</span>`;
+    return `<div class="aih-chips">${[
+      [t('aih.metric.prompts'), m.prompts], [t('aih.metric.replies'), m.replies],
+      [t('aih.metric.corrections'), m.corrections], [t('aih.metric.approvals'), m.approvals],
+      [t('aih.metric.toolErrors'), m.tool_errors], [t('aih.metric.sessions'), m.sessions],
+    ].map(([k, v]) => `<span class="badge">${esc(k)}: ${Number(v) || 0}</span>`).join(' ')} ${rate}</div>`
+      + (list(m.models).length ? `<div class="aih-chips">${list(m.models).map((x) => `<span class="badge">🤖 ${esc(x.label)}: ${Number(x.replies) || 0}</span>`).join(' ')}</div>` : '');
+  }
+
+  // The conversations behind a phase, each opened in full from the archive.
+  function sessionButtons(phase) {
+    const refs = [...new Set(list(phase.events).filter((e) => e.source === 'chats' && e.ref).map((e) => e.ref))];
+    if (!refs.length) return '';
+    return `<h4 class="aih-section">${esc(t('aih.fullConversations'))}</h4><div class="aih-chips">`
+      + refs.map((r) => `<button type="button" class="btn btn--sm" data-session-ref="${esc(r)}">${esc(r)}</button>`).join(' ')
+      + '</div><div class="aih-session" data-session-view></div>';
+  }
+
+  async function showSession(button) {
+    const view = button.closest('.aih-detail, #aiHistoryPanel').querySelector('[data-session-view]');
+    if (!view) return;
+    view.innerHTML = `<p class="aih-hint">${esc(t('aih.loadingConversation'))}</p>`;
+    try {
+      const res = await fetch(`/api/ai-history/session?ref=${encodeURIComponent(button.dataset.sessionRef)}`, { cache: 'no-store' });
+      if (!res.ok) { view.innerHTML = `<p class="aih-hint">${esc(t('aih.notArchived'))}</p>`; return; }
+      const body = await res.json();
+      view.innerHTML = list(body.turns).filter((turn) => turn.text).map((turn) => `<div class="aih-turn aih-turn--${esc(turn.role)}">`
+        + `<span class="aih-ev__when">${stamp(turn.ts)} · ${esc(turn.model_label || turn.role)}${turn.inferred ? ` (${esc(t('aih.inferredModel'))})` : ''}</span>`
+        + `<div class="aih-turn__text">${esc(turn.text)}</div></div>`).join('');
+    } catch (err) {
+      view.innerHTML = `<p class="aih-hint">${esc(t('aih.loadFailed', { error: err.message }))}</p>`;
+    }
   }
 
   function stamp(ts) {
@@ -235,7 +278,7 @@
         + ` data-ev-round="${esc(e.round ?? '')}">`
         + (e.round ? `<span class="aih-ev__round" data-round="${esc(e.round)}" title="${esc(t('aih.round', { n: e.round }))}">R${esc(e.round)}</span>` : '')
         + `<span class="aih-ev__kind">${esc(kindLabel(e.kind))}</span>`
-        + `<span class="aih-ev__when">${stamp(e.ts)} · ${esc(e.actor || e.source)}</span>`
+        + `<span class="aih-ev__when">${stamp(e.ts)} · ${esc(e.model_label || e.actor || e.source)}</span>`
         + `<div class="aih-ev__text">${esc(e.summary)}</div>`
         + (e.path ? `<div class="aih-ev__ref">📄 ${fileLink(e.path)}${e.ref && e.ref !== e.path ? ` <code>${esc(e.ref.slice(e.path.length))}</code>` : ''}</div>`
           : e.ref ? `<code class="aih-ev__ref">${esc(e.ref)}</code>` : '')
@@ -245,11 +288,11 @@
       + ` <span class="badge aih-badge--${esc(phase.color)}">${esc(colorLabel(phase.color))}</span></div>`
       + `<p class="aih-detail__meta">${esc(t('aih.gate'))} <code>${esc(phase.gate)}</code> · ${esc(t('aih.agent', { agent: phase.agent || '—' }))}</p>`
       + `<p class="aih-detail__meta">${list(phase.reasons).map(esc).join(' · ')}</p>`
-      + `<div class="aih-chips">${chips}</div>`
+      + `<div class="aih-chips">${chips}</div>${metricChips(phase)}`
       + `<h4 class="aih-section">${esc(t('aih.decisionGraph', { n: list(phase.rounds).length }))}</h4>`
       + `<div class="aih-chips">${summaryGlyphs(phase.decision_summary).replace(/ · $/, '') || '—'}</div>`
       + `${decisionGraph(phase)}${roundCard(phase)}${artifacts(phase)}`
-      + `<h4 class="aih-section">${esc(t('aih.interactions'))}</h4>${toggle}${shown}${items}`;
+      + `<h4 class="aih-section">${esc(t('aih.interactions'))}</h4>${toggle}${shown}${items}${sessionButtons(phase)}`;
   }
 
   function artifacts(phase) {
@@ -426,6 +469,8 @@
       + `<div class="aih-detail" aria-live="polite">${detail(current)}</div>` + sourcesNote(lastView);
     const detailEl = host.querySelector('.aih-detail');
     detailEl?.addEventListener('click', (ev) => {
+      const session = ev.target.closest('[data-session-ref]');
+      if (session) { showSession(session); return; }
       const round = ev.target.closest('[data-round]');
       if (round) { pickRound(Number(round.getAttribute('data-round'))); return; }
       openArtifact(ev);

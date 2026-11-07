@@ -13,6 +13,21 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+- **Persistent AI history.** Every operator prompt and agent answer of every harness now lands in full in
+  `.papersmith/ai-history/`, tracked by git, one file per session, with common secrets and personal data
+  (emails, private IPs, user names in paths, phones) masked before saving. The dashboard brings it up to date
+  and commits that folder alone at most every ten minutes, masking every record again first, unsigned and
+  never pushing (`PAPERSMITH_AI_HISTORY_COMMIT=0` turns it off), and `python -m skills._core.command_center.ai_archive sync
+  --root .` does it by hand. It also keeps prompts sent while the agent works, tutor threads, subagent
+  answers and sessions of subdirectories, and a session survives its harness deleting it.
+- **A more honest AI History graph.** Turns before the first phase command are reported as unassigned instead
+  of dropped; harness-written turns no longer count as the operator's; a tool error the agent recovers from
+  and two different remote runs are no longer rework; an approval alone no longer paints friction. Each phase
+  reports prompts, replies, corrections, approvals, tool errors, sessions and its share of rounds with no
+  rework, and a button opens each conversation in full.
+- **Which agent and model wrote each reply.** The history shows it per reply, per round and per phase, as in
+  `Claude Code · opus 5.5 - medium`. Antigravity's is inferred from its logs and marked as such; what a harness
+  does not record stays empty.
 - **Preprints of accepted labs support the concept trees.** A preprint at most 4 years old now counts
   when an author belongs to Google, Google DeepMind, OpenAI, Anthropic, Microsoft, Meta, NVIDIA, Apple,
   IBM, Amazon, the Allen Institute for AI, Xanadu, Quantinuum or IonQ. `citations_cli.py rank` finds the

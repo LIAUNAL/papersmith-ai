@@ -8,9 +8,15 @@ interactions that phase had. Read-only and bounded; it never raises. Sources:
   and experimental deliberation sidecars, the remote-execution ledgers).
 * ``revisions``: managed proposal revisions ``proposals/*-rNN.md``.
 * ``chats``: this workspace's sessions of every harness (Claude Code, Pi,
-  OpenCode; see :mod:`ai_transcripts`). A phase command opens that phase; the
-  operator's follow-up messages, the agent's replies and failed tool calls
-  are attributed to it until the next phase command.
+  OpenCode; see :mod:`ai_transcripts`), plus the sessions only the archive still
+  holds (:mod:`ai_archive`), such as those of another machine. A phase command
+  opens that phase; the operator's follow-up messages, the agent's replies and
+  failed tool calls are attributed to it until the next phase command, and what
+  comes before the first one is reported as ``unassigned``.
+
+Each phase reports ``metrics``: rounds, prompts, replies, corrections, approvals,
+tool errors, sessions, each outcome, and ``first_pass_rate``, the share of rounds
+that needed no rework.
 
 Colour: ``red`` when the phase has not passed and shows no friction;
 ``orange`` when it shows errors, rework (more than one revision) or user
@@ -21,10 +27,11 @@ iterations (a follow-up message, a repeated command, a deliberation edit);
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from . import ai_transcripts, decisions, phase_actions
+from . import ai_archive, ai_transcripts, decisions, phase_actions
 
 MAX_PHASE_EVENTS = 60
 TEXT_MAX = 240
@@ -133,8 +140,9 @@ def _assess(status: str, events: list[dict[str, Any]]) -> tuple[str, list[str], 
         reasons.append(f"{counts['edits']} deliberated edits")
     if counts["commands"] > 1:
         reasons.append(f"{counts['commands']} invocations of the phase command")
-    if counts["user_messages"]:
-        reasons.append(f"{counts['user_messages']} iteration(s) with the operator")
+    iterations = sum(1 for e in events if e.get("kind") == "user_message" and not _is_approval(e))
+    if iterations:
+        reasons.append(f"{iterations} iteration(s) with the operator")
     if reasons:
         return "orange", reasons, counts
     if status == "PASS":
@@ -179,9 +187,11 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
     or decision, the reply that answers it, or an error: the phase's main
     interactions).
 
-    Outcome: ``rework`` when the round shows an error or a declined fact, or
-    the next round asks to correct or redo it or relaunches the phase command
-    (or the same remote submission); ``success`` when the
+    Outcome: ``rework`` when the round shows a recorded error or a declined
+    fact, or the next round asks to correct or redo it or relaunches the phase
+    command (or the same remote submission). A failed tool call alone is no
+    rework, since the agent often recovers: it counts in ``tool_errors``.
+    ``success`` when the
     operator approved it or it is the last round of a passed phase;
     ``pending`` when it is the last round of a phase that has not passed;
     ``iteration`` otherwise (the operator kept refining)."""
@@ -197,7 +207,7 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
         if opens or decides:
             rounds.append({"n": len(rounds) + 1, "ts": event.get("ts"),
                            "kind": kind if opens else "decision", "opener": kind,
-                           "prompt": event.get("summary", ""), "reply": "", "errors": 0,
+                           "prompt": event.get("summary", ""), "reply": "", "errors": 0, "tool_errors": 0,
                            "approved": False, "events": []})
         elif not rounds or (event.get("source") != "chats" and not event.get("ts")):
             continue
@@ -210,9 +220,11 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
         elif kind == "agent_reply" or current["kind"] == "decision":
             current["reply"] = event.get("summary", "")
             current["reply_event"] = event
+            if event.get("model_label"):
+                current["model_label"] = event["model_label"]
         if _is_error(event) or kind == "fact_declined":
             event["key"] = True
-            current["errors"] += 1
+            current["tool_errors" if event.get("source") == "chats" else "errors"] += 1
     for current in rounds:
         if "reply_event" in current:
             current.pop("reply_event")["key"] = True
@@ -222,10 +234,11 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
             outcome, reason = "rework", f"{current['errors']} error(s) or rejection(s) during the iteration"
         elif nxt and nxt["kind"] == "command":
             outcome, reason = "rework", "The phase command was run again"
-        elif nxt and current["opener"] == nxt["opener"] == "submitted":
+        elif nxt and current["opener"] == nxt["opener"] == "submitted" and current["prompt"] == nxt["prompt"]:
             outcome, reason = "rework", "The remote run was launched again"
         elif nxt and _CORRECTION_RE.search(nxt["prompt"]):
-            outcome, reason = "rework", "The operator asked to fix or redo it"
+            outcome, reason = "rework", (f"{current['tool_errors']} tool error(s), then the operator asked to fix it"
+                                         if current["tool_errors"] else "The operator asked to fix or redo it")
         elif current["approved"]:
             outcome, reason = "success", "The operator approved it"
         elif nxt:
@@ -238,6 +251,25 @@ def decision_rounds(status: str, events: list[dict[str, Any]]) -> list[dict[str,
         current.update(outcome=outcome, reason=reason)
         del current["approved"], current["opener"]
     return rounds
+
+
+def _metrics(events: list[dict[str, Any]], rounds: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the operator and the agent did in a phase, and how it went."""
+    outcomes = {name: sum(1 for r in rounds if r["outcome"] == name) for name in OUTCOMES}
+    approvals = sum(1 for e in events if _is_approval(e))
+    operator = sum(1 for e in events if e.get("kind") in OPERATOR_KINDS)
+    return {
+        "rounds": len(rounds), "prompts": operator - approvals, "approvals": approvals,
+        "replies": sum(1 for e in events if e.get("kind") == "agent_reply"),
+        "corrections": sum(1 for e in events if e.get("kind") == "user_message" and not _is_approval(e)
+                           and _CORRECTION_RE.search(str(e.get("summary") or ""))),
+        "tool_errors": sum(r["tool_errors"] for r in rounds),
+        "sessions": len({e.get("ref") for e in events if e.get("source") == "chats"}),
+        "models": [{"label": label, "replies": replies} for label, replies in sorted(Counter(
+            e["model_label"] for e in events if e.get("model_label")).items())],
+        **outcomes,
+        "first_pass_rate": round((len(rounds) - outcomes["rework"]) / len(rounds), 2) if rounds else None,
+    }
 
 
 def _sort_key(event: dict[str, Any]) -> tuple[int, str]:
@@ -269,6 +301,17 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
     sources["revisions"] = {"status": "ok" if revisions else "absent", "count": len(revisions)}
 
     chats, sources["chats"] = ai_transcripts.read_all(root, sessions, original)
+    live = {event.get("ref") for items in chats.values() for event in items}
+    skills = ai_transcripts.skill_stages()
+    kept = 0
+    for harness, name, records in ai_archive.archived_sessions(root, live):
+        ref = f"{harness}:{name[-8:]}"
+        turns = ai_transcripts._compacted((r.get("ts"), r.get("role", ""), r.get("text", ""),
+                                           r if r.get("model") else None) for r in records)
+        ai_transcripts.attribute(turns, ref, skills, chats)
+        kept += 1
+    sources["archive"] = {"status": "ok" if kept else "absent", "sessions": kept,
+                          "last_run": ai_archive.last_report(root)}
     for stage, items in chats.items():
         by_stage.setdefault(stage, []).extend(items)
     return root, by_stage, sources
@@ -307,10 +350,16 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
             "total_events": len(events), "events": events[-MAX_PHASE_EVENTS:],
             "artifacts": artifacts, "rounds": rounds[-MAX_PHASE_ROUNDS:],
             "total_rounds": len(rounds), "decision_summary": summary,
+            "metrics": _metrics(events, rounds),
         })
+    loose = sorted(by_stage.get(ai_transcripts.UNASSIGNED, []), key=_sort_key)
+    unassigned = {"prompts": sum(1 for e in loose if e.get("kind") == "user_message"),
+                  "replies": sum(1 for e in loose if e.get("kind") == "agent_reply"),
+                  "sessions": len({e.get("ref") for e in loose}), "events": loose[-MAX_PHASE_EVENTS:]}
     return {"phases": phases, "sources": sources, "decision_summary": totals, "pending": pending,
-            "note": ("Read-only summary: persisted decisions, revisions and chat sessions "
-                     "(Claude Code, Pi, OpenCode) of this workspace.")}
+            "unassigned": unassigned,
+            "note": ("Summary of the persisted decisions, the revisions and the chat sessions of this "
+                     "workspace; full conversations live in .papersmith/ai-history/.")}
 
 
 def _harness_of(ref: Any) -> str | None:
@@ -331,8 +380,8 @@ def build_ai_usage(root: Path | str,
     worked on it and how many sessions, the operator's commands, follow-up
     messages and approvals, the revisions, the persisted decisions and the
     errors. Phases with nothing recorded are omitted. The harness model or
-    version is not part of the record: ``model`` is always ``None`` so a
-    declaration never invents one."""
+    version comes from the pane's ``metrics``, not from here: ``model`` stays
+    ``None`` so a declaration never states what it has not checked."""
     root, by_stage, sources = _collect(root, sessions)
     phases = []
     harnesses: set[str] = set()
@@ -360,6 +409,7 @@ def build_ai_usage(root: Path | str,
             "agent": (phase_actions.ACTIONS.get(stage) or {}).get("agent"),
             "harnesses": tools, "model": None, "counts": counts,
         })
+    harnesses.update(h for h in (_harness_of(e.get("ref")) for e in by_stage.get(ai_transcripts.UNASSIGNED, [])) if h)
     return {"phases": phases, "harnesses": sorted(harnesses), "sources": sources}
 
 
