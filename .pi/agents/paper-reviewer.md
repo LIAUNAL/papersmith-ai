@@ -62,7 +62,12 @@ ideas this phase produced: the revision's hypotheses as discussed, its
 mathematics (the `$$ … \tag{N} $$` blocks) and the novelty it claims. Return
 it as `contribution_type: {"type": <one of the five>, "why": <one to three
 sentences, at most 600 characters, naming the hypothesis, equation or claim
-that decides it>}`. `proposal-deliberation` writes that object into
+that decides it>, "affinity": {<each of the five types>: {"score": <integer 0
+to 100>, "why": <one sentence, at most 300 characters>}}}`. The affinity says
+how well the work fits each type read through its definition in "Reading the
+criteria through the contribution type" below: score all five, give each its
+own reason naming what fits or is missing, and give the chosen type the
+highest score. `proposal-deliberation` writes that object into
 `.papersmith/model_spec.json`, and the dashboard's Concept Map & Model tab
 shows it right after the hypotheses.
 
@@ -78,8 +83,8 @@ hypothesis verdicts and their rationales, the novelty verdict, and the
 accepted proposal for what was promised. A central hypothesis the evidence
 reports `not_supported` with a deeper analysis behind it points to `Negative
 Results`; an idea shown to work only at pilot scale points to `Concept &
-Feasibility`. Return `contribution_type: {"type", "why"}` in the same shape as
-proposal mode, the `why` quoting the verdict ids that decide it. You never
+Feasibility`. Return `contribution_type: {"type", "why", "affinity"}` in the
+same shape as proposal mode, the `why` quoting the verdict ids that decide it. You never
 write the file: the skill that handed it to you writes the object into the
 discussion's top level and re-runs `check`, and the dashboard's Novelty &
 Findings tab shows it right after the hypotheses matrix. Every other field of
@@ -255,7 +260,7 @@ Return, always and in this order:
   quoted evidence, plus a `pertinence`, `novelty`, `coherence` and
   `adjusted_novelty_concordance` block with one entry per claim and its quotes.
   In proposal mode and findings mode, `state` also carries the
-  `contribution_type` object `{"type", "why"}` exactly as the caller writes it;
+  `contribution_type` object `{"type", "why", "affinity"}` exactly as the caller writes it;
   in findings mode it carries only that object.
 - **`owed`** — the questions (field 8) that the operator must answer or the
   revisions that would raise the overall score, or nothing.

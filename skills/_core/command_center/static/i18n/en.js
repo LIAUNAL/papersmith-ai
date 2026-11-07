@@ -45,7 +45,6 @@ window.PAPERSMITH_I18N.en = {
   "atlas.manuscript.rebuilding": "Rebuilding…",
   "atlas.manuscript.rebuilt": "✓ Layer rebuilt",
   "atlas.manuscript.rebuildFailed": "Layer not rebuilt: {detail}",
-  "atlas.btn.summary": "🧭 Manuscript summary",
   "atlas.btn.summaryTitle": "Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)",
   "atlas.title.summary": "🧭 Manuscript summary graph — from topic to conclusions",
   "atlas.summary.absent": "No manuscript graph written yet: the view shows a live reading. It is written after bib build, verify or a compile, or with smith atlas summary.",
@@ -1363,6 +1362,7 @@ window.PAPERSMITH_I18N.en = {
   "novelty.title": "Novelty & Findings Assessment",
   "novelty.subtitle": "Empirical hypothesis contrast, SOTA grounding, and formal gate decision before manuscript drafting.",
   "novelty.loading": "Loading novelty and findings assessment…",
+  "novelty.summary.rebuild": "🔄 Rebuild summary",
   "novelty.gate.title": "Novelty Decision Gate",
   "novelty.gate.last_decision": "Last decision:",
   "novelty.gate.no_decision": "No decision recorded yet",
@@ -1592,5 +1592,14 @@ window.PAPERSMITH_I18N.en = {
   "contribution.type.Theory": "Theory",
   "contribution.type.Use-Inspired": "Use-Inspired",
   "contribution.type.Concept & Feasibility": "Concept & Feasibility",
-  "contribution.type.Negative Results": "Negative Results"
+  "contribution.type.Negative Results": "Negative Results",
+  "contribution.affinity.title": "Affinity by contribution type",
+  "contribution.affinity.definition": "Definition:",
+  "contribution.affinity.why": "Why this score:",
+  "contribution.affinity.unscored": "Run the judge again to score each type.",
+  "contribution.def.general": "Read with the four criteria as written: quality, clarity, significance and originality.",
+  "contribution.def.theory": "The rigor and correctness of the proofs come first; assumptions are judged against the literature, missing experiments are never penalised, rigor should come with intuition, and originality is a new proof technique or a novel synthesis of tools.",
+  "contribution.def.useInspired": "The use case must be real and the design must fit it; non-standard datasets are fine when the use case justifies them; it compares against relevant non-ML approaches as well as ML baselines, and explains domain jargon for an ML reader.",
+  "contribution.def.conceptFeasibility": "Claims are strongly supported (partial support is a workshop standard); the bar for significance and originality is high: the idea must change how a problem is approached.",
+  "contribution.def.negativeResults": "Grounded in deeper analysis, not a failed run; it must change how the community approaches a question and be surprising; it need not propose a fix."
 };

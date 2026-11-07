@@ -95,6 +95,9 @@ ALLOWLIST = (
     Allow("skills/paper-writing/scripts/paper_language.py",
           "the Spanish lexicon this detector recognizes",
           ('"que los', '"hasta entre', '"más está')),
+    Allow("skills/_core/results/citations.py",
+          "the Spanish lexicon the concept-tree language check recognizes",
+          ('"modelo", "modelos"', "_SPANISH_GLUE = frozenset")),
     Allow("tests/test_experimental_implementation.py",
           "quotes a past engine refusal verbatim", ("no declara qué reescribiría",)),
 )

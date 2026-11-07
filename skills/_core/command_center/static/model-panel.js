@@ -175,6 +175,7 @@
     return `${head}<div class="model-hypothesis-card">
         <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type]))}</span>
         <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;"><strong>${esc(t('contribution.why'))}</strong> ${esc(ct.why)}</p>
+        ${window.ContributionAffinity ? window.ContributionAffinity.html(ct) : ''}
       </div>${judgeButton(true)}`;
   }
 

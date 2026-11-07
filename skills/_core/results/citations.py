@@ -82,6 +82,11 @@ MAX_PROTOCOL_BYTES = 1024 * 1024
 MIN_CAUSES = 2
 MAX_CAUSES = 3
 MIN_PILLARS = 2
+#: A tree statement's length in lines of this many characters: the central problem
+#: takes at most four, every cause, effect, pillar and hypothesis at most three.
+LINE_CHARS = 100
+PROBLEM_LINES = 4
+ITEM_LINES = 3
 MAX_REFERENCE_AGE = 4
 ACCEPTED_QUARTILES = ("Q1", "Q2")
 #: Research labs whose preprints support the concept trees, by ROR id.
@@ -278,6 +283,13 @@ def _wording(node: str, text: str) -> list[str]:
     return [f"tree:{node}: must state a negative condition, not open with {opener.split()[0]!r}"]
 
 
+def _length(node: str, lines: int, *texts: Any) -> list[str]:
+    """A tree statement is short enough to read at a glance."""
+    limit = lines * LINE_CHARS
+    return [f"tree:{node}: is {len(text.strip())} characters, at most {limit} ({lines} lines)"
+            for text in texts if isinstance(text, str) and len(text.strip()) > limit]
+
+
 def _problem_tree_findings(tree: Any) -> list[str]:
     if not isinstance(tree, dict):
         return ["tree:problem: novelty.problem_tree is missing"]
@@ -285,7 +297,7 @@ def _problem_tree_findings(tree: Any) -> list[str]:
     central = tree.get("central") if isinstance(tree.get("central"), dict) else {}
     text = central.get("text")
     if isinstance(text, str) and text.strip():
-        found += _wording("central", text) + _language("central", text)
+        found += _wording("central", text) + _language("central", text) + _length("central", PROBLEM_LINES, text)
     else:
         found.append("tree:central: has no text")
     causes = _listed(tree.get("causes"), "text")
@@ -299,14 +311,16 @@ def _problem_tree_findings(tree: Any) -> list[str]:
         if ident in ids:
             found.append(f"tree:causes: duplicate id {ident!r}")
         ids.append(ident)
-        found += _wording(ident, cause["text"]) + _language(ident, cause["text"])
+        found += (_wording(ident, cause["text"]) + _language(ident, cause["text"])
+                  + _length(ident, ITEM_LINES, cause["text"]))
     effects = _listed(tree.get("effects"), "text")
     if not effects:
         found.append("tree:effects: needs at least 1 effect")
     reached: set[str] = set()
     for position, effect in enumerate(effects, 1):
         found += (_wording(_id(effect, "EF", position), effect["text"])
-                  + _language(_id(effect, "EF", position), effect["text"]))
+                  + _language(_id(effect, "EF", position), effect["text"])
+                  + _length(_id(effect, "EF", position), ITEM_LINES, effect["text"]))
         for name in _names(effect.get("caused_by")):
             if name in ids:
                 reached.add(name)
@@ -325,7 +339,7 @@ def tree_findings(novelty: dict[str, Any]) -> list[str]:
         found.append(f"tree:pillars: {len(pillars)} pillar(s), needs at least {MIN_PILLARS}")
     ids = [_id(item, "P", n) for n, item in enumerate(pillars, 1)]
     for ident, item in zip(ids, pillars):
-        found += _language(ident, item.get("name"))
+        found += _language(ident, item.get("name")) + _length(ident, ITEM_LINES, item.get("name"), item.get("summary"))
     found += [f"tree:pillars: duplicate id {ident!r}" for ident in sorted({i for i in ids if ids.count(i) > 1})]
     reached: set[str] = set()
     seen: set[str] = set()
@@ -334,7 +348,8 @@ def tree_findings(novelty: dict[str, Any]) -> list[str]:
         if ident in seen:
             found.append(f"tree:hypotheses: duplicate id {ident!r}")
         seen.add(ident)
-        found += _language(ident, hypothesis.get("title"), hypothesis.get("statement"))
+        found += (_language(ident, hypothesis.get("title"), hypothesis.get("statement"))
+                  + _length(ident, ITEM_LINES, hypothesis.get("title"), hypothesis.get("statement")))
         names = _names(hypothesis.get("pillars"))
         if not names:
             found.append(f"tree:hypotheses: {ident} names no pillar")

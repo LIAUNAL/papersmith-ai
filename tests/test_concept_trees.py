@@ -535,3 +535,67 @@ class Cli(Workspace):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def sentence(length: int) -> str:
+    """English prose of exactly ``length`` characters."""
+    text = ("Degraded balanced accuracy of shallow encoders under noisy pediatric channels. " * 10)[:length]
+    return text[:-1] + "." if length else text
+
+
+class LineLimits(Workspace):
+    """The problem fits in four lines and every other item in three, a line being
+    100 characters."""
+
+    def test_the_central_problem_fits_in_four_lines(self):
+        data = novelty()
+        data["problem_tree"]["central"]["text"] = sentence(400)
+        self.assertEqual(self.owed(self.write(data)), [])
+        data["problem_tree"]["central"]["text"] = sentence(401)
+        self.assertIn("tree:central: is 401 characters, at most 400 (4 lines)", self.owed(self.write(data)))
+
+    def test_causes_and_effects_fit_in_three_lines(self):
+        data = novelty()
+        data["problem_tree"]["causes"][0]["text"] = sentence(300)
+        data["problem_tree"]["effects"][0]["text"] = sentence(300)
+        self.assertEqual(self.owed(self.write(data)), [])
+        data["problem_tree"]["causes"][0]["text"] = sentence(301)
+        data["problem_tree"]["effects"][0]["text"] = sentence(302)
+        owed = self.owed(self.write(data))
+        self.assertIn("tree:DC1: is 301 characters, at most 300 (3 lines)", owed)
+        self.assertIn("tree:EF1: is 302 characters, at most 300 (3 lines)", owed)
+
+    def test_pillars_and_hypotheses_fit_in_three_lines(self):
+        data = novelty()
+        data["pillars"][0]["summary"] = sentence(300)
+        data["hypotheses"][0]["statement"] = sentence(300)
+        self.assertEqual(self.owed(self.write(data)), [])
+        data["pillars"][0]["name"] = sentence(301)
+        data["pillars"][1]["summary"] = sentence(305)
+        data["hypotheses"][0]["title"] = sentence(303)
+        data["hypotheses"][1]["statement"] = sentence(304)
+        owed = self.owed(self.write(data))
+        self.assertIn("tree:C1: is 301 characters, at most 300 (3 lines)", owed)
+        self.assertIn("tree:C2: is 305 characters, at most 300 (3 lines)", owed)
+        self.assertIn("tree:E1: is 303 characters, at most 300 (3 lines)", owed)
+        self.assertIn("tree:E2: is 304 characters, at most 300 (3 lines)", owed)
+
+    def test_the_writing_rules_still_hold_beside_the_length(self):
+        data = novelty()
+        data["problem_tree"]["causes"][0]["text"] = "Lack of " + sentence(300)
+        data["hypotheses"][0]["title"] = "La ganancia del modelo en los datos " + "x" * 280
+        owed = self.owed(self.write(data))
+        self.assertIn("tree:DC1: must state a negative condition, not open with 'Lack'", owed)
+        self.assertIn("tree:DC1: is 308 characters, at most 300 (3 lines)", owed)
+        self.assertIn("tree:E1: must be written in English", owed)
+        self.assertIn("tree:E1: is 316 characters, at most 300 (3 lines)", owed)
+
+    def test_the_cli_reports_an_over_long_item(self):
+        data = novelty()
+        data["problem_tree"]["causes"][1]["text"] = sentence(320)
+        self.write(data)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = citations_cli.main(["check", "--root", str(self.root)])
+        self.assertEqual(code, 1)
+        self.assertIn("tree:DC2: is 320 characters, at most 300 (3 lines)", json.loads(out.getvalue())["trees"])

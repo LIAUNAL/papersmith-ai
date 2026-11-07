@@ -399,6 +399,7 @@
           <div style="margin-top:0.75rem; font-size:0.9rem; line-height:1.5;">
             <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type], ct.type))}</span>
             <p style="margin-top:0.5rem;"><strong>${esc(t('contribution.why', 'Why:'))}</strong> ${esc(ct.why)}</p>
+            ${window.ContributionAffinity ? window.ContributionAffinity.html(ct) : ''}
           </div>` : `
           <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">${esc(t('contribution.owed', 'paper-reviewer').replace('{artifact}', 'Results/discussion.json'))}</p>`}
         <div style="margin-top:0.6rem;">${judgeActions()}</div>

@@ -11,6 +11,20 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Concept-tree statements are short.** `citations_cli.py check` now refuses a central problem longer than four
+  lines of 100 characters (400) and a cause, effect, pillar name or summary, or hypothesis title or statement
+  longer than three (300). The English, wording and citation rules are unchanged.
+- **The manuscript summary diagram moved to Novelty & Findings.** The boxes-and-flow view from topic to
+  conclusions now opens at the top of that tab, with its own rebuild button, and the Graph Atlas no longer shows
+  it. The cited-papers explorer's locate button opens it there.
+- **The NeurIPS judge scores every contribution type.** `contribution_type` gains an optional `affinity`: a 0-100
+  score and a short reason for each of General, Theory, Use-Inspired, Concept & Feasibility and Negative Results,
+  the chosen type on top. Both judge cards (Concept Map & Model, Novelty & Findings) show a green bar per type;
+  clicking one opens the reviewer guide's definition of the type and the reason for its score. A verdict without
+  affinity stays valid and its card asks to run the judge again.
+
 ## 0.62.0
 
 - **Persistent AI history.** Every operator prompt and agent answer of every harness now lands in full in

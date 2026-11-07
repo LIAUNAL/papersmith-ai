@@ -84,5 +84,36 @@ class PreservedPanelsTests(unittest.TestCase):
         self.assertIn('id="pane-pipeline" class="tab-pane"', PAGE)
         self.assertIn("let activeTab = 'flow';", PAGE)
 
+class ManuscriptSummaryTests(unittest.TestCase):
+    """The manuscript summary diagram lives in Novelty & Findings, not in the atlas."""
+
+    def novelty_pane(self) -> str:
+        start = PAGE.index('<div id="pane-novelty" class="tab-pane">')
+        return PAGE[start:PAGE.index("<!-- TAB 3: SECTIONS -->", start)]
+
+    def test_the_atlas_no_longer_offers_the_summary(self) -> None:
+        self.assertNotIn("btnGraphSummary", PAGE)
+        self.assertNotIn("switchGraph('summary')", PAGE)
+        self.assertNotIn("kind === 'summary'", PAGE)
+        self.assertNotIn("currentGraphKind === 'summary'", PAGE)
+
+    def test_novelty_and_findings_shows_the_summary_diagram(self) -> None:
+        pane = self.novelty_pane()
+        self.assertIn('<iframe id="manuscriptSummaryIframe" class="iframe-viewer"', pane)
+        self.assertIn('id="manuscriptSummaryBadge"', pane)
+        self.assertIn('onclick="rebuildManuscriptGraph()"', pane)
+        self.assertIn('href="/api/atlas/manuscript-graph/view"', pane)
+        self.assertIn('data-i18n="atlas.title.summary"', pane)
+        self.assertLess(pane.index("manuscriptSummaryIframe"), pane.index('id="noveltyRoot"'))
+        self.assertIn('"novelty.summary.rebuild": "🔄 Regenerar resumen"', ES_CATALOGUE)
+
+    def test_the_summary_polls_only_while_its_tab_is_shown(self) -> None:
+        self.assertIn("if (tabId === 'novelty') window.showManuscriptGraph?.();", PAGE)
+        self.assertIn("else window.hideManuscriptGraph?.();", PAGE)
+        panel = (STATIC / "manuscript-graph-panel.js").read_text(encoding="utf-8")
+        self.assertIn("document.getElementById('manuscriptSummaryIframe')", panel)
+        self.assertNotIn("graphIframe", panel)
+
+
 if __name__ == "__main__":
     unittest.main()

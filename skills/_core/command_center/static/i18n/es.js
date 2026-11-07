@@ -44,7 +44,6 @@ window.PAPERSMITH_I18N.es = {
   "atlas.manuscript.rebuilding": "Reconstruyendo…",
   "atlas.manuscript.rebuilt": "✓ Capa reconstruida",
   "atlas.manuscript.rebuildFailed": "Capa no reconstruida: {detail}",
-  "atlas.btn.summary": "🧭 Resumen del manuscrito",
   "atlas.btn.summaryTitle": "Tema, problema y pilares, hipótesis, SOTA citado, matemática base y de la novedad, experimentos, hallazgos y conclusiones (.papersmith/manuscript_graph.json)",
   "atlas.title.summary": "🧭 Grafo resumen del manuscrito — del tema a las conclusiones",
   "atlas.summary.absent": "Aún no se ha escrito el grafo del manuscrito: la vista muestra una lectura en vivo. Se escribe tras bib build, verify o una compilación, o con smith atlas summary.",
@@ -1362,6 +1361,7 @@ window.PAPERSMITH_I18N.es = {
   "novelty.title": "Evaluación de Novedad & Decisión de Manuscrito",
   "novelty.subtitle": "Contraste empírico de hipótesis, evaluación frente a SOTA y compuerta formal antes de redacción.",
   "novelty.loading": "Cargando evaluación de novedad y hallazgos…",
+  "novelty.summary.rebuild": "🔄 Regenerar resumen",
   "novelty.gate.title": "Compuerta de Decisión de Novedad (Novelty Gate)",
   "novelty.gate.last_decision": "Última decisión:",
   "novelty.gate.no_decision": "Sin decisión registrada aún",
@@ -1591,5 +1591,14 @@ window.PAPERSMITH_I18N.es = {
   "contribution.type.Theory": "Teórica (Theory)",
   "contribution.type.Use-Inspired": "Inspirada en un uso (Use-Inspired)",
   "contribution.type.Concept & Feasibility": "Concepto y factibilidad (Concept & Feasibility)",
-  "contribution.type.Negative Results": "Resultados negativos (Negative Results)"
+  "contribution.type.Negative Results": "Resultados negativos (Negative Results)",
+  "contribution.affinity.title": "Afinidad por tipo de contribución",
+  "contribution.affinity.definition": "Definición:",
+  "contribution.affinity.why": "Por qué este puntaje:",
+  "contribution.affinity.unscored": "Vuelve a lanzar el juez para puntuar cada tipo.",
+  "contribution.def.general": "Se evalúa con los cuatro criterios tal como están escritos: calidad, claridad, significancia y originalidad.",
+  "contribution.def.theory": "Aquí el rigor y la corrección de las demostraciones van primero; los supuestos se juzgan frente a la literatura, nunca se penaliza la falta de experimentos, el rigor debe venir con intuición y la originalidad es una técnica de demostración nueva o una síntesis novedosa de herramientas.",
+  "contribution.def.useInspired": "El caso de uso debe ser real y el diseño debe ajustarse a él; se aceptan datasets no estándar si el caso los justifica; compara contra enfoques no-ML relevantes además de líneas base de ML, y explica la jerga del dominio para un lector de ML.",
+  "contribution.def.conceptFeasibility": "Las afirmaciones están fuertemente sustentadas (el soporte parcial es nivel de workshop); la exigencia en significancia y originalidad es alta: la idea debe cambiar cómo se aborda un problema.",
+  "contribution.def.negativeResults": "Se basa en un análisis profundo, no en una corrida fallida; debe cambiar cómo la comunidad aborda una pregunta y ser sorprendente; no necesita proponer una solución."
 };

@@ -333,11 +333,14 @@ const advance = (ms) => {
   }
   now = end;
 };
-global.currentGraphKind = 'cited';
+let summaryShown = false;
 const switched = [];
-const switchGraph = (kind) => { switched.push(kind); global.currentGraphKind = kind; };
+const openManuscriptSummary = () => { switched.push('summary'); summaryShown = true; };
+// Leaving Novelty & Findings for another tab.
+const leaveSummary = () => { summaryShown = false; };
 let language = 'en';
-global.window = { t: (key) => `${language}:${key}`, switchGraph, location: { origin: 'http://panel', href: 'http://panel/' } };
+global.window = { t: (key) => `${language}:${key}`, openManuscriptSummary, manuscriptSummaryShown: () => summaryShown,
+  location: { origin: 'http://panel', href: 'http://panel/' } };
 Object.defineProperty(global, 'navigator', { value: { clipboard: { writeText: async () => {} } } });
 const reply = (value) => ({ ok: true, json: async () => JSON.parse(JSON.stringify(value)) });
 const body = JSON.parse(process.argv[3]);
@@ -357,7 +360,7 @@ const graph = (state, nodes, path = '/api/atlas/manuscript-graph/view') => {
     querySelectorAll: () => doc.selected.map((id) => ({ dataset: { id } })) };
   return doc;
 };
-const frame = element('graphIframe');
+const frame = element('manuscriptSummaryIframe');
 frame.src = 'http://panel/api/atlas/manuscript-graph/view';
 const sent = [];
 frame.contentWindow = { postMessage: (message) => {
@@ -538,7 +541,7 @@ class PanelBehaviorTests(unittest.TestCase):
             sent.length = 0;
             frame.contentDocument = graph('loading', false);
             act({action: 'locate', node: 'gone'});
-            switchGraph('atlas');
+            leaveSummary();
             frame.contentDocument = graph('complete', true);
             advance(1000);
             out.left = sent.slice();
