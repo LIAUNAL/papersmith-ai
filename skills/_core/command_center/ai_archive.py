@@ -264,7 +264,8 @@ def archived_sessions(root: Path) -> Iterator[tuple[str, str, list[dict[str, Any
     for path in paths:
         named = _harness_of(path.stem)
         if named and named[0] != "tutor" and "-sub-" not in named[1]:
-            yield named[0], named[1], _read(path)
+            # A file only grows, so a turn found later can sit after newer ones.
+            yield named[0], named[1], sorted(_read(path), key=lambda r: r.get("ts") or "")
 
 
 def session(root: Path, ref: str) -> list[dict[str, Any]] | None:

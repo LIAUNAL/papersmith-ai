@@ -79,6 +79,16 @@ class Store(Base):
         self.assertEqual(self.sync()["added"], 1)
         self.assertEqual([r["text"] for r in self.records()], ["one", "two"])
 
+    def test_turns_added_later_are_read_in_time_order(self):
+        early = _line("user", "first", "2026-10-03T10:00:00Z")
+        late = _line("user", "third", "2026-10-03T10:02:00Z")
+        self.session(early, late)
+        self.sync()
+        self.session(early, _line("assistant", _text("second"), "2026-10-03T10:01:00Z"), late)
+        self.sync()
+        turns = ai_archive.session(self.root, "claude-code:-session")
+        self.assertEqual([t["text"] for t in turns], ["first", "second", "third"])
+
     def test_the_archive_outlives_the_harness_session(self):
         self.session(_line("user", "/proposal-deliberation idea", "2026-10-03T10:00:00Z"),
                      _line("assistant", _text("Done."), "2026-10-03T10:01:00Z")).parent
