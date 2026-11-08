@@ -1698,6 +1698,7 @@ belongs here is which reported state routes to which one:
 | `readiness` | `smokeReady` itself: it is the function `probe` calls to compute that fact, and asking it directly is how you see the reason | `--job-dir`, `--worker` | the `remote-execution` skill |
 | `generate-jobs` | The product declares several remote steps and none (or a stale set) has a job folder: it generates every remote step's job in one call from `__steps__` (and a `schedule` output) and prints the one `preflight` to run next | `--product`, `--target` | the `remote-execution` skill |
 | `preflight` | A job folder exists and no rehearsal has been asked for yet, or the job was just re-pinned: it checks locally everything a first remote rehearsal used to find, and is run before the operator is asked to authorize one | `--entrypoint`, `--target` | the `remote-execution` skill |
+| `prune-caches` | A product whose `.remote-execution/**/clone/` folders hold dataset caches, bytecode, virtual environments or VCS metadata an older fetch brought back: it lists them, and removes them only with `--apply`; results, models, logs and rehearsal evidence stay | `--product` | the `remote-execution` skill |
 
 Column one is read by the suite against that CLI's own parser, so a subcommand
 added there fails the tests until this table says which state sends a reader to

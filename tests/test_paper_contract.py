@@ -1044,7 +1044,7 @@ PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "03-results-and-discussion.md": "a84dfb8133dff360a3966bdfba8dfa8b874dc4b0c2787e7bfaa3670af3a32235",
     "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
     "05-related-work.md": "614b1e054feb9fa962ce932158ef94e2fcb358f79c168e9ba87e5a91b19f0f74",
-    "06-introduction.md": "9a81434de6c2cc2f35021d5d8318680570e8d8df788defc021a530177eb74db4",
+    "06-introduction.md": "603a0e6a79f9862730cca672b0c35506d7476ac6d0561b718be2fc42f04fd587",
     "07-conclusions.md": "c956d406bc200361379e61c8730e9a28ca728a64aa79639b49a0914980b688d0",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
     "09-title-and-keywords.md": "e91df770daef297c33bbabfe54ec49d1c09c7e2d43b48e8807f252eb465f545d",
