@@ -28,7 +28,9 @@ MAX_BYTES = 2 * 1024 * 1024
 MAX_EQUATIONS = 40
 TEXT_MAX = 600
 
-_REVISION = re.compile(r"^research-concept-.+-r(\d+)\.md$")
+#: A managed revision, with or without a slug: research-concept-r44.md and
+#: research-concept-eeg-r07.md both are, as Phase 4 reads them.
+_REVISION = re.compile(r"^research-concept-(?:.+-)?r(\d+)\.md$")
 _TAG = re.compile(r"\\tag\{([^{}]*)\}")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _FENCE = re.compile(r"^(```|~~~)")
@@ -96,13 +98,15 @@ def _paragraph_after(lines: list[str], start: int) -> str:
 
 
 def equations_from_markdown(text: str) -> list[dict[str, Any]]:
-    """Every closed ``$$`` display block, in order, with its context."""
-    return [equation for equation, _ in _display_equations(text)]
+    """The first ``MAX_EQUATIONS`` closed ``$$`` display blocks, in order, with
+    their context."""
+    return [equation for equation, _ in _display_equations(text)][:MAX_EQUATIONS]
 
 
 def tagged_equation_count(text: str) -> int:
     """How many closed ``$$`` display blocks carry an explicit ``\\tag{N}``:
-    the proposal's canonical numbered equations (Phase 4's mathematics step)."""
+    the proposal's canonical numbered equations (Phase 4's mathematics step),
+    up to ``MAX_EQUATIONS`` of them; untagged blocks never use up that cap."""
     return sum(1 for _, tagged in _display_equations(text) if tagged)
 
 
@@ -112,7 +116,8 @@ def _display_equations(text: str) -> list[tuple[dict[str, Any], bool]]:
     found: list[tuple[dict[str, Any], bool]] = []
     index = 0
     fence: str | None = None
-    while index < len(lines) and len(found) < MAX_EQUATIONS:
+    tagged = 0
+    while index < len(lines) and tagged < MAX_EQUATIONS:
         line = lines[index].strip()
         fence_match = _FENCE.match(line)
         if fence_match and (fence is None or fence_match.group(1) == fence):
@@ -144,6 +149,7 @@ def _display_equations(text: str) -> list[tuple[dict[str, Any], bool]]:
                 "connection": _first_sentence(_paragraph_after(lines, end + 1)),
                 "variables": [],
             }, tag_match is not None))
+            tagged += tag_match is not None
         index = end + 1
     return found
 

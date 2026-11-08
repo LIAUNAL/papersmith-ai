@@ -120,7 +120,10 @@ SIGNIFICANCE_KEYS = ("comparison", "test", "statistic", "p_value", "p_adjusted",
 SIGNIFICANCE_TEXT_KEYS = ("hypothesis", "experiment")
 
 _PROTOCOL_RE = re.compile(r"^experiments-.+-v(\d+)\.md$")
-_EXPERIMENT_RE = re.compile(r"^##\s+Experiment\s+\[exp:([^\]]+)\]\s*[—–-]?\s*(.*)$")
+#: An experiment declares [exp:<id>] in its own heading, at any level
+#: (skills/_core/conventions/experiments.json): "## Experiment [exp:E1] — Title"
+#: or "### 5.1 Title [exp:E1]". The title is the text after the tag, else before it.
+_EXPERIMENT_RE = re.compile(r"^#{1,6}\s+(.*?)\s*\[exp:([^\]]+)\]\s*[—–-]?\s*(.*)$")
 _REPORT_RE = re.compile(r"^###\s+Expected Report:?\s*(.*)$")
 _BULLET_RE = re.compile(r"^-\s+\*\*([^*]+?):?\*\*:?\s*(.*)$")
 _SCHEME_RE = re.compile(r"^\*\*Validation scheme:?\*\*:?\s*(.*)$", re.IGNORECASE)
@@ -270,7 +273,9 @@ def _parse_protocol(root: Path, reader: _Reader) -> dict[str, Any] | None:
         exp_match = _EXPERIMENT_RE.match(stripped)
         if exp_match:
             close_report()
-            current = {"id": _clip(exp_match.group(1), 40), "title": _clip(exp_match.group(2), 200),
+            before, ident, after = exp_match.groups()
+            title = after or ("" if before.lower() == "experiment" else before)
+            current = {"id": _clip(ident, 40), "title": _clip(title, 200),
                        "priority": "", "hypothesis": "", "success_criterion": "", "cost": "",
                        "expected_reports": []}
             experiments.append(current)

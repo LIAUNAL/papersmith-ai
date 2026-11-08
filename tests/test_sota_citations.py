@@ -23,7 +23,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from skills._core.command_center import experiments_view, math_view, phase_steps, server
-from skills._core.results import citations, citations_cli, novelty_cli, novelty_gate
+from skills._core.results import citations, citations_cli, discussion, novelty_cli, novelty_gate
 from tests.test_flow_gating_phase4 import (EQUATION, POOL, _Workspace as _Phase4, _write, cite_everything,
                                           rank_pool, render, with_trees)
 from tests.test_flow_gating_phase5 import render_panel
@@ -209,6 +209,38 @@ class IdeaKindTests(_Ideas):
         self.assertEqual(self.keys(), ["experiment:E1", "experiment:E2"])
         view = experiments_view.get_experiments_view(self.root)
         self.assertEqual([e["id"] for e in view["protocol"]["experiments"]], ["E1", "E2"])
+
+    def test_a_slugless_revision_is_read_like_a_slugged_one(self) -> None:
+        # #155: research-concept-r44.md is a managed revision, as Phase 4 says.
+        _write(self.root / "proposals" / "research-concept-r44.md", MARKER + "$$\nx\n\\tag{1}\n$$\n")
+        self.assertEqual(self.keys(), ["equation:1"])
+        self.assertEqual(self.steps()["mathematics"]["evidence"]["equations"], 1)
+        for name in ("research-concept-r44.graph.html", "research-concept-.md", "research-concept-xr12.md"):
+            with self.subTest(name=name):
+                self.assertIsNone(citations._REVISION.match(name))
+                self.assertIsNone(math_view._REVISION.match(name))
+        self.assertEqual(citations._REVISION.match("research-concept-foo-bar-r07.md").group(1), "07")
+
+    def test_the_equation_cap_counts_tagged_equations_only(self) -> None:
+        # #155: untagged display blocks no longer use up the cap of tagged ones.
+        blocks = "".join(f"$$\nu_{i}\n$$\n\n" for i in range(40))
+        tagged = "".join(f"$$\nx_{i}\n\\tag{{{i}}}\n$$\n\n" for i in range(1, 40))
+        self.revision(blocks + tagged)
+        self.assertEqual(self.keys(), [f"equation:{i}" for i in range(1, 40)])
+        self.assertEqual(math_view.tagged_equation_count(blocks + tagged), 39)
+
+    def test_an_experiment_declared_at_any_heading_level_is_an_idea(self) -> None:
+        # #155: the convention asks for [exp:<id>] in the experiment's own heading, any level.
+        protocol = MARKER + ("# Protocol\n\n## 5 Experiments\n\n### 5.1 Level adaptation [exp:A-level]\n\n"
+                             "- **Hypothesis:** It adapts.\n\n## Experiment [exp:E2] — Second\n")
+        _write(self.root / "experiments" / "experiments-eeg-v01.md", protocol)
+        self.assertEqual([k for k in self.keys() if k.startswith("experiment:")],
+                         ["experiment:A-level", "experiment:E2"])
+        view = experiments_view.get_experiments_view(self.root)
+        found = [(e["id"], e["title"]) for e in view["protocol"]["experiments"]]
+        self.assertEqual(found, [("A-level", "5.1 Level adaptation"), ("E2", "Second")])
+        read = discussion._protocol_experiments(self.root / "experiments" / "experiments-eeg-v01.md")
+        self.assertEqual([(e["experiment"], e["statement"]) for e in read], [("A-level", "It adapts."), ("E2", "")])
 
 
 class StepTests(_Ideas):

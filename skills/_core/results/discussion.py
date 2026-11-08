@@ -65,7 +65,9 @@ FIGURE_EXTS = {".png", ".svg", ".jpg", ".jpeg", ".pdf"}
 TABLE_EXTS = {".csv", ".md", ".json"}
 
 _PROTOCOL_RE = re.compile(r"^experiments-.+-v(\d+)\.md$")
-_EXPERIMENT_RE = re.compile(r"^##\s+Experiment\s+\[exp:([^\]]+)\]\s*[—–-]?\s*(.*)$")
+#: An experiment declares [exp:<id>] in its own heading, at any level
+#: (skills/_core/conventions/experiments.json), as the Experiments tab reads it.
+_EXPERIMENT_RE = re.compile(r"^#{1,6}\s+.*?\[exp:([^\]]+)\]")
 _REPORT_RE = re.compile(r"^###\s+Expected Report:?\s*(.*)$")
 _BULLET_RE = re.compile(r"^-\s+\*\*([^*]+?):?\*\*:?\s*(.*)$")
 _BULLET_FIELDS = {"hypothesis": "statement", "success criterion": "criterion"}
@@ -543,7 +545,7 @@ def _latest_protocol(root: Path) -> Path | None:
 
 
 def _protocol_experiments(path: Path) -> list[dict[str, str]]:
-    """Each ``## Experiment [exp:<id>]`` with its first ``Hypothesis`` and ``Success criterion`` bullets, verbatim."""
+    """Each experiment heading carrying ``[exp:<id>]`` (any level) with its first ``Hypothesis`` and ``Success criterion`` bullets, verbatim."""
     try:
         with open(path, "rb") as handle:
             text = handle.read(MAX_PROTOCOL_BYTES).decode("utf-8", errors="replace")
