@@ -544,21 +544,30 @@ def _quote_problems(key: str, position: int, entry: dict[str, Any], record: dict
         return [f"{key}: entry {position} quote is shorter than {MIN_QUOTE} characters"]
     if len(quote) > MAX_QUOTE:
         return [f"{key}: entry {position} quote is longer than {MAX_QUOTE} characters"]
-    if quote not in abstract:
+    if not _holds(abstract, quote):
         return [f"{key}: entry {position} quote is not in the abstract of {entry['id'].strip()!r}"]
     return []
 
 
+def _holds(abstract: str, quote: str) -> bool:
+    """Whether ``quote`` is a span of ``abstract`` that starts and ends on word
+    boundaries, so a fragment of a word never counts as a quote."""
+    return re.search(r"(?<!\w)" + re.escape(quote) + r"(?!\w)", abstract) is not None
+
+
 def routes(recorded: dict[str, Any], pool: dict[str, dict[str, Any]], keys: list[str]) -> list[dict[str, Any]]:
     """The reverse map: each pool reference, in pool order, with the current
-    ideas that cite it and the quote each one takes from its abstract."""
+    ideas that cite it, the quote each one takes from its abstract and whether
+    that quote is grounded (verbatim in the abstract, as ``check`` requires)."""
     found: dict[str, list[dict[str, str]]] = {identity: [] for identity in pool}
     for key in keys:
         entries = recorded.get(key)
         for entry in (entries if isinstance(entries, list) else [])[:MAX_CITATIONS]:
             identity = normalize(entry.get("id")) if isinstance(entry, dict) else None
             if identity in found and all(item["key"] != key for item in found[identity]):
-                found[identity].append({"key": key, "quote": _clip(_spaced(entry.get("quote")))})
+                quote = _spaced(entry.get("quote"))
+                grounded = bool(quote) and not _quote_problems(key, 0, entry, pool[identity])
+                found[identity].append({"key": key, "quote": _clip(quote), "grounded": grounded})
     return [{"id": _clip(record.get("identifier")), "title": _clip(record.get("title")), "ideas": found[identity]}
             for identity, record in pool.items()]
 

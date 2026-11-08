@@ -146,8 +146,19 @@ class ContractTests(_Ideas):
         routes = citations.state(self.root)["routes"]
         self.assertEqual(routes, [
             {"id": A, "title": POOL[0]["title"],
-             "ideas": [{"key": "pillar:P1", "quote": QUOTES[A]}, {"key": "hypothesis:H1", "quote": QUOTES[A]}]},
-            {"id": B, "title": POOL[1]["title"], "ideas": [{"key": "pillar:P1", "quote": QUOTES[B]}]}])
+             "ideas": [{"key": "pillar:P1", "quote": QUOTES[A], "grounded": True},
+                       {"key": "hypothesis:H1", "quote": QUOTES[A], "grounded": True}]},
+            {"id": B, "title": POOL[1]["title"], "ideas": [{"key": "pillar:P1", "quote": QUOTES[B], "grounded": True}]}])
+
+    def test_a_route_says_when_its_quote_is_not_grounded(self) -> None:
+        self.ideas()
+        _file(self.root, {"pillar:P1": [{**GOOD[0], "quote": "a loose bound on the estimation error"}, GOOD[1]]})
+        first = citations.state(self.root)["routes"][0]["ideas"]
+        self.assertEqual(first, [{"key": "pillar:P1", "quote": "a loose bound on the estimation error", "grounded": False}])
+
+    def test_a_quote_must_start_and_end_on_word_boundaries(self) -> None:
+        cut = [{**GOOD[0], "quote": "ight bound on the estimation erro"}, GOOD[1]]
+        self.assertEqual(self.problems(cut), [f"pillar:P1: entry 1 quote is not in the abstract of {A!r}"])
 
     def test_an_idea_absent_from_the_file_owes_citations(self) -> None:
         self.ideas()
@@ -503,10 +514,13 @@ class CliTests(_Ideas):
         code, body = self.run_cli("routes", "--root", str(self.root))
         self.assertEqual(code, 0)
         self.assertTrue(body["ok"])
+        before = (self.root / ".papersmith" / "citations.json").read_bytes()
+        code, body = self.run_cli("routes", "--root", str(self.root))
+        self.assertEqual(code, 0)
         self.assertEqual(body["routes"][0], {"id": A, "title": POOL[0]["title"],
-                                             "ideas": [{"key": "pillar:P1", "quote": QUOTES[A]}]})
+                                             "ideas": [{"key": "pillar:P1", "quote": QUOTES[A], "grounded": True}]})
         self.assertEqual(body["uncited"], [B])
-        self.assertFalse((self.root / ".papersmith" / "citations.json").read_text(encoding="utf-8") == "")
+        self.assertEqual((self.root / ".papersmith" / "citations.json").read_bytes(), before)
 
     def test_a_missing_root_refuses(self) -> None:
         code, body = self.run_cli("check", "--root", str(self.root / "absent"))

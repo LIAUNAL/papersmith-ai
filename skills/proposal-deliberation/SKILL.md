@@ -312,7 +312,7 @@ never claims more than the reference's abstract or ingested text states.
 `quote` copies, verbatim (whitespace aside), 20 to 300 characters of that
 reference's `abstract` in the pool that hold the idea; the check refuses a
 quote the abstract does not contain, a citation without one, and a reference
-whose pool record has no abstract. A reference whose abstract holds no span for
+whose pool record has no abstract. A quote starts and ends on word boundaries. A reference whose abstract holds no span for
 the idea does not support it: cite another one. `citations_cli.py routes --root
 .` lists, per pool reference, the ideas it is cited for with their quotes, and
 the references no idea cites. Keys of ideas that no longer exist are ignored. After writing

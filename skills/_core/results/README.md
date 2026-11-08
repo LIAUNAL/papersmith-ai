@@ -14,7 +14,7 @@ Each product folder (`implementations/<repo>/<Name>/`) closes its proof of conce
                                            "quote": "A verbatim span of the reference's abstract that holds it."}]}}
 ```
 
-`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. Each citation's `quote` must appear verbatim (whitespace aside), 20 to 300 characters, in the pool record's `abstract`, so a citation is grounded in what its reference states; a reference with no abstract cannot be cited. `citations_cli.py routes --root .` prints the reverse map: each pool reference with the ideas it is cited for and their quotes, and `uncited`, the references no idea cites.
+`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. Each citation's `quote` must appear verbatim (whitespace aside), 20 to 300 characters, in the pool record's `abstract`, so a citation is grounded in what its reference states; a reference with no abstract cannot be cited. `citations_cli.py routes --root .` prints the reverse map: each pool reference with the ideas it is cited for, their quotes and whether each is `grounded`, and `uncited`, the references no idea cites.
 
 ## CLI
 
