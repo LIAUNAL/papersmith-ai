@@ -332,8 +332,8 @@ class RenderAtlasTests(unittest.TestCase):
         self.assertIn('id="zoomreset"', page)
         self.assertIn('famchips', page)
         self.assertNotIn('famfilter', page)
-        self.assertIn('id="overlay"', page)
-        self.assertIn('openModal', page)
+        self.assertIn('<aside id="side" aria-label="Paper summary" hidden>', page)
+        self.assertIn('function showSide(key)', page)
         self.assertIn('AtlasViewer.mount', page)
         self.assertNotIn("<script src", page)
         self.assertNotIn("<link ", page)
@@ -531,10 +531,12 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
         self.assertIn('<div id="gpunote" role="status" hidden></div>', page)
         script = self.page_script()
         for needle in ("failIfMajorPerformanceCaveat", "WEBGL_debug_renderer_info",
-                       "navigator.deviceMemory", "navigator.hardwareConcurrency",
-                       "get('view')", "const FlatViewer", "function watchFrameRate",
-                       "'view-2d'", "'view-3d'"):
+                       "get('view')", "const FlatViewer", "'view-2d'", "'view-3d'"):
             self.assertIn(needle, script)
+        # Like Banco LIA, only missing or software WebGL drops to 2D: a modest
+        # machine and a slow first second keep the 3D sky.
+        for gone in ("navigator.deviceMemory", "navigator.hardwareConcurrency", "function watchFrameRate"):
+            self.assertNotIn(gone, script)
 
     def test_page_stops_drawing_while_nobody_can_see_it(self):
         script = self.page_script()

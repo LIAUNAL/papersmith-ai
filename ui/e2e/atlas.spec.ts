@@ -226,3 +226,60 @@ test.describe('the SOTA constellation', () => {
     expect(box.x + box.width).toBeLessThanOrEqual(sky.x + sky.width);
   });
 });
+
+test.describe('a selected paper', () => {
+  test('a machine with little memory or few cores keeps the 3D sky', async ({ page }) => {
+    await open(page);
+    const choice = await page.evaluate(`(() => {
+      webglSupport = () => 'ok';
+      Object.defineProperty(navigator, 'deviceMemory', { configurable: true, get: () => 2 });
+      Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, get: () => 2 });
+      return chooseView();
+    })()`);
+    expect(choice).toEqual({ mode: '3d', reason: 'auto' });
+  });
+
+  test('clicking a paper opens its summary beside the sky and dims the rest', async ({ page }) => {
+    const errors = await open(page, '?view=2d');
+    await page.evaluate(`select('s03.s03-problem')`);
+    const side = page.locator('#side');
+    await expect(side).toBeVisible();
+    await expect(side.locator('h2')).toHaveText('sun of s03');
+    for (const heading of ['Application topic', 'AI topic', 'Problem', 'Application', 'Main novelty', 'Family', 'Results', 'Conclusions']) {
+      await expect(side.locator('dt').filter({ hasText: new RegExp(`^${heading}$`) })).toHaveCount(1);
+    }
+    await expect(side.locator('.side-node')).toContainText('problem of s03');
+    await expect(side.locator('.side-links button')).toHaveCount(2);
+    const lit = await page.evaluate(`[...selectedKeep]`) as string[];
+    expect(lit).toContain('s03.s03-novelty');
+    expect(lit).toContain('s02.s02-novelty');
+    expect(lit).not.toContain('s10.s10-sun');
+    await page.keyboard.press('Escape');
+    await expect(side).toBeHidden();
+    expect(errors).toEqual([]);
+  });
+
+  test('a linked paper in the panel opens its own summary', async ({ page }) => {
+    await open(page, '?view=2d');
+    await page.evaluate(`select('s03.s03-sun')`);
+    await page.locator('#side .side-links button').first().click();
+    await expect(page.locator('#side h2')).toHaveText(/sun of s0[24]/);
+  });
+
+  test("a paper's name in the 3D sky is a button to its summary", async ({ page }) => {
+    await open(page, '?view=3d');
+    test.skip(await currentView(page) !== '3d', 'no WebGL in this browser');
+    const name = page.locator('.atlas-names div:visible').first();
+    await expect(name).toBeVisible({ timeout: 5000 });
+    const title = await name.textContent();
+    await name.click();
+    await expect(page.locator('#side')).toBeVisible();
+    await expect(page.locator('#side .side-meta')).toContainText(String(title));
+  });
+
+  test('a citation opened from the dashboard selects its paper', async ({ page }) => {
+    await open(page, '?view=2d');
+    await page.evaluate(`focusReference('s07.s07-sun')`);
+    await expect(page.locator('#side h2')).toHaveText('sun of s07');
+  });
+});

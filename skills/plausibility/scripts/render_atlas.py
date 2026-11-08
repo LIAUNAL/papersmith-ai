@@ -228,12 +228,24 @@ h1{font-size:18px;font-weight:600;margin:0 0 8px;letter-spacing:.02em}
 .sky canvas{display:block;width:100%;height:100%}
 .sky:active{cursor:grabbing}
 #panel{color:#9aa3bd;font-size:13px;margin:0 0 8px}
-#overlay{position:fixed;inset:0;background:rgba(5,5,10,.65);display:none;align-items:center;justify-content:center;z-index:10}
-#overlay.open{display:flex}
-#modal{background:#11131f;border:1px solid #9b7ede;border-radius:10px;padding:16px 20px;max-width:580px;max-height:82vh;overflow:auto;box-shadow:0 0 40px rgba(155,126,222,.25)}
-#modal h3{margin:0 0 6px}
-#modal .quote{font-style:italic;color:#b9c4de;border-left:3px solid #9b7ede;margin:10px 0;padding-left:10px}
-#modalclose{float:right;cursor:pointer;font-size:14px;padding:2px 10px;background:#1a1d2e;color:#e4e4ed;border:1px solid #2a3350;border-radius:6px}
+#stage{position:relative;flex:1 1 auto;display:flex;gap:10px;min-height:420px}
+#stage .sky{flex:1 1 auto;width:auto;min-width:0}
+#side{flex:0 0 360px;max-width:360px;box-sizing:border-box;background:#11131f;border:1px solid #2a3350;border-left:3px solid #9b7ede;border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;line-height:1.45}
+#side[hidden]{display:none}
+#side h2{font-size:15px;margin:0 22px 4px 0;color:#fff}
+#side .side-meta{color:#9aa3bd;font-size:12px;margin:0 0 10px}
+#side .side-meta a{color:#9bc1ff}
+#side dl{margin:0}
+#side dt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#9b7ede;margin-top:10px}
+#side dd{margin:2px 0 0}
+#side dd p{margin:2px 0}
+#side dd span{color:#b9c4de}
+#side .side-node{margin:0 0 8px;padding:6px 8px;border:1px solid #2a3350;border-radius:6px;background:#14172a}
+#side .side-node .quote{font-style:italic;color:#b9c4de;border-left:3px solid #9b7ede;margin:6px 0 0;padding-left:8px}
+#side .side-links button{display:block;width:100%;text-align:left;margin:4px 0 0;padding:4px 8px;cursor:pointer;background:#14172a;color:#e4e4ed;border:1px solid #2a3350;border-radius:6px;font-size:12px}
+#side .side-links button:hover{border-color:#9b7ede}
+#sideclose{position:absolute;top:8px;right:10px;cursor:pointer;font-size:13px;padding:1px 8px;background:#1a1d2e;color:#e4e4ed;border:1px solid #2a3350;border-radius:6px}
+#side{position:relative}
 #famlegend,#rellegend,#toolbar{margin:0 0 6px;font-size:13px;color:#9aa3bd}
 .famchip{margin:2px;padding:3px 12px;cursor:pointer;border-radius:12px;border:1px solid #9b7ede;background:#14172a;color:#e4e4ed;font-size:12px}
 .famchip.on{background:#9b7ede;color:#0a0a10}
@@ -246,20 +258,20 @@ h1{font-size:18px;font-weight:600;margin:0 0 8px;letter-spacing:.02em}
 #gpunote[hidden]{display:none}
 .atlas-tip{max-width:340px;white-space:normal!important;text-align:center;line-height:1.3;z-index:5}
 .atlas-names{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:4}
-.atlas-names div{position:absolute;left:0;top:0;font:11px system-ui,sans-serif;white-space:nowrap;color:#f3d98b;text-shadow:0 0 3px #0a0a10,0 0 3px #0a0a10,0 0 6px #0a0a10}
+.atlas-names div{position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;font:11px system-ui,sans-serif;white-space:nowrap;color:#f3d98b;text-shadow:0 0 3px #0a0a10,0 0 3px #0a0a10,0 0 6px #0a0a10}
 .atlas-names .lit{font-weight:600;color:#fff}
-@media (max-width:820px){#toolbar .sep{display:none}}
+.atlas-names div:hover{color:#fff;text-decoration:underline}
+@media (max-width:820px){#toolbar .sep{display:none}#stage{flex-direction:column}#side{flex-basis:auto;max-width:none}}
 </style>
 </head>
 <body>
 <h1>@@HEADING@@</h1>
 <div id="panel">Drag to orbit, right-drag to pan, wheel to zoom. Hover a planet to trace its cross-system links; click to read it; double-click to fly to it.</div>
 <div id="gpunote" role="status" hidden></div>
-<div id="overlay"><div id="modal"><button id="modalclose">close</button><div id="modalbody"></div></div></div>
 <div id="famlegend"><em>Families:</em> <span id="famchips"></span></div>
 <div id="rellegend"><em>Links:</em> <span class="dot" style="border-color:#2ecc71"></span>extends <span class="dot" style="border-color:#5aa9e6"></span>supports <span class="dot" style="border-color:#e65a5a"></span>contradicts <span class="dot" style="border-color:#8a93ad"></span>addresses <span class="dot" style="border-color:#9b7ede;border-top-style:dashed"></span>shared family <span class="dot" style="border-color:#e8b339"></span>yields <span class="dot" style="border-color:#4a5a80"></span>about</div>
 <div id="toolbar"><button id="zoomin">zoom +</button><button id="zoomout">zoom −</button><span class="sep"></span><button id="spinleft" title="Turn left">⟲ turn</button><button id="spinright" title="Turn right">turn ⟳</button><button id="tiltup" title="Tilt up">▲ tilt</button><button id="tiltdown" title="Tilt down">▼ tilt</button><button id="autorotate" class="on" title="Automatic rotation">⏸ rotation</button><button id="names" class="on" title="Show or hide system names; only names that do not overlap are drawn, and zooming in shows more">names</button><span class="sep"></span><button id="zoomreset">reset view</button><button id="grouplayout">Group layout</button><span class="sep"></span><button id="viewmode" title="Switch between the 3D sky and the lighter 2D constellation">2D view</button></div>
-<div id="sky" class="sky"></div>
+<div id="stage"><div id="sky" class="sky"></div><aside id="side" aria-label="Paper summary" hidden><button id="sideclose" type="button" aria-label="Close">✕</button><div id="sidebody"></div></aside></div>
 <script type="application/json" id="atlas-data">@@DATA@@</script>
 <script>
 @@VIEWER@@
@@ -278,35 +290,112 @@ function familyLabel(s) {
   const fam = s ? s.planets.find(p => p.slot === 'family' && typeof p.label === 'string' && p.label.trim()) : null;
   return fam ? fam.label.trim() : '';
 }
-const panel = document.getElementById('modalbody');
-const overlay = document.getElementById('overlay');
-function closeModal() { overlay.classList.remove('open'); }
-document.getElementById('modalclose').addEventListener('click', closeModal);
-overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+const side = document.getElementById('side');
+const sideBody = document.getElementById('sidebody');
 function line(tag, text, cls) {
   const el = document.createElement(tag);
   el.textContent = text;
   if (cls) el.className = cls;
   return el;
 }
-function openModal(nodes) {
-  panel.replaceChildren(...nodes);
-  overlay.classList.add('open');
+// A paper's summary, as its constellation states it: one section per planet
+// slot, in the order a reader meets the paper.
+const SIDE_SECTIONS = [['topic_app', 'Application topic'], ['topic_ai', 'AI topic'], ['problem', 'Problem'],
+  ['application', 'Application'], ['novelty', 'Main novelty'], ['contribution', 'Contributions'],
+  ['result', 'Results'], ['conclusion', 'Conclusions'], ['family', 'Family'], ['branch', 'Branch']];
+function sunKey(system) {
+  const sun = system.planets.find(p => p.slot === 'sun') || system.planets[0];
+  return sun ? system.id + '.' + sun.id : null;
 }
-function showPlanet(key) {
+// The systems a link ties to this one, by id, in a stable order.
+function linkedSystems(system) {
+  const ids = new Set();
+  SCENE.edges.forEach(e => {
+    if (!e.inter) return;
+    const a = PLANETS.get(e.from), b = PLANETS.get(e.to);
+    if (!a || !b) return;
+    if (a.system.id === system.id && b.system.id !== system.id) ids.add(b.system.id);
+    if (b.system.id === system.id && a.system.id !== system.id) ids.add(a.system.id);
+  });
+  return [...ids].sort().map(id => SYSTEMS.get(id)).filter(Boolean);
+}
+function showSide(key) {
   const entry = PLANETS.get(key);
   if (!entry) return;
+  const system = entry.system;
+  const sun = system.planets.find(p => p.slot === 'sun') || {};
+  const nodes = [line('h2', sun.label || system.title || system.id)];
+  const ev = sun.evidence || {};
+  const meta = document.createElement('p');
+  meta.className = 'side-meta';
+  if (system.title && system.title !== sun.label) meta.append(system.title + ' · ');
+  if (/^https?:\/\//.test(ev.origin || '')) {
+    const a = document.createElement('a');
+    a.href = ev.origin; a.target = '_blank'; a.rel = 'noopener'; a.textContent = ev.origin;
+    meta.append(a);
+  } else if (ev.origin) meta.append(ev.origin);
+  nodes.push(meta);
   const p = entry.planet;
-  const ev = p.evidence || {};
-  openModal([
-    line('h3', p.label),
-    line('p', p.slot + ' · orbit ' + p.orbit + ' · ' + (p.provenance || '') + ' · ' + (entry.system.title || entry.system.id)),
-    line('p', p.detail || ''),
-    line('p', ev.quote || '', 'quote'),
-    line('small', (ev.origin || '') + ' · retrieved ' + (ev.retrieved || '')),
-  ]);
+  if (p.slot !== 'sun') {
+    const node = document.createElement('div');
+    node.className = 'side-node';
+    node.append(line('strong', 'Selected · ' + p.slot + ': '), line('span', p.label || ''));
+    if (p.detail && p.detail !== p.label) node.append(line('p', p.detail));
+    if (p.evidence && p.evidence.quote) node.append(line('p', p.evidence.quote, 'quote'));
+    nodes.push(node);
+  }
+  const list = document.createElement('dl');
+  SIDE_SECTIONS.forEach(([slot, title]) => {
+    const planets = system.planets.filter(q => q.slot === slot && q.label);
+    if (!planets.length) return;
+    list.append(line('dt', title));
+    const dd = document.createElement('dd');
+    planets.forEach(q => {
+      const item = line('p', q.label);
+      if (q.detail && q.detail.trim().toLowerCase() !== String(q.label).trim().toLowerCase()) item.append(line('span', ' — ' + q.detail));
+      dd.append(item);
+    });
+    list.append(dd);
+  });
+  nodes.push(list);
+  const linked = linkedSystems(system);
+  if (linked.length) {
+    const links = document.createElement('div');
+    links.className = 'side-links';
+    links.append(line('dt', 'Linked papers'));
+    linked.forEach(other => {
+      const button = line('button', (other.planets.find(q => q.slot === 'sun') || {}).label || other.title || other.id);
+      button.type = 'button';
+      button.addEventListener('click', () => { const k = sunKey(other); if (k) { if (viewer && viewer.focus) viewer.focus(k); select(k); } });
+      links.append(button);
+    });
+    nodes.push(links);
+  }
+  sideBody.replaceChildren(...nodes);
+  side.hidden = false;
+  side.scrollTop = 0;
 }
+// The paper selected by a click, a name or a citation from the dashboard:
+// its summary opens beside the sky, and the sky keeps it and the papers it
+// links to lit until another is selected or the panel closes.
+let selectedKeep = null;
+function select(key) {
+  const entry = PLANETS.get(key);
+  if (!entry) return;
+  showSide(key);
+  const keep = new Set();
+  [entry.system, ...linkedSystems(entry.system)].forEach(s => s.planets.forEach(q => keep.add(s.id + '.' + q.id)));
+  selectedKeep = keep;
+  dimTo(keep);
+  if (typeof reportPlanet === 'function') reportPlanet(key);
+}
+function clearSelection() {
+  side.hidden = true;
+  selectedKeep = null;
+  dimTo(familyKeep());
+}
+document.getElementById('sideclose').addEventListener('click', clearSelection);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !side.hidden) clearSelection(); });
 let activeFam = null;
 function familyKeep() {
   if (activeFam === null) return null;
@@ -367,9 +456,9 @@ function webglSupport() {
     return 'none';
   }
 }
-// Which view to open: ?view=2d or ?view=3d wins, then the viewer's last choice,
-// then the machine: no or software WebGL, under 4 GB of memory or under 4
-// cores opens the 2D constellation, which costs a fraction of the 3D sky.
+// Which view to open: ?view=2d or ?view=3d wins, then the viewer's own last
+// choice; otherwise the 3D sky, unless WebGL is missing or software-only. A
+// modest machine (little memory, few cores) keeps the 3D sky, as Banco LIA does.
 const VIEW_KEY = 'papersmith-atlas-view';
 function storedView() {
   try { return localStorage.getItem(VIEW_KEY); } catch (e) { return null; }
@@ -383,8 +472,6 @@ function chooseView() {
   if (asked === '2d') return {mode: '2d', reason: 'chosen'};
   if (asked === '3d' && gl !== 'none') return {mode: '3d', reason: 'chosen'};
   if (gl !== 'ok') return {mode: '2d', reason: gl};
-  const memory = navigator.deviceMemory, cores = navigator.hardwareConcurrency;
-  if ((memory && memory < 4) || (cores && cores < 4)) return {mode: '2d', reason: 'low'};
   return {mode: '3d', reason: 'auto'};
 }
 // Canvas 2D constellation with the same handle as AtlasViewer: an orthographic
@@ -728,6 +815,8 @@ function startNameLayer(host) {
         if (!el) {
           el = document.createElement('div');
           el.textContent = b.s.name;
+          el.title = 'Open this paper';
+          el.addEventListener('click', () => select(b.s.key));
           nameLayer.pool.set(b.s.key, el);
           nameLayer.el.appendChild(el);
         }
@@ -763,12 +852,10 @@ const HELP_2D = '2D view: drag to pan, wheel to zoom; turn and tilt change the a
 const NOTES = {
   weak: '⚠ This computer has no suitable GPU for the 3D sky (software rendering): showing the 2D constellation.',
   none: '⚠ WebGL is not available here: showing the 2D constellation.',
-  low: '⚠ This computer reports little memory or few cores: showing the lighter 2D constellation.',
-  slow: '⚠ The 3D sky drew too slowly here: switched to the lighter 2D constellation.',
 };
 const viewerHooks = {
-  onSelect: key => { showPlanet(key); reportPlanet(key); },
-  onHover: key => { hovered = key; dimTo(key ? hoverKeep(key) : (focusedKeep || familyKeep())); },
+  onSelect: key => select(key),
+  onHover: key => { hovered = key; dimTo(key ? hoverKeep(key) : (selectedKeep || familyKeep())); },
   afterDraw: drawNames,
 };
 let viewer = null;
@@ -799,7 +886,7 @@ function mountView(mode, reason) {
   if (mode === '3d') startNameLayer(skyHost);
   applyVisibility();
   syncRotate();
-  if (mode === '3d' && reason === 'auto') watchFrameRate();
+  if (mode === '3d' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) viewer.rotate(false);
 }
 // Draw nothing while nobody can see the sky: the page is hidden (another
 // browser tab, a minimized window) or the dashboard paused it.
@@ -814,20 +901,6 @@ function applyVisibility() {
   }
 }
 document.addEventListener('visibilitychange', () => { pageHidden = document.hidden; applyVisibility(); });
-// A machine that passed the GPU check can still be too slow for the 3D sky:
-// count frames for a few seconds after opening and fall back to 2D under 20 fps.
-function watchFrameRate() {
-  let frames = 0, start = 0;
-  const mounted = viewer;
-  function count(t) {
-    if (viewer !== mounted || pageHidden || dashboardPaused) return;
-    if (!start) start = t;
-    frames++;
-    if (t - start < 3000) { requestAnimationFrame(count); return; }
-    if (frames * 1000 / (t - start) < 20) mountView('2d', 'slow');
-  }
-  setTimeout(() => requestAnimationFrame(count), 1000);
-}
 viewButton.addEventListener('click', () => {
   const next = view === '2d' ? '3d' : '2d';
   storeView(next);
@@ -890,14 +963,11 @@ document.getElementById('zoomin').addEventListener('click', () => viewer && view
 document.getElementById('zoomout').addEventListener('click', () => viewer && viewer.zoom(1 / 1.5));
 document.getElementById('zoomreset').addEventListener('click', resetView);
 layoutButton.addEventListener('click', toggleLayout);
-// The system a dashboard citation opened stays lit until another is opened.
-let focusedKeep = null;
+// A citation opened from the dashboard: fly to its paper and open its summary.
 function focusReference(key) {
   const system = PLANETS.get(key).system;
-  const keep = new Set(system.planets.map(p => system.id + '.' + p.id));
-  focusedKeep = keep;
   if (viewer && typeof viewer.focus === 'function') viewer.focus(key);
-  dimTo(keep);
+  select(key);
   tellParent({type: 'atlas-focused', key: String(key), system: {id: String(system.id), title: String(system.title || '')}});
 }
 // Dashboard commands: only from the framing parent, only the named few.
