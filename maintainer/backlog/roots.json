@@ -1,5 +1,5 @@
 {
-  "pinned_commit": "dd46b7c9",
+  "pinned_commit": "8649ac59",
   "roots": [
     {
       "key": "tracker",
@@ -33,12 +33,9 @@
       "state": "closed",
       "title": "State the server measures is not pushed to the dashboard",
       "fix": "Publish health_update whenever a measurement is taken; refetch /api/state on SSE reconnect.",
-      "issues": [
-        83
-      ],
+      "issues": [],
       "evidence": {
-        "100": "server.py:475-489 vs :514-515",
-        "83": "ui/src/hooks/useWorkspaceEvents.ts:159,186-190"
+        "100": "server.py:475-489 vs :514-515"
       },
       "proof": "PR #114 closed #100; #83 closed as superseded by command center SSE and PR #142"
     },
@@ -48,15 +45,8 @@
       "state": "closed",
       "title": "Untrusted values reach argv where they can act as options",
       "fix": "End options with -- (or reject a leading -) before every value-bearing positional, quote remote command text once, and make dry-run the default the guard assumes.",
-      "issues": [
-        82,
-        56,
-        59
-      ],
+      "issues": [],
       "evidence": {
-        "82": "src/papersmith/core/target.py:61, core/executor.py:260-264 (PR #98)",
-        "56": "skills/remote-execution/scripts/jobfolder.py:3170",
-        "59": "src/papersmith/mcp/registry.py:1450-1451, :853",
         "81": "paper_bib.py:60 \\cite only; paper_figure.py:84-88, paper_latex.py:220"
       },
       "proof": "PR #98 closes #82; fix/argv-boundaries closes #81, refs #56 #59"
@@ -64,14 +54,11 @@
     {
       "key": "engine-defect-recorder",
       "tier": 2,
-      "state": "partial",
+      "state": "closed",
       "title": "The engine's crash recorder writes defects for invalid input, outside the gated targets",
       "fix": "Classify unreadable input as a refusal, and record a crash only through resolve_target/validate_name into an existing product dir.",
-      "issues": [
-        67
-      ],
+      "issues": [],
       "evidence": {
-        "67": "implementation_engine.py:9470 unguarded --plan read",
         "88": "implementation_engine.py:19055-19057"
       },
       "proof": "fix/engine-defect-recorder closes #88, refs #67 (--session validation open)"
@@ -79,15 +66,11 @@
     {
       "key": "adopt-nameerror",
       "tier": 2,
-      "state": "partial",
+      "state": "closed",
       "title": "adopt crashes on an undefined WORKSPACE",
       "fix": "Resolve WORKSPACE through impl_layout; isolated adopt regression.",
-      "issues": [
-        52
-      ],
-      "evidence": {
-        "52": "implementation_engine.py:19771,19775"
-      },
+      "issues": [],
+      "evidence": {},
       "proof": "fix/adopt-nameerror refs #52 (re-seal adopt-same-target open)"
     },
     {
@@ -111,26 +94,18 @@
       "state": "closed",
       "title": "A CLI converts its module URL by hand",
       "fix": "Use fileURLToPath from node:url in cli.mjs.",
-      "issues": [
-        76
-      ],
-      "evidence": {
-        "76": "skills/_core/deliberation/engine/cli.mjs:83"
-      },
+      "issues": [],
+      "evidence": {},
       "proof": "commit c01371c9 closes #76 using fileURLToPath"
     },
     {
       "key": "agent-cli-drift",
       "tier": 2,
-      "state": "partial",
+      "state": "closed",
       "title": "Agent instructions name flags the CLI does not have",
       "fix": "Derive the ingestion agent's commands from the CLI contract and guard them with a test.",
-      "issues": [
-        70
-      ],
-      "evidence": {
-        "70": ".claude/agents/paper-ingestion.md:21-25 vs skills/paper-ingestion/SKILL.md:168"
-      },
+      "issues": [],
+      "evidence": {},
       "proof": "fix/agent-cli-drift refs #70 (roster count and redactor contract open)"
     },
     {
@@ -139,12 +114,8 @@
       "state": "closed",
       "title": "Generated JSON is indexed before it is validated",
       "fix": "Validate draft envelopes at the paper_cli boundary before paper_write reads them.",
-      "issues": [
-        71
-      ],
-      "evidence": {
-        "71": "skills/paper-writing/scripts/paper_cli.py:2486, paper_write.py:123"
-      },
+      "issues": [],
+      "evidence": {},
       "proof": "closes #71 with envelope validation and fence stripping"
     },
     {
@@ -201,8 +172,7 @@
         66,
         69,
         74,
-        78,
-        79
+        78
       ]
     },
     {
@@ -211,9 +181,7 @@
       "state": "closed",
       "title": "Multi-account Kaggle scheduling vs service policy",
       "fix": "Record a policy review; the one-account-per-person attestation exists (core/team.py:39).",
-      "issues": [
-        77
-      ],
+      "issues": [],
       "proof": "COLAB_ATTESTATION in core/team.py:39, PR #112 and test_no_personal_context_dependency.py closes #77"
     },
     {
@@ -222,9 +190,7 @@
       "state": "closed",
       "title": "OCR device selection on Intel Macs",
       "fix": "Decide whether to pin CPU when MPS is unusable; surfacing OCR timeouts is part of ingestion-silent-loss.",
-      "issues": [
-        103
-      ],
+      "issues": [],
       "proof": "closes #103 with Intel Mac MPS CPU fallback"
     },
     {
@@ -240,14 +206,68 @@
     {
       "key": "experiment-disclosure",
       "tier": 2,
-      "state": "open",
+      "state": "closed",
       "title": "Protocol hypotheses are buried and disclosures collapse on repaint",
       "fix": "Show the protocol after launch warnings and retain open/closed disclosures by stable experiment and product keys.",
-      "issues": [151],
-      "evidence": {
-        "151": "72900d70: skills/_core/command_center/static/experiments-panel.js:1030,1038"
-      },
+      "issues": [],
+      "evidence": {},
       "proof": "test_experiments_disclosure_visibility.py: 6 RED/1 existing-behavior pass on main, 96 focused GREEN; real Chromium refresh, tab and language checks at desktop and narrow viewports"
+    },
+    {
+      "key": "proposal-revision-names",
+      "title": "Readers of proposal revisions and protocol headings disagree with Phase 4 and the shared convention",
+      "tier": 2,
+      "state": "open",
+      "fix": "Make the slug optional in the revision pattern, cap tagged equations only, and read [exp:<id>] at any heading level in citations, experiments_view and discussion.",
+      "proof": "tests/test_sota_citations.py slugless/cap/heading-level tests, PR #157",
+      "issues": [
+        155
+      ],
+      "evidence": {
+        "155": "skills/_core/command_center/math_view.py:31 and skills/_core/results/citations.py:114 require a slug"
+      }
+    },
+    {
+      "key": "run-selector-label",
+      "title": "The header run selector shows full proposal file names",
+      "tier": 2,
+      "state": "open",
+      "fix": "Label each option with its run id and keep the file name as value and tooltip.",
+      "proof": "ui/e2e/shipped/run-selector.spec.ts, PR #158",
+      "issues": [
+        156
+      ],
+      "evidence": {
+        "156": "skills/_core/command_center/static/index.html:5608 sets the option text to the file name"
+      }
+    },
+    {
+      "key": "citation-grounding",
+      "title": "SOTA citations are not tied to what their reference's abstract states",
+      "tier": 3,
+      "state": "open",
+      "fix": "Require a verbatim abstract quote per citation and publish the reverse reference-to-idea map (citations_cli.py routes).",
+      "proof": "tests/test_sota_citations.py quote and routes tests, PR #162",
+      "issues": [
+        160
+      ],
+      "evidence": {
+        "160": "skills/_core/results/citations.py problems() checked pool membership and a why, never the abstract"
+      }
+    },
+    {
+      "key": "judge-reviewer-name",
+      "title": "The reviewing judge is named after a venue",
+      "tier": 2,
+      "state": "open",
+      "fix": "Rename the judge to judge-reviewer everywhere (step id, refusal code, i18n, agents, skills, docs).",
+      "proof": "PR #164; git grep -i neurips finds only test fixtures",
+      "issues": [
+        163
+      ],
+      "evidence": {
+        "163": "skills/_core/command_center/phase_steps.py STEP_IDS carried neurips_review"
+      }
     }
   ]
 }
