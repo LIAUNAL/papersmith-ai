@@ -14,8 +14,8 @@ Branch: feat/atlas-coverage. Delivery: ask-on-risk. Test runner: pytest (`tests/
 
 - [x] T1 [S1] restore the slow-start fallback without storing it — inline — b9546102
 - [x] T2 [S2] `atlas_coverage.py`, `smith atlas coverage`, `GET /api/atlas/coverage`, Atlas tab notice with its button, phase instructions — inline — 364a0b6e
-- [ ] T3 [S3] qmleegV2: resolve the manuscript references, add them to the pool, draw them — delegated (agent work on the workspace)
-- [ ] T4 [S4] commit, merge, push, release, delete branches — inline
+- [x] T3 [S3] qmleegV2: resolve the manuscript references, add them to the pool, draw them — delegated — qmleegV2 aee87c4 (sota-pool is gitignored by the workspace)
+- [x] T4 [S4] commit, merge, push, release, delete branches — inline — v0.66.0 (c23f5284)
 
 ## Log
 
@@ -24,3 +24,5 @@ Branch: feat/atlas-coverage. Delivery: ask-on-risk. Test runner: pytest (`tests/
 - L3 Flow points: Phase 2 draws the constellation from the pool; Phase 4 step 4 and Phase 5 cite pool references (a journal pass can add pool references the constellation never drew); Phase 8 `bib build` and `resolve --references` add manuscript references that may be outside the pool.
 - L4 T2 finding: `atlas_build` and `atlas_manuscript.refresh` already redraw the manuscript's citations as "Manuscript Citations" placeholders, but the sota-grapher instructions rendered with `render_atlas.py` alone, which dropped them; the agent now rebuilds with `smith atlas build .`. Coverage: proposal references not drawn by any atlas.json system, manuscript placeholders split by pool membership.
 - L5 T3 delegated: resolve --references, sota-scout records, sota-grapher systems in qmleegV2; full suite running for the release.
+- L6 (2026-11-08) Operator: "sube el limite de familias a 7" — check_atlas.py now accepts 3 to 7 families (85a2cd38); qmleegV2's 16 methodology references moved from F1 to F6.
+- L7 T3 result: resolve --references resolved 47 of 58 keys (36 with an abstract); 29 manuscript references drawn from their abstracts; atlas 74 systems, 725 planets, 396 links, 6 families, check green. 21 stay placeholders: 10 not found and 11 with no abstract in OpenAlex (4 have arXiv versions; arXiv answered 429). `smith atlas coverage .` exits 1 on those 21.
