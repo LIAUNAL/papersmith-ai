@@ -35,6 +35,11 @@ number is `0`, breaking changes can still arrive without a major bump.
   the manuscript summary was always dark. Both now take the dashboard's theme on load and whenever it changes
   (Archify through `archify-theme`, the summary through a new light palette), checked by
   `ui/e2e/shipped/theme.spec.ts` for a light and a dark system under either theme.
+- **System tools are reported where they can be fixed.** `smith status` no longer says "OCR Engine Missing" when
+  `llama-server` is in the workspace environment, where `setup_env.py install` puts it. `smith doctor` now names
+  the command that installs a missing TeX engine or PDF rasterizer on the platform it runs on (`apt` packages on
+  Linux, MacTeX or poppler through Homebrew on macOS); `smith init` does not install them, since they are system
+  packages.
 
 ## 0.64.0
 

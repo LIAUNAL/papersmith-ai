@@ -129,9 +129,31 @@ def tool_rows(root: Path) -> list[dict[str, str]]:
                          path if path else f"not found ({purpose})"))
     for group, present in groups.items():
         rows.append(_row("tools", group, "ok" if present else "warn",
-                         "available" if present else
-                         f"no {group} found: install TeX Live/MacTeX or poppler"))
+                         "available" if present else f"no {group} found: {_install_hint(group)}"))
     return rows
+
+
+#: The packages that install each missing group, by platform. The paper uses
+#: amsmath, booktabs, geometry, hyperref, lmodern, microtype, multirow,
+#: tabularx and tikz; a venue class may need more (`texlive-full` has them all).
+INSTALL_HINTS = {
+    "TeX engine": {
+        "linux": "sudo apt install latexmk texlive-latex-recommended texlive-latex-extra "
+                 "texlive-pictures texlive-fonts-recommended texlive-science",
+        "darwin": "brew install --cask mactex-no-gui",
+        "other": "install TeX Live (https://tug.org/texlive/) with latexmk",
+    },
+    "rasterizer": {
+        "linux": "sudo apt install poppler-utils",
+        "darwin": "brew install poppler",
+        "other": "install poppler or Ghostscript",
+    },
+}
+
+
+def _install_hint(group: str) -> str:
+    platform = "linux" if sys.platform.startswith("linux") else ("darwin" if sys.platform == "darwin" else "other")
+    return INSTALL_HINTS.get(group, {}).get(platform, "install TeX Live/MacTeX or poppler")
 
 
 # --------------------------------------------------------------------------
