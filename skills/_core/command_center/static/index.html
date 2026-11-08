@@ -3019,6 +3019,8 @@
     .atlas-ref__row li span { color: var(--text-muted); }
     .atlas-ref__note { margin-top: 0.4rem; color: var(--warn); font-size: 0.78rem; }
     .atlas-ref__note:empty { display: none; }
+    .atlas-coverage { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.55rem 0.9rem; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); border-left: 3px solid var(--warn); font-size: 0.82rem; color: var(--text-muted); }
+    .atlas-coverage[hidden] { display: none; }
     /* Rows the panels build with inline flex styles wrap too. */
     .tab-pane [style*="justify-content: space-between"], .tab-pane [style*="justify-content:space-between"],
     .tutor__modes, #pane-experiments .exp-chart figcaption { flex-wrap: wrap; }
@@ -3524,6 +3526,12 @@
             <button class="btn btn--sm" onclick="clearAtlasSelection()">✕</button>
           </span>
           <span id="atlasSelResult" style="flex-basis: 100%; color: var(--text-muted); font-size: 0.74rem;"></span>
+        </div>
+
+        <!-- Cited references the constellation does not draw yet (atlas-reference.js) -->
+        <div id="atlasCoverage" class="atlas-coverage" hidden>
+          <span id="atlasCoverageText"></span>
+          <button type="button" class="btn btn--sm btn--primary" data-atlas-complete data-i18n="atlasCoverage.button">Complete the constellation</button>
         </div>
 
         <!-- A cited reference opened from a panel (atlas-reference.js) -->

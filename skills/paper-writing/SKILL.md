@@ -748,7 +748,11 @@ by its own digest.
 
 **`resolve --references` keeps what the paper cites beside `refs.bib`.** Run it
 after the citations change, because `bib build` rewrites `refs.bib` and carries
-no abstract. A key's DOI asks OpenAlex first, since Crossref never returns an
+no abstract. Then run `smith atlas coverage .`: a cited key the SOTA
+constellation draws only as a placeholder (no system of its own) goes to the
+`sota-scout` agent, which adds it to `sota-pool/candidates.json` with the
+abstract `resolve --references` stored, and to the `sota-grapher` agent, which
+draws it. A key's DOI asks OpenAlex first, since Crossref never returns an
 abstract, then Crossref; an arXiv id asks arXiv; and while no abstract was found,
 an OpenAlex title search is accepted only on an exact normalized title (a near
 title is `not_found`). Each record is `{status, resolver, identifier, title,

@@ -311,7 +311,7 @@ never claims more than the reference's abstract or ingested text states: passing
 the check proves pool membership and a stated reason, not that the reference
 supports the idea. Keys of ideas that no longer exist are ignored. After writing
 it, run `python skills/_core/results/citations_cli.py check --root .`, which
-prints what is owed and exits non-zero until every idea is cited. Experiments
+prints what is owed and exits non-zero until every idea is cited. Then run `smith atlas coverage .`: a cited reference the SOTA constellation does not draw (a journal pass can add one to the pool after the constellation was drawn) goes to the `sota-grapher` agent, which appends its system to `sota-pool/atlas.json` and rebuilds with `smith atlas build .`. Experiments
 live in the same file and belong to `/experimental-deliberation`; the check also
 lists them.
 

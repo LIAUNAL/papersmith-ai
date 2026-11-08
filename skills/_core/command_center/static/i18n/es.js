@@ -740,6 +740,8 @@ window.PAPERSMITH_I18N.es = {
   "conceptTree.novelty": "Árbol de pilares e hipótesis",
   "citations.openInAtlas": "Abrir esta referencia en la constelación SOTA",
   "atlasRef.system": "Constelación: {title}",
+  "atlasCoverage.text": "La constelación SOTA deja fuera {proposal} referencia(s) que cita la propuesta y dibuja solo como marcadores {manuscript} que cita el manuscrito.",
+  "atlasCoverage.button": "Completar la constelación",
   "common.close": "Cerrar",
   "atlasRef.notDrawn": "Esta referencia está en el pool SOTA, pero la constelación aún no la dibuja (sota-pool/atlas.json).",
   "atlasRef.oldAtlas": "Este atlas se dibujó antes de poder resaltar una referencia: pulsa ⚡ Regenerar grafo y vuelve a abrir la referencia.",

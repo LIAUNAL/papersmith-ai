@@ -46,8 +46,12 @@ stretch may run, in this order:
 
 ```
 python3 skills/plausibility/scripts/check_atlas.py sota-pool/atlas.json --pool sota-pool/candidates.json
-python3 skills/plausibility/scripts/render_atlas.py sota-pool/atlas.json --out sota-pool/atlas.html
+smith atlas build .
 ```
+
+`smith atlas build .` runs the same checker, renders the page and redraws the manuscript's citations beside the pool's systems; rendering `render_atlas.py` alone drops them until the next rebuild.
+
+**Extending the constellation.** When `smith atlas coverage .` lists references the paper cites that the constellation does not draw (`proposal.undrawn`, or `manuscript.placeholders` that are `in_pool`), append one system for each to `sota-pool/atlas.json` under the same rules, keeping every existing system, planet, link and family as it is, then run the checker and `smith atlas build .`. A manuscript placeholder outside the pool needs its abstract first: `resolve --references` stores it, and the `sota-scout` agent adds the reference to `sota-pool/candidates.json`.
 
 `--pool` holds every planet's quote to the abstract of the candidate its
 `evidence.origin` names, verbatim up to whitespace. No installers, no

@@ -326,7 +326,10 @@ reference states. Refresh the file with each new protocol version, then run
 is owed and exits non-zero. Until every experiment is cited,
 `/proposal-implementation` and `/experimental-implementation` stay locked, the
 G-EXP-POC approval refuses `SOTA_CITATIONS_OWED` and Phase 5 cannot pass. The
-Experiments tab's "Justify with SOTA citations" button asks for it.
+Experiments tab's "Justify with SOTA citations" button asks for it. Then run
+`smith atlas coverage .`: a cited reference the SOTA constellation does not draw
+goes to the `sota-grapher` agent, which appends its system and rebuilds with
+`smith atlas build .`.
 
 ### A second, unrelated citation form: `[claims:N]`
 

@@ -101,7 +101,7 @@ skill refuses when its input is missing.
      `sota-pool/candidates.json`, each with its reason, in
      `.papersmith/citations.json`, and shown beside the idea. This is the
      phase's fourth step, launched from its button in the stepper; `python
-     skills/_core/results/citations_cli.py check --root .` says what is owed.
+     skills/_core/results/citations_cli.py check --root .` says what is owed. Each reference the ideas cite must also be drawn in the SOTA constellation: `smith atlas coverage .` lists the ones it is not.
    - **Contribution type**: once the hypotheses are discussed and the
      mathematics and the novelty proposed, the `paper-reviewer` agent
      classifies the proposal's NeurIPS contribution type
@@ -192,7 +192,7 @@ skill refuses when its input is missing.
    `resolve --references`: it stores each cited paper's metadata and abstract
    in `paper/.paper-writing/references.json`, and `verify` fails while a cited
    key has no record there. A paper it cannot resolve, offline included, keeps
-   a record and passes with a note.
+   a record and passes with a note. Then `smith atlas coverage .` lists the cited papers the SOTA constellation draws only as placeholders: their abstracts go to the pool (`sota-scout`) and their systems to the constellation (`sota-grapher`).
 9. **Figures**: `/figure-review <figure id>` checks a compiled
    `paper/Figures/<id>.pdf`.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:

@@ -741,6 +741,8 @@ window.PAPERSMITH_I18N.en = {
   "conceptTree.novelty": "Pillars and hypotheses tree",
   "citations.openInAtlas": "Open this reference on the SOTA constellation",
   "atlasRef.system": "Constellation: {title}",
+  "atlasCoverage.text": "The SOTA constellation leaves out {proposal} reference(s) the proposal cites and draws {manuscript} the manuscript cites only as placeholders.",
+  "atlasCoverage.button": "Complete the constellation",
   "common.close": "Close",
   "atlasRef.notDrawn": "This reference is in the SOTA pool but the constellation does not draw it yet (sota-pool/atlas.json).",
   "atlasRef.oldAtlas": "This atlas was drawn before it could highlight a reference: press ⚡ Regenerate graph and open the reference again.",

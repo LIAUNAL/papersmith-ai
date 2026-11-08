@@ -143,6 +143,20 @@ yet — nothing is ingested):
   `scripts/render_atlas.py` — same atlas, same sky, every run. Never
   hand-edited — a hand touch is regenerated away on the next run.
 
+## Keeping the constellation complete
+
+The constellation is drawn in Phase 2, but the paper keeps citing after it: the
+proposal's and the protocol's SOTA citations (Phases 4 and 5) can name pool
+references a later journal pass added, and the manuscript (Phase 8) cites
+`refs.bib` entries the pool never held. `smith atlas coverage .` lists both
+(`proposal.undrawn`, `manuscript.placeholders`) and exits 1 until every cited
+reference has a system of its own; the Graph Atlas tab shows the same count with
+a button that asks the agent to complete it. A manuscript reference with no
+system is still drawn, as a placeholder of the "Manuscript Citations" family
+built from its BibTeX entry, until the `sota-grapher` draws it from its abstract.
+Rebuild with `smith atlas build .` (or the tab's ⚡ Regenerate graph): rendering
+`render_atlas.py` alone drops the manuscript's citations until the next rebuild.
+
 ## The checker and the renderer
 
 `scripts/check_atlas.py` (stdlib-only) is the bound that holds. It refuses,

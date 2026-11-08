@@ -21,6 +21,15 @@ number is `0`, breaking changes can still arrive without a major bump.
   conclusions, family) and the papers it links to, and lights that paper and its links. A citation opened from a
   dashboard panel lands on the 3D sky with that paper selected and its panel open; the dashboard's own card now
   appears only for a reference the constellation does not draw or an atlas drawn by an older release.
+- **A 3D sky too slow to start falls back to 2D again**, so the page never hangs; the fallback is not remembered,
+  and the next visit tries the 3D sky first.
+- **No cited reference stays out of the SOTA constellation.** `smith atlas coverage` (and `GET /api/atlas/coverage`)
+  lists the references the proposal and the protocol cite that no system draws, and the manuscript's `refs.bib`
+  entries the constellation draws only as placeholders, with whether the pool holds them. The Graph Atlas tab shows
+  the counts with a "Complete the constellation" button, and Phases 4, 5 and 8 now end by running it: the
+  `sota-scout` adds a manuscript reference to the pool with its resolved abstract, and the `sota-grapher` appends its
+  system and rebuilds with `smith atlas build`, which keeps the manuscript's citations drawn (rendering the page
+  alone dropped them). A citation drawn only as a placeholder now opens on the sky too.
 
 ## 0.65.0
 
