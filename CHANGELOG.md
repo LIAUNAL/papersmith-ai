@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.65.0
 
 - **A pillars and hypotheses tree that explains itself.** Each box now says what it is ("Pillar · C1",
   "Hypothesis · E1") with its name, its statement, and the pillars it rests on or the hypotheses it supports. A
