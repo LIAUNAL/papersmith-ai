@@ -1,5 +1,5 @@
 {
-  "pinned_commit": "8649ac59",
+  "pinned_commit": "e36a5393",
   "roots": [
     {
       "key": "tracker",
@@ -217,56 +217,54 @@
       "key": "proposal-revision-names",
       "title": "Readers of proposal revisions and protocol headings disagree with Phase 4 and the shared convention",
       "tier": 2,
-      "state": "open",
+      "state": "closed",
       "fix": "Make the slug optional in the revision pattern, cap tagged equations only, and read [exp:<id>] at any heading level in citations, experiments_view and discussion.",
       "proof": "tests/test_sota_citations.py slugless/cap/heading-level tests, PR #157",
-      "issues": [
-        155
-      ],
-      "evidence": {
-        "155": "skills/_core/command_center/math_view.py:31 and skills/_core/results/citations.py:114 require a slug"
-      }
+      "issues": [],
+      "evidence": {}
     },
     {
       "key": "run-selector-label",
       "title": "The header run selector shows full proposal file names",
       "tier": 2,
-      "state": "open",
+      "state": "closed",
       "fix": "Label each option with its run id and keep the file name as value and tooltip.",
       "proof": "ui/e2e/shipped/run-selector.spec.ts, PR #158",
-      "issues": [
-        156
-      ],
-      "evidence": {
-        "156": "skills/_core/command_center/static/index.html:5608 sets the option text to the file name"
-      }
+      "issues": [],
+      "evidence": {}
     },
     {
       "key": "citation-grounding",
       "title": "SOTA citations are not tied to what their reference's abstract states",
       "tier": 3,
-      "state": "open",
+      "state": "closed",
       "fix": "Require a verbatim abstract quote per citation and publish the reverse reference-to-idea map (citations_cli.py routes).",
       "proof": "tests/test_sota_citations.py quote and routes tests, PR #162",
-      "issues": [
-        160
-      ],
-      "evidence": {
-        "160": "skills/_core/results/citations.py problems() checked pool membership and a why, never the abstract"
-      }
+      "issues": [],
+      "evidence": {}
     },
     {
       "key": "judge-reviewer-name",
       "title": "The reviewing judge is named after a venue",
       "tier": 2,
-      "state": "open",
+      "state": "closed",
       "fix": "Rename the judge to judge-reviewer everywhere (step id, refusal code, i18n, agents, skills, docs).",
       "proof": "PR #164; git grep -i neurips finds only test fixtures",
+      "issues": [],
+      "evidence": {}
+    },
+    {
+      "key": "gate-decoy-flakes",
+      "title": "Tests that pass under the empty home and fail intermittently under the decoy home",
+      "tier": 2,
+      "state": "open",
+      "fix": "Keep test fixtures from starting background work that reads the home (AI-archive sync); capture the failing assertion of the remaining flake and fix its cause.",
+      "proof": "tests/test_command_center_terminal.py footer test patched; gate prints E lines since #161",
       "issues": [
-        163
+        166
       ],
       "evidence": {
-        "163": "skills/_core/command_center/phase_steps.py STEP_IDS carried neurips_review"
+        "166": "tests/test_journal_finder.py:1963 failed once under the decoy home on CI"
       }
     }
   ]

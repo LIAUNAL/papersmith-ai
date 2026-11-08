@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from skills._core.command_center import server, terminal
@@ -342,7 +343,11 @@ class BrandingTests(unittest.TestCase):
             (root / ".papersmith").mkdir()
             (root / ".papersmith" / "version").write_text("0.16.0\n", encoding="utf-8")
             app = server.create_app(root, history_store=None)
-            status = _body(_route(app, "/api/status", "GET")())
+            # A `version` file makes this a real workspace, so the route would
+            # start an AI-archive sync thread that reads the home's transcripts
+            # and writes here while the directory is being removed.
+            with mock.patch.object(server.ai_archive, "sync_in_background"):
+                status = _body(_route(app, "/api/status", "GET")())
             self.assertEqual(status["framework_version"], "0.16.0")
 
 
