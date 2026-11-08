@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.64.0
 
 - **A text-size control and a dashboard that fits every screen.** The top bar's `A ×1` selector scales the
   dashboard's text to ×1.25, ×1.5 or ×2, remembered per browser. The header wraps instead of squeezing, and the
