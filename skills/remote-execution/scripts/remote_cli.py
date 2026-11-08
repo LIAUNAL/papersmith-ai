@@ -5234,15 +5234,27 @@ def cmd_prune_caches(product: Path, *, apply: bool = False) -> dict:
                 else:
                     keep.append(name)
             dirnames[:] = keep
-    total = 0
-    for path in found:
-        for inner, _, files in os.walk(path):
-            total += sum(os.lstat(os.path.join(inner, name)).st_size for name in files)
+    def weight(path: Path) -> int:
+        return sum(os.lstat(os.path.join(inner, name)).st_size
+                   for inner, _, files in os.walk(path) for name in files)
+
+    sizes = {path: weight(path) for path in found}
+    report: dict = {"product": str(product), "dirs": [path.relative_to(product).as_posix() for path in found],
+                    "bytes": sum(sizes.values()), "applied": apply}
     if apply:
+        removed: list[str] = []
+        failed: list[dict] = []
         for path in found:
-            shutil.rmtree(path)
-    return {"product": str(product), "dirs": [path.relative_to(product).as_posix() for path in found],
-            "bytes": total, "applied": apply}
+            relative = path.relative_to(product).as_posix()
+            try:
+                shutil.rmtree(path)
+            except OSError as exc:
+                failed.append({"dir": relative, "error": f"{type(exc).__name__}: {exc}"})
+            else:
+                removed.append(relative)
+        report.update(removed=removed, failed=failed,
+                      freed=sum(sizes[product / name] for name in removed))
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -5735,8 +5747,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result["summary"]["ok"] else 1
 
     if args.command == "prune-caches":
-        print(json.dumps(cmd_prune_caches(args.product, apply=args.apply), indent=2))
-        return 0
+        if not args.product.is_dir():
+            print(f"remote_cli: refusing prune-caches: {args.product} is not a directory", file=sys.stderr)
+            return 2
+        report = cmd_prune_caches(args.product, apply=args.apply)
+        print(json.dumps(report, indent=2))
+        return 1 if report.get("failed") else 0
 
     if args.command == "readiness":
         try:

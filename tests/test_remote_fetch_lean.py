@@ -16,10 +16,12 @@ import argparse
 import contextlib
 import io
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tests.test_remote_execution import (
     COLAB,
@@ -32,12 +34,15 @@ from tests.test_remote_execution import (
     _streamed,
 )
 from tests.test_papersmith_init import WorkspaceSetupEnvTests
+from tests.test_remote_execution import JOBFOLDER
 
 KEPT = ["log.txt", "Results/e1/partial.json", "clone/Prod/Results/runs.jsonl",
         "clone/Prod/Results/checkpoints/last.pt", "clone/Prod/src/cache.py"]
 SKIPPED = ["clone/.cache/eeg-data/b2bd.npz", "clone/Prod/.cache/eeg-data/b2bd.json",
            "clone/Prod/src/__pycache__/model.cpython-312.pyc", "clone/.venv/lib/site.py",
            "clone/.git/objects/pack/p.pack"]
+#: A worktree or submodule clone carries `.git` as a file, not a directory.
+GIT_FILE = "clone/vendor/lib/.git"
 
 
 class KaggleFetchTests(unittest.TestCase):
@@ -49,7 +54,7 @@ class KaggleFetchTests(unittest.TestCase):
             requested.append(request.url)
             return _streamed(b"payload")
 
-        names = [name for name in KEPT + SKIPPED if name != "log.txt"]
+        names = [name for name in KEPT + SKIPPED + [GIT_FILE] if name != "log.txt"]
 
         class _Client:
             def __init__(self):
@@ -69,7 +74,7 @@ class KaggleFetchTests(unittest.TestCase):
             self.assertEqual(result["files"], sorted(KEPT))
             for name in KEPT:
                 self.assertTrue((into / name).is_file(), name)
-            for name in SKIPPED:
+            for name in SKIPPED + [GIT_FILE]:
                 self.assertFalse((into / name).exists(), name)
                 self.assertNotIn(f"https://files.example.invalid/{name}", requested)
 
@@ -78,7 +83,7 @@ class ColabFetchTests(unittest.TestCase):
     def test_the_executor_manifest_leaves_regenerable_directories_out(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            for name in [n for n in KEPT if n != "log.txt"] + SKIPPED:
+            for name in [n for n in KEPT if n != "log.txt"] + SKIPPED + [GIT_FILE]:
                 (base / name).parent.mkdir(parents=True, exist_ok=True)
                 (base / name).write_text("x", encoding="utf-8")
             self.assertEqual(COLAB_EXECUTOR.manifest_entries(base), sorted(n for n in KEPT if n != "log.txt"))
@@ -161,10 +166,86 @@ class PruneCachesTests(unittest.TestCase):
             self.assertEqual((code, report["dirs"], report["bytes"]), (0, [], 0))
 
 
+    def test_a_missing_product_is_refused_not_reported_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                code = _remote_cli().main(["prune-caches", "--product", str(Path(tmp) / "typo")])
+            self.assertEqual(code, 2)
+            self.assertIn("is not a directory", err.getvalue())
+
+    def test_a_directory_that_cannot_be_removed_is_reported_and_the_rest_go(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self.product(tmp)
+            cli = _remote_cli()
+            real = cli.shutil.rmtree
+            stuck = ".remote-execution/returned/e1_run/clone/.git"
+
+            def rmtree(path, *args, **kwargs):
+                if Path(path).as_posix().endswith(stuck):
+                    raise PermissionError("read-only pack")
+                return real(path, *args, **kwargs)
+
+            with mock.patch.object(cli.shutil, "rmtree", rmtree):
+                code, report = self.run_cli("--product", str(product), "--apply")
+            self.assertEqual(code, 1)
+            self.assertEqual(report["failed"], [{"dir": stuck, "error": "PermissionError: read-only pack"}])
+            self.assertEqual(len(report["removed"]), 14)
+            self.assertNotIn(stuck, report["removed"])
+            self.assertTrue((product / stuck).is_dir())
+            self.assertFalse((product / ".remote-execution/returned/e1_run/clone/.cache").exists())
+            self.assertEqual(report["freed"], 14 * 10)
+
+    def test_a_symlinked_cache_is_neither_followed_nor_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "Prod"
+            outside = Path(tmp) / "elsewhere"
+            (outside / "data.npz").parent.mkdir(parents=True)
+            (outside / "data.npz").write_bytes(b"x" * 10)
+            clone = product / ".remote-execution/returned/e1_run/clone"
+            clone.mkdir(parents=True)
+            (clone / ".cache").symlink_to(outside, target_is_directory=True)
+            code, report = self.run_cli("--product", str(product), "--apply")
+            self.assertEqual((code, report["dirs"]), (0, []))
+            self.assertTrue((outside / "data.npz").is_file())
+            self.assertTrue((clone / ".cache").is_symlink())
+
+
+class CarryPathTests(unittest.TestCase):
+    def test_a_carry_path_inside_a_directory_fetch_leaves_out_is_refused(self) -> None:
+        for raw in ("Results/.cache/checkpoints", ".venv/state", "hpo/__pycache__/study.db", "src/.git"):
+            with self.subTest(raw=raw):
+                with self.assertRaises(JOBFOLDER.JobFolderError) as ctx:
+                    JOBFOLDER.validate_carry_paths([raw])
+                self.assertIn("a fetch leaves out", str(ctx.exception))
+
+    def test_the_usual_carry_paths_still_pass(self) -> None:
+        self.assertEqual(JOBFOLDER.validate_carry_paths(["Results/checkpoints", "hpo/studies"]),
+                         ("Results/checkpoints", "hpo/studies"))
+
+
 class SetupEnvCleanTests(WorkspaceSetupEnvTests):
-    def test_install_drops_the_package_downloads_it_no_longer_needs(self) -> None:
+    def test_install_drops_only_what_it_can_download_again(self) -> None:
         calls = self.install_calls(self.new_bare_root())
-        self.assertEqual(calls[-1], ["clean", "--all", "--yes"])
+        self.assertEqual(calls[-1], ["clean", "--tarballs", "--index-cache", "--locks", "--yes"])
+
+    def test_a_failed_cleanup_does_not_fail_a_built_environment(self) -> None:
+        module = self.load_copy(self.new_bare_root())
+        module.find_micromamba = lambda: Path("/fake/mm")
+        module.env_exists = lambda name: False
+        module.detect_cuda = lambda: False
+
+        def run(mm, args, env):
+            if args[0] == "clean":
+                raise subprocess.CalledProcessError(1, ["micromamba", *args])
+
+        module.run = run
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = module.cmd_install(argparse.Namespace(name="papersmith", cpu=True, cuda=False, no_ingestion=True))
+        self.assertEqual(code, 0)
+        self.assertIn("[setup] done", out.getvalue())
+        self.assertIn("could not clean", out.getvalue())
 
 
 del WorkspaceSetupEnvTests

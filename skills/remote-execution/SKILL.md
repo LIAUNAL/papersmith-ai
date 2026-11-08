@@ -2593,11 +2593,14 @@ back kept one copy of the dataset per run on the operator's disk: one
 workspace held 23 copies of a 306 MB cache, about 13 GB. Nothing local reads
 them: the gate reads `bootstrap.json`, a continuation reads `partial.json`,
 `runs.jsonl` and its declared carry paths, and the dashboard reads the ledgers.
-A carry path must therefore not live inside one of those directories.
+A carry path inside one of those directories would never come back, so
+`generate-job` and `submit` refuse it.
 
 `python skills/remote-execution/scripts/remote_cli.py prune-caches --product
 <dir>` lists what older fetches left there, with the bytes they hold, and
-`--apply` removes it.
+`--apply` removes it, reporting `removed`, `failed` and the bytes `freed`; it
+exits 1 when a directory could not be removed and 2 when `--product` is not a
+directory. Symlinks are neither followed nor removed.
 
 ## Quarantine location
 

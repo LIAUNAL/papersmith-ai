@@ -205,8 +205,9 @@ def manifest_entries(base: Path) -> list[str]:
             or parts[0] in CREDENTIAL_MATERIAL_FILENAMES
         ):
             continue
-        if len(parts) > 2 and parts[0] == CLONE_DIRNAME and any(
-                part in REGENERABLE_DIRNAMES for part in parts[1:-1]):
+        # The last part counts too: a worktree or submodule clone has `.git` as a file.
+        if len(parts) > 1 and parts[0] == CLONE_DIRNAME and any(
+                part in REGENERABLE_DIRNAMES for part in parts[1:]):
             continue
         entries.append(relative.as_posix())
     return sorted(entries)

@@ -480,7 +480,8 @@ REGENERABLE_DIRNAMES = frozenset({".cache", "__pycache__", ".venv", ".git"})
 def regenerable(name: str) -> bool:
     """Whether a fetched path lies in a regenerable directory of the clone."""
     parts = PurePosixPath(name).parts
-    return len(parts) > 2 and parts[0] == "clone" and any(part in REGENERABLE_DIRNAMES for part in parts[1:-1])
+    # The last part counts too: a worktree or submodule clone has `.git` as a file.
+    return len(parts) > 1 and parts[0] == "clone" and any(part in REGENERABLE_DIRNAMES for part in parts[1:])
 
 
 def _is_kaggle_origin(url: str) -> bool:
