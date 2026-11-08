@@ -224,6 +224,20 @@ class CarryPathTests(unittest.TestCase):
                          ("Results/checkpoints", "hpo/studies"))
 
 
+class OneRuleTests(unittest.TestCase):
+    def test_every_copy_of_the_skipped_directory_names_agrees(self) -> None:
+        driver = _load_kaggle_driver_module()
+        copies = {
+            "kaggle_driver": driver.REGENERABLE_DIRNAMES,
+            "colab adapter": COLAB.REGENERABLE_DIRNAMES,
+            "colab executor": COLAB_EXECUTOR.REGENERABLE_DIRNAMES,
+            "remote_cli": _remote_cli().REGENERABLE_DIRNAMES,
+            "jobfolder": JOBFOLDER.FETCH_SKIPPED_DIRNAMES,
+        }
+        self.assertEqual({name: sorted(value) for name, value in copies.items()},
+                         {name: sorted(copies["kaggle_driver"]) for name in copies})
+
+
 class SetupEnvCleanTests(WorkspaceSetupEnvTests):
     def test_install_drops_only_what_it_can_download_again(self) -> None:
         calls = self.install_calls(self.new_bare_root())
