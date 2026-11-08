@@ -17,6 +17,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from ..errors import SourceError, UserError
@@ -132,7 +133,13 @@ def provisioned_interpreters(workspace: Path) -> tuple[Path, ...]:
         if spec is None or spec.loader is None:
             return ()
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Reading the declaration must not leave `scripts/__pycache__/` in the
+        # workspace (the publish and export paths promise to write nothing).
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = previous
         root = Path(module.MAMBA_ROOT)
         env_name = str(module.ENV_NAME)
     except Exception:                      # noqa: BLE001 -- any failure is "cannot derive"
@@ -351,6 +358,9 @@ def run_cli(args) -> int:
     command_center_entry(workspace)
     interpreter = workspace_interpreter(workspace)
 
+    if getattr(args, "publish_pages", False):
+        return run_publish_pages(args, workspace, interpreter)
+
     export_snapshot = getattr(args, "export_snapshot", None)
     if export_snapshot:
         # Run by the workspace's own backend, like every `smith ui` path: the
@@ -391,6 +401,70 @@ def run_cli(args) -> int:
     return _run_child(argv, workspace)
 
 
+def _confirm(prompt: str) -> bool:
+    try:
+        answer = input(prompt)
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
+
+
+def run_publish_pages(args, workspace: Path, interpreter: str) -> int:
+    """Export a fresh snapshot and publish it to GitHub Pages (``--publish-pages``).
+
+    The remote is checked first, then the snapshot is written by the workspace's
+    own backend into a temporary directory outside the workspace, summarized,
+    confirmed (``--yes`` or an interactive "y"), committed as one orphan commit
+    on the Pages branch and force-pushed; finally ``gh api`` makes Pages serve
+    that branch.
+    """
+    from . import pages
+
+    prog = getattr(args, "_prog", "smith")
+    remote = getattr(args, "pages_remote", None) or pages.DEFAULT_REMOTE
+    branch = getattr(args, "pages_branch", None) or pages.DEFAULT_BRANCH
+    if args.export_snapshot or args.export_static:
+        raise UserError("--publish-pages writes its own snapshot; drop --export-snapshot/--export-static")
+    url = pages.remote_url(workspace, remote)
+    owner, repo = pages.parse_github_remote(url)
+    interpreter = require_runnable_backend(workspace, interpreter)
+    with tempfile.TemporaryDirectory(prefix="smith-pages-") as holder:
+        site = Path(holder).resolve() / "site"
+        if workspace == site or workspace in site.parents:
+            raise UserError(f"the temporary directory {holder} is inside the workspace; "
+                            "set TMPDIR to a directory outside it")
+        argv = build_server_argv(
+            workspace, args.host, args.port, no_browser=True, export_snapshot=str(site),
+            snapshot_lang=getattr(args, "snapshot_lang", None),
+            snapshot_ai_history=getattr(args, "ai_history", None), interpreter=interpreter,
+        )
+        code = _run_child(argv, workspace)
+        if code != SUCCESS or not (site / "snapshot" / "manifest.json").is_file():
+            raise UserError("the snapshot export failed, so nothing was published")
+        summary = pages.site_summary(site)
+        print(f"{prog} ui: about to publish a read-only snapshot of {workspace.name} to the "
+              f"{branch} branch of {owner}/{repo} ({remote})")
+        print(f"{prog} ui: the GitHub Pages site will be PUBLIC, even if the repository is private")
+        print(f"{prog} ui: AI history: "
+              + ("included (credentials, emails and the workspace's people masked)"
+                 if summary["ai_history"] else "not included"))
+        print(f"{prog} ui: {summary['files']} files, {pages.human_size(summary['bytes'])}; "
+              f"the paper PDF and figures are published as they are")
+        if not getattr(args, "yes", False):
+            if not sys.stdin.isatty():
+                raise UserError("refusing to publish without confirmation: pass --yes "
+                                "(stdin is not a terminal)")
+            if not _confirm(f"Publish to {owner}/{repo} {branch}? [y/N] "):
+                print(f"{prog} ui: nothing was published")
+                return USER_ERROR
+        sha = pages.push_snapshot(workspace, site, remote=remote, branch=branch)
+    print(f"{prog} ui: pushed {sha[:12]} to {remote} {branch}")
+    ok, site_url = pages.ensure_pages(owner, repo, branch)
+    print(f"{prog} ui: site: {site_url}")
+    print(f"{prog} ui: GitHub Pages takes a minute or two to build the site after a push")
+    return SUCCESS if ok else USER_ERROR
+
+
 def register(subparsers) -> None:
     parser = subparsers.add_parser(
         "ui",
@@ -415,6 +489,17 @@ def register(subparsers) -> None:
                         help="with --export-snapshot: include the AI History tab and its "
                              "conversations, with credentials, emails and the workspace's people "
                              "masked (default: on; --no-ai-history leaves them out)")
+    parser.add_argument("--publish-pages", action="store_true",
+                        help="export a fresh read-only snapshot and publish it to GitHub Pages: one "
+                             "orphan commit force-pushed to the Pages branch of the workspace's "
+                             "GitHub remote, then Pages enabled for that branch with `gh api`; the "
+                             "site is PUBLIC (honors --snapshot-lang and --no-ai-history)")
+    parser.add_argument("--pages-branch", default=None, metavar="<branch>",
+                        help="with --publish-pages: the branch GitHub Pages serves (default: gh-pages)")
+    parser.add_argument("--pages-remote", default=None, metavar="<remote>",
+                        help="with --publish-pages: the git remote to push to (default: origin)")
+    parser.add_argument("--yes", action="store_true",
+                        help="with --publish-pages: publish without the interactive confirmation")
     parser.add_argument("--allowed-host", action="append", default=None, metavar="HOST:PORT",
                         help="also accept this Host header (repeatable), e.g. when forwarding "
                              "the port or running the Vite dev server")

@@ -96,6 +96,7 @@ inside, and its own section below explains it. Sections 13 to 19 cover the
 skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
 `hyperparameter-search`, `remote-parallelism`, `math-tutor`,
 `experiments-tutor` and `journal-finder` — and each names its own seams.
+Section 20, `ui-github`, publishes the dashboard itself, read-only.
 
 ---
 
@@ -3339,3 +3340,29 @@ flowchart TD
     L --> G
     J --> K
 ```
+
+---
+
+### 20. `ui-github` — the dashboard, read-only, on GitHub Pages
+
+**What it is for.** `smith ui` serves a live dashboard on the operator's
+machine; a co-author or reader without the workspace cannot see it. This skill
+publishes a static snapshot of it to `https://<owner>.github.io/<repo>/`:
+every panel's read-only data as files, nothing that runs (no server, no
+terminal, no agent, no phase execution).
+
+**What it runs.** `smith ui . --publish-pages --yes [--no-ai-history]
+[--snapshot-lang en,es] [--pages-branch gh-pages] [--pages-remote origin]`,
+whose steps `docs/cli.md` lists: a fresh snapshot exported outside the
+workspace, one orphan commit force-pushed to the Pages branch without touching
+the workspace's tree, index or branch, and Pages enabled or repointed with
+`gh api`. `$ARGUMENTS` pass through as flags.
+
+**What it asks first.** The site is PUBLIC even for a private repository, so
+the skill confirms with the operator the public URL and whether to include the
+masked AI history (default yes; `--no-ai-history` leaves it out) before it adds
+`--yes`. The paper PDF and figures are published as they are.
+
+**What it refuses.** A workspace without the remote, a remote that is not on
+github.com, a failed export, and a non-interactive run without `--yes`; each
+exits non-zero with nothing pushed.

@@ -98,6 +98,7 @@ The full path, from a PDF to a compiled paper:
 | 12 | `/figure-review` | Looks at the render: rasterizes every `Figures/<id>.pdf` and measures what a raster can support (ink outside the canvas, collisions) | a visual report, never a change |
 | 13 | `/skill-audit` | Audits any of the above: what the code accepts versus what its documentation promises | a report, never a change |
 | 14 | `/upgrade-project` | Brings the workspace to the version of the CLI you have installed: it syncs the kit files and migrates the artifacts, delegating everything to `smith upgrade` | the workspace itself |
+| 15 | `/ui-github` | Publishes a read-only copy of the dashboard on GitHub Pages (`smith ui --publish-pages`): a static snapshot, nothing runs, and the site is public; it asks before pushing, and `--no-ai-history` leaves the masked AI history out | the `gh-pages` branch of the GitHub remote, never the workspace |
 
 The minimum to try the forge is step 1: with the idea in two sentences,
 `/plausibility` tracks the SOTA and returns the constellation plus the top-5. Only
@@ -484,6 +485,7 @@ smith init ~/papers/sparse-ae \
 
 cd ~/papers/sparse-ae
 smith ui                     # the dashboard; works right after init
+smith ui --publish-pages     # publish a read-only copy with /ui-github (public site)
 smith status
 smith status --json          # machine-readable snapshot
 ```

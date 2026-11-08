@@ -22,6 +22,14 @@ number is `0`, breaking changes can still arrive without a major bump.
   authors, team members and the operator `[author-N]`, `[member-N]` and `[user]`. The AI History tab and its
   conversations are included, masked, unless `--no-ai-history`; `--snapshot-lang` picks the languages. Exporting
   writes nothing into the workspace.
+- **Publish that snapshot to GitHub Pages** (`smith ui --publish-pages`, the `/ui-github` skill). It exports a fresh
+  snapshot outside the workspace, says what it publishes (a PUBLIC site, AI history included or not, file count
+  and size) and asks, or needs `--yes`; then it commits the snapshot alone as one orphan commit with a temporary
+  index, force-pushes it to `gh-pages` (`--pages-branch`) of `origin` (`--pages-remote`) without touching the
+  workspace's tree, index or branch, and enables Pages for that branch with `gh api` (created on 404, repointed
+  when it serves another branch), printing the site URL. Without `gh` or its login, the branch is published and
+  the `gh api` command is printed. It refuses a workspace without that remote, a remote off github.com, and a
+  failed export. Reading the workspace's `scripts/setup_env.py` no longer leaves a `scripts/__pycache__/` in it.
 
 ## 0.67.0
 

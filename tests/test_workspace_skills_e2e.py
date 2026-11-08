@@ -47,6 +47,7 @@ SKILL_NAMES = (
     "remote-execution",
     "remote-parallelism",
     "skill-audit",
+    "ui-github",
     "upgrade-project",
 )
 
