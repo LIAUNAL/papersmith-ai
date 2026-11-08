@@ -531,12 +531,15 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
         self.assertIn('<div id="gpunote" role="status" hidden></div>', page)
         script = self.page_script()
         for needle in ("failIfMajorPerformanceCaveat", "WEBGL_debug_renderer_info",
-                       "get('view')", "const FlatViewer", "'view-2d'", "'view-3d'"):
+                       "get('view')", "const FlatViewer", "'view-2d'", "'view-3d'",
+                       "function watchFrameRate", "mountView('2d', 'slow')"):
             self.assertIn(needle, script)
-        # Like Banco LIA, only missing or software WebGL drops to 2D: a modest
-        # machine and a slow first second keep the 3D sky.
-        for gone in ("navigator.deviceMemory", "navigator.hardwareConcurrency", "function watchFrameRate"):
+        # Missing or software WebGL, or a sky too slow to start, drops to 2D; a
+        # modest machine alone keeps the 3D sky, as Banco LIA does.
+        for gone in ("navigator.deviceMemory", "navigator.hardwareConcurrency"):
             self.assertNotIn(gone, script)
+        watch = script[script.index("function watchFrameRate"):]
+        self.assertNotIn("storeView", watch[:watch.index("viewButton.addEventListener")])
 
     def test_page_stops_drawing_while_nobody_can_see_it(self):
         script = self.page_script()

@@ -852,6 +852,7 @@ const HELP_2D = '2D view: drag to pan, wheel to zoom; turn and tilt change the a
 const NOTES = {
   weak: '⚠ This computer has no suitable GPU for the 3D sky (software rendering): showing the 2D constellation.',
   none: '⚠ WebGL is not available here: showing the 2D constellation.',
+  slow: '⚠ The 3D sky drew too slowly here: switched to the lighter 2D constellation (the 3D view button tries it again).',
 };
 const viewerHooks = {
   onSelect: key => select(key),
@@ -887,6 +888,7 @@ function mountView(mode, reason) {
   applyVisibility();
   syncRotate();
   if (mode === '3d' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) viewer.rotate(false);
+  if (mode === '3d' && reason === 'auto') watchFrameRate();
 }
 // Draw nothing while nobody can see the sky: the page is hidden (another
 // browser tab, a minimized window) or the dashboard paused it.
@@ -901,6 +903,22 @@ function applyVisibility() {
   }
 }
 document.addEventListener('visibilitychange', () => { pageHidden = document.hidden; applyVisibility(); });
+// A sky that passed the WebGL check can still be too slow to start here: count
+// frames for a few seconds after opening and fall back to the 2D constellation
+// under 20 fps, so the page never hangs. Only the automatic pick is watched,
+// and the fallback is not stored: the next visit tries the 3D sky again.
+function watchFrameRate() {
+  let frames = 0, start = 0;
+  const mounted = viewer;
+  function count(t) {
+    if (viewer !== mounted || pageHidden || dashboardPaused) return;
+    if (!start) start = t;
+    frames++;
+    if (t - start < 3000) { requestAnimationFrame(count); return; }
+    if (frames * 1000 / (t - start) < 20) mountView('2d', 'slow');
+  }
+  setTimeout(() => requestAnimationFrame(count), 1000);
+}
 viewButton.addEventListener('click', () => {
   const next = view === '2d' ? '3d' : '2d';
   storeView(next);
