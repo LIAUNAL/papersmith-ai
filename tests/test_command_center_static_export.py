@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,14 +36,41 @@ def _tree_digest(root: Path) -> dict[str, str]:
     return digest
 
 
+GHP_TOKEN = "ghp_" + "A1b2C3d4E5" * 4
+KAGGLE_KEY = "0123456789abcdef0123456789abcdef"
+#: Secrets and people a conversation holds; none may reach the public snapshot.
+SESSION_TEXT = (
+    "/plausibility An idea for the paper, in two sentences. Write to zed.person@example.org with "
+    f"token {GHP_TOKEN}, kaggle KGAT_abcdef123456 and key {KAGGLE_KEY}; the request sent "
+    "Authorization: Bearer abcdefghijklmnop from /home/zeduser/projects/x. Ada Quintero-Lovelace "
+    "drafts, Bruno Cifuentes runs the GPUs and Carla Debian-Ortiz reviews.")
+FORBIDDEN_IN_HISTORY = ["zed.person@example.org", GHP_TOKEN, "KGAT_", KAGGLE_KEY, "Bearer abcdefghijklmnop",
+                        "zeduser", "Quintero", "Lovelace", "Cifuentes", "Bruno", "Debian-Ortiz", "Carla",
+                        "bcifu", "brunok123", "bruno@example.net"]
+
+
 def _seed_private_data(workspace: Path) -> None:
     """What a real workspace holds and a public snapshot must not."""
     papersmith = workspace / ".papersmith"
-    (papersmith / "ai-history").mkdir(parents=True, exist_ok=True)
-    (papersmith / "ai-history" / "session.md").write_text("private conversation", encoding="utf-8")
-    (papersmith / "team.json").write_text(json.dumps({"members": [
-        {"owner": "alice", "email": "alice@example.org", "kaggle_username": "alice-k"}]}),
+    archive = papersmith / "ai-history"
+    archive.mkdir(parents=True, exist_ok=True)
+    (archive / "session.md").write_text("private conversation", encoding="utf-8")
+    (archive / "claude-code-0123abcd-9f8e7d6c.jsonl").write_text(
+        json.dumps({"id": "a1", "ts": "2026-01-01T00:00:00Z", "role": "user", "text": SESSION_TEXT}) + "\n"
+        + json.dumps({"id": "a2", "ts": "2026-01-01T00:01:00Z", "role": "assistant",
+                      "text": "Done, Bruno Cifuentes and Ada Quintero-Lovelace were told."}) + "\n",
         encoding="utf-8")
+    (papersmith / "team.json").write_text(json.dumps({"members": [
+        {"owner": "bcifu", "displayName": "Bruno Cifuentes", "email": "alice@example.org",
+         "kaggle_username": "alice-k",
+         "accounts": {"kaggle": {"username": "brunok123", "email": "bruno@example.net"}}}]}),
+        encoding="utf-8")
+    config = json.loads((papersmith / "config.json").read_text(encoding="utf-8"))
+    config["authors"] = ["Ada Quintero-Lovelace"]
+    (papersmith / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(workspace)], check=True)
+    subprocess.run(["git", "-C", str(workspace), "config", "user.name", "Carla Debian-Ortiz"], check=True)
+    subprocess.run(["git", "-C", str(workspace), "config", "user.email", "carla@example.com"], check=True)
     (papersmith / "anotaciones_pdf.json").write_text(json.dumps(
         {"timestamp": "2026-01-01", "annotations": [{"text": "operator note"}], "applied": {}}),
         encoding="utf-8")
@@ -54,7 +82,7 @@ class SnapshotExportTests(unittest.TestCase):
         cls.holder = tempfile.TemporaryDirectory()
         base = Path(cls.holder.name).resolve()
         cls.workspace = base / "snapshot-ws"
-        init_module.initialize(cls.workspace, run_npm=False, run_env=False)
+        init_module.initialize(cls.workspace, run_npm=False, run_env=False, allow_dirty_kit=True)
         _seed_private_data(cls.workspace)
         cls.before = _tree_digest(cls.workspace)
         cls.out = base / "site"
@@ -107,7 +135,8 @@ class SnapshotExportTests(unittest.TestCase):
     def test_no_conversation_team_or_credential_data(self) -> None:
         forbidden = [b"private conversation", b"alice@example.org", b"alice-k", b"operator note",
                      b"token_path", b"kaggle_username", b"accounts_store_present"]
-        for path in (self.out / "snapshot").rglob("*"):
+        forbidden += [needle.encode("utf-8") for needle in FORBIDDEN_IN_HISTORY]
+        for path in [*(self.out / "snapshot").rglob("*"), self.out / "index.html"]:
             if not path.is_file():
                 continue
             data = path.read_bytes()
@@ -118,11 +147,36 @@ class SnapshotExportTests(unittest.TestCase):
     def test_excluded_routes_are_absent(self) -> None:
         for key in self.entries():
             with self.subTest(key=key):
-                self.assertFalse(key.startswith(("/api/ai-history", "/api/terminal", "/api/doctor")))
+                self.assertFalse(key.startswith(("/api/terminal", "/api/doctor")))
         annotations = json.loads((self.out / self.entries()["/api/pdf/annotations"]["file"]).read_text())
         self.assertEqual(annotations, {"timestamp": None, "annotations": [], "applied": {}})
-        for excluded in ("/api/ai-history", "/api/doctor", "/api/terminal/*"):
-            self.assertIn(excluded, self.report["excluded"])
+        self.assertEqual(self.report["excluded"], ["/api/doctor", "/api/terminal/*"])
+
+    def test_the_ai_history_and_its_sessions_are_exported_by_default(self) -> None:
+        self.assertIn("/api/ai-history", self.entries())
+        self.assertIn("/api/ai-history?lang=es", self.entries())
+        self.assertTrue(self.manifest["ai_history"])
+        sessions = [key for key in self.entries() if key.startswith("/api/ai-history/session?")]
+        self.assertIn("/api/ai-history/session?ref=claude-code%3A9f8e7d6c", sessions)
+        turns = json.loads((self.out / self.entries()["/api/ai-history/session?ref=claude-code%3A9f8e7d6c"]
+                            ["file"]).read_text(encoding="utf-8"))["turns"]
+        text = " ".join(turn["text"] for turn in turns)
+        for needle in FORBIDDEN_IN_HISTORY:
+            with self.subTest(needle=needle):
+                self.assertNotIn(needle.lower(), text.lower())
+        for placeholder in ("[email]", "[secret]", "[author-", "[member-1]", "[user]", "~/projects/x"):
+            with self.subTest(placeholder=placeholder):
+                self.assertIn(placeholder, text)
+
+    def test_without_ai_history_its_routes_are_left_out(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            report = static_export.export_snapshot(self.workspace, Path(raw) / "site", languages=("en",),
+                                                   ai_history=False)
+            manifest = json.loads((Path(raw) / "site" / "snapshot" / "manifest.json").read_text())
+        self.assertFalse(manifest["ai_history"])
+        self.assertEqual([key for key in manifest["entries"] if key.startswith("/api/ai-history")], [])
+        self.assertIn("/api/ai-history", report["excluded"])
+        self.assertIn("/api/ai-history/session", report["excluded"])
 
     def test_artifacts_come_only_from_the_allow_list(self) -> None:
         artifacts = [key for key in self.entries() if key.startswith("/api/artifact")]
@@ -209,6 +263,17 @@ class PathScrubTests(unittest.TestCase):
         self.assertEqual(scrubbed, b'{"a": "./sections/x.md", "b": "~/Documents/data", '
                                    b'"c": "~/.cache/x", "d": "https://example.org/home/page"}')
 
+    def test_a_name_followed_by_an_affiliation_mark_is_masked(self) -> None:
+        identities = (("Ada Quintero-Lovelace", "[author-1]"), ("Lovelace", "[author-1]"))
+        self.assertEqual(static_export._clean("Ada Quintero-Lovelace\u00b3 and Lovelace\u00b9,", [], identities),
+                         "[author-1]\u00b3 and [author-1]\u00b9,")
+
+    def test_a_page_with_scripts_keeps_its_code(self) -> None:
+        page = b"<script>const token = readToken(); const user = 1;</script><p>a@b.org</p>"
+        scrubbed = static_export._scrub_text(page, [], (), code=True)
+        self.assertEqual(scrubbed, b"<script>const token = readToken(); const user = 1;</script><p>[email]</p>")
+        self.assertIn(b"[secret]", static_export._scrub_text(b"https://h/x?token=abc123", []))
+
     def test_guidance_and_dot_folders_are_never_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw).resolve()
@@ -242,11 +307,17 @@ class CliTests(unittest.TestCase):
         args = parser.parse_args(["--export-snapshot", "/tmp/x", "--snapshot-lang", "en"])
         self.assertEqual(args.export_snapshot, "/tmp/x")
         self.assertEqual(args.snapshot_lang, "en")
+        self.assertTrue(args.ai_history)
+        self.assertFalse(parser.parse_args(["--export-snapshot", "/tmp/x", "--no-ai-history"]).ai_history)
 
     def test_smith_ui_forwards_the_snapshot_flags_to_the_workspace_backend(self) -> None:
         argv = ui_command.build_server_argv(Path("/w"), "127.0.0.1", 8080, no_browser=True,
                                             export_snapshot="/tmp/site", snapshot_lang="en,es")
         self.assertIn("--export-snapshot", argv)
+        self.assertNotIn("--no-ai-history", argv)
+        off = ui_command.build_server_argv(Path("/w"), "127.0.0.1", 8080, no_browser=True,
+                                           export_snapshot="/tmp/site", snapshot_ai_history=False)
+        self.assertIn("--no-ai-history", off)
         self.assertEqual(argv[argv.index("--export-snapshot") + 1], "/tmp/site")
         self.assertEqual(argv[argv.index("--snapshot-lang") + 1], "en,es")
 
@@ -265,10 +336,21 @@ class CliTests(unittest.TestCase):
             entry.write_text("", encoding="utf-8")
             args = argparse.Namespace(directory=str(root), host="127.0.0.1", port=8080,
                                       no_browser=False, export_static=None,
-                                      export_snapshot=str(root / "site"), snapshot_lang="en")
+                                      export_snapshot=str(root / "site"), snapshot_lang="en",
+                                      ai_history=False)
             self.assertEqual(ui_command.run_cli(args), 0)
         self.assertIn("--export-snapshot", captured[0])
+        self.assertIn("--no-ai-history", captured[0])
         self.assertNotIn("--export-static", captured[0])
+
+    def test_smith_ui_takes_the_ai_history_flag(self) -> None:
+        import argparse as _argparse
+
+        parser = _argparse.ArgumentParser()
+        ui_command.register(parser.add_subparsers())
+        self.assertIsNone(parser.parse_args(["ui"]).ai_history)
+        self.assertFalse(parser.parse_args(["ui", "--no-ai-history"]).ai_history)
+        self.assertTrue(parser.parse_args(["ui", "--ai-history"]).ai_history)
 
     def test_the_server_refuses_a_non_workspace_with_exit_2(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

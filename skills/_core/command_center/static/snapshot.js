@@ -15,7 +15,8 @@
  *     checks keep working; root-absolute paths become relative, so the site
  *     works under /<repo>/ on GitHub Pages;
  *   - makes sendToCli, phase runs and the other launchers no-ops, hides every
- *     control that runs something (HIDDEN_CONTROLS) and shows a banner.
+ *     control that runs something (HIDDEN_CONTROLS), and the AI History tab
+ *     when the export left it out (--no-ai-history), and shows a banner.
  *
  * Public surface (snapshot only): window.psRewrite(url), window.psApiPath(pathname).
  * The request key is static_export.request_key: the path, then the sorted
@@ -52,8 +53,10 @@
     '[data-jp-action]:not([data-jp-action="pdf"])', '.journals-sjr label',
     '[data-exp-fold="infrastructure"]', '[data-atlas-complete]', '.badge--live',
     '.phase-action__input', '.phase-action__agent', '.phase-action__foot', '.kw-help',
-    '[onclick="navigateTab(\'historia\')"]', '[onclick="navigateTab(\'doctor\')"]',
+    '[onclick="navigateTab(\'doctor\')"]',
   ];
+  // The AI History tab is in the snapshot unless it was exported with --no-ai-history.
+  if (!entries['/api/ai-history']) HIDDEN_CONTROLS.push('[onclick="navigateTab(\'historia\')"]');
 
   // Global launchers defined by the page and its panels.
   const LAUNCHERS = ['triggerRunPhase', 'triggerBuildAtlas', 'sendNoveltyDecision', 'launchNoveltyJudge',

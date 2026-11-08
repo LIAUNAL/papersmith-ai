@@ -8,11 +8,18 @@ dashboard) maps the page's ``/api/...`` requests to those files, refuses every
 write and hides the controls that run something.
 
 A Pages site is public even for a private repository, so the snapshot carries
-an allow-list only: no AI conversations, terminal or doctor routes, no team
-members, accounts or credential status, no operator PDF annotations, and no
-absolute workspace or home path (they become ``.`` and ``~``). Exporting writes
-nothing into the workspace: the AI-archive sync that ``/api/status`` starts is
-switched off for the duration.
+an allow-list only: no terminal or doctor routes, no team members, accounts or
+credential status, no operator PDF annotations, nothing under ``guidance/``,
+and no absolute workspace or home path (they become ``.`` and ``~``). The AI
+History tab and its conversations are included unless ``ai_history=False``
+(``--no-ai-history``). Every text answer passes through
+``ai_archive.redact_public``: credentials become ``[secret]``, addresses
+``[email]``, and the people the workspace declares (authors, team members, the
+operator) ``[author-N]``, ``[member-N]`` and ``[user]``; a name typed free-form
+that the workspace does not declare cannot be recognized. Binary answers (the
+PDF, figures) are copied as they are. Exporting writes nothing into the
+workspace: the AI-archive sync that ``/api/status`` starts and the novelty
+viewer's copy are switched off for the duration.
 """
 
 from __future__ import annotations
@@ -42,7 +49,9 @@ STATIC_ROUTES = (
 )
 
 #: Routes never exported; the shim answers them "not in this snapshot".
-EXCLUDED_ROUTES = ("/api/ai-history", "/api/ai-history/session", "/api/doctor", "/api/terminal/*")
+EXCLUDED_ROUTES = ("/api/doctor", "/api/terminal/*")
+#: The AI History tab, exported unless ``ai_history=False`` (``--no-ai-history``).
+AI_HISTORY_ROUTES = ("/api/ai-history", "/api/ai-history/session")
 
 #: The operator's PDF notes are private: the snapshot answers "none".
 EMPTY_ANNOTATIONS = {"timestamp": None, "annotations": [], "applied": {}}
@@ -75,6 +84,8 @@ EXTENSIONS = {
     "image/svg+xml": ".svg", "text/plain": ".txt", "text/markdown": ".md",
 }
 TEXT_TYPES = ("application/json", "text/", "image/svg+xml")
+#: Answers whose scripts must survive the scrub (see ``redact_public(code=True)``).
+CODE_TYPES = ("text/html", "image/svg+xml")
 
 
 class SnapshotError(ValueError):
@@ -157,13 +168,73 @@ def _path_replacements(root: Path) -> list[tuple[str, str]]:
 
 #: Any other machine's home directory (a teammate's run records it): the
 #: user name and everything above it become ``~``.
-OTHER_HOME = re.compile(rb"(?<![\w.~])(?:/Users|/home|[A-Za-z]:(?:\\\\|\\)Users)(?:/|\\\\|\\)[^/\\\s\"'<>]+")
+OTHER_HOME = re.compile(r"(?<![\w.~])(?:/Users|/home|[A-Za-z]:(?:\\\\|\\)Users)(?:/|\\\\|\\)[^/\\\s\"'<>]+")
 
 
-def _scrub_text(data: bytes, replacements: list[tuple[str, str]]) -> bytes:
+def _clean(text: str, replacements: list[tuple[str, str]],
+           identities: tuple[tuple[str, str], ...] = (), *, code: bool = False) -> str:
+    """One string fit for the public snapshot: the workspace and home paths
+    relative, then ``ai_archive.redact_public`` (credentials, addresses, the
+    workspace's people), then any other machine's home directory."""
+    from . import ai_archive
+
     for needle, replacement in replacements:
-        data = data.replace(needle.encode("utf-8"), replacement.encode("utf-8"))
-    return OTHER_HOME.sub(b"~", data)
+        text = text.replace(needle, replacement)
+    return OTHER_HOME.sub("~", ai_archive.redact_public(text, identities, code=code))
+
+
+def _scrub_text(data: bytes, replacements: list[tuple[str, str]],
+                identities: tuple[tuple[str, str], ...] = (), *, code: bool = False) -> bytes:
+    return _clean(data.decode("utf-8", errors="replace"), replacements, identities,
+                  code=code).encode("utf-8")
+
+
+def _scrub_json(node: Any, replacements: list[tuple[str, str]],
+                identities: tuple[tuple[str, str], ...]) -> Any:
+    """Every string of a JSON document, keys included, through :func:`_clean`."""
+    if isinstance(node, dict):
+        return {_clean(key, replacements, identities) if isinstance(key, str) else key:
+                _scrub_json(value, replacements, identities) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_scrub_json(item, replacements, identities) for item in node]
+    if isinstance(node, str):
+        return _clean(node, replacements, identities)
+    return node
+
+
+def _chat_refs(history: Any) -> list[str]:
+    """The ``ref`` of every chat event the AI History lists, for its sessions."""
+    refs: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("source") == "chats" and isinstance(node.get("ref"), str) and ":" in node["ref"]:
+                refs.append(node["ref"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(history)
+    return _unique(refs)
+
+
+def _event_paths(history: Any) -> list[str]:
+    paths: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("path"), str):
+                paths.append(node["path"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(history)
+    return paths
 
 
 # --------------------------------------------------------------------------
@@ -259,9 +330,13 @@ def _prepare_destination(out_dir: Path) -> None:
 
 def export_snapshot(root: Path | str, out_dir: Path | str, *,
                     languages: tuple[str, ...] = ("en", "es"),
+                    ai_history: bool = True,
                     report: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Write the snapshot of the workspace at ``root`` into ``out_dir`` and
-    return its counts: routes, files, bytes, excluded and missing."""
+    return its counts: routes, files, bytes, excluded and missing.
+
+    ``ai_history`` exports the AI History tab and every conversation it lists;
+    like every other text, they pass through ``ai_archive.redact_public``."""
     root = Path(root).expanduser().resolve()
     out_dir = Path(out_dir).expanduser().resolve()
     if not (root / "papersmith.yaml").is_file():
@@ -280,7 +355,10 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
 
     from . import server
 
+    from . import ai_archive
+
     replacements = _path_replacements(root)
+    identities = ai_archive.public_identities(root)
     entries: dict[str, dict[str, Any]] = {}
     by_digest: dict[str, str] = {}
     missing: list[str] = []
@@ -288,8 +366,14 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
     written = {"files": 0, "bytes": 0}
 
     def store(key: str, body: bytes, media_type: str, status: int) -> None:
-        if media_type.startswith(TEXT_TYPES):
-            body = _scrub_text(body, replacements)
+        if media_type == "application/json":
+            try:
+                body = json.dumps(_scrub_json(json.loads(body), replacements, identities),
+                                  ensure_ascii=False).encode("utf-8")
+            except ValueError:
+                body = _scrub_text(body, replacements, identities)
+        elif media_type.startswith(TEXT_TYPES):
+            body = _scrub_text(body, replacements, identities, code=media_type in CODE_TYPES)
         digest = hashlib.sha256(body + media_type.encode()).hexdigest()
         rel = by_digest.get(digest)
         if rel is None:
@@ -335,6 +419,7 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
         citations = first_json("/api/citations")
         qa = first_json("/api/paper/qa")
         venues = first_json("/api/venues")
+        history = first_json("/api/ai-history") if ai_history else None
 
         artifacts: list[str] = []
         if isinstance(status, dict):
@@ -343,12 +428,16 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
             artifacts += [f"sections/{item.get('filename')}" for item in status.get("sections") or []
                           if isinstance(item, dict) and item.get("filename")]
         artifacts += _experiment_paths(experiments)
+        artifacts += _event_paths(history)
         artifacts.append("paper/journal-candidates.md")
         artifacts = [rel for rel in _unique([a for a in artifacts if isinstance(a, str)])
                      if _allowed_artifact(root, rel)]
         allowed_artifacts = set(artifacts)
 
         requests: list[tuple[str, dict[str, str]]] = [(route, {}) for route in STATIC_ROUTES]
+        if ai_history:
+            requests.append(("/api/ai-history", {}))
+            requests += [("/api/ai-history/session", {"ref": ref}) for ref in _chat_refs(history)]
         requests += [("/api/artifact", {"path": rel}) for rel in artifacts]
         requests += [("/api/atlas/reference", {"id": ref}) for ref in _unique(_citation_ids(citations))]
         if isinstance(status, dict):
@@ -409,9 +498,10 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
             os.environ["PYTHONDONTWRITEBYTECODE"] = saved_env
 
     generated = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    workspace_name = _project_name(root, status)
+    workspace_name = _clean(_project_name(root, status), replacements, identities)
     manifest = {"version": 1, "generated": generated, "workspace": workspace_name,
-                "languages": list(languages), "entries": dict(sorted(entries.items()))}
+                "languages": list(languages), "ai_history": bool(ai_history),
+                "entries": dict(sorted(entries.items()))}
     (out_dir / "snapshot").mkdir(parents=True, exist_ok=True)
     (out_dir / "snapshot" / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -426,7 +516,8 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
 
     return {"out": str(out_dir), "routes": len(entries), "files": written["files"],
-            "bytes": written["bytes"], "excluded": list(EXCLUDED_ROUTES),
+            "bytes": written["bytes"], "excluded": list(EXCLUDED_ROUTES) + ([] if ai_history else list(AI_HISTORY_ROUTES)),
+            "ai_history": bool(ai_history),
             "missing": sorted(set(missing)), "skipped": skipped, "generated": generated,
             "workspace": workspace_name}
 

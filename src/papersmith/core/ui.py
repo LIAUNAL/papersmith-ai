@@ -8,6 +8,7 @@ dashboard runs standalone without Node/npm in the workspace.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import contextlib
 import importlib.util
@@ -246,6 +247,7 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
                       export_static: str | None = None,
                       export_snapshot: str | None = None,
                       snapshot_lang: str | None = None,
+                      snapshot_ai_history: bool | None = None,
                       interpreter: str | None = None,
                       allowed_hosts: list[str] | None = None,
                       allow_unauthenticated_network: bool = False,
@@ -270,6 +272,9 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
         argv.extend(["--export-snapshot", str(export_snapshot)])
         if snapshot_lang:
             argv.extend(["--snapshot-lang", str(snapshot_lang)])
+        # On by default in the backend; only an explicit choice is forwarded.
+        if snapshot_ai_history is not None:
+            argv.append("--ai-history" if snapshot_ai_history else "--no-ai-history")
     # Only forwarded when given, so an older workspace backend without the
     # flag keeps working.
     for allowed in allowed_hosts or []:
@@ -354,7 +359,8 @@ def run_cli(args) -> int:
         argv = build_server_argv(
             workspace, args.host, args.port, no_browser=True,
             export_snapshot=str(Path(export_snapshot).expanduser().resolve()),
-            snapshot_lang=getattr(args, "snapshot_lang", None), interpreter=interpreter,
+            snapshot_lang=getattr(args, "snapshot_lang", None),
+            snapshot_ai_history=getattr(args, "ai_history", None), interpreter=interpreter,
         )
         return _run_child(argv, workspace)
 
@@ -405,6 +411,10 @@ def register(subparsers) -> None:
                              "data as files, nothing that runs) to <dir> for GitHub Pages, and exit")
     parser.add_argument("--snapshot-lang", default=None, metavar="en,es",
                         help="languages the snapshot answers in (default: en,es)")
+    parser.add_argument("--ai-history", action=argparse.BooleanOptionalAction, default=None,
+                        help="with --export-snapshot: include the AI History tab and its "
+                             "conversations, with credentials, emails and the workspace's people "
+                             "masked (default: on; --no-ai-history leaves them out)")
     parser.add_argument("--allowed-host", action="append", default=None, metavar="HOST:PORT",
                         help="also accept this Host header (repeatable), e.g. when forwarding "
                              "the port or running the Vite dev server")

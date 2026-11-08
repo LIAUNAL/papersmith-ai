@@ -163,13 +163,13 @@ def export_static(root: Path, destination: Path) -> int:
     return 0
 
 
-def export_snapshot_cli(root: Path, destination: Path, languages: str) -> int:
+def export_snapshot_cli(root: Path, destination: Path, languages: str, *, ai_history: bool = True) -> int:
     """Write the read-only snapshot (static_export.py) and report its counts."""
     from . import static_export
 
     langs = tuple(part.strip() for part in str(languages or "").split(",") if part.strip())
     try:
-        result = static_export.export_snapshot(root, destination, languages=langs)
+        result = static_export.export_snapshot(root, destination, languages=langs, ai_history=ai_history)
     except static_export.SnapshotError as exc:
         print(f"smith ui: {exc}", file=sys.stderr)
         return 2
@@ -3983,6 +3983,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "(for GitHub Pages) to <dir> and exit")
     parser.add_argument("--snapshot-lang", default="en,es", metavar="en,es",
                         help="languages of the snapshot's answers (default: en,es)")
+    parser.add_argument("--ai-history", action=argparse.BooleanOptionalAction, default=True,
+                        help="include the AI History tab and its conversations in the snapshot, "
+                             "with credentials, addresses and the workspace's people masked "
+                             "(default: on)")
     parser.add_argument("--allowed-host", action="append", default=[], metavar="HOST:PORT",
                         help="extra Host header to accept (repeatable); "
                              "for `npm run dev` use --allowed-host localhost:5173")
@@ -4071,7 +4075,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.export_static:
         return export_static(root, Path(args.export_static))
     if args.export_snapshot:
-        return export_snapshot_cli(root, Path(args.export_snapshot), args.snapshot_lang)
+        return export_snapshot_cli(root, Path(args.export_snapshot), args.snapshot_lang,
+                                   ai_history=args.ai_history)
     if not is_loopback_bind(args.host) and not args.allow_unauthenticated_network:
         parser.error(
             f"--host {args.host} is not a loopback address, and the dashboard has no "

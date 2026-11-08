@@ -492,6 +492,8 @@ agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).
 smith ui --port 8080
 smith ui ~/papers/sparse-ae --no-browser
 smith ui --export-static ./dashboard-static
+smith ui --export-snapshot ./site
+smith ui --export-snapshot ./site --snapshot-lang en --no-ai-history
 ```
 
 | Flag | Effect |
@@ -500,9 +502,40 @@ smith ui --export-static ./dashboard-static
 | `--port PORT` | Preferred port; if it is taken, the next free one |
 | `--no-browser` | Does not open the browser |
 | `--export-static <dir>` | Copies the dashboard build to `<dir>` and exits |
+| `--export-snapshot <dir>` | Writes a static, read-only snapshot of this workspace's dashboard to `<dir>` (for GitHub Pages) and exits; see *Read-only snapshot* below |
+| `--snapshot-lang en,es` | Languages the snapshot answers in (default `en,es`) |
+| `--ai-history` / `--no-ai-history` | Includes the AI History tab and its conversations in the snapshot, masked (default: included) |
 | `--allowed-host HOST:PORT` | Also accepts that `Host` header (repeatable); only forwarded to the backend when supplied |
 | `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
 | `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
+
+**Read-only snapshot.** `--export-snapshot <dir>` runs the workspace's own
+backend once, in-process, and writes every read-only answer the dashboard needs
+as a file under `<dir>/snapshot/`, indexed in `snapshot/manifest.json`, next to
+the shipped assets, an `index.html` and `.nojekyll`. Any static host serves the
+folder, under a sub-path too (`https://<user>.github.io/<repo>/`). In it,
+`snapshot.js` answers the page's `/api/` requests from those files, refuses every
+write with `403 STATIC_SNAPSHOT`, hides every control that runs something (phase
+runs, agents, the support terminal, rebuilds, novelty decisions, PDF edits,
+journal searches) and shows a "Read-only snapshot of <workspace> · <date>"
+banner. Nothing is written into the workspace while it exports, and a previous
+snapshot in `<dir>` is replaced; any other non-empty `<dir>` is refused.
+
+A Pages site is public even for a private repository, so the snapshot copies an
+allow-list only. It never carries the Smith Doctor or the support terminal, the
+experiments tab's accounts, team members, credential status and local
+environment, the operator's PDF annotations, or files under `guidance/` and
+dot-folders, and the workspace and home paths become `.` and `~`. The AI History
+tab and the conversations it lists are included unless `--no-ai-history` is
+given. Every text answer, those conversations included, is masked first:
+credentials and tokens become `[secret]`, email addresses `[email]`, and the
+people the workspace declares (the authors of `papersmith.yaml`,
+`.papersmith/config.json`, `.papersmith/model_spec.json` and `paper/main.tex`,
+the members and accounts of `.papersmith/team.json`, the system user, its full
+name and git's `user.name` and `user.email`) `[author-N]`, `[member-N]` and
+`[user]`. A name typed free-form that the workspace does not declare cannot be
+recognized, and the compiled PDF and figures are copied as they are, so they
+show the paper's own author block.
 
 **Right after `smith init`.** The dashboard runs from the workspace's environment
 when it exists (`.micromamba/envs/papersmith`, then a hand-made `.venv`). A fresh

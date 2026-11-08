@@ -36,6 +36,11 @@ pdf += b"xref\n0 4\n0000000000 65535 f \n" + b"".join(b"%010d 00000 n \n" % o fo
 pdf += b"trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
 (ws / "paper").mkdir(exist_ok=True)
 (ws / "paper" / "main.pdf").write_bytes(pdf)
+archive = ws / ".papersmith" / "ai-history"
+archive.mkdir(parents=True, exist_ok=True)
+(archive / "claude-code-0123abcd-9f8e7d6c.jsonl").write_text(
+    '{"id": "a1", "ts": "2026-01-01T00:00:00Z", "role": "user", "text": "/plausibility An idea in two sentences, mailed to zed.person@example.org."}\n'
+    '{"id": "a2", "ts": "2026-01-01T00:01:00Z", "role": "assistant", "text": "Plausibility report written."}\n')
 static_export.export_snapshot(ws, base / "site" / "repo")
 `;
 
@@ -118,7 +123,7 @@ test('writes are refused and nothing that runs is shown', async ({ page }) => {
   });
   expect(refused.status).toBe(403);
   expect(refused.body.error).toBe('STATIC_SNAPSHOT');
-  const absent = await page.evaluate(async () => (await fetch('/api/ai-history')).status);
+  const absent = await page.evaluate(async () => (await fetch('/api/doctor')).status);
   expect(absent).toBe(404);
 
   await expect(page.locator('#smithAssistantFab')).toBeHidden();
@@ -127,7 +132,25 @@ test('writes are refused and nothing that runs is shown', async ({ page }) => {
   await page.evaluate(() => (window as any).navigateTab('pipeline'));
   const runButtons = page.locator('[onclick^="triggerRunPhase"], [data-phase-action]');
   for (const button of await runButtons.all()) await expect(button).toBeHidden();
-  await expect(page.locator('.tab-nav__btn', { hasText: 'AI History' })).toBeHidden();
+  await expect(page.locator('.tab-nav__btn', { hasText: 'Smith Doctor' })).toBeHidden();
+});
+
+test('the AI History tab and its conversations come from the snapshot, masked', async ({ page }) => {
+  const seen = watch(page);
+  await page.goto(BASE);
+  await expect(page.locator('.tab-nav__btn', { hasText: 'AI History' })).toBeVisible();
+  await page.evaluate(() => (window as any).navigateTab('historia'));
+  // The conversation sits under the phase its command started (Plausibility).
+  await page.locator('#pane-historia').getByText('Plausibility', { exact: true }).first().click();
+  const open = page.locator('[data-session-ref]').first();
+  await expect(open).toBeVisible({ timeout: 15_000 });
+  await open.click();
+  const conversation = page.locator('[data-session-view]').first();
+  await expect(conversation.locator('.aih-turn')).toHaveCount(2, { timeout: 10_000 });
+  await expect(conversation).toContainText('[email]');
+  await expect(conversation).not.toContainText('zed.person@example.org');
+  expect(seen.api).toEqual([]);
+  expect(seen.errors).toEqual([]);
 });
 
 test('the Spanish snapshot shows the Spanish banner and answers', async ({ page }) => {
