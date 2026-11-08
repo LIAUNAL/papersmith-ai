@@ -11,6 +11,15 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **A pillars and hypotheses tree that explains itself.** Each box now says what it is ("Pillar · C1",
+  "Hypothesis · E1") with its name, its statement, and the pillars it rests on or the hypotheses it supports. A
+  legend says what a pillar and a hypothesis are and where their ids come from. Curved arrows in each pillar's
+  colour run from the pillar's edge to every hypothesis it supports, drawn from the boxes' real positions so they
+  hold at any text size, and pointing at a box brings its arrows forward. On one column, as on a phone, the arrows
+  give way to the written links.
+
 ## 0.64.0
 
 - **A text-size control and a dashboard that fits every screen.** The top bar's `A ×1` selector scales the
