@@ -127,7 +127,7 @@ Any new edge that only the grid can route fails at the current size.
 The page draws at whatever width the viewport gives it, so the frame is a
 capture decision rather than part of the artifact. The committed PNG is 1400px
 wide at **device pixel ratio 1**, captured full-page with `?embed=1` (which is
-what drops the viewer's own chrome); it is 1400x4013 for the current drawing. A browser driver needs those three
+what drops the viewer's own chrome); it is 1400x4163 for the current drawing. A browser driver needs those three
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.
