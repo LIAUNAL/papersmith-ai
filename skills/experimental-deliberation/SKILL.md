@@ -315,8 +315,8 @@ Put the declaration in the experiment's own heading. `experimental-implementatio
 ### SOTA citations of each experiment: `.papersmith/citations.json`
 
 **Every experiment of the latest protocol is justified by 2 to 5 references of
-the SOTA pool**, under the key `experiment:<id>` of the `## Experiment [exp:<id>]`
-heading, in the file the proposal's ideas use: `{"schema": 1, "ideas":
+the SOTA pool**, under the key `experiment:<id>` of the heading (any level) carrying `[exp:<id>]`,
+such as `## Experiment [exp:<id>]`, in the file the proposal's ideas use: `{"schema": 1, "ideas":
 {"experiment:E1": [{"id": "<pool identifier>", "why": "<how this reference
 supports the experiment>", "quote": "<the span of its abstract that holds it,
 verbatim>"}]}}`. Keep the other keys of that file as they are.

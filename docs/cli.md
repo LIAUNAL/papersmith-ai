@@ -21,7 +21,12 @@ to the current directory and has to point at an initialized workspace, except fo
 | `doctor` | One health table: framework, packages, tools, skills, agents and phases |
 | `novelty` | Reads the novelty assessment and records the `G-NOVELTY` decision (approve, iterate, reset) |
 | `ui` | Serves the local Paper Command Center (DAG, gates, sections, wiring) |
+| `atlas` | SOTA atlas actions: `build`, `cited`, `coverage`, `summary`, `novelty` (the dashboard's graph buttons) |
+| `paper` | Checks on the compiled manuscript (`paper qa`) |
 | `mcp` | Exposes the orchestrator and the paper verbs over Model Context Protocol |
+| `env` | Manages the workspace's micromamba Python environment |
+| `team` | The team registry: remote accounts associated with distinct emails (`list`, `add`, `remove`) |
+| `colab` | Signs team owners in to the official Colab CLI and reports their state (`login`, `status`) |
 
 ### `smith init [<dir>]`
 
@@ -554,9 +559,12 @@ Two phases also order their own steps:
   the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), then the SOTA
   citations (4.7), then the judge-reviewer (4.8), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
   overlay for the first two, a `$$ … \tag{N} $$` block in the latest
-  `proposals/research-concept-<slug>-rNN.md` for the third, 2 to 5 valid citations
+  `proposals/research-concept-<slug>-rNN.md` (or slugless `research-concept-rNN.md`)
+  for the third (the 40-equation cap counts tagged equations only), 2 to 5 valid citations
   per central problem, direct cause, pillar, hypothesis, layer and equation in
-  `.papersmith/citations.json` for the fourth, with both concept trees whole and
+  `.papersmith/citations.json` for the fourth (each with a `quote`: 20 to 300
+  characters of the pool record's `abstract`, verbatim and starting and ending on
+  word boundaries, so a reference without an abstract cannot be cited), with both concept trees whole and
   Q1 or Q2 journal articles of at most 4 years on the problem, causes, pillars and
   hypotheses (`citations_cli.py rank` records them), a valid `contribution_type` in `.papersmith/model_spec.json` for the
   fifth — and each
@@ -566,7 +574,11 @@ Two phases also order their own steps:
   into the agent terminal (the mathematics step also offers `/math-tutor`), and the
   paper-reviewer's contribution type right after the hypotheses, with the
   *Lanzar el juez-revisor* button on that card. Each idea shows its citations
-  beside it (`GET /api/citations`), or a mark that it owes them.
+  beside it (`GET /api/citations`) with its title, year, reason and quote, or a
+  mark that it owes them. `python skills/_core/results/citations_cli.py routes
+  --root .` prints each pool reference with the ideas it is cited for, their
+  quotes and `grounded`, plus the `uncited` ones. The phase ends with
+  `smith atlas coverage .`.
 - **Phase 5 (proof of concept and experiments)**: the experimental protocol
   (5.1 to 5.5), the toy set (5.6), the replication of the comparison methods
   (5.7), the proof of concept (5.8), its verification by the operator (5.9,
@@ -580,8 +592,9 @@ Two phases also order their own steps:
   and 5.13 reads `Results/reviewer_report.json`. The phase passes only with a
   published protocol, a proof of concept discussed and verified, and a full
   experiment discussed, so no later phase unlocks over an unverified proof of
-  concept. *Experimentos* steps through proof of concept → verify → full
-  experiment with one button each.
+  concept. *Experimentos* steps through SOTA citations → proof of concept →
+  verify → full experiment with one button each. An experiment is any heading,
+  of any level, carrying `[exp:<id>]`.
 
 The gates follow the same order: `G-EXP-POC` passes once a proof of concept closes
 with a complete discussion and the operator verified it (`smith novelty approve
@@ -650,8 +663,10 @@ the interface. The install step uses `npm ci` and not `npm install` on purpose:
 not belong to any dependency change. The end-to-end smoke is
 `bash scripts/command-center-smoke.sh`.
 
-**Light theme.** The dashboard uses a single light theme, defined by colour tokens
-in `ui/src/styles.css`; a Vitest test rejects any literal colour outside `:root`
+**Dark and light themes.** The header's theme button switches the dashboard
+between dark (the default) and light, and the framed views (the Archify flow and
+the manuscript summary) follow it. The Vite frontend's colour tokens live in
+`ui/src/styles.css`; a Vitest test rejects any literal colour outside `:root`
 and checks the contrast (WCAG AA) of the token pairs.
 
 **Two frontends.** The tabs listed above are those of the dashboard shipped in
@@ -723,7 +738,7 @@ Tutor* shows the paper's own mathematics as LaTeX rendered by KaTeX 0.16.22
 equation, a one-line *Conexión*, variables), beside a compact *Idea y novedad*
 card (central idea, novelty, problem, contributions, key equation).
 `GET /api/model/math` builds it from the latest
-`proposals/research-concept-<slug>-rNN.md` (every `$$`-fenced block with its
+`proposals/research-concept-<slug>-rNN.md` (or slugless `research-concept-rNN.md`; every `$$`-fenced block with its
 `\tag{N}`, the heading above it and the first sentence after it) and its
 `.sky.json` overlay, else from `.papersmith/model_spec.json`; an empty
 workspace says so instead of inventing equations. The **tutor** beside it is
@@ -741,7 +756,7 @@ paper's novelty. Uploads and the thread live in `.papersmith/math-tutor/`
 `GET|DELETE /api/terminal/tutor/thread`, `POST /api/terminal/tutor/images`,
 `GET /api/terminal/tutor/images/<id>` and `POST /api/terminal/tutor/turn`.
 
-**Experiments tutor.** The *Experimentos* tab opens with a second tutor card,
+**Experiments tutor.** The *Experimentos* tab closes with a second tutor card,
 the `experiments-tutor` skill, for consulting and iterating on the experiment
 decisions: pick a decision area (*Arquitectura de la red*, *Hiperparámetros y
 búsqueda*, *Estudios de ablación*, *Pruebas de significancia estadística*,
@@ -785,7 +800,10 @@ switches and adds **⚡ Regenerar grafo** (the SOTA atlas through
 rebuilds the view) and **🧩 Disposición de grupos**, which asks the atlas frame to
 rearrange its systems by family cluster and back. The dashboard and the
 sandboxed atlas frame talk through `postMessage`: the dashboard sends
-`{type: 'atlas-command', command: 'group-layout' | 'sky-layout' | 'toggle-layout' | 'reset' | 'pause' | 'resume' | 'view-2d' | 'view-3d'}`
+`{type: 'atlas-command', command: 'group-layout' | 'sky-layout' | 'toggle-layout' | 'reset' | 'pause' | 'resume' | 'view-2d' | 'view-3d'}`,
+or `{type: 'atlas-command', command: 'focus', key}` to fly to one paper and open
+its side panel (a citation clicked in any dashboard panel lands there, answered by
+`{type: 'atlas-focused', key, system}`)
 (`pause` while another tab is shown, so the atlas stops drawing; it loads the
 first time its tab opens, and it also stops while the browser hides the page) and the atlas answers `{type: 'atlas-layout', mode}` and, on a click,
 `{type: 'atlas-planet-selected', key, label, slot, system: {id, title}}`. A
@@ -827,7 +845,9 @@ without the token gets `403`. Every call must also be same-origin: a foreign
 non-JSON body answers `403`.
 
 **Branding.** The LabIA UNAL logo appears once, centred in the footer on a white
-badge; the header carries Smith's avatar and the laboratory line only. The footer
+badge; the header carries Smith's avatar, the laboratory line, the run selector
+(the short run id, such as `r07`, with the file name as its tooltip), the theme
+button and the text-size control (A ×1, ×1.25, ×1.5, ×2). The footer
 names the framework version the workspace was last initialized or upgraded to
 (`/api/status` → `framework_version`).
 
@@ -993,7 +1013,10 @@ absent | invalid, stale, graph}`; `GET /api/atlas/manuscript-graph/view` draws i
 offline HTML (no CDN) in eight columns, a stored graph when there is one and a live,
 unwritten reading otherwise; `POST /api/atlas/manuscript-graph/build` (same-origin
 only) rewrites it and answers `200` or `422`. The **✨ Novelty & Findings** tab
-shows that view at its top, with a rebuild button. The `Host` protection (421) covers these routes only on a loopback
+shows that view at its top, with a rebuild button. `GET /api/atlas/coverage`
+returns what `smith atlas coverage` prints, and `GET /api/atlas/reference?id=`
+returns one cited reference's pool record and its constellation system (`400`
+without `id`), for the citation buttons. The `Host` protection (421) covers these routes only on a loopback
 bind; on a non-loopback bind there is no `Host` filtering.
 
 **The Atlas tab.** `#atlas` consumes the routes above. On the left, a native
@@ -1012,6 +1035,14 @@ opened and with the *Refresh* button (without overlapping requests; a failure
 shows the error with *Retry* and keeps the previous data). Note: Chromium does not
 paint an isolated iframe that falls outside the viewport in `--full-page` captures
 (at 700x900 it comes out blank); inside the viewport it is complete.
+Above the constellation a coverage notice counts the cited references it does not
+draw yet, with a *Complete the constellation* button that asks the agent to add
+them. The constellation opens in 3D and falls back to 2D only when WebGL is
+missing or software-only, when the operator chose 2D, or when it draws under
+20 fps in its first seconds (that fallback is not remembered). Clicking a planet
+or a paper name opens a side panel with the paper's summary (topics, problem,
+application, novelty, contributions, results, conclusions, family) and its
+linked papers.
 
 **Decisions line (read-only, backend).** `GET /api/decisions` mixes, when asked,
 normalized events `{ts, source, kind, summary, ref}` from records the workspace
@@ -1171,7 +1202,9 @@ Regenerates the SOTA atlas page, the same action as the dashboard's
 own `skills/plausibility/scripts/check_atlas.py` on `sota-pool/atlas.json` (with
 `--pool sota-pool/candidates.json` when the pool exists) and, only when the
 checker is green, `render_atlas.py` to `sota-pool/atlas.html`. A failing atlas
-never replaces a good page. Exit `0` when the page was written, `1` otherwise.
+never replaces a good page. When `paper/refs.bib` or the manuscript layer exists,
+it also redraws the manuscript's citations into the constellation (as
+`smith atlas cited --sync`). Exit `0` when the page was written, `1` otherwise.
 The route answers `200`, `404` (no `atlas.json` or no scripts), `422` (the
 checker or renderer refused) or `504` (timeout), always with
 `{ok, stage, detail}` plus the system, planet and link counts on success.
@@ -1181,6 +1214,10 @@ checker or renderer refused) or `504` (timeout), always with
 ```bash
 smith atlas coverage
 ```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints the result as JSON (already the default) |
 
 Lists, as JSON, the references the paper cites that the SOTA constellation does
 not draw: `proposal.undrawn`, the `.papersmith/citations.json` references no
@@ -1203,6 +1240,7 @@ smith atlas cited ~/papers/sparse-ae --json
 | Flag | Effect |
 |------|--------|
 | `--json` | Prints the result object instead of one line |
+| `--sync` | Also synchronizes the 3D constellation with every citation: writes `sota-pool/atlas.with-manuscript.json` and re-renders `sota-pool/atlas.html` with the manuscript's cited papers |
 
 Writes the manuscript layer of the SOTA atlas, `sota-pool/atlas.manuscript.json`,
 through the workspace's `skills/_core/command_center/atlas_manuscript.py`. It joins

@@ -197,13 +197,16 @@ three.js viewer `assets/atlas3d.bundle.js` is inlined verbatim and only
 draws it, so there is no CDN and no network at view time. Rebuild that
 bundle with `npm run build:atlas-viewer` only when `assets/atlas3d/viewer.js`
 changes (see `assets/atlas3d/README.md`); rendering never needs Node.
-When the computer has no suitable GPU (no WebGL, a software renderer, little
-memory or few cores, or a 3D sky that draws too slowly) the page opens a
-lighter 2D constellation of the same scene and says why; a toolbar button and
-`?view=2d` / `?view=3d` switch views. System names appear where they do not
+The page opens the 3D sky and falls back to a lighter 2D constellation of the
+same scene, saying why, only when WebGL is missing or software-only, when the
+viewer chose 2D, or when the 3D sky draws under 20 fps in its first seconds
+(that fallback is not remembered: the next visit tries 3D again); memory and
+core counts do not matter. A toolbar button and `?view=2d` / `?view=3d` switch
+views. System names appear where they do not
 overlap, and the page draws nothing while it is hidden.
-Drag orbits the sky and the wheel zooms. Clicking a planet shows its detail
-and abstract quote; a family filter dims what does not belong; hovering a
+Drag orbits the sky and the wheel zooms. Clicking a planet or a paper name opens a side panel with the paper's summary
+(topics, problem, application, novelty, contributions, results, conclusions,
+family) and its linked papers; a family filter dims what does not belong; hovering a
 planet highlights its links across systems; double-clicking flies to it.
 The "Group layout" button regroups the sky live — each whole system
 slides so a family's systems cluster together on a flat grid — and pressing it

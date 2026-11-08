@@ -10,9 +10,11 @@ number it carries:
   phase-2 box, the `banco-lia` MCP's `search_bank`, and the operator's approval
   of the proposed prompt, launched as `/plausibility <draft>`);
 - `4a`: the proposal's ordered steps on the *Mapa Conceptual* tab — the central
-  problem and its pillars, then the hypotheses, then the mathematics, each locked
-  until the one before it exists — with the `paper-reviewer`'s
-  contribution type classified after the hypotheses (`.papersmith/model_spec.json`)
+  problem and its pillars, then the hypotheses, then the mathematics, then the
+  SOTA citations (`.papersmith/citations.json`, each with a verbatim quote of its
+  abstract; `citations_cli.py check · routes`, then `smith atlas coverage`), then
+  the judge-reviewer (the `paper-reviewer` classifying the contribution type,
+  `.papersmith/model_spec.json`), each locked until the one before it exists —
   and the `/math-tutor`;
 - `5` and `5a` to `5g`: Phase 5 in the order the harness entrypoints state it —
   the protocol (`/experimental-deliberation`), the datasets (toy set, then the
@@ -112,7 +114,7 @@ gate's: Archify's grid search, which routes an edge around nodes it has no
 relationship with, gives up on a scene of more than 80 obstacles
 (`maximumObstacleCount`), and an authored `via` cannot replace it, because only
 two automatic routes may cross (with a halo) -- an authored crossing is a
-showcase error. The flow is at 103 components, so every edge has to be routable
+showcase error. The flow is at 105 components, so every edge has to be routable
 without the grid: between row neighbours, straight down a column, or through
 the corridor between two rows. That is why the dashed `replication` ->
 `expBuild` arrow is gone (its relation lives in the `expBuild` tag and in the
@@ -125,7 +127,7 @@ Any new edge that only the grid can route fails at the current size.
 The page draws at whatever width the viewport gives it, so the frame is a
 capture decision rather than part of the artifact. The committed PNG is 1400px
 wide at **device pixel ratio 1**, captured full-page with `?embed=1` (which is
-what drops the viewer's own chrome); it is 1400x4013 for the current drawing. A browser driver needs those three
+what drops the viewer's own chrome); it is 1400x4163 for the current drawing. A browser driver needs those three
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.

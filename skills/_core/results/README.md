@@ -14,7 +14,7 @@ Each product folder (`implementations/<repo>/<Name>/`) closes its proof of conce
                                            "quote": "A verbatim span of the reference's abstract that holds it."}]}}
 ```
 
-`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. Each citation's `quote` must appear verbatim (whitespace aside), 20 to 300 characters, in the pool record's `abstract`, so a citation is grounded in what its reference states; a reference with no abstract cannot be cited. `citations_cli.py routes --root .` prints the reverse map: each pool reference with the ideas it is cited for, their quotes and whether each is `grounded`, and `uncited`, the references no idea cites.
+`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. Each citation's `quote` must appear verbatim (whitespace aside), 20 to 300 characters, starting and ending on word boundaries, in the pool record's `abstract`, so a citation is grounded in what its reference states; a reference with no abstract cannot be cited. `citations_cli.py routes --root .` prints the reverse map: each pool reference with the ideas it is cited for, their quotes and whether each is `grounded`, and `uncited`, the references no idea cites.
 
 ## CLI
 
@@ -38,7 +38,7 @@ Refusal codes: `USAGE`, `PRODUCT_ABSENT` (not a directory), `APPROVAL_ABSENT` (s
 
 ## Scaffold
 
-The stage comes from the holder (`Experimental_AGREED.md` → `full`, else `AGREED.md` → `poc`). The workspace root is `product.parents[2]`. From the latest `experiments/experiments-*-vNN.md` (highest `NN`), each `## Experiment [exp:<id>]` becomes one hypothesis `H1..Hn` (in order) with its **Hypothesis** and **Success criterion** bullets copied verbatim; `verdict` is `pending`, `observed` and `summary` are empty. `metrics` starts empty. `available_evidence` lists the figures, tables, qualitative artifacts (`Results/qualitative/**`) and significance comparisons found on disk, to help the author; it is ignored by the check. No number is ever written.
+The stage comes from the holder (`Experimental_AGREED.md` → `full`, else `AGREED.md` → `poc`). The workspace root is `product.parents[2]`. From the latest `experiments/experiments-*-vNN.md` (highest `NN`), each heading of any level carrying `[exp:<id>]` (such as `## Experiment [exp:<id>]`) becomes one hypothesis `H1..Hn` (in order) with its **Hypothesis** and **Success criterion** bullets copied verbatim; `verdict` is `pending`, `observed` and `summary` are empty. `metrics` starts empty. `available_evidence` lists the figures, tables, qualitative artifacts (`Results/qualitative/**`) and significance comparisons found on disk, to help the author; it is ignored by the check. No number is ever written.
 
 **A fresh scaffold is `invalid` on purpose** (empty `summary`, no `metrics`, no qualitative entry or reason). The author fills it, then runs `check` until it is `complete`. If no protocol exists, `protocol` is `""` and the hypotheses must be added by hand (the CLI warns).
 

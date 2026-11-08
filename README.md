@@ -142,17 +142,21 @@ every harness entrypoint (`CLAUDE.md`, `OPENCODE.md`, `.pi/APPEND_SYSTEM.md`,
 `.agents/AGENTS.md`) under "Paper construction flow".
 
 The dashboard has twelve tabs; the tab names below are the Spanish ones the
-dashboard shows (the interface also has an English catalogue):
+dashboard shows (the interface also has an English catalogue). The header
+carries the run selector (the short run id, such as `r07`, with the file name as
+tooltip), a dark/light theme toggle (dark by default; the framed Archify and
+manuscript-summary views follow it) and a text-size control (A ×1, ×1.25, ×1.5,
+×2):
 
 | Tab | What it shows |
 |---|---|
 | **Flujo Archify** | The interactive flow diagram above and the table of every agent the workspace ships. It is the tab the dashboard opens on |
 | **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console |
-| **Mapa Conceptual & Modelo** | The proposal built in order: a stepper for the central problem and its pillars → the hypotheses → the mathematics, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the paper-reviewer's contribution type right after the hypotheses; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year and why) or a mark that it owes them |
-| **Experimentos** | A stepper proof of concept → verify → full experiment, one button each (the full-experiment button stays disabled until `G-EXP-POC` passes), then the proof-of-concept and full-experiment cards, run options and the `experiments-tutor`. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
-| **Novedad & Hallazgos** | The proof-of-concept verification card (`G-EXP-POC`), the novelty assessment with the paper-reviewer's contribution type of the findings, and the `G-NOVELTY` gate (below) |
+| **Mapa Conceptual & Modelo** | The proposal built in five ordered steps: a stepper for the central problem and its pillars → the hypotheses → the mathematics → the SOTA citations → the judge-reviewer, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the judge-reviewer's contribution type right after the hypotheses, with affinity bars per contribution type; the pillar → hypothesis tree drawn with arrows; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year, why and the quote of its abstract) or a mark that it owes them; its blocks fold |
+| **Experimentos** | A stepper SOTA citations → proof of concept → verify → full experiment, one button each (the full-experiment button stays disabled until `G-EXP-POC` passes), then, in flow order and folded, the protocol, datasets, proof-of-concept and full-experiment cards, the comparison, the infrastructure and run options, and the `experiments-tutor` last. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
+| **Novedad & Hallazgos** | The manuscript summary diagram at the top, with its rebuild button; the proof-of-concept verification card (`G-EXP-POC`), the novelty assessment with the paper-reviewer's contribution type of the findings, and the `G-NOVELTY` gate (below) |
 | **Secciones del Paper** | The canonical section structure of the manuscript: state, words and blocks of each section |
-| **Atlas de Grafos** | The 3D SOTA constellation (`sota-pool/atlas.html`), the manuscript's novelty graph and the candidate matrix |
+| **Atlas de Grafos** | The 3D SOTA constellation (`sota-pool/atlas.html`), the manuscript's novelty graph and the candidate matrix. A coverage notice counts the cited references the constellation does not draw, with a *Complete the constellation* button; clicking a planet or paper name opens a side panel with the paper's summary and linked papers, and a citation clicked in any panel lands on that paper in the atlas. The `smith atlas` commands are in [docs/cli.md](docs/cli.md#smith-atlas-build-dir) |
 | **Previsualización PDF** | The written blocks and the compiled `paper/main.pdf` side by side, the style and redundancy panel (each section's writing style and redundancy scored from 0 to 100), and below them the journal block: *Revistas sugeridas* (the ranked journals for a quartile range you choose) and, once you pick one, *Revista elegida* (the venue state machine, the audit, the plan and its approval, and a toggle between the canonical PDF and the journal's). See [Choosing and adapting to a journal](#choosing-and-adapting-to-a-journal) |
 | **Artefactos** | Explorer of the section rules, canonical contracts and the documents of the formulation cycle |
 | **Historia con IA** | Each phase's gate, colour and timeline of AI interactions |
@@ -659,15 +663,21 @@ from accepted labs (Google, Google DeepMind, OpenAI, Anthropic, Microsoft, Meta,
 NVIDIA, Apple, IBM, Amazon, Allen Institute for AI, Xanadu, Quantinuum, IonQ) count
 too, found in OpenAlex or confirmed by the operator with `citations_cli.py lab`.
 `python skills/_core/results/citations_cli.py check --root .`
-prints what is owed and exits non-zero. A valid citation is in the pool and
-states a reason; that does not prove the reference supports the idea, so
-existing workspaces lose their Phase 4 PASS until they are cited.
+prints what is owed and exits non-zero. A valid citation is in the pool, states
+a reason and carries a `quote`: 20 to 300 characters of the pool record's
+`abstract`, verbatim (whitespace aside) and starting and ending on word
+boundaries, so a reference without an abstract cannot be cited; the panels show
+the quote. `python skills/_core/results/citations_cli.py routes --root .` prints
+each pool reference with the ideas it is cited for, their quotes and whether
+they are `grounded`, plus the `uncited` ones. Existing workspaces lose their
+Phase 4 PASS until they are cited. The step ends with `smith atlas coverage .`,
+which lists the cited references the SOTA constellation does not draw yet.
 
 Discuss the concept map and the
 equations with `/math-tutor` before implementing the revision.
 
 Proposals live in `proposals/`, one per managed revision
-(`research-concept-<slug>-rNN.md`).
+(`research-concept-<slug>-rNN.md`, or without the slug, such as `research-concept-r07.md`).
 
 Each published revision travels with its own constellation: the SOTA's with the
 proposal inside, in `proposals/research-concept-<slug>-rNN.graph.html`, drawn by the
@@ -690,7 +700,10 @@ proposal it tests, its metric and its SOTA baseline, and the deliberation
 publishes it as a managed revision in `experiments/` only after you accept it.
 It needs the data paper in `guidance/data-paper/` (the ceiling of what can be
 claimed). `/experiments-tutor`, from the *Experimentos* tab, questions each
-design decision with you; a change of decision goes back to this skill.
+design decision with you; a change of decision goes back to this skill. An
+experiment is any heading, of any level, carrying `[exp:<id>]`; each one is
+cited from the SOTA pool like the ideas of Step 4, and the step ends with
+`smith atlas coverage .`.
 
 ### Step 6 — Data and the comparison methods (`datasets`, replication)
 
@@ -777,7 +790,9 @@ passed.
 `/paper-writing` opens the `paper/` tree and its section contracts
 (scaffolding), records each decision of the paper with `mark` (declarations)
 and then writes one named block at a time; every claim needs a source that
-holds it. `/figure-review <figure id>` checks each compiled figure.
+holds it. `/figure-review <figure id>` checks each compiled figure. After the
+citations change, `smith atlas coverage .` lists the cited papers the SOTA
+constellation draws only as placeholders.
 
 ### Step 12 — Compile, review and choose a journal
 
@@ -815,7 +830,7 @@ my-paper/
 │   ├── reference-papers/        # drop-zone: reference PDFs go here
 │   ├── paper-guide/             # guiding papers for method and style (optional but recommended)
 │   └── data-paper/              # data paper (mandatory for experimental-deliberation)
-├── proposals/                   # managed revisions, flat: research-concept-<slug>-rNN.md
+├── proposals/                   # managed revisions, flat: research-concept-[<slug>-]rNN.md
 ├── paper/                       # the paper's LaTeX (paper-writing writes it here)
 ├── experiments/                 # the managed experimental protocol
 ├── implementations/             # destination repos; each one with its own git
@@ -1060,12 +1075,12 @@ to establish it. The operator opens and closes the gates.
 | `diagram-author` | Writes a standalone TikZ diagram (`<id>.tex` + `<id>.diagram.json`) and compiles it in its own loop, up to the repair budget. It never draws a chart from measured numbers — that is the `place` verb. | `paper-writing` |
 | `figure-auditor` | Compares the components declared in the manifest against the section's prose and the pipeline steps; reports a structured verdict. | `paper-writing` |
 | `figure-visual-reviewer` | One visual pass over one rendered diagram whose mechanical audit already passed: reads a preview of at most 1400 px once and judges legibility at print scale, balance, overlaps and whether labels and arrows read correctly. Returns PASS, or FAIL with concrete fixes; it never edits a file. | `paper-writing`, `experiment-diagrams` |
-| `paper-reviewer` | Reviews the compiled paper with the main-track review form; grounds pertinence, novelty and coherence in quoted evidence. | `paper-writing` |
+| `paper-reviewer` | Reviews the compiled paper with the main-track review form; grounds pertinence, novelty and coherence in quoted evidence. It is also the judge-reviewer that scores the proposal's and the findings' contribution type, with an affinity per type. | `paper-writing` |
 | `section-grounding-auditor` | Reads a block's own bound source section, verbatim, and judges each subject sentence against it: `supported` — with the quoted span that carries it —, `unsupported` or `undecidable`. No code path invokes it, and `write` re-derives both sides independently rather than trusting its account. | `paper-writing` |
 | `insumos-observer` | Reads the paper's four declared input sources —`proposals/`, `experiments/`, the destination repo's code and its own run outputs— and reports, for each observable fact, whether it holds and with what evidence. It never decides a value nor runs `declare`. | `paper-writing` |
 | `ai-auditor` | Measures writing quality (sentence-cadence variation $CV$, overused academic phrasing, formulaic transitions, lexical diversity) and revises written blocks for clarity under the strict F5 invariant preservation contract (citations, numbers, math inviolable). It never hides AI use: the AI-use declaration stays mandatory. | `paper-writing` |
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
-| `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 5 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
+| `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 7 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
 | `sota-grapher` | Maps the pool to its constellation —one solar system per paper grouped by family, 20 planets maximum, edges between sibling systems— as `atlas.json` plus the single `atlas.html`, running checker and renderer until green. | `plausibility` |
 | `venue-adapter` | Reads a chosen journal's author guidelines and template and measures the manuscript against them: requirements (each one a quote and a url), sections to adjust, sections missing and inconsistencies with smith's base template; proposes an adjustment plan only when prudent and iterates it with the operator until they approve its exact text. It writes nothing and never submits. | `paper-writing` |
 | `audit-report` | Audits a subject that enumerates a closed set —operations, subcommands, codes, assets— looking for the gap between what its code accepts and what its documentation promises. It reports; it never repairs. | `skill-audit` |

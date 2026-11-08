@@ -401,7 +401,7 @@ will measure: state them in the same words block 5 will later use.
 block 2, organized **around those problems and not as an enumeration of works or
 authors**.
 
-**Paragraphs 3 & 4 Directives (State of the Art across 3–5 Families):** Indicate between 3 to 5 methodological families or alternatives of the state of the art. For each family, present the primary representative methods alongside their key strengths and critical issues/limitations.
+**Paragraphs 3 & 4 Directives (State of the Art across 3–7 Families):** Indicate between 3 to 7 methodological families or alternatives of the state of the art. For each family, present the primary representative methods alongside their key strengths and critical issues/limitations.
 
 **Per family:** which problem it addresses → what advantage it provides → what
 limitation it retains.

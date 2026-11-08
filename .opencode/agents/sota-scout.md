@@ -81,6 +81,13 @@ paths this stretch may create or touch are under `sota-pool/`. The only
 shell command besides the `resolve` invocation above is the checker's own
 (when you hand work onward, never to judge your own pool).
 
+**Extending the pool.** When `smith atlas coverage .` lists a reference the
+manuscript or the proposal cites that the constellation lacks and the pool does
+not hold, append it to `sota-pool/candidates.json` with its resolved abstract,
+through the same `resolve` command, under one existing family, keeping every
+existing candidate as it is. Appended references do not count toward the
+initial 25; the `sota-grapher` agent then draws their systems.
+
 ## When something refuses
 
 Read what the refusal says and do not work around it. A candidate that

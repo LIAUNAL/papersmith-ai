@@ -185,7 +185,7 @@ Five blocks. The third repeats — once per stated problem.
 5. synthesis artefact
 
 ### Directives: Correspondence with Introduction's Families & Subsection Triad
-Organized in direct correspondence with the 3 to 5 methodological families or alternatives established in Paragraphs 3 and 4 of the Introduction:
+Organized in direct correspondence with the 3 to 7 methodological families or alternatives established in Paragraphs 3 and 4 of the Introduction:
 - **Opening Context Paragraph:** A first paragraph giving context to the problems and methods studied, directly framing the families that follow.
 - **Subsections per Family:** Each family introduced in the Introduction's state of the art receives its own dedicated subsection (`\subsection{...}`).
 - **Internal Subsection Triad (2 to 3 paragraphs each):**

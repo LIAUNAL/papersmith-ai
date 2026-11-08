@@ -96,7 +96,7 @@ Return, always and in this order:
   what distinguishes it from having stopped silently.
 - **`state`** — what a reader can re-measure right now to confirm all of the
   above: the atlas and HTML paths, and both green lines as they last printed.
-- **`owed`** — unmapped candidates, families left out over the 5-family
+- **`owed`** — unmapped candidates, families left out over the 7-family
   ceiling, violations after 3 passes, or nothing.
 
 If you stopped because something refused, quote the refusal rather than

@@ -33,8 +33,9 @@
  * The lanes are numbered by the eleven dashboard phases
  * (`phase_actions.STAGES`), and a lettered lane is a sub-lane of the phase whose
  * number it carries: 2a the optional thematic help; 4a the proposal's ordered
- * steps (problem and pillars, hypotheses, mathematics), the paper-reviewer's
- * contribution type and the math tutor; 5a to 5g Phase 5 in the order the
+ * steps (problem and pillars, hypotheses, mathematics, SOTA citations with
+ * `smith atlas coverage`), the judge-reviewer's contribution type and the math
+ * tutor; 5a to 5g Phase 5 in the order the
  * harness entrypoints state it -- datasets, replication and proof of concept,
  * the proof-of-concept verification gate (G-EXP-POC), the full experiments,
  * credentials, the remote rehearsal and launch, and the findings with their
@@ -104,8 +105,10 @@ const nodes=[
  n('tutor','steps',3,'frontend','/math-tutor','socratic · hand-written pages',{tag:'.pi/prompts',sources:K('math-tutor',54,74)}),
  n('tutorAgent','steps',4,'backend','math-tutor',agentMeta('math-tutor').sub,{...(agentMeta('math-tutor').tag?{tag:agentMeta('math-tutor').tag}:{}),sources:A('math-tutor')}),
  n('modelSpec','steps',0,'database','model_spec.json','.papersmith/ · contribution_type',{rowOff:1,sources:[{path:'skills/proposal-deliberation/SKILL.md',line:221,end_line:241}]}),
- n('contribProp','steps',1,'backend','paper-reviewer','contribution type',{rowOff:1,tag:'after the hypotheses',sources:[{path:'skills/_core/results/contribution_type.py',line:1,end_line:16},...A('paper-reviewer')]}),
- n('ui','steps',2,'external','smith ui','phase drawer → /<skill>',{rowOff:1,tag:'command center',sources:S('skills/_core/command_center/phase_actions.py',1,15)}),
+ n('contribProp','steps',1,'backend','paper-reviewer','judge-reviewer · step 5',{rowOff:1,tag:'contribution type',sources:[{path:'skills/_core/results/contribution_type.py',line:1,end_line:16},...A('paper-reviewer')]}),
+ n('stepCite','steps',2,'database','SOTA citations','step 4 · citations.json quotes',{rowOff:1,tag:'citations_cli check · routes',sources:[{path:'skills/_core/command_center/phase_steps.py',line:16,end_line:19},{path:'skills/proposal-deliberation/SKILL.md',line:312,end_line:320}]}),
+ n('atlasCov','steps',2,'messagebus','smith atlas coverage','cited refs the sky lacks',{rowOff:2,sources:S('src/papersmith/core/atlas.py',118,128)}),
+ n('ui','steps',3,'external','smith ui','phase drawer → /<skill>',{rowOff:2,tag:'command center',sources:S('skills/_core/command_center/phase_actions.py',1,15)}),
  n('mathApi','steps',3,'messagebus','/api/model/math','concept map · KaTeX cards',{rowOff:1,sources:S('skills/_core/command_center/math_view.py',1,16)}),
  n('tutorStore','steps',4,'database','.papersmith/math-tutor/','thread + uploaded pages',{rowOff:1,sources:S('skills/_core/command_center/tutor.py',1,12)}),
 
@@ -152,7 +155,7 @@ const nodes=[
  n('guard','remote',4,'security','refuse-offpath-push.js','extension: watches bash',{tag:'tool_call',sources:[{path:'.pi/extensions/refuse-offpath-push.js',line:1,end_line:30},{path:'.pi/APPEND_SYSTEM.md',line:37,end_line:43}]}),
  n('remote','remote',0,'frontend','/remote-execution','reachable → returned',{tag:'.pi/prompts',sources:K('remote-execution',40,44)}),
  n('readiness','remote',1,'security','readiness + gate','single-use token',{tag:'5.14',sources:S('skills/remote-execution/SKILL.md',42)}),
- n('remoteCli','remote',2,'messagebus','remote_cli.py','submit · poll · fetch',{tag:'12 subcommands',sources:S('skills/remote-execution/SKILL.md',1577,1595)}),
+ n('remoteCli','remote',2,'messagebus','remote_cli.py','submit · poll · fetch',{tag:'13 subcommands',sources:S('skills/remote-execution/SKILL.md',1577,1596)}),
  n('inbox','remote',3,'database','kaggle-inbox/','ledger + results',{sources:S('README.md',89)}),
 
  n('contribFind','nov',0,'backend','paper-reviewer','contribution type of the findings',{tag:'discussion.json',sources:[{path:'skills/_core/results/contribution_type.py',line:1,end_line:16},{path:'skills/experimental-implementation/SKILL.md',line:579,end_line:579}]}),
@@ -173,7 +176,7 @@ const nodes=[
  n('style','write',3,'backend','style-sampler',agentMeta('style-sampler').sub,{...(agentMeta('style-sampler').tag?{tag:agentMeta('style-sampler').tag}:{}),sources:A('style-sampler')}),
  n('grounding','write',4,'backend','section-grounding-auditor',agentMeta('section-grounding-auditor').sub,{...(agentMeta('section-grounding-auditor').tag?{tag:agentMeta('section-grounding-auditor').tag}:{}),sources:A('section-grounding-auditor')}),
 
- n('paperCli','figs',0,'messagebus','paper_cli.py','write judges what comes back',{tag:'29 verbs',sources:S('skills/paper-writing/SKILL.md',14,16)}),
+ n('paperCli','figs',0,'messagebus','paper_cli.py','write judges what comes back',{tag:'31 verbs',sources:S('skills/paper-writing/SKILL.md',14,16)}),
  n('diagram','figs',1,'backend','diagram-author',agentMeta('diagram-author').sub,{...(agentMeta('diagram-author').tag?{tag:agentMeta('diagram-author').tag}:{}),sources:A('diagram-author')}),
  n('figAud','figs',2,'backend','figure-auditor',agentMeta('figure-auditor').sub,{...(agentMeta('figure-auditor').tag?{tag:agentMeta('figure-auditor').tag}:{}),sources:A('figure-auditor')}),
  n('figRev','figs',3,'frontend','/figure-review','probe · raster, no changes',{tag:'.pi/prompts',sources:K('figure-review',1,12)}),
@@ -222,7 +225,7 @@ const edges=[
  e('grapher','delibPub','atlas.json',{variant:'dashed'}),
  e('delib','stepPP','concept + math',{variant:'dashed'}),
  e('stepPP','stepHyp'), e('stepHyp','stepMath'), e('stepMath','tutor',null,{variant:'dashed'}), e('tutor','tutorAgent'), e('tutorAgent','tutorStore'),
- e('stepHyp','contribProp','classify'), e('contribProp','modelSpec'), e('ui','mathApi'),
+ e('stepMath','stepCite'), e('stepCite','contribProp'), e('stepCite','atlasCov'), e('contribProp','modelSpec'), e('ui','mathApi'),
  e('expDelib','expVal'), e('expVal','expGate'), e('expGate','expPub',null,{variant:'security'}), e('expPub','experiments'),
  e('dataCmd','dataScout'), e('dataScout','dataCurator'), e('dataCurator','dataGate'), e('dataGate','dataStore',null,{variant:'security'}),
  e('dataStore','implBuild','toy set',{variant:'dashed',fromSide:'bottom',toSide:'top'}),
@@ -251,7 +254,7 @@ const edges=[
 // Lanes are numbered by the eleven dashboard phases (phase_actions.STAGES);
 // a lettered lane is a sub-lane of the phase it carries the number of.
 const lanes=[
- ['pi','1 · Harness (Pi)'], ['help','2a · Thematic help (optional, before /plausibility)'], ['plaus','2 · Plausibility'],['ingest','3 · Ingestion'],['delib','4 · Proposal deliberation'],['steps','4a · Problem & pillars → hypotheses → mathematics, contribution type (Mapa Conceptual)'],
+ ['pi','1 · Harness (Pi)'], ['help','2a · Thematic help (optional, before /plausibility)'], ['plaus','2 · Plausibility'],['ingest','3 · Ingestion'],['delib','4 · Proposal deliberation'],['steps','4a · Problem & pillars → hypotheses → mathematics → SOTA citations → judge-reviewer (Mapa Conceptual)'],
  ['expdelib','5 · Proof of concept and experiments: the protocol first'],['data','5a · Datasets (toy set → official preparation)'],['impl','5b · Replication and proof of concept'],['pocv','5c · Proof-of-concept verification (G-EXP-POC, operator)'],['expimpl','5d · Full experiments (after G-EXP-POC)'],
  ['creds','5e · Credentials'],['remote','5f · Remote rehearsal and launch'],['nov','5g · Findings: contribution type and G-NOVELTY'],['scaf','6 · Scaffolding'],['decl','7 · Declarations'],['write','8 · Writing'],['figs','9 · Figures and grounding'],['out','10 · Paper (PDF preview)'],['jv','10a · Journal choice and venue adaptation (after the PDF)'],
  ['audit','11 · Audit (transversal)']].map(([id,label])=>({id,label}));
@@ -267,16 +270,16 @@ const doc={schema_version:1,diagram_type:'architecture',meta:{
   title:'Papersmith AI in Pi — commands, skills and agents',
   quality_profile:'showcase',
   output:'docs/diagrams/papersmith-pi-flow.html',
-  repository:{url:'https://github.com/LIAUNAL/papersmith-ai',provider:'github',link_mode:'web',revision:'d1d3de2a59b603cfc6664bebfa20742c3f42dcde'},
+  repository:{url:'https://github.com/LIAUNAL/papersmith-ai',provider:'github',link_mode:'web',revision:'61191aee876eec489dcde68873f4a9903ed5fcca'},
   legend:{mode:'auto',entries:{frontend:{label:'Pi command /skill'},backend:{label:'Pi subagent'},messagebus:{label:'CLI'},security:{label:'Gate (human)'},database:{label:'Artifact on disk'},external:{label:'Pi harness'}}}
  },
  layout:{mode:'grid',origin:[30,48],cols:5,cellW:182,cellH:58,gapX:24,gapY:62},
  components, boundaries, connections,
  cards:[
   {dot:'cyan',title:'How Pi sees it',items:['.pi/APPEND_SYSTEM.md is the system prompt: Pi appends it to the project one','/<skill> = .pi/prompts/<skill>.md: it loads the SKILL.md and passes $ARGUMENTS',`The ${fs.readdirSync(`${REPO}/.pi/agents`).filter(f=>f.endsWith('.md')).length} .pi/agents/ are projected from .claude/agents/; Pi core has no subagents, so they need pi-subagents`,'Each agent declares tools (read, find, grep, write, edit, bash, mcp) and its stretch','refuse-offpath-push.js intercepts bash tool_call; it is a warning that fails open, not a gate']},
-  {dot:'emerald',title:'Harness commands',items:['npm run setup:harnesses — links .pi/skills -> ../skills','python scripts/sync-repo-harness.py — regenerates .pi/prompts, .pi/agents, .pi/extensions (--check detects drift)','smith init · ui · status · ingest · deliberate · implement · run · remote · novelty · audit','npm run test:all — the quality gate']},
+  {dot:'emerald',title:'Harness commands',items:['npm run setup:harnesses — links .pi/skills -> ../skills','python scripts/sync-repo-harness.py — regenerates .pi/prompts, .pi/agents, .pi/extensions (--check detects drift)','smith init · ui · status · ingest · deliberate · implement · run · remote · novelty · audit · atlas · doctor · paper','npm run test:all — the quality gate']},
   {dot:'violet',title:'Per-skill CLIs',items:['paper-ingestion: python scripts/setup_env.py install','deliberation: node skills/<skill>/cli.mjs --serve','the proposal graph: merge_proposal_sky.py → check_atlas.py → render_atlas.py','implementation: implementation_cli.py materialize · verify · fidelity · audit · step','kaggle-accounts: accounts_cli.py list · discover · validate · remove · materialize','remote-execution: remote_cli.py submit · status · poll · fetch · readiness …','paper-writing: paper_cli.py status · plan · write · verify … (31 verbs)','journal-finder: journal_cli.py search · sjr-import · status','venue adaptation: paper_cli.py venue select · requirements · acquire · diff · plan · approve · build','datasets: datasets_cli.py synth · search · license · qc · prepare · publish','figure-review: review_cli.py probe · raster · skill-audit: audit_cli.py']},
-  {dot:'amber',title:'Flow rules',items:['The order is optional: each skill refuses with a code when its input is missing','Starting with /plausibility, before ingestion, is the recommendation','The proposal is built in order: the central problem and its pillars, then the hypotheses, then the mathematics; each step stays locked until the one before it exists (Mapa Conceptual tab, one Generar y deliberar button per step)','paper-reviewer classifies the contribution type of the proposal (model_spec.json) and of each stage\'s findings (discussion.json)','Phase 5 runs protocol → toy set → replication → proof of concept → its verification (G-EXP-POC) → timing → optional search → full experiments → review → rehearsal → launch','The full experiments stay locked until the operator verifies the proof of concept (smith novelty approve --gate poc, or the Novedad tab card); the writing waits for G-NOVELTY','/datasets gives a seeded toy set first (dataset-scout: sourced → licensed; dataset-curator: toy → checked → prepared → published); publishing is private and only on the operator\'s consent','The proof of concept reads the toy set; the full experiments read the one official subject-wise preparation, mounted by remote notebooks','paper-replicator (implementation fidelity) searches for published code first: adopt it and audit its correspondence to the paper, else reimplement from the ingested paper; its baselines feed the experiments','experiments-reviewer reviews the instrumented code before any rehearsal or launch','No walk can launch a campaign: the operator authorizes it','contract-auditor, redactor and style-sampler have no code path: the orchestrator launches them and write judges','/figure-review and /skill-audit only report; they never repair','Once the paper compiles, /journal-finder ranks journals by quartile, access, APC and an estimated review time; nothing is submitted, and without an SJR file the quartile is a labelled OpenAlex proxy','The operator picks a journal in the PDF Preview tab; venue-adapter reads its guidelines and every requirement carries a quote and a url','The operator approves the adaptation plan by its sha256; text changes go only through write, and venue build never writes paper/main.tex','smith ui: each pipeline phase card sends its /<skill> with the rules as a guide, or opens the panel that owns the work']}
+  {dot:'amber',title:'Flow rules',items:['The order is optional: each skill refuses with a code when its input is missing','Starting with /plausibility, before ingestion, is the recommendation','The proposal is built in order: the central problem and its pillars, then the hypotheses, then the mathematics, then the SOTA citations, then the judge-reviewer; each step stays locked until the one before it exists (Mapa Conceptual tab, one Generar y deliberar button per step)','Every pillar, hypothesis, layer, equation and experiment cites 2 to 5 pool references in citations.json, each with a verbatim 20–300 character quote of its abstract; phases 4, 5 and 8 end with smith atlas coverage, and sota-scout and sota-grapher add what the constellation lacks','paper-reviewer, the judge-reviewer, classifies the contribution type of the proposal (model_spec.json) and of each stage\'s findings (discussion.json)','Phase 5 runs protocol → toy set → replication → proof of concept → its verification (G-EXP-POC) → timing → optional search → full experiments → review → rehearsal → launch','The full experiments stay locked until the operator verifies the proof of concept (smith novelty approve --gate poc, or the Novedad tab card); the writing waits for G-NOVELTY','/datasets gives a seeded toy set first (dataset-scout: sourced → licensed; dataset-curator: toy → checked → prepared → published); publishing is private and only on the operator\'s consent','The proof of concept reads the toy set; the full experiments read the one official subject-wise preparation, mounted by remote notebooks','paper-replicator (implementation fidelity) searches for published code first: adopt it and audit its correspondence to the paper, else reimplement from the ingested paper; its baselines feed the experiments','experiments-reviewer reviews the instrumented code before any rehearsal or launch','No walk can launch a campaign: the operator authorizes it','contract-auditor, redactor and style-sampler have no code path: the orchestrator launches them and write judges','/figure-review and /skill-audit only report; they never repair','Once the paper compiles, /journal-finder ranks journals by quartile, access, APC and an estimated review time; nothing is submitted, and without an SJR file the quartile is a labelled OpenAlex proxy','The operator picks a journal in the PDF Preview tab; venue-adapter reads its guidelines and every requirement carries a quote and a url','The operator approves the adaptation plan by its sha256; text changes go only through write, and venue build never writes paper/main.tex','smith ui: each pipeline phase card sends its /<skill> with the rules as a guide, or opens the panel that owns the work']}
  ]};
 const out = path.resolve(process.argv[2] || fileURLToPath(new URL('./candidate.json', import.meta.url)));
 fs.mkdirSync(path.dirname(out), { recursive: true });
