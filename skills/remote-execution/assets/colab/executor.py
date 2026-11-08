@@ -60,6 +60,10 @@ EXECUTOR_FILENAME = "executor.py"
 CLONE_DIRNAME = "clone"
 VCS_DIRNAME = ".git"
 DEFAULT_KERNEL_NAME = "python3"
+#: Directories under `clone/` the manifest never lists: dataset caches,
+#: bytecode, a virtual environment and VCS metadata (`VCS_DIRNAME` among
+#: them). Mirrors REGENERABLE_DIRNAMES in scripts/adapters/colab.py.
+REGENERABLE_DIRNAMES = frozenset({".cache", "__pycache__", ".venv", VCS_DIRNAME})
 
 # The credential material a credentialed submission stages beside this
 # executor (S3): an askpass script and the token file it reads. The names
@@ -178,7 +182,10 @@ def manifest_entries(base: Path) -> list[str]:
       notebook that never started) can never be listed either;
     - anything under `clone/.git/` is the pinned input's VCS metadata —
       thousands of files that are not produced artifacts and that a
-      per-file download would pay for one call at a time.
+      per-file download would pay for one call at a time;
+    - anything under a `.cache`, `__pycache__` or `.venv` directory of the
+      clone is regenerable: the dataset a run downloads lands there, and
+      fetching it kept one copy of the dataset per run on local disk.
 
     Symlinks are skipped, never followed and never listed: a link's
     target is somebody else's file, possibly outside this directory, and
@@ -198,7 +205,9 @@ def manifest_entries(base: Path) -> list[str]:
             or parts[0] in CREDENTIAL_MATERIAL_FILENAMES
         ):
             continue
-        if len(parts) >= 2 and parts[0] == CLONE_DIRNAME and parts[1] == VCS_DIRNAME:
+        # The last part counts too: a worktree or submodule clone has `.git` as a file.
+        if len(parts) > 1 and parts[0] == CLONE_DIRNAME and any(
+                part in REGENERABLE_DIRNAMES for part in parts[1:]):
             continue
         entries.append(relative.as_posix())
     return sorted(entries)

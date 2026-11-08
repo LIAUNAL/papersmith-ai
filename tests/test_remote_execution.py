@@ -7406,7 +7406,7 @@ class PollFetchDriverTests(unittest.TestCase):
                     files=[
                         SimpleNamespace(
                             url="https://files.example.invalid/nested",
-                            file_name="clone/.cache/corpus/raw/holdout"),
+                            file_name="clone/Prod/Results/runs/holdout.json"),
                         SimpleNamespace(
                             url="https://files.example.invalid/boom",
                             file_name="second.csv"),
@@ -7418,7 +7418,7 @@ class PollFetchDriverTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 driver.cmd_fetch(
                     _Client(), "acct-1/kernel-1", into)
-            nested = into / "clone/.cache/corpus/raw/holdout"
+            nested = into / "clone/Prod/Results/runs/holdout.json"
             self.assertTrue(
                 nested.is_file(),
                 "a name carrying directories must make its own parents; one "

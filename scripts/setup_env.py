@@ -369,6 +369,16 @@ def cmd_install(args: argparse.Namespace) -> int:
         run(mm, ["run", "-n", args.name, "python", "-m", "pip", "install", *pip_packages],
             mamba_env())
 
+    # The environment keeps its files; the downloaded tarballs and the index
+    # cache only weigh on the workspace's disk once it is built. The extracted
+    # packages stay, so the environment can be built again offline, and a
+    # cleanup that fails never fails an environment that is already built.
+    try:
+        run(mm, ["clean", "--tarballs", "--index-cache", "--locks", "--yes"], mamba_env())
+    except subprocess.CalledProcessError as exc:
+        print(f"[setup] could not clean the package downloads (exit {exc.returncode}); "
+              "the environment is built and usable")
+
     print("\n[setup] done. Activate or run through the environment:")
     print(f"  micromamba run -n {args.name} python skills/paper-ingestion/scripts/extract_pdf.py --list")
     print(f"  micromamba run -n {args.name} python -m pytest tests/")

@@ -1,6 +1,6 @@
 ---
 name: remote-execution
-description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`, `preflight`, `generate-jobs`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
+description: "Trigger: durable record of what a repository has submitted to a remote worker, what came back, and how much to submit at once: the append-only ledger and the fold that derives per-entrypoint state, the capacity clamp and worker auto-selection, the `remote_cli` front door (`submit` with its path guard, `status`, `poll`, `fetch`, `reconcile`, `distribute`, `remaining`, `generate-job`, `smoke`, `record`, `readiness`, `preflight`, `generate-jobs`, `prune-caches`), the backend-agnostic adapter seam (ABC, frozen shapes, registry), and one shipped backend -- `adapters/kaggle.py`, the only file here allowed to name a service, shelling out to `adapters/kaggle_driver.py`, the only one allowed to import the pinned `kagglesdk` client. Credentials travel as a `CredentialHandle(worker_id, token_path)`, read at one expression in that one file; readiness is derived from `smoke.jsonl` evidence, never a human assertion and never a clock. Stdlib-only except that one named driver script."
 ---
 
 # Remote Execution
@@ -1574,7 +1574,7 @@ executable — no test in this suite reaches the network or a real account).
 
 ## The commands
 
-`remote_cli.py` accepts exactly twelve top-level subcommands; this table is the
+`remote_cli.py` accepts exactly thirteen top-level subcommands; this table is the
 closed roster `skill-audit`'s `roster` move derives against, driving the CLI
 with a nonce it cannot accept and reading the accepted set out of its own
 refusal.
@@ -1593,6 +1593,7 @@ refusal.
 | `smoke` | smoke-run bookkeeping: recording a rehearsal's evidence-derived verdict |
 | `readiness` | state whether a job is ready for a full submission on a worker, from that worker's own latest rehearsal; reports only, issues no submission |
 | `preflight` | check a generated job locally before its first remote rehearsal, one `pass`/`warn`/`fail` row per check with its evidence and fix, including a local rehearsal of its smoke; exits non-zero on any `fail`, never submits |
+| `prune-caches` | list, or with `--apply` remove, the dataset caches, bytecode, virtual environments and VCS metadata an older fetch brought back under `<product>/.remote-execution/**/clone/`; results, models, logs, notebooks and rehearsal evidence stay |
 
 ## Refusal codes
 
@@ -2580,6 +2581,26 @@ stylistic).
 what `fetch` brought back from a run without a complete result, one
 directory per fetch. Outside `Results/shards/` for the same reason as
 quarantine below.
+
+## What a fetch leaves out
+
+A job clones its product into `clone/`, and the product's code downloads its
+dataset into the clone's `.cache/`. Fetch skips every file under a `.cache`,
+`__pycache__`, `.venv` or `.git` directory of `clone/`, on Kaggle (the driver
+never requests them) and on Colab (the executor's `files.json` never lists
+them, and the adapter skips them when an older executor did). Bringing them
+back kept one copy of the dataset per run on the operator's disk: one
+workspace held 23 copies of a 306 MB cache, about 13 GB. Nothing local reads
+them: the gate reads `bootstrap.json`, a continuation reads `partial.json`,
+`runs.jsonl` and its declared carry paths, and the dashboard reads the ledgers.
+A carry path inside one of those directories would never come back, so
+`generate-job` and `submit` refuse it.
+
+`python skills/remote-execution/scripts/remote_cli.py prune-caches --product
+<dir>` lists what older fetches left there, with the bytes they hold, and
+`--apply` removes it, reporting `removed`, `failed` and the bytes `freed`; it
+exits 1 when a directory could not be removed and 2 when `--product` is not a
+directory. Symlinks are neither followed nor removed.
 
 ## Quarantine location
 

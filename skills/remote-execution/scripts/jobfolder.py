@@ -288,6 +288,11 @@ def validate_clone_paths(
     return tuple(validated)
 
 
+#: The clone's regenerable directories a fetch leaves out (REGENERABLE_DIRNAMES
+#: in adapters/colab.py): a carry path inside one would never come back.
+FETCH_SKIPPED_DIRNAMES = frozenset({".cache", "__pycache__", ".venv", ".git"})
+
+
 def validate_carry_paths(carry_paths: Sequence[str]) -> tuple[str, ...]:
     """The paths, relative to the product folder, whose contents a
     continuation of this job needs carried from the session before it
@@ -312,6 +317,13 @@ def validate_carry_paths(carry_paths: Sequence[str]) -> tuple[str, ...]:
             raise JobFolderError(
                 f"refusing carry path {raw!r}: names the product folder itself, "
                 "not a path inside it"
+            )
+        hidden = [part for part in candidate.parts if part in FETCH_SKIPPED_DIRNAMES]
+        if hidden:
+            raise JobFolderError(
+                f"refusing carry path {raw!r}: it lies in {hidden[0]!r}, a directory "
+                "a fetch leaves out of the returned clone, so the continuation would "
+                "start without it; carry it from a folder such as Results/checkpoints"
             )
         validated.append(candidate.as_posix())
     return tuple(validated)

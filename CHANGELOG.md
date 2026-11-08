@@ -24,6 +24,13 @@ number is `0`, breaking changes can still arrive without a major bump.
   at the end. Each product shows its discussion first and its figures, convergence, tables and significance on
   demand, and the experiments tutor closes the tab. On a QMLEEG workspace the tab drops from about 39,000 px to
   about 3,600.
+- **Remote results come back without the clone's dataset caches.** Fetch now skips every file under a `.cache`,
+  `__pycache__`, `.venv` or `.git` directory of the job's `clone/`, on Kaggle and on Colab. Bringing them back
+  kept one copy of the dataset per run: one workspace held 23 copies of a 306 MB cache, about 13 GB. Results,
+  models, logs, notebooks and rehearsal evidence still arrive. `remote_cli.py prune-caches --product <dir>` lists
+  what older fetches left, and `--apply` removes it, reporting what it could not. A carry path inside one of those
+  directories is refused when the job is generated or submitted. `setup_env.py install` also drops micromamba's
+  downloaded tarballs and index once the environment is built, and a failed cleanup no longer fails the install.
 
 ## 0.63.0
 
