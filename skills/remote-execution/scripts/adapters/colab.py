@@ -332,6 +332,24 @@ REPO_CREDENTIAL_TOKEN_FILENAME = "git-askpass-token"
 # material after the run and excludes it from its manifest, so a manifest
 # naming either one at the top level is a manifest this protocol never
 # produces.
+#: Directories under the job's `clone/` that a fetch never brings back: the
+#: dataset caches a run downloads, bytecode, a virtual environment and VCS
+#: metadata. Each run made its own copy of them, so fetching them kept one
+#: copy of the dataset per run on the operator's disk; nothing local reads
+#: them (the gate reads bootstrap.json, a continuation partial.json,
+#: runs.jsonl and its declared carry paths). Mirrored in
+#: assets/colab/executor.py, adapters/colab.py, adapters/kaggle_driver.py and
+#: remote_cli.py's prune-caches; tests/test_remote_fetch_lean.py holds them
+#: to the same answers.
+REGENERABLE_DIRNAMES = frozenset({".cache", "__pycache__", ".venv", ".git"})
+
+
+def regenerable(name: str) -> bool:
+    """Whether a fetched path lies in a regenerable directory of the clone."""
+    parts = PurePosixPath(name).parts
+    return len(parts) > 2 and parts[0] == "clone" and any(part in REGENERABLE_DIRNAMES for part in parts[1:-1])
+
+
 CREDENTIAL_MATERIAL_FILENAMES = frozenset(
     {REPO_CREDENTIAL_ASKPASS_FILENAME, REPO_CREDENTIAL_TOKEN_FILENAME}
 )
@@ -1875,6 +1893,9 @@ class ColabAdapter(ADAPTER.Adapter):
 
         materialized: list[str] = []
         for entry in sorted(entries):
+            # An executor older than this rule lists the clone's caches too.
+            if regenerable(entry):
+                continue
             local = into / entry
             local.parent.mkdir(parents=True, exist_ok=True)
             remote = f"{self._session_dir(session_name)}/{entry}"

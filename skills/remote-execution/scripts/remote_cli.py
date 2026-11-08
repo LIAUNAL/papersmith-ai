@@ -272,6 +272,10 @@ PARTIAL_SUFFIX = ".partial"
 # (or a resume) reads it; `remaining --unit-field` counts the per-unit
 # records it holds.
 KEPT_PARTIAL_DIRNAME = "partial"
+#: The clone's regenerable directories a fetch no longer brings back (see
+#: REGENERABLE_DIRNAMES in adapters/colab.py); `prune-caches` clears the ones
+#: an older fetch left under `.remote-execution/`.
+REGENERABLE_DIRNAMES = frozenset({".cache", "__pycache__", ".venv", ".git"})
 
 # The run states after which an incomplete fetch is RECORDED, as an
 # `errored` event naming the kept bytes: the run is over, and it did not
@@ -5013,6 +5017,17 @@ def _build_parser() -> argparse.ArgumentParser:
     # its own for automatic selection to take over.
     smoke_record.add_argument("--worker", required=True)
 
+    prune = subparsers.add_parser(
+        "prune-caches",
+        help="list (or, with --apply, remove) the dataset caches, bytecode, "
+        "virtual environments and VCS metadata older fetches brought back "
+        "under <product>/.remote-execution/**/clone/; results, models, logs "
+        "and rehearsal evidence stay",
+    )
+    prune.add_argument("--product", required=True, type=Path)
+    prune.add_argument("--apply", action="store_true",
+                       help="remove what the dry run lists; without it nothing is removed")
+
     readiness = subparsers.add_parser(
         "readiness",
         help="state whether a job is ready for a full submission on a worker; "
@@ -5198,6 +5213,36 @@ def _refused(exc: object) -> int:
     print(f"error: {exc}", file=sys.stderr)
     print(json.dumps({"objective": OBJECTIVE_FLOW}, indent=2), file=sys.stderr)
     return 1
+
+
+def cmd_prune_caches(product: Path, *, apply: bool = False) -> dict:
+    """The clone's regenerable directories under `<product>/.remote-execution`,
+    with the bytes they hold, removed when `apply` is set. Only directories
+    inside a fetched `clone/` count; symlinks are neither followed nor removed."""
+    base = product / ".remote-execution"
+    found: list[Path] = []
+    if base.is_dir() and not base.is_symlink():
+        for dirpath, dirnames, _ in os.walk(base):
+            in_clone = "clone" in Path(dirpath).relative_to(base).parts
+            keep = []
+            for name in sorted(dirnames):
+                path = Path(dirpath) / name
+                if path.is_symlink():
+                    continue
+                if in_clone and name in REGENERABLE_DIRNAMES:
+                    found.append(path)
+                else:
+                    keep.append(name)
+            dirnames[:] = keep
+    total = 0
+    for path in found:
+        for inner, _, files in os.walk(path):
+            total += sum(os.lstat(os.path.join(inner, name)).st_size for name in files)
+    if apply:
+        for path in found:
+            shutil.rmtree(path)
+    return {"product": str(product), "dirs": [path.relative_to(product).as_posix() for path in found],
+            "bytes": total, "applied": apply}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -5688,6 +5733,10 @@ def main(argv: list[str] | None = None) -> int:
         # verdict: 0 only when no row fails.
         print(json.dumps(result, sort_keys=True, default=str))
         return 0 if result["summary"]["ok"] else 1
+
+    if args.command == "prune-caches":
+        print(json.dumps(cmd_prune_caches(args.product, apply=args.apply), indent=2))
+        return 0
 
     if args.command == "readiness":
         try:

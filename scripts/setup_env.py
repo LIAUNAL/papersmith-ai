@@ -369,6 +369,10 @@ def cmd_install(args: argparse.Namespace) -> int:
         run(mm, ["run", "-n", args.name, "python", "-m", "pip", "install", *pip_packages],
             mamba_env())
 
+    # The environment keeps its files; the downloaded tarballs and the index
+    # cache only weigh on the workspace's disk once it is built.
+    run(mm, ["clean", "--all", "--yes"], mamba_env())
+
     print("\n[setup] done. Activate or run through the environment:")
     print(f"  micromamba run -n {args.name} python skills/paper-ingestion/scripts/extract_pdf.py --list")
     print(f"  micromamba run -n {args.name} python -m pytest tests/")

@@ -11,6 +11,15 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Remote results come back without the clone's dataset caches.** Fetch now skips every file under a `.cache`,
+  `__pycache__`, `.venv` or `.git` directory of the job's `clone/`, on Kaggle and on Colab. Bringing them back
+  kept one copy of the dataset per run: one workspace held 23 copies of a 306 MB cache, about 13 GB. Results,
+  models, logs, notebooks and rehearsal evidence still arrive. `remote_cli.py prune-caches --product <dir>` lists
+  what older fetches left, and `--apply` removes it. `setup_env.py install` also drops micromamba's downloaded
+  tarballs once the environment is built.
+
 ## 0.63.0
 
 - **Concept-tree statements are short.** `citations_cli.py check` now refuses a central problem longer than four
