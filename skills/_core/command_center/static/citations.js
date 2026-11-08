@@ -32,7 +32,8 @@
     const lab = c.lab ? ` <span class="badge">${esc(c.lab)}</span>` : '';
     // The reference opens on the SOTA constellation (atlas-reference.js).
     return `<li style="margin-top: 0.25rem;"><button type="button" class="cite-link" data-atlas-ref="${esc(c.id)}" title="${esc(t('citations.openInAtlas'))}"><strong>${esc(c.title || c.id)}</strong></button>${year}${lab}
-        ${c.why ? `<span style="color: var(--text-muted);"> — ${esc(c.why)}</span>` : ''}</li>`;
+        ${c.why ? `<span style="color: var(--text-muted);"> — ${esc(c.why)}</span>` : ''}
+        ${c.quote ? `<blockquote class="cite-quote" style="margin: 0.2rem 0 0 0.8rem; font-style: italic; color: var(--text-dim);">“${esc(c.quote)}”</blockquote>` : ''}</li>`;
   }
 
   function block(key) {

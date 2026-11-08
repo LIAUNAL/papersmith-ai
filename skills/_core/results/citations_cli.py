@@ -70,6 +70,14 @@ def _check(root: Path) -> int:
     return _emit({"ok": False, "error": "SOTA_CITATIONS_OWED", "message": message, **summary}, 1)
 
 
+def _routes(root: Path) -> int:
+    """Which ideas each pool reference is cited for, with the quote each takes."""
+    if not root.is_dir():
+        return _emit({"ok": False, "error": "ROOT_ABSENT", "message": f"{root} is not a directory"}, 1)
+    found = citations.state(root)["routes"]
+    return _emit({"ok": True, "routes": found, "uncited": [route["id"] for route in found if not route["ideas"]]})
+
+
 def _crossref(doi: str) -> dict[str, Any] | None:
     """A DOI's work type, ISSNs and issued year, ``None`` when Crossref does not answer."""
     request = urllib.request.Request(CROSSREF_WORKS + urllib.parse.quote(doi, safe=""),
@@ -213,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check", help="Say which ideas still owe their citations")
     check.add_argument("--root", default=".", help="Workspace root (default: current dir)")
+    routes = sub.add_parser("routes", help="List the ideas each pool reference is cited for, and the uncited ones")
+    routes.add_argument("--root", default=".", help="Workspace root (default: current dir)")
     rank = sub.add_parser("rank", help="Record each pool reference's work type and SJR quartile")
     rank.add_argument("--root", default=".", help="Workspace root (default: current dir)")
     rank.add_argument("--sjr", help="SJR CSV (default: the newest imported table)")
@@ -224,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "lab":
         return _confirm_lab(Path(args.root), args.id, args.lab, args.evidence)
+    if args.command == "routes":
+        return _routes(Path(args.root))
     return _rank(Path(args.root), args.sjr) if args.command == "rank" else _check(Path(args.root))
 
 

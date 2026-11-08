@@ -297,7 +297,8 @@ accepted revision:
 
 ```json
 {"schema": 1, "ideas": {
-  "pillar:pillar-1": [{"id": "<pool identifier>", "why": "<how this reference supports the idea>"}],
+  "pillar:pillar-1": [{"id": "<pool identifier>", "why": "<how this reference supports the idea>",
+                       "quote": "<the span of its abstract that holds the idea, verbatim>"}],
   "hypothesis:H1": [], "layer:<layer name>": [], "equation:1": []}}
 ```
 
@@ -307,9 +308,14 @@ Each idea has 2 to 5 entries with distinct ids; each `id` is a
 `candidates[].identifier` of `sota-pool/candidates.json`, and a reference outside
 the pool does not count: name it for `/plausibility` instead of citing it. `why`
 says, in at most 300 characters, how that reference supports that idea, and
-never claims more than the reference's abstract or ingested text states: passing
-the check proves pool membership and a stated reason, not that the reference
-supports the idea. Keys of ideas that no longer exist are ignored. After writing
+never claims more than the reference's abstract or ingested text states.
+`quote` copies, verbatim (whitespace aside), 20 to 300 characters of that
+reference's `abstract` in the pool that hold the idea; the check refuses a
+quote the abstract does not contain, a citation without one, and a reference
+whose pool record has no abstract. A quote starts and ends on word boundaries. A reference whose abstract holds no span for
+the idea does not support it: cite another one. `citations_cli.py routes --root
+.` lists, per pool reference, the ideas it is cited for with their quotes, and
+the references no idea cites. Keys of ideas that no longer exist are ignored. After writing
 it, run `python skills/_core/results/citations_cli.py check --root .`, which
 prints what is owed and exits non-zero until every idea is cited. Then run `smith atlas coverage .`: a cited reference the SOTA constellation does not draw (a journal pass can add one to the pool after the constellation was drawn) goes to the `sota-grapher` agent, which appends its system to `sota-pool/atlas.json` and rebuilds with `smith atlas build .`. Experiments
 live in the same file and belong to `/experimental-deliberation`; the check also
