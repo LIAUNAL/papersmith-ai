@@ -17,10 +17,12 @@
   <script src="./i18n/es.js?v=0.64.0"></script>
   <script src="./i18n.js?v=0.64.0"></script>
   <script src="./text-size.js?v=0.64.0"></script>
+  <script src="./section-folds.js?v=0.64.0"></script>
   <script src="./cli-console.js?v=0.64.0"></script>
   <link rel="stylesheet" href="./vendor/katex/katex.min.css">
   <script src="./vendor/katex/katex.min.js"></script>
   <script src="./citations.js?v=0.64.0"></script>
+  <script src="./atlas-reference.js?v=0.64.0"></script>
   <script src="./math-panel.js?v=0.64.0"></script>
   <script src="./contribution-affinity.js?v=0.64.0"></script>
   <script src="./model-panel.js?v=0.64.0"></script>
@@ -2264,8 +2266,29 @@
     .concept-tree__node--central { border-left: 4px solid #ef4444; }
     .concept-tree__node--effect { border-top: 3px solid #f59e0b; }
     .concept-tree__node--cause { border-bottom: 3px solid #38bdf8; }
-    .concept-tree__links { display: block; width: 100%; height: 3rem; }
-    .concept-tree__links line { stroke: var(--text-dim); stroke-width: 1.5; }
+    /* Pillars over hypotheses: labelled boxes and arrows drawn from their edges. */
+    .concept-tree--novelty { position: relative; }
+    .concept-tree__legend { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; max-width: 70rem; }
+    .concept-tree--novelty .concept-tree__level + .concept-tree__level { margin-top: 3.25rem; }
+    .concept-tree--novelty .concept-tree__level h5 { text-align: left; text-transform: uppercase; letter-spacing: 0.04em; position: relative; z-index: 1; }
+    .concept-tree--novelty .concept-tree__level + .concept-tree__level h5 { margin-bottom: 1.6rem; display: inline-block; background: var(--surface); padding-right: 0.5rem; }
+    .concept-tree--novelty .concept-tree__grid { grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: 0.75rem 1rem; position: relative; z-index: 1; }
+    .concept-tree__node--pillar { border-top: 4px solid var(--tone, #38bdf8); }
+    .concept-tree__node--hypothesis { border-left: 4px solid #a78bfa; }
+    .concept-tree__kind { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.3rem; }
+    .concept-tree__node--pillar .concept-tree__kind > span:first-child { color: var(--tone, #38bdf8); }
+    .concept-tree__node--hypothesis .concept-tree__kind > span:first-child { color: #a78bfa; }
+    .concept-tree__tag { border: 1px solid var(--border); border-radius: 999px; padding: 0 0.45rem; font-weight: 600; }
+    .concept-tree__name { font-weight: 700; color: var(--text); }
+    .concept-tree__text { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.3rem; }
+    .concept-tree__node--hypothesis small, .concept-tree__node--pillar small { display: block; margin-top: 0.4rem; }
+    .concept-tree--novelty.is-stacked .concept-tree__arrows { display: none; }
+    .concept-tree--novelty.is-stacked .concept-tree__level + .concept-tree__level { margin-top: 1.25rem; }
+    .concept-tree--novelty.is-stacked .concept-tree__level + .concept-tree__level h5 { margin-bottom: 0.3rem; }
+    .concept-tree__arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 0; }
+    .concept-tree__arrow { fill: none; stroke-width: 2; opacity: 0.8; transition: opacity 0.15s; }
+    .concept-tree--novelty.has-focus .concept-tree__arrow { opacity: 0.15; }
+    .concept-tree--novelty.has-focus .concept-tree__arrow.is-focus { opacity: 1; stroke-width: 3; }
 
     .model-pillar-card {
       background: var(--surface-2);
@@ -2284,7 +2307,7 @@
     }
     .model-hypothesis-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
       gap: 1rem;
       margin-top: 1rem;
     }
@@ -2967,10 +2990,35 @@
     .exp-fold[open] > .exp-fold__summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
     .exp-fold__body > section.panel, .exp-fold__body > .tutor { border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0; }
     .exp-fold__body > section > .panel__header > .panel__title, .exp-fold__body > section > h3.panel__title { display: none; }
+    /* section-folds.js: a wrapped block's own title moves to the fold's bar. */
+    .exp-fold__body > [data-fold] > .panel__header .panel__title,
+    .exp-fold__body > [data-fold] > div:first-child > h4:first-child,
+    .exp-fold__body > [data-fold] > h4:first-child,
+    .exp-fold__body > [data-fold] .concept-tree__title,
+    .exp-fold__body > [data-fold].contribution-type > h4:first-child { display: none; }
+    .exp-fold__body > [data-fold] { margin: 0 !important; border-top-left-radius: 0; border-top-right-radius: 0; }
+    .exp-fold__body > [data-fold]:not(.panel) { padding: 0.9rem 1rem; background: var(--surface); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
     .exp-flow-steps__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
     #pane-experiments .exp-attention a { color: var(--accent); font-weight: 600; }
     .exp-detail { margin-top: 0.75rem; }
     .exp-detail__summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--accent); padding: 0.45rem 0; }
+    /* A citation is a button to the SOTA constellation (atlas-reference.js). */
+    .cite-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+    .cite-link strong { color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; }
+    .cite-link:hover strong, .cite-link:focus-visible strong { text-decoration-style: solid; }
+    .atlas-ref { scroll-margin-top: 6rem; position: relative; padding: 0.7rem 2.6rem 0.7rem 0.9rem; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); border-left: 3px solid var(--accent); font-size: 0.82rem; }
+    .atlas-ref[hidden] { display: none; }
+    .atlas-ref__close { position: absolute; top: 0.5rem; right: 0.5rem; }
+    .atlas-ref__head { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; align-items: center; margin-bottom: 0.4rem; }
+    .atlas-ref__title { font-weight: 700; color: var(--text); }
+    .atlas-ref__meta { color: var(--text-muted); }
+    .atlas-ref__slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: 0.35rem 1rem; margin: 0; }
+    .atlas-ref__row dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+    .atlas-ref__row dd { margin: 0; }
+    .atlas-ref__row ul { margin: 0; padding-left: 1rem; }
+    .atlas-ref__row li span { color: var(--text-muted); }
+    .atlas-ref__note { margin-top: 0.4rem; color: var(--warn); font-size: 0.78rem; }
+    .atlas-ref__note:empty { display: none; }
     /* Rows the panels build with inline flex styles wrap too. */
     .tab-pane [style*="justify-content: space-between"], .tab-pane [style*="justify-content:space-between"],
     .tutor__modes, #pane-experiments .exp-chart figcaption { flex-wrap: wrap; }
@@ -3193,6 +3241,7 @@
             <span id="modelStageBadge" class="badge badge--ok">DELIBERATION STAGE</span>
           </div>
 
+          <div data-fold="model:problem" data-fold-title="conceptTree.problem" data-fold-open>
           <div style="margin-bottom: 1.25rem;">
             <h4 id="modelProblemTitle" style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.4rem;" data-i18n="model.problemTitle">🚨 Problem Statement &amp; Scientific Gap</h4>
             <div id="modelProblemStatementText" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-left: 4px solid var(--bad); border-radius: var(--radius); padding: 0.9rem 1.15rem; font-size: 0.86rem; color: var(--text); line-height: 1.55;" data-i18n="model.problemDefault">The research problem and the technical gap are formalized during Phase 4, proposal deliberation.</div>
@@ -3200,28 +3249,29 @@
 
           <!-- Problem tree and the tree of pillars and hypotheses (model-panel.js) -->
           <div id="modelProblemTree" style="margin-bottom: 1.25rem;"></div>
-          <div id="modelNoveltyTree" style="margin-bottom: 1.25rem;"></div>
+          </div>
+          <div id="modelNoveltyTree" style="margin-bottom: 1.25rem;" data-fold="model:noveltyTree" data-fold-title="conceptTree.novelty" data-fold-open></div>
 
           <!-- Novelty pillars (model-panel.js) -->
-          <div style="margin-bottom: 1.25rem;">
+          <div style="margin-bottom: 1.25rem;" data-fold="model:pillars" data-fold-title="model.pillarsTitle">
             <h4 id="modelPillarsTitle" style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;" data-i18n="model.pillarsTitle">✨ Novelty Pillars of the Proposal</h4>
             <div id="modelPillarGrid" class="model-pillar-grid"></div>
           </div>
 
           <!-- Hypotheses (model-panel.js) -->
-          <div>
+          <div data-fold="model:hypotheses" data-fold-title="model.hypothesesTitle">
             <h4 style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;" data-i18n="model.hypothesesTitle">🔬 Scientific Hypotheses</h4>
             <div id="modelHypothesisGrid" class="model-hypothesis-grid"></div>
           </div>
 
           <!-- NeurIPS contribution type of the proposal, from paper-reviewer (model-panel.js) -->
-          <div id="modelContributionType" class="contribution-type" style="margin-top: 1.25rem;"></div>
+          <div id="modelContributionType" class="contribution-type" style="margin-top: 1.25rem;" data-fold="model:contribution" data-fold-title="contribution.title" data-fold-open></div>
         </div>
       </div>
 
       <!-- MODULE 2: CONCEPT MAP (model-panel.js) -->
       <div id="modelSecMapa" class="model-section">
-        <div class="panel">
+        <div class="panel" data-fold="model:map" data-fold-title="model.sec2">
           <div class="panel__header">
             <div class="panel__title">
               <span data-i18n="model.sec2">🗺️ 2. Concept Map of the Architecture &amp; Data Flow</span>
@@ -3237,7 +3287,7 @@
 
       <!-- MODULE 3: THE PAPER'S MATHEMATICS + SOCRATIC TUTOR (math-panel.js) -->
       <div id="modelSecMatematico" class="model-section">
-        <div class="panel math-panel">
+        <div class="panel math-panel" data-fold="model:math" data-fold-title="math.title" data-fold-open>
           <div class="panel__header">
             <div class="panel__title"><span data-i18n="math.title">📐 3. The paper's mathematics</span></div>
             <div class="panel__tools">
@@ -3338,7 +3388,7 @@
     <!-- TAB: NOVELTY & FINDINGS ASSESSMENT -->
     <div id="pane-novelty" class="tab-pane">
       <!-- The manuscript summary diagram (manuscript-graph-panel.js): topic to conclusions. -->
-      <section class="panel" id="manuscriptSummaryPanel" style="margin-bottom: 1rem;">
+      <section class="panel" id="manuscriptSummaryPanel" style="margin-bottom: 1rem;" data-fold="novelty:summary" data-fold-title="atlas.title.summary" data-fold-open>
         <div class="panel__header">
           <div class="panel__title">
             <span data-i18n="atlas.title.summary" title="Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)" data-i18n-attr="title:atlas.btn.summaryTitle">🧭 Manuscript summary graph — from topic to conclusions</span>
@@ -3474,6 +3524,13 @@
             <button class="btn btn--sm" onclick="clearAtlasSelection()">✕</button>
           </span>
           <span id="atlasSelResult" style="flex-basis: 100%; color: var(--text-muted); font-size: 0.74rem;"></span>
+        </div>
+
+        <!-- A cited reference opened from a panel (atlas-reference.js) -->
+        <div id="atlasReferenceCard" class="atlas-ref" hidden>
+          <button type="button" class="btn btn--sm atlas-ref__close" data-atlas-ref-close aria-label="Close" data-i18n-attr="aria-label:common.close">✕</button>
+          <div id="atlasReferenceBody"></div>
+          <p id="atlasReferenceNote" class="atlas-ref__note"></p>
         </div>
 
         <!-- Help bar: mouse interaction sensitivity -->
@@ -4034,18 +4091,40 @@
       document.getElementById('themeBtn').textContent = dark ? t('theme.light') : t('theme.dark');
     }
 
+    // The framed views (the Archify flow, the manuscript summary) take the
+    // dashboard's theme, never the operating system's: Archify reads
+    // `archify-theme` on load, and both follow `data-theme` on their document.
+    const THEMED_FRAMES = ['flowIframe', 'manuscriptSummaryIframe'];
+    function syncFrameThemes(theme) {
+      try { localStorage.setItem('archify-theme', theme); } catch (_) { /* this page only */ }
+      THEMED_FRAMES.forEach((id) => {
+        const frame = document.getElementById(id);
+        if (!frame) return;
+        if (!frame.dataset.themeSync) {
+          frame.dataset.themeSync = '1';
+          frame.addEventListener('load', () => syncFrameThemes(document.documentElement.getAttribute('data-theme') || 'dark'));
+        }
+        try {
+          const doc = frame.contentDocument;
+          if (doc && doc.documentElement && doc.URL !== 'about:blank') doc.documentElement.setAttribute('data-theme', theme);
+        } catch (_) { /* another origin keeps its own theme */ }
+      });
+    }
+
     function toggleTheme() {
       const html = document.documentElement;
       const nextTheme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       html.setAttribute('data-theme', nextTheme);
       localStorage.setItem('papersmith-theme', nextTheme);
       renderThemeButton();
+      syncFrameThemes(nextTheme);
     }
 
     // Init theme
     const savedTheme = localStorage.getItem('papersmith-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
     renderThemeButton();
+    syncFrameThemes(savedTheme);
 
     function navigateTab(tabId) {
       activeTab = tabId;

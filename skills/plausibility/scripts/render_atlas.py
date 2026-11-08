@@ -768,7 +768,7 @@ const NOTES = {
 };
 const viewerHooks = {
   onSelect: key => { showPlanet(key); reportPlanet(key); },
-  onHover: key => { hovered = key; dimTo(key ? hoverKeep(key) : familyKeep()); },
+  onHover: key => { hovered = key; dimTo(key ? hoverKeep(key) : (focusedKeep || familyKeep())); },
   afterDraw: drawNames,
 };
 let viewer = null;
@@ -890,6 +890,16 @@ document.getElementById('zoomin').addEventListener('click', () => viewer && view
 document.getElementById('zoomout').addEventListener('click', () => viewer && viewer.zoom(1 / 1.5));
 document.getElementById('zoomreset').addEventListener('click', resetView);
 layoutButton.addEventListener('click', toggleLayout);
+// The system a dashboard citation opened stays lit until another is opened.
+let focusedKeep = null;
+function focusReference(key) {
+  const system = PLANETS.get(key).system;
+  const keep = new Set(system.planets.map(p => system.id + '.' + p.id));
+  focusedKeep = keep;
+  if (viewer && typeof viewer.focus === 'function') viewer.focus(key);
+  dimTo(keep);
+  tellParent({type: 'atlas-focused', key: String(key), system: {id: String(system.id), title: String(system.title || '')}});
+}
 // Dashboard commands: only from the framing parent, only the named few.
 const COMMANDS = {
   'group-layout': () => applyLayout('groups'),
@@ -905,6 +915,12 @@ window.addEventListener('message', event => {
   if (!(event.source === window.parent) || window.parent === window) return;
   const data = event.data;
   if (!data || typeof data !== 'object' || data.type !== 'atlas-command') return;
+  // A cited reference opened from the dashboard: centre its system, light it
+  // and dim the rest, and say so, so the dashboard knows this page can.
+  if (data.command === 'focus' && typeof data.key === 'string' && PLANETS.has(data.key)) {
+    focusReference(data.key);
+    return;
+  }
   if (typeof data.command !== 'string' || !Object.prototype.hasOwnProperty.call(COMMANDS, data.command)) return;
   COMMANDS[data.command]();
 });

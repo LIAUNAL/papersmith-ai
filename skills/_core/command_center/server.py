@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
+from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -2716,6 +2716,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # whether its inputs changed since it was written. Written by `bib build`,
         # `verify`, a successful compile, or `smith atlas cited`.
         return JSONResponse(atlas_manuscript.read_layer(root_path), headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/atlas/reference")
+    def api_atlas_reference(id: str = "") -> JSONResponse:
+        # Read-only: one cited reference's pool record and its constellation
+        # system (topic, problem, novelty...), for the citation buttons.
+        if not id.strip():
+            return JSONResponse({"error": "id is required"}, status_code=400)
+        return JSONResponse(atlas_reference.reference(root_path, id), headers=dict(_PAPER_HEADERS))
 
     @app.post("/api/atlas/manuscript/build")
     def api_atlas_manuscript_build(request: Request) -> JSONResponse:

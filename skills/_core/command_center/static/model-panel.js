@@ -92,26 +92,110 @@
       </div>${treeFindings()}`;
   }
 
-  // Pillars over hypotheses, a line for each link. Both rows are equal columns,
-  // so a node's centre is known without measuring the page.
+  // Pillars over hypotheses, an arrow from each pillar to every hypothesis it
+  // supports. The arrows are drawn after layout, from the boxes' real edges
+  // (drawNoveltyArrows), so they meet the boxes at any text size or width.
   function noveltyTree(spec) {
     const novelty = spec.novelty || {};
     const pillarList = (novelty.pillars || []).filter((p) => p && (p.name || p.summary));
     const hypothesisList = (novelty.hypotheses || []).filter((h) => h && (h.title || h.statement));
     const ids = pillarList.map((p, i) => ideaId(p, 'P', i + 1));
-    const centre = (i, n) => ((i + 0.5) * 100) / n;
-    const lines = hypothesisList.flatMap((h, j) => listed(h.pillars)
+    const tones = pillarList.map((p, i) => colour(p.color, ['#38bdf8', '#a78bfa', '#34d399', '#f59e0b', '#f472b6'][i % 5]));
+    const hids = hypothesisList.map((h, j) => ideaId(h, 'H', j + 1));
+    const links = hypothesisList.flatMap((h, j) => listed(h.pillars)
       .filter((name) => ids.includes(name))
-      .map((name) => `<line x1="${centre(ids.indexOf(name), ids.length)}" y1="0" x2="${centre(j, hypothesisList.length)}" y2="100" vector-effect="non-scaling-stroke"></line>`));
-    if (!lines.length) return '';
-    const columns = (n) => `style="grid-template-columns: repeat(${n}, minmax(0, 1fr));"`;
-    return `<div class="concept-tree">
+      .map((name) => ({ from: name, to: hids[j], tone: tones[ids.indexOf(name)] })));
+    if (!links.length) return '';
+    const kind = (label, id, extra = '') => `<div class="concept-tree__kind"><span>${esc(t(label))} · ${esc(id)}</span>${extra}</div>`;
+    const pillarNodes = pillarList.map((p, i) => {
+      const to = links.filter((link) => link.from === ids[i]).map((link) => link.to);
+      return `<div class="concept-tree__node concept-tree__node--pillar" data-tree-node="${esc(ids[i])}" style="--tone: ${tones[i]};">
+        ${kind('conceptTree.pillar', ids[i], p.badge ? `<span class="concept-tree__tag">${esc(p.badge)}</span>` : '')}
+        <p class="concept-tree__name">${rich(p.name || p.summary)}</p>
+        ${p.name && p.summary ? `<p class="concept-tree__text">${rich(p.summary)}</p>` : ''}
+        ${to.length ? `<small>${esc(t('conceptTree.supports', { ids: to.join(', ') }))}</small>` : ''}
+      </div>`;
+    }).join('');
+    const hypothesisNodes = hypothesisList.map((h, j) => {
+      const from = listed(h.pillars).filter((name) => ids.includes(name));
+      return `<div class="concept-tree__node concept-tree__node--hypothesis" data-tree-node="${esc(hids[j])}">
+        ${kind('conceptTree.hypothesis', hids[j])}
+        <p class="concept-tree__name">${rich(h.title || h.statement)}</p>
+        ${h.title && h.statement ? `<p class="concept-tree__text">${rich(h.statement)}</p>` : ''}
+        ${from.length ? `<small>${esc(t('conceptTree.supportedBy', { ids: from.join(', ') }))}</small>` : ''}
+      </div>`;
+    }).join('');
+    const markers = tones.map((tone, i) => `<marker id="ctArrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${tone}"></path></marker>`).join('');
+    const arrows = links.map((link) => `<path class="concept-tree__arrow" data-from="${esc(link.from)}" data-to="${esc(link.to)}" style="stroke: ${link.tone};" marker-end="url(#ctArrow${ids.indexOf(link.from)})"></path>`).join('');
+    return `<div class="concept-tree concept-tree--novelty" data-novelty-tree>
         <h4 class="concept-tree__title">${esc(t('conceptTree.novelty'))}</h4>
-        <div class="concept-tree__grid" ${columns(ids.length)}>${pillarList.map((p, i) => treeNode('pillar', ids[i], p.name || p.summary, '')).join('')}</div>
-        <svg class="concept-tree__links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${lines.join('')}</svg>
-        <div class="concept-tree__grid" ${columns(hypothesisList.length)}>${hypothesisList.map((h, i) => treeNode('hypothesis', ideaId(h, 'H', i + 1), h.title || h.statement, '')).join('')}</div>
+        <p class="concept-tree__legend">${esc(t('conceptTree.legend'))}</p>
+        <div class="concept-tree__level"><h5>${esc(t('conceptTree.pillarsLevel'))}</h5>
+          <div class="concept-tree__grid">${pillarNodes}</div></div>
+        <div class="concept-tree__level"><h5>${esc(t('conceptTree.hypothesesLevel'))}</h5>
+          <div class="concept-tree__grid">${hypothesisNodes}</div></div>
+        <svg class="concept-tree__arrows" aria-hidden="true"><defs>${markers}</defs>${arrows}</svg>
       </div>`;
   }
+
+  // Each arrow leaves the bottom edge of its pillar and lands on the top edge
+  // of its hypothesis; several arrows on one edge spread apart so none hides
+  // another. Pointing at a box brings its arrows forward.
+  function drawNoveltyArrows() {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    document.querySelectorAll('[data-novelty-tree]').forEach((tree) => {
+      const svg = tree.querySelector('.concept-tree__arrows');
+      const box = tree.getBoundingClientRect();
+      if (!svg || !box.width) return;
+      // One column (a phone, or very large text): arrows would run behind the
+      // boxes, so the "Supports" and "Supported by" lines carry the links.
+      const pillarBoxes = Array.from(tree.querySelectorAll('.concept-tree__node--pillar'), (node) => node.getBoundingClientRect());
+      const stacked = pillarBoxes.length > 1 && pillarBoxes.every((rect) => Math.abs(rect.left - pillarBoxes[0].left) < 1);
+      tree.classList.toggle('is-stacked', stacked);
+      if (stacked) return;
+      svg.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+      const nodes = new Map(Array.from(tree.querySelectorAll('[data-tree-node]'),
+        (node) => [node.dataset.treeNode, node.getBoundingClientRect()]));
+      const paths = Array.from(svg.querySelectorAll('.concept-tree__arrow'));
+      const spread = (key) => {
+        const group = paths.reduce((acc, path) => { (acc[path.dataset[key]] = acc[path.dataset[key]] || []).push(path); return acc; }, {});
+        return (path) => {
+          const peers = group[path.dataset[key]];
+          return (peers.indexOf(path) - (peers.length - 1) / 2) * 12;
+        };
+      };
+      const out = spread('from');
+      const into = spread('to');
+      paths.forEach((path) => {
+        const a = nodes.get(path.dataset.from);
+        const b = nodes.get(path.dataset.to);
+        if (!a || !b) return;
+        const x1 = a.left + a.width / 2 - box.left + out(path);
+        const y1 = a.bottom - box.top;
+        const x2 = b.left + b.width / 2 - box.left + into(path);
+        const y2 = b.top - box.top - 2;
+        const bend = Math.max(18, (y2 - y1) / 2);
+        path.setAttribute('d', `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2}`);
+      });
+      if (!tree.dataset.arrowsWired) {
+        tree.dataset.arrowsWired = '1';
+        if (typeof ResizeObserver === 'function') new ResizeObserver(() => drawNoveltyArrows()).observe(tree);
+        tree.addEventListener('mouseover', (event) => {
+          const node = event.target.closest && event.target.closest('[data-tree-node]');
+          const id = node ? node.dataset.treeNode : '';
+          tree.classList.toggle('has-focus', Boolean(id));
+          tree.querySelectorAll('.concept-tree__arrow').forEach((path) => {
+            path.classList.toggle('is-focus', Boolean(id) && (path.dataset.from === id || path.dataset.to === id));
+          });
+        });
+        tree.addEventListener('mouseleave', () => {
+          tree.classList.remove('has-focus');
+          tree.querySelectorAll('.concept-tree__arrow.is-focus').forEach((path) => path.classList.remove('is-focus'));
+        });
+      }
+    });
+  }
+  if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', drawNoveltyArrows);
 
   function pillars(spec) {
     const list = ((spec.novelty || {}).pillars || []).filter((p) => p && (p.name || p.summary));
@@ -218,6 +302,7 @@
     const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
     put('modelProblemTree', problemTree(lastSpec));
     put('modelNoveltyTree', noveltyTree(lastSpec));
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(drawNoveltyArrows);
     const statement = document.getElementById('modelProblemStatementText');
     if (statement) statement.hidden = Boolean(centralText(lastSpec));
     put('modelPillarGrid', pillars(lastSpec));

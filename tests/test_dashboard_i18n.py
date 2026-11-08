@@ -100,7 +100,8 @@ class CatalogueTests(unittest.TestCase):
 
     def test_every_panel_reads_the_catalogue(self) -> None:
         # text-size.js draws no text: its options are the scale factors themselves.
-        for path in (path for path in PANELS if path.name != "text-size.js"):
+        # section-folds.js reads each title from the catalogue key its block names.
+        for path in (path for path in PANELS if path.name not in ("text-size.js", "section-folds.js")):
             with self.subTest(panel=path.name):
                 self.assertRegex(path.read_text(encoding="utf-8"), r"(?<![\w.$])t\(\s*'")
 

@@ -225,7 +225,12 @@ def _runtime_status(root: Path) -> dict[str, Any]:
     mamba_local = root / ".micromamba" / "bin" / mamba_name
     fallback_local = root / ".micromamba" / "bin" / "micromamba"
     micromamba = fs.is_regular_file(mamba_local) or fs.is_regular_file(fallback_local) or shutil.which("micromamba") is not None
-    llama = shutil.which("llama-server") is not None or os.environ.get("LLAMA_CPP_BINARY") is not None
+    # `setup_env.py install` puts llama-server in the workspace environment,
+    # which is not on PATH: look there too, or status reports a missing engine
+    # that is installed.
+    env_bin = root / ".micromamba" / "envs" / "papersmith" / ("Library/bin" if os.name == "nt" else "bin")
+    llama = (shutil.which("llama-server") is not None or os.environ.get("LLAMA_CPP_BINARY") is not None
+             or any(fs.is_regular_file(env_bin / name) for name in ("llama-server", "llama-server.exe")))
     return {
         "node": node,
         "micromamba": micromamba,

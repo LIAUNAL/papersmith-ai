@@ -11,6 +11,36 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **A pillars and hypotheses tree that explains itself.** Each box now says what it is ("Pillar · C1",
+  "Hypothesis · E1") with its name, its statement, and the pillars it rests on or the hypotheses it supports. A
+  legend says what a pillar and a hypothesis are and where their ids come from. Curved arrows in each pillar's
+  colour run from the pillar's edge to every hypothesis it supports, drawn from the boxes' real positions so they
+  hold at any text size, and pointing at a box brings its arrows forward. On one column, as on a phone, the arrows
+  give way to the written links.
+- **The Concept Map & Model and Novelty & Findings tabs fold like Experiments.** Each block sits behind a bar with
+  its title: the problem tree, the pillars and hypotheses tree, the pillar and hypothesis cards, the NeurIPS
+  contribution type, the concept map and the mathematics; and the manuscript summary, the proof-of-concept check,
+  the decision gate, the hypotheses matrix, the contribution type, the SOTA sobriety and the rigor audit. Blocks that
+  ask for an action start open, the rest folded, and each choice is remembered per browser.
+- **A cited reference opens on the SOTA constellation.** Every SOTA citation the Concept Map, mathematics and
+  Experiments panels show is now a link. A click opens the Graph Atlas, centres and lights that reference's system
+  while the rest dims, and shows a card with what the constellation knows about it: application and AI topics,
+  problem, application, family, branch, novelty, contributions, results and conclusions
+  (`GET /api/atlas/reference?id=`). A reference the constellation does not draw shows its pool record and says so;
+  an atlas drawn by an older release asks to regenerate the graph.
+- **The dashboard's theme rules the framed views too.** The Archify flow followed the operating system's
+  preference, so it was white on a light Ubuntu under a dark dashboard and black on a dark Mac under a light one;
+  the manuscript summary was always dark. Both now take the dashboard's theme on load and whenever it changes
+  (Archify through `archify-theme`, the summary through a new light palette), checked by
+  `ui/e2e/shipped/theme.spec.ts` for a light and a dark system under either theme.
+- **System tools are reported where they can be fixed.** `smith status` no longer says "OCR Engine Missing" when
+  `llama-server` is in the workspace environment, where `setup_env.py install` puts it. `smith doctor` now names
+  the command that installs a missing TeX engine or PDF rasterizer on the platform it runs on (`apt` packages on
+  Linux, MacTeX or poppler through Homebrew on macOS); `smith init` does not install them, since they are system
+  packages.
+
 ## 0.64.0
 
 - **A text-size control and a dashboard that fits every screen.** The top bar's `A ×1` selector scales the

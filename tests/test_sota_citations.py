@@ -596,10 +596,15 @@ class PanelTests(_Ideas):
         self.all_ideas()
         cite_everything(self.root)
         tree = render_panels(self.payload())["noveltyTree"]
-        self.assertEqual(tree.count("<line"), 2)
-        for text in ("P1", "P2", "H1", "Second pillar", "It improves."):
+        self.assertEqual(tree.count('class="concept-tree__arrow"'), 2)
+        self.assertIn('data-from="P1" data-to="H1"', tree)
+        for text in ("Pillar · P1", "Pillar · P2", "Hypothesis · H1", "Second pillar", "It improves.",
+                     "Supported by P1, P2", "Pillars: the design ideas the proposal stands on",
+                     "Hypotheses: testable predictions the experiments check",
+                     "An arrow goes from a pillar to each hypothesis it supports"):
             with self.subTest(text=text):
                 self.assertIn(text, tree)
+        self.assertLess(tree.index("Pillar · P1"), tree.index("Hypothesis · H1"))
 
     def test_a_workspace_without_trees_says_what_it_owes(self) -> None:
         _write(self.root / ".papersmith" / "model_spec.json", json.dumps(
