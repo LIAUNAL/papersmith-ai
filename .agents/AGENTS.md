@@ -97,10 +97,10 @@ skill refuses when its input is missing.
      skills/_core/results/citations_cli.py check --root .` says what is owed. Each reference the ideas cite must also be drawn in the SOTA constellation: `smith atlas coverage .` lists the ones it is not.
    - **Contribution type**: once the hypotheses are discussed and the
      mathematics and the novelty proposed, the `paper-reviewer` agent
-     classifies the proposal's NeurIPS contribution type
+     classifies the proposal's contribution type
      (`contribution_type` in `.papersmith/model_spec.json`), shown right after
-     the hypotheses. This NeurIPS judge is the phase's fifth step: the
-     "Lanzar el juez NeurIPS" button, on that card and in the stepper, launches
+     the hypotheses. This judge-reviewer is the phase's fifth step: the
+     "Lanzar el juez-revisor" button, on that card and in the stepper, launches
      it, and Phase 5 stays locked until it records a type.
 5. **Proof of concept and experiments**, in this order:
    `/experimental-deliberation` writes the protocol in `experiments/`; a toy
@@ -163,11 +163,11 @@ skill refuses when its input is missing.
      `/remote-execution`: generate-job → submit --smoke → fetch --smoke /
      smoke record → readiness → gate → submit → status / poll → fetch.
    - **Findings and novelty**: once a stage's discussion is complete, the
-     `paper-reviewer` agent classifies the NeurIPS contribution type of its
+     `paper-reviewer` agent classifies the contribution type of its
      findings (`contribution_type` in `Results/discussion.json`). The
      Novedad & Hallazgos tab launches that judge from a button on its
      contribution-type card, and G-EXP-POC and G-NOVELTY refuse their approval
-     (`NEURIPS_JUDGE_OWED`) while a complete discussion of that stage has no
+     (`JUDGE_REVIEW_OWED`) while a complete discussion of that stage has no
      type. The tab contrasts the hypothesis verdicts with the SOTA
      pool and the operator records `G-NOVELTY` (`smith novelty approve` or
      `iterate`) before the paper is written.

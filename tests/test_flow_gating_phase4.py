@@ -1,7 +1,7 @@
 """Phase 4 forces its steps in order: the problem and its pillars, then the
 hypotheses, then the mathematics, then the SOTA citations
-(`test_sota_citations.py`), then the NeurIPS judge
-(`test_neurips_judge_gate.py`). Each step reads its own evidence on disk, each
+(`test_sota_citations.py`), then the judge-reviewer
+(`test_judge_review_gate.py`). Each step reads its own evidence on disk, each
 is locked until the one before it passed, the phase passes only with all five,
 and the Concept Map tab offers a "Generate & deliberate" button per
 step that types the step's slash command into the agent terminal."""
@@ -108,7 +108,7 @@ class _Workspace(unittest.TestCase):
 class StepDerivationTests(_Workspace):
     def test_an_empty_workspace_opens_the_first_step_and_locks_the_rest(self) -> None:
         steps = phase_steps.proposal_steps(self.root)
-        self.assertEqual([s["id"] for s in steps], ["problem_pillars", "hypotheses", "mathematics", "sota_citations", "neurips_review"])
+        self.assertEqual([s["id"] for s in steps], ["problem_pillars", "hypotheses", "mathematics", "sota_citations", "judge_review"])
         self.assertEqual([s["status"] for s in steps], ["ACTIVE", "LOCKED", "LOCKED", "LOCKED", "LOCKED"])
         self.assertEqual([s["requires"] for s in steps],
                          [None, "problem_pillars", "hypotheses", "mathematics", "sota_citations"])

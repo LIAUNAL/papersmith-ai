@@ -11,7 +11,7 @@ number it carries:
   of the proposed prompt, launched as `/plausibility <draft>`);
 - `4a`: the proposal's ordered steps on the *Mapa Conceptual* tab — the central
   problem and its pillars, then the hypotheses, then the mathematics, each locked
-  until the one before it exists — with the `paper-reviewer`'s NeurIPS
+  until the one before it exists — with the `paper-reviewer`'s
   contribution type classified after the hypotheses (`.papersmith/model_spec.json`)
   and the `/math-tutor`;
 - `5` and `5a` to `5g`: Phase 5 in the order the harness entrypoints state it —
@@ -23,7 +23,7 @@ number it carries:
   5.9), the full experiments that only start after it (their discussion gates
   5.12 and `experiments-reviewer`'s `Results/reviewer_report.json` gates 5.13),
   the credentials, the remote rehearsal and launch, and the findings: their
-  NeurIPS contribution type and the `G-NOVELTY` operator gate
+  contribution type and the `G-NOVELTY` operator gate
   (`.papersmith/novelty_gate.json`, `smith novelty`), which releases the writing;
 - `6` to `10`: scaffolding, declarations, writing, figures and the paper, whose
   PDF preview carries the style and redundancy panel;

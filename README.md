@@ -79,7 +79,7 @@ The full path, from a PDF to a compiled paper:
 |---|---------|----------|-------------------------|
 | 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, the dashboard's optional thematic help turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
 | 2 | `/paper-ingestion` | Converts the reference PDFs into readable Markdown (equations in LaTeX, tables as tables, figures as files) | `guidance/<folder>/` |
-| 3 | `/proposal-deliberation` | Builds the proposal with you in one order — the central problem and its pillars, then the hypotheses, then the mathematics, each locked until the one before it exists — and publishes each agreement as a managed revision, with the SOTA constellation alongside; every idea is then justified by 2 to 5 SOTA pool citations, and the `paper-reviewer` agent classifies its NeurIPS contribution type | `proposals/` (the revision and its `graph.html`); the citations in `.papersmith/citations.json`; the contribution type in `.papersmith/model_spec.json` |
+| 3 | `/proposal-deliberation` | Builds the proposal with you in one order — the central problem and its pillars, then the hypotheses, then the mathematics, each locked until the one before it exists — and publishes each agreement as a managed revision, with the SOTA constellation alongside; every idea is then justified by 2 to 5 SOTA pool citations, and the `paper-reviewer` agent classifies its contribution type | `proposals/` (the revision and its `graph.html`); the citations in `.papersmith/citations.json`; the contribution type in `.papersmith/model_spec.json` |
 | 3b | `/math-tutor` | Before implementing a revision: a Socratic tutor that discusses its concept map and mathematics with you, reads the pages you draw by hand, and checks your understanding of why the novelty holds | nothing on disk but its thread (`.papersmith/math-tutor/`); used from the dashboard's Mapa Conceptual & Modelo tab |
 | 4 | `/experimental-deliberation` | Discusses the experimental design that will put that mathematics to the test | `experiments/` |
 | 4b | `/experiments-tutor` | Consults and iterates on each experiment decision with you — architecture, hyperparameters, ablations, significance tests, the toy set's purpose, training, upper bounds (*techos*), the methods compared and their implementation — reading the protocol, the approvals, the code and the results first; it never invents a number, and any change of decision goes back to `/experimental-deliberation` | nothing on disk but its thread (`.papersmith/experiments-tutor/`); used from the dashboard's Experimentos tab |
@@ -91,7 +91,7 @@ The full path, from a PDF to a compiled paper:
 | 8b | `/experiment-diagrams` | When the proof of concept (`AGREED.md`) and then the full experiments (`Experimental_AGREED.md`) are approved, draws one TikZ diagram of each, stating the experiment's single claim along one reading spine, compiles it to PDF and PNG and reviews it, grayscale included | `implementations/<repo>/<Name>/diagrams/`, shown in the Experimentos panel |
 | 9 | `/kaggle-accounts` | Proves that the Kaggle credentials really authenticate | `store/` (never leaves the disk) |
 | 10 | `/remote-execution` | Sends work to a remote worker and keeps the record of what came back | the target repo's ledger |
-| 10b | `smith novelty {status,approve,iterate,reset}` (or the dashboard's Novedad & Hallazgos tab) | Not a skill but a gate between the experiments and the paper: you contrast the discussions' hypothesis verdicts with the SOTA pool, read the reviewer-defense checklist and record whether the evidence supports the novelty (`G-NOVELTY`), with the paper-reviewer's NeurIPS contribution type of the findings beside the matrix, or record that the work returns to experiments, proposal or plausibility | `.papersmith/novelty_gate.json` (the decision and its history) |
+| 10b | `smith novelty {status,approve,iterate,reset}` (or the dashboard's Novedad & Hallazgos tab) | Not a skill but a gate between the experiments and the paper: you contrast the discussions' hypothesis verdicts with the SOTA pool, read the reviewer-defense checklist and record whether the evidence supports the novelty (`G-NOVELTY`), with the paper-reviewer's contribution type of the findings beside the matrix, or record that the work returns to experiments, proposal or plausibility | `.papersmith/novelty_gate.json` (the decision and its history) |
 | 11 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence, stylometric burstiness analysis ($CV$), AI cliché detection and humanization under F5 invariant preservation | `paper/` |
 | 11b | `/journal-finder` (or the PDF Preview tab's *Revistas sugeridas* block) | Once the paper compiles: you pick a quartile range (`Q1`, `Q2-Q3`, `Q1-Q4`) and it ranks the journals that already publish work like the paper, each with its quartile and where it came from, open-access state, APC, h-index, a review-time estimate and the similar works that justify the fit; an agent then reads each journal's aims and scope and writes the case for it. It never submits and never contacts an editor | `paper/journal-candidates.json` and `paper/journal-candidates.md` |
 | 11c | `paper-writing` `venue` verbs and the `venue-adapter` agent (the PDF Preview tab's *Revista elegida* card) | After you choose a journal: reads its author guidelines and template, measures the manuscript against them and alerts on sections to adjust, sections missing and inconsistencies with smith's base template, proposes an adjustment plan only when it is prudent, and builds the journal's own `main.tex` once you approve the plan. Text changes go only through the `write` loop | `paper/venues/<slug>/` (the canonical `paper/main.tex` is never written) |
@@ -148,9 +148,9 @@ dashboard shows (the interface also has an English catalogue):
 |---|---|
 | **Flujo Archify** | The interactive flow diagram above and the table of every agent the workspace ships. It is the tab the dashboard opens on |
 | **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console |
-| **Mapa Conceptual & Modelo** | The proposal built in order: a stepper for the central problem and its pillars → the hypotheses → the mathematics, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the paper-reviewer's NeurIPS contribution type right after the hypotheses; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year and why) or a mark that it owes them |
+| **Mapa Conceptual & Modelo** | The proposal built in order: a stepper for the central problem and its pillars → the hypotheses → the mathematics, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the paper-reviewer's contribution type right after the hypotheses; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year and why) or a mark that it owes them |
 | **Experimentos** | A stepper proof of concept → verify → full experiment, one button each (the full-experiment button stays disabled until `G-EXP-POC` passes), then the proof-of-concept and full-experiment cards, run options and the `experiments-tutor`. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
-| **Novedad & Hallazgos** | The proof-of-concept verification card (`G-EXP-POC`), the novelty assessment with the paper-reviewer's NeurIPS contribution type of the findings, and the `G-NOVELTY` gate (below) |
+| **Novedad & Hallazgos** | The proof-of-concept verification card (`G-EXP-POC`), the novelty assessment with the paper-reviewer's contribution type of the findings, and the `G-NOVELTY` gate (below) |
 | **Secciones del Paper** | The canonical section structure of the manuscript: state, words and blocks of each section |
 | **Atlas de Grafos** | The 3D SOTA constellation (`sota-pool/atlas.html`), the manuscript's novelty graph and the candidate matrix |
 | **Previsualización PDF** | The written blocks and the compiled `paper/main.pdf` side by side, the style and redundancy panel (each section's writing style and redundancy scored from 0 to 100), and below them the journal block: *Revistas sugeridas* (the ranked journals for a quartile range you choose) and, once you pick one, *Revista elegida* (the venue state machine, the audit, the plan and its approval, and a toggle between the canonical PDF and the journal's). See [Choosing and adapting to a journal](#choosing-and-adapting-to-a-journal) |
@@ -633,10 +633,10 @@ one before it exists on disk (`.papersmith/model_spec.json` or the revision's
 *Mapa Conceptual & Modelo* tab shows the three with a *Generar y deliberar*
 button that types the step's `/proposal-deliberation` into the agent. Once the
 hypotheses are discussed and the mathematics and novelty proposed, the
-`paper-reviewer` agent classifies the proposal's NeurIPS contribution type
+`paper-reviewer` agent classifies the proposal's contribution type
 (`General`, `Theory`, `Use-Inspired`, `Concept & Feasibility` or `Negative
-Results`), shown right after the hypotheses. This NeurIPS judge is the fifth
-step: the *Lanzar el juez NeurIPS* button on that card launches it, and Phase 5
+Results`), shown right after the hypotheses. This judge-reviewer is the fifth
+step: the *Lanzar el juez-revisor* button on that card launches it, and Phase 5
 stays locked until it records a type.
 
 The fourth step comes before the judge, so it reads justified ideas: every
@@ -739,7 +739,7 @@ The proof of concept is done when its `Results/discussion.json` is complete
 (`python skills/_core/results/discussion_cli.py scaffold|check --product
 implementations/<repo>/<Name>`): a verdict per hypothesis backed by its test,
 the novelty and the qualitative analysis. The `paper-reviewer` agent then
-classifies the NeurIPS contribution type of those findings: launch it with the
+classifies the contribution type of those findings: launch it with the
 judge button in the *Novedad & Hallazgos* tab, because `G-EXP-POC` and
 `G-NOVELTY` refuse their approval until each complete discussion has its type.
 
@@ -767,7 +767,7 @@ its own complete `Results/discussion.json`.
 ### Step 10 — Decide on the findings (`G-NOVELTY`)
 
 *Novedad & Hallazgos* contrasts every hypothesis verdict with the SOTA pool,
-shows the findings' NeurIPS contribution type and the reviewer-defense
+shows the findings' contribution type and the reviewer-defense
 checklist, and records your decision with `smith novelty approve` or `iterate`
 (back to experiments, proposal or plausibility). It opens once Phase 5 has
 passed.
@@ -1060,7 +1060,7 @@ to establish it. The operator opens and closes the gates.
 | `diagram-author` | Writes a standalone TikZ diagram (`<id>.tex` + `<id>.diagram.json`) and compiles it in its own loop, up to the repair budget. It never draws a chart from measured numbers — that is the `place` verb. | `paper-writing` |
 | `figure-auditor` | Compares the components declared in the manifest against the section's prose and the pipeline steps; reports a structured verdict. | `paper-writing` |
 | `figure-visual-reviewer` | One visual pass over one rendered diagram whose mechanical audit already passed: reads a preview of at most 1400 px once and judges legibility at print scale, balance, overlaps and whether labels and arrows read correctly. Returns PASS, or FAIL with concrete fixes; it never edits a file. | `paper-writing`, `experiment-diagrams` |
-| `paper-reviewer` | Reviews the compiled paper with the NeurIPS 2026 review form; grounds pertinence, novelty and coherence in quoted evidence. | `paper-writing` |
+| `paper-reviewer` | Reviews the compiled paper with the main-track review form; grounds pertinence, novelty and coherence in quoted evidence. | `paper-writing` |
 | `section-grounding-auditor` | Reads a block's own bound source section, verbatim, and judges each subject sentence against it: `supported` — with the quoted span that carries it —, `unsupported` or `undecidable`. No code path invokes it, and `write` re-derives both sides independently rather than trusting its account. | `paper-writing` |
 | `insumos-observer` | Reads the paper's four declared input sources —`proposals/`, `experiments/`, the destination repo's code and its own run outputs— and reports, for each observable fact, whether it holds and with what evidence. It never decides a value nor runs `declare`. | `paper-writing` |
 | `ai-auditor` | Measures writing quality (sentence-cadence variation $CV$, overused academic phrasing, formulaic transitions, lexical diversity) and revises written blocks for clarity under the strict F5 invariant preservation contract (citations, numbers, math inviolable). It never hides AI use: the AI-use declaration stays mandatory. | `paper-writing` |

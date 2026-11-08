@@ -2,7 +2,7 @@
 
 The proposal is built in one order: the central problem and its pillars, then
 the hypotheses each pillar predicts, then the mathematics, then the SOTA
-citations that justify them, then the NeurIPS judge. Each step passes from evidence on disk, never from the dashboard's
+citations that justify them, then the judge-reviewer. Each step passes from evidence on disk, never from the dashboard's
 placeholder specification:
 
 * ``problem_pillars``: a problem statement and at least one pillar, from
@@ -17,7 +17,7 @@ placeholder specification:
   every direct cause, pillar, hypothesis, concept-map layer and numbered
   equation, in ``.papersmith/citations.json``, and both concept trees whole
   (``results/citations.py``), so the judge reads justified ideas;
-* ``neurips_review``: the paper-reviewer's valid ``contribution_type`` in
+* ``judge_review``: the paper-reviewer's valid ``contribution_type`` in
   ``.papersmith/model_spec.json``.
 
 A step is ``LOCKED`` while the one before it has not passed, ``ACTIVE`` when it
@@ -34,7 +34,7 @@ from typing import Any
 from . import math_view, model_spec
 
 #: The five steps in their one order; each requires the one before it.
-STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics", "sota_citations", "neurips_review")
+STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics", "sota_citations", "judge_review")
 SPEC_REL = ".papersmith/model_spec.json"
 #: How many owed keys a step's evidence names; the check prints them all.
 MAX_OWED_SHOWN = 20
@@ -157,7 +157,7 @@ def proposal_steps(root: Path | str) -> list[dict[str, Any]]:
         "sota_citations": (cited["ideas"] > 0 and not cited["owed"], cited["cited"] > 0,
                            {"ideas": cited["ideas"], "cited": cited["cited"],
                             "owed": cited["owed"][:MAX_OWED_SHOWN]}),
-        "neurips_review": (bool(found["contribution_type"]), bool(found["contribution_type"]),
+        "judge_review": (bool(found["contribution_type"]), bool(found["contribution_type"]),
                            {"type": found["contribution_type"]}),
     }
     steps: list[dict[str, Any]] = []

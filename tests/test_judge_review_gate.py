@@ -1,4 +1,4 @@
-"""The NeurIPS judge is a step the flow cannot skip.
+"""The judge-reviewer is a step the flow cannot skip.
 
 The paper-reviewer's contribution type is step 5 of Phase 4, so Phase 5 stays
 locked until the proposal carries one. A proof of concept or a full experiment
@@ -39,16 +39,16 @@ class _Proposal(_Phase4):
 class ProposalStepTests(_Proposal):
     def test_the_judge_is_the_last_step_and_needs_the_citations(self) -> None:
         steps = phase_steps.proposal_steps(self.root)
-        self.assertEqual(steps[-1]["id"], "neurips_review")
+        self.assertEqual(steps[-1]["id"], "judge_review")
         self.assertEqual((steps[-1]["status"], steps[-1]["requires"]), ("LOCKED", "sota_citations"))
 
     def test_it_opens_after_the_citations_and_passes_with_a_valid_type(self) -> None:
         self.ready()
-        self.assertEqual(self.steps()["neurips_review"]["status"], "ACTIVE")
+        self.assertEqual(self.steps()["judge_review"]["status"], "ACTIVE")
         self.ready(contribution_type={"type": "Survey", "why": "x"})
-        self.assertEqual(self.steps()["neurips_review"]["status"], "ACTIVE")
+        self.assertEqual(self.steps()["judge_review"]["status"], "ACTIVE")
         self.ready(contribution_type=TYPED)
-        step = self.steps()["neurips_review"]
+        step = self.steps()["judge_review"]
         self.assertEqual((step["status"], step["evidence"]["type"]), ("PASS", "Theory"))
 
     def test_phase_four_waits_for_the_judge_and_phase_five_with_it(self) -> None:
@@ -72,7 +72,7 @@ class ProposalStepTests(_Proposal):
 class ConceptMapButtonTests(_Proposal):
     def test_the_step_button_types_the_judge_command(self) -> None:
         self.ready()
-        result = render(phase_steps.proposal_steps(self.root), clicks=["neurips_review"])
+        result = render(phase_steps.proposal_steps(self.root), clicks=["judge_review"])
         self.assertEqual(len(result["calls"]), 1)
         text, run, kind = result["calls"][0]
         self.assertTrue(text.startswith("/proposal-deliberation "))
@@ -81,10 +81,10 @@ class ConceptMapButtonTests(_Proposal):
         self.assertEqual((run, kind), (False, "slash"))
 
     def test_a_locked_judge_sends_nothing_and_says_what_it_requires(self) -> None:
-        result = render(phase_steps.proposal_steps(self.root), clicks=["neurips_review"])
+        result = render(phase_steps.proposal_steps(self.root), clicks=["judge_review"])
         self.assertEqual(result["calls"], [])
         self.assertIn("Requires: SOTA citations", result["html"])
-        button = re.search(r'<button[^>]*data-model-step="neurips_review"[^>]*>', result["html"]).group(0)
+        button = re.search(r'<button[^>]*data-model-step="judge_review"[^>]*>', result["html"]).group(0)
         self.assertIn("disabled", button)
 
     def test_the_verdict_card_carries_the_button_where_the_type_appears(self) -> None:
@@ -108,7 +108,7 @@ class ConceptMapButtonTests(_Proposal):
         out = subprocess.run(["node", "-e", script], input=json.dumps(phase_steps.proposal_steps(self.root)),
                              capture_output=True, text=True, cwd=tempfile.gettempdir(), check=True).stdout
         result = json.loads(out)
-        button = re.search(r'<button[^>]*data-model-step="neurips_review"[^>]*>', result["html"]).group(0)
+        button = re.search(r'<button[^>]*data-model-step="judge_review"[^>]*>', result["html"]).group(0)
         self.assertNotIn("disabled", button)
         self.assertEqual(len(result["calls"]), 1)
         self.assertIn("paper-reviewer", result["calls"][0])
@@ -140,7 +140,7 @@ class ApprovalTests(_Stages):
         product = self.poc()
         with self.assertRaises(novelty_gate.NoveltyRefusal) as ctx:
             novelty_gate.record_decision(self.root, "approve", stage="poc")
-        self.assertEqual(ctx.exception.code, "NEURIPS_JUDGE_OWED")
+        self.assertEqual(ctx.exception.code, "JUDGE_REVIEW_OWED")
         self.assertIn("Poc", ctx.exception.message)
         self.assertEqual(novelty_gate.read_gate(self.root)["poc"]["status"], "pending")
         self.set_type(product, TYPED)
@@ -151,7 +151,7 @@ class ApprovalTests(_Stages):
         product = self.full()
         with self.assertRaises(novelty_gate.NoveltyRefusal) as ctx:
             novelty_gate.record_decision(self.root, "approve")
-        self.assertEqual(ctx.exception.code, "NEURIPS_JUDGE_OWED")
+        self.assertEqual(ctx.exception.code, "JUDGE_REVIEW_OWED")
         self.assertEqual(novelty_gate.read_gate(self.root)["status"], "pending")
         self.set_type(product, TYPED)
         self.assertEqual(novelty_gate.record_decision(self.root, "approve")["status"], "approved")
@@ -164,7 +164,7 @@ class ApprovalTests(_Stages):
                 self.assertEqual(novelty_gate.judge_state(self.root)["full"]["owed"], ["Full"])
                 with self.assertRaises(novelty_gate.NoveltyRefusal) as ctx:
                     novelty_gate.record_decision(self.root, "approve")
-                self.assertEqual(ctx.exception.code, "NEURIPS_JUDGE_OWED")
+                self.assertEqual(ctx.exception.code, "JUDGE_REVIEW_OWED")
 
     def test_a_draft_with_a_malformed_type_blocks_nothing(self) -> None:
         self.poc(typed=True)
@@ -186,7 +186,7 @@ class ApprovalTests(_Stages):
         self.poc()
         self.assertEqual(novelty_cli.main(["approve", "--root", str(self.root), "--gate", "poc"]), 1)
         res = TestClient(self.app).post("/api/novelty/decision", json={"action": "approve", "stage": "poc"})
-        self.assertEqual((res.status_code, res.json()["error"]), (422, "NEURIPS_JUDGE_OWED"))
+        self.assertEqual((res.status_code, res.json()["error"]), (422, "JUDGE_REVIEW_OWED"))
 
     def test_the_overview_says_what_each_stage_owes(self) -> None:
         self.poc()
@@ -280,8 +280,8 @@ class CatalogueTests(unittest.TestCase):
     def test_both_catalogues_carry_the_judge_keys(self) -> None:
         for name in ("en.js", "es.js"):
             text = (STATIC / "i18n" / name).read_text(encoding="utf-8")
-            for key in ("modelSteps.neuripsReview", "modelSteps.judge", "modelSteps.judgeAgain",
-                        "modelSteps.evidence.neuripsReview", "modelSteps.evidence.neuripsOwed",
+            for key in ("modelSteps.judgeReview", "modelSteps.judge", "modelSteps.judgeAgain",
+                        "modelSteps.evidence.judgeReview", "modelSteps.evidence.judgeOwed",
                         "novelty.judge.launchPoc", "novelty.judge.launchFull", "novelty.judge.againPoc",
                         "novelty.judge.againFull", "novelty.judge.owed", "novelty.judge.needsDiscussion",
                         "novelty.judge.approvalLocked"):

@@ -4,7 +4,7 @@
  * one, else a neutral specification named after `papersmith.yaml`. This file
  * renders its problem tree (effects, central problem, direct causes), its tree
  * of pillars and hypotheses, novelty pillars, hypotheses, concept-map layers and proof-of-
- * concept experiments, each idea with its SOTA citations (citations.js), and the NeurIPS contribution type the paper-reviewer
+ * concept experiments, each idea with its SOTA citations (citations.js), and the contribution type the paper-reviewer
  * assigned to the proposal (`contribution_type`); when a part is absent it says what produces it instead
  * of showing anybody else's content. Every value is escaped before insertion;
  * prose fields go through math-panel.js's richText, so $…$ compiles with KaTeX.
@@ -15,7 +15,7 @@
  *
  * Above the modules, a stepper (GET /api/model/steps) forces Phase 4's order:
  * the problem and its pillars, then the hypotheses, then the mathematics, then
- * the SOTA citations, then the NeurIPS judge. Each step's button types `/proposal-deliberation <the
+ * the SOTA citations, then the judge-reviewer. Each step's button types `/proposal-deliberation <the
  * step's instruction>` into the agent terminal (window.sendToCli); the
  * mathematics step also offers `/math-tutor`, and the judge's button repeats on
  * the contribution-type card, where its verdict appears. A locked step's
@@ -228,7 +228,7 @@
       </div>`).join('');
   }
 
-  // The five NeurIPS 2026 contribution types and their catalogue keys.
+  // The five contribution types and their catalogue keys.
   const CONTRIBUTION_TYPE_KEYS = {
     'General': 'contribution.type.General',
     'Theory': 'contribution.type.Theory',
@@ -240,17 +240,17 @@
   // The button that launches the judge, on the card its verdict lands on. Until
   // the stepper answers, or while the citations are missing, it stays disabled.
   function judgeButton(judged) {
-    const step = (lastSteps || []).find((s) => s.id === 'neurips_review');
+    const step = (lastSteps || []).find((s) => s.id === 'judge_review');
     const open = step && step.status !== 'LOCKED';
     const off = open ? '' : ' disabled aria-disabled="true"';
     const reason = step && !open
       ? `<p class="model-step__reason">🔒 ${esc(t('modelSteps.requires', { step: t('modelSteps.sotaCitations') }))}</p>` : '';
     return `${reason}<div class="model-step__actions" style="margin-top: 0.6rem;">
-        <button type="button" class="btn ${judged ? '' : 'btn--primary '}btn--sm" data-model-step="neurips_review"${off}>${esc(t(judged ? 'modelSteps.judgeAgain' : 'modelSteps.judge'))}</button>
+        <button type="button" class="btn ${judged ? '' : 'btn--primary '}btn--sm" data-model-step="judge_review"${off}>${esc(t(judged ? 'modelSteps.judgeAgain' : 'modelSteps.judge'))}</button>
       </div>`;
   }
 
-  // The paper-reviewer's NeurIPS contribution type for the proposal, after
+  // The paper-reviewer's contribution type for the proposal, after
   // the hypotheses it was read from.
   function contributionType(spec) {
     const ct = spec.contribution_type;
@@ -323,7 +323,7 @@
     hypotheses: 'modelSteps.hypotheses',
     mathematics: 'modelSteps.mathematics',
     sota_citations: 'modelSteps.sotaCitations',
-    neurips_review: 'modelSteps.neuripsReview',
+    judge_review: 'modelSteps.judgeReview',
   };
   const STATUS_LABELS = {
     PASS: 'modelSteps.status.pass',
@@ -346,7 +346,7 @@
       + 'causes, pillars and hypotheses take Q1 or Q2 journal articles at most 4 years old, so run '
       + '`python skills/_core/results/citations_cli.py rank --root .` first. Then fix what '
       + '`python skills/_core/results/citations_cli.py check --root .` still reports for them.',
-    neurips_review: '/proposal-deliberation Run the NeurIPS judge now: hand the latest revision to the paper-reviewer '
+    judge_review: '/proposal-deliberation Run the judge-reviewer now: hand the latest revision to the paper-reviewer '
       + 'agent in its proposal mode and record its contribution_type verbatim in .papersmith/model_spec.json.',
     'math-tutor': '/math-tutor Walk me through the equations of the latest proposal revision.',
   };
@@ -362,16 +362,16 @@
     if (step.id === 'sota_citations') {
       return t('modelSteps.evidence.sotaCitations', { cited: Number(e.cited) || 0, ideas: Number(e.ideas) || 0 });
     }
-    if (step.id === 'neurips_review') {
+    if (step.id === 'judge_review') {
       return e.type && CONTRIBUTION_TYPE_KEYS[e.type]
-        ? t('modelSteps.evidence.neuripsReview', { type: t(CONTRIBUTION_TYPE_KEYS[e.type]) })
-        : t('modelSteps.evidence.neuripsOwed');
+        ? t('modelSteps.evidence.judgeReview', { type: t(CONTRIBUTION_TYPE_KEYS[e.type]) })
+        : t('modelSteps.evidence.judgeOwed');
     }
     return t('modelSteps.evidence.mathematics', { n: Number(e.equations) || 0 });
   }
 
   function stepButton(step) {
-    if (step.id === 'neurips_review') return step.done ? 'modelSteps.judgeAgain' : 'modelSteps.judge';
+    if (step.id === 'judge_review') return step.done ? 'modelSteps.judgeAgain' : 'modelSteps.judge';
     if (step.id === 'sota_citations') return step.done ? 'modelSteps.citeAgain' : 'modelSteps.cite';
     return 'modelSteps.generate';
   }

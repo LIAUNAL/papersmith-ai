@@ -272,7 +272,7 @@ Sustains claim C1 [tests:E1]: the method needs no target labels.
 | Baseline | Repository | Venue |
 | --- | --- | --- |
 | Alpha-Net | [repository](https://example.org/alpha-net) [pending-verification] | ICML 2015 |
-| Beta-Net | https://example.org/beta-net [verified: 2026-09-08] | NeurIPS 2019 |
+| Beta-Net | https://example.org/beta-net [verified: 2026-09-08] | ICLR 2019 |
 ```
 
 Three things to notice, each of which is a rule and not a style choice:
@@ -301,7 +301,7 @@ Every `CREATE_SUCCESSOR` preview needs `changeSummary`, or it is blocked with `C
     "why": "A baseline without a venue year and a checkable repository is not a comparison a reviewer can follow."
   },
   "resolvedDecisions": [
-    { "kind": "replace", "targetEntryId": "<entryId from the resolve step>", "replacementText": "| Baseline | Repository | Venue |\n| --- | --- | --- |\n| Alpha-Net | [repository](https://example.org/alpha-net) [verified: 2026-09-08] | ICML 2015 |\n| Beta-Net | [repository](https://example.org/beta-net) [verified: 2026-09-08] | NeurIPS 2019 |\n\n" }
+    { "kind": "replace", "targetEntryId": "<entryId from the resolve step>", "replacementText": "| Baseline | Repository | Venue |\n| --- | --- | --- |\n| Alpha-Net | [repository](https://example.org/alpha-net) [verified: 2026-09-08] | ICML 2015 |\n| Beta-Net | [repository](https://example.org/beta-net) [verified: 2026-09-08] | ICLR 2019 |\n\n" }
   ]
 }
 ```
