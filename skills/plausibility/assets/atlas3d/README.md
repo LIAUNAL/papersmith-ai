@@ -76,7 +76,9 @@ visible points). Orbit rings and family ties are one geometry each, and a frame
 is drawn only when something changed or the camera moved by about a tenth of a
 pixel, so an idle sky with rotation off costs no rendering.
 
-The page's inline script owns the modal, the family chips, the toolbar (zoom,
+The page's inline script owns the side panel (a clicked planet's or paper
+name's summary — topics, problem, application, novelty, contributions,
+results, conclusions, family — and its linked papers), the family chips, the toolbar (zoom,
 turn, tilt, rotation, names, reset, the "Group layout" toggle with
 class `on` while grouped, and the 2D/3D view button) and the system names.
 System names are not sprites: the page places them in an HTML layer (3D) or
@@ -86,8 +88,9 @@ placed, so zooming in reveals more of them.
 **2D constellation.** The page opens a canvas 2D view of the same scene, with
 the same handle, when the 3D sky cannot or should not run: no WebGL, a
 software renderer (`failIfMajorPerformanceCaveat` or a SwiftShader / llvmpipe
-renderer name), under 4 GB of reported memory or under 4 cores, or a 3D sky
-that draws under 20 fps in its first seconds. `#gpunote` says why. `?view=2d`
+renderer name), or a 3D sky that draws under 20 fps in its first seconds;
+reported memory and core counts do not matter. `#gpunote` says why. The slow
+fallback is not remembered: the next visit tries the 3D sky again. `?view=2d`
 or `?view=3d` overrides the choice, and so does the view button (remembered
 in `localStorage` where the frame allows it). The 2D view draws on demand,
 one frame per change, and nothing at rest unless rotation is on. Either view
@@ -102,8 +105,11 @@ parent -> atlas  { type: 'atlas-command',
                    command: 'group-layout' | 'sky-layout' | 'toggle-layout' | 'reset'
                             | 'pause' | 'resume'     pause stops drawing until resume
                             | 'view-2d' | 'view-3d' }  switch the view (remembered)
+                 { type: 'atlas-command', command: 'focus', key }
+                                             fly to that paper and open its side panel
                  accepted only when event.source === window.parent; anything else is ignored
 atlas -> parent  { type: 'atlas-layout', mode: 'sky' | 'groups' }      on load and on every layout command
                  { type: 'atlas-planet-selected', key, label, slot,
                    system: { id, title } }                              on a planet click (plain strings)
+                 { type: 'atlas-focused', key, system: { id, title } } after a focus command
 ```

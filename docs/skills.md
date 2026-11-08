@@ -674,6 +674,24 @@ absent), and the experimental profile stopped declaring it. In the same entry fi
 `cli.mjs` imported `pathToFileURL` without using it except for a closing
 `void pathToFileURL;`; both were deleted.
 
+**The ordered Phase 4 steps.** The dashboard builds a proposal in five steps,
+each locked until the one before it holds: the central problem and its pillars,
+the hypotheses, the mathematics, the SOTA citations and the judge-reviewer. The
+fourth step justifies every pillar, hypothesis, concept-map layer and numbered
+equation with 2 to 5 references of `sota-pool/candidates.json` in
+`.papersmith/citations.json`, each with its reason and a `quote`: 20 to 300
+characters of the pool record's `abstract`, verbatim (whitespace aside) and
+starting and ending on word boundaries, so a reference with no abstract cannot
+be cited. `python skills/_core/results/citations_cli.py check --root .` says
+what is owed and `routes --root .` prints each pool reference with the ideas it
+is cited for, their quotes and `grounded`, plus `uncited`. The step ends with
+`smith atlas coverage .`, which lists the cited references the SOTA
+constellation does not draw yet. The fifth step is the judge-reviewer (the
+`paper-reviewer` agent, step id `judge_review`), which records the proposal's
+`contribution_type`; G-EXP-POC and G-NOVELTY refuse `JUDGE_REVIEW_OWED` while a
+complete discussion of their stage has none. The full contract and its refusal
+codes are in [`skills/_core/results/README.md`](../skills/_core/results/README.md).
+
 **Diagram.**
 
 ```mermaid
@@ -1337,7 +1355,7 @@ validation runs **before any draft**, not after.
 | `references/usage.md` | Request/response examples and a worked transcript. Backed by its own drift guard (`tests/experimental-deliberation-usage-doc-drift.test.mjs`): every `../SKILL.md#anchor` link has to resolve to a real heading, and the worked example is extracted from the document and **actually run**, comparing the response against what the engine returns today. |
 | `profile.ts` | The domain profile: directory `experiments`, revision label `v` (not `r`), the `ACHIEVED_RESULT` detector, the three sources with their requiredness, and the five-stage objective (`bound` → `validated` → `deliberated` → `composed` → `published`). The engine under `_core/` gained not one line to admit this second domain. |
 | `preservation-experimental.ts` | `extractAtoms`/`violations`: the six atoms that may not vanish in silence (table, baseline, success criterion, figure, URL, dataset) and the hard form rules — verification tag, empty cell, baseline with URL and year, dataset/scheme declared exactly once. |
-| `reference-experimental.ts` | `declares`/`cites`: an experiment declares `[exp:E1]`; a claim cites `[tests:E1]` or `(Exp. E1)` in prose. It makes visible, mechanically, both the claim with no experiment and the experiment that supports none. |
+| `reference-experimental.ts` | `declares`/`cites`: an experiment declares `[exp:E1]` (outside the engine, any heading of any level carrying `[exp:<id>]` is an experiment: its SOTA citations, the Experimentos tab and the results discussion read it that way); a claim cites `[tests:E1]` or `(Exp. E1)` in prose. It makes visible, mechanically, both the claim with no experiment and the experiment that supports none. |
 | `cli.mjs` | 13 lines. It sets `DELIBERATION_DOMAIN_PROFILE` to this `profile.ts` and delegates the entire rest — arguments, stdin mode, exit codes — to the shared engine's `cli.mjs`. |
 | `.claude/agents/experimental-validation.md` | The `validated` stretch: it searches and verifies, never composes. It ends when no finding depends on memory instead of a search from this same run. |
 | `.claude/agents/experimental-publish.md` | The terminal stretch: it starts where the operator has already accepted the change and ends with the successor published and current. It has no `Write` or `Edit` — only the engine writes. |
@@ -1894,6 +1912,7 @@ the launch**, which is hours of somebody's quota.
 | `reconcile` | Compares what the service says it has against what the record believes, in both directions. It reports orphans; it never adopts them or cancels them on its own. | When something does not add up. A human always runs it. |
 | `smoke record` | Records a rehearsal's verdict, and that verdict comes from **the evidence of the artifact brought back**, not from somebody saying that it worked. | After the rehearsal is brought back. |
 | `readiness` | Reports —it never submits— whether a job is ready for its full run. It binds that worker's own last rehearsal to three things: that it passed, the same commit, the same worker — a rehearsal on another account never revokes it. **It reads no clock**: a rehearsal expires because the commit or the worker changed, never because time passed. | Before spending a large run. |
+| `prune-caches` | Lists, or with `--apply` removes, the dataset caches, bytecode, virtual environments and VCS metadata an older fetch brought back under `<product>/.remote-execution/**/clone/`; results, models, logs, notebooks and rehearsal evidence stay. `fetch` itself skips every file under a `.cache`, `__pycache__`, `.venv` or `.git` directory of `clone/`. | Once, to reclaim the disk an older fetch used. |
 
 **The record and its fold.** The record is a file of one JSON line per event,
 append-only. It is written with a raw descriptor in append mode, checking that the

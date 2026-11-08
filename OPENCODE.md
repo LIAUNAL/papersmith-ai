@@ -72,7 +72,8 @@ skill refuses when its input is missing.
    turns the accepted top 5 into Markdown under `guidance/`, with equations
    as LaTeX.
 4. **Proposal deliberation**: `/proposal-deliberation` keeps managed revisions
-   `proposals/research-concept-<slug>-rNN.md`, built in this order: the
+   `proposals/research-concept-<slug>-rNN.md` (or slugless
+   `research-concept-rNN.md`), built in this order: the
    central problem and its pillars, then the hypotheses each pillar predicts,
    then the mathematics in `$$ … \tag{N} $$` display blocks. Each step stays
    locked until the one before it exists on disk; the dashboard's
@@ -101,7 +102,11 @@ skill refuses when its input is missing.
      `sota-pool/candidates.json`, each with its reason and a verbatim quote of its abstract that holds the idea, in
      `.papersmith/citations.json`, and shown beside the idea. This is the
      phase's fourth step, launched from its button in the stepper; `python
-     skills/_core/results/citations_cli.py check --root .` says what is owed. Each reference the ideas cite must also be drawn in the SOTA constellation: `smith atlas coverage .` lists the ones it is not.
+     skills/_core/results/citations_cli.py check --root .` says what is owed. The quote is 20 to 300 characters of the pool record's
+     abstract, verbatim and starting and ending on word boundaries, so a
+     reference without an abstract cannot be cited; `python
+     skills/_core/results/citations_cli.py routes --root .` prints each
+     reference with the ideas it is cited for and their quotes. Each reference the ideas cite must also be drawn in the SOTA constellation: `smith atlas coverage .` lists the ones it is not.
    - **Contribution type**: once the hypotheses are discussed and the
      mathematics and the novelty proposed, the `paper-reviewer` agent
      classifies the proposal's contribution type
@@ -126,7 +131,8 @@ skill refuses when its input is missing.
      its 2 to 5 SOTA citations in `.papersmith/citations.json`, launched from
      the Experimentos tab. Until then `/proposal-implementation` and
      `/experimental-implementation` stay locked and G-EXP-POC refuses its
-     approval (`SOTA_CITATIONS_OWED`).
+     approval (`SOTA_CITATIONS_OWED`). Then `smith atlas coverage .` lists the
+     cited references the SOTA constellation does not draw yet.
    - **Data**: `/datasets synth|search|license|qc|prepare|publish` gives both
      stages a seeded toy set always and one official dataset (agents
      `dataset-scout`, `dataset-curator`): license checked, quality measured,

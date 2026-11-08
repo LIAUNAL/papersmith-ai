@@ -10,9 +10,11 @@ number it carries:
   phase-2 box, the `banco-lia` MCP's `search_bank`, and the operator's approval
   of the proposed prompt, launched as `/plausibility <draft>`);
 - `4a`: the proposal's ordered steps on the *Mapa Conceptual* tab — the central
-  problem and its pillars, then the hypotheses, then the mathematics, each locked
-  until the one before it exists — with the `paper-reviewer`'s
-  contribution type classified after the hypotheses (`.papersmith/model_spec.json`)
+  problem and its pillars, then the hypotheses, then the mathematics, then the
+  SOTA citations (`.papersmith/citations.json`, each with a verbatim quote of its
+  abstract; `citations_cli.py check · routes`, then `smith atlas coverage`), then
+  the judge-reviewer (the `paper-reviewer` classifying the contribution type,
+  `.papersmith/model_spec.json`), each locked until the one before it exists —
   and the `/math-tutor`;
 - `5` and `5a` to `5g`: Phase 5 in the order the harness entrypoints state it —
   the protocol (`/experimental-deliberation`), the datasets (toy set, then the
@@ -112,7 +114,7 @@ gate's: Archify's grid search, which routes an edge around nodes it has no
 relationship with, gives up on a scene of more than 80 obstacles
 (`maximumObstacleCount`), and an authored `via` cannot replace it, because only
 two automatic routes may cross (with a halo) -- an authored crossing is a
-showcase error. The flow is at 103 components, so every edge has to be routable
+showcase error. The flow is at 105 components, so every edge has to be routable
 without the grid: between row neighbours, straight down a column, or through
 the corridor between two rows. That is why the dashed `replication` ->
 `expBuild` arrow is gone (its relation lives in the `expBuild` tag and in the
