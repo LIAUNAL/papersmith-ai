@@ -254,6 +254,20 @@
       "evidence": {
         "160": "skills/_core/results/citations.py problems() checked pool membership and a why, never the abstract"
       }
+    },
+    {
+      "key": "judge-reviewer-name",
+      "title": "The reviewing judge is named after a venue",
+      "tier": 2,
+      "state": "open",
+      "fix": "Rename the judge to judge-reviewer everywhere (step id, refusal code, i18n, agents, skills, docs).",
+      "proof": "PR #164; git grep -i neurips finds only test fixtures",
+      "issues": [
+        163
+      ],
+      "evidence": {
+        "163": "skills/_core/command_center/phase_steps.py STEP_IDS carried neurips_review"
+      }
     }
   ]
 }
