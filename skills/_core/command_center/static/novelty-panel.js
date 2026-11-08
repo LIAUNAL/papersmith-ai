@@ -221,7 +221,7 @@
     const tone = state === 'approved' ? 'ok' : (state === 'iterating' ? 'info' : 'warn');
     const pocHypotheses = (data.hypotheses || []).filter((h) => h && h.stage === 'poc');
     return `
-      <section id="noveltyPocVerify" class="panel" style="border: 2px solid var(--${state === 'approved' ? 'ok' : 'accent'}); margin-bottom: 1.5rem; background: var(--surface);">
+      <section data-fold="novelty:poc" data-fold-title="novelty.poc.title" data-fold-open id="noveltyPocVerify" class="panel" style="border: 2px solid var(--${state === 'approved' ? 'ok' : 'accent'}); margin-bottom: 1.5rem; background: var(--surface);">
         <div class="panel__header">
           <div class="panel__title" style="font-size:1.05rem; font-weight:700; color:var(--text);">🧪 ${esc(t('novelty.poc.title', 'Verify the proof of concept'))}</div>
           <span class="badge badge--${tone}">${esc(t(POC_STATE_KEYS[state]))}</span>
@@ -276,7 +276,7 @@
     // SUBSECTION 4: DECISION GATE CARD (Highlighted at top)
     // ----------------------------------------------------
     html += `
-      <section class="panel" style="border: 2px solid ${status === 'approved' ? 'var(--ok)' : 'var(--accent)'}; margin-bottom: 1.5rem; background: var(--surface);">
+      <section data-fold="novelty:gate" data-fold-title="novelty.gate.title" data-fold-open class="panel" style="border: 2px solid ${status === 'approved' ? 'var(--ok)' : 'var(--accent)'}; margin-bottom: 1.5rem; background: var(--surface);">
         <div class="panel__header">
           <div class="panel__title" style="font-size:1.05rem; font-weight:700; color:var(--text);">
             🚪 ${t('novelty.gate.title', 'Novelty Decision Gate')}
@@ -331,7 +331,7 @@
     // ----------------------------------------------------
     const hypotheses = data.hypotheses || [];
     html += `
-      <section class="panel" style="margin-bottom: 1.5rem;">
+      <section data-fold="novelty:hypotheses" data-fold-title="novelty.hypotheses.title" class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel__header">
           <div class="panel__title">
             1. ${t('novelty.hypotheses.title', 'Hypotheses vs. Empirical Evidence')}
@@ -390,7 +390,7 @@
     // NeurIPS contribution type the paper-reviewer read from the checked findings
     const ct = data.contribution_type;
     html += `
-      <section id="noveltyContributionType" class="panel" style="margin-bottom: 1.5rem;">
+      <section data-fold="novelty:contribution" data-fold-title="contribution.title" data-fold-open id="noveltyContributionType" class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel__header">
           <div class="panel__title">${esc(t('contribution.title', 'NeurIPS contribution type'))}</div>
           ${ct && ct.product ? `<span class="panel__meta">${esc(ct.product)} · ${esc(ct.stage)}</span>` : ''}
@@ -413,7 +413,7 @@
     const noveltyClaims = data.novelty_claims || [];
     const sobrietyItems = sobrietyListItems(data);
     html += `
-      <section class="panel" style="margin-bottom: 1.5rem;">
+      <section data-fold="novelty:sota" data-fold-title="novelty.sota.title" class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel__header">
           <div class="panel__title">
             2. ${t('novelty.sota.title', 'Novelty Assessment & Scientific Sobriety vs. SOTA')}
@@ -452,7 +452,7 @@
     // ----------------------------------------------------
     const rigor = data.rigor_audit || [];
     html += `
-      <section class="panel" style="margin-bottom: 1.5rem;">
+      <section data-fold="novelty:rigor" data-fold-title="novelty.rigor.title" class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel__header">
           <div class="panel__title">
             3. ${t('novelty.rigor.title', 'Scientific Rigor & Reviewer Defense Audit')}
@@ -495,6 +495,7 @@
     }
 
     root.innerHTML = html;
+    if (window.SectionFolds) window.SectionFolds.wrap(root);
   }
 
   // Export to window

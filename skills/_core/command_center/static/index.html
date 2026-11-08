@@ -17,6 +17,7 @@
   <script src="./i18n/es.js?v=0.64.0"></script>
   <script src="./i18n.js?v=0.64.0"></script>
   <script src="./text-size.js?v=0.64.0"></script>
+  <script src="./section-folds.js?v=0.64.0"></script>
   <script src="./cli-console.js?v=0.64.0"></script>
   <link rel="stylesheet" href="./vendor/katex/katex.min.css">
   <script src="./vendor/katex/katex.min.js"></script>
@@ -2988,6 +2989,14 @@
     .exp-fold[open] > .exp-fold__summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
     .exp-fold__body > section.panel, .exp-fold__body > .tutor { border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0; }
     .exp-fold__body > section > .panel__header > .panel__title, .exp-fold__body > section > h3.panel__title { display: none; }
+    /* section-folds.js: a wrapped block's own title moves to the fold's bar. */
+    .exp-fold__body > [data-fold] > .panel__header .panel__title,
+    .exp-fold__body > [data-fold] > div:first-child > h4:first-child,
+    .exp-fold__body > [data-fold] > h4:first-child,
+    .exp-fold__body > [data-fold] .concept-tree__title,
+    .exp-fold__body > [data-fold].contribution-type > h4:first-child { display: none; }
+    .exp-fold__body > [data-fold] { margin: 0 !important; border-top-left-radius: 0; border-top-right-radius: 0; }
+    .exp-fold__body > [data-fold]:not(.panel) { padding: 0.9rem 1rem; background: var(--surface); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
     .exp-flow-steps__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
     #pane-experiments .exp-attention a { color: var(--accent); font-weight: 600; }
     .exp-detail { margin-top: 0.75rem; }
@@ -3214,6 +3223,7 @@
             <span id="modelStageBadge" class="badge badge--ok">DELIBERATION STAGE</span>
           </div>
 
+          <div data-fold="model:problem" data-fold-title="conceptTree.problem" data-fold-open>
           <div style="margin-bottom: 1.25rem;">
             <h4 id="modelProblemTitle" style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.4rem;" data-i18n="model.problemTitle">🚨 Problem Statement &amp; Scientific Gap</h4>
             <div id="modelProblemStatementText" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-left: 4px solid var(--bad); border-radius: var(--radius); padding: 0.9rem 1.15rem; font-size: 0.86rem; color: var(--text); line-height: 1.55;" data-i18n="model.problemDefault">The research problem and the technical gap are formalized during Phase 4, proposal deliberation.</div>
@@ -3221,28 +3231,29 @@
 
           <!-- Problem tree and the tree of pillars and hypotheses (model-panel.js) -->
           <div id="modelProblemTree" style="margin-bottom: 1.25rem;"></div>
-          <div id="modelNoveltyTree" style="margin-bottom: 1.25rem;"></div>
+          </div>
+          <div id="modelNoveltyTree" style="margin-bottom: 1.25rem;" data-fold="model:noveltyTree" data-fold-title="conceptTree.novelty" data-fold-open></div>
 
           <!-- Novelty pillars (model-panel.js) -->
-          <div style="margin-bottom: 1.25rem;">
+          <div style="margin-bottom: 1.25rem;" data-fold="model:pillars" data-fold-title="model.pillarsTitle">
             <h4 id="modelPillarsTitle" style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;" data-i18n="model.pillarsTitle">✨ Novelty Pillars of the Proposal</h4>
             <div id="modelPillarGrid" class="model-pillar-grid"></div>
           </div>
 
           <!-- Hypotheses (model-panel.js) -->
-          <div>
+          <div data-fold="model:hypotheses" data-fold-title="model.hypothesesTitle">
             <h4 style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;" data-i18n="model.hypothesesTitle">🔬 Scientific Hypotheses</h4>
             <div id="modelHypothesisGrid" class="model-hypothesis-grid"></div>
           </div>
 
           <!-- NeurIPS contribution type of the proposal, from paper-reviewer (model-panel.js) -->
-          <div id="modelContributionType" class="contribution-type" style="margin-top: 1.25rem;"></div>
+          <div id="modelContributionType" class="contribution-type" style="margin-top: 1.25rem;" data-fold="model:contribution" data-fold-title="contribution.title" data-fold-open></div>
         </div>
       </div>
 
       <!-- MODULE 2: CONCEPT MAP (model-panel.js) -->
       <div id="modelSecMapa" class="model-section">
-        <div class="panel">
+        <div class="panel" data-fold="model:map" data-fold-title="model.sec2">
           <div class="panel__header">
             <div class="panel__title">
               <span data-i18n="model.sec2">🗺️ 2. Concept Map of the Architecture &amp; Data Flow</span>
@@ -3258,7 +3269,7 @@
 
       <!-- MODULE 3: THE PAPER'S MATHEMATICS + SOCRATIC TUTOR (math-panel.js) -->
       <div id="modelSecMatematico" class="model-section">
-        <div class="panel math-panel">
+        <div class="panel math-panel" data-fold="model:math" data-fold-title="math.title" data-fold-open>
           <div class="panel__header">
             <div class="panel__title"><span data-i18n="math.title">📐 3. The paper's mathematics</span></div>
             <div class="panel__tools">
@@ -3359,7 +3370,7 @@
     <!-- TAB: NOVELTY & FINDINGS ASSESSMENT -->
     <div id="pane-novelty" class="tab-pane">
       <!-- The manuscript summary diagram (manuscript-graph-panel.js): topic to conclusions. -->
-      <section class="panel" id="manuscriptSummaryPanel" style="margin-bottom: 1rem;">
+      <section class="panel" id="manuscriptSummaryPanel" style="margin-bottom: 1rem;" data-fold="novelty:summary" data-fold-title="atlas.title.summary" data-fold-open>
         <div class="panel__header">
           <div class="panel__title">
             <span data-i18n="atlas.title.summary" title="Topic, problem and pillars, hypotheses, cited SOTA, base and novelty math, experiments, findings and conclusions (.papersmith/manuscript_graph.json)" data-i18n-attr="title:atlas.btn.summaryTitle">🧭 Manuscript summary graph — from topic to conclusions</span>

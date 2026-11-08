@@ -19,6 +19,11 @@ number is `0`, breaking changes can still arrive without a major bump.
   colour run from the pillar's edge to every hypothesis it supports, drawn from the boxes' real positions so they
   hold at any text size, and pointing at a box brings its arrows forward. On one column, as on a phone, the arrows
   give way to the written links.
+- **The Concept Map & Model and Novelty & Findings tabs fold like Experiments.** Each block sits behind a bar with
+  its title: the problem tree, the pillars and hypotheses tree, the pillar and hypothesis cards, the NeurIPS
+  contribution type, the concept map and the mathematics; and the manuscript summary, the proof-of-concept check,
+  the decision gate, the hypotheses matrix, the contribution type, the SOTA sobriety and the rigor audit. Blocks that
+  ask for an action start open, the rest folded, and each choice is remembered per browser.
 
 ## 0.64.0
 
