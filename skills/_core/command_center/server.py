@@ -1290,6 +1290,11 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # The dashboard polls this route, so conversations reach the archive
         # without the AI History tab being opened.
         ai_archive.sync_in_background(root_path)
+        return status_payload()
+
+    def status_payload() -> JSONResponse:
+        """What ``/api/status`` answers, without the archive sync its route
+        starts, so a read-only caller (``smith doctor``) writes nothing."""
         import re
         from datetime import datetime, timezone
 
@@ -2066,6 +2071,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             "proposals": {"count": len(prop_files), "files": prop_files},
             "state": state
         })
+
+    # Read-only callers (doctor_view) take the status without the archive sync.
+    app.state.status_payload = status_payload
 
     @app.get("/api/artifact")
     def api_artifact(path: str = "", file: str = "") -> Response:

@@ -80,9 +80,9 @@ def flow_phases(root: Path) -> tuple[list[dict[str, Any]] | None, str | None]:
         return None, f"command center not importable: {type(exc).__name__}: {exc}"
     try:
         app = server.create_app(root, history_store=None)
-        endpoint = next(route.endpoint for route in app.routes
-                        if getattr(route, "path", None) == "/api/status")
-        return json.loads(bytes(endpoint().body)).get("fases") or [], None
+        # The status itself, not its route: the route also syncs the AI
+        # archive, a write a read-only doctor must never make.
+        return json.loads(bytes(app.state.status_payload().body)).get("fases") or [], None
     except Exception as exc:  # noqa: BLE001
         return None, f"/api/status failed: {type(exc).__name__}: {exc}"
 
