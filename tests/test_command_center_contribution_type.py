@@ -1,4 +1,4 @@
-"""The NeurIPS contribution type the paper-reviewer assigns at each phase, shown
+"""The contribution type the paper-reviewer assigns at each phase, shown
 right after that phase's hypotheses: the concept-map panel reads it from
 `.papersmith/model_spec.json`, the novelty-and-findings panel from each
 product's `Results/discussion.json`."""
@@ -86,7 +86,7 @@ class ConceptMapPanelTests(unittest.TestCase):
         self.assertLess(page.index('id="modelContributionType"'), page.index('id="modelSecMapa"'))
 
     def test_it_names_the_type_and_why_escaped_in_both_languages(self) -> None:
-        for lang, heading in {"en": "NeurIPS contribution type", "es": "Tipo de contribución NeurIPS"}.items():
+        for lang, heading in {"en": "contribution type", "es": "Tipo de contribución"}.items():
             with self.subTest(lang=lang):
                 out = render_model(SPEC, lang)
                 self.assertFalse(out["hidden"])
@@ -113,8 +113,8 @@ class NoveltyPanelTests(unittest.TestCase):
         return novelty_gate.get_novelty_overview(root)
 
     def test_it_follows_the_hypotheses_matrix_in_both_languages(self) -> None:
-        for lang, (hyp, heading) in {"en": ("Hypotheses vs. Empirical Evidence", "NeurIPS contribution type"),
-                                     "es": ("Hipótesis vs Evidencia Empírica", "Tipo de contribución NeurIPS")}.items():
+        for lang, (hyp, heading) in {"en": ("Hypotheses vs. Empirical Evidence", "contribution type"),
+                                     "es": ("Hipótesis vs Evidencia Empírica", "Tipo de contribución")}.items():
             with self.subTest(lang=lang):
                 html = render_novelty(self.overview(), lang)
                 card = html.index('id="noveltyContributionType"')

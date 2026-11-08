@@ -475,7 +475,7 @@ class RuleTest(CheckCase):
 
 
 class ContributionTypeTest(CheckCase):
-    """The optional NeurIPS contribution type the paper-reviewer assigns to the findings."""
+    """The optional contribution type the paper-reviewer assigns to the findings."""
 
     def test_a_named_type_with_a_reason_is_complete(self) -> None:
         for kind in ("General", "Theory", "Use-Inspired", "Concept & Feasibility", "Negative Results"):

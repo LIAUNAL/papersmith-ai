@@ -62,7 +62,7 @@ operator decides whether to accept it.
 | Stretch | Delegated to | Begins after | Ends at | Measure this before delegating |
 | --- | --- | --- | --- | --- |
 | Publish | this skill delegates to the `deliberation-publish` agent | the operator accepted the change | the successor published and current | the acceptance itself — the one precondition here that no command reports, because nothing measures `deliberated`. The orchestrator holds it or the stretch does not begin |
-| Pre-acceptance review (advisory) | this skill delegates to the `paper-reviewer` agent, in its proposal mode | a revision `proposals/research-concept-<slug>-rNN.md` exists and the operator asked for a review | a NeurIPS-form review of the revision on the operator's screen, before acceptance | that the revision file exists and is not empty, and whether `sota-pool/candidates.json` exists. The review never closes `deliberated`: only the operator's acceptance does |
+| Pre-acceptance review (advisory) | this skill delegates to the `paper-reviewer` agent, in its proposal mode | a revision `proposals/research-concept-<slug>-rNN.md` exists and the operator asked for a review | a main-track-form review of the revision on the operator's screen, before acceptance | that the revision file exists and is not empty, and whether `sota-pool/candidates.json` exists. The review never closes `deliberated`: only the operator's acceptance does |
 
 **The deliberation itself is never delegated**, and the north above says why:
 nothing measures it, so an agent that could close that stage would be approving
@@ -284,7 +284,7 @@ chosen type on top. The Concept
 Map & Model tab shows it right after the hypotheses; a missing or malformed
 object shows as not classified yet. Re-classify whenever an accepted revision
 changes a hypothesis, an equation or the claimed novelty. This is Phase 4's
-last step: the dashboard's "Launch the NeurIPS judge" button asks for it, and
+last step: the dashboard's "Launch the judge-reviewer" button asks for it, and
 Phase 5 stays locked until the type is recorded.
 
 ### The SOTA citations: `.papersmith/citations.json`

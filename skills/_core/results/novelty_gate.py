@@ -205,7 +205,7 @@ def _write(root: Path, record: dict[str, Any]) -> None:
 def judge_state(root: Path) -> dict[str, dict[str, Any]]:
     """Per stage, how many products close with a ``complete`` discussion and
     which of them still lack the paper-reviewer's valid ``contribution_type``
-    (the NeurIPS judge); never raises. A malformed type alone makes a discussion
+    (the judge-reviewer); never raises. A malformed type alone makes a discussion
     fail its check, so a discussion is judged here without that field: one that
     is complete apart from its type owes the judge, a draft owes nothing."""
     state: dict[str, dict[str, Any]] = {stage: {"complete": 0, "owed": []} for stage in STAGES}
@@ -233,12 +233,12 @@ def judge_state(root: Path) -> dict[str, dict[str, Any]]:
 
 
 def _require_judge(root: Path, stage: str) -> None:
-    """Refuse an approval while a product of ``stage`` still owes the NeurIPS judge."""
+    """Refuse an approval while a product of ``stage`` still owes the judge-reviewer."""
     owed = judge_state(root)[stage]["owed"]
     if owed:
         raise NoveltyRefusal(
-            "NEURIPS_JUDGE_OWED",
-            f"run the NeurIPS judge first: {', '.join(owed)} has a complete discussion and no "
+            "JUDGE_REVIEW_OWED",
+            f"run the judge-reviewer first: {', '.join(owed)} has a complete discussion and no "
             "contribution_type; launch it from the Novelty & Findings tab, or hand the discussion "
             "to the paper-reviewer agent in its findings mode",
         )
@@ -315,8 +315,8 @@ def record_decision(
     ``stage="full"`` (the default) is the novelty gate before writing;
     ``stage="poc"`` records the proof-of-concept verification in the ``poc``
     sub-record and refuses an approval without a complete PoC discussion. An
-    approval of either stage refuses while one of its products owes the NeurIPS
-    judge."""
+    approval of either stage refuses while one of its products owes the
+    judge-reviewer."""
     if stage not in STAGES:
         raise NoveltyRefusal("INVALID_STAGE", f"stage must be one of {list(STAGES)}, got {stage!r}")
     if stage == "poc":
@@ -524,7 +524,7 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
         },
     ]
 
-    # 4. The paper-reviewer's NeurIPS contribution type for the findings:
+    # 4. The paper-reviewer's contribution type for the findings:
     # the full stage's over the pilot's, the first product in order otherwise.
     typed = [d for d in discussions if d["contribution_type"]]
     typed.sort(key=lambda d: d["stage"] != "full")

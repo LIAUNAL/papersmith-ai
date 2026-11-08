@@ -3,7 +3,7 @@
  *
  * Renders the 4 core subsections:
  *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts), followed by
- *      the paper-reviewer's NeurIPS contribution type for the findings, with the
+ *      the paper-reviewer's contribution type for the findings, with the
  *      button that launches that judge (a stage's approval waits for it).
  *   2. Novelty Assessment & Scientific Sobriety vs SOTA (claims, limits, unsupported findings).
  *   3. Scientific Rigor & Reviewer Defense Audit checklist.
@@ -109,8 +109,8 @@
   function judgeCommand(stage) {
     const [skill, name] = JUDGE_SKILLS[stage];
     return judgeOwed(stage).length
-      ? `${skill} Run the NeurIPS judge now: hand each ${name} discussion that is complete apart from a missing or invalid contribution_type ${JUDGE_RECORD} Leave drafts untouched.`
-      : `${skill} Run the NeurIPS judge again: hand every complete ${name} discussion ${JUDGE_RECORD}`;
+      ? `${skill} Run the judge-reviewer now: hand each ${name} discussion that is complete apart from a missing or invalid contribution_type ${JUDGE_RECORD} Leave drafts untouched.`
+      : `${skill} Run the judge-reviewer again: hand every complete ${name} discussion ${JUDGE_RECORD}`;
   }
   const JUDGE_LABELS = {
     poc: { launch: 'novelty.judge.launchPoc', again: 'novelty.judge.againPoc' },
@@ -194,7 +194,7 @@
     }
   }
 
-  // The five NeurIPS 2026 contribution types and their catalogue keys.
+  // The five contribution types and their catalogue keys.
   const CONTRIBUTION_TYPE_KEYS = {
     'General': 'contribution.type.General',
     'Theory': 'contribution.type.Theory',
@@ -387,12 +387,12 @@
       </section>
     `;
 
-    // NeurIPS contribution type the paper-reviewer read from the checked findings
+    // contribution type the paper-reviewer read from the checked findings
     const ct = data.contribution_type;
     html += `
       <section data-fold="novelty:contribution" data-fold-title="contribution.title" data-fold-open id="noveltyContributionType" class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel__header">
-          <div class="panel__title">${esc(t('contribution.title', 'NeurIPS contribution type'))}</div>
+          <div class="panel__title">${esc(t('contribution.title', 'contribution type'))}</div>
           ${ct && ct.product ? `<span class="panel__meta">${esc(ct.product)} · ${esc(ct.stage)}</span>` : ''}
         </div>
         ${ct && CONTRIBUTION_TYPE_KEYS[ct.type] ? `

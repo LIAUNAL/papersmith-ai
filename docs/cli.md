@@ -552,7 +552,7 @@ Two phases also order their own steps:
 
 - **Phase 4 (proposal deliberation)**: the central problem and its pillars, then
   the hypotheses, then the mathematics (sub-phases 4.1 to 4.3), then the SOTA
-  citations (4.7), then the NeurIPS judge (4.8), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
+  citations (4.7), then the judge-reviewer (4.8), each read from its own evidence — `.papersmith/model_spec.json` or the revision's `.sky.json`
   overlay for the first two, a `$$ … \tag{N} $$` block in the latest
   `proposals/research-concept-<slug>-rNN.md` for the third, 2 to 5 valid citations
   per central problem, direct cause, pillar, hypothesis, layer and equation in
@@ -564,8 +564,8 @@ Two phases also order their own steps:
   *Mapa Conceptual & Modelo* shows the five steps with a *Generar y deliberar*
   button that types the step's `/proposal-deliberation`
   into the agent terminal (the mathematics step also offers `/math-tutor`), and the
-  paper-reviewer's NeurIPS contribution type right after the hypotheses, with the
-  *Lanzar el juez NeurIPS* button on that card. Each idea shows its citations
+  paper-reviewer's contribution type right after the hypotheses, with the
+  *Lanzar el juez-revisor* button on that card. Each idea shows its citations
   beside it (`GET /api/citations`), or a mark that it owes them.
 - **Phase 5 (proof of concept and experiments)**: the experimental protocol
   (5.1 to 5.5), the toy set (5.6), the replication of the comparison methods
@@ -1113,12 +1113,12 @@ below.
   `Results/discussion.json` with their verdict, test and observed result, and the
   scientific-rigor checklist (leakage-free partitioning, significance tests,
   empirical support for the hypotheses, SOTA contrast). `--json` prints the whole
-  overview, including the paper-reviewer's NeurIPS `contribution_type` for the
+  overview, including the paper-reviewer's `contribution_type` for the
   findings (`{type, why, product, stage}`, or `null` until it is classified), the same one the dashboard's *Novedad & Hallazgos* tab reads from
   `GET /api/novelty/status`.
 - `approve [--notes TEXT]` — records that the empirical evidence supports the
   novelty (`approved`, target stage `scaffolding`). With either `--gate`, it refuses
-  `NEURIPS_JUDGE_OWED` while a complete discussion of that stage has no
+  `JUDGE_REVIEW_OWED` while a complete discussion of that stage has no
   `contribution_type`.
 - `iterate [--stage {experiments,proposal,plausibility}] [--notes TEXT]` — records
   that the work returns to Phase 5 (default), Phase 4 or Phase 2

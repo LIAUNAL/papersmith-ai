@@ -28,6 +28,10 @@ number is `0`, breaking changes can still arrive without a major bump.
   SOTA citations step, the experiment citations and G-EXP-POC reopen in a workspace until its citations are grounded.
   `citations_cli.py routes --root .` prints the reverse map, each pool reference with the ideas it is cited for and
   their quotes, plus the references no idea cites; the panels show each citation's quote under its reason.
+- **The reviewing judge is the judge-reviewer.** The dashboard, the skills, the agents, the docs and the messages no
+  longer name a venue: the Concept stepper's fifth step is `judge_review` ("Step 5: judge-reviewer", Spanish
+  "juez-revisor"), the approval refusal is `JUDGE_REVIEW_OWED` (was `NEURIPS_JUDGE_OWED`), and the contribution
+  type is simply the contribution type. The `paper-reviewer` agent keeps its name and its review form.
 
 ## 0.66.0
 

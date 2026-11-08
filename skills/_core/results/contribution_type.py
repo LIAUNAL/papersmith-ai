@@ -1,7 +1,7 @@
-"""The NeurIPS contribution type a paper-reviewer pass assigns to one phase's ideas.
+"""The contribution type a paper-reviewer pass assigns to one phase's ideas.
 
-The `paper-reviewer` agent reads the work the way a NeurIPS 2026 main-track
-reviewer would, and field 2 of that form is the contribution type the paper
+The `paper-reviewer` agent reads the work the way a main-track reviewer of a
+top machine-learning conference would, and field 2 of that form is the contribution type the paper
 fits. Two phases record it, each on the artifact the phase already owns:
 
 - the proposal (concept map and mathematics): ``contribution_type`` in

@@ -1,10 +1,10 @@
 /**
  * contribution-affinity.js: the "affinity by contribution type" subsection of
- * the NeurIPS judge's analysis, shared by the Concept Map & Model card and the
+ * the judge-reviewer's analysis, shared by the Concept Map & Model card and the
  * Novelty & Findings card.
  *
- * The paper-reviewer scores how well the work fits each of the five NeurIPS
- * 2026 contribution types (0-100) with a short reason. Each type is a
+ * The paper-reviewer scores how well the work fits each of the five
+ * contribution types (0-100) with a short reason. Each type is a
  * <details> row: its green bar fills to the score, and opening it shows the
  * reviewer guide's definition of the type and the reason for the score.
  */

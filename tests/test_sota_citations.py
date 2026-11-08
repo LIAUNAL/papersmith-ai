@@ -2,7 +2,7 @@
 
 `.papersmith/citations.json` gives each pillar, hypothesis, concept-map layer,
 numbered equation and experiment 2 to 5 pool references with a reason. A step of
-Phase 4 reads the proposal's ideas before the NeurIPS judge; the experiments'
+Phase 4 reads the proposal's ideas before the judge-reviewer; the experiments'
 citations hold the implementation actions, G-EXP-POC and Phase 5. The panels
 show each idea's citations beside it, and `citations_cli.py check` says what is
 owed. Validity means pool membership and a stated reason, not that the reference
@@ -27,7 +27,7 @@ from skills._core.results import citations, citations_cli, discussion, novelty_c
 from tests.test_flow_gating_phase4 import (EQUATION, POOL, QUOTES, _Workspace as _Phase4, _write, cite_everything,
                                           rank_pool, render, with_trees)
 from tests.test_flow_gating_phase5 import render_panel
-from tests.test_neurips_judge_gate import TYPED
+from tests.test_judge_review_gate import TYPED
 from tests.test_phase5_review import MARKER, _Status
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -294,10 +294,10 @@ class IdeaKindTests(_Ideas):
 class StepTests(_Ideas):
     def test_the_step_sits_between_the_mathematics_and_the_judge(self) -> None:
         self.assertEqual(phase_steps.STEP_IDS, ("problem_pillars", "hypotheses", "mathematics",
-                                                "sota_citations", "neurips_review"))
+                                                "sota_citations", "judge_review"))
         steps = self.steps()
         self.assertEqual(steps["sota_citations"]["requires"], "mathematics")
-        self.assertEqual(steps["neurips_review"]["requires"], "sota_citations")
+        self.assertEqual(steps["judge_review"]["requires"], "sota_citations")
         self.assertEqual(steps["sota_citations"]["status"], "LOCKED")
 
     def test_it_opens_after_the_mathematics_and_holds_the_judge(self) -> None:
@@ -306,7 +306,7 @@ class StepTests(_Ideas):
         self.assertEqual(steps["sota_citations"]["status"], "ACTIVE")
         self.assertEqual(steps["sota_citations"]["evidence"]["ideas"], 8)
         self.assertEqual(steps["sota_citations"]["evidence"]["cited"], 0)
-        self.assertEqual(steps["neurips_review"]["status"], "LOCKED")
+        self.assertEqual(steps["judge_review"]["status"], "LOCKED")
 
     def test_it_passes_when_every_proposal_idea_is_cited(self) -> None:
         self.ideas(contribution_type=TYPED)
@@ -314,7 +314,7 @@ class StepTests(_Ideas):
         steps = self.steps()
         self.assertEqual(steps["sota_citations"]["status"], "PASS")
         self.assertEqual(steps["sota_citations"]["evidence"]["cited"], 8)
-        self.assertEqual(steps["neurips_review"]["status"], "PASS")
+        self.assertEqual(steps["judge_review"]["status"], "PASS")
 
     def test_an_uncited_experiment_does_not_hold_the_proposal_step(self) -> None:
         self.ideas()
@@ -337,7 +337,7 @@ class StepTests(_Ideas):
         self.ideas()
         sub = {s["id"]: s for s in self.fase4()["subfases"]}
         self.assertEqual((sub["4.7"]["name"], sub["4.7"]["status"]), ("Step 4: SOTA citations", "PENDING"))
-        self.assertEqual((sub["4.8"]["name"], sub["4.8"]["status"]), ("Step 5: NeurIPS judge", "LOCKED"))
+        self.assertEqual((sub["4.8"]["name"], sub["4.8"]["status"]), ("Step 5: judge-reviewer", "LOCKED"))
 
     def test_the_route_answers_read_only(self) -> None:
         self.ideas()
@@ -472,7 +472,7 @@ class ApprovalTests(_Experiments):
         path.write_text(json.dumps(data), encoding="utf-8")
         with self.assertRaises(novelty_gate.NoveltyRefusal) as ctx:
             novelty_gate.record_decision(self.root, "approve", stage="poc")
-        self.assertEqual(ctx.exception.code, "NEURIPS_JUDGE_OWED")
+        self.assertEqual(ctx.exception.code, "JUDGE_REVIEW_OWED")
 
 
 class CliTests(_Ideas):
@@ -559,7 +559,7 @@ class ButtonTests(_Ideas):
 
     def test_the_judge_now_waits_for_the_citations(self) -> None:
         self.ideas()
-        result = render(phase_steps.proposal_steps(self.root), clicks=["neurips_review"])
+        result = render(phase_steps.proposal_steps(self.root), clicks=["judge_review"])
         self.assertEqual(result["calls"], [])
         self.assertIn("Requires: SOTA citations", result["html"])
 

@@ -1832,9 +1832,9 @@ the orchestrator's own discipline to hold, not a structural guarantee —
 treat any action that would have needed a scoped-out tool as a stop, not a
 workaround.
 
-**Reviewing the whole paper as a NeurIPS reviewer delegates to the `paper-reviewer` agent.**
+**Reviewing the whole paper as a main-track reviewer delegates to the `paper-reviewer` agent.**
 Once every section is written and `paper/main.tex` compiles, it fills the
-NeurIPS 2026 main-track review form — summary, contribution type, strengths
+main-track review form — summary, contribution type, strengths
 and weaknesses, the four 1-4 ratings, questions, limitations, overall,
 confidence, ethics and formatting — and backs pertinence, novelty, coherence,
 and adjusted novelty concordance (ensuring the problem, title, abstract, and introduction
