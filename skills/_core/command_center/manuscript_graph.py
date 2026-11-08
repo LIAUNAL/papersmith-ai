@@ -705,6 +705,14 @@ def render_html(graph: dict[str, Any], lang: str = "en", *, note: str = "") -> s
               if note else "")
     return f"""<!DOCTYPE html>
 <html lang="{esc(lang)}"><head><meta charset="utf-8"><title>{esc(L['title'])}</title>
+<script>
+// The dashboard's theme, before first paint: ?theme= when opened alone; framed,
+// the dashboard also sets data-theme on this document whenever it changes.
+(function () {{
+  const theme = new URLSearchParams(window.location.search).get('theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+}})();
+</script>
 <style>
 body {{ margin: 0; background: #0b0f19; color: #e2e8f0; font: 13px/1.4 system-ui, sans-serif; }}
 .note {{ padding: 6px 12px; background: #3b2f0b; color: #facc15; }}
@@ -721,6 +729,15 @@ body {{ margin: 0; background: #0b0f19; color: #e2e8f0; font: 13px/1.4 system-ui
 .tag--supported {{ color: #10b981; }} .tag--refuted {{ color: #f43f5e; }} .tag--inconclusive {{ color: #facc15; }}
 #detail {{ margin: 0 12px 12px; padding: 8px 10px; border: 1px solid #1f2937; border-radius: 6px; background: #111827; }}
 #detail code {{ color: #93c5fd; }}
+html[data-theme="light"] body {{ background: #f8fafc; color: #0f172a; }}
+html[data-theme="light"] .note {{ background: #fef3c7; color: #92400e; }}
+html[data-theme="light"] .col h2 {{ color: #475569; }}
+html[data-theme="light"] .node, html[data-theme="light"] #detail {{ background: #ffffff; }}
+html[data-theme="light"] #detail {{ border-color: #e2e8f0; }}
+html[data-theme="light"] .node--missing {{ color: #64748b; }}
+html[data-theme="light"] .tag {{ background: #e2e8f0; }}
+html[data-theme="light"] .tag--inconclusive {{ color: #a16207; }}
+html[data-theme="light"] #detail code {{ color: #1d4ed8; }}
 </style></head><body>
 {banner}<div id="wrap"><svg id="edges"></svg><div id="cols">{''.join(columns)}</div></div>
 <div id="detail" data-i18n="atlas.summaryView.pick">{esc(L['pick'])}</div>

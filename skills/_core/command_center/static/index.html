@@ -4091,18 +4091,40 @@
       document.getElementById('themeBtn').textContent = dark ? t('theme.light') : t('theme.dark');
     }
 
+    // The framed views (the Archify flow, the manuscript summary) take the
+    // dashboard's theme, never the operating system's: Archify reads
+    // `archify-theme` on load, and both follow `data-theme` on their document.
+    const THEMED_FRAMES = ['flowIframe', 'manuscriptSummaryIframe'];
+    function syncFrameThemes(theme) {
+      try { localStorage.setItem('archify-theme', theme); } catch (_) { /* this page only */ }
+      THEMED_FRAMES.forEach((id) => {
+        const frame = document.getElementById(id);
+        if (!frame) return;
+        if (!frame.dataset.themeSync) {
+          frame.dataset.themeSync = '1';
+          frame.addEventListener('load', () => syncFrameThemes(document.documentElement.getAttribute('data-theme') || 'dark'));
+        }
+        try {
+          const doc = frame.contentDocument;
+          if (doc && doc.documentElement && doc.URL !== 'about:blank') doc.documentElement.setAttribute('data-theme', theme);
+        } catch (_) { /* another origin keeps its own theme */ }
+      });
+    }
+
     function toggleTheme() {
       const html = document.documentElement;
       const nextTheme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       html.setAttribute('data-theme', nextTheme);
       localStorage.setItem('papersmith-theme', nextTheme);
       renderThemeButton();
+      syncFrameThemes(nextTheme);
     }
 
     // Init theme
     const savedTheme = localStorage.getItem('papersmith-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
     renderThemeButton();
+    syncFrameThemes(savedTheme);
 
     function navigateTab(tabId) {
       activeTab = tabId;

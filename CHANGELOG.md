@@ -30,6 +30,11 @@ number is `0`, breaking changes can still arrive without a major bump.
   problem, application, family, branch, novelty, contributions, results and conclusions
   (`GET /api/atlas/reference?id=`). A reference the constellation does not draw shows its pool record and says so;
   an atlas drawn by an older release asks to regenerate the graph.
+- **The dashboard's theme rules the framed views too.** The Archify flow followed the operating system's
+  preference, so it was white on a light Ubuntu under a dark dashboard and black on a dark Mac under a light one;
+  the manuscript summary was always dark. Both now take the dashboard's theme on load and whenever it changes
+  (Archify through `archify-theme`, the summary through a new light palette), checked by
+  `ui/e2e/shipped/theme.spec.ts` for a light and a dark system under either theme.
 
 ## 0.64.0
 
