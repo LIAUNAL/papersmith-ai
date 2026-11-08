@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.67.0
 
 - **A proposal revision without a slug counts** (#155). `research-concept-r44.md` is a managed revision for the
   Concept stepper and the SOTA citation contract, as it already was for Phase 4, so its tagged equations reach the
@@ -32,6 +32,16 @@ number is `0`, breaking changes can still arrive without a major bump.
   longer name a venue: the Concept stepper's fifth step is `judge_review` ("Step 5: judge-reviewer", Spanish
   "juez-revisor"), the approval refusal is `JUDGE_REVIEW_OWED` (was `NEURIPS_JUDGE_OWED`), and the contribution
   type is simply the contribution type. The `paper-reviewer` agent keeps its name and its review form.
+
+- **`smith doctor` is read-only again.** It read the dashboard status through the `/api/status` route, which since
+  0.62.0 also syncs the AI archive and writes `.papersmith/cache/ai-archive-state.json`; it now reads the status
+  without that sync, so the MCP `workspace_doctor` tool leaves a workspace byte-identical.
+- **The documentation follows the flow again.** README, `docs/`, the flow diagram (both HTML copies and the PNG),
+  the CLAUDE.md flow section and its mirrors, the plausibility and results docs and the `redactor`, `sota-grapher`
+  and `sota-scout` agents now describe the citation quotes, the coverage runs, the judge-reviewer, the 3D-first
+  atlas, the header controls and 3 to 7 families; `sota-scout` gains its instructions for extending the pool.
+- **CI tells why a test failed under the clean-context gate**, by repeating the failing assertions, and the
+  re-captured introduction contract digests and the `prune-caches` seam row bring `main` back to green.
 
 ## 0.66.0
 
