@@ -58,6 +58,31 @@
   const empty = (text) => `<p class="exp-empty">${esc(text)}</p>`;
   // Machine identities survive translated labels and changing product order.
   const disclosure = (...identity) => `data-exp-disclosure="${esc(JSON.stringify(identity))}"`;
+
+  // Each section of the tab folds, and the operator's choice survives a reload.
+  const FOLDS_KEY = 'papersmith.expFolds';
+  function storedFolds() {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(FOLDS_KEY) || '{}');
+      return value && typeof value === 'object' ? value : {};
+    } catch (_) {
+      return {};
+    }
+  }
+  function rememberFold(name, open) {
+    const folds = storedFolds();
+    folds[name] = open;
+    try { window.localStorage.setItem(FOLDS_KEY, JSON.stringify(folds)); } catch (_) { /* this page only */ }
+  }
+  function fold(name, title, body, open) {
+    if (!body) return '';
+    const saved = storedFolds()[name];
+    const shown = typeof saved === 'boolean' ? saved : open;
+    return `<details class="exp-fold" ${disclosure('section', name)} data-exp-fold="${esc(name)}"${shown ? ' open' : ''}>
+        <summary class="exp-fold__summary"><span class="exp-fold__title">${esc(title)}</span></summary>
+        <div class="exp-fold__body">${body}</div>
+      </details>`;
+  }
   const artifactUrl = (path) => `/api/artifact?path=${encodeURIComponent(path)}`;
   const PALETTE = ['#38bdf8', '#f59e0b', '#10b981', '#ef4444', '#a78bfa', '#f472b6', '#14b8a6', '#eab308',
     '#60a5fa', '#fb923c', '#4ade80', '#f87171'];
@@ -645,17 +670,20 @@
         <div class="exp-chips">${runs(p)}</div>
       </header>
       ${discussion(p)}
-      ${remoteWorkers(p)}
       ${executionMonitor(p)}
       ${diagrams(p)}
-      ${reviewerAudit(p)}
-      ${pinned.length ? `<h4 class="exp-h4">${esc(t('exp.pinned'))}</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}
-      <h4 class="exp-h4">${esc(t('exp.convergence'))}</h4>${convergence(p)}
-      ${figures.length ? `<h4 class="exp-h4">${esc(t('exp.figures'))}</h4><div class="exp-gallery">${figures.map(artifact).join('')}</div>` : ''}
-      ${hpo(p)}
-      ${tables(p)}
-      ${significance(p)}
-      ${warnings.length ? `<details class="exp-warnings"><summary>${esc(t('exp.readWarnings', { n: warnings.length }))}</summary><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
+      <details class="exp-detail" ${disclosure('detail', p.path)}>
+        <summary class="exp-detail__summary">${esc(t('exp.detail'))}</summary>
+        ${remoteWorkers(p)}
+        ${reviewerAudit(p)}
+        ${pinned.length ? `<h4 class="exp-h4">${esc(t('exp.pinned'))}</h4><div class="exp-gallery">${pinned.map(artifact).join('')}</div>` : ''}
+        <h4 class="exp-h4">${esc(t('exp.convergence'))}</h4>${convergence(p)}
+        ${figures.length ? `<h4 class="exp-h4">${esc(t('exp.figures'))}</h4><div class="exp-gallery">${figures.map(artifact).join('')}</div>` : ''}
+        ${hpo(p)}
+        ${tables(p)}
+        ${significance(p)}
+        ${warnings.length ? `<details class="exp-warnings"><summary>${esc(t('exp.readWarnings', { n: warnings.length }))}</summary><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
+      </details>
     </article>`;
   }
 
@@ -1067,7 +1095,9 @@
           <div class="model-step__actions"><button type="button" class="btn btn--primary btn--sm" data-exp-step="${step.id}"${off}>${esc(t(step.button))}</button></div>
         </div>`;
     }).join('');
-    return `<section class="panel exp-flow-steps"><h3 class="panel__title">${esc(t('exp.flow.title'))}</h3>
+    const next = steps.find((step) => step.state === 'next');
+    const hint = next ? `<span class="badge badge--info exp-next">${esc(t('exp.flow.nextAction', { step: t(next.title) }))}</span>` : '';
+    return `<section class="panel exp-flow-steps"><div class="exp-flow-steps__head"><h3 class="panel__title">${esc(t('exp.flow.title'))}</h3>${hint}</div>
         <p class="exp-intro">${esc(t('exp.flow.intro', { done: Number(f.poc_discussed) || 0, total: Number(f.poc) || 0 }))}</p>
         <div class="model-steps__row">${cards}</div></section>`;
   }
@@ -1096,9 +1126,9 @@
     const full = products.filter((p) => p.kind === 'full');
     const other = products.filter((p) => p.kind !== 'poc' && p.kind !== 'full');
     lastView = v;
-    return [
-      attention(v),
-      protocol(v.protocol),
+    // The order of the flow: what to do next and what blocks a launch, then the
+    // plan, the runs and their comparison; the infrastructure waits at the end.
+    const infrastructure = [
       mcpActivation(v.remote_mcp),
       colabActivation(v.remote_colab),
       remoteServices(v.remote_services),
@@ -1106,12 +1136,17 @@
       runOptions(v.run_options),
       team(v.remote_services && v.remote_services.team),
       help(v.remote_accounts),
-      datasets(v.datasets),
+    ].join('');
+    return [
       flowSteps(v.flow),
-      group(t('exp.group.poc'), t('exp.group.pocIntro'), poc, t('exp.group.pocEmpty')),
-      group(t('exp.group.full'), t('exp.group.fullIntro'), full, t('exp.group.fullEmpty')),
-      stageComparison(v),
-      other.length ? group(t('exp.group.other'), t('exp.group.otherIntro'), other, '') : '',
+      attention(v),
+      fold('protocol', t('exp.protocol'), protocol(v.protocol), true),
+      fold('datasets', t('exp.ds.title'), datasets(v.datasets), false),
+      fold('poc', t('exp.group.poc'), group(t('exp.group.poc'), t('exp.group.pocIntro'), poc, t('exp.group.pocEmpty')), true),
+      fold('full', t('exp.group.full'), group(t('exp.group.full'), t('exp.group.fullIntro'), full, t('exp.group.fullEmpty')), false),
+      fold('comparison', t('exp.disc.compare.title'), stageComparison(v), false),
+      other.length ? fold('other', t('exp.group.other'), group(t('exp.group.other'), t('exp.group.otherIntro'), other, ''), false) : '',
+      fold('infrastructure', t('exp.fold.infrastructure'), infrastructure, false),
     ].join('');
   }
 
@@ -1146,8 +1181,26 @@
   }
 
   if (typeof document !== 'undefined' && document.addEventListener) {
+    // A folded section remembers whether the operator opened it, the tutor's too.
+    document.addEventListener('toggle', (event) => {
+      const item = event.target;
+      if (item && item.dataset && item.dataset.expFold) rememberFold(item.dataset.expFold, item.open);
+    }, true);
+    document.addEventListener('DOMContentLoaded', () => {
+      const tutor = document.getElementById('xtutorFold');
+      const saved = storedFolds().tutor;
+      if (tutor && typeof saved === 'boolean') tutor.open = saved;
+    });
     document.addEventListener('click', (event) => {
       const closest = (sel) => (event.target && event.target.closest ? event.target.closest(sel) : null);
+      // A link to a section inside a fold opens every fold around it first.
+      const jump = closest('a[href^="#exp-"]');
+      if (jump && document.getElementById) {
+        const target = document.getElementById(jump.getAttribute('href').slice(1));
+        for (let node = target; node; node = node.parentElement) {
+          if (node.tagName === 'DETAILS') node.open = true;
+        }
+      }
       const cli = closest('[data-exp-cli]');
       if (cli) {
         if (typeof window.sendToCli === 'function') {
