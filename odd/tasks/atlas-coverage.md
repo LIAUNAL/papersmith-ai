@@ -12,8 +12,8 @@ Branch: feat/atlas-coverage. Delivery: ask-on-risk. Test runner: pytest (`tests/
 
 ## Tasks
 
-- [ ] T1 [S1] restore the slow-start fallback without storing it — inline
-- [ ] T2 [S2] `atlas_coverage.py`, `smith atlas coverage`, `GET /api/atlas/coverage`, Atlas tab notice with its button, phase instructions — inline
+- [x] T1 [S1] restore the slow-start fallback without storing it — inline — b9546102
+- [x] T2 [S2] `atlas_coverage.py`, `smith atlas coverage`, `GET /api/atlas/coverage`, Atlas tab notice with its button, phase instructions — inline — 364a0b6e
 - [ ] T3 [S3] qmleegV2: resolve the manuscript references, add them to the pool, draw them — delegated (agent work on the workspace)
 - [ ] T4 [S4] commit, merge, push, release, delete branches — inline
 
@@ -22,3 +22,5 @@ Branch: feat/atlas-coverage. Delivery: ask-on-risk. Test runner: pytest (`tests/
 - L1 (2026-11-08) "si el primer segundo dentro del tablero iba lento agregalo como regla para pasar a 2D y evitar que se cuelge. luego explora en que partes del flujoo fases deberimaos actualizar el grafo sota, para evitar que referencias del paper queden sin citar. ajusta e implementa esos cambio. actualiza en qmleegv2 para que el grafo sota quede completo. comit mergea push release y borra ramas"
 - L2 Evidence: qmleegV2's constellation draws 45 systems after a sota-grapher run added the 21 proposal references it lacked; `smith atlas cited` reports 50 manuscript references outside the pool. paper/refs.bib has 58 entries and no abstracts, and paper/.paper-writing/references.json does not exist (`resolve --references` never ran), so those references cannot enter the pool, whose planets need a verbatim abstract quote.
 - L3 Flow points: Phase 2 draws the constellation from the pool; Phase 4 step 4 and Phase 5 cite pool references (a journal pass can add pool references the constellation never drew); Phase 8 `bib build` and `resolve --references` add manuscript references that may be outside the pool.
+- L4 T2 finding: `atlas_build` and `atlas_manuscript.refresh` already redraw the manuscript's citations as "Manuscript Citations" placeholders, but the sota-grapher instructions rendered with `render_atlas.py` alone, which dropped them; the agent now rebuilds with `smith atlas build .`. Coverage: proposal references not drawn by any atlas.json system, manuscript placeholders split by pool membership.
+- L5 T3 delegated: resolve --references, sota-scout records, sota-grapher systems in qmleegV2; full suite running for the release.
