@@ -7,6 +7,7 @@ a real workspace and requires the tree to come back byte-identical.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -42,11 +43,20 @@ def test_the_tree_hash_guard_detects_a_mutation(workspace: Path) -> None:
     assert tree_hash(workspace) == before
 
 
+def _files(root: Path) -> dict[str, str]:
+    return {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(root.rglob("*")) if path.is_file()
+            and "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo")}
+
+
 def test_every_read_only_tool_leaves_the_workspace_byte_identical(workspace: Path) -> None:
     assert READ_ONLY
-    before = tree_hash(workspace)
-    call_many(
-        workspace,
-        [tool_call(name, request_id=index) for index, name in enumerate(READ_ONLY)],
-    )
-    assert tree_hash(workspace) == before
+    changed = []
+    for index, name in enumerate(READ_ONLY):
+        before = _files(workspace)
+        call_many(workspace, [tool_call(name, request_id=index)])
+        after = _files(workspace)
+        paths = sorted(path for path in set(before) | set(after) if before.get(path) != after.get(path))
+        if paths:
+            changed.append(f"{name}: {', '.join(paths[:10])}")
+    assert changed == [], "read-only tools changed the workspace: " + "; ".join(changed)
