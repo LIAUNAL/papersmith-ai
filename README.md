@@ -543,7 +543,7 @@ from the idea and from what can be found about it.
 
 | Stretch | Runs as | Ends at |
 | --- | --- | --- |
-| **Scout** | the `sota-scout` agent | the pool — 25 candidates with abstracts, in 3 to 5 families, plus the provisional plausibility note |
+| **Scout** | the `sota-scout` agent | the pool — 25 candidates with abstracts, in 3 to 7 families, plus the provisional plausibility note |
 | **Constellation** | the `sota-grapher` agent | the single `atlas.html` beside `atlas.json`, with the checker's green run |
 | **Screen** | the `novelty-screener` agent | the plausibility report — graded claims, a ranked top 5, and one closing paragraph on where the proposal stands |
 

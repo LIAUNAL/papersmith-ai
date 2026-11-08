@@ -141,14 +141,14 @@ The Introduction has exactly seven paragraphs; the full contract, with the exten
 1. **Paragraph 1 (Application Context):** General context of the application domain and motivating phenomenon.
 2. **Paragraph 2 (AI Context & Problem Statement):** Context of AI techniques in said application, concluding with 2 to 3 sentences explicitly declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; strictly running text, no bullet items, no bold text, no numbered questions).
 3. **Paragraph 3 (State of the Art, first families):** The first methodological families, with their principal methods, strengths, and issues/limitations.
-4. **Paragraph 4 (State of the Art, remaining families and joint gap):** The remaining families in the same form, closing on the joint gap. Paragraphs 3 and 4 together present 3 to 5 families.
+4. **Paragraph 4 (State of the Art, remaining families and joint gap):** The remaining families in the same form, closing on the joint gap. Paragraphs 3 and 4 together present 3 to 7 families.
 5. **Paragraph 5 (Proposal & Contributions):** Proposal presentation, introduced once in the paper's one voice (*this work introduces* by default, *we propose* when the paper chose first person), ending in a colon and followed by its main contributions in 3 to 4 short items; the list continues the paragraph. The count is inherited from the methods section: a proposal outside 3 to 4 contributions is fixed there, never by padding or trimming the list.
 6. **Paragraph 6 (Evaluation, Results & Impact):** Summary of experiments conducted, comparison methods and criteria, most important empirical results obtained, and potential impact.
 7. **Paragraph 7 (Roadmap/Agenda):** Agenda of the paper (`The remainder of this paper is organized as follows: ...`).
 
 ### Related Work Structure and Citation Density
 1. **Opening Context Paragraph:** First paragraph establishes the overarching context of problems and methods studied, framing the families introduced in the Introduction.
-2. **Subsections per Family:** Each of the 3 to 5 families has its own dedicated subsection (`\subsection{...}`).
+2. **Subsections per Family:** Each of the 3 to 7 families has its own dedicated subsection (`\subsection{...}`).
 3. **Three-part internal structure (2 to 3 paragraphs per subsection):** Foundations (fundamentos), Main methods (métodos principales), and Main challenges/issues (principales desafíos).
 4. **Citation volume per family:** Each family subsection must cite between 5 to 10 distinct alternative works.
 5. **Reference Horizon:** Between the Introduction and Related Work, the bibliography must collectively cite between 30 and 40 references.
@@ -748,7 +748,11 @@ by its own digest.
 
 **`resolve --references` keeps what the paper cites beside `refs.bib`.** Run it
 after the citations change, because `bib build` rewrites `refs.bib` and carries
-no abstract. A key's DOI asks OpenAlex first, since Crossref never returns an
+no abstract. Then run `smith atlas coverage .`: a cited key the SOTA
+constellation draws only as a placeholder (no system of its own) goes to the
+`sota-scout` agent, which adds it to `sota-pool/candidates.json` with the
+abstract `resolve --references` stored, and to the `sota-grapher` agent, which
+draws it. A key's DOI asks OpenAlex first, since Crossref never returns an
 abstract, then Crossref; an arXiv id asks arXiv; and while no abstract was found,
 an OpenAlex title search is accepted only on an exact normalized title (a near
 title is `not_found`). Each record is `{status, resolver, identifier, title,

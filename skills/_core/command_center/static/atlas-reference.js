@@ -115,5 +115,38 @@
     if (data.key === pending) { stop(); close(); }
   });
 
-  window.AtlasReference = { open, close };
+  // ---------------------------------------------------------- coverage
+  // The references the paper cites that the constellation does not draw
+  // (GET /api/atlas/coverage), with a button that asks the agent to draw them.
+  const COMPLETE_COMMAND = 'Complete the SOTA constellation: run `smith atlas coverage .`. For each manuscript '
+    + 'placeholder outside the pool, run `python skills/paper-writing/scripts/paper_cli.py resolve --references` '
+    + 'and hand it to the sota-scout agent to add it to sota-pool/candidates.json with its stored abstract; then '
+    + 'hand every reference the coverage lists to the sota-grapher agent, which appends one system each to '
+    + 'sota-pool/atlas.json under its rules, keeping every existing system, and rebuilds with `smith atlas build .`. '
+    + 'Finish when `smith atlas coverage .` exits 0.';
+
+  async function loadCoverage() {
+    const host = document.getElementById('atlasCoverage');
+    if (!host) return;
+    let data;
+    try {
+      data = await (await fetch('/api/atlas/coverage', { cache: 'no-store' })).json();
+    } catch (_) {
+      return;
+    }
+    const proposal = (data.proposal && data.proposal.undrawn) || [];
+    const manuscript = (data.manuscript && data.manuscript.placeholders) || [];
+    host.hidden = !data.atlas || (!proposal.length && !manuscript.length);
+    const text = document.getElementById('atlasCoverageText');
+    if (text) text.textContent = t('atlasCoverage.text', { proposal: proposal.length, manuscript: manuscript.length });
+  }
+
+  document.addEventListener('click', (event) => {
+    if (!(event.target && event.target.closest && event.target.closest('[data-atlas-complete]'))) return;
+    if (typeof window.sendToCli === 'function') window.sendToCli(COMPLETE_COMMAND, false, { kind: 'slash' });
+  });
+  window.addEventListener('hashchange', () => { if (window.location.hash === '#atlas') loadCoverage(); });
+  document.addEventListener('DOMContentLoaded', () => { if (window.location.hash === '#atlas') loadCoverage(); });
+
+  window.AtlasReference = { open, close, loadCoverage };
 })();

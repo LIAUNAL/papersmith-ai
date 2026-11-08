@@ -113,13 +113,18 @@ class CheckAtlasTests(unittest.TestCase):
         systems = [system("a", "F1"), system("b", "F1")]
         code, out = self.run_checker(atlas(systems=systems))
         self.assertEqual(code, 1, out)
-        self.assertIn("POOL_FAMILIES_OUTSIDE_3_5", out)
+        self.assertIn("POOL_FAMILIES_OUTSIDE_3_7", out)
 
-    def test_pool_with_six_families_is_no_constellation(self):
-        systems = [system(f"s{i}", f"F{i}") for i in range(6)]
+    def test_pool_with_seven_families_is_a_constellation(self):
+        systems = [system(f"s{i}", f"F{i}") for i in range(7)]
+        code, out = self.run_checker(atlas(systems=systems))
+        self.assertNotIn("POOL_FAMILIES_OUTSIDE", out)
+
+    def test_pool_with_eight_families_is_no_constellation(self):
+        systems = [system(f"s{i}", f"F{i}") for i in range(8)]
         code, out = self.run_checker(atlas(systems=systems))
         self.assertEqual(code, 1, out)
-        self.assertIn("POOL_FAMILIES_OUTSIDE_3_5", out)
+        self.assertIn("POOL_FAMILIES_OUTSIDE_3_7", out)
 
     def test_link_to_no_planet_is_named(self):
         links = [{"from_system": "a", "from": "a-sun", "to_system": "b",
@@ -531,12 +536,15 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
         self.assertIn('<div id="gpunote" role="status" hidden></div>', page)
         script = self.page_script()
         for needle in ("failIfMajorPerformanceCaveat", "WEBGL_debug_renderer_info",
-                       "get('view')", "const FlatViewer", "'view-2d'", "'view-3d'"):
+                       "get('view')", "const FlatViewer", "'view-2d'", "'view-3d'",
+                       "function watchFrameRate", "mountView('2d', 'slow')"):
             self.assertIn(needle, script)
-        # Like Banco LIA, only missing or software WebGL drops to 2D: a modest
-        # machine and a slow first second keep the 3D sky.
-        for gone in ("navigator.deviceMemory", "navigator.hardwareConcurrency", "function watchFrameRate"):
+        # Missing or software WebGL, or a sky too slow to start, drops to 2D; a
+        # modest machine alone keeps the 3D sky, as Banco LIA does.
+        for gone in ("navigator.deviceMemory", "navigator.hardwareConcurrency"):
             self.assertNotIn(gone, script)
+        watch = script[script.index("function watchFrameRate"):]
+        self.assertNotIn("storeView", watch[:watch.index("viewButton.addEventListener")])
 
     def test_page_stops_drawing_while_nobody_can_see_it(self):
         script = self.page_script()

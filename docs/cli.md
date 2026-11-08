@@ -1176,6 +1176,23 @@ The route answers `200`, `404` (no `atlas.json` or no scripts), `422` (the
 checker or renderer refused) or `504` (timeout), always with
 `{ok, stage, detail}` plus the system, planet and link counts on success.
 
+### `smith atlas coverage [<dir>]`
+
+```bash
+smith atlas coverage
+```
+
+Lists, as JSON, the references the paper cites that the SOTA constellation does
+not draw: `proposal.undrawn`, the `.papersmith/citations.json` references no
+system of `sota-pool/atlas.json` draws, and `manuscript.placeholders`, the
+`paper/refs.bib` entries the constellation draws only as placeholders of the
+"Manuscript Citations" family (each with `in_pool`). Exit `0` when every cited
+reference has its own system, `1` otherwise. The Graph Atlas tab shows the same
+counts (`GET /api/atlas/coverage`) with a button that asks the agent to complete
+the constellation: abstracts for the manuscript's references
+(`resolve --references`), the pool (`sota-scout`), then the systems
+(`sota-grapher`) and `smith atlas build`. Read-only.
+
 ### `smith atlas cited [<dir>]`
 
 ```bash

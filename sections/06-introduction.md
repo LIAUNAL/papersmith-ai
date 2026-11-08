@@ -226,7 +226,7 @@ block extents below are written to fit it, and no block adds a paragraph of its 
 1. **Paragraph 1 (General Application Context)** — `block-1`, 145–200 words: general context of the application domain and motivating phenomenon.
 2. **Paragraph 2 (AI Context & Problem Statement)** — `block-2`, 130–220 words: context of AI techniques in said application, ending with two or three sentences declaring the technical problem and its root causes (taken from the conceptual map & model panel and foundational pillars; strictly continuous running text, with no bullet items, no bold text highlights, and no numbered questions).
 3. **Paragraph 3 (State of the Art, first families)** — `block-3`, 130–300 words: the first methodological families of the state of the art, with their primary methods, main strengths and issues/limitations.
-4. **Paragraph 4 (State of the Art, remaining families and joint gap)** — `block-3`, 130–300 words: the remaining families, in the same form, closing on the joint gap. Paragraphs 3 and 4 together present 3 to 5 families.
+4. **Paragraph 4 (State of the Art, remaining families and joint gap)** — `block-3`, 130–300 words: the remaining families, in the same form, closing on the joint gap. Paragraphs 3 and 4 together present 3 to 7 families.
 5. **Paragraph 5 (Proposal & Contributions)** — `block-4a` + `block-4b`, 120–180 words: the proposal presentation ending in a colon, followed by its contributions described in 3 to 4 short items. The list continues the paragraph; it is not counted as a paragraph of its own.
 6. **Paragraph 6 (Evaluation, Results & Impact)** — `block-5`, 65–135 words: summary of experiments conducted, comparison methods and evaluation criteria, most significant empirical results obtained, and potential impact of the work.
 7. **Paragraph 7 (Roadmap/Agenda)** — `block-6`, 32–42 words: agenda of the paper specifying section organization in a fixed roadmap formula.
@@ -412,7 +412,7 @@ limitation it retains.
 what the two paragraphs contain, never how many there are. That is a decision about the
 structure of the manuscript, and it is taken before drafting the block.
 
-**The unit is the family, tied to the problems.** The 3 to 5 families are distributed
+**The unit is the family, tied to the problems.** The 3 to 7 families are distributed
 across the two paragraphs in the order of the problems of block 2, and each family
 states which of those problems it addresses: that is what keeps the correspondence with
 block 2 explicit. Paragraph 3 carries the first families; paragraph 4 carries the
@@ -658,7 +658,7 @@ the subject of a sentence.
 - A completed 4b whose achieved effects were not checked back against block 2 and,
   through it, block 3.
 - Bullet items, lists (`itemize`, `enumerate`), bold text highlighting, or numbered questions in Block 2 (Paragraph 2).
-- Block 3 presenting fewer than 3 or more than 5 methodological families or alternatives, or omitting their strengths and issues.
+- Block 3 presenting fewer than 3 or more than 7 methodological families or alternatives, or omitting their strengths and issues.
 - Block 4 presenting fewer than 3 or more than 4 contribution items.
 - A contribution item that opens in bold or as a description label.
 - Block 5 omitting the comparison methods, evaluation criteria, or potential impact.

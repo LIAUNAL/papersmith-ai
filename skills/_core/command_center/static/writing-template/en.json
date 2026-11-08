@@ -52,7 +52,7 @@
         {"label": "Paragraph 1 — Application context", "text": "145–200 words: the application domain and the motivating phenomenon the dataset contains, never the family of methods; no dataset named."},
         {"label": "Paragraph 2 — AI context and problem", "text": "130–220 words: AI techniques in that application, closing with two or three sentences declaring the technical problem and its root causes; running text, no bullets, no bold, no numbered questions."},
         {"label": "Paragraph 3 — State of the art, first families", "text": "130–300 words: the first methodological families with their primary methods, strengths and limitations; each paragraph ends on a limitation."},
-        {"label": "Paragraph 4 — Remaining families and joint gap", "text": "130–300 words: the remaining families in the same form, closing on the joint gap; paragraphs 3 and 4 present 3 to 5 families."},
+        {"label": "Paragraph 4 — Remaining families and joint gap", "text": "130–300 words: the remaining families in the same form, closing on the joint gap; paragraphs 3 and 4 present 3 to 7 families."},
         {"label": "Paragraph 5 — Proposal and contributions", "text": "120–180 words: the proposal presentation ending in a colon, followed by 3 to 4 short contribution items that continue the paragraph."},
         {"label": "Paragraph 6 — Evaluation, results and impact", "text": "65–135 words: experiments, comparison methods, evaluation criteria and potential impact; no figure, percentage or value."},
         {"label": "Paragraph 7 — Roadmap", "text": "32–42 words: the organization of the paper in a fixed roadmap formula, naming only sections that exist."}

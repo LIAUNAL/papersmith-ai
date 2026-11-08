@@ -109,7 +109,7 @@ the idea and from what can be found about it.
 
 | Stretch | Delegated to | Begins after | Ends at |
 | --- | --- | --- | --- |
-| Scout | `sota-scout` | the idea is stated in at least two sentences | the pool: 25 candidates with abstracts, in 3 to 5 families |
+| Scout | `sota-scout` | the idea is stated in at least two sentences | the pool: 25 candidates with abstracts, in 3 to 7 families |
 | Constellation | `sota-grapher` | the pool holds its 25 candidates | one `atlas.html` beside `atlas.json`, with the checker green |
 | Screen | `novelty-screener` | the hypothesis is stated and the pool holds its candidates | the plausibility report: graded claims, a ranked top 5, and one closing paragraph on where the proposal stands |
 
@@ -128,7 +128,7 @@ slots, and the 20-planet limit per system is absolute.
 | `topic_ai` | exactly 1 | the same topic framed as an AI problem |
 | `problem` | exactly 1 | the problem the paper faces, in one claim |
 | `application` | exactly 1 | where it lands in the world |
-| `family` | exactly 1 | the group this system belongs to: one per paper, 3 to 5 families per pool |
+| `family` | exactly 1 | the group this system belongs to: one per paper, 3 to 7 families per pool |
 | `novelty` | exactly 1 | what the paper adds over those families |
 | `contribution` | 0 to 5 | concepts argued beyond the one novelty claim |
 | `result` | 1 to 3 | punctual results, one claim per planet |
@@ -147,7 +147,7 @@ gate, because an acceptance of a previous report is not an acceptance of this on
 
 **Its refusals.** An idea under two sentences is refused before the search starts.
 Fewer than 25 resolvable candidates is reported short, with what was tried, and is
-never padded with unquoted entries. More than 5 families means keeping the 5 the
+never padded with unquoted entries. More than 7 families means keeping the 7 the
 abstracts lean on hardest and naming the ones left out. A claim with no abstract
 passage behind it does not become a planet: a quoteless planet is a drawing.
 

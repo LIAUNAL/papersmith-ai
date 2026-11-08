@@ -29,7 +29,7 @@
   "E.g.: upgrade the workspace and tell me what changed in the commands.": "Ej.: actualiza el workspace y dime qué cambió en los comandos.",
   "Explore the plausibility of the idea": "Explorar la plausibilidad de la idea",
   "Write the idea in at least two sentences: the problem and what you propose (otherwise the agent refuses to search).": "Escribe la idea en al menos dos oraciones: el problema y lo que propones (si no, el agente se niega a buscar).",
-  "The agent gathers ~25 SOTA references by their abstracts, in 3 to 5 families, and draws the constellation (atlas.html).": "El agente reúne ~25 referencias SOTA por sus abstracts, en 3 a 5 familias, y dibuja la constelación (atlas.html).",
+  "The agent gathers ~25 SOTA references by their abstracts, in 3 to 7 families, and draws the constellation (atlas.html).": "El agente reúne ~25 referencias SOTA por sus abstracts, en 3 a 7 familias, y dibuja la constelación (atlas.html).",
   "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.": "Luego divide la hipótesis en afirmaciones y califica cada una (novel / known / tension / contradicted) con citas literales.",
   "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.": "Nada se ingiere ni se archiva: el informe espera tu aceptación antes de pasar el top 5 a ingestión.",
   "You can adjust the idea and ask for a new screening; every pass is a new report.": "Puedes ajustar la idea y pedir un nuevo screening; cada pasada es un informe nuevo.",

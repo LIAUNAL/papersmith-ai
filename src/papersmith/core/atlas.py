@@ -35,6 +35,9 @@ ATLAS_MANUSCRIPT_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_ma
 #: The workspace module that writes the manuscript summary graph.
 MANUSCRIPT_GRAPH_MODULE = "skills._core.command_center.manuscript_graph"
 MANUSCRIPT_GRAPH_ENTRY = Path("skills") / "_core" / "command_center" / "manuscript_graph.py"
+#: The workspace module that reports the cited references the constellation misses.
+ATLAS_COVERAGE_MODULE = "skills._core.command_center.atlas_coverage"
+ATLAS_COVERAGE_ENTRY = Path("skills") / "_core" / "command_center" / "atlas_coverage.py"
 #: The workspace module that builds the 3D novelty solar constellation.
 NOVELTY_GRAPH_MODULE = "skills._core.command_center.novelty_graph"
 NOVELTY_GRAPH_ENTRY = Path("skills") / "_core" / "command_center" / "novelty_graph.py"
@@ -65,6 +68,10 @@ def run_build(args) -> int:
 
 def run_cited(args) -> int:
     return _run_module(args, ATLAS_MANUSCRIPT_MODULE, ATLAS_MANUSCRIPT_ENTRY)
+
+
+def run_coverage(args) -> int:
+    return _run_module(args, ATLAS_COVERAGE_MODULE, ATLAS_COVERAGE_ENTRY)
 
 
 def run_summary(args) -> int:
@@ -108,6 +115,17 @@ def register(subparsers) -> None:
     cited.add_argument("--sync", action="store_true", help="synchronize the 3D constellation with all citations")
     cited.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     cited.set_defaults(handler=run_cited)
+    coverage = actions.add_parser(
+        "coverage",
+        help="list the cited references the SOTA constellation does not draw",
+        description=("List the references .papersmith/citations.json cites that no system of "
+                     "sota-pool/atlas.json draws, and the paper/refs.bib entries the manuscript cites "
+                     "that the constellation draws only as placeholders (with whether the pool holds "
+                     "them), as JSON. Exit 0 when every cited reference has its own system, 1 otherwise."),
+    )
+    coverage.add_argument("--json", action="store_true", help="print the result as JSON (the default)")
+    coverage.add_argument("directory", nargs="?", default=".", metavar="<dir>")
+    coverage.set_defaults(handler=run_coverage)
     summary = actions.add_parser(
         "summary",
         help="write .papersmith/manuscript_graph.json: the manuscript summary graph",
@@ -133,6 +151,6 @@ def register(subparsers) -> None:
     novelty.set_defaults(handler=run_novelty)
 
 
-__all__ = ["register", "run_build", "run_cited", "run_summary", "run_novelty",
+__all__ = ["register", "run_build", "run_cited", "run_coverage", "run_summary", "run_novelty",
            "MANUSCRIPT_GRAPH_MODULE", "MANUSCRIPT_GRAPH_ENTRY", "ATLAS_BUILD_MODULE", "ATLAS_BUILD_ENTRY",
            "ATLAS_MANUSCRIPT_MODULE", "ATLAS_MANUSCRIPT_ENTRY", "NOVELTY_GRAPH_MODULE", "NOVELTY_GRAPH_ENTRY"]

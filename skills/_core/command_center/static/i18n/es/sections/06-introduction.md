@@ -226,7 +226,7 @@ extensiones de los bloques que siguen están escritas para ajustarse a él, y ni
 1. **Párrafo 1 (contexto general de la aplicación)** — `block-1`, 145–200 palabras: contexto general del dominio de aplicación y del fenómeno que lo motiva.
 2. **Párrafo 2 (contexto de IA y planteamiento del problema)** — `block-2`, 130–220 palabras: contexto de las técnicas de IA en dicha aplicación, que termina con dos o tres oraciones que declaran el problema técnico y sus causas de fondo (tomadas del mapa conceptual y panel del modelo y de los pilares fundamentales; estrictamente en texto corrido continuo, sin viñetas, sin resaltados en negrita y sin preguntas numeradas).
 3. **Párrafo 3 (estado del arte, primeras familias)** — `block-3`, 130–300 palabras: las primeras familias metodológicas del estado del arte, con sus métodos principales, sus fortalezas principales y sus problemas o limitaciones.
-4. **Párrafo 4 (estado del arte, familias restantes y brecha conjunta)** — `block-3`, 130–300 palabras: las familias restantes, de la misma forma, cerrando con la brecha conjunta. Los párrafos 3 y 4 presentan en conjunto de 3 a 5 familias.
+4. **Párrafo 4 (estado del arte, familias restantes y brecha conjunta)** — `block-3`, 130–300 palabras: las familias restantes, de la misma forma, cerrando con la brecha conjunta. Los párrafos 3 y 4 presentan en conjunto de 3 a 7 familias.
 5. **Párrafo 5 (propuesta y contribuciones)** — `block-4a` + `block-4b`, 120–180 palabras: la presentación de la propuesta, que termina en dos puntos, seguida de sus contribuciones descritas en 3 a 4 elementos breves. La lista continúa el párrafo; no se cuenta como un párrafo propio.
 6. **Párrafo 6 (evaluación, resultados e impacto)** — `block-5`, 65–135 palabras: resumen de los experimentos realizados, los métodos de comparación y los criterios de evaluación, los resultados empíricos más significativos obtenidos y el impacto potencial del trabajo.
 7. **Párrafo 7 (hoja de ruta)** — `block-6`, 32–42 palabras: la agenda del artículo, que especifica la organización de las secciones con una fórmula fija de hoja de ruta.
@@ -401,7 +401,7 @@ medirá: enúncielos con las mismas palabras que el bloque 5 usará más adelant
 bloque 2, organizadas **en torno a esos problemas y no como una enumeración de trabajos o
 autores**.
 
-**Directivas de los párrafos 3 y 4 (estado del arte en 3 a 5 familias):** indique entre 3 y 5 familias metodológicas o alternativas del estado del arte. Para cada familia, presente los métodos representativos principales junto con sus fortalezas clave y sus problemas o limitaciones críticas.
+**Directivas de los párrafos 3 y 4 (estado del arte en 3 a 7 familias):** indique entre 3 y 7 familias metodológicas o alternativas del estado del arte. Para cada familia, presente los métodos representativos principales junto con sus fortalezas clave y sus problemas o limitaciones críticas.
 
 **Por familia:** qué problema aborda → qué ventaja aporta → qué
 limitación conserva.
@@ -412,7 +412,7 @@ limitación conserva.
 lo que contienen los dos párrafos, nunca cuántos son. Esa es una decisión sobre la
 estructura del manuscrito, y se toma antes de redactar el bloque.
 
-**La unidad es la familia, ligada a los problemas.** Las 3 a 5 familias se distribuyen
+**La unidad es la familia, ligada a los problemas.** Las 3 a 7 familias se distribuyen
 entre los dos párrafos en el orden de los problemas del bloque 2, y cada familia
 indica cuál de esos problemas aborda: eso es lo que mantiene explícita la correspondencia con
 el bloque 2. El párrafo 3 contiene las primeras familias; el párrafo 4 contiene las
@@ -657,7 +657,7 @@ es el sujeto de una oración.
 - Un 4b completado cuyos efectos logrados no se verificaron de vuelta contra el bloque 2 y,
   a través de él, contra el bloque 3.
 - Viñetas, listas (`itemize`, `enumerate`), resaltados en negrita o preguntas numeradas en el bloque 2 (párrafo 2).
-- El bloque 3 presentando menos de 3 o más de 5 familias metodológicas o alternativas, u omitiendo sus fortalezas y problemas.
+- El bloque 3 presentando menos de 3 o más de 7 familias metodológicas o alternativas, u omitiendo sus fortalezas y problemas.
 - El bloque 4 presentando menos de 3 o más de 4 elementos de contribución.
 - Un elemento de contribución que abre en negrita o como etiqueta de descripción.
 - El bloque 5 omitiendo los métodos de comparación, los criterios de evaluación o el impacto potencial.

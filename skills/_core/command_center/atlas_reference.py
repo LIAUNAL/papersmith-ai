@@ -19,6 +19,9 @@ from typing import Any
 from . import atlas_manuscript, phase_steps
 
 ATLAS_REL = Path("sota-pool") / "atlas.json"
+#: The constellation as drawn: atlas.json plus the manuscript's citations the
+#: pool lacks, written by ``atlas_manuscript.sync_constellation_citations``.
+MERGED_REL = Path("sota-pool") / "atlas.with-manuscript.json"
 POOL_REL = Path("sota-pool") / "candidates.json"
 #: The slots a card shows, in the order a reader meets them.
 SLOTS = ("topic_app", "topic_ai", "problem", "application", "family", "branch", "novelty",
@@ -68,6 +71,28 @@ def _system(system: dict) -> dict[str, Any]:
             "key": f"{_text(system.get('id'))}.{_text(sun.get('id'))}", "slots": slots}
 
 
+def drawn_systems(root: Path) -> list[dict]:
+    """Every system the sky draws: atlas.json's, then the manuscript-only ones."""
+    atlas = _json(root / ATLAS_REL)
+    systems = [s for s in (atlas.get("systems") if isinstance(atlas, dict) else None) or [] if isinstance(s, dict)]
+    merged = _json(root / MERGED_REL)
+    known = {s.get("id") for s in systems}
+    for system in (merged.get("systems") if isinstance(merged, dict) else None) or []:
+        if isinstance(system, dict) and system.get("id") not in known:
+            systems.append(system)
+    return systems
+
+
+def system_keys(normalize, system: dict, candidates: list[dict]) -> set[str]:
+    """The normalized identifiers a system stands for: its planets' origins and
+    the pool candidates those origins name."""
+    origins = atlas_manuscript._system_origins(system)
+    keys = _keys(normalize, *origins)
+    for candidate in atlas_manuscript._system_candidates(origins, candidates):
+        keys |= _keys(normalize, candidate.get("identifier"), candidate.get("source_url"), candidate.get("url"))
+    return keys
+
+
 def reference(root: Path | str, ident: str) -> dict[str, Any]:
     """``{"id", "record", "system"}`` for one cited identifier: its pool record
     (empty when the pool lacks it) and its constellation system with the
@@ -83,16 +108,8 @@ def reference(root: Path | str, ident: str) -> dict[str, Any]:
             record = _record(candidate)
             break
     found = None
-    atlas = _json(root / ATLAS_REL)
-    systems = atlas.get("systems") if isinstance(atlas, dict) else None
-    for system in systems if isinstance(systems, list) and wanted else []:
-        if not isinstance(system, dict):
-            continue
-        origins = atlas_manuscript._system_origins(system)
-        keys = _keys(normalize, *origins)
-        for candidate in atlas_manuscript._system_candidates(origins, candidates):
-            keys |= _keys(normalize, candidate.get("identifier"), candidate.get("source_url"), candidate.get("url"))
-        if wanted in keys:
+    for system in drawn_systems(root) if wanted else []:
+        if wanted in system_keys(normalize, system, candidates):
             found = _system(system)
             break
     return {"id": _text(ident), "record": record, "system": found}
