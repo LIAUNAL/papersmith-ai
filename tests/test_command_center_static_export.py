@@ -15,6 +15,8 @@ import re
 import subprocess
 import tempfile
 import unittest
+
+from papersmith.errors import UserError
 from pathlib import Path
 
 from papersmith.core import init as init_module
@@ -221,6 +223,23 @@ class SnapshotExportTests(unittest.TestCase):
             self.assertIn("papersmith.yaml", str(caught.exception))
             self.assertFalse((Path(raw) / "out").exists())
 
+    def test_a_failed_export_keeps_the_previous_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            out = Path(raw) / "site"
+            static_export.export_snapshot(self.workspace, out, languages=("en",), ai_history=False)
+            before = (out / "snapshot" / "manifest.json").read_bytes()
+            original = static_export._export_into
+
+            def broken(*args, **kwargs):
+                raise RuntimeError("export interrupted")
+
+            static_export._export_into = broken
+            self.addCleanup(setattr, static_export, "_export_into", original)
+            with self.assertRaises(RuntimeError):
+                static_export.export_snapshot(self.workspace, out, languages=("en",))
+            self.assertEqual((out / "snapshot" / "manifest.json").read_bytes(), before)
+            self.assertEqual(sorted(p.name for p in Path(raw).iterdir()), ["site"])
+
     def test_a_non_empty_destination_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             out = Path(raw)
@@ -302,6 +321,11 @@ class ShippedPageTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    def test_publish_pages_refuses_an_export_flag_beside_it(self) -> None:
+        args = argparse.Namespace(publish_pages=True, export_snapshot="/tmp/x", export_static=None)
+        with self.assertRaises(UserError):
+            ui_command._refuse_conflicting_publish(args)
+
     def test_the_server_flag_runs_the_exporter(self) -> None:
         parser = server.build_parser()
         args = parser.parse_args(["--export-snapshot", "/tmp/x", "--snapshot-lang", "en"])

@@ -29,6 +29,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import sys
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -332,6 +333,33 @@ def export_snapshot(root: Path | str, out_dir: Path | str, *,
                     languages: tuple[str, ...] = ("en", "es"),
                     ai_history: bool = True,
                     report: Callable[[str], None] | None = None) -> dict[str, Any]:
+    """Write the snapshot of the workspace at ``root`` into ``out_dir``.
+
+    The snapshot is built in a staging folder beside ``out_dir`` and replaces a
+    previous one only once it is complete, so a failed export leaves the old
+    snapshot in place."""
+    final = Path(out_dir).expanduser().resolve()
+    if final.exists() and any(final.iterdir()):
+        previous = (final / "snapshot" / "manifest.json").is_file() and (final / "index.html").is_file()
+        if not previous:
+            raise SnapshotError(f"destination is not empty: {final}")
+    final.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{final.name}.", dir=final.parent))
+    try:
+        result = _export_into(root, staging, languages=languages, ai_history=ai_history, report=report)
+        _prepare_destination(final)
+        for child in staging.iterdir():
+            shutil.move(str(child), str(final / child.name))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    result["out"] = str(final)
+    return result
+
+
+def _export_into(root: Path | str, out_dir: Path | str, *,
+                 languages: tuple[str, ...] = ("en", "es"),
+                 ai_history: bool = True,
+                 report: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Write the snapshot of the workspace at ``root`` into ``out_dir`` and
     return its counts: routes, files, bytes, excluded and missing.
 

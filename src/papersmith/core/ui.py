@@ -351,6 +351,13 @@ def _run_child(argv: list[str], workspace: Path) -> int:
     return code if code > 0 else USER_ERROR
 
 
+def _refuse_conflicting_publish(args) -> None:
+    """``--publish-pages`` exports its own snapshot, so an export flag beside it
+    would be silently ignored: refuse it instead."""
+    if getattr(args, "export_snapshot", None) or getattr(args, "export_static", None):
+        raise UserError("--publish-pages exports its own snapshot: drop --export-snapshot/--export-static")
+
+
 def run_cli(args) -> int:
     workspace = Path(args.directory).expanduser().resolve()
     if not fs.is_dir(workspace):
@@ -359,6 +366,7 @@ def run_cli(args) -> int:
     interpreter = workspace_interpreter(workspace)
 
     if getattr(args, "publish_pages", False):
+        _refuse_conflicting_publish(args)
         return run_publish_pages(args, workspace, interpreter)
 
     export_snapshot = getattr(args, "export_snapshot", None)
