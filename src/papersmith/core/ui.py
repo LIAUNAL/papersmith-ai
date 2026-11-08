@@ -244,6 +244,8 @@ def find_available_port(host: str, preferred: int,
 
 def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool,
                       export_static: str | None = None,
+                      export_snapshot: str | None = None,
+                      snapshot_lang: str | None = None,
                       interpreter: str | None = None,
                       allowed_hosts: list[str] | None = None,
                       allow_unauthenticated_network: bool = False,
@@ -264,6 +266,10 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
         argv.append("--no-browser")
     if export_static is not None:
         argv.extend(["--export-static", str(export_static)])
+    if export_snapshot is not None:
+        argv.extend(["--export-snapshot", str(export_snapshot)])
+        if snapshot_lang:
+            argv.extend(["--snapshot-lang", str(snapshot_lang)])
     # Only forwarded when given, so an older workspace backend without the
     # flag keeps working.
     for allowed in allowed_hosts or []:
@@ -340,6 +346,18 @@ def run_cli(args) -> int:
     command_center_entry(workspace)
     interpreter = workspace_interpreter(workspace)
 
+    export_snapshot = getattr(args, "export_snapshot", None)
+    if export_snapshot:
+        # Run by the workspace's own backend, like every `smith ui` path: the
+        # snapshot is the dashboard that workspace's kit ships.
+        interpreter = require_runnable_backend(workspace, interpreter)
+        argv = build_server_argv(
+            workspace, args.host, args.port, no_browser=True,
+            export_snapshot=str(Path(export_snapshot).expanduser().resolve()),
+            snapshot_lang=getattr(args, "snapshot_lang", None), interpreter=interpreter,
+        )
+        return _run_child(argv, workspace)
+
     if args.export_static:
         argv = build_server_argv(
             workspace, args.host, args.port, no_browser=True,
@@ -382,6 +400,11 @@ def register(subparsers) -> None:
     parser.add_argument("--no-browser", action="store_true", help="never open a browser window")
     parser.add_argument("--export-static", metavar="<dir>", default=None,
                         help="copy the dashboard build to <dir> and exit")
+    parser.add_argument("--export-snapshot", metavar="<dir>", default=None,
+                        help="write a static, read-only snapshot of the dashboard (every panel's "
+                             "data as files, nothing that runs) to <dir> for GitHub Pages, and exit")
+    parser.add_argument("--snapshot-lang", default=None, metavar="en,es",
+                        help="languages the snapshot answers in (default: en,es)")
     parser.add_argument("--allowed-host", action="append", default=None, metavar="HOST:PORT",
                         help="also accept this Host header (repeatable), e.g. when forwarding "
                              "the port or running the Vite dev server")

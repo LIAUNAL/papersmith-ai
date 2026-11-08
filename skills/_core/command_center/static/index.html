@@ -16,6 +16,7 @@
   <script src="./i18n/en.js?v=0.67.0"></script>
   <script src="./i18n/es.js?v=0.67.0"></script>
   <script src="./i18n.js?v=0.67.0"></script>
+<script src="./snapshot.js?v=0.67.0"></script>
   <script src="./text-size.js?v=0.67.0"></script>
   <script src="./section-folds.js?v=0.67.0"></script>
   <script src="./cli-console.js?v=0.67.0"></script>
@@ -5883,7 +5884,9 @@
     // (journals-panel.js toggles it); null shows paper/main.pdf.
     let pdfVenueSlug = null;
     function pdfUrl(query) {
-      return `/api/pdf?${query}${pdfVenueSlug ? `&venue=${encodeURIComponent(pdfVenueSlug)}` : ''}`;
+      const url = `/api/pdf?${query}${pdfVenueSlug ? `&venue=${encodeURIComponent(pdfVenueSlug)}` : ''}`;
+      // The read-only snapshot (snapshot.js) maps it to its file; live, unchanged.
+      return window.psRewrite ? window.psRewrite(url) : url;
     }
     function setPdfVenue(slug) {
       pdfVenueSlug = slug || null;

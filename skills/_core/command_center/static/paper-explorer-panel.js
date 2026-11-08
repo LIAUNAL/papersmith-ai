@@ -265,7 +265,9 @@
   // says whether the graph is there.
   function graphDocument(frame) {
     const doc = frame.contentDocument;
-    const ready = doc && doc.readyState === 'complete' && doc.location.pathname === GRAPH_VIEW;
+    // In the read-only snapshot the view is a file; psApiPath names its route.
+    const path = doc ? (window.psApiPath ? window.psApiPath(doc.location.pathname) : doc.location.pathname) : '';
+    const ready = doc && doc.readyState === 'complete' && path === GRAPH_VIEW;
     return ready && doc.querySelector('.node') ? doc : null;
   }
 
