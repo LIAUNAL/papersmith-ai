@@ -11,6 +11,15 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **A proposal revision without a slug counts** (#155). `research-concept-r44.md` is a managed revision for the
+  Concept stepper and the SOTA citation contract, as it already was for Phase 4, so its tagged equations reach the
+  mathematics step and are owed citations. The cap of 40 equations now counts tagged equations only, so untagged
+  display blocks no longer hide later numbered ones, and an experiment declared as `[exp:<id>]` in a heading of any
+  level (as the shared convention says) is an idea owing citations and an experiment of the Experiments tab and
+  of the results discussion.
+
 ## 0.66.0
 
 - **The SOTA constellation keeps its 3D sky and opens a paper's summary beside it.** The atlas page now drops to

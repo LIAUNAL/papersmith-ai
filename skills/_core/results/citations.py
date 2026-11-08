@@ -111,9 +111,13 @@ STAGE_KINDS = {"proposal": ("problem", "cause", "pillar", "hypothesis", "layer",
 _DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
 _ARXIV_PREFIX = re.compile(r"^(?:https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/|arxiv:)", re.IGNORECASE)
 _ARXIV_ID = re.compile(r"^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?$")
-_REVISION = re.compile(r"^research-concept-.+-r(\d+)\.md$")
+#: A managed revision, with or without a slug: research-concept-r44.md and
+#: research-concept-eeg-r07.md both are, as Phase 4 reads them.
+_REVISION = re.compile(r"^research-concept-(?:.+-)?r(\d+)\.md$")
 _PROTOCOL = re.compile(r"^experiments-.+-v(\d+)\.md$")
-_EXPERIMENT = re.compile(r"^##\s+Experiment\s+\[exp:([^\]]+)\]")
+#: An experiment declares [exp:<id>] in its own heading, at any level
+#: (skills/_core/conventions/experiments.json), as the Experiments tab reads it.
+_EXPERIMENT = re.compile(r"^#{1,6}\s+.*?\[exp:([^\]]+)\]")
 _TAG = re.compile(r"\\tag\{([^{}]*)\}")
 _FENCE = re.compile(r"^(```|~~~)")
 _CAUSE_ID = re.compile(r"^DC\d+$")
@@ -213,10 +217,9 @@ def _tags(text: str) -> list[str]:
     LaTeX, and an unclosed one ends the reading."""
     lines = text.splitlines()
     tags: list[str] = []
-    blocks = 0
     index = 0
     fence: str | None = None
-    while index < len(lines) and blocks < MAX_EQUATIONS:
+    while index < len(lines) and len(tags) < MAX_EQUATIONS:
         line = lines[index].strip()
         fence_match = _FENCE.match(line)
         if fence_match and (fence is None or fence_match.group(1) == fence):
@@ -231,10 +234,8 @@ def _tags(text: str) -> list[str]:
             break
         body = "\n".join(lines[index + 1:end]).strip()
         tag = _TAG.search(body)
-        if _TAG.sub("", body).strip():
-            blocks += 1
-            if tag:
-                tags.append(tag.group(1).strip())
+        if tag and _TAG.sub("", body).strip():
+            tags.append(tag.group(1).strip())
         index = end + 1
     return tags
 
