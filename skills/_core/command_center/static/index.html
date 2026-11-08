@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="./vendor/katex/katex.min.css">
   <script src="./vendor/katex/katex.min.js"></script>
   <script src="./citations.js?v=0.64.0"></script>
+  <script src="./atlas-reference.js?v=0.64.0"></script>
   <script src="./math-panel.js?v=0.64.0"></script>
   <script src="./contribution-affinity.js?v=0.64.0"></script>
   <script src="./model-panel.js?v=0.64.0"></script>
@@ -3001,6 +3002,23 @@
     #pane-experiments .exp-attention a { color: var(--accent); font-weight: 600; }
     .exp-detail { margin-top: 0.75rem; }
     .exp-detail__summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--accent); padding: 0.45rem 0; }
+    /* A citation is a button to the SOTA constellation (atlas-reference.js). */
+    .cite-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+    .cite-link strong { color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; }
+    .cite-link:hover strong, .cite-link:focus-visible strong { text-decoration-style: solid; }
+    .atlas-ref { scroll-margin-top: 6rem; position: relative; padding: 0.7rem 2.6rem 0.7rem 0.9rem; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); border-left: 3px solid var(--accent); font-size: 0.82rem; }
+    .atlas-ref[hidden] { display: none; }
+    .atlas-ref__close { position: absolute; top: 0.5rem; right: 0.5rem; }
+    .atlas-ref__head { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; align-items: center; margin-bottom: 0.4rem; }
+    .atlas-ref__title { font-weight: 700; color: var(--text); }
+    .atlas-ref__meta { color: var(--text-muted); }
+    .atlas-ref__slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: 0.35rem 1rem; margin: 0; }
+    .atlas-ref__row dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+    .atlas-ref__row dd { margin: 0; }
+    .atlas-ref__row ul { margin: 0; padding-left: 1rem; }
+    .atlas-ref__row li span { color: var(--text-muted); }
+    .atlas-ref__note { margin-top: 0.4rem; color: var(--warn); font-size: 0.78rem; }
+    .atlas-ref__note:empty { display: none; }
     /* Rows the panels build with inline flex styles wrap too. */
     .tab-pane [style*="justify-content: space-between"], .tab-pane [style*="justify-content:space-between"],
     .tutor__modes, #pane-experiments .exp-chart figcaption { flex-wrap: wrap; }
@@ -3506,6 +3524,13 @@
             <button class="btn btn--sm" onclick="clearAtlasSelection()">✕</button>
           </span>
           <span id="atlasSelResult" style="flex-basis: 100%; color: var(--text-muted); font-size: 0.74rem;"></span>
+        </div>
+
+        <!-- A cited reference opened from a panel (atlas-reference.js) -->
+        <div id="atlasReferenceCard" class="atlas-ref" hidden>
+          <button type="button" class="btn btn--sm atlas-ref__close" data-atlas-ref-close aria-label="Close" data-i18n-attr="aria-label:common.close">✕</button>
+          <div id="atlasReferenceBody"></div>
+          <p id="atlasReferenceNote" class="atlas-ref__note"></p>
         </div>
 
         <!-- Help bar: mouse interaction sensitivity -->

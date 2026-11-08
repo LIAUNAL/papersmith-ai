@@ -24,6 +24,12 @@ number is `0`, breaking changes can still arrive without a major bump.
   contribution type, the concept map and the mathematics; and the manuscript summary, the proof-of-concept check,
   the decision gate, the hypotheses matrix, the contribution type, the SOTA sobriety and the rigor audit. Blocks that
   ask for an action start open, the rest folded, and each choice is remembered per browser.
+- **A cited reference opens on the SOTA constellation.** Every SOTA citation the Concept Map, mathematics and
+  Experiments panels show is now a link. A click opens the Graph Atlas, centres and lights that reference's system
+  while the rest dims, and shows a card with what the constellation knows about it: application and AI topics,
+  problem, application, family, branch, novelty, contributions, results and conclusions
+  (`GET /api/atlas/reference?id=`). A reference the constellation does not draw shows its pool record and says so;
+  an atlas drawn by an older release asks to regenerate the graph.
 
 ## 0.64.0
 
