@@ -5602,13 +5602,18 @@
         // Populate Runs Selector
         const runSel = document.getElementById('runSelector');
         runSel.innerHTML = '';
+        // Each revision shows its short run id (r07); the full file name stays
+        // its value and its tooltip, so a long name never widens the header.
+        const runId = name => (String(name).match(/r(\d+)\.md$/) || [])[0]?.replace(/\.md$/, '') || String(name);
         (data.all_runs || []).forEach(r => {
           const opt = document.createElement('option');
           opt.value = r;
-          opt.textContent = r;
-          if (r === data.active_run) opt.selected = true;
+          opt.textContent = runId(r);
+          opt.title = r;
+          if (runId(r) === data.active_run && !runSel.querySelector('option[selected]')) opt.defaultSelected = true;
           runSel.appendChild(opt);
         });
+        runSel.title = runSel.value || '';
 
         // Header Title & Totals
         const details = data.run_details || {};

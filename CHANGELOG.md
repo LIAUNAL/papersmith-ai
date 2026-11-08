@@ -19,6 +19,8 @@ number is `0`, breaking changes can still arrive without a major bump.
   display blocks no longer hide later numbered ones, and an experiment declared as `[exp:<id>]` in a heading of any
   level (as the shared convention says) is an idea owing citations and an experiment of the Experiments tab and
   of the results discussion.
+- **The run selector names each revision by its run id** (#156). The header shows `r07` instead of a long
+  `research-concept-…-r07.md` file name, which stays the option's value and its tooltip, so the title no longer wraps.
 
 ## 0.66.0
 
