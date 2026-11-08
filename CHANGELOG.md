@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.66.0
 
 - **The SOTA constellation keeps its 3D sky and opens a paper's summary beside it.** The atlas page now drops to
   the 2D constellation only when WebGL is missing or software-only, or when the operator asks; a machine with little
