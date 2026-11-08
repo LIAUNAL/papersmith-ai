@@ -91,7 +91,7 @@ When drafting canonical paper blocks, you must strictly uphold the following rul
   - *Paragraph 7:* Paper agenda and roadmap.
 - **Related Work Canon:**
   - Opening paragraph providing overarching context of problems and methods studied based on the Introduction's families.
-  - Dedicated subsections (`\subsection{...}`) for each family (3 to 5 subsections).
+  - Dedicated subsections (`\subsection{...}`) for each family (3 to 7 subsections).
   - Each subsection structured in 2 to 3 paragraphs: foundations, main methods, main challenges.
   - Each family must cite between 5 to 10 alternatives.
   - Combined citation volume across Introduction and Related Work must total 30 to 40 references.

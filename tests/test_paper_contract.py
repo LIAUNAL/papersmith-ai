@@ -918,6 +918,10 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: block 4 citation rule, the density rule and the matching disqualifier
 #: now carve out that single 4a citation; from 4b onward nothing is cited.
 #:
+#: `05-related-work.md` and `06-introduction.md` were re-captured once more
+#: when the family range followed the SOTA pool's 3 to 7 families (it read
+#: 3 to 5, which left `06-introduction.md` contradicting itself).
+#:
 #: `02-experimental-setup.md`'s digest was re-captured a further time for
 #: `the-requirement-names-the-sentence-that-demands-it`, Work Unit U3: the
 #: operator's ruling on `es-assessment`'s `experimental-design` and `gap`
@@ -1043,8 +1047,8 @@ PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "02-experimental-setup.md": "2d092c8555940a6b4cc6373f1ef8c0f42b55812960bb80911f8cd02296827207",
     "03-results-and-discussion.md": "a84dfb8133dff360a3966bdfba8dfa8b874dc4b0c2787e7bfaa3670af3a32235",
     "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
-    "05-related-work.md": "614b1e054feb9fa962ce932158ef94e2fcb358f79c168e9ba87e5a91b19f0f74",
-    "06-introduction.md": "603a0e6a79f9862730cca672b0c35506d7476ac6d0561b718be2fc42f04fd587",
+    "05-related-work.md": "35461f08cd877a198b13f19202ee6a2091024d35e736f91563b45002fbc80c76",
+    "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",
     "07-conclusions.md": "c956d406bc200361379e61c8730e9a28ca728a64aa79639b49a0914980b688d0",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
     "09-title-and-keywords.md": "e91df770daef297c33bbabfe54ec49d1c09c7e2d43b48e8807f252eb465f545d",
