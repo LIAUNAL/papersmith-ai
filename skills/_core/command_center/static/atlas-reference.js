@@ -57,7 +57,9 @@
     pending = null;
   }
 
-  function focus(key) {
+  // The atlas page opens the paper's summary beside the sky itself; this card
+  // only speaks when that page cannot (an atlas drawn by an older release).
+  function focus(key, data) {
     stop();
     pending = key;
     let tries = 0;
@@ -66,7 +68,7 @@
       tries += 1;
       if (typeof window.postToGraph === 'function') window.postToGraph({ type: 'atlas-command', command: 'focus', key });
       if (tries < TRIES) timer = setTimeout(send, RETRY_MS);
-      else { pending = null; note(t('atlasRef.oldAtlas')); }
+      else { pending = null; render(data); note(t('atlasRef.oldAtlas')); }
     };
     send();
   }
@@ -81,8 +83,13 @@
     }
     if (typeof window.navigateTab === 'function') window.navigateTab('atlas');
     if (typeof window.switchGraph === 'function') window.switchGraph('atlas');
-    render(data);
-    if (data.system && data.system.key) focus(data.system.key);
+    if (data.system && data.system.key) {
+      const host = card();
+      if (host) host.hidden = true;
+      focus(data.system.key, data);
+    } else {
+      render(data);
+    }
   }
 
   function close() {
@@ -105,7 +112,7 @@
     const frame = document.getElementById('graphIframe');
     const data = event.data;
     if (!frame || event.source !== frame.contentWindow || !data || data.type !== 'atlas-focused') return;
-    if (data.key === pending) { stop(); note(''); }
+    if (data.key === pending) { stop(); close(); }
   });
 
   window.AtlasReference = { open, close };

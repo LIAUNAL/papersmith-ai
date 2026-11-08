@@ -11,6 +11,17 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **The SOTA constellation keeps its 3D sky and opens a paper's summary beside it.** The atlas page now drops to
+  the 2D constellation only when WebGL is missing or software-only, or when the operator asks; a machine with little
+  memory or few cores, or a slow first second inside the dashboard, keeps the 3D sky with its glow, orbits and
+  rotation, as Banco LIA does. Clicking a planet or a paper's name opens a side panel with the paper's summary as its
+  constellation states it (application and AI topics, problem, application, main novelty, contributions, results,
+  conclusions, family) and the papers it links to, and lights that paper and its links. A citation opened from a
+  dashboard panel lands on the 3D sky with that paper selected and its panel open; the dashboard's own card now
+  appears only for a reference the constellation does not draw or an atlas drawn by an older release.
+
 ## 0.65.0
 
 - **A pillars and hypotheses tree that explains itself.** Each box now says what it is ("Pillar · C1",
