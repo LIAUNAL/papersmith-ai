@@ -10,10 +10,11 @@ Each product folder (`implementations/<repo>/<Name>/`) closes its proof of conce
 `citations.py` is a second contract here, for the ideas rather than the results: every pillar, hypothesis, concept-map layer, numbered equation and experiment is justified by 2 to 5 entries of `sota-pool/candidates.json` in `.papersmith/citations.json`.
 
 ```json
-{"schema": 1, "ideas": {"hypothesis:H1": [{"id": "2008.08605", "why": "How this reference supports the idea."}]}}
+{"schema": 1, "ideas": {"hypothesis:H1": [{"id": "2008.08605", "why": "How this reference supports the idea.",
+                                           "quote": "A verbatim span of the reference's abstract that holds it."}]}}
 ```
 
-`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. It proves pool membership and a stated reason, not that the reference really supports the idea.
+`python skills/_core/results/citations_cli.py check --root .` reports what is owed and exits 1 while anything is. Each citation's `quote` must appear verbatim (whitespace aside), 20 to 300 characters, in the pool record's `abstract`, so a citation is grounded in what its reference states; a reference with no abstract cannot be cited. `citations_cli.py routes --root .` prints the reverse map: each pool reference with the ideas it is cited for and their quotes, and `uncited`, the references no idea cites.
 
 ## CLI
 

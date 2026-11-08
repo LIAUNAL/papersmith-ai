@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 
 from skills._core.command_center import experiments_view, math_view, phase_steps, server
 from skills._core.results import citations, citations_cli, discussion, novelty_cli, novelty_gate
-from tests.test_flow_gating_phase4 import (EQUATION, POOL, _Workspace as _Phase4, _write, cite_everything,
+from tests.test_flow_gating_phase4 import (EQUATION, POOL, QUOTES, _Workspace as _Phase4, _write, cite_everything,
                                           rank_pool, render, with_trees)
 from tests.test_flow_gating_phase5 import render_panel
 from tests.test_neurips_judge_gate import TYPED
@@ -32,7 +32,8 @@ from tests.test_phase5_review import MARKER, _Status
 
 STATIC = Path(server.__file__).resolve().parent / "static"
 A, B = POOL[0]["identifier"], POOL[1]["identifier"]
-GOOD = [{"id": A, "why": "It states the bound."}, {"id": B, "why": "It measures the gap."}]
+GOOD = [{"id": A, "why": "It states the bound.", "quote": QUOTES[A]},
+        {"id": B, "why": "It measures the gap.", "quote": QUOTES[B]}]
 TREE_IDEAS = ["problem:central", "cause:DC1", "cause:DC2", "pillar:P1", "pillar:P2", "hypothesis:H1"]
 PROTOCOL = MARKER + "# Protocol\n\n## Experiment [exp:E1] — First\n\n## Experiment [exp:E2] — Second\n"
 
@@ -70,10 +71,10 @@ class _Ideas(_Phase4):
 
 class ContractTests(_Ideas):
     def test_two_to_five_citations_with_a_reason_are_valid(self) -> None:
-        extra = [{"identifier": f"10.1000/x{i}", "title": "X"} for i in range(3)]
+        extra = [{"identifier": f"10.1000/x{i}", "title": "X", "abstract": "The same task under the same protocol."} for i in range(3)]
         _pool(self.root, *extra)
         rank_pool(self.root, *extra)
-        five = GOOD + [{"id": e["identifier"], "why": "Same task."} for e in extra]
+        five = GOOD + [{"id": e["identifier"], "why": "Same task.", "quote": "same task under the same protocol"} for e in extra]
         self.assertEqual(self.problems(GOOD), [])
         self.assertEqual(self.problems(five), [])
 
@@ -81,14 +82,14 @@ class ContractTests(_Ideas):
         self.assertEqual(self.problems(GOOD[:1]), ["pillar:P1: 1 citation(s), needs 2 to 5"])
 
     def test_six_citations_refuse(self) -> None:
-        extra = [{"identifier": f"10.1000/y{i}", "title": "Y"} for i in range(4)]
+        extra = [{"identifier": f"10.1000/y{i}", "title": "Y", "abstract": "The same task under the same protocol."} for i in range(4)]
         _pool(self.root, *extra)
         rank_pool(self.root, *extra)
-        six = GOOD + [{"id": e["identifier"], "why": "Same task."} for e in extra]
+        six = GOOD + [{"id": e["identifier"], "why": "Same task.", "quote": "same task under the same protocol"} for e in extra]
         self.assertEqual(self.problems(six), ["pillar:P1: 6 citation(s), needs 2 to 5"])
 
     def test_a_duplicate_id_refuses_even_when_spelled_differently(self) -> None:
-        twice = [{"id": B, "why": "One."}, {"id": B.removeprefix("arXiv:"), "why": "Two."}]
+        twice = [{**GOOD[1], "why": "One."}, {**GOOD[1], "id": B.removeprefix("arXiv:"), "why": "Two."}]
         self.assertEqual(self.problems(twice), [f"pillar:P1: duplicate id {B.removeprefix('arXiv:')!r}"])
 
     def test_an_id_outside_the_pool_refuses(self) -> None:
@@ -96,8 +97,8 @@ class ContractTests(_Ideas):
         self.assertEqual(found, ["pillar:P1: '10.9999/absent' is not in sota-pool/candidates.json"])
 
     def test_the_arxiv_prefix_and_the_doi_case_normalize(self) -> None:
-        spelled = [{"id": "https://doi.org/" + A.upper(), "why": "Same work."},
-                   {"id": B.removeprefix("arXiv:"), "why": "Same work."}]
+        spelled = [{**GOOD[0], "id": "https://doi.org/" + A.upper()},
+                   {**GOOD[1], "id": B.removeprefix("arXiv:")}]
         self.assertEqual(self.problems(spelled), [])
         self.assertEqual(citations.normalize("arXiv:2008.08605"), citations.normalize("2008.08605"))
         self.assertEqual(citations.normalize("DOI:10.1000/AbC"), citations.normalize("10.1000/abc"))
@@ -106,11 +107,47 @@ class ContractTests(_Ideas):
         self.assertNotEqual(citations.normalize("2401.00001v2"), citations.normalize("2401.00001"))
 
     def test_a_blank_why_refuses(self) -> None:
-        self.assertEqual(self.problems([GOOD[0], {"id": B, "why": "   "}]), ["pillar:P1: entry 2 has no why"])
+        self.assertEqual(self.problems([GOOD[0], {**GOOD[1], "why": "   "}]), ["pillar:P1: entry 2 has no why"])
 
     def test_a_why_over_three_hundred_characters_refuses(self) -> None:
-        self.assertEqual(self.problems([GOOD[0], {"id": B, "why": "x" * 301}]),
+        self.assertEqual(self.problems([GOOD[0], {**GOOD[1], "why": "x" * 301}]),
                          ["pillar:P1: entry 2 why is longer than 300 characters"])
+
+    def test_a_citation_without_a_quote_is_owed(self) -> None:
+        # #160: every citation quotes the abstract span that holds the idea.
+        bare = [{"id": A, "why": "It states the bound."}, GOOD[1]]
+        self.assertEqual(self.problems(bare), ["pillar:P1: entry 1 has no quote"])
+
+    def test_a_quote_must_be_verbatim_in_the_pool_abstract(self) -> None:
+        spaced = [{**GOOD[0], "quote": "a  tight bound\non the estimation error"}, GOOD[1]]
+        self.assertEqual(self.problems(spaced), [])
+        made_up = [{**GOOD[0], "quote": "a loose bound on the estimation error"}, GOOD[1]]
+        self.assertEqual(self.problems(made_up),
+                         [f"pillar:P1: entry 1 quote is not in the abstract of {A!r}"])
+
+    def test_a_quote_has_twenty_to_three_hundred_characters(self) -> None:
+        short = [{**GOOD[0], "quote": "tight bound"}, GOOD[1]]
+        self.assertEqual(self.problems(short), ["pillar:P1: entry 1 quote is shorter than 20 characters"])
+        long = [{**GOOD[0], "quote": "x" * 301}, GOOD[1]]
+        self.assertEqual(self.problems(long), ["pillar:P1: entry 1 quote is longer than 300 characters"])
+
+    def test_a_reference_without_an_abstract_cannot_be_cited(self) -> None:
+        bare = {"identifier": "10.1000/noabs", "title": "No abstract", "year": 2024}
+        _pool(self.root, bare)
+        rank_pool(self.root, bare)
+        entries = [GOOD[0], {"id": "10.1000/noabs", "why": "Same task.", "quote": "a tight bound on the estimation"}]
+        self.assertEqual(self.problems(entries),
+                         ["pillar:P1: '10.1000/noabs' has no abstract in sota-pool/candidates.json to quote"])
+
+    def test_the_routes_map_each_reference_to_the_ideas_it_holds(self) -> None:
+        # #160: the reverse map, every pool reference with the ideas it is cited for.
+        self.ideas()
+        _file(self.root, {"pillar:P1": GOOD, "hypothesis:H1": GOOD[:1]})
+        routes = citations.state(self.root)["routes"]
+        self.assertEqual(routes, [
+            {"id": A, "title": POOL[0]["title"],
+             "ideas": [{"key": "pillar:P1", "quote": QUOTES[A]}, {"key": "hypothesis:H1", "quote": QUOTES[A]}]},
+            {"id": B, "title": POOL[1]["title"], "ideas": [{"key": "pillar:P1", "quote": QUOTES[B]}]}])
 
     def test_an_idea_absent_from_the_file_owes_citations(self) -> None:
         self.ideas()
@@ -160,7 +197,7 @@ class ContractTests(_Ideas):
         self.ideas()
         _file(self.root, {"pillar:P1": GOOD})
         idea = next(i for i in citations.state(self.root)["ideas"] if i["key"] == "pillar:P1")
-        self.assertEqual(idea["citations"][0], {"id": A, "why": GOOD[0]["why"], "title": POOL[0]["title"],
+        self.assertEqual(idea["citations"][0], {"id": A, "why": GOOD[0]["why"], "quote": QUOTES[A], "title": POOL[0]["title"],
                                                 "year": POOL[0]["year"], "authors": POOL[0]["authors"],
                                                 "venue": POOL[0]["venue"]})
 
@@ -460,6 +497,17 @@ class CliTests(_Ideas):
         self.assertEqual(code, 1)
         self.assertEqual([o["key"] for o in body["owed"]], ["experiment:E1", "experiment:E2"])
 
+    def test_routes_prints_each_reference_and_the_uncited_ones(self) -> None:
+        self.ideas()
+        _file(self.root, {"pillar:P1": GOOD[:1]})
+        code, body = self.run_cli("routes", "--root", str(self.root))
+        self.assertEqual(code, 0)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["routes"][0], {"id": A, "title": POOL[0]["title"],
+                                             "ideas": [{"key": "pillar:P1", "quote": QUOTES[A]}]})
+        self.assertEqual(body["uncited"], [B])
+        self.assertFalse((self.root / ".papersmith" / "citations.json").read_text(encoding="utf-8") == "")
+
     def test_a_missing_root_refuses(self) -> None:
         code, body = self.run_cli("check", "--root", str(self.root / "absent"))
         self.assertEqual((code, body["error"]), (1, "ROOT_ABSENT"))
@@ -609,6 +657,7 @@ class PanelTests(_Ideas):
                 self.assertIn(POOL[0]["title"], result[panel])
                 self.assertIn(str(POOL[0]["year"]), result[panel])
                 self.assertIn("Cited for the test.", result[panel])
+                self.assertIn(f"“{QUOTES[POOL[0]['identifier']]}”", result[panel])
                 self.assertIn("SOTA citations", result[panel])
 
     def test_the_problem_tree_draws_effects_problem_and_causes_with_citations(self) -> None:

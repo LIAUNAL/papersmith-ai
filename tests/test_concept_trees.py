@@ -60,11 +60,11 @@ class Workspace(unittest.TestCase):
         year = THIS_YEAR - 1 if year is None else year
         (self.root / ".papersmith" / "model_spec.json").write_text(json.dumps({"novelty": data}))
         (self.root / "sota-pool" / "candidates.json").write_text(json.dumps(
-            {"candidates": [{"identifier": i, "title": i, "year": year} for i in self.ids]}))
+            {"candidates": [{"identifier": i, "title": i, "year": year, "abstract": "It supports the idea with measured evidence."} for i in self.ids]}))
         good = {"work_type": "journal-article", "quartile": "Q1", "quartile_source": "sjr"}
         (self.root / "sota-pool" / "journal-ranks.json").write_text(json.dumps(
             {"schema": 1, "ranks": {i: {**good, **(rank or {})} for i in self.ids}}))
-        entries = [{"id": i, "why": "Supports it."} for i in self.ids]
+        entries = [{"id": i, "why": "Supports it.", "quote": "supports the idea with measured evidence"} for i in self.ids]
         ideas = {key: entries for key in tree_keys()} if cited else {}
         (self.root / ".papersmith" / "citations.json").write_text(json.dumps({"schema": 1, "ideas": ideas}))
         return citations.state(self.root)
@@ -293,7 +293,7 @@ class References(Workspace):
         self.write(novelty(), year=THIS_YEAR - 9, rank={"quartile": "Q4"})
         (self.root / ".papersmith" / "model_spec.json").write_text(json.dumps(data))
         ideas = json.loads((self.root / ".papersmith" / "citations.json").read_text())
-        ideas["ideas"]["layer:Encoder"] = [{"id": i, "why": "Foundation."} for i in self.ids]
+        ideas["ideas"]["layer:Encoder"] = [{"id": i, "why": "Foundation.", "quote": "supports the idea with measured evidence"} for i in self.ids]
         (self.root / ".papersmith" / "citations.json").write_text(json.dumps(ideas))
         self.assertEqual(self.problems(citations.state(self.root), "layer:Encoder"), [])
 
@@ -346,8 +346,8 @@ class LabPreprints(Workspace):
 
 class ExistingBehavior(Workspace):
     def test_problems_without_ranks_keeps_its_answer(self):
-        pool = {citations.normalize(i): {"identifier": i} for i in self.ids}
-        entries = [{"id": i, "why": "Supports it."} for i in self.ids]
+        pool = {citations.normalize(i): {"identifier": i, "abstract": "It supports the idea with measured evidence."} for i in self.ids}
+        entries = [{"id": i, "why": "Supports it.", "quote": "supports the idea with measured evidence"} for i in self.ids]
         self.assertEqual(citations.problems("pillar:P1", entries, pool), [])
 
     def test_a_workspace_with_no_ideas_owes_no_tree(self):
@@ -380,7 +380,7 @@ class Cli(Workspace):
         data["pillars"].append({"id": "C3", "name": "Unlinked"})
         self.write(data)
         ideas = json.loads((self.root / ".papersmith" / "citations.json").read_text())
-        ideas["ideas"]["pillar:C3"] = [{"id": i, "why": "Supports it."} for i in self.ids]
+        ideas["ideas"]["pillar:C3"] = [{"id": i, "why": "Supports it.", "quote": "supports the idea with measured evidence"} for i in self.ids]
         (self.root / ".papersmith" / "citations.json").write_text(json.dumps(ideas))
         code, body = self.run_cli("check")
         self.assertEqual((code, body["ok"], body["error"]), (1, False, "SOTA_CITATIONS_OWED"))

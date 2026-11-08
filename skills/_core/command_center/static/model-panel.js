@@ -342,7 +342,7 @@
       + 'display blocks in the next revision.',
     sota_citations: '/proposal-deliberation Justify the proposal with SOTA citations now: in .papersmith/citations.json, '
       + 'give the central problem, every direct cause, pillar, hypothesis, concept-map layer and numbered equation '
-      + '2 to 5 references of sota-pool/candidates.json, each with the reason it supports the idea; the problem, '
+      + '2 to 5 references of sota-pool/candidates.json, each with the reason it supports the idea and a verbatim quote of its abstract that holds it; the problem, '
       + 'causes, pillars and hypotheses take Q1 or Q2 journal articles at most 4 years old, so run '
       + '`python skills/_core/results/citations_cli.py rank --root .` first. Then fix what '
       + '`python skills/_core/results/citations_cli.py check --root .` still reports for them.',

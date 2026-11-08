@@ -21,6 +21,13 @@ number is `0`, breaking changes can still arrive without a major bump.
   of the results discussion.
 - **The run selector names each revision by its run id** (#156). The header shows `r07` instead of a long
   `research-concept-…-r07.md` file name, which stays the option's value and its tooltip, so the title no longer wraps.
+- **Every SOTA citation quotes the abstract that holds its idea** (#160). Each entry of
+  `.papersmith/citations.json` now carries a `quote`: 20 to 300 characters of the pool reference's `abstract`,
+  verbatim (whitespace aside), that hold the idea it justifies. `citations_cli.py check` refuses a citation without
+  a quote, a quote the abstract does not contain, and a reference whose pool record has no abstract, so Phase 4's
+  SOTA citations step, the experiment citations and G-EXP-POC reopen in a workspace until its citations are grounded.
+  `citations_cli.py routes --root .` prints the reverse map, each pool reference with the ideas it is cited for and
+  their quotes, plus the references no idea cites; the panels show each citation's quote under its reason.
 
 ## 0.66.0
 

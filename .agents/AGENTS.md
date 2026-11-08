@@ -91,7 +91,7 @@ skill refuses when its input is missing.
      The fourth step stays open until both trees hold.
    - **SOTA citations**: every pillar, hypothesis, concept-map layer and
      numbered equation is justified by 2 to 5 references of
-     `sota-pool/candidates.json`, each with its reason, in
+     `sota-pool/candidates.json`, each with its reason and a verbatim quote of its abstract that holds the idea, in
      `.papersmith/citations.json`, and shown beside the idea. This is the
      phase's fourth step, launched from its button in the stepper; `python
      skills/_core/results/citations_cli.py check --root .` says what is owed. Each reference the ideas cite must also be drawn in the SOTA constellation: `smith atlas coverage .` lists the ones it is not.

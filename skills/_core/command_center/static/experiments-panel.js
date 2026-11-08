@@ -1053,7 +1053,7 @@
   const FLOW_COMMANDS = {
     cite: '/experimental-deliberation Justify the protocol with SOTA citations now: in .papersmith/citations.json, '
       + 'give every experiment of the latest protocol 2 to 5 references of sota-pool/candidates.json, each with the '
-      + 'reason it supports the experiment, and fix what `python skills/_core/results/citations_cli.py check --root .` '
+      + 'reason it supports the experiment and a verbatim quote of its abstract that holds it, and fix what `python skills/_core/results/citations_cli.py check --root .` '
       + 'still reports for them.',
     poc: '/proposal-implementation Implement the proof of concept of the latest proposal revision on the toy set '
       + 'and close it with a complete Results/discussion.json (hypothesis verdicts, tests, novelty).',

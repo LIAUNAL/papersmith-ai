@@ -26,8 +26,13 @@ STATIC = Path(server.__file__).resolve().parent / "static"
 EN_JS, ES_JS, I18N_JS = STATIC / "i18n" / "en.js", STATIC / "i18n" / "es.js", STATIC / "i18n.js"
 MARKER = "<!-- proposal-workspace:artifact:v1 -->\n"
 EQUATION = "$$\nL = \\sum_i \\ell_i\n\\tag{1}\n$$\n"
-POOL = [{"identifier": "10.1000/Alpha", "title": "Alpha bound", "authors": ["Ana"], "year": 2021, "venue": "V"},
-        {"identifier": "arXiv:2008.08605", "title": "Beta gap", "authors": ["Beto"], "year": 2020, "venue": "W"}]
+POOL = [{"identifier": "10.1000/Alpha", "title": "Alpha bound", "authors": ["Ana"], "year": 2021, "venue": "V",
+         "abstract": "We prove a tight bound on the estimation error of the model."},
+        {"identifier": "arXiv:2008.08605", "title": "Beta gap", "authors": ["Beto"], "year": 2020, "venue": "W",
+         "abstract": "We measure the generalization gap of deep networks on held-out subjects."}]
+#: A verbatim span of each POOL abstract, the quote a citation of it carries.
+QUOTES = {"10.1000/Alpha": "a tight bound on the estimation error",
+          "arXiv:2008.08605": "the generalization gap of deep networks"}
 
 
 def _write(path: Path, text: str) -> None:
@@ -68,7 +73,8 @@ def cite_everything(root: Path) -> None:
     spec = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     if spec.get("novelty"):
         _write(path, json.dumps({**spec, "novelty": with_trees(spec["novelty"])}))
-    entries = [{"id": ref["identifier"], "why": "Cited for the test."} for ref in POOL]
+    entries = [{"id": ref["identifier"], "why": "Cited for the test.", "quote": QUOTES[ref["identifier"]]}
+               for ref in POOL]
     ideas = {idea["key"]: entries for idea in citations.state(root)["ideas"]}
     _write(root / ".papersmith" / "citations.json", json.dumps({"schema": 1, "ideas": ideas}))
 
