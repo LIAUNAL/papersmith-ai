@@ -175,7 +175,7 @@ def redact(text: str, terms: Iterable[str] = (), *, assignments: bool = True) ->
 # --------------------------------------------------------------------------
 #: A public copy masks more than the archive: shapes that are a credential in
 #: a page anyone can read even when the archive keeps them (a bare 32-hex key
-#: such as Kaggle's legacy one, any bearer value, ``token=...`` in a URL).
+#: such as a platform's legacy API key, any bearer value, ``token=...`` in a URL).
 _PUBLIC_SECRETS = (
     re.compile(r"(?<![0-9A-Fa-f])[0-9a-fA-F]{32}(?![0-9A-Fa-f])"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
@@ -320,7 +320,7 @@ def _variants(term: str) -> set[str]:
     term = term.strip()
     out = {term}
     parts = re.split(r"[\s-]+", term)
-    # A person's name, not an address or a group ("QMLEEG Research Team").
+    # A person's name, not an address or a group ("Example Research Team").
     if "@" not in term and not any(part.lower() in _NAME_STOPWORDS for part in parts):
         out |= {part for part in parts if len(part) >= 4 and not part.isupper()}
     for value in list(out):

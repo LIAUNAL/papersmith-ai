@@ -61,20 +61,22 @@ EMPTY_ANNOTATIONS = {"timestamp": None, "annotations": [], "applied": {}}
 #: and the local machine rather than the research.
 EXPERIMENT_SECTIONS_DROPPED = ("remote_accounts", "remote_mcp", "remote_colab", "remote_services",
                                "local_environment", "run_options")
-#: Keys dropped wherever they occur inside `/api/experiments`.
+#: Keys dropped wherever they occur inside `/api/experiments`, plus any key
+#: ending in ``username`` (a platform account name).
 EXPERIMENT_KEYS_DROPPED = frozenset({
-    "remote_workers", "placement_plan", "accounts", "worker", "submission_id", "kaggle_username",
+    "remote_workers", "placement_plan", "accounts", "worker", "submission_id",
     "email", "emails", "members", "team", "token_path", "user",
 })
 
 #: Extensions an allow-listed artifact may have.
 ARTIFACT_SUFFIXES = frozenset({".md", ".txt", ".json", ".jsonl", ".csv", ".tsv", ".png", ".jpg",
                                ".jpeg", ".gif", ".svg", ".pdf", ".tex", ".bib", ".yaml", ".yml"})
-#: Path parts that keep a file out of the snapshot even when a panel links it.
+#: Path parts that keep a file out of the snapshot even when a panel links it;
+#: any part ending in ``-inbox`` (a worker's download drop) is kept out too.
 #: Top-level folders never copied: `guidance/` holds the operator's drop-zone
 #: and the full text of third-party reference papers.
 ARTIFACT_DENIED_ROOTS = frozenset({"guidance"})
-ARTIFACT_DENIED_PARTS = frozenset({"ai-history", "cache", "caches", "node_modules", "kaggle-inbox",
+ARTIFACT_DENIED_PARTS = frozenset({"ai-history", "cache", "caches", "node_modules",
                                    "team.json", "accounts.json", "secrets"})
 #: Larger answers are left out (a Pages site has a 1 GB budget).
 MAX_ANSWER_BYTES = 50 * 1024 * 1024
@@ -147,7 +149,8 @@ def scrub_experiments(view: Any) -> Any:
 
     def walk(node: Any) -> Any:
         if isinstance(node, dict):
-            return {key: walk(value) for key, value in node.items() if key not in EXPERIMENT_KEYS_DROPPED}
+            return {key: walk(value) for key, value in node.items() if key not in EXPERIMENT_KEYS_DROPPED
+                    and not str(key).lower().endswith("username")}
         if isinstance(node, list):
             return [walk(item) for item in node]
         return node
@@ -247,7 +250,8 @@ def _allowed_artifact(root: Path, rel: str) -> bool:
     parts = PurePosixPath(rel).parts
     if not parts or any(part in ("..", "") or part.startswith(".") for part in parts):
         return False
-    if parts[0] in ARTIFACT_DENIED_ROOTS or any(part.lower() in ARTIFACT_DENIED_PARTS for part in parts):
+    if parts[0] in ARTIFACT_DENIED_ROOTS or any(
+            part.lower() in ARTIFACT_DENIED_PARTS or part.lower().endswith("-inbox") for part in parts):
         return False
     if PurePosixPath(rel).suffix.lower() not in ARTIFACT_SUFFIXES:
         return False

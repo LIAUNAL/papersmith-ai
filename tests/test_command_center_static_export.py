@@ -296,11 +296,13 @@ class PathScrubTests(unittest.TestCase):
     def test_guidance_and_dot_folders_are_never_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw).resolve()
-            for rel in ("guidance/reference-papers/p.md", ".papersmith/team.json", "sections/a.md"):
+            for rel in ("guidance/reference-papers/p.md", ".papersmith/team.json", "sections/a.md",
+                        "experiments/worker-inbox/log.txt"):
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text("x", encoding="utf-8")
             allowed = [rel for rel in ("guidance/reference-papers/p.md", ".papersmith/team.json",
-                                       "sections/a.md", "../etc/passwd")
+                                       "sections/a.md", "experiments/worker-inbox/log.txt",
+                                       "../etc/passwd")
                        if static_export._allowed_artifact(root, rel)]
         self.assertEqual(allowed, ["sections/a.md"])
 
