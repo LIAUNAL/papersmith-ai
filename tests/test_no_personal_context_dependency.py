@@ -345,6 +345,18 @@ class DifferentialControlTests(unittest.TestCase):
             "agreeing failures are still not a disagreement; the baseline check "
             "is separate from the comparator")
 
+    def test_the_failure_details_keep_what_a_failing_test_said(self):
+        control = self.module()
+        log = ("tests/test_x.py F\n"
+               "E   AssertionError: read-only tools changed the workspace: tool: a.json\n"
+               "FAILED tests/test_x.py::test_y - AssertionError: read-only tools changed\n"
+               "FAILED tests/test_x.py::test_z\n"
+               "1 failed, 2 passed\n")
+        self.assertEqual(control.failure_details(log), [
+            "E   AssertionError: read-only tools changed the workspace: tool: a.json",
+            "FAILED tests/test_x.py::test_y - AssertionError: read-only tools changed"])
+        self.assertEqual(control.failure_details("E   x\n" * 100), ["E   x"] * control.DETAIL_LINES)
+
     def test_a_baseline_that_passes_under_the_empty_home_is_silent(self):
         control = self.module()
         self.assertEqual(control.baseline_failures(self.result("empty", 0)), [])

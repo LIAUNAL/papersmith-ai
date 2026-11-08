@@ -51,6 +51,17 @@ class DoctorRouteTests(unittest.TestCase):
         self.assertEqual(payload["rows"], cli["rows"])
         self.assertEqual(payload["summary"]["state"], cli["summary"]["state"])
 
+    def test_the_doctor_reads_the_phases_without_syncing_the_ai_archive(self) -> None:
+        # The /api/status route syncs the AI archive, which writes
+        # .papersmith/cache/ai-archive-state.json; `smith doctor` and the MCP
+        # workspace_doctor tool are read-only, so they read the status without it.
+        with mock.patch.object(server.ai_archive, "sync_in_background") as sync:
+            phases, error = doctor_view.flow_phases(self.workspace)
+        self.assertIsNone(error)
+        self.assertTrue(phases)
+        sync.assert_not_called()
+        self.assertFalse((self.workspace / ".papersmith" / "cache" / "ai-archive-state.json").exists())
+
     def test_api_doctor_is_cached_until_asked_fresh(self) -> None:
         app = server.create_app(self.workspace, history_store=None)
         route = _routes(app)["/api/doctor"]
