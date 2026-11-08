@@ -185,7 +185,7 @@ Cinco bloques. El tercero se repite — una vez por cada problema enunciado.
 5. artefacto de síntesis
 
 ### Directivas: correspondencia con las familias de la introducción y tríada de cada subsección
-Se organiza en correspondencia directa con las 3 a 5 familias metodológicas o alternativas establecidas en los párrafos 3 y 4 de la introducción:
+Se organiza en correspondencia directa con las 3 a 7 familias metodológicas o alternativas establecidas en los párrafos 3 y 4 de la introducción:
 - **Párrafo de contexto inicial:** un primer párrafo que da contexto a los problemas y métodos estudiados, enmarcando directamente las familias que siguen.
 - **Una subsección por familia:** cada familia presentada en el estado del arte de la introducción recibe su propia subsección (`\subsection{...}`).
 - **Tríada interna de cada subsección (2 a 3 párrafos cada una):**

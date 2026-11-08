@@ -30,6 +30,10 @@ number is `0`, breaking changes can still arrive without a major bump.
   `sota-scout` adds a manuscript reference to the pool with its resolved abstract, and the `sota-grapher` appends its
   system and rebuilds with `smith atlas build`, which keeps the manuscript's citations drawn (rendering the page
   alone dropped them). A citation drawn only as a placeholder now opens on the sky too.
+- **A SOTA pool may hold up to 7 families** (it was 5): `check_atlas.py` now refuses fewer than 3 or more than 7
+  (`POOL_FAMILIES_OUTSIDE_3_7`), so a manuscript's background references (statistics, evaluation, optimizers) can
+  have their own family instead of joining an unrelated one. The scout, the plausibility skill and the writing guides
+  say the same.
 
 ## 0.65.0
 

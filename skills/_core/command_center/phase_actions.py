@@ -102,7 +102,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
         "actions": [
             _prompt("/plausibility", "Explore the plausibility of the idea", [
                 "Write the idea in at least two sentences: the problem and what you propose (otherwise the agent refuses to search).",
-                "The agent gathers ~25 SOTA references by their abstracts, in 3 to 5 families, and draws the constellation (atlas.html).",
+                "The agent gathers ~25 SOTA references by their abstracts, in 3 to 7 families, and draws the constellation (atlas.html).",
                 "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.",
                 "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.",
                 "You can adjust the idea and ask for a new screening; every pass is a new report.",

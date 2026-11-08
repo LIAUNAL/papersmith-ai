@@ -30,7 +30,7 @@ cites the draft's items as state of the art.
 
 | Stretch | Delegated to | Begins after | Ends at | Measure this before delegating |
 | --- | --- | --- | --- | --- |
-| Scout | this skill delegates to the `sota-scout` agent | the idea is stated in at least two sentences | the pool: 25 candidates with abstracts, 3 to 5 families, and the provisional plausibility note | the stated idea — scouting an unstated idea invents its own question |
+| Scout | this skill delegates to the `sota-scout` agent | the idea is stated in at least two sentences | the pool: 25 candidates with abstracts, 3 to 7 families, and the provisional plausibility note | the stated idea — scouting an unstated idea invents its own question |
 | Constellation | this skill delegates to the `sota-grapher` agent | the pool holds its 25 candidates | the single `atlas.html` beside `atlas.json`, plus the checker's green run | the pool file exists with 25 resolved candidates — mapping fewer invents coverage |
 | Screen | this skill delegates to the `novelty-screener` agent | the hypothesis is stated and the pool holds its candidates | the plausibility report — graded claims, ranked top 5, and one closing paragraph on where the proposal stands — with what remains owed | the stated hypothesis plus the pool — an empty pool is the scout's to fill, not this stretch's to invent; the borrowed `resolve` runs only to confirm the top 5, and nothing here files into `guidance/` |
 
@@ -104,7 +104,7 @@ and the 20-planet limit per system is absolute.
 | `topic_ai` | exactly 1 | 1 | The same topic framed as an AI problem |
 | `problem` | exactly 1 | 1 | The problem the paper faces, in one claim |
 | `application` | exactly 1 | 1 | Where it lands in the world |
-| `family` | exactly 1 | 2 | The group this system belongs to: one family per paper, 3 to 5 families per pool |
+| `family` | exactly 1 | 2 | The group this system belongs to: one family per paper, 3 to 7 families per pool |
 | `novelty` | exactly 1 | 1 | What the paper adds over those families |
 | `contribution` | 0 to 5 | 1 | Concepts argued beyond the one novelty claim: empty for a paper, 3 to 5 for a proposal overlaid on the pool |
 | `result` | 1 to 3 | 3 | Punctual results, one claim per planet |
@@ -112,7 +112,7 @@ and the 20-planet limit per system is absolute.
 
 A family the abstracts themselves name carries `provenance: stated`. A
 family grouped out of scattered methods carries `provenance: grouped`.
-A paper belongs to exactly one family; the pool holds 3 to 5 families
+A paper belongs to exactly one family; the pool holds 3 to 7 families
 total. Families are groups of systems, not labels sprayed over every
 paper — a family name appearing on every system is a family that
 distinguishes nothing.
@@ -280,7 +280,7 @@ operator has to be able to say no and have that change what happens next.
 | Idea under two sentences | Refuse before searching; scouting an unstated idea invents its own question |
 | The idea comes from the dashboard's thematic help | Treat it as any stated idea: two sentences still apply, and its LIA items are continuity context, never SOTA evidence |
 | Fewer than 25 resolvable candidates | Report the pool short with what was tried; never pad with unquoted entries |
-| More than 5 families | Keep the 5 the abstracts lean on hardest and say which were left out |
+| More than 7 families | Keep the 7 the abstracts lean on hardest and say which were left out |
 | The checker refuses | Fix the atlas and re-run, up to 3 repair passes; then stop with the violations quoted in `owed` |
 | A quote is not verbatim in its abstract | Copy the passage from the pool's abstract again, or drop the planet; never edit the abstract to fit the quote |
 | A claim has no abstract passage | The planet does not exist; a quoteless planet is a drawing |

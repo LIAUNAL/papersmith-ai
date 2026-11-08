@@ -210,8 +210,8 @@ def _shape_failures(atlas: object) -> list[str]:
                 label = planet.get("label")
                 if isinstance(label, str) and label.strip():
                     pool_families.add(label.strip())
-    if not 3 <= len(pool_families) <= 5:
-        found.append(f"POOL_FAMILIES_OUTSIDE_3_5: {len(pool_families)} distinct families")
+    if not 3 <= len(pool_families) <= 7:
+        found.append(f"POOL_FAMILIES_OUTSIDE_3_7: {len(pool_families)} distinct families")
 
     for position, link in enumerate(links):
         where = f"links[{position}]"

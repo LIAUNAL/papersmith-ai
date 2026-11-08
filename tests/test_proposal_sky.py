@@ -190,16 +190,16 @@ class MergeProposalSkyTests(unittest.TestCase):
         family pool is the widest the checker admits, so a proposal that opens a
         sixth neighborhood merges fine and is refused by the one authority that
         owns that number -- named, and after the merge, not instead of it."""
-        five = {"systems": [system(f"s{i}", f"F{i}") for i in range(1, 6)], "links": []}
-        self.atlas_path.write_text(json.dumps(five), encoding="utf-8")
-        self.overlay_path.write_text(json.dumps(overlay(family="F6", links=[])),
+        seven = {"systems": [system(f"s{i}", f"F{i}") for i in range(1, 8)], "links": []}
+        self.atlas_path.write_text(json.dumps(seven), encoding="utf-8")
+        self.overlay_path.write_text(json.dumps(overlay(family="F8", links=[])),
                                      encoding="utf-8")
         code, out = self.merge()
         self.assertEqual(code, 0, out)
         self.assertTrue(self.merged_path.is_file())
         code, out = self.run_script(CHECKER, str(self.merged_path))
         self.assertEqual(code, 1, out)
-        self.assertIn("POOL_FAMILIES_OUTSIDE_3_5", out)
+        self.assertIn("POOL_FAMILIES_OUTSIDE_3_7", out)
 
 
 if __name__ == "__main__":

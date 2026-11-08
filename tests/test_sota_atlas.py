@@ -113,13 +113,18 @@ class CheckAtlasTests(unittest.TestCase):
         systems = [system("a", "F1"), system("b", "F1")]
         code, out = self.run_checker(atlas(systems=systems))
         self.assertEqual(code, 1, out)
-        self.assertIn("POOL_FAMILIES_OUTSIDE_3_5", out)
+        self.assertIn("POOL_FAMILIES_OUTSIDE_3_7", out)
 
-    def test_pool_with_six_families_is_no_constellation(self):
-        systems = [system(f"s{i}", f"F{i}") for i in range(6)]
+    def test_pool_with_seven_families_is_a_constellation(self):
+        systems = [system(f"s{i}", f"F{i}") for i in range(7)]
+        code, out = self.run_checker(atlas(systems=systems))
+        self.assertNotIn("POOL_FAMILIES_OUTSIDE", out)
+
+    def test_pool_with_eight_families_is_no_constellation(self):
+        systems = [system(f"s{i}", f"F{i}") for i in range(8)]
         code, out = self.run_checker(atlas(systems=systems))
         self.assertEqual(code, 1, out)
-        self.assertIn("POOL_FAMILIES_OUTSIDE_3_5", out)
+        self.assertIn("POOL_FAMILIES_OUTSIDE_3_7", out)
 
     def test_link_to_no_planet_is_named(self):
         links = [{"from_system": "a", "from": "a-sun", "to_system": "b",

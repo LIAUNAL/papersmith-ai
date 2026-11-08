@@ -1,5 +1,5 @@
 ---
-description: "One stretch: scout a stated research idea across the open literature — at most 25 resolved references with verbatim abstracts, each in exactly one primary family, 3 to 5 families per pool, and a provisional plausibility note — as sota-pool/candidates.json. Ends at the pool; ingests nothing, grades nothing as final, files nothing into guidance/."
+description: "One stretch: scout a stated research idea across the open literature — at most 25 resolved references with verbatim abstracts, each in exactly one primary family, 3 to 7 families per pool, and a provisional plausibility note — as sota-pool/candidates.json. Ends at the pool; ingests nothing, grades nothing as final, files nothing into guidance/."
 mode: subagent
 permission:
   read: allow
@@ -65,7 +65,7 @@ In this order, and inside these budgets:
    broken; `RESOLVER_UNREACHABLE`, `IDENTIFIER_UNRESOLVED`) rather than
    working around them.
 3. **Families.** Assign each resolved candidate exactly one primary family,
-   from what the abstracts state — 3 to 5 families for the whole pool. A
+   from what the abstracts state — 3 to 7 families for the whole pool. A
    family the abstracts name carries `provenance: stated`; one you grouped
    carries `provenance: grouped`. A paper belongs to one group; families
    are neighborhoods of systems, not labels sprayed over every paper.

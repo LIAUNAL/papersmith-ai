@@ -89,7 +89,7 @@ When drafting canonical paper blocks, you must strictly uphold the following rul
   - *Paragraph 1:* General application context and motivating phenomenon.
   - *Paragraph 2:* Context of AI techniques in said application, ending with 2 to 3 sentences declaring the problem and its causes (drawn from the conceptual map, model panel, and pillars; continuous running prose, no bullet items, no bold text, no numbered questions).
   - *Paragraph 3:* State of the art, first methodological families: main methods, strengths, and issues/limitations.
-  - *Paragraph 4:* State of the art, remaining families in the same form, closing on the joint gap (3 to 5 families across paragraphs 3 and 4).
+  - *Paragraph 4:* State of the art, remaining families in the same form, closing on the joint gap (3 to 7 families across paragraphs 3 and 4).
   - *Paragraph 5:* Proposal presentation in the paper's one voice (*this work introduces* by default, *we propose* when the paper chose first person), ending in a colon and followed by its main contributions in 3 to 4 short items; the list continues the paragraph. The count is inherited from the methods section, never padded or trimmed here.
   - *Paragraph 6:* Summary of experiments performed, comparison methods and criteria, key empirical results, and potential impact.
   - *Paragraph 7:* Paper agenda and roadmap.
