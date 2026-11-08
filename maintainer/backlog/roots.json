@@ -240,6 +240,20 @@
       "evidence": {
         "156": "skills/_core/command_center/static/index.html:5608 sets the option text to the file name"
       }
+    },
+    {
+      "key": "citation-grounding",
+      "title": "SOTA citations are not tied to what their reference's abstract states",
+      "tier": 3,
+      "state": "open",
+      "fix": "Require a verbatim abstract quote per citation and publish the reverse reference-to-idea map (citations_cli.py routes).",
+      "proof": "tests/test_sota_citations.py quote and routes tests, PR #162",
+      "issues": [
+        160
+      ],
+      "evidence": {
+        "160": "skills/_core/results/citations.py problems() checked pool membership and a why, never the abstract"
+      }
     }
   ]
 }
