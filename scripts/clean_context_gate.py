@@ -181,6 +181,21 @@ def failure_signature(log_text: str) -> list[str]:
     return sorted(found)
 
 
+#: The most lines of a failing run's own explanation the report repeats.
+DETAIL_LINES = 40
+
+
+def failure_details(log_text: str) -> list[str]:
+    """What the failing tests said: pytest's short-summary lines that carry a
+    message (``FAILED x - AssertionError: ...``) and its ``E`` assertion lines,
+    at most ``DETAIL_LINES`` of them. The log itself lives in a temporary home
+    that is removed, so without these a CI-only failure names a test and never
+    says why it failed."""
+    lines = [line.rstrip() for line in log_text.splitlines()
+             if line.startswith(("FAILED ", "ERROR ")) and " - " in line or line.startswith("E   ")]
+    return lines[:DETAIL_LINES]
+
+
 def gate_could_not_run(log_text: str, code: int) -> bool:
     """Whether a stage failed to launch, rather than failed a test.
 
@@ -302,6 +317,11 @@ def main(argv: list[str] | None = None) -> int:
                   "with no personal context:")
             for line in failures:
                 print(f"  {line}")
+            details = failure_details((root / "empty.log").read_text("utf-8"))
+            if details:
+                print("\n[clean-context] what the failing tests said under the empty home:")
+                for line in details:
+                    print(f"  {line}")
             return 1
 
         print("\n[clean-context] OK: the gate's result is identical under an "
