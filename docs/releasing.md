@@ -145,13 +145,11 @@ from it, which is the security property rather than an inconvenience:
 All five fields must match exactly. A mismatched environment name produces a
 `403` that does not say which field was wrong.
 
-### When the first publication lands
+### Package name in the manual
 
-The manual currently states that there is no plain `pip install papersmith-ai`,
-and explains that the neighbouring `papersmith` on PyPI is an unrelated project.
-The first half of that stops being true the moment a version is published; the
-warning about the neighbouring name does not, and should stay. Editing that
-paragraph belongs to the release commit that first publishes, not to a follow-up.
+The README already documents `pipx install papersmith-ai` and
+`pip install papersmith-ai`. Keep the warning that the neighbouring `papersmith`
+package on PyPI is unrelated; do not replace the installation name with it.
 
 ## The audit
 

@@ -354,9 +354,9 @@ start.
 
 | Runtime | Version | What for | If it's missing |
 | --- | --- | --- | --- |
-| **Python** | ≥ 3.11 | the `smith` CLI and all the Python skills | there's no possible installation |
-| **Node.js** | ≥ 21 | the deliberation engine (`jiti`, `typebox`) and the dashboard | `init` warns and `deliberate` refuses |
-| `npm` | whatever Node ships | installing those two dependencies in the workspace | same as above |
+| **Python** | ≥ 3.11 (CI: 3.11, 3.12) | the `smith` CLI and all the Python skills | there's no possible installation |
+| **Node.js** | ≥ 21 (CI: 24; local check: 26.13.0) | the deliberation engine (`jiti`, `typebox`) and the dashboard | `init` warns and `deliberate` refuses |
+| `npm` | compatible with the selected Node (local check: 12.2.2 with Node 26.13.0) | installing those two dependencies in the workspace | same as above |
 
 Both are checked at once:
 
@@ -400,11 +400,11 @@ smith upgrade --plan-migrations ~/papers/sparse-ae  # which artifacts are missin
 smith upgrade ~/papers/sparse-ae                    # syncs the files and migrates the artifacts
 smith status ~/papers/sparse-ae                     # drift and pending migrations
 
-# 2. Isolated ingestion runtime (micromamba: Python 3.12, PyTorch, Surya OCR, llama-server)
+# 2–3. Only inside a repository clone, for framework development:
+# Isolated ingestion runtime (micromamba: Python 3.12, PyTorch, Surya OCR, llama-server)
 python3 scripts/setup_env.py install
-
-# 3. Node dependencies and projection of skills to the harnesses
-npm install
+# Node dependencies and projection of skills to the harnesses
+npm ci
 npm run setup:harnesses
 ```
 
@@ -468,6 +468,12 @@ including the `llama-server` binary that the OCR needs — it is **not** Ollama
 nor a Homebrew installation. The micromamba it bootstraps is a pinned release
 whose SHA-256 is checked before it runs; the comment above `MICROMAMBA_VERSION`
 in `scripts/setup_env.py` is the procedure for moving the pin.
+The locally verified Node/npm pair (26.13.0/12.2.2) is a workstation setup,
+not a new minimum for workspaces; CI still tests Node 24. If a shell picks an
+older `node` or `npm`, check `command -v node` and `command -v npm` before
+changing the project's manifests. Keep account credentials in the harness's
+user configuration, never in `.pi/settings.json` or committed files.
+
 `npm run setup:harnesses` symlinks the canonical
 `skills/` tree into `.claude/skills`, `.pi/skills`, `.opencode/skills`
 and `.agents/skills`, with relative, idempotent symlinks (see
@@ -977,9 +983,12 @@ touches an existing one (add packages to it with `pi install -l <source>`).
 
 What the table does not promise:
 
-- **Pi:** the agents in `.pi/agents` are only read by the third-party package
-  `pi-subagents`; the Pi core has no subagents. Without that package, the
-  files exist but remain unused.
+- **Pi and Gentle Shell:** the agents in `.pi/agents` are only read by the
+  third-party package `pi-subagents`; Pi core has no subagents. Gentle Shell's
+  own orchestrator and subagents are user-level features, not installed or
+  configured by this repository. The generated Pi persona belongs to an
+  initialized workspace, not to this source checkout. Without a subagent
+  package, the projected agent files exist but remain unused.
 - **Claude Code:** the guard is opt-in. Papersmith never writes or merges
   `.claude/settings.json`; the snippet to enable it is in
   [`docs/guard-hooks.md`](docs/guard-hooks.md).

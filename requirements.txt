@@ -1,5 +1,9 @@
-# The forge's OWN dependencies. This file is the manifest of the virtualenv the
-# suite runs under -- not a target's, and not optional: measured on 2026-09-08,
+# The forge's OWN dependencies. Requires Python >=3.11 (pyproject.toml);
+# CI tests 3.11/3.12 and scripts/setup_env.py provisions Python 3.12.
+# Node/npm are separate runtimes, not Python requirements; never store provider
+# credentials or machine-local PATH settings in this manifest.
+# This file is the manifest of the virtualenv the suite runs under -- not a
+# target's, and not optional: measured on 2026-09-08,
 # a bare interpreter without these collected 2020 of 2750 tests and reported OK
 # over every one it managed to reach, which is indistinguishable from a green
 # suite. Three whole test modules failed to import and said nothing anybody
