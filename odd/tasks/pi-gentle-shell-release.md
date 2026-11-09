@@ -12,8 +12,8 @@ S4. "el repositorio es el que esta enlazado con https://github.com/LIAUNAL/paper
 ## Tasks
 
 T1 [S1-S2] Done: document supported vs verified runtimes and Pi scope; inline; commit 9a59caa6 (merged by e0f9ccda).
-T2 [S1-S2] Done: projection clean; Node, UI, typecheck, 254 focused Python tests and full two-home clean-context gate passed; independent verifier found no blocker; release metadata commit pending.
-T3 [S3-S4] In progress: commit release 0.68.1, merge, tag, push and publish; inline; commit pending.
+T2 [S1-S2] Done: projection clean; Node, UI, typecheck, 254 focused Python tests and full two-home clean-context gate passed; independent verifier found no blocker; release metadata commit 24b8f2d9.
+T3 [S3-S4] Done: 24b8f2d9 merged via cfd77ad6, annotated v0.68.1 points at that merge, main/tag pushed, GitHub release and PyPI published; closure log commit follows tag.
 
 ## Log
 
@@ -25,3 +25,4 @@ L2. el repositorio es el que esta enlazado con https://github.com/LIAUNAL/papers
 L3. 7a5254e1, 9a83002c and cfb7cea0 are already ancestors of main and origin/main; do not merge them twice.
 L4. docs: distinguish verified Node 26/npm 12 workstation from Node>=21/Python>=3.11 project contract; Python 3.11/3.12 and Node 24 are CI-tested. `python3 -m pytest` used the unrelated Python 3.15 lacking pytest; use `.micromamba/envs/papersmith/bin/pytest` for T2.
 L5. Initial focused Python run: 93 passed, 1 failed (`test_shipped_changes_since_the_last_release_moved_the_version`), because cfb7cea0 changed shipped paths since v0.68.0 without a version bump. 0.68.1 release candidate fixes this; rerun: 254 passed, 2663 subtests passed; Node, UI and typecheck passed. Full `scripts/clean_context_gate.py`: two homes, both Node/Python exit 0, 0 failures, same results (50m44s). Independent verifier found no blocker. Runtime warnings: one Starlette `httpx` deprecation on focused run.
+L6. v0.68.1 published: https://github.com/LIAUNAL/papersmith-ai/releases/tag/v0.68.1. Publish workflow 42556423547 completed successfully at cfd77ad6; PyPI JSON returned HTTP 200 for 0.68.1 with wheel and sdist. Remote main and peeled tag both resolve to cfd77ad6. An unrelated user-level pi-web-access web fetch failed with missing `@earendil-works/pi-ai`; this is not evidence against the repository's harness projection, but user-level tooling requires separate diagnosis.
