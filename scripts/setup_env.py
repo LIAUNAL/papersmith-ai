@@ -127,6 +127,10 @@ CONDA_BASE_PACKAGES = [
     "uvicorn",
     "watchfiles",
     "pydantic",
+    # The client behind `fastapi.testclient`, which the dashboard's static
+    # snapshot export (`smith ui --publish-pages`) uses; starlette 1.x refuses
+    # without it, and `smith ui`'s backend probe now asks for it.
+    "httpx2",
 ]
 
 # The micromamba release `install` bootstraps, and the SHA-256 of each

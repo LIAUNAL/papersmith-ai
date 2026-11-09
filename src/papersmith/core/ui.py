@@ -51,7 +51,11 @@ FALLBACK_INTERPRETERS = (
 #: when no interpreter can import the backend (a fresh `smith init` defers the
 #: workspace environment, and the pipx install declares no dependency). Each
 #: spec is the one `requirements.txt` declares.
-UI_ENV_PACKAGES = ("fastapi>=0.110", "uvicorn>=0.27", "watchfiles>=0.21", "PyYAML>=6.0")
+#: `httpx2` is what `fastapi.testclient` needs for the static snapshot that
+#: `--export-snapshot` and `--publish-pages` write; starlette 1.x refuses
+#: without it (or the deprecated `httpx`), and fastapi does not bring it.
+UI_ENV_PACKAGES = ("fastapi>=0.110", "uvicorn>=0.27", "watchfiles>=0.21", "PyYAML>=6.0",
+                   "httpx2>=2.0")
 
 
 def ui_env_dir() -> Path:
@@ -103,10 +107,13 @@ def provision_ui_env(report=print) -> Path | None:
 
 #: The modules the backend imports at module scope, asked of the interpreter
 #: itself rather than restated as a dependency list. `fastapi` is the one whose
-#: absence produces the raw traceback this preflight replaces.
+#: absence produces the raw traceback this preflight replaces. An HTTP client
+#: (`httpx2`, or the older `httpx`) is asked too, so an environment provisioned
+#: before it was declared is reinstalled instead of failing the snapshot export.
 BACKEND_PROBE = (
     "import importlib.util as u, sys;"
     "missing = [m for m in ('fastapi', 'uvicorn') if u.find_spec(m) is None];"
+    "missing += [] if (u.find_spec('httpx2') or u.find_spec('httpx')) else ['httpx2'];"
     "sys.exit(1 if missing else 0)"
 )
 

@@ -105,6 +105,32 @@ class UiRuntimeBootstrapTests(unittest.TestCase):
             with self.subTest(spec=spec):
                 self.assertIn(spec, requirements)
 
+    def test_the_runtime_installs_the_http_client_the_snapshot_export_needs(self) -> None:
+        # `--publish-pages` exports through `fastapi.testclient`, which needs
+        # `httpx2` (or the deprecated `httpx`); neither comes with fastapi.
+        names = {spec.split(">")[0].split(";")[0].strip() for spec in ui.UI_ENV_PACKAGES}
+        self.assertTrue({"httpx2", "httpx"} & names)
+
+    def _probe(self, *modules: str) -> int:
+        import subprocess
+        import sys
+
+        stubs = self.root / "stubs"
+        for name in modules:
+            (stubs / name).mkdir(parents=True, exist_ok=True)
+            (stubs / name / "__init__.py").write_text("", encoding="utf-8")
+        env = {**os.environ, "PYTHONPATH": str(stubs)}
+        # -S drops site-packages, so only the stubs above are importable.
+        return subprocess.run([sys.executable, "-S", "-c", ui.BACKEND_PROBE],
+                              env=env, check=False).returncode
+
+    def test_an_environment_without_an_http_client_is_not_runnable(self) -> None:
+        self.assertNotEqual(self._probe("fastapi", "uvicorn"), 0)
+
+    def test_an_environment_with_either_http_client_is_runnable(self) -> None:
+        self.assertEqual(self._probe("fastapi", "uvicorn", "httpx2"), 0)
+        self.assertEqual(self._probe("fastapi", "uvicorn", "httpx"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
