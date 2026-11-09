@@ -1628,5 +1628,8 @@ window.PAPERSMITH_I18N.es = {
   "contribution.def.theory": "Aquí el rigor y la corrección de las demostraciones van primero; los supuestos se juzgan frente a la literatura, nunca se penaliza la falta de experimentos, el rigor debe venir con intuición y la originalidad es una técnica de demostración nueva o una síntesis novedosa de herramientas.",
   "contribution.def.useInspired": "El caso de uso debe ser real y el diseño debe ajustarse a él; se aceptan datasets no estándar si el caso los justifica; compara contra enfoques no-ML relevantes además de líneas base de ML, y explica la jerga del dominio para un lector de ML.",
   "contribution.def.conceptFeasibility": "Las afirmaciones están fuertemente sustentadas (el soporte parcial es nivel de workshop); la exigencia en significancia y originalidad es alta: la idea debe cambiar cómo se aborda un problema.",
-  "contribution.def.negativeResults": "Se basa en un análisis profundo, no en una corrida fallida; debe cambiar cómo la comunidad aborda una pregunta y ser sorprendente; no necesita proponer una solución."
+  "contribution.def.negativeResults": "Se basa en un análisis profundo, no en una corrida fallida; debe cambiar cómo la comunidad aborda una pregunta y ser sorprendente; no necesita proponer una solución.",
+  "static.banner": "Instantánea de solo lectura de {workspace} · {date} — aquí no se ejecuta nada",
+  "static.refused": "Esta es una instantánea de solo lectura: aquí no se puede ejecutar ni cambiar nada.",
+  "static.missing": "No forma parte de esta instantánea de solo lectura."
 };

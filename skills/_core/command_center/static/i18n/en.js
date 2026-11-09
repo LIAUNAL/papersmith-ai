@@ -1629,5 +1629,8 @@ window.PAPERSMITH_I18N.en = {
   "contribution.def.theory": "The rigor and correctness of the proofs come first; assumptions are judged against the literature, missing experiments are never penalised, rigor should come with intuition, and originality is a new proof technique or a novel synthesis of tools.",
   "contribution.def.useInspired": "The use case must be real and the design must fit it; non-standard datasets are fine when the use case justifies them; it compares against relevant non-ML approaches as well as ML baselines, and explains domain jargon for an ML reader.",
   "contribution.def.conceptFeasibility": "Claims are strongly supported (partial support is a workshop standard); the bar for significance and originality is high: the idea must change how a problem is approached.",
-  "contribution.def.negativeResults": "Grounded in deeper analysis, not a failed run; it must change how the community approaches a question and be surprising; it need not propose a fix."
+  "contribution.def.negativeResults": "Grounded in deeper analysis, not a failed run; it must change how the community approaches a question and be surprising; it need not propose a fix.",
+  "static.banner": "Read-only snapshot of {workspace} · {date} — nothing runs here",
+  "static.refused": "This is a read-only snapshot: nothing can be run or changed here.",
+  "static.missing": "Not part of this read-only snapshot."
 };

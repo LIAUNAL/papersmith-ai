@@ -11,6 +11,26 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **A read-only snapshot of the dashboard** (`smith ui --export-snapshot <dir>`). It writes the workspace's dashboard
+  as static files any host serves, GitHub Pages included and under a sub-path: every read-only answer as a file, a
+  shim that answers the page's requests from them, refuses every write and hides every control that runs
+  something, and a "Read-only snapshot" banner. It copies an allow-list only (no doctor, terminal, accounts, team,
+  credential status, PDF annotations, `guidance/` or absolute paths), and masks every text with the AI archive's
+  redaction plus the workspace's people: credentials become `[secret]`, addresses `[email]`, and declared
+  authors, team members and the operator `[author-N]`, `[member-N]` and `[user]`. The AI History tab and its
+  conversations are included, masked, unless `--no-ai-history`; `--snapshot-lang` picks the languages. Exporting
+  writes nothing into the workspace.
+- **Publish that snapshot to GitHub Pages** (`smith ui --publish-pages`, the `/ui-github` skill). It exports a fresh
+  snapshot outside the workspace, says what it publishes (a PUBLIC site, AI history included or not, file count
+  and size) and asks, or needs `--yes`; then it commits the snapshot alone as one orphan commit with a temporary
+  index, force-pushes it to `gh-pages` (`--pages-branch`) of `origin` (`--pages-remote`) without touching the
+  workspace's tree, index or branch, and enables Pages for that branch with `gh api` (created on 404, repointed
+  when it serves another branch), printing the site URL. Without `gh` or its login, the branch is published and
+  the `gh api` command is printed. It refuses a workspace without that remote, a remote off github.com, and a
+  failed export. Reading the workspace's `scripts/setup_env.py` no longer leaves a `scripts/__pycache__/` in it.
+
 ## 0.67.0
 
 - **A proposal revision without a slug counts** (#155). `research-concept-r44.md` is a managed revision for the

@@ -44,6 +44,7 @@ out. :func:`sync` skips a source that has not changed since the last run, using
 from __future__ import annotations
 
 import argparse
+import functools
 import getpass
 import hashlib
 import json
@@ -154,18 +155,228 @@ def private_terms(root: Path) -> tuple[str, ...]:
     return tuple(sorted(kept, key=lambda term: (-len(term), term)))
 
 
-def redact(text: str, terms: Iterable[str] = ()) -> str:
+def redact(text: str, terms: Iterable[str] = (), *, assignments: bool = True) -> str:
     """``text`` with what looks like a credential replaced by ``[REDACTED]`` and
     personal data by its mask; ``terms`` are this workspace's people."""
     for pattern in _SECRETS:
         text = pattern.sub(REDACTED, text)
-    text = _ASSIGNED.sub(_assigned, text)
+    if assignments:
+        text = _ASSIGNED.sub(_assigned, text)
     for pattern, mask in _PRIVATE:
         text = pattern.sub(mask, text)
     for term in terms:
         if len(term) >= MIN_TERM:
             text = re.sub(rf"(?<![\w-]){re.escape(term)}(?![\w-])", "[ACCOUNT]", text, flags=re.IGNORECASE)
     return text
+
+
+# --------------------------------------------------------------------------
+# public copies (the dashboard's read-only snapshot, static_export.py)
+# --------------------------------------------------------------------------
+#: A public copy masks more than the archive: shapes that are a credential in
+#: a page anyone can read even when the archive keeps them (a bare 32-hex key
+#: such as a platform's legacy API key, any bearer value, ``token=...`` in a URL).
+_PUBLIC_SECRETS = (
+    re.compile(r"(?<![0-9A-Fa-f])[0-9a-fA-F]{32}(?![0-9A-Fa-f])"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+)
+#: ``token=...``: a query string or a config line, but also code (``const token = x``).
+_PUBLIC_ASSIGNED = re.compile(
+    r"(?i)(?<![\w-])(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key)\s*=\s*[^\s&\"'<>,;]+")
+PUBLIC_SECRET = "[secret]"
+PUBLIC_EMAIL = "[email]"
+#: Name parts too common to mask on their own.
+_NAME_STOPWORDS = frozenset({"and", "the", "del", "de", "la", "las", "los", "van", "von", "der", "team",
+                             "research", "group", "lab", "author", "authors"})
+_LATEX_ACCENTS = {"\u00e1": "a", "\u00e9": "e", "\u00ed": "i", "\u00f3": "o", "\u00fa": "u", "\u00c1": "A",
+                  "\u00c9": "E", "\u00cd": "I", "\u00d3": "O", "\u00da": "U"}
+
+
+def _fold(text: str) -> str:
+    import unicodedata
+
+    return "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+
+
+def _latex_unescape(text: str) -> str:
+    """Accented letters as LaTeX writes them (``\\'{a}``, ``\\'a``, ``\\~{n}``)."""
+    marks = {"'": "\u0301", "`": "\u0300", "~": "\u0303", '"': "\u0308", "^": "\u0302"}
+
+    def accent(match: re.Match[str]) -> str:
+        import unicodedata
+
+        return unicodedata.normalize("NFC", match.group(2) + marks[match.group(1)])
+
+    text = re.sub(r"\\([`'~\"^])\{?([A-Za-z])\}?", accent, text)
+    return re.sub(r"\{([A-Za-z\u00c0-\u024f])\}", r"\1", text)
+
+
+def _latex_escapes(term: str) -> list[str]:
+    """``term`` as LaTeX source may spell it: acute accents as ``\\'{a}`` and ``\\'a``."""
+    if not any(ch in _LATEX_ACCENTS for ch in term):
+        return []
+    braced = "".join(f"\\'{{{_LATEX_ACCENTS[ch]}}}" if ch in _LATEX_ACCENTS else ch for ch in term)
+    bare = "".join(f"\\'{_LATEX_ACCENTS[ch]}" if ch in _LATEX_ACCENTS else ch for ch in term)
+    return [braced, bare]
+
+
+def _manuscript_authors(root: Path) -> list[str]:
+    """The names of ``paper/main.tex``'s ``\\author{...}``, LaTeX removed."""
+    try:
+        source = (root / "paper" / "main.tex").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    start = source.find("\\author{")
+    if start < 0:
+        return []
+    block = source[start + len("\\author{"):start + 4000]
+    names: list[str] = []
+    for line in block.splitlines():
+        line = re.sub(r"%.*", "", line)
+        if not line.strip() or line.lstrip().startswith(("\\begin", "\\end", "\\centering", "\\small")):
+            continue
+        line = re.sub(r"\$[^$]*\$", "", _latex_unescape(line))
+        line = re.sub(r"\\\\(\[[^\]]*\])?", "", line)
+        if "@" in line or re.search(r"\\(?:texttt|url|textit)\b|^\s*\$|\d{4}", line):
+            break
+        for part in re.split(r",|\band\b", re.sub(r"\\[A-Za-z]+\*?", " ", line)):
+            name = re.sub(r"[{}]", "", part).strip()
+            if 2 <= len(name.split()) <= 6 and not re.search(r"[^\w\s.'-]", name):
+                names.append(name)
+        if names:
+            break
+    return names
+
+
+def _declared_authors(root: Path) -> list[str]:
+    """Authors the workspace declares: ``papersmith.yaml``, ``.papersmith/config.json``,
+    ``.papersmith/model_spec.json`` and the manuscript's ``\\author``."""
+    found: list[Any] = []
+    try:
+        import yaml
+
+        data = yaml.safe_load((root / "papersmith.yaml").read_text(encoding="utf-8")) or {}
+        found.append(data.get("authors") if isinstance(data, dict) else None)
+    except Exception:  # noqa: BLE001 - a missing or broken file declares nobody
+        pass
+    for rel in (".papersmith/config.json", ".papersmith/model_spec.json"):
+        try:
+            data = json.loads((root / rel).read_text(encoding="utf-8"))
+            found.append(data.get("authors") if isinstance(data, dict) else None)
+        except (OSError, ValueError):
+            pass
+    names: list[str] = []
+    for entry in found:
+        items = entry if isinstance(entry, list) else [entry]
+        for item in items:
+            if isinstance(item, dict):
+                names += [item.get(key) for key in ("name", "email", "orcid")]
+            elif isinstance(item, str):
+                names += [part.strip() for part in re.split(r";|\band\b", item)]
+    return [name for name in names if isinstance(name, str) and name.strip()] + _manuscript_authors(root)
+
+
+def _team_people(root: Path) -> list[list[str]]:
+    try:
+        team = json.loads((root / ".papersmith" / "team.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    people = []
+    for member in team.get("members") or [] if isinstance(team, dict) else []:
+        if not isinstance(member, dict):
+            continue
+        terms = [member.get(key) for key in ("owner", "displayName", "display_name", "name", "email")]
+        accounts = member.get("accounts") if isinstance(member.get("accounts"), dict) else {}
+        for account in accounts.values():
+            if isinstance(account, dict):
+                terms += [account.get(key) for key in ("username", "email")]
+        people.append([term for term in terms if isinstance(term, str) and term.strip()])
+    return people
+
+
+def _operator(root: Path) -> list[str]:
+    terms: list[str] = []
+    try:
+        terms.append(getpass.getuser())
+    except (OSError, KeyError):
+        pass
+    try:
+        import pwd
+
+        terms.append(pwd.getpwuid(os.getuid()).pw_gecos.split(",")[0])
+    except (ImportError, KeyError, AttributeError, OSError):
+        pass
+    for key in ("user.name", "user.email"):
+        try:
+            terms.append(_git(root, "config", key).stdout.strip())
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return [term for term in terms if term and term.strip()]
+
+
+def _variants(term: str) -> set[str]:
+    """``term``, its parts (a full name's given names and surnames) and their
+    unaccented and LaTeX spellings."""
+    term = term.strip()
+    out = {term}
+    parts = re.split(r"[\s-]+", term)
+    # A person's name, not an address or a group ("Example Research Team").
+    if "@" not in term and not any(part.lower() in _NAME_STOPWORDS for part in parts):
+        out |= {part for part in parts if len(part) >= 4 and not part.isupper()}
+    for value in list(out):
+        out.add(_fold(value))
+        out.update(_latex_escapes(value))
+    return {value for value in out if len(value) >= 4}
+
+
+def public_identities(root: Path | str) -> tuple[tuple[str, str], ...]:
+    """The people a public copy of this workspace must not name, each spelling
+    with its placeholder, longest first: authors ``[author-N]``, team members
+    ``[member-N]`` (names, usernames and emails) and the operator ``[user]`` (the
+    system user, its full name and git's ``user.name`` and ``user.email``). A name
+    typed free-form that the workspace does not declare cannot be recognized."""
+    root = Path(root)
+    groups = [(f"[author-{n}]", [name]) for n, name in enumerate(dict.fromkeys(_declared_authors(root)), 1)]
+    groups += [(f"[member-{n}]", terms) for n, terms in enumerate(_team_people(root), 1)]
+    groups.append(("[user]", _operator(root)))
+    mapping: dict[str, tuple[str, str]] = {}
+    for mask, terms in groups:
+        for term in terms:
+            for variant in _variants(term):
+                # Matching ignores case, so the first spelling of a name keeps it.
+                mapping.setdefault(variant.lower(), (variant, mask))
+    return tuple(sorted(mapping.values(), key=lambda item: (-len(item[0]), item[0])))
+
+
+def redact_public(text: str, identities: Iterable[tuple[str, str]] = (), *, code: bool = False) -> str:
+    """``text`` fit for a public page: :func:`redact`'s credentials and personal
+    data, the stricter :data:`_PUBLIC_SECRETS`, and every spelling in
+    ``identities`` (:func:`public_identities`) replaced by its placeholder.
+    Credentials become ``[secret]`` and addresses ``[email]``. ``code`` marks a
+    page with scripts (an HTML view): ``name = value`` there is code, not a
+    credential, so assignments are left alone."""
+    text = redact(text, assignments=not code).replace(REDACTED, PUBLIC_SECRET).replace("[EMAIL]", PUBLIC_EMAIL)
+    for pattern in _PUBLIC_SECRETS:
+        text = pattern.sub(PUBLIC_SECRET, text)
+    if not code:
+        text = _PUBLIC_ASSIGNED.sub(PUBLIC_SECRET, text)
+    matcher, masks = _identity_matcher(tuple(identities))
+    if matcher is not None:
+        text = matcher.sub(lambda match: masks.get(match.group(0).lower(), "[name]"), text)
+    return text
+
+
+@functools.lru_cache(maxsize=8)
+def _identity_matcher(identities: tuple[tuple[str, str], ...]) -> tuple[re.Pattern[str] | None, dict[str, str]]:
+    """One alternation of every spelling, longest first, whole words, any case."""
+    if not identities:
+        return None, {}
+    ordered = sorted(identities, key=lambda item: -len(item[0]))
+    # A name ends at anything but a letter or digit: "Meza\u00b3" (an affiliation mark) still matches.
+    letter = r"[A-Za-z0-9_\u00c0-\u024f]"
+    pattern = re.compile(rf"(?<!{letter})(?:" + "|".join(re.escape(term) for term, _ in ordered) + rf")(?!{letter})",
+                         re.IGNORECASE)
+    return pattern, {term.lower(): mask for term, mask in ordered}
 
 
 def _assigned(match: re.Match[str]) -> str:

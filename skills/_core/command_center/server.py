@@ -163,6 +163,25 @@ def export_static(root: Path, destination: Path) -> int:
     return 0
 
 
+def export_snapshot_cli(root: Path, destination: Path, languages: str, *, ai_history: bool = True) -> int:
+    """Write the read-only snapshot (static_export.py) and report its counts."""
+    from . import static_export
+
+    langs = tuple(part.strip() for part in str(languages or "").split(",") if part.strip())
+    try:
+        result = static_export.export_snapshot(root, destination, languages=langs, ai_history=ai_history)
+    except static_export.SnapshotError as exc:
+        print(f"smith ui: {exc}", file=sys.stderr)
+        return 2
+    print(f"smith ui: snapshot of {result['workspace']} -> {result['out']}: "
+          f"{result['routes']} answers in {result['files']} files, {result['bytes']} bytes; "
+          f"excluded {', '.join(result['excluded'])}")
+    if result["missing"]:
+        print(f"smith ui: {len(result['missing'])} answers were errors or absent: "
+              + ", ".join(result["missing"][:10]) + (" ..." if len(result["missing"]) > 10 else ""))
+    return 0
+
+
 # --------------------------------------------------------------------------
 # SSE helpers
 # --------------------------------------------------------------------------
@@ -3959,6 +3978,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--health-ttl", type=float, default=DEFAULT_HEALTH_TTL_SECONDS)
     parser.add_argument("--export-static", metavar="<dir>", default=None,
                         help="copy the dashboard build to <dir> and exit")
+    parser.add_argument("--export-snapshot", metavar="<dir>", default=None,
+                        help="write a static, read-only snapshot of this workspace's dashboard "
+                             "(for GitHub Pages) to <dir> and exit")
+    parser.add_argument("--snapshot-lang", default="en,es", metavar="en,es",
+                        help="languages of the snapshot's answers (default: en,es)")
+    parser.add_argument("--ai-history", action=argparse.BooleanOptionalAction, default=True,
+                        help="include the AI History tab and its conversations in the snapshot, "
+                             "with credentials, addresses and the workspace's people masked "
+                             "(default: on)")
     parser.add_argument("--allowed-host", action="append", default=[], metavar="HOST:PORT",
                         help="extra Host header to accept (repeatable); "
                              "for `npm run dev` use --allowed-host localhost:5173")
@@ -4046,6 +4074,9 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(args.root).expanduser().resolve()
     if args.export_static:
         return export_static(root, Path(args.export_static))
+    if args.export_snapshot:
+        return export_snapshot_cli(root, Path(args.export_snapshot), args.snapshot_lang,
+                                   ai_history=args.ai_history)
     if not is_loopback_bind(args.host) and not args.allow_unauthenticated_network:
         parser.error(
             f"--host {args.host} is not a loopback address, and the dashboard has no "

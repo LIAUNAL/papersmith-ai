@@ -359,6 +359,11 @@ def build_novelty_constellation(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+#: Whether the viewer keeps a copy in .papersmith/novelty_graph.html. The
+#: read-only snapshot (static_export.py) turns it off while it exports.
+WRITE_VIEWER_COPY = True
+
+
 def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -> str:
     """Generate the full responsive 3D celestial constellation viewer for the novelty graph,
     matching the exact Three.js solar-system aesthetics of the SOTA Atlas.
@@ -375,7 +380,7 @@ def build_novelty_viewer_html(root_path: Path | None = None, lang: str = "en") -
         banner = _language_banner(raw_data, lang)
         if banner:
             html_out = html_out.replace("</h1>\n", f"</h1>\n{banner}\n", 1)
-        if root_path is not None:
+        if root_path is not None and WRITE_VIEWER_COPY:
             try:
                 ps_dir = Path(root_path) / ".papersmith"
                 if ps_dir.is_dir():

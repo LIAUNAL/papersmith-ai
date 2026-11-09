@@ -492,6 +492,10 @@ agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).
 smith ui --port 8080
 smith ui ~/papers/sparse-ae --no-browser
 smith ui --export-static ./dashboard-static
+smith ui --export-snapshot ./site
+smith ui --export-snapshot ./site --snapshot-lang en --no-ai-history
+smith ui . --publish-pages              # asks before pushing
+smith ui . --publish-pages --yes --no-ai-history
 ```
 
 | Flag | Effect |
@@ -500,9 +504,83 @@ smith ui --export-static ./dashboard-static
 | `--port PORT` | Preferred port; if it is taken, the next free one |
 | `--no-browser` | Does not open the browser |
 | `--export-static <dir>` | Copies the dashboard build to `<dir>` and exits |
+| `--export-snapshot <dir>` | Writes a static, read-only snapshot of this workspace's dashboard to `<dir>` (for GitHub Pages) and exits; see *Read-only snapshot* below |
+| `--snapshot-lang en,es` | Languages the snapshot answers in (default `en,es`) |
+| `--ai-history` / `--no-ai-history` | Includes the AI History tab and its conversations in the snapshot, masked (default: included) |
+| `--publish-pages` | Exports a fresh snapshot and publishes it to GitHub Pages; see *Publishing to GitHub Pages* below |
+| `--pages-branch <branch>` | With `--publish-pages`: the branch Pages serves (default `gh-pages`) |
+| `--pages-remote <remote>` | With `--publish-pages`: the git remote pushed to (default `origin`) |
+| `--yes` | With `--publish-pages`: publishes without the interactive confirmation |
 | `--allowed-host HOST:PORT` | Also accepts that `Host` header (repeatable); only forwarded to the backend when supplied |
 | `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
 | `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
+
+**Read-only snapshot.** `--export-snapshot <dir>` runs the workspace's own
+backend once, in-process, and writes every read-only answer the dashboard needs
+as a file under `<dir>/snapshot/`, indexed in `snapshot/manifest.json`, next to
+the shipped assets, an `index.html` and `.nojekyll`. Any static host serves the
+folder, under a sub-path too (`https://<user>.github.io/<repo>/`). In it,
+`snapshot.js` answers the page's `/api/` requests from those files, refuses every
+write with `403 STATIC_SNAPSHOT`, hides every control that runs something (phase
+runs, agents, the support terminal, rebuilds, novelty decisions, PDF edits,
+journal searches) and shows a "Read-only snapshot of <workspace> · <date>"
+banner. Nothing is written into the workspace while it exports, and a previous
+snapshot in `<dir>` is replaced; any other non-empty `<dir>` is refused.
+
+A Pages site is public even for a private repository, so the snapshot copies an
+allow-list only. It never carries the Smith Doctor or the support terminal, the
+experiments tab's accounts, team members, credential status and local
+environment, the operator's PDF annotations, or files under `guidance/` and
+dot-folders, and the workspace and home paths become `.` and `~`. The AI History
+tab and the conversations it lists are included unless `--no-ai-history` is
+given. Every text answer, those conversations included, is masked first:
+credentials and tokens become `[secret]`, email addresses `[email]`, and the
+people the workspace declares (the authors of `papersmith.yaml`,
+`.papersmith/config.json`, `.papersmith/model_spec.json` and `paper/main.tex`,
+the members and accounts of `.papersmith/team.json`, the system user, its full
+name and git's `user.name` and `user.email`) `[author-N]`, `[member-N]` and
+`[user]`. A name typed free-form that the workspace does not declare cannot be
+recognized, and the compiled PDF and figures are copied as they are, so they
+show the paper's own author block.
+
+**Publishing to GitHub Pages.** `smith ui [<dir>] --publish-pages` (the
+`/ui-github` skill runs it) puts that snapshot on the web. It is a flag of
+`smith ui`, like `--export-snapshot`, because `smith ui` already takes the
+workspace as its positional `<dir>`, so a `pages` subcommand word would be read
+as a directory. In order, it:
+
+1. reads the URL of the remote (`--pages-remote`, default `origin`) as
+   configured and refuses unless it is a `github.com` repository
+   (`https://github.com/<owner>/<repo>(.git)`, `ssh://git@github.com/...` or
+   `git@github.com:<owner>/<repo>.git`), or when the workspace is not a git
+   repository or has no remote of that name;
+2. exports a fresh snapshot with the workspace's own backend into a temporary
+   directory outside the workspace (`--snapshot-lang` and `--no-ai-history`
+   apply; the AI history is included by default), and refuses if the export
+   fails;
+3. prints what it is about to publish: that the site is PUBLIC, whether the
+   AI history is included, the file count and size, and that the PDF and
+   figures are published as they are; then it asks `[y/N]`, or needs `--yes`
+   (without a terminal and without `--yes` it refuses);
+4. commits the snapshot, and only the snapshot, as one orphan commit
+   (`Publish the read-only dashboard snapshot (<UTC timestamp>)`, authored by
+   the repository's configured git user) built with a temporary index file,
+   and force-pushes it by commit id to `refs/heads/<branch>` (`--pages-branch`,
+   default `gh-pages`). The workspace's working tree, index, HEAD and current
+   branch are never touched, and the Pages branch always holds a single
+   commit;
+5. makes GitHub Pages serve that branch: `gh api repos/<owner>/<repo>/pages`;
+   on 404 `gh api -X POST repos/<owner>/<repo>/pages -f 'source[branch]=gh-pages'
+   -f 'source[path]=/'`, and `-X PUT` with the same fields when Pages serves
+   another branch or folder. It prints the site URL (`html_url`, else
+   `https://<owner>.github.io/<repo>/`); GitHub takes a minute or two to build
+   it after each push.
+
+When `gh` is not installed or not authenticated, the branch is still published
+and the exact `gh api` command to enable Pages is printed; it exits `1` only
+when `gh` answered with an error (a private repository needs GitHub Pro, Team
+or Enterprise for Pages). The privacy rules are those of the snapshot above:
+the site is public even for a private repository.
 
 **Right after `smith init`.** The dashboard runs from the workspace's environment
 when it exists (`.micromamba/envs/papersmith`, then a hand-made `.venv`). A fresh

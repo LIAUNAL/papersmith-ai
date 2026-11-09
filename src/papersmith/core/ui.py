@@ -8,6 +8,7 @@ dashboard runs standalone without Node/npm in the workspace.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import contextlib
 import importlib.util
@@ -16,6 +17,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from ..errors import SourceError, UserError
@@ -131,7 +133,13 @@ def provisioned_interpreters(workspace: Path) -> tuple[Path, ...]:
         if spec is None or spec.loader is None:
             return ()
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Reading the declaration must not leave `scripts/__pycache__/` in the
+        # workspace (the publish and export paths promise to write nothing).
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = previous
         root = Path(module.MAMBA_ROOT)
         env_name = str(module.ENV_NAME)
     except Exception:                      # noqa: BLE001 -- any failure is "cannot derive"
@@ -244,6 +252,9 @@ def find_available_port(host: str, preferred: int,
 
 def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool,
                       export_static: str | None = None,
+                      export_snapshot: str | None = None,
+                      snapshot_lang: str | None = None,
+                      snapshot_ai_history: bool | None = None,
                       interpreter: str | None = None,
                       allowed_hosts: list[str] | None = None,
                       allow_unauthenticated_network: bool = False,
@@ -264,6 +275,13 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
         argv.append("--no-browser")
     if export_static is not None:
         argv.extend(["--export-static", str(export_static)])
+    if export_snapshot is not None:
+        argv.extend(["--export-snapshot", str(export_snapshot)])
+        if snapshot_lang:
+            argv.extend(["--snapshot-lang", str(snapshot_lang)])
+        # On by default in the backend; only an explicit choice is forwarded.
+        if snapshot_ai_history is not None:
+            argv.append("--ai-history" if snapshot_ai_history else "--no-ai-history")
     # Only forwarded when given, so an older workspace backend without the
     # flag keeps working.
     for allowed in allowed_hosts or []:
@@ -333,12 +351,36 @@ def _run_child(argv: list[str], workspace: Path) -> int:
     return code if code > 0 else USER_ERROR
 
 
+def _refuse_conflicting_publish(args) -> None:
+    """``--publish-pages`` exports its own snapshot, so an export flag beside it
+    would be silently ignored: refuse it instead."""
+    if getattr(args, "export_snapshot", None) or getattr(args, "export_static", None):
+        raise UserError("--publish-pages exports its own snapshot: drop --export-snapshot/--export-static")
+
+
 def run_cli(args) -> int:
     workspace = Path(args.directory).expanduser().resolve()
     if not fs.is_dir(workspace):
         raise UserError(f"not a directory: {workspace}")
     command_center_entry(workspace)
     interpreter = workspace_interpreter(workspace)
+
+    if getattr(args, "publish_pages", False):
+        _refuse_conflicting_publish(args)
+        return run_publish_pages(args, workspace, interpreter)
+
+    export_snapshot = getattr(args, "export_snapshot", None)
+    if export_snapshot:
+        # Run by the workspace's own backend, like every `smith ui` path: the
+        # snapshot is the dashboard that workspace's kit ships.
+        interpreter = require_runnable_backend(workspace, interpreter)
+        argv = build_server_argv(
+            workspace, args.host, args.port, no_browser=True,
+            export_snapshot=str(Path(export_snapshot).expanduser().resolve()),
+            snapshot_lang=getattr(args, "snapshot_lang", None),
+            snapshot_ai_history=getattr(args, "ai_history", None), interpreter=interpreter,
+        )
+        return _run_child(argv, workspace)
 
     if args.export_static:
         argv = build_server_argv(
@@ -367,6 +409,70 @@ def run_cli(args) -> int:
     return _run_child(argv, workspace)
 
 
+def _confirm(prompt: str) -> bool:
+    try:
+        answer = input(prompt)
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
+
+
+def run_publish_pages(args, workspace: Path, interpreter: str) -> int:
+    """Export a fresh snapshot and publish it to GitHub Pages (``--publish-pages``).
+
+    The remote is checked first, then the snapshot is written by the workspace's
+    own backend into a temporary directory outside the workspace, summarized,
+    confirmed (``--yes`` or an interactive "y"), committed as one orphan commit
+    on the Pages branch and force-pushed; finally ``gh api`` makes Pages serve
+    that branch.
+    """
+    from . import pages
+
+    prog = getattr(args, "_prog", "smith")
+    remote = getattr(args, "pages_remote", None) or pages.DEFAULT_REMOTE
+    branch = getattr(args, "pages_branch", None) or pages.DEFAULT_BRANCH
+    if args.export_snapshot or args.export_static:
+        raise UserError("--publish-pages writes its own snapshot; drop --export-snapshot/--export-static")
+    url = pages.remote_url(workspace, remote)
+    owner, repo = pages.parse_github_remote(url)
+    interpreter = require_runnable_backend(workspace, interpreter)
+    with tempfile.TemporaryDirectory(prefix="smith-pages-") as holder:
+        site = Path(holder).resolve() / "site"
+        if workspace == site or workspace in site.parents:
+            raise UserError(f"the temporary directory {holder} is inside the workspace; "
+                            "set TMPDIR to a directory outside it")
+        argv = build_server_argv(
+            workspace, args.host, args.port, no_browser=True, export_snapshot=str(site),
+            snapshot_lang=getattr(args, "snapshot_lang", None),
+            snapshot_ai_history=getattr(args, "ai_history", None), interpreter=interpreter,
+        )
+        code = _run_child(argv, workspace)
+        if code != SUCCESS or not (site / "snapshot" / "manifest.json").is_file():
+            raise UserError("the snapshot export failed, so nothing was published")
+        summary = pages.site_summary(site)
+        print(f"{prog} ui: about to publish a read-only snapshot of {workspace.name} to the "
+              f"{branch} branch of {owner}/{repo} ({remote})")
+        print(f"{prog} ui: the GitHub Pages site will be PUBLIC, even if the repository is private")
+        print(f"{prog} ui: AI history: "
+              + ("included (credentials, emails and the workspace's people masked)"
+                 if summary["ai_history"] else "not included"))
+        print(f"{prog} ui: {summary['files']} files, {pages.human_size(summary['bytes'])}; "
+              f"the paper PDF and figures are published as they are")
+        if not getattr(args, "yes", False):
+            if not sys.stdin.isatty():
+                raise UserError("refusing to publish without confirmation: pass --yes "
+                                "(stdin is not a terminal)")
+            if not _confirm(f"Publish to {owner}/{repo} {branch}? [y/N] "):
+                print(f"{prog} ui: nothing was published")
+                return USER_ERROR
+        sha = pages.push_snapshot(workspace, site, remote=remote, branch=branch)
+    print(f"{prog} ui: pushed {sha[:12]} to {remote} {branch}")
+    ok, site_url = pages.ensure_pages(owner, repo, branch)
+    print(f"{prog} ui: site: {site_url}")
+    print(f"{prog} ui: GitHub Pages takes a minute or two to build the site after a push")
+    return SUCCESS if ok else USER_ERROR
+
+
 def register(subparsers) -> None:
     parser = subparsers.add_parser(
         "ui",
@@ -382,6 +488,26 @@ def register(subparsers) -> None:
     parser.add_argument("--no-browser", action="store_true", help="never open a browser window")
     parser.add_argument("--export-static", metavar="<dir>", default=None,
                         help="copy the dashboard build to <dir> and exit")
+    parser.add_argument("--export-snapshot", metavar="<dir>", default=None,
+                        help="write a static, read-only snapshot of the dashboard (every panel's "
+                             "data as files, nothing that runs) to <dir> for GitHub Pages, and exit")
+    parser.add_argument("--snapshot-lang", default=None, metavar="en,es",
+                        help="languages the snapshot answers in (default: en,es)")
+    parser.add_argument("--ai-history", action=argparse.BooleanOptionalAction, default=None,
+                        help="with --export-snapshot: include the AI History tab and its "
+                             "conversations, with credentials, emails and the workspace's people "
+                             "masked (default: on; --no-ai-history leaves them out)")
+    parser.add_argument("--publish-pages", action="store_true",
+                        help="export a fresh read-only snapshot and publish it to GitHub Pages: one "
+                             "orphan commit force-pushed to the Pages branch of the workspace's "
+                             "GitHub remote, then Pages enabled for that branch with `gh api`; the "
+                             "site is PUBLIC (honors --snapshot-lang and --no-ai-history)")
+    parser.add_argument("--pages-branch", default=None, metavar="<branch>",
+                        help="with --publish-pages: the branch GitHub Pages serves (default: gh-pages)")
+    parser.add_argument("--pages-remote", default=None, metavar="<remote>",
+                        help="with --publish-pages: the git remote to push to (default: origin)")
+    parser.add_argument("--yes", action="store_true",
+                        help="with --publish-pages: publish without the interactive confirmation")
     parser.add_argument("--allowed-host", action="append", default=None, metavar="HOST:PORT",
                         help="also accept this Host header (repeatable), e.g. when forwarding "
                              "the port or running the Vite dev server")
