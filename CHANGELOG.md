@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.68.0
 
 - **A read-only snapshot of the dashboard** (`smith ui --export-snapshot <dir>`). It writes the workspace's dashboard
   as static files any host serves, GitHub Pages included and under a sub-path: every read-only answer as a file, a
