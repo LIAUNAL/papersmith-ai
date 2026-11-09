@@ -11,6 +11,14 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.68.1
+
+- Fix static dashboard snapshot export by provisioning `httpx2` in the forge
+  environment, including when upgrading an existing micromamba environment.
+- Clarify Pi/Gentle Shell integration and the difference between supported
+  runtime minimums, CI-tested versions and locally verified Node 26/npm 12.
+  Keep credentials in the user's harness configuration, not project manifests.
+
 ## 0.68.0
 
 - **A read-only snapshot of the dashboard** (`smith ui --export-snapshot <dir>`). It writes the workspace's dashboard
