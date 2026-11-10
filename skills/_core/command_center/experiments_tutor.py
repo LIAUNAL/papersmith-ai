@@ -126,7 +126,31 @@ def deny_rules(root: Path) -> tuple[str, ...]:
     digest's filter and the doctrine."""
     root = Path(root).expanduser().resolve()
     declared = (f"./{prefix}**" for prefix in _secret_paths(root) if _PLAIN_PREFIX.fullmatch(prefix))
-    return tuple(f"Read({path})" for path in (*DENY_READ, *declared))
+    return tuple(f"Read({path})" for path in (*DENY_READ, *declared, *key_store_paths()))
+
+
+def key_store_paths() -> tuple[str, ...]:
+    """The per-user API key store (``skills/_core/api_keys.py``) as a deny path,
+    when ``~/.config/**`` does not already cover it: a moved
+    ``XDG_CONFIG_HOME`` or ``PAPERSMITH_KEYS_DIR``. ``~/`` under the home,
+    ``//`` (absolute) elsewhere; a path the rule list cannot carry verbatim is
+    left to the doctrine, like a declared prefix."""
+    try:
+        from .keys_view import api_keys
+
+        directory = Path(api_keys().store_dir()).expanduser().absolute()
+    except Exception:  # noqa: BLE001 - the fixed rules still apply
+        return ()
+    try:
+        relative = directory.relative_to(Path.home())
+    except ValueError:
+        relative = None
+    if relative is not None and relative.parts[:1] == (".config",):
+        return ()
+    text = relative.as_posix() if relative is not None else directory.as_posix().lstrip("/")
+    if not text or not _PLAIN_PREFIX.fullmatch(text + "/"):
+        return ()
+    return (f"~/{text}/**" if relative is not None else f"//{text}/**",)
 
 
 def _inside(root: Path, path: Path) -> bool:

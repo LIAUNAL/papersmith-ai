@@ -53,7 +53,7 @@
     '[data-jp-action]:not([data-jp-action="pdf"])', '.journals-sjr label',
     '[data-exp-fold="infrastructure"]', '[data-atlas-complete]', '.badge--live',
     '.phase-action__input', '.phase-action__agent', '.phase-action__foot', '.kw-help',
-    '[onclick="navigateTab(\'doctor\')"]',
+    '[onclick="navigateTab(\'doctor\')"]', '#keysCard', '[data-keys-prompt]', '[data-keys-terminal]',
   ];
   // The AI History tab is in the snapshot unless it was exported with --no-ai-history.
   if (!entries['/api/ai-history']) HIDDEN_CONTROLS.push('[onclick="navigateTab(\'historia\')"]');

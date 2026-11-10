@@ -37,6 +37,7 @@ from .. import __version__
 from ..errors import PapersmithError, UserError
 from . import fs, manifest
 from .exit_codes import EXECUTION_ERROR, SUCCESS
+from .keys import key_rows
 
 #: Row states from best to worst; the summary is the worst one present.
 STATES = ("ok", "absent", "warn", "fail")
@@ -345,7 +346,8 @@ def build_report(workspace: str | Path, *, backend: dict[str, Any] | None,
     stored = manifest.load_manifest(root)
     if stored is None:
         raise UserError(f"not a papersmith workspace: missing {root / '.papersmith/manifest.json'}")
-    rows = framework_rows(root, stored) + tool_rows(root) + backend_rows(root, backend, backend_error)
+    rows = (framework_rows(root, stored) + tool_rows(root) + key_rows()
+            + backend_rows(root, backend, backend_error))
     order = {area: index for index, area in enumerate(AREAS)}
     rows.sort(key=lambda row: order[row["area"]])  # stable: keeps each area's own order
     counts = {state: sum(1 for row in rows if row["state"] == state) for state in STATES}

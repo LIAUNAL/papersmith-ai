@@ -1,3 +1,6 @@
+# Local secrets: never committed (workspaces ignore them too, gitignore.tpl).
+.env*
+
 # papersmith CLI build artifacts and the generated kit snapshot
 build/
 dist/

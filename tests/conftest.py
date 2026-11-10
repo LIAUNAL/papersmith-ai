@@ -34,6 +34,12 @@ os.environ.setdefault("PAPERSMITH_ALLOW_DIRTY_KIT", "1")
 # when no interpreter can import the backend. The suite must never touch the
 # operator's own cache, so it gets a throwaway one for the whole run.
 os.environ["XDG_CACHE_HOME"] = tempfile.mkdtemp(prefix="papersmith-test-cache-")
+# The literature connectors' API keys (skills/_core/api_keys.py) are kept per
+# user, outside every workspace. The suite must never read or write the
+# operator's own: a throwaway store, and neither variable exported.
+os.environ["PAPERSMITH_KEYS_DIR"] = tempfile.mkdtemp(prefix="papersmith-test-keys-")
+for _variable in ("ASTA_API_KEY", "OPENALEX_API_KEY"):
+    os.environ.pop(_variable, None)
 
 
 # --- Process-state isolation (X8b) -----------------------------------------

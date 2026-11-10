@@ -28,6 +28,7 @@ to the current directory and has to point at an initialized workspace, except fo
 | `env` | Manages the workspace's micromamba Python environment |
 | `team` | The team registry: remote accounts associated with distinct emails (`list`, `add`, `remove`) |
 | `colab` | Signs team owners in to the official Colab CLI and reports their state (`login`, `status`) |
+| `keys` | Your Asta and OpenAlex API keys, stored once per user and never printed (`set`, `status`, `clear`) |
 
 ### `smith init [<dir>]`
 
@@ -476,6 +477,9 @@ One table of the workspace's health, read-only. Each row has a state: `ok`,
   (`/Library/TeX/texbin`, `/usr/local/texlive/*/bin/*`, `/opt/texlive/*/bin/*`),
   so it works on macOS, Linux and Windows under WSL. A missing tool is a row,
   never a crash; with no TeX engine or no rasterizer at all, a `warn` row says so.
+  Two more rows say whether the `asta key` and the `openalex key` are
+  configured (stored, or exported) — offline, never the value: `absent` when not
+  (both are optional), `warn` when a stored file is ignored as insecure.
 - **skills** and **agents**: each one present, projected to every enabled
   harness, and each skill front door answering `--help`.
 - **flows**: the dashboard's phases and their status (`PASS`, `ACTIVE`,
@@ -1407,6 +1411,57 @@ dashboard compile runs the same pass and reports it under `manuscript_qa`, never
 failing because of it; `smith audit` prints the stored count and whether
 `main.pdf` changed since. The check reads the PDF itself because Playwright
 renders HTML, not PDFs; Playwright stays for the dashboard UI (`ui/e2e`).
+
+### `smith keys {set,status,clear} [<provider>]`
+
+```bash
+smith keys set asta             # hidden prompt; prints where to request a key
+smith keys set openalex --verify
+printf '%s\n' "$KEY" | smith keys set asta --stdin
+smith keys status               # offline: configured, from where, never the value
+smith keys status asta --json   # that provider's status object
+smith keys status --verify      # one read-only call per configured key
+smith keys clear asta
+```
+
+The per-user API keys of the literature connectors, `asta` (Ai2's Asta, the
+Semantic Scholar corpus) and `openalex`. Both services answer without a key, so
+both keys are optional: without the Asta key nothing changes and OpenAlex stays
+the default; with it, Asta is asked first wherever `papersmith.yaml`'s
+`paper_writing.roles` name it (resolution, journal-finder, the scout's
+discovery). An OpenAlex key raises OpenAlex's daily budget. The dashboard asks
+for the same keys in **Doctor → API keys**.
+
+| Flag | Effect |
+|------|--------|
+| `--stdin` | (`set`) Reads the key from one line of stdin. Without it, `set` uses a hidden prompt and refuses when there is no terminal, so a key never lands in an agent's transcript |
+| `--verify` | (`set`) Checks the key with the service first and stores it only if accepted. (`status`) Makes one read-only call per configured key and exits 1 unless every one is accepted |
+| `--json` | Prints JSON. `status <provider> --json` prints that provider's status object (`configured`, `source`: `env`, `store` or `none`, `stored`, `shadowed`, `problem`, `path`, ...) |
+
+- **Where it lives:** `$XDG_CONFIG_HOME/papersmith/keys/<provider>`
+  (`~/.config/papersmith/keys/` by default), directory `0700`, file `0600`,
+  written atomically, outside every workspace. On POSIX a stored file that is a
+  symlink, belongs to another user or is readable by others is never used (the
+  same rule as the Kaggle token). `PAPERSMITH_KEYS_DIR` moves the store; it is
+  for tests and CI only.
+- **Precedence:** an exported `ASTA_API_KEY` / `OPENALEX_API_KEY` wins over the
+  stored key (`status` says when a stored key is shadowed).
+- **Never printed:** no command prints a key, takes one as an argument or puts
+  one in its JSON. `--verify` sends it only to its own service (Asta: one
+  `get_paper` call in the `x-api-key` header; OpenAlex: one `/works?per-page=1`
+  call with `api_key`), follows no redirect, and reports `ok`, `refused` or
+  `unreachable` — for OpenAlex with the remaining daily budget.
+- **Sessions:** the dashboard exports each stored key into the sessions its CLI
+  assistant starts (unless already exported). For an agent started elsewhere,
+  `status` prints the line to export it from the file, e.g.
+  `export ASTA_API_KEY="$(cat "$HOME/.config/papersmith/keys/asta")"`.
+- **Asta's terms:** Ai2 licenses Asta for academic and non-commercial use, asks
+  that you acknowledge it in what you publish, and the key is personal
+  ([license](https://allenai.org/asta-corpus-license)); request a key at
+  <https://share.hsforms.com/1L4hUh20oT3mu8iXJQMV77w3ioxm>. OpenAlex keys:
+  <https://openalex.org/settings/api-key>. papersmith never requests a key on
+  your behalf.
+- A key pasted into an agent chat is in that chat's history: rotate it.
 
 ### `smith mcp {serve,inspect,print-config,kaggle}`
 

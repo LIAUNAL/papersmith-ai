@@ -155,9 +155,36 @@ def private_terms(root: Path) -> tuple[str, ...]:
     return tuple(sorted(kept, key=lambda term: (-len(term), term)))
 
 
+#: The literature connectors' keys the operator configured (Asta, OpenAlex;
+#: ``skills/_core/api_keys.py``). A bare key has no shape a pattern knows, so
+#: it is masked literally: read at most every few seconds, held only in this
+#: process's memory, never written to the archive's state.
+_KEY_NEEDLES: dict[str, Any] = {"at": float("-inf"), "values": ()}
+KEY_NEEDLE_TTL_SECONDS = 5.0
+
+
+def _key_needles() -> tuple[str, ...]:
+    now = time.monotonic()
+    if now - _KEY_NEEDLES["at"] > KEY_NEEDLE_TTL_SECONDS:
+        try:
+            from .keys_view import secret_values
+
+            values = tuple(secret_values())
+        except Exception:  # noqa: BLE001 - redaction never fails on a broken store
+            values = ()
+        _KEY_NEEDLES.update(at=now, values=values)
+    return _KEY_NEEDLES["values"]
+
+
 def redact(text: str, terms: Iterable[str] = (), *, assignments: bool = True) -> str:
     """``text`` with what looks like a credential replaced by ``[REDACTED]`` and
-    personal data by its mask; ``terms`` are this workspace's people."""
+    personal data by its mask; ``terms`` are this workspace's people.
+
+    A configured API key is replaced first, literally, before any pattern can
+    rewrite part of it and leave the rest readable."""
+    for value in _key_needles():
+        if value in text:
+            text = text.replace(value, REDACTED)
     for pattern in _SECRETS:
         text = pattern.sub(REDACTED, text)
     if assignments:

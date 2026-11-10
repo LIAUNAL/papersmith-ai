@@ -270,9 +270,11 @@ that already publish work like it. Nothing is ever submitted.
   requires a free API key for real use; keyless calls are a small demo
   allowance (USD 0.10 per day, shared by everyone behind one IP). A free key
   takes an account at <https://openalex.org/signup> with a verified email, then
-  the key from <https://openalex.org/settings/api>, and `export
-  OPENALEX_API_KEY=...` (the CLI sends it only when set, and never asks for it
-  on your behalf). It gives USD 1 per day of usage, ten times the keyless
+  the key from <https://openalex.org/settings/api-key>. Save it once in the
+  dashboard's **Doctor → API keys** panel or with `smith keys set openalex`
+  (stored per user, mode `0600`, outside every workspace; an exported
+  `OPENALEX_API_KEY` still wins). The CLI sends it only to OpenAlex and only
+  when set, and never requests a key on your behalf. It gives USD 1 per day of usage, ten times the keyless
   budget. By OpenAlex's price list (checked 2026-10-31), fetching a record by
   id is free, a list with a filter costs USD 0.10 per 1,000 requests and a
   search USD 1 per 1,000, so a day's budget is about 1,000 searches or 10,000

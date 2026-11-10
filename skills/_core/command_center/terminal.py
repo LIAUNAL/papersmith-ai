@@ -498,6 +498,14 @@ def session_env(agent_id: str, root: Path) -> dict[str, str]:
         token = read_remote_mcp_token()
         if token:
             env[REMOTE_MCP_TOKEN_ENV] = token
+    # The literature connectors' keys (Asta, OpenAlex) the operator stored in
+    # the Doctor tab or with `smith keys set`: the harnesses' MCP entries and
+    # the skill scripts read them from the environment. An export still wins.
+    try:
+        from .keys_view import session_additions
+    except ImportError:  # loaded outside its package: no keys to add
+        return env
+    env.update(session_additions(env))
     return env
 
 

@@ -302,6 +302,12 @@ FIXED_RULES = ["Read(./.remote-execution/**)", "Read(./**/.remote-execution/**)"
                "Read(~/.ssh/**)", "Read(~/.kaggle/**)", "Read(~/.config/**)"]
 
 
+def key_rules() -> list[str]:
+    """The API key store's deny rule: the suite moves the store (conftest's
+    PAPERSMITH_KEYS_DIR) out of `~/.config`, so the rule always appears here."""
+    return [f"Read({path})" for path in experiments_tutor.key_store_paths()]
+
+
 class DenyRuleTests(_Root):
     """"Never read secrets" enforced by the CLI, not only asked of the model:
     the experiments tutor's command carries Read deny rules; the math tutor's
@@ -322,14 +328,15 @@ class DenyRuleTests(_Root):
         return calls
 
     def test_the_rules_cover_remote_secrets_credentials_home_and_the_declared_store(self) -> None:
-        self.assertEqual(list(experiments_tutor.deny_rules(self.root)), FIXED_RULES)
+        self.assertEqual(list(experiments_tutor.deny_rules(self.root)), FIXED_RULES + key_rules())
         self.declare_store_and_inbox()
         self.assertEqual(list(experiments_tutor.deny_rules(self.root)),
-                         FIXED_RULES + ["Read(./skills/remote-accounts/store/**)", "Read(./remote-inbox/**)"])
+                         FIXED_RULES + ["Read(./skills/remote-accounts/store/**)", "Read(./remote-inbox/**)"]
+                         + key_rules())
 
     def test_a_declared_prefix_the_rule_parser_would_split_is_left_to_the_digest_filter(self) -> None:
         _write(self.root, "skills/remote-accounts/scripts/accounts_cli.py", 'INBOX_NAME = "in(box),x"\n')
-        self.assertEqual(list(experiments_tutor.deny_rules(self.root)), FIXED_RULES)
+        self.assertEqual(list(experiments_tutor.deny_rules(self.root)), FIXED_RULES + key_rules())
 
     def test_the_experiments_command_denies_and_the_math_command_is_unchanged(self) -> None:
         argv = tutor.claude_argv("/bin/claude", "S", "P", tutor.TURN_SCHEMA, ("Read",), ("Read(./a/**)", "Read(~/b c/**)"))
@@ -346,7 +353,8 @@ class DenyRuleTests(_Root):
         experiments_tutor.run_turn(self.root, "Is my split leak-free?", "ask", "validation")
         argv = calls[0]
         self.assertEqual(argv[argv.index("--disallowedTools") + 1].split(","),
-                         FIXED_RULES + ["Read(./skills/remote-accounts/store/**)", "Read(./remote-inbox/**)"])
+                         FIXED_RULES + ["Read(./skills/remote-accounts/store/**)", "Read(./remote-inbox/**)"]
+                         + key_rules())
         self.assertEqual(argv[argv.index("--tools") + 1], "Read,Glob,Grep")
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read,Glob,Grep")
         self.assertEqual(argv[-1].splitlines()[0], "mode: ask")
@@ -494,7 +502,7 @@ class ExperimentsRouteTests(_Root):
         response = _call(_route(self.app, self.BASE + "/turn", "POST"),
                          self.req({"message": "help", "mode": "ask", "area": "general"}))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(calls[0][calls[0].index("--disallowedTools") + 1].split(","), FIXED_RULES)
+        self.assertEqual(calls[0][calls[0].index("--disallowedTools") + 1].split(","), FIXED_RULES + key_rules())
 
     def test_a_turn_runs_through_the_route_with_the_experiments_schema(self) -> None:
         turn = _route(self.app, self.BASE + "/turn", "POST")
