@@ -5,7 +5,7 @@ reads them. One is different and is documented here because it is generated.
 
 ## `workspace_v0_13_0/`: a populated 0.13.0 workspace
 
-What `papersmith upgrade` has to carry forward is a workspace that a real
+What `smith upgrade` has to carry forward is a workspace that a real
 release produced, so this one was produced by the 0.13.0 release itself.
 `scripts/build-v0_13_0-fixture.py` extracts `git archive 55dcb4e` (the commit
 whose `src/papersmith/__init__.py` reads `0.13.0`; that release has no tag)

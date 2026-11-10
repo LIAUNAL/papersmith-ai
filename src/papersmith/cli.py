@@ -107,8 +107,8 @@ def parse_argv(parser: argparse.ArgumentParser, argv: list[str] | None):
 
 
 def main(argv: list[str] | None = None) -> int:
-    # `smith` is the canonical command name; the `papersmith` entry point stays
-    # installed as a compatibility alias but reports itself as `smith`.
+    # `smith` is the only command the package installs; the `papersmith` alias
+    # was removed, and a CLI started any other way still reports itself as `smith`.
     prog = "smith"
     parser = build_parser(prog=prog)
     args = parse_argv(parser, argv)

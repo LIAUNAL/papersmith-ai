@@ -468,6 +468,95 @@ class RefreshRenderedAtlas(Migration):
         return [f"rendered {self.PAGE}"], []
 
 
+class RetireLegacyCommand(Migration):
+    """Point MCP servers that still launch ``papersmith`` at ``smith``.
+
+    The ``papersmith`` console script — an alias of ``smith`` since 0.19.0 — is
+    no longer installed. From 0.2.0 to 0.18.x ``smith mcp print-config`` printed,
+    and ``docs/mcp.md`` told operators to paste, ``"command": "papersmith"`` into
+    their harness's MCP file. Such an entry now fails to start, and nothing in
+    the workspace says why.
+
+    Those files belong to the workspace: ``upgrade`` never overwrites them
+    (``PRESERVE_PATTERNS``) and ``ensure_mcp_servers`` keeps every server it does
+    not manage, so this is the one mechanism that reaches them. It rewrites
+    exactly one field, the ``command`` of a server whose command is the bare
+    name the old docs printed, under any key, and leaves every other server,
+    key and argument as written. An explicit path (``/opt/tools/papersmith``)
+    may be the operator's own wrapper and is left alone, as is a file that is
+    not a JSON object: ``ensure_mcp_servers`` already warns about that one.
+
+    It is convergence, not version-gated, for the reason ``ScaffoldGraphPool``
+    gives: the files answer the question directly, at any history.
+    """
+
+    id = "mcp-legacy-papersmith-command"
+    summary = "point MCP servers that still launch the removed `papersmith` command at `smith`"
+
+    LEGACY = "papersmith"
+    CURRENT = "smith"
+
+    def _files(self) -> tuple[str, ...]:
+        # Imported here: the generators module is the one owner of which file
+        # each harness reads, and nothing at import time needs it.
+        from ..generators import MCP_CONFIG_FILES
+
+        return tuple(MCP_CONFIG_FILES.values())
+
+    def _load(self, workspace: Path, relpath: str) -> dict | None:
+        """The file as a JSON object with an ``mcpServers`` object, else ``None``."""
+        path = workspace / relpath
+        if not fs.is_regular_file(path):
+            return None
+        text = fs.read_text(path)
+        if text is None:
+            return None
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict) or not isinstance(data.get("mcpServers"), dict):
+            return None
+        return data
+
+    def _stale(self, data: dict) -> list[str]:
+        return [name for name, entry in data["mcpServers"].items()
+                if isinstance(entry, dict) and entry.get("command") == self.LEGACY]
+
+    def plan(self, workspace: Path) -> list[str]:
+        actions: list[str] = []
+        for relpath in self._files():
+            data = self._load(workspace, relpath)
+            if data is None:
+                continue
+            actions.extend(f"point {relpath}'s `{name}` server at `{self.CURRENT}`: "
+                           f"the `{self.LEGACY}` command was removed"
+                           for name in self._stale(data))
+        return actions
+
+    def apply(self, workspace: Path) -> tuple[list[str], list[str]]:
+        done: list[str] = []
+        failures: list[str] = []
+        for relpath in self._files():
+            data = self._load(workspace, relpath)
+            if data is None:
+                continue
+            stale = self._stale(data)
+            if not stale:
+                continue
+            for name in stale:
+                data["mcpServers"][name]["command"] = self.CURRENT
+            text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+            if not fs.write_text(workspace / relpath, text):
+                failures.append(f"could not rewrite {relpath}: point its "
+                                f"{', '.join(f'`{name}`' for name in stale)} server(s) at "
+                                f"`{self.CURRENT}` by hand")
+                continue
+            done.extend(f"pointed {relpath}'s `{name}` server at `{self.CURRENT}`"
+                        for name in stale)
+        return done, failures
+
+
 #: Every migration this release ships, in the order they must run.
 #:
 #: Order is contract: the scaffold creates the pool the renderer writes into.
@@ -479,4 +568,5 @@ class RefreshRenderedAtlas(Migration):
 REGISTRY: tuple[Migration, ...] = (
     ScaffoldGraphPool(),
     RefreshRenderedAtlas(),
+    RetireLegacyCommand(),
 )

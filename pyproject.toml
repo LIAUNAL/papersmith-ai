@@ -45,7 +45,8 @@ Changelog = "https://github.com/LIAUNAL/papersmith-ai/blob/main/CHANGELOG.md"
 Issues = "https://github.com/LIAUNAL/papersmith-ai/issues"
 
 [project.scripts]
-papersmith = "papersmith.cli:main"
+# `smith` is the only command. The `papersmith` alias (0.19.0-0.68.x) was
+# removed; `smith upgrade` repoints workspace MCP entries that still launch it.
 smith = "papersmith.cli:main"
 
 [tool.setuptools]

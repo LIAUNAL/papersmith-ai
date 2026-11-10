@@ -2,7 +2,8 @@
 
 Moved out of the README (#79). `smith --help` and `smith <command> --help` are the source of truth; this page explains each command. Back to the [README](../README.md).
 
-Every command runs as `papersmith <command> [options] [<dir>]`. `<dir>` defaults
+Every command runs as `smith <command> [options] [<dir>]` (`smith` is the only
+command; the `papersmith` alias was removed in 0.70.0). `<dir>` defaults
 to the current directory and has to point at an initialized workspace, except for
 `init`. Global flag: `--version`.
 
@@ -156,7 +157,7 @@ read-only probe and is evaluated on every run, because the next release can
 change what there is to converge on. A workspace that already satisfies it writes
 nothing.
 
-The current version ships two convergence migrations:
+The current version ships three convergence migrations:
 
 - **`sota-pool-scaffold`** creates `sota-pool/.gitkeep` in workspaces older than
   the release that began scaffolding the graph pool.
@@ -165,6 +166,11 @@ The current version ships two convergence migrations:
   from hashes stored in `sota-pool/.atlas-render.json`, not from modification
   dates: the mtime of a copy says when the file was written, and `upgrade`
   rewrites it for reasons that have nothing to do with the page.
+- **`mcp-legacy-papersmith-command`** points every server in `.mcp.json`,
+  `.pi/mcp.json` and `.agents/mcp_config.json` whose `command` is the bare
+  `papersmith` (what `mcp print-config` printed up to 0.18.x) at `smith`, the
+  only command since 0.70.0. It rewrites that one field and keeps every other
+  server, key and argument; an explicit path is left as written.
 
 When the recorded version cannot be ordered — the marker was lost, or it says
 something without a number — a version-bound migration cannot be placed on
