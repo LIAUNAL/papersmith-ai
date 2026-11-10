@@ -6846,8 +6846,15 @@ class DriverInterceptionTests(unittest.TestCase):
             self.assertFalse(payload["ok"], payload)
             self.assertIn("machine_shape", payload["error"])
             self.assertIn(sys.executable, payload["error"])
-            self.assertIn("pip install", payload["error"])
-            self.assertIn("kagglesdk==0.1.37", payload["error"])
+            # The remedy has two honest shapes and the driver picks one by
+            # environment: install the pin when the workspace env is absent
+            # or is the running interpreter, else name the interpreter that
+            # already carries it. Refusing to accept either shape would make
+            # this test a property of the machine, not of the driver.
+            self.assertTrue(
+                ("pip install" in payload["error"] and "kagglesdk==0.1.37" in payload["error"])
+                or "workspace env interpreter" in payload["error"],
+                payload["error"])
 
             accepted = _run_driver_under_shim(capable, ["selftest"])
             self.assertEqual(
