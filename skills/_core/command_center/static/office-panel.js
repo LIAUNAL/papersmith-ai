@@ -57,7 +57,7 @@
 
   async function refresh() {
     try {
-      const res = await fetch('/api/office/state');
+      const res = await fetch('/api/terminal/office');
       state.info = res.ok ? await res.json() : null;
       state.error = res.ok ? null : `HTTP ${res.status}`;
     } catch (error) {
