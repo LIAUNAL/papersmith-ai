@@ -456,6 +456,9 @@ class Session:
     buffer: bytearray = field(default_factory=bytearray)
     base: int = 0  # absolute offset of buffer[0]
     alive: bool = True
+    #: The PTY size, read by the Agents Office's screen model (office.Screen).
+    cols: int = 100
+    rows: int = 30
     # (loop, asyncio.Event) pairs of the output streams waiting on this session.
     waiters: set = field(default_factory=set)
 
@@ -552,11 +555,14 @@ class TerminalManager:
 
         facts: list[dict[str, Any]] = []
         with self._lock:
-            sessions = list(self._sessions.values())
-        for session in sessions:
+            sessions = list(self._sessions.items())
+        for sid, session in sessions:
             with session.lock:
-                tail = bytes(session.buffer[-office.MEMORY_SCAN_BYTES:]).decode("utf-8", "replace")
-            facts.append({"agent": session.agent, "alive": session.alive, "tail": tail})
+                raw = bytes(session.buffer[-office.MEMORY_SCAN_BYTES:])
+                end = session.base + len(session.buffer)
+            facts.append({"id": sid, "agent": session.agent, "alive": session.alive,
+                          "tail": raw.decode("utf-8", "replace"), "raw": raw, "end": end,
+                          "cols": session.cols, "rows": session.rows})
         return facts
 
     def count(self) -> int:
@@ -620,7 +626,7 @@ class TerminalManager:
                 raise TerminalError(f"could not start {agent.argv[0]}: {error}") from error
             finally:
                 os.close(slave)
-            session = Session(uuid.uuid4().hex, agent.id, process, master)
+            session = Session(uuid.uuid4().hex, agent.id, process, master, cols=cols, rows=rows)
             self._sessions[session.id] = session
         threading.Thread(target=self._pump, args=(session,), daemon=True,
                          name=f"terminal-{session.id[:8]}").start()
@@ -662,6 +668,7 @@ class TerminalManager:
         session = self.get(sid)
         cols, rows = _clamp(cols, rows)
         _set_size(session.fd, cols, rows)
+        session.cols, session.rows = cols, rows
         try:
             os.killpg(session.process.pid, signal.SIGWINCH)
         except OSError:

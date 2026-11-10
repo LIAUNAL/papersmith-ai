@@ -1285,6 +1285,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     #: Engram interactions observed in live session output, bounded by
     #: office.MEMORY_EVENTS_MAX; the office state endpoint owns this ring.
     office_ring: list = []
+    #: Events already seen and sessions already primed (office.observe); the
+    #: lock keeps two polling tabs from interleaving their updates.
+    office_memo: dict = {}
+    office_lock = threading.Lock()
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -3556,20 +3560,30 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         }, headers=dict(_PAPER_HEADERS))
 
     # ------------------------------------------------------------ agents office
-    # The Agents Office is a read-only view of the same facts the terminal
-    # already serves, so it answers under the same authorization semantics:
-    # an unauthorized page sees no roster and no session output.
+    # The Agents Office is a read-only view: the roster is the workspace's own
+    # agent definitions (the same ones /api/agents serves); their activity comes
+    # from the terminal's sessions under the terminal's authorization, so an
+    # unauthorized page sees every agent "available" and no session output.
+    # Served under /api/terminal/ because the terminal cookie is scoped to that
+    # path: at /api/office/state the browser never sent it, so the page always
+    # read as unauthorized. The old path stays for API clients.
+    @app.get("/api/terminal/office")
     @app.get("/api/office/state")
     def api_office_state(request: Request) -> JSONResponse:
-        authorized = terminals.authorized(request.cookies.get(TERMINAL_COOKIE))
+        # The session reads also need a same-origin request, like the session
+        # routes: a cross-site request that carries the cookie sees no activity.
+        authorized = (terminals.authorized(request.cookies.get(TERMINAL_COOKIE))
+                      and terminal.guard(request.headers, mutating=False) is None)
         enabled = bool(enable_terminal and terminal.fcntl is not None)
         facts = terminals.session_facts() if enabled and authorized else []
-        facts = office.observe_memory(office_ring, facts)
-        return JSONResponse(office.office_state(
-            catalog=terminals.agents() if enabled and authorized else [],
-            session_facts=facts, ring=office_ring,
-            engram_path=office.engram_path(), enabled=enabled, authorized=authorized,
-        ), headers=dict(_PAPER_HEADERS))
+        defined = [{**agent, "stages": list(agents_view.TRAMO_PHASES.get(agent.get("tramo") or "", ()))}
+                   for agent in agents_view.get_agents_view(root_path).get("agents", [])]
+        with office_lock:
+            snapshot = office.office_state(
+                defined=defined, session_facts=facts, ring=office_ring,
+                engram_path=office.engram_path(), enabled=enabled, authorized=authorized,
+                memo=office_memo, counter=office.engram_observations)
+        return JSONResponse(snapshot, headers=dict(_PAPER_HEADERS))
 
     # -------------------------------------------------------------- API keys
     # The Doctor tab asks for the Asta and OpenAlex keys here (skills/_core/

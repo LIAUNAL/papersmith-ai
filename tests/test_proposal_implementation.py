@@ -9422,6 +9422,12 @@ FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
                   "skill and the hosted backend by name, the same subject the "
                   "admissions above record, not a loan from any research project",
     },
+    "_core/command_center/static/vendor/three/three.core.min.js": {
+        "transfer": "a property name inside the vendored three.js 0.183.0 core "
+                    "(the Agents Office scene) -- each color space's transfer "
+                    "function, an object key a minifier cannot rename; "
+                    "generated third-party code, named by no target",
+    },
     "_core/command_center/static/vendor/pdf.min.js": {
         "transfer": "the vendored pdf.js build (pdfjs-dist 3.11.174) posting "
                     "buffers to its worker with a transfer list -- a web "
