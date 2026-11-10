@@ -214,6 +214,86 @@ class RouteTests(unittest.TestCase):
         panel = (FORGE_ROOT / "skills" / "_core" / "command_center" / "static" / "office-panel.js").read_text()
         self.assertIn("fetch('/api/terminal/office')", panel)
 
+STATIC = FORGE_ROOT / "skills" / "_core" / "command_center" / "static"
+
+MODEL_HARNESS = r"""
+const fs = require('fs');
+const cfg = JSON.parse(fs.readFileSync(0, 'utf8'));
+global.window = { i18n: { t: (k, v) => k + (v ? ' ' + JSON.stringify(v) : '') } };
+global.document = { addEventListener() {}, getElementById: () => null };
+eval(fs.readFileSync(process.argv[1], 'utf8'));
+const m = window.officeModel;
+const info = m.decorate(cfg.info, cfg.runs);
+console.log(JSON.stringify({
+  inPhase: Object.fromEntries(info.agents.map((a) => [a.id, a.inPhase])),
+  counts: m.counts(info),
+  tasks: Object.fromEntries(info.agents.map((a) => [a.id, m.taskOf(a, info)])),
+  boss: m.taskOf({ id: 'orchestrator', state: 'available' }, info),
+}));
+"""
+
+
+@unittest.skipUnless(__import__("shutil").which("node"), "node is not installed")
+class PanelModelTests(unittest.TestCase):
+    """The real office-panel.js helpers, run in node."""
+
+    def run_model(self, info: dict, runs: dict) -> dict:
+        import json
+        import subprocess
+        done = subprocess.run(["node", "-e", MODEL_HARNESS, str(STATIC / "office-panel.js")],
+                              input=json.dumps({"info": info, "runs": runs}),
+                              capture_output=True, text=True, timeout=30, check=True)
+        return json.loads(done.stdout)
+
+    def test_a_running_phase_marks_its_agents_and_names_the_orchestrator_task(self) -> None:
+        info = {"agents": [
+            {"id": "sota-scout", "state": "available", "stages": ["plausibility"]},
+            {"id": "redactor", "state": "saving", "stages": ["writing"]},
+            {"id": "math-tutor", "state": "working", "stages": []},
+        ], "memory": {"interactions": [{"agent": "redactor", "kind": "save", "line": "mem_save x"}]}}
+        runs = {"plausibility": {"stage": "plausibility", "name": "Plausibility", "command": "/plausibility idea", "startedAt": 1},
+                "writing": {"stage": "writing", "startedAt": 1, "stoppedAt": 2}}
+        out = self.run_model(info, runs)
+        self.assertEqual(out["inPhase"], {"sota-scout": True, "redactor": False, "math-tutor": False})
+        self.assertEqual(out["counts"], {"working": 1, "saving": 1, "loading": 0, "available": 1})
+        self.assertEqual(out["tasks"]["sota-scout"], "office.task.inPhase")
+        self.assertIn("office.task.saving", out["tasks"]["redactor"])
+        self.assertIn("mem_save x", out["tasks"]["redactor"])
+        self.assertEqual(out["tasks"]["math-tutor"], "office.task.working")
+        self.assertIn("/plausibility idea", out["boss"])
+
+
+class WiringTests(unittest.TestCase):
+    """The page loads the vendored three.js scene and the panel reads the office."""
+
+    def test_the_page_maps_three_to_the_vendored_build_and_loads_the_scene(self) -> None:
+        page = (STATIC / "index.html").read_text()
+        self.assertIn('"three": "./vendor/three/three.module.min.js"', page)
+        self.assertLess(page.index('type="importmap"'), page.index('src="./office3d.js'))
+        self.assertIn('id="officeStage"', page)
+        for name in ("three.module.min.js", "three.core.min.js", "LICENSE"):
+            self.assertTrue((STATIC / "vendor" / "three" / name).is_file(), name)
+        import hashlib
+        pinned = {"three.core.min.js": "c5f69a04c70d", "three.module.min.js": "e3ec4d5d223c"}  # three@0.183.0
+        for name, prefix in pinned.items():
+            digest = hashlib.sha256((STATIC / "vendor" / "three" / name).read_bytes()).hexdigest()
+            self.assertTrue(digest.startswith(prefix), name)
+
+    def test_the_scene_is_weherds_procedural_office_with_an_engram_core(self) -> None:
+        scene = (STATIC / "office3d.js").read_text()
+        self.assertIn("import * as THREE from 'three';", scene)
+        self.assertNotIn("examples/jsm", scene)
+        self.assertIn("OrthographicCamera", scene)
+        self.assertIn("camera.position.set(28, 34, 36)", scene)
+        for state in ("'working'", "'saving'", "'loading'", "'available'"):
+            self.assertIn(state, scene)
+        self.assertIn("office.brainSign", scene)
+
+    def test_the_panel_is_read_only(self) -> None:
+        panel = (STATIC / "office-panel.js").read_text()
+        for verb in ("method: 'POST'", "method: 'DELETE'", "/input"):
+            self.assertNotIn(verb, panel)
+
 
 if __name__ == "__main__":
     unittest.main()

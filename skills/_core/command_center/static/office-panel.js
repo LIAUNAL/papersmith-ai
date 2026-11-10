@@ -1,20 +1,15 @@
-/* Agents Office: a measured, spatial view of the smith agents at work.
+/* Agents Office: the smith agents and their orchestrator at work, in 3D.
  *
- * Spec S2/S3 of odd/tasks/agents-office-panel.md. Inspired by Weherd's 3D
- * office, rebuilt as a vanilla 2.5D canvas so the dashboard ships no 3D
- * library and no new dependency: floor, the orchestrator's desk, one desk
- * per smith agent, and a grand-brain memory area for Engram. Everything
- * drawn comes from GET /api/office/state (roster, live sessions, observed
- * Engram interactions) plus the phase runs this browser already tracks in
- * localStorage. The panel is read-only: clicking a desk opens a card with
- * the agent's role, model and current task, and can open the existing CLI
- * console on that agent — it never closes, interrupts or writes to a
- * session (Weherd's shotgun is deliberately excluded).
+ * Spec odd/tasks/agents-office-3d.md. The roster is every agent defined in
+ * the workspace (.claude/agents) plus the orchestrator, served measured by
+ * GET /api/terminal/office (under the terminal cookie's path); office3d.js (a module on the vendored three.js
+ * 0.183.0, weherd's office) draws it. This controller polls while the tab is
+ * open, marks the agents of a running phase (the phase runs this browser
+ * tracks in localStorage), keeps the legend and the status line honest, and
+ * opens a read-only card on click. Nothing here closes, interrupts or writes
+ * to a session; "Open console" only opens the existing CLI console.
  *
- * Honest states: a disabled terminal or an unauthorized page says so instead
- * of drawing fiction; a model nobody measured shows as "not measured".
- *
- * Public surface (window): officeWake().
+ * Public surface (window): officeWake(), officeModel (pure helpers, tested).
  */
 (function () {
   'use strict';
@@ -23,353 +18,217 @@
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
+  const STATES = ['working', 'saving', 'loading', 'available'];
+  const POLL_MS = 2000;
 
-  const state = { info: null, error: null, card: null };
-  const DESK_W = 128, DESK_H = 74;
-  const COLORS = {
-    floor: 'rgba(148,163,184,0.14)', desk: '#111827', deskEdge: '#374151',
-    working: '#34d399', idle: '#9ca3af', off: '#4b5563', text: '#e5e7eb',
-    dim: '#9ca3af', line: '#38bdf8', brain: '#a78bfa', brainGlow: 'rgba(167,139,250,',
-  };
+  const state = { info: null, error: null, card: null, mounted: false, sceneError: null, timer: null };
 
-  // ---- data --------------------------------------------------------------
-  function phaseRunsStore() {
+  // ---- pure model (window.officeModel) -------------------------------------
+  function phaseRunsStore(storage, host) {
     try {
-      const host = (typeof location !== 'undefined' && location.host) || 'local';
-      return JSON.parse(localStorage.getItem(`smith_phase_runs@${host}`) || '{}') || {};
+      return JSON.parse(storage.getItem(`smith_phase_runs@${host}`) || '{}') || {};
     } catch (_) {
       return {};
     }
   }
 
-  function activeRunFor(agentId) {
-    const runs = Object.values(phaseRunsStore());
-    const live = runs.filter((r) => r && r.agent === agentId && !r.stoppedAt);
-    if (!live.length) return null;
-    return live.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+  /** Phase runs still running: started, neither stopped nor verified. */
+  function runningRuns(runs) {
+    return Object.values(runs || {}).filter((r) => r && r.stage && !r.stoppedAt && !r.verifiedAt);
   }
 
-  function statusOf(agent) {
-    if (agent.session && agent.session.alive) return 'working';
-    if (!agent.available) return 'off';
-    return 'idle';
+  /** The snapshot the scene draws: each agent gains `inPhase` when its
+   *  dashboard stage is running; the orchestrator gains the running runs. */
+  function decorate(info, runs) {
+    const live = runningRuns(runs);
+    const stages = new Set(live.map((r) => r.stage));
+    const agents = ((info && info.agents) || []).map((a) => ({
+      ...a, inPhase: (a.stages || []).some((s) => stages.has(s)),
+    }));
+    return { ...(info || {}), agents, runs: live };
+  }
+
+  function counts(info) {
+    const out = { working: 0, saving: 0, loading: 0, available: 0 };
+    for (const a of (info && info.agents) || []) if (a.state in out) out[a.state] += 1;
+    return out;
+  }
+
+  /** What the card says the agent is doing right now, from measured facts. */
+  function taskOf(agent, info) {
+    const memory = ((info && info.memory) || {}).interactions || [];
+    const last = [...memory].reverse().find((m) => m.agent === agent.id);
+    if (agent.state === 'saving' || agent.state === 'loading') {
+      return t(`office.task.${agent.state}`, { line: last ? last.line : '' });
+    }
+    if (agent.state === 'working') return t('office.task.working');
+    if (agent.id === 'orchestrator') {
+      const run = (info.runs || [])[0];
+      if (run) return t('office.phaseTask', { phase: run.name || run.stage, command: run.command || '' });
+    }
+    if (agent.inPhase) return t('office.task.inPhase');
+    return t('office.noTask');
+  }
+
+  window.officeModel = { phaseRunsStore, runningRuns, decorate, counts, taskOf };
+
+  // ---- data ----------------------------------------------------------------
+  function host() {
+    return (typeof location !== 'undefined' && location.host) || 'local';
   }
 
   async function refresh() {
     try {
       const res = await fetch('/api/terminal/office');
-      state.info = res.ok ? await res.json() : null;
+      const info = res.ok ? await res.json() : null;
+      state.info = info ? decorate(info, phaseRunsStore(localStorage, host())) : null;
       state.error = res.ok ? null : `HTTP ${res.status}`;
     } catch (error) {
       state.error = String(error);
     }
+    render();
   }
 
-  // ---- geometry ----------------------------------------------------------
-  function layout(width, height) {
-    const info = state.info || {};
-    const agents = info.agents || [];
-    const spots = [{ x: width / 2, y: height * 0.16 }];
-    const cols = Math.min(agents.length, 4);
-    const rows = Math.ceil(agents.length / cols) || 1;
-    agents.forEach((agent, i) => {
-      const row = Math.floor(i / cols);
-      const inRow = Math.min(agents.length - row * cols, cols);
-      const col = i % cols;
-      const y = height * (0.40 + 0.26 * (rows > 1 ? row : 0.5));
-      const x = width * ((col + 1) / (inRow + 1));
-      spots.push({ x, y });
-    });
-    return {
-      orchestrator: { x: width / 2, y: height * 0.14 },
-      desks: spots.slice(1),
-      brain: { x: width * 0.82, y: height * 0.88, r: Math.min(64, height * 0.11) },
-    };
-  }
-
-  function deskBox(spot) {
-    return { x: spot.x - DESK_W / 2, y: spot.y - DESK_H / 2, w: DESK_W, h: DESK_H };
-  }
-
-  // ---- drawing -----------------------------------------------------------
-  function roundRect(ctx, box, r) {
-    ctx.beginPath();
-    ctx.moveTo(box.x + r, box.y);
-    ctx.arcTo(box.x + box.w, box.y, box.x + box.w, box.y + box.h, r);
-    ctx.arcTo(box.x + box.w, box.y + box.h, box.x, box.y + box.h, r);
-    ctx.arcTo(box.x, box.y + box.h, box.x, box.y, r);
-    ctx.arcTo(box.x, box.y, box.x + box.w, box.y, r);
-    ctx.closePath();
-  }
-
-  function truncate(ctx, text, maxWidth) {
-    if (ctx.measureText(text).width <= maxWidth) return text;
-    while (text.length > 1 && ctx.measureText(`${text}…`).width > maxWidth) text = text.slice(0, -1);
-    return `${text}…`;
-  }
-
-  function drawFloor(ctx, width, height) {
-    ctx.strokeStyle = COLORS.floor;
-    ctx.lineWidth = 1;
-    const step = 56;
-    for (let x = -height; x < width + height; x += step) {
-      ctx.beginPath();
-      ctx.moveTo(x, height);
-      ctx.lineTo(x + height * 0.5, 0);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x + height * 0.5, height);
-      ctx.stroke();
-    }
-  }
-
-  function drawDesk(ctx, spot, agent, ts) {
-    const box = deskBox(spot);
-    const status = statusOf(agent);
-    const color = status === 'working' ? COLORS.working : (status === 'idle' ? COLORS.idle : COLORS.off);
-    const pulse = status === 'working' ? 0.5 + 0.5 * Math.cos(ts / 400) : 0;
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    roundRect(ctx, { x: box.x + 4, y: box.y + 5, w: box.w, h: box.h }, 10);
-    ctx.fill();
-    ctx.fillStyle = COLORS.desk;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = status === 'working' ? 2 + pulse : 1.5;
-    roundRect(ctx, box, 10);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = COLORS.text;
-    ctx.font = '600 13px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(truncate(ctx, agent.label, box.w - 14), box.x + box.w / 2, box.y + 19);
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.fillStyle = COLORS.dim;
-    ctx.fillText(truncate(ctx, agent.role || agent.id, box.w - 12), box.x + box.w / 2, box.y + 34);
-    ctx.fillText(t('office.model') + ': ' + (agent.model == null ? t('office.modelUnknown') : agent.model),
-      box.x + box.w / 2, box.y + 48);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(box.x + 12, box.y + box.h - 12, 4 + (status === 'working' ? pulse : 0), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = COLORS.dim;
-    ctx.font = '10px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(t(`office.${status}`), box.x + 20, box.y + box.h - 9);
-    ctx.restore();
-  }
-
-  function drawFlowLine(ctx, from, to, color, ts, active) {
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = active ? 0.8 : 0.15;
-    ctx.lineWidth = active ? 1.6 : 1;
-    if (active) ctx.setLineDash([6, 8]);
-    ctx.lineDashOffset = -ts / 40;
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.quadraticCurveTo((from.x + to.x) / 2, (from.y + to.y) / 2 + 30, to.x, to.y);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawBrain(ctx, brain, ts) {
-    const interactions = ((state.info || {}).memory || {}).interactions || [];
-    const last = interactions[interactions.length - 1];
-    const recent = last && (Date.now() / 1000 - (last.at || 0)) < 120;
-    const glow = recent ? 0.35 + 0.2 * Math.cos(ts / 300) : 0.12;
-    ctx.save();
-    ctx.fillStyle = COLORS.brainGlow + glow + ')';
-    ctx.beginPath();
-    ctx.arc(brain.x, brain.y, brain.r * (recent ? 1.12 : 1), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = COLORS.brain;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(brain.x, brain.y, brain.r, 0, Math.PI * 2);
-    ctx.stroke();
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2 + ts / 4000;
-      ctx.fillStyle = COLORS.brain;
-      ctx.beginPath();
-      ctx.arc(brain.x + Math.cos(angle) * brain.r * 0.5,
-        brain.y + Math.cos(angle - Math.PI / 2) * brain.r * 0.5, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = COLORS.text;
-    ctx.font = '600 12px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(t('office.brain'), brain.x, brain.y + brain.r + 16);
-    ctx.font = '10px system-ui, sans-serif';
-    ctx.fillStyle = COLORS.dim;
-    const line = recent && last ? t('office.brainLast', { line: truncate(ctx, last.line || '', 40) })
-      : t('office.brainEmpty');
-    ctx.fillText(line, brain.x, brain.y + brain.r + 30);
-    ctx.restore();
-    return recent;
-  }
-
-  function drawStatusLine(ctx, width) {
-    const info = state.info;
-    ctx.save();
-    ctx.font = '12px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    if (state.error && !info) {
-      ctx.fillStyle = '#f87171';
-      ctx.fillText(`${t('office.error')}: ${state.error}`, 12, 20);
-      ctx.restore();
+  // ---- rendering -----------------------------------------------------------
+  function mountScene() {
+    if (state.mounted) return;
+    if (!window.officeScene) {
+      // Module scripts run before DOMContentLoaded: no scene now means the
+      // three.js module failed to load (no WebGL-capable module support).
+      state.sceneError = 'three.js module not loaded';
       return;
     }
-    if (!info) {
-      ctx.fillStyle = COLORS.dim;
-      ctx.fillText(t('office.loading'), 12, 20);
-      ctx.restore();
-      return;
-    }
-    if (!info.enabled) {
-      ctx.fillStyle = '#fbbf24';
-      ctx.fillText(t('office.disabled'), 12, 20);
-      ctx.restore();
-      return;
-    }
-    if (!info.authorized) {
-      ctx.fillStyle = '#fbbf24';
-      ctx.fillText(t('office.unauthorized'), 12, 20);
-      ctx.restore();
-      return;
-    }
-    const working = (info.agents || []).filter((a) => statusOf(a) === 'working').length;
-    ctx.fillStyle = COLORS.dim;
-    ctx.fillText(t('office.status', {
-      working, total: (info.agents || []).length,
-      memories: ((info.memory || {}).interactions || []).length,
-    }), 12, 20);
-    ctx.restore();
-  }
-
-  function draw(ts) {
-    const canvas = document.getElementById('officeCanvas');
-    const pane = document.getElementById('pane-office');
-    if (!canvas || !pane || !pane.classList.contains('active')) return;
-    const width = canvas.clientWidth, height = canvas.clientHeight;
-    if (!width || !height) return;
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-    }
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    drawFloor(ctx, width, height);
-    const geo = layout(width, height);
-    const info = state.info || {};
-    const agents = info.agents || [];
-    const anyWorking = agents.some((a) => statusOf(a) === 'working');
-    drawDesk(ctx, geo.orchestrator, {
-      label: t('office.orchestrator'), role: 'smith',
-      model: null, available: info.authorized, session: anyWorking ? { alive: true } : null,
-    }, ts);
-    agents.forEach((agent, i) => {
-      const spot = geo.desks[i];
-      if (!spot) return;
-      drawFlowLine(ctx, geo.orchestrator, spot, COLORS.line, ts, statusOf(agent) === 'working');
-    });
-    agents.forEach((agent, i) => {
-      const spot = geo.desks[i];
-      if (spot) drawDesk(ctx, spot, agent, ts);
-    });
-    const brainActive = drawBrain(ctx, geo.brain, ts);
-    drawFlowLine(ctx, geo.orchestrator, { x: geo.brain.x, y: geo.brain.y - geo.brain.r },
-      COLORS.brain, ts, brainActive);
-    drawStatusLine(ctx, width);
-  }
-
-  // ---- interaction -------------------------------------------------------
-  function showCard(agent, spot) {
-    state.card = agent.id;
-    const host = document.getElementById('officeCardHost');
+    const host = document.getElementById('officeStage');
     if (!host) return;
-    const run = activeRunFor(agent.id);
-    const task = run
-      ? t('office.phaseTask', { phase: run.name || run.stage || '', command: run.command || '' })
-      : (agent.session && agent.session.alive ? t('office.sessionTask') : t('office.noTask'));
-    const status = statusOf(agent);
-    host.innerHTML = `<div class="office-card" role="dialog" aria-label="${esc(agent.label)}">
-        <button type="button" class="office-card__close" aria-label="${esc(t('office.close'))}"
-          onclick="document.getElementById('officeCardHost').innerHTML='';">✕</button>
-        <h4>${esc(agent.label)} <span class="office-card__status office-card__status--${status}">${esc(t(`office.${status}`))}</span></h4>
-        <p><strong>${esc(t('office.role'))}:</strong> ${esc(agent.role || agent.id)}</p>
-        <p><strong>${esc(t('office.model'))}:</strong> ${agent.model == null ? esc(t('office.modelUnknown')) : esc(agent.model)}</p>
-        <p><strong>${esc(t('office.task'))}:</strong> ${esc(task)}</p>
-        ${agent.available
-          ? `<button type="button" class="office-card__open" data-office-open="${esc(agent.id)}">${esc(t('office.openConsole'))}</button>`
-          : ''}
+    try {
+      window.officeScene.mount(host, {
+        select: (id, event) => showCard(id, event),
+      });
+      state.mounted = true;
+    } catch (error) {
+      state.sceneError = String(error && error.message ? error.message : error);
+    }
+  }
+
+  function render() {
+    const info = state.info;
+    const status = document.getElementById('officeStatus');
+    const legend = document.getElementById('officeLegend');
+    if (status) {
+      let text;
+      if (state.error) text = `${t('office.error')}: ${state.error}`;
+      else if (!info) text = t('office.loading');
+      else if (state.sceneError) text = t('office.noWebgl');
+      else if (!info.enabled) text = t('office.disabled');
+      else if (!info.authorized) text = t('office.unauthorized');
+      else {
+        const c = counts(info);
+        text = t('office.status', {
+          total: info.agents.length, working: c.working, memory: c.saving + c.loading,
+          orchestrator: t(`office.state.${info.orchestrator.state}`),
+        });
+      }
+      status.textContent = text;
+    }
+    if (legend && info) {
+      const c = counts(info);
+      legend.innerHTML = STATES.map((s) => `<span class="office-legend__item office-legend__item--${s}">`
+        + `<i></i>${esc(t(`office.state.${s}`))} <b>${c[s]}</b></span>`).join('')
+        + `<span class="office-legend__item office-legend__item--engram"><i></i>${esc(t('office.brain'))}`
+        + ` <b>${esc(info.memory && info.memory.engram_path ? t('office.engramFound') : t('office.engramMissing'))}</b></span>`;
+    }
+    if (info && state.mounted) window.officeScene.update(info);
+    if (state.card && info) refreshCard();
+  }
+
+  function findAgent(id) {
+    const info = state.info || {};
+    if (id === 'orchestrator') return { id, label: t('office.orchestrator'), ...(info.orchestrator || {}) };
+    return (info.agents || []).find((a) => a.id === id) || null;
+  }
+
+  function cardHtml(agent) {
+    const info = state.info || {};
+    const s = agent.state || 'available';
+    const rows = [];
+    if (agent.id === 'orchestrator') {
+      rows.push([t('office.role'), t('office.orchestratorRole')]);
+      rows.push([t('office.cli'), (agent.clis || []).join(', ') || t('office.none')]);
+    } else {
+      rows.push([t('office.role'), agent.role || agent.id]);
+      rows.push([t('office.model'), agent.model || t('office.modelInherited')]);
+      rows.push([t('office.tramo'), agent.tramo || t('office.none')]);
+      rows.push([t('office.phases'), (agent.phases || []).join(', ').replace(/<[^>]*>/g, '') || t('office.none')]);
+    }
+    rows.push([t('office.task'), taskOf(agent, info)]);
+    return `<div class="office-card" role="dialog" aria-label="${esc(agent.label)}">
+        <button type="button" class="office-card__close" data-office-close aria-label="${esc(t('office.close'))}">✕</button>
+        <h4>${esc(agent.label)} <span class="office-card__status office-card__status--${esc(s)}">${esc(t(`office.state.${s}`))}</span></h4>
+        ${rows.map(([k, v]) => `<p><strong>${esc(k)}:</strong> ${esc(v)}</p>`).join('')}
+        <button type="button" class="office-card__open" data-office-open>${esc(t('office.openConsole'))}</button>
       </div>`;
-    host.style.left = `${Math.max(8, spot.x - 140)}px`;
-    host.style.top = `${Math.max(8, spot.y + DESK_H)}px`;
-    host.querySelectorAll('[data-office-open]').forEach((btn) => {
-      btn.addEventListener('click', () => openConsoleOn(btn.getAttribute('data-office-open')));
+  }
+
+  function showCard(id, event) {
+    const agent = findAgent(id);
+    const host = document.getElementById('officeCardHost');
+    if (!agent || !host) return;
+    state.card = id;
+    if (window.officeScene) window.officeScene.focus(id);
+    host.innerHTML = cardHtml(agent);
+    const stage = document.getElementById('officeStage');
+    if (event && stage) {
+      const rect = stage.getBoundingClientRect();
+      host.style.left = `${Math.max(8, Math.min(rect.width - 310, event.clientX - rect.left + 12))}px`;
+      host.style.top = `${Math.max(8, Math.min(rect.height - 200, event.clientY - rect.top + 12))}px`;
+    }
+    host.querySelector('[data-office-close]').addEventListener('click', closeCard);
+    host.querySelector('[data-office-open]').addEventListener('click', () => {
+      if (typeof window.openCliConsole === 'function') window.openCliConsole();
     });
   }
 
-  function openConsoleOn(agentId) {
-    const select = document.getElementById('terminalAgentSelect');
-    if (select && select.value !== agentId) {
-      select.value = agentId;
-      select.dispatchEvent(new Event('change'));
-    }
-    if (typeof window.openCliConsole === 'function') window.openCliConsole();
+  function refreshCard() {
+    const agent = findAgent(state.card);
+    const host = document.getElementById('officeCardHost');
+    if (!agent || !host || !host.firstElementChild) return;
+    const left = host.style.left; const top = host.style.top;
+    showCard(state.card);
+    host.style.left = left; host.style.top = top;
   }
 
-  function onCanvasClick(event) {
-    const canvas = document.getElementById('officeCanvas');
-    if (!canvas || !(state.info || {}).authorized) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = event.clientX - rect.left, my = event.clientY - rect.top;
-    const geo = layout(rect.width, rect.height);
-    const agents = (state.info || {}).agents || [];
-    for (let i = 0; i < agents.length; i++) {
-      const spot = geo.desks[i];
-      if (!spot) continue;
-      const box = deskBox(spot);
-      if (mx >= box.x && mx <= box.x + box.w && my >= box.y && my <= box.y + box.h) {
-        showCard(agents[i], spot);
-        return;
-      }
-    }
-  }
-
-  // ---- lifecycle ---------------------------------------------------------
-  function startLoop() {
-    const tick = (ts) => {
-      draw(ts);
-      window.requestAnimationFrame(tick);
-    };
-    window.requestAnimationFrame(tick);
-  }
-
-  function pollWhileActive() {
-    const pane = document.getElementById('pane-office');
-    if (pane && pane.classList.contains('active')
-      && document.visibilityState === 'visible') {
-      refresh();
-    }
-  }
-
-  window.officeWake = () => {
-    refresh();
+  function closeCard() {
+    state.card = null;
     const host = document.getElementById('officeCardHost');
     if (host) host.innerHTML = '';
-    state.card = null;
-  };
+    if (window.officeScene) window.officeScene.focus(null);
+  }
+
+  // ---- lifecycle -----------------------------------------------------------
+  function paneActive() {
+    const pane = document.getElementById('pane-office');
+    return !!(pane && pane.classList.contains('active') && document.visibilityState === 'visible');
+  }
+
+  function sync() {
+    if (paneActive()) {
+      mountScene();
+      if (state.mounted) window.officeScene.start();
+      if (!state.timer) { refresh(); state.timer = window.setInterval(refresh, POLL_MS); }
+    } else {
+      if (state.mounted) window.officeScene.stop();
+      if (state.timer) { window.clearInterval(state.timer); state.timer = null; }
+    }
+  }
+
+  window.officeWake = () => { closeCard(); sync(); refresh(); };
 
   document.addEventListener('DOMContentLoaded', () => {
-    const canvas = document.getElementById('officeCanvas');
-    if (!canvas) return;
-    canvas.addEventListener('click', onCanvasClick);
-    startLoop();
-    refresh();
-    window.setInterval(pollWhileActive, 2000);
+    const pane = document.getElementById('pane-office');
+    if (!pane) return;
+    new MutationObserver(sync).observe(pane, { attributes: true, attributeFilter: ['class'] });
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('office-scene-ready', sync);
+    sync();
   });
 })();

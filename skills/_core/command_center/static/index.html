@@ -27,6 +27,8 @@
   <script src="./math-panel.js?v=0.71.1"></script>
   <script src="./contribution-affinity.js?v=0.71.1"></script>
   <script src="./model-panel.js?v=0.71.1"></script>
+  <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
+  <script type="module" src="./office3d.js?v=0.71.1"></script>
   <script src="./office-panel.js?v=0.71.1"></script>
   <script src="./experiments-panel.js?v=0.71.1"></script>
   <script src="./experiments-tutor.js?v=0.71.1"></script>
@@ -3074,8 +3076,26 @@
     color: #9ca3af; cursor: pointer; font-size: 14px; padding: 0; }
   .office-card__status { font-size: 11px; font-weight: 400; margin-left: 6px; }
   .office-card__status--working { color: #34d399; }
-  .office-card__status--idle { color: #9ca3af; }
-  .office-card__status--off { color: #6b7280; }
+  .office-card__status--available { color: #9ca3af; }
+  .office-card__status--saving { color: #d5e987; }
+  .office-card__status--loading { color: #74b9a9; }
+  .office-card__status--absent { color: #6b7280; }
+  .office-wrap { position: relative; border-radius: 12px; overflow: hidden; }
+  .office-stage { width: 100%; height: min(72vh, 680px); background: #e8eee6; }
+  .office-hud { position: absolute; left: 12px; top: 10px; right: 12px; pointer-events: none;
+    display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+    font: 12px/1.4 system-ui, sans-serif; color: #253c37; }
+  .office-hud__status { background: #fcfaf3e6; border-radius: 8px; padding: 4px 10px; font-weight: 600; }
+  .office-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+  .office-legend__item { background: #fcfaf3e6; border-radius: 8px; padding: 3px 8px; display: inline-flex; gap: 5px; align-items: center; }
+  .office-legend__item i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .office-legend__item--working i { background: #275849; }
+  .office-legend__item--saving i { background: #b6cb5a; }
+  .office-legend__item--loading i { background: #74b9a9; }
+  .office-legend__item--available i { background: #c9c3b4; }
+  .office-legend__item--engram i { background: #b79ce0; }
+  .office-card-host { position: absolute; z-index: 20; max-width: 300px; left: 12px; top: 48px; }
+  .office-card-host .office-card { max-height: 46vh; overflow: auto; }
   .office-card__open { margin-top: 6px; background: #1d4ed8; color: #fff; border: 0;
     border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 12px system-ui, sans-serif; }
   </style>
@@ -4007,10 +4027,13 @@
     </div>
   <!-- TAB: AGENTS OFFICE -->
   <div id="pane-office" class="tab-pane">
-    <div class="office-wrap" style="position: relative;">
-      <canvas id="officeCanvas" style="width: 100%; height: min(68vh, 640px); display: block;"
-              aria-label="Agents Office"></canvas>
-      <div id="officeCardHost" style="position: absolute; z-index: 20; max-width: 300px;"></div>
+    <div class="office-wrap">
+      <div id="officeStage" class="office-stage"></div>
+      <div class="office-hud">
+        <div id="officeStatus" class="office-hud__status" role="status" data-i18n="office.loading">Measuring the office…</div>
+        <div id="officeLegend" class="office-legend"></div>
+      </div>
+      <div id="officeCardHost" class="office-card-host"></div>
     </div>
   </div>
 

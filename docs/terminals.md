@@ -66,18 +66,47 @@ in node through the click → activate → session flow.
 
 ## The Agents Office panel
 
-The dashboard's **Agents Office** tab (`static/office-panel.js`) draws a 2.5D
-vanilla-canvas view of the same facts: the orchestrator's desk, one desk per
-smith agent with its role, model (or `not measured` — nothing invents one),
-and live status dot, animated flow lines for working agents, and a
-**grand-brain memory area** that glows while Engram interactions
-(`mem_*`/`engram` command lines) are observed in live session output.
-Clicking a desk opens a read-only card with the agent's role, model and
-current task — the phase run this browser tracks, else its session state —
-and can open the existing CLI console on that agent. The panel never closes,
-interrupts or writes to a session; a disabled terminal or an unauthorized
-page says so instead of drawing fiction. The state comes from
-`GET /api/office/state` (`skills/_core/command_center/office.py`), which
-answers under the same authorization semantics as the terminal.
-`tests/test_command_center_office.py` pins the measured-state contract, the
-route wiring and the panel's vanilla-canvas surface.
+The dashboard's **Agents Office** tab is a 3D office in the style of weherd
+(amalvarezme/weherd): the same library, three.js 0.183.0, vendored under
+`static/vendor/three/` and mapped by an import map, with no addons, no build
+step and no network. `static/office3d.js` ports weherd's procedural office:
+an orthographic isometric camera, the cream floor, walls with windows, desks
+with monitor and mug, box-built people and the coffee counter. Its lounge is
+the **Engram memory core**: a floating brain on a pedestal with one orbiting
+cube per observed memory interaction.
+
+Who is in the office:
+
+- **One desk per agent defined in smith**: every `.claude/agents/*.md` of
+  the workspace, read through `agents_view.get_agents_view` (29 today). The
+  card shows the role, the model (`model:` frontmatter, else "inherits the
+  orchestrator's model"), the stretch, the phases and the current task.
+- **The orchestrator** at the front desk with three monitors: the main CLI
+  session (claude, opencode, pi, …) that runs the skills and calls the
+  agents. The CLI programs are not desks; the card names the CLIs where the
+  orchestrator runs. Without a live agent CLI session its chair is empty.
+
+Each person shows one state, measured by `office.py` from the output tail of
+the live CLI sessions, never invented:
+
+| State | Measured from | Mechanic |
+|---|---|---|
+| working | the agent's invocation (`● sota-scout(…)`, `Task(sota-scout: …)`, `subagent_type: "sota-scout"`, `@sota-scout`) with no completion marker (`⎿ Done (…)`) after it; completions close agents in launch order | seated, typing, bright screen with scrolling lines, flow line from the orchestrator |
+| saving | an Engram write (`mem_save`, `mem_update`, `mem_session_summary`, `engram save`, …) while that agent runs, for 8 s | stands by the desk facing the brain, lime cubes stream desk → brain |
+| loading | an Engram read (`mem_search`, `mem_context`, `mem_get_observation`, `engram search`, …) while that agent runs, for 8 s | same pose, teal cubes stream brain → desk |
+| available | none of the above | seated, leaning back with a coffee cup, dim screen |
+
+An Engram call outside any running agent belongs to the orchestrator. The
+agents of a phase this browser is running (its phase runs) get a soft ring.
+Clicking a person opens a read-only card; "Open console" only opens the CLI
+console. The panel never closes, interrupts or writes to a session.
+
+The state is served at `GET /api/terminal/office`: under `/api/terminal/`
+because the terminal cookie is scoped to that path (the older
+`/api/office/state` still answers, but a browser never sends the cookie
+there, so it always reads as unauthorized). The roster shows to every page;
+the activity only to a page authorized for the terminal, otherwise every
+agent is available and the status line says why.
+`tests/test_command_center_office.py` pins the detection rules, the roster,
+the authorization, the route, the panel helpers (run in node) and the
+vendored, hash-pinned three.js.

@@ -143,7 +143,7 @@ class PageTests(unittest.TestCase):
 
     def test_the_runtime_and_catalogues_load_before_every_panel(self) -> None:
         head = PAGE[:PAGE.index("</head>")]
-        order = re.findall(r'<script src="\./([^"?]+)', head)
+        order = re.findall(r'<script\b[^>]*?\bsrc="\./([^"?]+)', head)
         runtime = order.index("i18n.js")
         self.assertLess(order.index("i18n/en.js"), runtime)
         self.assertLess(order.index("i18n/es.js"), runtime)
