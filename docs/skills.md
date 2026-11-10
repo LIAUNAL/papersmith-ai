@@ -3084,7 +3084,7 @@ verbs of `paper-writing` (section 9), which adapt the manuscript to its template
 under `paper/venues/<slug>/`.
 
 **How it runs.** `/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>]
-[--max-review-days N] [--limit N] [--source auto|openalex|crossref]
+[--max-review-days N] [--limit N] [--source auto|asta|openalex|crossref]
 [--include-unknown-quartile]`, or from the dashboard's *Previsualización
 PDF* tab: the *Revistas sugeridas* block takes the quartile range, the
 open-access, APC, review-time and limit filters, a source selector (Auto,
@@ -3114,7 +3114,10 @@ the quartile range; optionally an SJR file; optionally a contact email, an
 OpenAlex key and a Semantic Scholar key.
 
 **The providers and the fallback chain.** OpenAlex now requires a free API key
-for real use; keyless calls are a small demo allowance. `--source` chooses what
+for real use; keyless calls are a small demo allowance. With the operator's Asta
+key (Ai2; smith ui's Doctor → API keys or `smith keys set asta`), Asta's relevance
+search picks the works like the paper first (`query.search_mode: asta-relevance`)
+and OpenAlex then describes their journals; `--source asta` requires that key. `--source` chooses what
 answers:
 
 - `auto` (the default) asks OpenAlex first. When it is unavailable (no
@@ -3197,7 +3200,8 @@ was set and the journal has no public data).
 USD 0.10 per day, shared by everyone behind one IP address. A free key (checked
 against OpenAlex's help pages on 2026-10-31) takes an account at
 <https://openalex.org/signup> with a verified email, then the key from
-<https://openalex.org/settings/api>, and `export OPENALEX_API_KEY=...`; it gives
+<https://openalex.org/settings/api-key>, saved in smith ui's Doctor → API keys or with
+`smith keys set openalex` (an exported `OPENALEX_API_KEY` still wins); it gives
 USD 1 per day of usage, ten times the keyless budget. The skill never asks for
 the key on the operator's behalf and never prints it. OpenAlex prices: fetching
 a record by id is free, a list with a filter costs USD 0.10 per 1,000 requests
@@ -3305,6 +3309,8 @@ numbers.
 | `PAPERSMITH_CONTACT_EMAIL` | Optional polite `mailto` (Crossref's polite pool), User-Agent and NCBI `email`; never hard-coded and sent only when set |
 | `OPENALEX_API_KEY` | Sent to OpenAlex only when set. Keyless calls are a demo allowance (USD 0.10 per IP per day); a free key from openalex.org/settings/api gives USD 1 per day. The quota refusal and the fallback note name this variable |
 | `SEMANTIC_SCHOLAR_API_KEY` | Enables Semantic Scholar in the fallback chain; without it that provider is not queried at all. Sent in the `x-api-key` header, never cached or printed |
+| `ASTA_API_KEY` | Ai2's Asta: with it (or the same key saved with `smith keys set asta` / smith ui), Asta's relevance search picks the works like the paper and joins the fallback chain first; without it Asta is not queried at all. Sent only in the `x-api-key` header, never in a URL, the cache or the output |
+| `PAPERSMITH_ASTA_URL`, `PAPERSMITH_ASTA_DEADLINE` | The Asta endpoint (tests point it at a stand-in) and the wall-time bound of one Asta call, 60 s by default (its keep-alive pings never end a stalled call on their own) |
 | `PAPERSMITH_JOURNAL_CACHE_DIR` | The response cache's directory (default `~/.cache/papersmith/journal-finder/http`) |
 | `NCBI_API_KEY` | Sent to PubMed only when set (the CLI stays under three requests per second either way) |
 | `PAPERSMITH_SJR_DIR` | The directory of the imported SJR files (default `~/.cache/papersmith/sjr`) |

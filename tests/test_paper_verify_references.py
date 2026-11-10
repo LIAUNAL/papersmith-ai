@@ -108,6 +108,19 @@ class RemediationTests(unittest.TestCase):
 
 
 class NoCitationsTests(unittest.TestCase):
+    def test_an_asta_resolved_key_earns_an_acknowledgement_note_not_a_failure(self) -> None:
+        evidence = types.SimpleNamespace(main_tex_bytes=b"See \\cite{a,b}.\n")
+        records = {"a": {"status": "resolved", "resolver": "asta", "abstract": "A"},
+                   "b": {"status": "resolved", "resolver": "openalex", "abstract": "B"}}
+        entry = paper_verify.check_references(evidence, references=records)
+        self.assertEqual(entry["verdict"], "pass")
+        self.assertEqual(entry["evidence"]["via_asta"], ["a"])
+        self.assertTrue(any("Ai2's Asta" in line and "acknowledge" in line for line in entry["limits"]),
+                        entry["limits"])
+        without = paper_verify.check_references(evidence, references={**records, "a": records["b"]})
+        self.assertEqual(without["verdict"], "pass")
+        self.assertFalse(any("Asta" in line for line in without["limits"]))
+
     def test_a_workspace_with_no_citations_passes(self) -> None:
         sys.path.insert(0, str(FORGE_ROOT / "skills" / "paper-writing" / "scripts"))
         import types

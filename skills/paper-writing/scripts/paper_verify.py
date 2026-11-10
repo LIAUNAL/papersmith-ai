@@ -787,6 +787,10 @@ def check_references(evidence, *, optional_block_ids: frozenset = frozenset(),
     unreachable = [key for key in cited if statuses.get(key) == "unreachable"]
     without_abstract = [key for key in cited if statuses.get(key) == "resolved"
                         and not records[key].get("abstract")]
+    # Ai2's terms ask that work done with Asta acknowledge it: a note, never a
+    # verdict (literature-search, Requirement: Asta's Use Is Acknowledged).
+    via_asta = [key for key in cited if statuses.get(key) == "resolved"
+                and records[key].get("resolver") == "asta"]
     unresolved = len(not_found) + len(unreachable)
     return _entry(
         "references", classification="mechanical", verdict="fail" if missing else "pass",
@@ -796,11 +800,14 @@ def check_references(evidence, *, optional_block_ids: frozenset = frozenset(),
              "origin": ".paper-writing/references.json, written by resolve --references"},
         ],
         evidence={"cited": cited, "missing": missing, "not_found": not_found,
-                  "unreachable": unreachable, "without_abstract": without_abstract},
+                  "unreachable": unreachable, "without_abstract": without_abstract,
+                  "via_asta": via_asta},
         limits=[line for line in (
             f"{len(missing)} cited key(s) have no reference record: run `resolve --references`" if missing else "",
             f"{unresolved} cited key(s) have a record but no resolved metadata" if unresolved else "",
             f"{len(without_abstract)} resolved key(s) have no abstract at their source" if without_abstract else "",
+            (f"{len(via_asta)} cited key(s) were resolved through Ai2's Asta: acknowledge the Asta "
+             "Scientific Corpus Tool (Ai2) in the paper, as its terms ask") if via_asta else "",
         ) if line],
         unmeasured_reason=None,
     )

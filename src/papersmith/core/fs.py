@@ -22,7 +22,9 @@ has to live below both of them.
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -97,6 +99,38 @@ def write_text(path: Path, text: str, *, encoding: str = "utf-8") -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding=encoding)
     except OSError:
+        return False
+    return True
+
+
+def replace_bytes(path: Path, data: bytes) -> bool:
+    """Replace an existing regular file's bytes atomically, keeping its mode.
+
+    For a file that belongs to the workspace (``papersmith.yaml``): a crash
+    mid-write leaves either the old bytes or the new ones, never a truncated
+    config, and nothing is decoded, so line endings stay as given. Returns
+    ``False`` instead of raising when the path is not a regular file or the
+    write fails.
+    """
+    if not is_regular_file(path):
+        return False
+    try:
+        mode = path.stat().st_mode & 0o7777
+        handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    except OSError:
+        return False
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    except OSError:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
         return False
     return True
 

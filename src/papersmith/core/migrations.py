@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
+from .. import yamllite
 from ..bridges.python import run_script
 from ..errors import PapersmithError, SourceError, UserError
 from . import fs, manifest
@@ -557,6 +558,155 @@ class RetireLegacyCommand(Migration):
         return done, failures
 
 
+class AstaConnectorRoles(Migration):
+    """Name Ai2's Asta in an existing workspace's connector roles, once.
+
+    From this release ``paper_writing.roles`` names ``asta`` first in
+    ``resolution`` and in ``discovery``. A connector that needs a key is
+    skipped while its key is not set, so a workspace without the Asta key
+    behaves exactly as before; with the key (set in smith ui or with
+    ``smith keys set asta``), Asta is asked first. ``papersmith.yaml`` belongs
+    to the workspace and ``upgrade`` never rewrites it, so only this reaches
+    the workspaces made before it.
+
+    It edits only what it can recognize byte for byte: the block lists the
+    template seeded (``resolution`` exactly openalex, crossref, arxiv;
+    ``discovery`` exactly ``[]``). A list the operator changed is left exactly
+    as written and named once in the report, with the line to add by hand.
+    Line endings are kept, the result is checked with the orchestrator's own
+    YAML reader before anything is written, and the write is atomic.
+
+    Convergence, recorded by its own stamp (``.papersmith/connector-roles.json``)
+    the way ``RefreshRenderedAtlas`` records its render: an operator who later
+    removes ``asta`` is never overruled, and a customized list is reported
+    once, not on every upgrade.
+    """
+
+    id = "paper-writing-asta-roles"
+    summary = "name Ai2's Asta first in papersmith.yaml's resolution and discovery roles (used only with its key)"
+
+    CONFIG = "papersmith.yaml"
+    STAMP = ".papersmith/connector-roles.json"
+    CANONICAL_RESOLUTION = ("      - openalex", "      - crossref", "      - arxiv")
+
+    def _stamped(self, workspace: Path) -> bool:
+        return fs.is_regular_file(workspace / self.STAMP)
+
+    def _probe(self, workspace: Path) -> dict | None:
+        """``{lines, roles, resolution, discovery}`` or ``None`` when there is
+        nothing this migration may touch. ``resolution``/``discovery`` are
+        ``"insert"``, ``"named"`` (already names asta), ``"custom"`` or ``None``
+        (the key is absent)."""
+        path = workspace / self.CONFIG
+        if not fs.is_regular_file(path):
+            return None
+        try:
+            text = path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        lines = text.splitlines(keepends=True)
+        bare = [line.rstrip("\r\n") for line in lines]
+        try:
+            top = bare.index("paper_writing:")
+        except ValueError:
+            return None
+        roles = None
+        for index in range(top + 1, len(bare)):
+            line = bare[index]
+            if line and not line.startswith(" ") and not line.startswith("#"):
+                break  # the next top-level key: no roles block
+            if line == "  roles:":
+                roles = index
+                break
+        if roles is None:
+            return None
+        state = {"lines": lines, "roles": roles, "resolution": None, "discovery": None}
+        index = roles + 1
+        while index < len(bare) and (bare[index].startswith("    ") or not bare[index].strip()
+                                     or bare[index].lstrip().startswith("#")):
+            line = bare[index]
+            if line == "    resolution:":
+                items = []
+                cursor = index + 1
+                while cursor < len(bare) and bare[cursor].startswith("      - "):
+                    items.append(bare[cursor])
+                    cursor += 1
+                names = [item[len("      - "):].strip() for item in items]
+                if "asta" in names:
+                    state["resolution"] = "named"
+                elif tuple(items) == self.CANONICAL_RESOLUTION:
+                    state["resolution"] = ("insert", index)
+                else:
+                    state["resolution"] = "custom"
+            elif line.startswith("    resolution:"):
+                state["resolution"] = "named" if "asta" in line else "custom"
+            elif line == "    discovery: []":
+                state["discovery"] = ("insert", index)
+            elif line == "    discovery:":
+                cursor = index + 1
+                names = []
+                while cursor < len(bare) and bare[cursor].startswith("      - "):
+                    names.append(bare[cursor][len("      - "):].strip())
+                    cursor += 1
+                state["discovery"] = "named" if "asta" in names else "custom"
+            elif line.startswith("    discovery:"):
+                state["discovery"] = "named" if "asta" in line else "custom"
+            index += 1
+        return state
+
+    def plan(self, workspace: Path) -> list[str]:
+        if self._stamped(workspace):
+            return []
+        state = self._probe(workspace)
+        if state is None:
+            return []
+        actions = []
+        for role in ("resolution", "discovery"):
+            found = state[role]
+            if isinstance(found, tuple):
+                actions.append(f"name asta first in papersmith.yaml's paper_writing.roles.{role} "
+                               "(skipped until its key is set in smith ui)")
+            elif found == "custom":
+                actions.append(f"leave paper_writing.roles.{role} as written: add `- asta` first by hand "
+                               "to use Ai2's Asta once its key is set")
+        return actions
+
+    def apply(self, workspace: Path) -> tuple[list[str], list[str]]:
+        state = self._probe(workspace)
+        if state is None:
+            return [], []
+        lines = list(state["lines"])
+        newline = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
+        done: list[str] = []
+        # Bottom-up, so an earlier insertion never shifts a later index.
+        edits = sorted(((role, state[role][1]) for role in ("resolution", "discovery")
+                        if isinstance(state[role], tuple)), key=lambda edit: -edit[1])
+        for role, index in edits:
+            if role == "resolution":
+                lines.insert(index + 1, "      - asta" + newline)
+            else:
+                lines[index] = "    discovery:" + newline
+                lines.insert(index + 1, "      - asta" + newline)
+            done.append(f"named asta first in paper_writing.roles.{role}")
+        manual = [f"paper_writing.roles.{role} was customized: add `- asta` first by hand to use it"
+                  for role in ("resolution", "discovery") if state[role] == "custom"]
+        if edits:
+            text = "".join(lines)
+            try:
+                parsed = yamllite.loads(text.replace("\r\n", "\n"))
+                roles = parsed["paper_writing"]["roles"]
+                assert all(roles[role][0] == "asta" for role, _ in edits)
+            except Exception as exc:  # noqa: BLE001 - never write what does not read back
+                return [], [f"{self.CONFIG} was left unchanged: the edited roles did not read back ({exc})"]
+            if not fs.replace_bytes(workspace / self.CONFIG, text.encode("utf-8")):
+                return [], [f"could not rewrite {self.CONFIG}; add `- asta` first in its "
+                            "paper_writing.roles.resolution and discovery by hand"]
+        stamp = {"asta": {"named": [role for role, _ in edits], "manual": [m for m in manual]}}
+        if not fs.write_text(workspace / self.STAMP, json.dumps(stamp, indent=2) + "\n"):
+            return done + manual, [f"could not record {self.STAMP}; this migration will be planned again"]
+        return done + manual, []
+
+
 #: Every migration this release ships, in the order they must run.
 #:
 #: Order is contract: the scaffold creates the pool the renderer writes into.
@@ -569,4 +719,5 @@ REGISTRY: tuple[Migration, ...] = (
     ScaffoldGraphPool(),
     RefreshRenderedAtlas(),
     RetireLegacyCommand(),
+    AstaConnectorRoles(),
 )

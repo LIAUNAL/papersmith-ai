@@ -357,6 +357,7 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "DISCOVERY_UNAVAILABLE": WORK_STATE,
     "RESOLVER_ROLE_EMPTY": WORK_STATE,
     "RESOLVER_UNREACHABLE": WORK_STATE,
+    "RESOLVER_REFUSED": WORK_STATE,
     "IDENTIFIER_UNRESOLVED": WORK_STATE,
     # --- the-pdf-arrives-or-the-operator-is-told: fills the full-text role
     # (paper_full_text.py) -- `RESOLVER_ROLE_EMPTY`/`RESOLVER_UNREACHABLE`/
@@ -1584,14 +1585,21 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
     else:
         paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
     config = paper_resolve.load_config()
-    result = paper_resolve.resolve_identifier(
-        args.identifier, resolver=args.resolver, role=args.role, config=config,
-    )
+    attempts = None
+    if args.resolver == paper_resolve.AUTO:
+        # The role's active connectors in its own order: the first whole record
+        # with an abstract, else the first that found the work. Only that one
+        # record is cached.
+        result, attempts = paper_resolve.resolve_chain(args.identifier, role=args.role, config=config)
+    else:
+        result = paper_resolve.resolve_identifier(
+            args.identifier, resolver=args.resolver, role=args.role, config=config,
+        )
     if paper_dir is None:
         paper_resolve.cache_metadata_in(cache_dir, result)
     else:
         paper_resolve.cache_metadata(paper_dir, result)
-    return result
+    return result if attempts is None else {**result, "attempts": attempts}
 
 
 def cmd_full_text(args: argparse.Namespace) -> dict:
@@ -3778,7 +3786,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_resolve = sub.add_parser(
         "resolve",
-        help="resolve one identifier's metadata through a named connector, keyless",
+        help="resolve one identifier's metadata through a named connector (or `auto`: the role's "
+             "connectors in order), keyless by default",
     )
     resolve_cache = p_resolve.add_mutually_exclusive_group()
     resolve_cache.add_argument(
@@ -3793,8 +3802,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_resolve.add_argument("--identifier", default=None, help="DOI or arXiv id to resolve")
     p_resolve.add_argument(
-        "--resolver", default=None, choices=paper_resolve.RESOLVERS,
-        help="which connector to resolve through",
+        "--resolver", default=None, choices=(*paper_resolve.RESOLVERS, paper_resolve.AUTO),
+        help="which connector to resolve through; `auto` asks the role's connectors in its order "
+             "(a keyed one only with its key) and keeps the first whole record with an abstract",
     )
     p_resolve.add_argument(
         "--references", action="store_true",

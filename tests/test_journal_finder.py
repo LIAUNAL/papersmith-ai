@@ -67,6 +67,7 @@ SCRUBBED = (
     "PAPERSMITH_OPENALEX_MIN_INTERVAL", "PAPERSMITH_JOURNAL_CACHE_DIR",
     "PAPERSMITH_EUROPEPMC_URL", "PAPERSMITH_DOAJ_URL", "PAPERSMITH_SEMANTICSCHOLAR_URL",
     "SEMANTIC_SCHOLAR_API_KEY", "PAPERSMITH_CROSSREF_MIN_INTERVAL", "PAPERSMITH_FALLBACK_MIN_INTERVAL",
+    "ASTA_API_KEY", "PAPERSMITH_ASTA_URL", "PAPERSMITH_ASTA_DEADLINE",
 )
 
 
@@ -409,7 +410,7 @@ class SkillFileTests(unittest.TestCase):
             self.assertIn(f"{weight:g} * {name}", self.text.replace("×", "*"), name)
 
     def test_the_skill_documents_the_provider_chain_and_the_openalex_key(self):
-        for phrase in ("--source auto|openalex|crossref", "--include-unknown-quartile", "providers", "fallback",
+        for phrase in ("--source auto|asta|openalex|crossref", "--include-unknown-quartile", "providers", "fallback",
                        "sources", "Europe PMC", "DOAJ", "Semantic Scholar", "SEMANTIC_SCHOLAR_API_KEY",
                        "x-api-key", "PAPERSMITH_EUROPEPMC_URL", "PAPERSMITH_DOAJ_URL",
                        "PAPERSMITH_SEMANTICSCHOLAR_URL", "openalex.org/settings/api", "OPENALEX_API_KEY",
@@ -1981,7 +1982,7 @@ class CacheTests(JournalFinderCase):
         calls = self.search().json["api_calls"]
         self.assertEqual(set(calls), {"made", "cached", "by_service", "cache", "budget"})
         self.assertEqual(set(calls["by_service"]),
-                         {"openalex", "crossref", "pubmed", "europepmc", "doaj", "semanticscholar"})
+                         {"openalex", "crossref", "pubmed", "europepmc", "doaj", "semanticscholar", "asta"})
         self.assertEqual(sum(v["made"] for v in calls["by_service"].values()), calls["made"])
         self.assertEqual(calls["by_service"]["openalex"]["made"],
                          len(api.hits("/openalex")))
@@ -2103,7 +2104,7 @@ QFL = "Quantum Fixture Letters"
 CITED_ONLY = "Cited Only Journal"
 #: the journals Crossref and Europe PMC name for the fixture paper
 FALLBACK_JOURNALS = {NFL, OSP, BFR, OQ, TOR, NFJ}
-PROVIDER_ORDER = ["openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj"]
+PROVIDER_ORDER = ["asta", "openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj"]
 KEY_GUIDE = "openalex.org/settings/api"
 NON_BIOMEDICAL_TEX = (
     "\\title{Variational Quantum Circuits and Fourier Models}\\begin{abstract}Short.\\end{abstract}"

@@ -8965,8 +8965,11 @@ class RefusalRosterTests(unittest.TestCase):
 
         213 -> 215 in `spark-to-paper-enhancements` (S4): the read-only venue
         catalog adds 2 codes (VENUE_CATALOG_INVALID for a malformed shipped
-        catalog, VENUE_CATALOG_UNKNOWN for an unknown catalog slug)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 215)
+        catalog, VENUE_CATALOG_UNKNOWN for an unknown catalog slug).
+
+        215 -> 216: `resolve` refuses a connector that rejected the operator's
+        configured key (RESOLVER_REFUSED), never as IDENTIFIER_UNRESOLVED."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 216)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

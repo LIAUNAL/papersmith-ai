@@ -1557,7 +1557,7 @@ window.PAPERSMITH_I18N.en = {
   "journals.works.none": "No similar works recorded",
   "journals.select": "Choose this journal",
   "journals.form.source": "Source",
-  "journals.form.sourceTitle": "Service that looks for the journals (--source): automatic tries OpenAlex and, when it does not answer, uses the free fallback sources.",
+  "journals.form.sourceTitle": "Service that looks for the journals (--source): automatic tries OpenAlex and, when it does not answer, uses the free fallback sources; with an Asta key (Doctor → API keys), Asta first finds the works like the paper. Asta (Ai2) needs that key.",
   "journals.form.source.auto": "Automatic",
   "journals.form.includeUnknown": "Include journals without a quartile",
   "journals.form.includeUnknownTitle": "Keep the journals whose quartile could not be determined (--include-unknown-quartile). Without it, the quartile filter excludes them.",

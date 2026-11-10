@@ -105,11 +105,16 @@ paper_ingestion:
 # Without the `resolution` role, `paper_cli.py resolve` refuses with
 # RESOLVER_ROLE_EMPTY and literature scouting cannot start. Mirrors the
 # framework default shipped in this repository's own papersmith.yaml.
+# `asta` (Ai2's Asta, the Semantic Scholar corpus) is asked first once its
+# key is set in smith ui (Doctor -> API keys) or with `smith keys set asta`,
+# and skipped without it, so without the key OpenAlex answers as before.
 paper_writing:
   contact: ""
   roles:
-    discovery: []
+    discovery:
+      - asta
     resolution:
+      - asta
       - openalex
       - crossref
       - arxiv

@@ -32,6 +32,7 @@ import importlib.util
 import json
 import os
 import re
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
@@ -91,9 +92,37 @@ def _crossref(doi: str) -> dict[str, Any] | None:
         return None
 
 
+def _openalex_key() -> str | None:
+    """The operator's OpenAlex key (``skills/_core/api_keys.py``: the dashboard's
+    API keys panel, ``smith keys set openalex`` or ``OPENALEX_API_KEY``), or
+    ``None``. Never raises: without a key the lookup is keyless, as before."""
+    name = "papersmith_api_keys"
+    try:
+        module = sys.modules.get(name)
+        if module is None:
+            source = Path(__file__).resolve().parents[1] / "api_keys.py"
+            spec = importlib.util.spec_from_file_location(name, source)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            try:
+                spec.loader.exec_module(module)
+            except BaseException:
+                sys.modules.pop(name, None)
+                raise
+        return module.read("openalex")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _openalex_institutions(arxiv_id: str) -> dict[str, Any] | None:
-    """The ROR ids of a preprint's authors and its year, ``None`` when OpenAlex does not answer."""
+    """The ROR ids of a preprint's authors and its year, ``None`` when OpenAlex does not answer.
+
+    The operator's OpenAlex key, when configured, raises the budget; a failure
+    still returns ``None``, so no key can reach a message."""
     url = OPENALEX_WORKS + urllib.parse.quote(arxiv_id, safe="") + "?select=publication_year,authorships"
+    key = _openalex_key()
+    if key:
+        url += "&api_key=" + urllib.parse.quote(key, safe="")
     request = urllib.request.Request(url, headers={"User-Agent": "papersmith-ai"})
     try:
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:

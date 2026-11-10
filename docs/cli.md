@@ -158,7 +158,7 @@ read-only probe and is evaluated on every run, because the next release can
 change what there is to converge on. A workspace that already satisfies it writes
 nothing.
 
-The current version ships three convergence migrations:
+The current version ships four convergence migrations:
 
 - **`sota-pool-scaffold`** creates `sota-pool/.gitkeep` in workspaces older than
   the release that began scaffolding the graph pool.
@@ -172,6 +172,12 @@ The current version ships three convergence migrations:
   `papersmith` (what `mcp print-config` printed up to 0.18.x) at `smith`, the
   only command since 0.70.0. It rewrites that one field and keeps every other
   server, key and argument; an explicit path is left as written.
+- **`paper-writing-asta-roles`** names Ai2's Asta first in `papersmith.yaml`'s
+  `paper_writing.roles.resolution` and `discovery`, once (stamped in
+  `.papersmith/connector-roles.json`, so removing it later is never overruled).
+  Asta is asked only once its key is set (`smith keys set asta`), so without the
+  key nothing changes. Only the lists the template seeded are edited, line
+  endings kept; a customized list is left as written and reported once.
 
 When the recorded version cannot be ordered — the marker was lost, or it says
 something without a number — a version-bound migration cannot be placed on
@@ -1001,7 +1007,7 @@ and answer with an error object instead of raising:
 | Route | What it does |
 |---|---|
 | `GET /api/journals` | `{ok, candidates, sjr, sjr_download_url, notes_md, busy}`: the contents of `paper/journal-candidates.json` (or `null`, with `candidates_error` when it cannot be read), the SJR state from `journal_cli.py status` (the imported file and its year, or `null`), whether `paper/journal-candidates.md` exists, and whether a search is running |
-| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, max_review_days, limit, no_cache, source, include_unknown_quartile}`; only `quartiles` is required. Runs `journal_cli.py search` in a worker thread (330 s) and returns the CLI's JSON, `api_calls`, `providers` and `fallback` included. `no_cache: true` adds `--no-cache` (the *Forzar actualización* checkbox). `source` is `auto` (the default), `openalex` or `crossref` and becomes `--source`; `include_unknown_quartile: true` adds `--include-unknown-quartile`. Both are validated like the other filters and passed through unchanged. One search at a time (`409 SEARCH_RUNNING`). `422` for an invalid range (`QUARTILE_RANGE_INVALID`) or filter (`FILTER_INVALID`: `limit` 1-50, `max_apc` 0-10000000, `max_review_days` 1-3650, `oa_only` and `no_cache` booleans). A CLI refusal keeps its shape: `409 PAPER_ABSENT`, `404 WORKSPACE_ABSENT`, `502 NETWORK_UNAVAILABLE` (with `source: openalex`, an unreachable OpenAlex or a spent daily quota whose message names `OPENALEX_API_KEY`; with `auto` or `crossref`, only when the fallback providers cannot be reached either: an unavailable OpenAlex under `auto` answers `200` with `fallback.used: true`), `504 TIMEOUT`; a CLI that prints no JSON is `502 JOURNAL_CLI_FAILED` |
+| `POST /api/journals/search` | Body `{quartiles, oa_only, max_apc, max_review_days, limit, no_cache, source, include_unknown_quartile}`; only `quartiles` is required. Runs `journal_cli.py search` in a worker thread (330 s) and returns the CLI's JSON, `api_calls`, `providers` and `fallback` included. `no_cache: true` adds `--no-cache` (the *Forzar actualización* checkbox). `source` is `auto` (the default), `asta` (needs the Asta key), `openalex` or `crossref` and becomes `--source`; `include_unknown_quartile: true` adds `--include-unknown-quartile`. Both are validated like the other filters and passed through unchanged. One search at a time (`409 SEARCH_RUNNING`). `422` for an invalid range (`QUARTILE_RANGE_INVALID`) or filter (`FILTER_INVALID`: `limit` 1-50, `max_apc` 0-10000000, `max_review_days` 1-3650, `oa_only` and `no_cache` booleans). A CLI refusal keeps its shape: `409 PAPER_ABSENT`, `404 WORKSPACE_ABSENT`, `502 NETWORK_UNAVAILABLE` (with `source: openalex`, an unreachable OpenAlex or a spent daily quota whose message names `OPENALEX_API_KEY`; with `auto` or `crossref`, only when the fallback providers cannot be reached either: an unavailable OpenAlex under `auto` answers `200` with `fallback.used: true`), `504 TIMEOUT`; a CLI that prints no JSON is `502 JOURNAL_CLI_FAILED` |
 | `POST /api/journals/sjr` | The SCImago "Download data" CSV as the **raw request body** (not multipart), its file name and optional year in the query string (`?name=scimagojr 2025.csv&year=2025`). Capped at 16 MiB (`413 FILE_TOO_LARGE`); an empty body or an invalid CSV is `422 SJR_FILE_INVALID`. Runs `journal_cli.py sjr-import` and returns its JSON |
 | `GET /api/venues` | `{ok, venues: [{slug, journal, quartile, state, blockers, next_action}]}`, one per `paper/venues/<slug>/` that holds a `venue.json` |
 | `POST /api/venues/select` | Body `{candidate}` (an OpenAlex source id from `paper/journal-candidates.json`) or `{journal, issn}`, plus an optional `slug` (else derived from the journal's name). Runs `venue select`; `409 VENUE_EXISTS`, `404 CANDIDATE_UNKNOWN`, `409 CANDIDATES_ABSENT`, `400 VENUE_SLUG_INVALID` and `422` for a body that gives neither or both modes |

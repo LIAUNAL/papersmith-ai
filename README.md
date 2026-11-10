@@ -226,9 +226,12 @@ that already publish work like it. Nothing is ever submitted.
   `no-application-evidence` flag; it still appears, flagged. The numbers are in
   the JSON (`fit`, `facets`, `query.scoring`) and in the panel, which prints the
   formula above the table.
-- **Where the journals come from.** `--source auto|openalex|crossref` picks the
-  chain (default `auto`; the panel's source selector sends the same choice).
-  OpenAlex answers first. When it cannot (no key and the keyless demo allowance
+- **Where the journals come from.** `--source auto|asta|openalex|crossref` picks
+  the chain (default `auto`; the panel's source selector sends the same choice).
+  With your Asta key (Ai2's Semantic Scholar corpus; save it in the dashboard's
+  Doctor → API keys or with `smith keys set asta`), Asta's relevance search picks
+  the works like the paper first and OpenAlex describes the journals that
+  published them; without the key nothing changes. OpenAlex answers first. When it cannot (no key and the keyless demo allowance
   is spent, a `429`, a `401`/`403`, a 5xx or a network error) `auto` does not
   refuse: it continues with free sources and says so in the output
   (`fallback: {used, code, reason}`, a note and, in the panel, a banner). The

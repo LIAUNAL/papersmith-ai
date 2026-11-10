@@ -45,6 +45,9 @@ INTENDED_CHANGES = {
     ".papersmith/version": "the marker moves to this release once migrations finish",
     ".gitignore": "0.14.0 wraps the framework's lines in a managed block and ignores the "
                   "deliberation engines' state (tests/test_workspace_gitignore.py)",
+    "papersmith.yaml": "the paper-writing-asta-roles migration names Ai2's Asta first in the "
+                       "resolution and discovery roles, used only with its key "
+                       "(tests/test_connector_roles_migration.py)",
 }
 
 #: The deliberation engines and the profile each reads.
@@ -74,6 +77,12 @@ def extract_fixture(destination: Path) -> Path:
     with tarfile.open(FIXTURE / "workspace.tar.gz") as tar:
         tar.extractall(workspace, filter="data")
     return workspace
+
+
+def _fixture_text(relpath: str) -> str:
+    """One file of the 0.13.0 workspace as it was shipped, before any upgrade."""
+    with tempfile.TemporaryDirectory() as holder:
+        return (extract_fixture(Path(holder)) / relpath).read_text(encoding="utf-8")
 
 
 def run_upgrade(workspace: Path) -> dict:
@@ -121,6 +130,20 @@ class UpgradeOfAPopulatedV0130WorkspaceTests(unittest.TestCase):
                 self.assertTrue(any(path.startswith(prefix) for path in listed), prefix)
         revisions = [path for path in listed if path.startswith("proposals/research-concept-")]
         self.assertGreaterEqual(len(revisions), 2, "a v1 and one successor")
+
+    def test_the_connector_roles_name_asta_first_and_keep_everything_else(self) -> None:
+        from papersmith import yamllite
+
+        text = (self.workspace / "papersmith.yaml").read_text(encoding="utf-8")
+        roles = yamllite.loads(text)["paper_writing"]["roles"]
+        self.assertEqual(roles["resolution"], ["asta", "openalex", "crossref", "arxiv"])
+        self.assertEqual(roles["discovery"], ["asta"])
+        self.assertEqual(roles["full-text"], ["openalex", "arxiv"])
+        # Only the two role lists moved: every other line of the operator's file is kept.
+        before = _fixture_text("papersmith.yaml").splitlines()
+        after = text.splitlines()
+        self.assertEqual([line for line in after if line not in ("      - asta", "    discovery:")],
+                         [line for line in before if line != "    discovery: []"])
 
     def test_nothing_the_workspace_made_changes_except_what_is_listed_as_intended(self) -> None:
         changed = {relpath for relpath, digest in self.before.items()

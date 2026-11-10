@@ -87,13 +87,15 @@ abstracts bear most directly on the graded claims. Confirm each one's
 metadata through the borrowed front door — the one shell command this
 stretch may invoke:
 `python skills/paper-writing/scripts/paper_cli.py resolve
---identifier <id> --resolver {openalex,crossref,arxiv} --role resolution
+--identifier <id> --resolver auto --role resolution
 --cache-dir sota-pool/metadata`.
 Its cache lands in `sota-pool/metadata/`, beside the pool, never under
 `paper/`. Report identifier, resolver, title, year, venue, and whether its own
-`full_text_url` names a reachable PDF. Quote refusals
-(`RESOLVER_ROLE_EMPTY`, `RESOLVER_UNREACHABLE`, `IDENTIFIER_UNRESOLVED`)
-rather than working around them. Ranking is not filing: the PDFs stay where
+`full_text_url` names a reachable PDF; a record Ai2's Asta answered names no
+`full_text_url` (Asta is never a full-text connector), so for those ask the same
+command once more naming the OpenAlex or arXiv connector. Quote refusals
+(`RESOLVER_ROLE_EMPTY`, `RESOLVER_UNREACHABLE`, `RESOLVER_REFUSED`,
+`IDENTIFIER_UNRESOLVED`) rather than working around them. Ranking is not filing: the PDFs stay where
 they are until the ingestion stage runs.
 
 ## When something refuses

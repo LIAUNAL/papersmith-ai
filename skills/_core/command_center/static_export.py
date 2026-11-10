@@ -193,12 +193,24 @@ def _scrub_text(data: bytes, replacements: list[tuple[str, str]],
                   code=code).encode("utf-8")
 
 
+#: A record that Ai2's Asta returned names it as its `resolver`. Its abstract is
+#: the Asta corpus's text, which Ai2's license does not let a public page
+#: redistribute: the snapshot keeps the record (title, venue, link) and drops
+#: the abstract. The live dashboard, on the operator's own machine, still shows it.
+ASTA_RESOLVER = "asta"
+WITHHELD_ABSTRACT = "[abstract withheld from the public snapshot: retrieved through Ai2's Asta]"
+
+
 def _scrub_json(node: Any, replacements: list[tuple[str, str]],
                 identities: tuple[tuple[str, str], ...]) -> Any:
-    """Every string of a JSON document, keys included, through :func:`_clean`."""
+    """Every string of a JSON document, keys included, through :func:`_clean`;
+    the abstract of an Asta-resolved record is withheld (:data:`ASTA_RESOLVER`)."""
     if isinstance(node, dict):
+        withhold = node.get("resolver") == ASTA_RESOLVER and isinstance(node.get("abstract"), str)
         return {_clean(key, replacements, identities) if isinstance(key, str) else key:
-                _scrub_json(value, replacements, identities) for key, value in node.items()}
+                (WITHHELD_ABSTRACT if withhold and key == "abstract"
+                 else _scrub_json(value, replacements, identities))
+                for key, value in node.items()}
     if isinstance(node, list):
         return [_scrub_json(item, replacements, identities) for item in node]
     if isinstance(node, str):

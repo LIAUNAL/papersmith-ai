@@ -824,9 +824,12 @@ class InitTests(unittest.TestCase):
         workspace = tmp_path / "paper"
         init_module.initialize(workspace, run_npm=False, run_env=False)
         yaml = config.load_papersmith_yaml(workspace)
+        # `asta` first: a keyed connector, skipped until its key is set, so
+        # without the key the role behaves as openalex, crossref, arxiv.
         assert yaml["paper_writing"]["roles"]["resolution"] == [
-            "openalex", "crossref", "arxiv",
+            "asta", "openalex", "crossref", "arxiv",
         ], yaml.get("paper_writing")
+        assert yaml["paper_writing"]["roles"]["discovery"] == ["asta"], yaml.get("paper_writing")
         assert yaml["paper_writing"]["roles"]["full-text"] == [
             "openalex", "arxiv",
         ], yaml.get("paper_writing")

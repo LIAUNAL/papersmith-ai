@@ -57,7 +57,7 @@ def agent_invocation(agent: str) -> list[str]:
     if len(spans) != 1:
         raise AssertionError(f"{agent}: expected one resolve invocation, found {spans}")
     argv = spans[0].split()
-    filled = {"<id>": IDENTIFIER, "{openalex,crossref,arxiv}": "openalex"}
+    filled = {"<id>": IDENTIFIER, "{openalex,crossref,arxiv}": "openalex"}  # an older wording
     argv = [filled.get(token, token) for token in argv]
     if argv[:2] != ["python", "skills/paper-writing/scripts/paper_cli.py"]:
         raise AssertionError(f"{agent}: unexpected launcher {argv[:2]}")
