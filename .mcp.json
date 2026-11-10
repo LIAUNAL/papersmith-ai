@@ -17,6 +17,21 @@
         "x-api-key": "${ASTA_API_KEY:-}"
       },
       "timeout": 60000
+    },
+    "kaggle": {
+      "type": "http",
+      "url": "https://www.kaggle.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${KAGGLE_API_TOKEN:-}"
+      }
+    },
+    "colab": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "git+https://github.com/googlecolab/colab-mcp@b9ab3899e0f1fa493390b1fd6d54aa2e464ecdf1"
+      ],
+      "timeout": 30000
     }
   }
 }

@@ -416,7 +416,7 @@ npm run setup:harnesses
 **The command is `smith`.** Installing `papersmith-ai` puts `smith` on `PATH`,
 and every command in this README uses it (`smith init`, `smith upgrade`,
 `smith status`, …). It is the only command: the older `papersmith` alias was
-removed in 0.70.0, and `smith upgrade` repoints a workspace's MCP entries that
+removed in 0.71.0, and `smith upgrade` repoints a workspace's MCP entries that
 still launch it. Edit any user-level config that names it (`~/.claude.json`,
 `~/.gemini/config/mcp_config.json`) by hand; if `papersmith` lingers on `PATH`
 after `pipx upgrade`, run `pipx reinstall papersmith-ai`.
@@ -430,7 +430,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.70.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.71.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 

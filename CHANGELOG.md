@@ -11,6 +11,25 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.71.0
+
+- BREAKING: the duplicate `papersmith` command is gone — `smith` is the only
+  CLI (the alias existed since 0.19.0; nothing shipped ran the old binary).
+  A new convergence migration (`mcp-legacy-papersmith-command`) makes
+  `smith upgrade` repoint any server in `.mcp.json`, `.pi/mcp.json` and
+  `.agents/mcp_config.json` whose command is the bare `papersmith`; user-level
+  MCP configs naming it must be edited by hand.
+- Per-user API keys for Ai2's Asta and OpenAlex, asked once in the dashboard's
+  Doctor → API keys panel or with `smith keys set|status|clear` — stored
+  outside every workspace, never printed, and handed to the sessions the
+  dashboard starts as environment variables.
+- Citation resolution and journal-finder gain Ai2's Asta as an alternative to
+  OpenAlex (`--resolver auto` asks Asta first and keeps the first answer; the
+  keyless connectors are unchanged).
+- Literature discovery across every harness via Ai2's Asta MCP server
+  (`docs/mcp.md` documents the per-harness wiring, its `sota-scout`-only tool
+  grant, and the academic, non-commercial license terms).
+
 ## 0.70.0
 
 - New Command Center panel **Agents Office** (`smith ui`): a measured
