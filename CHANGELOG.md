@@ -11,6 +11,31 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.69.0
+
+- Cross-platform terminal launch: `detect_tools`/`launch_external` probe GNOME
+  Terminal, Konsole, `x-terminal-emulator`, Ghostty and WezTerm on Linux (the
+  macOS `open(1)` path is unchanged and pinned); the launch button labels the
+  probed emulator and the missing-tools hint is no longer brew-only.
+- Command Center UI: the problem tree renders direct causes -> central problem
+  -> effects (each effect's `caused_by` note now cites referents shown above
+  it), and an unauthorized page shows a dismissible activation banner (en/es)
+  instead of only a console line.
+- New stdlib SVG figure audit (`skills/_core/figure/svg_audit.py`,
+  `diagram_cli.py audit-svg`): typography hierarchy, text collisions, WCAG
+  contrast and viewbox fit, with `diagram_audit.py`'s pass/fail/unmeasured
+  contract; no VLMs, no paid APIs.
+- Citation verification: a keyless Semantic Scholar connector joins OpenAlex,
+  Crossref and arXiv in `paper resolve`; docs/mcp.md documents Allen AI ASTA as
+  an optional agent-side citation-grounding helper.
+- Adversarial review: `redactor.md` ships the Anti-Skim protocol (quote-verify
+  before citing; `UNVERIFIED` flags) and `paper-reviewer.md` the
+  `HALLUCINATION` checks, identical across the four harness projections.
+- Venues: a machine-readable catalog (`smith venue catalog`) covers NeurIPS,
+  ICML, IEEE conferences/Transactions, Elsevier, Springer LNCS, Frontiers and
+  MDPI as data — the forge still ships no document class.
+- New docs page `docs/terminals.md` (platforms, agents, activation).
+
 ## 0.68.1
 
 - Fix static dashboard snapshot export by provisioning `httpx2` in the forge
