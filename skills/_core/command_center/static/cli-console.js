@@ -25,6 +25,10 @@
   const SESSION_KEY = `smith_terminal_session@${(typeof location !== 'undefined' && location.host) || 'local'}`;
   // Output replayed on reconnect is not the agent working.
   const REPLAY_QUIET_MS = 800;
+  // Self-activation of a page without the terminal cookie: how often to look
+  // for the cookie the reopened login URL sets, and for how long.
+  const ACTIVATION_POLL_MS = 700;
+  const ACTIVATION_WAIT_MS = 45000;
 
   const state = {
     info: null,        // GET /api/terminal/agents
@@ -43,6 +47,8 @@
     refusal: '',       // why the last sendToCli did not send, for the caller
     quietUntil: 0,     // replayed output before this does not count as activity
     resuming: null,    // the reattach attempt started on load
+    activating: null,  // the pending self-activation (POST /api/terminal/activate)
+    accessNote: '',    // why this page stays unauthorized after activating, if known
     said: null,        // the last status as { key, vars, tone }, redrawn on a language switch
   };
 
@@ -167,6 +173,17 @@
     const text = document.createElement('span');
     text.setAttribute('data-i18n', 'cli.activateBanner');
     text.textContent = t('cli.activateBanner');
+    const activate = document.createElement('button');
+    activate.type = 'button';
+    activate.setAttribute('data-i18n', 'cli.activateButton');
+    activate.textContent = t('cli.activateButton');
+    activate.style.cssText = 'background:#fff;color:#7f1d1d;border:0;border-radius:6px;'
+      + 'padding:4px 10px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    activate.addEventListener('click', () => {
+      ensureAuthorized().then((info) => {
+        if (info && info.authorized && isOpen() && !state.sessionId) start().catch(() => {});
+      }).catch(() => {});
+    });
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = '×';
@@ -174,8 +191,64 @@
     close.title = t('cli.activateBanner');
     close.style.cssText = 'background:none;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1;padding:0;';
     close.addEventListener('click', () => banner.remove());
-    banner.append(text, close);
+    banner.append(text, activate, close);
     document.body.appendChild(banner);
+  }
+
+  function hideActivationBanner() {
+    const banner = document.getElementById('cliActivationBanner');
+    if (banner) banner.remove();
+  }
+
+  // The page lacks this server's terminal cookie (an old tab, a bookmark, a
+  // server restarted since): ask the server to open its login URL again in the
+  // desktop browser, which sets the cookie for this host, then wait until this
+  // page is authorized too. Only on a click, never on load; resolves with the
+  // fresh /api/terminal/agents info, authorized or not.
+  async function ensureAuthorized() {
+    const info = await loadInfo();
+    if (!info.enabled || info.authorized) return info;
+    if (state.activating) return state.activating;
+    state.accessNote = '';
+    state.activating = (async () => {
+      say('cli.activating', null, 'warn');
+      let opened = false;
+      try {
+        const result = await api('/api/terminal/activate', 'POST', {});
+        opened = Boolean(result.opened || result.throttled);
+        // The cookie belongs to the server's own address: a page reached under
+        // another name (localhost for 127.0.0.1) never receives it.
+        const here = typeof location !== 'undefined' ? location.origin : null;
+        if (result.origin && here && result.origin !== here) {
+          state.accessNote = t('cli.activatedElsewhere', { origin: result.origin });
+          return state.info;
+        }
+      } catch (_) { /* fall through: the printed link still works */ }
+      if (!opened) say('cli.activatePrinted', null, 'warn');
+      const deadline = Date.now() + ACTIVATION_WAIT_MS;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, ACTIVATION_POLL_MS));
+        let fresh = null;
+        try {
+          const res = await fetch('/api/terminal/agents');
+          fresh = res.ok ? await res.json() : null;
+        } catch (_) { fresh = null; }
+        if (fresh && fresh.authorized) {
+          state.info = null;
+          hideActivationBanner();
+          const ready = await loadInfo();
+          say('cli.activated', null, 'ok');
+          return ready;
+        }
+      }
+      say('cli.activateTimeout', null, 'bad');
+      return state.info;
+    })();
+    try {
+      return await state.activating;
+    } finally {
+      state.activating = null;
+    }
   }
 
   async function loadTools() {
@@ -357,9 +430,9 @@
     if (state.sessionId) return state.sessionId;
     if (state.starting) return state.starting;
     state.starting = (async () => {
-      const info = await loadInfo();
+      const info = await ensureAuthorized();
       if (!info.enabled) throw new Error(t('cli.errDisabled'));
-      if (!info.authorized) throw new Error(t('cli.errNoAccess'));
+      if (!info.authorized) throw new Error(state.accessNote || t('cli.errNoAccess'));
       const term = ensureTerm();
       if (!term) throw new Error(t('cli.errNoXterm'));
       refit(false);
@@ -422,7 +495,8 @@
       if (!ensureTerm()) return;
       setTimeout(() => {
         refit(true);
-        if (info.enabled && info.authorized && !state.sessionId && !state.exited) start().catch(() => {});
+        // An unauthorized page activates itself first (start → ensureAuthorized).
+        if (info.enabled && !state.sessionId && !state.exited) start().catch(() => {});
         state.term.focus();
       }, 100);
     });
@@ -493,7 +567,8 @@
   // the operator's confirmation. Returns { switched, prefix }.
   async function useAgent(kind, options) {
     const opts = options || {};
-    const info = await loadInfo();
+    const info = await ensureAuthorized();
+    if (info.enabled && !info.authorized) throw new Error(state.accessNote || t('cli.errNoAccess'));
     const available = (info.agents || []).filter((a) => a.available).map((a) => a.id);
     const live = Boolean(state.sessionId);
     let wanted = state.agent;
