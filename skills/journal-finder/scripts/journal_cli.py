@@ -102,6 +102,7 @@ import csv
 import datetime as dt
 import hashlib
 import http.client
+import importlib.util
 import io
 import json
 import math
@@ -157,6 +158,14 @@ PUBMED_DEFAULT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 EUROPEPMC_DEFAULT = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 DOAJ_DEFAULT = "https://doaj.org"
 SEMANTICSCHOLAR_DEFAULT = "https://api.semanticscholar.org"
+#: Ai2's Asta (the Semantic Scholar corpus over MCP streamable HTTP). Asked only
+#: with the operator's key (smith ui's API keys panel or `smith keys set asta`):
+#: its searches stall without one.
+ASTA_DEFAULT = "https://asta-tools.allen.ai/mcp/v1"
+ASTA_WORK_FIELDS = "title,year,externalIds,publicationVenue,venue,journal"
+ASTA_INTERVAL = 1.0  # one keyed tool call per second
+ASTA_CALL_DEADLINE = 60.0  # its 15 s pings keep a stalled call open; this bounds one call
+ASTA_SEARCH_LIMIT = 100
 SJR_DOWNLOAD_URL = "https://www.scimagojr.com/journalrank.php"
 PUBMED_MIN_INTERVAL = 0.34  # strictly under 3 requests per second
 CROSSREF_LIST_INTERVAL = 0.34  # Crossref polite pool: 3 list requests per second
@@ -167,13 +176,16 @@ SEMANTICSCHOLAR_INTERVAL = 1.0  # a Semantic Scholar key starts at 1 request per
 CROSSREF_WORK_FIELDS = "DOI,title,container-title,ISSN,published,subject"
 MAX_CROSSREF_DOIS = 100
 UNAVAILABLE_STATUSES = (200, 401, 402, 403, 429)  # 200: an answer that is not JSON
-PROVIDER_ORDER = ("openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj")
-SOURCE_CHOICES = ("auto", "openalex", "crossref")
-OPENALEX_KEY_URL = "openalex.org/settings/api"
+PROVIDER_ORDER = ("asta", "openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj")
+SOURCE_CHOICES = ("auto", "asta", "openalex", "crossref")
+OPENALEX_KEY_URL = "openalex.org/settings/api-key"
 OPENALEX_KEY_GUIDE = ("OpenAlex now asks for a free API key for real use: keyless calls are a small demo "
                       "allowance and a free key gives about USD 1 per day, 10x the keyless budget. Create a free "
-                      "account at openalex.org, copy the key from " + OPENALEX_KEY_URL + " and export "
-                      "OPENALEX_API_KEY.")
+                      "account at openalex.org, copy the key from " + OPENALEX_KEY_URL + " and save it in "
+                      "smith ui (Doctor -> API keys) or with `smith keys set openalex` (an exported "
+                      "OPENALEX_API_KEY also works).")
+ASTA_KEY_GUIDE = ("--source asta needs the Asta key: save it in smith ui (Doctor -> API keys) or run "
+                  "`smith keys set asta` (an exported ASTA_API_KEY also works)")
 SJR_FIRST_YEAR = 1999
 SJR_REQUIRED = ("Title", "Issn", "SJR", "SJR Best Quartile", "Categories", "Publisher")
 SOURCE_SELECT = ("id,display_name,issn_l,issn,type,host_organization_name,is_oa,is_in_doaj,"
@@ -223,6 +235,43 @@ def _contact() -> str:
 
 def _base(name: str, default: str) -> str:
     return os.environ.get(name, "").strip().rstrip("/") or default
+
+
+def _core(name: str, relative: str):
+    """A `skills/_core` module, loaded by path once (this skill ships alone)."""
+    module = sys.modules.get(name)
+    if module is None:
+        source = Path(__file__).resolve().parents[2] / "_core" / relative
+        spec = importlib.util.spec_from_file_location(name, source)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {source}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return module
+
+
+def _key(provider: str) -> str:
+    """The operator's key for `provider` (smith ui's API keys panel, `smith keys set`, or its exported
+    variable, which wins), else "". Never raises, never printed, never cached."""
+    try:
+        return _core("papersmith_api_keys", "api_keys.py").read(provider) or ""
+    except Exception:  # noqa: BLE001 - no usable key behaves as no key
+        return ""
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A request carrying a key follows no redirect: one would hand the header to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_KEYED_OPENER = urllib.request.build_opener(_RefuseRedirects)
 
 
 def sjr_dir() -> Path:
@@ -319,7 +368,7 @@ class ResponseCache:
 class CallStats:
     """How many HTTP requests were made or served from the cache, per service, and the OpenAlex budget."""
 
-    SERVICES = ("openalex", "crossref", "pubmed", "europepmc", "doaj", "semanticscholar")
+    SERVICES = ("openalex", "crossref", "pubmed", "europepmc", "doaj", "semanticscholar", "asta")
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -432,6 +481,59 @@ class Http:
                     time.sleep(pause)
         raise HttpFailure(f"{last} from {urllib.parse.urlsplit(url).netloc} after "
                           f"{self.retries + 1} attempt(s)", status=status)
+
+    def post_mcp(self, url: str, tool: str, arguments: dict, key: str, limiter: RateLimiter | None = None,
+                 service: str = "asta") -> dict:
+        """One MCP `tools/call` (Asta's streamable HTTP), as `{"data": [paper, ...]}`.
+
+        Cached like a search (the tool and its arguments are the key; the API key rides only the header and
+        never the cache). The event stream is read under a deadline of its own, because keep-alive pings reset
+        any per-read timeout. A refused key is HttpFailure(status=403); other failures retry like `get_json`."""
+        protocol = _core("papersmith_asta_protocol", "literature/asta_protocol.py")
+        params = {"query": json.dumps({"tool": tool, "arguments": arguments}, sort_keys=True)}
+        cached = self.cache.get(url, params)
+        if cached is not None:
+            self.stats.record(service, cached=True)
+            return cached
+        endpoint, body, headers = protocol.request(tool, arguments, key=key, endpoint=url)
+        host = urllib.parse.urlsplit(url).netloc
+        last, status = "no attempt made", None
+        call_deadline = max(1.0, _env_float("PAPERSMITH_ASTA_DEADLINE", ASTA_CALL_DEADLINE))
+        for attempt in range(self.retries + 1):
+            remaining = self.deadline.remaining()
+            if remaining <= 0:
+                raise HttpFailure(f"total deadline of {self.deadline.seconds:g}s exceeded", deadline=True)
+            if limiter is not None:
+                limiter.wait()
+            self.stats.record(service, cached=False)
+            request = urllib.request.Request(endpoint, data=body, method="POST",
+                                             headers={"User-Agent": self.user_agent, **headers})
+            until = time.monotonic() + min(call_deadline, remaining)
+            try:
+                with _KEYED_OPENER.open(request, timeout=max(0.05, min(self.timeout + 15, remaining))) as response:
+                    message = protocol.read_message(response.readline, deadline=until)
+                data = {"data": protocol.papers(protocol.tool_texts(message))}
+                self.cache.put(url, params, data)
+                return data
+            except protocol.AstaError as exc:
+                detail = protocol.redact(exc.detail, key)
+                if exc.kind == protocol.REFUSED:
+                    raise HttpFailure(f"{host} refused the Asta key ({detail})", status=403) from None
+                if exc.kind == protocol.NOT_FOUND:
+                    return {"data": []}
+                last, status = detail, None
+            except urllib.error.HTTPError as exc:
+                if exc.code != 429 and not 500 <= exc.code <= 599:
+                    raise HttpFailure(f"HTTP {exc.code} from {host}", status=exc.code) from exc
+                last, status = f"HTTP {exc.code}", exc.code
+            except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
+                reason = getattr(exc, "reason", exc)
+                last, status = protocol.redact(f"{type(reason).__name__}: {reason}", key), None
+            if attempt < self.retries:
+                pause = min(self.backoff * (2 ** attempt), max(0.0, self.deadline.remaining()))
+                if pause > 0:
+                    time.sleep(pause)
+        raise HttpFailure(f"{last} from {host} after {self.retries + 1} attempt(s)", status=status)
 
 
 # --------------------------------------------------------------------------- quartile range
@@ -996,6 +1098,9 @@ class Services:
         self.doaj = _base("PAPERSMITH_DOAJ_URL", DOAJ_DEFAULT)
         self.semanticscholar = _base("PAPERSMITH_SEMANTICSCHOLAR_URL", SEMANTICSCHOLAR_DEFAULT)
         self.semanticscholar_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
+        self.asta = _base("PAPERSMITH_ASTA_URL", ASTA_DEFAULT)
+        self.asta_key = _key("asta")
+        self.openalex_key = _key("openalex")
         self.openalex_limiter = RateLimiter(max(0.0, _env_float("PAPERSMITH_OPENALEX_MIN_INTERVAL", 0.11)))
         crossref_interval = max(0.0, _env_float("PAPERSMITH_CROSSREF_MIN_INTERVAL", CROSSREF_LIST_INTERVAL))
         self.crossref_limiter = RateLimiter(crossref_interval)
@@ -1008,20 +1113,25 @@ class Services:
         self.europepmc_limiter = RateLimiter(fallback_interval(EUROPEPMC_INTERVAL))
         self.doaj_limiter = RateLimiter(fallback_interval(DOAJ_INTERVAL))
         self.semanticscholar_limiter = RateLimiter(fallback_interval(SEMANTICSCHOLAR_INTERVAL))
+        self.asta_limiter = RateLimiter(fallback_interval(ASTA_INTERVAL))
 
     def openalex_get(self, path: str, params: dict) -> dict:
         params = dict(params)
         if _contact():
             params["mailto"] = _contact()
-        if os.environ.get("OPENALEX_API_KEY"):
-            params["api_key"] = os.environ["OPENALEX_API_KEY"]
+        if self.openalex_key:
+            params["api_key"] = self.openalex_key
         try:
             return self.http.get_json(f"{self.openalex}{path}", params, self.openalex_limiter, "openalex")
         except HttpFailure as exc:
             if exc.quota:
-                raise HttpFailure(f"{exc}; set OPENALEX_API_KEY (a free key has its own daily budget) or wait "
-                                  "for the reset", status=429, quota=True) from exc
+                raise HttpFailure(f"{exc}; save an OpenAlex key in smith ui or with `smith keys set openalex`, or "
+                                  "export OPENALEX_API_KEY (a free key has its own daily budget), or wait for the "
+                                  "reset", status=429, quota=True) from exc
             raise
+
+    def asta_papers(self, tool: str, arguments: dict) -> dict:
+        return self.http.post_mcp(self.asta, tool, arguments, self.asta_key, self.asta_limiter, "asta")
 
     def crossref_get(self, path: str, params: dict, single: bool = False) -> dict:
         """`single` marks a record request (a work or a journal), which has its own, faster polite-pool limit."""
@@ -1054,13 +1164,43 @@ def _short_id(url: str) -> str:
     return str(url).rstrip("/").rsplit("/", 1)[-1]
 
 
+def fetch_asta_seeds(services: Services, facets: dict[str, list[str]], terms: list[str], max_works: int,
+                     today: dt.date, notes: list[str]) -> dict[str, list[str]] | None:
+    """DOIs of the works Asta ranks most relevant to each facet (journal articles or not, last RECENT_YEARS), for
+    `fetch_similar_sources` to look up in OpenAlex. All or nothing: the first failed facet abandons Asta with a
+    note, and `None` sends the caller to the plain OpenAlex search."""
+    plan = [(name, list(phrases)) for name, phrases in facets.items() if phrases] or [("all", [])]
+    limit = max(1, min(ASTA_SEARCH_LIMIT, max_works // len(plan)))
+    since = recency_start(today).isoformat()
+    seeds: dict[str, list[str]] = {}
+    for facet, phrases in plan:
+        keyword = " ".join(phrases) if phrases else " ".join(terms[:START_TERMS])
+        try:
+            data = services.asta_papers("search_papers_by_relevance", {
+                "keyword": keyword, "fields": ASTA_WORK_FIELDS, "limit": limit,
+                "publication_date_range": f"{since}:"})
+        except HttpFailure as exc:
+            if exc.deadline:
+                raise
+            notes.append(f"Asta's relevance search failed for the {facet} query ({exc}); OpenAlex searched as usual")
+            return None
+        dois = [normalize_doi((paper.get("externalIds") or {}).get("DOI")) for paper in data.get("data") or []]
+        seeds[facet] = list(dict.fromkeys(doi for doi in dois if doi))
+    if not any(seeds.values()):
+        notes.append("Asta's relevance search found no works with a DOI; OpenAlex searched as usual")
+        return None
+    return seeds
+
+
 def fetch_similar_sources(services: Services, facets: dict[str, list[str]], terms: list[str], max_works: int,
-                          today: dt.date, title: str = "") -> dict:
+                          today: dt.date, title: str = "", seeds: dict[str, list[str]] | None = None) -> dict:
     """Journals hosting works like the paper, and the topics of those works.
 
     One OR query of quoted phrases per facet (journal articles of the last RECENT_YEARS), each with an equal
     share of `max_works`. A facet whose query matches fewer than MIN_MATCHES works is dropped; when none
-    survives (or there are no phrases) the AND relaxation of `terms` runs instead. Returns {sources: [{id,
+    survives (or there are no phrases) the AND relaxation of `terms` runs instead. With `seeds` (the DOIs
+    Asta ranked per facet, `fetch_asta_seeds`) those works are looked up in OpenAlex by DOI instead of
+    searched, and the same aggregation runs over them (mode `asta-relevance`). Returns {sources: [{id,
     name, count, works, first, ids, facet_ids}], scanned, terms, phrases, mode, notes, queries,
     topics_by_facet, topic_names, tail}.
     """
@@ -1076,7 +1216,22 @@ def fetch_similar_sources(services: Services, facets: dict[str, list[str]], term
     names = [name for name, phrases in facets.items() if phrases]
     share = max(1, max_works // max(1, len(names)))
     recent = base_filter + f",from_publication_date:{recency_start(today).isoformat()}"
-    for name in names:
+    for facet, dois in (seeds or {}).items():
+        results: list[dict] = []
+        for start in range(0, min(len(dois), DOI_BATCH * MAX_DOI_BATCHES), DOI_BATCH):
+            batch = dois[start:start + DOI_BATCH]
+            data = services.openalex_get("/works", {"filter": "doi:" + "|".join(batch), "per-page": len(batch),
+                                                   "select": WORK_SELECT})
+            results.extend(data.get("results") or [])
+        if results:
+            # One page, never paginated: the works are Asta's, not an OpenAlex ranking.
+            kept.append({"facet": facet, "phrases": list(facets.get(facet) or []), "search": None, "filter": None,
+                         "per_page": len(results) + 1, "data": {"results": results}, "matched": len(dois),
+                         "provider": "asta"})
+    if seeds and not kept:
+        notes.append("none of the works Asta found are in OpenAlex; OpenAlex searched as usual")
+    seeded = bool(kept)
+    for name in ([] if seeded else names):
         per_page = max(1, min(WORKS_PAGE_SIZE, share))
         search = or_query(facets[name])
         first = request(search, recent, 1, per_page)
@@ -1102,7 +1257,10 @@ def fetch_similar_sources(services: Services, facets: dict[str, list[str]], term
             notes.append("no phrase query matched enough works; fell back to the AND relaxation of single terms")
         kept.append({"facet": "all", "phrases": [], "search": search, "filter": base_filter,
                      "per_page": per_page, "data": data, "matched": (data.get("meta") or {}).get("count")})
-    mode = "phrases-or" if names and kept[0]["facet"] != "all" else "terms-and-relaxation"
+    if seeded:
+        mode = "asta-relevance"
+    else:
+        mode = "phrases-or" if names and kept[0]["facet"] != "all" else "terms-and-relaxation"
     budget = max(1, max_works // len(kept))
     sources: dict[str, dict] = {}
     topics_by_facet: dict[str, dict[str, float]] = {}
@@ -1144,9 +1302,9 @@ def fetch_similar_sources(services: Services, facets: dict[str, list[str]], term
             page += 1
             data = request(query["search"], query["filter"], page, query["per_page"])
         queries.append({"facet": query["facet"], "phrases": query["phrases"], "matched": query["matched"],
-                        "works_read": read})
+                        "works_read": read, "provider": query.get("provider", "openalex")})
     return {"sources": list(sources.values()), "scanned": scanned,
-            "terms": used if mode != "phrases-or" else terms,
+            "terms": used if mode == "terms-and-relaxation" else terms,
             "phrases": [p for q in queries for p in q["phrases"]], "mode": mode, "notes": notes,
             "queries": [q for q in queries if q["facet"] != "all"],
             "topics_by_facet": topics_by_facet, "topic_names": topic_names,
@@ -1753,11 +1911,12 @@ def _work_key(work: dict) -> str:
 
 def fetch_similar_fallback(services: Services, profile: dict, facets: dict[str, list[str]], terms: list[str],
                            max_works: int, today: dt.date) -> dict:
-    """Journals hosting works like the paper, from Crossref, Europe PMC and Semantic Scholar.
+    """Journals hosting works like the paper, from Asta, Crossref, Europe PMC and Semantic Scholar.
 
     One query per facet and provider, each with an equal share of `max_works` (one page of at most 100):
-    Crossref `/works` always, Europe PMC when `biomedical_matches` finds something (BIOMEDICAL_RULE), Semantic
-    Scholar only when SEMANTIC_SCHOLAR_API_KEY is set. Journal articles only; works are counted once per DOI
+    Asta's relevance search first when its key is configured, Crossref `/works` always, Europe PMC when
+    `biomedical_matches` finds something (BIOMEDICAL_RULE), Semantic Scholar only when SEMANTIC_SCHOLAR_API_KEY
+    is set. Journal articles only; works are counted once per DOI
     (else per title and year) however many providers or facets found them, and aggregated per journal. A
     provider that fails costs a note; when none answers the failure is raised. Returns the same shape as
     `fetch_similar_sources` with the `index` of journals in place of `sources`.
@@ -1769,6 +1928,7 @@ def fetch_similar_fallback(services: Services, profile: dict, facets: dict[str, 
     rows = max(1, min(WORKS_PAGE_SIZE, max_works // len(plan)))
     matched_words = biomedical_matches(profile, facets)
     keyed = bool(services.semanticscholar_key)
+    asta_keyed = bool(services.asta_key)
     contributed: set[str] = set()
     answered: set[str] = set()
     failures: dict[str, str] = {}
@@ -1803,6 +1963,13 @@ def fetch_similar_fallback(services: Services, profile: dict, facets: dict[str, 
     recent = f"type:journal-article,from-pub-date:{since.isoformat()}"
     for facet, phrases in plan:
         quoted = " ".join(f'"{p}"' for p in phrases) if phrases else " ".join(terms[:START_TERMS])
+        if asta_keyed:
+            attempt("asta", "Asta", facet, phrases,
+                    lambda: services.asta_papers("search_papers_by_relevance", {
+                        "keyword": " ".join(phrases) if phrases else " ".join(terms[:START_TERMS]),
+                        "fields": ASTA_WORK_FIELDS, "limit": min(rows, ASTA_SEARCH_LIMIT),
+                        "publication_date_range": f"{since.isoformat()}:"}),
+                    semanticscholar_works, lambda d: len(d.get("data") or []), lambda d: len(d.get("data") or []))
         attempt("crossref", "Crossref", facet, phrases,
                 lambda: services.crossref_get("/works", {
                     "query": quoted, "filter": recent, "rows": rows, "select": CROSSREF_WORK_FIELDS}),
@@ -2028,7 +2195,8 @@ def _write_json(path: Path, document: dict) -> None:
 
 EXCLUSION_REASONS = ("record_unavailable", "quartile_unknown", "quartile_range", "not_oa", "apc_above_max",
                      "review_time_above_max")
-PROVIDER_LABELS = {"crossref": "Crossref", "europepmc": "Europe PMC", "semanticscholar": "Semantic Scholar"}
+PROVIDER_LABELS = {"asta": "Asta (Ai2)", "crossref": "Crossref", "europepmc": "Europe PMC",
+                   "semanticscholar": "Semantic Scholar"}
 
 
 class OpenAlexUnavailable(Exception):
@@ -2048,14 +2216,16 @@ def openalex_unavailable(failure: HttpFailure) -> bool:
 
 
 def run_openalex(services: Services, profile: dict, terms: list[str], facets: dict[str, list[str]], max_works: int,
-                 entries: list[dict], filters: dict, notes: list[str]) -> dict:
-    """The OpenAlex path: similar works, cited venues, journal records, fit. Raises HttpFailure when the search
-    itself cannot be answered and OpenAlexUnavailable when no journal record could be fetched."""
-    found = fetch_similar_sources(services, facets, terms, max_works, dt.date.today(), profile["title"])
+                 entries: list[dict], filters: dict, notes: list[str],
+                 seeds: dict[str, list[str]] | None = None) -> dict:
+    """The OpenAlex path: similar works (Asta's, looked up in OpenAlex, when `seeds` are given), cited venues,
+    journal records, fit. Raises HttpFailure when the search itself cannot be answered and OpenAlexUnavailable
+    when no journal record could be fetched."""
+    found = fetch_similar_sources(services, facets, terms, max_works, dt.date.today(), profile["title"], seeds)
     sources = found["sources"]
     notes.extend(found["notes"])
-    for query in found["queries"]:
-        query["provider"] = "openalex"
+    seeded = found["mode"] == "asta-relevance"
+    similar_ids = {source["id"] for source in sources}
     cited = resolve_cited(services, entries, notes) if entries else empty_cited()
     matched_topics = blend_topics(*found["topics_by_facet"].values())
     topic_profile = blend_topics(matched_topics, cited["topics"])
@@ -2095,10 +2265,11 @@ def run_openalex(services: Services, profile: dict, terms: list[str], facets: di
             shares = detail.pop("topic_shares")
             detail["topic_raw"] = topic_overlap(topic_profile, shares)
             detail["application_overlap"] = topic_overlap(application_profile, shares)
-            detail.update(doaj=None, _found_by={"openalex"}, _meta_by={"openalex"})
+            found_by = {"asta", "openalex"} if seeded and detail.get("openalex_id") in similar_ids else {"openalex"}
+            detail.update(doaj=None, _found_by=found_by, _meta_by={"openalex"})
     return {"found": found, "details": details, "unavailable": unavailable, "cited": cited,
             "topic_profile": topic_profile, "basis": "openalex-topics", "provider": "openalex",
-            "similar_providers": {"openalex"} if sources else set(),
+            "similar_providers": ({"asta", "openalex"} if seeded else {"openalex"}) if sources else set(),
             "cited_providers": {"openalex"} if cited["summary"]["resolved_by_doi"]
             or cited["summary"]["resolved_by_journal_name"] else set(),
             "topic_names": {**cited["topic_names"], **found["topic_names"]}, "europepmc": None}
@@ -2181,12 +2352,25 @@ def cmd_search(args: argparse.Namespace) -> dict:
 
     fallback = {"used": False, "reason": None, "code": None}
     run = None
+    seeds = None
+    if args.source == "asta" and not services.asta_key:
+        raise Refusal("NETWORK_UNAVAILABLE", ASTA_KEY_GUIDE)
+    if args.source in ("auto", "asta") and services.asta_key:
+        # With the Asta key, Asta's relevance search picks the works like the paper; OpenAlex (or, when it is
+        # down, the fallback providers) still describes the journals that published them.
+        try:
+            seeds = fetch_asta_seeds(services, facets, terms, max_works, dt.date.today(), notes)
+        except HttpFailure as exc:
+            raise Refusal("NETWORK_UNAVAILABLE", f"Asta's relevance search did not finish: {exc}") from exc
+        if seeds is None and args.source == "asta":
+            raise Refusal("NETWORK_UNAVAILABLE", "--source asta: Asta's relevance search did not answer ("
+                          + (notes[-1] if notes else "no detail") + ")")
     if args.source == "crossref":
         fallback = {"used": True, "code": "requested",
                     "reason": "--source crossref skips OpenAlex; the free fallback providers answered"}
     else:
         try:
-            run = run_openalex(services, profile, terms, facets, max_works, entries, filters, notes)
+            run = run_openalex(services, profile, terms, facets, max_works, entries, filters, notes, seeds)
         except (HttpFailure, OpenAlexUnavailable) as exc:
             unavailable = isinstance(exc, OpenAlexUnavailable) or openalex_unavailable(exc)
             if args.source == "openalex" or not unavailable:
@@ -2343,6 +2527,8 @@ def cmd_search(args: argparse.Namespace) -> dict:
     providers = {"similar_works": ordered(run["similar_providers"]), "cited_venues": ordered(run["cited_providers"]),
                  "metadata": ordered(meta_by or ({"openalex"} if on_openalex else set())),
                  "quartile": quartile_provider}
+    asta = {"queried": bool(services.asta_key) and args.source in ("auto", "asta"),
+            "answered": "asta" in providers["similar_works"]}
     document = {
         "schema": SCHEMA,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -2357,6 +2543,7 @@ def cmd_search(args: argparse.Namespace) -> dict:
                        for tid, weight in sorted(run["topic_profile"].items(), key=lambda kv: -kv[1])[:5]],
             "cited": {"references_file": references_file, **cited["summary"]},
             "fallback": run["europepmc"],
+            "asta": asta,
             "scoring": scoring},
         "quartiles": [f"Q{n}" for n in range(low, high + 1)],
         "filters": filters,

@@ -493,6 +493,14 @@ def source_identity(identifier: str, resolver: str) -> tuple[str, str] | None:
     text = (identifier or "").strip()
     if not text or resolver not in paper_resolve.RESOLVERS:
         return None
+    if resolver in ("asta", "semantic-scholar"):
+        # Both resolve either kind; the identifier's own shape says which
+        # (`arXiv:2401.00001`, `DOI:10.x/y` or a bare one). An Asta title
+        # search may name a work only by its Semantic Scholar page.
+        kind = paper_resolve.identifier_kind(text)
+        if kind is None:
+            return None
+        resolver = "arxiv" if kind[0] == "arxiv" else "crossref"
     if resolver == "arxiv":
         bare = _ARXIV_PREFIX_RE.sub("", text)
         if bare.lower().endswith(".pdf"):
@@ -686,10 +694,14 @@ def read_references(paper_dir: Path) -> dict[str, dict]:
 
 
 def _reference_link(result: dict) -> str | None:
-    """A DOI's or arXiv id's page, else the OpenAlex work a search found."""
+    """A DOI's or arXiv id's page, else the work page a search found."""
     identifier = result.get("identifier") or ""
     if result.get("resolver") == "arxiv":
         return f"https://arxiv.org/abs/{quote(identifier, safe='/.-')}"
+    if result.get("resolver") == "asta":
+        kind = paper_resolve.identifier_kind(identifier)
+        if kind is not None and kind[0] == "arxiv":
+            return f"https://arxiv.org/abs/{quote(kind[1], safe='/.-')}"
     doi = source_identity(result.get("doi") or identifier, "crossref")
     if doi is not None and doi[1].startswith("10."):
         return f"https://doi.org/{quote(doi[1], safe='/:;()._-')}"
@@ -712,21 +724,22 @@ def _reference_record(status: str, retrieved: str, identifier: str | None, resul
     }
 
 
-def _ask(call) -> tuple[object, bool]:
-    """`(answer, failed)` of one paced request. An endpoint that names no such
-    work answers `None`; one that never answers, or answers something
-    unreadable, reports `failed` so the key can be retried."""
+def _ask(call) -> tuple[object, str | None]:
+    """`(answer, failure)` of one paced request. An endpoint that names no such
+    work answers `None` with no failure; one that never answers, refuses the
+    operator's key, or answers something unreadable reports the failure's code
+    so the key can be retried and the connector set aside for the run."""
     paper_resolve.pause()
     try:
-        return call(), False
+        return call(), None
     except Refused as exc:
         if exc.code == "IDENTIFIER_UNRESOLVED":
-            return None, False
-        if exc.code == "RESOLVER_UNREACHABLE":
-            return None, True
+            return None, None
+        if exc.code in ("RESOLVER_UNREACHABLE", "RESOLVER_REFUSED"):
+            return None, exc.code
         raise
     except (OSError, ValueError, SyntaxError, AttributeError, TypeError, http.client.HTTPException):
-        return None, True
+        return None, "RESOLVER_UNREACHABLE"
 
 
 def _years_agree(bib_year: str | None, work_year: object) -> bool:
@@ -749,13 +762,24 @@ def _best_title_match(title: str, year: str | None, works: list[dict]) -> dict |
     return exact[0] if exact else None
 
 
+def _set_aside(down: dict, name: str, mode: str, failure: str) -> None:
+    """Skip `name` for the rest of the run once it refused the operator's key,
+    or once a connector that needs a key failed: asking again per citation
+    would cost one deadline each and answer the same."""
+    if failure == "RESOLVER_REFUSED" or name in paper_resolve.KEY_REQUIRED:
+        down.setdefault((name, mode), failure)
+
+
 def _resolve_reference(entry: dict[str, str], *, connectors: list, role: str,
-                       config: dict) -> tuple[str, dict | None]:
-    """`(status, result)` for one bib entry: its identifiers through the
-    configured connectors, then an OpenAlex title search while no abstract
-    was found. Crossref never carries an abstract, so a DOI asks OpenAlex
-    first and Crossref only for a work OpenAlex does not hold."""
+                       config: dict, down: dict | None = None) -> tuple[str, dict | None]:
+    """`(status, result)` for one bib entry: its identifiers through the role's
+    active connectors in the role's order (`paper_resolve.chain_for`), then a
+    title search through each title-capable one while no abstract was found.
+    Each record is kept whole from one connector: the first with an abstract,
+    else the first that found the work. Crossref never carries an abstract,
+    so it is asked last and only for a work no other connector holds."""
     found, failed = None, False
+    down = {} if down is None else down
     fields = identity_fields(entry)
     identifiers = bib_identifiers(fields)
     url = fields.get("url", "")
@@ -763,24 +787,35 @@ def _resolve_reference(entry: dict[str, str], *, connectors: list, role: str,
         identifiers.insert(0, (url, "crossref"))
     for identifier, resolver in identifiers:
         identity = source_identity(identifier, resolver)
-        chain = ("openalex", "crossref") if resolver == "crossref" else (resolver,)
-        for name in chain:
-            if identity is None or name not in connectors or (found and name == "crossref"):
+        if identity is None:
+            continue
+        for name in paper_resolve.chain_for(identity[0], connectors):
+            if (name, "identifier") in down or (found and name in paper_resolve.ABSTRACTLESS):
                 continue
-            result, down = _ask(lambda: paper_resolve.resolve_identifier(
+            result, failure = _ask(lambda: paper_resolve.resolve_identifier(
                 identity[1], resolver=name, role=role, config=config))
-            failed = failed or down
+            if failure:
+                failed = True
+                _set_aside(down, name, "identifier", failure)
             if result and result.get("abstract"):
                 return "resolved", result
             found = found or result
     title = plain_text(entry.get("title"))
-    if title and "openalex" in connectors:
-        works, down = _ask(lambda: paper_resolve.search_title(title, role=role, config=config))
-        failed = failed or down
+    if title:
         year = _YEAR_RE.search(plain_text(entry.get("year") or entry.get("date")))
-        match = _best_title_match(title, year.group(1) if year else None, works or [])
-        if match and (found is None or match.get("abstract")):
-            return "resolved", match
+        for name in paper_resolve.chain_for("title", connectors):
+            if (name, "title") in down:
+                continue
+            works, failure = _ask(lambda: paper_resolve.search_title(
+                title, role=role, config=config, connector=name))
+            if failure:
+                failed = True
+                _set_aside(down, name, "title", failure)
+            match = _best_title_match(title, year.group(1) if year else None, works or [])
+            if match and match.get("abstract"):
+                return "resolved", match
+            if match and found is None:
+                found = match
     if found:
         return "resolved", found
     return ("unreachable" if failed else "not_found"), None
@@ -795,7 +830,8 @@ def resolve_references(paper_dir: Path, main_tex_bytes: bytes, refs_bib_bytes: b
     a recorded `unreachable`, never a refusal, so offline work carries on,
     while an emptied role refuses before any request or write.
     """
-    connectors = paper_resolve.require_role_connectors(config, role)
+    connectors = paper_resolve.active_connectors(config, role)
+    down: dict = {}
     bib = parse_bib(refs_bib_bytes.decode("utf-8", errors="replace"))
     keys = sorted(cited_keys(main_tex_bytes) or bib)
     try:
@@ -818,7 +854,8 @@ def resolve_references(paper_dir: Path, main_tex_bytes: bytes, refs_bib_bytes: b
         elif streak >= _UNREACHABLE_STREAK:
             status, result = "unreachable", None
         else:
-            status, result = _resolve_reference(entry, connectors=connectors, role=role, config=config)
+            status, result = _resolve_reference(entry, connectors=connectors, role=role, config=config,
+                                                down=down)
             streak = streak + 1 if status == "unreachable" else 0
         if status != "resolved" and kept is not None:
             records[key] = kept
@@ -829,7 +866,7 @@ def resolve_references(paper_dir: Path, main_tex_bytes: bytes, refs_bib_bytes: b
     text = json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     paper_block._atomic_replace(path, text.encode("utf-8"))
     statuses = [record.get("status") for record in records.values()]
-    return {
+    summary = {
         "path": str(path),
         "references": len(records),
         "resolved": statuses.count("resolved"),
@@ -838,3 +875,8 @@ def resolve_references(paper_dir: Path, main_tex_bytes: bytes, refs_bib_bytes: b
         "with_abstract": sum(1 for record in records.values() if record.get("abstract")),
         "reused": reused,
     }
+    if down:
+        # Only when a connector was set aside, so a run without one reads as before.
+        summary["connectors_down"] = [f"{name} ({mode}): {failure}"
+                                      for (name, mode), failure in sorted(down.items())]
+    return summary

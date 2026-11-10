@@ -758,7 +758,7 @@ VENUE_JSON_MAX_BYTES = 1024 * 1024
 VENUE_TEXT_MAX_BYTES = 256 * 1024
 SJR_FIRST_YEAR = 1999
 JOURNAL_MAX_LIMIT = 50
-JOURNAL_SOURCES = ("auto", "openalex", "crossref")
+JOURNAL_SOURCES = ("auto", "asta", "openalex", "crossref")
 #: One journal search at a time: it spends a shared API budget and writes
 #: `paper/journal-candidates.json`.
 _JOURNAL_LOCK = threading.Lock()

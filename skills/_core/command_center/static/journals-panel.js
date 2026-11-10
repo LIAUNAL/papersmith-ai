@@ -72,9 +72,10 @@
     'review-time-unknown': () => t('journals.flag.reviewTimeUnknown'),
     'quartile-unknown': () => t('journals.flag.quartileUnknown'),
   };
-  const SOURCES = ['auto', 'openalex', 'crossref'];
+  const SOURCES = ['auto', 'asta', 'openalex', 'crossref'];
   const SOURCE_LABEL = {
     auto: () => t('journals.form.source.auto'),
+    asta: () => 'Asta (Ai2)',
     openalex: () => 'OpenAlex',
     crossref: () => 'Crossref',
   };
@@ -379,7 +380,7 @@
 
   const SERVICE_NAME = {
     openalex: 'OpenAlex', crossref: 'Crossref', pubmed: 'PubMed', europepmc: 'Europe PMC', doaj: 'DOAJ',
-    semanticscholar: 'Semantic Scholar',
+    semanticscholar: 'Semantic Scholar', asta: 'Asta (Ai2)',
   };
   const providerName = (name) => {
     if (name === 'sjr') return 'SJR';

@@ -415,10 +415,29 @@ class ResolverKeylessTests(unittest.TestCase):
         url = paper_resolve._openalex_url("10.1000/example", config)
         self.assertNotIn("mailto", url)
 
-    def test_resolution_source_holds_no_hardcoded_api_key(self) -> None:
+    def test_resolution_reads_a_key_only_through_the_key_store(self) -> None:
+        """Keyless by default. The amended requirement (`literature-search`,
+        Resolution Runs Through the CLI Over Stdlib `urllib`) lets OpenAlex and
+        Asta carry the operator's own key, read only through `_key()` from the
+        per-user store `smith keys` writes: never hardcoded, never an
+        environment read of this module's own, and OpenAlex's `api_key`
+        parameter is named in exactly one function."""
+        import ast
+        from unittest import mock
+
         source = (SKILL_SCRIPTS / "paper_resolve.py").read_text(encoding="utf-8")
-        self.assertNotIn("api_key", source.lower())
         self.assertNotIn("Bearer ", source)
+        self.assertNotIn("os.environ", source)
+        self.assertNotIn("getenv", source)
+        owners = set()
+        for function in (node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef)):
+            for node in ast.walk(function):
+                if isinstance(node, ast.Constant) and node.value == "api_key":
+                    owners.add(function.name)
+        self.assertEqual(owners, {"_openalex_params"})
+        with mock.patch.object(paper_resolve, "_key", return_value=None):
+            url = paper_resolve._openalex_url("10.1000/example", _config(contact=""))
+        self.assertNotIn("api_key", url)
 
 
 class ResolverOfflineTests(unittest.TestCase):

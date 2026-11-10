@@ -1578,7 +1578,7 @@ window.PAPERSMITH_I18N.es = {
   "journals.works.none": "Sin trabajos similares registrados",
   "journals.select": "Elegir esta revista",
   "journals.form.source": "Fuente",
-  "journals.form.sourceTitle": "Servicio que busca las revistas (--source): automática prueba OpenAlex y, si no responde, usa las fuentes gratuitas de respaldo.",
+  "journals.form.sourceTitle": "Servicio que busca las revistas (--source): automático prueba OpenAlex y, si no responde, usa las fuentes alternativas gratuitas; con una clave de Asta (Doctor → Claves API), Asta encuentra primero los trabajos parecidos al artículo. Asta (Ai2) necesita esa clave.",
   "journals.form.source.auto": "Automática",
   "journals.form.includeUnknown": "Incluir revistas sin cuartil",
   "journals.form.includeUnknownTitle": "Conservar las revistas cuyo cuartil no se pudo determinar (--include-unknown-quartile). Sin esto, el filtro de cuartiles las excluye.",

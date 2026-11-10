@@ -293,6 +293,20 @@ class PathScrubTests(unittest.TestCase):
         self.assertEqual(scrubbed, b"<script>const token = readToken(); const user = 1;</script><p>[email]</p>")
         self.assertIn(b"[secret]", static_export._scrub_text(b"https://h/x?token=abc123", []))
 
+    def test_an_asta_resolved_abstract_never_reaches_the_public_snapshot(self) -> None:
+        """Ai2's license does not let a public page redistribute Asta's corpus
+        text: the record stays, its abstract is withheld."""
+        document = {"candidates": [
+            {"identifier": "10.1/a", "resolver": "asta", "title": "T", "abstract": "Corpus words."},
+            {"identifier": "10.1/b", "resolver": "openalex", "title": "U", "abstract": "Open words."},
+            {"identifier": "10.1/c", "resolver": "asta", "title": "V", "abstract": None}]}
+        scrubbed = static_export._scrub_json(document, [], ())
+        first, second, third = scrubbed["candidates"]
+        self.assertEqual((first["title"], first["abstract"]), ("T", static_export.WITHHELD_ABSTRACT))
+        self.assertEqual(second["abstract"], "Open words.")
+        self.assertIsNone(third["abstract"])
+        self.assertNotIn("Corpus words.", json.dumps(scrubbed))
+
     def test_guidance_and_dot_folders_are_never_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw).resolve()

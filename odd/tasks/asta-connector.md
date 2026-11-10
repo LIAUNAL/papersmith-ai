@@ -21,11 +21,12 @@ Branches (stacked, worktree ../papersmith-ai-worktrees/asta-connector): feat/api
 - [x] T3 [S3] `smith keys set|status|clear` + offline `smith doctor` rows — inline
 - [x] T4 [S3, S7] Dashboard: `keys_view.py`, `/api/terminal/keys*` routes, session injection, the Doctor tab's API keys panel (`keys-panel.js`, en/es), prompts in the plausibility card and the journals panel, hidden in snapshots — inline
 - [x] T5 [S7] Leak hardening: archive and public-copy masking, journal error tail, experiments-tutor deny rule for a moved store, MCP bridge pin, forge `.gitignore` `.env*` — inline
-- [ ] T6 [S1, S4, S6] Resolver `asta` + OpenAlex key + roles + migration + spec (S3 slice)
-- [ ] T7 [S1, S4] journal-finder Asta provider (S3 slice)
+- [x] T6 [S1, S4, S6] Resolver `asta` (+ `--resolver auto`, role-ordered chains, whole-record fall-through, per-run circuit breaker, `RESOLVER_REFUSED`), OpenAlex key in resolution and `citations_cli rank`, template roles + convergence migration `paper-writing-asta-roles` (stamped, canonical blocks only, atomic `fs.replace_bytes`), literature-search spec amended in place, `verify` acknowledgement note, Asta abstracts withheld from the public snapshot — inline
+- [x] T7 [S1, S4] journal-finder: with the Asta key its relevance search seeds the works like the paper (looked up in OpenAlex by DOI, same aggregation), Asta first in the fallback chain, `--source asta`; keys from the store (env wins); dashboard source picker — inline
 - [ ] T8 [S1, S4] Asta MCP server in the four harnesses + the scout's gated grant (S4 slice)
 
 ## Log
 
 - L1 (2026-11-09) Probed the live endpoint (initialize, tools/list: 8 tools incl. undocumented `get_paper_batch`; get_paper keyed/keyless/bogus key; searches keyless) and OpenAlex (keyless budget `x-ratelimit-limit-usd: 0.1`; bad `api_key` -> HTTP 401 pointing at https://openalex.org/settings/api-key).
 - L2 Baseline: clean `main` in a worktree fails 9 tests that depend on the machine (the gate's `.micromamba` interpreter path, skill-audit's live `claude -p`, slot-queue golden timing, the wiring smoke). They fail identically with and without these changes.
+- L3 S3: pinned tests amended on purpose, each pinning the rule this change amends: `test_paper_evidence` keyless-source assertion (now: keys only through `_key`, `api_key` named in `_openalex_params` only), the template's default roles, `INTENDED_CHANGES` of the v0.13.0 upgrade (`papersmith.yaml`), journal-finder's service/provider rosters and its `--source` doc phrase. The resolver's mutation anchor (`m1`) still appears exactly once and still fails its mutant.

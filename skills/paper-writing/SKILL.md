@@ -1,6 +1,6 @@
 ---
 name: paper-writing
-description: "Trigger: create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, bound source sections); record or reopen a declaration or fact and see the paper's plan; resolve a citation against OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement; judge a drafted, audited block against its evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; check the cross-section couplings, citation integrity and contract currency; or adapt the manuscript to a chosen journal (venue select, requirements, acquire, diff, plan, approve, build under paper/venues/<slug>/, never touching the canonical main.tex). Stdlib-only, keyless, fail-closed CLI (paper_cli.py)."
+description: "Trigger: create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, bound source sections); record or reopen a declaration or fact and see the paper's plan; resolve a citation against Asta/OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement; judge a drafted, audited block against its evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; check the cross-section couplings, citation integrity and contract currency; or adapt the manuscript to a chosen journal (venue select, requirements, acquire, diff, plan, approve, build under paper/venues/<slug>/, never touching the canonical main.tex). Stdlib-only, keyless by default, fail-closed CLI (paper_cli.py)."
 ---
 
 # Paper Writing
@@ -60,11 +60,14 @@ stands against all of it in one read-only call — see "The paper's own
 decisions" below.
 
 **This CLI is no longer offline end to end.** `resolve` is the one path
-that reaches the network — keyless, stdlib `urllib` only, against OpenAlex,
-Crossref and arXiv, behind a `papersmith.yaml` role the operator can empty.
-Every other verb remains exactly as offline as before; `resolve` refuses by
-name (`RESOLVER_UNREACHABLE`, `DISCOVERY_UNAVAILABLE`, `RESOLVER_ROLE_EMPTY`)
-rather than silently returning an empty result.
+that reaches the network — stdlib `urllib` only, keyless by default, against
+Ai2's Asta, OpenAlex, Crossref and arXiv, behind a `papersmith.yaml` role the
+operator can empty. The operator's own Asta and OpenAlex keys (saved in smith
+ui's Doctor → API keys, or with `smith keys set`) are read from their per-user
+store, sent only to their own service, and never written anywhere. Every other
+verb remains exactly as offline as before; `resolve` refuses by name
+(`RESOLVER_UNREACHABLE`, `RESOLVER_REFUSED`, `DISCOVERY_UNAVAILABLE`,
+`RESOLVER_ROLE_EMPTY`) rather than silently returning an empty result.
 `resolve --references` is the one exception to that refusal: it records an
 unreachable key as `unreachable` in its sidecar, so offline work carries on, and
 only an emptied role refuses.
@@ -731,9 +734,10 @@ the rollback a command instead of a hand edit.
 
 Search comes first, always — but search itself runs through the agent's own
 MCP (`discovery` role, `.mcp.json`), never through this CLI. `resolve` is the
-CLI-side half: given an identifier and a named connector, it fetches
-metadata over stdlib `urllib`, keyless, and caches the result on disk keyed
-by its own digest.
+CLI-side half: given an identifier and a named connector (or `auto`: the
+role's connectors in their configured order), it fetches metadata over stdlib
+`urllib`, keyless by default, and caches the result on disk keyed by its own
+digest.
 
 ```bash
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py resolve \
@@ -742,7 +746,7 @@ by its own digest.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `resolve --identifier <id> --resolver {openalex,crossref,arxiv} [--role <role>] [--paper <dir> \| --cache-dir <dir>]` | Resolves one identifier's metadata through one named connector and caches it: under `<paper>/.paper-writing/metadata/` by default, or as `<dir>/<metadata_digest>.json` with `--cache-dir` | `PAPER_OUTSIDE_REPOSITORY`, `PAPERSMITH_CONFIG_UNREADABLE`, `UNKNOWN_ROLE`, `DISCOVERY_UNAVAILABLE`, `RESOLVER_ROLE_EMPTY`, `RESOLVER_UNREACHABLE`, `IDENTIFIER_UNRESOLVED` |
+| `resolve --identifier <id> --resolver {openalex,crossref,arxiv,semantic-scholar,asta,auto} [--role <role>] [--paper <dir> \| --cache-dir <dir>]` | Resolves one identifier's metadata through one named connector, or with `auto` through the role's connectors in order (the first whole record with an abstract, reported with its `attempts`), and caches it: under `<paper>/.paper-writing/metadata/` by default, or as `<dir>/<metadata_digest>.json` with `--cache-dir` | `PAPER_OUTSIDE_REPOSITORY`, `PAPERSMITH_CONFIG_UNREADABLE`, `UNKNOWN_ROLE`, `DISCOVERY_UNAVAILABLE`, `RESOLVER_ROLE_EMPTY`, `RESOLVER_UNREACHABLE`, `RESOLVER_REFUSED`, `IDENTIFIER_UNRESOLVED` |
 
 | `resolve --references [--force] [--role <role>] [--paper <dir>]` | Resolves every key `main.tex` cites, or every `refs.bib` entry when the manuscript's citation commands are not ones `bib` reads, into `paper/.paper-writing/references.json`; prints how many were `resolved`, `not_found`, `unreachable`, `reused` and `with_abstract` | `PAPER_OUTSIDE_REPOSITORY`, `PAPER_ABSENT`, `PAPERSMITH_CONFIG_UNREADABLE`, `UNKNOWN_ROLE`, `RESOLVER_ROLE_EMPTY` |
 
@@ -752,10 +756,16 @@ no abstract. Then run `smith atlas coverage .`: a cited key the SOTA
 constellation draws only as a placeholder (no system of its own) goes to the
 `sota-scout` agent, which adds it to `sota-pool/candidates.json` with the
 abstract `resolve --references` stored, and to the `sota-grapher` agent, which
-draws it. A key's DOI asks OpenAlex first, since Crossref never returns an
-abstract, then Crossref; an arXiv id asks arXiv; and while no abstract was found,
-an OpenAlex title search is accepted only on an exact normalized title (a near
-title is `not_found`). Each record is `{status, resolver, identifier, title,
+draws it. A key's identifiers ask the `resolution` role's connectors in its
+configured order, each record kept whole from one connector: the first with an
+abstract, else the first that found the work. Crossref never returns an
+abstract, so it is asked last and only for a work no other connector holds; an
+arXiv id asks Asta (with its key) and arXiv; and while no abstract was found, a
+title search (Asta's, then OpenAlex's) is accepted only on an exact normalized
+title (a near title is `not_found`). Ai2's Asta is asked only once its key is
+set: without the key, a role naming it behaves exactly as without it. A
+connector that refuses the operator's key, or a keyed one that fails, is set
+aside for the rest of the run and listed in the summary's `connectors_down`. Each record is `{status, resolver, identifier, title,
 abstract, year, venue, link, digest, retrieved}`, with `status` one of `resolved`,
 `not_found` or `unreachable`, and the keys are sorted. A rerun reuses `resolved`
 records and asks again for the rest; `--force` asks again for all of them, and a
@@ -777,9 +787,19 @@ two flags are one choice: passing both is a usage error. A directory outside
 the repository refuses `PAPER_OUTSIDE_REPOSITORY` before any request.
 
 **Every role can be emptied in `papersmith.yaml`.** An empty `resolution`
-role refuses `RESOLVER_ROLE_EMPTY` rather than silently resolving nothing;
+role refuses `RESOLVER_ROLE_EMPTY` rather than silently resolving nothing,
+and so does asking a keyed connector (Asta) whose key is not set;
 an unreachable connector refuses `RESOLVER_UNREACHABLE` with a non-zero
-exit, never a silent empty result. `contact` (a courtesy `mailto` for
+exit, never a silent empty result, and a service that refuses the operator's
+configured key refuses `RESOLVER_REFUSED` — never `IDENTIFIER_UNRESOLVED`,
+because the paper was never looked up.
+
+**Asta's records.** Ai2's Asta answers with the Semantic Scholar corpus: the
+record's abstract is the paper's own (never the model-written `tldr`, and never
+markup stripped into text), and its `full_text_url` is always `null` — Asta is
+not a full-text connector. Ai2's terms ask that work done with Asta acknowledge
+it: `verify`'s `references` check lists the cited keys resolved through Asta and
+adds a note, never a failure. `contact` (a courtesy `mailto` for
 OpenAlex's polite pool) is read from `papersmith.yaml`, never hardcoded, and
 is never a secret — leaving it empty just means requests go out without it.
 

@@ -41,7 +41,7 @@ paper_ingestion:
 # (literature-search, Requirement: Connector Roles Are Configuration, Never
 # Code). `discovery` runs through the agent's own MCP servers (see
 # `.mcp.json`) and is never read by the CLI; `resolution` and `full-text`
-# are read by `paper_resolve.py` over stdlib `urllib`, keyless.
+# are read by `paper_resolve.py` over stdlib `urllib`, keyless by default.
 paper_writing:
   # A courtesy contact for OpenAlex's polite pool (their own `mailto`
   # convention) -- never a secret, never sent to any connector when left
@@ -49,9 +49,14 @@ paper_writing:
   # credential.
   contact: ""
   roles:
+    # `asta` (Ai2's Asta) is a keyed connector: asked first once its key is set
+    # (`smith keys set asta` or the dashboard's Doctor -> API keys), skipped
+    # without it, so without the key every role behaves as if it were absent.
     discovery:
+      - asta
       - banco-lia
     resolution:
+      - asta
       - openalex
       - crossref
       - arxiv

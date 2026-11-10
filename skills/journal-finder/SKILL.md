@@ -1,6 +1,6 @@
 ---
 name: journal-finder
-description: "Trigger: the paper has a title and an abstract and the operator wants journals worth sending it to, in a quartile range they choose (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--limit N]`). Runs a bounded OpenAlex search for works like the paper (free Crossref, Europe PMC and DOAJ fallbacks when OpenAlex is unavailable), ranks the journals that published them with quartile (SCImago SJR when imported, a labelled OpenAlex proxy, else unknown), open-access state, APC, h-index and a review-time estimate, then reads each shortlisted journal's aims and scope and writes `paper/journal-candidates.md`. Never submits, never contacts an editor, never invents a quartile, impact factor, APC or acceptance rate."
+description: "Trigger: the paper has a title and an abstract and the operator wants journals worth sending it to, in a quartile range they choose (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--limit N]`). Runs a bounded OpenAlex search for works like the paper (Ai2's Asta picks them first when its key is set; free Crossref, Europe PMC and DOAJ fallbacks when OpenAlex is unavailable), ranks the journals that published them with quartile (SCImago SJR when imported, a labelled OpenAlex proxy, else unknown), open-access state, APC, h-index and a review-time estimate, then reads each shortlisted journal's aims and scope and writes `paper/journal-candidates.md`. Never submits, never contacts an editor, never invents a quartile, impact factor, APC or acceptance rate."
 ---
 
 # Journal finder
@@ -15,7 +15,7 @@ submitted, and no editor is contacted.
 ## Usage
 
 ```
-/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--max-review-days N] [--limit N] [--source auto|openalex|crossref] [--include-unknown-quartile]
+/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--max-review-days N] [--limit N] [--source auto|asta|openalex|crossref] [--include-unknown-quartile]
 ```
 
 The quartile argument is a single quartile (`Q1`) or an ascending contiguous
@@ -30,7 +30,8 @@ maximum 50.
 | Quartile range | the argument of `/journal-finder` | `QUARTILE_RANGE_INVALID` |
 | SJR file | `~/.cache/papersmith/sjr/scimagojr-<year>.csv`, imported once with `sjr-import` (or the dashboard's upload) | not an error: the quartile becomes the `openalex-proxy` approximation, labelled as such |
 | Contact email | `PAPERSMITH_CONTACT_EMAIL`, optional | requests go out without it; it is never hard-coded (Crossref's polite pool uses it as `mailto`) |
-| OpenAlex key | `OPENALEX_API_KEY`, optional but advised | keyless OpenAlex is a small demo allowance; see "Get an OpenAlex key" |
+| OpenAlex key | smith ui's Doctor → API keys, `smith keys set openalex` or `OPENALEX_API_KEY`, optional but advised | keyless OpenAlex is a small demo allowance; see "Get an OpenAlex key" |
+| Asta key | smith ui's Doctor → API keys, `smith keys set asta` or `ASTA_API_KEY`, optional | Asta (Ai2) is not queried at all; `--source asta` refuses `NETWORK_UNAVAILABLE` |
 | Semantic Scholar key | `SEMANTIC_SCHOLAR_API_KEY`, optional | Semantic Scholar is not queried at all |
 
 ## The flow
@@ -78,7 +79,7 @@ Run from the workspace root. One JSON object on stdout per call; a refusal is
 `{"ok": false, "error": CODE, "message": ...}` with exit 2 and nothing written.
 
 ```
-python3 skills/journal-finder/scripts/journal_cli.py search --workspace . --quartiles Q1-Q2 [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--source auto|openalex|crossref] [--include-unknown-quartile] [--sjr <csv>] [--out <path>] [--no-cache]
+python3 skills/journal-finder/scripts/journal_cli.py search --workspace . --quartiles Q1-Q2 [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--source auto|asta|openalex|crossref] [--include-unknown-quartile] [--sjr <csv>] [--out <path>] [--no-cache]
 python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <path> [--year YYYY]
 python3 skills/journal-finder/scripts/journal_cli.py status --workspace .
 ```
@@ -123,6 +124,20 @@ null), `candidates`, `excluded_count`, `excluded_reasons`, `notes`,
 OpenAlex now asks for a free API key for real use; keyless calls are a small
 demo allowance. `--source` chooses the chain:
 
+- **With the Asta key** (`auto` or `asta`): Ai2's Asta (the Semantic Scholar
+  corpus, over MCP streamable HTTP; override `PAPERSMITH_ASTA_URL`, one call per
+  second, each bounded by `PAPERSMITH_ASTA_DEADLINE`, 60 s by default) runs one
+  relevance search per facet (`search_papers_by_relevance`, the last six years)
+  and its works' DOIs are then looked up in OpenAlex by DOI, so the same
+  aggregation, topics, proxy quartile and journal records follow
+  (`query.search_mode` is `asta-relevance`, `providers.similar_works` names
+  `asta` and `openalex`, `query.asta` says whether Asta was queried and
+  answered). The key travels only in the `x-api-key` header, never in a URL,
+  the cache or the output. When Asta fails or none of its works is in OpenAlex,
+  a note says so and the OpenAlex search runs as below (under `asta` a failed
+  Asta search refuses `NETWORK_UNAVAILABLE`). When OpenAlex is unavailable,
+  Asta joins the fallback chain as its first similar-works provider. Asta
+  output is never presented as OpenAlex's.
 - **`auto`** (default): OpenAlex first. When it cannot answer (no response, a
   `429` for a spent quota, `401`/`403` key required, a 5xx, a network error, or
   no journal record fetched) the search continues with the fallback chain
@@ -131,6 +146,8 @@ demo allowance. `--source` chooses the chain:
   deadline is still a refusal.
 - **`openalex`**: today's behaviour; `NETWORK_UNAVAILABLE` when OpenAlex is
   unavailable.
+- **`asta`**: as `auto` with the Asta key; without it, `NETWORK_UNAVAILABLE`
+  naming where to set it.
 - **`crossref`**: skips OpenAlex (`fallback.code` is `requested`).
 
 The fallback chain, per signal:
@@ -176,16 +193,20 @@ The fallback chain, per signal:
 
 Transparency. `providers` is `{similar_works: [...], cited_venues: [...],
 metadata: [...], quartile: "sjr"|"openalex-proxy"|"unknown"}`, each list in the
-order openalex, crossref, europepmc, semanticscholar, sjr, doaj; `quartile` is
+order asta, openalex, crossref, europepmc, semanticscholar, sjr, doaj; `quartile` is
 `sjr` when any candidate has an SJR quartile, else `openalex-proxy` when any has a
 proxy, else `unknown`. Each candidate's `sources` lists the providers that
 contributed to it. The agent copies both into the markdown and never claims a
 source that did not answer.
 
 **Get an OpenAlex key.** Create a free account at openalex.org, copy the key
-from openalex.org/settings/api and `export OPENALEX_API_KEY=...`. A free key
-gives about USD 1 per day of usage, 10x the keyless budget. The skill never
-asks for the key on the operator's behalf and never prints it.
+from openalex.org/settings/api-key and save it in smith ui's Doctor → API keys
+or with `smith keys set openalex` (stored per user, outside every workspace; an
+exported `OPENALEX_API_KEY` still wins). A free key gives about USD 1 per day of
+usage, 10x the keyless budget. The skill never requests a key on the
+operator's behalf and never prints it. An Asta key (Ai2) is requested from Ai2
+and saved the same way (`smith keys set asta`); Ai2 licenses it for academic,
+non-commercial use, with acknowledgement.
 
 ### How the fit score is built
 
@@ -265,7 +286,7 @@ publishes similar work.
 
 `api_calls` reports how many HTTP requests the search made and how many it
 served from disk, in total and per service (`openalex`, `crossref`,
-`pubmed`, `europepmc`, `doaj`, `semanticscholar`), whether the cache was on and where, and the OpenAlex budget:
+`pubmed`, `europepmc`, `doaj`, `semanticscholar`, `asta`), whether the cache was on and where, and the OpenAlex budget:
 `budget.state` is `ok` (the answers carried `x-ratelimit-remaining-usd`),
 `exhausted` (a request was refused for a spent quota) or `unknown`, with
 `remaining_usd`, `limit_usd` and `retry_after_seconds` when known. A retry
@@ -366,7 +387,7 @@ search: that journal reads `source: "none"` and `notes` says why.
 | Situation | Action |
 | --- | --- |
 | No SJR file imported | Say so before searching: every quartile will be `openalex-proxy` (or `unknown` with the fallback chain); offer the download link |
-| `fallback.used` is true | Say which sources answered (`providers`), that the quartile may be unknown and that `mean_citedness_2yr` is absent; show the OpenAlex key guide; never present fallback output as OpenAlex |
+| `fallback.used` is true | Say which sources answered (`providers`), that the quartile may be unknown and that `mean_citedness_2yr` is absent; show the OpenAlex key guide; never present Asta or fallback output as OpenAlex |
 | `excluded_reasons.quartile_unknown` > 0 | Tell the operator the count and offer `--include-unknown-quartile`, `sjr-import` or an `OPENALEX_API_KEY` |
 | Fewer journals than `--limit` | Report the short list and the notes; never pad it from memory |
 | A journal's scope page cannot be read | Mark it "scope page unread" and keep its numbers; never paraphrase a page not read |

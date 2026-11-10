@@ -55,15 +55,20 @@ In this order, and inside these budgets:
    through the borrowed front door — one of the shell commands this stretch
    may invoke:
    `python skills/paper-writing/scripts/paper_cli.py resolve
-   --identifier <id> --resolver {openalex,crossref,arxiv} --role resolution
+   --identifier <id> --resolver auto --role resolution
    --cache-dir sota-pool/metadata`.
-   It fetches metadata over stdlib `urllib`, keyless, and caches it under
-   `sota-pool/metadata/`, beside the pool it confirms — never under `paper/`,
-   which no paper has started yet; it never fetches a PDF and never judges
-   whether a span holds a claim. Quote its refusals (`RESOLVER_ROLE_EMPTY` means the operator
+   `auto` asks the role's connectors in `papersmith.yaml`'s order — Ai2's
+   Asta first once the operator set its key, else OpenAlex — and keeps the
+   first whole record that carries an abstract, so a paper OpenAlex holds
+   without one can still enter the pool. It fetches metadata over stdlib
+   `urllib`, keyless by default, and caches it under `sota-pool/metadata/`,
+   beside the pool it confirms — never under `paper/`, which no paper has
+   started yet; it never fetches a PDF and never judges whether a span holds
+   a claim. Quote its refusals (`RESOLVER_ROLE_EMPTY` means the operator
    emptied the role in `papersmith.yaml` — the power is off by config, not
-   broken; `RESOLVER_UNREACHABLE`, `IDENTIFIER_UNRESOLVED`) rather than
-   working around them.
+   broken — or every connector it names needs a key that is not set;
+   `RESOLVER_UNREACHABLE`, `RESOLVER_REFUSED` — the service refused the
+   operator's key —, `IDENTIFIER_UNRESOLVED`) rather than working around them.
 3. **Families.** Assign each resolved candidate exactly one primary family,
    from what the abstracts state — 3 to 7 families for the whole pool. A
    family the abstracts name carries `provenance: stated`; one you grouped

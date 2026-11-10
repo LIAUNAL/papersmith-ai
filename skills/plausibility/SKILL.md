@@ -66,16 +66,24 @@ gitignored, like everything under `sota-pool/`.
 What each resolver can and cannot give the pool, measured from
 `paper_resolve.py`:
 
+- **Asta** (Ai2's Semantic Scholar corpus) is asked only once the operator
+  saved its key (smith ui's Doctor → API keys, or `smith keys set asta`); it
+  returns the year, the venue and, when the corpus holds one, the paper's own
+  abstract — never the model-written `tldr` — and no full-text URL. Its
+  abstracts and OpenAlex's complement each other: a paper one of them holds
+  without an abstract often has it in the other. For an arXiv id it may answer
+  with the record of the published version.
 - **OpenAlex** returns the year, the venue and, when OpenAlex holds one, the
   abstract (rebuilt in reading order from its inverted index).
 - **Crossref** never returns an abstract: publishers ship it as JATS markup,
   and stripping tags would mint a quote no source printed, so the resolver
   reports `abstract: null`. Its `year` is the record's `issued` year (else
-  its `published` year), `null` when Crossref gives neither. Resolve a DOI
-  through OpenAlex for its abstract; when neither resolver has one, the
-  candidate stays out of the pool (it cannot be quoted,
-  and the checker's `--pool` run refuses any planet citing it with
-  `EVIDENCE_ABSTRACT_MISSING`).
+  its `published` year), `null` when Crossref gives neither. Resolve with
+  `--resolver auto`: it asks the role's connectors in order (Asta first when
+  its key is set, then OpenAlex, Crossref last) and keeps the first whole
+  record that has an abstract; when none has one, the candidate stays out of
+  the pool (it cannot be quoted, and the checker's `--pool` run refuses any
+  planet citing it with `EVIDENCE_ABSTRACT_MISSING`).
 - **arXiv** returns the abstract (the entry's own `<summary>`, whitespace
   collapsed) with `venue: "arXiv"` and the year of the entry's `<published>`
   stamp (the first version's submission date, not a later venue's). An entry
