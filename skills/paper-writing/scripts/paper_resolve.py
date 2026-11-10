@@ -51,13 +51,15 @@ from impl_refusals import Refused  # noqa: E402
 #: bearing rather than merely present.
 OPENER: urllib.request.OpenerDirector = urllib.request.build_opener()
 
-#: The three connectors this CLI resolves against, closed for what an
+#: The connectors this CLI resolves against, closed for what an
 #: identifier's own scheme demands, never for what any one paper is about:
 #: OpenAlex and Crossref resolve a DOI, arXiv resolves its own id space, and
-#: together they cover every identifier `resolve` accepts today. Widening
-#: this set is a module change made when a new identifier scheme needs a
-#: client, never a per-paper decision (`proposal.md`, Approach).
-RESOLVERS: tuple[str, ...] = ("openalex", "crossref", "arxiv")
+#: Semantic Scholar (Graph API, keyless public pool) resolves either a DOI
+#: or an arXiv id with cross-source external ids -- together they cover every
+#: identifier `resolve` accepts today. Widening this set is a module change
+#: made when a new identifier scheme needs a client, never a per-paper
+#: decision (`proposal.md`, Approach).
+RESOLVERS: tuple[str, ...] = ("openalex", "crossref", "arxiv", "semantic-scholar")
 
 #: The connector roles `papersmith.yaml`'s `paper_writing.roles` maps.
 #: `discovery` is read by this module only to validate configuration --
@@ -261,6 +263,49 @@ def _arxiv_url(arxiv_id: str) -> str:
     return "http://export.arxiv.org/api/query?" + urllib.parse.urlencode({"id_list": bare})
 
 
+def _semantic_scholar_url(identifier: str, config: dict) -> str:
+    """The Semantic Scholar Graph API `paper` endpoint for one identifier.
+
+    Keyless (the public shared pool -- no `mailto`, no `x-api-key`); the
+    endpoint takes the identifier prefixed with its own scheme (`DOI:...`,
+    `ARXIV:...`), so a bare DOI is treated as one, matching how `resolve`
+    passes DOIs to OpenAlex and Crossref. A batch still owes its
+    `_REQUEST_PAUSE_SECONDS` between requests, like every other connector.
+    """
+    bare = identifier.strip()
+    if bare[:6].lower() == "arxiv:":
+        prefixed = "ARXIV:" + bare[6:].strip()
+    elif bare[:4].lower() == "doi:":
+        prefixed = "DOI:" + bare[4:].strip()
+    else:
+        prefixed = "DOI:" + bare
+    fields = "title,authors,year,venue,externalIds,abstract,openAccessPdf"
+    return ("https://api.semanticscholar.org/graph/v1/paper/"
+            + urllib.parse.quote(prefixed, safe=":")
+            + "?" + urllib.parse.urlencode({"fields": fields}))
+
+
+def _parse_semantic_scholar(raw: bytes) -> dict:
+    """The same seven fields `_parse_openalex` answers, from the Graph API's
+    paper record: `openAccessPdf.url` is a measured open version, never
+    inferred (`full-text-fetch`, "Reachability is measured, never assumed")."""
+    obj = json.loads(raw)
+    authors = []
+    for author in obj.get("authors") or []:
+        name = ((author or {}).get("name") or "").strip()
+        if name:
+            authors.append(name)
+    return {
+        "title": obj.get("title"),
+        "doi": (obj.get("externalIds") or {}).get("DOI"),
+        "year": obj.get("year"),
+        "full_text_url": (obj.get("openAccessPdf") or {}).get("url"),
+        "authors": authors,
+        "venue": obj.get("venue"),
+        "abstract": obj.get("abstract"),
+    }
+
+
 def _parse_openalex(raw: bytes) -> dict:
     obj = json.loads(raw)
     # `full_text_url`: OpenAlex's own measured signal that a real open
@@ -410,6 +455,7 @@ _ENDPOINT_BUILDERS = {
     "openalex": lambda identifier, config: (_openalex_url(identifier, config), _parse_openalex),
     "crossref": lambda identifier, config: (_crossref_url(identifier), _parse_crossref),
     "arxiv": lambda identifier, config: (_arxiv_url(identifier), _parse_arxiv),
+    "semantic-scholar": lambda identifier, config: (_semantic_scholar_url(identifier, config), _parse_semantic_scholar),
 }
 
 

@@ -175,3 +175,24 @@ Never bind a sentence to an evidence or fact id without having read that
 record in the same reply and confirmed it actually supports what the
 sentence says. An invented binding sounds like a citation and gets acted
 on like one.
+## Anti-Skim protocol — every citation is quote-verified
+
+Before a cited claim enters the draft, you verify it against the source the
+citation names, never against your memory of it:
+
+1. Retrieve the source (a record in the evidence set you were handed) and
+   read the passage the claim rests on.
+2. The binding's evidence record must quote that passage. If you cannot
+   quote it, you have not read it, and the binding does not exist: bind the
+   sentence to nothing rather than to a source you skimmed.
+3. A claim the quoted passage does not support is either rewritten to what
+   the source does support or dropped. It is never kept on the strength of
+   the citation's reputation, an abstract's promise, or a related work's
+   summary of it.
+4. A claim whose source cannot be retrieved at all is reported in `owed`
+   as `UNVERIFIED: <the claim>` — never silently kept, never silently
+   dropped: the operator decides whether it stays.
+
+Skimming is the failure mode this protocol exists for: an abstract can
+support that a paper exists, rarely that it says what your sentence says.
+
