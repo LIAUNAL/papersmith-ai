@@ -40,7 +40,7 @@ from typing import Any, AsyncIterator, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
+from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
 from . import doctor_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -1279,6 +1279,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     watcher = WorkspaceWatcher(root_path, on_flush, debounce_ms=debounce_ms)
     smoke_lock = threading.Lock()
     terminals = terminal.TerminalManager(root_path)
+    #: Engram interactions observed in live session output, bounded by
+    #: office.MEMORY_EVENTS_MAX; the office state endpoint owns this ring.
+    office_ring: list = []
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -3512,6 +3515,22 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             "default": next((a["id"] for a in agents if a["available"]), "shell"),
             "quick": {"shell": list(terminal.SHELL_QUICK), "agent": slash[:24]},
         }, headers=dict(_PAPER_HEADERS))
+
+    # ------------------------------------------------------------ agents office
+    # The Agents Office is a read-only view of the same facts the terminal
+    # already serves, so it answers under the same authorization semantics:
+    # an unauthorized page sees no roster and no session output.
+    @app.get("/api/office/state")
+    def api_office_state(request: Request) -> JSONResponse:
+        authorized = terminals.authorized(request.cookies.get(TERMINAL_COOKIE))
+        enabled = bool(enable_terminal and terminal.fcntl is not None)
+        facts = terminals.session_facts() if enabled and authorized else []
+        facts = office.observe_memory(office_ring, facts)
+        return JSONResponse(office.office_state(
+            catalog=terminals.agents() if enabled and authorized else [],
+            session_facts=facts, ring=office_ring,
+            engram_path=office.engram_path(), enabled=enabled, authorized=authorized,
+        ), headers=dict(_PAPER_HEADERS))
 
     # ------------------------------------------------------------ math tutor
     # The Socratic tutor runs the reader's own agent CLI, so it lives behind the

@@ -519,6 +519,22 @@ class TerminalManager:
         return [{"id": a.id, "label": a.label, "desc": a.desc, "available": a.available()}
                 for a in self.agents_by_id.values()]
 
+    def session_facts(self) -> list[dict[str, Any]]:
+        """Read-only facts for the Agents Office (office.py): one entry per
+        session with its agent, liveness and a decoded output tail that
+        office.py scans for Engram interactions. Nothing here writes to,
+        interrupts or closes anything."""
+        from . import office  # sibling module; imported lazily to keep terminal importable standalone
+
+        facts: list[dict[str, Any]] = []
+        with self._lock:
+            sessions = list(self._sessions.values())
+        for session in sessions:
+            with session.lock:
+                tail = bytes(session.buffer[-office.MEMORY_SCAN_BYTES:]).decode("utf-8", "replace")
+            facts.append({"agent": session.agent, "alive": session.alive, "tail": tail})
+        return facts
+
     def count(self) -> int:
         with self._lock:
             return len(self._sessions)
