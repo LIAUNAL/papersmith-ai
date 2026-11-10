@@ -294,6 +294,8 @@ class HostAllowListMiddleware:
 # --------------------------------------------------------------------------
 #: Cookie holding the support terminal's per-server secret.
 TERMINAL_COOKIE = "papersmith_terminal"
+#: Seconds between two browser openings asked by POST /api/terminal/activate.
+ACTIVATION_THROTTLE_S = 10.0
 
 
 def _framework_version(root: Path) -> str:
@@ -3503,6 +3505,42 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                             samesite="strict", path="/api/terminal")
         return response
 
+    # A page without this server's cookie (an old tab, a bookmark, a server
+    # restarted since) asks the server to open its login URL again. The token
+    # goes only to the desktop browser through the OS, never to the caller; the
+    # new login sets the cookie for this host, so the asking tab is authorized
+    # as well. Same-origin requests only, at most once per throttle window.
+    activation = {"last": 0.0, "lock": threading.Lock()}
+
+    @app.post("/api/terminal/activate")
+    async def api_terminal_activate(request: Request) -> JSONResponse:
+        if not enable_terminal:
+            return JSONResponse({"detail": "the support terminal is disabled on this bind"},
+                                status_code=404, headers=dict(_PAPER_HEADERS))
+        reason = terminal.guard(request.headers, mutating=True)
+        if reason is not None:
+            return JSONResponse({"detail": f"refused: {reason}"}, status_code=403,
+                                headers=dict(_PAPER_HEADERS))
+        # The token goes only to the socket this server listens on, never to a
+        # name taken from the request: another local user could bind
+        # [::1]:PORT on an IPv4-only server, or a name that resolves elsewhere.
+        bound = _bound_origin(request.scope.get("server"))
+        if bound is None:
+            return JSONResponse({"detail": "refused: the server is not on a loopback address"},
+                                status_code=403, headers=dict(_PAPER_HEADERS))
+        with activation["lock"]:
+            now = time.monotonic()
+            if activation["last"] and now - activation["last"] < ACTIVATION_THROTTLE_S:
+                return JSONResponse({"ok": True, "opened": False, "throttled": True},
+                                    headers=dict(_PAPER_HEADERS))
+            activation["last"] = now
+        opened = await asyncio.to_thread(
+            open_browser, f"{bound}/api/terminal/login?token={terminals.token}")
+        # The cookie belongs to the bound host: a page reached under another
+        # name (localhost for 127.0.0.1) is told where the activated one is.
+        return JSONResponse({"ok": True, "opened": bool(opened), "origin": bound},
+                            headers=dict(_PAPER_HEADERS))
+
     @app.get("/api/terminal/agents")
     def api_terminal_agents(request: Request) -> JSONResponse:
         authorized = terminals.authorized(request.cookies.get(TERMINAL_COOKIE))
@@ -4116,8 +4154,28 @@ def _print_url(url: str) -> None:
     print(f"open the dashboard in a browser: {url}", flush=True)
 
 
-def open_browser(url: str) -> None:
+def _bound_origin(server: Any) -> str | None:
+    """``http://host:port`` of the listening socket from an ASGI ``scope["server"]``,
+    or ``None`` unless it is a loopback IP address."""
+    try:
+        address, port = server
+        import ipaddress
+
+        ip = ipaddress.ip_address(str(address))
+        port = int(port)
+    except (TypeError, ValueError):
+        return None
+    if not ip.is_loopback or not 0 < port < 65536:
+        return None
+    host = f"[{ip.compressed}]" if ip.version == 6 else ip.compressed
+    return f"http://{host}:{port}"
+
+
+def open_browser(url: str) -> bool:
     """Open ``url`` in a browser that fits the platform; never raises.
+
+    Returns whether a browser was launched; ``False`` means the URL was only
+    printed on the server's console.
 
     Under WSL the Windows browser is reached through ``wslview`` (wslu), then
     ``explorer.exe``. On Linux without a graphical display Python's
@@ -4137,20 +4195,21 @@ def open_browser(url: str) -> None:
                 subprocess.Popen([executable, url], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  close_fds=True)
-                return
+                return True
             except OSError:
                 continue
     if sys.platform.startswith("linux") and not _has_graphical_display():
         _print_url(url)
-        return
+        return False
     import webbrowser
 
     try:
         if webbrowser.open(url):
-            return
+            return True
     except Exception:  # Browser setup must not prevent the server from starting.
         pass
     _print_url(url)
+    return False
 
 
 def warm_caches(root: Path, *extra: Callable[[], Any]) -> None:

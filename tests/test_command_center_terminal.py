@@ -24,6 +24,7 @@ class _Request:
         self.headers = {k.lower(): v for k, v in (headers or {}).items()}
         self._body = body
         self.cookies = dict(cookies or {})
+        self.scope = {"server": ("127.0.0.1", 8080)}
 
     async def json(self) -> object:
         if isinstance(self._body, Exception):
@@ -272,6 +273,73 @@ class RouteTests(unittest.TestCase):
         self.assertFalse(agents["authorized"])
         self.assertEqual(agents["agents"], [])
         self.assertEqual(self.app.state.terminal.count(), 0)
+
+    def test_an_unauthorized_page_can_ask_the_server_to_reopen_its_login_url(self) -> None:
+        activate = _route(self.app, "/api/terminal/activate", "POST")
+        with mock.patch.object(server, "open_browser", return_value=True) as opened:
+            response = _call(activate, self.req(SAME, {}, cookie=False))
+        self.assertEqual(response.status_code, 200)
+        body = _body(response)
+        self.assertEqual(body, {"ok": True, "opened": True, "origin": "http://127.0.0.1:8080"})
+        # The token goes to the OS browser only, for the host the page uses.
+        url = opened.call_args[0][0]
+        self.assertEqual(url, "http://127.0.0.1:8080/api/terminal/login?token="
+                         + self.app.state.terminal.token)
+        self.assertNotIn(self.app.state.terminal.token, json.dumps(body))
+
+    def test_activation_is_same_origin_only_and_throttled(self) -> None:
+        activate = _route(self.app, "/api/terminal/activate", "POST")
+        with mock.patch.object(server, "open_browser", return_value=True) as opened:
+            foreign = _call(activate, self.req({**SAME, "Origin": "http://evil.example"}, {}, cookie=False))
+            no_header = _call(activate, self.req({k: v for k, v in SAME.items()
+                                                  if k != "X-Papersmith-Terminal"}, {}, cookie=False))
+            first = _call(activate, self.req(SAME, {}, cookie=False))
+            second = _call(activate, self.req(SAME, {}, cookie=False))
+        self.assertEqual(foreign.status_code, 403)
+        self.assertEqual(no_header.status_code, 403)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(_body(second), {"ok": True, "opened": False, "throttled": True})
+        self.assertEqual(opened.call_count, 1)
+
+    def test_activation_sends_the_token_only_to_the_bound_socket(self) -> None:
+        # Host is never trusted: [::1] is a free socket on an IPv4-only bind,
+        # which another local user could listen on to catch the token.
+        token = self.app.state.terminal.token
+        for host in ("[::1]:8080", "localhost:8080", "evil.example", "127.0.0.1:80@evil.example", ""):
+            self.app = server.create_app(self.root, history_store=None, enable_terminal=True)
+            self.addCleanup(self.app.state.terminal.close_all)
+            token = self.app.state.terminal.token
+            headers = {**SAME, "Host": host}
+            headers.pop("Origin")
+            with mock.patch.object(server, "open_browser", return_value=True) as opened:
+                _call(_route(self.app, "/api/terminal/activate", "POST"), self.req(headers, {}, cookie=False))
+            self.assertEqual(opened.call_args[0][0],
+                             f"http://127.0.0.1:8080/api/terminal/login?token={token}", host)
+
+    def test_activation_refuses_a_server_off_loopback(self) -> None:
+        activate = _route(self.app, "/api/terminal/activate", "POST")
+        for bound in (("0.0.0.0", 8080), ("192.168.1.4", 8080), None, ("127.0.0.1", 0)):
+            request = self.req(SAME, {}, cookie=False)
+            request.scope = {"server": bound}
+            with mock.patch.object(server, "open_browser") as opened:
+                self.assertEqual(_call(activate, request).status_code, 403, bound)
+            opened.assert_not_called()
+
+    def test_an_ipv6_loopback_bind_is_bracketed(self) -> None:
+        self.assertEqual(server._bound_origin(("::1", 9000)), "http://[::1]:9000")
+
+    def test_activation_reports_a_login_url_it_could_only_print(self) -> None:
+        activate = _route(self.app, "/api/terminal/activate", "POST")
+        with mock.patch.object(server, "open_browser", return_value=False):
+            body = _body(_call(activate, self.req(SAME, {}, cookie=False)))
+        self.assertEqual(body, {"ok": True, "opened": False, "origin": "http://127.0.0.1:8080"})
+
+    def test_activation_is_refused_when_the_terminal_is_disabled(self) -> None:
+        app = server.create_app(self.root, history_store=None, enable_terminal=False)
+        with mock.patch.object(server, "open_browser") as opened:
+            response = _call(_route(app, "/api/terminal/activate", "POST"), _Request(SAME, {}))
+        self.assertEqual(response.status_code, 404)
+        opened.assert_not_called()
 
     def test_the_login_url_sets_the_cookie_only_for_the_right_token(self) -> None:
         login = _route(self.app, "/api/terminal/login", "GET")
