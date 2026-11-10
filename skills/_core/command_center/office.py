@@ -35,7 +35,7 @@ MEMORY_SCAN_BYTES = 8192
 #: CLI command, possibly behind a shell prompt. Tool-finding prose ("member
 #: list", "memory foam") never matches: the line must start with the call.
 _MEMORY_LINE_RE = re.compile(
-    r"^\s*(?:[(\[]?[a-z0-9_.-]+@[a-z0-9_.-]+[:~\$\)]\s*|[$>#]\s*)?"
+    r"^\s*(?:[(\[]?[a-z0-9_.-]+@[a-z0-9_.-]+[:~$)\]]*\s*|[$>#]\s*)?"
     r"(mem_[a-z_]+|engram)\b[^\n]{0,120}$",
     re.IGNORECASE | re.MULTILINE,
 )
