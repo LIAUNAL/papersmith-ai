@@ -11,6 +11,7 @@ permission:
   webfetch: allow
   websearch: allow
   task: deny
+  "asta_*": allow
 ---
 
 # SOTA Scout — the scouting stretch
@@ -46,11 +47,35 @@ In this order, and inside these budgets:
 
 1. **Discovery (identifiers, not verdicts).** Turn the idea into candidate
    identifiers (DOI, arXiv id) through your own MCP servers first — the
-   `discovery` role, never a CLI — falling back to `WebSearch` only when
-   no MCP answers. At most 10 searches per pool, each tagged with the date
-   you ran it. Discovery names *candidates*; it proves nothing about any
-   of them. Read the abstract of every candidate before it enters the pool
-   — a title is not a territory.
+   connectors `papersmith.yaml` lists under `paper_writing.roles.discovery`,
+   in that order, never a CLI — falling back to `WebSearch` only when no MCP
+   answers. At most 10 searches per pool, whichever connector runs them,
+   each tagged with the date you ran it and the connector that answered.
+   Discovery names *candidates*; it proves nothing about any of them. Read
+   the abstract of every candidate before it enters the pool — a title is
+   not a territory.
+
+   **Asta, only with its key loaded.** `asta` is Ai2's Asta, the Semantic
+   Scholar corpus. Without a key its searches hang for minutes, so when the
+   role lists `asta`, run `smith keys status asta --json` once per pass,
+   before the first search; it never prints the key. Search Asta only when
+   it answers `"configured": true` with `"source": "env"` (the key is loaded
+   in this session, where the server's header reads it) and one of your
+   tools belongs to the `asta` server (`mcp__asta__…` in Claude Code,
+   `asta_…` in OpenCode): `search_papers_by_relevance` for the idea,
+   `search_paper_by_title` for a title you already hold, `snippet_search`
+   for a phrase. On any other answer, a failed command, or no `asta` tool,
+   call no Asta tool and discover as if the role did not list it, and say
+   why in `owed` (`"source": "store"` means the key is saved but this
+   session started without it; a session the dashboard starts loads it).
+   Take only identifiers from Asta: its `tldr` is written by a model and a
+   snippet is an excerpt a search picked, so neither is ever an abstract, a
+   quote or a pool field — the abstract comes from the `resolve` step below.
+   Never print, echo or pass the key; it travels only in the server's own
+   header. An Asta tool error (`HTTP status 403 Forbidden`, a timeout) is a
+   refusal: quote it and call Asta no more in this pass. Ai2 licenses Asta
+   for academic, non-commercial use with attribution, which is why each
+   search it answered names `asta` as its connector.
 2. **Resolution (metadata, not meaning).** Run at most 25 identifiers
    through the borrowed front door — one of the shell commands this stretch
    may invoke:
@@ -83,8 +108,9 @@ In this order, and inside these budgets:
 
 You have no `Write` beyond the pool file and no `Edit` outside it: the only
 paths this stretch may create or touch are under `sota-pool/`. The only
-shell command besides the `resolve` invocation above is the checker's own
-(when you hand work onward, never to judge your own pool).
+shell commands besides the `resolve` invocation above are the Asta key check
+(`smith keys status asta --json`, step 1) and the checker's own (when you hand
+work onward, never to judge your own pool).
 
 **Extending the pool.** When `smith atlas coverage .` lists a reference the
 manuscript or the proposal cites that the constellation lacks and the pool does

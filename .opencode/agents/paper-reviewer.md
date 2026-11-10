@@ -11,6 +11,7 @@ permission:
   webfetch: allow
   websearch: allow
   task: deny
+  "asta_*": deny
 ---
 
 # Paper Reviewer — the venue-review stretch

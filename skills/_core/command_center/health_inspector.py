@@ -212,6 +212,32 @@ KNOWN_HARNESS_TOOLS = frozenset({
     "MultiEdit", "LS", "BashOutput", "KillBash", "mcp", "Skill",
 })
 
+#: Fallback for ``papersmith.generators.GRANTABLE_MCP_SERVERS``: the managed MCP
+#: servers whose whole-server grant (``mcp__<server>__*``) an agent may declare.
+#: Duplicated for the stdlib-only reason the skill links give;
+#: tests/test_asta_discovery.py pins it to the real tuple.
+_FALLBACK_GRANTABLE_MCP_SERVERS: tuple[str, ...] = ("asta",)
+
+
+def _grantable_mcp_servers() -> tuple[str, ...]:
+    try:
+        import papersmith.generators as generators  # type: ignore
+
+        return tuple(generators.GRANTABLE_MCP_SERVERS)
+    except Exception:  # noqa: BLE001 - the dashboard runs without the CLI package
+        return _FALLBACK_GRANTABLE_MCP_SERVERS
+
+
+def _tool_bound(token: str) -> bool:
+    """A known harness tool, or a whole grantable MCP server (`mcp__asta__*`).
+    Any other `mcp__...` token names a server no projection can grant: unbound."""
+    if token in KNOWN_HARNESS_TOOLS:
+        return True
+    if token.startswith("mcp__") and token.endswith("__*"):
+        return token[len("mcp__"):-len("__*")] in _grantable_mcp_servers()
+    return False
+
+
 #: Python packages the command center itself depends on.
 REQUIRED_PACKAGES = ("fastapi", "uvicorn", "watchfiles", "pydantic")
 #: TeX engines, in preference order, and every TeX tool the environment row reports.
@@ -447,7 +473,7 @@ def agent_integrity(root: Path) -> list[dict[str, Any]]:
         text = _read_text(path) or ""
         skills = _referenced_skills(text)
         tools = [token.strip() for token in str(meta.get("tools", "")).split(",") if token.strip()]
-        unbound = [token for token in tools if token not in KNOWN_HARNESS_TOOLS]
+        unbound = [token for token in tools if not _tool_bound(token)]
         resolved = [skill for skill in skills if (root / "skills" / skill / "SKILL.md").is_file()]
         if not path.is_file():
             state, detail = "MISSING", "agent file absent"

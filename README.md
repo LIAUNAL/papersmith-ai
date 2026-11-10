@@ -576,6 +576,16 @@ An idea stated in fewer than two sentences is refused before the search starts:
 scouting an unstated idea invents its own question. A claim with no abstract
 passage behind it does not become a planet — a quoteless planet is a drawing.
 
+**Ai2's Asta, with your key.** Save an Asta key once (the dashboard's Doctor →
+API keys, or `smith keys set asta`) and the scout searches Asta — the Semantic
+Scholar corpus — first in Claude Code and OpenCode, and every candidate resolves
+with `--resolver auto`, which asks Asta and then OpenAlex and keeps the first
+record that carries an abstract: a paper OpenAlex holds without one can still
+enter the pool. Without the key nothing changes. Pi and Antigravity scouts keep
+searching the web (their subagents get no MCP grant that fails safe); their main
+sessions can still use Asta. Ai2 licenses Asta for academic, non-commercial use
+with acknowledgement.
+
 **Thematic help, when the idea is not clear yet.** In the dashboard, the box
 that opens when you click phase 2 carries an optional *Ayuda temática*. Type 3 to
 5 keywords and the server asks the lab's `banco-lia` MCP (its `search_bank` tool)
@@ -1024,7 +1034,7 @@ tool documents, not what Papersmith generates (that is the table above).
 | OpenCode | supported: `.opencode/skills` | supported: `.opencode/commands` | supported: `.opencode/agents` | supported: `.opencode/plugins/` | supported: `opencode.json` | <https://opencode.ai/docs/skills/>, <https://opencode.ai/docs/commands/>, <https://opencode.ai/docs/agents/>, <https://opencode.ai/docs/plugins/>, <https://opencode.ai/docs/config/> |
 | Pi | supported: `.pi/skills`, `.agents/skills` | supported: `.pi/prompts/*.md` | unsupported in the core; third-party only (`.pi/agents`, `pi-subagents`) | supported: `.pi/extensions/` | supported: `.pi/mcp.json` | <https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/configuration.md>, <https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/prompt-templates.md>, <https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md>, <https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/mcp.md>, <https://github.com/nicobailon/pi-subagents/blob/main/docs/agents.md> |
 | Google Antigravity | supported: `.agents/skills` | supported but deprecated (workflows); path `.agents/workflows` unverified | supported: `.agents/agents` | supported: `.agents/hooks.json` (input schema unverified) | supported: `.agents/mcp_config.json` | <https://antigravity.google/docs/skills>, <https://antigravity.google/docs/ide/workflows>, <https://antigravity.google/docs/subagents>, <https://antigravity.google/docs/hooks>, <https://antigravity.google/docs/mcp> |
-| Claude Code | supported: `.claude/skills` | supported (legacy format): `.claude/commands` | supported: `.claude/agents` | supported: `.claude/settings.json` (Papersmith never writes it) | supported: `.mcp.json` (Papersmith registers only the lab's `banco-lia` server and Kaggle's official `kaggle` server there) | <https://code.claude.com/docs/en/skills>, <https://code.claude.com/docs/en/sub-agents>, <https://code.claude.com/docs/en/hooks>, <https://code.claude.com/docs/en/mcp> |
+| Claude Code | supported: `.claude/skills` | supported (legacy format): `.claude/commands` | supported: `.claude/agents` | supported: `.claude/settings.json` (Papersmith never writes it) | supported: `.mcp.json` (Papersmith registers only the servers it manages: the lab's `banco-lia`, Kaggle's official `kaggle`, Google Colab's `colab` and Ai2's `asta`) | <https://code.claude.com/docs/en/skills>, <https://code.claude.com/docs/en/sub-agents>, <https://code.claude.com/docs/en/hooks>, <https://code.claude.com/docs/en/mcp> |
 
 - `.antigravity/skills` and `.antigravity/rules.md`: unsupported (no source found)
   and no longer generated; Antigravity uses `.agents/skills`, `.agents/agents/` and

@@ -157,6 +157,15 @@ same pass from the abstract its evidence names, and never grades a claim whose
 abstract was not read in the same reply. An invented quote reads as a finding and
 is acted on as one.
 
+**Ai2's Asta in discovery and resolution.** With the operator's Asta key (the
+dashboard's Doctor → API keys, or `smith keys set asta`), the scout searches Asta
+(the Semantic Scholar corpus, an MCP server every harness registers) before the
+web, but only when `smith keys status asta --json` reports the key loaded in its
+session; candidates resolve with `--resolver auto`, Asta first, OpenAlex next,
+keeping the first whole record that carries an abstract. Asta's `tldr` and its
+snippets are never abstracts or quotes. Without the key nothing changes. Details
+in [mcp.md](mcp.md#literature-discovery-ai2s-asta-asta).
+
 **Thematic help, when the operator has no sentences yet.** The skill itself only
 ever receives an idea. In the dashboard, the box that opens on phase 2 offers an
 optional *Ayuda temática*: the operator types 3 to 5 keywords, the dashboard's

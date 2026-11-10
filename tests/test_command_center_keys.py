@@ -105,6 +105,7 @@ class RouteTests(KeysCase):
         assert [state["provider"] for state in body["keys"]] == ["asta", "openalex"]
         assert body["keys"][0]["configured"] is True and body["keys"][0]["source"] == "store"
         assert "export_command" in body["keys"][0] and body["sessions_open"] == 0
+        assert body["asta_mcp"]["server"] == "asta" and isinstance(body["asta_mcp"]["registered"], list)
         self.assert_no_key(response, KEY)
         assert response.headers["cache-control"] == "no-store"
 

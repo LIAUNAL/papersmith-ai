@@ -3542,7 +3542,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if refusal is not None:
             return refusal
         try:
-            payload = keys_view.status_payload(terminals.count())
+            payload = keys_view.status_payload(terminals.count(), root_path)
         except Exception as exc:  # noqa: BLE001 - reported, never raised into the loop
             return _keys_response(500, {"ok": False, "error": "KEYS_UNAVAILABLE",
                                         "detail": type(exc).__name__})

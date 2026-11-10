@@ -28,9 +28,9 @@ git+https://github.com/LIAUNAL/bancoProyectosPapersLIA banco-lia-mcp`:
 | Antigravity / agy | `.agents/mcp_config.json` | `mcpServers.banco-lia` |
 
 `.mcp.json`, `.pi/mcp.json` and `.agents/mcp_config.json` belong to the
-workspace: init and upgrade add or refresh only the three servers papersmith
-manages — `banco-lia`, Kaggle's official server (`kaggle`) and Google Colab's
-(`colab`) — and keep every other server. A file that is not valid JSON is left untouched and reported as a
+workspace: init and upgrade add or refresh only the four servers papersmith
+manages — `banco-lia`, Kaggle's official server (`kaggle`), Google Colab's
+(`colab`) and Ai2's Asta (`asta`) — and keep every other server. A file that is not valid JSON is left untouched and reported as a
 warning. `opencode.json` is a rendered file, so upgrade rewrites it whole.
 The `papersmith` server itself is never written to any of them; use
 `smith mcp print-config` for it. `uv` must be on `PATH` for the harness to
@@ -84,6 +84,31 @@ other case, including `{"available": false, "reason": "..."}`.
 The bank's items are LIA continuity context (projects `H*` and `P*`, articles by
 title and DOI). They are not state-of-the-art evidence, and nothing in the proposed
 idea cites them as such.
+
+## Literature discovery: Ai2's Asta (`asta`)
+
+Asta (<https://allenai.org/asta/resources/mcp>) serves the Semantic Scholar
+corpus as MCP tools over streamable HTTP. It is a **discovery** connector for
+the agents (`papersmith.yaml`'s `paper_writing.roles.discovery`); the CLI reaches
+the same corpus by itself when it resolves a citation, and never reads these
+files. `init` and `upgrade` register it in every declared harness:
+
+| Harness | File | Entry |
+|---|---|---|
+| Claude Code | `.mcp.json` | `type: http`, `url: https://asta-tools.allen.ai/mcp/v1`, header `x-api-key: ${ASTA_API_KEY:-}`, `timeout: 60000` |
+| OpenCode | `opencode.json` | `type: remote`, the same URL, header `x-api-key: {env:ASTA_API_KEY}` |
+| Pi | `.pi/mcp.json` | `npx -y mcp-remote@0.14.3 <url> --header x-api-key:${ASTA_API_KEY}` |
+| Antigravity / agy | `.agents/mcp_config.json` | the same `mcp-remote` bridge |
+
+| Question | Answer |
+|---|---|
+| Where does the key live? | Never in these files. Save it once in the dashboard's **Doctor → API keys** panel or with `smith keys set asta`; the sessions the dashboard starts receive it as `ASTA_API_KEY`. For an agent started elsewhere, export it (`smith keys status asta` prints the line, never the key) |
+| What if it is not set? | Claude and OpenCode send an empty header (Asta answers id lookups without a key); `mcp-remote` sends its literal placeholder, which Asta answers `403` at once. Searches without a key stall, so agents check `smith keys status asta --json` and search Asta only when it reports `"source": "env"` |
+| Which agents may call it? | Only `sota-scout` (`tools: … mcp__asta__*`). OpenCode allows `asta_*` for it and denies it for every other agent. Pi and Antigravity carry no subagent grant (Pi's fails the launch when the server is down; Antigravity documents none), so their scouts discover through the web; their main sessions still have Asta |
+| How long can a call take? | Claude Code: 60 s per call (`timeout`). Pi and Antigravity apply their own limits; OpenCode's entry sets none |
+| Is anything it returns evidence? | No. Its `tldr` is model-written and a `snippet_search` passage is an excerpt a search picked: neither is ever an abstract, a quote or a pool field. Every candidate goes through CLI `resolve` (`--resolver auto`) first |
+| Terms | Ai2's Asta Scientific Corpus Tool License: academic and non-commercial use, acknowledge Ai2's Asta, the key is personal (<https://allenai.org/asta-corpus-license>) |
+| Claude Code prompts | Claude asks to approve the new `asta` server once per collaborator after upgrade, and a tool call once; papersmith never writes `settings.json`, so allow `mcp__asta` yourself if you want |
 
 ## Wiring
 
@@ -151,31 +176,20 @@ Or register via CLI:
 agy mcp add papersmith -- smith mcp serve --workspace /path/to/your/workspace
 ```
 
-### Allen AI ASTA (optional, agent-side citation grounding)
+### Ai2's Asta (written by `init` and `upgrade`)
 
-[ASTA](https://asta.allenai.org) is Allen AI's free scientific-search MCP
-server. It is an *agent-side* helper, exactly like the clients below: the CLI
-never reads `.mcp.json` (see [Protocol](#protocol)), so ASTA is never part of
-the CLI's citation-resolution path — resolution still runs through the CLI
-over OpenAlex, Crossref, arXiv and Semantic Scholar (keyless). Use ASTA from
-the agent to ground citations during drafting and review: retrieve candidate
-sources, quote-verify claims against them, and flag every citation the
-retrieved sources do not support. Adding it is a per-user client edit, not a
-forge change:
-
-```json
-{
-  "mcpServers": {
-    "asta": {
-      "url": "https://asta.allenai.org/api/mcp"
-    }
-  }
-}
-```
-
-Check ASTA's own documentation for the current endpoint and any account
-step; if the server is not configured, the forge's zero-cost citation path
-still works without it.
+`smith init` and `smith upgrade` write the `asta` entry into all four files
+above, so there is nothing to paste: [Literature discovery: Ai2's
+Asta](#literature-discovery-ai2s-asta-asta) lists each entry, where the key
+lives and which agents may call it. In a main session, use it to ground
+citations while drafting and reviewing: retrieve candidate sources,
+quote-verify each claim against the passage it rests on, and flag every
+citation the retrieved sources do not support. A `tldr` or a `snippet_search`
+passage only points at a source; it is never the quote. The CLI never reads
+these files (see [Protocol](#protocol)): `resolve` reaches Asta over HTTP by
+itself, only with the operator's key, and without it resolves keyless through
+the role's other connectors (OpenAlex, Crossref, arXiv, Semantic Scholar), so
+nothing depends on the server being configured.
 
 ## Protocol
 

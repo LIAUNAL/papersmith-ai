@@ -658,6 +658,8 @@ window.PAPERSMITH_I18N.en = {
   "keys.request": "Request a key ↗",
   "keys.license": "License ↗",
   "keys.asta.license": "Asta Scientific Corpus Tool License: academic and non-commercial use only; acknowledge Ai2's Asta in what you publish; never share the key. papersmith keeps it only in your user's private configuration on this machine, never in the project.",
+  "keys.asta.mcp": "Agents reach Asta through the MCP server registered in: {files}.",
+  "keys.asta.mcpNone": "The Asta MCP server is not registered in this workspace yet: run smith upgrade.",
   "keys.saving": "Saving…",
   "keys.verifying": "Checking with the service…",
   "keys.saved": "Saved. Sessions started from now on get {env}; restart open ones.",

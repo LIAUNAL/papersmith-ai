@@ -190,6 +190,22 @@ def remote_mcp_status(root: Path) -> dict[str, Any]:
             "token_page": "https://www.kaggle.com/settings", "environment": remote_mcp_environment()}
 
 
+#: Ai2's Asta MCP server (the Semantic Scholar corpus), registered by `init`
+#: and `upgrade` for the agents' discovery (`papersmith.generators`; a test
+#: holds the two names equal). Its key is the per-user one the API keys panel
+#: stores and `session_env` exports; nothing here reads it.
+ASTA_MCP_SERVER = "asta"
+
+
+def asta_mcp_status(root: Path) -> dict[str, Any]:
+    """Which workspace MCP files register the Asta server. Reads no key."""
+    try:
+        registered = registered_mcp_files(root, ASTA_MCP_SERVER)
+    except Exception:  # noqa: BLE001 - the panel still renders
+        registered = []
+    return {"server": ASTA_MCP_SERVER, "registered": registered, "register": "smith upgrade"}
+
+
 #: The second remote GPU service. Its official MCP (`googlecolab/colab-mcp`)
 #: is interactive: it drives a notebook the person keeps open in a browser.
 #: Headless runs go through the official `colab` CLI, installed with the exact

@@ -75,6 +75,11 @@
     const request = state.request_url
       ? `<a class="btn btn--sm" href="${esc(state.request_url)}" target="_blank" rel="noopener noreferrer">${esc(t('keys.request'))}</a>`
       : '';
+    const mcp = (state.provider === 'asta' && last && last.asta_mcp) ? last.asta_mcp : null;
+    const registered = mcp
+      ? `<p class="panel__meta">${esc(mcp.registered && mcp.registered.length
+        ? t('keys.asta.mcp', { files: mcp.registered.join(', ') }) : t('keys.asta.mcpNone'))}</p>`
+      : '';
     const outside = state.source === 'store'
       ? `<details class="keys-outside"><summary>${esc(t('keys.outsideTitle'))}</summary>`
         + `<p>${esc(t('keys.outsideText'))}</p><code>${esc(state.export_command)}</code></details>`
@@ -82,6 +87,7 @@
     return `<div class="keys-provider" data-keys-provider="${p}">
         <div class="keys-provider__head"><strong>${esc(name)}</strong> ${stateBadge(state)}</div>
         <p class="keys-provider__role">${esc(ROLE[state.provider] ? t(ROLE[state.provider]) : '')}</p>
+        ${registered}
         ${license}
         <form class="keys-form" data-keys-form="${p}" autocomplete="off">
           <label class="keys-form__label" for="keysInput-${p}">${esc(t('keys.input.label', { name }))}</label>

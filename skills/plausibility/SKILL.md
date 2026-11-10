@@ -63,6 +63,14 @@ family. A candidate without an abstract does not exist for the map — a
 title is not a territory. The pool is research content: it travels
 gitignored, like everything under `sota-pool/`.
 
+The abstract is the one `resolve` returned. A discovery connector's own text
+— a summary a model generated, such as Asta's `tldr`, or a passage
+`snippet_search` picked — only points at a paper: it is never stored as an
+abstract, never quoted, and never kept in any pool field. When the discovery
+role lists `asta`, the scout searches it only when `smith keys status asta
+--json` reports the key loaded in its session (`"source": "env"`); otherwise
+it uses the role's other connectors and then the web, and says which.
+
 What each resolver can and cannot give the pool, measured from
 `paper_resolve.py`:
 

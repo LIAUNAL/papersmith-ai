@@ -733,7 +733,11 @@ the rollback a command instead of a hand edit.
 ## No claim without a source that holds it: `resolve`
 
 Search comes first, always — but search itself runs through the agent's own
-MCP (`discovery` role, `.mcp.json`), never through this CLI. `resolve` is the
+MCP (the `discovery` role; each harness registers its servers in `.mcp.json`,
+`opencode.json`, `.pi/mcp.json` or `.agents/mcp_config.json`), never through
+this CLI. A connector that needs a key, such as `asta`, is searched only when
+`smith keys status <connector> --json` reports `"source": "env"`; what it
+generates — a summary, a snippet — points at a paper and is never evidence. `resolve` is the
 CLI-side half: given an identifier and a named connector (or `auto`: the
 role's connectors in their configured order), it fetches metadata over stdlib
 `urllib`, keyless by default, and caches the result on disk keyed by its own
