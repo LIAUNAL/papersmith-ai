@@ -38,6 +38,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -374,27 +375,36 @@ class DifferentialControlTests(unittest.TestCase):
             "FAILED tests/test_x.py::test_y - AssertionError: read-only tools changed"])
         self.assertEqual(control.failure_details("E   x\n" * 100), ["E   x"] * control.DETAIL_LINES)
 
-    def run_planted_gate(self, fails_when: str) -> tuple[int, str]:
+    def run_planted_gate(self, fails_when: str, shared: int = 0) -> tuple[int, str]:
         """Run the script's own `main` with the declared gate replaced by one
         stage that prints a pytest-shaped ERROR and exits 1 when `fails_when`
-        (a Python expression over `home`, the HOME it runs under) holds."""
+        (a Python expression over `home`, the HOME it runs under) holds. With
+        `shared`, both homes first fail another test that prints that many
+        `E` lines, as they do while `main` is red."""
         control = self.module()
         with tempfile.TemporaryDirectory() as holder:
             stage = Path(holder) / "planted_stage.py"
             stage.write_text(
                 "import os, pathlib, sys\n"
                 "home = pathlib.Path(os.environ['HOME'])\n"
+                f"for n in range({shared}):\n"
+                "    print(f'E       AssertionError: shared line {n}')\n"
+                f"if {shared}:\n"
+                "    print('FAILED tests/test_s.py::S::test_shared - AssertionError: shared')\n"
                 f"if {fails_when}:\n"
                 "    print('E       OSError: [Errno 39] Directory not empty: planted')\n"
                 "    print('ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted')\n"
-                "    sys.exit(1)\n", encoding="utf-8")
-            control.half_stages = lambda half: [[sys.executable, str(stage)]]
+                "    sys.exit(1)\n"
+                f"sys.exit(1 if {shared} else 0)\n", encoding="utf-8")
+            # patch.object raises if `half_stages` is ever renamed, instead of
+            # letting `main` run the real suite, which holds this very test.
+            stages = mock.patch.object(control, "half_stages", lambda half: [[sys.executable, str(stage)]])
             # `main` installs its own SIGTERM handler; this process keeps its own.
             previous = signal.getsignal(signal.SIGTERM)
             if previous is not None:
                 self.addCleanup(signal.signal, signal.SIGTERM, previous)
             out = io.StringIO()
-            with contextlib.redirect_stdout(out):
+            with stages, contextlib.redirect_stdout(out):
                 code = control.main(["--half", "python"])
         return code, out.getvalue()
 
@@ -408,10 +418,26 @@ class DifferentialControlTests(unittest.TestCase):
         self.assertEqual(code, 1, report)
         self.assertIn("fails only under decoy: ERROR tests/test_x.py::T::test_y", report)
         self.assertIn(
-            "under the decoy home:\n  E       OSError: [Errno 39] Directory not empty: planted", report,
+            "under the decoy home:\n"
+            "  ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted\n"
+            "  E       OSError: [Errno 39] Directory not empty: planted", report,
             "a test failing under one home only was named without what it said, "
             "so a CI-only failure stays unexplained:\n" + report)
         self.assertNotIn("under the empty home:", report, "the home that passed has nothing to say")
+
+    def test_failures_both_homes_share_cannot_crowd_out_the_one_that_differs(self):
+        """The details are capped, and while `main` is red both homes fail
+        other tests first. Their lines came first in the log and spent the
+        whole cap, so the failure that differs was named and its message cut:
+        found by review, with a red `main` and the Pages flake in one run."""
+        code, report = self.run_planted_gate(
+            "(home / '.engram').is_dir()", shared=self.module().DETAIL_LINES + 5)
+        self.assertEqual(code, 1, report)
+        self.assertIn("fails only under decoy: ERROR tests/test_x.py::T::test_y", report)
+        self.assertIn(
+            "under the decoy home:\n"
+            "  ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted", report,
+            "failures both homes share spent the detail cap before the one that differs:\n" + report)
 
     def test_a_test_failing_under_both_homes_says_why_once(self):
         code, report = self.run_planted_gate("True")

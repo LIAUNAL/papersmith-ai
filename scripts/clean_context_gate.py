@@ -196,24 +196,36 @@ def failure_signature(log_text: str) -> list[str]:
 DETAIL_LINES = 40
 
 
-def failure_details(log_text: str) -> list[str]:
+def failure_details(log_text: str, first: frozenset[str] = frozenset()) -> list[str]:
     """What the failing tests said: pytest's short-summary lines that carry a
     message (``FAILED x - AssertionError: ...``) and its ``E`` assertion lines,
     at most ``DETAIL_LINES`` of them. The log itself lives in a temporary home
     that is removed, so without these a CI-only failure names a test and never
-    says why it failed."""
+    says why it failed.
+
+    The summary lines of the failures in `first` (spelled as
+    `failure_signature` spells them) lead, and the rest keep their log order:
+    while `main` is red, both homes fail other tests whose lines come first in
+    the log and would otherwise spend the cap before the failure that differs."""
     lines = [line.rstrip() for line in log_text.splitlines()
              if line.startswith(("FAILED ", "ERROR ")) and " - " in line or line.startswith("E   ")]
+
+    def leads(line: str) -> bool:
+        match = PYTEST_FAILURE.match(line)
+        return match is not None and f"{match[1]} {match[2]}" in first
+
+    lines.sort(key=lambda line: not leads(line))
     return lines[:DETAIL_LINES]
 
 
-def print_failure_details(home: str, log_text: str) -> None:
+def print_failure_details(home: str, log_text: str, first: frozenset[str] = frozenset()) -> None:
     """Print `failure_details` of one home's run, under that home's name.
 
     Called for every home whose run failed, whether or not the two homes
     agree: a test that fails under one home only is the failure this control
-    exists for, and naming it without what it said leaves it unexplained."""
-    details = failure_details(log_text)
+    exists for, and naming it without what it said leaves it unexplained.
+    `first` holds the failures only this home had."""
+    details = failure_details(log_text, first)
     if details:
         print(f"\n[clean-context] what the failing tests said under the {home} home:")
         for line in details:
@@ -332,9 +344,10 @@ def main(argv: list[str] | None = None) -> int:
                   "that has none:")
             for line in differences:
                 print(f"  {line}")
-            for result in (empty_result, decoy_result):
+            for result, other in ((empty_result, decoy_result), (decoy_result, empty_result)):
                 if result["code"] != 0:
-                    print_failure_details(result["home"], logs[result["home"]])
+                    only_here = frozenset(result["failures"]) - frozenset(other["failures"])
+                    print_failure_details(result["home"], logs[result["home"]], only_here)
             return 1
 
         failures = baseline_failures(empty_result)
