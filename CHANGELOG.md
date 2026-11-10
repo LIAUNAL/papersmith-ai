@@ -11,6 +11,36 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.72.0
+
+- The dashboard's CLI starts on a click without an agent already open: a
+  page that lost the terminal cookie (an old tab, a bookmark, a restarted
+  `smith ui`, `localhost` instead of `127.0.0.1`) asks the server to reopen
+  its login link, waits for the cookie and then opens the agent. The FAB,
+  a phase run and the banner's new "Activate" button all do it; loading the
+  page never does. The link is built from the socket the server listens on,
+  never from the `Host` header, so another local user cannot catch the token
+  on `[::1]`.
+- The Agents Office is now a 3D office in the style of weherd, on the same
+  library (three.js 0.183.0, vendored and served through an import map, no
+  network, no build step). It seats every agent defined in `.claude/agents`
+  plus the orchestrator at a front desk, and its lounge is an Engram memory
+  core. Each person animates a measured state: working (typing, flow line
+  from the orchestrator), available (coffee), saving to Engram (cubes to the
+  brain) or loading from it (cubes back).
+- The office reads what a real Claude Code session shows: a bounded screen
+  model rebuilds the cells Claude Code repaints with cursor moves, a call
+  counts when a new call row appears, it belongs to the transcript entry it
+  sits in, the typed prompt never counts, and a folded `Called engram` is a
+  save when the Engram store's observation count grew (`engram stats`, asked
+  only around a call and at most once a minute when it does not answer).
+  Since every smith agent lists its own tools and none includes Engram, the
+  orchestrator is the one that reads and saves memory.
+- The office state is served at `/api/terminal/office`, under the terminal
+  cookie's path: at `/api/office/state` a browser never sent the cookie, so
+  the 0.70.0 office always read as unauthorized. Session activity is read
+  only for a same-origin request.
+
 ## 0.71.1
 
 - The dashboard's phase boxes explain the reference search where it runs: the
