@@ -29,6 +29,7 @@ document is the defect.
 | The PDF Preview tab's journal block and its `/api/journals*`, `/api/venues*`, venue compile and `/api/pdf?venue=` routes | [cli.md](cli.md#smith-ui-dir) |
 | Releasing | [releasing.md](releasing.md) |
 | Dashboard under WSL | [wsl-dashboard.md](wsl-dashboard.md) |
+| The support terminal: platforms, agents, activation | [terminals.md](terminals.md) |
 | Flow diagrams | [diagrams/README.md](diagrams/README.md) |
 | Repository maintenance (issues and PRs) | [`maintainer/skills/backlog-steward/SKILL.md`](../maintainer/skills/backlog-steward/SKILL.md) |
 

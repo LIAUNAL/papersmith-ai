@@ -14,12 +14,12 @@ Branch: feat/spark-to-paper-enhancements. Delivery: reviewable slices (~400 auth
 
 ## Tasks
 
-- [ ] T1a [S5] Linux terminal launch backends in `terminal.py` (`detect_tools`, `launch_external`) with unit tests
-- [ ] T1b [S6] Problem tree inversion in `model-panel.js` + activation prompt for inactive CLI status, with i18n and JS tests
-- [ ] T2 [S1] Stdlib SVG audit (typography hierarchy, bbox collisions, contrast) integrated with the `diagram_audit.py` verdict contract
-- [ ] T3 [S2, S3] Semantic Scholar resolver source (CLI) + ASTA agent-side doc + Anti-Skim/adversarial prompt updates across 4 projections
-- [ ] T4 [S4] Machine-readable venue catalog (JSON data, no vendored templates) wired into `paper_venue.py list/requirements`
-- [ ] T5 Verification: run `test_command_center_terminal.py`, `test_diagram_audit.py`, `test_paper_venue.py`, `test_mcp_registry.py`, `test_paper_language.py`, `test_harness_parity.py`, JS suites; bump `?v=` cache tokens in `static/index.html` for changed panel scripts; add `docs/` page + index row for terminal platforms; version 0.69.0 + CHANGELOG section
+- [x] T1a [S5] Linux terminal launch backends in `terminal.py` (`detect_tools`, `launch_external`) with unit tests
+- [x] T1b [S6] Problem tree inversion in `model-panel.js` + activation prompt for inactive CLI status, with i18n and JS tests
+- [x] T2 [S1] Stdlib SVG audit (typography hierarchy, bbox collisions, contrast) integrated with the `diagram_audit.py` verdict contract
+- [x] T3 [S2, S3] Semantic Scholar resolver source (CLI) + ASTA agent-side doc + Anti-Skim/adversarial prompt updates across 4 projections
+- [x] T4 [S4] Machine-readable venue catalog (JSON data, no vendored templates) wired into `paper_venue.py list/requirements`
+- [x] T5 Verification: run `test_command_center_terminal.py`, `test_diagram_audit.py`, `test_paper_venue.py`, `test_mcp_registry.py`, `test_paper_language.py`, `test_harness_parity.py`, JS suites; bump `?v=` cache tokens in `static/index.html` for changed panel scripts; add `docs/` page + index row for terminal platforms; version 0.69.0 + CHANGELOG section
 
 ## Log
 
@@ -27,3 +27,5 @@ Branch: feat/spark-to-paper-enhancements. Delivery: reviewable slices (~400 auth
 - L2 (2026-11-09) Engram observations recorded: #2880 (CLI terminal activation), #2881 (Spark-To-Paper enhancement plan), #2882 (Problem tree & UI activation).
 - L3 (2026-11-09) Plan synchronized to Beelink (andresmarino@100.91.199.72) via Engram Cloud Sync and repository sync.
 - L4 (2026-11-10) User request (verbatim): "revisa [artifact paths] ... y analiza y ajusta el plan alli dispuesto, mira si se puede morjoar algo, ajusta e implementalo". Evidence-based plan revision: S1 paths corrected (`skills/_core/figure/diagram_audit.py`; SVG pipeline is net-new; contrast named as new check); S5 rewritten as Linux backends (agent selection already ships); S6 auto-activate replaced by UI activation prompt to preserve the cookie login invariant; S4 redesigned from vendored templates to machine-readable catalog data per the no-shipped-document-class policy; S2 split CLI (Semantic Scholar resolver) vs agent-side (ASTA MCP); T1 split into T1a/T1b; T5 given named tests, docs page, `?v=` bumps, and version 0.69.0.
+- L5 (2026-11-10) Implementation evidence, slice boundaries: T1a Linux launch backends (commit bd5052ff, 185-line slice with doc revision 2d2f03d8); T1b problem tree inversion + activation banner + Linux labels (2a6af90a, ~87-line slice); T2 stdlib SVG audit + `diagram_cli.py audit-svg` (11e41aba); T3 Semantic Scholar resolver + ASTA doc + Anti-Skim/HALLUCINATION prompts across 4 projections (294e9b82); T4 venue catalog JSON + `venue catalog` verb + refusal roster 213->215 (19a6f4ce + ef56b375). All named suites green: test_command_center_terminal (40), test_svg_audit (22+CLI), test_diagram_audit, test_paper_resolve (11), test_paper_venue (99), test_mcp_docs/registry (23), test_paper_language/test_harness_parity (29), test_journal_finder (210), test_paper_writing RefusalRoster (5). NOTE: delegation to gentle-ai-worker was rejected by the runtime (no `Spec: odd/tasks/<feature>.md, T<n>` match), so T2-T4 were implemented inline by the parent per the runtime's own instruction.
+- L6 (2026-11-10) T5 verification and release: docs/terminals.md + index row; version 0.69.0 and CHANGELOG on chore/release-0.69.0 per docs/releasing.md; `?v=0.69.0` cache tokens on every static panel asset.
