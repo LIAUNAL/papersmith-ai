@@ -11,6 +11,21 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.70.0
+
+- New Command Center panel **Agents Office** (`smith ui`): a measured
+  `GET /api/office/state` snapshot (roster with each agent's availability,
+  live session facts and phase-run activity, the orchestrator stretch, and
+  Engram availability plus a bounded ring of observed `mem_*`/`engram`
+  interactions), and a vanilla-JS 2.5D isometric canvas office — orchestrator
+  desk at the center, one desk per smith agent, a grand-brain memory area for
+  Engram, pulsing flow lines while agents work or memory is touched. Agent
+  desks show role and model where measurable, and a click opens a read-only
+  task card (phase-run instruction, session or last activity; unmeasured
+  fields stay `unknown`). The panel stays read-only: no close, no input, no
+  destructive action.
+- New docs section in `docs/terminals.md` ("The Agents Office panel").
+
 ## 0.69.0
 
 - Cross-platform terminal launch: `detect_tools`/`launch_external` probe GNOME
