@@ -25,6 +25,7 @@ import os
 import platform
 import re
 import secrets
+import shlex
 import shutil
 import stat
 import signal
@@ -335,17 +336,56 @@ def _app_installed(name: str) -> bool:
                for base in (Path("/Applications"), Path.home() / "Applications"))
 
 
+#: Terminal emulators probed on PATH outside macOS, in preference order.
+LINUX_TERMINALS = ("ghostty", "wezterm", "gnome-terminal", "konsole", "x-terminal-emulator")
+
+
+def _preferred_terminal() -> tuple[str | None, str]:
+    """The terminal to launch and the label ``missing`` reports when none is found.
+
+    macOS probes installed applications plus PATH (Ghostty, WezTerm); every
+    other platform probes PATH only, in :data:`LINUX_TERMINALS` order.
+    """
+    if sys.platform == "darwin":
+        ghostty = bool(find_executable("ghostty") or _app_installed("Ghostty"))
+        wezterm = bool(find_executable("wezterm") or _app_installed("WezTerm"))
+        return ("ghostty" if ghostty else ("wezterm" if wezterm else None)), "ghostty"
+    found = {name for name in LINUX_TERMINALS if find_executable(name)}
+    for name in LINUX_TERMINALS:
+        if name in found:
+            return name, "terminal emulator"
+    return None, "terminal emulator"
+
+
+def _linux_launch_argv(terminal_name: str, cwd: str, command: str) -> list[str] | None:
+    if terminal_name == "ghostty":
+        return ["ghostty", f"--working-directory={cwd}", "-e", command]
+    if terminal_name == "wezterm":
+        return ["wezterm", "start", "--cwd", cwd, command]
+    if terminal_name == "gnome-terminal":
+        return ["gnome-terminal", f"--working-directory={cwd}", "--", command]
+    if terminal_name == "konsole":
+        return ["konsole", "--workdir", cwd, "-e", command]
+    if terminal_name == "x-terminal-emulator":
+        # The Debian alternative has no working-directory flag; run the agent
+        # through a shell that cds first, so a path with spaces still lands.
+        return ["x-terminal-emulator", "-e", "/bin/sh", "-c",
+                f"cd {shlex.quote(cwd)} && exec {shlex.quote(command)}"]
+    return None
+
+
 def detect_tools(root: Path) -> dict[str, Any]:
     herdr = find_executable("herdr")
     server_running = bool(herdr and _herdr_running_text(herdr))
-    ghostty = bool(find_executable("ghostty") or _app_installed("Ghostty"))
-    wezterm = bool(find_executable("wezterm") or _app_installed("WezTerm"))
-    preferred = "ghostty" if ghostty else ("wezterm" if wezterm else None)
-    missing = ([] if herdr else ["herdr"]) + ([] if preferred else ["ghostty"])
+    preferred, missing_terminal = _preferred_terminal()
+    missing = ([] if herdr else ["herdr"]) + ([] if preferred else [missing_terminal])
     return {"ready": bool(herdr and preferred), "preferred_terminal": preferred,
             "missing": missing, "monitored_path": str(Path(root).resolve()),
             "herdr": {"installed": bool(herdr), "path": herdr, "server_running": server_running},
-            "ghostty": {"installed": ghostty}, "wezterm": {"installed": wezterm}}
+            "ghostty": {"installed": bool(find_executable("ghostty") or
+                                          sys.platform == "darwin" and _app_installed("Ghostty"))},
+            "wezterm": {"installed": bool(find_executable("wezterm") or
+                                           sys.platform == "darwin" and _app_installed("WezTerm"))}}
 
 
 def _herdr_running_text(herdr: str) -> bool:
@@ -357,26 +397,37 @@ def _herdr_running_text(herdr: str) -> bool:
 
 
 def launch_external(root: Path) -> dict[str, Any]:
-    """Open herdr on this project in Ghostty (preferred) or WezTerm."""
+    """Open herdr on this project in an external terminal (Ghostty preferred).
+
+    macOS launches through ``open``; Linux and other POSIX platforms start the
+    preferred emulator directly (see :data:`LINUX_TERMINALS`).
+    """
     tools = detect_tools(root)
     if not tools["ready"]:
         return {"ok": False, "error": "missing_tools", "missing": tools["missing"]}
     cwd = str(Path(root).resolve())
     ensure_herdr_workspace(root)
     herdr = tools["herdr"]["path"]
+    preferred = tools["preferred_terminal"]
     try:
-        if tools["preferred_terminal"] == "ghostty":
-            subprocess.run(["open", "-na", "Ghostty", "--args", f"--working-directory={cwd}",
-                            "-e", herdr], capture_output=True, timeout=5.0)
-        else:
-            wezterm = find_executable("wezterm")
-            if wezterm:
-                subprocess.Popen([wezterm, "start", "--cwd", cwd, herdr], start_new_session=True)
+        if sys.platform == "darwin":
+            if preferred == "ghostty":
+                subprocess.run(["open", "-na", "Ghostty", "--args", f"--working-directory={cwd}",
+                                "-e", herdr], capture_output=True, timeout=5.0)
             else:
-                subprocess.run(["open", "-a", "WezTerm"], capture_output=True, timeout=5.0)
+                wezterm = find_executable("wezterm")
+                if wezterm:
+                    subprocess.Popen([wezterm, "start", "--cwd", cwd, herdr], start_new_session=True)
+                else:
+                    subprocess.run(["open", "-a", "WezTerm"], capture_output=True, timeout=5.0)
+        else:
+            argv = _linux_launch_argv(preferred, cwd, herdr)
+            if argv is None:
+                return {"ok": False, "error": f"unsupported terminal: {preferred}"}
+            subprocess.Popen(argv, start_new_session=True)
     except (OSError, subprocess.TimeoutExpired) as error:
         return {"ok": False, "error": str(error)}
-    return {"ok": True, "terminal": tools["preferred_terminal"], "cwd": cwd}
+    return {"ok": True, "terminal": preferred, "cwd": cwd}
 
 
 @dataclass
