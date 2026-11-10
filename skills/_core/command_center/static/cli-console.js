@@ -109,6 +109,16 @@
   }
 
   // ---- agents, tools and quick commands ------------------------------------
+  // Friendly labels for the terminals detect_tools may prefer (S5: macOS apps
+  // plus the Linux emulators probed on PATH).
+  const TERMINAL_LABELS = {
+    ghostty: 'Ghostty',
+    wezterm: 'WezTerm',
+    'gnome-terminal': 'GNOME Terminal',
+    konsole: 'Konsole',
+    'x-terminal-emulator': 'Terminal',
+  };
+
   async function loadInfo() {
     if (state.info) return state.info;
     const res = await fetch('/api/terminal/agents');
@@ -134,11 +144,38 @@
       say('cli.disabled', null, 'bad');
     } else if (!state.info.authorized) {
       say('cli.openFromLink', null, 'bad');
+      showActivationBanner();
     } else {
       loadTools();
     }
     renderFooter();
     return state.info;
+  }
+
+  // A dismissible notice for a page the terminal server has not authorized:
+  // the server withholds agents and sessions until the browser holds the cookie
+  // its printed access link sets (server.py terminal login), so say what to do.
+  function showActivationBanner() {
+    if (document.getElementById('cliActivationBanner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'cliActivationBanner';
+    banner.setAttribute('role', 'alert');
+    banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;'
+      + 'background:#7f1d1d;color:#fff;padding:10px 14px;border-radius:8px;'
+      + 'font:14px/1.4 system-ui,sans-serif;max-width:min(90vw,560px);'
+      + 'box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;gap:10px;align-items:center;';
+    const text = document.createElement('span');
+    text.setAttribute('data-i18n', 'cli.activateBanner');
+    text.textContent = t('cli.activateBanner');
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.setAttribute('aria-label', '×');
+    close.title = t('cli.activateBanner');
+    close.style.cssText = 'background:none;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1;padding:0;';
+    close.addEventListener('click', () => banner.remove());
+    banner.append(text, close);
+    document.body.appendChild(banner);
   }
 
   async function loadTools() {
@@ -150,7 +187,8 @@
     }
     const btn = $('btnLaunchExternalTerm');
     if (btn && state.tools) {
-      const name = state.tools.preferred_terminal === 'wezterm' ? 'WezTerm' : 'Ghostty';
+      const name = TERMINAL_LABELS[state.tools.preferred_terminal]
+        || (state.tools.preferred_terminal || 'Terminal');
       btn.textContent = `🖥️ ${name}`;
       btn.disabled = !state.tools.ready;
       btn.title = state.tools.ready

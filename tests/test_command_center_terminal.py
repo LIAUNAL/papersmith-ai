@@ -399,6 +399,39 @@ class DashboardWiringTests(unittest.TestCase):
         self.assertIn("api(`/api/terminal/sessions/${sessionId}`, 'DELETE', {})", script)
 
 
+class ProblemTreeOrderTests(unittest.TestCase):
+    """S6: problem tree order and CLI activation affordances in the static panels."""
+
+    @staticmethod
+    def _static(name: str) -> str:
+        return (Path(server.__file__).parent / "static" / name).read_text()
+
+    def _problem_tree(self) -> str:
+        body = self._static("model-panel.js")
+        return body[body.index("function problemTree"):body.index("function noveltyTree")]
+
+    def test_problem_tree_rows_run_causes_central_effects(self) -> None:
+        block = self._problem_tree()
+        rows = [block.index(f"treeRow(t('conceptTree.{level}')")
+                for level in ("causes", "central", "effects")]
+        self.assertEqual(rows, sorted(rows))
+
+    def test_effect_nodes_still_cite_their_causes(self) -> None:
+        self.assertIn("conceptTree.causedBy", self._problem_tree())
+
+    def test_an_unauthorized_page_gets_a_dismissible_activation_banner(self) -> None:
+        source = self._static("cli-console.js")
+        self.assertIn("cli.activateBanner", source)
+        self.assertIn("showActivationBanner", source)
+        self.assertIn("cliActivationBanner", source)
+        self.assertIn("remove()", source)
+
+    def test_the_launch_button_knows_the_linux_terminals(self) -> None:
+        source = self._static("cli-console.js")
+        for name in ("gnome-terminal", "konsole", "x-terminal-emulator"):
+            self.assertIn(name, source)
+
+
 class BrandingTests(unittest.TestCase):
     STATIC = Path(server.__file__).resolve().parent / "static"
 

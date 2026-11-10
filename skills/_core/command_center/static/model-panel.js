@@ -2,7 +2,7 @@
  *
  * GET /api/model answers `.papersmith/model_spec.json` when the workspace has
  * one, else a neutral specification named after `papersmith.yaml`. This file
- * renders its problem tree (effects, central problem, direct causes), its tree
+ * renders its problem tree (direct causes, central problem, effects), its tree
  * of pillars and hypotheses, novelty pillars, hypotheses, concept-map layers and proof-of-
  * concept experiments, each idea with its SOTA citations (citations.js), and the contribution type the paper-reviewer
  * assigned to the proposal (`contribution_type`); when a part is absent it says what produces it instead
@@ -69,7 +69,7 @@
     return tree && tree.central ? String(tree.central.text || '').trim() : '';
   };
 
-  // Morfeo's tree, read from the top: effects, central problem, direct causes.
+  // Morfeo's tree, read from the top: direct causes, central problem, effects.
   function problemTree(spec) {
     const central = centralText(spec);
     if (!central) return treeFindings();
@@ -86,9 +86,9 @@
     }).join('');
     return `<div class="concept-tree">
         <h4 class="concept-tree__title">${esc(t('conceptTree.problem'))}</h4>
-        ${treeRow(t('conceptTree.effects'), effects)}
-        ${treeRow(t('conceptTree.central'), treeNode('central', t('conceptTree.centralBadge'), central, 'problem:central'))}
         ${treeRow(t('conceptTree.causes'), causes)}
+        ${treeRow(t('conceptTree.central'), treeNode('central', t('conceptTree.centralBadge'), central, 'problem:central'))}
+        ${treeRow(t('conceptTree.effects'), effects)}
       </div>${treeFindings()}`;
   }
 
