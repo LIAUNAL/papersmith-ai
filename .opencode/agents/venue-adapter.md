@@ -11,6 +11,7 @@ permission:
   webfetch: allow
   websearch: allow
   task: deny
+  "asta_*": deny
 ---
 
 # Venue Adapter — the journal-adaptation stretch

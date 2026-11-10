@@ -383,10 +383,27 @@ COLAB_MCP_COMMAND = "uvx"
 COLAB_MCP_ARGS = ("git+https://github.com/googlecolab/colab-mcp@b9ab3899e0f1fa493390b1fd6d54aa2e464ecdf1",)
 COLAB_MCP_TIMEOUT_MS = 30000
 
+#: Ai2's Asta (https://allenai.org/asta/resources/mcp): the Semantic Scholar
+#: corpus as MCP tools over streamable HTTP, for the agents' DISCOVERY only; the
+#: CLI reaches the same corpus by itself (``paper_resolve``) and never reads
+#: these files. No file holds the key: every entry names :data:`ASTA_KEY_ENV`,
+#: which the dashboard exports into the sessions it starts from the per-user
+#: store (``smith keys set asta``). Unset, Claude and OpenCode send an empty
+#: header (Asta answers id lookups without a key) and mcp-remote sends its
+#: literal placeholder (Asta answers 403 at once). Searches without a key stall,
+#: so the agents that may call it check ``smith keys status asta --json`` first,
+#: and Claude's per-call ``timeout`` cuts a stray call. Registered
+#: unconditionally: the files are committed and must read the same for every
+#: collaborator; whether Asta is used is the role's and the key's to decide.
+ASTA_MCP_SERVER = "asta"
+ASTA_MCP_URL = "https://asta-tools.allen.ai/mcp/v1"
+ASTA_KEY_ENV = "ASTA_API_KEY"
+ASTA_KEY_HEADER = "x-api-key"
+ASTA_MCP_TIMEOUT_MS = 60000
+
 #: Each harness's project MCP file and the entries it takes. These files belong
 #: to the workspace: ``init`` and ``upgrade`` add or refresh only the
-#: :data:`BANCO_LIA_SERVER`, :data:`KAGGLE_MCP_SERVER` and :data:`COLAB_MCP_SERVER`
-#: entries and keep every other server.
+#: :data:`MANAGED_MCP_SERVERS` entries and keep every other server.
 MCP_CONFIG_FILES = {
     "claude": ".mcp.json",
     "pi": ".pi/mcp.json",
@@ -418,9 +435,42 @@ def _colab_entry(tool: str) -> dict[str, Any]:
     return entry
 
 
+def _asta_entry(tool: str) -> dict[str, Any]:
+    if tool == "claude":
+        # `:-` keeps the header empty (keyless) when the key is not exported, and
+        # `timeout` is a hard per-call wall-clock cap only Claude's file expresses.
+        return {"type": "http", "url": ASTA_MCP_URL,
+                "headers": {ASTA_KEY_HEADER: f"${{{ASTA_KEY_ENV}:-}}"},
+                "timeout": ASTA_MCP_TIMEOUT_MS}
+    return {"command": "npx",
+            "args": ["-y", MCP_REMOTE_PACKAGE, ASTA_MCP_URL,
+                     "--header", f"{ASTA_KEY_HEADER}:${{{ASTA_KEY_ENV}}}"]}
+
+
+#: Every server ``init`` and ``upgrade`` register, in file order. One list, so
+#: the warning, the dashboard and the projections never name a different set.
+MANAGED_MCP_SERVERS: tuple[str, ...] = (BANCO_LIA_SERVER, KAGGLE_MCP_SERVER, COLAB_MCP_SERVER,
+                                        ASTA_MCP_SERVER)
+_MCP_ENTRY_BUILDERS = {BANCO_LIA_SERVER: _banco_lia_entry, KAGGLE_MCP_SERVER: _kaggle_entry,
+                       COLAB_MCP_SERVER: _colab_entry, ASTA_MCP_SERVER: _asta_entry}
+#: Managed servers whose tools a subagent reaches only through a grant its own
+#: source definition declares (`mcp__<server>__*`).
+GRANTABLE_MCP_SERVERS: tuple[str, ...] = (ASTA_MCP_SERVER,)
+
+
 def _mcp_entries(tool: str) -> dict[str, dict[str, Any]]:
-    return {BANCO_LIA_SERVER: _banco_lia_entry(tool), KAGGLE_MCP_SERVER: _kaggle_entry(tool),
-            COLAB_MCP_SERVER: _colab_entry(tool)}
+    return {name: _MCP_ENTRY_BUILDERS[name](tool) for name in MANAGED_MCP_SERVERS}
+
+
+def managed_mcp_grant(tool: str) -> str | None:
+    """The grantable managed server a Claude tool token grants whole
+    (`mcp__asta__*`), or None: any other server is not one a projection can carry."""
+    token = tool.strip()
+    prefix, suffix = "mcp__", "__*"
+    if not (token.startswith(prefix) and token.endswith(suffix)):
+        return None
+    server = token[len(prefix):-len(suffix)]
+    return server if server in GRANTABLE_MCP_SERVERS else None
 
 
 def ensure_mcp_servers(workspace: Path, tools: Sequence[str], *,
@@ -445,9 +495,9 @@ def ensure_mcp_servers(workspace: Path, tools: Sequence[str], *,
                 data = None
             if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
                 if warnings is not None:
+                    named = ", ".join(MANAGED_MCP_SERVERS[:-1]) + f" and {MANAGED_MCP_SERVERS[-1]}"
                     warnings.append(f"{relpath} is not a JSON object with an `mcpServers` object; "
-                                    f"add the {BANCO_LIA_SERVER}, {KAGGLE_MCP_SERVER} and "
-                                    f"{COLAB_MCP_SERVER} servers by hand")
+                                    f"add the {named} servers by hand")
                 continue
         servers = data.setdefault("mcpServers", {})
         entries = _mcp_entries(tool)
@@ -625,6 +675,12 @@ def _pi_tools_line(value: str) -> tuple[str, list[str]]:
         tool = item.strip()
         if not tool:
             continue
+        if managed_mcp_grant(tool):
+            # pi-subagents' own grant (`mcp:<server>`) fails the launch when the
+            # server is not connected, so a scout that works today would stop
+            # working; Pi's agents discover through the web instead, and Pi's
+            # main session still has the server (docs/harness-support-matrix.md).
+            continue
         mapped.append(PI_TOOL_MAP.get(tool.lower(), tool.lower()))
     return "tools:\n" + "\n".join(f"  - {name}" for name in mapped), notes
 
@@ -731,9 +787,14 @@ def _translate_agent_for_opencode(
     )
     if tools_value is not None:
         granted: set[str] = set()
+        mcp_granted: set[str] = set()
         for item in tools_value.split(","):
             tool = item.strip()
             if not tool:
+                continue
+            server = managed_mcp_grant(tool)
+            if server:
+                mcp_granted.add(server)
                 continue
             keys = OPENCODE_TOOL_PERMISSIONS.get(tool.lower())
             if keys is None:
@@ -744,6 +805,12 @@ def _translate_agent_for_opencode(
         out.extend(
             f"  {key}: {'allow' if key in granted else 'deny'}"
             for key in OPENCODE_PERMISSION_KEYS
+        )
+        # OpenCode lets every agent call every MCP tool by default (`<server>_<tool>`):
+        # a grantable server is decided per agent, as Claude's allow-list does.
+        out.extend(
+            f'  "{server}_*": {"allow" if server in mcp_granted else "deny"}'
+            for server in GRANTABLE_MCP_SERVERS
         )
     body = "\n".join(rest).replace(".claude/skills/", "skills/")
     text = "---\n" + "\n".join(out) + "\n---\n" + body
@@ -782,6 +849,11 @@ def _translate_agent_for_antigravity(
     for item in (tools_value or "").split(","):
         tool = item.strip()
         if not tool:
+            continue
+        if managed_mcp_grant(tool):
+            # Antigravity documents no per-server grant for a file-defined
+            # subagent, and an unmapped tool name may hang it: carried by none,
+            # its agents discover through the web (docs/harness-support-matrix.md).
             continue
         names = ANTIGRAVITY_TOOL_MAP.get(tool.lower())
         if names is None:

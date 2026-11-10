@@ -40,10 +40,12 @@ is this stretch's own end and nothing more.
 
 Only the pool's abstracts count: `sota-pool/candidates.json`, each entry
 with its verbatim abstract, source, and retrieval date. A title without an
-abstract is not evidence. There are no ingested papers at this stage, and
-that is by design — **every grade below is provisional until ingestion**,
-and the report says so on every grade, not once in a preamble a reader
-could miss.
+abstract is not evidence. Nor is a connector's own text: a summary a model
+wrote (Asta's `tldr`) or a passage a search picked (`snippet_search`) never
+grades a claim and is never quoted. There are no ingested papers at this
+stage, and that is by design — **every grade below is provisional until
+ingestion**, and the report says so on every grade, not once in a preamble a
+reader could miss.
 
 ## How to grade
 

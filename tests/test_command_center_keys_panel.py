@@ -154,6 +154,15 @@ class KeysPanelTests(unittest.TestCase):
         result = self.node("await KeysPanel.save('asta', true); out(calls.map((c) => c.method));", routes=routes)
         assert result == ["GET"]
 
+    def test_the_asta_card_says_where_agents_reach_the_server(self) -> None:
+        body = payload(state("asta"), state("openalex"))
+        body["asta_mcp"] = {"server": "asta", "registered": [".mcp.json", "opencode.json"]}
+        html = self.node("out(panel.innerHTML);", routes=[["GET", "/api/terminal/keys", {"status": 200, "body": body}]])
+        assert "registered in: .mcp.json, opencode.json" in html
+        body["asta_mcp"]["registered"] = []
+        html = self.node("out(panel.innerHTML);", routes=[["GET", "/api/terminal/keys", {"status": 200, "body": body}]])
+        assert "run smith upgrade" in html
+
     def test_a_refused_route_says_to_use_the_terminal(self) -> None:
         routes = [["GET", "/api/terminal/keys", {"status": 403, "body": {"detail": "refused"}}]]
         html = self.node("out(panel.innerHTML);", routes=routes)

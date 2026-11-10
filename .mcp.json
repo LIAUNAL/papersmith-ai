@@ -1,5 +1,5 @@
 {
-  "//": "Discovery connectors for paper-writing's literature-search capability (no-claim-without-a-source-that-holds-it). Agent-side only -- the CLI never reads this file and holds no resolution credential of its own (literature-search, Requirement: Discovery Runs Through the Agent's MCP). This is a starter scaffold naming the role, not a working credential: an operator wires a real academic-search MCP server here and fills in its own command/args/env. Resolution and metadata retrieval stay CLI-side over stdlib urllib against OpenAlex/Crossref/arXiv -- see papersmith.yaml's paper_writing.roles.resolution.",
+  "//": "Discovery connectors for the agent side of literature-search (Requirement: Discovery Runs Through the Agent's MCP); no skill script reads this file. banco-lia is the lab's bank: continuity context, never SOTA evidence. asta is Ai2's Asta Scientific Corpus Tools (the Semantic Scholar corpus) over streamable HTTP, the same entry smith init/upgrade write into every workspace: its x-api-key header comes from ASTA_API_KEY (stored with smith keys or the dashboard's API keys panel, never in this file) and is empty when unset; agents search it only when `smith keys status asta --json` reports the key loaded in their session, and the 60 s timeout cuts a stray keyless search. Ai2 licenses it for academic, non-commercial use with attribution; the key is personal. Resolution stays CLI-side (paper_resolve.py over stdlib urllib): see papersmith.yaml's paper_writing.roles.resolution.",
   "mcpServers": {
     "banco-lia": {
       "type": "stdio",
@@ -9,6 +9,14 @@
         "git+https://github.com/LIAUNAL/bancoProyectosPapersLIA",
         "banco-lia-mcp"
       ]
+    },
+    "asta": {
+      "type": "http",
+      "url": "https://asta-tools.allen.ai/mcp/v1",
+      "headers": {
+        "x-api-key": "${ASTA_API_KEY:-}"
+      },
+      "timeout": 60000
     }
   }
 }

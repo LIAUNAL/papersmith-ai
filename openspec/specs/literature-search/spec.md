@@ -60,15 +60,71 @@ block id, density number, or placement rule MUST appear in search or resolution 
 
 ### Requirement: Discovery Runs Through the Agent's MCP
 
-Discovery search MUST run through the agent's configured MCP servers (the operator's
-`.mcp.json`), never through the CLI. A hallucinated discovery candidate is acceptable
-input because it is re-checked at resolution.
+Discovery search MUST run through the MCP servers the agent's harness registers for
+the workspace (`.mcp.json` for Claude Code, `opencode.json` for OpenCode, `.pi/mcp.json`
+for Pi, `.agents/mcp_config.json` for Antigravity), never through the CLI. A
+hallucinated discovery candidate is acceptable input because it is re-checked at
+resolution. A discovery server that takes a credential MUST read it from an
+environment variable its entry names; no committed file and no agent command line MUST
+hold the value. An agent MUST NOT call a keyed connector's tools unless the key is
+loaded in its own session, and MUST then discover through the role's remaining
+connectors. Text a discovery connector generates or excerpts (a summary, a passage
+snippet) MUST NOT be stored as an abstract, quoted, or used as a verdict span.
 
 #### Scenario: Discovery candidate reaches resolution
 
 - GIVEN an MCP discovery call returns a candidate source
 - WHEN the citation pipeline processes it
 - THEN the candidate is passed to CLI-side resolution before any citation is accepted
+
+#### Scenario: Every declared harness registers the server, the key only by reference
+
+- GIVEN a workspace declaring Claude Code, OpenCode, Pi and Antigravity
+- WHEN `smith init` or `smith upgrade` runs
+- THEN each harness's MCP file registers every managed discovery server, and its
+  credential appears only as a reference to its environment variable
+
+#### Scenario: No key in the session, no keyed call
+
+- GIVEN the `discovery` role lists `asta` and the session holds no Asta key
+- WHEN the scouting stretch discovers candidates
+- THEN it calls no `asta` tool, discovers through the other connectors and then the
+  web, and its report says so
+
+#### Scenario: Generated text never becomes an abstract
+
+- GIVEN a connector returns a generated summary or a snippet for a candidate
+- WHEN the candidate enters the pool
+- THEN its abstract is the one CLI-side resolution returned, and the summary or
+  snippet is in no pool field
+
+### Requirement: An Agent's Discovery Grant Is Carried Only Where It Fails Safe
+
+A delegated agent MUST reach a managed discovery server only through the grant its
+source definition declares (`mcp__<server>__*`). A harness projection MUST carry it
+through the harness's documented per-agent mechanism and MUST decide the server
+explicitly where the harness grants MCP tools by default. A harness that documents no
+per-agent grant, or whose grant fails the launch when the server is not connected,
+MUST carry none and emit no note; its agents discover through the web, and the
+support matrix MUST say so.
+
+#### Scenario: OpenCode allows the granted server and denies it elsewhere
+
+- GIVEN an agent whose source grants `mcp__asta__*` and one that does not
+- WHEN the OpenCode projection renders
+- THEN the first agent's permission allows `asta_*` and the second's denies it
+
+#### Scenario: Pi and Antigravity carry no grant and stay quiet
+
+- GIVEN the same granting agent
+- WHEN the Pi and Antigravity projections render
+- THEN neither lists an MCP tool and no projection note names it
+
+#### Scenario: The inspector binds a managed grant only
+
+- GIVEN agents requesting `mcp__asta__*`, `mcp__mystery__*` and `mcp__asta__get_paper`
+- WHEN agent integrity is checked
+- THEN the first is WIRED and the other two are TOOL_UNBOUND
 
 ### Requirement: Resolution Runs Through the CLI Over Stdlib `urllib`
 

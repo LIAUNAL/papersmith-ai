@@ -11,6 +11,7 @@ permission:
   webfetch: deny
   websearch: deny
   task: deny
+  "asta_*": deny
 ---
 
 # Experimental implementation — the build stretch

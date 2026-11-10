@@ -55,8 +55,9 @@ def _environment() -> dict[str, str]:
     return {key: env.get(key, "") for key in ("system", "shell", "profile_file", "note")}
 
 
-def status_payload(sessions_open: int = 0) -> dict[str, Any]:
-    """What the keys panel shows. Never a key."""
+def status_payload(sessions_open: int = 0, root: Path | None = None) -> dict[str, Any]:
+    """What the keys panel shows. Never a key. With the workspace ``root``, also
+    which harness files register the Asta MCP server the agents search."""
     keys = api_keys()
     environment = _environment()
     states = []
@@ -64,9 +65,14 @@ def status_payload(sessions_open: int = 0) -> dict[str, Any]:
         state = keys.status(provider)
         state["export_command"] = keys.export_command(provider, environment["shell"] or "sh")
         states.append(state)
-    return {"ok": True, "store_dir": str(keys.store_dir()),
-            "override": bool(states and states[0]["override"]),
-            "environment": environment, "keys": states, "sessions_open": int(sessions_open)}
+    payload = {"ok": True, "store_dir": str(keys.store_dir()),
+               "override": bool(states and states[0]["override"]),
+               "environment": environment, "keys": states, "sessions_open": int(sessions_open)}
+    if root is not None:
+        from .terminal import asta_mcp_status
+
+        payload["asta_mcp"] = asta_mcp_status(root)
+    return payload
 
 
 def store(provider: str, value: Any, *, verify: bool = False) -> tuple[int, dict[str, Any]]:

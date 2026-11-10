@@ -34,6 +34,14 @@
         "git+https://github.com/googlecolab/colab-mcp@b9ab3899e0f1fa493390b1fd6d54aa2e464ecdf1"
       ],
       "enabled": true
+    },
+    "asta": {
+      "type": "remote",
+      "url": "https://asta-tools.allen.ai/mcp/v1",
+      "headers": {
+        "x-api-key": "{env:ASTA_API_KEY}"
+      },
+      "enabled": true
     }
   }
 }

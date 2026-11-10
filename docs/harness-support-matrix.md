@@ -119,7 +119,7 @@ and `.agents/rules/*.md`) hold. The generated Antigravity rules/routing entrypoi
 | Commands | supported (legacy format) | `.claude/commands/*.md`; "Custom commands have been merged into skills"; same frontmatter minus `name`/`paths`; `$ARGUMENTS`, `$N` | https://code.claude.com/docs/en/skills |
 | Agents | supported | `.claude/agents/*.md`; frontmatter `name`, `description` (required), `tools` (comma-separated), `model`, `permissionMode`, `skills`, `memory`, `mcpServers`, `maxTurns` | https://code.claude.com/docs/en/sub-agents |
 | Hooks | supported | `.claude/settings.json` (shareable), `.claude/settings.local.json`, `~/.claude/settings.json`; also plugin `hooks.json`, skill and subagent frontmatter. `PreToolUse` blocks via exit code 2 or JSON `permissionDecision: "deny"`. Documentation only here: this repo never writes `settings.json` | https://code.claude.com/docs/en/hooks |
-| MCP / config | supported | `.mcp.json` at the project root (`mcpServers`); requires workspace trust. `smith init`/`upgrade` add only the servers papersmith manages (`banco-lia`, `kaggle`, `colab`) and keep the rest | https://code.claude.com/docs/en/mcp |
+| MCP / config | supported | `.mcp.json` at the project root (`mcpServers`); requires workspace trust. `smith init`/`upgrade` add only the servers papersmith manages (`banco-lia`, `kaggle`, `colab`, `asta`) and keep the rest. A subagent with an explicit `tools:` list reaches a server only through `mcp__<server>__*` (the scout's grant for `asta`) | https://code.claude.com/docs/en/mcp ; https://code.claude.com/docs/en/sub-agents |
 
 ## Contradicted or unsupported repo claims
 
@@ -209,3 +209,12 @@ raw-text check): `.antigravity/*` is no longer generated; Antigravity uses
 - Antigravity: unsupported until the hook input and output protocol is read raw;
   see `docs/guard-hooks.md`.
 - OpenCode: unchanged.
+
+## Re-verification 2026-11-09: a managed MCP server granted to one subagent (`asta`)
+
+| Harness | Documented per-agent MCP grant | What papersmith projects for `mcp__asta__*` |
+| --- | --- | --- |
+| Claude Code | An explicit `tools:` list drops every MCP tool it does not name; a whole server is granted as `mcp__<server>__*` (https://code.claude.com/docs/en/sub-agents) | The grant as written (`.claude/agents/sota-scout.md`) |
+| OpenCode | Every agent may call every MCP tool by default; permission keys are tool names with `*` patterns, MCP tools named `<server>_<tool>` (https://opencode.ai/docs/agents/ ; https://opencode.ai/docs/mcp-servers/) | `"asta_*": allow` for the granting agent, `"asta_*": deny` for every other agent with a `tools` line |
+| Pi (pi-subagents) | `mcp:<server>` inside `tools`, which fails the launch when the server is not connected | Nothing, silently: the scout keeps web search; the main session still has Asta |
+| Antigravity | No per-server grant for a file-defined subagent; an unmapped tool name may hang it | Nothing, silently: the scout keeps `search_web`; the main session still has Asta |
