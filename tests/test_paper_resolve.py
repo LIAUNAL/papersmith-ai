@@ -160,5 +160,85 @@ class PublicationYearTests(unittest.TestCase):
             read = paper_resolve.read_cached_metadata(paper_dir, fresh["metadata_digest"])
             self.assertEqual(read, legacy)
 
+class SemanticScholarResolverTests(unittest.TestCase):
+    """The Semantic Scholar Graph API connector: keyless, scheme-prefixed,
+    same seven metadata fields the other parsers answer (S2 of
+    odd/tasks/spark-to-paper-enhancements.md). The transport is stubbed."""
+
+    CONFIG = {
+        "paper_writing": {
+            "roles": {"resolution": ["semantic-scholar"], "full-text": [], "discovery": []},
+            "contact": "",
+        }
+    }
+
+    RECORD = json.dumps({
+        "paperId": "abc123", "title": "Deep Residual Learning",
+        "year": 2015, "venue": "arXiv", "abstract": "We present a residual learning framework.",
+        "authors": [{"name": "Kaiming He"}, {"name": None}, {"name": " Xiangyu Zhang "}],
+        "externalIds": {"DOI": "10.1109/CVPR.2016.90", "ArXiv": "1512.03385"},
+        "openAccessPdf": {"url": "https://arxiv.org/pdf/1512.03385"},
+    }).encode()
+
+    def stub_get(self, payload: bytes) -> list[str]:
+        seen: list[str] = []
+        original = paper_resolve._get
+
+        def fake(url: str, *, config: dict) -> bytes:
+            seen.append(url)
+            return payload
+
+        paper_resolve._get = fake
+        self.addCleanup(setattr, paper_resolve, "_get", original)
+        return seen
+
+    def test_a_bare_doi_queries_the_doi_prefixed_endpoint(self) -> None:
+        seen = self.stub_get(self.RECORD)
+        result = paper_resolve.resolve_identifier(
+            "10.1109/CVPR.2016.90", resolver="semantic-scholar", role="resolution",
+            config=self.CONFIG)
+        assert "graph/v1/paper/DOI:10.1109%2FCVPR.2016.90" in seen[0].replace("%2F", "%2F") or \
+            "graph/v1/paper/DOI:10.1109/CVPR.2016.90" in seen[0], seen
+        assert "x-api-key" not in seen[0]
+        assert result["title"] == "Deep Residual Learning", result
+        assert result["doi"] == "10.1109/CVPR.2016.90", result
+        assert result["year"] == 2015, result
+        assert result["venue"] == "arXiv", result
+        assert result["authors"] == ["Kaiming He", "Xiangyu Zhang"], result
+        assert result["abstract"].startswith("We present"), result
+        assert result["full_text_url"] == "https://arxiv.org/pdf/1512.03385", result
+
+    def test_an_arxiv_identifier_queries_the_arxiv_scheme(self) -> None:
+        seen = self.stub_get(self.RECORD)
+        paper_resolve.resolve_identifier(
+            "arXiv:1512.03385", resolver="semantic-scholar", role="resolution",
+            config=self.CONFIG)
+        assert "graph/v1/paper/ARXIV:1512.03385" in seen[0], seen
+
+    def test_not_configured_for_the_role_refuses_by_name(self) -> None:
+        with self.assertRaises(Refused) as ctx:
+            paper_resolve.resolve_identifier(
+                "10.1109/CVPR.2016.90", resolver="semantic-scholar", role="resolution",
+                config=CONFIG)
+        assert ctx.exception.code == "RESOLVER_ROLE_EMPTY", ctx.exception.code
+
+    def test_transport_failure_refuses_resolver_unreachable(self) -> None:
+        original = paper_resolve._get
+
+        def fake(url: str, *, config: dict) -> bytes:
+            raise paper_resolve._Unreachable("https://api.semanticscholar.org: down")
+
+        paper_resolve._get = fake
+        self.addCleanup(setattr, paper_resolve, "_get", original)
+        with self.assertRaises(Refused) as ctx:
+            paper_resolve.resolve_identifier(
+                "10.1109/CVPR.2016.90", resolver="semantic-scholar", role="resolution",
+                config=self.CONFIG)
+        assert ctx.exception.code == "RESOLVER_UNREACHABLE", ctx.exception.code
+
+    def test_semantic_scholar_is_a_registered_resolver(self) -> None:
+        assert "semantic-scholar" in paper_resolve.RESOLVERS
+
+
 if __name__ == "__main__":
     unittest.main()

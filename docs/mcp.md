@@ -151,6 +151,32 @@ Or register via CLI:
 agy mcp add papersmith -- smith mcp serve --workspace /path/to/your/workspace
 ```
 
+### Allen AI ASTA (optional, agent-side citation grounding)
+
+[ASTA](https://asta.allenai.org) is Allen AI's free scientific-search MCP
+server. It is an *agent-side* helper, exactly like the clients below: the CLI
+never reads `.mcp.json` (see [Protocol](#protocol)), so ASTA is never part of
+the CLI's citation-resolution path — resolution still runs through the CLI
+over OpenAlex, Crossref, arXiv and Semantic Scholar (keyless). Use ASTA from
+the agent to ground citations during drafting and review: retrieve candidate
+sources, quote-verify claims against them, and flag every citation the
+retrieved sources do not support. Adding it is a per-user client edit, not a
+forge change:
+
+```json
+{
+  "mcpServers": {
+    "asta": {
+      "url": "https://asta.allenai.org/api/mcp"
+    }
+  }
+}
+```
+
+Check ASTA's own documentation for the current endpoint and any account
+step; if the server is not configured, the forge's zero-cost citation path
+still works without it.
+
 ## Protocol
 
 - Revision `2026-07-28`, with `2025-11-25` accepted for compatibility. Any other

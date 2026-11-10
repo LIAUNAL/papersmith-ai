@@ -605,6 +605,8 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "VENUE_SLUG_INVALID": INVOCATION_DEFECT,
     "VENUE_EXISTS": WORK_STATE,
     "VENUE_ABSENT": WORK_STATE,
+    "VENUE_CATALOG_INVALID": WORK_STATE,
+    "VENUE_CATALOG_UNKNOWN": INVOCATION_DEFECT,
     "SELECT_MODE_REQUIRED": INVOCATION_DEFECT,
     "SELECT_MODE_CONFLICT": INVOCATION_DEFECT,
     "ISSN_INVALID": INVOCATION_DEFECT,
@@ -3108,6 +3110,8 @@ def cmd_venue(args: argparse.Namespace) -> dict:
         return paper_venue.build(paper_dir, args.slug)
     if verb == "status":
         return paper_venue.status(paper_dir, args.slug)
+    if verb == "catalog":
+        return paper_venue.catalog(getattr(args, "slug", None))
     return paper_venue.list_venues(paper_dir)
 
 
@@ -4158,6 +4162,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_venue_acquire = _venue_verb("acquire", "record the document class: TeX Live by name, or a publisher template")
     p_venue_acquire.add_argument("--texlive", default=None, help="a class TeX Live carries (resolved with kpsewhich)")
     p_venue_acquire.add_argument("--file", default=None, help="a .zip/.cls/.sty/.bst/.tex downloaded by the operator")
+
+    p_venue_catalog = _venue_verb("catalog", "read-only venue catalog: every shipped venue entry, "
+                                               "or one venue's facts plus its acquire command (with --slug)",
+                                  slug=False)
+    p_venue_catalog.add_argument("--slug", default=None,
+                                 help="one venue's facts; omit for the whole catalog")
     p_venue_acquire.add_argument("--url", default=None, help="where --file came from (http or https)")
 
     p_venue_diff = _venue_verb("diff", "audit smith's contracts and manuscript against the requirements; writes audit.json")

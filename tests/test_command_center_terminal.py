@@ -159,6 +159,81 @@ class ManagerTests(unittest.TestCase):
 
 
 @unittest.skipUnless(POSIX, "the support terminal needs a POSIX pty")
+class LauncherPlatformTests(unittest.TestCase):
+    """S5: cross-platform external terminal launching (macOS unchanged, Linux added)."""
+
+    ALL = {"ghostty", "wezterm", "gnome-terminal", "konsole",
+           "x-terminal-emulator", "herdr"}
+
+    def _detect(self, platform_name: str, available: set[str]) -> dict:
+        finder = lambda name: f"/usr/bin/{name}" if name in available else None  # noqa: E731
+        with mock.patch.object(terminal, "find_executable", side_effect=finder), \
+                mock.patch.object(terminal, "_herdr_running_text", return_value=True), \
+                mock.patch.object(sys, "platform", platform_name):
+            return terminal.detect_tools(Path("/tmp/workspace"))
+
+    def test_linux_detects_gnome_terminal(self) -> None:
+        tools = self._detect("linux", {"herdr", "gnome-terminal", "konsole"})
+        self.assertTrue(tools["ready"])
+        self.assertEqual(tools["preferred_terminal"], "gnome-terminal")
+
+    def test_linux_priority_prefers_ghostty_then_wezterm(self) -> None:
+        self.assertEqual(self._detect("linux", {"herdr", "wezterm",
+                                                "x-terminal-emulator"})["preferred_terminal"], "wezterm")
+        self.assertEqual(self._detect("linux", {"herdr", "x-terminal-emulator"})["preferred_terminal"],
+                         "x-terminal-emulator")
+
+    def test_linux_without_a_terminal_reports_it_missing(self) -> None:
+        tools = self._detect("linux", {"herdr"})
+        self.assertFalse(tools["ready"])
+        self.assertIn("terminal emulator", tools["missing"])
+
+    def test_linux_launch_uses_gnome_terminal_without_open(self) -> None:
+        with mock.patch.object(terminal, "find_executable",
+                               side_effect=lambda n: f"/usr/bin/{n}" if n in {"herdr", "gnome-terminal"} else None), \
+                mock.patch.object(terminal, "_herdr_running_text", return_value=True), \
+                mock.patch.object(terminal, "ensure_herdr_workspace",
+                                  return_value={"ok": True, "action": "focused"}), \
+                mock.patch.object(sys, "platform", "linux"), \
+                mock.patch.object(terminal.subprocess, "Popen") as popen:
+            result = terminal.launch_external(Path("/tmp/workspace"))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["terminal"], "gnome-terminal")
+        argv = popen.call_args[0][0]
+        self.assertEqual(argv, ["gnome-terminal", "--working-directory=/tmp/workspace",
+                                "--", "/usr/bin/herdr"])
+        self.assertNotIn("open", argv)
+
+    def test_linux_x_terminal_wraps_the_command_in_a_shell(self) -> None:
+        with mock.patch.object(terminal, "find_executable",
+                               side_effect=lambda n: f"/usr/bin/{n}" if n in {"herdr", "x-terminal-emulator"} else None), \
+                mock.patch.object(terminal, "_herdr_running_text", return_value=True), \
+                mock.patch.object(terminal, "ensure_herdr_workspace",
+                                  return_value={"ok": True, "action": "focused"}), \
+                mock.patch.object(sys, "platform", "linux"), \
+                mock.patch.object(terminal.subprocess, "Popen") as popen:
+            result = terminal.launch_external(Path("/tmp/workspace"))
+        self.assertTrue(result["ok"])
+        argv = popen.call_args[0][0]
+        self.assertEqual(argv[:2], ["x-terminal-emulator", "-e"])
+        self.assertIn("cd /tmp/workspace", argv[-1])
+
+    def test_macos_launch_still_uses_open(self) -> None:
+        with mock.patch.object(terminal, "find_executable",
+                               side_effect=lambda n: "/usr/bin/herdr" if n == "herdr" else None), \
+                mock.patch.object(terminal, "_herdr_running_text", return_value=True), \
+                mock.patch.object(terminal, "ensure_herdr_workspace",
+                                  return_value={"ok": True, "action": "focused"}), \
+                mock.patch.object(terminal, "_app_installed",
+                                  side_effect=lambda name: name == "Ghostty"), \
+                mock.patch.object(sys, "platform", "darwin"), \
+                mock.patch.object(terminal.subprocess, "run") as run:
+            result = terminal.launch_external(Path("/tmp/workspace"))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["terminal"], "ghostty")
+        self.assertEqual(run.call_args[0][0][0], "open")
+
+
 class RouteTests(unittest.TestCase):
     def setUp(self) -> None:
         holder = tempfile.TemporaryDirectory()
@@ -322,6 +397,39 @@ class DashboardWiringTests(unittest.TestCase):
         self.assertIn("'Content-Type': 'application/json'", script)
         self.assertIn("const AGENT_KEY = 'smith_terminal_agent';", script)
         self.assertIn("api(`/api/terminal/sessions/${sessionId}`, 'DELETE', {})", script)
+
+
+class ProblemTreeOrderTests(unittest.TestCase):
+    """S6: problem tree order and CLI activation affordances in the static panels."""
+
+    @staticmethod
+    def _static(name: str) -> str:
+        return (Path(server.__file__).parent / "static" / name).read_text()
+
+    def _problem_tree(self) -> str:
+        body = self._static("model-panel.js")
+        return body[body.index("function problemTree"):body.index("function noveltyTree")]
+
+    def test_problem_tree_rows_run_causes_central_effects(self) -> None:
+        block = self._problem_tree()
+        rows = [block.index(f"treeRow(t('conceptTree.{level}')")
+                for level in ("causes", "central", "effects")]
+        self.assertEqual(rows, sorted(rows))
+
+    def test_effect_nodes_still_cite_their_causes(self) -> None:
+        self.assertIn("conceptTree.causedBy", self._problem_tree())
+
+    def test_an_unauthorized_page_gets_a_dismissible_activation_banner(self) -> None:
+        source = self._static("cli-console.js")
+        self.assertIn("cli.activateBanner", source)
+        self.assertIn("showActivationBanner", source)
+        self.assertIn("cliActivationBanner", source)
+        self.assertIn("remove()", source)
+
+    def test_the_launch_button_knows_the_linux_terminals(self) -> None:
+        source = self._static("cli-console.js")
+        for name in ("gnome-terminal", "konsole", "x-terminal-emulator"):
+            self.assertIn(name, source)
 
 
 class BrandingTests(unittest.TestCase):

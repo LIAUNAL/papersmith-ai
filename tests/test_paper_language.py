@@ -240,5 +240,27 @@ class ManuscriptQaLanguageTests(unittest.TestCase):
         self.assertEqual(self.qa.language_findings(ENGLISH_WITH_NAMES, []), [])
 
 
+class AntiSkimParityTests(unittest.TestCase):
+    """S3 of odd/tasks/spark-to-paper-enhancements.md: the Anti-Skim protocol
+    (redactor) and the adversarial citation checks (paper-reviewer) exist in
+    every harness projection, so no projection can quietly drop them."""
+
+    PROJECTIONS = (".claude", ".agents", ".opencode", ".pi")
+
+    def test_the_anti_skim_protocol_ships_in_every_redactor(self) -> None:
+        for tool in self.PROJECTIONS:
+            body = (REPO / tool / "agents" / "redactor.md").read_text(encoding="utf-8")
+            with self.subTest(tool=tool):
+                self.assertIn("## Anti-Skim protocol", body)
+                self.assertIn("UNVERIFIED:", body)
+
+    def test_the_adversarial_citation_checks_ship_in_every_reviewer(self) -> None:
+        for tool in self.PROJECTIONS:
+            body = (REPO / tool / "agents" / "paper-reviewer.md").read_text(encoding="utf-8")
+            with self.subTest(tool=tool):
+                self.assertIn("## Adversarial citation and hallucination checks", body)
+                self.assertIn("HALLUCINATION:", body)
+
+
 if __name__ == "__main__":
     unittest.main()

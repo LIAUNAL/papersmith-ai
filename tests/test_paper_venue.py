@@ -1408,6 +1408,63 @@ class StatusListTests(VenueCase):
 # =====================================================================
 # wiring
 # =====================================================================
+class VenueCatalogTests(VenueCase):
+    """S4 of odd/tasks/spark-to-paper-enhancements.md: the shipped venue
+    catalog is data (never a document class), read-only, validated on load."""
+
+    def test_every_catalog_entry_has_the_full_schema(self) -> None:
+        entries = paper_venue.venue_catalog()
+        slugs = [entry["slug"] for entry in entries]
+        self.assertEqual(len(slugs), len(set(slugs)), "slug uniqueness")
+        for entry in entries:
+            with self.subTest(slug=entry["slug"]):
+                self.assertEqual(sorted(entry.keys()), sorted(paper_venue.CATALOG_FIELDS))
+                self.assertIn(entry["kind"], paper_venue.CATALOG_KINDS)
+                self.assertTrue(entry["name"] and entry["class_origin"])
+                if entry["guidelines_url"] is not None:
+                    self.assertTrue(entry["guidelines_url"].startswith("https://"))
+
+    def test_the_catalog_covers_the_requested_venues(self) -> None:
+        slugs = {entry["slug"] for entry in paper_venue.venue_catalog()}
+        for slug in ("neurips", "icml", "ieee-conference", "ieee-transactions",
+                     "elsevier-journal", "springer-lncs", "frontiers", "mdpi-journal"):
+            self.assertIn(slug, slugs)
+
+    def test_a_texlive_entry_names_a_class_name_not_a_file(self) -> None:
+        ieee = next(entry for entry in paper_venue.venue_catalog()
+                    if entry["slug"] == "ieee-conference")
+        self.assertEqual(ieee["texlive_class"], "IEEEtran")
+        self.assertEqual(ieee["class_origin"], "texlive")
+
+    def test_catalog_verb_lists_every_venue(self) -> None:
+        code, payload = self.run_cli("venue", "catalog")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["verb"], "catalog")
+        self.assertGreaterEqual(len(payload["venues"]), 8)
+
+    def test_catalog_by_slug_gives_the_acquire_command(self) -> None:
+        code, payload = self.run_cli("venue", "catalog", "--slug", "ieee-conference")
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["venue"]["texlive_class"], "IEEEtran")
+        self.assertEqual(payload["venue"]["acquire"],
+                         "venue acquire --slug ieee-conference --texlive IEEEtran")
+
+    def test_a_publisher_style_venue_hints_at_the_archive(self) -> None:
+        code, payload = self.run_cli("venue", "catalog", "--slug", "mdpi-journal")
+        self.assertEqual(code, 0)
+        self.assertIsNone(payload["venue"]["texlive_class"])
+        self.assertIn("--file <archive>", payload["venue"]["acquire"])
+
+    def test_an_unknown_catalog_slug_refuses(self) -> None:
+        self.refused("catalog", "VENUE_CATALOG_UNKNOWN", "--slug", "not-a-venue")
+
+    def test_list_also_reports_the_catalog(self) -> None:
+        code, payload = self.run_cli("venue", "list", "--paper", str(self.paper))
+        self.assertEqual(code, 0)
+        self.assertIn("catalog", payload)
+        self.assertGreaterEqual(len(payload["catalog"]), 8)
+
+
 class WiringTests(VenueCase):
     def test_every_venue_verb_is_in_the_parser_and_every_refusal_is_classified(self) -> None:
         parser = paper_cli.build_parser()
@@ -1415,7 +1472,7 @@ class WiringTests(VenueCase):
         group = next(a for a in venue.choices["venue"]._actions if hasattr(a, "choices") and a.choices)
         self.assertEqual(set(group.choices), set(paper_venue.VERBS))
         self.assertEqual(set(paper_venue.VERBS), {
-            "select", "requirements", "acquire", "diff", "plan", "approve", "build", "status", "list"})
+            "select", "requirements", "acquire", "diff", "plan", "approve", "build", "status", "list", "catalog"})
         self.assertIn("venue", paper_cli.COMMANDS)
         source = (SCRIPTS / "paper_venue.py").read_text(encoding="utf-8")
         raised = set(re.findall(r'Refused\(\s*"([A-Z_]+)"', source))

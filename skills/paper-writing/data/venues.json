@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "venues": [
+    {
+      "slug": "neurips",
+      "name": "NeurIPS (Advances in Neural Information Processing Systems)",
+      "kind": "conference",
+      "texlive_class": null,
+      "class_origin": "publisher style file, acquired per workspace",
+      "guidelines_url": "https://neurips.cc",
+      "notes": "The style file changes per edition; check the current call for page limits and the preprint policy."
+    },
+    {
+      "slug": "icml",
+      "name": "ICML (International Conference on Machine Learning)",
+      "kind": "conference",
+      "texlive_class": null,
+      "class_origin": "publisher style file, acquired per workspace",
+      "guidelines_url": "https://icml.cc",
+      "notes": "The style file changes per edition; check the current call for page limits and the supplementary policy."
+    },
+    {
+      "slug": "ieee-conference",
+      "name": "IEEE conferences (general template)",
+      "kind": "conference",
+      "texlive_class": "IEEEtran",
+      "class_origin": "texlive",
+      "guidelines_url": "https://www.ieee.org",
+      "notes": "IEEE conference templates use IEEEtran in conference mode; each conference's call fixes page limits."
+    },
+    {
+      "slug": "ieee-transactions",
+      "name": "IEEE Transactions (journal template)",
+      "kind": "journal",
+      "texlive_class": "IEEEtran",
+      "class_origin": "texlive",
+      "guidelines_url": "https://www.ieee.org",
+      "notes": "IEEEtran in journal mode; each Transactions title fixes its own length and submission rules."
+    },
+    {
+      "slug": "elsevier-journal",
+      "name": "Elsevier journals (general template)",
+      "kind": "journal",
+      "texlive_class": "elsarticle",
+      "class_origin": "texlive",
+      "guidelines_url": "https://www.elsevier.com",
+      "notes": "elsarticle ships in TeX Live; each journal's Guide for Authors fixes the rest."
+    },
+    {
+      "slug": "springer-lncs",
+      "name": "Springer LNCS-style volumes",
+      "kind": "journal",
+      "texlive_class": "llncs",
+      "class_origin": "texlive",
+      "guidelines_url": "https://link.springer.com",
+      "notes": "llncs ships in TeX Live; Springer's author guidelines fix length and formatting details."
+    },
+    {
+      "slug": "frontiers",
+      "name": "Frontiers journals",
+      "kind": "journal",
+      "texlive_class": null,
+      "class_origin": "publisher style file, acquired per workspace",
+      "guidelines_url": "https://www.frontiersin.org",
+      "notes": "Frontiers runs its own submission pipeline; check the journal's author guidelines."
+    },
+    {
+      "slug": "mdpi-journal",
+      "name": "MDPI journals (general template)",
+      "kind": "journal",
+      "texlive_class": null,
+      "class_origin": "publisher style file, acquired per workspace",
+      "guidelines_url": "https://www.mdpi.com",
+      "notes": "MDPI distributes its own LaTeX class as a publisher archive; acquire it per workspace."
+    }
+  ]
+}

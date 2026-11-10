@@ -8961,8 +8961,12 @@ class RefusalRosterTests(unittest.TestCase):
         printing above 0.90 x body (FIGURE_TEXT_ABOVE_PRINT_CAP).
         212 -> 213: `paper_write._stage_lead_ins` refuses a draft of the
         introduction or the experimental set-up that opens a paragraph or an
-        item on bold or a run-in heading (DRAFT_BOLD_LEAD_IN)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 213)
+        item on bold or a run-in heading (DRAFT_BOLD_LEAD_IN).
+
+        213 -> 215 in `spark-to-paper-enhancements` (S4): the read-only venue
+        catalog adds 2 codes (VENUE_CATALOG_INVALID for a malformed shipped
+        catalog, VENUE_CATALOG_UNKNOWN for an unknown catalog slug)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 215)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

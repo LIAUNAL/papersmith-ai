@@ -54,8 +54,9 @@ input because it is re-checked at resolution.
 ### Requirement: Resolution Runs Through the CLI Over Stdlib `urllib`
 
 Resolution and metadata retrieval MUST run through the CLI, keyless, using only the
-Python standard library's `urllib`, against OpenAlex, Crossref, and arXiv. Where an
-endpoint accepts a polite-pool contact parameter (OpenAlex's documented `mailto`
+Python standard library's `urllib`, against OpenAlex, Crossref, arXiv, and Semantic
+Scholar (Graph API, keyless public shared pool). Where an endpoint accepts a
+polite-pool contact parameter (OpenAlex's documented `mailto`
 parameter), the CLI's resolution requests MUST include it, sourced from
 configuration, never hardcoded — this keeps the "keyless" claim intact: `mailto` is
 a courtesy contact, not a secret, and OpenAlex's own documentation states this

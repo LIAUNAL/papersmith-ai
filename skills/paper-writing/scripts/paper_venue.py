@@ -49,7 +49,16 @@ import paper_region  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
 
-VERBS = ("select", "requirements", "acquire", "diff", "plan", "approve", "build", "status", "list")
+VERBS = ("select", "requirements", "acquire", "diff", "plan", "approve", "build", "status", "list", "catalog")
+
+#: The shipped venue catalog: DATA about venues (which TeX Live class a
+#: venue's template uses, where its official guidelines live), never shipped
+#: templates -- the forge ships no document class (odd/tasks/journal-finder.md),
+#: so acquisition stays per-workspace (`acquire`).
+CATALOG_PATH = Path(__file__).resolve().parents[1] / "data" / "venues.json"
+CATALOG_KINDS = ("conference", "journal")
+CATALOG_FIELDS = ("slug", "name", "kind", "texlive_class", "class_origin",
+                  "guidelines_url", "notes")
 
 #: A venue slug: lowercase, digits and hyphens, never leading with a hyphen.
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -2010,6 +2019,57 @@ def back_matter_placement(paper_dir: Path) -> list:
     return placements
 
 
+def venue_catalog() -> list:
+    """The shipped venue catalog, validated on every load: one entry per
+    venue, every required field present, slug unique, kind in
+    `CATALOG_KINDS`. A `texlive_class` is a TeX Live class NAME, not a file:
+    the class itself arrives per workspace through `acquire --texlive`."""
+    data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    entries = data.get("venues") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise Refused("VENUE_CATALOG_INVALID", f"{CATALOG_PATH.name}: no venues array")
+    slugs = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise Refused("VENUE_CATALOG_INVALID", "every entry is an object")
+        missing = [field for field in CATALOG_FIELDS if field not in entry]
+        if missing:
+            raise Refused("VENUE_CATALOG_INVALID", f"entry missing fields: {missing}")
+        slug = entry["slug"]
+        if not isinstance(slug, str) or not SLUG_RE.match(slug):
+            raise Refused("VENUE_CATALOG_INVALID", f"bad slug {slug!r}")
+        if slug in slugs:
+            raise Refused("VENUE_CATALOG_INVALID", f"duplicate slug {slug!r}")
+        slugs.add(slug)
+        if entry["kind"] not in CATALOG_KINDS:
+            raise Refused("VENUE_CATALOG_INVALID", f"{slug}: kind must be one of {CATALOG_KINDS}")
+        if entry["texlive_class"] is not None and not isinstance(entry["texlive_class"], str):
+            raise Refused("VENUE_CATALOG_INVALID", f"{slug}: texlive_class is a name or null")
+        url = entry["guidelines_url"]
+        if url is not None and not _is_url(url):
+            raise Refused("VENUE_CATALOG_INVALID", f"{slug}: guidelines_url is an http(s) url or null")
+    return entries
+
+
+def catalog(slug: str | None = None) -> dict:
+    """Read-only venue catalog: every entry (or one venue's facts plus the
+    exact `acquire` command its class origin implies). Refuses
+    `VENUE_CATALOG_UNKNOWN` for a slug the catalog does not name."""
+    entries = venue_catalog()
+    if slug is None:
+        return {"verb": "catalog", "venues": entries}
+    validate_slug(slug)
+    for entry in entries:
+        if entry["slug"] == slug:
+            if entry["texlive_class"]:
+                hint = f"venue acquire --slug {slug} --texlive {entry['texlive_class']}"
+            else:
+                hint = ("download the publisher's style archive, then: "
+                        f"venue acquire --slug {slug} --file <archive>")
+            return {"verb": "catalog", "venue": {**entry, "acquire": hint}}
+    raise Refused("VENUE_CATALOG_UNKNOWN", f"no catalog venue {slug!r}")
+
+
 def list_venues(paper_dir: Path) -> dict:
     _require_paper_dir(paper_dir)
     root = paper_dir / "venues"
@@ -2020,4 +2080,7 @@ def list_venues(paper_dir: Path) -> dict:
                 summary = _summarise(paper_dir, entry.name)
                 venues.append({key: summary[key] for key in
                                ("slug", "journal", "quartile", "state", "blockers", "next_action")})
-    return {"verb": "list", "venues": venues}
+    return {"verb": "list", "venues": venues,
+            "catalog": [{"slug": entry["slug"], "name": entry["name"], "kind": entry["kind"],
+                         "texlive_class": entry["texlive_class"]}
+                        for entry in venue_catalog()]}
