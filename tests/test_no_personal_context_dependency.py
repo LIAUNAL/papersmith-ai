@@ -81,7 +81,7 @@ ENGRAM_MIRROR_PATTERN = re.compile(r"(?im)^\s*[-*]\s*engram mirrors?\s*:")
 #: `engram_mem_*`, and its Pi-native aliases are `mem_*`. Nineteen tools exist;
 #: naming them would be a roster that rots and misses the twentieth, so the
 #: namespace is what is matched.
-MEMORY_TOOL_PATTERN = re.compile(r"\b(?:mem_[a-z_]+|engram_mem_[a-z_]+)\b")
+MEMORY_TOOL_PATTERN = re.compile(r"\b(?:mem_[a-z_]+|engram_mem_[a-z_]+)\s*\(")
 
 CODE_SUFFIXES = (".py", ".ts", ".mjs", ".js", ".sh")
 
@@ -148,7 +148,7 @@ def scan_memory_tool_calls(sources) -> list[tuple[str, int, str]]:
     found = []
     for label, text in sources:
         for match in MEMORY_TOOL_PATTERN.finditer(text):
-            found.append((label, text[: match.start()].count("\n") + 1, match.group(0)))
+            found.append((label, text[: match.start()].count("\n") + 1, match.group(0).split("(")[0].strip()))
     return found
 
 
@@ -283,6 +283,19 @@ class ScannerInversionTests(unittest.TestCase):
             ["engram_mem_search"],
             "the scanner covers only the Pi-native `mem_*` spelling and misses "
             "the MCP `engram_mem_*` rows")
+
+    def test_the_call_scanner_ignores_observed_tool_output(self):
+        """A tool NAME is data wherever code observes a terminal: the office
+        state module detects `mem_*` lines in a session's output tail, and its
+        tests exercise that detection with realistic output. Such text names a
+        tool; it does not call one. The scanner has to keep telling those
+        apart, or the guard fires on every fixture that quotes what an agent
+        printed -- a false alarm that would train a reader to ignore the rule.
+        """
+        planted = [("planted.py", 'tail = "$ mem_search \\"herdr agents\\"\\n42 results\\n"')]
+        self.assertEqual(
+            scan_memory_tool_calls(planted), [],
+            "the scanner fired on tool output a file merely observes")
 
     def test_the_call_scan_does_not_reach_this_file(self):
         """The exclusion that keeps the rule honest. Without it the scan fires on
