@@ -279,6 +279,7 @@ class Screen:
             grid[index][:min(cols, len(row))] = row[:cols]
         self.grid, self.cols, self.rows = grid, cols, rows
         self.r, self.c = min(self.r, rows - 1), min(self.c, cols - 1)
+        self.saved = (min(self.saved[0], rows - 1), min(self.saved[1], cols - 1))
 
     def _linefeed(self) -> None:
         if self.r >= self.rows - 1:
@@ -313,13 +314,15 @@ class Screen:
                 if match.group(3) == "7":
                     self.saved = (self.r, self.c)
                 else:
-                    self.r, self.c = self.saved
+                    self.r, self.c = min(self.saved[0], self.rows - 1), min(self.saved[1], self.cols - 1)
             elif final:
                 self._csi(match.group(1) or "", final)
 
     def _csi(self, params: str, final: str) -> None:
         private = params.startswith("?")
-        values = [int(v) if v.isdigit() else 0 for v in params.lstrip("?<>=").split(";")] if params else []
+        # The last six digits bound every count: no conversion of a huge
+        # number, no move or erase past what a screen can hold.
+        values = [int(v[-6:]) if v.isdigit() else 0 for v in params.lstrip("?<>=").split(";")[:16]] if params else []
         n = max(1, values[0]) if values and values[0] else 1
         top, left = self.rows - 1, self.cols - 1
         if private:
@@ -370,7 +373,7 @@ class Screen:
             row.extend([" "] * (self.cols - len(row)))
         elif final == "@":
             row = self.grid[self.r]
-            row[self.c:self.c] = [" "] * n
+            row[self.c:self.c] = [" "] * min(n, self.cols - self.c)
             del row[self.cols:]
         elif final == "S":
             for _ in range(min(n, self.rows)):
@@ -383,7 +386,7 @@ class Screen:
         elif final == "s":
             self.saved = (self.r, self.c)
         elif final == "u":
-            self.r, self.c = self.saved
+            self.r, self.c = min(self.saved[0], self.rows - 1), min(self.saved[1], self.cols - 1)
 
     def feed_bytes(self, chunk: bytes) -> None:
         """Feed raw output that may end inside a UTF-8 character or an escape
@@ -396,6 +399,26 @@ class Screen:
 
     def lines(self) -> list[str]:
         return ["".join(row).rstrip() for row in self.grid]
+
+
+#: After Engram fails to give a count, it is not asked again for this long.
+COUNTER_BACKOFF_S = 60.0
+
+
+def _backed_off(counter: Callable[[], int | None] | None, memo: dict,
+                stamp: float) -> Callable[[], int | None] | None:
+    """``counter`` wrapped so a failed answer (None) silences it for
+    ``COUNTER_BACKOFF_S``: a hung or changed ``engram`` costs one timeout a
+    minute, not one per poll."""
+    if counter is None or stamp - memo.get("counter_failed_at", -COUNTER_BACKOFF_S - 1) < COUNTER_BACKOFF_S:
+        return None
+
+    def measured() -> int | None:
+        value = counter()
+        if value is None:
+            memo["counter_failed_at"] = stamp
+        return value
+    return measured
 
 
 def observe(ring: list, session_facts: list, names: list[str],
@@ -424,6 +447,7 @@ def observe(ring: list, session_facts: list, names: list[str],
 
     stamp = time.time() if now is None else now
     memo = {} if memo is None else memo
+    counter = _backed_off(counter, memo, stamp)
     screens: dict = memo.setdefault("screens", {})
     shown_before: dict = memo.setdefault("shown", {})
     spinning: dict = memo.setdefault("spinning", {})
@@ -457,7 +481,10 @@ def observe(ring: list, session_facts: list, names: list[str],
             screen.resize(fact.get("cols", 100), fact.get("rows", 30))
             written = max(0, end - ends.get(sid, end))
             chunk = raw[-written:] if written else b""
-        screen.feed_bytes(chunk)
+        try:
+            screen.feed_bytes(chunk)
+        except Exception:  # noqa: BLE001 - untrusted output must never break the office
+            screen = screens[sid] = Screen(fact.get("cols", 100), fact.get("rows", 30))
         primed = sid in ends
         ends[sid] = end
         shown = scan_tail("\n".join(screen.lines()), names)["memory"]

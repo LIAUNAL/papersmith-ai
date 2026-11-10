@@ -131,6 +131,46 @@ class LinearScanTests(unittest.TestCase):
             screen.feed_bytes(chunk.encode("utf-8"))
             self.assertLess(clock.perf_counter() - started, 0.5, repr(chunk[:12]))
 
+    def test_hostile_parameters_neither_raise_nor_allocate(self) -> None:
+        import time as clock
+        screen = office.Screen(cols=50, rows=10)
+        started = clock.perf_counter()
+        screen.feed_bytes(b"\x1b[" + b"9" * 5000 + b"m")
+        screen.feed_bytes(b"\x1b[2000000000@\x1b[999999999P\x1b[999999999X")
+        self.assertLess(clock.perf_counter() - started, 0.2)
+        self.assertTrue(all(len(row) == 50 for row in screen.grid))
+
+    def test_a_saved_cursor_survives_a_smaller_window(self) -> None:
+        for save, restore in (("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")):
+            screen = office.Screen(cols=120, rows=40)
+            screen.feed("\x1b[30;100H" + save)
+            screen.resize(50, 10)
+            screen.feed(restore + "x")
+            self.assertEqual(screen.lines()[9].rstrip()[-1], "x")
+
+    def test_a_failing_feed_never_breaks_the_office(self) -> None:
+        memo: dict = {}
+        fact = lambda end: [{"id": "s", "agent": "claude", "alive": True, "end": end, "tail": "", "raw": b"x" * end}]
+        original = office.Screen.feed_bytes
+        office.Screen.feed_bytes = lambda self, chunk: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            office.office_state(defined=DEFINED, session_facts=fact(5), ring=[], engram_path=None,
+                                enabled=True, authorized=True, now=NOW, memo=memo)
+        finally:
+            office.Screen.feed_bytes = original
+        snapshot = office.office_state(defined=DEFINED, session_facts=fact(9), ring=[], engram_path=None,
+                                       enabled=True, authorized=True, now=NOW + 2, memo=memo)
+        self.assertEqual(snapshot["orchestrator"]["state"], "available")
+
+    def test_an_engram_without_a_count_is_asked_once_a_minute(self) -> None:
+        calls = []
+        memo: dict = {}
+        fact = [{"id": "s", "agent": "claude", "alive": True, "end": 1, "tail": "", "raw": b">"}]
+        for second in range(0, 30, 2):
+            office.office_state(defined=DEFINED, session_facts=fact, ring=[], engram_path="x", enabled=True,
+                                authorized=True, now=NOW + second, memo=memo, counter=lambda: calls.append(1))
+        self.assertEqual(len(calls), 1)
+
     def test_a_chunk_cut_inside_a_sequence_or_a_character_finishes_next_time(self) -> None:
         screen = office.Screen(cols=20, rows=2)
         data = "\x1b[1;1Hcafé\x1b[2;1Hdone".encode("utf-8")
