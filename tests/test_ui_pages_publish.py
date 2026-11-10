@@ -95,6 +95,12 @@ class PagesPublishTests(unittest.TestCase):
                                             encoding="utf-8")  # an unstaged edit the publish must keep
         cls.bare = base / "remote.git"
         git("init", "-q", "--bare", str(cls.bare))
+        # Left on, every push into the bare remote ends with receive-pack
+        # starting a detached `git maintenance run --auto`. After this class's
+        # snapshot-sized pushes it repacks, and traced runs (GIT_TRACE2_EVENT,
+        # git 2.56) show that repack still running in remote.git/objects/pack
+        # when tearDownClass starts removing this directory.
+        git("--git-dir", str(cls.bare), "config", "maintenance.auto", "false")
         git("remote", "add", "origin", "https://github.com/o/r.git", cwd=ws)
         git("config", f"url.{cls.bare}.insteadOf", "https://github.com/o/r.git", cwd=ws)
         bindir = base / "bin"
