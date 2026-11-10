@@ -1285,6 +1285,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     #: Engram interactions observed in live session output, bounded by
     #: office.MEMORY_EVENTS_MAX; the office state endpoint owns this ring.
     office_ring: list = []
+    #: Events already seen and sessions already primed (office.observe); the
+    #: lock keeps two polling tabs from interleaving their updates.
+    office_memo: dict = {}
+    office_lock = threading.Lock()
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -3574,10 +3578,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         facts = terminals.session_facts() if enabled and authorized else []
         defined = [{**agent, "stages": list(agents_view.TRAMO_PHASES.get(agent.get("tramo") or "", ()))}
                    for agent in agents_view.get_agents_view(root_path).get("agents", [])]
-        return JSONResponse(office.office_state(
-            defined=defined, session_facts=facts, ring=office_ring,
-            engram_path=office.engram_path(), enabled=enabled, authorized=authorized,
-        ), headers=dict(_PAPER_HEADERS))
+        with office_lock:
+            snapshot = office.office_state(
+                defined=defined, session_facts=facts, ring=office_ring,
+                engram_path=office.engram_path(), enabled=enabled, authorized=authorized,
+                memo=office_memo, counter=office.engram_observations)
+        return JSONResponse(snapshot, headers=dict(_PAPER_HEADERS))
 
     # -------------------------------------------------------------- API keys
     # The Doctor tab asks for the Asta and OpenAlex keys here (skills/_core/

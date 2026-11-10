@@ -122,6 +122,24 @@ class LinearScanTests(unittest.TestCase):
             office.detect_memory_interaction(tail)
             self.assertLess(clock.perf_counter() - started, 0.25, repr(tail[:20]))
 
+    def test_the_screen_model_is_linear_on_hostile_output(self) -> None:
+        import time as clock
+        for chunk in ("\x1b[" + "1;" * 8000 + "H", "\x1b]" + "x" * 16000, "\x1b[999;999H" * 2000,
+                      ("é" * 5000).encode("utf-8")[:-1].decode("utf-8", "ignore"), "\x1b[3S\x1b[2T" * 3000):
+            screen = office.Screen(cols=400, rows=200)
+            started = clock.perf_counter()
+            screen.feed_bytes(chunk.encode("utf-8"))
+            self.assertLess(clock.perf_counter() - started, 0.5, repr(chunk[:12]))
+
+    def test_a_chunk_cut_inside_a_sequence_or_a_character_finishes_next_time(self) -> None:
+        screen = office.Screen(cols=20, rows=2)
+        data = "\x1b[1;1Hcafé\x1b[2;1Hdone".encode("utf-8")
+        for cut in range(len(data) + 1):
+            screen = office.Screen(cols=20, rows=2)
+            screen.feed_bytes(data[:cut])
+            screen.feed_bytes(data[cut:])
+            self.assertEqual(screen.lines(), ["café", "done"], cut)
+
     def test_a_call_past_the_scanned_width_is_not_read(self) -> None:
         tail = " " * office.LINE_SCAN_CHARS + "● sota-scout(x)\n"
         self.assertEqual(by_id(state(tail))["sota-scout"]["state"], "available")
@@ -144,7 +162,7 @@ class MemoryTests(unittest.TestCase):
 
     def test_a_save_inside_a_running_agent_makes_it_saving(self) -> None:
         ring: list = []
-        tail = f"● sota-scout(Scout)\n● engram - {M}save (MCP)(title: pool)\n"
+        tail = f"● sota-scout(Scout)\n  ⎿  engram - {M}save (MCP)(title: pool)\n"
         snapshot = state(tail, ring=ring)
         self.assertEqual(by_id(snapshot)["sota-scout"]["state"], "saving")
         self.assertEqual(ring[-1]["agent"], "sota-scout")
@@ -174,6 +192,137 @@ class MemoryTests(unittest.TestCase):
     def test_the_last_engram_line_is_reported(self) -> None:
         self.assertEqual(office.detect_memory_interaction("mem_search a\nnoise\nmem_save b\n"), "mem_save b")
         self.assertIsNone(office.detect_memory_interaction("plain output"))
+
+
+def esc(seq: str) -> str:
+    return "\x1b[" + seq
+
+
+class ClaudeCodeScreenTests(unittest.TestCase):
+    """Claude Code v2 draws its transcript with cursor moves, folds MCP calls
+    and closes background agents with ``Agent "…" finished`` (shapes taken
+    from a real session; the text here is synthetic)."""
+
+    def screen(self, *rows: str) -> str:
+        # Each row starts like Claude Code's: carriage return + cursor down.
+        return "".join("\r" + esc("1B") + esc("K") + row for row in rows)
+
+    def test_rows_separated_by_cursor_moves_are_lines(self) -> None:
+        tail = self.screen(
+            esc("38;2;78;186;101m") + "●" + esc("3G") + esc("39m") + esc("1m") + "math-tutor"
+            + esc("22m") + "(Math" + esc("19G") + "tutor" + esc("25G") + "probe)",
+            "  ⎿ \u00a0Backgrounded agent (↓ to manage)")
+        self.assertIn("● math-tutor(Math tutor probe)", office.strip_ansi(tail).splitlines())
+        self.assertEqual(office.scan_tail(tail, NAMES + ["math-tutor"])["running"], ["math-tutor"])
+
+    def test_a_finished_background_agent_is_closed(self) -> None:
+        tail = self.screen("● redactor(Draft)", "  ⎿  Backgrounded agent", '● Agent "Draft" finished · 1s')
+        self.assertEqual(by_id(state(tail))["redactor"]["state"], "available")
+
+    def test_the_typed_prompt_is_never_a_call(self) -> None:
+        tail = self.screen("❯ Do these steps: 1) call the engram", f"  {M}search tool with query x. 2) launch",
+                           "  the redactor subagent")
+        snapshot = state(tail)
+        self.assertEqual(snapshot["memory"]["interactions"], [])
+        self.assertEqual(snapshot["orchestrator"]["state"], "available")
+
+    def test_a_call_belongs_to_the_entry_it_is_printed_in(self) -> None:
+        tail = self.screen("● redactor(Draft)", f"  ⎿  engram - {M}search (MCP)(query: x)",
+                           f"● engram - {M}save (MCP)(title: y)")
+        ring: list = []
+        snapshot = state(tail, ring=ring)
+        self.assertEqual([(e["agent"], e["kind"]) for e in ring], [("redactor", "load"), ("orchestrator", "save")])
+        self.assertEqual(by_id(snapshot)["redactor"]["state"], "loading")
+        self.assertEqual(snapshot["orchestrator"]["state"], "saving")
+
+    def folded(self, counts: list, *, memo: dict | None = None) -> list:
+        tail = self.screen("  Called engram ", '  ⎿  "smith ui agents office"')
+        values = iter(counts)
+        ring: list = []
+        office.office_state(defined=DEFINED, session_facts=[{"agent": "claude", "alive": True, "tail": tail}],
+                            ring=ring, engram_path="/usr/bin/engram", enabled=True, authorized=True,
+                            now=NOW, memo={"observations": 10} if memo is None else memo,
+                            counter=lambda: next(values))
+        return ring
+
+    def test_a_folded_call_is_a_save_when_the_store_grew(self) -> None:
+        ring = self.folded([11])
+        self.assertEqual((ring[0]["agent"], ring[0]["kind"]), ("orchestrator", "save"))
+        self.assertIn('"smith ui agents office"', ring[0]["line"])
+
+    def test_a_folded_call_is_a_read_when_the_store_did_not_grow(self) -> None:
+        self.assertEqual(self.folded([10])[0]["kind"], "load")
+
+    def test_a_folded_call_without_a_count_keeps_an_unknown_direction(self) -> None:
+        ring = self.folded([None])
+        self.assertEqual(ring[0]["kind"], "use")
+        snapshot = office.office_state(defined=DEFINED, session_facts=[], ring=ring, engram_path=None,
+                                       enabled=True, authorized=True, now=NOW)
+        self.assertEqual(snapshot["orchestrator"]["state"], "absent")
+
+    def poller(self, counts=None):
+        """Polls one live session the way the server does: id, absolute end."""
+        memo: dict = {}
+        ring: list = []
+        output = {"text": ""}
+        values = iter(counts or [])
+
+        def poll(appended: str, at: float) -> list:
+            output["text"] += appended
+            raw = output["text"].encode("utf-8")
+            office.office_state(
+                defined=DEFINED, ring=ring, engram_path=None, enabled=True, authorized=True, now=at, memo=memo,
+                session_facts=[{"id": "s1", "agent": "claude", "alive": True, "end": len(raw), "cols": 100, "rows": 30,
+                                "tail": raw[-office.MEMORY_SCAN_BYTES:].decode("utf-8", "replace")}],
+                counter=(lambda: next(values)) if counts else None)
+            return [(e["agent"], e["kind"]) for e in ring]
+
+        return poll
+
+    def test_history_before_the_office_looked_is_not_activity(self) -> None:
+        poll = self.poller()
+        self.assertEqual(poll(self.screen(f"● engram - {M}save (MCP)(title: before)"), NOW), [])
+        self.assertEqual(poll(self.screen(f"● engram - {M}search (MCP)(query: after)"), NOW + 2),
+                         [("orchestrator", "load")])
+
+    def test_a_repaint_is_not_a_new_call_but_a_later_identical_call_is(self) -> None:
+        poll = self.poller(counts=[10, 10, 11])
+        poll(self.screen("❯ "), NOW)
+        rows = self.screen("● Step one", "● Called engram", "● Step two")
+        self.assertEqual(poll(rows, NOW + 2), [("orchestrator", "load")])
+        # Claude Code repaints by moving home and writing the same rows again.
+        self.assertEqual(poll(esc("H") + "\r" + esc("1B") + rows, NOW + 4), [("orchestrator", "load")])
+        self.assertEqual(poll(self.screen("● Called engram"), NOW + 6),
+                         [("orchestrator", "load"), ("orchestrator", "save")])
+
+    def test_the_screen_model_follows_cursor_moves_and_erases(self) -> None:
+        screen = office.Screen(cols=20, rows=4)
+        screen.feed("hello world" + esc("1;7H") + "there" + esc("2;1H") + "line two" + esc("2;5H") + esc("K"))
+        self.assertEqual(screen.lines()[:2], ["hello there", "line"])
+        screen.feed(esc("4;1H") + "last\r\nscrolled")
+        self.assertEqual(screen.lines(), ["line", "", "last", "scrolled"])
+        screen.feed(esc("2J"))
+        self.assertEqual(screen.lines(), ["", "", "", ""])
+        big = office.Screen(cols=10 ** 6, rows=10 ** 6)
+        self.assertEqual((big.cols, big.rows), (office.SCREEN_MAX_COLS, office.SCREEN_MAX_ROWS))
+
+    def test_two_identical_folded_calls_in_a_row_are_two_calls(self) -> None:
+        poll = self.poller(counts=[10, 10])
+        poll(self.screen("❯ "), NOW)
+        self.assertEqual(poll(self.screen("● Called engram", '  ⎿  "q"', "● Reading", "● Called engram"), NOW + 2),
+                         [("orchestrator", "load"), ("orchestrator", "load")])
+
+    def test_the_store_count_reads_only_the_observation_total(self) -> None:
+        import tempfile as tmpmod
+        with tmpmod.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "engram"
+            fake.write_text("#!/bin/sh\necho 'Engram Memory Stats'\necho '  Observations: 2873'\necho '  Projects: a, b'\n")
+            fake.chmod(0o755)
+            self.assertEqual(office.engram_observations(str(fake)), 2873)
+            (Path(tmp) / "broken").write_text("#!/bin/sh\nexit 3\n")
+            (Path(tmp) / "broken").chmod(0o755)
+            self.assertIsNone(office.engram_observations(str(Path(tmp) / "broken")))
+        self.assertIsNone(office.engram_observations(None) if not office.engram_path() else None)
 
 
 class OrchestratorTests(unittest.TestCase):

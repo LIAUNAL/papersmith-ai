@@ -33,7 +33,7 @@ const materials = {
   pot: mat(0xd79d7a), leaf: mat(0x46775c), soil: mat(0x685747), coffee: mat(0x594638),
 };
 const SCREEN_ON = { color: 0x70c4af, emissive: 0x326b5c, intensity: 0.4 };
-const STREAM = { save: C.lime, load: C.teal };
+const STREAM = { save: C.lime, load: C.teal, use: C.violet };
 /** The sine wave, spelled through cosine: the dashboard's Spanish-word scan flags the bare three-letter name. */
 const wave = (x) => Math.cos(x - Math.PI / 2);
 const t = (key, vars) => (window.i18n ? window.i18n.t(key, vars) : key);
@@ -316,7 +316,7 @@ class Office {
       if (!this.seenMemory.has(key)) {
         this.seenMemory.add(key);
         const person = this.people.get(item.agent);
-        if (person && this.started) this.spawnStream(person, item.kind === 'save' ? 'save' : 'load');
+        if (person && this.started) this.spawnStream(person, STREAM[item.kind] ? item.kind : 'use');
         this.core.pulse = 1;
       }
     });
@@ -326,7 +326,7 @@ class Office {
     interactions.forEach((item, i) => {
       let cube = this.memoryCubes[i];
       if (!cube) { cube = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ roughness: 0.4 })); this.core.group.add(cube); this.memoryCubes.push(cube); }
-      const color = item.kind === 'save' ? C.lime : C.teal;
+      const color = STREAM[item.kind] || C.violet;
       cube.material.color.setHex(color); cube.material.emissive.setHex(color); cube.material.emissiveIntensity = 0.55;
       cube.userData.orbit = { r: 1.75 + (i % 3) * 0.28, y: 1.6 + (i % 4) * 0.42, a: (i / Math.max(interactions.length, 1)) * Math.PI * 2 };
     });

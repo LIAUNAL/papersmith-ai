@@ -96,7 +96,26 @@ the live CLI sessions (each line read up to 400 characters, so any output scans 
 | loading | an Engram read (`mem_search`, `mem_context`, `mem_get_observation`, `engram search`, …) while that agent runs, for 8 s | same pose, teal cubes stream brain → desk |
 | available | none of the above | seated, leaning back with a coffee cup, dim screen |
 
-An Engram call outside any running agent belongs to the orchestrator. The
+An Engram call belongs to the transcript entry it is printed in: nested
+under an agent's entry (`⎿`) it is that agent's, a top-level entry (`●`) is
+the orchestrator's, and text in the input prompt (`❯`) is the operator's
+typing, never a call. Claude Code repaints only the cells that change, using
+cursor moves instead of newlines, so the office keeps a small screen model
+per session (`office.Screen`, bounded, fed only the output written since the
+last poll) and counts a call when a new call row appears on that screen; a
+repaint adds no row. Who is running is read from the output history, where
+Claude Code closes background agents with `● Agent "…" finished`.
+
+Claude Code folds MCP calls into `Called engram` without the tool name. The
+direction of a folded call is measured from the Engram store,
+`engram stats --all` (its observation count only, run only around a call):
+a save when the count grew, a read otherwise. A save that updates an
+existing memory (same title or topic) does not grow the count, so it shows
+as a read. Without Engram on `PATH` the direction stays unknown (violet).
+In smith, every agent definition lists its own tools and none includes
+Engram, so the agents never read or write Engram themselves: the
+orchestrator does, and the office shows it at the orchestrator's desk. What
+a session showed before the office first read it is history, not activity. The
 agents of a phase this browser is running (its phase runs) get a soft ring.
 Clicking a person opens a read-only card; "Open console" only opens the CLI
 console. The panel never closes, interrupts or writes to a session.
