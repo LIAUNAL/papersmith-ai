@@ -82,7 +82,7 @@ class WorkingTests(unittest.TestCase):
         self.assertEqual(by_id(state(done))["sota-scout"]["state"], "available")
 
     def test_other_cli_spellings_open_a_running_agent(self) -> None:
-        for tail in ("Task(redactor: draft the intro)", 'subagent_type: "redactor"', "delegating to @redactor now"):
+        for tail in ("Task(redactor: draft the intro)", 'subagent_type: "redactor"', "⏺ redactor(Draft)"):
             with self.subTest(tail=tail):
                 self.assertEqual(by_id(state(tail))["redactor"]["state"], "working")
 
@@ -93,7 +93,8 @@ class WorkingTests(unittest.TestCase):
         self.assertEqual(agents["redactor"]["state"], "working")
 
     def test_prose_naming_an_agent_is_not_a_call(self) -> None:
-        tail = "The sota-scout agent writes the pool.\nsee docs/redactor.md\n"
+        tail = ("The sota-scout agent writes the pool.\nsee docs/redactor.md\n"
+                "* sota-scout (finds papers)\n• redactor (writes the draft)\nsee @sota-scout for details\n")
         for agent in state(tail)["agents"]:
             self.assertEqual(agent["state"], "available", agent["id"])
 
@@ -107,6 +108,25 @@ class WorkingTests(unittest.TestCase):
         self.assertEqual(snapshot["orchestrator"]["state"], "absent")
 
 
+class LinearScanTests(unittest.TestCase):
+    """A terminal tail is untrusted: no line may make the scan slow."""
+
+    def test_pathological_lines_scan_in_linear_time(self) -> None:
+        import time as clock
+        names = [p.stem for p in (FORGE_ROOT / ".claude" / "agents").glob("*.md")]
+        size = office.MEMORY_SCAN_BYTES
+        for tail in (" " * (size - 1) + "x", " \t" * (size // 2 - 1) + "●",
+                     "\n".join(["   " * 50 + "⎿"] * 100), "a@b" * (size // 3)):
+            started = clock.perf_counter()
+            office.scan_tail(tail, names)
+            office.detect_memory_interaction(tail)
+            self.assertLess(clock.perf_counter() - started, 0.25, repr(tail[:20]))
+
+    def test_a_call_past_the_scanned_width_is_not_read(self) -> None:
+        tail = " " * office.LINE_SCAN_CHARS + "● sota-scout(x)\n"
+        self.assertEqual(by_id(state(tail))["sota-scout"]["state"], "available")
+
+
 class MemoryTests(unittest.TestCase):
 
     def test_writes_and_reads_are_told_apart(self) -> None:
@@ -118,6 +138,9 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(office.memory_kind("$ engram save note"), "save")
         self.assertIsNone(office.memory_kind("member list and memory foam"))
         self.assertIsNone(office.memory_kind("remem_save is not a tool"))
+        self.assertIsNone(office.memory_kind(f"Note: {M}search is a tool"))
+        self.assertIsNone(office.memory_kind(f"$ git commit -m '{M}save fix'"))
+        self.assertEqual(office.memory_kind(f"engram_{M}search query"), "load")
 
     def test_a_save_inside_a_running_agent_makes_it_saving(self) -> None:
         ring: list = []
@@ -209,8 +232,10 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(login.status_code, 303)
             under = client.get("/api/terminal/office").json()
             outside = client.get("/api/office/state").json()
+            cross = client.get("/api/terminal/office", headers={"Sec-Fetch-Site": "cross-site"}).json()
         self.assertTrue(under["authorized"])
         self.assertFalse(outside["authorized"])
+        self.assertFalse(cross["authorized"], "a cross-site read carrying the cookie sees no activity")
         panel = (FORGE_ROOT / "skills" / "_core" / "command_center" / "static" / "office-panel.js").read_text()
         self.assertIn("fetch('/api/terminal/office')", panel)
 

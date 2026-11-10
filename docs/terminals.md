@@ -87,12 +87,12 @@ Who is in the office:
   orchestrator runs. Without a live agent CLI session its chair is empty.
 
 Each person shows one state, measured by `office.py` from the output tail of
-the live CLI sessions, never invented:
+the live CLI sessions (each line read up to 400 characters, so any output scans in linear time), never invented:
 
 | State | Measured from | Mechanic |
 |---|---|---|
-| working | the agent's invocation (`● sota-scout(…)`, `Task(sota-scout: …)`, `subagent_type: "sota-scout"`, `@sota-scout`) with no completion marker (`⎿ Done (…)`) after it; completions close agents in launch order | seated, typing, bright screen with scrolling lines, flow line from the orchestrator |
-| saving | an Engram write (`mem_save`, `mem_update`, `mem_session_summary`, `engram save`, …) while that agent runs, for 8 s | stands by the desk facing the brain, lime cubes stream desk → brain |
+| working | the agent's invocation at the start of a line (`● sota-scout(…)`, `Task(sota-scout: …)`, `subagent_type: "sota-scout"`; prose that only names an agent does not count) with no completion marker (`⎿ Done (…)`) after it; completions close agents in launch order | seated, typing, bright screen with scrolling lines, flow line from the orchestrator |
+| saving | an Engram write printed as a tool call at the start of a line (`mem_save`, `mem_update`, `mem_session_summary`, `engram save`, …) while that agent runs, for 8 s | stands by the desk facing the brain, lime cubes stream desk → brain |
 | loading | an Engram read (`mem_search`, `mem_context`, `mem_get_observation`, `engram search`, …) while that agent runs, for 8 s | same pose, teal cubes stream brain → desk |
 | available | none of the above | seated, leaning back with a coffee cup, dim screen |
 

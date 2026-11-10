@@ -3566,7 +3566,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/terminal/office")
     @app.get("/api/office/state")
     def api_office_state(request: Request) -> JSONResponse:
-        authorized = terminals.authorized(request.cookies.get(TERMINAL_COOKIE))
+        # The session reads also need a same-origin request, like the session
+        # routes: a cross-site request that carries the cookie sees no activity.
+        authorized = (terminals.authorized(request.cookies.get(TERMINAL_COOKIE))
+                      and terminal.guard(request.headers, mutating=False) is None)
         enabled = bool(enable_terminal and terminal.fcntl is not None)
         facts = terminals.session_facts() if enabled and authorized else []
         defined = [{**agent, "stages": list(agents_view.TRAMO_PHASES.get(agent.get("tramo") or "", ()))}

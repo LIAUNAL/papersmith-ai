@@ -62,17 +62,24 @@ _SAVE_VERBS = ("save", "update", "session_summary", "capture_passive", "save_pro
                "session_finalize", "consolidate", "pin", "judge", "compare")
 _LOAD_VERBS = ("search", "context", "get_observation", "timeline", "review",
                "search_prompts", "current_project", "list_projects")
-_MEM_TOOL_RE = re.compile(r"(?<![A-Za-z0-9_])mem_([a-z_]+)")
+#: Only this many characters of one output line are read: a scanner of an
+#: untrusted terminal tail must stay linear whatever a program prints.
+LINE_SCAN_CHARS = 400
+#: An Engram tool call as the CLIs print it: at the start of the line, behind
+#: an optional bullet and an optional ``engram -``/``engram_`` server prefix
+#: (the Claude Code MCP line ``● engram - mem_<verb> (MCP)``, OpenCode's ``engram_mem_<verb>``, or a bare ``mem_<verb>``).
+#: A ``mem_*`` word inside prose or a shell argument is not a call.
+_MEM_TOOL_RE = re.compile(r"^[ \t]*(?:[●⏺•*][ \t]*)?(?:engram[ \t]*-[ \t]*|engram_)?mem_([a-z_]+)\b")
 #: An ``engram`` CLI command line, possibly behind a shell prompt.
 _ENGRAM_CLI_RE = re.compile(
-    r"^\s*(?:[(\[]?[a-z0-9_.-]+@[a-z0-9_.-]+[:~$)\]]*\s*|[$>#●⏺]\s*)?engram\s+([a-z_-]+)",
+    r"^[ \t]*(?:(?:[(\[]?[a-z0-9_.-]+@[a-z0-9_.-]+[:~$)\]]*|[$>#●⏺])[ \t]*)?engram[ \t]+([a-z_-]+)",
     re.IGNORECASE)
 _ENGRAM_CLI_SAVE = {"save", "update", "import", "sync"}
 _ENGRAM_CLI_LOAD = {"search", "context", "get", "show", "timeline", "export", "stats"}
 
 #: A finished subagent: Claude Code's ``⎿  Done (12 tool uses · …)``, or a
 #: line that says the agent completed.
-_DONE_RE = re.compile(r"^\s*(?:⎿\s*)?(?:Done|Completed|Finished)\b(?:\s*\(|\s*$)", re.IGNORECASE)
+_DONE_RE = re.compile(r"^[ \t]*(?:⎿[ \t]*)?(?:Done|Completed|Finished)\b[ \t]*(?:\(|$)", re.IGNORECASE)
 
 
 def strip_ansi(text: str) -> str:
@@ -83,7 +90,8 @@ def strip_ansi(text: str) -> str:
 
 def memory_kind(line: str) -> str | None:
     """``"save"`` for an Engram write, ``"load"`` for a read, else ``None``."""
-    match = _MEM_TOOL_RE.search(line or "")
+    line = (line or "")[:LINE_SCAN_CHARS]
+    match = _MEM_TOOL_RE.search(line)
     if match:
         verb = match.group(1)
         if verb in _SAVE_VERBS:
@@ -91,7 +99,7 @@ def memory_kind(line: str) -> str | None:
         if verb in _LOAD_VERBS:
             return "load"
         return None
-    cli = _ENGRAM_CLI_RE.search(line or "")
+    cli = _ENGRAM_CLI_RE.search(line)
     if cli:
         verb = cli.group(1).lower()
         if verb in _ENGRAM_CLI_SAVE:
@@ -110,16 +118,18 @@ def detect_memory_interaction(output_tail: str) -> str | None:
 
 
 def _invocation_re(names: list[str]) -> re.Pattern[str] | None:
-    """A subagent call as the CLIs print it: ``● sota-scout(…)``,
-    ``Task(sota-scout: …)``, ``subagent_type: "sota-scout"`` or ``@sota-scout``."""
+    """A subagent call as the CLIs print it: ``● sota-scout(…)`` (the name
+    glued to its parenthesis, behind an optional bullet), ``Task(sota-scout: …)``
+    or ``subagent_type: "sota-scout"``. Prose that names an agent
+    (``* sota-scout (finds papers)``, ``see @sota-scout``) is not a call.
+    Every whitespace run is unambiguous, so matching stays linear."""
     if not names:
         return None
     alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
     return re.compile(
-        rf"(?:^\s*[●⏺•*]?\s*(?P<a>{alt})\s*\("
-        rf"|(?:Task|Agent)\(\s*(?P<b>{alt})\b"
-        rf"|subagent_type\W{{1,4}}(?P<c>{alt})\b"
-        rf"|(?<![\w/-])@(?P<d>{alt})(?![\w-]))")
+        rf"(?:^[ \t]*(?:[●⏺•*][ \t]*)?(?P<a>{alt})\("
+        rf"|(?:Task|Agent)\([ \t]*(?P<b>{alt})\b"
+        rf"|subagent_type\W{{1,4}}(?P<c>{alt})\b)")
 
 
 def scan_tail(output_tail: str, names: list[str]) -> dict[str, Any]:
@@ -134,7 +144,8 @@ def scan_tail(output_tail: str, names: list[str]) -> dict[str, Any]:
     pattern = _invocation_re(names)
     running: list[str] = []
     memory: list[dict[str, str]] = []
-    for raw in strip_ansi(output_tail).splitlines():
+    for full in strip_ansi(output_tail).splitlines():
+        raw = full[:LINE_SCAN_CHARS]
         line = raw.strip()
         if not line:
             continue
