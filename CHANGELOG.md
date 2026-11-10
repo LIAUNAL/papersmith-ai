@@ -11,6 +11,25 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.71.1
+
+- The dashboard's phase boxes explain the reference search where it runs: the
+  plausibility and writing prompt cards (en/es) describe how discovery and
+  resolution work — Asta first with its key, the keyless web otherwise, then
+  `smith paper resolve` with OpenAlex as the keyless default — and name the
+  Asta setup with links to Ai2's key request form and
+  openalex.org/settings/api-key; the journals fallback banner carries the
+  OpenAlex key link too.
+- `requirements.txt` declares Pillow: the paper-ingestion fast path stores
+  figures and page-cache entries as PIL images, and its tests silently
+  extracted nothing without it.
+- The anti-memory-provider guard requires call shape (`mem_save(...)`), so
+  code that merely observes terminal output naming tools (the Agents Office)
+  no longer trips it; a new inversion control pins the distinction.
+- The accelerator-refusal probe accepts both honest SDK remedies (install the
+  pin, or run under the workspace env interpreter) instead of asserting one
+  machine-dependent text.
+
 ## 0.71.0
 
 - BREAKING: the duplicate `papersmith` command is gone — `smith` is the only
