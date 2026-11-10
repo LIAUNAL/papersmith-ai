@@ -80,6 +80,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "colab",
     "doctor",
     "novelty",
+    "keys",
 )
 
 
@@ -1617,6 +1618,11 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # support the novelty claims, never an agent's. `status` is the same data the
     # dashboard's Novelty & Findings panel and `results` tooling already surface.
     "novelty": "out",
+    # `keys set|status|clear` holds the operator's own Asta and OpenAlex API
+    # keys. A secret never travels through a tool call, and the bridge strips
+    # `*_KEY` from every child anyway: the operator's act, from a terminal or
+    # the dashboard's Doctor tab, never an agent's.
+    "keys": "out",
 }
 
 PAPER_DISPOSITIONS: dict[str, str] = {

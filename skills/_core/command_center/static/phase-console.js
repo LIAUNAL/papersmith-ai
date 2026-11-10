@@ -207,6 +207,7 @@
         ${actionLock(a, i)}
         <ul class="phase-action__guide">${guide}</ul>
         ${a.keyword_help ? kwBlock(i) : ''}
+        ${a.slash === '/plausibility' ? '<div class="keys-prompt" data-keys-prompt="asta" hidden></div>' : ''}
         <textarea class="phase-action__input" id="phaseInput${i}" rows="4"
           placeholder="${esc(a.placeholder)}" aria-label="${esc(a.label)}"></textarea>
         <div class="phase-action__error" id="phaseError${i}" role="alert" hidden></div>

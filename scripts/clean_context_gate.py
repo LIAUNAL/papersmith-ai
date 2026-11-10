@@ -70,7 +70,15 @@ DECOY_FILES: dict[str, str] = {
     ".config/opencode/skills/decoy-skill/SKILL.md": "---\nname: decoy-skill\n---\n\nPersonal.\n",
     ".engram/config.json": json.dumps({"data_dir": "/decoy/.engram"}, indent=2),
     ".gemini/skills/decoy-skill/SKILL.md": "---\nname: decoy-skill\n---\n\nPersonal.\n",
+    # Valid-looking literature-connector keys in the store `smith keys` writes
+    # (`skills/_core/api_keys.py`), private as that store requires: a run that
+    # reads them sends a decoy key and diverges from the empty-HOME run.
+    ".config/papersmith/keys/asta": "decoy-asta-key-0000000000\n",
+    ".config/papersmith/keys/openalex": "decoy-openalex-key-000000\n",
 }
+
+#: Decoys that must be private (mode 0600 in a 0700 directory) to be usable.
+PRIVATE_DECOYS = (".config/papersmith/keys/asta", ".config/papersmith/keys/openalex")
 
 #: A failing test, in either half's vocabulary. pytest reports `FAILED path::test`
 #: and `ERROR path`; `node --test` reports TAP `not ok N - name`. Collected as a
@@ -135,6 +143,9 @@ def build_decoy_home(root: Path) -> Path:
         path = home / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+        if relative in PRIVATE_DECOYS and os.name != "nt":
+            path.parent.chmod(0o700)
+            path.chmod(0o600)
     return home
 
 

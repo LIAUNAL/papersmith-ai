@@ -41,7 +41,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import doctor_view, localize, toolchain
+from . import doctor_view, keys_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -935,7 +935,8 @@ def _run_journal_cli(root: Path, argv: list[str], timeout: float) -> tuple[dict[
     except ValueError:
         payload = None
     if not isinstance(payload, dict):
-        tail = (done.stderr or done.stdout or "no output").strip()[-300:]
+        # A request the CLI echoed back may carry a configured key: mask it.
+        tail = keys_view.scrub((done.stderr or done.stdout or "no output").strip())[-300:]
         return _journal_error("JOURNAL_CLI_FAILED",
                               f"the journal CLI answered no JSON (exit {done.returncode}): {tail}", 502)
     if payload.get("ok") is False:
@@ -3512,6 +3513,84 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             "default": next((a["id"] for a in agents if a["available"]), "shell"),
             "quick": {"shell": list(terminal.SHELL_QUICK), "agent": slash[:24]},
         }, headers=dict(_PAPER_HEADERS))
+
+    # -------------------------------------------------------------- API keys
+    # The Doctor tab asks for the Asta and OpenAlex keys here (skills/_core/
+    # api_keys.py holds them, outside every workspace). Behind the terminal's
+    # cookie and guards, under its path where that cookie is sent: a loopback
+    # bind only, and a write must also carry this server's `Origin`, which the
+    # browser always sends on a PUT/DELETE/POST. The body is parsed by hand,
+    # because a validation error that echoed the input would echo the key;
+    # nothing here logs a body, publishes an event or returns a key.
+    key_verify_locks = {name: threading.Lock() for name in ("asta", "openalex")}
+
+    def _keys_write_refusal(request: Request) -> JSONResponse | None:
+        refusal = _terminal_refusal(request, mutating=True)
+        if refusal is not None:
+            return refusal
+        if not request.headers.get("origin") or not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "only the dashboard can change a key"},
+                                status_code=403, headers=dict(_PAPER_HEADERS))
+        return None
+
+    def _keys_response(status_code: int, body: dict[str, Any]) -> JSONResponse:
+        return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/terminal/keys")
+    def api_keys_status(request: Request) -> JSONResponse:
+        refusal = _terminal_refusal(request, mutating=False)
+        if refusal is not None:
+            return refusal
+        try:
+            payload = keys_view.status_payload(terminals.count())
+        except Exception as exc:  # noqa: BLE001 - reported, never raised into the loop
+            return _keys_response(500, {"ok": False, "error": "KEYS_UNAVAILABLE",
+                                        "detail": type(exc).__name__})
+        return _keys_response(200, payload)
+
+    @app.put("/api/terminal/keys/{provider}")
+    async def api_keys_store(provider: str, request: Request) -> JSONResponse:
+        refusal = _keys_write_refusal(request)
+        if refusal is not None:
+            return refusal
+        raw = await request.body()
+        if len(raw) > keys_view.MAX_BODY_BYTES:
+            return _keys_response(413, {"ok": False, "error": "BODY_TOO_LARGE"})
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else None
+        except (UnicodeDecodeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            return _keys_response(422, {"ok": False, "error": "KEY_INVALID", "reason": "EMPTY",
+                                        "detail": 'the body must be {"value": "<key>"}'})
+        status_code, body = await asyncio.to_thread(
+            keys_view.store, provider, payload.get("value"), verify=payload.get("verify") is True)
+        body["sessions_open"] = terminals.count()
+        return _keys_response(status_code, body)
+
+    @app.delete("/api/terminal/keys/{provider}")
+    async def api_keys_clear(provider: str, request: Request) -> JSONResponse:
+        refusal = _keys_write_refusal(request)
+        if refusal is not None:
+            return refusal
+        status_code, body = await asyncio.to_thread(keys_view.clear, provider)
+        return _keys_response(status_code, body)
+
+    @app.post("/api/terminal/keys/{provider}/verify")
+    async def api_keys_verify(provider: str, request: Request) -> JSONResponse:
+        refusal = _keys_write_refusal(request)
+        if refusal is not None:
+            return refusal
+        lock = key_verify_locks.get(provider)
+        if lock is None:
+            return _keys_response(404, {"ok": False, "error": "UNKNOWN_PROVIDER"})
+        if not lock.acquire(blocking=False):
+            return _keys_response(409, {"ok": False, "error": "VERIFY_RUNNING"})
+        try:
+            status_code, body = await asyncio.to_thread(keys_view.verify, provider)
+        finally:
+            lock.release()
+        return _keys_response(status_code, body)
 
     # ------------------------------------------------------------ math tutor
     # The Socratic tutor runs the reader's own agent CLI, so it lives behind the

@@ -408,7 +408,8 @@
     if (info.used !== true) return '';
     const reason = oneLine(info.reason) || oneLine(info.code) || '—';
     return `<div class="journals-msg journals-msg--warn" role="status"><div>${esc(t('journals.fallback', { reason }))}</div>`
-      + `<div>${esc(t('journals.key.guidance'))}</div></div>`;
+      + `<div>${esc(t('journals.key.guidance'))}</div>`
+      + '<div class="keys-prompt" data-keys-prompt="openalex" hidden></div></div>';
   }
 
   // Journals the quartile filter dropped for lacking one, and how to get them back.

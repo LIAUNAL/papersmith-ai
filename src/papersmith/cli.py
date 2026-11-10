@@ -21,6 +21,7 @@ from .core import env as env_command
 from .core import executor as executor_command
 from .core import init as init_command
 from .core import ingest as ingest_command
+from .core import keys as keys_command
 from .core import novelty as novelty_command
 from .core import paper_qa as paper_qa_command
 from .core import status as status_command
@@ -65,6 +66,7 @@ _REGISTRY: list = [
     mcp_command.register,
     team_command.register,
     colab_command.register,
+    keys_command.register,
 ]
 
 

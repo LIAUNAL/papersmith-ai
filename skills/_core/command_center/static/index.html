@@ -32,6 +32,7 @@
   <script src="./novelty-panel.js?v=0.69.0"></script>
   <script src="./agents-panel.js?v=0.69.0"></script>
   <script src="./doctor-panel.js?v=0.69.0"></script>
+  <script src="./keys-panel.js?v=0.69.0"></script>
   <script src="./journals-panel.js?v=0.69.0"></script>
   <script src="./ai-history-panel.js?v=0.69.0"></script>
   <script src="./phase-console.js?v=0.69.0"></script>
@@ -2912,6 +2913,19 @@
     .doctor-group th { background: var(--surface-2); color: var(--text); cursor: default; text-transform: uppercase;
       font-size: 0.72rem; letter-spacing: 0.04em; }
     .doctor-detail { color: var(--text-muted); word-break: break-word; }
+    .keys-provider { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; }
+    .keys-provider__head { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .keys-provider__role, .keys-license { color: var(--text-muted); margin: 0.35rem 0; }
+    .keys-form { display: flex; flex-direction: column; gap: 0.4rem; }
+    .keys-form input { max-width: 32rem; font-family: var(--font-mono, monospace); }
+    .keys-form__buttons { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+    .keys-result { min-height: 1.2em; margin-top: 0.35rem; }
+    .keys-result--ok { color: var(--ok, #3fb950); } .keys-result--bad { color: var(--bad, #f85149); }
+    .keys-result--warn { color: var(--warn, #d29922); }
+    .keys-outside code { display: block; white-space: pre-wrap; word-break: break-all; margin-top: 0.3rem; }
+    .keys-prompt { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0;
+      padding: 0.45rem 0.6rem; border: 1px dashed var(--border); border-radius: 6px; }
+    .keys-prompt[hidden] { display: none; }
     .badge--absent { background: transparent; color: var(--text-dim); border-color: var(--border); }
     /* Journals and venue panel of the PDF Preview tab (journals-panel.js) */
     .journals-details { margin-bottom: 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -3910,6 +3924,14 @@
 
     <!-- SMITH DOCTOR: project health (GET /api/doctor, doctor-panel.js) -->
     <div id="pane-doctor" class="tab-pane">
+      <!-- API KEYS: Asta and OpenAlex, per user (GET/PUT/DELETE /api/terminal/keys, keys-panel.js) -->
+      <div class="panel" id="keysCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="keys.title">API keys: Asta and OpenAlex</div>
+          <span class="panel__meta" data-i18n-html="keys.metaHtml">Kept per user outside every workspace, same store as <code>smith keys</code></span>
+        </div>
+        <div id="keysPanel" data-i18n="keys.loading">Loading API keys…</div>
+      </div>
       <div class="panel">
         <div class="panel__header">
           <div class="panel__title" data-i18n="doctor.title">Smith Doctor: project health</div>
@@ -4172,6 +4194,7 @@
       else window.hideManuscriptGraph?.();
       if (tabId === 'doctor') {
         window.refreshDoctorPanel?.();
+        window.refreshKeysPanel?.();
       }
       if (tabId === 'historia') {
         window.refreshAiHistoryPanel?.();

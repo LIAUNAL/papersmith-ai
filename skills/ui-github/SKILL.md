@@ -21,8 +21,9 @@ browse the paper's state without installing anything.
 - **Public.** A GitHub Pages site is public even when the repository is
   private (Pro, Team or Enterprise are needed to serve one from a private
   repository at all).
-- **What is never published:** team and account data, credential status,
-  absolute or home paths, the operator's PDF annotations, and any workspace
+- **What is never published:** team and account data, credential status
+  (the remote-service token and the Asta and OpenAlex API keys panel, whose values are
+  also masked wherever a session quoted them), absolute or home paths, the operator's PDF annotations, and any workspace
   file outside the snapshot's allow-list. The paper PDF (`paper/main.pdf`) and
   its figures are published **as they are**.
 - **AI history:** included by default, with emails, names of the workspace's
