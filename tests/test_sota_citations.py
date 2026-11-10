@@ -674,7 +674,10 @@ class PanelTests(_Ideas):
                 self.assertIn(f"“{QUOTES[POOL[0]['identifier']]}”", result[panel])
                 self.assertIn("SOTA citations", result[panel])
 
-    def test_the_problem_tree_draws_effects_problem_and_causes_with_citations(self) -> None:
+    def test_the_problem_tree_draws_causes_problem_and_effects_with_citations(self) -> None:
+        # odd/tasks/spark-to-paper-enhancements.md S6: the tree reads strictly
+        # top-down, direct causes -> central problem -> effects, so each
+        # effect's "Caused by" note cites referents shown above it.
         self.all_ideas()
         cite_everything(self.root)
         result = render_panels(self.payload())
@@ -683,8 +686,9 @@ class PanelTests(_Ideas):
                      "Unreliable output.", "Caused by DC1, DC2", POOL[0]["title"], "Problem tree"):
             with self.subTest(text=text):
                 self.assertIn(text, tree)
-        self.assertLess(tree.index("Unreliable output."), tree.index("Degraded accuracy"))
-        self.assertLess(tree.index("Degraded accuracy"), tree.index("Noisy features."))
+        self.assertLess(tree.index("Noisy features."), tree.index("Unstable training."))
+        self.assertLess(tree.index("Unstable training."), tree.index("Degraded accuracy"))
+        self.assertLess(tree.index("Degraded accuracy"), tree.index("Unreliable output."))
         self.assertTrue(result["statementHidden"])
 
     def test_the_novelty_tree_links_each_hypothesis_to_its_pillars(self) -> None:

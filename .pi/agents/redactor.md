@@ -194,4 +194,3 @@ citation names, never against your memory of it:
 
 Skimming is the failure mode this protocol exists for: an abstract can
 support that a paper exists, rarely that it says what your sentence says.
-

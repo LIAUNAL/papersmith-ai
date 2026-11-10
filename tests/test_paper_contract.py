@@ -3164,6 +3164,12 @@ class VenueVerbFrontDoorTests(unittest.TestCase):
             code = paper_cli.main(["venue", "status", "--slug", "eswa", "--paper", p])
         self.assertEqual((code, json.loads(out.getvalue())["state"]), (0, "built"))
 
+        with self._captured() as out:
+            code = paper_cli.main(["venue", "catalog"])
+        payload = json.loads(out.getvalue())
+        self.assertEqual((code, payload["verb"]), (0, "catalog"))
+        self.assertGreaterEqual(len(payload["venues"]), 8)
+
     def test_every_venue_verb_has_a_front_door_call_here(self) -> None:
         shipped = _paper_cli_venue_verbs()
         called = _venue_verbs_called_through_main(Path(__file__))
