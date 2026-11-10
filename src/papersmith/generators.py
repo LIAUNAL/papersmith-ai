@@ -180,6 +180,16 @@ LEGACY_BLOCK_BEGINS = frozenset({
     "# >>> papersmith managed block: `papersmith upgrade` rewrites every "
     "line up to the closing marker",
 })
+#: Lines the managed block carried in earlier releases and no longer does. A
+#: file with no markers (written before 0.14.0) is converted by keeping every
+#: line the new block does not carry, so without this a template line whose
+#: wording changed since would be kept below the block as if the workspace had
+#: written it. 0.70.0 removed the `papersmith` command from a comment.
+RETIRED_BLOCK_LINES: Mapping[str, frozenset[str]] = {
+    ".gitignore": frozenset({
+        "# `papersmith init`/`upgrade` and `scripts/setup-harnesses.sh`. `skills/` is",
+    }),
+}
 
 
 def _block_span(lines: list[str]) -> tuple[int, int] | None | bool:
@@ -264,7 +274,7 @@ def merge_managed(relpath: str, rendered: str, existing: bytes | None,
         return "".join(lines[:begin]) + rendered + "".join(lines[end + 1:])
     if baseline_digest is not None and hashlib.sha256(existing).hexdigest() == baseline_digest:
         return rendered
-    carried = set(rendered.splitlines())
+    carried = set(rendered.splitlines()) | RETIRED_BLOCK_LINES.get(relpath, frozenset())
     kept: list[str] = []
     for line in (raw.rstrip("\r\n") for raw in lines):
         if line in carried and line.strip():

@@ -31,7 +31,7 @@ function makeTmp(prefix) {
 
 function generateWorkspace() {
   const destination = makeTmp("papersmith-pi-ext-");
-  const consoleScript = path.join(REPO_ROOT, ".venv", "bin", "papersmith");
+  const consoleScript = path.join(REPO_ROOT, ".venv", "bin", "smith");
   // `--no-env` keeps this offline-fast: `init` provisions a micromamba
   // environment by default, and a test that performed a multi-gigabyte
   // network install per run would leak it into the temp dir and make the

@@ -6,7 +6,7 @@ paper-guide, provisioning scripts). Resolution order:
 1. ``PAPERSMITH_KIT_ROOT`` environment variable — the explicit override.
 2. A papersmith-ai development checkout on disk (a directory holding
    ``skills/``, ``scripts/setup_env.py``, and ``CLAUDE.md``) found above the
-   installed package — this is how ``papersmith`` run from a checkout tracks
+   installed package — this is how ``smith`` run from a checkout tracks
    live edits without reinstalling.
 3. The ``_kit/`` snapshot bundled inside the installed package.
 

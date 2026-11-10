@@ -410,9 +410,11 @@ npm run setup:harnesses
 
 **The command is `smith`.** Installing `papersmith-ai` puts `smith` on `PATH`,
 and every command in this README uses it (`smith init`, `smith upgrade`,
-`smith status`, …). The older `papersmith` entry point is still installed as a
-compatibility alias for existing scripts; it runs the same CLI and reports itself
-as `smith`.
+`smith status`, …). It is the only command: the older `papersmith` alias was
+removed in 0.70.0, and `smith upgrade` repoints a workspace's MCP entries that
+still launch it. Edit any user-level config that names it (`~/.claude.json`,
+`~/.gemini/config/mcp_config.json`) by hand; if `papersmith` lingers on `PATH`
+after `pipx upgrade`, run `pipx reinstall papersmith-ai`.
 
 **The package is published on PyPI.** `pipx install papersmith-ai` brings the
 latest release, which `pipx upgrade papersmith-ai` in **1c** updates. The git URL
@@ -885,7 +887,7 @@ paper_ingestion:
   source_base: guidance
 ```
 
-The active target and profile live in `.papersmith/config.json`; `papersmith
+The active target and profile live in `.papersmith/config.json`; `smith
 target set` changes them. The `paper_ingestion` block is owned by the ingestion
 skill and the orchestrator treats it as opaque (it is edited with the skill, not
 by hand).
@@ -913,7 +915,7 @@ migrations](docs/cli.md#artifact-migrations), and it is also the reason
 
 ### The state: `.papersmith/`
 
-- **`manifest.json`** stores the hash of every generated file. `papersmith
+- **`manifest.json`** stores the hash of every generated file. `smith
   audit --check-drift` compares against the disk and names what drifted; the
   repair is `smith upgrade`, never a hand edit.
 - **`runs_ledger.jsonl`** is append-only: every `smith run` that gets
@@ -1181,7 +1183,7 @@ contract lives in the `remote-execution` section of the
 [Anatomy](docs/skills.md#anatomy-of-each-skill).
 
 **Credentials and backends.** `remote-execution` supports several backends (`kaggle`, `colab`):
-- **Kaggle**: runs against the configured worker pool. Its credentials live in the `kaggle-accounts` store (`skills/kaggle-accounts/store/accounts.json`), never leave the disk and are never printed: `materialize` writes a worker's token to a text file and reports **where**, never **what**. `/kaggle-accounts` validates or removes accounts, and `smith target check kaggle` tests them from the side. A `papersmith accounts` subcommand does not exist yet (recorded follow-up): it is invoked as `python3 skills/kaggle-accounts/scripts/accounts_cli.py {list,discover,validate,remove,materialize}`; `validate --account <username> --json` re-checks one stored account and writes nothing, which is how `preflight` checks each worker.
+- **Kaggle**: runs against the configured worker pool. Its credentials live in the `kaggle-accounts` store (`skills/kaggle-accounts/store/accounts.json`), never leave the disk and are never printed: `materialize` writes a worker's token to a text file and reports **where**, never **what**. `/kaggle-accounts` validates or removes accounts, and `smith target check kaggle` tests them from the side. A `smith accounts` subcommand does not exist yet (recorded follow-up): it is invoked as `python3 skills/kaggle-accounts/scripts/accounts_cli.py {list,discover,validate,remove,materialize}`; `validate --account <username> --json` re-checks one stored account and writes nothing, which is how `preflight` checks each worker.
 - **Colab**: runs against sessions managed by `google-colab-cli` (`smith remote push --backend colab ...`). It is not a workspace target (it is not passed to `init --remote` or to `target check`), but a direct backend of `remote-execution`. It requires `google-colab-cli` on `PATH` and the token resolved in `~/.config/colab-cli/token.json`.
 
 **Jobs checked before they run.** `remote_cli.py generate-jobs` writes one job
@@ -1381,7 +1383,7 @@ four harnesses, relative and idempotent.
 to the manifest. It is not edited by hand: run `smith upgrade` (and `--force`
 if needed) to return to the framework's version.
 
-**"`papersmith accounts` cannot be run."** It does not exist yet (recorded
+**"`smith accounts` cannot be run."** It does not exist yet (recorded
 follow-up). Use
 `python3 skills/kaggle-accounts/scripts/accounts_cli.py {list,discover,validate,remove,materialize}`.
 

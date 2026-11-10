@@ -1541,7 +1541,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "1.1", "name": "Workspace & Manifest", "status": fase1_status, "detail": "papersmith.yaml and the versioned base structure"},
                     {"id": "1.2", "name": "Agent Projection", "status": fase1_status, "detail": "Symbolic links to the operational harnesses"},
                     {"id": "1.3", "name": "Micromamba Isolation", "status": fase1_status, "detail": "Python 3.12 and the environment's dependencies"},
-                    {"id": "1.4", "name": "CLI Integrity", "status": fase1_status, "detail": "papersmith CLI verified"}
+                    {"id": "1.4", "name": "CLI Integrity", "status": fase1_status, "detail": "smith CLI verified"}
                 ]
             },
             {
