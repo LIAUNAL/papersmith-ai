@@ -27,10 +27,14 @@ against a future call, not evidence that the provider-absent path was exercised.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import re
+import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -369,6 +373,54 @@ class DifferentialControlTests(unittest.TestCase):
             "E   AssertionError: read-only tools changed the workspace: tool: a.json",
             "FAILED tests/test_x.py::test_y - AssertionError: read-only tools changed"])
         self.assertEqual(control.failure_details("E   x\n" * 100), ["E   x"] * control.DETAIL_LINES)
+
+    def run_planted_gate(self, fails_when: str) -> tuple[int, str]:
+        """Run the script's own `main` with the declared gate replaced by one
+        stage that prints a pytest-shaped ERROR and exits 1 when `fails_when`
+        (a Python expression over `home`, the HOME it runs under) holds."""
+        control = self.module()
+        with tempfile.TemporaryDirectory() as holder:
+            stage = Path(holder) / "planted_stage.py"
+            stage.write_text(
+                "import os, pathlib, sys\n"
+                "home = pathlib.Path(os.environ['HOME'])\n"
+                f"if {fails_when}:\n"
+                "    print('E       OSError: [Errno 39] Directory not empty: planted')\n"
+                "    print('ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted')\n"
+                "    sys.exit(1)\n", encoding="utf-8")
+            control.half_stages = lambda half: [[sys.executable, str(stage)]]
+            # `main` installs its own SIGTERM handler; this process keeps its own.
+            previous = signal.getsignal(signal.SIGTERM)
+            if previous is not None:
+                self.addCleanup(signal.signal, signal.SIGTERM, previous)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = control.main(["--half", "python"])
+        return code, out.getvalue()
+
+    def test_a_test_failing_under_one_home_only_says_why(self):
+        """The failure this control exists for is the one that differs between
+        the homes, and its log is removed with them. On CI a Pages-publish test
+        reported ERROR under the empty home on one run and under the decoy home
+        on the next, and each job printed the test's id and nothing it said:
+        the details were printed only when both homes failed alike."""
+        code, report = self.run_planted_gate("(home / '.engram').is_dir()")
+        self.assertEqual(code, 1, report)
+        self.assertIn("fails only under decoy: ERROR tests/test_x.py::T::test_y", report)
+        self.assertIn(
+            "under the decoy home:\n  E       OSError: [Errno 39] Directory not empty: planted", report,
+            "a test failing under one home only was named without what it said, "
+            "so a CI-only failure stays unexplained:\n" + report)
+        self.assertNotIn("under the empty home:", report, "the home that passed has nothing to say")
+
+    def test_a_test_failing_under_both_homes_says_why_once(self):
+        code, report = self.run_planted_gate("True")
+        self.assertEqual(code, 1, report)
+        self.assertIn("the gate fails under the empty home (exit 1): ERROR tests/test_x.py::T::test_y", report)
+        self.assertIn(
+            "under the empty home:\n  E       OSError: [Errno 39] Directory not empty: planted", report)
+        self.assertEqual(report.count("Directory not empty: planted"), 2,
+                         "the E line and the summary line, printed once:\n" + report)
 
     def test_a_baseline_that_passes_under_the_empty_home_is_silent(self):
         control = self.module()

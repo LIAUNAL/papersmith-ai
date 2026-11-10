@@ -207,6 +207,19 @@ def failure_details(log_text: str) -> list[str]:
     return lines[:DETAIL_LINES]
 
 
+def print_failure_details(home: str, log_text: str) -> None:
+    """Print `failure_details` of one home's run, under that home's name.
+
+    Called for every home whose run failed, whether or not the two homes
+    agree: a test that fails under one home only is the failure this control
+    exists for, and naming it without what it said leaves it unexplained."""
+    details = failure_details(log_text)
+    if details:
+        print(f"\n[clean-context] what the failing tests said under the {home} home:")
+        for line in details:
+            print(f"  {line}")
+
+
 def gate_could_not_run(log_text: str, code: int) -> bool:
     """Whether a stage failed to launch, rather than failed a test.
 
@@ -297,14 +310,13 @@ def main(argv: list[str] | None = None) -> int:
 
         empty_code, empty_note = run_gate(empty, stages, root / "empty.log")
         decoy_code, decoy_note = run_gate(decoy, stages, root / "decoy.log")
+        logs = {home: (root / f"{home}.log").read_text("utf-8") for home in ("empty", "decoy")}
         empty_result = {"home": "empty", "code": empty_code,
-                        "failures": failure_signature((root / "empty.log").read_text("utf-8")),
-                        "unrunnable": gate_could_not_run(
-                            (root / "empty.log").read_text("utf-8"), empty_code)}
+                        "failures": failure_signature(logs["empty"]),
+                        "unrunnable": gate_could_not_run(logs["empty"], empty_code)}
         decoy_result = {"home": "decoy", "code": decoy_code,
-                        "failures": failure_signature((root / "decoy.log").read_text("utf-8")),
-                        "unrunnable": gate_could_not_run(
-                            (root / "decoy.log").read_text("utf-8"), decoy_code)}
+                        "failures": failure_signature(logs["decoy"]),
+                        "unrunnable": gate_could_not_run(logs["decoy"], decoy_code)}
 
         print(empty_note)
         print(decoy_note)
@@ -320,6 +332,9 @@ def main(argv: list[str] | None = None) -> int:
                   "that has none:")
             for line in differences:
                 print(f"  {line}")
+            for result in (empty_result, decoy_result):
+                if result["code"] != 0:
+                    print_failure_details(result["home"], logs[result["home"]])
             return 1
 
         failures = baseline_failures(empty_result)
@@ -328,11 +343,7 @@ def main(argv: list[str] | None = None) -> int:
                   "with no personal context:")
             for line in failures:
                 print(f"  {line}")
-            details = failure_details((root / "empty.log").read_text("utf-8"))
-            if details:
-                print("\n[clean-context] what the failing tests said under the empty home:")
-                for line in details:
-                    print(f"  {line}")
+            print_failure_details("empty", logs["empty"])
             return 1
 
         print("\n[clean-context] OK: the gate's result is identical under an "
