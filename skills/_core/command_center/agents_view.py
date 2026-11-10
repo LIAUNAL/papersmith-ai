@@ -94,6 +94,7 @@ def _agent(root: Path, path: Path, warnings: list[str]) -> dict[str, Any]:
         "skill": skill_match.group(1) if skill_match else "",
         "stretch": str(meta.get("stretch", "")),
         "tools": tools,
+        "model": str(meta.get("model", "")).strip(),
         "tramo": tramo or "",
         "phases": _phases(name, tramo),
         "harnesses": [d for d in HARNESS_DIRS if (root / d / path.name).is_file()],
