@@ -196,26 +196,47 @@ def failure_signature(log_text: str) -> list[str]:
 DETAIL_LINES = 40
 
 
+def summary_name(line: str) -> str | None:
+    """The failure a pytest short-summary line reports, spelled as
+    `failure_signature` spells it, or None for any other line."""
+    match = PYTEST_FAILURE.match(line)
+    if match:
+        return f"{match[1]} {match[2]}"
+    match = PYTEST_SUBFAILURE.match(line)
+    if match:
+        return f"SUBFAILED {match[1]} {match[2]}"
+    return None
+
+
 def failure_details(log_text: str, first: frozenset[str] = frozenset()) -> list[str]:
-    """What the failing tests said: pytest's short-summary lines that carry a
-    message (``FAILED x - AssertionError: ...``) and its ``E`` assertion lines,
-    at most ``DETAIL_LINES`` of them. The log itself lives in a temporary home
-    that is removed, so without these a CI-only failure names a test and never
-    says why it failed.
+    """What the failing tests said: pytest's short-summary entries that carry a
+    message (``FAILED x - AssertionError: ...``, a subtest's ``SUBFAILED(...)
+    x - ...``) and its ``E`` assertion lines, at most ``DETAIL_LINES`` of them.
+    The log itself lives in a temporary home that is removed, so without these
+    a CI-only failure names a test and never says why it failed.
 
-    The summary lines of the failures in `first` (spelled as
-    `failure_signature` spells them) lead, and the rest keep their log order:
-    while `main` is red, both homes fail other tests whose lines come first in
-    the log and would otherwise spend the cap before the failure that differs."""
-    lines = [line.rstrip() for line in log_text.splitlines()
-             if line.startswith(("FAILED ", "ERROR ")) and " - " in line or line.startswith("E   ")]
-
-    def leads(line: str) -> bool:
-        match = PYTEST_FAILURE.match(line)
-        return match is not None and f"{match[1]} {match[2]}" in first
-
-    lines.sort(key=lambda line: not leads(line))
-    return lines[:DETAIL_LINES]
+    The entries of the failures in `first` (spelled as `failure_signature`
+    spells them) lead, whole: on CI pytest prints a multi-line message in full,
+    its later lines unprefixed. The rest keep their log order. While `main` is
+    red, both homes fail other tests whose lines come first in the log and
+    would otherwise spend the cap before the failure that differs."""
+    leading: list[str] = []
+    rest: list[str] = []
+    continuing = False
+    for line in (raw.rstrip() for raw in log_text.splitlines()):
+        name = summary_name(line)
+        if name is not None:
+            continuing = name in first and " - " in line
+            if " - " in line:
+                (leading if continuing else rest).append(line)
+        elif line.startswith("E   "):
+            continuing = False
+            rest.append(line)
+        elif continuing and line and not line.startswith(("=", "_")):
+            leading.append(line)
+        else:
+            continuing = False
+    return (leading + rest)[:DETAIL_LINES]
 
 
 def print_failure_details(home: str, log_text: str, first: frozenset[str] = frozenset()) -> None:

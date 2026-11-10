@@ -375,27 +375,31 @@ class DifferentialControlTests(unittest.TestCase):
             "FAILED tests/test_x.py::test_y - AssertionError: read-only tools changed"])
         self.assertEqual(control.failure_details("E   x\n" * 100), ["E   x"] * control.DETAIL_LINES)
 
-    def run_planted_gate(self, fails_when: str, shared: int = 0) -> tuple[int, str]:
+    PLANTED = "ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted"
+
+    def run_planted_gate(self, fails_when: str, shared: int = 0, planted: str = PLANTED) -> tuple[int, str]:
         """Run the script's own `main` with the declared gate replaced by one
-        stage that prints a pytest-shaped ERROR and exits 1 when `fails_when`
-        (a Python expression over `home`, the HOME it runs under) holds. With
-        `shared`, both homes first fail another test that prints that many
-        `E` lines, as they do while `main` is red."""
+        stage that fails a test, printing an `E` line and then the short-summary
+        entry `planted`, when `fails_when` (a Python expression over `home`, the
+        HOME it runs under) holds. With `shared`, both homes also fail another
+        test that prints that many `E` lines, as they do while `main` is red.
+        The output keeps pytest's order: every `E` line, then the summary."""
         control = self.module()
         with tempfile.TemporaryDirectory() as holder:
             stage = Path(holder) / "planted_stage.py"
             stage.write_text(
                 "import os, pathlib, sys\n"
                 "home = pathlib.Path(os.environ['HOME'])\n"
+                f"differs = {fails_when}\n"
                 f"for n in range({shared}):\n"
                 "    print(f'E       AssertionError: shared line {n}')\n"
+                "if differs:\n"
+                "    print('E       OSError: [Errno 39] Directory not empty: planted')\n"
                 f"if {shared}:\n"
                 "    print('FAILED tests/test_s.py::S::test_shared - AssertionError: shared')\n"
-                f"if {fails_when}:\n"
-                "    print('E       OSError: [Errno 39] Directory not empty: planted')\n"
-                "    print('ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted')\n"
-                "    sys.exit(1)\n"
-                f"sys.exit(1 if {shared} else 0)\n", encoding="utf-8")
+                "if differs:\n"
+                f"    print({planted!r})\n"
+                f"sys.exit(1 if differs or {shared} else 0)\n", encoding="utf-8")
             # patch.object raises if `half_stages` is ever renamed, instead of
             # letting `main` run the real suite, which holds this very test.
             stages = mock.patch.object(control, "half_stages", lambda half: [[sys.executable, str(stage)]])
@@ -438,6 +442,35 @@ class DifferentialControlTests(unittest.TestCase):
             "under the decoy home:\n"
             "  ERROR tests/test_x.py::T::test_y - OSError: [Errno 39] Directory not empty: planted", report,
             "failures both homes share spent the detail cap before the one that differs:\n" + report)
+
+    def test_a_subtest_failing_under_one_home_only_leads_too(self):
+        """A failing subtest's only summary entry is `SUBFAILED(subject) x -
+        message` (pytest 9.1.1), which the details never collected."""
+        code, report = self.run_planted_gate(
+            "(home / '.engram').is_dir()", shared=self.module().DETAIL_LINES + 5,
+            planted="SUBFAILED(x=2) tests/test_x.py::T::test_y - AssertionError: planted subtest")
+        self.assertEqual(code, 1, report)
+        self.assertIn("fails only under decoy: SUBFAILED x=2 tests/test_x.py::T::test_y", report)
+        self.assertIn(
+            "under the decoy home:\n"
+            "  SUBFAILED(x=2) tests/test_x.py::T::test_y - AssertionError: planted subtest", report,
+            "a subtest failing under one home only said nothing:\n" + report)
+
+    def test_a_leading_failure_keeps_its_whole_message(self):
+        """On CI pytest prints a multi-line message whole in the summary, its
+        later lines unprefixed: a set comparison names the differing items
+        there, as the journal-finder flake in #166 would."""
+        code, report = self.run_planted_gate(
+            "(home / '.engram').is_dir()", shared=self.module().DETAIL_LINES + 5,
+            planted="FAILED tests/test_x.py::T::test_y - AssertionError: Items in the first set "
+                    "but not the second:\n'req-17'\n'req-18'")
+        self.assertEqual(code, 1, report)
+        self.assertIn(
+            "under the decoy home:\n"
+            "  FAILED tests/test_x.py::T::test_y - AssertionError: Items in the first set but not the second:\n"
+            "  'req-17'\n"
+            "  'req-18'\n", report,
+            "the failure that differs lost the rest of its message:\n" + report)
 
     def test_a_test_failing_under_both_homes_says_why_once(self):
         code, report = self.run_planted_gate("True")
