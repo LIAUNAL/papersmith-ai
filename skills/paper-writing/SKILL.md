@@ -2073,6 +2073,16 @@ finding; an audit with none goes from `audited` straight to `built`.
 Every verb accepts `--paper <dir>`, prints one JSON object, and on a refusal
 exits 2 having written nothing.
 
+The shipped venue catalog (`venue catalog`, or one venue with
+`venue catalog --slug <slug>`) is read-only data about the major venues
+(NeurIPS, ICML, IEEE conferences and Transactions, Elsevier, Springer LNCS,
+Frontiers, MDPI): which TeX Live class a venue's template uses, where its
+official guidelines live, and the exact `acquire` command its class origin
+implies. It is data, never shipped templates: the forge ships no document
+class, so the class or style archive itself always arrives per workspace
+through `venue acquire` (`venue list` reports the catalog beside the
+workspace's own venues).
+
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `select --slug <s> (--candidate <openalex id> \| --journal <name> --issn <issn>)` | Writes `venue.json`: the journal (name, ISSNs, publisher, homepage), and the quartile, its source and the review-time estimate copied from `paper/journal-candidates.json`; a candidate missing optional fields is tolerated. The slug is lowercase letters, digits and hyphens | `VENUE_SLUG_INVALID`, `SELECT_MODE_REQUIRED`, `SELECT_MODE_CONFLICT`, `ISSN_INVALID`, `CANDIDATES_ABSENT`, `CANDIDATE_UNKNOWN`, `VENUE_EXISTS`, `PAPER_ABSENT` |
