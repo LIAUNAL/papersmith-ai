@@ -199,6 +199,10 @@
   function promptCard(a, i) {
     const guide = (a.guide || []).map((g) => `<li>${esc(g)}</li>`).join('');
     const need = a.min_sentences ? t('phaseConsole.minSentences', { n: a.min_sentences }) : (a.optional ? t('phaseConsole.optionalText') : '');
+    // Where the reference connectors are called, say how they work and how to
+    // configure them (i18n HTML; the same links the Doctor keys panel uses).
+    const refsNote = a.slash === '/plausibility' ? t('refs.note.plausibilityHtml')
+      : a.slash === '/paper-writing' ? t('refs.note.writingHtml') : '';
     return `<div class="phase-action phase-action--prompt">
         <div class="phase-action__head">
           <strong>${esc(a.label)}</strong>
@@ -208,6 +212,7 @@
         <ul class="phase-action__guide">${guide}</ul>
         ${a.keyword_help ? kwBlock(i) : ''}
         ${a.slash === '/plausibility' ? '<div class="keys-prompt" data-keys-prompt="asta" hidden></div>' : ''}
+        ${refsNote ? `<div class="refs-note">${refsNote}</div>` : ''}
         <textarea class="phase-action__input" id="phaseInput${i}" rows="4"
           placeholder="${esc(a.placeholder)}" aria-label="${esc(a.label)}"></textarea>
         <div class="phase-action__error" id="phaseError${i}" role="alert" hidden></div>

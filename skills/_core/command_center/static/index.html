@@ -2927,6 +2927,12 @@
     .keys-prompt { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0;
       padding: 0.45rem 0.6rem; border: 1px dashed var(--border); border-radius: 6px; }
     .keys-prompt[hidden] { display: none; }
+    /* How the reference connectors work, shown in the phase boxes that call
+       them (phase-console.js) and in the journals panel (journals-panel.js). */
+    .refs-note { margin: 0.4rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--border-subtle);
+      border-radius: 6px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.45; }
+    .refs-note a { color: var(--accent); }
+    .refs-note code { font-size: 0.78rem; }
     .badge--absent { background: transparent; color: var(--text-dim); border-color: var(--border); }
     /* Journals and venue panel of the PDF Preview tab (journals-panel.js) */
     .journals-details { margin-bottom: 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-lg);

@@ -410,6 +410,7 @@
     const reason = oneLine(info.reason) || oneLine(info.code) || '—';
     return `<div class="journals-msg journals-msg--warn" role="status"><div>${esc(t('journals.fallback', { reason }))}</div>`
       + `<div>${esc(t('journals.key.guidance'))}</div>`
+      + `<div class="refs-note">${t('refs.note.journalsHtml')}</div>`
       + '<div class="keys-prompt" data-keys-prompt="openalex" hidden></div></div>';
   }
 
