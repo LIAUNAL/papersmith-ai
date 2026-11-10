@@ -6,6 +6,7 @@ Five subcommands, each printing exactly one JSON object on stdout:
     derive --target <repo> --name <Name> --kind poc|experiments
     render --spec <path/to/diagrams/<kind>.json>
     audit --spec <path/to/diagrams/<kind>.json>
+    audit-svg --svg <path/to/figure.svg>
     status --target <repo> --name <Name>
     validate --target <repo> --name <Name> --kind poc|experiments
              --png-sha256 <hex> --operator-statement "<the operator's words>"
@@ -30,7 +31,8 @@ non-zero. Codes: `APPROVAL_ABSENT`, `PRODUCT_ABSENT`, `DIAGRAMS_OUTSIDE_PRODUCT`
 `PNG_HASH_INVALID`, `PNG_HASH_MISMATCH`, `STATEMENT_EMPTY`, `AUDIT_NOT_PASSED`.
 
 `derive`, `status` and `validate` use the standard library only; `render`
-and `audit` load `_core/figure/diagram_audit` (pypdfium2). TeX runs with shell escape disabled; every process is
+and `audit` load `_core/figure/diagram_audit` (pypdfium2); `audit-svg` loads
+`_core/figure/svg_audit` (stdlib only). TeX runs with shell escape disabled; every process is
 spawned from an argument list, never a shell string.
 """
 from __future__ import annotations
@@ -1036,6 +1038,31 @@ def cmd_audit(args) -> dict:
     return {"ok": True, "kind": spec["kind"], **summary, "report": record["report"]}
 
 
+def _svg_audit():
+    """`_core/figure/svg_audit` (100% stdlib, spec S1 of
+    odd/tasks/spark-to-paper-enhancements.md), loaded on demand."""
+    core = FORGE_ROOT / "skills" / "_core" / "figure"
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    import svg_audit  # noqa: E402  (resolved above)
+
+    return svg_audit
+
+
+def cmd_audit_svg(args) -> dict:
+    """Audit a standalone SVG the same way `audit` audits a drawn diagram:
+    a failing audit is a finding, not a refused call; it exits 0 with
+    `verdict: fail`."""
+    svg = Path(args.svg)
+    if not svg.is_file():
+        raise Refusal("SVG_ABSENT", f"no such file: {svg}")
+    report = _svg_audit().audit_svg(svg)
+    return {"ok": True, "svg": str(svg), "verdict": report["verdict"],
+            "failures": report["failures"],
+            "messages": _svg_audit().failure_messages(report),
+            "report": report}
+
+
 def audit_state(product: Path, kind: str) -> dict:
     """The audit of the PNG drawn now: `verdict` is `pass`, `fail` or
     `unmeasured` from `diagrams/<kind>.audit.json`, `absent` without a
@@ -1143,6 +1170,10 @@ def build_parser() -> argparse.ArgumentParser:
     audit = sub.add_parser("audit", help="re-run the mechanical audit on the drawn diagram and "
                                          "write diagrams/<kind>.audit.json")
     audit.add_argument("--spec", required=True)
+    audit_svg = sub.add_parser("audit-svg", help="run the stdlib SVG audit (typography hierarchy, "
+                                                 "text collisions, contrast, viewbox fit) on a "
+                                                 "standalone SVG and print the report")
+    audit_svg.add_argument("--svg", required=True)
     status = sub.add_parser("status", help="which diagrams and approvals exist for a product")
     status.add_argument("--target", required=True)
     status.add_argument("--name", required=True)
@@ -1168,6 +1199,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
         result = {"derive": cmd_derive, "render": cmd_render, "audit": cmd_audit,
+                  "audit-svg": cmd_audit_svg,
                   "status": cmd_status, "validate": cmd_validate}[args.command](args)
     except Refusal as refusal:
         print(json.dumps({"ok": False, "error": refusal.code, "message": refusal.message, **refusal.extra},
