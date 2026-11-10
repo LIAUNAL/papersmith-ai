@@ -27,6 +27,7 @@
   <script src="./math-panel.js?v=0.69.0"></script>
   <script src="./contribution-affinity.js?v=0.69.0"></script>
   <script src="./model-panel.js?v=0.69.0"></script>
+  <script src="./office-panel.js?v=0.69.0"></script>
   <script src="./experiments-panel.js?v=0.69.0"></script>
   <script src="./experiments-tutor.js?v=0.69.0"></script>
   <script src="./novelty-panel.js?v=0.69.0"></script>
@@ -3043,6 +3044,20 @@
       .pdf-workspace-layout { flex-direction: column; }
       .pdf-control-panel { width: 100%; max-width: 100%; }
     }
+  
+  .office-card { background: #111827; border: 1px solid #374151; border-radius: 10px;
+    padding: 10px 12px; font: 13px/1.5 system-ui, sans-serif; color: #e5e7eb;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); position: relative; }
+  .office-card h4 { margin: 0 0 6px; font-size: 14px; }
+  .office-card p { margin: 2px 0; }
+  .office-card__close { position: absolute; top: 6px; right: 8px; background: none; border: 0;
+    color: #9ca3af; cursor: pointer; font-size: 14px; padding: 0; }
+  .office-card__status { font-size: 11px; font-weight: 400; margin-left: 6px; }
+  .office-card__status--working { color: #34d399; }
+  .office-card__status--idle { color: #9ca3af; }
+  .office-card__status--off { color: #6b7280; }
+  .office-card__open { margin-top: 6px; background: #1d4ed8; color: #fff; border: 0;
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 12px system-ui, sans-serif; }
   </style>
 </head>
 <body>
@@ -3098,6 +3113,7 @@
     <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
     <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-i18n="nav.experiments">🧪 Experiments</button>
     <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
+    <button class="tab-nav__btn" onclick="navigateTab('office')" data-i18n="nav.office">🏢 Agents Office</button>
     <button class="tab-nav__btn" onclick="navigateTab('sections')" data-i18n="nav.sections">Paper Sections</button>
     <button class="tab-nav__btn" onclick="navigateTab('atlas')" data-i18n="nav.atlas">Graph Atlas</button>
     <button class="tab-nav__btn" onclick="navigateTab('preview')" data-i18n="nav.preview">PDF Preview</button>
@@ -3961,6 +3977,15 @@
         </div>
       </div>
     </div>
+  <!-- TAB: AGENTS OFFICE -->
+  <div id="pane-office" class="tab-pane">
+    <div class="office-wrap" style="position: relative;">
+      <canvas id="officeCanvas" style="width: 100%; height: min(68vh, 640px); display: block;"
+              aria-label="Agents Office"></canvas>
+      <div id="officeCardHost" style="position: absolute; z-index: 20; max-width: 300px;"></div>
+    </div>
+  </div>
+
   </main>
 
   <!-- Detail Drawer Modal -->
