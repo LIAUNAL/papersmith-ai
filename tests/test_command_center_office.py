@@ -158,7 +158,7 @@ class WiringTests(unittest.TestCase):
     def test_the_panel_reads_state_and_phases(self) -> None:
         panel = (FORGE_ROOT / "skills" / "_core" / "command_center" / "static" / "office-panel.js").read_text()
         self.assertIn("/api/office/state", panel)
-        self.assertIn("window.phaseRuns", panel)
+        self.assertIn("smith_phase_runs@", panel)
         self.assertIn("openCliConsole", panel)
 
 

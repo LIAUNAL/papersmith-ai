@@ -45,3 +45,21 @@ entirely, for shared or headless machines.
 `tests/test_command_center_terminal.py` pins the launch argvs per platform,
 the macOS `open(1)` path, the unauthorized-page behavior and the console's
 activation affordances.
+
+## The Agents Office panel
+
+The dashboard's **Agents Office** tab (`static/office-panel.js`) draws a 2.5D
+vanilla-canvas view of the same facts: the orchestrator's desk, one desk per
+smith agent with its role, model (or `not measured` — nothing invents one),
+and live status dot, animated flow lines for working agents, and a
+**grand-brain memory area** that glows while Engram interactions
+(`mem_*`/`engram` command lines) are observed in live session output.
+Clicking a desk opens a read-only card with the agent's role, model and
+current task — the phase run this browser tracks, else its session state —
+and can open the existing CLI console on that agent. The panel never closes,
+interrupts or writes to a session; a disabled terminal or an unauthorized
+page says so instead of drawing fiction. The state comes from
+`GET /api/office/state` (`skills/_core/command_center/office.py`), which
+answers under the same authorization semantics as the terminal.
+`tests/test_command_center_office.py` pins the measured-state contract, the
+route wiring and the panel's vanilla-canvas surface.
