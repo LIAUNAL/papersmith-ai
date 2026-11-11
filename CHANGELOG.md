@@ -11,6 +11,38 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.73.0
+
+- The Agents Office is sharp and fluid without a GPU: every static piece
+  (room, desks, the parts of each limb) is baked into one vertex-colored
+  mesh, so the scene is a few hundred draws instead of thousands, and the
+  measured frame rate picks a quality tier (pixel ratio and shadows) that
+  only steps down. On a software-rendered 1440×900 window it went from
+  16 to about 34 fps.
+- Names, states, zone signs and bubbles are HTML tags over the 3D canvas,
+  sized in rem, so they stay crisp and follow the dashboard's text-size
+  control (13.8 px names at A ×1, about 7 px before).
+- Desks are grouped into tramo zones in pipeline order, each with a colored
+  floor and a sign; people have rounded bodies, faces that blink, several
+  hair styles, the zone color on their shirt and a role object on the desk.
+- Interactions read at a glance: lit arcs with data pulses from the
+  orchestrator to each active agent, a document that travels to an agent
+  when it starts a task ("Orchestrator → agent") and back with "✓ done"
+  when it finishes, a brighter Engram core with a ripple and its own tag,
+  and an Events strip with the last 8 events and their time (tasks given
+  and done, the orchestrator session opening and closing, every Engram
+  interaction the server measured).
+- The office camera follows the activity until the operator drags to pan,
+  wheels to zoom at the cursor or clicks an agent (the camera flies to it);
+  "Follow activity" and "Fit all" reframe.
+- The SOTA atlas stays in 3D on software WebGL (no GPU) whenever the page
+  does not hang; only a measured hang (frames over a second, or under 5 fps)
+  drops it to 2D, with a note saying it froze. A browser without WebGL still
+  opens the 2D view.
+- The clean-context gate leads its details with the failures only one home
+  had, including failing subtests and multi-line messages printed whole on
+  CI.
+
 ## 0.72.0
 
 - The dashboard's CLI starts on a click without an agent already open: a
