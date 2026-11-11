@@ -477,6 +477,67 @@ class PanelModelTests(unittest.TestCase):
         self.assertIn("/plausibility idea", out["boss"])
 
 
+EVENTS_HARNESS = r"""
+const fs = require('fs');
+const cfg = JSON.parse(fs.readFileSync(0, 'utf8'));
+global.window = { i18n: { t: (k, v) => k + (v ? ' ' + JSON.stringify(v) : '') } };
+global.document = { addEventListener() {}, getElementById: () => null };
+eval(fs.readFileSync(process.argv[1], 'utf8'));
+const m = window.officeModel;
+const events = m.diffEvents(cfg.prev, cfg.next);
+console.log(JSON.stringify({ events, texts: events.map(m.eventText) }));
+"""
+
+
+@unittest.skipUnless(__import__("shutil").which("node"), "node is not installed")
+class EventsModelTests(unittest.TestCase):
+    """The events strip: only what changed between two measured snapshots."""
+
+    def run_events(self, prev, nxt) -> dict:
+        import json
+        import subprocess
+        done = subprocess.run(["node", "-e", EVENTS_HARNESS, str(STATIC / "office-panel.js")],
+                              input=json.dumps({"prev": prev, "next": nxt}),
+                              capture_output=True, text=True, timeout=30, check=True)
+        return json.loads(done.stdout)
+
+    @staticmethod
+    def snap(states: dict, orch: str = "working", memory=(), at: float = 100.0) -> dict:
+        return {"generated_at": at, "orchestrator": {"state": orch},
+                "agents": [{"id": k, "label": k, "state": v} for k, v in states.items()],
+                "memory": {"interactions": list(memory)}}
+
+    def test_a_task_given_and_a_task_done_become_events(self) -> None:
+        prev = self.snap({"math-tutor": "available", "redactor": "working", "sota-scout": "available"})
+        nxt = self.snap({"math-tutor": "working", "redactor": "available", "sota-scout": "available"}, at=102.5)
+        out = self.run_events(prev, nxt)
+        self.assertEqual([(e["kind"], e["agent"], e["at"]) for e in out["events"]],
+                         [("dispatch", "math-tutor", 102.5), ("done", "redactor", 102.5)])
+        self.assertIn("office.event.dispatch", out["texts"][0])
+        self.assertIn('"agent":"math-tutor"', out["texts"][0])
+        self.assertIn('"from":"office.orchestrator"', out["texts"][0])
+
+    def test_the_first_snapshot_only_reports_its_engram_interactions_with_their_time(self) -> None:
+        memory = [{"at": 90.0, "agent": "orchestrator", "kind": "load", "line": "Called engram"},
+                  {"at": 95.0, "agent": "orchestrator", "kind": "save", "line": "Called engram"}]
+        out = self.run_events(None, self.snap({"math-tutor": "working"}, memory=memory))
+        self.assertEqual([(e["kind"], e["agent"], e["at"]) for e in out["events"]],
+                         [("load", "orchestrator", 90.0), ("save", "orchestrator", 95.0)])
+
+    def test_unchanged_snapshots_and_seen_interactions_report_nothing(self) -> None:
+        memory = [{"at": 90.0, "agent": "orchestrator", "kind": "save", "line": "x"}]
+        same = self.snap({"math-tutor": "working"}, memory=memory)
+        self.assertEqual(self.run_events(same, same)["events"], [])
+
+    def test_the_orchestrator_session_opening_and_closing(self) -> None:
+        opened = self.run_events(self.snap({}, orch="absent"), self.snap({}, orch="available"))["events"]
+        closed = self.run_events(self.snap({}, orch="working"), self.snap({}, orch="absent"))["events"]
+        self.assertEqual([e["kind"] for e in opened], ["online"])
+        self.assertEqual([e["kind"] for e in closed], ["offline"])
+        busy = self.run_events(self.snap({}, orch="available"), self.snap({}, orch="saving"))["events"]
+        self.assertEqual(busy, [], "a state change of a live session is not an online/offline event")
+
+
 class WiringTests(unittest.TestCase):
     """The page loads the vendored three.js scene and the panel reads the office."""
 
@@ -498,10 +559,30 @@ class WiringTests(unittest.TestCase):
         self.assertIn("import * as THREE from 'three';", scene)
         self.assertNotIn("examples/jsm", scene)
         self.assertIn("OrthographicCamera", scene)
-        self.assertIn("camera.position.set(28, 34, 36)", scene)
+        self.assertIn("const OFFSET = new THREE.Vector3(28, 34, 36);", scene)
         for state in ("'working'", "'saving'", "'loading'", "'available'"):
             self.assertIn(state, scene)
         self.assertIn("office.brainSign", scene)
+
+    def test_the_scene_bakes_static_pieces_and_labels_in_html_sized_in_rem(self) -> None:
+        scene = (STATIC / "office3d.js").read_text()
+        page = (STATIC / "index.html").read_text()
+        self.assertIn("function bake(root)", scene)
+        self.assertIn("bake(statics);", scene)
+        self.assertNotIn("CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;\n  const sprite", scene)
+        self.assertNotIn("THREE.Sprite(", scene, "names and states are HTML tags, not canvas sprites")
+        self.assertIn(".office-tag__card b { display: block; font-size: 0.86rem;", page)
+        self.assertIn("MIN_FPS", scene)
+        for zone in ("plausibility", "writing", "figures", "audit"):
+            self.assertIn(f"'{zone}'", scene)
+
+    def test_the_hud_has_camera_controls_and_an_events_strip(self) -> None:
+        page = (STATIC / "index.html").read_text()
+        panel = (STATIC / "office-panel.js").read_text()
+        for element in ('id="officeFit"', 'id="officeFollow"', 'id="officeEvents"'):
+            self.assertIn(element, page)
+        self.assertIn("window.officeScene.fitAll()", panel)
+        self.assertIn("window.officeScene.followActive()", panel)
 
     def test_the_panel_is_read_only(self) -> None:
         panel = (STATIC / "office-panel.js").read_text()
