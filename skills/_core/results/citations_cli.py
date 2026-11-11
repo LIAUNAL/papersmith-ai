@@ -179,6 +179,11 @@ def _rank(root: Path, sjr: str | None) -> int:
             ranks[identifier] = known
             ranked += 1
             continue
+        published = citations.normalize(record.get("doi")) if identity.startswith("arxiv:") else None
+        if published and published.startswith("doi:") and not published.startswith("doi:10.48550/"):
+            # The pool already names this preprint's published version: its
+            # journal rank decides, as for an entry filed under that DOI.
+            identity = published
         if identity.startswith("arxiv:"):
             found = _openalex_institutions(re.sub(r"v\d+$", "", identity.removeprefix("arxiv:")))
             if found is None:

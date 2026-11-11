@@ -456,6 +456,27 @@ class Cli(Workspace):
         with mock.patch.object(citations_cli, "_openalex_institutions", side_effect=works.get):
             return self.rank({"10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024}})
 
+    def test_rank_takes_a_preprint_with_a_published_doi_by_its_journal(self):
+        self.ids = ["10.1000/a", "2202.08545"]
+        self.write(novelty())
+        pool_path = self.root / "sota-pool" / "candidates.json"
+        pool = json.loads(pool_path.read_text())
+        pool["candidates"][1]["doi"] = "10.1000/B"
+        pool_path.write_text(json.dumps(pool))
+        with mock.patch.object(citations_cli, "_openalex_institutions") as openalex:
+            code, body, written = self.rank({
+                "10.1000/a": {"type": "journal-article", "issn": ["1234-5678"], "year": 2024},
+                "10.1000/b": {"type": "journal-article", "issn": ["1234-5678"], "year": 2023}})
+        openalex.assert_not_called()
+        self.assertEqual((code, body["ranked"], body["skipped"]), (0, 2, []))
+        self.assertEqual((written["ranks"]["2202.08545"]["work_type"], written["ranks"]["2202.08545"]["quartile"]),
+                         ("journal-article", "Q1"))
+        self.assertEqual(self.owed(citations.state(self.root)), [])
+
+    def test_rank_keeps_a_preprint_whose_doi_is_its_arxiv_doi_a_preprint(self):
+        code, body, written = self.rank_preprints({"2005.14165": {"rors": ["03cve4549"], "year": 2025}})
+        self.assertEqual(written["ranks"]["2005.14165"]["work_type"], "preprint")
+
     def test_rank_finds_the_lab_of_a_preprint_in_openalex(self):
         code, body, written = self.rank_preprints({"2005.14165": {"rors": ["05wx9n238"], "year": 2020}})
         self.assertEqual((code, body["skipped"]), (0, []))
