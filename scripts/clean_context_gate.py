@@ -196,15 +196,61 @@ def failure_signature(log_text: str) -> list[str]:
 DETAIL_LINES = 40
 
 
-def failure_details(log_text: str) -> list[str]:
-    """What the failing tests said: pytest's short-summary lines that carry a
-    message (``FAILED x - AssertionError: ...``) and its ``E`` assertion lines,
-    at most ``DETAIL_LINES`` of them. The log itself lives in a temporary home
-    that is removed, so without these a CI-only failure names a test and never
-    says why it failed."""
-    lines = [line.rstrip() for line in log_text.splitlines()
-             if line.startswith(("FAILED ", "ERROR ")) and " - " in line or line.startswith("E   ")]
-    return lines[:DETAIL_LINES]
+def summary_name(line: str) -> str | None:
+    """The failure a pytest short-summary line reports, spelled as
+    `failure_signature` spells it, or None for any other line."""
+    match = PYTEST_FAILURE.match(line)
+    if match:
+        return f"{match[1]} {match[2]}"
+    match = PYTEST_SUBFAILURE.match(line)
+    if match:
+        return f"SUBFAILED {match[1]} {match[2]}"
+    return None
+
+
+def failure_details(log_text: str, first: frozenset[str] = frozenset()) -> list[str]:
+    """What the failing tests said: pytest's short-summary entries that carry a
+    message (``FAILED x - AssertionError: ...``, a subtest's ``SUBFAILED(...)
+    x - ...``) and its ``E`` assertion lines, at most ``DETAIL_LINES`` of them.
+    The log itself lives in a temporary home that is removed, so without these
+    a CI-only failure names a test and never says why it failed.
+
+    The entries of the failures in `first` (spelled as `failure_signature`
+    spells them) lead, whole: on CI pytest prints a multi-line message in full,
+    its later lines unprefixed. The rest keep their log order. While `main` is
+    red, both homes fail other tests whose lines come first in the log and
+    would otherwise spend the cap before the failure that differs."""
+    leading: list[str] = []
+    rest: list[str] = []
+    continuing = False
+    for line in (raw.rstrip() for raw in log_text.splitlines()):
+        name = summary_name(line)
+        if name is not None:
+            continuing = name in first and " - " in line
+            if " - " in line:
+                (leading if continuing else rest).append(line)
+        elif line.startswith("E   "):
+            continuing = False
+            rest.append(line)
+        elif continuing and line and not line.startswith(("=", "_")):
+            leading.append(line)
+        else:
+            continuing = False
+    return (leading + rest)[:DETAIL_LINES]
+
+
+def print_failure_details(home: str, log_text: str, first: frozenset[str] = frozenset()) -> None:
+    """Print `failure_details` of one home's run, under that home's name.
+
+    Called for every home whose run failed, whether or not the two homes
+    agree: a test that fails under one home only is the failure this control
+    exists for, and naming it without what it said leaves it unexplained.
+    `first` holds the failures only this home had."""
+    details = failure_details(log_text, first)
+    if details:
+        print(f"\n[clean-context] what the failing tests said under the {home} home:")
+        for line in details:
+            print(f"  {line}")
 
 
 def gate_could_not_run(log_text: str, code: int) -> bool:
@@ -297,14 +343,13 @@ def main(argv: list[str] | None = None) -> int:
 
         empty_code, empty_note = run_gate(empty, stages, root / "empty.log")
         decoy_code, decoy_note = run_gate(decoy, stages, root / "decoy.log")
+        logs = {home: (root / f"{home}.log").read_text("utf-8") for home in ("empty", "decoy")}
         empty_result = {"home": "empty", "code": empty_code,
-                        "failures": failure_signature((root / "empty.log").read_text("utf-8")),
-                        "unrunnable": gate_could_not_run(
-                            (root / "empty.log").read_text("utf-8"), empty_code)}
+                        "failures": failure_signature(logs["empty"]),
+                        "unrunnable": gate_could_not_run(logs["empty"], empty_code)}
         decoy_result = {"home": "decoy", "code": decoy_code,
-                        "failures": failure_signature((root / "decoy.log").read_text("utf-8")),
-                        "unrunnable": gate_could_not_run(
-                            (root / "decoy.log").read_text("utf-8"), decoy_code)}
+                        "failures": failure_signature(logs["decoy"]),
+                        "unrunnable": gate_could_not_run(logs["decoy"], decoy_code)}
 
         print(empty_note)
         print(decoy_note)
@@ -320,6 +365,10 @@ def main(argv: list[str] | None = None) -> int:
                   "that has none:")
             for line in differences:
                 print(f"  {line}")
+            for result, other in ((empty_result, decoy_result), (decoy_result, empty_result)):
+                if result["code"] != 0:
+                    only_here = frozenset(result["failures"]) - frozenset(other["failures"])
+                    print_failure_details(result["home"], logs[result["home"]], only_here)
             return 1
 
         failures = baseline_failures(empty_result)
@@ -328,11 +377,7 @@ def main(argv: list[str] | None = None) -> int:
                   "with no personal context:")
             for line in failures:
                 print(f"  {line}")
-            details = failure_details((root / "empty.log").read_text("utf-8"))
-            if details:
-                print("\n[clean-context] what the failing tests said under the empty home:")
-                for line in details:
-                    print(f"  {line}")
+            print_failure_details("empty", logs["empty"])
             return 1
 
         print("\n[clean-context] OK: the gate's result is identical under an "
