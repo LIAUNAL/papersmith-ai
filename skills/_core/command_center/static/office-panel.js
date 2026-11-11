@@ -9,6 +9,12 @@
  * opens a read-only card on click. Nothing here closes, interrupts or writes
  * to a session; "Open console" only opens the existing CLI console.
  *
+ * The events strip lists what changed between two measured snapshots: a task
+ * given (an agent goes from available to working: the orchestrator invoked
+ * it), a task done (working -> available), the orchestrator session opening
+ * or closing, and each Engram interaction the server observed (with its own
+ * time). The first snapshot only contributes its Engram interactions.
+ *
  * Public surface (window): officeWake(), officeModel (pure helpers, tested).
  */
 (function () {
@@ -20,8 +26,10 @@
   })[c]);
   const STATES = ['working', 'saving', 'loading', 'available'];
   const POLL_MS = 2000;
+  const EVENTS_SHOWN = 8;
+  const EVENTS_KEPT = 40;
 
-  const state = { info: null, error: null, card: null, mounted: false, sceneError: null, timer: null };
+  const state = { info: null, error: null, card: null, mounted: false, sceneError: null, timer: null, events: [], prev: null };
 
   // ---- pure model (window.officeModel) -------------------------------------
   function phaseRunsStore(storage, host) {
@@ -70,7 +78,42 @@
     return t('office.noTask');
   }
 
-  window.officeModel = { phaseRunsStore, runningRuns, decorate, counts, taskOf };
+  const memoryKey = (m) => `${m.at}|${m.agent}|${m.kind}|${m.line}`;
+
+  /** Events between two measured snapshots (prev may be null), oldest first. */
+  function diffEvents(prev, next) {
+    const out = [];
+    if (!next) return out;
+    const at = Number(next.generated_at) || Date.now() / 1000;
+    const labels = new Map((next.agents || []).map((a) => [a.id, a.label || a.id]));
+    const label = (id) => (id === 'orchestrator' ? t('office.orchestrator') : labels.get(id) || id);
+    if (prev) {
+      const before = new Map((prev.agents || []).map((a) => [a.id, a.state]));
+      for (const a of next.agents || []) {
+        const was = before.get(a.id);
+        if (was === undefined || was === a.state) continue;
+        if (a.state === 'working' && was === 'available') out.push({ at, kind: 'dispatch', agent: a.id, label: label(a.id) });
+        if (a.state === 'available' && was === 'working') out.push({ at, kind: 'done', agent: a.id, label: label(a.id) });
+      }
+      const was = (prev.orchestrator || {}).state; const now = (next.orchestrator || {}).state;
+      if (was && now && was !== now && (was === 'absent' || now === 'absent')) {
+        out.push({ at, kind: now === 'absent' ? 'offline' : 'online', agent: 'orchestrator', label: label('orchestrator') });
+      }
+    }
+    const seen = new Set((((prev || {}).memory || {}).interactions || []).map(memoryKey));
+    for (const m of ((next.memory || {}).interactions || [])) {
+      if (seen.has(memoryKey(m))) continue;
+      const kind = ['save', 'load'].includes(m.kind) ? m.kind : 'use';
+      out.push({ at: Number(m.at) || at, kind, agent: m.agent, label: label(m.agent) });
+    }
+    return out.sort((a, b) => a.at - b.at);
+  }
+
+  function eventText(event) {
+    return t(`office.event.${event.kind}`, { agent: event.label, from: t('office.orchestrator') });
+  }
+
+  window.officeModel = { phaseRunsStore, runningRuns, decorate, counts, taskOf, diffEvents, eventText };
 
   // ---- data ----------------------------------------------------------------
   function host() {
@@ -82,6 +125,10 @@
       const res = await fetch('/api/terminal/office');
       const info = res.ok ? await res.json() : null;
       state.info = info ? decorate(info, phaseRunsStore(localStorage, host())) : null;
+      if (state.info && state.info.authorized) {
+        state.events = state.events.concat(diffEvents(state.prev, state.info)).slice(-EVENTS_KEPT);
+        state.prev = state.info;
+      }
       state.error = res.ok ? null : `HTTP ${res.status}`;
     } catch (error) {
       state.error = String(error);
@@ -103,6 +150,7 @@
     try {
       window.officeScene.mount(host, {
         select: (id, event) => showCard(id, event),
+        camera: () => renderControls(),
       });
       state.mounted = true;
     } catch (error) {
@@ -137,8 +185,33 @@
         + `<span class="office-legend__item office-legend__item--engram"><i></i>${esc(t('office.brain'))}`
         + ` <b>${esc(info.memory && info.memory.engram_path ? t('office.engramFound') : t('office.engramMissing'))}</b></span>`;
     }
+    renderEvents();
+    renderControls();
     if (info && state.mounted) window.officeScene.update(info);
     if (state.card && info) refreshCard();
+  }
+
+  function clock(at) {
+    try {
+      return new Date(at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function renderEvents() {
+    const host = document.getElementById('officeEvents');
+    if (!host) return;
+    const shown = state.events.slice(-EVENTS_SHOWN).reverse();
+    host.innerHTML = `<h5>${esc(t('office.events'))}</h5>`
+      + (shown.length ? `<ol>${shown.map((e) => `<li class="office-event office-event--${esc(e.kind)}">`
+        + `<time>${esc(clock(e.at))}</time> <span>${esc(eventText(e))}</span></li>`).join('')}</ol>`
+        : `<p>${esc(t('office.noEvents'))}</p>`);
+  }
+
+  function renderControls() {
+    const follow = document.getElementById('officeFollow');
+    if (follow && window.officeScene) follow.setAttribute('aria-pressed', String(!!window.officeScene.following()));
   }
 
   function findAgent(id) {
@@ -227,6 +300,10 @@
     const pane = document.getElementById('pane-office');
     if (!pane) return;
     new MutationObserver(sync).observe(pane, { attributes: true, attributeFilter: ['class'] });
+    const fit = document.getElementById('officeFit');
+    const follow = document.getElementById('officeFollow');
+    if (fit) fit.addEventListener('click', () => { if (window.officeScene) window.officeScene.fitAll(); renderControls(); });
+    if (follow) follow.addEventListener('click', () => { if (window.officeScene) window.officeScene.followActive(); renderControls(); });
     document.addEventListener('visibilitychange', sync);
     window.addEventListener('office-scene-ready', sync);
     sync();
