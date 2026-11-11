@@ -120,6 +120,31 @@ class ProposalTests(_Workspace):
                                                  "Benchmark on BCI-IV 2a"])
         self.assertEqual(card["key_equation"]["tag"], "1")
 
+    def test_a_revision_without_an_overlay_takes_its_novelty_from_the_concept_map(self) -> None:
+        self.write_proposals()
+        (self.root / "proposals" / "research-concept-qml-r02.sky.json").unlink()
+        (self.root / ".papersmith").mkdir()
+        (self.root / ".papersmith" / "model_spec.json").write_text(json.dumps({
+            "title": "Spec title",
+            "novelty": {"problem_tree": {"central": {"text": "Degraded accuracy on short epochs"}},
+                        "pillars": [{"name": "Fidelity kernel", "summary": "Detail one."},
+                                    {"name": "Re-uploading map"}, {"name": "Shot-noise training"}]},
+        }), encoding="utf-8")
+        card = math_view.build(self.root)["novelty"]
+        self.assertEqual(card["central_idea"], "QMLEEG")
+        self.assertEqual((card["novelty"], card["novelty_detail"]), ("Fidelity kernel", "Detail one."))
+        self.assertEqual(card["problem"], "Degraded accuracy on short epochs")
+        self.assertEqual(card["contributions"], ["Re-uploading map", "Shot-noise training"])
+
+    def test_the_overlay_wins_over_the_concept_map(self) -> None:
+        self.write_proposals()
+        (self.root / ".papersmith").mkdir()
+        (self.root / ".papersmith" / "model_spec.json").write_text(json.dumps({
+            "novelty": {"pillars": [{"name": "Other"}, {"name": "Another"}]}}), encoding="utf-8")
+        card = math_view.build(self.root)["novelty"]
+        self.assertEqual(card["novelty"], "Fidelity kernel on EEG epochs")
+        self.assertEqual(card["contributions"][0], "Data re-uploading map")
+
     def test_maths_inside_a_code_block_is_not_an_equation(self) -> None:
         text = "## A\n\n```latex\n$$\n\\begin{bad\n$$\n```\n\n$$\ny = 2 \\tag{3}\n$$\n"
         found = math_view.equations_from_markdown(text)
