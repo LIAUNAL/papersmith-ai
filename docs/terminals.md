@@ -71,9 +71,30 @@ The dashboard's **Agents Office** tab is a 3D office in the style of weherd
 `static/vendor/three/` and mapped by an import map, with no addons, no build
 step and no network. `static/office3d.js` ports weherd's procedural office:
 an orthographic isometric camera, the cream floor, walls with windows, desks
-with monitor and mug, box-built people and the coffee counter. Its lounge is
+with monitor and mug, procedural people and the coffee counter. Its lounge is
 the **Engram memory core**: a floating brain on a pedestal with one orbiting
 cube per observed memory interaction.
+
+Desks are grouped into **tramo zones** (the agent's stretch of the pipeline,
+in pipeline order), each with a colored floor and a sign; shirts take the
+zone color, each desk carries an object for the agent's role (magnifier for
+auditors and reviewers, books for tutors, pens for writers, a globe for
+scouts, a chart for figures, a server for data, a toolbox for builders), and
+people have rounded bodies, faces that blink and several hair styles.
+
+Built to stay sharp and fluid without a GPU (software WebGL): every static
+piece is baked into one vertex-colored mesh (the room and its desks, and the
+parts of each limb), so the scene is a few hundred draws; the measured frame
+rate picks a quality tier (pixel ratio 2 with shadows, 1.5, then 1 with a
+soft disc under each person) and only steps down. Names, states, zone signs
+and bubbles are HTML tags over the canvas, sized in rem, so the dashboard's
+text-size control (A ×1 … ×2) scales them. On a software-rendered 1440×900
+window the office runs at about 33 fps (it was 16 before baking).
+
+The camera follows the activity (the orchestrator, the active agents and,
+when memory is in use, the brain) until the operator drags to pan, wheels to
+zoom at the cursor, or clicks an agent (the camera flies to it); **Follow
+activity** and **Fit all** reframe.
 
 Who is in the office:
 
@@ -91,7 +112,7 @@ the live CLI sessions (each line read up to 400 characters, so any output scans 
 
 | State | Measured from | Mechanic |
 |---|---|---|
-| working | the agent's invocation at the start of a line (`● sota-scout(…)`, `Task(sota-scout: …)`, `subagent_type: "sota-scout"`; prose that only names an agent does not count) with no completion marker (`⎿ Done (…)`) after it; completions close agents in launch order | seated, typing, bright screen with scrolling lines, flow line from the orchestrator |
+| working | the agent's invocation at the start of a line (`● sota-scout(…)`, `Task(sota-scout: …)`, `subagent_type: "sota-scout"`; prose that only names an agent does not count) with no completion marker (`⎿ Done (…)`) after it; completions close agents in launch order | seated, typing, a scrolling code screen, a lit arc from the orchestrator with data pulses along it |
 | saving | an Engram write printed as a tool call at the start of a line (`mem_save`, `mem_update`, `mem_session_summary`, `engram save`, …) while that agent runs, for 8 s | stands by the desk facing the brain, lime cubes stream desk → brain |
 | loading | an Engram read (`mem_search`, `mem_context`, `mem_get_observation`, `engram search`, …) while that agent runs, for 8 s | same pose, teal cubes stream brain → desk |
 | available | none of the above | seated, leaning back with a coffee cup, dim screen |
@@ -119,6 +140,16 @@ a session showed before the office first read it is history, not activity. The
 agents of a phase this browser is running (its phase runs) get a soft ring.
 Clicking a person opens a read-only card; "Open console" only opens the CLI
 console. The panel never closes, interrupts or writes to a session.
+
+Changes between two measured snapshots are drawn as events. A task given
+(an agent goes from available to working: the orchestrator invoked it) sends
+a document along an arc from the orchestrator's desk with the bubble
+"Orchestrator → agent"; a task done (working → available) sends it back with
+"✓ done"; each Engram interaction flashes the brain and its tag. The
+**Events** strip lists the last 8 with their time: tasks given and done, the
+orchestrator session opening and closing, and every Engram interaction the
+server observed (with the time the server measured it; the first snapshot
+contributes only these).
 
 The state is served at `GET /api/terminal/office`: under `/api/terminal/`
 because the terminal cookie is scoped to that path (the older
