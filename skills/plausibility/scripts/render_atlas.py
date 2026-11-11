@@ -437,7 +437,7 @@ function reportPlanet(key) {
 }
 // 'ok' when WebGL runs on a real GPU; 'weak' when only a software renderer is
 // available (failIfMajorPerformanceCaveat, or a renderer named like one);
-// 'none' when WebGL cannot start at all.
+// 'none' when WebGL cannot start at all. Only 'none' rules the 3D sky out.
 function webglSupport() {
   try {
     const strict = {failIfMajorPerformanceCaveat: true};
@@ -457,8 +457,10 @@ function webglSupport() {
   }
 }
 // Which view to open: ?view=2d or ?view=3d wins, then the viewer's own last
-// choice; otherwise the 3D sky, unless WebGL is missing or software-only. A
-// modest machine (little memory, few cores) keeps the 3D sky, as Banco LIA does.
+// choice; otherwise the 3D sky whenever WebGL starts, on a GPU or in software
+// (llvmpipe, SwiftShader): a machine without a GPU still gets the 3D sky, and
+// only a sky that hangs (watchFrameRate) drops to 2D. A modest machine (little
+// memory, few cores) keeps the 3D sky, as Banco LIA does.
 const VIEW_KEY = 'papersmith-atlas-view';
 function storedView() {
   try { return localStorage.getItem(VIEW_KEY); } catch (e) { return null; }
@@ -471,8 +473,8 @@ function chooseView() {
   const gl = webglSupport();
   if (asked === '2d') return {mode: '2d', reason: 'chosen'};
   if (asked === '3d' && gl !== 'none') return {mode: '3d', reason: 'chosen'};
-  if (gl !== 'ok') return {mode: '2d', reason: gl};
-  return {mode: '3d', reason: 'auto'};
+  if (gl === 'none') return {mode: '2d', reason: 'none'};
+  return {mode: '3d', reason: gl === 'weak' ? 'software' : 'auto'};
 }
 // Canvas 2D constellation with the same handle as AtlasViewer: an orthographic
 // projection of the precomputed sky that can still spin and tilt, drawn only
@@ -850,9 +852,8 @@ const helpPanel = document.getElementById('panel');
 const HELP_3D = helpPanel.textContent;
 const HELP_2D = '2D view: drag to pan, wheel to zoom; turn and tilt change the angle. Hover a planet to trace its cross-system links; click to read it; double-click to center it.';
 const NOTES = {
-  weak: '⚠ This computer has no suitable GPU for the 3D sky (software rendering): showing the 2D constellation.',
   none: '⚠ WebGL is not available here: showing the 2D constellation.',
-  slow: '⚠ The 3D sky drew too slowly here: switched to the lighter 2D constellation (the 3D view button tries it again).',
+  hang: '⚠ The 3D sky froze on this computer: switched to the lighter 2D constellation (the 3D view button tries it again).',
 };
 const viewerHooks = {
   onSelect: key => select(key),
@@ -888,7 +889,7 @@ function mountView(mode, reason) {
   applyVisibility();
   syncRotate();
   if (mode === '3d' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) viewer.rotate(false);
-  if (mode === '3d' && reason === 'auto') watchFrameRate();
+  if (mode === '3d' && (reason === 'auto' || reason === 'software')) watchFrameRate();
 }
 // Draw nothing while nobody can see the sky: the page is hidden (another
 // browser tab, a minimized window) or the dashboard paused it.
@@ -903,19 +904,28 @@ function applyVisibility() {
   }
 }
 document.addEventListener('visibilitychange', () => { pageHidden = document.hidden; applyVisibility(); });
-// A sky that passed the WebGL check can still be too slow to start here: count
-// frames for a few seconds after opening and fall back to the 2D constellation
-// under 20 fps, so the page never hangs. Only the automatic pick is watched,
-// and the fallback is not stored: the next visit tries the 3D sky again.
+// The one rule that drops an automatically opened 3D sky to 2D: it hangs.
+// A slow sky is not a hung one: software rendering without a GPU draws 10 to
+// 30 frames a second and stays usable, so it keeps the 3D sky. Watching the
+// first seconds after opening, the sky hangs when one frame takes longer than
+// HANG_FRAME_MS or the average falls under HANG_FPS. Only the automatic pick
+// is watched, and the fallback is not stored: the next visit tries 3D again.
+const HANG_FRAME_MS = 1000;
+const HANG_FPS = 5;
+function hangs(frames, elapsedMs, worstFrameMs) {
+  return worstFrameMs > HANG_FRAME_MS || (elapsedMs >= 3000 && frames * 1000 / elapsedMs < HANG_FPS);
+}
 function watchFrameRate() {
-  let frames = 0, start = 0;
+  let frames = 0, start = 0, last = 0, worst = 0;
   const mounted = viewer;
   function count(t) {
     if (viewer !== mounted || pageHidden || dashboardPaused) return;
     if (!start) start = t;
+    if (last) worst = Math.max(worst, t - last);
+    last = t;
     frames++;
-    if (t - start < 3000) { requestAnimationFrame(count); return; }
-    if (frames * 1000 / (t - start) < 20) mountView('2d', 'slow');
+    if (hangs(frames, t - start, worst)) { mountView('2d', 'hang'); return; }
+    if (t - start < 3000) requestAnimationFrame(count);
   }
   setTimeout(() => requestAnimationFrame(count), 1000);
 }

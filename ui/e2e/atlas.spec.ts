@@ -228,6 +228,38 @@ test.describe('the SOTA constellation', () => {
 });
 
 test.describe('a selected paper', () => {
+  test('a software renderer (no GPU) keeps the 3D sky and is watched only for a hang', async ({ page }) => {
+    await open(page);
+    const result = await page.evaluate(`(() => {
+      webglSupport = () => 'weak';
+      return {
+        choice: chooseView(),
+        slowButAlive: hangs(30, 3000, 200),   // 10 fps, worst frame 200 ms
+        fewFrames: hangs(12, 3000, 400),      // 4 fps
+        stalledFrame: hangs(3, 1500, 1200),   // one frame over a second
+      };
+    })()`);
+    expect(result).toEqual({ choice: { mode: '3d', reason: 'software' }, slowButAlive: false, fewFrames: true, stalledFrame: true });
+  });
+
+  test('a 3D sky that hangs drops to the 2D constellation and says why', async ({ page }) => {
+    // One frame blocks the page for 1.3 s shortly after opening: a hang.
+    await page.addInitScript(() => {
+      const raf = window.requestAnimationFrame.bind(window);
+      let stalled = false;
+      const t0 = Date.now();
+      window.requestAnimationFrame = (cb) => raf((t) => {
+        if (!stalled && Date.now() - t0 > 2000) { stalled = true; const end = Date.now() + 1300; while (Date.now() < end) { /* hang */ } }
+        cb(t);
+      });
+    });
+    const errors = await open(page);
+    await expect.poll(() => currentView(page), { timeout: 15_000 }).toBe('2d');
+    await expect(page.locator('#gpunote')).toContainText('froze');
+    await expect(page.locator('#viewmode')).toBeEnabled();
+    expect(errors).toEqual([]);
+  });
+
   test('a machine with little memory or few cores keeps the 3D sky', async ({ page }) => {
     await open(page);
     const choice = await page.evaluate(`(() => {

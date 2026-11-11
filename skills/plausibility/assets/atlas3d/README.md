@@ -86,11 +86,14 @@ on the canvas (2D), by priority, skipping any that would overlap one already
 placed, so zooming in reveals more of them.
 
 **2D constellation.** The page opens a canvas 2D view of the same scene, with
-the same handle, when the 3D sky cannot or should not run: no WebGL, a
-software renderer (`failIfMajorPerformanceCaveat` or a SwiftShader / llvmpipe
-renderer name), or a 3D sky that draws under 20 fps in its first seconds;
-reported memory and core counts do not matter. `#gpunote` says why. The slow
-fallback is not remembered: the next visit tries the 3D sky again. `?view=2d`
+the same handle, only when the 3D sky cannot run or hangs: no WebGL at all,
+or, in its first seconds, one frame longer than 1 s or an average under
+5 fps. A machine without a GPU keeps the 3D sky: a software renderer
+(`failIfMajorPerformanceCaveat`, or a SwiftShader / llvmpipe renderer name)
+draws it at roughly 10 to 30 fps and stays usable, so it is watched like any
+automatic pick instead of being sent to 2D up front; reported memory and core
+counts do not matter either. `#gpunote` says why. The hang fallback is not
+remembered: the next visit tries the 3D sky again. `?view=2d`
 or `?view=3d` overrides the choice, and so does the view button (remembered
 in `localStorage` where the frame allows it). The 2D view draws on demand,
 one frame per change, and nothing at rest unless rotation is on. Either view

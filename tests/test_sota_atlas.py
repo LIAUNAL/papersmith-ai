@@ -524,9 +524,9 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
         self.assertIn("window.parent !== window", script)
         self.assertIn("postMessage(", script)
 
-    def test_page_offers_the_2d_constellation_when_the_3d_sky_should_not_run(self):
-        """No WebGL, a software renderer, a small machine or a slow first few
-        seconds open the 2D constellation, and the viewer can switch by hand."""
+    def test_page_offers_the_2d_constellation_when_the_3d_sky_cannot_run_or_hangs(self):
+        """No WebGL or a 3D sky that hangs opens the 2D constellation, and the
+        viewer can switch by hand. A software renderer (no GPU) keeps 3D."""
         page = self.page()
         toolbar = page[page.index('<div id="toolbar">'):]
         toolbar = toolbar[:toolbar.index("</div>")]
@@ -537,10 +537,16 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
         script = self.page_script()
         for needle in ("failIfMajorPerformanceCaveat", "WEBGL_debug_renderer_info",
                        "get('view')", "const FlatViewer", "'view-2d'", "'view-3d'",
-                       "function watchFrameRate", "mountView('2d', 'slow')"):
+                       "function watchFrameRate", "mountView('2d', 'hang')",
+                       "if (gl === 'none') return {mode: '2d', reason: 'none'};",
+                       "return {mode: '3d', reason: gl === 'weak' ? 'software' : 'auto'};",
+                       "const HANG_FRAME_MS = 1000;", "const HANG_FPS = 5;",
+                       "(reason === 'auto' || reason === 'software')) watchFrameRate();"):
             self.assertIn(needle, script)
-        # Missing or software WebGL, or a sky too slow to start, drops to 2D; a
-        # modest machine alone keeps the 3D sky, as Banco LIA does.
+        # Only a missing WebGL or a hung sky drops to 2D: neither a software
+        # renderer nor a slow-but-alive sky nor a modest machine does.
+        for gone in ("gl !== 'ok'", "'slow'", "< 20"):
+            self.assertNotIn(gone, script)
         for gone in ("navigator.deviceMemory", "navigator.hardwareConcurrency"):
             self.assertNotIn(gone, script)
         watch = script[script.index("function watchFrameRate"):]
