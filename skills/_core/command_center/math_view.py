@@ -260,6 +260,14 @@ def build(root: Path | str) -> dict[str, Any]:
         current = model_spec.get_model_specification(root)
         spec_novelty = current.get("novelty") if isinstance(current, dict) else None
         central = _central_problem(spec_novelty) if isinstance(spec_novelty, dict) else ""
+        if isinstance(current, dict) and _valid_spec_file(root / model_spec.SPEC_REL):
+            # A revision without its own overlay (or one whose overlay names no
+            # novelty) takes the card's novelty and contributions from the
+            # concept map, which the deliberation refreshes after every revision.
+            from_spec = _novelty_from_spec(current, title)
+            for field in ("novelty", "novelty_detail", "problem", "contributions"):
+                if not novelty[field]:
+                    novelty[field] = from_spec[field]
         if central:
             novelty = {**novelty, "problem": central, "problem_detail": ""}
         source = f"proposal:{proposal.relative_to(root).as_posix()}"
