@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -667,6 +668,200 @@ class SmithUiTests(unittest.TestCase):
         argv = captured[0]
         self.assertIn("--network-terminal", argv)
         self.assertEqual(argv[argv.index("--terminal-token-file") + 1], str(elsewhere / "secrets" / "tok"))
+
+
+class SmithUiLanTests(unittest.TestCase):
+    """``smith ui --lan``: one switch for the other machines on the operator's
+    network, with the Host check fed this machine's own names (never a
+    wildcard) and the terminal behind a secret kept in a private file."""
+
+    LAN = ["192.168.1.15:8080", "intel2.local:8080", "127.0.0.1:8080"]
+
+    def setUp(self) -> None:
+        from papersmith.core import ui
+
+        self.ui = ui
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.base = Path(holder.name).resolve()
+        self.root = self.base / "paper"
+        self.root.mkdir()
+        from test_command_center_cli import _seed_command_center
+
+        _seed_command_center(self.root)
+        self.captured: list[list[str]] = []
+        stubs = {"_run_child": lambda argv, workspace: self.captured.append(argv) or 0,
+                 "require_runnable_backend": lambda workspace, interpreter: None,
+                 "port_is_free": lambda host, port: True,
+                 "lan_hosts": lambda port: list(self.LAN)}
+        for name, stub in stubs.items():
+            self.addCleanup(setattr, ui, name, getattr(ui, name))
+            setattr(ui, name, stub)
+        patcher = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.base / "config")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop(ui.LAN_ENV, None)
+
+    def args(self, *argv: str) -> argparse.Namespace:
+        parser = argparse.ArgumentParser()
+        self.ui.register(parser.add_subparsers())
+        return parser.parse_args(["ui", *argv, str(self.root)])
+
+    def run_ui(self, *argv: str) -> tuple[list[str], str]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.ui.run_cli(self.args(*argv)), 0)
+        return self.captured[-1], out.getvalue()
+
+    @staticmethod
+    def values(argv: list[str], flag: str) -> list[str]:
+        return [argv[i + 1] for i, item in enumerate(argv) if item == flag]
+
+    def test_without_lan_nothing_changes(self) -> None:
+        argv, _ = self.run_ui()
+        self.assertEqual(self.values(argv, "--host"), ["127.0.0.1"])
+        for flag in ("--allow-unauthenticated-network", "--network-terminal",
+                     "--terminal-token-file", "--allowed-host"):
+            self.assertNotIn(flag, argv)
+        self.assertFalse((self.base / "config").exists())
+
+    def test_lan_serves_the_network_with_the_terminal_behind_a_private_secret(self) -> None:
+        argv, out = self.run_ui("--lan")
+        self.assertEqual(self.values(argv, "--host"), ["0.0.0.0"])
+        self.assertIn("--allow-unauthenticated-network", argv)
+        self.assertIn("--network-terminal", argv)
+        self.assertEqual(self.values(argv, "--allowed-host"), self.LAN)
+        token_file = Path(self.values(argv, "--terminal-token-file")[0])
+        self.assertEqual(token_file, self.base / "config" / "papersmith" / "terminal-token")
+        # The file the wrapper creates passes the backend's own private-file rule.
+        secret = terminal.read_login_token(token_file)
+        if POSIX:
+            self.assertEqual(token_file.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(token_file.parent.stat().st_mode & 0o777, 0o700)
+        self.assertNotIn(secret, " ".join(argv), "argv is readable by every local user")
+        # Shown once, at creation, for the bookmarks; never the wildcard.
+        self.assertIn(f"http://192.168.1.15:8080/api/terminal/login?token={secret}", out)
+        self.assertIn(f"http://intel2.local:8080/api/terminal/login?token={secret}", out)
+        self.assertNotIn("127.0.0.1:8080/api/terminal/login", out)
+
+        argv, out = self.run_ui("--lan")
+        self.assertNotIn(secret, out, "a later start reads the file and does not print it")
+        self.assertEqual(terminal.read_login_token(token_file), secret, "kept across restarts")
+
+    def test_the_environment_makes_lan_the_default_and_no_lan_turns_it_off(self) -> None:
+        with mock.patch.dict(os.environ, {self.ui.LAN_ENV: "1"}):
+            argv, _ = self.run_ui()
+            self.assertEqual(self.values(argv, "--host"), ["0.0.0.0"])
+            argv, _ = self.run_ui("--no-lan")
+            self.assertEqual(self.values(argv, "--host"), ["127.0.0.1"])
+            self.assertNotIn("--network-terminal", argv)
+        with mock.patch.dict(os.environ, {self.ui.LAN_ENV: "0"}):
+            argv, _ = self.run_ui()
+            self.assertNotIn("--allow-unauthenticated-network", argv)
+
+    def test_lan_keeps_an_explicit_host_token_file_and_extra_hosts(self) -> None:
+        token = self.base / "mine"
+        argv, out = self.run_ui("--lan", "--host", "192.168.1.15", "--allowed-host",
+                                "box.example:8080", "--terminal-token-file", str(token))
+        self.assertEqual(self.values(argv, "--host"), ["192.168.1.15"])
+        self.assertEqual(self.values(argv, "--allowed-host"), ["box.example:8080", *self.LAN])
+        self.assertEqual(self.values(argv, "--terminal-token-file"), [str(token)])
+        self.assertTrue(token.is_file())
+
+    def test_lan_without_the_terminal_creates_no_secret(self) -> None:
+        argv, out = self.run_ui("--lan", "--no-terminal")
+        self.assertIn("--no-terminal", argv)
+        self.assertNotIn("--network-terminal", argv)
+        self.assertNotIn("--terminal-token-file", argv)
+        self.assertFalse((self.base / "config").exists())
+        self.assertNotIn("token=", out)
+
+    def test_a_public_address_is_warned_about(self) -> None:
+        err = io.StringIO()
+        self.ui.public_addresses, original = (lambda hosts: ["8.8.4.4"]), self.ui.public_addresses
+        self.addCleanup(setattr, self.ui, "public_addresses", original)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.ui.run_cli(self.args("--lan"))
+        self.assertIn("WARNING: this machine has a public address (8.8.4.4)", err.getvalue())
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.ui.run_cli(self.args("--lan", "--host", "192.168.1.15"))
+        self.assertNotIn("WARNING", err.getvalue(), "bound to a private address only")
+
+    def test_an_existing_token_file_is_never_rewritten(self) -> None:
+        path = self.base / "kept"
+        path.write_text("x" * 40 + "\n", encoding="ascii")
+        self.assertIsNone(self.ui.ensure_token_file(path))
+        self.assertEqual(path.read_text(encoding="ascii"), "x" * 40 + "\n")
+        if POSIX:
+            link = self.base / "link"
+            link.symlink_to(self.base / "nowhere")
+            self.assertIsNone(self.ui.ensure_token_file(link))
+            self.assertFalse((self.base / "nowhere").exists(), "a dangling symlink is not followed")
+
+
+class LanHostsTests(unittest.TestCase):
+    def test_this_machines_names_and_addresses_never_a_wildcard(self) -> None:
+        from papersmith.core import ui
+
+        hosts = ui.lan_hosts(8765, addresses=["192.168.1.15", "2800:e2:1::5"], hostname="Intel2",
+                             names=["intel2.tail1234.ts.net"])
+        self.assertEqual(hosts, ["192.168.1.15:8765", "[2800:e2:1::5]:8765", "intel2:8765",
+                                 "intel2.local:8765", "intel2.tail1234.ts.net:8765", "127.0.0.1:8765", "localhost:8765",
+                                 "[::1]:8765"])
+        self.assertNotIn("0.0.0.0:8765", hosts)
+        self.assertEqual(ui.lan_hosts(1, addresses=[], hostname="box.lan", names=[])[0], "box.lan:1")
+
+    def test_only_addresses_a_browser_can_name(self) -> None:
+        from papersmith.core import ui
+
+        for address in ("127.0.0.1", "::1", "0.0.0.0", "fe80::1", "224.0.0.1", "not-an-ip"):
+            with self.subTest(address=address):
+                self.assertFalse(ui._usable(address))
+        self.assertTrue(ui._usable("10.0.0.7"))
+        self.assertTrue(ui._usable("100.101.102.103"), "a Tailscale address")
+        found = ui.machine_addresses()
+        self.assertTrue(all(ui._usable(address) for address in found), found)
+
+    def test_the_tailscale_name_is_read_from_tailscaled_and_checked(self) -> None:
+        from papersmith.core import ui
+
+        def status(stdout: str, code: int = 0):
+            return mock.patch.object(ui.subprocess, "run", return_value=subprocess.CompletedProcess(
+                ["tailscale"], code, stdout=stdout, stderr=""))
+
+        with status('{"Self": {"DNSName": "Intel2.tail1234.ts.net."}}'):
+            self.assertEqual(ui.tailscale_names(), ["intel2.tail1234.ts.net"])
+        for stdout, code in (("", 1), ("not json", 0), ('{"Self": null}', 0), ("[]", 0),
+                             ('{"Self": {"DNSName": "*.evil.example."}}', 0),
+                             ('{"Self": {"DNSName": "nodots"}}', 0)):
+            with self.subTest(stdout=stdout), status(stdout, code):
+                self.assertEqual(ui.tailscale_names(), [])
+        with mock.patch.object(ui.subprocess, "run", side_effect=FileNotFoundError):
+            self.assertEqual(ui.tailscale_names(), [], "no tailscale installed")
+
+    def test_only_a_public_ipv4_counts_as_public(self) -> None:
+        from papersmith.core import ui
+
+        self.assertEqual(ui.public_addresses(
+            ["192.168.1.15:1", "100.101.102.103:1", "8.8.4.4:1", "[2800:e2:1::5]:1",
+             "intel2.local:1", "10.0.0.1:1"]), ["8.8.4.4"])
+
+    def test_a_lan_host_list_still_refuses_a_rebinding_name(self) -> None:
+        from papersmith.core import ui
+
+        allowed = server.build_allowed_hosts(
+            "0.0.0.0", 8765, ui.lan_hosts(8765, addresses=["192.168.1.15"], hostname="intel2",
+                                        names=[]))
+        with tempfile.TemporaryDirectory() as holder:
+            app = server.create_app(holder, history_store=None, enable_terminal=False,
+                                    allowed_hosts=allowed)
+            for host, refused in (("192.168.1.15:8765", False), ("intel2.local:8765", False),
+                                  ("attacker.example:8765", True)):
+                with self.subTest(host=host):
+                    client = TestClient(app, base_url=f"http://{host}")
+                    status = client.get("/api/health/wiring").status_code
+                    self.assertEqual(status == 421, refused, status)
 
 
 class DashboardTextTests(unittest.TestCase):

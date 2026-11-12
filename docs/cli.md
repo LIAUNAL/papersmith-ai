@@ -531,6 +531,7 @@ smith ui . --publish-pages --yes --no-ai-history
 | `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
 | `--no-terminal` | Does not offer the dashboard's support terminal (offered by default on a loopback bind only; see `--network-terminal`) |
 | `--network-terminal` | Also offers the support terminal and the API keys panel on a non-loopback `--host`, behind a secret (see *Network exposure* below); needs `--allow-unauthenticated-network`; only forwarded when supplied |
+| `--lan` / `--no-lan` | Serves the dashboard to the other machines on your network in one switch: `0.0.0.0`, this machine's own addresses and names for the `Host` check, and the terminal behind a secret kept in `~/.config/papersmith/terminal-token` (see *One switch for your home network* below); `PAPERSMITH_UI_LAN=1` makes it the default |
 | `--terminal-token-file <path>` | With `--network-terminal`: reads the secret from `<path>` (mode `600`, 32 to 256 characters from `A-Z a-z 0-9 . _ ~ -`) instead of generating one at each start, and never prints it; a relative path is resolved from where `smith ui` runs |
 
 **Read-only snapshot.** `--export-snapshot <dir>` runs the workspace's own
@@ -837,6 +838,34 @@ unencrypted, so the SSH tunnel above remains the safer route. Details:
 ```bash
 smith ui --host 0.0.0.0 --allow-unauthenticated-network \
   --allowed-host 192.168.1.10:8080 --network-terminal
+```
+
+**One switch for your home network: `--lan`.** `smith ui --lan` does all of the
+above without naming any address: it binds `0.0.0.0`, adds
+`--allow-unauthenticated-network` and `--network-terminal`, and feeds the
+`Host` check this machine's own names: each of its non-loopback IP addresses
+(VPN interfaces such as Tailscale included), its host name,
+`<hostname>.local`, its Tailscale MagicDNS name (`<host>.<tailnet>.ts.net`, when
+`tailscaled` runs) and the loopback names. It never accepts an arbitrary name,
+so a DNS-rebinding page is still refused (`421`). The terminal's secret lives in
+`~/.config/papersmith/terminal-token` (or `--terminal-token-file`), created on
+the first `--lan` start with mode `600` in a mode-`700` folder and printed that
+once, inside the login URLs to bookmark; later starts read it and never print
+it. A bookmarked login URL keeps working across restarts; open it once after
+each start, because the session cookie is still new at each start. An existing
+token file is never rewritten: delete it to get a new secret. `--no-terminal`
+creates none. Put `export PAPERSMITH_UI_LAN=1` in your shell profile to make
+`--lan` the default of every `smith ui`; `--no-lan` turns it off for one run.
+The same warnings apply: plain HTTP, an unauthenticated dashboard, so only on a
+network you trust. When the machine has a public IPv4 address, `--lan` warns
+that the dashboard is reachable from the Internet unless a firewall blocks the
+port; to reach it from outside your network, use Tailscale (its name and
+address are picked up automatically) or an SSH tunnel, never a public port.
+The addresses are read once at start: restart after the machine changes
+networks.
+
+```bash
+smith ui --lan --no-browser --port 8765
 ```
 
 **A new workspace starts clean.** `smith init` copies only the framework (the
