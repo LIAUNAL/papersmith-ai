@@ -529,7 +529,9 @@ smith ui . --publish-pages --yes --no-ai-history
 | `--yes` | With `--publish-pages`: publishes without the interactive confirmation |
 | `--allowed-host HOST:PORT` | Also accepts that `Host` header (repeatable); only forwarded to the backend when supplied |
 | `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
-| `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
+| `--no-terminal` | Does not offer the dashboard's support terminal (offered by default on a loopback bind only; see `--network-terminal`) |
+| `--network-terminal` | Also offers the support terminal and the API keys panel on a non-loopback `--host`, behind a secret (see *Network exposure* below); needs `--allow-unauthenticated-network`; only forwarded when supplied |
+| `--terminal-token-file <path>` | With `--network-terminal`: reads the secret from `<path>` (mode `600`, 32 to 256 characters from `A-Z a-z 0-9 . _ ~ -`) instead of generating one at each start, and never prints it; a relative path is resolved from where `smith ui` runs |
 
 **Read-only snapshot.** `--export-snapshot <dir>` runs the workspace's own
 backend once, in-process, and writes every read-only answer the dashboard needs
@@ -814,6 +816,29 @@ trust, such as a container whose port is published only to its host,
 `--allow-unauthenticated-network` lifts the refusal. The `Host` check stays on,
 so name every address clients use with `--allowed-host`.
 
+**The support terminal on a network bind.** A non-loopback `--host` does not
+offer the support terminal (a shell with your privileges) or the API keys
+panel, not even with `--allow-unauthenticated-network`; the console says
+"Terminal disabled". `--network-terminal` offers both behind a secret. The
+server prints it once at start, inside one login URL per address a browser may
+use (`http://<address>/api/terminal/login?token=…`, the bind address unless it
+is a wildcard, then each `--allowed-host`); it is new at each start, or read
+from `--terminal-token-file <path>` (a mode-`600` file you own, never printed).
+Opening that URL once in a browser trades the secret for an HttpOnly,
+SameSite=Strict session cookie, new at each start. Every terminal and key route
+answers `403` without it, a state-changing call must also carry this server's
+`Origin`, and the access log shows the URL as `token=[REDACTED]`. A bad token
+file, `--network-terminal` with `--no-terminal`, or `--network-terminal` on a
+loopback `--host` stops the server with exit code 2. The rest of the dashboard
+stays unauthenticated, and plain HTTP carries the secret and every keystroke
+unencrypted, so the SSH tunnel above remains the safer route. Details:
+[terminals.md](terminals.md#on-a-network-bind---network-terminal).
+
+```bash
+smith ui --host 0.0.0.0 --allow-unauthenticated-network \
+  --allowed-host 192.168.1.10:8080 --network-terminal
+```
+
 **A new workspace starts clean.** `smith init` copies only the framework (the
 kit's skills, section contracts, agents and setup scripts) into an empty folder
 and seeds `papersmith.yaml`; it never copies artifacts, graphs or data from
@@ -929,12 +954,15 @@ liveness, for a reload to reattach), `POST /api/terminal/sessions/<id>/input` (`
 it waits for output and pings every 15 s). A closed console drops its stream
 unless a phase is running, and reattaches when opened again.
 At most four live sessions; they close with the server. The console is a shell
-with your privileges, so it is only offered on a loopback bind
-(`smith ui --no-terminal` turns it off). Each server start creates a secret: the
-browser it opens (or the `dashboard login URL` it prints, for `--no-browser`) goes
-through `GET /api/terminal/login?token=…`, which sets an HttpOnly, SameSite=Strict
-cookie, and every terminal route requires it, so another local user or a `curl`
-without the token gets `403`. Every call must also be same-origin: a foreign
+with your privileges, so it is only offered on a loopback bind, or on a network
+bind started with `--network-terminal` (see *The support terminal on a network
+bind* above; `smith ui --no-terminal` turns it off). Each server start creates a
+secret: the browser it opens (or the `dashboard login URL` it prints, for
+`--no-browser`) goes through `GET /api/terminal/login?token=…`, which trades it
+for an HttpOnly, SameSite=Strict session cookie (a second secret, never the
+login one), and every terminal route requires that cookie, so another local user
+or a `curl` without the token gets `403`; the access log shows the login URL as
+`token=[REDACTED]`. Every call must also be same-origin: a foreign
 `Origin` or `Sec-Fetch-Site`, a missing `X-Papersmith-Terminal: 1` header or a
 non-JSON body answers `403`.
 
@@ -977,8 +1005,8 @@ no content), each section contract 256 KiB, 32 KiB of text per block and 200 KiB
 of text in total (with `truncated`). Every read resolves the path, requires it to
 stay inside the workspace (a symlink that escapes gives `unsafe`/404) and
 requires it to be a regular file. papersmith does not generate `main.pdf`: the
-file not existing is normal. The `Host` protection (421) covers these routes only
-on a loopback bind; on a non-loopback bind there is no `Host` filtering.
+file not existing is normal. The `Host` protection (421) covers these routes on
+every bind (see *Allowed-host list*).
 
 **The *Preview* tab.** Shows the text of the written blocks and the compiled PDF
 in one view. On the left the sections appear in order with their state; each block
@@ -1110,8 +1138,8 @@ only) rewrites it and answers `200` or `422`. The **✨ Novelty & Findings** tab
 shows that view at its top, with a rebuild button. `GET /api/atlas/coverage`
 returns what `smith atlas coverage` prints, and `GET /api/atlas/reference?id=`
 returns one cited reference's pool record and its constellation system (`400`
-without `id`), for the citation buttons. The `Host` protection (421) covers these routes only on a loopback
-bind; on a non-loopback bind there is no `Host` filtering.
+without `id`), for the citation buttons. The `Host` protection (421) covers these routes on every
+bind (see *Allowed-host list*).
 
 **The Atlas tab.** `#atlas` consumes the routes above. On the left, a native
 summary (text always escaped): a table of systems with planets and families, the
@@ -1166,8 +1194,7 @@ malformed lines are skipped and counted in `detail`). Optional filters: `source=
 (comma-separated list; 422 on an unknown name) and `limit=` (1 to 1000). Every
 read resolves the path, requires it to stay inside the workspace and to be a
 regular file, and checks the size before reading. There is no author field: it is
-never recorded. The `Host` protection (421) covers the route only on a loopback
-bind.
+never recorded. The `Host` protection (421) covers the route on every bind.
 
 **The Decisions tab.** `#decisions` consumes `/api/decisions` when it opens and
 with the *Refresh* button (the sources are not watched; without overlapping

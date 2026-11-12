@@ -417,7 +417,7 @@ class RouteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             app = server.create_app(tmp, enable_terminal=True, history_store=None)
             client = TestClient(app, base_url="http://127.0.0.1:8080")
-            login = client.get(f"/api/terminal/login?token={app.state.terminal.token}", follow_redirects=False)
+            login = client.get(f"/api/terminal/login?token={app.state.terminal.login_token}", follow_redirects=False)
             self.assertEqual(login.status_code, 303)
             under = client.get("/api/terminal/office").json()
             outside = client.get("/api/office/state").json()

@@ -3,9 +3,12 @@
 The keys themselves — Ai2's Asta and OpenAlex — and every rule about them live
 in ``skills/_core/api_keys.py`` (one file the skill scripts and ``smith keys``
 load too); this module adapts it to the server. The server exposes it only
-behind the support terminal's guard: a loopback bind, the per-server cookie
-and, for writes, a same-origin request carrying ``Origin`` — a key typed into a
-page anybody on the network can reach would not stay a secret.
+behind the support terminal's guard: a bind where the terminal is offered (a
+loopback one, or a network one started with ``--network-terminal``), the
+session cookie its login URL sets and, for writes, a same-origin request
+carrying ``Origin`` — a key typed into a page anybody on the network can reach
+would not stay a secret. Over plain HTTP on a network bind the key still
+crosses the network unencrypted, as everything typed into the terminal does.
 
 Nothing here returns a key. ``status_payload`` says whether and from where;
 ``secret_values`` exists for redaction (the AI-history archive, the static
