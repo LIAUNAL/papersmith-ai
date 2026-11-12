@@ -61,6 +61,12 @@ activates itself (below).
 
 ## On a network bind (`--network-terminal`)
 
+`smith ui --lan` (or `PAPERSMITH_UI_LAN=1`) sets all of this up in one switch:
+the network bind, this machine's own addresses and names for the `Host`
+check, and a login secret kept in `~/.config/papersmith/terminal-token`,
+printed once when it is created. See
+[cli.md](cli.md) (*One switch for your home network*).
+
 A non-loopback `--host` does not offer the terminal, not even with
 `--allow-unauthenticated-network`: the console shows "Terminal disabled", and
 every terminal and API-key route answers 404. Adding `--network-terminal`

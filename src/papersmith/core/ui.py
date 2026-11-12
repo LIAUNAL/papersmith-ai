@@ -12,7 +12,11 @@ import argparse
 import ast
 import contextlib
 import importlib.util
+import ipaddress
+import json
 import os
+import re
+import secrets
 import signal
 import socket
 import subprocess
@@ -372,6 +376,155 @@ def _refuse_conflicting_publish(args) -> None:
         raise UserError("--publish-pages exports its own snapshot: drop --export-snapshot/--export-static")
 
 
+
+#: ``PAPERSMITH_UI_LAN=1`` makes ``--lan`` the default of every ``smith ui``
+#: this shell starts; ``--no-lan`` still turns it off for one run.
+LAN_ENV = "PAPERSMITH_UI_LAN"
+LAN_HOST = "0.0.0.0"
+
+
+def lan_requested(args) -> bool:
+    """``--lan`` / ``--no-lan`` when given, else the ``PAPERSMITH_UI_LAN`` default."""
+    chosen = getattr(args, "lan", None)
+    if chosen is not None:
+        return bool(chosen)
+    return os.environ.get(LAN_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def default_token_file() -> Path:
+    """Where ``--lan`` keeps its login secret when no ``--terminal-token-file`` is given."""
+    config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(config) / "papersmith" / "terminal-token"
+
+
+def ensure_token_file(path: Path) -> str | None:
+    """Create ``path`` with a new login secret (mode 600, in a mode-700 folder)
+    unless it exists. Returns the new secret, or ``None`` when the file was
+    already there; an existing file is left for the backend to check."""
+    if path.exists() or path.is_symlink():
+        return None
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    secret = secrets.token_urlsafe(32)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+        handle.write(secret + "\n")
+    return secret
+
+
+_ADDRESS = re.compile(r"\binet6?\s+(?:addr:)?([0-9a-fA-F.:]+)")
+
+
+def _usable(address: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address.split("%")[0])
+    except ValueError:
+        return False
+    # A link-local IPv6 needs a zone id no browser accepts in a Host header.
+    return not (ip.is_loopback or ip.is_unspecified or ip.is_multicast or ip.is_link_local)
+
+
+def _route_address(family: int, probe: str) -> str | None:
+    """The source address this machine uses toward ``probe`` (no packet is sent)."""
+    try:
+        with socket.socket(family, socket.SOCK_DGRAM) as udp:
+            udp.connect((probe, 9))
+            return udp.getsockname()[0]
+    except OSError:
+        return None
+
+
+def machine_addresses() -> list[str]:
+    """This machine's own non-loopback IP addresses, the default route's first.
+
+    Read from the routing table, the host name, and ``ip addr`` / ``ifconfig``
+    when present (VPN interfaces such as Tailscale included). Never raises."""
+    found: list[str] = []
+    candidates = [_route_address(socket.AF_INET, "192.0.2.1"),
+                  _route_address(socket.AF_INET6, "2001:db8::1")]
+    with contextlib.suppress(OSError, UnicodeError):
+        candidates += [info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None)]
+    for command in (["ip", "-o", "addr", "show"], ["ifconfig"]):
+        try:
+            listing = subprocess.run(command, capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        candidates += _ADDRESS.findall(listing)
+        if listing:
+            break
+    for address in candidates:
+        if address and _usable(address):
+            address = ipaddress.ip_address(address.split("%")[0]).compressed
+            if address not in found:
+                found.append(address)
+    return found
+
+
+_DNS_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+")
+
+
+def tailscale_names() -> list[str]:
+    """This machine's Tailscale MagicDNS name (``host.tailnet.ts.net``) when
+    ``tailscaled`` runs here, else nothing. Its 100.x address comes from
+    ``machine_addresses``. Never raises."""
+    try:
+        done = subprocess.run(["tailscale", "status", "--json"], capture_output=True,
+                              text=True, timeout=5)
+        data = json.loads(done.stdout) if done.returncode == 0 else {}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    me = data.get("Self") if isinstance(data, dict) else None
+    name = str((me or {}).get("DNSName") or "").rstrip(".").lower() if isinstance(me, dict) else ""
+    return [name] if _DNS_NAME.fullmatch(name) else []
+
+
+def public_addresses(hosts: list[str]) -> list[str]:
+    """The IPv4 addresses among ``hosts`` that the whole Internet can route to."""
+    found = []
+    for value in hosts:
+        with contextlib.suppress(ValueError):
+            ip = ipaddress.ip_address(value.rsplit(":", 1)[0])
+            if ip.version == 4 and ip.is_global:
+                found.append(str(ip))
+    return found
+
+
+def _bookmark_rank(value: str) -> int:
+    """IPv4 addresses first, then names, then IPv6 (often a temporary address)."""
+    host = value.rsplit(":", 1)[0].strip("[]")
+    try:
+        return 0 if ipaddress.ip_address(host).version == 4 else 2
+    except ValueError:
+        return 1
+
+
+def lan_hosts(port: int, addresses: list[str] | None = None,
+              hostname: str | None = None, names: list[str] | None = None) -> list[str]:
+    """The ``Host`` values a ``--lan`` dashboard answers to: this machine's own
+    addresses and names, never a wildcard. A DNS-rebinding page arrives under
+    its own domain name, so the Host check keeps refusing it."""
+    hosts: list[str] = []
+
+    def add(name: str) -> None:
+        name = name.strip().lower()
+        value = f"[{name}]:{port}" if ":" in name else f"{name}:{port}"
+        if name and value not in hosts:
+            hosts.append(value)
+
+    for address in machine_addresses() if addresses is None else addresses:
+        add(address)
+    name = (socket.gethostname() if hostname is None else hostname).strip().lower()
+    if name and name != "localhost":
+        add(name)
+        if "." not in name:
+            add(f"{name}.local")
+    for extra in tailscale_names() if names is None else names:
+        add(extra)
+    for loopback in ("127.0.0.1", "localhost", "::1"):
+        add(loopback)
+    return hosts
+
+
 def run_cli(args) -> int:
     workspace = Path(args.directory).expanduser().resolve()
     if not fs.is_dir(workspace):
@@ -405,23 +558,76 @@ def run_cli(args) -> int:
 
     if args.port < 1 or args.port > 65535:
         raise UserError(f"port out of range: {args.port}")
-    port = args.port if port_is_free(args.host, args.port) else find_available_port(args.host, args.port)
+    lan = lan_requested(args)
+    host = args.host
+    allowed = list(getattr(args, "allowed_host", None) or [])
+    allow_network = getattr(args, "allow_unauthenticated_network", False)
+    no_terminal = getattr(args, "no_terminal", False)
+    network_terminal = getattr(args, "network_terminal", False)
+    token_file = getattr(args, "terminal_token_file", None)
+    if lan:
+        # One switch for "reachable from the other machines on my network":
+        # every interface, the Host check fed this machine's own names, and
+        # the terminal behind a login secret kept in a private file.
+        with contextlib.suppress(ValueError):
+            if ipaddress.ip_address(host.strip("[]")).is_loopback:
+                host = LAN_HOST
+        if host == "localhost":
+            host = LAN_HOST
+        allow_network = True
+        network_terminal = not no_terminal
+    port = args.port if port_is_free(host, args.port) else find_available_port(host, args.port)
     prog = getattr(args, "_prog", "smith")
     if port != args.port:
         print(f"{prog} ui: port {args.port} is busy; using {port}", file=sys.stderr)
 
-    url = f"http://{args.host}:{port}/"
+    new_secret = None
+    if lan:
+        allowed += [value for value in lan_hosts(port) if value not in allowed]
+        if network_terminal:
+            if token_file is None:
+                token_file = str(default_token_file())
+            try:
+                new_secret = ensure_token_file(Path(os.path.expanduser(token_file)))
+            except OSError as exc:
+                raise UserError(f"cannot create the login secret {token_file}: {exc}") from exc
+
+    url = f"http://{host}:{port}/"
     interpreter = require_runnable_backend(workspace, interpreter)
     print(f"{prog} ui: serving {workspace} at {url}")
+    if lan:
+        reachable = sorted((value for value in allowed
+                            if not value.startswith(("127.", "localhost:", "[::1]"))),
+                           key=_bookmark_rank)
+        # The default route's address and the .local name: the two worth a
+        # bookmark (container bridges and a second interface also answer).
+        bookmarks = (reachable[:1] + [v for v in reachable[1:]
+                                      if v.split(":")[0].endswith((".local", ".ts.net"))]) or reachable
+        print(f"{prog} ui: on your network (--lan) at: "
+              + ", ".join(f"http://{value}/" for value in bookmarks))
+        exposed = public_addresses(allowed) if host == LAN_HOST else []
+        if exposed:
+            print(f"{prog} ui: WARNING: this machine has a public address ({', '.join(exposed)}). "
+                  f"Unless a firewall blocks port {port}, anyone on the Internet can open this "
+                  f"dashboard over plain HTTP. Prefer Tailscale or an SSH tunnel.",
+                  file=sys.stderr)
+        if new_secret is not None:
+            # Printed this once, when the file is created; later starts read
+            # it from the file and print <secret> in its place.
+            print(f"{prog} ui: new terminal login secret saved in {token_file}. Bookmark a login "
+                  f"URL on each device; it stays valid across restarts:")
+            for value in bookmarks:
+                print(f"  http://{value}/api/terminal/login?token={new_secret}")
+        elif network_terminal:
+            print(f"{prog} ui: terminal login: open your bookmarked login URL once after each "
+                  f"start (its secret is in {token_file})")
     print(f"{prog} ui: press Ctrl+C to stop")
-    token_file = getattr(args, "terminal_token_file", None)
-    argv = build_server_argv(workspace, args.host, port, no_browser=args.no_browser,
+    argv = build_server_argv(workspace, host, port, no_browser=args.no_browser,
                              interpreter=interpreter,
-                             allowed_hosts=getattr(args, "allowed_host", None),
-                             allow_unauthenticated_network=getattr(
-                                 args, "allow_unauthenticated_network", False),
-                             no_terminal=getattr(args, "no_terminal", False),
-                             network_terminal=getattr(args, "network_terminal", False),
+                             allowed_hosts=allowed or None,
+                             allow_unauthenticated_network=allow_network,
+                             no_terminal=no_terminal,
+                             network_terminal=network_terminal,
                              # The backend runs in the workspace: a relative
                              # path is the operator's, from where they typed it.
                              terminal_token_file=(os.path.abspath(os.path.expanduser(token_file))
@@ -549,6 +755,13 @@ def register(subparsers) -> None:
                         help="with --network-terminal: read the secret from <path> (a file only "
                              "you can read, mode 600, 32 to 256 characters from A-Z a-z 0-9 . _ "
                              "~ -) instead of generating one at each start")
+    parser.add_argument("--lan", action=argparse.BooleanOptionalAction, default=None,
+                        help="reach the dashboard from the other machines on your network in "
+                             "one switch: binds 0.0.0.0, accepts this machine's own addresses "
+                             "and <hostname>.local, and offers the terminal behind a login "
+                             "secret kept in ~/.config/papersmith/terminal-token (created once, "
+                             f"mode 600). {LAN_ENV}=1 makes it the default; --no-lan turns it "
+                             "off. Plain HTTP: only on a network you trust")
     parser.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     parser.set_defaults(handler=run_cli)
 
@@ -557,4 +770,6 @@ __all__ = [
     "register", "run_cli", "find_available_port", "port_is_free",
     "build_server_argv", "command_center_entry", "COMMAND_CENTER_ENTRY",
     "COMMAND_CENTER_MODULE", "workspace_interpreter",
+    "LAN_ENV", "lan_requested", "tailscale_names", "public_addresses", "default_token_file", "ensure_token_file",
+    "machine_addresses", "lan_hosts",
 ]
