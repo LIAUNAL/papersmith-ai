@@ -43,7 +43,9 @@ without guessing the order. The minimum path:
    What it leaves inside, in [Inside the workspace](#inside-the-workspace).
 3. **Open the dashboard** — `cd ~/papers/my-paper && smith ui`. It works right
    after `init`: the first run installs the dashboard's own runtime once, outside
-   the workspace, and then serves the eleven phases in order.
+   the workspace, and then serves the eleven phases in order. To use it from
+   your phone or another computer at home, `smith ui --lan` (see
+   [Open the dashboard from another device](#open-the-dashboard-from-another-device)).
 4. **Check that the idea is plausible** — with your idea in two sentences,
    `/plausibility` tracks the SOTA and returns the constellation plus a ranked top 5.
    If you have no clear sentences yet, the dashboard's phase-2 box offers an
@@ -430,7 +432,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.73.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.74.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -498,6 +500,7 @@ smith init ~/papers/sparse-ae \
 
 cd ~/papers/sparse-ae
 smith ui                     # the dashboard; works right after init
+smith ui --lan               # the same, reachable from your other devices (LAN, Tailscale)
 smith ui --publish-pages     # publish a read-only copy with /ui-github (public site)
 smith status
 smith status --json          # machine-readable snapshot
@@ -513,6 +516,50 @@ The workspace stays decoupled from the framework checkout: the scaffolding is
 synced with `smith upgrade`, and the research artifacts are protected by
 contract. What `init` creates exactly —and what gets versioned— in
 [Inside the workspace](#inside-the-workspace).
+
+### Open the dashboard from another device
+
+`smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open
+it. To work from a phone, a tablet or another laptop on the same network:
+
+```bash
+smith ui --lan                         # once
+export PAPERSMITH_UI_LAN=1             # in ~/.bashrc: every smith ui does it
+```
+
+`--lan` binds `0.0.0.0` and prints the addresses to open, for example
+`http://192.168.1.15:8080/` and `http://<hostname>.local:8080/`. When
+[Tailscale](https://tailscale.com) runs on the machine
+(`sudo systemctl enable --now tailscaled && sudo tailscale up`), its MagicDNS name
+`http://<hostname>.<tailnet>.ts.net:8080/` works too, from any of your Tailscale
+devices, away from home included. Only this machine's own addresses and names
+are accepted; any other `Host` gets `421`.
+
+The **support terminal** (the Smith CLI Assistant, a shell with your user's
+rights) and the **API-key panel** stay locked on each device until it logs in:
+
+1. The first `--lan` start creates a secret in
+   `~/.config/papersmith/terminal-token` (mode `600`) and prints it once, inside
+   one login URL per address. Bookmark one on each device; it keeps working
+   across restarts.
+2. A device without the bookmark opens the plain dashboard, opens the terminal
+   window and pastes the secret into its password box (`cat
+   ~/.config/papersmith/terminal-token` on the server shows it). The browser can
+   save it like a password.
+3. The login lasts until the server stops: after each restart, open the
+   bookmark or press **Log in** again.
+
+Delete the token file to get a new secret. `--no-lan` turns it off for one run,
+and `--no-terminal` serves the dashboard without the terminal at all.
+
+**Only on a network you trust.** The rest of the dashboard has no login, and
+plain HTTP carries the secret and every keystroke unencrypted. Never forward the
+port to the Internet: `--lan` warns when the machine has a public address. From
+outside, use Tailscale or an SSH tunnel
+(`ssh -L 8080:127.0.0.1:8080 <server>`, then `http://127.0.0.1:8080/`). The
+lower-level flags (`--host`, `--allowed-host`, `--network-terminal`,
+`--terminal-token-file`) are in [docs/cli.md](docs/cli.md#smith-ui-dir) and the
+terminal's rules in [docs/terminals.md](docs/terminals.md).
 
 ### 3. Ingest literature
 
@@ -1397,6 +1444,14 @@ four harnesses, relative and idempotent.
 **"`smith audit` reports drift."** Some generated file changed with respect
 to the manifest. It is not edited by hand: run `smith upgrade` (and `--force`
 if needed) to return to the framework's version.
+
+**"The terminal window is blank on my phone" or "Could not open a browser
+here".** That device has not logged in to the terminal yet. On a `--lan`
+server, open the terminal window and paste the secret from
+`~/.config/papersmith/terminal-token` into its password box, or open your
+bookmarked login URL. A workspace upgraded before 0.74.0 shows no password box:
+run `smith upgrade` in it and restart `smith ui`. See
+[Open the dashboard from another device](#open-the-dashboard-from-another-device).
 
 **"`smith accounts` cannot be run."** It does not exist yet (recorded
 follow-up). Use
