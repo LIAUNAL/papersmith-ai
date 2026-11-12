@@ -365,6 +365,9 @@ def redact_login_tokens() -> None:
 TERMINAL_COOKIE = "papersmith_terminal"
 #: Seconds between two browser openings asked by POST /api/terminal/activate.
 ACTIVATION_THROTTLE_S = 10.0
+#: Wrong secrets the page's login accepts per window before answering 429.
+LOGIN_FAILURES_MAX = 10
+LOGIN_FAILURE_WINDOW_S = 60.0
 
 
 def _framework_version(root: Path) -> str:
@@ -3603,6 +3606,41 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                             samesite="strict", path="/api/terminal")
         return response
 
+    # The same login from the page itself: the console's password box posts
+    # the secret in a JSON body (never a URL, so no log or history holds it).
+    # Same-origin only, with Origin required on a network bind, and at most
+    # LOGIN_FAILURES_MAX wrong secrets per LOGIN_FAILURE_WINDOW_S, after which
+    # it answers 429 without comparing.
+    login_failures: list[float] = []
+    login_lock = threading.Lock()
+
+    @app.post("/api/terminal/login")
+    async def api_terminal_login_form(request: Request) -> JSONResponse:
+        if not enable_terminal:
+            return JSONResponse({"detail": "the support terminal is disabled on this bind"},
+                                status_code=404, headers=dict(_PAPER_HEADERS))
+        reason = terminal.guard(request.headers, mutating=True, require_origin=network_terminal)
+        if reason is not None:
+            return JSONResponse({"detail": f"refused: {reason}"}, status_code=403,
+                                headers=dict(_PAPER_HEADERS))
+        body = await _terminal_body(request)
+        if body is None:
+            return _bad_body()
+        with login_lock:
+            now = time.monotonic()
+            login_failures[:] = [t for t in login_failures if now - t < LOGIN_FAILURE_WINDOW_S]
+            if len(login_failures) >= LOGIN_FAILURES_MAX:
+                return JSONResponse({"detail": "too many wrong secrets: wait a minute"},
+                                    status_code=429, headers=dict(_PAPER_HEADERS))
+            if not terminals.accepts_login(body.get("token")):
+                login_failures.append(now)
+                return JSONResponse({"detail": "invalid terminal token"}, status_code=403,
+                                    headers=dict(_PAPER_HEADERS))
+        response = JSONResponse({"ok": True}, headers={**_PAPER_HEADERS, "Cache-Control": "no-store"})
+        response.set_cookie(TERMINAL_COOKIE, terminals.token, httponly=True,
+                            samesite="strict", path="/api/terminal")
+        return response
+
     # A page without this server's cookie (an old tab, a bookmark, a server
     # restarted since) asks the server to open its login URL again. The token
     # goes only to the desktop browser through the OS, never to the caller; the
@@ -3654,6 +3692,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse({
             "enabled": enable_terminal and terminal.fcntl is not None,
             "authorized": enable_terminal and authorized,
+            # On a network bind the page logs in with the secret (POST
+            # /api/terminal/login) instead of the loopback self-activation.
+            "network": network_terminal,
             "agents": agents,
             "default": next((a["id"] for a in agents if a["available"]), "shell"),
             "quick": {"shell": list(terminal.SHELL_QUICK), "agent": slash[:24]},

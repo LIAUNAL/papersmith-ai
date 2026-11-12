@@ -28,8 +28,8 @@ function el(id) {
     els[id] = { id, value: '', textContent: '', dataset: {}, disabled: false, innerHTML: '', style: {},
       classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c),
                    toggle: (c) => (cls.has(c) ? cls.delete(c) : cls.add(c)) },
-      setAttribute() {}, addEventListener() {}, appendChild() {}, append() {}, focus() {},
-      remove() { log.push(['bannerRemoved', id]); delete els[id]; } };
+      setAttribute() {}, addEventListener(t, fn) { this['on_' + t] = fn; }, appendChild() {}, append() {}, focus() {},
+      remove() { log.push(['bannerRemoved', this.id]); delete els[this.id]; } };
   }
   return els[id];
 }
@@ -40,9 +40,10 @@ const docListeners = {};
 let created = 0;
 global.document = {
   getElementById: (id) => els[id] || (id === 'cliActivationBanner' ? null : el(id)),
-  createElement: () => { created += 1; return el(created === 1 ? 'cliActivationBanner' : 'x' + created); },
+  createElement: (tag) => { created += 1; return Object.assign(el('x' + created), { tag }); },
   addEventListener: (t, fn) => { docListeners[t] = fn; },
-  body: { appendChild(node) { log.push(['banner', node.id]); } },
+  // The banner is found by the id the script gives it once it is shown.
+  body: { appendChild(node) { log.push(['banner', node.id]); els[node.id] = node; } },
 };
 global.ResizeObserver = class { observe() {} };
 if (cfg.pageOrigin) global.location = { origin: cfg.pageOrigin, host: cfg.pageOrigin.split('//')[1] };
@@ -58,7 +59,7 @@ global.fetch = async (path, opts = {}) => {
   if (path === '/api/terminal/agents') {
     if (activated) pollsSinceActivation += 1;
     const authorized = activated && cfg.authorizeAfter !== null && pollsSinceActivation >= cfg.authorizeAfter;
-    data = { enabled: true, authorized, default: 'claude', quick: {},
+    data = { enabled: true, authorized, network: Boolean(cfg.network), default: 'claude', quick: {},
              agents: authorized ? ['claude', 'shell'].map((id) => ({ id, label: id, available: true })) : [] };
   } else if (path === '/api/terminal/activate' && method === 'POST') {
     // `activated` also stands for the operator opening the printed login
@@ -71,6 +72,10 @@ global.fetch = async (path, opts = {}) => {
     } else {
       data = { ok: true, opened: cfg.opened !== false, origin: 'http://127.0.0.1:8080' };
     }
+  } else if (path === '/api/terminal/login' && method === 'POST') {
+    log.push(['login', body.token, opts.headers['X-Papersmith-Terminal']]);
+    if (body.token === cfg.secret) { activated = true; data = { ok: true }; }
+    else { ok = false; data = { detail: 'invalid terminal token' }; }
   } else if (path === '/api/terminal/tools') {
     data = { tools: { ready: true, preferred_terminal: 'ghostty', missing: [] } };
   } else if (path === '/api/terminal/sessions' && method === 'POST') {
@@ -117,6 +122,17 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   if (cfg.action === 'fab') {
     window.toggleSmithTerminal();
     await wait(cfg.waitMs);
+  } else if (cfg.action === 'login') {
+    window.toggleSmithTerminal();
+    await wait(300);
+    out.form = Boolean(els.cliActivationBanner);
+    for (const typed of cfg.typed) {
+      const box = Object.values(els).find((e) => e.type === 'password');
+      if (!box || !els.cliActivationBanner) break;
+      box.value = typed;
+      els.cliActivationBanner.on_submit({ preventDefault() {} });
+      await wait(400);
+    }
   } else if (cfg.action === 'phase') {
     out.sent = await window.sendToCli('/plausibility idea', true, { kind: 'slash' });
     await wait(400);
@@ -192,6 +208,27 @@ class CliActivationTests(unittest.TestCase):
         out = run(action="fab", refuseActivation=True, authorizeAfter=2)
         self.assertIn(["open", "claude"], out["log"])
         self.assertEqual(out["activity"]["sessionId"], "s1")
+
+
+    def test_a_network_page_asks_for_the_secret_instead_of_activating(self) -> None:
+        # smith ui --lan: no browser on this device can be opened by the
+        # server, so the page shows a password box and never posts activate.
+        out = run(action="login", network=True, secret="s" * 43, typed=[], authorizeAfter=0)
+        self.assertTrue(out["form"])
+        self.assertNotIn("activate", [entry[0] for entry in out["log"]])
+        self.assertNotIn("open", [entry[0] for entry in out["log"]])
+        self.assertIn("cli.loginNeeded", out["status"])
+
+    def test_the_pasted_secret_logs_in_and_opens_the_agent(self) -> None:
+        secret = "s" * 43
+        out = run(action="login", network=True, secret=secret, typed=["wrong", f"  {secret}\n"],
+                  authorizeAfter=0)
+        logins = [entry for entry in out["log"] if entry[0] == "login"]
+        self.assertEqual(logins, [["login", "wrong", "1"], ["login", secret, "1"]])
+        self.assertIn(["bannerRemoved", "cliActivationBanner"], out["log"])
+        self.assertIn(["open", "claude"], out["log"])
+        self.assertEqual(out["activity"]["sessionId"], "s1")
+        self.assertNotIn("activate", [entry[0] for entry in out["log"]])
 
 
 if __name__ == "__main__":

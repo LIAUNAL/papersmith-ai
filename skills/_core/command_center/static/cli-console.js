@@ -149,7 +149,7 @@
     if (!state.info.enabled) {
       say('cli.disabled', null, 'bad');
     } else if (!state.info.authorized) {
-      say('cli.openFromLink', null, 'bad');
+      say(state.info.network ? 'cli.loginNeeded' : 'cli.openFromLink', null, 'bad');
       showActivationBanner();
     } else {
       loadTools();
@@ -163,6 +163,7 @@
   // its printed access link sets (server.py terminal login), so say what to do.
   function showActivationBanner() {
     if (document.getElementById('cliActivationBanner')) return;
+    if (state.info && state.info.network) { showLoginBanner(); return; }
     const banner = document.createElement('div');
     banner.id = 'cliActivationBanner';
     banner.setAttribute('role', 'alert');
@@ -195,6 +196,83 @@
     document.body.appendChild(banner);
   }
 
+  // On a network bind the server cannot open a browser for this device, so
+  // the page asks for the login secret itself (the file smith ui names) and
+  // posts it in a JSON body; the server answers with the terminal cookie. A
+  // form with a password field lets the browser offer to remember it.
+  function showLoginBanner() {
+    const banner = document.createElement('form');
+    banner.id = 'cliActivationBanner';
+    banner.setAttribute('role', 'alert');
+    banner.setAttribute('autocomplete', 'on');
+    banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;'
+      + 'background:#7f1d1d;color:#fff;padding:10px 14px;border-radius:8px;'
+      + 'font:14px/1.4 system-ui,sans-serif;max-width:min(92vw,600px);'
+      + 'box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+    const text = document.createElement('span');
+    text.setAttribute('data-i18n', 'cli.loginBanner');
+    text.textContent = t('cli.loginBanner');
+    text.style.cssText = 'flex:1 1 100%;';
+    // A hidden user name, so password managers file the secret under one entry.
+    const user = document.createElement('input');
+    user.type = 'text';
+    user.name = 'username';
+    user.value = 'papersmith-terminal';
+    user.setAttribute('autocomplete', 'username');
+    user.style.cssText = 'display:none;';
+    const secret = document.createElement('input');
+    secret.type = 'password';
+    secret.name = 'password';
+    secret.id = 'cliLoginSecret';
+    secret.setAttribute('autocomplete', 'current-password');
+    secret.setAttribute('aria-label', t('cli.loginBanner'));
+    secret.style.cssText = 'flex:1 1 220px;min-width:0;padding:4px 8px;border-radius:6px;border:0;'
+      + 'font:13px ui-monospace,monospace;';
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.setAttribute('data-i18n', 'cli.loginButton');
+    submit.textContent = t('cli.loginButton');
+    submit.style.cssText = 'background:#fff;color:#7f1d1d;border:0;border-radius:6px;'
+      + 'padding:4px 10px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.setAttribute('aria-label', '×');
+    close.style.cssText = 'background:none;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1;padding:0;';
+    close.addEventListener('click', () => banner.remove());
+    banner.addEventListener('submit', (event) => {
+      if (event && event.preventDefault) event.preventDefault();
+      login(String(secret.value || '').trim()).then((ok) => {
+        if (ok && isOpen() && !state.sessionId) start().catch(() => {});
+      }).catch(() => {});
+    });
+    banner.append(text, user, secret, submit, close);
+    document.body.appendChild(banner);
+    if (secret.focus) secret.focus();
+  }
+
+  // Trades the login secret for the terminal cookie; true once authorized.
+  async function login(secret) {
+    if (!secret) return false;
+    say('cli.loggingIn', null, 'warn');
+    try {
+      await api('/api/terminal/login', 'POST', { token: secret });
+    } catch (err) {
+      say('cli.loginFailed', { error: err.message }, 'bad');
+      return false;
+    }
+    state.info = null;
+    state.accessNote = '';
+    const info = await loadInfo();
+    if (!info.authorized) {
+      say('cli.loginFailed', { error: 'HTTP 403' }, 'bad');
+      return false;
+    }
+    hideActivationBanner();
+    say('cli.activated', null, 'ok');
+    return true;
+  }
+
   function hideActivationBanner() {
     const banner = document.getElementById('cliActivationBanner');
     if (banner) banner.remove();
@@ -208,6 +286,13 @@
   async function ensureAuthorized() {
     const info = await loadInfo();
     if (!info.enabled || info.authorized) return info;
+    // A network bind refuses the self-activation: the page logs in instead.
+    if (info.network) {
+      showActivationBanner();
+      state.accessNote = t('cli.loginNeeded');
+      say('cli.loginNeeded', null, 'bad');
+      return info;
+    }
     if (state.activating) return state.activating;
     state.accessNote = '';
     state.activating = (async () => {

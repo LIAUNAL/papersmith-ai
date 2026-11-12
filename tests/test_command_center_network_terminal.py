@@ -42,9 +42,10 @@ ORIGIN = f"http://{NET}"
 #: What the dashboard's own scripts send on every state-changing call.
 WRITE = {"Origin": ORIGIN, "Content-Type": "application/json", "X-Papersmith-Terminal": "1"}
 #: Routes under /api/terminal that answer without the cookie by design: the
-#: login itself, the self-activation (refused on a network bind) and two status
+#: login itself (the link and the page's password box), the self-activation (refused on a network bind) and two status
 #: reads that withhold every agent and session byte from an unauthorized page.
-OPEN_BY_DESIGN = {("GET", "/api/terminal/login"), ("POST", "/api/terminal/activate"),
+OPEN_BY_DESIGN = {("GET", "/api/terminal/login"), ("POST", "/api/terminal/login"),
+                  ("POST", "/api/terminal/activate"),
                   ("GET", "/api/terminal/agents"), ("GET", "/api/terminal/office")}
 SECRET = "operator-secret-" + "k" * 24
 
@@ -218,6 +219,87 @@ class NetworkRouteTests(NetworkCase):
         cleared = self.client.request("DELETE", "/api/terminal/keys/asta", headers=WRITE, content=b"{}")
         self.assertEqual(cleared.status_code, 200)
         self.assertIsNone(api_keys.read("asta"))
+
+
+class PageLoginTests(NetworkCase):
+    """The console's password box: POST /api/terminal/login with the secret in a
+    JSON body, so a device that has no login link can still get in."""
+
+    def post(self, body, headers=None, client=None):
+        return (client or self.client).post("/api/terminal/login", headers=headers or WRITE,
+                                            content=json.dumps(body).encode())
+
+    def test_the_page_tells_a_network_bind_from_loopback(self) -> None:
+        self.assertTrue(self.client.get("/api/terminal/agents").json()["network"])
+        with tempfile.TemporaryDirectory() as holder:
+            app = server.create_app(Path(holder), history_store=None, enable_terminal=True)
+            self.addCleanup(app.state.terminal.close_all)
+            local = TestClient(app, base_url="http://127.0.0.1:8080")
+            self.assertFalse(local.get("/api/terminal/agents").json()["network"])
+
+    def test_the_secret_in_the_body_buys_the_cookie(self) -> None:
+        terminals = self.app.state.terminal
+        response = self.post({"token": terminals.login_token})
+        self.assertEqual(response.status_code, 200, response.text)
+        cookie = response.headers["set-cookie"]
+        self.assertTrue(cookie.startswith(f"{server.TERMINAL_COOKIE}={terminals.token};"), cookie)
+        for attribute in ("HttpOnly", "SameSite=strict", "Path=/api/terminal"):
+            self.assertIn(attribute, cookie)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertNotIn(terminals.login_token, json.dumps(dict(response.headers)) + response.text)
+        self.assertTrue(self.client.get("/api/terminal/agents").json()["authorized"])
+
+    def test_a_wrong_or_odd_secret_is_refused_without_a_cookie(self) -> None:
+        terminals = self.app.state.terminal
+        for body in ({}, {"token": ""}, {"token": "wrong"}, {"token": terminals.token},
+                     {"token": terminals.login_token[:-1]}, {"token": 7}, {"token": None},
+                     {"token": "\udcff"}, {"token": "é" * 40}):
+            with self.subTest(body=body):
+                response = self.post(body)
+                self.assertEqual(response.status_code, 403, response.text)
+                self.assertNotIn("set-cookie", response.headers)
+        bad = self.client.post("/api/terminal/login", headers=WRITE, content=b"[1]")
+        self.assertEqual(bad.status_code, 422)
+        self.assertFalse(self.client.get("/api/terminal/agents").json()["authorized"])
+
+    def test_the_page_login_needs_this_servers_origin(self) -> None:
+        token = self.app.state.terminal.login_token
+        no_origin = {k: v for k, v in WRITE.items() if k != "Origin"}
+        for headers in (no_origin, {**WRITE, "Origin": "http://evil.example"},
+                        {**WRITE, "Origin": "null"}, {**WRITE, "Sec-Fetch-Site": "cross-site"}):
+            with self.subTest(headers=headers):
+                response = self.post({"token": token}, headers=headers)
+                self.assertEqual(response.status_code, 403, response.text)
+                self.assertNotIn("set-cookie", response.headers)
+        self.assertEqual(self.client.get("/api/terminal/login", params={}).status_code, 403)
+
+    def test_wrong_secrets_are_limited_per_minute(self) -> None:
+        for _ in range(server.LOGIN_FAILURES_MAX):
+            self.assertEqual(self.post({"token": "wrong"}).status_code, 403)
+        # Past the limit even the right secret waits: nothing is compared.
+        limited = self.post({"token": self.app.state.terminal.login_token})
+        self.assertEqual(limited.status_code, 429)
+        self.assertNotIn("set-cookie", limited.headers)
+        later = time.monotonic() + server.LOGIN_FAILURE_WINDOW_S + 1
+        with mock.patch.object(server.time, "monotonic", return_value=later):
+            self.assertEqual(self.post({"token": self.app.state.terminal.login_token}).status_code, 200)
+
+    def test_the_page_login_never_logs_the_secret(self) -> None:
+        token = self.app.state.terminal.login_token
+        with self.assertLogs(level="DEBUG") as seen:
+            logging.getLogger("papersmith.test").debug("marker")
+            self.post({"token": "wrong"})
+            self.post({"token": token})
+        self.assertNotIn(token, "\n".join(seen.output))
+
+    def test_a_disabled_terminal_has_no_page_login(self) -> None:
+        with tempfile.TemporaryDirectory() as holder:
+            app = server.create_app(Path(holder), history_store=None, enable_terminal=False,
+                                    allowed_hosts=server.build_allowed_hosts("0.0.0.0", 8080, [NET]))
+            client = TestClient(app, base_url=ORIGIN)
+            response = client.post("/api/terminal/login", headers=WRITE,
+                                   content=json.dumps({"token": "x" * 43}).encode())
+            self.assertEqual(response.status_code, 404)
 
 
 @unittest.skipUnless(POSIX, "the support terminal needs a POSIX pty")

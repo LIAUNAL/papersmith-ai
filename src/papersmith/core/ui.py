@@ -619,8 +619,9 @@ def run_cli(args) -> int:
             for value in bookmarks:
                 print(f"  http://{value}/api/terminal/login?token={new_secret}")
         elif network_terminal:
-            print(f"{prog} ui: terminal login: open your bookmarked login URL once after each "
-                  f"start (its secret is in {token_file})")
+            print(f"{prog} ui: terminal login: once per device after each start, open your "
+                  f"bookmarked login URL or paste the secret from {token_file} into the "
+                  f"dashboard's terminal window")
     print(f"{prog} ui: press Ctrl+C to stop")
     argv = build_server_argv(workspace, host, port, no_browser=args.no_browser,
                              interpreter=interpreter,

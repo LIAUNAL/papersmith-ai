@@ -92,6 +92,14 @@ offers both behind a secret, for example
   with its server. The page never activates itself (`POST
   /api/terminal/activate` answers 403), and the browser `smith ui` opens gets
   the plain dashboard URL, never the secret.
+- **Or the password box.** A device without the login URL (a phone, another
+  laptop) opens the plain dashboard: the terminal window then shows a password
+  box. Pasting the secret there posts it in a JSON body to `POST
+  /api/terminal/login` (never in a URL, so no log or history holds it), which
+  sets the same cookie. It needs this server's `Origin`, like every
+  state-changing call, and after 10 wrong secrets in a minute it answers `429`
+  without comparing. The browser can remember the secret as a saved password,
+  so later logins are one click.
 - **Every route checks it.** Every terminal route (sessions, input and resize,
   the SSE stream, tools, the external launch, both tutors) and every API-key
   route answers 403 without the cookie, comparing secrets with

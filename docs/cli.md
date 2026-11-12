@@ -852,7 +852,9 @@ so a DNS-rebinding page is still refused (`421`). The terminal's secret lives in
 the first `--lan` start with mode `600` in a mode-`700` folder and printed that
 once, inside the login URLs to bookmark; later starts read it and never print
 it. A bookmarked login URL keeps working across restarts; open it once after
-each start, because the session cookie is still new at each start. An existing
+each start, because the session cookie is still new at each start. A device
+without it opens the plain dashboard and pastes the secret into the terminal
+window's password box (the browser can remember it). An existing
 token file is never rewritten: delete it to get a new secret. `--no-terminal`
 creates none. Put `export PAPERSMITH_UI_LAN=1` in your shell profile to make
 `--lan` the default of every `smith ui`; `--no-lan` turns it off for one run.
