@@ -1483,7 +1483,9 @@ for the same keys in **Doctor → API keys**.
   one in its JSON. `--verify` sends it only to its own service (Asta: one
   `get_paper` call in the `x-api-key` header; OpenAlex: one `/works?per-page=1`
   call with `api_key`), follows no redirect, and reports `ok`, `refused` or
-  `unreachable` — for OpenAlex with the remaining daily budget.
+  `unreachable` — for OpenAlex with the remaining daily budget. A keyed Asta
+  lookup answers within a second or only after 30 s or more, so a call silent
+  for 5 s is asked again, within 30 s in all.
 - **Sessions:** the dashboard exports each stored key into the sessions its CLI
   assistant starts (unless already exported). For an agent started elsewhere,
   `status` prints the line to export it from the file, e.g.

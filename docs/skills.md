@@ -162,7 +162,9 @@ dashboard's Doctor → API keys, or `smith keys set asta`), the scout searches A
 (the Semantic Scholar corpus, an MCP server every harness registers) before the
 web, but only when `smith keys status asta --json` reports the key loaded in its
 session; candidates resolve with `--resolver auto`, Asta first, OpenAlex next,
-keeping the first whole record that carries an abstract. Asta's `tldr` and its
+keeping the first whole record that carries an abstract. A keyed Asta lookup
+answers within a second or only after 30 s or more, so one silent for 5 s is
+asked again, within 30 s per paper. Asta's `tldr` and its
 snippets are never abstracts or quotes. Without the key nothing changes. Details
 in [mcp.md](mcp.md#literature-discovery-ai2s-asta-asta).
 
