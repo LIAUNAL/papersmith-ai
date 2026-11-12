@@ -11,6 +11,42 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.74.0
+
+- `smith ui --lan` opens the dashboard to the other devices on your network
+  in one switch: it binds `0.0.0.0`, accepts only this machine's own
+  addresses and names in the `Host` check (`<hostname>`, `<hostname>.local`
+  and, when `tailscaled` runs, its Tailscale MagicDNS name), and puts the
+  support terminal behind a login secret kept in
+  `~/.config/papersmith/terminal-token` (mode `600`, created and printed
+  once, inside the login URLs to bookmark). `PAPERSMITH_UI_LAN=1` makes it
+  the default; `--no-lan` turns it off for one run. When the machine has a
+  public IPv4 address it warns that the port may be open to the Internet.
+- The support terminal and the API-key panel can run on a network bind
+  (`--network-terminal`, optionally with `--terminal-token-file <path>`),
+  but only behind that secret: every terminal and key route answers 403
+  without the session cookie, state-changing calls must carry this
+  server's `Origin`, and without the opt-in a network bind keeps the
+  terminal off as before. The login secret only buys the cookie, which is
+  a second secret new at each start.
+- A device that opens the plain dashboard (a phone, another laptop) logs
+  in from the terminal window itself: on a network bind it shows a
+  password box, and the secret it posts (in a JSON body, never a URL) sets
+  the cookie. After 10 wrong secrets in a minute it answers 429. Before,
+  the window stayed blank with "Could not open a browser here".
+- uvicorn's access log no longer records the login secret
+  (`token=[REDACTED]`, also in `--log-level trace` scopes), and a terminal
+  cookie with non-ASCII bytes is a wrong secret (403) instead of a 500.
+- A keyed Asta lookup silent for 5 s is asked again instead of waited out
+  (Asta answers in about 0.5 s or only after 30 to 60 s), in key
+  verification and in resolver lookups.
+- `citations_cli.py rank` ranks an arXiv entry whose pool record names its
+  published DOI by that journal, as a journal article, instead of as a
+  preprint that needs an accepted lab.
+- The math panel's novelty card fills its novelty, detail, problem and
+  contributions from the concept map when the revision's overlay names
+  none.
+
 ## 0.73.0
 
 - The Agents Office is sharp and fluid without a GPU: every static piece
