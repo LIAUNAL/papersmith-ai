@@ -289,10 +289,79 @@ class HostAllowListMiddleware:
         await send({"type": "http.response.body", "body": body})
 
 
+def is_wildcard_bind(host: str) -> bool:
+    """Whether ``host`` is ``0.0.0.0`` or ``::``: every interface, no name of its own."""
+    import ipaddress
+
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_unspecified
+    except ValueError:
+        return False
+
+
+def login_hosts(host: str, port: int, extra: list[str] | None = None) -> list[str]:
+    """The ``HOST:PORT`` values a browser can open the dashboard under, for
+    the login URLs a network bind prints: the bind address unless it is a
+    wildcard (``0.0.0.0``, ``::``), then each ``--allowed-host``. A wildcard
+    bind named nowhere else falls back to its own address."""
+    hosts: list[str] = []
+    if not is_wildcard_bind(host):
+        hosts.append(_host_header(host, port))
+    for value in extra or []:
+        value = value.strip().lower()
+        if value and value not in hosts:
+            hosts.append(value)
+    return hosts or [_host_header(host, port)]
+
+
+#: A ``token`` query parameter: the terminal's login secret, or a guess at it.
+_TOKEN_QUERY = re.compile(r"(?<=[?&])(token=)[^&#\s\"]*", re.IGNORECASE)
+
+
+#: uvicorn's loggers that print a request's query: the access log, and at
+#: ``--log-level trace`` the ASGI scope (its headers, cookies included, are
+#: already masked there; its ``query_string`` is not).
+REDACTED_LOGGERS = ("uvicorn.access", "uvicorn.asgi")
+
+
+def _redact_query(value: Any) -> Any:
+    if isinstance(value, str):
+        return _TOKEN_QUERY.sub(r"\1[REDACTED]", value)
+    if isinstance(value, dict) and isinstance(value.get("query_string"), (bytes, str)):
+        query = value["query_string"]
+        text = query.decode("latin-1") if isinstance(query, bytes) else query
+        text = _TOKEN_QUERY.sub(r"\1[REDACTED]", "?" + text)[1:]
+        return {**value, "query_string": text.encode("latin-1") if isinstance(query, bytes) else text}
+    return value
+
+
+class RedactLoginToken(logging.Filter):
+    """Blank the login secret in uvicorn's logs. The login URL carries it as
+    ``?token=``, and uvicorn logs each request's path with its query, so the
+    secret (or a wrong guess at it) would otherwise land in every log of the
+    server's output."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(_redact_query(value) for value in record.args)
+        if isinstance(record.msg, str):
+            record.msg = _redact_query(record.msg)
+        return True
+
+
+def redact_login_tokens() -> None:
+    """Install :class:`RedactLoginToken` on each of :data:`REDACTED_LOGGERS`, once."""
+    for name in REDACTED_LOGGERS:
+        target = logging.getLogger(name)
+        if not any(isinstance(existing, RedactLoginToken) for existing in target.filters):
+            target.addFilter(RedactLoginToken())
+
+
 # --------------------------------------------------------------------------
 # application
 # --------------------------------------------------------------------------
-#: Cookie holding the support terminal's per-server secret.
+#: Cookie holding the support terminal's session secret (TerminalManager.token),
+#: which a browser receives from the login URL in exchange for the login secret.
 TERMINAL_COOKIE = "papersmith_terminal"
 #: Seconds between two browser openings asked by POST /api/terminal/activate.
 ACTIVATION_THROTTLE_S = 10.0
@@ -1180,9 +1249,11 @@ def _venue_call(function: Callable[[], dict[str, Any]]) -> tuple[dict[str, Any],
         return {"ok": False, "error": "INTERNAL_ERROR", "message": f"{type(exc).__name__}: {exc}"}, 500
 
 
-def terminal_allowed(host: str) -> bool:
-    """The support terminal is a shell: offer it only on a loopback bind."""
-    return is_loopback_bind(host)
+def terminal_allowed(host: str, *, network_terminal: bool = False) -> bool:
+    """The support terminal is a shell: offer it on a loopback bind, and on any
+    other bind only when the operator opted in with ``--network-terminal``,
+    which keeps it behind the login secret (``create_app(network_terminal=)``)."""
+    return is_loopback_bind(host) or bool(network_terminal)
 
 
 def _novelty_gate():
@@ -1203,8 +1274,23 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                health_ttl: float = DEFAULT_HEALTH_TTL_SECONDS,
                history_store: history.HistoryStore | None = None,
                allowed_hosts: frozenset[str] | None = None,
-               enable_terminal: bool = False) -> FastAPI:
+               enable_terminal: bool = False,
+               network_terminal: bool = False,
+               terminal_token: str | None = None) -> FastAPI:
+    """The dashboard's application.
+
+    ``enable_terminal`` offers the support terminal; ``network_terminal`` says
+    it is served on a non-loopback bind, which refuses the self-activation and
+    requires ``Origin`` on every state-changing terminal request.
+    ``terminal_token`` is the operator's login secret (else one is generated);
+    one that breaks the token-file rule keeps the terminal off.
+    """
     root_path = Path(root).expanduser().resolve()
+    if terminal_token is not None and not terminal.valid_login_token(terminal_token):
+        # Fail closed, and never echo the value: it may be the secret itself.
+        _log.warning("support terminal disabled: the configured login secret is not valid")
+        enable_terminal, terminal_token = False, None
+    network_terminal = bool(enable_terminal and network_terminal)
     # The release this process loaded its code under; an upgrade on disk does
     # not reach a running server, so the panel compares the two and says so.
     started_version = _framework_version(root_path)
@@ -1281,7 +1367,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     watcher = WorkspaceWatcher(root_path, on_flush, debounce_ms=debounce_ms)
     smoke_lock = threading.Lock()
-    terminals = terminal.TerminalManager(root_path)
+    terminals = terminal.TerminalManager(root_path, login_token=terminal_token)
     #: Engram interactions observed in live session output, bounded by
     #: office.MEMORY_EVENTS_MAX; the office state endpoint owns this ring.
     office_ring: list = []
@@ -1292,6 +1378,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Here, not in main: uvicorn has configured its loggers by now.
+        redact_login_tokens()
         bus.bind_loop(asyncio.get_running_loop())
         watcher.start()
         try:
@@ -3471,18 +3559,20 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     # ---------------------------------------------------------------- terminal
     app.state.terminal = terminals
     app.state.terminal_enabled = enable_terminal
+    app.state.terminal_network = network_terminal
 
     def _terminal_refusal(request: Request, *, mutating: bool) -> JSONResponse | None:
         if not enable_terminal:
             return JSONResponse({"detail": "the support terminal is disabled on this bind"},
                                 status_code=404, headers=dict(_PAPER_HEADERS))
         # A secret, not just headers: any local client (another OS user, curl)
-        # can send the right headers, but only this server's browser holds it.
+        # or, on a network bind, anyone who reaches the port can send the right
+        # headers, but only a browser that logged in holds the session cookie.
         if not terminals.authorized(request.cookies.get(TERMINAL_COOKIE)):
             return JSONResponse({"detail": "refused: open the dashboard from the login URL "
                                  "the server printed"}, status_code=403,
                                 headers=dict(_PAPER_HEADERS))
-        reason = terminal.guard(request.headers, mutating=mutating)
+        reason = terminal.guard(request.headers, mutating=mutating, require_origin=network_terminal)
         if reason is not None:
             return JSONResponse({"detail": f"refused: {reason}"}, status_code=403,
                                 headers=dict(_PAPER_HEADERS))
@@ -3499,12 +3589,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse({"detail": "the body must be a JSON object"}, status_code=422,
                             headers=dict(_PAPER_HEADERS))
 
+    # The one-time login: the login secret in, the session cookie out. The
+    # access log never shows the secret (RedactLoginToken), and the redirect
+    # leaves no page whose address holds it.
     @app.get("/api/terminal/login")
     def api_terminal_login(token: str = "") -> Response:
-        if not enable_terminal or not terminals.authorized(token):
+        if not enable_terminal or not terminals.accepts_login(token):
             return JSONResponse({"detail": "invalid terminal token"}, status_code=403,
                                 headers=dict(_PAPER_HEADERS))
-        response = Response(status_code=303, headers={"Location": "/", "Cache-Control": "no-store"})
+        response = Response(status_code=303, headers={"Location": "/", "Cache-Control": "no-store",
+                                                      "Referrer-Policy": "no-referrer"})
         response.set_cookie(TERMINAL_COOKIE, terminals.token, httponly=True,
                             samesite="strict", path="/api/terminal")
         return response
@@ -3514,6 +3608,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     # goes only to the desktop browser through the OS, never to the caller; the
     # new login sets the cookie for this host, so the asking tab is authorized
     # as well. Same-origin requests only, at most once per throttle window.
+    # Never on a network bind: there the operator's browser is elsewhere, and
+    # the login URL is only the one the server printed at start.
     activation = {"last": 0.0, "lock": threading.Lock()}
 
     @app.post("/api/terminal/activate")
@@ -3521,6 +3617,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not enable_terminal:
             return JSONResponse({"detail": "the support terminal is disabled on this bind"},
                                 status_code=404, headers=dict(_PAPER_HEADERS))
+        if network_terminal:
+            return JSONResponse({"detail": "refused: on a network bind, open the login URL "
+                                 "smith ui printed when it started"}, status_code=403,
+                                headers=dict(_PAPER_HEADERS))
         reason = terminal.guard(request.headers, mutating=True)
         if reason is not None:
             return JSONResponse({"detail": f"refused: {reason}"}, status_code=403,
@@ -3539,7 +3639,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                                     headers=dict(_PAPER_HEADERS))
             activation["last"] = now
         opened = await asyncio.to_thread(
-            open_browser, f"{bound}/api/terminal/login?token={terminals.token}")
+            open_browser, f"{bound}/api/terminal/login?token={terminals.login_token}")
         # The cookie belongs to the bound host: a page reached under another
         # name (localhost for 127.0.0.1) is told where the activated one is.
         return JSONResponse({"ok": True, "opened": bool(opened), "origin": bound},
@@ -3588,8 +3688,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     # -------------------------------------------------------------- API keys
     # The Doctor tab asks for the Asta and OpenAlex keys here (skills/_core/
     # api_keys.py holds them, outside every workspace). Behind the terminal's
-    # cookie and guards, under its path where that cookie is sent: a loopback
-    # bind only, and a write must also carry this server's `Origin`, which the
+    # cookie and guards, under its path where that cookie is sent: wherever the
+    # terminal is offered (a loopback bind, or a network bind behind its login
+    # secret), and a write must also carry this server's `Origin`, which the
     # browser always sends on a PUT/DELETE/POST. The body is parsed by hand,
     # because a validation error that echoed the input would echo the key;
     # nothing here logs a body, publishes an event or returns a key.
@@ -4145,10 +4246,76 @@ def build_parser() -> argparse.ArgumentParser:
                              "authentication, so only on a network you trust (the Host "
                              "check still accepts only the bind address and --allowed-host)")
     parser.add_argument("--no-terminal", action="store_true",
-                        help="do not offer the dashboard's support terminal (it is only "
-                             "ever offered on a loopback bind)")
+                        help="do not offer the dashboard's support terminal (offered by default "
+                             "on a loopback bind only; --network-terminal offers it on a "
+                             "non-loopback --host, behind a secret)")
+    parser.add_argument("--network-terminal", action="store_true",
+                        help="also offer the support terminal (a shell with your privileges) and "
+                             "the API keys panel on a non-loopback --host, behind a secret: the "
+                             "server prints a login URL at start, and every terminal and key "
+                             "route refuses a browser that has not opened it (403). The secret "
+                             "is generated at each start and printed once, unless "
+                             "--terminal-token-file names one. Plain HTTP can be read on the "
+                             "network: an SSH tunnel to a loopback bind is safer")
+    parser.add_argument("--terminal-token-file", metavar="<path>", default=None,
+                        help="with --network-terminal: read the secret from <path> (a regular "
+                             "file only you can read, mode 600, holding 32 to 256 characters "
+                             "from A-Z a-z 0-9 . _ ~ -) instead of generating one; the server "
+                             "never prints it")
     parser.add_argument("--log-level", default="info")
     return parser
+
+
+def resolve_terminal(parser: argparse.ArgumentParser,
+                     args: argparse.Namespace) -> tuple[bool, bool, str | None]:
+    """``(offer the terminal, on a network bind, the operator's secret or None)``.
+
+    Refuses through ``parser.error`` (exit 2) every flag combination that could
+    leave a network terminal half configured: the terminal stays off unless
+    every check passes.
+    """
+    network = bool(getattr(args, "network_terminal", False))
+    token_file = getattr(args, "terminal_token_file", None)
+    loopback = is_loopback_bind(args.host)
+    if network and args.no_terminal:
+        parser.error("--network-terminal and --no-terminal contradict each other; pass one")
+    if network and loopback:
+        parser.error(f"--network-terminal is for a non-loopback --host; on {args.host} the "
+                     "support terminal is already offered, behind the login URL the server prints")
+    if token_file is not None and not network:
+        parser.error("--terminal-token-file needs --network-terminal")
+    token = None
+    if token_file is not None:
+        try:
+            token = terminal.read_login_token(Path(token_file).expanduser())
+        except terminal.LoginTokenError as error:
+            parser.error(f"--terminal-token-file: {error}")
+    enabled = terminal_allowed(args.host, network_terminal=network) and not args.no_terminal
+    return enabled, enabled and not loopback, token
+
+
+def print_network_terminal_banner(app: FastAPI, args: argparse.Namespace) -> None:
+    """The start banner of a terminal served on a network bind: the login URL
+    for each address a browser may use. A generated secret is printed here,
+    once; an operator's secret (``--terminal-token-file``) never is."""
+    supplied = getattr(args, "terminal_token_file", None) is not None
+    secret = "<secret>" if supplied else app.state.terminal.login_token
+    print("support terminal enabled on a network bind: open a login URL below once in each "
+          "browser; every terminal and API-key route refuses a browser that has not (403)",
+          flush=True)
+    for host in login_hosts(args.host, args.port, args.allowed_host):
+        print(f"  http://{host}/api/terminal/login?token={secret}", flush=True)
+    if supplied:
+        print(f"  with the secret in {args.terminal_token_file} in place of <secret>; the server "
+              "never prints it", flush=True)
+    else:
+        print("  the secret in these URLs is new at each start and is not printed again", flush=True)
+    if not args.allowed_host and is_wildcard_bind(args.host):
+        print(f"  browsers on other machines need the address they use named: add --allowed-host "
+              f"<address>:{args.port} (the Host check answers 421 to any other)", flush=True)
+    print("plain HTTP carries the secret and every keystroke unencrypted: on a network you do not "
+          f"trust, serve on 127.0.0.1 and use ssh -L {args.port}:127.0.0.1:{args.port} <server>",
+          flush=True)
 
 
 def _is_wsl() -> bool:
@@ -4254,20 +4421,29 @@ def main(argv: list[str] | None = None) -> int:
             "authentication: anyone who reaches the port could read and edit this "
             "workspace and start its compile and smoke runs. Serve on 127.0.0.1 and "
             f"forward the port (ssh -L {args.port}:127.0.0.1:{args.port} <server>), "
-            "or pass --allow-unauthenticated-network on a network you trust.")
+            "or pass --allow-unauthenticated-network on a network you trust."
+            + (" --network-terminal puts only the support terminal and the API keys behind "
+               "a secret; the rest of the dashboard stays unauthenticated."
+               if args.network_terminal else ""))
+    enable_terminal, network_terminal, terminal_token = resolve_terminal(parser, args)
 
     import uvicorn
 
     app = create_app(
         root, debounce_ms=args.debounce_ms, health_ttl=args.health_ttl,
         allowed_hosts=build_allowed_hosts(args.host, args.port, args.allowed_host),
-        enable_terminal=terminal_allowed(args.host) and not args.no_terminal,
+        enable_terminal=enable_terminal, network_terminal=network_terminal,
+        terminal_token=terminal_token,
     )
     url = f"http://{args.host}:{args.port}/"
-    if app.state.terminal_enabled:
+    if app.state.terminal_enabled and app.state.terminal_network:
+        # The login URLs go to the console only: the browser this server may
+        # open gets the plain dashboard, so the secret reaches no process list.
+        print_network_terminal_banner(app, args)
+    elif app.state.terminal_enabled:
         # The terminal's secret travels only in this URL; opening it once sets
         # the cookie. Printed so --no-browser users can open it themselves.
-        url = f"{url}api/terminal/login?token={app.state.terminal.token}"
+        url = f"{url}api/terminal/login?token={app.state.terminal.login_token}"
         print(f"support terminal enabled; dashboard login URL: {url}", flush=True)
     threading.Thread(target=warm_caches, args=(root, app.state.warm_doctor), name="warm-caches", daemon=True).start()
     if not args.no_browser:

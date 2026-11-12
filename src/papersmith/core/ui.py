@@ -265,7 +265,9 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
                       interpreter: str | None = None,
                       allowed_hosts: list[str] | None = None,
                       allow_unauthenticated_network: bool = False,
-                      no_terminal: bool = False) -> list[str]:
+                      no_terminal: bool = False,
+                      network_terminal: bool = False,
+                      terminal_token_file: str | None = None) -> list[str]:
     """Build the child command that runs the workspace's backend."""
     argv = [
         interpreter or sys.executable,
@@ -298,6 +300,11 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
     # Same rule: only forwarded when asked for.
     if no_terminal:
         argv.append("--no-terminal")
+    if network_terminal:
+        argv.append("--network-terminal")
+    if terminal_token_file is not None:
+        # A path, never the secret: argv is readable by every local user.
+        argv.extend(["--terminal-token-file", str(terminal_token_file)])
     return argv
 
 
@@ -407,12 +414,18 @@ def run_cli(args) -> int:
     interpreter = require_runnable_backend(workspace, interpreter)
     print(f"{prog} ui: serving {workspace} at {url}")
     print(f"{prog} ui: press Ctrl+C to stop")
+    token_file = getattr(args, "terminal_token_file", None)
     argv = build_server_argv(workspace, args.host, port, no_browser=args.no_browser,
                              interpreter=interpreter,
                              allowed_hosts=getattr(args, "allowed_host", None),
                              allow_unauthenticated_network=getattr(
                                  args, "allow_unauthenticated_network", False),
-                             no_terminal=getattr(args, "no_terminal", False))
+                             no_terminal=getattr(args, "no_terminal", False),
+                             network_terminal=getattr(args, "network_terminal", False),
+                             # The backend runs in the workspace: a relative
+                             # path is the operator's, from where they typed it.
+                             terminal_token_file=(os.path.abspath(os.path.expanduser(token_file))
+                                                  if token_file else None))
     return _run_child(argv, workspace)
 
 
@@ -522,8 +535,20 @@ def register(subparsers) -> None:
                         help="permit a non-loopback --host; the dashboard has no "
                              "authentication, so only on a network you trust")
     parser.add_argument("--no-terminal", action="store_true",
-                        help="do not offer the dashboard's support terminal (it is only "
-                             "offered on a loopback bind)")
+                        help="do not offer the dashboard's support terminal (offered by default "
+                             "on a loopback bind only; --network-terminal offers it on a "
+                             "non-loopback --host, behind a secret)")
+    parser.add_argument("--network-terminal", action="store_true",
+                        help="also offer the support terminal and the API keys panel on a "
+                             "non-loopback --host (with --allow-unauthenticated-network), behind "
+                             "a secret: the backend prints a login URL once at start, and every "
+                             "terminal and key route refuses a browser that has not opened it. "
+                             "Plain HTTP can be read on the network: an SSH tunnel to a loopback "
+                             "bind is safer")
+    parser.add_argument("--terminal-token-file", metavar="<path>", default=None,
+                        help="with --network-terminal: read the secret from <path> (a file only "
+                             "you can read, mode 600, 32 to 256 characters from A-Z a-z 0-9 . _ "
+                             "~ -) instead of generating one at each start")
     parser.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     parser.set_defaults(handler=run_cli)
 

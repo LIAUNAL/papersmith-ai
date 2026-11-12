@@ -61,9 +61,16 @@ global.fetch = async (path, opts = {}) => {
     data = { enabled: true, authorized, default: 'claude', quick: {},
              agents: authorized ? ['claude', 'shell'].map((id) => ({ id, label: id, available: true })) : [] };
   } else if (path === '/api/terminal/activate' && method === 'POST') {
+    // `activated` also stands for the operator opening the printed login
+    // link in another tab, which is how a refused (network bind) page gets in.
     activated = true;
     log.push(['activate', opts.headers['X-Papersmith-Terminal']]);
-    data = { ok: true, opened: cfg.opened !== false, origin: 'http://127.0.0.1:8080' };
+    if (cfg.refuseActivation) {
+      ok = false;
+      data = { detail: 'refused: on a network bind, open the login URL smith ui printed when it started' };
+    } else {
+      data = { ok: true, opened: cfg.opened !== false, origin: 'http://127.0.0.1:8080' };
+    }
   } else if (path === '/api/terminal/tools') {
     data = { tools: { ready: true, preferred_terminal: 'ghostty', missing: [] } };
   } else if (path === '/api/terminal/sessions' && method === 'POST') {
@@ -171,6 +178,20 @@ class CliActivationTests(unittest.TestCase):
     def test_loading_the_page_never_activates_on_its_own(self) -> None:
         out = run(action=None)
         self.assertNotIn("activate", [entry[0] for entry in out["log"]])
+
+    def test_a_network_bind_refuses_activation_and_the_page_points_at_the_printed_link(self) -> None:
+        # smith ui --network-terminal answers 403 to the self-activation: the
+        # page says to open the printed login link and opens nothing meanwhile.
+        out = run(action="fab", refuseActivation=True, authorizeAfter=None, waitMs=1500)
+        log = out["log"]
+        self.assertIn(["activate", "1"], log)
+        self.assertNotIn("open", [entry[0] for entry in log])
+        self.assertIn("cli.activatePrinted", out["status"])
+
+    def test_the_refused_page_opens_the_agent_once_the_printed_link_was_used(self) -> None:
+        out = run(action="fab", refuseActivation=True, authorizeAfter=2)
+        self.assertIn(["open", "claude"], out["log"])
+        self.assertEqual(out["activity"]["sessionId"], "s1")
 
 
 if __name__ == "__main__":

@@ -3,10 +3,12 @@
 The dashboard's floating CLI console (`skills/_core/command_center/`) runs the
 workspace's agents on a pseudo-terminal and streams them over Server-Sent
 Events. This page records what each platform supports and how the console is
-activated. The security posture is fixed: the terminal is only offered on a
-loopback bind, and a browser page only gets sessions after it holds the cookie
-the login URL sets (see [wsl-dashboard.md](wsl-dashboard.md) for the WSL
-variant of the same flow).
+activated. The security posture is fixed: the terminal is offered on a
+loopback bind, and on a network bind only when `smith ui` is started with
+`--network-terminal` (see [On a network bind](#on-a-network-bind---network-terminal));
+either way a browser page only gets sessions after it holds the cookie the
+login URL sets (see [wsl-dashboard.md](wsl-dashboard.md) for the WSL variant of
+the same flow).
 
 ## Agents
 
@@ -54,7 +56,57 @@ the console names the address where the activated dashboard opened. When the ser
 open a browser (a headless Linux server, a dashboard reached through an SSH
 tunnel), it prints the link on its console instead, and the page says to open
 it from there. Starting `smith ui` with `--no-terminal` disables the terminal
-entirely, for shared or headless machines.
+entirely, for shared or headless machines. On a network bind the page never
+activates itself (below).
+
+## On a network bind (`--network-terminal`)
+
+A non-loopback `--host` does not offer the terminal, not even with
+`--allow-unauthenticated-network`: the console shows "Terminal disabled", and
+every terminal and API-key route answers 404. Adding `--network-terminal`
+offers both behind a secret, for example
+`smith ui --host 0.0.0.0 --allow-unauthenticated-network --allowed-host 192.168.1.10:8080 --network-terminal`:
+
+- **The login secret.** Generated at each start and printed once, in the start
+  banner, inside one login URL per address a browser may use (the bind address
+  unless it is a wildcard, then each `--allowed-host`). With
+  `--terminal-token-file <path>` it is read from that file instead and never
+  printed. The file follows the API keys' rule: a regular file you own, not a
+  symlink, mode `600`, in a directory that is not a symlink, holding 32 to 256
+  characters from `A-Z a-z 0-9 . _ ~ -`, for example
+  `(umask 077; python -c 'import secrets; print(secrets.token_urlsafe(32))' > ~/.config/papersmith/terminal-token)`.
+  Any other file, or `--network-terminal` beside `--no-terminal` or on a
+  loopback `--host`, stops the server with exit code 2: the terminal is never
+  half configured.
+- **The one-time login.** Opening `/api/terminal/login?token=<secret>` once in
+  each browser trades the secret for the session cookie (`papersmith_terminal`:
+  HttpOnly, SameSite=Strict, `Path=/api/terminal`) and redirects to the
+  dashboard. The cookie holds a second random secret, new at each start, so the
+  login secret is never stored in a browser or sent again, and a cookie dies
+  with its server. The page never activates itself (`POST
+  /api/terminal/activate` answers 403), and the browser `smith ui` opens gets
+  the plain dashboard URL, never the secret.
+- **Every route checks it.** Every terminal route (sessions, input and resize,
+  the SSE stream, tools, the external launch, both tutors) and every API-key
+  route answers 403 without the cookie, comparing secrets with
+  `hmac.compare_digest`. `GET /api/terminal/agents` and
+  `GET /api/terminal/office` still answer an unauthorized page, without any
+  agent or session data. The SSE stream's URL holds no secret: it travels as
+  the cookie.
+- **Same origin.** The `Host` allow-list still answers 421 to anything but the
+  bind address and `--allowed-host`, and the request guards stay. A
+  state-changing request (POST, PUT, DELETE) must also carry this server's
+  `Origin`: over plain HTTP to a network address browsers send no
+  `Sec-Fetch-Site`, so the origin is what refuses a cross-site request.
+- **Never logged.** uvicorn's logs show the login URL as `token=[REDACTED]`
+  (the access log, and the ASGI trace of `--log-level trace`, on a loopback
+  bind too), and no response carries the login secret.
+
+The rest of the dashboard stays unauthenticated, which is why
+`--allow-unauthenticated-network` is still required. Plain HTTP carries the
+secret, the cookie and every keystroke unencrypted, and the login URL stays in
+each browser's history: on a network you do not trust, keep the loopback bind
+and forward the port (`ssh -L 8080:127.0.0.1:8080 <server>`).
 
 ## Tests
 
@@ -63,6 +115,10 @@ the macOS `open(1)` path, the unauthorized-page behavior, the activation
 endpoint and the console's activation affordances;
 `tests/test_command_center_cli_activation.py` runs the real `cli-console.js`
 in node through the click → activate → session flow.
+`tests/test_command_center_network_terminal.py` pins the network bind: the
+terminal off without the opt-in, a 403 on every terminal and key route
+without the cookie, the login exchange, the `Origin` rule, the token file's
+rule, the start banner and a real uvicorn access log without the secret.
 
 ## The Agents Office panel
 
