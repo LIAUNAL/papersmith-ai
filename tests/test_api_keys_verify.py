@@ -139,6 +139,36 @@ class AstaVerifyTests(VerifyCase):
         assert result["state"] == "unreachable"
         assert time.monotonic() - started < 5
 
+    def test_a_silent_lookup_is_asked_again(self) -> None:
+        # Live on 2026-11-11, a keyed lookup answered within a second or only
+        # after 30 s or more: the first request here stays silent, the next
+        # answers at once.
+        def handler(h, body):
+            if len(server.hits) == 1:
+                time.sleep(3)
+            try:
+                _sse(h, _tool('{"title": "EEGNet"}', error=False))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        server = self.serve(handler)
+        with mock.patch.object(api_keys._asta_protocol(), "LOOKUP_ATTEMPT_SECONDS", 0.3):
+            result = api_keys.verify("asta", KEY, url=server.url, deadline=2)
+        assert result["state"] == "ok", result
+        assert len(server.hits) == 2
+
+    def test_silent_attempts_end_unreachable_at_the_deadline(self) -> None:
+        def handler(h, body):
+            time.sleep(3)
+
+        server = self.serve(handler)
+        started = time.monotonic()
+        with mock.patch.object(api_keys._asta_protocol(), "LOOKUP_ATTEMPT_SECONDS", 0.3):
+            result = api_keys.verify("asta", KEY, url=server.url, deadline=1.2)
+        assert result["state"] == "unreachable" and "attempts" in result["detail"], result
+        assert len(server.hits) >= 2
+        assert time.monotonic() - started < 3
+
     def test_a_redirect_is_never_followed(self) -> None:
         elsewhere = self.serve(lambda h, body: _sse(h, _tool("{}", error=False)))
 
