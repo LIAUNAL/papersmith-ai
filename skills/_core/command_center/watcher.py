@@ -1,10 +1,12 @@
 """Debounced filesystem watching and a thread-safe SSE broadcast bus.
 
 The watcher is deliberately narrow: it watches the directories that carry
-paper state (``sections/``, ``openspec/``, ``experiments/`` and
-``papersmith.yaml``), ignores build and VCS noise, and coalesces a burst of
-writes into one 300 ms flush so a single editor save does not fan out into a
-dozen recomputations.
+paper state (``WATCH_TARGETS``), ignores build and VCS noise and the files the
+server writes itself, and coalesces a burst of writes into one 300 ms flush so
+a single editor save does not fan out into a dozen recomputations. A target
+created after the server started (``proposals/`` in a fresh workspace, say) is
+picked up within ``RESCAN_SECONDS``, and a stream of writes (a training log)
+flushes at most once per ``MIN_FLUSH_SECONDS``.
 
 The bus lets the watcher thread publish into asyncio queues owned by the
 server's SSE subscribers without reaching into their event loop directly.
@@ -13,11 +15,15 @@ server's SSE subscribers without reaching into their event loop directly.
 from __future__ import annotations
 
 import asyncio
+import logging
 import platform
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
+
+_log = logging.getLogger(__name__)
 
 #: Watch targets, relative to the workspace root. ``paper/`` is included
 #: because the drafting stage, the word counts, the citation signals and the
@@ -26,7 +32,26 @@ from typing import Any, Callable, Iterable
 #: the drafting stage is about. ``sota-pool/`` carries the SOTA atlas and its
 #: manuscript layer (``atlas.manuscript.json``), rebuilt after ``bib build``,
 #: ``verify`` and a compile, so the atlas tab refreshes with the citations.
-WATCH_TARGETS = ("sections", "openspec", "experiments", "paper", "sota-pool", "papersmith.yaml")
+#: ``proposals/``, ``implementations/`` (each stage's ``Results/``),
+#: ``guidance/`` (ingestion), ``kaggle-inbox/`` (fetched runs), ``review/``
+#: (the review line) and ``.papersmith/`` (gates, citations, model spec,
+#: ledger) carry the phase board's evidence too, so a phase that advances on
+#: disk reaches the page without anyone asking for it.
+WATCH_TARGETS = (
+    "sections", "openspec", "experiments", "paper", "sota-pool", "papersmith.yaml",
+    "proposals", "implementations", "guidance", "kaggle-inbox", "review", ".papersmith",
+)
+
+#: Paths the server itself writes while it answers a request (the AI-history
+#: archive synced on every ``/api/status``, its cursor and other caches).
+#: Reacting to them would turn each refresh into the next change.
+IGNORED_PREFIXES = (".papersmith/cache", ".papersmith/ai-history")
+
+#: How often a missing target is looked for again, in seconds.
+RESCAN_SECONDS = 2.0
+
+#: The shortest interval between two flushes, in seconds.
+MIN_FLUSH_SECONDS = 1.0
 
 #: Health surfaces watched in addition to the state targets. These are the
 #: concrete projections whose drift the health payload reports -- targeted at
@@ -72,6 +97,9 @@ def is_ignored(path: Path, root: Path) -> bool:
         relative = path
     parts = relative.parts
     if any(part in IGNORED_DIRS for part in parts):
+        return True
+    posix = "/".join(parts)
+    if any(posix == prefix or posix.startswith(prefix + "/") for prefix in IGNORED_PREFIXES):
         return True
     name = path.name
     if name.endswith(".synctex.gz"):
@@ -216,33 +244,55 @@ class WorkspaceWatcher:
         try:
             from watchfiles import watch
         except ModuleNotFoundError:
+            _log.warning("watchfiles is not installed; the dashboard falls back to polling")
             return
-        paths = self.watch_paths()
-        try:
-            for changes in watch(
-                *[str(path) for path in paths],
-                debounce=self.debounce_ms,
-                step=50,
-                stop_event=self._stop,
-                recursive=True,
-                raise_interrupt=False,
-                # None keeps watchfiles' own default (and its
-                # WATCHFILES_FORCE_POLLING variable) off a Windows drive.
-                force_polling=True if needs_polling(self.root) else None,
-            ):
-                if self._stop.is_set():
-                    break
-                touched = [
-                    Path(path) for _change, path in changes
-                    if not is_ignored(Path(path), self.root)
-                ]
-                if touched:
-                    try:
-                        self.on_flush(touched)
-                    except Exception:
-                        # A callback failure must not kill the watcher thread.
-                        continue
-        except Exception:
-            # watchfiles can raise when a watched path vanishes; the server
-            # keeps serving and the next restart re-establishes the watch.
-            return
+        pending: list[Path] = []
+        last_flush = 0.0
+        while not self._stop.is_set():
+            paths = self.watch_paths()
+            watched = set(paths)
+            last_scan = time.monotonic()
+            try:
+                for changes in watch(
+                    *[str(path) for path in paths],
+                    debounce=self.debounce_ms,
+                    step=50,
+                    stop_event=self._stop,
+                    recursive=True,
+                    raise_interrupt=False,
+                    # Wake up without a change, so a target created later is
+                    # picked up and a throttled flush is not left pending.
+                    rust_timeout=int(RESCAN_SECONDS * 1000),
+                    yield_on_timeout=True,
+                    # None keeps watchfiles' own default (and its
+                    # WATCHFILES_FORCE_POLLING variable) off a Windows drive.
+                    force_polling=True if needs_polling(self.root) else None,
+                ):
+                    if self._stop.is_set():
+                        return
+                    pending.extend(
+                        Path(path) for _change, path in changes
+                        if not is_ignored(Path(path), self.root)
+                    )
+                    now = time.monotonic()
+                    if pending and now - last_flush >= MIN_FLUSH_SECONDS:
+                        touched = list(dict.fromkeys(pending))
+                        pending.clear()
+                        last_flush = now
+                        try:
+                            self.on_flush(touched)
+                        except Exception:
+                            # A callback failure must not kill the watcher thread.
+                            _log.exception("dashboard watcher: the flush callback failed")
+                    if now - last_scan >= RESCAN_SECONDS:
+                        last_scan = now
+                        if set(self.watch_paths()) != watched:
+                            break  # restart the watch with the new targets
+                else:
+                    return  # the watch ended: the server is stopping
+            except Exception:
+                # watchfiles raises when a watched path vanishes; watch the
+                # targets that still exist instead of going silent.
+                _log.warning("dashboard watcher: restarting after a watched path changed", exc_info=True)
+                if self._stop.wait(RESCAN_SECONDS):
+                    return

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -141,3 +142,91 @@ class WorkspaceWatcherTests(unittest.TestCase):
 
         workspace_watcher.stop()
         workspace_watcher.stop()
+
+
+class LiveRefreshTests(unittest.TestCase):
+    """The board refreshes by itself: every directory that carries a phase's
+    evidence is watched, including ones created after the server started, and
+    the files the server writes while answering a request never wake it."""
+
+    def new_root(self) -> Path:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        return Path(holder.name).resolve()
+
+    def test_every_phase_evidence_directory_is_a_target(self) -> None:
+        for target in ("proposals", "implementations", "guidance", "kaggle-inbox", "review", ".papersmith",
+                       "experiments", "paper", "sota-pool", "sections"):
+            assert target in watcher.WATCH_TARGETS, target
+
+    def test_the_servers_own_writes_are_ignored(self) -> None:
+        root = self.new_root()
+        assert watcher.is_ignored(root / ".papersmith" / "ai-history" / "claude.jsonl", root)
+        assert watcher.is_ignored(root / ".papersmith" / "cache" / "ai-archive-state.json", root)
+        assert not watcher.is_ignored(root / ".papersmith" / "model_spec.json", root)
+        assert not watcher.is_ignored(root / ".papersmith" / "cachedir-lookalike.json", root)
+
+    def run_watcher(self, root: Path) -> tuple[list[list[Path]], threading.Event]:
+        flushes: list[list[Path]] = []
+        woke = threading.Event()
+
+        def on_flush(paths: list[Path]) -> None:
+            flushes.append(paths)
+            woke.set()
+
+        workspace_watcher = watcher.WorkspaceWatcher(root, on_flush, debounce_ms=50)
+        workspace_watcher.start()
+        self.addCleanup(workspace_watcher.stop)
+        return flushes, woke
+
+    def test_a_target_created_after_start_is_watched(self) -> None:
+        root = self.new_root()
+        (root / "sections").mkdir()
+        flushes, woke = self.run_watcher(root)
+        time.sleep(0.5)
+        (root / "proposals").mkdir()
+        time.sleep(watcher.RESCAN_SECONDS * 2 + 0.5)  # the rescan picks the new folder up
+        woke.clear()
+        (root / "proposals" / "research-concept-r01.md").write_text("# r01\n", encoding="utf-8")
+        assert woke.wait(watcher.RESCAN_SECONDS * 3), "a write in a folder created later never woke the board"
+        assert any(path.name == "research-concept-r01.md" for batch in flushes for path in batch)
+
+    def test_an_archive_write_does_not_wake_the_board(self) -> None:
+        root = self.new_root()
+        (root / ".papersmith" / "ai-history").mkdir(parents=True)
+        flushes, woke = self.run_watcher(root)
+        time.sleep(0.5)
+        (root / ".papersmith" / "ai-history" / "claude.jsonl").write_text("{}\n", encoding="utf-8")
+        assert not woke.wait(watcher.MIN_FLUSH_SECONDS + 1.5)
+        (root / ".papersmith" / "citations.json").write_text("{}\n", encoding="utf-8")
+        assert woke.wait(watcher.RESCAN_SECONDS * 3)
+        assert [path.name for batch in flushes for path in batch] == ["citations.json"]
+
+    def test_a_stream_of_writes_flushes_at_most_once_per_interval(self) -> None:
+        root = self.new_root()
+        (root / "experiments").mkdir()
+        flushes, woke = self.run_watcher(root)
+        time.sleep(0.5)
+        started = time.monotonic()
+        while time.monotonic() - started < 2.5:
+            with (root / "experiments" / "metrics.csv").open("a", encoding="utf-8") as stream:
+                stream.write("step\n")
+            time.sleep(0.08)
+        time.sleep(watcher.RESCAN_SECONDS + 0.5)
+        assert 1 <= len(flushes) <= int(2.5 / watcher.MIN_FLUSH_SECONDS) + 2
+
+
+class DashboardSubscribesTests(unittest.TestCase):
+    """The served page listens to the live channel instead of waiting for a
+    manual refresh."""
+
+    PAGE = (Path(__file__).resolve().parents[1] / "skills" / "_core" / "command_center" / "static"
+            / "index.html").read_text(encoding="utf-8")
+
+    def test_the_page_opens_the_event_stream_and_reacts_to_state_updates(self) -> None:
+        assert "new EventSource('/api/events')" in self.PAGE
+        assert "addEventListener('state_update'" in self.PAGE
+        assert "LIVE_TAB_REFRESH[activeTab]" in self.PAGE
+
+    def test_subphases_change_the_redraw_signature(self) -> None:
+        assert "sub: (data.fases || []).map(f => JSON.stringify([f.subfases || null, f.steps || null]))" in self.PAGE

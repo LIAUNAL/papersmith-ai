@@ -4231,6 +4231,8 @@
 
     let currentStatus = null;
     let activeTab = 'flow';
+    // The server's live channel (`/api/events`), see startLiveChannel().
+    const liveChannel = { connected: false, lastStatusAt: 0, timer: null, changed: [], missed: false };
 
     // The theme button names the theme it switches to.
     function renderThemeButton() {
@@ -5710,6 +5712,7 @@
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
+        liveChannel.lastStatusAt = Date.now();
         currentStatus = data;
         window.currentStatus = data;
         if (window.phaseRuns) window.phaseRuns.onStatus(data);
@@ -5729,6 +5732,10 @@
           totals: data.totals,
           gates: data.gates,
           fases: (data.fases || []).map(f => `${f.id}:${f.status}:${f.progress}:${f.unlocked}:${(f.evidence || []).map(e => e.count + '@' + e.mtime).join(',')}`),
+          // Subphases and stepper steps move without the phase's own status
+          // moving, so they belong to the signature too.
+          sub: (data.fases || []).map(f => JSON.stringify([f.subfases || null, f.steps || null])),
+          proposal: data.active_proposal || null,
           artifacts: (data.artifacts || []).map(a => `${a.rel_path}:${a.size_kb}`),
           sec_count: (data.sections || []).length,
           tel_count: (data.telemetria || []).length
@@ -7319,12 +7326,70 @@
         navigateTab(hash);
       }
       loadStatus();
-      // Polling every 5 seconds for live status
-      setInterval(loadStatus, 5000);
+      // Live channel: the server watches the workspace and pushes an event
+      // when a phase's evidence changes on disk, so the board and the tab in
+      // view refresh by themselves. Polling stays as the fallback: every 5 s
+      // while the channel is down, every 30 s while it is up.
+      startLiveChannel();
+      setInterval(() => {
+        if (!liveChannel.connected || Date.now() - liveChannel.lastStatusAt > 30000) loadStatus();
+      }, 5000);
     });
+
+    // The panel each tab shows, refreshed when the workspace changes while it is in view.
+    const LIVE_TAB_REFRESH = {
+      flow: () => window.refreshAgentsPanel?.(),
+      experiments: () => { window.refreshExperimentsPanel?.(); window.refreshExperimentsTutor?.(); },
+      novelty: () => window.refreshNoveltyPanel?.(),
+      historia: () => window.refreshAiHistoryPanel?.(),
+      doctor: () => { window.refreshDoctorPanel?.(); window.refreshKeysPanel?.(); },
+      modelo: () => { refreshModelData(); window.refreshMathPanel?.(); },
+      preview: () => { if (document.getElementById('journalsDetails')?.open) window.refreshJournalsPanel?.(); },
+    };
+    function applyLiveChange() {
+      const changed = liveChannel.changed.splice(0);
+      if (document.hidden) {
+        liveChannel.missed = true; // refreshed by the visibilitychange handler
+        return;
+      }
+      lastStatusSignature = '';
+      loadStatus();
+      // The tab in view refreshes now; any other tab refreshes when it is
+      // opened (navigateTab).
+      LIVE_TAB_REFRESH[activeTab]?.();
+      if (currentLoadedArtifactPath && changed.includes(currentLoadedArtifactPath)) {
+        loadArtifact(currentLoadedArtifactPath);
+      }
+    }
+
+    function scheduleLiveChange(changed) {
+      liveChannel.changed.push(...(changed || []));
+      clearTimeout(liveChannel.timer);
+      liveChannel.timer = setTimeout(applyLiveChange, 250);
+    }
+
+    function startLiveChannel() {
+      if (!window.EventSource) return;
+      const source = new EventSource('/api/events');
+      source.addEventListener('ready', () => { liveChannel.connected = true; });
+      source.addEventListener('state_update', (e) => {
+        let changed = [];
+        try { changed = JSON.parse(e.data).changed || []; } catch (_) { /* a malformed frame still refreshes */ }
+        scheduleLiveChange(changed);
+      });
+      source.addEventListener('health_update', () => scheduleLiveChange([]));
+      // EventSource reconnects by itself; until it does, the 5 s poll runs.
+      source.onerror = () => { liveChannel.connected = false; };
+    }
+    window.liveChannel = liveChannel;
 
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
+        if (liveChannel.missed) {
+          liveChannel.missed = false;
+          lastStatusSignature = '';
+          LIVE_TAB_REFRESH[activeTab]?.();
+        }
         loadStatus();
       }
     });
