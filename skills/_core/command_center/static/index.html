@@ -44,6 +44,7 @@
   <script src="./manuscript-graph-panel.js?v=0.75.0"></script>
   <script src="./paper-explorer-panel.js?v=0.75.0"></script>
   <script src="./manuscript-qa-panel.js?v=0.75.0"></script>
+  <script src="./paper-review-panel.js?v=0.75.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -3778,6 +3779,11 @@
             </div>
             <a id="linkPdfDirect" href="/api/pdf" target="_blank" class="btn btn--sm" style="white-space: nowrap; font-size: 0.74rem;" data-i18n="pdf.openNewTab">Open the PDF in a new tab ↗</a>
           </div>
+
+          <details id="paperReviewDetails" class="journals-details" open ontoggle="if (this.open) window.refreshPaperReview?.()">
+            <summary data-i18n="review.title">Final judge (paper-reviewer)</summary>
+            <div id="paperReviewPanel"></div>
+          </details>
 
           <details id="journalsDetails" class="journals-details" ontoggle="if (this.open) window.refreshJournalsPanel?.()">
             <summary data-i18n="journals.title">Suggested journals</summary>

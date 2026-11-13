@@ -1037,6 +1037,31 @@ def _read_candidates(root: Path) -> tuple[dict[str, Any] | None, dict[str, str] 
     return document, None
 
 
+PAPER_REVIEW_FILE = ".papersmith/paper_review.json"
+PAPER_REVIEW_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _paper_review_state(root: Path) -> dict[str, Any]:
+    """The final judge's rounds over the assembled manuscript, read-only.
+
+    ``.papersmith/paper_review.json`` holds ``{"rounds": [...]}``, one entry per
+    paper-reviewer pass: overall and confidence scores, the four ratings, the
+    verdict on each item of the previous round, the remaining revisions and the
+    full report text. ``status`` is ``ok``, ``absent`` or why it was not read.
+    """
+    status, text = paper_preview.bounded_read(root, root / PAPER_REVIEW_FILE, PAPER_REVIEW_MAX_BYTES)
+    if status != "ok" or text is None:
+        return {"status": status, "rounds": []}
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return {"status": "invalid", "rounds": []}
+    rounds = document.get("rounds") if isinstance(document, dict) else None
+    if not isinstance(rounds, list):
+        return {"status": "invalid", "rounds": []}
+    return {"status": "ok", "rounds": [r for r in rounds if isinstance(r, dict)]}
+
+
 def _journals_state(root: Path) -> dict[str, Any]:
     document, error = _read_candidates(root)
     sjr = None
@@ -3375,6 +3400,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse({"ok": False, "error": "FORBIDDEN", "code": "FORBIDDEN",
                              "message": "cross-origin request rejected"},
                             status_code=403, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/paper/review")
+    def api_paper_review() -> JSONResponse:
+        return JSONResponse(_paper_review_state(root_path), headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/journals")
     def api_journals() -> JSONResponse:
