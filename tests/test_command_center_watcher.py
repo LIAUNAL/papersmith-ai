@@ -191,6 +191,19 @@ class LiveRefreshTests(unittest.TestCase):
         assert woke.wait(watcher.RESCAN_SECONDS * 3), "a write in a folder created later never woke the board"
         assert any(path.name == "research-concept-r01.md" for batch in flushes for path in batch)
 
+    def test_a_file_written_with_its_new_target_is_announced(self) -> None:
+        """mkdir and the first write land before the watch covers the folder:
+        no event exists for them, so the rescan announces the target itself."""
+        root = self.new_root()
+        (root / "sections").mkdir()
+        flushes, woke = self.run_watcher(root)
+        time.sleep(0.5)
+        (root / "review").mkdir()
+        (root / "review" / "protocol.json").write_text("{}\n", encoding="utf-8")
+        assert woke.wait(watcher.RESCAN_SECONDS * 3), "a new target with a file in it was never announced"
+        announced = {path for batch in flushes for path in batch}
+        assert root / "review" in announced or root / "review" / "protocol.json" in announced
+
     def test_an_archive_write_does_not_wake_the_board(self) -> None:
         root = self.new_root()
         (root / ".papersmith" / "ai-history").mkdir(parents=True)

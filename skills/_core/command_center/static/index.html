@@ -4232,7 +4232,7 @@
     let currentStatus = null;
     let activeTab = 'flow';
     // The server's live channel (`/api/events`), see startLiveChannel().
-    const liveChannel = { connected: false, lastStatusAt: 0, timer: null, changed: [], missed: false };
+    const liveChannel = { connected: false, everConnected: false, lastStatusAt: 0, timer: null, changed: [], missed: false };
 
     // The theme button names the theme it switches to.
     function renderThemeButton() {
@@ -7347,11 +7347,11 @@
       preview: () => { if (document.getElementById('journalsDetails')?.open) window.refreshJournalsPanel?.(); },
     };
     function applyLiveChange() {
-      const changed = liveChannel.changed.splice(0);
       if (document.hidden) {
         liveChannel.missed = true; // refreshed by the visibilitychange handler
-        return;
+        return; // the changed paths stay queued for that refresh
       }
+      const changed = liveChannel.changed.splice(0);
       lastStatusSignature = '';
       loadStatus();
       // The tab in view refreshes now; any other tab refreshes when it is
@@ -7371,7 +7371,14 @@
     function startLiveChannel() {
       if (!window.EventSource) return;
       const source = new EventSource('/api/events');
-      source.addEventListener('ready', () => { liveChannel.connected = true; });
+      source.addEventListener('ready', () => {
+        // After a reconnect, whatever changed while the stream was down is
+        // refreshed once, as if it had been announced.
+        const reconnected = liveChannel.everConnected;
+        liveChannel.connected = true;
+        liveChannel.everConnected = true;
+        if (reconnected) scheduleLiveChange([]);
+      });
       source.addEventListener('state_update', (e) => {
         let changed = [];
         try { changed = JSON.parse(e.data).changed || []; } catch (_) { /* a malformed frame still refreshes */ }
@@ -7387,8 +7394,8 @@
       if (!document.hidden) {
         if (liveChannel.missed) {
           liveChannel.missed = false;
-          lastStatusSignature = '';
-          LIVE_TAB_REFRESH[activeTab]?.();
+          applyLiveChange();
+          return;
         }
         loadStatus();
       }

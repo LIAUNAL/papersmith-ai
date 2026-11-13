@@ -5,8 +5,9 @@ paper state (``WATCH_TARGETS``), ignores build and VCS noise and the files the
 server writes itself, and coalesces a burst of writes into one 300 ms flush so
 a single editor save does not fan out into a dozen recomputations. A target
 created after the server started (``proposals/`` in a fresh workspace, say) is
-picked up within ``RESCAN_SECONDS``, and a stream of writes (a training log)
-flushes at most once per ``MIN_FLUSH_SECONDS``.
+picked up within ``RESCAN_SECONDS`` (and announced, since what was written into
+it before the watch covered it raised no event), and a stream of writes (a
+metrics file a run appends to) flushes at most once per ``MIN_FLUSH_SECONDS``.
 
 The bus lets the watcher thread publish into asyncio queues owned by the
 server's SSE subscribers without reaching into their event loop directly.
@@ -275,7 +276,17 @@ class WorkspaceWatcher:
                         if not is_ignored(Path(path), self.root)
                     )
                     now = time.monotonic()
-                    if pending and now - last_flush >= MIN_FLUSH_SECONDS:
+                    restart = False
+                    if now - last_scan >= RESCAN_SECONDS:
+                        last_scan = now
+                        current = self.watch_paths()
+                        if set(current) != watched:
+                            # A target created after the watch started: what
+                            # was written into it so far raised no event, so
+                            # the target itself is announced, now.
+                            pending.extend(path for path in current if path not in watched)
+                            restart = True
+                    if pending and (restart or now - last_flush >= MIN_FLUSH_SECONDS):
                         touched = list(dict.fromkeys(pending))
                         pending.clear()
                         last_flush = now
@@ -284,10 +295,8 @@ class WorkspaceWatcher:
                         except Exception:
                             # A callback failure must not kill the watcher thread.
                             _log.exception("dashboard watcher: the flush callback failed")
-                    if now - last_scan >= RESCAN_SECONDS:
-                        last_scan = now
-                        if set(self.watch_paths()) != watched:
-                            break  # restart the watch with the new targets
+                    if restart:
+                        break  # restart the watch with the new targets
                 else:
                     return  # the watch ended: the server is stopping
             except Exception:
