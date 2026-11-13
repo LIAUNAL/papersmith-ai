@@ -308,6 +308,16 @@ class InitTests(unittest.TestCase):
         self.addCleanup(holder.cleanup)
         return Path(holder.name).resolve()
 
+    def test_initialize_ships_the_scimago_snapshot_once(self) -> None:
+        workspace = self.new_tmp() / "ws"
+        init_module.initialize(workspace, tools=("claude",), run_npm=False, run_env=False)
+        shipped = sorted((workspace / "skills" / "journal-finder" / "data").glob("scimagojr-*.csv.gz"))
+        assert shipped, "init must copy the bundled SCImago snapshot into the workspace"
+        # the harness reads it through its projected skills link, not a second copy
+        mirrored = workspace / ".claude" / "skills" / "journal-finder" / "data" / shipped[-1].name
+        assert mirrored.is_file()
+        assert mirrored.resolve() == shipped[-1].resolve()
+
     def test_initialize_creates_the_workspace_contract(self) -> None:
         tmp_path = self.new_tmp()
         workspace = tmp_path / "sparse-ae"

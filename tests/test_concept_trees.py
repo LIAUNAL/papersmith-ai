@@ -548,7 +548,8 @@ class Cli(Workspace):
         self.write(novelty())
         ranks = self.root / "sota-pool" / "journal-ranks.json"
         ranks.unlink()
-        with mock.patch.dict("os.environ", {"PAPERSMITH_SJR_DIR": str(self.root / "none")}):
+        with mock.patch.dict("os.environ", {"PAPERSMITH_SJR_DIR": str(self.root / "none"),
+                                             "PAPERSMITH_SJR_BUNDLED_DIR": ""}):
             code, body = self.run_cli("rank")
         self.assertEqual((code, body["ok"], body["error"]), (1, False, "SJR_TABLE_ABSENT"))
         self.assertFalse(ranks.exists())

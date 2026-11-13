@@ -28,7 +28,7 @@ maximum 50.
 | --- | --- | --- |
 | Title, abstract, keywords | `paper/main.tex` (`\title`, the `abstract` environment, `\keywords`, a `keyword` or `IEEEkeywords` block or a `Keywords:` line); else the title and abstract files under `paper/sections/` | `PAPER_ABSENT`: write the title and the abstract first |
 | Quartile range | the argument of `/journal-finder` | `QUARTILE_RANGE_INVALID` |
-| SJR file | `~/.cache/papersmith/sjr/scimagojr-<year>.csv`, imported once with `sjr-import` (or the dashboard's upload) | not an error: the quartile becomes the `openalex-proxy` approximation, labelled as such |
+| SJR file | the snapshot this skill ships, `skills/journal-finder/data/scimagojr-<year>.csv.gz` (copied into every workspace by `smith init`), or a newer `~/.cache/papersmith/sjr/scimagojr-<year>.csv` imported with `sjr-import` (or the dashboard's upload) | not an error: the quartile becomes the `openalex-proxy` approximation, labelled as such |
 | Contact email | `PAPERSMITH_CONTACT_EMAIL`, optional | requests go out without it; it is never hard-coded (Crossref's polite pool uses it as `mailto`) |
 | OpenAlex key | smith ui's Doctor → API keys, `smith keys set openalex` or `OPENALEX_API_KEY`, optional but advised | keyless OpenAlex is a small demo allowance; see "Get an OpenAlex key" |
 | Asta key | smith ui's Doctor → API keys, `smith keys set asta` or `ASTA_API_KEY`, optional | Asta (Ai2) is not queried at all; `--source asta` refuses `NETWORK_UNAVAILABLE` |
@@ -316,7 +316,7 @@ two happened and never retries in a loop.
 
 ### Where the quartile comes from
 
-- **`sjr`**: the SCImago file the operator imported, matched by any ISSN
+- **`sjr`**: the SCImago file in use (the bundled snapshot or the operator's import), matched by any ISSN
   (hyphens ignored, never by title). The best quartile decides the range
   filter; the per-category quartiles and the SJR value ride along.
 - **`unknown`**: no SJR row and no OpenAlex proxy (OpenAlex unavailable, or it
@@ -329,10 +329,15 @@ two happened and never retries in a loop.
   quartile; every place that shows it says so.
 
 scimagojr.com sits behind a browser challenge, so this skill never scrapes it.
-The operator downloads the CSV once from
+The skill ships a gzip snapshot of that CSV in `data/scimagojr-<year>.csv.gz`
+(`smith init` and `smith upgrade` copy it with the skill). To use a newer
+year, the operator downloads the CSV from
 https://www.scimagojr.com/journalrank.php ("Download data") and runs
-`sjr-import`. The latest imported year is used, and a file older than two
-years adds a note to the output.
+`sjr-import`. The newest year wins, an imported file wins a tie with the
+snapshot, and the output's `sjr.source` says which one was used (`bundled`,
+`imported` or `explicit` for `--sjr`). A file older than two years adds a note
+to the output. `PAPERSMITH_SJR_BUNDLED_DIR` points at another snapshot folder;
+set empty, it disables the snapshot.
 
 ### Review-time estimate
 

@@ -48,6 +48,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -60,7 +61,7 @@ FIXTURES = ROOT / "tests" / "fixtures" / "journal_finder"
 
 #: Environment variables that would change the CLI's behaviour; scrubbed per run.
 SCRUBBED = (
-    "PAPERSMITH_CONTACT_EMAIL", "NCBI_API_KEY", "OPENALEX_API_KEY", "PAPERSMITH_SJR_DIR",
+    "PAPERSMITH_CONTACT_EMAIL", "NCBI_API_KEY", "OPENALEX_API_KEY", "PAPERSMITH_SJR_DIR", "PAPERSMITH_SJR_BUNDLED_DIR",
     "PAPERSMITH_OPENALEX_URL", "PAPERSMITH_CROSSREF_URL", "PAPERSMITH_PUBMED_URL",
     "PAPERSMITH_HTTP_TIMEOUT", "PAPERSMITH_HTTP_RETRIES", "PAPERSMITH_HTTP_BACKOFF",
     "PAPERSMITH_JOURNAL_DEADLINE", "PAPERSMITH_JOURNAL_MAX_WORKS",
@@ -330,6 +331,7 @@ class JournalFinderCase(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k not in SCRUBBED}
         env.update({
             "PAPERSMITH_SJR_DIR": str(self.sjr_dir),
+            "PAPERSMITH_SJR_BUNDLED_DIR": "",
             "PAPERSMITH_HTTP_BACKOFF": "0",
             "PAPERSMITH_OPENALEX_MIN_INTERVAL": "0",
             "PAPERSMITH_HTTP_RETRIES": "2",
@@ -629,6 +631,26 @@ class SjrUnits(unittest.TestCase):
 # --------------------------------------------------------------------------- S2/S3 sjr-import
 
 
+class BundledSjrUnits(unittest.TestCase):
+    """The SCImago snapshot shipped in skills/journal-finder/data."""
+
+    def test_shipped_snapshot_is_a_readable_scimago_file(self):
+        mod = load_module()
+        shipped = sorted((SKILL_DIR / "data").glob("scimagojr-*.csv.gz"))
+        self.assertTrue(shipped, "skills/journal-finder/data has no scimagojr-<year>.csv.gz")
+        table = mod.read_sjr(shipped[-1])
+        self.assertGreater(table.rows, 20000)
+        self.assertIsNotNone(mod.year_from_name(shipped[-1].name))
+
+    def test_default_bundled_dir_is_the_skill_data_folder(self):
+        mod = load_module()
+        with unittest.mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PAPERSMITH_SJR_BUNDLED_DIR", None)
+            self.assertEqual(mod.bundled_sjr_dir(), (SKILL_DIR / "data").resolve())
+            os.environ["PAPERSMITH_SJR_BUNDLED_DIR"] = ""
+            self.assertIsNone(mod.bundled_sjr_dir())
+
+
 class SjrImportTests(JournalFinderCase):
     def test_import_stores_the_file_and_prints_rows_year_path(self):
         result = self.run_cli("sjr-import", "--file", str(FIXTURES / "scimagojr-2019.csv"))
@@ -821,6 +843,45 @@ class SjrSearchTests(JournalFinderCase):
         self.assertEqual(result.json["quartile_source_summary"], {"sjr": 2, "openalex-proxy": 2})
         self.assertEqual(result.json["sjr"]["year"], 2019)
         self.assertTrue(result.json["sjr"]["file"].endswith("scimagojr-2019.csv"))
+
+    def bundled_fixture(self, year: int = 2019) -> Path:
+        import gzip
+        folder = self.tmp / "bundled"
+        folder.mkdir(exist_ok=True)
+        (folder / f"scimagojr-{year}.csv.gz").write_bytes(
+            gzip.compress((FIXTURES / "scimagojr-2019.csv").read_bytes()))
+        return folder
+
+    def test_bundled_snapshot_supplies_quartiles_without_an_import(self):
+        self.start_api()
+        env = {"PAPERSMITH_SJR_BUNDLED_DIR": str(self.bundled_fixture())}
+        result = self.search(extra_env=env)
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        self.assertEqual(result.json["quartile_source_summary"], {"sjr": 2, "openalex-proxy": 2})
+        self.assertEqual(result.json["sjr"]["source"], "bundled")
+        self.assertTrue(result.json["sjr"]["file"].endswith("scimagojr-2019.csv.gz"))
+        status = self.run_cli("status", "--workspace", str(self.workspace), extra_env=env)
+        self.assertEqual(status.json["sjr"]["source"], "bundled")
+
+    def test_imported_file_wins_a_tie_and_a_newer_bundle_wins_otherwise(self):
+        self.start_api()
+        self.import_fixture_sjr()
+        tie = self.run_cli("status", "--workspace", str(self.workspace),
+                           extra_env={"PAPERSMITH_SJR_BUNDLED_DIR": str(self.bundled_fixture(2019))})
+        self.assertEqual((tie.json["sjr"]["source"], tie.json["sjr"]["year"]), ("imported", 2019))
+        newer = self.run_cli("status", "--workspace", str(self.workspace),
+                             extra_env={"PAPERSMITH_SJR_BUNDLED_DIR": str(self.bundled_fixture(2024))})
+        self.assertEqual((newer.json["sjr"]["source"], newer.json["sjr"]["year"]), ("bundled", 2024))
+
+    def test_a_damaged_bundle_is_ignored_with_a_note(self):
+        self.start_api()
+        folder = self.tmp / "broken"
+        folder.mkdir()
+        (folder / "scimagojr-2025.csv.gz").write_bytes(b"\x1f\x8bnot really gzip")
+        result = self.search(extra_env={"PAPERSMITH_SJR_BUNDLED_DIR": str(folder)})
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        self.assertIsNone(result.json["sjr"])
+        self.assertTrue(any("bundled SJR file ignored" in n for n in result.json["notes"]))
 
     def test_title_match_alone_never_assigns_an_sjr_quartile(self):
         # the fixture has an impostor "Open Signal Processing" with Q1 and other ISSNs

@@ -87,6 +87,7 @@ Environment
     PAPERSMITH_CONTACT_EMAIL     polite `mailto`/User-Agent/NCBI `email` (never hard-coded)
     NCBI_API_KEY, OPENALEX_API_KEY                         sent only when set
     PAPERSMITH_SJR_DIR           SJR cache (default ~/.cache/papersmith/sjr)
+    PAPERSMITH_SJR_BUNDLED_DIR   SJR snapshot shipped with the skill (default <skill>/data; empty disables)
     PAPERSMITH_HTTP_TIMEOUT      per-request seconds (default 15)
     PAPERSMITH_HTTP_RETRIES      retries on 429/5xx/transport errors (default 3)
     PAPERSMITH_HTTP_BACKOFF      first backoff in seconds, doubling (default 0.5)
@@ -100,6 +101,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import gzip
 import hashlib
 import http.client
 import importlib.util
@@ -279,6 +281,16 @@ def sjr_dir() -> Path:
     if override:
         return Path(override).expanduser()
     return Path.home() / ".cache" / "papersmith" / "sjr"
+
+
+def bundled_sjr_dir() -> Path | None:
+    """The SCImago snapshot this skill ships (``<skill>/data``), copied into
+    every workspace by ``smith init``; ``PAPERSMITH_SJR_BUNDLED_DIR`` set to an
+    empty value disables it."""
+    override = os.environ.get("PAPERSMITH_SJR_BUNDLED_DIR")
+    if override is not None:
+        return Path(override.strip()).expanduser() if override.strip() else None
+    return Path(__file__).resolve().parent.parent / "data"
 
 
 # --------------------------------------------------------------------------- HTTP
@@ -1000,6 +1012,11 @@ def read_sjr(path: Path) -> SjrTable:
         raw = path.read_bytes()
     except OSError as exc:
         raise _invalid(f"{path} cannot be read ({exc.strerror or exc})") from exc
+    if raw[:2] == b"\x1f\x8b":
+        try:
+            raw = gzip.decompress(raw)
+        except (OSError, EOFError) as exc:
+            raise _invalid(f"{path} is a damaged gzip file ({exc})") from exc
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -1046,14 +1063,29 @@ def read_sjr(path: Path) -> SjrTable:
     return SjrTable(rows, by_issn)
 
 
-def latest_cached_sjr() -> tuple[Path, int] | None:
-    folder = sjr_dir()
+def _newest_sjr(folder: Path | None, pattern: str) -> tuple[Path, int] | None:
     best: tuple[Path, int] | None = None
-    for path in folder.glob("scimagojr-*.csv") if folder.is_dir() else []:
+    for path in folder.glob(pattern) if folder is not None and folder.is_dir() else []:
         year = year_from_name(path.name)
         if year is not None and (best is None or year > best[1]):
             best = (path, year)
     return best
+
+
+def latest_cached_sjr() -> tuple[Path, int] | None:
+    return _newest_sjr(sjr_dir(), "scimagojr-*.csv")
+
+
+def latest_sjr() -> tuple[Path, int, str] | None:
+    """The newest SCImago file available: the operator's import or the bundled
+    snapshot, the import winning a tie. The third item names the source."""
+    cached = latest_cached_sjr()
+    bundled = _newest_sjr(bundled_sjr_dir(), "scimagojr-*.csv.gz")
+    if cached is not None and (bundled is None or cached[1] >= bundled[1]):
+        return cached[0], cached[1], "imported"
+    if bundled is not None:
+        return bundled[0], bundled[1], "bundled"
+    return None
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -2177,15 +2209,15 @@ def _validated_filters(args: argparse.Namespace) -> tuple[dict, list[str]]:
 def _load_sjr(args: argparse.Namespace, notes: list[str]) -> tuple[SjrTable | None, dict | None]:
     if args.sjr:
         path = Path(args.sjr).expanduser()
-        return read_sjr(path), {"file": str(path), "year": year_from_name(path.name)}
-    cached = latest_cached_sjr()
-    if cached is None:
+        return read_sjr(path), {"file": str(path), "year": year_from_name(path.name), "source": "explicit"}
+    found = latest_sjr()
+    if found is None:
         return None, None
-    path, year = cached
+    path, year, source = found
     try:
-        return read_sjr(path), {"file": str(path), "year": year}
+        return read_sjr(path), {"file": str(path), "year": year, "source": source}
     except Refusal as exc:
-        notes.append(f"cached SJR file ignored: {exc.message}")
+        notes.append(f"{'cached' if source == 'imported' else 'bundled'} SJR file ignored: {exc.message}")
         return None, None
 
 
@@ -2579,8 +2611,8 @@ def cmd_status(args: argparse.Namespace) -> dict:
                        "title": (document.get("query") or {}).get("title"), "sjr": document.get("sjr")}
         except (ValueError, KeyError, TypeError, OSError) as exc:
             raise Refusal("CANDIDATES_UNREADABLE", f"{path} cannot be read as journal candidates ({exc})") from exc
-    cached = latest_cached_sjr()
-    sjr = {"file": str(cached[0]), "year": cached[1]} if cached else None
+    found = latest_sjr()
+    sjr = {"file": str(found[0]), "year": found[1], "source": found[2]} if found else None
     return {"ok": True, "candidates": summary, "sjr": sjr}
 
 
