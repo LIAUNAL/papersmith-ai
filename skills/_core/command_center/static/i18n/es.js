@@ -218,6 +218,7 @@ window.PAPERSMITH_I18N.es = {
   "contract.term.problem-statement": "planteamiento del problema",
   "contract.term.repository-url": "URL del repositorio",
   "contract.term.ethics-approval": "aprobación ética",
+  "contract.term.review-registration": "registro de la revisión",
   "contract.term.results": "resultados",
   "section.file": "Archivo:",
   "section.pdfPage": "Pág. PDF:",

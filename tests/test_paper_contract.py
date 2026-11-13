@@ -141,8 +141,9 @@ class VocabularyTests(unittest.TestCase):
         self.assertIsInstance(paper_vocabulary.DECLARATIONS, tuple)
         self.assertIsInstance(paper_vocabulary.CITATIONS_REGIMES, tuple)
         self.assertEqual(len(paper_vocabulary.FACTS), 10)
-        # Seven since closing-sections T1 added `ethics-approval`.
-        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 7)
+        # Seven since closing-sections T1 added `ethics-approval`; eight
+        # since the review line added `review-registration`.
+        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 8)
         self.assertEqual(len(paper_vocabulary.CITATIONS_REGIMES), 3)
         self.assertEqual(
             set(paper_vocabulary.FACTS) & set(paper_vocabulary.DECLARATIONS), set()
