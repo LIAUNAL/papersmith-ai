@@ -614,8 +614,18 @@ when that install fails (offline) does it refuse, naming `smith env install`.
 Serves the **Paper Command Center**: a local dashboard inside the workspace with
 its twelve tabs, the eleven phases of the paper flow, the gates (`G-EXP-POC`,
 `G-NOVELTY` and `G1` to `G4`), the ten-section matrix and the health of the
-harness wiring. It updates live over Server-Sent Events, with a 300 ms
-debounce on `sections/`, `openspec/`, `experiments/` and `papersmith.yaml`.
+harness wiring. It updates by itself as the phases advance: the server watches
+`sections/`, `openspec/`, `experiments/`, `paper/`, `sota-pool/`,
+`proposals/`, `implementations/`, `guidance/`, `kaggle-inbox/`, `review/`,
+`.papersmith/` and `papersmith.yaml` (a folder created after the server
+started is picked up within 2 s), coalesces a burst of writes into one flush
+(300 ms debounce, at most one flush per second), and pushes a `state_update`
+over Server-Sent Events (`/api/events`). The page redraws the phase board and
+refreshes the tab in view; any other tab refreshes when it is opened, and the
+open artifact reloads when it is the file that changed. The server's own
+writes (`.papersmith/ai-history/`, `.papersmith/cache/`) wake nothing. While
+the event stream is down the page polls `/api/status` every 5 s, and every
+30 s while it is up.
 
 The backend lives in `skills/_core/command_center/` (part of the kit, so it
 travels with every workspace) and runs standalone without Node/npm:
