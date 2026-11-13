@@ -11,6 +11,25 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.76.0
+
+- `smith init --kind review` starts a PRISMA 2020 systematic-review workspace:
+  nine review section contracts (title and keywords, abstract, introduction,
+  background, methods, results, discussion, limitations, conclusions) served
+  at `sections/`, a `review/` folder, and the `/systematic-review` skill with
+  `review_cli.py` (protocol, search log, screening, the 27-item PRISMA
+  checklist). The results section asks for a comparative thematic synthesis:
+  sub-themes that compare studies along one dimension, one comparison table
+  per theme, and reconciled category counts. Experimental workspaces keep
+  their ten section contracts unchanged.
+- The dashboard refreshes itself: `/api/events` streams workspace changes over
+  server-sent events and each open tab reloads only what changed (proposals,
+  sections, preview, Kaggle inbox), with no manual reload.
+- The PDF preview tab shows the final judge's verdict per round from
+  `.papersmith/paper_review.json` (`GET /api/paper/review`, read-only, capped
+  at 2 MB, in English and Spanish), refreshed live with the preview
+  (PR #179 by Carlos Canamejoy).
+
 ## 0.75.0
 
 - Every workspace now ships the SCImago Journal & Country Rank 2025 snapshot
