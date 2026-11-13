@@ -11,6 +11,19 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.75.0
+
+- Every workspace now ships the SCImago Journal & Country Rank 2025 snapshot
+  (`skills/journal-finder/data/scimagojr-2025.csv.gz`, 2.7 MB, copied by
+  `smith init` and refreshed by `smith upgrade`), so `/journal-finder` and the
+  dashboard's journals panel give SJR quartiles out of the box instead of the
+  `openalex-proxy` approximation. A newer year imported with `sjr-import`
+  still wins, and so does an import of the same year.
+- `journal_cli.py` reads gzip-compressed SCImago CSVs, reports which file it
+  used in `sjr.source` (`bundled`, `imported` or `explicit` for `--sjr`), and
+  ignores a damaged snapshot with a note. `PAPERSMITH_SJR_BUNDLED_DIR` points
+  at another snapshot folder; set empty, it disables the snapshot.
+
 ## 0.74.0
 
 - `smith ui --lan` opens the dashboard to the other devices on your network
