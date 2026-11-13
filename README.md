@@ -520,6 +520,46 @@ synced with `smith upgrade`, and the research artifacts are protected by
 contract. What `init` creates exactly —and what gets versioned— in
 [Inside the workspace](#inside-the-workspace).
 
+### The review line (systematic reviews)
+
+A review paper needs no experiments, but it does need an accepted method. The
+review line is a second, separate path that follows the PRISMA 2020 statement
+(Page et al., 2021, doi:10.1136/bmj.n71); the experimental line above is
+unchanged.
+
+```bash
+smith init ~/papers/gnn-drug-review --kind review \
+  --title "Graph neural networks in drug discovery: a systematic review"
+```
+
+A review workspace has `review/` instead of `proposals/`, `experiments/`,
+`implementations/` and `kaggle-inbox/`; its `sections/` hold the review
+contracts (title, PRISMA 2020 for Abstracts, introduction, methods, results,
+discussion, limitations, conclusions, and the shared back matter); and its
+`CLAUDE.md` (and every other harness entrypoint) states the review flow:
+
+1. **Scoping**: `/systematic-review scope` finds existing reviews on the topic.
+2. **Protocol**: research questions (PICOC), criteria, one query per source,
+   dates, appraisal checklist and extraction fields in `review/protocol.json`,
+   approved by the operator (G-PROTOCOL) before any search; later changes are
+   logged amendments.
+3. **Identification**: searches on OpenAlex, Crossref and Europe PMC, and
+   RIS/BibTeX exports from Scopus, Web of Science, IEEE Xplore or ACM, each
+   logged with its date, query and count; duplicates removed by DOI and title.
+4. **Screening**: title/abstract, then full text, by two reviewers (the agent
+   can be one, the operator is always the other), with conflicts settled by
+   the operator and Cohen's kappa reported.
+5. **Appraisal and extraction**, every value with the quote that holds it.
+6. **Synthesis**: the PRISMA flow counts and diagram
+   (`paper/Figures/prisma-flow.svg`), bibliometrics, taxonomy and the answer
+   to each research question.
+7. **Writing** with `/paper-writing`, and the 27-item PRISMA 2020 checklist
+   (`review_cli.py checklist`) for submission.
+
+The dashboard's phase board still shows the experimental phases; a review
+workspace follows the list in its `CLAUDE.md`. Details in
+[skills/systematic-review/SKILL.md](skills/systematic-review/SKILL.md).
+
 ### Open the dashboard from another device
 
 `smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open

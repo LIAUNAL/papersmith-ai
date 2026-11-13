@@ -85,6 +85,8 @@ class ReviewInitTests(ReviewLineCase):
                              (ROOT / "sections-review" / name).read_bytes())
         self.assertFalse((workspace / "sections-review").exists())
         self.assertTrue((workspace / "review" / ".gitkeep").is_file())
+        self.assertTrue((workspace / "skills" / "systematic-review" / "scripts" / "review_cli.py").is_file())
+        self.assertTrue((workspace / ".claude" / "commands" / "systematic-review.md").is_file())
         for folder in ("proposals", "experiments", "implementations", "kaggle-inbox"):
             self.assertFalse((workspace / folder).exists(), folder)
 
@@ -156,6 +158,31 @@ class ReviewContractsTests(ReviewLineCase):
         for block in ("methods.m-search-strategy", "methods.m-selection-process", "results.r-study-selection",
                       "results.r-research-questions", "abstract.abs-other", "back-matter.bm-funding"):
             self.assertIn(block, blocks)
+
+    def test_the_prisma_checklist_reads_the_written_blocks_and_the_registration(self) -> None:
+        workspace = self.init("review")
+        paper = workspace / "skills" / "paper-writing" / "scripts" / "paper_cli.py"
+        review = workspace / "skills" / "systematic-review" / "scripts" / "review_cli.py"
+
+        def run(cli, *argv, stdin=None):
+            completed = subprocess.run([sys.executable, str(cli), *argv], cwd=workspace, input=stdin,
+                                       capture_output=True, text=True, timeout=120)
+            return json.loads(completed.stdout)
+
+        def item(number):
+            return run(review, "checklist")["items"][number - 1]
+
+        self.assertEqual(run(paper, "scaffold")["status"], "ok")
+        self.assertIn("text:methods.m-eligibility", item(5)["missing"])
+        run(paper, "open", "--block", "methods.m-eligibility", "--at-end")
+        self.assertIn("text:methods.m-eligibility", item(5)["missing"])  # opened but empty
+        body = workspace / "body.tex"
+        body.write_text("Studies were eligible when they evaluated a method on real data.\n", encoding="utf-8")
+        self.assertEqual(run(paper, "substitute", "--block", "methods.m-eligibility", "--body", str(body))["status"], "ok")
+        self.assertEqual(item(5)["missing"], ["record:protocol"])
+        self.assertIn("declaration:review-registration", item(24)["missing"])
+        run(paper, "declare", "--declaration", "review-registration", "--value", "OSF 10.17605/OSF.IO/ABCDE")
+        self.assertNotIn("declaration:review-registration", item(24)["missing"])
 
     def test_review_registration_is_a_declaration(self) -> None:
         sys.path.insert(0, str(ROOT / "skills" / "paper-writing" / "scripts"))
