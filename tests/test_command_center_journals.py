@@ -48,7 +48,8 @@ class JournalCase(unittest.TestCase):
         self.root = self.tmp / "ws"
         (self.root / "paper").mkdir(parents=True)
         self.sjr_dir = self.tmp / "sjr"
-        patcher = mock.patch.dict(os.environ, {"PAPERSMITH_SJR_DIR": str(self.sjr_dir)})
+        patcher = mock.patch.dict(os.environ, {"PAPERSMITH_SJR_DIR": str(self.sjr_dir),
+                                                    "PAPERSMITH_SJR_BUNDLED_DIR": ""})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.client = TestClient(server.create_app(self.root))

@@ -248,9 +248,12 @@ that already publish work like it. Nothing is ever submitted.
   (`providers`, and `sources` on every candidate), so a fallback result is
   never passed off as an OpenAlex one. The fallback has less to go on: no
   OpenAlex topics, no citedness and no proxy quartile.
-- **Where the quartile comes from.** The SJR quartile comes from a SCImago CSV
-  that **you** download once from <https://www.scimagojr.com/journalrank.php>
-  ("Download data") and import (`python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <csv>`,
+- **Where the quartile comes from.** The SJR quartile comes from a SCImago CSV.
+  Every workspace ships a snapshot (`skills/journal-finder/data/scimagojr-2025.csv.gz`,
+  copied by `smith init` and refreshed by `smith upgrade`), so quartiles work
+  out of the box; data © SCImago Journal & Country Rank (Scopus data),
+  <https://www.scimagojr.com>. For a newer year, download the CSV from
+  <https://www.scimagojr.com/journalrank.php> ("Download data") and import (`python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <csv>`,
   or the panel's upload, which sends the file as the raw body of
   `POST /api/journals/sjr`, up to 16 MiB); scimagojr.com answers automated
   downloads with a browser challenge, so the forge never scrapes it. When
@@ -432,7 +435,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.74.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.75.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 
