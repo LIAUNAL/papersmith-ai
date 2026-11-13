@@ -7350,7 +7350,10 @@
       historia: () => window.refreshAiHistoryPanel?.(),
       doctor: () => { window.refreshDoctorPanel?.(); window.refreshKeysPanel?.(); },
       modelo: () => { refreshModelData(); window.refreshMathPanel?.(); },
-      preview: () => { if (document.getElementById('journalsDetails')?.open) window.refreshJournalsPanel?.(); },
+      preview: () => {
+        if (document.getElementById('paperReviewDetails')?.open) window.refreshPaperReview?.();
+        if (document.getElementById('journalsDetails')?.open) window.refreshJournalsPanel?.();
+      },
     };
     function applyLiveChange() {
       if (document.hidden) {

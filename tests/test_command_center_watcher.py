@@ -241,5 +241,9 @@ class DashboardSubscribesTests(unittest.TestCase):
         assert "addEventListener('state_update'" in self.PAGE
         assert "LIVE_TAB_REFRESH[activeTab]" in self.PAGE
 
+    def test_the_open_final_judge_panel_refreshes_with_the_preview_tab(self) -> None:
+        preview = self.PAGE.split("preview: () =>", 1)[1].split("\n      },", 1)[0]
+        assert "paperReviewDetails" in preview and "refreshPaperReview" in preview
+
     def test_subphases_change_the_redraw_signature(self) -> None:
         assert "sub: (data.fases || []).map(f => JSON.stringify([f.subfases || null, f.steps || null]))" in self.PAGE
