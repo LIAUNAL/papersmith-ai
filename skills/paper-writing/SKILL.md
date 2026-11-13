@@ -311,9 +311,9 @@ sole producer from `introduction.block-4b` to
 **The three closed vocabularies** a header may draw from: ten
 `requires_facts` ids (`formulation`, `contributions`, `problem-statement`,
 `gap`, `dataset`, `experimental-design`, `implementation`, `results`,
-`limitations`, `skeleton`), seven `requires_declarations` ids (`author-roles`,
+`limitations`, `skeleton`), eight `requires_declarations` ids (`author-roles`,
 `grant-title`, `grant-code`, `repository-url`, `keyword-bounds`,
-`classification-line`, `ethics-approval`), and three `citations` regimes (`discovery`,
+`classification-line`, `ethics-approval`, `review-registration`), and three `citations` regimes (`discovery`,
 `resolution`, `none`). A value outside any of the three refuses
 immediately — this is deliberately closed, not a convention.
 
@@ -442,9 +442,10 @@ readable by Phase 1's block scanner: both markers share the `%% paper-writing
 `MARKER_PREFIX`'s own `startswith` check skips them (proven in
 `tests/test_paper_decisions.py::DisjointGrammarTests`).
 
-`declare` records two kinds of value: a `declaration` (one of the seven
+`declare` records two kinds of value: a `declaration` (one of the eight
 operator-input ids — `author-roles`, `grant-title`, `grant-code`,
-`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`)
+`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`,
+`review-registration`, the last one used by review workspaces only)
 or a `fact`
 resolution (one of the ten fact ids). Recording either fixes it immediately
 — a further `declare` on the same id refuses `DECLARATION_FIXED` until

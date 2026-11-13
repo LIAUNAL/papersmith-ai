@@ -3383,3 +3383,47 @@ masked AI history (default yes; `--no-ai-history` leaves it out) before it adds
 **What it refuses.** A workspace without the remote, a remote that is not on
 github.com, a failed export, and a non-interactive run without `--yes`; each
 exits non-zero with nothing pushed.
+
+### 21. `systematic-review` — a review paper on an accepted method, with every number on record
+
+**When.** Only in a review workspace (`smith init --kind review`): the paper is
+a systematic review, with no proposal and no experiments, reported after the
+PRISMA 2020 statement (Page et al., 2021, doi:10.1136/bmj.n71). An
+experimental workspace never receives this skill.
+
+**How it runs.** `/systematic-review` drives
+`skills/systematic-review/scripts/review_cli.py` (standard library only; every
+verb prints one JSON object and a refusal exits 2) through the stages, each
+leaving its record under `review/`:
+
+| Verb | Writes | PRISMA 2020 items |
+|---|---|---|
+| `scope --query` | `review/scope.json`: existing reviews (OpenAlex, `type:review`) | 3 |
+| `init`, `protocol check\|approve\|amend` | `review/protocol.json`, `review/protocol.lock.json` (G-PROTOCOL, amendments) | 4, 5, 7, 10, 24 |
+| `search --source openalex\|crossref\|europepmc`, `import --file --source --query` | `review/searches.jsonl`, `review/records.jsonl` | 6, 7, 16 |
+| `dedupe` | `duplicate_of` on `review/records.jsonl` | 16 |
+| `queue`, `screen`, `conflicts`, `kappa` (stages `ta`, `ft`) | `review/screening.jsonl` | 8, 16 |
+| `appraise`, `extract` | `review/appraisal.jsonl`, `review/extraction.jsonl` | 9, 11, 17, 18 |
+| `prisma`, `flow`, `biblio` | `review/prisma.json`, `paper/Figures/prisma-flow.svg`, `review/biblio.json` | 16 |
+| `checklist`, `status` | nothing; reports the 27 items and the records | all |
+
+**Human gates.** The operator approves the protocol before any search and
+records every amendment with its reason; the operator is always one of the two
+screeners and settles conflicts (`screen --final`). The agent may be the other
+screener and extracts data with the quote that holds each value.
+
+**Writing.** The review section contracts (`sections-review/` in the kit,
+served at `sections/` in a review workspace) are written with `/paper-writing`;
+they require the `review-registration` declaration and copy every count from
+`review/prisma.json`. They add a Background section (definitions, evolution,
+open problems) and write the results as a comparative thematic synthesis: one
+subsection per theme, sub-themes with a bold label that compare several studies
+along one dimension, a closing sentence on what the evidence supports, and one
+comparison table per theme. Their house style and disqualifiers are measured
+on the group's MDPI review A029; the experimental contracts are untouched.
+
+**What it refuses.** A search or a decision on an unapproved or silently
+changed protocol, a source the protocol does not name, a full-text exclusion
+without a protocol criterion, a decision on a duplicate or a record the
+previous stage excluded, an incomplete appraisal, and an extracted value
+without its quote.

@@ -45,6 +45,7 @@ smith init ~/papers/sparse-ae \
 | `--topic TEXT` | Research topic |
 | `--tools TEXT` | Runtimes to provision, comma-separated |
 | `--remote {kaggle,local,slurm}` | Default compute target (default: `kaggle`) |
+| `--kind {experimental,review}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. An experimental workspace never receives the review-only files. See [The review line](../README.md#the-review-line-systematic-reviews) |
 | `<dir>` | Where the workspace goes; omitted, it is the current directory (`smith init` alone sets up the folder you are in, on every operating system) |
 | `--import-existing` | Explicitly initialize a nonempty directory while preserving existing files: keeps its `README.md`, merges papersmith's block into its `.gitignore`, and refuses any other file or symlink collision before copying |
 | `--no-npm` | Skips the best-effort `npm install` (offline/hermetic use) |

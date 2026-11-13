@@ -1013,8 +1013,9 @@ class DeclarationsTests(unittest.TestCase):
     def test_facts_and_declarations_vocabularies_are_pinned_and_disjoint(self) -> None:
         self.assertEqual(len(paper_vocabulary.FACTS), 10)
         # Seven since closing-sections T1 added `ethics-approval` (the
-        # back-matter ethics and informed-consent blocks).
-        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 7)
+        # back-matter ethics and informed-consent blocks); eight since the
+        # review line added `review-registration` (PRISMA 2020 item 24a).
+        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 8)
         self.assertTrue(set(paper_vocabulary.FACTS).isdisjoint(paper_vocabulary.DECLARATIONS))
 
     def test_a_fixed_entry_refuses_a_plain_overwrite(self) -> None:

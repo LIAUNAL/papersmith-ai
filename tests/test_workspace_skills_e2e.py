@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 
 from papersmith.generators import collect_commands
+from papersmith.core import manifest
 
 from workspace_series import (
     REPO_ROOT,
@@ -79,7 +80,11 @@ class SkillTreeTests(unittest.TestCase):
 
     def test_every_repository_skill_ships_in_the_workspace(self) -> None:
         workspace = make_workspace(new_tmp(self))
-        repo = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()}
+        # Review-only skills (``manifest.REVIEW_ONLY_PREFIXES``) ship only to a
+        # review workspace (``smith init --kind review``).
+        review_only = {prefix.split("/")[1] for prefix in manifest.REVIEW_ONLY_PREFIXES
+                       if prefix.startswith("skills/")}
+        repo = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()} - review_only
         shipped = {path.name for path in (workspace / "skills").iterdir() if path.is_dir()}
         self.assertEqual(shipped, repo, "the workspace must ship the whole skill tree")
 

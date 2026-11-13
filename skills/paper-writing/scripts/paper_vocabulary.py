@@ -44,6 +44,11 @@ DECLARATIONS: tuple[str, ...] = (
     # record like a grant code, never derived from a fact. Read by the
     # back-matter ethics and informed-consent blocks.
     "ethics-approval",
+    # A review's protocol registration (registry and id, e.g. "PROSPERO
+    # CRD42025000000" or "OSF 10.17605/OSF.IO/XXXXX") or "Not registered."
+    # with the protocol's location -- PRISMA 2020 item 24a. Read by the
+    # review line's abstract, methods and back-matter blocks.
+    "review-registration",
 )
 
 #: A block's `citations` value — exactly one of these three.
