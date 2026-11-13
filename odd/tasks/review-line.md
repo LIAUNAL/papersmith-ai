@@ -19,7 +19,7 @@ Branch: feat/review-line (from main 0.75.0, worktree ../papersmith-ai-worktrees/
 - [x] T2 [S4] `paper-flow-review.md.tpl` chosen by kind; `sections-review/*.md` contracts — inline — 313ba4ef, f3af49bf
 - [x] T3 [S5] `skills/systematic-review` (SKILL.md + `review_cli.py`): protocol, search, import, dedupe, screening, kappa, appraisal, extraction, prisma counts/diagram/checklist, bibliometrics; tests — inline — eabc3292
 - [x] T5 [S5] verifier B1: `checklist` reads written blocks (`paper_cli status`) and the registration declaration (`phases`); A2 review records follow the umask — inline — eabc3292
-- [ ] T6 [S7] regenerate `sections-review/` (9 contracts: + background; results `r-thematic-synthesis`), checklist id, flow template, skill, docs, writing-rule tests — inline
+- [x] T6 [S7] regenerate `sections-review/` (9 contracts: + background; results `r-thematic-synthesis`), checklist id, flow template, skill, docs, writing-rule tests — inline — e57254fd
 - [x] T4 [S1-S5] docs (README, docs/cli.md), CHANGELOG — inline — f3af49bf, eabc3292
 
 ## Log
@@ -36,3 +36,4 @@ Branch: feat/review-line (from main 0.75.0, worktree ../papersmith-ai-worktrees/
 - L10 (2026-11-13) "acabo de poner en mi drive el ejemplo de articulo de review de mdpi, mira si piedes accederlo, revisa muy bien secciones , patrins de escritura etc para ajustar flujo y reglas de secciones para articulo revision, sin alterar el flujo que ya tenemos de articulo de investigacion trasicional"
 - L11 (2026-11-13) "dale con la síntesis comparativa y ajusta los contratos, recuerda que no debes tocar las reglas para papers convencionales como tenemos, solo si se escoge paper de revision"
 - L12 A029 measured: 9.5k body words, 168 refs (102 included), Fig. 1 PRISMA flow, Tables 1-6; catalogue pattern ("The paper by [n]" 46x), stock openers (In addition 14x), RQs never stated, search keywords given as examples, no RoB; counts reconciled in prose (92/74 of 102). T6 generator: scratchpad gen_review_sections.py (not committed).
+- L13 T6 e57254fd: full suite 10073 passed; failures are the 5 forge_gate baseline + test_version_sources release hygiene (also fails at f69810c4, clears on release). Experimental sections/ diff empty. Native review f69810c4..e57254fd (readability, reliability): approved, acknowledged (lineage review-52e7d2119f67a766).
