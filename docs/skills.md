@@ -3415,7 +3415,12 @@ screener and extracts data with the quote that holds each value.
 **Writing.** The review section contracts (`sections-review/` in the kit,
 served at `sections/` in a review workspace) are written with `/paper-writing`;
 they require the `review-registration` declaration and copy every count from
-`review/prisma.json`.
+`review/prisma.json`. They add a Background section (definitions, evolution,
+open problems) and write the results as a comparative thematic synthesis: one
+subsection per theme, sub-themes with a bold label that compare several studies
+along one dimension, a closing sentence on what the evidence supports, and one
+comparison table per theme. Their house style and disqualifiers are measured
+on the group's MDPI review A029; the experimental contracts are untouched.
 
 **What it refuses.** A search or a decision on an unapproved or silently
 changed protocol, a source the protocol does not name, a full-text exclusion

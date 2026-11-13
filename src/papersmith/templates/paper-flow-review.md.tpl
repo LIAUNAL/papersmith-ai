@@ -51,10 +51,12 @@ board still shows the experimental phases; follow this list instead.
    diagram (`paper/Figures/prisma-flow.svg`), `review_cli.py biblio` the
    counts per year and venue and the keyword co-occurrence
    (`review/biblio.json`), and the agent builds, with the operator, the
-   taxonomy and the per-question synthesis from `review/extraction.jsonl`.
+   taxonomy of themes, the problem classes and one comparison table per theme
+   from `review/extraction.jsonl`.
 8. **Scaffolding, declarations and writing**: `/paper-writing` opens the
    `paper/` tree from the review section contracts in `sections/` (title,
-   abstract after PRISMA 2020 for Abstracts, introduction, methods, results,
+   abstract after PRISMA 2020 for Abstracts, introduction, background, methods,
+   results as a comparative thematic synthesis,
    discussion, limitations, conclusions, back matter), records the
    declarations (`review-registration` included) and writes one block at a
    time. Every count is copied from `review/prisma.json`; every claim about a

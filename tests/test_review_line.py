@@ -125,11 +125,11 @@ class ReviewInitTests(ReviewLineCase):
 class ReviewUpgradeAndDriftTests(ReviewLineCase):
     def test_upgrade_keeps_the_review_layout_and_repairs_a_review_contract(self) -> None:
         workspace = self.init("review")
-        (workspace / "sections" / "04-methods.md").unlink()
+        (workspace / "sections" / "05-methods.md").unlink()
         result = upgrade_module.upgrade(workspace)
-        self.assertIn("sections/04-methods.md", result["changed_files"])
-        self.assertEqual((workspace / "sections" / "04-methods.md").read_bytes(),
-                         (ROOT / "sections-review" / "04-methods.md").read_bytes())
+        self.assertIn("sections/05-methods.md", result["changed_files"])
+        self.assertEqual((workspace / "sections" / "05-methods.md").read_bytes(),
+                         (ROOT / "sections-review" / "05-methods.md").read_bytes())
         names = sorted(p.name for p in (workspace / "sections").glob("*.md"))
         for name in EXPERIMENTAL_SECTIONS:
             if f"sections/{name}" not in manifest.REVIEW_SHARED_SECTIONS:
@@ -156,7 +156,7 @@ class ReviewContractsTests(ReviewLineCase):
             self.assertEqual(payload["status"], "ok", (argv, completed.stdout, completed.stderr))
         blocks = {block["block"] for wave in payload["waves"] for block in wave["blocks"]}
         for block in ("methods.m-search-strategy", "methods.m-selection-process", "results.r-study-selection",
-                      "results.r-research-questions", "abstract.abs-other", "back-matter.bm-funding"):
+                      "results.r-thematic-synthesis", "abstract.abs-other", "back-matter.bm-funding"):
             self.assertIn(block, blocks)
 
     def test_the_prisma_checklist_reads_the_written_blocks_and_the_registration(self) -> None:
@@ -192,6 +192,62 @@ class ReviewContractsTests(ReviewLineCase):
             sys.path.pop(0)
         paper_vocabulary.validate_declaration("review-registration")
         self.assertNotIn("review-registration", paper_vocabulary.FACTS)
+
+
+
+def review_body(name: str) -> str:
+    return (ROOT / "sections-review" / name).read_text(encoding="utf-8").split("\n---\n", 1)[1]
+
+
+class ReviewWritingRulesTests(unittest.TestCase):
+    """The review contracts carry their own house style, measured on the group's review A029."""
+
+    def test_the_review_sections_follow_the_groups_review_structure(self) -> None:
+        names = [json.loads((ROOT / "sections-review" / name).read_text(encoding="utf-8")
+                            .split("---\n", 2)[1])["section"] for name in REVIEW_SECTIONS]
+        self.assertEqual(names, ["title-and-keywords", "abstract", "introduction", "background", "methods",
+                                 "results", "discussion", "limitations", "conclusions"])
+
+    def test_every_review_contract_carries_its_house_style_before_its_disqualifiers_and_an_extent(self) -> None:
+        from skills._core.command_center import state_extractor
+        for name in REVIEW_SECTIONS:
+            with self.subTest(contract=name):
+                text = review_body(name)
+                self.assertEqual(text.count("\n## LIA house style\n"), 1)
+                self.assertLess(text.index("\n## LIA house style\n"), text.index("\n## Disqualifiers\n"))
+                self.assertIn("Measured on the group's MDPI review A029", text)
+                low, high = state_extractor._extent(text)
+                self.assertIsNotNone(low)
+                self.assertLess(low, high)
+
+    def test_the_results_are_a_comparative_synthesis(self) -> None:
+        text = review_body("06-results.md")
+        self.assertIn("compares at least two studies along one dimension", text)
+        self.assertIn("A comparison table per theme", text)
+        disqualifiers = text.split("\n## Disqualifiers\n", 1)[1]
+        for rule in ("A citation as the subject of a sentence: *The paper by [n]*",
+                     "Three or more consecutive sentences about one study.",
+                     "A sub-theme without its closing synthesis sentence",
+                     "An included study cited nowhere in the results."):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, disqualifiers)
+
+    def test_the_methods_refuse_example_keywords_for_a_search_strategy(self) -> None:
+        disqualifiers = review_body("05-methods.md").split("\n## Disqualifiers\n", 1)[1]
+        self.assertIn("A search strategy given as example keywords (*terms such as*)", disqualifiers)
+
+    def test_the_background_names_the_problem_classes_the_results_use(self) -> None:
+        self.assertIn("same names", review_body("04-background.md"))
+        header = json.loads((ROOT / "sections-review" / "06-results.md").read_text(encoding="utf-8").split("---\n", 2)[1])
+        synthesis = next(b for b in header["blocks"] if b["id"] == "r-thematic-synthesis")
+        self.assertIn("background.bg-open-problems", [edge["target"] for edge in synthesis["after"]])
+
+    def test_the_experimental_contracts_carry_no_review_rule(self) -> None:
+        for name in EXPERIMENTAL_SECTIONS:
+            with self.subTest(contract=name):
+                text = (ROOT / "sections" / name).read_text(encoding="utf-8")
+                self.assertNotIn("A029", text)
+                self.assertNotIn("comparative synthesis", text)
 
 
 if __name__ == "__main__":

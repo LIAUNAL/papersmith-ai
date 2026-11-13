@@ -112,9 +112,14 @@ recorded as the `review-registration` declaration of `/paper-writing`.
 - `biblio` writes per-year and per-venue counts and keyword co-occurrence to
   `review/biblio.json` (from the included studies, or the screened records
   before any is included).
-- The taxonomy and the per-question synthesis are built by the agent with the
-  operator from `review/extraction.jsonl`, one research question at a time;
-  every statement about a study cites it.
+- The taxonomy is built by the agent with the operator from
+  `review/extraction.jsonl`: the themes (each answering a research question),
+  the problem classes (the background's open problems, with the same names)
+  and the dimensions each theme is compared along, with one comparison table
+  per theme. The results are a comparative synthesis: each paragraph compares
+  several studies along one dimension, the citation closes the sentence and is
+  never its subject, and each sub-theme closes on what the evidence supports.
+  The section contracts in `sections/` hold the full rules.
 
 ### 7. Writing and reporting check
 

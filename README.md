@@ -534,8 +534,9 @@ smith init ~/papers/gnn-drug-review --kind review \
 
 A review workspace has `review/` instead of `proposals/`, `experiments/`,
 `implementations/` and `kaggle-inbox/`; its `sections/` hold the review
-contracts (title, PRISMA 2020 for Abstracts, introduction, methods, results,
-discussion, limitations, conclusions, and the shared back matter); and its
+contracts (title, PRISMA 2020 for Abstracts, introduction, background, methods,
+results as a comparative thematic synthesis, discussion, limitations,
+conclusions, and the shared back matter); and its
 `CLAUDE.md` (and every other harness entrypoint) states the review flow:
 
 1. **Scoping**: `/systematic-review scope` finds existing reviews on the topic.
