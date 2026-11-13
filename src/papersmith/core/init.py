@@ -56,6 +56,35 @@ def _write_text(root: Path, relpath: str, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+#: The research-state folders a review workspace gets instead of the
+#: experimental ones (``proposals``, ``implementations``, ``kaggle-inbox``,
+#: ``experiments``): ``review/`` holds the PRISMA 2020 records of
+#: ``skills/systematic-review``.
+_REVIEW_TOPOLOGY = (
+    ".papersmith",
+    ".claude/agents",
+    ".opencode",
+    ".pi/gentle-ai",
+    "guidance/paper-guide",
+    "guidance/reference-papers",
+    "guidance/data-paper",
+    "paper",
+    "review",
+    "sota-pool",
+)
+
+
+def _create_review_topology(root: Path) -> None:
+    for relpath in _REVIEW_TOPOLOGY:
+        (root / relpath).mkdir(parents=True, exist_ok=True)
+    for relpath in ("guidance/paper-guide/.gitkeep", "guidance/reference-papers/.gitkeep",
+                    "guidance/data-paper/.gitkeep", "paper/.gitkeep", "review/.gitkeep",
+                    "sota-pool/.gitkeep"):
+        path = root / relpath
+        if not fs.exists(path):
+            fs.write_text(path, "")
+
+
 def _create_topology(root: Path) -> None:
     # ``proposals/`` stays flat: this repository's own layout is
     # `proposals/research-concept-rNN.md` with no subfolders (see
@@ -108,7 +137,7 @@ def _create_topology(root: Path) -> None:
             fs.write_text(path, "")
 
 
-def _copy_kit(root: Path, kit_root: Path) -> list[str]:
+def _copy_kit(root: Path, kit_root: Path, kind: str = manifest.DEFAULT_PAPER_KIND) -> list[str]:
     """Copy every kit file into a fresh workspace, or fail loudly.
 
     ``init`` builds a workspace or refuses; unlike ``upgrade`` it has no
@@ -116,11 +145,12 @@ def _copy_kit(root: Path, kit_root: Path) -> list[str]:
     an error rather than something to report and continue past.
     """
     copied: list[str] = []
-    for relpath in sorted(manifest.kit_files(kit_root)):
-        source = kit_root / relpath
+    layout = manifest.kit_layout(kit_root, kind)
+    for relpath in sorted(layout):
+        source = kit_root / layout[relpath]
         if not fs.is_regular_file(source):
             raise SourceError(f"kit manifest names a missing source file: {source}")
-        if not manifest.copy_kit_file(kit_root, relpath, root):
+        if not manifest.copy_kit_file(kit_root, layout[relpath], root, relpath):
             raise UserError(f"could not write {root / relpath}")
         copied.append(relpath)
     return copied
@@ -392,7 +422,8 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
                run_env: bool = False,
                report: progress.Reporter | None = None,
                allow_dirty_kit: bool = False,
-               import_existing: bool = False) -> dict:
+               import_existing: bool = False,
+               kind: str = manifest.DEFAULT_PAPER_KIND) -> dict:
     """Create a workspace and return a machine-readable operation summary.
 
     ``report`` is where the bar, the child's log and the estimate go. It
@@ -404,6 +435,8 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
     tools = validate_tools(list(tools))
     if remote not in REMOTE_CHOICES:
         raise UserError(f"remote must be one of {', '.join(REMOTE_CHOICES)}")
+    if kind not in manifest.PAPER_KINDS:
+        raise UserError(f"kind must be one of {', '.join(manifest.PAPER_KINDS)}")
     if not isinstance(title, str) or not title.strip():
         raise UserError("title must be a non-empty string")
     if not isinstance(topic, str) or not topic.strip():
@@ -437,7 +470,7 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
                 result = initialize(
                     staged, title=title, tools=tools, topic=topic, remote=remote,
                     run_npm=False, run_env=False, report=report,
-                    allow_dirty_kit=allow_dirty_kit)
+                    allow_dirty_kit=allow_dirty_kit, kind=kind)
                 _import_staged(root, staged)
             ensure_mcp_servers(root, tools, warnings=result["warnings"])
             result["workspace"] = str(root)
@@ -476,8 +509,11 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
         version = manifest.kit_version(kit_root) or __version__
         target = REMOTE_TARGETS[remote]
         name = root.name
-        _create_topology(root)
-        copied = _copy_kit(root, kit_root)
+        if kind == "review":
+            _create_review_topology(root)
+        else:
+            _create_topology(root)
+        copied = _copy_kit(root, kit_root, kind)
     # A wired harness `skills` symlink is reported like every other kit file.
     # A path that could not be linked (no symlink privilege, read-only mount,
     # ELOOP) or that real content already occupies is surfaced as a warning
@@ -496,6 +532,10 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
         ensure_mcp_servers(root, tools, warnings=mcp_warnings)
         stamp = config.utc_timestamp()
         workspace_config = _default_config(name, tools, target, stamp)
+        if kind != manifest.DEFAULT_PAPER_KIND:
+            # Written only for the alternate line: an experimental config keeps
+            # the bytes it always had, and a missing key reads as experimental.
+            workspace_config["paper_kind"] = kind
         config.write_json(root / ".papersmith" / "config.json", workspace_config)
         # The destination is absent or empty by contract, so no damaged path can
         # occupy these yet; unlike ``upgrade`` there is nothing to gate against.
@@ -538,7 +578,7 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
         if not written:
             warnings.append(f"could not write {provenance.KIT_SOURCE_RECORD}; "
                             "`status` will report this workspace's kit source as unknown")
-    return {
+    result = {
         "workspace": str(root),
         "name": name,
         "version": version,
@@ -551,6 +591,9 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
         "kit_source": source_record,
         "wiring": wiring.summarize(root, tools, link_report, unsynchronized),
     }
+    if kind != manifest.DEFAULT_PAPER_KIND:
+        result["paper_kind"] = kind
+    return result
 
 
 def register(subparsers) -> None:
@@ -566,6 +609,11 @@ def register(subparsers) -> None:
     )
     parser.add_argument("--topic", default="unspecified")
     parser.add_argument("--remote", choices=REMOTE_CHOICES, default="kaggle")
+    parser.add_argument(
+        "--kind", choices=manifest.PAPER_KINDS, default=manifest.DEFAULT_PAPER_KIND,
+        help=("the paper line: experimental (default; proposal, experiments, results) or "
+              "review (a PRISMA 2020 systematic review with no experiments: protocol, "
+              "search, screening, synthesis under review/)"))
     parser.add_argument("--import-existing", action="store_true",
                         help=("initialize a nonempty directory without overwriting existing files: keep its "
                               "README.md, merge papersmith's block into its .gitignore, and "
@@ -614,10 +662,13 @@ def run_cli(args) -> int:
         report=report,
         allow_dirty_kit=args.allow_dirty_kit,
         import_existing=args.import_existing,
+        kind=args.kind,
     )
     report.finish()
     print(f"Initialized papersmith workspace: {result['workspace']}")
     print(f"Framework version: {result['version']}; default target: {result['default_target']}")
+    if result.get("paper_kind"):
+        print(f"Paper line: {result['paper_kind']} (PRISMA 2020 systematic review; see CLAUDE.md)")
     print(f"Kit source: {provenance.describe_record({'recorded': True, **result['kit_source']})}")
     print("Harness wiring:")
     for line in wiring.format_summary(result["wiring"]):

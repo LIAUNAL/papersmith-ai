@@ -50,6 +50,7 @@ VERSION_MARKER = ".papersmith/version"
 KIT_ENTRIES = (
     "skills",
     "sections",
+    "sections-review",
     ".claude/agents",
     "scripts/setup_env.py",
     "scripts/setup-harnesses.sh",
@@ -68,6 +69,7 @@ PRESERVE_PATTERNS = (
     "experiments/**",
     "implementations/**",
     "kaggle-inbox/**",
+    "review/**",
     "papersmith.yaml",
     "package.json",
     "README.md",
@@ -275,14 +277,18 @@ def link_warnings(report: LinkReport) -> list[str]:
     return warnings
 
 
-def copy_kit_file(kit_root: Path, relpath: str, dest_root: Path) -> bool:
+def copy_kit_file(kit_root: Path, relpath: str, dest_root: Path,
+                  dest_relpath: str | None = None) -> bool:
     """Copy one kit file into a workspace, or report that it could not be done.
+
+    ``dest_relpath`` is where the file lands when the paper line serves it at
+    another path (:func:`kit_layout`); it defaults to ``relpath``.
 
     ``shutil.copyfile`` opens the destination for writing, so a FIFO there would
     block forever and a directory would raise — after earlier paths in the same
     run have already been synchronized. Returns False instead.
     """
-    return fs.copy_file(kit_root / relpath, dest_root / relpath)
+    return fs.copy_file(kit_root / relpath, dest_root / (dest_relpath or relpath))
 
 
 def load_manifest(workspace: Path) -> dict | None:
@@ -376,6 +382,67 @@ def kit_files(kit_root: Path) -> dict[str, str]:
     return walk_kit_files(kit_root)
 
 
+#: The paper lines a workspace can follow. ``experimental`` is the original
+#: line and the default of every workspace that records no kind.
+PAPER_KINDS = ("experimental", "review")
+DEFAULT_PAPER_KIND = "experimental"
+
+#: Kit paths that belong to the review line only. An experimental workspace
+#: never receives them, so its files stay exactly what they were before the
+#: review line existed.
+REVIEW_ONLY_PREFIXES = ("sections-review/", "skills/systematic-review/")
+_REVIEW_SECTIONS = "sections-review/"
+_SECTIONS = "sections/"
+#: Experimental section contracts the review line keeps as they are: the
+#: back matter is the same accountability surface for both lines.
+REVIEW_SHARED_SECTIONS = ("sections/10-back-matter.md",)
+
+
+def paper_kind(workspace: Path) -> str:
+    """The paper line a workspace follows, from ``.papersmith/config.json``.
+
+    A workspace without the key (every workspace made before the review line,
+    and every experimental one) is experimental. An unknown value refuses,
+    because copying the wrong line's files into a workspace is not repairable
+    by a later run.
+    """
+    text = fs.read_text(workspace / ".papersmith" / "config.json")
+    if text is None:
+        return DEFAULT_PAPER_KIND
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return DEFAULT_PAPER_KIND
+    kind = data.get("paper_kind", DEFAULT_PAPER_KIND) if isinstance(data, dict) else DEFAULT_PAPER_KIND
+    if kind not in PAPER_KINDS:
+        raise UserError(f"unknown paper_kind {kind!r} in {workspace / '.papersmith' / 'config.json'}; "
+                        f"expected one of {', '.join(PAPER_KINDS)}")
+    return kind
+
+
+def kit_layout(kit_root: Path, kind: str = DEFAULT_PAPER_KIND) -> dict[str, str]:
+    """Workspace relpath -> kit relpath for the files a ``kind`` workspace gets.
+
+    The experimental line maps every kit file onto itself except the
+    review-only ones. The review line drops the experimental section contracts
+    (but the shared back matter) and serves ``sections-review/<file>`` at
+    ``sections/<file>``, so every consumer that globs ``sections/*.md`` reads
+    the review contracts unchanged.
+    """
+    if kind not in PAPER_KINDS:
+        raise UserError(f"paper kind must be one of {', '.join(PAPER_KINDS)}")
+    layout: dict[str, str] = {}
+    for relpath in kit_files(kit_root):
+        if kind == "experimental":
+            if not relpath.startswith(REVIEW_ONLY_PREFIXES):
+                layout[relpath] = relpath
+        elif relpath.startswith(_REVIEW_SECTIONS):
+            layout[_SECTIONS + relpath[len(_REVIEW_SECTIONS):]] = relpath
+        elif not relpath.startswith(_SECTIONS) or relpath in REVIEW_SHARED_SECTIONS:
+            layout[relpath] = relpath
+    return layout
+
+
 def kit_version(kit_root: Path) -> str:
     cached = load_kit_manifest(kit_root)
     if cached is not None and isinstance(cached.get("version"), str):
@@ -439,7 +506,8 @@ def synchronized_paths(workspace: Path, kit_root: Path, context: dict | None = N
     Kept here, beside the manifest it describes, so the components cannot drift
     from what :func:`workspace_framework_files` actually records.
     """
-    deliverable = {relpath for relpath in kit_files(kit_root) if not is_preserved(relpath)}
+    deliverable = {relpath for relpath in kit_layout(kit_root, paper_kind(workspace))
+                   if not is_preserved(relpath)}
     rendered = render_files(workspace, context, tools or workspace_tools(workspace))
     return deliverable | set(rendered) | {VERSION_MARKER}
 
@@ -467,7 +535,7 @@ def workspace_framework_files(workspace: Path, kit_root: Path,
     ``audit`` pass a list so they report them only when asked.
     """
     files: dict[str, str] = {}
-    for relpath in kit_files(kit_root):
+    for relpath in kit_layout(kit_root, paper_kind(workspace)):
         digest = sha256_if_readable(workspace / relpath)
         if digest is not None:
             files[relpath] = digest
