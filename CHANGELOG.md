@@ -11,6 +11,12 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- The SOTA atlas renderer no longer carries an invalid `\/` escape in its page
+  template, which Python 3.15 warns about on every render and a later Python
+  will reject; the rendered HTML is byte-identical.
+
 ## 0.76.2
 
 - `paper_cli.py place` measures a plot at the width the manuscript prints:
