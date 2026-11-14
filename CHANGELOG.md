@@ -11,6 +11,18 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.76.1
+
+- The final judge panel now has a writer. `paper_cli.py review --input
+  <round.json>` (or `-` for stdin) records one round of the `paper-reviewer`'s
+  review in `.papersmith/paper_review.json`: it checks overall 1-6, confidence
+  1-5 and the Quality, Clarity, Significance and Originality ratings 1-4,
+  numbers and dates the round, and from the second round on requires one
+  verdict (`resolved`, `partly`, `not resolved`) on every revision the
+  previous round raised. The agent returns the round and never writes;
+  `/paper-writing` records it. A refused round, or an existing file that
+  cannot be read, leaves the file unchanged.
+
 ## 0.76.0
 
 - `smith init --kind review` starts a PRISMA 2020 systematic-review workspace:
