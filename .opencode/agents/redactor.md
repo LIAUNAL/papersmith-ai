@@ -44,6 +44,13 @@ drafted, each naming exactly one of:
   record, and only that record, supports;
 - `fact:<fact-id>` — this sentence carries an operator-declared fact the
   contract's own `requires_facts` licenses;
+- `declaration:<id>` (or `declaration:<id>,<id>` for one sentence carrying
+  several) — this sentence copies the recorded value of a declaration the
+  contract's own `requires_declarations` licenses (the packet's
+  `declarations`), or, as `declaration:ai-usage`, the packet's `ai_usage`
+  record in the AI-use blocks. Copy the value verbatim — the grant code, the
+  funder, the URL, the commit, the release, the tool names — and print no
+  numeral and no named object the value does not hold;
 - `structural` — this sentence asserts nothing: transitions, pointers,
   summaries. It may name no numeral, no `\cite`, no comparative, and no
   external object your own contract prose does not also name verbatim.
@@ -59,7 +66,10 @@ refuses too.
 
 This is the whole point of the shape above. An `evidence:` binding whose id
 is not in the evidence set you were handed refuses. A `fact:` binding whose
-id sits outside `requires_facts` refuses. A `discovery`-class evidence
+id sits outside `requires_facts` refuses. A `declaration:` binding whose id
+sits outside `requires_declarations`, whose value was never recorded, whose
+sentence prints none of that value verbatim, or whose sentence prints a
+numeral or named object the value does not hold, refuses. A `discovery`-class evidence
 binding under `transposition` mode refuses — that mode admits only
 `fact`/`structural`/`resolution`-class evidence; `argument` mode
 additionally admits `discovery`-class evidence. None of this is instruction
