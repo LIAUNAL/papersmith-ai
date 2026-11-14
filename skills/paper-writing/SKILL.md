@@ -1878,8 +1878,9 @@ revision the previous one raised (`items`, one verdict per `rank`):
 `REVIEW_ITEMS_MISSING` names the ranks without a verdict and
 `REVIEW_ITEM_UNKNOWN` the ranks the previous round never raised.
 `REVIEW_ROUND_INVALID` lists every out-of-range or missing field, and
-`REVIEW_FILE_INVALID` reports an existing file that cannot be read, which is
-never overwritten. A refused round leaves the file unchanged: send the agent's
+`REVIEW_FILE_INVALID` reports an existing file that cannot be read or holds a
+round that is not an object (never overwritten), or a history that would grow
+past the dashboard's 2 MB cap with this round. A refused round leaves the file unchanged: send the agent's
 round back with the refusal detail rather than editing it yourself.
 
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`

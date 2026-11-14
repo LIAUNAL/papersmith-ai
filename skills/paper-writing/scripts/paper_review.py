@@ -57,6 +57,11 @@ def _text(value) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
+def _optional_text(value) -> str:
+    """An optional free-text field: absent or JSON null is empty text."""
+    return "" if value is None else str(value)
+
+
 def load_rounds(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -69,7 +74,9 @@ def load_rounds(path: Path) -> list[dict]:
     rounds = data.get("rounds") if isinstance(data, dict) else None
     if not isinstance(rounds, list):
         raise Refused("REVIEW_FILE_INVALID", f'{path} holds no "rounds" list')
-    return [r for r in rounds if isinstance(r, dict)]
+    if not all(isinstance(r, dict) for r in rounds):
+        raise Refused("REVIEW_FILE_INVALID", f"{path} holds a round that is not a JSON object")
+    return rounds
 
 
 def read_input(raw: str) -> dict:
@@ -100,11 +107,16 @@ def _validate(data: dict) -> list[str]:
     if not isinstance(items, list):
         errors.append("items must be a list")
     else:
+        item_ranks = []
         for n, item in enumerate(items, 1):
             if not isinstance(item, dict) or not _int_in(item.get("rank"), 1, 10**6):
                 errors.append(f"items[{n}] needs an integer rank")
-            elif item.get("verdict") not in ITEM_VERDICTS:
+                continue
+            item_ranks.append(item["rank"])
+            if item.get("verdict") not in ITEM_VERDICTS:
                 errors.append(f"items[{n}].verdict must be one of {', '.join(ITEM_VERDICTS)}")
+        if len(item_ranks) != len(set(item_ranks)):
+            errors.append("items must give one verdict per rank")
     revisions = data.get("revisions", [])
     if not isinstance(revisions, list):
         errors.append("revisions must be a list")
@@ -139,7 +151,7 @@ def _judged_items(items: list[dict], previous: dict | None) -> list[dict]:
         raise Refused("REVIEW_ITEMS_MISSING",
                       f"the previous round's revisions {missing} carry no verdict")
     return [{"rank": i["rank"], "item": raised[i["rank"]], "verdict": i["verdict"],
-             "evidence": str(i.get("evidence", ""))} for i in sorted(items, key=lambda i: i["rank"])]
+             "evidence": _optional_text(i.get("evidence"))} for i in sorted(items, key=lambda i: i["rank"])]
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -177,7 +189,7 @@ def record(paper_dir: Path, data: dict, *, today: _dt.date | None = None) -> dic
         "ratings": {k: data["ratings"][k] for k in RATINGS},
         "items": _judged_items(data.get("items", []), previous),
         "revisions": [{"rank": r["rank"], "text": r["text"].strip(), "status": r.get("status", "pending"),
-                       "note": str(r.get("note", ""))} for r in sorted(data.get("revisions", []),
+                       "note": _optional_text(r.get("note"))} for r in sorted(data.get("revisions", []),
                                                                      key=lambda r: r["rank"])],
         "excluded": list(data.get("excluded", [])),
         "report": data["report"],

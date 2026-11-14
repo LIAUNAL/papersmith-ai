@@ -141,5 +141,22 @@ class PaperReviewRecordTests(unittest.TestCase):
         self.assertRefusedUnchanged(first_round(), "REVIEW_FILE_INVALID")
 
 
+    def test_a_review_file_with_a_non_object_round_is_never_rewritten(self) -> None:
+        self.file.parent.mkdir(parents=True)
+        self.file.write_text(json.dumps({"rounds": [{"round": 1}, "not a round"]}), encoding="utf-8")
+        self.assertRefusedUnchanged(first_round(), "REVIEW_FILE_INVALID")
+
+    def test_two_verdicts_on_one_revision_are_refused(self) -> None:
+        self.record(first_round())
+        items = second_round()["items"] + [{"rank": 1, "verdict": "not resolved"}]
+        self.assertRefusedUnchanged(second_round(items=items), "REVIEW_ROUND_INVALID")
+
+    def test_a_null_note_or_evidence_is_stored_as_empty_text(self) -> None:
+        self.record(first_round(revisions=[{"rank": 1, "text": "Add seeds.", "note": None}]))
+        self.record(second_round(items=[{"rank": 1, "verdict": "resolved", "evidence": None}]))
+        stored = self.rounds()
+        self.assertEqual(stored[0]["revisions"][0]["note"], "")
+        self.assertEqual(stored[1]["items"][0]["evidence"], "")
+
 if __name__ == "__main__":
     unittest.main()
