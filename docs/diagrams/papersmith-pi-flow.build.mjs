@@ -176,7 +176,7 @@ const nodes=[
  n('style','write',3,'backend','style-sampler',agentMeta('style-sampler').sub,{...(agentMeta('style-sampler').tag?{tag:agentMeta('style-sampler').tag}:{}),sources:A('style-sampler')}),
  n('grounding','write',4,'backend','section-grounding-auditor',agentMeta('section-grounding-auditor').sub,{...(agentMeta('section-grounding-auditor').tag?{tag:agentMeta('section-grounding-auditor').tag}:{}),sources:A('section-grounding-auditor')}),
 
- n('paperCli','figs',0,'messagebus','paper_cli.py','write judges what comes back',{tag:'31 verbs',sources:S('skills/paper-writing/SKILL.md',14,16)}),
+ n('paperCli','figs',0,'messagebus','paper_cli.py','write judges what comes back',{tag:'32 verbs',sources:S('skills/paper-writing/SKILL.md',14,16)}),
  n('diagram','figs',1,'backend','diagram-author',agentMeta('diagram-author').sub,{...(agentMeta('diagram-author').tag?{tag:agentMeta('diagram-author').tag}:{}),sources:A('diagram-author')}),
  n('figAud','figs',2,'backend','figure-auditor',agentMeta('figure-auditor').sub,{...(agentMeta('figure-auditor').tag?{tag:agentMeta('figure-auditor').tag}:{}),sources:A('figure-auditor')}),
  n('figRev','figs',3,'frontend','/figure-review','probe · raster, no changes',{tag:'.pi/prompts',sources:K('figure-review',1,12)}),

@@ -1868,6 +1868,21 @@ with quotes from the paper, the accepted proposal, the experiments'
 results and the SOTA pool. It never edits the paper and never claims a lack of
 novelty without naming the reference that holds the idea.
 
+**Record each review round.** The agent returns the review as a `round` JSON
+object and writes nothing; save it to a scratch file and run
+`python skills/paper-writing/scripts/paper_cli.py review --input <file>`
+(`-` reads stdin). The verb numbers and dates the round and appends it to
+`.papersmith/paper_review.json`, which the dashboard's final-judge panel in the
+PDF preview tab reads. From the second round on, the round must judge every
+revision the previous one raised (`items`, one verdict per `rank`):
+`REVIEW_ITEMS_MISSING` names the ranks without a verdict and
+`REVIEW_ITEM_UNKNOWN` the ranks the previous round never raised.
+`REVIEW_ROUND_INVALID` lists every out-of-range or missing field, and
+`REVIEW_FILE_INVALID` reports an existing file that cannot be read or holds a
+round that is not an object (never overwritten), or a history that would grow
+past the dashboard's 2 MB cap with this round. A refused round leaves the file unchanged: send the agent's
+round back with the refusal detail rather than editing it yourself.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
