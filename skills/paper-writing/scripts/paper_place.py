@@ -84,12 +84,17 @@ def _print_scale():
 
 
 def text_width_pt(main_tex: Path, print_scale) -> tuple:
-    """`(\\textwidth in TeX points, source)` from `main.tex`'s class and
-    options; `("fallback")` 345 pt (article, a4, 10 pt) when absent."""
+    """`(\\textwidth in TeX points, source)`: the width `geometry` sets in
+    `main.tex`'s preamble (`"geometry"`) when it fixes one, else the width of
+    the class and options (`"class"`); `("fallback")` 345 pt (article, a4,
+    10 pt) when absent. A plot is measured at the width it actually prints."""
     try:
         text = Path(main_tex).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return print_scale.TEXTWIDTH_PT["article-a4-10pt"], "fallback"
+    geometry_width = print_scale.geometry_text_width_pt(Path(main_tex))
+    if geometry_width is not None:
+        return geometry_width, "geometry"
     name, options = paper_venue.parse_documentclass(text.split("\\begin{document}", 1)[0])
     sizes = [option for option in options if option in ("10pt", "11pt", "12pt")]
     size = sizes[0] if sizes else "10pt"
