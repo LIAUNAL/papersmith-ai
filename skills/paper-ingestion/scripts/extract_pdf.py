@@ -97,7 +97,12 @@ def _load_gpu_probe():
             return None
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
+        # The probe sits in the kit's skills/ tree; no __pycache__ beside it.
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = previous
         return module
     except Exception:
         sys.modules.pop("papersmith_gpu_probe", None)

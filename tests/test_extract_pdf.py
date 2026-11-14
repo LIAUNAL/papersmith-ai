@@ -816,5 +816,26 @@ class GpuSetupTests(unittest.TestCase):
         self.assertEqual(environ, {"SURYA_INFERENCE_BACKEND": "vllm", "DOCLING_DEVICE": "cuda"})
 
 
+class GpuProbeLoadTests(unittest.TestCase):
+    def test_loading_the_probe_writes_no_bytecode_into_the_kit(self) -> None:
+        """A workspace's skills tree is kit bytes; `--help` must not add a
+        `__pycache__/` beside the shared probe."""
+        import shutil
+        import subprocess
+
+        here = Path(EXTRACTOR.__file__).resolve()
+        with tempfile.TemporaryDirectory() as tmp:
+            skills = Path(tmp) / "skills"
+            shutil.copytree(here.parents[2] / "_core" / "gpu", skills / "_core" / "gpu",
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copytree(here.parent, skills / "paper-ingestion" / "scripts",
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            done = subprocess.run([sys.executable, str(skills / "paper-ingestion" / "scripts" / "extract_pdf.py"),
+                                   "--help"], capture_output=True, text=True, timeout=120,
+                                  env={**os.environ, "PYTHONDONTWRITEBYTECODE": ""})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertFalse((skills / "_core" / "gpu" / "__pycache__").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

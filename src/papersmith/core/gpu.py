@@ -43,7 +43,11 @@ def load_probe(root: Path | None = None):
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[_MODULE] = module
-                spec.loader.exec_module(module)
+                previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+                try:  # a workspace's skills/ tree is kit bytes: no __pycache__ in it
+                    spec.loader.exec_module(module)
+                finally:
+                    sys.dont_write_bytecode = previous
                 return module
     raise UserError(f"could not locate the GPU probe ({PROBE.as_posix()}); run `smith upgrade`")
 

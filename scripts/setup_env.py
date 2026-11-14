@@ -221,7 +221,11 @@ def load_gpu_probe():
         if spec is None or spec.loader is None or not path.is_file():
             return None
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:  # no __pycache__ inside the kit's skills/ tree
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = previous
         return module
     except Exception:
         return None
