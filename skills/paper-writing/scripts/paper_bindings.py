@@ -389,8 +389,10 @@ def check_declarations(bindings: list[Binding], declared: dict, contract_prose: 
       this paper's values), or a capitalised word -- not opening the
       sentence or following a `.`/`:`/`!`/`?` (a bold label) -- that is
       neither in the contract prose (verbatim, as `type_structural` reads
-      it) nor a value's run (any case). A declaration licenses its own
-      tokens, never others.
+      it) nor a value's run (any case), or a comparative
+      (`paper_vocabulary.COMPARATIVES`, as `type_structural` refuses it)
+      that no value holds. A declaration licenses its own tokens, never
+      others.
     """
     for binding in bindings:
         if binding.kind != "declaration":
@@ -427,6 +429,13 @@ def check_declarations(bindings: list[Binding], declared: dict, contract_prose: 
                 raise Refused(
                     "DECLARATION_CARRIES_CLAIM",
                     f"numeral {run!r} is in no value the sentence is bound to "
+                    f"({list(ids)}): {binding.sentence!r}",
+                )
+        for word in _WORD_RE.findall(sentence):
+            if word.lower() in paper_vocabulary.COMPARATIVES and word.lower() not in lowered:
+                raise Refused(
+                    "DECLARATION_CARRIES_CLAIM",
+                    f"comparative {word!r} is in no value the sentence is bound to "
                     f"({list(ids)}): {binding.sentence!r}",
                 )
         for match in _NAMED_RE.finditer(sentence):

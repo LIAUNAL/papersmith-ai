@@ -1589,8 +1589,14 @@ after `resolve_bindings` and `type_structural`, in this order:
    printed `13 November 2026`), and every capitalised word that does not open
    the sentence or follow a `.`/`:` (a bold label such as
    `\textbf{Funding.}`) is in the contract prose or a run of a named value
-   (any case), or it refuses `DECLARATION_CARRIES_CLAIM`. The contract prose never
-   licenses a numeral: its example release is not this paper's release.
+   (any case), and no comparative (`better`, `outperforms`, ... as
+   `structural` refuses them) appears unless a named value holds it, or it
+   refuses `DECLARATION_CARRIES_CLAIM`. The contract prose never licenses a
+   numeral: its example release is not this paper's release. Capitalised
+   words the contract prose names are licensed as written, so a tool the
+   contract lists only as an example still reads as licensed here; the
+   contract-auditor's AI-usage bullet is what holds the declaration to the
+   record.
 
 `declaration:` is admitted in every mode, like `fact:` and `structural`, and
 is never a grounding subject.

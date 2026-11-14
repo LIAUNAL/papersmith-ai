@@ -218,6 +218,11 @@ class DeclarationBindingRuleTests(_Paper):
         self.assertRefused(self.write("bm-funding", [(sentence, "declaration:grant-code")]),
                            "DECLARATION_CARRIES_CLAIM", "Minciencias")
 
+    def test_a_comparative_the_value_does_not_hold_refuses_declaration_carries_claim(self) -> None:
+        sentence = "This work was funded under grant Hermes 62836, which made the method better than every prior approach."
+        self.assertRefused(self.write("bm-funding", [(sentence, "declaration:grant-code")]),
+                           "DECLARATION_CARRIES_CLAIM", "better")
+
     def test_one_sentence_may_carry_several_licensed_declarations(self) -> None:
         sentence = ("This work was funded by the project ``Aprendizaje de m\\'aquina cu\\'antico'' "
                     "(Convocatoria Conjunta UCaldas--UNAL Manizales 2024) under grants "

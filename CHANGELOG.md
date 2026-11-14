@@ -33,7 +33,8 @@ number is `0`, breaking changes can still arrive without a major bump.
   `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT` or
   `DECLARATION_CARRIES_CLAIM`. Before, funding, code-availability and AI-use
   blocks could not be written at all. The packet carries a `declarations`
-  map, and the redactor and ai-auditor definitions know the new kind.
+  map, and the redactor and ai-auditor definitions know the new kind. A
+  `declaration:` sentence may not carry a comparative its values do not hold.
 - A produced list fact (such as `contributions`) now resolves from the
   producer block's `\subsection` titles, in order, when the block has no
   `\item` roster. Before, `render --section/--block` and `figure audit
