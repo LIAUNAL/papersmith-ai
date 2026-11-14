@@ -11,6 +11,35 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.76.2
+
+- A first revision no longer pastes a source document's own headings as
+  headings. The v1 render escapes every source heading (`\# Title`,
+  `\## Part`, setext underlines) so it prints as text, and `loadSourceWindow`
+  reports `headingsNeutralized` per source. Before, a source whose title equalled
+  the document's title produced several identical level-1 headings, which
+  every successor copied forward.
+- A repeated heading title can now be named by `<title>#<n>` (the n-th
+  occurrence in document order). `paper_cli.py separate` and `bind` accept it,
+  and `SECTION_TITLE_AMBIGUOUS` now lists each occurrence with its line. The
+  deliberation engine's `RESOLVE_TARGET` and `CREATE_SUCCESSOR` accept the
+  same form, and a heading's span no longer runs over the change header, so
+  an already affected lineage can be repaired through an ordinary successor.
+  A title that occurs once resolves exactly as before.
+- New binding kind `declaration:<id>` (or `declaration:<id>,<id>`), licensed
+  by the block's `requires_declarations`, plus `declaration:ai-usage` for the
+  AI-use blocks. A sentence bound this way may print the recorded value's
+  numerals and names; `write` refuses `DECLARATION_NOT_LICENSED`,
+  `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT` or
+  `DECLARATION_CARRIES_CLAIM`. Before, funding, code-availability and AI-use
+  blocks could not be written at all. The packet carries a `declarations`
+  map, and the redactor and ai-auditor definitions know the new kind.
+- A produced list fact (such as `contributions`) now resolves from the
+  producer block's `\subsection` titles, in order, when the block has no
+  `\item` roster. Before, `render --section/--block` and `figure audit
+  --block` refused `COMPONENTS_FACT_NOT_A_LIST` for the subsection form the
+  materials-and-methods contract allows.
+
 ## 0.76.1
 
 - The final judge panel now has a writer. `paper_cli.py review --input
