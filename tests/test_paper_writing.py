@@ -8980,8 +8980,12 @@ class RefusalRosterTests(unittest.TestCase):
         declaration's value (`paper_bindings.resolve_bindings`/
         `check_declarations`): DECLARATION_NOT_LICENSED,
         DECLARATION_UNDECLARED, DECLARATION_VALUE_ABSENT,
-        DECLARATION_CARRIES_CLAIM."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 225)
+        DECLARATION_CARRIES_CLAIM.
+
+        225 -> 226: `separate` refuses a `"shares": true` assignment naming a
+        section no non-sharing assignment of the same cut claims
+        (SEPARATION_SHARE_UNCLAIMED)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 226)
 
 
 class ObjectiveNorthTests(unittest.TestCase):
@@ -13441,6 +13445,292 @@ class RepeatedTitleBindingCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual((refused["status"], refused["code"]), ("refused", "SECTION_TITLE_AMBIGUOUS"))
         self.assertIn(f"'{self._TITLE}#2' (line 13, level 1)", refused["detail"])
+
+
+class SharedSectionSeparationCliTests(unittest.TestCase):
+    """A block whose job is to compress what another block expands (an
+    abstract) is grounded against the SAME source sections the expanding
+    block transposes. An assignment carrying `"shares": true` names sections
+    without claiming them: it is left out of the orphan/overlap/gap scoring,
+    every section it names must be claimed by a non-sharing assignment of
+    the same cut, it need not be contiguous, and `bind`/`packet` treat its
+    sections exactly as a claim's. End to end through the real CLI, on a
+    fixture under the forge's gitignored `.scratch/`."""
+
+    _DOC = _SeparationCorpusMixin._CLAIMABLE_DOC
+    _S1 = "1. Background on widget metrics"
+    _S2 = "2. Alignment estimators"
+    _S3 = "3. Proposed alignment objective"
+    _S4 = "4. Calibration procedure"
+    _S5 = "5. Open problems"
+
+    def setUp(self) -> None:
+        self.base = (
+            FORGE_ROOT / ".scratch"
+            / f".paper-writing-shared-sections-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        )
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.base.mkdir(parents=True)
+        self.sections_dir = self.base / "sections"
+        self.sections_dir.mkdir()
+        self.paper_dir = self.base / "paper"
+        paper_scaffold.scaffold(self.paper_dir)
+        mixin = _SeparationCorpusMixin()
+        mixin.sections_dir = self.sections_dir
+        mixin._write_block_section(
+            "02-methods.md", "methods", [("block-b", "formulation"), ("block-c", "formulation")],
+        )
+        self._write_summary_section()
+        self.proposals = self.base / "proposals"
+        self.proposals.mkdir()
+        (self.proposals / ".paper-writing.json").write_text(
+            json.dumps({"revisions": {"revision_prefix": "r", "ordinal_digits": 2}}), encoding="utf-8",
+        )
+        self.revision = self.proposals / "field-survey-r07.md"
+        self.revision.write_text(self._DOC, encoding="utf-8")
+        (self.base / "guidance").mkdir()
+
+    def _write_summary_section(self) -> None:
+        """One transposition-mode block that compresses the methods blocks."""
+        header = {
+            "section": "summary", "position": 3,
+            "mode": {"value": "transposition",
+                     "source": {"file": "sections/03-summary.md", "quote": "Prose here."}},
+            "blocks": [{
+                "id": "abstract",
+                "requires_facts": [{
+                    "value": "formulation",
+                    "source": {"file": "sections/03-summary.md", "quote": "Prose here."},
+                }],
+                "requires_declarations": [], "citations": "none",
+            }],
+        }
+        body = "Prose here.\n\n### External inputs\n\nNone.\n\n### Internal chain\n\nNone.\n"
+        (self.sections_dir / "03-summary.md").write_bytes(
+            b"---\n" + json.dumps(header).encode("utf-8") + b"\n---\n" + body.encode("utf-8")
+        )
+
+    def _cli(self, *argv: str, guidance: bool = False) -> tuple:
+        extra = ["--guidance", str(self.base / "guidance")] if guidance else []
+        proc = subprocess.run(
+            [sys.executable, str(SKILL_SCRIPTS / "paper_cli.py"), *argv,
+             "--paper", str(self.paper_dir), "--sections", str(self.sections_dir), *extra],
+            capture_output=True, text=True, timeout=60, cwd=str(FORGE_ROOT),
+        )
+        return proc.returncode, json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def _separate(self, assignments: list) -> tuple:
+        proposal = self.base / "proposal.json"
+        proposal.write_text(
+            json.dumps({"lineage": "field-survey", "assignments": assignments}), encoding="utf-8",
+        )
+        return self._cli("separate", "--proposal", str(proposal))
+
+    def _rounds(self) -> tuple:
+        return paper_declarations.read_separation_rounds(
+            self.paper_dir, "proposals", "field-survey", "field-survey-r07.md",
+        )
+
+    def _claims(self) -> list:
+        return [
+            {"block": "methods.block-b", "fact": "formulation", "sections": [self._S1, self._S2, self._S3]},
+            {"block": "methods.block-c", "fact": "formulation", "sections": [self._S4, self._S5]},
+        ]
+
+    def _abstract(self, sections: list, **extra) -> dict:
+        return {"block": "summary.abstract", "fact": "formulation", "sections": sections, **extra}
+
+    def test_a_sharing_assignment_settles_out_of_scoring_and_is_recorded_as_sharing(self) -> None:
+        """Rule: a sharing assignment is excluded from the orphan/overlap/gap
+        scoring, and need not be contiguous (it picks 1 and 4, skipping
+        2 and 3, which block-b and block-c claim)."""
+        code, separated = self._separate(
+            self._claims() + [self._abstract([self._S1, self._S4], shares=True)],
+        )
+
+        self.assertEqual(code, 0, separated)
+        self.assertEqual((separated["status"], separated["total"], separated["round"]), ("ok", 0, 1))
+        self.assertEqual(separated["unanchored"], [])
+        self.assertEqual(separated["bind_invocations"], [
+            f"bind --block methods.block-b --fact formulation --lineage field-survey "
+            f"--section '{self._S1}' --section '{self._S2}' --section '{self._S3}'",
+            f"bind --block methods.block-c --fact formulation --lineage field-survey "
+            f"--section '{self._S4}' --section '{self._S5}'",
+            f"bind --block summary.abstract --fact formulation --lineage field-survey "
+            f"--section '{self._S1}' --section '{self._S4}'",
+        ])
+        (recorded,) = self._rounds()
+        self.assertEqual(recorded["score"], 0)
+        self.assertEqual(recorded["assignments"], [
+            {"block": "methods.block-b", "fact": "formulation", "sections": [self._S1, self._S2, self._S3]},
+            {"block": "methods.block-c", "fact": "formulation", "sections": [self._S4, self._S5]},
+            {"block": "summary.abstract", "fact": "formulation", "sections": [self._S1, self._S4],
+             "shares": True},
+        ])
+
+    def test_the_same_cut_without_the_key_is_an_overlap_and_a_gap(self) -> None:
+        """The key is what turns the claim into a share: without it, the
+        abstract's titles overlap the methods blocks' and skip 2 and 3."""
+        code, refused = self._separate(self._claims() + [self._abstract([self._S1, self._S4])])
+
+        self.assertEqual(code, 2)
+        self.assertEqual((refused["status"], refused["code"]), ("refused", "SEPARATION_SECTION_OVERLAP"))
+        self.assertIn("total=4 (orphan=0, overlap=2, gap=2)", refused["detail"])
+        self.assertEqual(self._rounds()[0]["score"], 4)
+
+    def test_a_shared_title_no_claim_names_is_refused_before_any_round(self) -> None:
+        """Rule: every shared section must be claimed by a non-sharing
+        assignment of the same cut -- a share never satisfies coverage."""
+        claims = [
+            {"block": "methods.block-b", "fact": "formulation", "sections": [self._S1, self._S2, self._S3]},
+            {"block": "methods.block-c", "fact": "formulation", "sections": [self._S4]},
+        ]
+        code, refused = self._separate(claims + [self._abstract([self._S4, self._S5], shares=True)])
+
+        self.assertEqual(code, 2)
+        self.assertEqual((refused["status"], refused["code"]), ("refused", "SEPARATION_SHARE_UNCLAIMED"))
+        self.assertIn("summary.abstract", refused["detail"])
+        self.assertIn(repr(self._S5), refused["detail"])
+        self.assertNotIn(repr(self._S4) + " is", refused["detail"])
+        self.assertEqual(self._rounds(), (), "a refused share records no round")
+        self.assertEqual(paper_cli.REFUSAL_CLASSIFICATION["SEPARATION_SHARE_UNCLAIMED"], paper_cli.WORK_STATE)
+
+    def test_a_title_claimed_only_by_another_share_is_unclaimed(self) -> None:
+        """Two sharing assignments never license each other's titles."""
+        claims = [
+            {"block": "methods.block-b", "fact": "formulation", "sections": [self._S1, self._S2, self._S3, self._S4, self._S5]},
+            {"block": "methods.block-c", "fact": "formulation", "sections": [self._S5], "shares": True},
+        ]
+        code, refused = self._separate(claims + [self._abstract([self._S1], shares=True)])
+        self.assertEqual(code, 0, refused)
+
+        claims[0]["sections"] = [self._S1, self._S2, self._S3, self._S4]
+        code, refused = self._separate(claims + [self._abstract([self._S5], shares=True)])
+        self.assertEqual(code, 2)
+        self.assertEqual(refused["code"], "SEPARATION_SHARE_UNCLAIMED")
+
+    def test_a_shared_title_not_in_the_revision_is_not_in_source(self) -> None:
+        """Rule: a shared section resolves exactly as a claimed one does."""
+        code, refused = self._separate(
+            self._claims() + [self._abstract(["9. Nothing like this exists"], shares=True)],
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(refused["code"], "SECTION_NOT_IN_SOURCE")
+        self.assertIn("9. Nothing like this exists", refused["detail"])
+        self.assertEqual(self._rounds(), ())
+
+    def test_a_shared_title_takes_the_title_hash_n_form(self) -> None:
+        """Rule: the `<title>#<n>` form names one occurrence of a repeated
+        title in a share exactly as in a claim."""
+        title = SeparationRepeatedTitleTests._TITLE
+        self.revision.write_text(SeparationRepeatedTitleTests._REPEATED_DOC, encoding="utf-8")
+        code, separated = self._separate([
+            {"block": "methods.block-b", "fact": "formulation", "sections": [f"{title}#1", "Dataset Specification"]},
+            {"block": "methods.block-c", "fact": "formulation", "sections": [f"{title}#2"]},
+            self._abstract([f"{title}#2"], shares=True),
+        ])
+        self.assertEqual(code, 0, separated)
+        self.assertEqual(separated["total"], 0)
+
+        code, refused = self._separate([
+            {"block": "methods.block-b", "fact": "formulation", "sections": [f"{title}#1", "Dataset Specification"]},
+            {"block": "methods.block-c", "fact": "formulation", "sections": [f"{title}#2"]},
+            self._abstract([title], shares=True),
+        ])
+        self.assertEqual(code, 2)
+        self.assertEqual(refused["code"], "SECTION_TITLE_AMBIGUOUS")
+
+    def test_shares_must_be_a_boolean(self) -> None:
+        code, refused = self._separate(self._claims() + [self._abstract([self._S1], shares="yes")])
+
+        self.assertEqual(code, 2)
+        self.assertEqual(refused["code"], "SEPARATION_REPORT_UNREADABLE")
+        self.assertIn("'shares' must be a boolean", refused["detail"])
+        self.assertEqual(self._rounds(), ())
+
+    def test_bind_licenses_the_share_and_packet_resolves_its_sections(self) -> None:
+        """Rule: `bind` licenses a sharing assignment from the settled round,
+        and `packet` hands its transposition block the shared sections'
+        bytes -- the sections the expanding block transposes."""
+        code, separated = self._separate(
+            self._claims() + [self._abstract([self._S1, self._S4], shares=True)],
+        )
+        self.assertEqual(code, 0, separated)
+
+        code, bound = self._cli(
+            "bind", "--block", "summary.abstract", "--fact", "formulation",
+            "--lineage", "field-survey", "--section", self._S1, "--section", self._S4,
+        )
+        self.assertEqual(code, 0, bound)
+        self.assertEqual((bound["status"], bound["separation"]), ("ok", "licensed(round=1)"))
+        self.assertEqual(
+            paper_declarations.read_bindings(self.paper_dir)["summary.abstract"]["formulation"],
+            {"lineage": "field-survey", "sections": (self._S1, self._S4)},
+        )
+        code, claimed = self._cli(
+            "bind", "--block", "methods.block-c", "--fact", "formulation",
+            "--lineage", "field-survey", "--section", self._S4, "--section", self._S5,
+        )
+        self.assertEqual((code, claimed["separation"]), (0, "licensed(round=1)"), claimed)
+
+        code, packet = self._cli("packet", "--section", "summary", "--block", "abstract", guidance=True)
+        self.assertEqual(code, 0, packet)
+        self.assertEqual(packet["source_sections_state"]["state"], "resolved", packet)
+        body = self.revision.read_text(encoding="utf-8")
+        first, fourth = body.index(f"## {self._S1}"), body.index(f"## {self._S4}")
+        self.assertEqual(
+            [(entry["title"], entry["text"]) for entry in packet["source_sections"]],
+            [(self._S1, body[first:body.index(f"## {self._S2}")]),
+             (self._S4, body[fourth:body.index(f"## {self._S5}")])],
+        )
+
+    def test_bind_of_a_share_with_a_different_set_is_still_unargued(self) -> None:
+        code, separated = self._separate(
+            self._claims() + [self._abstract([self._S1, self._S4], shares=True)],
+        )
+        self.assertEqual(code, 0, separated)
+
+        code, refused = self._cli(
+            "bind", "--block", "summary.abstract", "--fact", "formulation",
+            "--lineage", "field-survey", "--section", self._S1,
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual((refused["code"], "failed_check='scope'" in refused["detail"]),
+                         ("BINDING_UNARGUED", True))
+
+    def test_a_cut_without_the_key_settles_exactly_as_before(self) -> None:
+        """Prior behaviour, byte for byte: a cut with no `shares` key (and
+        one with `"shares": false`, the same claim spelled out) returns the
+        same payload and records the same assignments as before -- no
+        `shares` field is written."""
+        claims = self._claims() + [
+            {"block": "summary.abstract", "fact": "formulation", "sections": [self._S5]},
+        ]
+        claims[1]["sections"] = [self._S4]
+        code, separated = self._separate(claims)
+
+        self.assertEqual(code, 0, separated)
+        (recorded,) = self._rounds()
+        self.assertEqual(separated, {
+            "status": "ok", "command": "separate", "total": 0, "unanchored": [],
+            "bind_invocations": [
+                f"bind --block methods.block-b --fact formulation --lineage field-survey "
+                f"--section '{self._S1}' --section '{self._S2}' --section '{self._S3}'",
+                f"bind --block methods.block-c --fact formulation --lineage field-survey "
+                f"--section '{self._S4}'",
+                f"bind --block summary.abstract --fact formulation --lineage field-survey "
+                f"--section '{self._S5}'",
+            ],
+            "round": 1, "round_id": recorded["id"],
+        })
+        self.assertEqual(recorded["assignments"], claims)
+
+        claims[2]["shares"] = False
+        code, replayed = self._separate(claims)
+        self.assertEqual(code, 0, replayed)
+        self.assertEqual(replayed, separated, "`shares: false` is the same cut, replayed")
+        self.assertEqual(len(self._rounds()), 1)
 
 
 class SeparationCorpusAnchoringTests(_SeparationCorpusMixin, unittest.TestCase):

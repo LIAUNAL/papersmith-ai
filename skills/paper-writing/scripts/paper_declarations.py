@@ -762,10 +762,12 @@ def _canonicalize_separation_assignments(assignments) -> tuple:
     treats as sets (the assignments list as a whole, and each
     assignment's own `sections`), so two proposals naming the identical
     cut in a different JSON order are recognized as the SAME cut, never a
-    spuriously new round."""
+    spuriously new round. Whether an assignment shares its sections
+    (`"shares": true`) is part of the cut, so the same titles claimed in
+    one round and shared in the next are two cuts."""
     return tuple(
         sorted(
-            (entry["block"], entry["fact"], tuple(sorted(entry["sections"])))
+            (entry["block"], entry["fact"], tuple(sorted(entry["sections"])), bool(entry.get("shares")))
             for entry in assignments
         )
     )
@@ -849,8 +851,11 @@ def record_separation_round(
             return latest
     round_number = (existing[-1]["round"] + 1) if existing else 1
     id_ = _separation_record_id(root, lineage, revision, round_number)
+    # A sharing assignment keeps `"shares": true`; a claim is stored with no
+    # `shares` key at all, exactly as before sharing existed.
     stored_assignments = [
-        {"block": entry["block"], "fact": entry["fact"], "sections": list(entry["sections"])}
+        {"block": entry["block"], "fact": entry["fact"], "sections": list(entry["sections"]),
+         **({"shares": True} if entry.get("shares") else {})}
         for entry in assignments
     ]
     _set_record(

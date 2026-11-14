@@ -54,6 +54,17 @@ number is `0`, breaking changes can still arrive without a major bump.
   written through `write` kept whatever older record `substitute` had left,
   so `verify` reported it `contract-currency` stale after any later contract
   edit even when it had just been rewritten.
+- A `separate` assignment may carry `"shares": true`: it names source
+  sections the block is grounded against without claiming them, such as an
+  abstract that compresses the sections the experimental set-up transposes.
+  A share is left out of the orphan/overlap/gap scoring, need not be
+  contiguous, and each section it names must be claimed by a non-sharing
+  assignment of the same cut, or `separate` refuses
+  `SEPARATION_SHARE_UNCLAIMED`. `bind` licenses it from the settled round and
+  `packet`/`write` resolve its sections as for a claim. Before, every section
+  belonged to exactly one block, so a compressing block could only be bound
+  to sections that did not hold what it had to name. A cut without the key
+  scores and records exactly as before.
 
 ## 0.76.1
 

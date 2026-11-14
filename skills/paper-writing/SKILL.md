@@ -1200,6 +1200,28 @@ bare string, an unknown top-level key, a duplicate `(block, fact)` pair
 across assignments, or assignments resolving through more than one source
 root all refuse `SEPARATION_REPORT_UNREADABLE` before anything is scored.
 
+**A block that compresses what another block expands shares its sections
+with `"shares": true`.** An abstract states what the experimental set-up
+transposes, so it must be grounded against the same sections — which a cut
+lets exactly one block claim. An assignment with the optional boolean
+`"shares": true` names sections WITHOUT claiming them:
+
+```json
+{"block": "abstract.slot-5", "fact": "experimental-design",
+ "sections": ["4. Instruments", "7. Statistical tests"], "shares": true}
+```
+
+A share is left out of scoring entirely (it clears no orphan and causes no
+overlap or gap), so it need not be contiguous. Every section it names
+resolves as a claim's does (`<title>#<n>` included) and must be claimed by a
+non-sharing assignment of the same cut; otherwise `separate` refuses
+`SEPARATION_SHARE_UNCLAIMED`, naming each such title, before any round is
+recorded — another share does not count. A settled round names its `bind`
+invocation like any other, `bind` licenses it by the same four checks, and
+`packet`/`write` resolve its bound sections exactly as a claim's, so a
+transposition block's grounding reads them. `"shares": false` is the plain
+claim; a cut without the key scores and records exactly as before.
+
 **A title two or more headings share is named `<title>#<n>`.** A section
 title names every heading that carries exactly that title; one heading is a
 resolved section, two or more refuse `SECTION_TITLE_AMBIGUOUS`. For such a
@@ -1270,7 +1292,7 @@ verb `write`'s phase-gated corpus assembly ever reads back.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `separate --proposal <path> [--sections <dir>] [--paper <dir>]` | Reads an already-authored whole-cut proposal, resolves every named title against the document's own structure and the assembled corpus, scores it, and records the round it just argued regardless of outcome. Never records a binding | `SEPARATION_REPORT_UNREADABLE`, `SEPARATION_SECTION_UNCLAIMABLE`, `SECTION_NOT_IN_SOURCE`, `SECTION_TITLE_AMBIGUOUS`, `SEPARATION_SECTION_OVERLAP`, `SEPARATION_SECTION_ORPHANED`, `SEPARATION_NOTATION_GAP`, `SEPARATION_ROUND_ABSENT`, `SEPARATION_CONCESSION_REGRESSED` |
+| `separate --proposal <path> [--sections <dir>] [--paper <dir>]` | Reads an already-authored whole-cut proposal, resolves every named title against the document's own structure and the assembled corpus, scores it, and records the round it just argued regardless of outcome. Never records a binding | `SEPARATION_REPORT_UNREADABLE`, `SEPARATION_SECTION_UNCLAIMABLE`, `SECTION_NOT_IN_SOURCE`, `SECTION_TITLE_AMBIGUOUS`, `SEPARATION_SECTION_OVERLAP`, `SEPARATION_SECTION_ORPHANED`, `SEPARATION_NOTATION_GAP`, `SEPARATION_SHARE_UNCLAIMED`, `SEPARATION_ROUND_ABSENT`, `SEPARATION_CONCESSION_REGRESSED` |
 | `bind --block <id> --fact <id> --lineage <lineage> --section <title> [--section <title> ...] [--sections <dir>] [--paper <dir>]` | Records which section(s) of a source document feed one block's own bindable requirement | `UNKNOWN_FACT`, `BINDING_FACT_NOT_BINDABLE`, `BINDING_LINEAGE_REQUIRED`, `BINDING_SECTIONS_REQUIRED`, `DECLARATION_FIXED`, `BINDING_UNARGUED` |
 | `bind --block <id> --fact <id> --reopen` | Clears an already-recorded `(block, fact)` binding's fixed state instead of recording one — never gated by `BINDING_UNARGUED` | (none beyond `bind`'s own) |
 
@@ -1289,6 +1311,7 @@ either command's own `--help`.
 | `write` refuses `DRAFT_PLACEHOLDER_TEXT` | The draft still carries `por definir`, `TODO`, `TBD`, `FIXME` or `\todo` — write the content, or leave the block unwritten. No attempt is spent |
 | `write` refuses `SECTION_BINDING_ABSENT` | Run `separate --proposal <path>` naming a whole cut for the missing claim's lineage, then the exact `bind` invocation the settled cut licenses |
 | `separate` refuses `SEPARATION_SECTION_OVERLAP` / `SEPARATION_SECTION_ORPHANED` / `SEPARATION_NOTATION_GAP` | One code by fixed precedence overlap → orphan → gap; the detail names every instance of every class present — fix the cut and resubmit the same proposal file |
+| `separate` refuses `SEPARATION_SHARE_UNCLAIMED` | A `"shares": true` assignment names a section no non-sharing assignment of the same cut claims — claim that section in the block that expands it, or drop it from the share. A share never covers a section on its own |
 | `separate`, `bind` or `write` refuses `SECTION_TITLE_AMBIGUOUS` | The title is carried by two or more headings — name one as `<title>#<n>`, picking it from the occurrences and lines the detail lists |
 | `separate` refuses `SEPARATION_SECTION_UNCLAIMABLE` | A named title resolves to a real heading outside the claimable set (the document's own title, or a subsection), or the document's claimable set could not be measured at all — `--file`/`contract` the section, or re-check the title against the document's own headings |
 | `separate` refuses `SEPARATION_ROUND_ABSENT` | `concedes_to_round` names a round with no record for this exact `(root, lineage, revision)` — check the round number and that the document revision has not moved |

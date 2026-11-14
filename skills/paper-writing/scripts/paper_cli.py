@@ -572,6 +572,9 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "SEPARATION_SECTION_OVERLAP": WORK_STATE,
     "SEPARATION_SECTION_ORPHANED": WORK_STATE,
     "SEPARATION_NOTATION_GAP": WORK_STATE,
+    # A `"shares": true` assignment names a section no non-sharing
+    # assignment of the same cut claims -- a share never covers a section.
+    "SEPARATION_SHARE_UNCLAIMED": WORK_STATE,
     # --- the-whole-cut-is-argued-before-any-section-is-claimed, U3/U4: round
     # persistence (`paper_declarations.record_separation_round`/`read_
     # separation_rounds`, a fourth `declarations`-region record kind) and the
@@ -1099,10 +1102,13 @@ def cmd_mark(args: argparse.Namespace) -> dict:
 #: `_read_separation_proposal`'s own closed key-set grammar (design.md,
 #: Interfaces / Contracts) -- the marker's own closed-grammar discipline,
 #: reused: `lineage`/`assignments` required, `concedes_to_round` optional,
-#: nothing else admitted.
+#: nothing else admitted. An assignment carries `block`/`fact`/`sections`
+#: and, optionally, `shares` (a boolean): `true` names sections the block is
+#: grounded against WITHOUT claiming them (see `compute_separation`).
 _SEPARATION_TOP_KEYS = frozenset({"lineage", "assignments", "concedes_to_round"})
 _SEPARATION_REQUIRED_TOP_KEYS = frozenset({"lineage", "assignments"})
 _SEPARATION_ASSIGNMENT_KEYS = frozenset({"block", "fact", "sections"})
+_SEPARATION_ASSIGNMENT_OPTIONAL_KEYS = frozenset({"shares"})
 
 
 def _read_separation_proposal(proposal_path: Path) -> dict:
@@ -1122,7 +1128,8 @@ def _read_separation_proposal(proposal_path: Path) -> dict:
     once this function returns cleanly.
 
     Returns `{"lineage": str, "assignments": [{"block", "fact",
-    "sections": tuple}, ...], "concedes_to_round": int|None, "root":
+    "sections": tuple[, "shares": True]}, ...], "concedes_to_round":
+    int|None, "root":
     paper_declarations.SourceRoot}` -- `root` is derived here, once, so no
     later stage re-derives it from the raw facts a second time.
     """
@@ -1176,11 +1183,16 @@ def _read_separation_proposal(proposal_path: Path) -> dict:
     seen_pairs = set()
     fact_ids = []
     for entry in raw_assignments:
-        if not isinstance(entry, dict) or set(entry) != _SEPARATION_ASSIGNMENT_KEYS:
+        if (
+            not isinstance(entry, dict)
+            or not _SEPARATION_ASSIGNMENT_KEYS <= set(entry)
+            or set(entry) - _SEPARATION_ASSIGNMENT_KEYS - _SEPARATION_ASSIGNMENT_OPTIONAL_KEYS
+        ):
             raise Refused(
                 "SEPARATION_REPORT_UNREADABLE",
                 f"{proposal_path}: each assignment must carry exactly "
-                f"{sorted(_SEPARATION_ASSIGNMENT_KEYS)}, got {entry!r}",
+                f"{sorted(_SEPARATION_ASSIGNMENT_KEYS)}, plus optionally "
+                f"{sorted(_SEPARATION_ASSIGNMENT_OPTIONAL_KEYS)}, got {entry!r}",
             )
         block, fact, sections = entry["block"], entry["fact"], entry["sections"]
         if not isinstance(block, str) or not block:
@@ -1207,9 +1219,20 @@ def _read_separation_proposal(proposal_path: Path) -> dict:
                 "SEPARATION_REPORT_UNREADABLE",
                 f"{proposal_path}: duplicate assignment for (block, fact) = {pair!r}",
             )
+        shares = entry.get("shares", False)
+        if not isinstance(shares, bool):
+            raise Refused(
+                "SEPARATION_REPORT_UNREADABLE",
+                f"{proposal_path}: 'shares' must be a boolean, got {shares!r}",
+            )
         seen_pairs.add(pair)
         fact_ids.append(fact)
-        assignments.append({"block": block, "fact": fact, "sections": tuple(sections)})
+        assignment = {"block": block, "fact": fact, "sections": tuple(sections)}
+        if shares:
+            # `"shares": false` is the plain claim, spelled out: it is stored
+            # and replayed exactly as an assignment without the key.
+            assignment["shares"] = True
+        assignments.append(assignment)
 
     root = _resolve_separation_root(proposal_path, fact_ids)
     return {
@@ -1308,7 +1331,12 @@ def _claims_by_block(assignments, corpus) -> tuple:
     coverage. Shared between the current cut's own scoring and the
     concession check's recompute of a PRIOR round's assignments
     (`_check_separation_concession` below), so both go through the
-    identical anchoring rule rather than two copies that could drift."""
+    identical anchoring rule rather than two copies that could drift.
+
+    A sharing assignment (`"shares": true`) is anchored the same way, so an
+    unanchored one is still reported, but it claims nothing: it is left out
+    of the map `score_cut` reads, so it clears no orphan and causes no
+    overlap or gap."""
     claims_by_block: dict = {}
     unanchored = []
     for entry in assignments:
@@ -1316,6 +1344,8 @@ def _claims_by_block(assignments, corpus) -> tuple:
         record = corpus.blocks.get(block)
         if record is None or fact not in record.requires_facts:
             unanchored.append({"block": block, "fact": fact})
+            continue
+        if entry.get("shares"):
             continue
         claims_by_block.setdefault(block, [])
         claims_by_block[block].extend(entry["sections"])
@@ -1450,6 +1480,7 @@ def compute_separation(
                     f"{block}: section {title!r} is not in the claimable set "
                     f"{claimable['titles']!r}",
                 )
+    _check_shared_sections_claimed(assignments)
 
     claims_by_block, unanchored = _claims_by_block(assignments, corpus)
     result = paper_separation.score_cut(claimable["titles"], claims_by_block)
@@ -1470,6 +1501,31 @@ def compute_separation(
             "round": recorded_round["round"], "round_id": recorded_round["id"],
         }
     _raise_separation_refusal(result, recorded_round["id"])
+
+
+def _check_shared_sections_claimed(assignments) -> None:
+    """A sharing assignment (`"shares": true`) grounds its block against
+    sections ANOTHER block of the same cut expands -- an abstract compresses
+    what the set-up transposes -- so every section it names must be claimed
+    by a non-sharing assignment of this cut. Refuses
+    `SEPARATION_SHARE_UNCLAIMED` naming every shared title no claim names,
+    before anything is scored or recorded: a share never covers a section,
+    and one sharing assignment never licenses another's title."""
+    claimed = {
+        title for entry in assignments if not entry.get("shares") for title in entry["sections"]
+    }
+    unclaimed = [
+        f"{entry['block']}/{entry['fact']}: {title!r}"
+        for entry in assignments if entry.get("shares")
+        for title in entry["sections"] if title not in claimed
+    ]
+    if unclaimed:
+        raise Refused(
+            "SEPARATION_SHARE_UNCLAIMED",
+            "a sharing assignment names section(s) no non-sharing assignment of this cut "
+            f"claims: {'; '.join(unclaimed)} -- claim each in a non-sharing assignment, or "
+            "drop it from the share",
+        )
 
 
 def _named_claimable_sections(outline: dict) -> dict:
@@ -3874,7 +3930,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--proposal", required=True,
         help="path to the proposal JSON file naming the whole cut; must resolve inside the "
              "repository root. A section title two or more headings share is named "
-             "<title>#<n>: the n-th heading with exactly that title, in document order",
+             "<title>#<n>: the n-th heading with exactly that title, in document order. An "
+             "assignment carrying \"shares\": true names sections it is grounded against "
+             "without claiming them (an abstract sharing the sections another block "
+             "transposes): it is left out of scoring, need not be contiguous, and every "
+             "section it names must be claimed by a non-sharing assignment of the same cut",
     )
 
     p_observe = sub.add_parser(
