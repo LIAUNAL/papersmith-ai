@@ -1,6 +1,6 @@
 {
   "name": "papersmith-ai",
-  "version": "0.76.2",
+  "version": "0.76.3",
   "private": true,
   "type": "module",
   "engines": {
