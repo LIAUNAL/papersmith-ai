@@ -171,7 +171,7 @@ def load_config(path: Path | None = None) -> dict:
     if force_ocr is not None and not isinstance(force_ocr, bool):
         raise ConfigError(f"force_ocr must be true or false, got {force_ocr!r}")
 
-    for flag in ("cache", "formulas_on_cpu"):
+    for flag in ("cache", "formulas_on_cpu", "marker_on_cpu"):
         value = cfg.get(flag)
         if value is not None and not isinstance(value, bool):
             raise ConfigError(f"{flag} must be true or false, got {value!r}")
@@ -832,12 +832,46 @@ def _sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def marker_accelerator() -> str | None:
+    """The GPU Marker's models would run on here, or None on a CPU-only machine.
+
+    Marker's layout, OCR and LLM passes take minutes per page on a CPU (hours
+    for a paper), so it is only worth running on CUDA or on Apple Silicon.
+    An integrated GPU torch cannot see (no CUDA, no MPS) counts as none."""
+    import platform
+
+    try:
+        import torch
+    except ImportError:
+        return None
+    if torch.cuda.is_available():
+        return "CUDA"
+    mps = getattr(getattr(torch, "backends", None), "mps", None)
+    if platform.system() == "Darwin" and platform.machine() == "arm64" and mps is not None and mps.is_available():
+        return "MPS (Apple Silicon)"
+    return None
+
+
 def build_engine(engine: str, mode: str | None, force_ocr: bool, cache_root: Path | None,
-                 formulas_on_cpu: bool = False):
-    """The converter for one run: Marker's, or the page-routed engine."""
+                 formulas_on_cpu: bool = False, marker_on_cpu: bool = False):
+    """The converter for one run: Marker's, or the page-routed engine.
+
+    `engine: marker` runs Marker only where a GPU is available
+    (`marker_accelerator`). On a CPU-only machine the run falls back to the
+    page-routed `auto` engine -- the fastest CPU route, which still sends
+    display-equation pages to the formula model when `formulas_on_cpu` is set
+    -- unless `marker_on_cpu` forces Marker anyway."""
     if engine == "marker":
-        print(f"NOTE {MARKER_LICENSE_NOTE}", file=sys.stderr)
-        return build_converter(mode, force_ocr)
+        accelerator = marker_accelerator()
+        if accelerator is None and not marker_on_cpu:
+            print("NOTE engine 'marker' needs a GPU (CUDA or Apple Silicon) and no GPU was found; "
+                  "this run uses the page-routed 'auto' engine instead"
+                  f" (formulas {'to LaTeX on the CPU' if formulas_on_cpu else 'on the fast path; set formulas_on_cpu: true for LaTeX'})."
+                  " Set marker_on_cpu: true to force Marker on the CPU.", file=sys.stderr)
+            engine = "auto"
+        else:
+            print(f"NOTE {MARKER_LICENSE_NOTE}", file=sys.stderr)
+            return build_converter(mode, force_ocr)
     try:
         import pypdfium2  # noqa: F401 -- the fast path is the core and always required
     except ImportError as exc:
@@ -1035,7 +1069,8 @@ def main() -> int:
 
     try:
         converter = build_engine(engine, mode, force_ocr, REPO_ROOT / CACHE_DIR if use_cache else None,
-                                 bool(cfg.get("formulas_on_cpu", False)))
+                                 bool(cfg.get("formulas_on_cpu", False)),
+                                 bool(cfg.get("marker_on_cpu", False)))
     except EngineError as exc:
         print(f"Environment error: {exc}", file=sys.stderr)
         return 2

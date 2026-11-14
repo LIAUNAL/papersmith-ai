@@ -13,6 +13,10 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## 0.76.2
 
+- `engine: marker` no longer runs on a CPU-only machine: without a GPU
+  PyTorch can see (CUDA, ROCm or Apple Silicon) ingestion falls back to the
+  page-routed `auto` engine, which keeps display equations as LaTeX with
+  `formulas_on_cpu: true`. `marker_on_cpu: true` forces Marker anyway.
 - A first revision no longer pastes a source document's own headings as
   headings. The v1 render escapes every source heading (`\# Title`,
   `\## Part`, setext underlines) so it prints as text, and `loadSourceWindow`

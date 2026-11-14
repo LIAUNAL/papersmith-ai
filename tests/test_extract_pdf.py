@@ -558,7 +558,7 @@ class EngineSelectionTests(_BaseFixture):
     _engine_arguments = ForceOcrTests._engine_arguments
 
     def test_the_default_engine_routes_pages_and_caches_them(self) -> None:
-        engine, _mode, _ocr, cache, _cpu = self._engine_arguments([], {})
+        engine, _mode, _ocr, cache, _cpu, _marker_cpu = self._engine_arguments([], {})
         self.assertEqual(engine, "auto")
         self.assertEqual(cache, EXTRACTOR.REPO_ROOT / EXTRACTOR.CACHE_DIR)
 
@@ -588,18 +588,58 @@ class EngineSelectionTests(_BaseFixture):
         from contextlib import redirect_stderr
 
         calls = []
-        real = EXTRACTOR.build_converter
+        real, real_gpu = EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator
         EXTRACTOR.build_converter = lambda mode, force_ocr: calls.append((mode, force_ocr)) or "marker"
+        EXTRACTOR.marker_accelerator = lambda: "CUDA"
         try:
             err = io.StringIO()
             with redirect_stderr(err):
                 self.assertEqual(EXTRACTOR.build_engine("marker", "fast", False, None), "marker")
                 routed = EXTRACTOR.build_engine("auto", None, False, None)
         finally:
-            EXTRACTOR.build_converter = real
+            EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator = real, real_gpu
         self.assertEqual(calls, [("fast", False)])
         self.assertIn("USD 5M", err.getvalue())
         self.assertIsInstance(routed, EXTRACTOR.RoutedEngine)
+
+    def _build_without_gpu(self, **kwargs):
+        import io
+        from contextlib import redirect_stderr
+
+        calls = []
+        real, real_gpu = EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator
+        EXTRACTOR.build_converter = lambda mode, force_ocr: calls.append((mode, force_ocr)) or "marker"
+        EXTRACTOR.marker_accelerator = lambda: None
+        err = io.StringIO()
+        try:
+            with redirect_stderr(err):
+                built = EXTRACTOR.build_engine("marker", "fast", False, None, **kwargs)
+        finally:
+            EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator = real, real_gpu
+        return built, calls, err.getvalue()
+
+    def test_marker_without_a_gpu_falls_back_to_the_routed_engine(self) -> None:
+        built, calls, err = self._build_without_gpu(formulas_on_cpu=True)
+        self.assertEqual(calls, [])
+        self.assertIsInstance(built, EXTRACTOR.RoutedEngine)
+        self.assertEqual(built.engine, "auto")
+        self.assertTrue(built.heavy.formulas_on_cpu)
+        self.assertIn("no GPU", err)
+        self.assertIn("marker_on_cpu", err)
+
+    def test_marker_on_cpu_forces_marker_without_a_gpu(self) -> None:
+        built, calls, err = self._build_without_gpu(marker_on_cpu=True)
+        self.assertEqual((built, calls), ("marker", [("fast", False)]))
+        self.assertIn("USD 5M", err)
+
+    def test_marker_on_cpu_reaches_the_engine_and_must_be_boolean(self) -> None:
+        self.assertFalse(self._engine_arguments([], {})[5])
+        self.assertTrue(self._engine_arguments([], {"marker_on_cpu": True})[5])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "papersmith.yaml"
+            path.write_text("paper_ingestion:\n  marker_on_cpu: sometimes\n", encoding="utf-8")
+            with self.assertRaises(EXTRACTOR.ConfigError):
+                EXTRACTOR.load_config(path)
 
 
 if __name__ == "__main__":

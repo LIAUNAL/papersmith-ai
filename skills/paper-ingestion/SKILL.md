@@ -111,6 +111,13 @@ formula, so math pages stay on the fast path there unless `formulas_on_cpu: true
 When Docling is not installed (`--no-ingestion`), `auto` reads every page on the
 fast path and says so; `engine: docling` refuses instead.
 
+**Marker runs only on a GPU.** `engine: marker` builds Marker only when
+PyTorch sees a GPU (CUDA, which a ROCm build also reports, or Apple Silicon
+MPS). On a CPU-only machine its layout, OCR and LLM passes take hours per
+paper, so the run falls back to the page-routed `auto` engine and says why;
+set `formulas_on_cpu: true` to keep display equations as LaTeX there, or
+`marker_on_cpu: true` to force Marker on the CPU anyway.
+
 **Every default engine is license-unrestricted** — no copyleft and no revenue or
 user threshold: pypdfium2 (Apache-2.0 / BSD-3-Clause; PDFium BSD), Docling and
 docling-core/-parse/-ibm-models (MIT), docling-layout-heron (Apache-2.0),
