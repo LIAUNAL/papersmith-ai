@@ -19,6 +19,7 @@ from .core import colab as colab_command
 from .core import doctor as doctor_command
 from .core import env as env_command
 from .core import executor as executor_command
+from .core import gpu as gpu_command
 from .core import init as init_command
 from .core import ingest as ingest_command
 from .core import keys as keys_command
@@ -59,6 +60,7 @@ _REGISTRY: list = [
     target_command.register,
     audit_command.register,
     doctor_command.register,
+    gpu_command.register,
     novelty_command.register,
     ui_command.register,
     atlas_command.register,

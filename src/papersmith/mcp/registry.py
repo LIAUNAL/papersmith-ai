@@ -80,6 +80,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "team",
     "colab",
     "doctor",
+    "gpu",
     "novelty",
     "keys",
 )
@@ -1614,6 +1615,10 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # account; `status` probes that sign-in. Both are an operator's acts.
     "colab": "out",
     "doctor": "exposed",
+    # `gpu` diagnoses the operator's own machine and its remedies are the
+    # operator's acts (`sudo usermod`, a re-login, a multi-gigabyte wheel
+    # install); ingestion already applies the one remedy it can (`sg render`).
+    "gpu": "out",
     # `novelty approve|iterate|reset` commits the G-NOVELTY gate decision that
     # unlocks manuscript drafting: the operator's verdict on whether the results
     # support the novelty claims, never an agent's. `status` is the same data the

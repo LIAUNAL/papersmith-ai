@@ -20,6 +20,7 @@ to the current directory and has to point at an initialized workspace, except fo
 | `target` | Lists, selects and checks compute targets |
 | `audit` | Audits the structure and detects drift in what was generated |
 | `doctor` | One health table: framework, packages, tools, skills, agents and phases |
+| `gpu` | Reports this machine's GPU (NVIDIA, AMD, Apple Silicon), what blocks it and the exact fix |
 | `novelty` | Reads the novelty assessment and records the `G-NOVELTY` decision (approve, iterate, reset) |
 | `ui` | Serves the local Paper Command Center (DAG, gates, sections, wiring) |
 | `atlas` | SOTA atlas actions: `build`, `cited`, `coverage`, `summary`, `novelty` (the dashboard's graph buttons) |
@@ -502,6 +503,44 @@ interpreter as `PAPERSMITH_CLI_PYTHON` and the tab builds its rows there.
 
 Exits `0` unless a row is `fail` (a skill without its `SKILL.md`, a missing
 agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).
+
+### `smith gpu [<dir>]`
+
+```bash
+smith gpu                                   # readable report
+smith gpu --json                            # the probe as JSON
+smith gpu --python .micromamba/envs/papersmith-marker/bin/python
+```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints the whole probe: `vendor`, `cards` (PCI id, VRAM/GTT bytes), `gfx_targets`, `rocm_supported`, `nodes`, `accessible`, `group`, `sg_remedy`, `llama`, `torch`, `accelerators`, `remedies` |
+| `--python <interpreter>` | Probes that interpreter's PyTorch (default: the workspace interpreter, else this one) |
+
+Read-only. Runs the kit's shared probe (`skills/_core/gpu/gpu_probe.py`, the
+one paper ingestion and `scripts/setup_env.py` use) and reports the GPU
+vendor, the AMD gfx target (`gfx_target_version` 110500 is `gfx1150`), VRAM
+and GTT, whether this process can open `/dev/kfd` and `/dev/dri/renderD*`,
+the `render` group state, the Vulkan devices of the `llama-server` beside the
+interpreter (`LLAMA_CPP_BINARY` overrides it) and the PyTorch backend (`cuda`,
+`hip`, `mps` or `cpu`). Each blocker is one `remedies` entry with its code
+and exact command:
+
+| Code | Command |
+|------|---------|
+| `GPU_GROUP_MISSING` | `sudo usermod -aG render,video $USER`, then log in again |
+| `GPU_GROUP_NOT_IN_SESSION` | `sg render -c '<command>'` (ingestion re-runs itself this way) |
+| `ROCM_TORCH_MISSING` | `<python> -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ ... torch[device-<gfx>]==... torchvision[device-<gfx>]==...`, or `smith env install --rocm` |
+| `ROCM_TARGET_UNSUPPORTED` | none; Vulkan still serves Marker, `smith env install --rocm` forces the wheels |
+| `HSA_OVERRIDE_SET` | `unset HSA_OVERRIDE_GFX_VERSION` (a natively supported target needs no override) |
+| `CUDA_TORCH_MISSING` | `smith env install --cuda` |
+| `LLAMA_SERVER_MISSING` | `smith env install` |
+| `VULKAN_MISSING` | none; install your distribution's Mesa Vulkan driver |
+
+Works outside a workspace (the probe then comes from the kit). Always exits `0`.
+`smith env install` takes `--rocm` to force AMD's ROCm PyTorch wheels and
+`--cpu` to forbid every GPU build; without either it picks CUDA on NVIDIA,
+ROCm on a supported AMD target and the CPU build otherwise, and prints why.
 
 ### `smith ui [<dir>]`
 
