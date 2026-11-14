@@ -8968,8 +8968,13 @@ class RefusalRosterTests(unittest.TestCase):
         catalog, VENUE_CATALOG_UNKNOWN for an unknown catalog slug).
 
         215 -> 216: `resolve` refuses a connector that rejected the operator's
-        configured key (RESOLVER_REFUSED), never as IDENTIFIER_UNRESOLVED."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 216)
+        configured key (RESOLVER_REFUSED), never as IDENTIFIER_UNRESOLVED.
+
+        216 -> 221: `review` records the final judge's rounds in
+        `.papersmith/paper_review.json` and adds 5 codes
+        (REVIEW_INPUT_UNREADABLE, REVIEW_ROUND_INVALID, REVIEW_ITEM_UNKNOWN,
+        REVIEW_ITEMS_MISSING, REVIEW_FILE_INVALID)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 221)
 
 
 class ObjectiveNorthTests(unittest.TestCase):
@@ -16057,6 +16062,30 @@ class ModelOutputEnvelopeValidationTests(unittest.TestCase):
             paper_write.write_block(Path("/dummy"), contract, {"latex": "ok", "bindings": []}, "not a dict")
         self.assertEqual(ctx.exception.code, "AUDIT_UNREADABLE")
 
+
+
+class ReviewVerbFrontDoorTests(unittest.TestCase):
+    """`review` through `paper_cli.main`: one round recorded where the
+    dashboard's final-judge panel reads it (the full behaviour lives in
+    `tests/test_paper_review_record.py`)."""
+
+    def test_main_records_a_round_beside_the_paper(self) -> None:
+        root = FORGE_ROOT / ".scratch" / f".paper-review-door-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        (root / "paper").mkdir(parents=True)
+        source = root / "round.json"
+        source.write_text(json.dumps({
+            "overall": 4, "confidence": 3, "recommendation": "Borderline accept",
+            "ratings": {"Quality": 3, "Clarity": 3, "Significance": 3, "Originality": 3},
+            "revisions": [{"rank": 1, "text": "Report seed variance."}], "report": "Form.",
+        }), encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = paper_cli.main(["review", "--paper", str(root / "paper"), "--input", str(source)])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["round"], 1)
+        stored = json.loads((root / ".papersmith" / "paper_review.json").read_text(encoding="utf-8"))
+        self.assertEqual([r["round"] for r in stored["rounds"]], [1])
 
 if __name__ == "__main__":
     unittest.main()

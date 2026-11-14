@@ -118,6 +118,7 @@ import paper_separation  # noqa: E402 -- the-whole-cut-is-argued-before-any-sect
 import paper_ai_metrics  # noqa: E402 -- closing-sections-and-manuscript-graphs S4: writing-quality metrics (cadence, overused phrasing, lexical diversity) and F5 invariant checks; never an AI-detection score
 import paper_language  # noqa: E402 -- manuscript-polish-0-54 S4: the English-only manuscript scan `write` refuses on and `verify`'s `language` check reports; raises no `Refused` of its own
 import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
+import paper_review  # noqa: E402 -- the final judge's rounds, read by the dashboard's panel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -640,6 +641,12 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "BLOCK_UNKNOWN": WORK_STATE,
     "F5_INVARIANT_VIOLATION": WORK_STATE,
     "TARGET_SCORE_UNMET": WORK_STATE,
+    # --- the final judge's rounds (review, paper_review.py) ---------------
+    "REVIEW_INPUT_UNREADABLE": INVOCATION_DEFECT,
+    "REVIEW_ROUND_INVALID": INVOCATION_DEFECT,
+    "REVIEW_ITEM_UNKNOWN": INVOCATION_DEFECT,
+    "REVIEW_ITEMS_MISSING": INVOCATION_DEFECT,
+    "REVIEW_FILE_INVALID": WORK_STATE,
 }
 
 
@@ -3400,6 +3407,15 @@ def cmd_ai_audit(args: argparse.Namespace) -> dict:
         raise Refused("TARGET_REQUIRED", "One of --file, --draft, --block, or --all is required for ai_audit.")
 
 
+def cmd_review(args: argparse.Namespace) -> dict:
+    """Records one round of the `paper-reviewer`'s review of the assembled
+    manuscript in `.papersmith/paper_review.json`, the file the dashboard's
+    final-judge panel reads. The agent returns the round; this verb is its
+    only writer."""
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    return paper_review.record(paper_dir, paper_review.read_input(args.input))
+
+
 def cmd_humanize(args: argparse.Namespace) -> dict:
     """Style revision of one block: the draft must keep every F5 invariant and,
     to be applied, reach the style target. It improves readability only; it
@@ -4288,6 +4304,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_humanize.add_argument("--contract", default=None, help="path to the section contract")
     p_humanize.add_argument("--paper", default=None, help="override paper/ location")
 
+    p_review = sub.add_parser(
+        "review",
+        help="record one round of the paper-reviewer's review in .papersmith/paper_review.json "
+             "(numbered and dated here; a later round judges every revision of the one before)",
+    )
+    p_review.add_argument("--input", required=True,
+                          help="path to the round as JSON, or - to read it from stdin")
+    p_review.add_argument("--paper", default=None, help="override paper/ location")
+
     return parser
 
 
@@ -4295,7 +4320,7 @@ COMMANDS = (
     "scaffold", "status", "open", "substitute", "contract", "readiness", "phases", "skeleton", "order",
     "declare", "bind", "mark", "separate", "observe", "plan", "resolve", "full_text", "bib", "validate",
     "write", "render", "place", "couplings", "verify", "figure", "packet", "reuse", "exhaustion", "venue",
-    "ai_audit", "humanize",
+    "ai_audit", "humanize", "review",
 )
 _COMMANDS = {
     "scaffold": cmd_scaffold,
@@ -4329,6 +4354,7 @@ _COMMANDS = {
     "venue": cmd_venue,
     "ai_audit": cmd_ai_audit,
     "humanize": cmd_humanize,
+    "review": cmd_review,
 }
 
 

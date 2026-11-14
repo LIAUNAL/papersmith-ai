@@ -57,6 +57,7 @@ PAPER_VERBS: tuple[str, ...] = (
     "venue",
     "ai_audit",
     "humanize",
+    "review",
 )
 
 #: The orchestrator CLI's own command roster (``cli._REGISTRY``).
@@ -1639,6 +1640,9 @@ PAPER_DISPOSITIONS: dict[str, str] = {
         # mixed like `figure`, so declared out for the same reason.
         else "out" if verb == "venue"
         else "out" if verb in {"ai_audit", "humanize"}
+        # `review` records the paper-reviewer's round, which `/paper-writing`
+        # receives from the agent and writes itself; not an agent-facing tool.
+        else "out" if verb == "review"
         else "exposed"
     )
     for verb in PAPER_VERBS
