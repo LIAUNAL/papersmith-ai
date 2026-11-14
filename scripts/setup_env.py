@@ -4,8 +4,9 @@
 One script, every OS (Linux / macOS / Windows). It creates a single isolated
 environment (`papersmith`) that holds every Python dependency the forge needs,
 and installs the hardware-appropriate build of PyTorch (CUDA when an NVIDIA GPU
-is present, CPU otherwise) plus the `llama-server` OCR backend — both pulled from
-conda-forge rather than Homebrew, so the same command works everywhere.
+is present, AMD's ROCm wheels when an AMD GPU with a supported gfx target is,
+CPU otherwise) plus the `llama-server` OCR backend — pulled from conda-forge
+rather than Homebrew, so the same command works everywhere.
 
 What it installs
     conda-forge: python=3.12, pip, pytest, pytest-xdist, python-build, numpy, pypdfium2, pyyaml, jsonschema,
@@ -14,8 +15,13 @@ What it installs
                  uvicorn, watchfiles and pydantic (the Paper Command Center
                  server the kit ships), and torch —
                  `pytorch-gpu`+`torchvision` on CUDA machines, else
-                 `pytorch-cpu`+`torchvision`.
-    pip:         this project itself, editable (`pip install -e .`), and the
+                 `pytorch-cpu`+`torchvision` (none on a ROCm machine).
+    pip:         on an AMD GPU whose gfx target is in the probe's ROCm set
+                 (`skills/_core/gpu/gpu_probe.py`, `ROCM_SUPPORTED_TARGETS`),
+                 AMD's ROCm builds of torch and torchvision with the
+                 `device-<gfx>` extra from https://stable.repo.amd.com/rocm/whl-next/
+                 (the ROCm runtime ships in the wheels: no system ROCm needed);
+                 this project itself, editable (`pip install -e .`), and the
                  paper-ingestion heavy engine: docling (MIT), plus mlx-vlm (MIT)
                  on Apple Silicon so its formula model runs on the GPU. Every one
                  is license-unrestricted. pypdfium2 (Apache-2.0/BSD-3) is the
@@ -28,6 +34,7 @@ Usage
     python3 scripts/setup_env.py install          # detect hardware, provision
     python3 scripts/setup_env.py install --cpu    # force CPU torch
     python3 scripts/setup_env.py install --cuda   # force CUDA torch
+    python3 scripts/setup_env.py install --rocm   # force AMD ROCm wheels for the detected gfx target
     python3 scripts/setup_env.py clean            # remove the environment
     python3 scripts/setup_env.py clean --full     # also remove bootstrapped micromamba
 
@@ -201,6 +208,77 @@ def detect_cuda() -> bool:
         return False
 
 
+GPU_PROBE = Path("skills") / "_core" / "gpu" / "gpu_probe.py"
+
+
+def load_gpu_probe():
+    """The kit's shared GPU probe, or None when this copy carries none."""
+    import importlib.util
+
+    path = PROJECT_ROOT / GPU_PROBE
+    try:
+        spec = importlib.util.spec_from_file_location("papersmith_setup_gpu_probe", path)
+        if spec is None or spec.loader is None or not path.is_file():
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+def gpu_facts() -> dict:
+    """Vendor and AMD gfx targets from the probe (sysfs only, no subprocess);
+    no GPU when the probe is missing or fails."""
+    probe = load_gpu_probe()
+    if probe is None:
+        return {"vendor": "none", "gfx_targets": []}
+    try:
+        return probe.access()
+    except Exception:
+        return {"vendor": "none", "gfx_targets": []}
+
+
+def torch_choice(args: argparse.Namespace, facts: dict) -> tuple[str, str | None, str]:
+    """``(kind, gfx, why)``: ``cuda``, ``rocm`` (with its gfx target) or ``cpu``.
+
+    NVIDIA wins as before; an AMD gfx target in the probe's ROCm set gets the
+    ROCm wheels; ``--rocm`` forces them for the detected target, ``--cpu``
+    forbids every GPU build."""
+    rocm = getattr(args, "rocm", False)
+    if sum(bool(flag) for flag in (args.cpu, args.cuda, rocm)) > 1:
+        raise SystemExit("--cpu, --cuda and --rocm are mutually exclusive")
+    if args.cpu:
+        return "cpu", None, "--cpu"
+    if args.cuda:
+        return "cuda", None, "--cuda"
+    targets = list(facts.get("gfx_targets") or [])
+    probe = load_gpu_probe()
+    supported = set(getattr(probe, "ROCM_SUPPORTED_TARGETS", ()))
+    if rocm:
+        if not targets:
+            raise SystemExit("--rocm needs an AMD GPU the kernel reports (no gfx target in "
+                             "/sys/class/kfd/kfd/topology); is the amdgpu driver loaded?")
+        return "rocm", targets[0], f"--rocm for {targets[0]}"
+    if detect_cuda():
+        return "cuda", None, "nvidia-smi found an NVIDIA GPU"
+    for target in targets:
+        if target in supported:
+            return "rocm", target, f"AMD {target} is in the ROCm 10.1 wheel set"
+    if targets:
+        url = getattr(probe, "ROCM_COMPATIBILITY_URL", "the ROCm compatibility matrix")
+        return "cpu", None, (f"AMD {', '.join(targets)} is not in the ROCm 10.1 wheel set ({url}); "
+                             "pass --rocm to install the wheels anyway")
+    return "cpu", None, "no NVIDIA or supported AMD GPU found"
+
+
+def rocm_pip_args(gfx: str) -> list[str]:
+    probe = load_gpu_probe()
+    if probe is None:
+        raise SystemExit(f"[setup] --rocm needs {GPU_PROBE} (run `smith upgrade` to restore the kit)")
+    return probe.rocm_pip_args(gfx)
+
+
 # --------------------------------------------------------------------------- #
 # micromamba bootstrap
 # --------------------------------------------------------------------------- #
@@ -339,20 +417,34 @@ def conda_torch_packages(cuda: bool) -> list[str]:
     return ["pytorch-cpu", "torchvision"]
 
 
-def cmd_install(args: argparse.Namespace) -> int:
-    if args.cuda and args.cpu:
-        raise SystemExit("--cuda and --cpu are mutually exclusive")
+#: conda-forge's torch packages a ROCm install removes from an existing env,
+#: so the ROCm wheels do not land on top of a conda CPU build.
+CONDA_TORCH_NAMES = ["pytorch", "pytorch-cpu", "pytorch-gpu", "torchvision"]
 
-    cuda = args.cuda or (not args.cpu and detect_cuda())
-    kind = "CUDA (GPU)" if cuda else "CPU"
-    print(f"[setup] platform={platform_asset()}  torch={kind}")
+
+def cmd_install(args: argparse.Namespace) -> int:
+    kind, gfx, why = torch_choice(args, gpu_facts())
+    label = {"cuda": "CUDA (GPU)", "rocm": f"ROCm ({gfx})", "cpu": "CPU"}[kind]
+    print(f"[setup] platform={platform_asset()}  torch={label}  ({why})")
 
     mm = find_micromamba() or bootstrap_micromamba()
 
-    conda_packages = CONDA_BASE_PACKAGES + conda_torch_packages(cuda)
-    verb = "install" if env_exists(args.name) else "create"
+    existed = env_exists(args.name)
+    conda_packages = CONDA_BASE_PACKAGES + ([] if kind == "rocm" else conda_torch_packages(kind == "cuda"))
+    verb = "install" if existed else "create"
     run(mm, [verb, "-y", "-n", args.name, "-c", "conda-forge", *conda_packages],
         mamba_env())
+
+    if kind == "rocm":
+        if existed:
+            # Best-effort: an env built earlier may hold conda-forge's CPU torch.
+            try:
+                run(mm, ["remove", "-y", "-n", args.name, "--force", *CONDA_TORCH_NAMES], mamba_env())
+            except subprocess.CalledProcessError:
+                print("[setup] no conda-forge torch to remove")
+        print(f"[setup] installing AMD's ROCm PyTorch wheels for {gfx} (runtime bundled; "
+              "leave HSA_OVERRIDE_GFX_VERSION unset)")
+        run(mm, ["run", "-n", args.name, "python", "-m", "pip", "install", *rocm_pip_args(gfx)], mamba_env())
 
     # The framework checkout itself, editable: `papersmith` is a real package
     # with a console entry point, and the MCP suites import it directly.
@@ -417,6 +509,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     mm = find_micromamba()
     print(f"micromamba: {mm or 'not found (run install to bootstrap)'}")
     print(f"CUDA detected: {detect_cuda()}")
+    facts = gpu_facts()
+    print(f"GPU vendor: {facts.get('vendor')}  AMD targets: {', '.join(facts.get('gfx_targets') or []) or '-'}")
     print(f"env prefix: {MAMBA_ROOT / 'envs' / args.name}")
     return 0
 
@@ -429,6 +523,8 @@ def main() -> int:
     p_install = sub.add_parser("install", help="create/update the environment")
     p_install.add_argument("--cpu", action="store_true", help="force CPU PyTorch")
     p_install.add_argument("--cuda", action="store_true", help="force CUDA PyTorch")
+    p_install.add_argument("--rocm", action="store_true",
+                           help="force AMD's ROCm PyTorch wheels for the detected gfx target")
     p_install.add_argument("--no-ingestion", action="store_true",
                            help="skip docling (the heavy ingestion engine); the pypdfium2 fast path stays")
 

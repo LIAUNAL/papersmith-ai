@@ -2,6 +2,9 @@
 # Thin wrapper around the cross-platform micromamba provisioner.
 # The real logic (OS + hardware detection, package install, env cleanup) lives in
 # scripts/setup_env.py so Linux, macOS, and Windows share one source of truth.
+# It picks the PyTorch build for the GPU it finds (CUDA on NVIDIA, AMD's ROCm
+# wheels on a supported AMD gfx target, CPU otherwise); pass --cpu, --cuda or
+# --rocm to override. `smith gpu` reports what it sees and how to unblock it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

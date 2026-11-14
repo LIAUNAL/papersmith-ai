@@ -17,6 +17,36 @@ number is `0`, breaking changes can still arrive without a major bump.
   PyTorch can see (CUDA, ROCm or Apple Silicon) ingestion falls back to the
   page-routed `auto` engine, which keeps display equations as LaTeX with
   `formulas_on_cpu: true`. `marker_on_cpu: true` forces Marker anyway.
+- `smith gpu [--json] [--python <interpreter>]` reports this machine's GPU and
+  the exact command for each blocker: vendor (NVIDIA, AMD, Apple Silicon),
+  the AMD gfx target from the KFD topology, VRAM/GTT, whether this process
+  can open `/dev/kfd` and `/dev/dri/renderD*`, the `render` group state, the
+  Vulkan devices `llama-server` lists and the PyTorch backend (`cuda`, `hip`,
+  `mps`, `cpu`). It runs the new shared stdlib probe
+  `skills/_core/gpu/gpu_probe.py`, which ingestion and `setup_env.py` use too.
+- Marker now runs on AMD and Intel GPUs: a ROCm build of PyTorch counts as a
+  GPU, and so does a Vulkan GPU `llama-server --list-devices` names
+  (`Vulkan (llama.cpp)`), which carries Marker's recognition model on an
+  integrated GPU without ROCm (Radeon 890M measured). On Vulkan only the run
+  sets `TORCH_DEVICE=cpu`, `SURYA_INFERENCE_BACKEND=llamacpp` and
+  `LLAMA_CPP_NGL=99`; on ROCm it sets `SURYA_INFERENCE_BACKEND=llamacpp` (Surya
+  would otherwise start vllm) and `DOCLING_DEVICE=cuda`, never overriding a
+  value already set, and the formula note says "CodeFormulaV2 on ROCm". The
+  probed `llama-server` (`LLAMA_CPP_BINARY`, else beside the interpreter, else
+  PATH) is exported as `LLAMA_CPP_BINARY` so the one probed is the one spawned.
+- When a GPU node exists but this session cannot open it and the account is
+  already listed in `render` (a session older than the `usermod`),
+  `extract_pdf.py` re-runs itself once under `sg render -c` with the same
+  arguments (`PAPERSMITH_GPU_SG_REEXEC` stops a second re-run). Not listed: the
+  fallback note names the node and `sudo usermod -aG render,video $USER`.
+- `setup_env.py install` (and `smith env install`) installs AMD's ROCm 10.1
+  PyTorch wheels with the `device-<gfx>` extra from
+  `https://stable.repo.amd.com/rocm/whl-next/` on an AMD GPU whose gfx target is
+  in `ROCM_SUPPORTED_TARGETS` (gfx1100-1102, gfx1150-1151, gfx1200-1201,
+  gfx942), instead of the CPU build; the runtime is bundled, so no system ROCm
+  is needed. `--rocm` forces them for another detected target, `--cpu` forbids
+  them, NVIDIA keeps conda-forge's CUDA build, and the run prints what it chose
+  and why.
 - A first revision no longer pastes a source document's own headings as
   headings. The v1 render escapes every source heading (`\# Title`,
   `\## Part`, setext underlines) so it prints as text, and `loadSourceWindow`
