@@ -137,7 +137,25 @@ function interEntryWhitespaceCompositeTargets(state:DocumentState,providedText:s
 }
 
 function headingLevel(state:DocumentState,entry:StructuralEntry){return /^#{1,6}(?=\s)/u.exec(entryText(state,entry.entryId))?.[0].length;}
-function sectionBodyEnd(state:DocumentState,entry:StructuralEntry){const level=headingLevel(state,entry);if(!level)return entry.endByte;const next=state.structuralIndex.entries.filter(candidate=>candidate.startByte>entry.startByte&&['section','subsection','heading'].includes(candidate.type)).sort((a,b)=>a.startByte-b.startByte).find(candidate=>(headingLevel(state,candidate)??7)<=level);return next?.startByte??state.documentBytes.length;}
+/**
+ * The heading entry of the domain's change header (`profile.artifact.changeHeader.heading`),
+ * the first heading carrying exactly that text -- the one `changeHeaderLocusCandidate` and
+ * therefore every successor replaces -- or `undefined` when the domain declares none or the
+ * document does not carry it.
+ */
+function changeHeaderEntry(state:DocumentState,heading:string|undefined=DOMAIN.artifact.changeHeader?.heading){
+ if(heading===undefined)return undefined;
+ return state.structuralIndex.entries.find(e=>['section','subsection','heading'].includes(e.type)&&entryText(state,e.entryId).split(/\r?\n/u,1)[0].replace(/^#{1,6}\s+/,'').trim()===heading);
+}
+/**
+ * A heading's natural span: from the heading through the next heading of the same or a higher
+ * level, or the document end -- but never over the change header. Every successor of a domain
+ * that declares one replaces that header, so a span reaching over it could only ever be
+ * refused `SUCCESSOR_TARGET_OVERLAP`; it happens whenever the header is nested under the
+ * section before it, as under the last of several `#` sections. Ending such a span where the
+ * header begins changes nothing that resolved before, and makes that last section editable.
+ */
+function sectionBodyEnd(state:DocumentState,entry:StructuralEntry){const level=headingLevel(state,entry);if(!level)return entry.endByte;const next=state.structuralIndex.entries.filter(candidate=>candidate.startByte>entry.startByte&&['section','subsection','heading'].includes(candidate.type)).sort((a,b)=>a.startByte-b.startByte).find(candidate=>(headingLevel(state,candidate)??7)<=level);const end=next?.startByte??state.documentBytes.length;const header=changeHeaderEntry(state);return header&&header.startByte>entry.startByte&&header.startByte<end?header.startByte:end;}
 /**
  * The document's root block — the `#` title plus the introduction that runs up
  * to the first `##` — as its own locus, or `undefined` for every other heading.
@@ -269,6 +287,33 @@ function successorLocusCandidate(state:DocumentState,entry:StructuralEntry,evide
  return compositeCandidate(state,[entry,last],startByte,endByte,evidence);
 }
 
+/** `<exact heading title>#<n>`: the title as the heading spells it, then `#` and an ordinal with no space before it. */
+const HEADING_ORDINAL=/^(.*\S)#([1-9]\d*)$/u;
+/**
+ * The one heading a `<title>#<n>` query names: the n-th heading, in document order, whose
+ * title is exactly `<title>` (and whose level is the requested one, when the query opens with
+ * level marks). It exists for a title two or more headings share -- a first revision rendered
+ * by an earlier release pasted each source's own `#` title, so a source titled like the document left
+ * byte-identical headings that no choice of words can tell apart. `paper-writing`'s
+ * `separate`/`bind` read the same `<title>#<n>` form, counted the same way.
+ *
+ * `undefined` -- read the query as before -- unless it has that shape, no heading is literally
+ * titled the whole query, and at least two headings carry the title; so no query that resolved
+ * before resolves differently now. An ordinal past the last occurrence names nothing.
+ */
+function headingOrdinalTarget(state:DocumentState,raw:string,requestedLevel:number|undefined):SuccessorTargetResolution|undefined{
+ const match=HEADING_ORDINAL.exec(raw);
+ if(!match)return undefined;
+ const outline=headingOutline(state).filter(heading=>requestedLevel===undefined||heading.level===requestedLevel);
+ if(outline.some(heading=>heading.title===raw))return undefined;
+ const same=outline.filter(heading=>heading.title===match[1]!.trim());
+ if(same.length<2)return undefined;
+ const heading=same[Number(match[2])-1];
+ const structural=heading&&successorLocusCandidate(state,heading.entry,`heading ordinal ${match[2]} of ${same.length}: ${heading.title}`);
+ if(!heading||!structural)return {candidates:[],reason:'SUCCESSOR_TARGET_NOT_FOUND'};
+ return {candidates:[{...structural,headingPath:heading.path,headingLevel:heading.level,matchedTerms:[],score:100,confidence:1,evidence:[...structural.evidence,'exact heading ordinal']}]};
+}
+
 /**
  * Resolves a semantic successor target into one Markdown heading's natural span, inferred from the request/deliberation without requiring a numbered range.
  *
@@ -284,6 +329,8 @@ function successorLocusCandidate(state:DocumentState,entry:StructuralEntry,evide
 export function resolveSuccessorTarget(state:DocumentState,query:string):SuccessorTargetResolution {
  const marks=LEVEL_MARKS.exec(query);
  const requestedLevel=marks?marks[1].length:undefined;
+ const ordinal=headingOrdinalTarget(state,marks?query.slice(marks[0].length).trim():query.trim(),requestedLevel);
+ if(ordinal)return ordinal;
  // A level-marked query is a heading spelled out, so it is read literally:
  // the section-noun and display-noun stripping below would eat a heading word.
  const semanticQuery=marks?query.slice(marks[0].length).trim():successorSelectionQuery(query);
@@ -329,7 +376,7 @@ export function resolveSuccessorTarget(state:DocumentState,query:string):Success
  * (yet) carry the header, e.g. a document seeded before the profile declared one.
  */
 export function changeHeaderLocusCandidate(state:DocumentState,heading:string):TargetCandidate|undefined{
- const entry=state.structuralIndex.entries.find(e=>['section','subsection','heading'].includes(e.type)&&entryText(state,e.entryId).split(/\r?\n/u,1)[0].replace(/^#{1,6}\s+/,'').trim()===heading);
+ const entry=changeHeaderEntry(state,heading);
  if(!entry)return undefined;
  return compositeCandidate(state,[entry],entry.startByte,entry.endByte,'change header locus');
 }
