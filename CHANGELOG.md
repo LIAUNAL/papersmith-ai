@@ -13,6 +13,11 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## 0.76.2
 
+- `paper_cli.py place` measures a plot at the width the manuscript prints:
+  the `\geometry` text width when the preamble sets one, the class width
+  otherwise. Before, it always used the class width (360 pt for an 11 pt
+  article), so it refused every correctly sized figure in a manuscript with
+  wider margins set by `geometry` (`FIGURE_TEXT_BELOW_PRINT_FLOOR`).
 - `engine: marker` no longer runs on a CPU-only machine: without a GPU
   PyTorch can see (CUDA, ROCm or Apple Silicon) ingestion falls back to the
   page-routed `auto` engine, which keeps display equations as LaTeX with
