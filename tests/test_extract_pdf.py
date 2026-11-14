@@ -11,6 +11,7 @@ Run with the skill's venv:
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
@@ -640,6 +641,179 @@ class EngineSelectionTests(_BaseFixture):
             path.write_text("paper_ingestion:\n  marker_on_cpu: sometimes\n", encoding="utf-8")
             with self.assertRaises(EXTRACTOR.ConfigError):
                 EXTRACTOR.load_config(path)
+
+    def test_a_render_node_this_user_cannot_open_is_named_in_the_fallback(self) -> None:
+        real = EXTRACTOR.unreadable_render_nodes
+        EXTRACTOR.unreadable_render_nodes = lambda: ["/dev/dri/renderD128"]
+        try:
+            _built, _calls, err = self._build_without_gpu()
+        finally:
+            EXTRACTOR.unreadable_render_nodes = real
+        self.assertIn("/dev/dri/renderD128", err)
+        self.assertIn("usermod -aG render,video", err)
+
+    def test_a_rocm_gpu_sends_surya_to_llama_cpp_instead_of_vllm(self) -> None:
+        import io
+        import os
+        from contextlib import redirect_stderr
+
+        real, real_gpu = EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator
+        EXTRACTOR.build_converter = lambda mode, force_ocr: "marker"
+        EXTRACTOR.marker_accelerator = lambda: "ROCm (AMD Radeon 890M)"
+        saved = os.environ.pop("SURYA_INFERENCE_BACKEND", None)
+        try:
+            with redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(EXTRACTOR.build_engine("marker", "fast", False, None), "marker")
+            self.assertEqual(os.environ.get("SURYA_INFERENCE_BACKEND"), "llamacpp")
+            self.assertIn("ROCm (AMD Radeon 890M)", err.getvalue())
+        finally:
+            EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator = real, real_gpu
+            os.environ.pop("SURYA_INFERENCE_BACKEND", None)
+            if saved is not None:
+                os.environ["SURYA_INFERENCE_BACKEND"] = saved
+
+
+class LocalGpuTests(unittest.TestCase):
+    """The probes behind `marker_accelerator` on a machine without CUDA."""
+
+    LISTING = ("load_backend: loaded Vulkan backend\nAvailable devices:\n"
+               "  Vulkan0: AMD Radeon 890M (RADV GFX1150) (48632 MiB, 33042 MiB free)\n"
+               "  BLAS: MKL (0 MiB, 0 MiB free)\n")
+
+    def test_vulkan_devices_are_read_from_the_llama_server_listing(self) -> None:
+        self.assertEqual(EXTRACTOR.parse_vulkan_devices(self.LISTING), ["AMD Radeon 890M (RADV GFX1150)"])
+        self.assertEqual(EXTRACTOR.parse_vulkan_devices("Available devices:\n  BLAS: MKL (0 MiB, 0 MiB free)\n"), [])
+
+    def test_a_vulkan_gpu_counts_as_a_marker_accelerator_without_cuda(self) -> None:
+        real_torch = sys.modules.get("torch")
+        real_vk = EXTRACTOR.vulkan_devices
+        sys.modules["torch"] = None  # import torch -> ImportError
+        EXTRACTOR.vulkan_devices = lambda: ["AMD Radeon 890M (RADV GFX1150)"]
+        try:
+            self.assertEqual(EXTRACTOR.marker_accelerator(), "Vulkan (llama.cpp)")
+            EXTRACTOR.vulkan_devices = lambda: []
+            self.assertIsNone(EXTRACTOR.marker_accelerator())
+        finally:
+            EXTRACTOR.vulkan_devices = real_vk
+            if real_torch is None:
+                sys.modules.pop("torch", None)
+            else:
+                sys.modules["torch"] = real_torch
+
+    def test_llama_server_next_to_the_interpreter_is_found_off_path(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "llama-server"
+            binary.write_text("#!/bin/sh\n", encoding="utf-8")
+            binary.chmod(0o755)
+            saved_path, saved_exe = os.environ.get("PATH", ""), sys.executable
+            saved_binary = os.environ.pop("LLAMA_CPP_BINARY", None)
+            os.environ["PATH"] = "/nonexistent"
+            sys.executable = str(Path(tmp) / "python")
+            try:
+                self.assertEqual(EXTRACTOR.llama_server_binary(), str(binary))
+            finally:
+                os.environ["PATH"], sys.executable = saved_path, saved_exe
+                if saved_binary is not None:
+                    os.environ["LLAMA_CPP_BINARY"] = saved_binary
+
+
+@unittest.skipIf(os.name == "nt", "shell-script stand-ins and POSIX permission bits")
+class GpuSetupTests(unittest.TestCase):
+    """The render-group re-execution, the llama.cpp Vulkan accelerator seen
+    through a stand-in `llama-server`, and the backend environment."""
+
+    def setUp(self) -> None:
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.base = Path(holder.name)
+        saved = {k: os.environ.get(k) for k in ("LLAMA_CPP_BINARY", "SURYA_INFERENCE_BACKEND", "TORCH_DEVICE",
+                                                 "LLAMA_CPP_NGL", "DOCLING_DEVICE")}
+
+        def restore() -> None:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        self.addCleanup(restore)
+
+    def _llama(self, *lines: str) -> str:
+        binary = self.base / "llama-server"
+        binary.write_text("#!/bin/sh\necho 'Available devices:'\n"
+                          + "".join(f"echo '{line}'\n" for line in lines), encoding="utf-8")
+        binary.chmod(0o755)
+        return str(binary)
+
+    def _facts(self, rw: bool, listed: bool = True) -> dict:
+        root = self.base / "root"
+        (root / "dev" / "dri").mkdir(parents=True, exist_ok=True)
+        for node in (root / "dev" / "kfd", root / "dev" / "dri" / "renderD128"):
+            node.unlink(missing_ok=True)
+            node.write_text("", encoding="utf-8")
+            node.chmod(0o600 if rw else 0o000)
+        (root / "etc").mkdir(exist_ok=True)
+        user = EXTRACTOR.GPU.current_user() if listed else "someone"
+        (root / "etc" / "group").write_text(f"render:x:64999:{user}\n", encoding="utf-8")
+        return EXTRACTOR.GPU.access(root, system="Linux", machine="x86_64", which=lambda _n: "/usr/bin/sg")
+
+    @unittest.skipIf(os.geteuid() == 0, "root opens every node")
+    def test_blocked_gpu_nodes_and_a_listed_user_reexec_the_same_argv_under_sg(self) -> None:
+        argv = ["/env/bin/python", "/w/extract_pdf.py", "--engine", "marker", "my paper.pdf"]
+        out = EXTRACTOR.gpu_reexec_argv("marker", argv=argv, environ={}, facts=self._facts(rw=False))
+        self.assertEqual(out, ["/usr/bin/sg", "render", "-c",
+                               "/env/bin/python /w/extract_pdf.py --engine marker 'my paper.pdf'"])
+        self.assertIsNone(EXTRACTOR.gpu_reexec_argv(
+            "marker", argv=argv, environ={EXTRACTOR.GPU.REEXEC_ENV: "1"}, facts=self._facts(rw=False)))
+
+    def test_no_reexec_without_gpu_nodes_with_open_nodes_or_on_the_fast_path(self) -> None:
+        empty = self.base / "empty"
+        empty.mkdir()
+        none = EXTRACTOR.GPU.access(empty, system="Linux", machine="x86_64", which=lambda _n: "/usr/bin/sg")
+        self.assertIsNone(EXTRACTOR.gpu_reexec_argv("auto", argv=["p"], environ={}, facts=none))
+        self.assertIsNone(EXTRACTOR.gpu_reexec_argv("auto", argv=["p"], environ={}, facts=self._facts(rw=True)))
+        self.assertIsNone(EXTRACTOR.gpu_reexec_argv("pdfium", argv=["p"], environ={},
+                                                    facts=self._facts(rw=False)))
+
+    def test_marker_accelerator_reads_a_vulkan_gpu_from_llama_server(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch absent")
+        if torch.cuda.is_available():
+            self.skipTest("a real GPU answers first")
+        os.environ["LLAMA_CPP_BINARY"] = self._llama(
+            "  Vulkan0: AMD Radeon 890M (RADV GFX1150) (48632 MiB, 33042 MiB free)", "  BLAS: MKL (0 MiB, 0 MiB free)")
+        self.assertEqual(EXTRACTOR.marker_accelerator(), "Vulkan (llama.cpp)")
+        os.environ["LLAMA_CPP_BINARY"] = self._llama("  BLAS: MKL (0 MiB, 0 MiB free)")
+        self.assertIsNone(EXTRACTOR.marker_accelerator())
+
+    def test_marker_on_vulkan_keeps_torch_on_the_cpu_and_surya_on_llama_cpp(self) -> None:
+        import io
+        from contextlib import redirect_stderr
+
+        for key in ("SURYA_INFERENCE_BACKEND", "TORCH_DEVICE", "LLAMA_CPP_NGL"):
+            os.environ.pop(key, None)
+        os.environ["LLAMA_CPP_BINARY"] = self._llama("  Vulkan0: AMD Radeon 890M (RADV GFX1150) (1 MiB, 1 MiB free)")
+        real, real_gpu = EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator
+        EXTRACTOR.build_converter = lambda mode, force_ocr: "marker"
+        EXTRACTOR.marker_accelerator = lambda: "Vulkan (llama.cpp)"
+        try:
+            with redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(EXTRACTOR.build_engine("marker", "fast", False, None), "marker")
+        finally:
+            EXTRACTOR.build_converter, EXTRACTOR.marker_accelerator = real, real_gpu
+        self.assertEqual(os.environ.get("TORCH_DEVICE"), "cpu")
+        self.assertEqual(os.environ.get("SURYA_INFERENCE_BACKEND"), "llamacpp")
+        self.assertEqual(os.environ.get("LLAMA_CPP_NGL"), "99")
+        self.assertIn("Vulkan (llama.cpp)", err.getvalue())
+
+    def test_gpu_env_respects_values_already_set_and_sets_docling_on_rocm(self) -> None:
+        environ = {"SURYA_INFERENCE_BACKEND": "vllm"}
+        applied = EXTRACTOR.apply_gpu_env({"backend": "hip"}, [], environ)
+        self.assertEqual(applied, {"DOCLING_DEVICE": "cuda"})
+        self.assertEqual(environ, {"SURYA_INFERENCE_BACKEND": "vllm", "DOCLING_DEVICE": "cuda"})
 
 
 if __name__ == "__main__":

@@ -472,12 +472,12 @@ def formula_backend(allow_cpu: bool = False) -> tuple[str | None, str]:
         import torch
 
         if torch.cuda.is_available():
-            return "codeformulav2", "CodeFormulaV2 on CUDA"
+            return "codeformulav2", f"CodeFormulaV2 on {'ROCm' if getattr(torch.version, 'hip', None) else 'CUDA'}"
     except ImportError:
         pass
     if allow_cpu:
         return "codeformulav2", "CodeFormulaV2 on CPU (slow: about 40 s per formula)"
-    return None, "no formula accelerator (MLX on Apple Silicon, or CUDA); math pages read on the fast path"
+    return None, "no formula accelerator (MLX on Apple Silicon, CUDA or ROCm); math pages read on the fast path"
 
 
 class HeavyEngine:

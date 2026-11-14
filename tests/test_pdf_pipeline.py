@@ -505,5 +505,24 @@ class FragmentTests(_Tmp):
         self.assertEqual(self.run_fragment(str(self.paper)).returncode, 2, "one selector is required")
 
 
+class FormulaBackendTests(unittest.TestCase):
+    """The formula accelerator names the GPU stack it found."""
+
+    def _with_torch(self, hip):
+        import types
+
+        fake = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True),
+                                     version=types.SimpleNamespace(hip=hip, cuda=None if hip else "12.4"))
+        with mock.patch.dict(sys.modules, {"torch": fake}), \
+                mock.patch("platform.system", return_value="Linux"):
+            return pdf_pipeline.formula_backend()
+
+    def test_a_rocm_build_is_named_rocm(self) -> None:
+        self.assertEqual(self._with_torch("10.1.0"), ("codeformulav2", "CodeFormulaV2 on ROCm"))
+
+    def test_a_cuda_build_is_still_named_cuda(self) -> None:
+        self.assertEqual(self._with_torch(None), ("codeformulav2", "CodeFormulaV2 on CUDA"))
+
+
 if __name__ == "__main__":
     unittest.main()

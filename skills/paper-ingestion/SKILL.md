@@ -111,12 +111,60 @@ formula, so math pages stay on the fast path there unless `formulas_on_cpu: true
 When Docling is not installed (`--no-ingestion`), `auto` reads every page on the
 fast path and says so; `engine: docling` refuses instead.
 
-**Marker runs only on a GPU.** `engine: marker` builds Marker only when
-PyTorch sees a GPU (CUDA, which a ROCm build also reports, or Apple Silicon
-MPS). On a CPU-only machine its layout, OCR and LLM passes take hours per
-paper, so the run falls back to the page-routed `auto` engine and says why;
-set `formulas_on_cpu: true` to keep display equations as LaTeX there, or
-`marker_on_cpu: true` to force Marker on the CPU anyway.
+**Marker runs only on a GPU.** `engine: marker` builds Marker only when a GPU
+is there to carry it: PyTorch's CUDA, a ROCm build (which PyTorch reports through
+the same API), Apple Silicon MPS, or a Vulkan GPU that `llama-server --list-devices`
+names (`Vulkan (llama.cpp)`). Marker's recognition model runs in `llama-server`
+on every non-NVIDIA machine, which is where its time goes, so the last covers AMD
+and Intel integrated GPUs without ROCm (for example a Radeon 890M). On a CPU-only
+machine Marker's layout, OCR and LLM passes take hours per paper, so the run falls
+back to the page-routed `auto` engine and says why; set `formulas_on_cpu: true` to
+keep display equations as LaTeX there, or `marker_on_cpu: true` to force Marker on
+the CPU anyway.
+
+### GPU
+
+`smith gpu` (or `python skills/_core/gpu/gpu_probe.py [--json]`) reports what the
+ingestion sees and the exact command for each blocker. The shared probe reads:
+
+- the **vendor** (NVIDIA, AMD, Apple Silicon or none) from each DRM card's PCI id,
+  the **AMD gfx target** from the KFD topology (`gfx_target_version` 110500 is
+  `gfx1150`), and VRAM/GTT totals;
+- whether this process can open `/dev/kfd` and `/dev/dri/renderD*`, and whether the
+  account is listed in the `render` group and holds it in this session;
+- the **Vulkan devices** of the `llama-server` Surya spawns (`LLAMA_CPP_BINARY`,
+  else the one beside the interpreter, else PATH) and the **PyTorch backend**
+  (`cuda`, `hip`, `mps` or `cpu`).
+
+What the run does with it:
+
+- **Render group.** When the GPU nodes exist but this session cannot open them and
+  the account is already listed in `render` (a session older than the
+  `usermod`), `extract_pdf.py` re-runs itself once under `sg render -c '<the same
+  command>'` (no password; `PAPERSMITH_GPU_SG_REEXEC` stops a second re-run). Not
+  listed at all: `sudo usermod -aG render,video $USER`, then log in again; the
+  fallback note names the node it could not open.
+- **Vulkan only** (torch on the CPU): `TORCH_DEVICE=cpu`,
+  `SURYA_INFERENCE_BACKEND=llamacpp`, `LLAMA_CPP_NGL=99`, so the layout model
+  stays on the CPU and every llama.cpp layer goes to the GPU.
+- **ROCm torch** (`torch.version.hip`): `SURYA_INFERENCE_BACKEND=llamacpp`
+  (Surya would read the device as NVIDIA and start vllm) and `DOCLING_DEVICE=cuda`
+  for Docling's layout and formula models, whose note then says "CodeFormulaV2 on
+  ROCm".
+- The run exports the `llama-server` it probed as `LLAMA_CPP_BINARY`, so the
+  binary probed is the binary spawned. None of these overrides a value already
+  set in the environment.
+
+**ROCm PyTorch.** On an AMD GPU whose gfx target is in the probe's
+`ROCM_SUPPORTED_TARGETS` (gfx1100, gfx1101, gfx1102, gfx1150, gfx1151, gfx1200,
+gfx1201, gfx942; the [ROCm compatibility
+matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)),
+`python scripts/setup_env.py install` installs AMD's ROCm 10.1 wheels with the
+`device-<gfx>` extra from `https://stable.repo.amd.com/rocm/whl-next/` instead of
+the CPU build. The ROCm runtime ships inside the wheels, so no system ROCm is
+needed. Leave `HSA_OVERRIDE_GFX_VERSION` unset on a supported target (`smith gpu`
+warns when it is set). `--rocm` forces the wheels for another detected target;
+`--cpu` forbids them.
 
 **Every default engine is license-unrestricted** — no copyleft and no revenue or
 user threshold: pypdfium2 (Apache-2.0 / BSD-3-Clause; PDFium BSD), Docling and
@@ -155,8 +203,9 @@ The provisioner installs both dependency kinds a `requirements.txt` alone cannot
   conda-forge's `llama.cpp`.
 
 The script detects the hardware and installs the matching PyTorch build:
-`pytorch-gpu` when an NVIDIA GPU is present, `pytorch-cpu` otherwise. Override the
-choice with `--cpu` or `--cuda`. Skip the heavy ingestion engine with `--no-ingestion`
+`pytorch-gpu` when an NVIDIA GPU is present, AMD's ROCm wheels on a supported AMD
+GPU (see **GPU** above), `pytorch-cpu` otherwise. It prints what it chose and why.
+Override the choice with `--cpu`, `--cuda` or `--rocm`. Skip the heavy ingestion engine with `--no-ingestion`
 (the pypdfium2 fast path stays, so digital PDFs still ingest),
 and tear everything down with `python scripts/setup_env.py clean` (`--full`
 also removes the bootstrapped micromamba).
