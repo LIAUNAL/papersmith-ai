@@ -76,7 +76,7 @@ One block's draft and its section contract. You re-read every time.
    - Citations (`\cite{...}`, numeric brackets) must remain byte-identical.
    - Numbers, statistics, p-values, percentages, and units must remain byte-identical.
    - Mathematical symbols and declared notation must remain byte-identical.
-   - Evidence bindings (`evidence:<id>`, `fact:<id>`) must remain intact.
+   - Evidence bindings (`evidence:<id>`, `fact:<id>`, `declaration:<id>`) must remain intact.
 
 ## How a flagged span is to be revised
 
