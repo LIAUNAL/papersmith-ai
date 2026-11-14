@@ -573,5 +573,25 @@ class GroupLayoutAndBridgeTests(unittest.TestCase):
         self.assertNotIn("</script", bundle.lower())
 
 
+
+class RendererSourceTests(unittest.TestCase):
+    """The renderer's own source compiles cleanly on current Python."""
+
+    def test_the_renderer_compiles_without_an_invalid_escape_warning(self):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", SyntaxWarning)
+            compile(RENDERER.read_text(encoding="utf-8"), str(RENDERER), "exec")
+
+    def test_the_origin_link_regex_reaches_the_page_unchanged(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("render_atlas_source", RENDERER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertIn("/^https?:\\/\\//.test(ev.origin || '')", module.PAGE)
+
+
 if __name__ == "__main__":
     unittest.main()
