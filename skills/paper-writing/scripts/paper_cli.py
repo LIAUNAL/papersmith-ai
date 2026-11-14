@@ -2818,10 +2818,18 @@ def _resolve_expected_components(paper_dir: Path, sections_dir: Path, fact_id: s
     Producer's Own Rendered Text`): when `fact_id` resolves to one or more
     corpus producers (`paper_graph.producers_by_fact`), the expected list is
     read from the producer's OWN rendered `main.tex` body — never a second,
-    separately-declared copy — through `paper_verify.item_lines`'s `\\item`
-    extraction (the exact slice `paper_coupling_evidence.gather` already
-    builds for `check_gap`; `check_contribution_list` and `paper_declarations
-    .read_fact` are both bypassed for a produced fact). The deterministic
+    separately-declared copy — in one of the two forms a contract admits
+    for a list: the `\\item` roster (`paper_verify.item_lines`, the exact
+    slice `paper_coupling_evidence.gather` already builds for `check_gap`),
+    or, when the block holds no `\\item` line at all, one `\\subsection`
+    per element (`paper_verify.subsection_titles`: printed titles, in
+    order). A roster present beside subsections IS the list: the
+    methods contract's own "one [subsection] that carries them all and
+    closes on the roster" has both, and whether a roster merely repeats
+    subsections is that contract's disqualifier, judged by
+    `contract-auditor`, never by this resolver. `check_contribution_list`
+    and `paper_declarations.read_fact` are both bypassed for a produced
+    fact. The deterministic
     first (lowest qualified id) producer is used when more than one exists
     — no live corpus consumer resolves a corroborated pair's value this way
     today (design.md: 'no live consumer resolves gap's text this way
@@ -2840,7 +2848,8 @@ def _resolve_expected_components(paper_dir: Path, sections_dir: Path, fact_id: s
     never declared (or, for a produced fact, its producer is not yet
     written). Refuses `COMPONENTS_FACT_NOT_A_LIST` (work-state) when the
     resolved value does not parse as a JSON array of strings (declared
-    route) or yields no `\\item` lines (produced route) — the resolved
+    route) or yields neither `\\item` lines nor `\\subsection` titles
+    (produced route) — the resolved
     value for a fact a `figure:` object names via `components_from` MUST be
     exactly that list, in the order the diagram must show it when
     `ordered: true`.
@@ -2864,12 +2873,16 @@ def _resolve_expected_components(paper_dir: Path, sections_dir: Path, fact_id: s
         begin, end = parsed_blocks.pairs[producer_id]
         body = main_tex_bytes[begin["end"]:end["start"]]
         items = paper_verify.item_lines(body)
-        if not items:
-            raise Refused(
-                "COMPONENTS_FACT_NOT_A_LIST",
-                f"{fact_id!r}'s producer {producer_id!r} yields no \\item lines to resolve as a list",
-            )
-        return items
+        if items:
+            return items
+        titles = paper_verify.subsection_titles(body)
+        if titles:
+            return titles
+        raise Refused(
+            "COMPONENTS_FACT_NOT_A_LIST",
+            f"{fact_id!r}'s producer {producer_id!r} yields neither \\item lines nor "
+            "\\subsection titles to resolve as a list",
+        )
 
     resolution = paper_declarations.read_fact(paper_dir, fact_id)
     if resolution is None:
