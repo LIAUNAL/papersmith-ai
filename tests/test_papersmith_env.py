@@ -64,6 +64,19 @@ class EnvCliTests(unittest.TestCase):
         self.assertIn("--cuda", cmd)
         self.assertIn("--no-ingestion", cmd)
 
+    def test_env_install_passes_rocm_through(self) -> None:
+        self.seed_script(self.tmp)
+        captured = []
+
+        def fake_run(args, cwd, check=False):
+            captured.append(args)
+            return subprocess.CompletedProcess(args=args, returncode=0)
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            self.assertEqual(main(["env", "install", "--rocm", str(self.tmp)]), SUCCESS)
+        self.assertIn("--rocm", captured[0])
+        self.assertNotIn("--cuda", captured[0])
+
     def test_env_clean_dispatches_full_flag(self) -> None:
         self.seed_script(self.tmp)
         captured = []

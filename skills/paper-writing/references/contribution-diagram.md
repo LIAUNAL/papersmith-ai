@@ -16,10 +16,12 @@ processing pipeline all fit it; section 3 says how the core changes between them
 Two layers share the figure, and only one of them is checked mechanically.
 
 - **The contribution panels are the components.** Each panel carries one
-  `% node: <label>` marker in the source, its label is the roster name exactly as the
-  section defines it, and the manifest's `components` lists them in the roster's
-  order. The Components Check, the excluded-class check and the caption check read
-  only these labels (`skills/paper-writing/scripts/paper_obligation.py`).
+  `% node: <label>` marker in the source, its label is the contribution's name exactly
+  as the section defines it — its `\item` roster line, or its `\subsection` title when
+  each contribution is its own subsection and no roster is written — and the
+  manifest's `components` lists them in that list's order. The Components Check, the
+  excluded-class check and the caption check read only these labels
+  (`skills/paper-writing/scripts/paper_obligation.py`).
 - **Everything else is context, and carries no marker.** Inputs, encoders, embedding
   spaces, heads, losses, outputs and the legend are drawn without `% node:`, so the
   checks never count them, and the figure audit never reports them as phantom
@@ -261,8 +263,10 @@ visual encoding the caption must decode. An example for a two-contribution metho
 
 1. Every contribution panel carries `% node:` with its roster name, and nothing else
    does.
-2. The manifest's `components` equal the roster, in order; the `contributions` fact
-   is declared (`declare --fact contributions --value '[...]'`).
+2. The manifest's `components` equal the contribution list, in order. `contributions`
+   is produced by `materials-and-methods.mm-proposal`, never declared: `render` reads
+   that block's `\item` roster, or its `\subsection` titles when it has no `\item` line,
+   and refuses `COMPONENTS_FACT_NOT_A_LIST` when it holds neither.
 3. Every symbol in the figure is declared in the section's prose, and every equation
    in a panel is the section's own.
 4. No dataset name, baseline, metric or measured value appears anywhere in the

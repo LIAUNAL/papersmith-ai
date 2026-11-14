@@ -83,6 +83,33 @@ if sys.platform == "darwin" and platform.machine() == "x86_64":
 # skills/paper-ingestion/scripts/extract_pdf.py -> repo root is parents[3]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # pdf_pipeline beside this script
+
+
+def _load_gpu_probe():
+    """The shared GPU probe (`skills/_core/gpu/gpu_probe.py`), or None when this
+    script runs outside a kit that carries it: every GPU step then stays off."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "_core" / "gpu" / "gpu_probe.py"
+    try:
+        spec = importlib.util.spec_from_file_location("papersmith_gpu_probe", path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        # The probe sits in the kit's skills/ tree; no __pycache__ beside it.
+        previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = previous
+        return module
+    except Exception:
+        sys.modules.pop("papersmith_gpu_probe", None)
+        return None
+
+
+GPU = _load_gpu_probe()
 CONFIG_PATH = REPO_ROOT / "papersmith.yaml"
 SETUP_SCRIPT = "./skills/paper-ingestion/setup.sh"
 
@@ -171,7 +198,7 @@ def load_config(path: Path | None = None) -> dict:
     if force_ocr is not None and not isinstance(force_ocr, bool):
         raise ConfigError(f"force_ocr must be true or false, got {force_ocr!r}")
 
-    for flag in ("cache", "formulas_on_cpu"):
+    for flag in ("cache", "formulas_on_cpu", "marker_on_cpu"):
         value = cfg.get(flag)
         if value is not None and not isinstance(value, bool):
             raise ConfigError(f"{flag} must be true or false, got {value!r}")
@@ -832,17 +859,182 @@ def _sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def llama_server_binary() -> str | None:
+    """The `llama-server` Surya would spawn: `LLAMA_CPP_BINARY`, else the one
+    installed next to this interpreter (an environment run without activating
+    it leaves its bin/ off PATH), else PATH. `build_engine` exports the choice
+    as `LLAMA_CPP_BINARY`, so the binary probed is the binary spawned."""
+    if GPU is None:
+        return shutil.which(os.environ.get("LLAMA_CPP_BINARY") or "llama-server")
+    return GPU.llama_server_binary(os.environ, sys.executable)
+
+
+def parse_vulkan_devices(listing: str) -> list[str]:
+    """The Vulkan GPUs a `llama-server --list-devices` listing names."""
+    return GPU.parse_vulkan_devices(listing) if GPU is not None else []
+
+
+def vulkan_devices() -> list[str]:
+    """The GPUs llama.cpp's Vulkan backend can open here. Surya runs its OCR
+    model through `llama-server` on every non-NVIDIA machine, so a Vulkan GPU
+    carries Marker's heaviest pass even when PyTorch itself sees no GPU (an
+    AMD or Intel integrated GPU without ROCm)."""
+    if GPU is None:
+        return []
+    return GPU.vulkan_devices(llama_server_binary())["devices"]
+
+
+def unreadable_render_nodes() -> list[str]:
+    """GPU nodes that exist but this user cannot open -- on Linux the usual
+    reason a present GPU is invisible: the account is not in `render`."""
+    if GPU is None:
+        return []
+    return [node for node, ok in GPU.device_nodes().items() if not ok]
+
+
+def marker_accelerator() -> str | None:
+    """The GPU Marker's models would run on here, or None on a CPU-only machine.
+
+    Marker's layout, OCR and LLM passes take minutes per page on a CPU (hours
+    for a paper), so it is only worth running on a GPU: CUDA, ROCm (which
+    PyTorch reports through its CUDA API), Apple Silicon, or a Vulkan GPU
+    llama.cpp can open -- Marker's recognition model runs in `llama-server`,
+    which is where its time goes."""
+    import platform
+
+    try:
+        import torch
+    except ImportError:
+        torch = None
+    if torch is not None:
+        if torch.cuda.is_available():
+            if getattr(torch.version, "hip", None):
+                return f"ROCm ({torch.cuda.get_device_name(0)})"
+            return "CUDA"
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        if platform.system() == "Darwin" and platform.machine() == "arm64" and mps is not None and mps.is_available():
+            return "MPS (Apple Silicon)"
+    if vulkan_devices():
+        return "Vulkan (llama.cpp)"
+    return None
+
+
+def apply_gpu_env(torch_info: dict | None, vulkan: list[str] | None, environ: dict | None = None) -> dict:
+    """Export what the engines need for the GPU found, never overriding a value
+    already set: ROCm sends Surya to llama.cpp (it would start vllm) and Docling
+    to `cuda`; a Vulkan-only GPU keeps torch on the CPU and offloads every
+    llama.cpp layer. Returns what it set."""
+    environ = os.environ if environ is None else environ
+    if GPU is None:
+        return {}
+    applied = GPU.backend_env(torch_info, vulkan, environ)
+    environ.update(applied)
+    return applied
+
+
+def gpu_reexec_argv(engine: str, argv: list[str] | None = None, environ: dict | None = None,
+                    facts: dict | None = None) -> list[str] | None:
+    """The `sg render -c` command that re-runs this exact invocation with the
+    GPU group, when the GPU nodes exist, this process cannot open them, and the
+    account is already listed in `render` (a session older than the `usermod`).
+    None on the fast path (`pdfium` loads no model), without GPU nodes, or in
+    the re-executed child (`PAPERSMITH_GPU_SG_REEXEC`)."""
+    if engine == "pdfium" or GPU is None:
+        return None
+    try:
+        facts = facts if facts is not None else GPU.access()
+    except Exception:
+        return None
+    if argv is None:
+        # Only the process this script started can be re-run as itself; a
+        # caller importing `main` (a test runner, another tool) never is.
+        try:
+            if not sys.argv or Path(sys.argv[0]).resolve() != Path(__file__).resolve():
+                return None
+        except OSError:
+            return None
+        argv = [sys.executable, str(Path(sys.argv[0]).resolve()), *sys.argv[1:]]
+    return GPU.reexec_argv(argv, facts, environ)
+
+
+def reexec_with_gpu_group(engine: str) -> None:
+    """Replace this process with itself under `sg render -c` when that is what
+    stands between it and the GPU (see `gpu_reexec_argv`). `sg` is tried first
+    with no terminal, so a password prompt or a refusal leaves this run going
+    on the CPU instead of hanging."""
+    import subprocess
+
+    argv = gpu_reexec_argv(engine)
+    if argv is None:
+        return
+    try:
+        probe = subprocess.run([argv[0], argv[1], "-c", "true"], stdin=subprocess.DEVNULL,
+                               capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return
+    if probe.returncode != 0:
+        return
+    print(f"NOTE this session cannot open the GPU; re-running under `{argv[0]} {argv[1]} -c` "
+          "(log in again to make the render group permanent).", file=sys.stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.environ[GPU.REEXEC_ENV] = "1"
+    try:
+        os.execvpe(argv[0], argv, os.environ)
+    except OSError as exc:
+        print(f"NOTE could not re-run under sg ({exc}); continuing without the GPU.", file=sys.stderr)
+
+
 def build_engine(engine: str, mode: str | None, force_ocr: bool, cache_root: Path | None,
-                 formulas_on_cpu: bool = False):
-    """The converter for one run: Marker's, or the page-routed engine."""
+                 formulas_on_cpu: bool = False, marker_on_cpu: bool = False):
+    """The converter for one run: Marker's, or the page-routed engine.
+
+    `engine: marker` runs Marker only where a GPU is available
+    (`marker_accelerator`). On a CPU-only machine the run falls back to the
+    page-routed `auto` engine -- the fastest CPU route, which still sends
+    display-equation pages to the formula model when `formulas_on_cpu` is set
+    -- unless `marker_on_cpu` forces Marker anyway."""
     if engine == "marker":
-        print(f"NOTE {MARKER_LICENSE_NOTE}", file=sys.stderr)
-        return build_converter(mode, force_ocr)
+        accelerator = marker_accelerator()
+        if accelerator is None and not marker_on_cpu:
+            blocked = unreadable_render_nodes()
+            hint = (f" A GPU render node exists ({', '.join(blocked)}) but this user cannot open it: run"
+                    " `sudo usermod -aG render,video $USER` and log in again (or run under `sg render -c`)."
+                    if blocked else "")
+            print("NOTE engine 'marker' needs a GPU (CUDA, ROCm, Apple Silicon, or a Vulkan GPU llama.cpp can open)"
+                  " and no GPU was found; this run uses the page-routed 'auto' engine instead"
+                  f" (formulas {'to LaTeX on the CPU' if formulas_on_cpu else 'on the fast path; set formulas_on_cpu: true for LaTeX'})."
+                  f"{hint} Set marker_on_cpu: true to force Marker on the CPU.", file=sys.stderr)
+            engine = "auto"
+        else:
+            vulkan = vulkan_devices() if accelerator == "Vulkan (llama.cpp)" else []
+            backend = ("hip" if accelerator and accelerator.startswith("ROCm") else
+                       "cuda" if accelerator == "CUDA" else "mps" if accelerator and accelerator.startswith("MPS")
+                       else "cpu")
+            applied = apply_gpu_env({"backend": backend}, vulkan)
+            binary = llama_server_binary()
+            if binary is not None and "LLAMA_CPP_BINARY" not in os.environ:
+                os.environ["LLAMA_CPP_BINARY"] = binary  # the binary probed is the binary Surya spawns
+            where = accelerator or "the CPU (marker_on_cpu)"
+            if vulkan:
+                where += f" on {vulkan[0]}"
+            print(f"NOTE engine 'marker' runs on {where}"
+                  + (f" ({', '.join(f'{k}={v}' for k, v in applied.items())})" if applied else "") + ".",
+                  file=sys.stderr)
+            print(f"NOTE {MARKER_LICENSE_NOTE}", file=sys.stderr)
+            return build_converter(mode, force_ocr)
     try:
         import pypdfium2  # noqa: F401 -- the fast path is the core and always required
     except ImportError as exc:
         raise EngineError(f"pypdfium2 is not available in this interpreter ({exc}); "
                           f"provision the environment with {SETUP_SCRIPT}") from None
+    if engine != "pdfium" and GPU is not None:
+        import importlib.util
+
+        if importlib.util.find_spec("docling") and importlib.util.find_spec("torch"):
+            applied = apply_gpu_env(GPU.torch_backend(), [])
+            if applied:
+                print(f"NOTE GPU: {', '.join(f'{k}={v}' for k, v in applied.items())}.", file=sys.stderr)
     return RoutedEngine(engine, mode, force_ocr, cache_root, formulas_on_cpu)
 
 
@@ -1033,9 +1225,14 @@ def main() -> int:
             print_unfiled(unfiled, filing_options(cfg))
         return 0
 
+    # A GPU this session cannot open while the account is already in `render`
+    # (a session older than the `usermod`): run again with the group, once.
+    reexec_with_gpu_group(engine)
+
     try:
         converter = build_engine(engine, mode, force_ocr, REPO_ROOT / CACHE_DIR if use_cache else None,
-                                 bool(cfg.get("formulas_on_cpu", False)))
+                                 bool(cfg.get("formulas_on_cpu", False)),
+                                 bool(cfg.get("marker_on_cpu", False)))
     except EngineError as exc:
         print(f"Environment error: {exc}", file=sys.stderr)
         return 2

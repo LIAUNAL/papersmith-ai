@@ -402,6 +402,12 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "EVIDENCE_ID_UNKNOWN": WORK_STATE,
     "FACT_NOT_LICENSED": WORK_STATE,
     "STRUCTURAL_CARRIES_CLAIM": WORK_STATE,
+    # `declaration:<id>` (paper_bindings.py): licensing, recorded value,
+    # verbatim presence, and no token outside the value.
+    "DECLARATION_NOT_LICENSED": WORK_STATE,
+    "DECLARATION_UNDECLARED": WORK_STATE,
+    "DECLARATION_VALUE_ABSENT": WORK_STATE,
+    "DECLARATION_CARRIES_CLAIM": WORK_STATE,
     "MODE_VIOLATION": WORK_STATE,
     # --- the contract audit: verbatim Disqualifiers, verdict reconciliation
     # (paper_audit.py; WU1) ------------------------------------------------
@@ -566,6 +572,9 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "SEPARATION_SECTION_OVERLAP": WORK_STATE,
     "SEPARATION_SECTION_ORPHANED": WORK_STATE,
     "SEPARATION_NOTATION_GAP": WORK_STATE,
+    # A `"shares": true` assignment names a section no non-sharing
+    # assignment of the same cut claims -- a share never covers a section.
+    "SEPARATION_SHARE_UNCLAIMED": WORK_STATE,
     # --- the-whole-cut-is-argued-before-any-section-is-claimed, U3/U4: round
     # persistence (`paper_declarations.record_separation_round`/`read_
     # separation_rounds`, a fourth `declarations`-region record kind) and the
@@ -1093,10 +1102,13 @@ def cmd_mark(args: argparse.Namespace) -> dict:
 #: `_read_separation_proposal`'s own closed key-set grammar (design.md,
 #: Interfaces / Contracts) -- the marker's own closed-grammar discipline,
 #: reused: `lineage`/`assignments` required, `concedes_to_round` optional,
-#: nothing else admitted.
+#: nothing else admitted. An assignment carries `block`/`fact`/`sections`
+#: and, optionally, `shares` (a boolean): `true` names sections the block is
+#: grounded against WITHOUT claiming them (see `compute_separation`).
 _SEPARATION_TOP_KEYS = frozenset({"lineage", "assignments", "concedes_to_round"})
 _SEPARATION_REQUIRED_TOP_KEYS = frozenset({"lineage", "assignments"})
 _SEPARATION_ASSIGNMENT_KEYS = frozenset({"block", "fact", "sections"})
+_SEPARATION_ASSIGNMENT_OPTIONAL_KEYS = frozenset({"shares"})
 
 
 def _read_separation_proposal(proposal_path: Path) -> dict:
@@ -1116,7 +1128,8 @@ def _read_separation_proposal(proposal_path: Path) -> dict:
     once this function returns cleanly.
 
     Returns `{"lineage": str, "assignments": [{"block", "fact",
-    "sections": tuple}, ...], "concedes_to_round": int|None, "root":
+    "sections": tuple[, "shares": True]}, ...], "concedes_to_round":
+    int|None, "root":
     paper_declarations.SourceRoot}` -- `root` is derived here, once, so no
     later stage re-derives it from the raw facts a second time.
     """
@@ -1170,11 +1183,16 @@ def _read_separation_proposal(proposal_path: Path) -> dict:
     seen_pairs = set()
     fact_ids = []
     for entry in raw_assignments:
-        if not isinstance(entry, dict) or set(entry) != _SEPARATION_ASSIGNMENT_KEYS:
+        if (
+            not isinstance(entry, dict)
+            or not _SEPARATION_ASSIGNMENT_KEYS <= set(entry)
+            or set(entry) - _SEPARATION_ASSIGNMENT_KEYS - _SEPARATION_ASSIGNMENT_OPTIONAL_KEYS
+        ):
             raise Refused(
                 "SEPARATION_REPORT_UNREADABLE",
                 f"{proposal_path}: each assignment must carry exactly "
-                f"{sorted(_SEPARATION_ASSIGNMENT_KEYS)}, got {entry!r}",
+                f"{sorted(_SEPARATION_ASSIGNMENT_KEYS)}, plus optionally "
+                f"{sorted(_SEPARATION_ASSIGNMENT_OPTIONAL_KEYS)}, got {entry!r}",
             )
         block, fact, sections = entry["block"], entry["fact"], entry["sections"]
         if not isinstance(block, str) or not block:
@@ -1201,9 +1219,20 @@ def _read_separation_proposal(proposal_path: Path) -> dict:
                 "SEPARATION_REPORT_UNREADABLE",
                 f"{proposal_path}: duplicate assignment for (block, fact) = {pair!r}",
             )
+        shares = entry.get("shares", False)
+        if not isinstance(shares, bool):
+            raise Refused(
+                "SEPARATION_REPORT_UNREADABLE",
+                f"{proposal_path}: 'shares' must be a boolean, got {shares!r}",
+            )
         seen_pairs.add(pair)
         fact_ids.append(fact)
-        assignments.append({"block": block, "fact": fact, "sections": tuple(sections)})
+        assignment = {"block": block, "fact": fact, "sections": tuple(sections)}
+        if shares:
+            # `"shares": false` is the plain claim, spelled out: it is stored
+            # and replayed exactly as an assignment without the key.
+            assignment["shares"] = True
+        assignments.append(assignment)
 
     root = _resolve_separation_root(proposal_path, fact_ids)
     return {
@@ -1302,7 +1331,12 @@ def _claims_by_block(assignments, corpus) -> tuple:
     coverage. Shared between the current cut's own scoring and the
     concession check's recompute of a PRIOR round's assignments
     (`_check_separation_concession` below), so both go through the
-    identical anchoring rule rather than two copies that could drift."""
+    identical anchoring rule rather than two copies that could drift.
+
+    A sharing assignment (`"shares": true`) is anchored the same way, so an
+    unanchored one is still reported, but it claims nothing: it is left out
+    of the map `score_cut` reads, so it clears no orphan and causes no
+    overlap or gap."""
     claims_by_block: dict = {}
     unanchored = []
     for entry in assignments:
@@ -1310,6 +1344,8 @@ def _claims_by_block(assignments, corpus) -> tuple:
         record = corpus.blocks.get(block)
         if record is None or fact not in record.requires_facts:
             unanchored.append({"block": block, "fact": fact})
+            continue
+        if entry.get("shares"):
             continue
         claims_by_block.setdefault(block, [])
         claims_by_block[block].extend(entry["sections"])
@@ -1410,10 +1446,10 @@ def compute_separation(
             f"{root.name!r} is not document-rooted; lineage {lineage!r} has no document to "
             f"measure a cut against ({(status or {}).get('reason')})",
         )
-    revision_path, counts, outline = paper_graph.resolve_section_index(
+    revision_path, _counts, outline = paper_graph.resolve_section_index(
         corpus.source_roots, root, lineage,
     )
-    claimable = paper_separation.claimable_sections(outline)
+    claimable = _named_claimable_sections(outline)
     if claimable["state"] == "unmeasured":
         raise Refused(
             "SEPARATION_SECTION_UNCLAIMABLE",
@@ -1424,17 +1460,19 @@ def compute_separation(
     for entry in assignments:
         block = entry["block"]
         for title in entry["sections"]:
-            count = counts.get(title, 0)
+            count = len(paper_graph.match_section_title(outline, title))
             if count == 0:
                 raise Refused(
                     "SECTION_NOT_IN_SOURCE",
                     f"{block}: section {title!r} is not a heading in the resolved revision "
-                    f"(lineage {lineage!r})",
+                    f"(lineage {lineage!r})"
+                    + paper_graph.section_not_in_source_detail(outline, title),
                 )
             if count > 1:
                 raise Refused(
                     "SECTION_TITLE_AMBIGUOUS",
-                    f"{block}: section {title!r} matches {count} headings (lineage {lineage!r})",
+                    f"{block}: section {title!r} matches {count} headings (lineage {lineage!r})"
+                    + paper_graph.section_title_ambiguous_detail(revision_path, outline, title),
                 )
             if title not in claimable_titles:
                 raise Refused(
@@ -1442,6 +1480,7 @@ def compute_separation(
                     f"{block}: section {title!r} is not in the claimable set "
                     f"{claimable['titles']!r}",
                 )
+    _check_shared_sections_claimed(assignments)
 
     claims_by_block, unanchored = _claims_by_block(assignments, corpus)
     result = paper_separation.score_cut(claimable["titles"], claims_by_block)
@@ -1462,6 +1501,51 @@ def compute_separation(
             "round": recorded_round["round"], "round_id": recorded_round["id"],
         }
     _raise_separation_refusal(result, recorded_round["id"])
+
+
+def _check_shared_sections_claimed(assignments) -> None:
+    """A sharing assignment (`"shares": true`) grounds its block against
+    sections ANOTHER block of the same cut expands -- an abstract compresses
+    what the set-up transposes -- so every section it names must be claimed
+    by a non-sharing assignment of this cut. Refuses
+    `SEPARATION_SHARE_UNCLAIMED` naming every shared title no claim names,
+    before anything is scored or recorded: a share never covers a section,
+    and one sharing assignment never licenses another's title."""
+    claimed = {
+        title for entry in assignments if not entry.get("shares") for title in entry["sections"]
+    }
+    unclaimed = [
+        f"{entry['block']}/{entry['fact']}: {title!r}"
+        for entry in assignments if entry.get("shares")
+        for title in entry["sections"] if title not in claimed
+    ]
+    if unclaimed:
+        raise Refused(
+            "SEPARATION_SHARE_UNCLAIMED",
+            "a sharing assignment names section(s) no non-sharing assignment of this cut "
+            f"claims: {'; '.join(unclaimed)} -- claim each in a non-sharing assignment, or "
+            "drop it from the share",
+        )
+
+
+def _named_claimable_sections(outline: dict) -> dict:
+    """`paper_separation.claimable_sections`, with every claimable heading
+    under the one name `paper_graph.match_section_title` resolves to it
+    (`paper_graph.section_name`): its title alone, or `<title>#<n>` when
+    two or more headings carry that title. Scoring is by name, so two
+    claimable headings sharing a title were one name counted twice and no
+    cut could ever claim either; under their own names each is claimed,
+    orphaned, overlapped or gapped on its own. A document repeating no
+    title yields exactly the tuple it yielded before."""
+    claimable = paper_separation.claimable_sections(outline)
+    if claimable["state"] != "measured":
+        return claimable
+    remaining = paper_separation._eliminate_root_spans(outline["headings"])
+    headings = sorted(
+        (heading for heading in remaining if heading["level"] == claimable["level"]),
+        key=lambda heading: heading["byte_start"],
+    )
+    return {**claimable, "titles": tuple(paper_graph.section_name(outline, h) for h in headings)}
 
 
 def cmd_separate(args: argparse.Namespace) -> dict:
@@ -2448,6 +2532,16 @@ def _resolve_packet_source_sections(
     return resolved_sections, {"state": "resolved", "reason": None, "unresolved": []}
 
 
+def _packet_declarations(paper_dir: Path, requires_declarations: tuple) -> dict:
+    """Each required declaration id -> its recorded value, or None while it
+    is unrecorded or the paper has no `main.tex` yet (the packet is
+    read-only and never refuses for that)."""
+    if not (paper_dir / "main.tex").is_file():
+        return {declaration_id: None for declaration_id in requires_declarations}
+    return {declaration_id: paper_declarations.read_declaration(paper_dir, declaration_id)
+            for declaration_id in requires_declarations}
+
+
 def assemble_packet(
     sections_dir: Path, guidance_dir: Path, section: str, block_id: str,
     *, corpus=None, paper_dir: Path | None = None,
@@ -2534,6 +2628,12 @@ def assemble_packet(
         "source_sections": source_sections,
         "source_sections_state": source_sections_state,
     }
+    # A block that requires declarations carries their recorded values (None
+    # while unrecorded): the redactor copies them verbatim into sentences it
+    # binds `declaration:<id>`, and `write` checks them against these values.
+    requires_declarations = paper_contract.requirement_values(block["requires_declarations"])
+    if requires_declarations and paper_dir is not None:
+        packet["declarations"] = _packet_declarations(paper_dir, requires_declarations)
     # The AI-use declaration states what the pipeline record shows; only the
     # blocks that declare AI use carry it, so every other packet is unchanged.
     if qualified_id in paper_ai_usage.AI_USAGE_BLOCKS and paper_dir is not None:
@@ -2657,6 +2757,43 @@ def _load_audit_envelope(audit_path: Path) -> dict:
     return data
 
 
+def _licensed_declarations(qualified_id: str, requires_declarations: tuple) -> tuple:
+    """The ids a `declaration:` binding in `qualified_id` may name: its own
+    `requires_declarations`, plus `ai-usage` when its packet carries the
+    `ai_usage` record (`paper_ai_usage.AI_USAGE_BLOCKS`)."""
+    licensed = tuple(requires_declarations)
+    if qualified_id in paper_ai_usage.AI_USAGE_BLOCKS:
+        licensed += (paper_bindings.AI_USAGE_DECLARATION,)
+    return licensed
+
+
+def _resolve_write_declarations(
+    paper_dir: Path, qualified_id: str, requires_declarations: tuple, draft: dict,
+) -> tuple:
+    """`(licensed_declarations, declared)` for `write`'s `BlockContract`.
+    Only the licensed ids the draft actually binds are read: a recorded
+    declaration's value through `paper_declarations.read_declaration`
+    (absent when unrecorded, so `write` refuses `DECLARATION_UNDECLARED`),
+    and the `ai_usage` record through `paper_ai_usage.build`, reduced to what
+    a sentence may carry (`paper_ai_usage.declarable`)."""
+    licensed = _licensed_declarations(qualified_id, requires_declarations)
+    named: set = set()
+    for entry in draft["bindings"]:
+        raw = entry.get("binding") if isinstance(entry, dict) else None
+        if isinstance(raw, str) and raw.startswith("declaration:"):
+            named.update(paper_bindings.declaration_ids(raw.split(":", 1)[1]))
+    declared: dict = {}
+    for declaration_id in requires_declarations:
+        if declaration_id in named:
+            value = paper_declarations.read_declaration(paper_dir, declaration_id)
+            if value is not None:
+                declared[declaration_id] = value
+    if paper_bindings.AI_USAGE_DECLARATION in licensed and paper_bindings.AI_USAGE_DECLARATION in named:
+        declared[paper_bindings.AI_USAGE_DECLARATION] = paper_ai_usage.declarable(
+            paper_ai_usage.build(paper_dir))
+    return licensed, declared
+
+
 def cmd_write(args: argparse.Namespace) -> dict:
     """`write`: reconciles an already-shuttled redactor draft and
     contract-auditor account against one block's real contract, evidence
@@ -2743,6 +2880,11 @@ def cmd_write(args: argparse.Namespace) -> dict:
     mode_obj = paper_contract.resolve_mode(header, block)
     mode = mode_obj["value"] if mode_obj is not None else None
 
+    licensed_declarations, declared = _resolve_write_declarations(
+        paper_dir, qualified_id, paper_contract.requirement_values(block["requires_declarations"]),
+        draft,
+    )
+
     evidence_set = ()
     if args.evidence:
         evidence_set = tuple(json.loads(Path(args.evidence).read_text(encoding="utf-8")))
@@ -2769,6 +2911,8 @@ def cmd_write(args: argparse.Namespace) -> dict:
         evidence_set=evidence_set,
         style_set=style_set,
         source_sections=paper_source_span.resolve_bound_sections(corpus, qualified_id),
+        licensed_declarations=licensed_declarations,
+        declared=declared,
     )
     res = paper_write.write_block(
         paper_dir, contract, draft, audit_account, grounding_account=grounding_account,
@@ -2818,10 +2962,18 @@ def _resolve_expected_components(paper_dir: Path, sections_dir: Path, fact_id: s
     Producer's Own Rendered Text`): when `fact_id` resolves to one or more
     corpus producers (`paper_graph.producers_by_fact`), the expected list is
     read from the producer's OWN rendered `main.tex` body — never a second,
-    separately-declared copy — through `paper_verify.item_lines`'s `\\item`
-    extraction (the exact slice `paper_coupling_evidence.gather` already
-    builds for `check_gap`; `check_contribution_list` and `paper_declarations
-    .read_fact` are both bypassed for a produced fact). The deterministic
+    separately-declared copy — in one of the two forms a contract admits
+    for a list: the `\\item` roster (`paper_verify.item_lines`, the exact
+    slice `paper_coupling_evidence.gather` already builds for `check_gap`),
+    or, when the block holds no `\\item` line at all, one `\\subsection`
+    per element (`paper_verify.subsection_titles`: printed titles, in
+    order). A roster present beside subsections IS the list: the
+    methods contract's own "one [subsection] that carries them all and
+    closes on the roster" has both, and whether a roster merely repeats
+    subsections is that contract's disqualifier, judged by
+    `contract-auditor`, never by this resolver. `check_contribution_list`
+    and `paper_declarations.read_fact` are both bypassed for a produced
+    fact. The deterministic
     first (lowest qualified id) producer is used when more than one exists
     — no live corpus consumer resolves a corroborated pair's value this way
     today (design.md: 'no live consumer resolves gap's text this way
@@ -2840,7 +2992,8 @@ def _resolve_expected_components(paper_dir: Path, sections_dir: Path, fact_id: s
     never declared (or, for a produced fact, its producer is not yet
     written). Refuses `COMPONENTS_FACT_NOT_A_LIST` (work-state) when the
     resolved value does not parse as a JSON array of strings (declared
-    route) or yields no `\\item` lines (produced route) — the resolved
+    route) or yields neither `\\item` lines nor `\\subsection` titles
+    (produced route) — the resolved
     value for a fact a `figure:` object names via `components_from` MUST be
     exactly that list, in the order the diagram must show it when
     `ordered: true`.
@@ -2864,12 +3017,16 @@ def _resolve_expected_components(paper_dir: Path, sections_dir: Path, fact_id: s
         begin, end = parsed_blocks.pairs[producer_id]
         body = main_tex_bytes[begin["end"]:end["start"]]
         items = paper_verify.item_lines(body)
-        if not items:
-            raise Refused(
-                "COMPONENTS_FACT_NOT_A_LIST",
-                f"{fact_id!r}'s producer {producer_id!r} yields no \\item lines to resolve as a list",
-            )
-        return items
+        if items:
+            return items
+        titles = paper_verify.subsection_titles(body)
+        if titles:
+            return titles
+        raise Refused(
+            "COMPONENTS_FACT_NOT_A_LIST",
+            f"{fact_id!r}'s producer {producer_id!r} yields neither \\item lines nor "
+            "\\subsection titles to resolve as a list",
+        )
 
     resolution = paper_declarations.read_fact(paper_dir, fact_id)
     if resolution is None:
@@ -3104,6 +3261,7 @@ def cmd_venue(args: argparse.Namespace) -> dict:
     if verb == "select":
         return paper_venue.select(
             paper_dir, args.slug, candidate=args.candidate, journal=args.journal, issn=args.issn,
+            publisher=args.publisher,
         )
     if verb == "requirements":
         return paper_venue.store_requirements(paper_dir, args.slug, _resolve_repo_path(args.file))
@@ -3684,7 +3842,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_bind.add_argument(
         "--section", action="append", default=None,
         help="a section title the named lineage's current revision must carry; repeatable for "
-             "a binding fed by more than one section (required unless --reopen)",
+             "a binding fed by more than one section (required unless --reopen). A title two "
+             "or more headings share is named <title>#<n>: the n-th heading with exactly "
+             "that title, in document order",
     )
     p_bind.add_argument(
         "--reopen", action="store_true",
@@ -3769,7 +3929,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_separate.add_argument(
         "--proposal", required=True,
         help="path to the proposal JSON file naming the whole cut; must resolve inside the "
-             "repository root",
+             "repository root. A section title two or more headings share is named "
+             "<title>#<n>: the n-th heading with exactly that title, in document order. An "
+             "assignment carrying \"shares\": true names sections it is grounded against "
+             "without claiming them (an abstract sharing the sections another block "
+             "transposes): it is left out of scoring, need not be contiguous, and every "
+             "section it names must be claimed by a non-sharing assignment of the same cut",
     )
 
     p_observe = sub.add_parser(
@@ -3977,7 +4142,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_write.add_argument("--block", required=True, help="block id to write")
     p_write.add_argument(
         "--draft", required=True,
-        help="path to the redactor's JSON envelope: {latex, bindings}; must resolve inside the repository root",
+        help="path to the redactor's JSON envelope: {latex, bindings}, each binding one of "
+             "evidence:<id>, fact:<id>, declaration:<id>[,<id>...] (an id the block's "
+             "requires_declarations lists, or ai-usage for the AI-use blocks) or structural; "
+             "must resolve inside the repository root",
     )
     p_write.add_argument(
         "--audit", required=True,
@@ -4176,6 +4344,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_venue_select.add_argument("--journal", default=None, help="the journal's name (with --issn)")
     p_venue_select.add_argument("--issn", default=None, help="the journal's ISSN (with --journal)")
+    p_venue_select.add_argument(
+        "--publisher", default=None,
+        help="the journal's publisher (with --journal/--issn), e.g. 'Elsevier'; it decides the "
+             "back-matter placement family (elsevier, mdpi, ieee, else neutral)",
+    )
 
     p_venue_requirements = _venue_verb(
         "requirements", "validate and store the agent's requirements.json; every requirement quoted and sourced",

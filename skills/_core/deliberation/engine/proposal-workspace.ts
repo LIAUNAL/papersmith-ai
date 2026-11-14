@@ -3235,12 +3235,25 @@ function countByText(items: SourceSpan[]): Map<string, number> {
  * literal. Spans are matched within one line only, so a span that crosses a line ending stays
  * unmasked and keeps failing closed. The placeholder is never `#` and never whitespace: a
  * masked span must not turn a fused line into a standalone heading (`` `a`## x `` stays fused).
+ *
+ * A backslash-escaped marker (`\# Title`, `\## Part`) is masked the same way, together with
+ * the `#` run it opens: the escape makes the first `#` literal and the line no longer opens a
+ * heading, so a Markdown reader prints it as text. This is how a first revision carries a
+ * pasted source's own headings (`neutralizeSourceHeadings`), and how an author writes a line
+ * that starts with `#` on purpose.
  */
 function maskInlineCodeSpans(line: string): string {
 	let masked = "";
 	let index = 0;
 	while (index < line.length) {
 		const character = line[index];
+		if (character === "\\" && line[index + 1] === "#") {
+			let runEnd = index + 1;
+			while (runEnd < line.length && line[runEnd] === "#") runEnd += 1;
+			masked += `\\${"x".repeat(runEnd - index - 1)}`;
+			index = runEnd;
+			continue;
+		}
 		if (character === "\\" && index + 1 < line.length) {
 			masked += line.slice(index, index + 2);
 			index += 2;
@@ -5561,7 +5574,7 @@ export function createProposalWorkspaceTool(
 	};
 }
 
-import { adoptInitialRevision, ChatDeliberationService, createFilesystemInitialRevisionPublicationPort, initialRevisionLockState, DraftMaterializationService, InitialRevisionCreationService, LifecycleV1PublicRouter, ProposalDeliberationOrchestrator, ProposalWorkspaceAdapter, defaultPiSessionDraftLifecycleAdapter, getRuntimeMetrics, getSharedPiSessionDraftRegistry, loadDocumentState, MAX_CHAT_DOCUMENT_CONTEXT_BYTES, MAX_CHAT_GUIDE_CONTEXT_BYTES, recordLifecycleMetric, recordRouteMetric, resolveIntent, resolveLatestManagedRevision, runConsistencyAudit, runProposalDeliberationSelfAudit, type ChatDocumentContext, type ChatGuideFragment, type DraftMaterializationPolicy, type EditAction, type DraftMaterializationRequest, type PiSessionDraftLifecycleAdapter, type PiSessionDraftRegistry, type ReviewerAdapter, type SemanticEditPlanner, type TutorAdapter } from './exports.js';
+import { adoptInitialRevision, ChatDeliberationService, createFilesystemInitialRevisionPublicationPort, initialRevisionLockState, DraftMaterializationService, InitialRevisionCreationService, LifecycleV1PublicRouter, ProposalDeliberationOrchestrator, ProposalWorkspaceAdapter, defaultPiSessionDraftLifecycleAdapter, getRuntimeMetrics, getSharedPiSessionDraftRegistry, loadDocumentState, MAX_CHAT_DOCUMENT_CONTEXT_BYTES, MAX_CHAT_GUIDE_CONTEXT_BYTES, neutralizeSourceHeadings, recordLifecycleMetric, recordRouteMetric, resolveIntent, resolveLatestManagedRevision, runConsistencyAudit, runProposalDeliberationSelfAudit, type ChatDocumentContext, type ChatGuideFragment, type DraftMaterializationPolicy, type EditAction, type DraftMaterializationRequest, type PiSessionDraftLifecycleAdapter, type PiSessionDraftRegistry, type ReviewerAdapter, type SemanticEditPlanner, type TutorAdapter } from './exports.js';
 import { createSuccessorAcceptanceRegistry, type SuccessorAcceptanceRegistry } from './successor-acceptance-registry.js';
 
 type GlobalRouteStage = 'LIFECYCLE' | 'DIRECT_DOCUMENT' | 'CHAT_DELIBERATION' | 'DRAFT_MATERIALIZATION' | 'MAINTENANCE' | 'CREATE_INITIAL_REVISION' | 'EXISTING_FALLBACK';
@@ -5678,7 +5691,7 @@ export const MAX_SOURCE_WINDOW_BYTES = MAX_WRITE_BYTES;
 export type SourceWindowReport = {
  limitBytes: number;
  loadedBytes: number;
- sources: { path: string; bytes: number; loadedBytes: number; status: 'loaded' | 'truncated' | 'not-loaded'; reservedMarkersRemoved?: number }[];
+ sources: { path: string; bytes: number; loadedBytes: number; status: 'loaded' | 'truncated' | 'not-loaded'; reservedMarkersRemoved?: number; headingsNeutralized?: number }[];
 };
 
 /**
@@ -5710,7 +5723,11 @@ async function loadSourceWindow(projectRoot: string, limit: number): Promise<{ f
    const raw = buffer.subarray(0, limit - bytes).toString("utf8");
    const loaded = Buffer.byteLength(raw);
    const { text, removed } = neutralizeReservedMarkers(raw);
-   report.sources.push({ path: file.relative, bytes: buffer.length, loadedBytes: Math.min(loaded, buffer.length), status: loaded >= buffer.length ? 'loaded' : 'truncated', ...(removed ? { reservedMarkersRemoved: removed } : {}) });
+   // Counted here, applied by the renderer: `renderFromIdea` escapes every fragment's own
+   // headings as it pastes it, so the report says how many lines of this source v1 carries
+   // as escaped text rather than as headings. The fragment itself is left as read.
+   const { neutralized } = neutralizeSourceHeadings(text.trim());
+   report.sources.push({ path: file.relative, bytes: buffer.length, loadedBytes: Math.min(loaded, buffer.length), status: loaded >= buffer.length ? 'loaded' : 'truncated', ...(removed ? { reservedMarkersRemoved: removed } : {}), ...(neutralized ? { headingsNeutralized: neutralized } : {}) });
    if (!raw) continue;
    bytes += loaded;
    fragments.push({ path: file.relative, content: text });

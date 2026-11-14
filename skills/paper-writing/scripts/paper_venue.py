@@ -212,7 +212,7 @@ def _issn_list(value) -> list:
 
 def select(
     paper_dir: Path, slug: str, *, candidate: str | None = None, journal: str | None = None,
-    issn: str | None = None, clock=_clock,
+    issn: str | None = None, publisher: str | None = None, clock=_clock,
 ) -> dict:
     validate_slug(slug)
     _require_paper_dir(paper_dir)
@@ -221,11 +221,13 @@ def select(
         raise Refused("VENUE_EXISTS", f"venue {slug!r} is already selected")
 
     manual = journal is not None or issn is not None
-    if candidate is not None and manual:
+    if candidate is not None and (manual or publisher is not None):
         raise Refused(
             "SELECT_MODE_CONFLICT",
-            "--candidate and --journal/--issn were given together; choose one",
+            "--candidate and --journal/--issn/--publisher were given together; choose one",
         )
+    if publisher is not None and not publisher.strip():
+        raise Refused("SELECT_MODE_REQUIRED", "--publisher must not be empty")
     if candidate is None and not (journal is not None and issn is not None):
         raise Refused(
             "SELECT_MODE_REQUIRED",
@@ -275,7 +277,7 @@ def select(
             raise Refused("SELECT_MODE_REQUIRED", "--journal must not be empty")
         record_journal = {
             "name": name, "issn": [_normalize_issn(issn)], "issn_l": None,
-            "publisher": None, "homepage_url": None,
+            "publisher": publisher.strip() if publisher is not None else None, "homepage_url": None,
         }
         extra = {
             "quartile": None, "quartile_source": None, "review_time": None,
