@@ -25,6 +25,7 @@ SECTIONS = REPO / "sections"
 sys.path.insert(0, str(SCRIPTS))
 import paper_ai_usage  # noqa: E402
 import paper_cli  # noqa: E402
+import paper_declarations  # noqa: E402
 import paper_venue  # noqa: E402
 
 
@@ -248,9 +249,42 @@ class PacketTests(_Workspace):
 
     def test_every_other_packet_keeps_its_previous_shape(self) -> None:
         self.manuscript()
-        packet = self._packet("back-matter", "bm-funding")
+        packet = self._packet("back-matter", "bm-conflicts-of-interest")
         self.assertEqual(set(packet), {"block", "section", "contract", "references",
                                        "source_sections", "source_sections_state"})
+
+    def test_a_block_requiring_declarations_carries_their_recorded_values(self) -> None:
+        """`bm-funding` binds its sentences `declaration:grant-title` and
+        `declaration:grant-code`; the packet hands the redactor the values it
+        must copy, None while one is unrecorded."""
+        self.manuscript()
+        packet = self._packet("back-matter", "bm-funding")
+        self.assertEqual(set(packet), {"block", "section", "contract", "references",
+                                       "source_sections", "source_sections_state",
+                                       "declarations"})
+        self.assertEqual(packet["declarations"], {"grant-title": None, "grant-code": None})
+
+        paper_declarations.set_declaration(self.paper, "grant-code", "Hermes 62836")
+        packet = self._packet("back-matter", "bm-funding")
+        self.assertEqual(packet["declarations"], {"grant-title": None, "grant-code": "Hermes 62836"})
+
+
+class DeclarableTests(_Workspace):
+    def test_the_record_yields_the_framework_tools_and_counts_a_declaration_may_carry(self) -> None:
+        self.manuscript()
+        (self.root / ".papersmith").mkdir()
+        (self.root / ".papersmith" / "version").write_text("0.76.1\n", encoding="utf-8")
+        self.chat(_line("user", "/plausibility idea", "2026-10-01T10:00:00Z"),
+                  _line("assistant", [{"type": "text", "text": "Done."}], "2026-10-01T10:01:00Z"))
+        record = paper_ai_usage.build(self.paper, sessions=self.sessions())
+        self.assertEqual(record["tool_names"], ["Claude Code"])
+
+        components, extra = paper_ai_usage.declarable(record)
+        for expected in ("papersmith", paper_ai_usage.FRAMEWORK_URL, "0.76.1", "claude-code",
+                         "Claude Code", "Plausibility", "redactor", "conclusions"):
+            self.assertIn(expected, components)
+        self.assertIn("1", extra)
+        self.assertNotIn("1", components)
 
 
 if __name__ == "__main__":

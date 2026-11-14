@@ -53,6 +53,7 @@ Public surface:
         its own current revision/paper, and the section titles read from it --
         what `write`'s own SECTION_BINDING_ABSENT refusal shows an operator)
     read_fact(paper_dir, id) -> str | None  (read-only; None when unresolved)
+    read_declaration(paper_dir, id) -> str | None  (read-only; None when unrecorded)
     read_declined(paper_dir) -> dict[str, dict]  (read-only;
         {fact_id: {"reason", "condition", "holds", "detail"}}, condition
         re-evaluated fresh from disk on every call)
@@ -465,6 +466,25 @@ def read_fact(paper_dir: Path, fact_id: str) -> str | None:
     if entry is None or not entry.get("fixed") or entry.get("declined"):
         return None
     return entry["resolution"]
+
+
+def read_declaration(paper_dir: Path, declaration: str) -> str | None:
+    """Read-only: the currently FIXED value recorded for the declaration id `declaration`,
+    or `None` when it was never declared, or was reopened and not yet
+    redeclared. The declaration counterpart of `read_fact`, through the same
+    private readers. Read by `write` to judge a `declaration:`-bound
+    sentence against the value it carries, and by `packet` to hand that
+    value to the redactor. Raises `UNKNOWN_DECLARATION` for an id outside
+    the closed vocabulary and `DECLARATIONS_HAND_EDITED` like every other
+    reader of this region."""
+    paper_vocabulary.validate_declaration(declaration)
+    _tex_path, _pre, record = _read_declarations(paper_dir)
+    _verify_not_hand_edited(record)
+    body = _body_or_default(record)
+    entry = _find_record(body, "declaration", declaration)
+    if entry is None or not entry.get("fixed"):
+        return None
+    return entry["value"]
 
 
 def read_declined(paper_dir: Path) -> dict:
