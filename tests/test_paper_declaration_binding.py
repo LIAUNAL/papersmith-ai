@@ -280,3 +280,45 @@ class PriorBindingKindsTests(_Paper):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WriteRecordsContractProvenanceTests(_Paper):
+    """`write` records the contract digest it judged the block against, so
+    `verify`'s `contract-currency` reads a block written through `write` as
+    current instead of comparing it with an older `substitute` record."""
+
+    SENTENCE = "This work was funded under grant Hermes 62836."
+
+    def _record(self, block_id: str):
+        import paper_provenance  # noqa: PLC0415
+        record = paper_provenance.read_provenance((self.paper / "main.tex").read_bytes())
+        if record is None:
+            return None
+        return next((r for r in record["body"]["records"] if r["block"] == block_id), None)
+
+    def test_a_written_block_carries_the_current_contract_digest(self) -> None:
+        import hashlib  # noqa: PLC0415
+        import paper_provenance  # noqa: PLC0415
+        contract = self.root / "sections" / "10-back-matter.md"
+        self.assertWritten(self.write("bm-funding", [(self.SENTENCE, "declaration:grant-code")]),
+                           "bm-funding", self.SENTENCE)
+        entry = self._record("back-matter.bm-funding")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["contract_sha256"], hashlib.sha256(contract.read_bytes()).hexdigest())
+        self.assertFalse(paper_provenance.drift(
+            (self.paper / "main.tex").read_bytes(), "back-matter.bm-funding", contract))
+
+        contract.write_bytes(contract.read_bytes() + b"\n")
+        self.assertTrue(paper_provenance.drift(
+            (self.paper / "main.tex").read_bytes(), "back-matter.bm-funding", contract))
+        self.assertWritten(self.write("bm-funding", [(self.SENTENCE, "declaration:grant-code")]),
+                           "bm-funding", self.SENTENCE)
+        self.assertFalse(paper_provenance.drift(
+            (self.paper / "main.tex").read_bytes(), "back-matter.bm-funding", contract))
+
+    def test_a_refused_write_records_no_provenance(self) -> None:
+        code, payload, before, after = self.write(
+            "bm-funding", [(self.SENTENCE, "fact:grant-code")])
+        self.assertEqual((code, payload["code"]), (2, "FACT_NOT_LICENSED"))
+        self.assertEqual(before, after)
+        self.assertIsNone(self._record("back-matter.bm-funding"))

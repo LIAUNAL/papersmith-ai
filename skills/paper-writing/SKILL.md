@@ -507,7 +507,10 @@ a decline never masks a real gap.
 byte of what gets written to the block, only records — in the `provenance`
 region — the contract file's sha256 digest as read at that exact moment and
 the declarations region's current generation. A block substituted without
-`--contract` is reported `unprovenanced`, never assumed current.
+`--contract` is reported `unprovenanced`, never assumed current. `write`
+records the same provenance on every successful write, for the contract
+file it judged the block against, so a block rewritten after its contract
+changed reads `current` again; a refused write records nothing.
 
 ```bash
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py substitute \
@@ -2118,7 +2121,7 @@ themselves.
 | A check reports `unmeasured`, reason `BLOCK_NOT_DECLARED` | Only the block(s) that check depends on have no entry in the record; every other check still ran |
 | A check reports `unmeasured`, reason `SECTION_CONTRACTS_UNREADABLE` | The `sections/` corpus itself could not be read — `contract`/`order` first, then re-run `verify` |
 | Coupling `gap` reports `unmeasured` | This is unconditional, not a defect — read the published closings and front lists yourself; `verify` never closes this one |
-| `contract-currency` reports `unmeasured`, reason `CONTRACT_RECORD_ABSENT` | No block was ever written with `--contract`; every other check still reports |
+| `contract-currency` reports `unmeasured`, reason `CONTRACT_RECORD_ABSENT` | No block was ever written through `write` or `substitute --contract`; every other check still reports |
 
 ## The lifecycle: `reuse` and `exhaustion`
 

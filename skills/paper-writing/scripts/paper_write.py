@@ -370,7 +370,15 @@ def write_block(
         source_grounding = paper_grounding.source_grounding_report(subjects, reconciled)
 
     body = own_paragraph_body(contract.block_id, draft["latex"])
-    result = paper_block.substitute(paper_dir, contract.block_id, new_body=body.encode("utf-8"))
+    # Record the contract this block was judged against, the same provenance
+    # `substitute --contract` records, so `verify`'s `contract-currency` reads
+    # a block written here as current rather than against an older record.
+    contract_path = Path(contract.contract_source) if contract.contract_source else None
+    if contract_path is not None and not contract_path.is_file():
+        contract_path = None
+    result = paper_block.substitute(
+        paper_dir, contract.block_id, new_body=body.encode("utf-8"), contract=contract_path,
+    )
 
     # `the-block-asserts-only-what-its-section-carries` skill's own
     # falsifier ("over ten or more recorded real `write` runs...") needs a

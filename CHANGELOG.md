@@ -49,6 +49,11 @@ number is `0`, breaking changes can still arrive without a major bump.
   `--publisher <name>`. Before, a manual selection always recorded no
   publisher, so an Elsevier journal chosen by hand read as the `neutral`
   back-matter family (funding as its own block, "Declaration of AI use").
+- `write` records the contract digest it judged a block against in the
+  `provenance` region, as `substitute --contract` does. Before, a block
+  written through `write` kept whatever older record `substitute` had left,
+  so `verify` reported it `contract-currency` stale after any later contract
+  edit even when it had just been rewritten.
 
 ## 0.76.1
 
