@@ -1197,6 +1197,27 @@ bare string, an unknown top-level key, a duplicate `(block, fact)` pair
 across assignments, or assignments resolving through more than one source
 root all refuse `SEPARATION_REPORT_UNREADABLE` before anything is scored.
 
+**A title two or more headings share is named `<title>#<n>`.** A section
+title names every heading that carries exactly that title; one heading is a
+resolved section, two or more refuse `SECTION_TITLE_AMBIGUOUS`. For such a
+repeated title, write `<title>#<n>` (no space before the `#`): the n-th
+heading, in document order, whose title is exactly `<title>` —
+`"Field Survey of Widget Alignment#2"`. The refusal names this syntax and
+every occurrence with its line and level, e.g. `'Field Survey of Widget
+Alignment#2' (line 13, level 1)`. The same spelling is used everywhere a
+title goes: a cut's `sections`, `bind --section`, the recorded binding, and
+the `write` gate and `packet` that resolve it. It is the only new spelling:
+a title one heading carries keeps its one name (`<title>#1` for it refuses
+`SECTION_NOT_IN_SOURCE`), so every title that resolved before resolves to
+the same heading, and an ordinal past the last occurrence refuses
+`SECTION_NOT_IN_SOURCE` naming how many there are. Scoring names each
+claimable heading the same way, so two claimable headings sharing a title
+are claimed, orphaned or overlapped each on its own. A managed revision
+rendered before the deliberation engine escaped its pasted sources'
+headings repeats the document title in every pasted copy; this is how such
+a document is cut and bound without a new revision. The deliberation
+engine's `RESOLVE_TARGET` reads the same form, counted the same way.
+
 **Scoring, in one paragraph.** `separate` derives the document's own
 claimable sections (every heading at the shallowest remaining level, once
 any heading that wraps every other heading is eliminated — no heading-level
@@ -1265,6 +1286,7 @@ either command's own `--help`.
 | `write` refuses `DRAFT_PLACEHOLDER_TEXT` | The draft still carries `por definir`, `TODO`, `TBD`, `FIXME` or `\todo` — write the content, or leave the block unwritten. No attempt is spent |
 | `write` refuses `SECTION_BINDING_ABSENT` | Run `separate --proposal <path>` naming a whole cut for the missing claim's lineage, then the exact `bind` invocation the settled cut licenses |
 | `separate` refuses `SEPARATION_SECTION_OVERLAP` / `SEPARATION_SECTION_ORPHANED` / `SEPARATION_NOTATION_GAP` | One code by fixed precedence overlap → orphan → gap; the detail names every instance of every class present — fix the cut and resubmit the same proposal file |
+| `separate`, `bind` or `write` refuses `SECTION_TITLE_AMBIGUOUS` | The title is carried by two or more headings — name one as `<title>#<n>`, picking it from the occurrences and lines the detail lists |
 | `separate` refuses `SEPARATION_SECTION_UNCLAIMABLE` | A named title resolves to a real heading outside the claimable set (the document's own title, or a subsection), or the document's claimable set could not be measured at all — `--file`/`contract` the section, or re-check the title against the document's own headings |
 | `separate` refuses `SEPARATION_ROUND_ABSENT` | `concedes_to_round` names a round with no record for this exact `(root, lineage, revision)` — check the round number and that the document revision has not moved |
 | `separate` refuses `SEPARATION_CONCESSION_REGRESSED` | This cut recomputes worse than the round it concedes to; both totals are recomputed from disk, never trusted from either round's stored record — argue a cut that is at least as good |

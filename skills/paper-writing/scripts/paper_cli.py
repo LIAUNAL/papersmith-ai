@@ -1410,10 +1410,10 @@ def compute_separation(
             f"{root.name!r} is not document-rooted; lineage {lineage!r} has no document to "
             f"measure a cut against ({(status or {}).get('reason')})",
         )
-    revision_path, counts, outline = paper_graph.resolve_section_index(
+    revision_path, _counts, outline = paper_graph.resolve_section_index(
         corpus.source_roots, root, lineage,
     )
-    claimable = paper_separation.claimable_sections(outline)
+    claimable = _named_claimable_sections(outline)
     if claimable["state"] == "unmeasured":
         raise Refused(
             "SEPARATION_SECTION_UNCLAIMABLE",
@@ -1424,17 +1424,19 @@ def compute_separation(
     for entry in assignments:
         block = entry["block"]
         for title in entry["sections"]:
-            count = counts.get(title, 0)
+            count = len(paper_graph.match_section_title(outline, title))
             if count == 0:
                 raise Refused(
                     "SECTION_NOT_IN_SOURCE",
                     f"{block}: section {title!r} is not a heading in the resolved revision "
-                    f"(lineage {lineage!r})",
+                    f"(lineage {lineage!r})"
+                    + paper_graph.section_not_in_source_detail(outline, title),
                 )
             if count > 1:
                 raise Refused(
                     "SECTION_TITLE_AMBIGUOUS",
-                    f"{block}: section {title!r} matches {count} headings (lineage {lineage!r})",
+                    f"{block}: section {title!r} matches {count} headings (lineage {lineage!r})"
+                    + paper_graph.section_title_ambiguous_detail(revision_path, outline, title),
                 )
             if title not in claimable_titles:
                 raise Refused(
@@ -1462,6 +1464,26 @@ def compute_separation(
             "round": recorded_round["round"], "round_id": recorded_round["id"],
         }
     _raise_separation_refusal(result, recorded_round["id"])
+
+
+def _named_claimable_sections(outline: dict) -> dict:
+    """`paper_separation.claimable_sections`, with every claimable heading
+    under the one name `paper_graph.match_section_title` resolves to it
+    (`paper_graph.section_name`): its title alone, or `<title>#<n>` when
+    two or more headings carry that title. Scoring is by name, so two
+    claimable headings sharing a title were one name counted twice and no
+    cut could ever claim either; under their own names each is claimed,
+    orphaned, overlapped or gapped on its own. A document repeating no
+    title yields exactly the tuple it yielded before."""
+    claimable = paper_separation.claimable_sections(outline)
+    if claimable["state"] != "measured":
+        return claimable
+    remaining = paper_separation._eliminate_root_spans(outline["headings"])
+    headings = sorted(
+        (heading for heading in remaining if heading["level"] == claimable["level"]),
+        key=lambda heading: heading["byte_start"],
+    )
+    return {**claimable, "titles": tuple(paper_graph.section_name(outline, h) for h in headings)}
 
 
 def cmd_separate(args: argparse.Namespace) -> dict:
@@ -3684,7 +3706,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_bind.add_argument(
         "--section", action="append", default=None,
         help="a section title the named lineage's current revision must carry; repeatable for "
-             "a binding fed by more than one section (required unless --reopen)",
+             "a binding fed by more than one section (required unless --reopen). A title two "
+             "or more headings share is named <title>#<n>: the n-th heading with exactly "
+             "that title, in document order",
     )
     p_bind.add_argument(
         "--reopen", action="store_true",
@@ -3769,7 +3793,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_separate.add_argument(
         "--proposal", required=True,
         help="path to the proposal JSON file naming the whole cut; must resolve inside the "
-             "repository root",
+             "repository root. A section title two or more headings share is named "
+             "<title>#<n>: the n-th heading with exactly that title, in document order",
     )
 
     p_observe = sub.add_parser(

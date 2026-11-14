@@ -44,6 +44,8 @@
 //   -> { "status": "resolved", "operation": "RESOLVE_TARGET", "entryId": "...", "blocked": false, "question": null }
 //   A blocked result also carries "candidates": [{ "entryId", "headingLevel", "headingPath", "score" }, ...].
 //   A query opening with level marks ("## Data") considers only headings of that level.
+//   "<title>#<n>" names the n-th heading whose title is exactly <title>, in document order,
+//   when two or more headings share that title; any other query reads as before.
 //
 //   { "operation": "RESOLVE_TARGET", "sourceFilename": "<file>.md", "queries": [{ "query": "..." }, ...] }
 //   -> { "status": "resolved", "operation": "RESOLVE_TARGET", "results": [{ "query": "...", "entryId": "...", "blocked": false, "question": null }, ...] }

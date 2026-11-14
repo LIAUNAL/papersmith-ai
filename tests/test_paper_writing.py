@@ -13253,6 +13253,189 @@ class SeparationResolutionReuseTests(_SeparationCorpusMixin, unittest.TestCase):
         self.assertIn("2. Alignment estimators", ctx.exception.detail)
 
 
+class SeparationRepeatedTitleTests(_SeparationCorpusMixin, unittest.TestCase):
+    """A source document may carry one heading title more than once -- a
+    managed revision rendered before the deliberation engine escaped its
+    pasted sources' own headings repeats the document title in every pasted
+    copy. No title can name one of those headings, so `separate` and `bind`
+    read `<title>#<n>`: the n-th heading, in document order, whose title is
+    exactly `<title>`, for a title two or more headings share. Every other
+    title resolves exactly as before."""
+
+    _TITLE = "Field Survey of Widget Alignment"
+    _REPEATED_DOC = (
+        "# Field Survey of Widget Alignment\n\n"
+        "## 1. Background on widget metrics\n\nBody.\n\n"
+        "# Dataset Specification\n\n"
+        "## 1. Overview\n\nBody.\n\n"
+        "# Field Survey of Widget Alignment\n\n"
+        "## 2. Alignment estimators\n\nBody.\n"
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.proposals / "field-survey-r07.md").write_text(self._REPEATED_DOC, encoding="utf-8")
+
+    def _cut(self, first: str, second: str, third: str) -> dict:
+        return {
+            "lineage": "field-survey",
+            "assignments": [
+                {"block": "overview.block-a", "fact": "formulation", "sections": [first]},
+                {"block": "methods.block-b", "fact": "formulation", "sections": [second]},
+                {"block": "methods.block-c", "fact": "formulation", "sections": [third]},
+            ],
+        }
+
+    def test_a_bare_repeated_title_names_the_syntax_and_every_occurrence_with_its_line(self) -> None:
+        with self.assertRaises(Refused) as ctx:
+            self._compute(self._cut(self._TITLE, "Dataset Specification", self._TITLE))
+
+        self.assertEqual(ctx.exception.code, "SECTION_TITLE_AMBIGUOUS")
+        detail = ctx.exception.detail
+        self.assertIn("matches 2 headings", detail)
+        self.assertIn("<title>#<n>", detail)
+        self.assertIn(f"'{self._TITLE}#1' (line 1, level 1)", detail)
+        self.assertIn(f"'{self._TITLE}#2' (line 13, level 1)", detail)
+        self.assertEqual(self._read_rounds(), (), "a refused title records no round")
+
+    def test_title_hash_n_names_one_occurrence_and_the_cut_settles(self) -> None:
+        result = self._compute(
+            self._cut(f"{self._TITLE}#1", "Dataset Specification", f"{self._TITLE}#2"),
+        )
+
+        self.assertEqual(result["total"], 0)
+        self.assertEqual(result["round"], 1)
+        self.assertIn(
+            "bind --block methods.block-c --fact formulation --lineage field-survey "
+            f"--section '{self._TITLE}#2'",
+            result["bind_invocations"],
+        )
+        rounds = self._read_rounds()
+        self.assertEqual(len(rounds), 1)
+        self.assertEqual(rounds[0]["score"], 0)
+        self.assertEqual(rounds[0]["assignments"][2]["sections"], [f"{self._TITLE}#2"])
+
+    def test_an_ordinal_past_the_last_occurrence_is_not_in_source(self) -> None:
+        with self.assertRaises(Refused) as ctx:
+            self._compute(self._cut(f"{self._TITLE}#1", "Dataset Specification", f"{self._TITLE}#3"))
+
+        self.assertEqual(ctx.exception.code, "SECTION_NOT_IN_SOURCE")
+        self.assertIn(f"{self._TITLE}#3", ctx.exception.detail)
+        self.assertIn("only 2 headings", ctx.exception.detail)
+
+    def test_an_unrepeated_title_keeps_its_one_name(self) -> None:
+        """Prior behaviour, on a document that repeats no title: every title
+        is named by itself alone, exactly as before, and `#1` is not a
+        second spelling of it."""
+        (self.proposals / "field-survey-r07.md").write_text(self._CLAIMABLE_DOC, encoding="utf-8")
+        self.assertEqual(self._compute(self._BRANCH_A)["total"], 0)
+
+        with self.assertRaises(Refused) as ctx:
+            self._compute({
+                "lineage": "field-survey",
+                "assignments": [{"block": "overview.block-a", "fact": "formulation",
+                                 "sections": ["1. Background on widget metrics#1"]}],
+            })
+
+        self.assertEqual(ctx.exception.code, "SECTION_NOT_IN_SOURCE")
+        self.assertIn("1. Background on widget metrics#1", ctx.exception.detail)
+
+
+class RepeatedTitleBindingCliTests(unittest.TestCase):
+    """End to end through the real CLI: `separate` then `bind` with
+    `<title>#<n>`, then the write gate's own corpus assembly and the bound
+    section's bytes. The CLI only accepts paths inside the repository, so
+    the fixture lives under the forge's gitignored `.scratch/` and is
+    removed after the test."""
+
+    _TITLE = SeparationRepeatedTitleTests._TITLE
+
+    def setUp(self) -> None:
+        self.base = (
+            FORGE_ROOT / ".scratch"
+            / f".paper-writing-repeated-title-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        )
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.base.mkdir(parents=True)
+        self.sections_dir = self.base / "sections"
+        self.sections_dir.mkdir()
+        self.paper_dir = self.base / "paper"
+        paper_scaffold.scaffold(self.paper_dir)
+        mixin = _SeparationCorpusMixin()
+        mixin.sections_dir = self.sections_dir
+        mixin._write_block_section("01-overview.md", "overview", [("block-a", "formulation")])
+        mixin._write_block_section(
+            "02-methods.md", "methods", [("block-b", "formulation"), ("block-c", "formulation")],
+        )
+        proposals = self.base / "proposals"
+        proposals.mkdir()
+        (proposals / ".paper-writing.json").write_text(
+            json.dumps({"revisions": {"revision_prefix": "r", "ordinal_digits": 2}}), encoding="utf-8",
+        )
+        self.revision = proposals / "field-survey-r07.md"
+        self.revision.write_text(SeparationRepeatedTitleTests._REPEATED_DOC, encoding="utf-8")
+
+    def _cli(self, *argv: str) -> tuple:
+        proc = subprocess.run(
+            [sys.executable, str(SKILL_SCRIPTS / "paper_cli.py"), *argv,
+             "--paper", str(self.paper_dir), "--sections", str(self.sections_dir)],
+            capture_output=True, text=True, timeout=60, cwd=str(FORGE_ROOT),
+        )
+        return proc.returncode, json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def test_separate_then_bind_by_ordinal_feeds_the_write_gate_that_occurrence(self) -> None:
+        proposal = self.base / "proposal.json"
+        proposal.write_text(json.dumps({
+            "lineage": "field-survey",
+            "assignments": [
+                {"block": "overview.block-a", "fact": "formulation", "sections": [f"{self._TITLE}#1"]},
+                {"block": "methods.block-b", "fact": "formulation", "sections": ["Dataset Specification"]},
+                {"block": "methods.block-c", "fact": "formulation", "sections": [f"{self._TITLE}#2"]},
+            ],
+        }), encoding="utf-8")
+
+        code, separated = self._cli("separate", "--proposal", str(proposal))
+        self.assertEqual(code, 0, separated)
+        self.assertEqual((separated["status"], separated["total"]), ("ok", 0))
+
+        code, bound = self._cli(
+            "bind", "--block", "methods.block-c", "--fact", "formulation",
+            "--lineage", "field-survey", "--section", f"{self._TITLE}#2",
+        )
+        self.assertEqual(code, 0, bound)
+        self.assertEqual(bound["status"], "ok")
+        self.assertEqual(bound["separation"], "licensed(round=1)")
+
+        # The write gate's own assembly resolves the binding instead of refusing it.
+        corpus = paper_graph.assemble_corpus(self.sections_dir, paper_dir=self.paper_dir)
+        self.assertIn(("formulation", "field-survey", f"{self._TITLE}#2"),
+                      corpus.blocks["methods.block-c"].source_bindings)
+        (section,) = paper_source_span.resolve_bound_sections(corpus, "methods.block-c")
+        body = self.revision.read_bytes()
+        second = body.index(f"# {self._TITLE}\n\n## 2.".encode("utf-8"))
+        self.assertEqual(
+            (section["title"], section["byte_start"], section["byte_end"]),
+            (f"{self._TITLE}#2", second, len(body)),
+        )
+        self.assertEqual(section["text"], body[second:].decode("utf-8"))
+
+    def test_bind_with_a_bare_repeated_title_is_still_refused_at_the_write_gate(self) -> None:
+        """Prior behaviour: a bare title two headings carry stays ambiguous."""
+        proposal = self.base / "proposal.json"
+        proposal.write_text(json.dumps({
+            "lineage": "field-survey",
+            "assignments": [
+                {"block": "overview.block-a", "fact": "formulation", "sections": [self._TITLE]},
+            ],
+        }), encoding="utf-8")
+
+        code, refused = self._cli("separate", "--proposal", str(proposal))
+
+        self.assertEqual(code, 2)
+        self.assertEqual((refused["status"], refused["code"]), ("refused", "SECTION_TITLE_AMBIGUOUS"))
+        self.assertIn(f"'{self._TITLE}#2' (line 13, level 1)", refused["detail"])
+
+
 class SeparationCorpusAnchoringTests(_SeparationCorpusMixin, unittest.TestCase):
     """Task 2.9/2.10: an assignment for a `(block, fact)` absent from the
     assembled corpus's `requires_facts` is reported, never deleted or

@@ -156,7 +156,9 @@ test('a source without reserved markers reports nothing new', async () => {
 	const root = await workspace({ 'guidance/paper-guide/notes.md': '# Guide\n\nPlain guide.\n', 'proposals/.gitkeep': '' });
 	const body = await cli(proposalCli, root, { operation: 'CREATE_INITIAL_REVISION', instruction: 'A bounded tutor for proof drafts. It names the step it doubts.' }, ['--dry-run']);
 	assert.equal(body.status, 'preview', JSON.stringify(body).slice(0, 800));
-	assert.deepEqual(body.sourceWindow.sources, [{ path: 'guidance/paper-guide/notes.md', bytes: 22, loadedBytes: 22, status: 'loaded' }]);
+	// No `reservedMarkersRemoved`. The guide's own `# Guide` line is counted by the separate
+	// heading rule (`headingsNeutralized`, tests/deliberation-pasted-source-headings.test.mjs).
+	assert.deepEqual(body.sourceWindow.sources, [{ path: 'guidance/paper-guide/notes.md', bytes: 22, loadedBytes: 22, status: 'loaded', headingsNeutralized: 1 }]);
 });
 
 // --- A first revision written before the fix, copied markers and all -----------------------
