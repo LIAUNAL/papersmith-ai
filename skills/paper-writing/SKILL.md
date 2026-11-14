@@ -1806,12 +1806,26 @@ measured figure is `place`, entirely outside the compile path: no
 `check_excluded`, `check_shared_components`, `check_caption`,
 `check_mandatory`) check it against a manifest, never against a hardcoded
 section or block id. When `components_from` names a fact, the Components
-Check's expected list is DERIVED — never operator-supplied — from that
-fact's own declared resolution (`declare --fact <id> --value
-'["a", "b"]'`, read back through `paper_declarations.read_fact`), refusing
-`COMPONENTS_FACT_UNRESOLVED` when the fact was never declared and
-`COMPONENTS_FACT_NOT_A_LIST` when its resolution does not parse as a JSON
-array of strings. `components_from`'s named fact must equal the FULL
+Check's expected list is DERIVED — never operator-supplied. A declared
+fact reads its own declared resolution (`declare --fact <id> --value
+'["a", "b"]'`, read back through `paper_declarations.read_fact`). A
+produced fact (`contributions`, produced by
+`materials-and-methods.mm-proposal`) reads its producer block's own text in
+`main.tex`, in either of the two forms the methods contract admits for the
+list: the `\item` roster, one line per element; or, when the block holds
+no `\item` line at all, one `\subsection` per element, its printed title
+naming it, in order (`\subsection*` counts; `\subsection[short]{long}`
+yields the long title; whitespace inside a title collapses to one space;
+`\subsubsection` and `%`-commented headings never count). A roster present
+beside subsections is the list — the contract's "one that carries them all
+and closes on the roster" has both — and whether a roster merely repeats
+subsections is that contract's disqualifier, for `contract-auditor` to
+judge. It refuses `COMPONENTS_FACT_UNRESOLVED` when the fact was never
+declared (or its producer is not written yet) and
+`COMPONENTS_FACT_NOT_A_LIST` when a declared resolution does not parse as a
+JSON array of strings, or a producer block yields neither `\item` lines nor
+`\subsection` titles. `figure audit --block` resolves its expected list
+through the same route. `components_from`'s named fact must equal the FULL
 expected list by contract — section 01's methods diagram IS the
 contribution list, so `components_from: contributions` alone suffices. A
 block whose diagram is a composite crossing over several categories of
