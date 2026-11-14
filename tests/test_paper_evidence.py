@@ -1223,6 +1223,40 @@ class ResolvedMetadataCarriesAuthorsTests(unittest.TestCase):
         self.assertIn(r"journal = {Journal of A \& B},", text)
         self.assertNotIn("A & B", text)
 
+    _NON_ASCII_AUTHORS = ["Óscar Wladimir Gómez Morales", "Yunan “Charles” Wu",
+                          "Jean-Éric Dupont", "Ada Lovelace"]
+
+    def _non_ascii_entry(self) -> str:
+        return paper_bib._entry_text({
+            "cite_key": "names2024", "title": "Éléments de réseau", "doi": None, "year": 2024,
+            "authors": list(self._NON_ASCII_AUTHORS), "venue": "Journal",
+            "resolver": "openalex", "metadata_digest": "abc",
+        })
+
+    def test_a_non_ascii_name_initial_is_braced_as_one_bibtex_character(self) -> None:
+        """BibTeX abbreviates a given name byte by byte, so a multi-byte first
+        letter (Ó, an opening quote, É after a hyphen) is cut in half and the
+        `.bbl` stops being UTF-8; `{\\relax c}` makes BibTeX keep it whole."""
+        text = self._non_ascii_entry()
+        self.assertIn(
+            "author = {{\\relax Ó}scar Wladimir Gómez Morales and Yunan {\\relax “}Charles” Wu"
+            " and Jean-{\\relax É}ric Dupont and Ada Lovelace},", text)
+        self.assertIn("title = {Éléments de réseau},", text)
+
+    @unittest.skipUnless(shutil.which("bibtex"), "bibtex is not installed")
+    def test_bibtex_abbreviates_braced_non_ascii_initials_into_valid_utf8(self) -> None:
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "refs.bib").write_text(self._non_ascii_entry(), encoding="utf-8")
+            Path(tmp, "main.aux").write_text(
+                "\\citation{names2024}\n\\bibstyle{ieeetr}\n\\bibdata{refs}\n", encoding="utf-8")
+            subprocess.run(["bibtex", "main"], cwd=tmp, capture_output=True, check=False)
+            bbl = Path(tmp, "main.bbl").read_bytes()
+        names = bbl.decode("utf-8")  # a half-cut initial raises here
+        self.assertIn("{\\relax Ó}.", names)
+        self.assertIn("{\\relax É}.", names)
+
 
 class ResolvedAuthorsMutationProofTests(unittest.TestCase):
     """The capture must be load-bearing, not merely present: dropping the

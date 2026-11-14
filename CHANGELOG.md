@@ -16,6 +16,10 @@ number is `0`, breaking changes can still arrive without a major bump.
 - The SOTA atlas renderer no longer carries an invalid `\/` escape in its page
   template, which Python 3.15 warns about on every render and a later Python
   will reject; the rendered HTML is byte-identical.
+- `bib build` braces an author's non-ASCII initial as `{\relax Ó}scar`, so
+  BibTeX keeps it whole when it abbreviates a given name. Before, a name such
+  as `Óscar`, `Jean-Éric` or one with an opening `“` was cut in the middle of a
+  UTF-8 character and `pdflatex` stopped on "Invalid UTF-8 byte sequence".
 
 ## 0.76.2
 

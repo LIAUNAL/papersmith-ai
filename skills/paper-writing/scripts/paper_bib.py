@@ -402,6 +402,22 @@ def _latex_escape(value: str) -> str:
     return text
 
 
+# A name token's first character, when it is not ASCII: at the start of the
+# name, or after whitespace, a hyphen or a tie.
+_NON_ASCII_INITIAL_RE = re.compile(r"(?:(?<=^)|(?<=[\s~-]))([^\x00-\x7f])")
+
+
+def _bibtex_name(value: str) -> str:
+    """One author for the `author` field: `_latex_escape`, then every name
+    token whose first character is not ASCII gets that character braced as
+    `{\\relax c}`. BibTeX abbreviates a given name byte by byte, so an
+    unbraced multi-byte initial (`Óscar`, an opening `“`, the `É` of
+    `Jean-Éric`) is cut in half and the `.bbl` stops being UTF-8; a group
+    that opens with a control sequence is one "special character" to BibTeX,
+    kept whole as the initial, and `\\relax` prints nothing."""
+    return _NON_ASCII_INITIAL_RE.sub(lambda m: "{\\relax " + m.group(1) + "}", _latex_escape(value))
+
+
 def _entry_text(entry: dict) -> str:
     # `@article` only when a venue was actually captured: the `plain` style
     # prints `journal` for an article and ignores it on a `@misc`, so an
@@ -412,7 +428,7 @@ def _entry_text(entry: dict) -> str:
     # `author`, `title` and `journal` share the identical exposure to raw,
     # unescaped connector text; all three are escaped here.
     if entry.get("authors"):
-        authors = " and ".join(_latex_escape(a) for a in entry["authors"])
+        authors = " and ".join(_bibtex_name(a) for a in entry["authors"])
         lines.append(f"  author = {{{authors}}},")
     if entry.get("title"):
         lines.append(f"  title = {{{_latex_escape(entry['title'])}}},")
