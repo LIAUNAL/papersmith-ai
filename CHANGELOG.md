@@ -44,6 +44,10 @@ number is `0`, breaking changes can still arrive without a major bump.
   `replace`/`delete` batches too (target it yourself and the batch is
   refused), and a pasted section is removed with `delete`, since an empty
   `replace` is refused `SUCCESSOR_OUTSIDE_TARGET_FORBIDDEN`.
+- `paper_cli.py venue select --journal <name> --issn <issn>` takes
+  `--publisher <name>`. Before, a manual selection always recorded no
+  publisher, so an Elsevier journal chosen by hand read as the `neutral`
+  back-matter family (funding as its own block, "Declaration of AI use").
 
 ## 0.76.1
 

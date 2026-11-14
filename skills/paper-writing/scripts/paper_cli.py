@@ -3205,6 +3205,7 @@ def cmd_venue(args: argparse.Namespace) -> dict:
     if verb == "select":
         return paper_venue.select(
             paper_dir, args.slug, candidate=args.candidate, journal=args.journal, issn=args.issn,
+            publisher=args.publisher,
         )
     if verb == "requirements":
         return paper_venue.store_requirements(paper_dir, args.slug, _resolve_repo_path(args.file))
@@ -4283,6 +4284,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_venue_select.add_argument("--journal", default=None, help="the journal's name (with --issn)")
     p_venue_select.add_argument("--issn", default=None, help="the journal's ISSN (with --journal)")
+    p_venue_select.add_argument(
+        "--publisher", default=None,
+        help="the journal's publisher (with --journal/--issn), e.g. 'Elsevier'; it decides the "
+             "back-matter placement family (elsevier, mdpi, ieee, else neutral)",
+    )
 
     p_venue_requirements = _venue_verb(
         "requirements", "validate and store the agent's requirements.json; every requirement quoted and sourced",
