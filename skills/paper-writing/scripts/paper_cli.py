@@ -402,6 +402,12 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "EVIDENCE_ID_UNKNOWN": WORK_STATE,
     "FACT_NOT_LICENSED": WORK_STATE,
     "STRUCTURAL_CARRIES_CLAIM": WORK_STATE,
+    # `declaration:<id>` (paper_bindings.py): licensing, recorded value,
+    # verbatim presence, and no token outside the value.
+    "DECLARATION_NOT_LICENSED": WORK_STATE,
+    "DECLARATION_UNDECLARED": WORK_STATE,
+    "DECLARATION_VALUE_ABSENT": WORK_STATE,
+    "DECLARATION_CARRIES_CLAIM": WORK_STATE,
     "MODE_VIOLATION": WORK_STATE,
     # --- the contract audit: verbatim Disqualifiers, verdict reconciliation
     # (paper_audit.py; WU1) ------------------------------------------------
@@ -2448,6 +2454,16 @@ def _resolve_packet_source_sections(
     return resolved_sections, {"state": "resolved", "reason": None, "unresolved": []}
 
 
+def _packet_declarations(paper_dir: Path, requires_declarations: tuple) -> dict:
+    """Each required declaration id -> its recorded value, or None while it
+    is unrecorded or the paper has no `main.tex` yet (the packet is
+    read-only and never refuses for that)."""
+    if not (paper_dir / "main.tex").is_file():
+        return {declaration_id: None for declaration_id in requires_declarations}
+    return {declaration_id: paper_declarations.read_declaration(paper_dir, declaration_id)
+            for declaration_id in requires_declarations}
+
+
 def assemble_packet(
     sections_dir: Path, guidance_dir: Path, section: str, block_id: str,
     *, corpus=None, paper_dir: Path | None = None,
@@ -2534,6 +2550,12 @@ def assemble_packet(
         "source_sections": source_sections,
         "source_sections_state": source_sections_state,
     }
+    # A block that requires declarations carries their recorded values (None
+    # while unrecorded): the redactor copies them verbatim into sentences it
+    # binds `declaration:<id>`, and `write` checks them against these values.
+    requires_declarations = paper_contract.requirement_values(block["requires_declarations"])
+    if requires_declarations and paper_dir is not None:
+        packet["declarations"] = _packet_declarations(paper_dir, requires_declarations)
     # The AI-use declaration states what the pipeline record shows; only the
     # blocks that declare AI use carry it, so every other packet is unchanged.
     if qualified_id in paper_ai_usage.AI_USAGE_BLOCKS and paper_dir is not None:
@@ -2657,6 +2679,43 @@ def _load_audit_envelope(audit_path: Path) -> dict:
     return data
 
 
+def _licensed_declarations(qualified_id: str, requires_declarations: tuple) -> tuple:
+    """The ids a `declaration:` binding in `qualified_id` may name: its own
+    `requires_declarations`, plus `ai-usage` when its packet carries the
+    `ai_usage` record (`paper_ai_usage.AI_USAGE_BLOCKS`)."""
+    licensed = tuple(requires_declarations)
+    if qualified_id in paper_ai_usage.AI_USAGE_BLOCKS:
+        licensed += (paper_bindings.AI_USAGE_DECLARATION,)
+    return licensed
+
+
+def _resolve_write_declarations(
+    paper_dir: Path, qualified_id: str, requires_declarations: tuple, draft: dict,
+) -> tuple:
+    """`(licensed_declarations, declared)` for `write`'s `BlockContract`.
+    Only the licensed ids the draft actually binds are read: a recorded
+    declaration's value through `paper_declarations.read_declaration`
+    (absent when unrecorded, so `write` refuses `DECLARATION_UNDECLARED`),
+    and the `ai_usage` record through `paper_ai_usage.build`, reduced to what
+    a sentence may carry (`paper_ai_usage.declarable`)."""
+    licensed = _licensed_declarations(qualified_id, requires_declarations)
+    named: set = set()
+    for entry in draft["bindings"]:
+        raw = entry.get("binding") if isinstance(entry, dict) else None
+        if isinstance(raw, str) and raw.startswith("declaration:"):
+            named.update(paper_bindings.declaration_ids(raw.split(":", 1)[1]))
+    declared: dict = {}
+    for declaration_id in requires_declarations:
+        if declaration_id in named:
+            value = paper_declarations.read_declaration(paper_dir, declaration_id)
+            if value is not None:
+                declared[declaration_id] = value
+    if paper_bindings.AI_USAGE_DECLARATION in licensed and paper_bindings.AI_USAGE_DECLARATION in named:
+        declared[paper_bindings.AI_USAGE_DECLARATION] = paper_ai_usage.declarable(
+            paper_ai_usage.build(paper_dir))
+    return licensed, declared
+
+
 def cmd_write(args: argparse.Namespace) -> dict:
     """`write`: reconciles an already-shuttled redactor draft and
     contract-auditor account against one block's real contract, evidence
@@ -2743,6 +2802,11 @@ def cmd_write(args: argparse.Namespace) -> dict:
     mode_obj = paper_contract.resolve_mode(header, block)
     mode = mode_obj["value"] if mode_obj is not None else None
 
+    licensed_declarations, declared = _resolve_write_declarations(
+        paper_dir, qualified_id, paper_contract.requirement_values(block["requires_declarations"]),
+        draft,
+    )
+
     evidence_set = ()
     if args.evidence:
         evidence_set = tuple(json.loads(Path(args.evidence).read_text(encoding="utf-8")))
@@ -2769,6 +2833,8 @@ def cmd_write(args: argparse.Namespace) -> dict:
         evidence_set=evidence_set,
         style_set=style_set,
         source_sections=paper_source_span.resolve_bound_sections(corpus, qualified_id),
+        licensed_declarations=licensed_declarations,
+        declared=declared,
     )
     res = paper_write.write_block(
         paper_dir, contract, draft, audit_account, grounding_account=grounding_account,
@@ -3977,7 +4043,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_write.add_argument("--block", required=True, help="block id to write")
     p_write.add_argument(
         "--draft", required=True,
-        help="path to the redactor's JSON envelope: {latex, bindings}; must resolve inside the repository root",
+        help="path to the redactor's JSON envelope: {latex, bindings}, each binding one of "
+             "evidence:<id>, fact:<id>, declaration:<id>[,<id>...] (an id the block's "
+             "requires_declarations lists, or ai-usage for the AI-use blocks) or structural; "
+             "must resolve inside the repository root",
     )
     p_write.add_argument(
         "--audit", required=True,

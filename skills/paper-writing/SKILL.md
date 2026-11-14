@@ -1398,7 +1398,7 @@ anything itself.**
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -1519,6 +1519,59 @@ evidence bindings — a block reporting an existing result. `argument`
 additionally admits `discovery`-class evidence — a block making a claim
 about the field. Binding a `discovery`-class record under `transposition`
 refuses `MODE_VIOLATION`.
+
+### The binding map: four kinds
+
+The redactor hands `write` one binding per sentence it drafted, each exactly
+one of:
+
+| Binding | The sentence carries | Licensed by |
+|---|---|---|
+| `evidence:<record-id>` | what that evidence record supports | the block's evidence set (`--evidence`) |
+| `fact:<fact-id>` | an operator-declared or produced fact | the block's `requires_facts` |
+| `declaration:<id>[,<id>...]` | the recorded value of one or more declarations, copied verbatim | the block's `requires_declarations`; `ai-usage` for the blocks whose packet carries the `ai_usage` record (`back-matter.bm-ai-use-declaration`, `experimental-setup.es-training-details`) |
+| `structural` | nothing: transitions, pointers, summaries | always; no numeral, `\cite`, comparative or named object outside the contract prose |
+
+`declaration:` exists for the blocks whose contract demands tokens no other
+kind may carry: the grant code and the funder (`bm-funding`), the repository
+URL, commit and access date (`bm-code-availability`,
+`bm-data-availability`), the ethics approval code, and the framework release
+and tool names of the AI-use declaration. Record a value with `declare
+--declaration <id> --value <v>`; `packet` hands the block's recorded values
+to the redactor under `declarations` (`{id: value | null}`), and the
+`ai_usage` record under `ai_usage` (its `tool_names` are the printed harness
+names). One sentence may name several ids (`declaration:grant-title,grant-code`
+for a funding entry that names its project and its code together).
+
+`write` judges every `declaration:` sentence against the values it names,
+after `resolve_bindings` and `type_structural`, in this order:
+
+1. every id is licensed, or it refuses `DECLARATION_NOT_LICENSED`;
+2. every id has a recorded value, or it refuses `DECLARATION_UNDECLARED`
+   naming the `declare` invocation that records it;
+3. for every id, the sentence prints at least one component of its value
+   verbatim, or it refuses `DECLARATION_VALUE_ABSENT`. The components of a
+   recorded value are the whole value, each parenthetical group's text, and
+   each `;`- or newline-separated part of the rest
+   (`"https://x/y; commit 06faa71; checked 2026-11-13"` -> `https://x/y`,
+   `commit 06faa71`, `checked 2026-11-13`); for `ai-usage` they are the
+   framework's name, URL and release, the tool ids and printed names, the
+   phase labels and agents, the drafting and auditing agents and the drafted
+   sections (`paper_ai_usage.declarable`). The comparison reads printed
+   text: accent macros (`m\'aquina`), `\url{}`/`\href{}{}`, TeX dashes and
+   quotes, `~` and escaped specials are reduced on both sides, and a
+   component matches only between alphanumeric boundaries;
+4. outside math, every alphanumeric run holding a digit is a run of a named
+   value (for `ai-usage`, its phase counts too; a recorded ISO date
+   `2026-11-13` also holds `13`, `11`, `November` and `Nov`, so it may be
+   printed `13 November 2026`), and every capitalised word that does not open
+   the sentence or follow a `.`/`:` (a bold label such as
+   `\textbf{Funding.}`) is in the contract prose or a run of a named value
+   (any case), or it refuses `DECLARATION_CARRIES_CLAIM`. The contract prose never
+   licenses a numeral: its example release is not this paper's release.
+
+`declaration:` is admitted in every mode, like `fact:` and `structural`, and
+is never a grounding subject.
 
 ### `requires_facts` / `requires_declarations`: the requirement must name its own sentence
 

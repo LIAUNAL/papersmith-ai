@@ -5413,10 +5413,11 @@ class BindingMapTests(unittest.TestCase):
     Production`, `Requirement: Draft-Versus-Map Reconciliation`,
     `Requirement: Binding Resolution`."""
 
-    def test_every_binding_entry_names_one_of_the_three_kinds(self) -> None:
+    def test_every_binding_entry_names_one_of_the_four_kinds(self) -> None:
         for raw, expected in (
             ("evidence:E1", ("evidence", "E1")),
             ("fact:results", ("fact", "results")),
+            ("declaration:grant-title,grant-code", ("declaration", "grant-title,grant-code")),
             ("structural", ("structural", None)),
         ):
             with self.subTest(raw=raw):
@@ -8973,8 +8974,14 @@ class RefusalRosterTests(unittest.TestCase):
         216 -> 221: `review` records the final judge's rounds in
         `.papersmith/paper_review.json` and adds 5 codes
         (REVIEW_INPUT_UNREADABLE, REVIEW_ROUND_INVALID, REVIEW_ITEM_UNKNOWN,
-        REVIEW_ITEMS_MISSING, REVIEW_FILE_INVALID)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 221)
+        REVIEW_ITEMS_MISSING, REVIEW_FILE_INVALID).
+
+        221 -> 225: a `declaration:<id>` binding carries a recorded
+        declaration's value (`paper_bindings.resolve_bindings`/
+        `check_declarations`): DECLARATION_NOT_LICENSED,
+        DECLARATION_UNDECLARED, DECLARATION_VALUE_ABSENT,
+        DECLARATION_CARRIES_CLAIM."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 225)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

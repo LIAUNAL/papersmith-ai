@@ -15,14 +15,20 @@ Public surface:
     parse_binding(raw)                         -> (kind, ref)
     segment_sentences(latex)                   -> list[str]
     reconcile(latex, binding_entries)          -> list[dict]  (raises UNBOUND_SENTENCE, BINDING_ORPHANED)
-    resolve_bindings(bindings, evidence_ids, licensed_facts) -> None  (raises EVIDENCE_ID_UNKNOWN, FACT_NOT_LICENSED)
+    resolve_bindings(bindings, evidence_ids, licensed_facts, licensed_declarations=())
+        -> None  (raises EVIDENCE_ID_UNKNOWN, FACT_NOT_LICENSED, DECLARATION_NOT_LICENSED)
     type_structural(bindings, contract_prose)  -> None  (raises STRUCTURAL_CARRIES_CLAIM)
+    declaration_ids(ref)                       -> tuple[str, ...]
+    declaration_components(value)              -> tuple[str, ...]
+    check_declarations(bindings, declared, contract_prose) -> None  (raises
+        DECLARATION_UNDECLARED, DECLARATION_VALUE_ABSENT, DECLARATION_CARRIES_CLAIM)
     check_mode_admissibility(bindings, mode, evidence_by_id) -> None  (raises MODE_VIOLATION)
 """
 from __future__ import annotations
 
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -55,11 +61,21 @@ class RedactorInput:
     source_sections: tuple = ()
 
 
-#: The three binding kinds a sentence may be classified under
+#: The four binding kinds a sentence may be classified under
 #: (`evidence-bound-drafting` spec, `Requirement: Binding Map Production`).
-BINDING_KINDS: tuple[str, ...] = ("evidence", "fact", "structural")
+#: `declaration` carries an operator-recorded declaration's value (the grant
+#: code, the repository URL and commit, ...) -- tokens a `fact:` binding is
+#: not licensed for and a `structural` sentence may never print.
+BINDING_KINDS: tuple[str, ...] = ("evidence", "fact", "declaration", "structural")
 
-_BINDING_RE = re.compile(r"^(evidence|fact):(?P<ref>.+)$")
+_BINDING_RE = re.compile(r"^(evidence|fact|declaration):(?P<ref>.+)$")
+
+#: The `declaration:` id that binds a sentence to the packet's `ai_usage`
+#: record (`paper_ai_usage.build`) rather than to a recorded declaration. It
+#: is not in `paper_vocabulary.DECLARATIONS` -- nobody declares it -- and is
+#: licensed only for the blocks whose packet carries that record
+#: (`paper_ai_usage.AI_USAGE_BLOCKS`).
+AI_USAGE_DECLARATION = "ai-usage"
 
 
 @dataclass(frozen=True)
@@ -72,20 +88,23 @@ class Binding:
 
 def parse_binding(raw: str) -> tuple[str, str | None]:
     """`"evidence:E1"` -> `("evidence", "E1")`; `"fact:results"` ->
-    `("fact", "results")`; `"structural"` -> `("structural", None)`. Any
-    other string is not one of the three kinds this map may name
-    (`evidence-bound-drafting` spec, `Requirement: Binding Map Production`,
-    "every entry names exactly one of `evidence:`, `fact:`, or
-    `structural`") — raised as a plain `ValueError`, never a `Refused`: a
-    binding map entry this malformed is not one this reconciliation was
-    ever asked to judge, the redactor's contract having already promised
-    only these three shapes.
+    `("fact", "results")`; `"declaration:grant-title,grant-code"` ->
+    `("declaration", "grant-title,grant-code")`; `"structural"` ->
+    `("structural", None)`. Any other string is not one of the four kinds
+    this map may name (`evidence-bound-drafting` spec, `Requirement: Binding
+    Map Production`, "every entry names exactly one of `evidence:`, `fact:`,
+    `declaration:`, or `structural`") — raised as a plain `ValueError`,
+    never a `Refused`: a binding map entry this malformed is not one this
+    reconciliation was ever asked to judge, the redactor's contract having
+    already promised only these four shapes.
     """
     if raw == "structural":
         return "structural", None
     match = _BINDING_RE.match(raw)
     if match is None:
-        raise ValueError(f"{raw!r} is not evidence:<id>, fact:<id>, or structural")
+        raise ValueError(
+            f"{raw!r} is not evidence:<id>, fact:<id>, declaration:<id>[,<id>...], or structural"
+        )
     return match.group(1), match.group("ref")
 
 
@@ -136,16 +155,48 @@ def reconcile(latex: str, binding_entries: list[dict]) -> list[Binding]:
     return bindings
 
 
-def resolve_bindings(bindings: list[Binding], evidence_ids: set, licensed_facts: set) -> None:
+def declaration_ids(ref: str | None) -> tuple[str, ...]:
+    """A `declaration:` binding's ids, in the order written:
+    `"grant-title,grant-code"` -> `("grant-title", "grant-code")`. One
+    sentence may carry several declarations (a funding entry names the
+    project's title and its code together)."""
+    return tuple(part.strip() for part in (ref or "").split(","))
+
+
+def resolve_bindings(
+    bindings: list[Binding], evidence_ids: set, licensed_facts: set,
+    licensed_declarations=(),
+) -> None:
     """Refuses `EVIDENCE_ID_UNKNOWN` naming an `evidence:` binding's id when
     it is absent from the block's evidence set; refuses `FACT_NOT_LICENSED`
     naming a `fact:` binding's id when it sits outside `requires_facts`
-    (`evidence-bound-drafting` spec, `Requirement: Binding Resolution`)."""
+    (`evidence-bound-drafting` spec, `Requirement: Binding Resolution`);
+    refuses `DECLARATION_NOT_LICENSED` naming a `declaration:` binding's id
+    when it sits outside `licensed_declarations` -- the block's own
+    `requires_declarations`, plus `AI_USAGE_DECLARATION` for a block whose
+    packet carries the `ai_usage` record. The default is empty, so a caller
+    that licenses no declaration refuses every `declaration:` binding."""
+    licensed = set(licensed_declarations)
     for binding in bindings:
         if binding.kind == "evidence" and binding.ref not in evidence_ids:
             raise Refused("EVIDENCE_ID_UNKNOWN", f"{binding.ref!r} is not in the block's evidence set")
         if binding.kind == "fact" and binding.ref not in licensed_facts:
             raise Refused("FACT_NOT_LICENSED", f"{binding.ref!r} is not in requires_facts")
+        if binding.kind == "declaration":
+            for declaration_id in declaration_ids(binding.ref):
+                if declaration_id in licensed:
+                    continue
+                if declaration_id == AI_USAGE_DECLARATION:
+                    raise Refused(
+                        "DECLARATION_NOT_LICENSED",
+                        f"{declaration_id!r} is licensed only for the blocks whose packet "
+                        "carries the ai_usage record",
+                    )
+                raise Refused(
+                    "DECLARATION_NOT_LICENSED",
+                    f"{declaration_id!r} is not in requires_declarations "
+                    f"(licensed: {sorted(licensed)})",
+                )
 
 
 _MATH_INLINE_RE = re.compile(r"\$[^$]*\$")
@@ -227,6 +278,173 @@ def type_structural(bindings: list[Binding], contract_prose: str) -> None:
             )
 
 
+#: LaTeX accent macros a declared value may be typed with in a draft
+#: (`m\'aquina`, `\~n`), mapped onto the combining mark that composes the
+#: same character the recorded value holds (`máquina`).
+_ACCENT_MARKS = {"'": "\u0301", "`": "\u0300", "^": "\u0302", '"': "\u0308", "~": "\u0303",
+                 "=": "\u0304", ".": "\u0307", "c": "\u0327", "v": "\u030c", "u": "\u0306",
+                 "H": "\u030b"}
+_ACCENT_RE = re.compile(r"\\([`'^\"~=.])\{?([A-Za-z])\}?|\\([cvuH])\{([A-Za-z])\}")
+_HREF_RE = re.compile(r"\\href\{([^{}]*)\}\{([^{}]*)\}")
+_COMMAND_ARG_RE = re.compile(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?\{([^{}]*)\}")
+_BARE_COMMAND_RE = re.compile(r"\\[a-zA-Z]+\*?")
+_ESCAPED_RE = re.compile(r"\\([&%_#$])")
+#: An alphanumeric run: the unit numerals and named objects are compared in.
+_RUN_RE = re.compile(r"[^\W_]+")
+#: A word on printed text, accented letters included (`Ángel`, `UCaldas–UNAL`
+#: is two words); a capitalised one is a named object.
+_NAMED_RE = re.compile(r"[^\W\d_](?:[^\W_]|['-](?=[^\W_]))*")
+
+
+def _accent(match: re.Match) -> str:
+    mark, letter = (match.group(1), match.group(2)) if match.group(1) else (match.group(3), match.group(4))
+    return letter + _ACCENT_MARKS[mark]
+
+
+def _normalize(text: str) -> str:
+    """The printed text of `text`, so a declared value and a sentence that
+    typesets it compare equal: accent macros composed, `\\url{X}` and
+    `\\href{X}{Y}` reduced to their text, any other `\\cmd{X}` to `X`, TeX
+    dashes and quotes to the characters they print, `~` to a space, escaped
+    specials unescaped, and whitespace collapsed. Applied to both sides."""
+    text = unicodedata.normalize("NFC", _ACCENT_RE.sub(_accent, text))
+    text = _HREF_RE.sub(r"\1 \2", text)
+    previous = None
+    while previous != text:
+        previous, text = text, _COMMAND_ARG_RE.sub(r"\1", text)
+    text = _BARE_COMMAND_RE.sub(" ", text)
+    text = _ESCAPED_RE.sub(r"\1", text)
+    text = text.replace("---", "\u2014").replace("--", "\u2013")
+    text = text.replace("``", '"').replace("''", '"').replace("~", " ")
+    text = text.replace("\\,", " ").replace("\\ ", " ")
+    return " ".join(text.split())
+
+
+_PARENTHETICAL_RE = re.compile(r"\(([^()]*)\)")
+_ISO_DATE_RE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August",
+           "September", "October", "November", "December")
+
+
+def _date_runs(text: str) -> set:
+    """The other runs an ISO date in a value prints as: `2026-11-03` may be
+    written `3 November 2026` or `Nov. 3, 2026`, so the month's name and
+    abbreviation and the unpadded month and day are runs of the value too."""
+    runs: set = set()
+    for _year, month, day in _ISO_DATE_RE.findall(text):
+        if 1 <= int(month) <= 12:
+            name = _MONTHS[int(month) - 1]
+            runs |= {name, name[:3], str(int(month)), str(int(day))}
+    return runs
+
+
+def declaration_components(value: str) -> tuple[str, ...]:
+    """The parts of a recorded declaration value a sentence may carry, each
+    verbatim: the whole value, every parenthetical group's text, and every
+    `;`- or newline-separated part of what remains, each stripped of
+    surrounding whitespace and trailing `.`/`,`/`:`.
+    `"https://x/y; commit 06faa71 (branch main); checked 2026-11-13"` ->
+    the whole value, `"branch main"`, `"https://x/y"`, `"commit 06faa71"`,
+    `"checked 2026-11-13"`."""
+    pieces = [value]
+    outer = value
+    while True:
+        inner = _PARENTHETICAL_RE.findall(outer)
+        if not inner:
+            break
+        pieces.extend(inner)
+        outer = _PARENTHETICAL_RE.sub(" ", outer)
+    for piece in [outer, *pieces[1:]]:
+        pieces.extend(re.split(r"[;\n]", piece))
+    components: list[str] = []
+    for piece in pieces:
+        cleaned = " ".join(piece.split()).strip(" .,:")
+        if cleaned and cleaned not in components:
+            components.append(cleaned)
+    return tuple(components)
+
+
+def _carries(sentence: str, component: str) -> bool:
+    pattern = r"(?<![^\W_])" + re.escape(_normalize(component)) + r"(?![^\W_])"
+    return re.search(pattern, sentence) is not None
+
+
+def check_declarations(bindings: list[Binding], declared: dict, contract_prose: str) -> None:
+    """Judges every `declaration:` sentence against the values it names.
+    `declared` maps a licensed id to its value -- a recorded declaration's
+    string, or, for `AI_USAGE_DECLARATION`, a `(components, extra)` pair
+    (`paper_ai_usage.declarable`). An id absent from `declared` has no
+    recorded value. Run after `resolve_bindings`, so every id is licensed.
+
+    Three refusals, each naming the sentence:
+
+    * `DECLARATION_UNDECLARED` -- a named id has no recorded value;
+    * `DECLARATION_VALUE_ABSENT` -- for some named id, the sentence carries
+      none of its components (`declaration_components`) verbatim, compared
+      on printed text (`_normalize`) between alphanumeric boundaries;
+    * `DECLARATION_CARRIES_CLAIM` -- outside math, the sentence prints an
+      alphanumeric run holding a digit that no named value holds as a run
+      (an ISO date also holds its month's name and its unpadded month and
+      day, `_date_runs`; the contract prose never licenses a numeral: its examples are not
+      this paper's values), or a capitalised word -- not opening the
+      sentence or following a `.`/`:`/`!`/`?` (a bold label) -- that is
+      neither in the contract prose (verbatim, as `type_structural` reads
+      it) nor a value's run (any case). A declaration licenses its own
+      tokens, never others.
+    """
+    for binding in bindings:
+        if binding.kind != "declaration":
+            continue
+        ids = declaration_ids(binding.ref)
+        sentence = _normalize(_strip_math(binding.sentence))
+        universe: list[str] = []
+        for declaration_id in ids:
+            if declaration_id not in declared or declared[declaration_id] is None:
+                raise Refused(
+                    "DECLARATION_UNDECLARED",
+                    f"{declaration_id!r} has no recorded value; record it with "
+                    f"`declare --declaration {declaration_id} --value <value>` before binding "
+                    f"a sentence to it: {binding.sentence!r}",
+                )
+            value = declared[declaration_id]
+            if isinstance(value, str):
+                components, extra = declaration_components(value), ()
+            else:
+                components, extra = tuple(value[0]), tuple(value[1])
+            if not any(_carries(sentence, component) for component in components):
+                raise Refused(
+                    "DECLARATION_VALUE_ABSENT",
+                    f"sentence bound to {declaration_id!r} carries none of its recorded value "
+                    f"verbatim (any one of {list(components)}): {binding.sentence!r}",
+                )
+            universe.extend(components)
+            universe.extend(extra)
+        runs = {run for text in universe for run in _RUN_RE.findall(_normalize(text))}
+        runs |= {run for text in universe for run in _date_runs(text)}
+        lowered = {run.lower() for run in runs}
+        for run in _RUN_RE.findall(sentence):
+            if any(ch.isdigit() for ch in run) and run not in runs:
+                raise Refused(
+                    "DECLARATION_CARRIES_CLAIM",
+                    f"numeral {run!r} is in no value the sentence is bound to "
+                    f"({list(ids)}): {binding.sentence!r}",
+                )
+        for match in _NAMED_RE.finditer(sentence):
+            token = match.group(0)
+            if not token[0].isupper() or token in contract_prose:
+                continue
+            before = sentence[: match.start()].rstrip()
+            if not before or before[-1] in ".:!?":
+                continue  # sentence- or label-initial (`\textbf{Funding.} The ...`)
+            if all(part.lower() in lowered for part in _RUN_RE.findall(token)):
+                continue
+            raise Refused(
+                "DECLARATION_CARRIES_CLAIM",
+                f"named object {token!r} is in no value the sentence is bound to "
+                f"({list(ids)}) nor in the contract prose: {binding.sentence!r}",
+            )
+
+
 #: `evidence-bound-drafting` spec, `Requirement: Mode-Admissible Bindings`.
 #: `transposition` admits only `fact`/`structural`/`resolution`-class
 #: evidence; `argument` additionally admits `discovery`-class evidence.
@@ -246,9 +464,9 @@ _MODE_ADMITTED_EVIDENCE_REGIMES: dict = {
 
 def check_mode_admissibility(bindings: list[Binding], mode: str, evidence_by_id: dict) -> None:
     """Refuses `MODE_VIOLATION` naming an `evidence:` binding's id when its
-    record's `regime` is outside the set `mode` admits. `fact:` and
-    `structural` bindings are always admitted — mode admissibility is an
-    evidence-class question only."""
+    record's `regime` is outside the set `mode` admits. `fact:`,
+    `declaration:` and `structural` bindings are always admitted — mode
+    admissibility is an evidence-class question only."""
     paper_vocabulary.validate_mode(mode)
     admitted = _MODE_ADMITTED_EVIDENCE_REGIMES[mode]
     for binding in bindings:
