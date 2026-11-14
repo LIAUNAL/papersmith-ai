@@ -39,6 +39,11 @@ number is `0`, breaking changes can still arrive without a major bump.
   `\item` roster. Before, `render --section/--block` and `figure audit
   --block` refused `COMPONENTS_FACT_NOT_A_LIST` for the subsection form the
   materials-and-methods contract allows.
+- The experimental-deliberation docs now say what the engine does: the
+  `## Changes` block is written from `changeSummary` on mixed
+  `replace`/`delete` batches too (target it yourself and the batch is
+  refused), and a pasted section is removed with `delete`, since an empty
+  `replace` is refused `SUCCESSOR_OUTSIDE_TARGET_FORBIDDEN`.
 
 ## 0.76.1
 
