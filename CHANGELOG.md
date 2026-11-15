@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.76.4
 
 - `write` and `verify`'s `own-paragraph` check now cover every block whose
   section contract opens a paragraph with it: the introduction's paragraphs
