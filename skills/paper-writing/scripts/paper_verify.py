@@ -873,6 +873,15 @@ def check_references(evidence, *, optional_block_ids: frozenset = frozenset(),
 #: Their markers are comments, so a block that follows another with no blank
 #: line in between would run into its last paragraph.
 OWN_PARAGRAPH_BLOCKS: frozenset = frozenset({
+    # Introduction: paragraphs 2-7 (block-4b continues block-4a's paragraph).
+    "introduction.block-2", "introduction.block-3", "introduction.block-4a",
+    "introduction.block-5", "introduction.block-6",
+    # Related work: the panorama, the closing and the synthesis pointer.
+    "related-work.rw-panorama", "related-work.rw-closing", "related-work.rw-synthesis-artefact",
+    # Limitations: one paragraph, or a second that carries the failure mode.
+    "limitations.lim-failure-mode",
+    # Conclusions: block 1 never merges, so block 2 opens its own paragraph.
+    "conclusions.concl-block-2",
     "conclusions.concl-block-4",
     "back-matter.bm-author-contributions", "back-matter.bm-funding",
     "back-matter.bm-data-availability", "back-matter.bm-code-availability",

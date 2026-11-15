@@ -11,6 +11,18 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- `write` and `verify`'s `own-paragraph` check now cover every block whose
+  section contract opens a paragraph with it: the introduction's paragraphs
+  2–7, the related-work panorama, closing and synthesis pointer, the
+  limitations' failure-mode paragraph and the conclusions' findings block, as
+  well as the future-work block and the declarations as before. Before, those
+  blocks were written right after the previous block's end marker, a comment,
+  so LaTeX ran them into one paragraph (an introduction of seven paragraphs in
+  the source printed as three). The abstract slots, the introduction's
+  contribution list and the limitations' items still continue their paragraph.
+
 ## 0.76.3
 
 - The SOTA atlas renderer no longer carries an invalid `\/` escape in its page
