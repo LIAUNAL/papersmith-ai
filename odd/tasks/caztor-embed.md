@@ -1,0 +1,25 @@
+Embed Caztor (the CaozCompilator LaTeX editor) inside the `smith ui` PDF tab, launched as a sidecar.
+Branches: papersmith-ai `feat/caztor-embed`, CaozCompilator `feat/smith-embed`. Delivery: ask-on-risk. Runners: pytest (smith), vitest + tsc (Caztor).
+
+## Specs
+
+- S1. "implementar ese proyecto dentro del panel ui de smith, pero sin la parte de visualizacion de otros proyectos": Caztor runs in an embedded mode that hides the project rail and refuses switching or creating projects.
+- S2. "con los paneles verticales de: archivos, codigo latex, pdf y agente tipo chatbot": the smith PDF tab shows Caztor's four vertical panes (files, LaTeX editor, PDF, chat) for the workspace itself.
+- S3. "ese panel de change control lo adaptas para que quede a un lado del chatbot": the existing Change Control panel sits to the right of the chat; text selected in Caztor's PDF reaches it, and its execution hands the annotations to Caztor's chat composer (and still records them via `/api/pdf/execute`).
+- S4. User decision (L2): sidecar, Caztor stays in its own repository; smith finds it via `CAZTOR_HOME` (default `~/CaozCompilator`) and launches it; "que caztor quede dentro del mismo ui de smith". When Caztor or Node is missing, the PDF tab falls back to the current viewer.
+- S5 (assumption). Embedded framing is allowed only for the exact smith origin (CSP `frame-ancestors`); everything else in Caztor's security gate stays as is.
+
+## Tasks
+
+- [x] T1 [S1,S5] Caztor: `--embed-origin` flag, embedded session field, no project switching, CSP frame-ancestors for that origin. Route: inline. Commit: CaozCompilator 4b633e5.
+- [x] T2 [S1,S3] Caztor web: hide rail when embedded; PDF text layer + selection posted to parent; parent message fills the chat draft. Route: inline. Commit: CaozCompilator 6a1f62e.
+- [x] T3 [S4] smith: sidecar manager module + `/api/caztor` endpoint + shutdown. Route: inline.
+- [x] T4 [S2,S3] smith UI: PDF tab layout with Caztor iframe and Change Control beside the chat; fallback. Route: inline.
+
+## Log
+
+- L1 (2026-11-14) "estoy trabajando en un workspace de papersmith, pero no me gusta que el panel de visualizacion del pdf solo sea para visualizar. hice un proyecto de un compilador de latex CaozCompilator. lo que quiero es implementar ese proyecto dentro del panel ui de smith, pero sin la parte de visualizacion de otros proyectos. modifica smith y agregalo, con los paneles verticales de: archivos, codigo latex, pdf y agente tipo chatbot  y ese panel de change control lo adaptas para que quede a un lado del chatbot"
+- L2 (2026-11-14) Distribution question answered: "el recomendado pero que caztor quede dentro del mismo ui de smith" (sidecar).
+- L3 Findings: smith ui = FastAPI + vanilla JS (`skills/_core/command_center`), the workspace runs its own kit copy. Caztor = Node 26 + React, CSP `frame-ancestors 'none'`, canvas-only PDF (no text selection). `/api/pdf/execute` only records annotations.
+- L4 Verification: Caztor vitest 3479 passed, `tsc -b` clean (RED observed for 8 new cases first). smith: 12 new sidecar tests (RED first); dashboard + command-center suites 1292 passed; `test_command_center_smoke` fails for an environment reason this change does not touch: `scripts/cli-paper-wiring-smoke.sh` runs `.venv/bin/python`, absent here (not re-run on the base, where the test was skipped). Live: headless Chromium on paper-mcmc-optimized showed the four panes without the rail, CSP `frame-ancestors http://127.0.0.1:8799`, cross-origin POST 403, Caztor stopped with smith; selecting "Graphical Abstract" in Caztor's PDF filled the change-control card (p. 1) and executing put the instruction in the chat box. Test side effects (`.caztor/`, `.papersmith/anotaciones_pdf.*`) removed.
+- L5 Open: this workspace compiles `paper/preview.tex` (preview-body.tex is assembled from main.tex by `paper/build_preview.py`); its `paper/main.tex` alone has no preamble, so Caztor's default compile of it fails there.

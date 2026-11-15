@@ -1081,6 +1081,23 @@ with pdf.js 3.11.174, vendored in `skills/_core/command_center/static/vendor/`
 `run_details.pdf_mtime`; when a recompile moves that token the open preview
 reloads in place and keeps the page you were reading.
 
+**LaTeX editor in the PDF tab (Caztor).** When a Caztor checkout
+(the CaozCompilator project) is found in `CAZTOR_HOME` (default
+`~/CaozCompilator`, with `npm install` and `npm run build -w @caztor/web` done) and
+`node` (Node.js 26) is on the `PATH`, the tab shows Caztor's four vertical panes
+in place of the viewer: files, LaTeX editor, the PDF it compiles with Tectonic
+(into `.caztor/build`, never `paper/main.pdf`), and the assistant chat. The
+change-control panel stays to the right of the chat: text selected in Caztor's
+PDF fills its selection card, and running the batch records it as before
+(`.papersmith/anotaciones_pdf.{json,md}`) and puts one instruction for the
+assistant in the chat box, which you review and send yourself. `POST /api/caztor`
+(same origin only) starts Caztor the first time the tab opens, as
+`node apps/server-local/src/main.ts <workspace> --embed-origin <the dashboard's origin>`:
+it binds loopback whatever `CAZTOR_HOST`/`CAZTOR_PUBLIC_NAME` say, only that
+origin may frame it, it cannot switch to another project, and it stops with the
+dashboard. Without Caztor or Node the tab falls back to the viewer above and
+says why. Add `.caztor/` to the workspace's `.gitignore`.
+
 **Paper preview (read-only).** Two GET routes, no writes:
 `GET /api/paper/preview` returns the sections in the same order and with the same
 ids as `/api/state`, with the plain text of each block of `paper/main.tex`

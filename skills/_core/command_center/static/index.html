@@ -1152,6 +1152,35 @@
       gap: 0.75rem;
     }
 
+    /* Caztor, the LaTeX editor (files, LaTeX, PDF, chat) shown in place of the viewer */
+    .caztor-host {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .caztor-host[hidden],
+    #legacyPdfViewer[hidden],
+    .caztor-notice[hidden] { display: none; }
+    .caztor-frame {
+      width: 100%;
+      height: calc(100vh - 150px);
+      min-height: 720px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    /* The four panes need the whole window: the PDF tab drops the page's width cap while Caztor shows */
+    main:has(#pane-preview.active .caztor-host:not([hidden])) {
+      max-width: none;
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+    .caztor-notice {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin: 0 0 0.5rem;
+    }
+
     /* PDF viewer top bar */
     .pdf-viewer-topbar {
       display: flex;
@@ -3794,6 +3823,12 @@
             <a id="linkPdfDirect" href="/api/pdf" target="_blank" class="btn btn--sm" style="white-space: nowrap; font-size: 0.74rem;" data-i18n="pdf.openNewTab">Open the PDF in a new tab ↗</a>
           </div>
 
+          <!-- Caztor: files, LaTeX editor, PDF and chat; the change-control panel stays to the right of its chat -->
+          <div class="caztor-host" id="caztorHost" hidden>
+            <iframe id="caztorFrame" class="caztor-frame" src="about:blank" title="Caztor LaTeX editor" data-i18n-attr="title:caztor.frameTitle"></iframe>
+          </div>
+          <p class="caztor-notice" id="caztorNotice" role="status" hidden></p>
+
           <details id="paperReviewDetails" class="journals-details" open ontoggle="if (this.open) window.refreshPaperReview?.()">
             <summary data-i18n="review.title">Final judge (paper-reviewer)</summary>
             <div id="paperReviewPanel"></div>
@@ -3815,6 +3850,7 @@
             <div id="manuscriptQaPanel"></div>
           </details>
 
+          <div id="legacyPdfViewer">
           <div class="pdf-viewer-topbar">
             <div class="pdf-topbar__left">
               <strong class="pdf-doc-title">📄 main.pdf</strong>
@@ -3889,6 +3925,7 @@
               <!-- Continuous vertical multi-page rendering -->
             </div>
             <iframe id="pdfNativeIframe" class="iframe-viewer" src="about:blank" style="display: none; height: 850px; width: 100%;"></iframe>
+          </div>
           </div>
         </div>
 
@@ -4312,7 +4349,7 @@
       if (targetPane) targetPane.classList.add('active');
 
       if (tabId === 'preview') {
-        ensurePdfLoaded();
+        openPdfWorkspace();
         if (document.getElementById('journalsDetails')?.open) window.refreshJournalsPanel?.();
       }
       // The 3D views load the first time their tab is shown, not with the page.
@@ -6139,6 +6176,8 @@
       if (previous === null) { loadedPdfToken = token; return; }
       // The token follows the canonical build; the venue and translation views reload when toggled.
       if (pdfVenueSlug || pdfTranslation) return;
+      // Caztor shows the PDF it compiles itself.
+      if (caztorActive()) return;
       if (!token || token === loadedPdfToken) return;
       const native = document.getElementById('pdfNativeIframe');
       if (native && isNativePdfViewer) native.src = `/api/pdf?v=${token}`;
@@ -6534,8 +6573,12 @@
         }
         const quickEl = document.getElementById('selectionActionsQuick');
         if (quickEl) quickEl.style.display = 'flex';
+        showSelectionCard(text, currentSelectedPage);
+      }
+    }
 
-        // Update the selection card in the side change-control panel
+    // The selection card of the side change-control panel.
+    function showSelectionCard(text, page) {
         const emptyState = document.getElementById('selectionEmptyState');
         const activeState = document.getElementById('selectionActiveState');
         const quoteEl = document.getElementById('selectedQuoteText');
@@ -6545,7 +6588,7 @@
         if (emptyState) emptyState.style.display = 'none';
         if (activeState) activeState.style.display = 'flex';
         if (quoteEl) quoteEl.textContent = `"${text}"`;
-        if (pageBadge) pageBadge.textContent = t('pdf.pageShort', { page: currentSelectedPage });
+        if (pageBadge) pageBadge.textContent = t('pdf.pageShort', { page });
         if (countEl) {
           const words = text.split(/\s+/).filter(Boolean).length;
           countEl.textContent = words === 1 ? t('pdf.oneWord') : t('pdf.words', { n: words });
@@ -6554,7 +6597,6 @@
         if (riskBadge) riskBadge.style.display = 'none';
         const clichesEl = document.getElementById('selectionAiCliches');
         if (clichesEl) clichesEl.style.display = 'none';
-      }
     }
 
     function clearSelectionNotice() {
@@ -6763,7 +6805,7 @@
 
     // Keyboard shortcuts for instant page navigation
     document.addEventListener('keydown', (e) => {
-      if (activeTab !== 'preview') return;
+      if (activeTab !== 'preview' || caztorActive()) return;
       const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
       if (tag === 'input' || tag === 'textarea') return;
 
@@ -7250,9 +7292,18 @@
         }
 
         // Execution successful
+        const executed = queuedAnnotations;
         queuedAnnotations = [];
         selectedAnnotIds.clear();
         renderAnnotationsTray();
+
+        // With Caztor, the annotations become a message in its chat box, for the operator to send.
+        if (caztorActive() && sendToCaztorChat(annotationsPrompt(executed))) {
+          showToast(t('annot.sentToChat', { n: executed.length }));
+          loadExecutionHistory();
+          loadStatus();
+          return;
+        }
 
         // Populate summary modal
         const s = result.summary || {};
@@ -7307,6 +7358,99 @@
       } catch (e) {
         console.warn("Error loading the annotation history:", e);
       }
+    }
+
+    // ---- Caztor: the LaTeX editor of this tab, a sidecar the dashboard starts (caztor.py) ----
+    let caztorState = null;
+    let caztorOrigin = null;
+    let caztorRequest = null;
+
+    function caztorActive() {
+      return !!(caztorState && caztorState.available && caztorOrigin);
+    }
+
+    // Shows Caztor when it runs, otherwise the PDF viewer with the reason.
+    async function openPdfWorkspace() {
+      if (!caztorRequest) caztorRequest = requestCaztor();
+      const state = await caztorRequest;
+      if (!state.available) {
+        // Asked again on the next visit: Caztor may have been installed or built meanwhile.
+        caztorRequest = null;
+        ensurePdfLoaded();
+      }
+    }
+
+    async function requestCaztor() {
+      let state;
+      try {
+        const response = await fetch('/api/caztor', { method: 'POST' });
+        state = await response.json();
+      } catch (err) {
+        state = { available: false, reason: err.message };
+      }
+      caztorState = state;
+      const host = document.getElementById('caztorHost');
+      const legacy = document.getElementById('legacyPdfViewer');
+      const notice = document.getElementById('caztorNotice');
+      const frame = document.getElementById('caztorFrame');
+      if (state.available && state.url) {
+        caztorOrigin = new URL(state.url).origin;
+        if (frame.dataset.src !== state.url) {
+          frame.dataset.src = state.url;
+          frame.src = state.url;
+        }
+        host.hidden = false;
+        legacy.hidden = true;
+        notice.hidden = true;
+      } else {
+        caztorOrigin = null;
+        host.hidden = true;
+        legacy.hidden = false;
+        notice.hidden = false;
+        notice.textContent = t('caztor.unavailable', { reason: state.reason || '' });
+      }
+      return state;
+    }
+
+    // A selection in Caztor's PDF fills the change-control panel, as a selection in the viewer does.
+    window.addEventListener('message', (event) => {
+      if (!caztorOrigin || event.origin !== caztorOrigin) return;
+      const frame = document.getElementById('caztorFrame');
+      if (!frame || event.source !== frame.contentWindow) return;
+      const data = event.data;
+      if (!data || data.type !== 'caztor:pdf-selection' || typeof data.text !== 'string') return;
+      const text = data.text.trim();
+      if (!text) return;
+      currentSelectedText = text;
+      currentSelectedPage = Number.isInteger(data.page) && data.page > 0 ? data.page : 1;
+      // Caztor's page geometry is not this page's: marks are listed, not drawn.
+      savedSelectedRangeRects = null;
+      showSelectionCard(text, currentSelectedPage);
+    });
+
+    function sendToCaztorChat(text) {
+      const frame = document.getElementById('caztorFrame');
+      if (!frame || !frame.contentWindow || !caztorOrigin) return false;
+      frame.contentWindow.postMessage({ type: 'caztor:compose', text }, caztorOrigin);
+      return true;
+    }
+
+    // The instruction for Caztor's assistant. It is a message to an agent, so it stays in English.
+    function annotationsPrompt(annotations) {
+      const lines = [
+        'Apply these editorial annotations, made on the compiled PDF, to the LaTeX sources of this paper (paper/main.tex and the files it includes).',
+        'Find each quoted passage in the sources; the PDF text can differ from the LaTeX by hyphenation, ligatures and macros.',
+        'Keep every `%% paper-writing` marker line unchanged, then recompile.',
+        '',
+      ];
+      annotations.forEach((ann, index) => {
+        const where = `page ${ann.page || '?'}`;
+        const quote = JSON.stringify(ann.text || '');
+        if (ann.type === 'strikethrough') lines.push(`${index + 1}. DELETE (${where}): ${quote}`);
+        else if (ann.type === 'humanize') lines.push(`${index + 1}. REWRITE more naturally, same meaning and citations (${where}): ${quote}`);
+        else lines.push(`${index + 1}. COMMENT (${where}): ${quote}\n   Instruction: ${ann.comment || ''}`);
+      });
+      return lines.join('\n');
     }
 
     function showToast(msg) {
