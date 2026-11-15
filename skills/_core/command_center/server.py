@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, localize, toolchain
+from . import board_refresh, caztor, doctor_view, keys_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -1536,6 +1536,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     watcher = WorkspaceWatcher(root_path, on_flush, debounce_ms=debounce_ms)
     smoke_lock = threading.Lock()
     terminals = terminal.TerminalManager(root_path, login_token=terminal_token)
+    # The PDF tab's LaTeX editor, started the first time the tab asks (caztor.py).
+    caztor_sidecar = caztor.CaztorSidecar(root_path)
     #: Engram interactions observed in live session output, bounded by
     #: office.MEMORY_EVENTS_MAX; the office state endpoint owns this ring.
     office_ring: list = []
@@ -1555,11 +1557,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         finally:
             watcher.stop()
             terminals.close_all()
+            caztor_sidecar.stop()
 
     app = FastAPI(title="Paper Command Center", version="0.1.0", lifespan=lifespan)
     app.state.root = root_path
     app.state.bus = bus
     app.state.watcher = watcher
+    app.state.caztor = caztor_sidecar
     app.state.measure_health = measure_health
     app.state.history = store
     # Display labels in English, or Spanish on `?lang=es` (see localize.py).
@@ -2680,6 +2684,20 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             except Exception:
                 pass
         return JSONResponse({"timestamp": None, "annotations": [], "applied": {}})
+
+    @app.post("/api/caztor")
+    async def api_caztor(request: Request) -> JSONResponse:
+        """Caztor's address for this page, starting it on first use.
+
+        Caztor lets only the origin the page was opened at frame it, so the
+        origin comes from this request's Host (already checked against the
+        allowlist when one is configured)."""
+        if not origin_is_same(request):
+            return JSONResponse({"available": False, "reason": "cross-origin request rejected"},
+                                status_code=403)
+        host = request.headers.get("host", "")
+        result = await asyncio.to_thread(app.state.caztor.ensure, f"http://{host}")
+        return JSONResponse(result)
 
     @app.post("/api/pdf/execute")
     async def api_pdf_execute(request: Request) -> JSONResponse:
