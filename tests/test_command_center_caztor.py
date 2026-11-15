@@ -57,7 +57,7 @@ class SidecarTests(unittest.TestCase):
     def test_it_starts_caztor_on_the_workspace_for_the_dashboard_origin(self) -> None:
         sidecar, bin_dir = self.sidecar()
         result = sidecar.ensure(ORIGIN)
-        self.assertEqual(result, {"available": True, "url": "http://127.0.0.1:4999"})
+        self.assertEqual(result, {"available": True, "url": "http://127.0.0.1:4999", "instance": sidecar._process.pid})
         args = (bin_dir / "args").read_text(encoding="utf-8").split()
         self.assertEqual(args[1:], [str(self.root), "--embed-origin", ORIGIN])
         self.assertTrue(args[0].endswith("apps/server-local/src/main.ts"))
@@ -68,6 +68,15 @@ class SidecarTests(unittest.TestCase):
         (bin_dir / "args").unlink()
         self.assertEqual(sidecar.ensure(ORIGIN), first)
         self.assertFalse((bin_dir / "args").exists())
+
+    def test_a_server_that_died_is_started_again_as_a_new_instance(self) -> None:
+        sidecar, _ = self.sidecar()
+        first = sidecar.ensure(ORIGIN)
+        sidecar._process.kill()
+        sidecar._process.wait()
+        second = sidecar.ensure(ORIGIN)
+        self.assertTrue(second["available"])
+        self.assertNotEqual(second["instance"], first["instance"])
 
     def test_another_origin_restarts_it_for_that_origin(self) -> None:
         sidecar, bin_dir = self.sidecar()
@@ -155,8 +164,20 @@ class CaztorRouteTests(unittest.TestCase):
     def test_the_dashboard_gets_caztor_for_the_address_it_was_opened_at(self) -> None:
         status, body = self.call({"Host": "127.0.0.1:8080", "Origin": "http://127.0.0.1:8080"})
         self.assertEqual(status, 200)
-        self.assertEqual(body, {"available": True, "url": "http://127.0.0.1:4999"})
+        self.assertEqual(body["url"], "http://127.0.0.1:4999")
+        self.assertTrue(body["available"])
         self.assertIn("--embed-origin http://127.0.0.1:8080", (self.bin_dir / "args").read_text(encoding="utf-8"))
+
+    def test_a_dashboard_reached_by_another_name_than_loopback_does_not_start_it(self) -> None:
+        status, body = self.call({"Host": "rebound.example:8080", "Origin": "http://rebound.example:8080"})
+        self.assertEqual(status, 200)
+        self.assertFalse(body["available"])
+        self.assertIn("loopback", body["reason"])
+        self.assertFalse((self.bin_dir / "args").exists())
+
+    def test_localhost_is_loopback_too(self) -> None:
+        status, body = self.call({"Host": "localhost:8080", "Origin": "http://localhost:8080"})
+        self.assertTrue(body["available"])
 
     def test_a_cross_origin_page_cannot_start_it(self) -> None:
         status, _ = self.call({"Host": "127.0.0.1:8080", "Origin": "http://evil.example"})

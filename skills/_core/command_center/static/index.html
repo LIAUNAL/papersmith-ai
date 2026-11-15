@@ -7369,15 +7369,13 @@
       return !!(caztorState && caztorState.available && caztorOrigin);
     }
 
-    // Shows Caztor when it runs, otherwise the PDF viewer with the reason.
+    // Shows Caztor when it runs, otherwise the PDF viewer with the reason. Asked on
+    // every visit: the server restarts a Caztor that died, and one that was
+    // installed or built meanwhile is picked up.
     async function openPdfWorkspace() {
-      if (!caztorRequest) caztorRequest = requestCaztor();
+      if (!caztorRequest) caztorRequest = requestCaztor().finally(() => { caztorRequest = null; });
       const state = await caztorRequest;
-      if (!state.available) {
-        // Asked again on the next visit: Caztor may have been installed or built meanwhile.
-        caztorRequest = null;
-        ensurePdfLoaded();
-      }
+      if (!state.available) ensurePdfLoaded();
     }
 
     async function requestCaztor() {
@@ -7395,8 +7393,10 @@
       const frame = document.getElementById('caztorFrame');
       if (state.available && state.url) {
         caztorOrigin = new URL(state.url).origin;
-        if (frame.dataset.src !== state.url) {
-          frame.dataset.src = state.url;
+        // A new instance has a new launch token, so the frame loads again even at the same address.
+        const instance = `${state.url}#${state.instance ?? ''}`;
+        if (frame.dataset.instance !== instance) {
+          frame.dataset.instance = instance;
           frame.src = state.url;
         }
         host.hidden = false;

@@ -2696,6 +2696,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({"available": False, "reason": "cross-origin request rejected"},
                                 status_code=403)
         host = request.headers.get("host", "")
+        # Only a dashboard opened on this machine: a page that reached it under
+        # another name (DNS rebinding) must not become Caztor's framing origin.
+        hostname = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+        if not is_loopback_bind(hostname):
+            return JSONResponse({"available": False, "reason": (
+                "The LaTeX editor runs only for a dashboard opened on a loopback address "
+                "(127.0.0.1 or localhost).")})
         result = await asyncio.to_thread(app.state.caztor.ensure, f"http://{host}")
         return JSONResponse(result)
 

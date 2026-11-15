@@ -70,7 +70,7 @@ class CaztorSidecar:
             return {"available": False, "reason": f"The dashboard origin is not a plain origin: {origin!r}."}
         with self._lock:
             if self._alive() and self._origin == origin and self._url is not None:
-                return {"available": True, "url": self._url}
+                return {"available": True, "url": self._url, "instance": self._process.pid}
             self._stop_locked()
             home, reason = self.locate()
             if home is None:
@@ -125,7 +125,8 @@ class CaztorSidecar:
             last = " ".join(line for line in self._tail if line) or "no output"
             return {"available": False, "reason": f"Caztor did not start: {last}"}
         self._process, self._origin, self._url = process, origin, found[0]
-        return {"available": True, "url": found[0]}
+        # A restarted server has a new launch token: the page reloads its frame when the instance changes.
+        return {"available": True, "url": found[0], "instance": process.pid}
 
     def _stop_locked(self) -> None:
         process, self._process = self._process, None
