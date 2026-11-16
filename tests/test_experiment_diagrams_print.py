@@ -27,6 +27,10 @@ sys.path.insert(0, str(REPO / "skills" / "_core" / "figure"))
 import diagram_audit  # noqa: E402
 
 STATEMENT = "aprobado"
+#: The audit's PDF measurements need pypdfium2; without it they read
+#: `unmeasured` (PDF_RASTERIZER_ABSENT), which the tests below cover too.
+_needs_pdf_reader = unittest.skipUnless(diagram_audit.print_scale.pdf_reader_available(),
+                                        "needs pypdfium2 to measure the PDF")
 
 
 class _Base(unittest.TestCase):
@@ -153,6 +157,7 @@ class ValidateGateTests(_Base):
 @unittest.skipUnless(_tex_available() and _raster_available(), "needs a TeX engine and a rasterizer")
 class RenderAuditTests(_Base):
 
+    @_needs_pdf_reader
     def test_render_keeps_the_log_and_writes_a_passing_audit(self) -> None:
         for kind in ("poc", "experiments"):
             with self.subTest(kind=kind):
@@ -167,6 +172,7 @@ class RenderAuditTests(_Base):
                 for check in ("overfull", "size_switches", "text_overlap", "font_range", "margins"):
                     self.assertEqual(record["report"]["checks"][check]["verdict"], "pass", check)
 
+    @_needs_pdf_reader
     def test_the_drawn_content_spans_the_printed_width_symmetrically(self) -> None:
         """Every margin at most 4 pt, left and right within 1 pt of each
         other: for the derived specs, a context note placed near the last
@@ -218,6 +224,31 @@ class RenderAuditTests(_Base):
                         self.assertLessEqual(value, 4.0, (side, sides))
                         self.assertGreaterEqual(value, 0.0, (side, sides))
                     self.assertLess(abs(sides["left"] - sides["right"]), 1.0, sides)
+
+    def test_render_without_pypdfium2_reports_unmeasured_not_a_traceback(self) -> None:
+        """An interpreter without pypdfium2 (the pipx install, a bare system
+        Python) still renders: the PDF-reading checks read `unmeasured` with
+        PDF_RASTERIZER_ABSENT and the remedy, instead of ModuleNotFoundError."""
+        blocker = Path(tempfile.mkdtemp(prefix="no-pypdfium2-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(blocker, ignore_errors=True))
+        (blocker / "pypdfium2").mkdir()
+        (blocker / "pypdfium2" / "__init__.py").write_text(
+            "raise ImportError('pypdfium2 blocked for this test')\n", encoding="utf-8")
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+            [str(blocker), *filter(None, [os.environ.get("PYTHONPATH")])]))
+        spec_path = self.spec("poc")
+        code, payload = run_cli("render", "--spec", str(spec_path), env=env)
+        self.assertEqual(code, 0, payload)
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(payload["audit"]["verdict"], "unmeasured", payload["audit"])
+        record = json.loads(spec_path.with_name("poc.audit.json").read_text(encoding="utf-8"))
+        for check in ("text_overlap", "font_range", "margins"):
+            measured = record["report"]["checks"][check]
+            self.assertEqual(measured["verdict"], "unmeasured", check)
+            self.assertEqual(measured["reason"], "PDF_RASTERIZER_ABSENT", check)
+            self.assertIn("pip install", measured["message"])
+        self.assertEqual(record["report"]["checks"]["overfull"]["verdict"], "pass")
+        self.assertTrue(spec_path.with_suffix(".png").is_file())
 
     def test_a_label_too_long_for_its_box_is_refused_overfull(self) -> None:
         spec_path = self.spec()

@@ -72,6 +72,12 @@ PDF's vector text layer: spans intersecting each other, or a span crossing a
 drawn frame it is not inside), every span within [0.70, 0.90] x body at the
 declared width (`font_range`), no background and every margin <= 4 pt. `audit` re-runs it on the
 drawing as it is (a failing audit exits 0 with `"verdict": "fail"`).
+The text, font-size and margin checks read the PDF through `pypdfium2`.
+The workspace environment carries it; an interpreter without it (a bare
+system Python, the pipx install) still renders, and those three checks read
+`unmeasured` with reason `PDF_RASTERIZER_ABSENT` and the install command,
+so the audit reads `unmeasured` rather than crashing. Install it into that
+interpreter, or run `render` under the workspace environment, to measure.
 `status` reports each kind's `audit` (`pass`, `fail`, `unmeasured`,
 `absent`, or `stale` when it audited an earlier drawing).
 

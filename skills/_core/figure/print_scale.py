@@ -115,8 +115,49 @@ import re
 import sys
 from pathlib import Path
 
-import pypdfium2 as pdfium
-import pypdfium2.raw as pdfium_c
+#: The code an audit reports when this interpreter cannot read a PDF's text
+#: layer and drawing (`pypdfium2` is not importable): its checks then read
+#: `unmeasured` with this reason, never `pass` and never a traceback.
+PDF_RASTERIZER_ABSENT = "PDF_RASTERIZER_ABSENT"
+
+
+class PdfReaderAbsent(ImportError):
+    """Raised by every reader here when `pypdfium2` is not importable."""
+
+
+try:
+    import pypdfium2 as pdfium
+    import pypdfium2.raw as pdfium_c
+    PDF_READER_IMPORT_ERROR: str | None = None
+except ImportError as _exc:  # imported lazily: the pure helpers work without it
+    PDF_READER_IMPORT_ERROR = f"{type(_exc).__name__}: {_exc}"
+
+    class _AbsentPdfium:
+        """Stands in for `pypdfium2` so callers' `except
+        print_scale.pdfium.PdfiumError` clauses stay valid; opening a
+        document raises `PdfReaderAbsent` naming the remedy."""
+
+        class PdfiumError(Exception):
+            """Never raised: pypdfium2 is absent."""
+
+        @staticmethod
+        def PdfDocument(*_args, **_kwargs):
+            raise PdfReaderAbsent(pdf_reader_absent_message())
+
+    pdfium = _AbsentPdfium()
+    pdfium_c = None
+
+
+def pdf_reader_absent_message() -> str:
+    """Why a PDF cannot be measured here, and the one command that fixes it."""
+    return (f"{PDF_RASTERIZER_ABSENT}: pypdfium2 is not importable in {sys.executable} "
+            f"({PDF_READER_IMPORT_ERROR}); the text-layer, font-size and margin checks need "
+            f"it. Install it into that interpreter ({sys.executable} -m pip install "
+            "'pypdfium2>=4.30') or run under the workspace environment, which carries it")
+
+
+def pdf_reader_available() -> bool:
+    return PDF_READER_IMPORT_ERROR is None
 
 MIN_RATIO = 0.70
 MAX_RATIO = 0.90

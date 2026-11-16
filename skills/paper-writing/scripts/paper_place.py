@@ -182,6 +182,8 @@ def check_figure(paper_dir: Path, pdf: Path, provenance: dict) -> dict:
         spans = print_scale.pdf_text_spans(pdf)
         font = print_scale.printed_font_report(pdf, printed_width, body_pt)
         path_boxes = print_scale.drawn_path_boxes(pdf)
+    except print_scale.PdfReaderAbsent as exc:
+        raise Refused("FIGURE_MEASUREMENT_UNAVAILABLE", f"cannot measure the figure: {exc}") from exc
     except print_scale.pdfium.PdfiumError as exc:
         raise Refused("FIGURE_PDF_UNREADABLE", f"{pdf} cannot be read as a PDF: {exc}") from exc
 
