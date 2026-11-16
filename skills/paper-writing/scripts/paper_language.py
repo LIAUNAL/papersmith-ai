@@ -25,6 +25,10 @@ a capitalized accented word is a proper name (a surname, an institution),
 and `et al.` is Latin, so neither makes a cited author or an affiliation
 read as Spanish.
 
+A span the paper itself marks as another language, `\\foreignlanguage{<lang>}{...}`
+or an `otherlanguage` environment, is exempt from the Spanish check
+(`mask_foreign_spans`); a placeholder inside it still counts.
+
 A paper may declare another language the way LaTeX itself does: the main
 language of `babel` (`main=` or the last option) or polyglossia's
 `\\setmainlanguage`. A paper whose declared main language is not English
@@ -253,6 +257,69 @@ def bold_lead_ins(tex: str) -> list[dict]:
     return hits
 
 
+_FOREIGN_COMMAND = re.compile(r"\\foreignlanguage\s*(?:\[[^\]]*\]\s*)?\{([^}]*)\}\s*\{")
+_OTHERLANGUAGE_BEGIN = re.compile(r"\\begin\{(otherlanguage\*?)\}\s*(?:\[[^\]]*\]\s*)?\{([^}]*)\}")
+
+
+def _blank(text: str) -> str:
+    """`text` with every character but a newline turned into a space, so line numbers survive."""
+    return "".join(char if char == "\n" else " " for char in text)
+
+
+def _closing_brace(tex: str, start: int) -> int:
+    """The index just past the brace closing the group opened right before `start`, or `len(tex)`."""
+    depth = 1
+    index = start
+    while index < len(tex):
+        char = tex[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return len(tex)
+
+
+def mask_foreign_spans(tex: str) -> str:
+    """`tex` with the text a paper marks as another language blanked out.
+
+    The argument of `\\foreignlanguage{<lang>}{...}` (braces balanced, across
+    lines) and the body of an `otherlanguage` or `otherlanguage*` environment
+    are replaced by spaces when `<lang>` is not English, newlines kept: the
+    Spanish check exempts such a span (issue #184 item 3, a funding-programme
+    title the back matter keeps in its original language). Only the Spanish
+    check reads the masked text; a placeholder marker inside a span still counts.
+    """
+    out: list[str] = []
+    cursor = 0
+    while True:
+        command = _FOREIGN_COMMAND.search(tex, cursor)
+        environment = _OTHERLANGUAGE_BEGIN.search(tex, cursor)
+        match = min((m for m in (command, environment) if m), key=lambda m: m.start(), default=None)
+        if match is None:
+            out.append(tex[cursor:])
+            return "".join(out)
+        if match is command:
+            language, body_start = match.group(1), match.end()
+            body_end = _closing_brace(tex, body_start)
+            closing = max(body_start, body_end - 1)
+        else:
+            language, body_start = match.group(2), match.end()
+            end = re.compile(r"\\end\{" + re.escape(match.group(1)) + r"\}").search(tex, body_start)
+            closing = body_end = end.start() if end else len(tex)
+        out.append(tex[cursor:body_start])
+        if is_english(language.strip()):
+            out.append(tex[body_start:closing])
+        else:
+            out.append(_blank(tex[body_start:closing]))
+        cursor = closing
+
+
 def scan(tex: str, *, language: str | None = None) -> dict:
     """Every Spanish line and placeholder marker of `tex`'s prose.
 
@@ -274,8 +341,10 @@ def scan(tex: str, *, language: str | None = None) -> dict:
             if pattern.search(text):
                 placeholders.append({"line": number, "marker": marker, "text": text[:160]})
                 break
-        if english and is_spanish_prose(text):
-            spanish.append({"line": number, "text": text[:160]})
+    if english:
+        for number, text in prose_lines(mask_foreign_spans(tex)):
+            if is_spanish_prose(text):
+                spanish.append({"line": number, "text": text[:160]})
     return {
         "language": language or "english",
         "english": english,

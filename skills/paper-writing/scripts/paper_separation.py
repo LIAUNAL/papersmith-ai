@@ -26,9 +26,14 @@ def claimable_sections(outline: dict) -> dict:
 
     A heading `H` is a root span iff every OTHER remaining heading's
     `byte_start` lies strictly inside `[H.byte_start, H.byte_end)` -- it
-    contains all of them, so it partitions nothing. A document carrying
-    exactly one heading eliminates that heading too: "every other
-    remaining heading" is an empty set, which is vacuously true.
+    contains all of them, so it partitions nothing. A lone remaining
+    heading is never eliminated, though: "every other remaining heading"
+    is an empty set, so it is vacuously a root span, and dropping it would
+    leave a single-section document (an ingested dataset page) with no
+    claimable section at all, a source no block could ever bind (issue
+    #184 item 6). The last section standing is the whole document's one
+    claimable section; a title wrapping two or more sections is still
+    eliminated, as before.
 
     No heading-level literal governs this computation anywhere: the only
     comparison against a level is against `shallowest`, itself derived
@@ -83,7 +88,9 @@ def _eliminate_root_spans(headings: list) -> list:
                 if other is not heading
             )
         }
-        if not root_span_ids:
+        if not root_span_ids or len(root_span_ids) == len(remaining):
+            # Nothing to drop, or dropping would empty the set: only a lone
+            # heading is a root span of itself, and it is the one section left.
             return remaining
         remaining = [heading for heading in remaining if id(heading) not in root_span_ids]
     return remaining
