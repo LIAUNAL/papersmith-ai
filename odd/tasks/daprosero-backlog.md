@@ -17,12 +17,12 @@ Objective: fix the open issues filed by Daprosero (#180-#186) and the maintainer
 
 ## Tasks
 - T1 [x] S9 — #166: one search asks each identical request once (single-flight per cache key in Http.get_json). Route: inline. RED test_one_search_never_asks_the_same_request_twice failed without the fix; 16/16 concurrent runs pass.
-- T2 [ ] S7, S6.1, S6.4 — base-digest compare-and-swap for `substitute`/`humanize --apply`, `--replacement` named in the refusal, a verb to reorder canonical blocks; writer agents pass the digest. Route: delegated writer W1 (parallel batch A; sole owner of paper_cli.py).
-- T3 [ ] S6.2, S6.3, S6.6, S6.7 — discussion scaffold languages, `\foreignlanguage` exemption, single-section `separate`, stale declarations warning. Route: delegated writer W2 (parallel batch A).
-- T4 [ ] S2 — figure-review measure from main.log and printed width, width share, per-page whitespace, numeric text in figures. Route: delegated writer W3 (parallel batch A).
-- T5 [ ] S1, S5 — deterministic caption and coherence checks in `verify` (new paper_coherence.py). Route: delegated writer W4 (parallel batch A; sole owner of paper_verify.py).
-- T6 [ ] S4 (items 2, 4) — bib build prefers published records over arXiv and normalizes entities and entry types. Route: delegated writer W5 (parallel batch A).
-- T7 [ ] S6.5 — Python floor. Route: pending user decision.
+- T2 [x] S7, S6.1, S6.4 — base-digest compare-and-swap for `substitute`/`humanize --apply`, `--replacement` named in the refusal, a verb to reorder canonical blocks; writer agents pass the digest. Route: delegated writer W1 (parallel batch A; sole owner of paper_cli.py).
+- T3 [x] S6.2, S6.3, S6.6, S6.7 — discussion scaffold languages, `\foreignlanguage` exemption, single-section `separate`, stale declarations warning. Route: delegated writer W2 (parallel batch A).
+- T4 [x] S2 — figure-review measure from main.log and printed width, width share, per-page whitespace, numeric text in figures. Route: delegated writer W3 (parallel batch A).
+- T5 [x] S1, S5 — deterministic caption and coherence checks in `verify` (new paper_coherence.py). Route: delegated writer W4 (parallel batch A; sole owner of paper_verify.py).
+- T6 [x] S4 (items 2, 4) — bib build prefers published records over arXiv and normalizes entities and entry types. Route: delegated writer W5 (parallel batch A).
+- T7 [x] S6.5 — Python floor raised to 3.11 and enforced in every skill CLI (user: "raise to 3.11"). Route: inline. Commit 3b86ed69.
 - T8 [ ] S4 (items 1, 3, auditor pass) — pending user decision on failing offline citations and cite-once.
 - T9 [ ] S8, S3 — run-record host/threads and figure provenance. Route: batch B.
 - T10 [ ] S11 — pixelrag. Route: pending user decision (keyless vs model).
@@ -33,3 +33,5 @@ Objective: fix the open issues filed by Daprosero (#180-#186) and the maintainer
 - L2 (2026-11-16) "ataquemos las de daprosero, y las 166, 110, 13, las de andresCdo no las atacaremos"
 - L3 (2026-11-16) Triage (read-only explorer): no issue fully fixed on main. Roots: R1 writer-tool defects (#184, #185), R2 deterministic coherence checks (#180, #183, #181.2-4), R3 citation integrity (#182), R4 reproducibility records (#186, #181.5), R5 test isolation (#166). roots.json pinned to e36a5393 lacks #180-#186. #184.5 reproduced: `adapter.py:471` PEP 604 alias raises TypeError on Python 3.9.6.
 - L4 (2026-11-16) #166 cause measured: the failing assertion is `first.json["api_calls"]["cached"] == 0`; the four candidates of field 17 each asked the field's total concurrently, so it reached the API 2-4 times or came from the cache depending on timing. Not the decoy home.
+- L5 (2026-11-16) "raise to 3.11"
+- L6 (2026-11-16) Batch A landed as work units: 03785bd1 (T6 bib), 063aa234 + e5e3759d (T3), 9ea468b9 (T5 coherence), df7405e0 (T4 figure-review), 5b772644 (T2 CAS, reorder, coherence/stale-facts wiring), bf314cc2, 3b86ed69 (T7), 533116f8 (docs, harness sync), and a fix for the skill-audit pinned line and an old-project word. Full suite: only Mac-environment failures (GPU probe, Linux launcher), xdist-only flakes (toy targets, skill_audit) and the release version bump. Next: T8/T10 decisions, T9 batch B, T11, independent verifier for T2 (concurrency: compare-and-swap).
