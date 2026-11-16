@@ -329,7 +329,7 @@ function showSide(key) {
   const meta = document.createElement('p');
   meta.className = 'side-meta';
   if (system.title && system.title !== sun.label) meta.append(system.title + ' · ');
-  if (/^https?:\/\//.test(ev.origin || '')) {
+  if (/^https?:\\/\\//.test(ev.origin || '')) {
     const a = document.createElement('a');
     a.href = ev.origin; a.target = '_blank'; a.rel = 'noopener'; a.textContent = ev.origin;
     meta.append(a);

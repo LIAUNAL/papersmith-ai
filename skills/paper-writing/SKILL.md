@@ -311,9 +311,9 @@ sole producer from `introduction.block-4b` to
 **The three closed vocabularies** a header may draw from: ten
 `requires_facts` ids (`formulation`, `contributions`, `problem-statement`,
 `gap`, `dataset`, `experimental-design`, `implementation`, `results`,
-`limitations`, `skeleton`), seven `requires_declarations` ids (`author-roles`,
+`limitations`, `skeleton`), eight `requires_declarations` ids (`author-roles`,
 `grant-title`, `grant-code`, `repository-url`, `keyword-bounds`,
-`classification-line`, `ethics-approval`), and three `citations` regimes (`discovery`,
+`classification-line`, `ethics-approval`, `review-registration`), and three `citations` regimes (`discovery`,
 `resolution`, `none`). A value outside any of the three refuses
 immediately — this is deliberately closed, not a convention.
 
@@ -442,9 +442,10 @@ readable by Phase 1's block scanner: both markers share the `%% paper-writing
 `MARKER_PREFIX`'s own `startswith` check skips them (proven in
 `tests/test_paper_decisions.py::DisjointGrammarTests`).
 
-`declare` records two kinds of value: a `declaration` (one of the seven
+`declare` records two kinds of value: a `declaration` (one of the eight
 operator-input ids — `author-roles`, `grant-title`, `grant-code`,
-`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`)
+`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`,
+`review-registration`, the last one used by review workspaces only)
 or a `fact`
 resolution (one of the ten fact ids). Recording either fixes it immediately
 — a further `declare` on the same id refuses `DECLARATION_FIXED` until
@@ -506,7 +507,10 @@ a decline never masks a real gap.
 byte of what gets written to the block, only records — in the `provenance`
 region — the contract file's sha256 digest as read at that exact moment and
 the declarations region's current generation. A block substituted without
-`--contract` is reported `unprovenanced`, never assumed current.
+`--contract` is reported `unprovenanced`, never assumed current. `write`
+records the same provenance on every successful write, for the contract
+file it judged the block against, so a block rewritten after its contract
+changed reads `current` again; a refused write records nothing.
 
 ```bash
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py substitute \
@@ -1196,6 +1200,49 @@ bare string, an unknown top-level key, a duplicate `(block, fact)` pair
 across assignments, or assignments resolving through more than one source
 root all refuse `SEPARATION_REPORT_UNREADABLE` before anything is scored.
 
+**A block that compresses what another block expands shares its sections
+with `"shares": true`.** An abstract states what the experimental set-up
+transposes, so it must be grounded against the same sections — which a cut
+lets exactly one block claim. An assignment with the optional boolean
+`"shares": true` names sections WITHOUT claiming them:
+
+```json
+{"block": "abstract.slot-5", "fact": "experimental-design",
+ "sections": ["4. Instruments", "7. Statistical tests"], "shares": true}
+```
+
+A share is left out of scoring entirely (it clears no orphan and causes no
+overlap or gap), so it need not be contiguous. Every section it names
+resolves as a claim's does (`<title>#<n>` included) and must be claimed by a
+non-sharing assignment of the same cut; otherwise `separate` refuses
+`SEPARATION_SHARE_UNCLAIMED`, naming each such title, before any round is
+recorded — another share does not count. A settled round names its `bind`
+invocation like any other, `bind` licenses it by the same four checks, and
+`packet`/`write` resolve its bound sections exactly as a claim's, so a
+transposition block's grounding reads them. `"shares": false` is the plain
+claim; a cut without the key scores and records exactly as before.
+
+**A title two or more headings share is named `<title>#<n>`.** A section
+title names every heading that carries exactly that title; one heading is a
+resolved section, two or more refuse `SECTION_TITLE_AMBIGUOUS`. For such a
+repeated title, write `<title>#<n>` (no space before the `#`): the n-th
+heading, in document order, whose title is exactly `<title>` —
+`"Field Survey of Widget Alignment#2"`. The refusal names this syntax and
+every occurrence with its line and level, e.g. `'Field Survey of Widget
+Alignment#2' (line 13, level 1)`. The same spelling is used everywhere a
+title goes: a cut's `sections`, `bind --section`, the recorded binding, and
+the `write` gate and `packet` that resolve it. It is the only new spelling:
+a title one heading carries keeps its one name (`<title>#1` for it refuses
+`SECTION_NOT_IN_SOURCE`), so every title that resolved before resolves to
+the same heading, and an ordinal past the last occurrence refuses
+`SECTION_NOT_IN_SOURCE` naming how many there are. Scoring names each
+claimable heading the same way, so two claimable headings sharing a title
+are claimed, orphaned or overlapped each on its own. A managed revision
+rendered before the deliberation engine escaped its pasted sources'
+headings repeats the document title in every pasted copy; this is how such
+a document is cut and bound without a new revision. The deliberation
+engine's `RESOLVE_TARGET` reads the same form, counted the same way.
+
 **Scoring, in one paragraph.** `separate` derives the document's own
 claimable sections (every heading at the shallowest remaining level, once
 any heading that wraps every other heading is eliminated — no heading-level
@@ -1245,7 +1292,7 @@ verb `write`'s phase-gated corpus assembly ever reads back.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `separate --proposal <path> [--sections <dir>] [--paper <dir>]` | Reads an already-authored whole-cut proposal, resolves every named title against the document's own structure and the assembled corpus, scores it, and records the round it just argued regardless of outcome. Never records a binding | `SEPARATION_REPORT_UNREADABLE`, `SEPARATION_SECTION_UNCLAIMABLE`, `SECTION_NOT_IN_SOURCE`, `SECTION_TITLE_AMBIGUOUS`, `SEPARATION_SECTION_OVERLAP`, `SEPARATION_SECTION_ORPHANED`, `SEPARATION_NOTATION_GAP`, `SEPARATION_ROUND_ABSENT`, `SEPARATION_CONCESSION_REGRESSED` |
+| `separate --proposal <path> [--sections <dir>] [--paper <dir>]` | Reads an already-authored whole-cut proposal, resolves every named title against the document's own structure and the assembled corpus, scores it, and records the round it just argued regardless of outcome. Never records a binding | `SEPARATION_REPORT_UNREADABLE`, `SEPARATION_SECTION_UNCLAIMABLE`, `SECTION_NOT_IN_SOURCE`, `SECTION_TITLE_AMBIGUOUS`, `SEPARATION_SECTION_OVERLAP`, `SEPARATION_SECTION_ORPHANED`, `SEPARATION_NOTATION_GAP`, `SEPARATION_SHARE_UNCLAIMED`, `SEPARATION_ROUND_ABSENT`, `SEPARATION_CONCESSION_REGRESSED` |
 | `bind --block <id> --fact <id> --lineage <lineage> --section <title> [--section <title> ...] [--sections <dir>] [--paper <dir>]` | Records which section(s) of a source document feed one block's own bindable requirement | `UNKNOWN_FACT`, `BINDING_FACT_NOT_BINDABLE`, `BINDING_LINEAGE_REQUIRED`, `BINDING_SECTIONS_REQUIRED`, `DECLARATION_FIXED`, `BINDING_UNARGUED` |
 | `bind --block <id> --fact <id> --reopen` | Clears an already-recorded `(block, fact)` binding's fixed state instead of recording one — never gated by `BINDING_UNARGUED` | (none beyond `bind`'s own) |
 
@@ -1264,6 +1311,8 @@ either command's own `--help`.
 | `write` refuses `DRAFT_PLACEHOLDER_TEXT` | The draft still carries `por definir`, `TODO`, `TBD`, `FIXME` or `\todo` — write the content, or leave the block unwritten. No attempt is spent |
 | `write` refuses `SECTION_BINDING_ABSENT` | Run `separate --proposal <path>` naming a whole cut for the missing claim's lineage, then the exact `bind` invocation the settled cut licenses |
 | `separate` refuses `SEPARATION_SECTION_OVERLAP` / `SEPARATION_SECTION_ORPHANED` / `SEPARATION_NOTATION_GAP` | One code by fixed precedence overlap → orphan → gap; the detail names every instance of every class present — fix the cut and resubmit the same proposal file |
+| `separate` refuses `SEPARATION_SHARE_UNCLAIMED` | A `"shares": true` assignment names a section no non-sharing assignment of the same cut claims — claim that section in the block that expands it, or drop it from the share. A share never covers a section on its own |
+| `separate`, `bind` or `write` refuses `SECTION_TITLE_AMBIGUOUS` | The title is carried by two or more headings — name one as `<title>#<n>`, picking it from the occurrences and lines the detail lists |
 | `separate` refuses `SEPARATION_SECTION_UNCLAIMABLE` | A named title resolves to a real heading outside the claimable set (the document's own title, or a subsection), or the document's claimable set could not be measured at all — `--file`/`contract` the section, or re-check the title against the document's own headings |
 | `separate` refuses `SEPARATION_ROUND_ABSENT` | `concedes_to_round` names a round with no record for this exact `(root, lineage, revision)` — check the round number and that the document revision has not moved |
 | `separate` refuses `SEPARATION_CONCESSION_REGRESSED` | This cut recomputes worse than the round it concedes to; both totals are recomputed from disk, never trusted from either round's stored record — argue a cut that is at least as good |
@@ -1401,7 +1450,7 @@ anything itself.**
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -1522,6 +1571,65 @@ evidence bindings — a block reporting an existing result. `argument`
 additionally admits `discovery`-class evidence — a block making a claim
 about the field. Binding a `discovery`-class record under `transposition`
 refuses `MODE_VIOLATION`.
+
+### The binding map: four kinds
+
+The redactor hands `write` one binding per sentence it drafted, each exactly
+one of:
+
+| Binding | The sentence carries | Licensed by |
+|---|---|---|
+| `evidence:<record-id>` | what that evidence record supports | the block's evidence set (`--evidence`) |
+| `fact:<fact-id>` | an operator-declared or produced fact | the block's `requires_facts` |
+| `declaration:<id>[,<id>...]` | the recorded value of one or more declarations, copied verbatim | the block's `requires_declarations`; `ai-usage` for the blocks whose packet carries the `ai_usage` record (`back-matter.bm-ai-use-declaration`, `experimental-setup.es-training-details`) |
+| `structural` | nothing: transitions, pointers, summaries | always; no numeral, `\cite`, comparative or named object outside the contract prose |
+
+`declaration:` exists for the blocks whose contract demands tokens no other
+kind may carry: the grant code and the funder (`bm-funding`), the repository
+URL, commit and access date (`bm-code-availability`,
+`bm-data-availability`), the ethics approval code, and the framework release
+and tool names of the AI-use declaration. Record a value with `declare
+--declaration <id> --value <v>`; `packet` hands the block's recorded values
+to the redactor under `declarations` (`{id: value | null}`), and the
+`ai_usage` record under `ai_usage` (its `tool_names` are the printed harness
+names). One sentence may name several ids (`declaration:grant-title,grant-code`
+for a funding entry that names its project and its code together).
+
+`write` judges every `declaration:` sentence against the values it names,
+after `resolve_bindings` and `type_structural`, in this order:
+
+1. every id is licensed, or it refuses `DECLARATION_NOT_LICENSED`;
+2. every id has a recorded value, or it refuses `DECLARATION_UNDECLARED`
+   naming the `declare` invocation that records it;
+3. for every id, the sentence prints at least one component of its value
+   verbatim, or it refuses `DECLARATION_VALUE_ABSENT`. The components of a
+   recorded value are the whole value, each parenthetical group's text, and
+   each `;`- or newline-separated part of the rest
+   (`"https://x/y; commit 06faa71; checked 2026-11-13"` -> `https://x/y`,
+   `commit 06faa71`, `checked 2026-11-13`); for `ai-usage` they are the
+   framework's name, URL and release, the tool ids and printed names, the
+   phase labels and agents, the drafting and auditing agents and the drafted
+   sections (`paper_ai_usage.declarable`). The comparison reads printed
+   text: accent macros (`m\'aquina`), `\url{}`/`\href{}{}`, TeX dashes and
+   quotes, `~` and escaped specials are reduced on both sides, and a
+   component matches only between alphanumeric boundaries;
+4. outside math, every alphanumeric run holding a digit is a run of a named
+   value (for `ai-usage`, its phase counts too; a recorded ISO date
+   `2026-11-13` also holds `13`, `11`, `November` and `Nov`, so it may be
+   printed `13 November 2026`), and every capitalised word that does not open
+   the sentence or follow a `.`/`:` (a bold label such as
+   `\textbf{Funding.}`) is in the contract prose or a run of a named value
+   (any case), and no comparative (`better`, `outperforms`, ... as
+   `structural` refuses them) appears unless a named value holds it, or it
+   refuses `DECLARATION_CARRIES_CLAIM`. The contract prose never licenses a
+   numeral: its example release is not this paper's release. Capitalised
+   words the contract prose names are licensed as written, so a tool the
+   contract lists only as an example still reads as licensed here; the
+   contract-auditor's AI-usage bullet is what holds the declaration to the
+   record.
+
+`declaration:` is admitted in every mode, like `fact:` and `structural`, and
+is never a grounding subject.
 
 ### `requires_facts` / `requires_declarations`: the requirement must name its own sentence
 
@@ -1787,12 +1895,26 @@ measured figure is `place`, entirely outside the compile path: no
 `check_excluded`, `check_shared_components`, `check_caption`,
 `check_mandatory`) check it against a manifest, never against a hardcoded
 section or block id. When `components_from` names a fact, the Components
-Check's expected list is DERIVED — never operator-supplied — from that
-fact's own declared resolution (`declare --fact <id> --value
-'["a", "b"]'`, read back through `paper_declarations.read_fact`), refusing
-`COMPONENTS_FACT_UNRESOLVED` when the fact was never declared and
-`COMPONENTS_FACT_NOT_A_LIST` when its resolution does not parse as a JSON
-array of strings. `components_from`'s named fact must equal the FULL
+Check's expected list is DERIVED — never operator-supplied. A declared
+fact reads its own declared resolution (`declare --fact <id> --value
+'["a", "b"]'`, read back through `paper_declarations.read_fact`). A
+produced fact (`contributions`, produced by
+`materials-and-methods.mm-proposal`) reads its producer block's own text in
+`main.tex`, in either of the two forms the methods contract admits for the
+list: the `\item` roster, one line per element; or, when the block holds
+no `\item` line at all, one `\subsection` per element, its printed title
+naming it, in order (`\subsection*` counts; `\subsection[short]{long}`
+yields the long title; whitespace inside a title collapses to one space;
+`\subsubsection` and `%`-commented headings never count). A roster present
+beside subsections is the list — the contract's "one that carries them all
+and closes on the roster" has both — and whether a roster merely repeats
+subsections is that contract's disqualifier, for `contract-auditor` to
+judge. It refuses `COMPONENTS_FACT_UNRESOLVED` when the fact was never
+declared (or its producer is not written yet) and
+`COMPONENTS_FACT_NOT_A_LIST` when a declared resolution does not parse as a
+JSON array of strings, or a producer block yields neither `\item` lines nor
+`\subsection` titles. `figure audit --block` resolves its expected list
+through the same route. `components_from`'s named fact must equal the FULL
 expected list by contract — section 01's methods diagram IS the
 contribution list, so `components_from: contributions` alone suffices. A
 block whose diagram is a composite crossing over several categories of
@@ -1871,6 +1993,21 @@ with quotes from the paper, the accepted proposal, the experiments'
 results and the SOTA pool. It never edits the paper and never claims a lack of
 novelty without naming the reference that holds the idea.
 
+**Record each review round.** The agent returns the review as a `round` JSON
+object and writes nothing; save it to a scratch file and run
+`python skills/paper-writing/scripts/paper_cli.py review --input <file>`
+(`-` reads stdin). The verb numbers and dates the round and appends it to
+`.papersmith/paper_review.json`, which the dashboard's final-judge panel in the
+PDF preview tab reads. From the second round on, the round must judge every
+revision the previous one raised (`items`, one verdict per `rank`):
+`REVIEW_ITEMS_MISSING` names the ranks without a verdict and
+`REVIEW_ITEM_UNKNOWN` the ranks the previous round never raised.
+`REVIEW_ROUND_INVALID` lists every out-of-range or missing field, and
+`REVIEW_FILE_INVALID` reports an existing file that cannot be read or holds a
+round that is not an object (never overwritten), or a history that would grow
+past the dashboard's 2 MB cap with this round. A refused round leaves the file unchanged: send the agent's
+round back with the refusal detail rather than editing it yourself.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
@@ -1914,7 +2051,7 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
-| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (the future-work block and every declaration open a paragraph of their own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
+| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (every block whose section contract opens a paragraph with it — the introduction's paragraphs 2–7, the related-work panorama, closing and synthesis pointer, the limitations' failure-mode paragraph, the conclusions' findings and future-work blocks, and every declaration — opens a paragraph of its own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
 **`contribution-list` holds only the blocks that enumerate.** A block that
 requires the contributions fact and names at least one declared contribution
@@ -2011,7 +2148,7 @@ themselves.
 | A check reports `unmeasured`, reason `BLOCK_NOT_DECLARED` | Only the block(s) that check depends on have no entry in the record; every other check still ran |
 | A check reports `unmeasured`, reason `SECTION_CONTRACTS_UNREADABLE` | The `sections/` corpus itself could not be read — `contract`/`order` first, then re-run `verify` |
 | Coupling `gap` reports `unmeasured` | This is unconditional, not a defect — read the published closings and front lists yourself; `verify` never closes this one |
-| `contract-currency` reports `unmeasured`, reason `CONTRACT_RECORD_ABSENT` | No block was ever written with `--contract`; every other check still reports |
+| `contract-currency` reports `unmeasured`, reason `CONTRACT_RECORD_ABSENT` | No block was ever written through `write` or `substitute --contract`; every other check still reports |
 
 ## The lifecycle: `reuse` and `exhaustion`
 
@@ -2113,7 +2250,7 @@ workspace's own venues).
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `select --slug <s> (--candidate <openalex id> \| --journal <name> --issn <issn>)` | Writes `venue.json`: the journal (name, ISSNs, publisher, homepage), and the quartile, its source and the review-time estimate copied from `paper/journal-candidates.json`; a candidate missing optional fields is tolerated. The slug is lowercase letters, digits and hyphens | `VENUE_SLUG_INVALID`, `SELECT_MODE_REQUIRED`, `SELECT_MODE_CONFLICT`, `ISSN_INVALID`, `CANDIDATES_ABSENT`, `CANDIDATE_UNKNOWN`, `VENUE_EXISTS`, `PAPER_ABSENT` |
+| `select --slug <s> (--candidate <openalex id> \| --journal <name> --issn <issn> [--publisher <name>])` | Writes `venue.json`: the journal (name, ISSNs, publisher, homepage), and the quartile, its source and the review-time estimate copied from `paper/journal-candidates.json`; a candidate missing optional fields is tolerated. A manual selection records the publisher only when `--publisher` names it; without one the venue reads as the `neutral` back-matter family, so name it for an Elsevier, MDPI or IEEE journal. The slug is lowercase letters, digits and hyphens | `VENUE_SLUG_INVALID`, `SELECT_MODE_REQUIRED`, `SELECT_MODE_CONFLICT`, `ISSN_INVALID`, `CANDIDATES_ABSENT`, `CANDIDATE_UNKNOWN`, `VENUE_EXISTS`, `PAPER_ABSENT` |
 | `requirements --slug <s> --file <json>` | Validates and stores `requirements.json` (schema 1): `guidelines_urls`, `document_class`, `sections`, `limits`, `declarations_required`, `reference_style`, `extras`. **Every requirement carries the `quote` from the guidelines and the `url` it came from** | `VENUE_ABSENT`, `REQUIREMENTS_INVALID`, `REQUIREMENT_UNSOURCED`, `PAPER_OUTSIDE_REPOSITORY` |
 | `acquire --slug <s> (--texlive <class> \| --file <zip\|cls\|sty\|bst\|tex> --url <origin>)` | Records `template.json`. A class TeX Live carries is recorded by name and the path `kpsewhich` resolves (also searched in `/Library/TeX/texbin` and `/usr/local/texlive/*/bin/*`). A publisher template is copied into `template/` with its origin url, sha256 and date; an archive is extracted only if no member escapes the directory, none is a symlink and the size and entry caps hold, and nothing is left behind otherwise | `VENUE_ABSENT`, `ACQUIRE_MODE_REQUIRED`, `ACQUIRE_MODE_CONFLICT`, `TEMPLATE_CLASS_INVALID`, `TEXLIVE_UNAVAILABLE`, `TEMPLATE_ABSENT`, `TEMPLATE_ORIGIN_REQUIRED`, `TEMPLATE_FILE_UNSUPPORTED`, `TEMPLATE_UNSAFE` |
 | `diff --slug <s> [--sections <dir>]` | Writes `audit.json`: smith's section contracts (`paper_contract.parse`: ids, `position`, the `**Extent**` prose read best-effort) and the written `main.tex` (blocks, declarations, keyword count, abstract/title/main-text word counts, figures, tables, cited references, the class and bibliography-style lines) against `requirements.json`. Findings: `missing-section`, `extra-section`, `out-of-order`, `over-limit`, `under-limit`, `missing-declaration`, `class-mismatch`, `reference-style-mismatch`, `missing-extra`, `undecidable`; each with a `severity` (`blocker`, `major`, `minor`), the smith side, the venue side with its quote and url, the affected block ids, and `resolved_by` (`build`, `text-change`, `operator-decision`). The audit records the sha256 of `main.tex` and of `requirements.json` it was computed from | `VENUE_ABSENT`, `REQUIREMENTS_ABSENT`, `TEMPLATE_ABSENT`, `PAPER_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `MALFORMED_HEADER` and the marker codes |

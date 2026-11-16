@@ -115,6 +115,28 @@ class ManagerTests(unittest.TestCase):
         token = self.manager.token
         altered = ("A" if token[0] != "A" else "B") + token[1:]
         self.assertFalse(self.manager.authorized(altered))
+        # A malformed value is a wrong one, never an error (compare_digest
+        # raises on non-ASCII str).
+        for odd in ("é" * 43, "\udcff", 42, ""):
+            self.assertFalse(self.manager.authorized(odd))
+            self.assertFalse(self.manager.accepts_login(odd))
+
+    def test_the_login_secret_is_never_the_cookie(self) -> None:
+        # The login secret buys the cookie; neither opens the other's door.
+        login, cookie = self.manager.login_token, self.manager.token
+        self.assertGreaterEqual(len(login), 40)
+        self.assertNotEqual(login, cookie)
+        self.assertTrue(self.manager.accepts_login(login))
+        self.assertFalse(self.manager.accepts_login(cookie))
+        self.assertFalse(self.manager.authorized(login))
+
+    def test_an_operator_secret_is_the_login_secret_only(self) -> None:
+        secret = "s3cr3t-" + "x" * 30
+        manager = terminal.TerminalManager(self.root, login_token=secret)
+        self.assertEqual(manager.login_token, secret)
+        self.assertNotEqual(manager.token, secret)
+        with self.assertRaises(terminal.LoginTokenError):
+            terminal.TerminalManager(self.root, login_token="too-short")
 
     def test_close_ends_the_process(self) -> None:
         session = self.manager.create("shell", cols=80, rows=24)
@@ -284,7 +306,8 @@ class RouteTests(unittest.TestCase):
         # The token goes to the OS browser only, for the host the page uses.
         url = opened.call_args[0][0]
         self.assertEqual(url, "http://127.0.0.1:8080/api/terminal/login?token="
-                         + self.app.state.terminal.token)
+                         + self.app.state.terminal.login_token)
+        self.assertNotIn(self.app.state.terminal.login_token, json.dumps(body))
         self.assertNotIn(self.app.state.terminal.token, json.dumps(body))
 
     def test_activation_is_same_origin_only_and_throttled(self) -> None:
@@ -304,11 +327,10 @@ class RouteTests(unittest.TestCase):
     def test_activation_sends_the_token_only_to_the_bound_socket(self) -> None:
         # Host is never trusted: [::1] is a free socket on an IPv4-only bind,
         # which another local user could listen on to catch the token.
-        token = self.app.state.terminal.token
         for host in ("[::1]:8080", "localhost:8080", "evil.example", "127.0.0.1:80@evil.example", ""):
             self.app = server.create_app(self.root, history_store=None, enable_terminal=True)
             self.addCleanup(self.app.state.terminal.close_all)
-            token = self.app.state.terminal.token
+            token = self.app.state.terminal.login_token
             headers = {**SAME, "Host": host}
             headers.pop("Origin")
             with mock.patch.object(server, "open_browser", return_value=True) as opened:
@@ -344,10 +366,13 @@ class RouteTests(unittest.TestCase):
     def test_the_login_url_sets_the_cookie_only_for_the_right_token(self) -> None:
         login = _route(self.app, "/api/terminal/login", "GET")
         self.assertEqual(login("wrong").status_code, 403)
-        ok = login(self.app.state.terminal.token)
+        # The cookie's own value buys nothing: only the login secret does.
+        self.assertEqual(login(self.app.state.terminal.token).status_code, 403)
+        ok = login(self.app.state.terminal.login_token)
         self.assertEqual(ok.status_code, 303)
         cookie = ok.headers["set-cookie"]
-        self.assertIn(f"{server.TERMINAL_COOKIE}=", cookie)
+        self.assertIn(f"{server.TERMINAL_COOKIE}={self.app.state.terminal.token};", cookie)
+        self.assertNotIn(self.app.state.terminal.login_token, cookie)
         self.assertIn("HttpOnly", cookie)
         self.assertIn("SameSite=strict", cookie)
 
@@ -420,6 +445,9 @@ class DisabledTests(unittest.TestCase):
         self.assertTrue(server.terminal_allowed("localhost"))
         self.assertFalse(server.terminal_allowed("0.0.0.0"))
         self.assertFalse(server.terminal_allowed("192.168.1.10"))
+        # Off loopback only on the operator's explicit opt-in (--network-terminal).
+        self.assertTrue(server.terminal_allowed("0.0.0.0", network_terminal=True))
+        self.assertTrue(server.terminal_allowed("192.168.1.10", network_terminal=True))
 
 
     def test_smith_ui_forwards_no_terminal_only_when_asked(self) -> None:

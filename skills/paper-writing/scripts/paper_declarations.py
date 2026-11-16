@@ -53,6 +53,7 @@ Public surface:
         its own current revision/paper, and the section titles read from it --
         what `write`'s own SECTION_BINDING_ABSENT refusal shows an operator)
     read_fact(paper_dir, id) -> str | None  (read-only; None when unresolved)
+    read_declaration(paper_dir, id) -> str | None  (read-only; None when unrecorded)
     read_declined(paper_dir) -> dict[str, dict]  (read-only;
         {fact_id: {"reason", "condition", "holds", "detail"}}, condition
         re-evaluated fresh from disk on every call)
@@ -467,6 +468,25 @@ def read_fact(paper_dir: Path, fact_id: str) -> str | None:
     return entry["resolution"]
 
 
+def read_declaration(paper_dir: Path, declaration: str) -> str | None:
+    """Read-only: the currently FIXED value recorded for the declaration id `declaration`,
+    or `None` when it was never declared, or was reopened and not yet
+    redeclared. The declaration counterpart of `read_fact`, through the same
+    private readers. Read by `write` to judge a `declaration:`-bound
+    sentence against the value it carries, and by `packet` to hand that
+    value to the redactor. Raises `UNKNOWN_DECLARATION` for an id outside
+    the closed vocabulary and `DECLARATIONS_HAND_EDITED` like every other
+    reader of this region."""
+    paper_vocabulary.validate_declaration(declaration)
+    _tex_path, _pre, record = _read_declarations(paper_dir)
+    _verify_not_hand_edited(record)
+    body = _body_or_default(record)
+    entry = _find_record(body, "declaration", declaration)
+    if entry is None or not entry.get("fixed"):
+        return None
+    return entry["value"]
+
+
 def read_declined(paper_dir: Path) -> dict:
     """Read-only: every currently-declined fact id mapped to
     `{"reason": str, "condition": dict, "holds": bool, "detail": str}` --
@@ -742,10 +762,12 @@ def _canonicalize_separation_assignments(assignments) -> tuple:
     treats as sets (the assignments list as a whole, and each
     assignment's own `sections`), so two proposals naming the identical
     cut in a different JSON order are recognized as the SAME cut, never a
-    spuriously new round."""
+    spuriously new round. Whether an assignment shares its sections
+    (`"shares": true`) is part of the cut, so the same titles claimed in
+    one round and shared in the next are two cuts."""
     return tuple(
         sorted(
-            (entry["block"], entry["fact"], tuple(sorted(entry["sections"])))
+            (entry["block"], entry["fact"], tuple(sorted(entry["sections"])), bool(entry.get("shares")))
             for entry in assignments
         )
     )
@@ -829,8 +851,11 @@ def record_separation_round(
             return latest
     round_number = (existing[-1]["round"] + 1) if existing else 1
     id_ = _separation_record_id(root, lineage, revision, round_number)
+    # A sharing assignment keeps `"shares": true`; a claim is stored with no
+    # `shares` key at all, exactly as before sharing existed.
     stored_assignments = [
-        {"block": entry["block"], "fact": entry["fact"], "sections": list(entry["sections"])}
+        {"block": entry["block"], "fact": entry["fact"], "sections": list(entry["sections"]),
+         **({"shares": True} if entry.get("shares") else {})}
         for entry in assignments
     ]
     _set_record(

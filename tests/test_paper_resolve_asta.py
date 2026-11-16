@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 from contextlib import redirect_stdout
@@ -208,8 +209,7 @@ class AstaLookupTests(AstaCase):
                 assert ASTA_KEY not in str(caught.exception.detail)
 
     def test_transport_failures_are_unreachable_after_one_retry(self) -> None:
-        for failure in (urllib.error.URLError("down"), TimeoutError("timed out"),
-                        urllib.error.HTTPError("u", 503, "busy", {}, None),
+        for failure in (urllib.error.URLError("down"), urllib.error.HTTPError("u", 503, "busy", {}, None),
                         sse(tool_error("Error executing tool get_paper: HTTP status 429 Too Many Requests"))):
             with self.subTest(failure=repr(failure)[:40]):
                 recorder = self.use(lambda request, failure=failure: failure)
@@ -217,6 +217,26 @@ class AstaLookupTests(AstaCase):
                     self.resolve("10.1/x")
                 assert caught.exception.code == "RESOLVER_UNREACHABLE"
                 assert len(recorder.requests) == 2
+
+    def test_a_silent_lookup_is_asked_again(self) -> None:
+        # Live on 2026-11-11, a keyed lookup answered within a second or only
+        # after 30 s or more, and a fresh request usually answered at once.
+        answers = [TimeoutError("timed out"), TimeoutError("timed out"), sse(tool_ok(PAPER))]
+        recorder = self.use(lambda request: answers.pop(0))
+        result = self.resolve("10.1016/j.neunet.2014.09.003")
+        assert result["resolver"] == "asta" and result["title"] == PAPER["title"]
+        assert len(recorder.requests) == 3
+
+    def test_silent_lookups_stop_at_the_deadline(self) -> None:
+        with mock.patch.object(paper_resolve, "_ASTA_LOOKUP_DEADLINE_SECONDS", 0.4), \
+                mock.patch.object(paper_resolve, "_ASTA_MIN_INTERVAL_SECONDS", 0.05):
+            recorder = self.use(lambda request: TimeoutError("timed out"))
+            started = time.monotonic()
+            with self.assertRaises(Refused) as caught:
+                self.resolve("10.1/x")
+        assert caught.exception.code == "RESOLVER_UNREACHABLE"
+        assert len(recorder.requests) > 2
+        assert time.monotonic() - started < 2
 
     def test_a_spent_deadline_never_blocks(self) -> None:
         with mock.patch.object(paper_resolve, "_ASTA_LOOKUP_DEADLINE_SECONDS", 0):

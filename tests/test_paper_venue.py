@@ -365,6 +365,26 @@ class SelectTests(VenueCase):
         self.assertEqual(record["journal"]["name"], "Some Journal")
         self.assertEqual(record["journal"]["issn"], ["1234-5678"])
         self.assertEqual(record["via"], "manual")
+        self.assertIsNone(record["journal"]["publisher"])
+
+    def test_select_manual_records_the_publisher_and_its_family(self) -> None:
+        payload = self.ok("select", "--slug", "bspc", "--journal", "Biomedical Signal Processing and Control",
+                          "--issn", "1746-8094", "--publisher", "Elsevier BV")
+        self.assertEqual(payload["via"], "manual")
+        record = json.loads((self.venue_dir("bspc") / "venue.json").read_text())
+        self.assertEqual(record["journal"]["publisher"], "Elsevier BV")
+        placement = paper_venue.back_matter_placement(self.paper)
+        self.assertEqual([(p["slug"], p["family"], p["funding"]) for p in placement],
+                         [("bspc", "elsevier", paper_venue.BACK_MATTER_PLACEMENT["elsevier"]["funding"])])
+
+    def test_publisher_needs_the_manual_mode(self) -> None:
+        self.candidates()
+        self.refused("select", "SELECT_MODE_CONFLICT", "--slug", "eswa", "--candidate", "S1001",
+                     "--publisher", "Elsevier")
+        self.refused("select", "SELECT_MODE_REQUIRED", "--slug", "eswa", "--publisher", "Elsevier")
+        self.refused("select", "SELECT_MODE_REQUIRED", "--slug", "eswa", "--journal", "X",
+                     "--issn", "1234-5678", "--publisher", "  ")
+        self.assertFalse((self.venue_dir("eswa") / "venue.json").exists())
 
     def test_unknown_candidate_refuses(self) -> None:
         self.candidates()

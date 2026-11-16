@@ -109,14 +109,15 @@ def _retired(root: Path, previous_managed: set[str], active: Sequence[str]) -> l
 
 
 def _copy_if_needed(workspace: Path, kit_root: Path, relpath: str, *, force: bool,
-                    unsynchronized: list[str]) -> bool:
+                    unsynchronized: list[str], kit_relpath: str | None = None) -> bool:
     """Synchronize one kit file; return whether it was written.
 
     A destination that cannot be written — a FIFO a copy would block on, a
     directory, an unsearchable parent — is appended to ``unsynchronized``
     instead of aborting a run that has already synchronized earlier files.
     """
-    source = kit_root / relpath
+    kit_relpath = kit_relpath or relpath
+    source = kit_root / kit_relpath
     destination = workspace / relpath
     if not fs.is_regular_file(source):
         raise SourceError(f"kit manifest names a missing source file: {source}")
@@ -129,7 +130,7 @@ def _copy_if_needed(workspace: Path, kit_root: Path, relpath: str, *, force: boo
         current = manifest.sha256_if_readable(destination)
         if current is not None and current == manifest.sha256_if_readable(source):
             return False
-    if not manifest.copy_kit_file(kit_root, relpath, workspace):
+    if not manifest.copy_kit_file(kit_root, kit_relpath, workspace, relpath):
         unsynchronized.append(relpath)
         return False
     return True
@@ -210,7 +211,10 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
         raise UserError(f"not a papersmith workspace: missing {root / '.papersmith/manifest.json'}")
 
     kit_root, kit_origin = resolve_and_validate_origin()
-    kit_files = manifest.kit_files(kit_root)
+    # The paper line decides which kit files this workspace receives and
+    # where (``manifest.kit_layout``): a review workspace keeps its review
+    # section contracts and never gets the experimental ones back.
+    kit_files = manifest.kit_layout(kit_root, manifest.paper_kind(root))
     version = manifest.kit_version(kit_root)
     # Read once, before this run can rewrite it: every later decision about
     # migrations asks where the workspace STARTED, not where it ended up.
@@ -256,7 +260,7 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
             preserved.append(relpath)
             continue
         if _copy_if_needed(root, kit_root, relpath, force=force,
-                           unsynchronized=unsynchronized):
+                           unsynchronized=unsynchronized, kit_relpath=kit_files[relpath]):
             changed.append(relpath)
 
     # Repair a missing or stale harness `skills` symlink for the active

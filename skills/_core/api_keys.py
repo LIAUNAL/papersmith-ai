@@ -75,9 +75,12 @@ MAX_KEY_CHARS = 512
 #: Largest stored file read; a key is far shorter.
 MAX_FILE_BYTES = 4096
 
-VERIFY_DEADLINE_SECONDS = 20.0
+#: The wall time of one verify, every attempt included: an Asta lookup left
+#: silent for ``asta_protocol.LOOKUP_ATTEMPT_SECONDS`` is asked again.
+VERIFY_DEADLINE_SECONDS = 30.0
 VERIFY_READ_TIMEOUT_SECONDS = 10.0
-#: A paper Asta answered for in about a second, keyed or not (2026-11-09).
+#: A paper Asta holds: answered in under a second keyless, and keyed in under
+#: a second or after 30 s or more (2026-11-11), hence the repeated attempts.
 ASTA_VERIFY_PAPER = "DOI:10.1088/1741-2552/aace8c"
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 USER_AGENT = "papersmith-ai (api-keys verify)"
@@ -431,29 +434,49 @@ def _verify_asta(key: str, url: str | None, deadline: float, started: float,
     endpoint, body, headers = protocol.request(
         "get_paper", {"paper_id": ASTA_VERIFY_PAPER, "fields": "title,year"},
         key=key, endpoint=url or protocol.ENDPOINT)
-    request = urllib.request.Request(endpoint, data=body, method="POST",
-                                     headers={"User-Agent": USER_AGENT, **headers})
     until = started + deadline
-    try:
-        timeout = max(0.1, min(VERIFY_READ_TIMEOUT_SECONDS, until - time.monotonic()))
-        with _OPENER.open(request, timeout=timeout) as response:
-            message = protocol.read_message(response.readline, deadline=until)
-        protocol.tool_texts(message)
-    except protocol.AstaError as exc:
-        if exc.kind == protocol.REFUSED:
-            return _result("asta", "refused", "Asta refused the key", origin, started)
-        if exc.kind == protocol.NOT_FOUND:
+    attempts = 0
+    while True:
+        attempts += 1
+        request = urllib.request.Request(endpoint, data=body, method="POST",
+                                         headers={"User-Agent": USER_AGENT, **headers})
+        now = time.monotonic()
+        # A keyed lookup answers within a second or only after 30 s or more:
+        # one silent this long is asked again, until the deadline.
+        attempt_until = min(until, now + protocol.LOOKUP_ATTEMPT_SECONDS)
+        try:
+            timeout = max(0.1, min(VERIFY_READ_TIMEOUT_SECONDS, attempt_until - now))
+            with _OPENER.open(request, timeout=timeout) as response:
+                message = protocol.read_message(response.readline, deadline=attempt_until)
+            protocol.tool_texts(message)
+        except protocol.AstaError as exc:
+            if exc.kind == protocol.REFUSED:
+                return _result("asta", "refused", "Asta refused the key", origin, started)
+            if exc.kind == protocol.NOT_FOUND:
+                return _result("asta", "ok", "key accepted", origin, started)
+            if not exc.timed_out:
+                return _result("asta", "unreachable", _short(exc.detail), origin, started)
+            reason = exc.detail
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                return _result("asta", "refused", f"HTTP {exc.code}", origin, started)
+            if 300 <= exc.code < 400:
+                return _result("asta", "unreachable", f"HTTP {exc.code}: redirect refused", origin, started)
+            return _result("asta", "unreachable", f"HTTP {exc.code}", origin, started)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            if not _timed_out(exc):
+                return _result("asta", "unreachable", _reason(exc), origin, started)
+            reason = _reason(exc)
+        else:
             return _result("asta", "ok", "key accepted", origin, started)
-        return _result("asta", "unreachable", _short(exc.detail), origin, started)
-    except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
-            return _result("asta", "refused", f"HTTP {exc.code}", origin, started)
-        if 300 <= exc.code < 400:
-            return _result("asta", "unreachable", f"HTTP {exc.code}: redirect refused", origin, started)
-        return _result("asta", "unreachable", f"HTTP {exc.code}", origin, started)
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        return _result("asta", "unreachable", _reason(exc), origin, started)
-    return _result("asta", "ok", "key accepted", origin, started)
+        if until - time.monotonic() < 0.5:
+            return _result("asta", "unreachable", f"{_short(reason)} ({attempts} attempts in "
+                           f"{deadline:g} s)", origin, started)
+
+
+def _timed_out(exc: BaseException) -> bool:
+    """A read or a connection that ran out of time, not a refusal."""
+    return isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
 
 
 def _verify_openalex(key: str, url: str | None, started: float, deadline: float,

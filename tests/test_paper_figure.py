@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import ast
 import dataclasses
+import hashlib
 import json
 import os
 import shutil
@@ -1032,6 +1033,180 @@ class CLIWiringTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, proc.stdout)
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["code"], "MANDATORY_DIAGRAM_ABSENT")
+
+
+class ProducedListFormTests(unittest.TestCase):
+    """`render --section materials-and-methods --block mm-proposal` against
+    the REAL shipped contract, whose `mm-proposal` block produces
+    `contributions` and declares `figure.components_from: contributions`.
+    The contract admits the contribution list in two forms -- one
+    `\\subsection` per contribution, or an `\\item` roster -- and
+    disqualifies a roster repeating subsections; the produced-fact route
+    (`paper_cli._resolve_expected_components`) must read whichever form the
+    block carries. Rules: the subsection form resolves when there is no
+    roster; a roster, when present, is the list (the contract's "one [that]
+    carries them all and closes on the roster"); neither form refuses
+    `COMPONENTS_FACT_NOT_A_LIST` naming both; the roster form behaves
+    exactly as before."""
+
+    BLOCK_ID = "materials-and-methods.mm-proposal"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.test_root = (
+            FORGE_ROOT / "implementations"
+            / f".paper-figure-produced-list-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        )
+        self.addCleanup(shutil.rmtree, self.test_root, ignore_errors=True)
+        self.paper_dir = self.test_root / "paper"
+        (self.paper_dir / "Figures").mkdir(parents=True)
+        self.bin_dir = Path(self._tmp.name) / "bin"
+        _install_stub_latexmk(self.bin_dir)
+
+    def _write_main_tex(self, body: str) -> bytes:
+        body_bytes = body.encode("utf-8")
+        digest = hashlib.sha256(body_bytes).hexdigest()
+        data = (
+            b"\\documentclass{article}\n\\begin{document}\n"
+            + f"%% paper-writing block {self.BLOCK_ID} begin sha256={digest}\n".encode("ascii")
+            + body_bytes
+            + f"%% paper-writing block {self.BLOCK_ID} end\n".encode("ascii")
+            + b"\\end{document}\n"
+        )
+        (self.paper_dir / "main.tex").write_bytes(data)
+        return data
+
+    def _write_figure(self, figure_id: str, components: list) -> None:
+        (self.paper_dir / "Figures" / f"{figure_id}.tex").write_text(
+            "".join(f"% node: {name}\n" for name in components), encoding="utf-8",
+        )
+        (self.paper_dir / "Figures" / f"{figure_id}.diagram.json").write_text(
+            json.dumps({
+                "components": components, "encodings": [],
+                "caption": "Figure 1. " + ", ".join(components) + ".",
+            }),
+            encoding="utf-8",
+        )
+
+    def _render(self, figure_id: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable, str(CLI), "render", "--paper", str(self.paper_dir),
+                "--figure-id", figure_id, "--latexmk-path", str(self.bin_dir),
+                "--section", "materials-and-methods", "--block", "mm-proposal",
+                "--sections", str(SECTIONS_DIR),
+            ],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "STUB_MODE": "success"},
+        )
+
+    def _assert_obligations_checked(self, proc: subprocess.CompletedProcess, main_tex: bytes) -> None:
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["verdict"], "success")
+        self.assertEqual(payload["obligations"], {"checked": True})
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), main_tex, "render never writes main.tex")
+
+    def _assert_refused(self, proc: subprocess.CompletedProcess, code: str, main_tex: bytes) -> dict:
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["code"], code)
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), main_tex, "render never writes main.tex")
+        return payload
+
+    def test_subsection_form_resolves_the_produced_list_from_the_titles_in_order(self) -> None:
+        main_tex = self._write_main_tex(
+            "\\subsection{Anchored correction}\\label{sec:anchored}\n"
+            "Defines the anchor and its equation.\n"
+            "\\subsubsection{Its notation}\n"
+            "Notation only.\n"
+            "\\subsection*{Gradient   attribution\n  by analytic gradients}\n"
+            "Defines the attribution.\n"
+            "% \\subsection{A commented-out heading}\n"
+            "\\subsection[Certificate]{Stability certificate with $\\mathcal{C}_{k}$}\n"
+            "Defines the certificate.\n"
+        )
+        expected = [
+            "Anchored correction",
+            "Gradient attribution by analytic gradients",
+            "Stability certificate with $\\mathcal{C}_{k}$",
+        ]
+        self._write_figure("figOrdered", expected)
+        self._assert_obligations_checked(self._render("figOrdered"), main_tex)
+
+    def test_subsection_titles_are_compared_against_the_figure_in_their_order(self) -> None:
+        main_tex = self._write_main_tex(
+            "\\subsection{Anchored correction}\nText.\n"
+            "\\subsection{Gradient attribution}\nText.\n"
+        )
+        self._write_figure("figSwapped", ["Gradient attribution", "Anchored correction"])
+        payload = self._assert_refused(self._render("figSwapped"), "COMPONENT_MISMATCH", main_tex)
+        self.assertIn("Anchored correction", payload["detail"])
+
+    def test_a_roster_beside_a_subsection_is_the_list(self) -> None:
+        main_tex = self._write_main_tex(
+            "\\subsection{The proposal}\n"
+            "Defines both contributions in prose.\n"
+            "\\begin{enumerate}\n"
+            "\\item Anchored correction\n"
+            "\\item Gradient attribution\n"
+            "\\end{enumerate}\n"
+        )
+        self._write_figure("figRoster", ["Anchored correction", "Gradient attribution"])
+        self._assert_obligations_checked(self._render("figRoster"), main_tex)
+
+    def test_a_block_with_neither_form_refuses_naming_both_forms(self) -> None:
+        main_tex = self._write_main_tex(
+            "The contributions run into the prose with no list at all.\n"
+            "\\subsubsection{A deeper heading is not an element}\n"
+        )
+        self._write_figure("figNone", ["Anchored correction"])
+        payload = self._assert_refused(self._render("figNone"), "COMPONENTS_FACT_NOT_A_LIST", main_tex)
+        self.assertEqual(
+            payload["detail"],
+            "'contributions''s producer 'materials-and-methods.mm-proposal' yields neither "
+            "\\item lines nor \\subsection titles to resolve as a list",
+        )
+
+    def test_the_roster_form_alone_resolves_exactly_as_before(self) -> None:
+        main_tex = self._write_main_tex(
+            "Prose defining both contributions.\n"
+            "\\item Anchored correction\n"
+            "\\item Gradient attribution\n"
+        )
+        self._write_figure("figItems", ["Anchored correction", "Gradient attribution"])
+        self._assert_obligations_checked(self._render("figItems"), main_tex)
+        self._write_figure("figItemsShort", ["Anchored correction"])
+        self._assert_refused(self._render("figItemsShort"), "COMPONENT_MISMATCH", main_tex)
+
+    def test_figure_audit_reads_the_subsection_form_too(self) -> None:
+        """`figure audit --figure-id --block` resolves its expected list
+        through the same route: a subsection-form block yields a measured
+        verdict, never `COMPONENTS_FACT_UNRESOLVED`'s `unmeasured` (the
+        audit's pipeline-step comparison also accepts a step the manuscript
+        prose names, so a measured clean figure reads `pass`)."""
+        self._write_main_tex(
+            "\\subsection{Anchored correction}\nText.\n"
+            "\\subsection{Gradient attribution}\nText.\n"
+        )
+        self._write_figure("figAudit", ["Anchored correction", "Gradient attribution"])
+        proc = subprocess.run(
+            [
+                sys.executable, str(CLI), "figure", "audit", "--paper", str(self.paper_dir),
+                "--figure-id", "figAudit", "--section", "materials-and-methods",
+                "--block", "mm-proposal", "--sections", str(SECTIONS_DIR),
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["verdict"], "pass")
+        self.assertIsNone(payload["unmeasured_reason"])
+        self.assertEqual(payload["missing_pipeline_steps"], [])
 
 
 _SKILL_MD = FORGE_ROOT / "skills" / "paper-writing" / "SKILL.md"

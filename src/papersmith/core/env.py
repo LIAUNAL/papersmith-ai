@@ -48,6 +48,8 @@ def register(subparsers) -> None:
     install = commands.add_parser("install", help="create or update the isolated micromamba environment")
     install.add_argument("--cpu", action="store_true", help="force CPU PyTorch")
     install.add_argument("--cuda", action="store_true", help="force CUDA PyTorch")
+    install.add_argument("--rocm", action="store_true",
+                         help="force AMD's ROCm PyTorch wheels for the detected gfx target")
     install.add_argument(
         "--no-ingestion", action="store_true",
         help="skip docling and heavy ingestion packages; fast pypdfium2 stays",
@@ -74,6 +76,8 @@ def run_cli(args: argparse.Namespace) -> int:
             extra.append("--cpu")
         if getattr(args, "cuda", False):
             extra.append("--cuda")
+        if getattr(args, "rocm", False):
+            extra.append("--rocm")
         if getattr(args, "no_ingestion", False):
             extra.append("--no-ingestion")
     elif cmd == "clean":

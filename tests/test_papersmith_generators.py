@@ -742,7 +742,7 @@ class WorkspaceToolsResolverTests(unittest.TestCase):
         context = context_for_workspace(workspace)
         assert (
             set(manifest.workspace_framework_files(workspace, kit_root).keys())
-            == set(manifest.kit_files(kit_root).keys())
+            == set(manifest.kit_layout(kit_root, manifest.paper_kind(workspace)).keys())
             | set(render_files(workspace, context, workspace_tools(workspace)).keys())
             | {".papersmith/version"}
         )

@@ -635,13 +635,17 @@ _MARKUP_RE = re.compile(r"</?(?:jats:[\w-]+|mml:[\w-]+|p|i|b|em|strong|sub|sup|s
 _asta_last_call = [0.0]
 
 
-def _asta_call(tool: str, arguments: dict, *, config: dict, deadline_seconds: float) -> list:
+def _asta_call(tool: str, arguments: dict, *, config: dict, deadline_seconds: float,
+               attempt_seconds: float | None = None) -> list:
     """One Asta tool call through `OPENER`: the text parts of its answer.
 
     Raises `_NoSuchWork` (the corpus holds no such paper), `_KeyRefused` (the
     key was refused) or `_Unreachable` (anything else, after at most one
-    retry, and never past `deadline_seconds` of wall time). No message carries
-    the key."""
+    retry, and never past `deadline_seconds` of wall time). With
+    `attempt_seconds`, an attempt left silent that long is asked again for as
+    long as the deadline allows: a keyed lookup answers within a second or
+    only after 30 s or more (`asta_protocol.LOOKUP_ATTEMPT_SECONDS`). No
+    message carries the key."""
     protocol = _asta()
     key = _key("asta")
     url, body, headers = protocol.request(tool, arguments, key=key)
@@ -658,10 +662,13 @@ def _asta_call(tool: str, arguments: dict, *, config: dict, deadline_seconds: fl
         _asta_last_call[0] = time.monotonic()
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         retryable = True
+        silent = False
+        now = time.monotonic()
+        attempt_until = until if attempt_seconds is None else min(until, now + attempt_seconds)
         try:
-            remaining = max(0.1, until - time.monotonic())
+            remaining = max(0.1, attempt_until - now)
             with OPENER.open(request, timeout=min(_ASTA_READ_TIMEOUT_SECONDS, remaining)) as response:
-                message = protocol.read_message(response.readline, deadline=until)
+                message = protocol.read_message(response.readline, deadline=attempt_until)
             return protocol.tool_texts(message)
         except protocol.AstaError as exc:
             detail = protocol.redact(exc.detail, key)
@@ -671,6 +678,7 @@ def _asta_call(tool: str, arguments: dict, *, config: dict, deadline_seconds: fl
                 raise _KeyRefused(f"asta {tool}: {detail}: the configured Asta key was refused; check it "
                                   "in the dashboard (Doctor -> API keys) or with `smith keys status asta`")
             reason = detail
+            silent = exc.timed_out
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
                 raise _KeyRefused(f"asta {tool}: HTTP {exc.code}: the configured Asta key was refused")
@@ -678,9 +686,15 @@ def _asta_call(tool: str, arguments: dict, *, config: dict, deadline_seconds: fl
             retryable = exc.code == 429 or 500 <= exc.code < 600
         except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
             reason = protocol.redact(f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}", key)
-        if not retryable or attempts >= 2 or until - time.monotonic() <= _RETRY_DELAY_SECONDS:
+            silent = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+        # A silent lookup is asked again while time remains (the per-call
+        # interval spaces the attempts); anything else retries once.
+        again = silent and attempt_seconds is not None
+        if not retryable or (attempts >= 2 and not again) \
+                or until - time.monotonic() <= _RETRY_DELAY_SECONDS:
             raise _Unreachable(f"asta {tool}: {reason} after {attempts} attempt(s)")
-        time.sleep(_RETRY_DELAY_SECONDS)
+        if not again:
+            time.sleep(_RETRY_DELAY_SECONDS)
 
 
 def _parse_asta(paper: dict) -> dict:
@@ -719,6 +733,7 @@ def _resolve_asta(identifier: str, config: dict) -> tuple[bytes, dict]:
     if kind is None:
         raise _NoSuchWork(f"asta: {identifier!r} is neither a DOI nor an arXiv id")
     texts = _asta_call("get_paper", {"paper_id": _asta().paper_id(*kind), "fields": ASTA_PAPER_FIELDS},
+                       attempt_seconds=_asta().LOOKUP_ATTEMPT_SECONDS,
                        config=config, deadline_seconds=_ASTA_LOOKUP_DEADLINE_SECONDS)
     payload = next((text for text in texts if text.strip()), None)
     if payload is None:

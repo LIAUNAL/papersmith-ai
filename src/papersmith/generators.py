@@ -953,6 +953,7 @@ def context_for_workspace(workspace: Path) -> dict[str, Any]:
         "version": read_workspace_version(workspace, str(yaml.get("version", "1"))),
         "tools": ", ".join(config["active_tools"]),
         "agents": _agents_block(workspace),
+        **({"paper_kind": config["paper_kind"]} if config.get("paper_kind") else {}),
     }
 
 
@@ -991,7 +992,10 @@ def _context_with_defaults(context: dict[str, Any]) -> dict[str, Any]:
     result.setdefault("tools", ", ".join(ALL_TOOLS))
     result.setdefault("agents", "- No specialized agents have been installed yet.")
     # One statement of the paper-construction flow, shared by every harness.
-    result.setdefault("paper_flow", render_package_template("paper-flow.md.tpl", {}).strip())
+    # A review workspace (``paper_kind: review``) follows the PRISMA 2020 line;
+    # every other workspace keeps the experimental flow.
+    flow = "paper-flow-review.md.tpl" if result.get("paper_kind") == "review" else "paper-flow.md.tpl"
+    result.setdefault("paper_flow", render_package_template(flow, {}).strip())
     # One statement of which language the agent replies in and which stays English.
     result.setdefault("language_rule", render_package_template("language.md.tpl", {}).strip())
     return result

@@ -80,6 +80,39 @@ class OwnParagraphCheckTests(unittest.TestCase):
             + block("introduction.block-4b", "\\begin{itemize}\n\\item A: does a.\n\\end{itemize}\n")
         self.assertEqual(paper_verify.check_own_paragraph(Evidence(tex))["verdict"], "pass")
 
+    #: Blocks whose section contract opens a paragraph with them: the
+    #: introduction's paragraphs 2-7, the related-work panorama, closing and
+    #: synthesis pointer, the limitations' failure-mode paragraph, and the
+    #: conclusions' findings block, which never merges with block 1.
+    CONTRACT_PARAGRAPH_STARTS = (
+        ("introduction.block-1", "introduction.block-2"),
+        ("introduction.block-2", "introduction.block-3"),
+        ("introduction.block-3", "introduction.block-4a"),
+        ("introduction.block-4b", "introduction.block-5"),
+        ("introduction.block-5", "introduction.block-6"),
+        ("related-work.rw-preamble", "related-work.rw-panorama"),
+        ("related-work.rw-problem-blocks", "related-work.rw-closing"),
+        ("related-work.rw-closing", "related-work.rw-synthesis-artefact"),
+        ("limitations.lim-validation-items", "limitations.lim-failure-mode"),
+        ("conclusions.concl-block-1", "conclusions.concl-block-2"),
+    )
+
+    def test_contract_paragraph_starts_fail_when_run_on(self) -> None:
+        for before, after in self.CONTRACT_PARAGRAPH_STARTS:
+            with self.subTest(block=after):
+                tex = block(before, "The previous paragraph closes here.\n") + block(after, "This one opens.\n")
+                report = paper_verify.check_own_paragraph(Evidence(tex))
+                self.assertEqual(report["verdict"], "fail")
+                self.assertEqual(report["evidence"]["run_on"], [after])
+
+    def test_single_paragraph_sections_may_still_run_on(self) -> None:
+        tex = (block("abstract.slot-1", "First sentence.\n") + block("abstract.slot-2", "Second sentence.\n")
+               + block("limitations.lim-opening-concession", "A concession.\n")
+               + block("limitations.lim-proposal-items", "First, an item.\n")
+               + block("conclusions.concl-block-2", "\nA finding.\n")
+               + block("conclusions.concl-block-3", "A consequence.\n"))
+        self.assertEqual(paper_verify.check_own_paragraph(Evidence(tex))["verdict"], "pass")
+
     def test_both_checks_are_structural(self) -> None:
         for check in ("own-paragraph", "appendix-length"):
             self.assertIn(check, paper_verify.STRUCTURE_CHECKS)

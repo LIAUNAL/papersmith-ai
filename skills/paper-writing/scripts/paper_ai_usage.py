@@ -2,6 +2,7 @@
 AI-use declaration needs. Read-only; never writes a byte.
 
     build(paper_dir, *, sessions=None) -> dict
+    declarable(record) -> (components, extra)  (what `declaration:ai-usage` may carry)
 
 Three sources, each read through its owner:
 
@@ -108,6 +109,59 @@ def _drafted_blocks(paper_dir: Path) -> dict:
     return {"status": "ok", "blocks": blocks, "sections": sections}
 
 
+def _tool_names(tools) -> list:
+    """Each harness id's printed name (`claude-code` -> `Claude Code`), the
+    name a declaration writes; the id itself when the command center is not
+    importable or does not know it."""
+    if str(_CORE) not in sys.path:
+        sys.path.insert(0, str(_CORE))
+    try:
+        from command_center.ai_transcripts import HARNESS_NAMES  # noqa: PLC0415
+    except ImportError:
+        HARNESS_NAMES = {}
+    return [HARNESS_NAMES.get(tool, tool) for tool in tools]
+
+
+def declarable(record: dict) -> tuple:
+    """What a sentence bound `declaration:ai-usage` may carry from `record`
+    (`build`'s own shape), as the `(components, extra)` pair
+    `paper_bindings.check_declarations` judges it against. `components` --
+    at least one of which the sentence must print verbatim -- are the
+    framework's name, repository URL and release, every tool id and printed
+    name, every phase's label and agent, the drafting and auditing agents and
+    the drafted sections. `extra` adds the phase counts (sessions,
+    approvals, ...), which a sentence may state but which are too bare to
+    prove the sentence carries the record."""
+    components: list = []
+
+    def add(value) -> None:
+        if isinstance(value, str) and value.strip() and value not in components:
+            components.append(value)
+
+    framework = record.get("framework") or {}
+    for key in ("name", "url", "version"):
+        add(framework.get(key))
+    for tool in record.get("tools") or []:
+        add(tool)
+    for name in record.get("tool_names") or []:
+        add(name)
+    pipeline = record.get("pipeline") or {}
+    extra: list = []
+    for phase in pipeline.get("phases") or []:
+        add(phase.get("label"))
+        add(phase.get("agent"))
+        for count in (phase.get("counts") or {}).values():
+            if isinstance(count, int) and str(count) not in extra:
+                extra.append(str(count))
+    drafted = record.get("drafted") or {}
+    for block in drafted.get("blocks") or []:
+        add(block.get("drafted_by"))
+        add(block.get("audited_by"))
+    for section in drafted.get("sections") or []:
+        add(section)
+    return tuple(components), tuple(extra)
+
+
 def build(paper_dir: Path, *, sessions=None) -> dict:
     """The AI-usage record for the paper under `paper_dir` (its workspace is
     `paper_dir.parent`). `sessions` overrides each harness's session store,
@@ -122,6 +176,7 @@ def build(paper_dir: Path, *, sessions=None) -> dict:
         "pipeline": pipeline,
         "drafted": drafted,
         "tools": pipeline.get("harnesses", []),
+        "tool_names": _tool_names(pipeline.get("harnesses", [])),
         "code_or_experiments_by_agents": bool(code_phases),
         "methods_sentence_required": bool(code_phases),
         "venues": paper_venue.back_matter_placement(paper_dir) if paper_dir.is_dir() else [],
@@ -130,4 +185,4 @@ def build(paper_dir: Path, *, sessions=None) -> dict:
     }
 
 
-__all__ = ["AI_USAGE_BLOCKS", "build"]
+__all__ = ["AI_USAGE_BLOCKS", "build", "declarable"]

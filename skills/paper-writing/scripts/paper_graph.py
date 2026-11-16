@@ -460,6 +460,94 @@ def resolve_section_index(source_roots: dict, root, lineage: str) -> tuple:
     return revision_path, counts, outline
 
 
+#: `<title>#<n>`: a section title exactly as the heading spells it, then `#`
+#: and a 1-based ordinal, with no space before the `#`.
+_SECTION_ORDINAL = re.compile(r"^(?P<title>.*\S)#(?P<ordinal>[1-9][0-9]*)$")
+
+#: The disambiguator's own spelling, named in every refusal that needs it.
+SECTION_ORDINAL_SYNTAX = "<title>#<n>"
+
+
+def match_section_title(outline: dict, title: str) -> list:
+    """Every heading of `outline` (`paper_guidance.segment_markdown`'s
+    shape) that the bound section title `title` names, in document order.
+
+    A title names every heading carrying exactly that title -- one is a
+    resolved section, none is `SECTION_NOT_IN_SOURCE`, several are
+    `SECTION_TITLE_AMBIGUOUS`, exactly as before. When no heading carries
+    `title` literally and it reads `<title>#<n>` for a title TWO OR MORE
+    headings carry, it names the n-th of those, in document order (none
+    when n is past the last). That is the only new spelling: a title one
+    heading carries keeps its one name, so every binding that resolved
+    before resolves to the same heading now. A managed revision rendered
+    before the deliberation engine escaped its pasted sources' headings
+    repeats the document title in every pasted copy, and no title alone can
+    tell those headings apart; the deliberation engine's `RESOLVE_TARGET`
+    reads the same form, counted the same way."""
+    headings = outline.get("headings") or []
+    exact = [heading for heading in headings if heading["title"] == title]
+    if exact:
+        return exact
+    parsed = _SECTION_ORDINAL.match(title)
+    if parsed is None:
+        return []
+    same = [heading for heading in headings if heading["title"] == parsed["title"]]
+    if len(same) < 2:
+        return []
+    ordinal = int(parsed["ordinal"])
+    return [same[ordinal - 1]] if ordinal <= len(same) else []
+
+
+def section_name(outline: dict, heading: dict) -> str:
+    """The one name `match_section_title` resolves to `heading`: its title
+    alone when no other heading carries that title, `<title>#<n>`
+    otherwise."""
+    same = [h for h in outline.get("headings") or [] if h["title"] == heading["title"]]
+    if len(same) < 2:
+        return heading["title"]
+    return f"{heading['title']}#{same.index(heading) + 1}"
+
+
+def _heading_line(body: bytes, heading: dict) -> int:
+    return body[:heading["byte_start"]].count(b"\n") + 1
+
+
+def section_title_ambiguous_detail(revision_path: Path, outline: dict, title: str) -> str:
+    """The tail every `SECTION_TITLE_AMBIGUOUS` refusal carries: the
+    `<title>#<n>` syntax and every occurrence it can name, each with its
+    line and level, so the refusal hands the operator a title that
+    resolves instead of a dead end."""
+    body = revision_path.read_bytes()
+    same = [h for h in outline.get("headings") or [] if h["title"] == title]
+    occurrences = ", ".join(
+        f"'{title}#{index}' (line {_heading_line(body, heading)}, level {heading['level']})"
+        for index, heading in enumerate(same, start=1)
+    )
+    return (
+        f"; name one occurrence as {SECTION_ORDINAL_SYNTAX} (the n-th heading with exactly that "
+        f"title, in document order): {occurrences}"
+    )
+
+
+def section_not_in_source_detail(outline: dict, title: str) -> str:
+    """The tail a `SECTION_NOT_IN_SOURCE` refusal carries when `title`
+    reads `<title>#<n>` past the last occurrence of a repeated title, or
+    gives an ordinal to a title only one heading carries; empty otherwise,
+    so every other refusal reads exactly as before."""
+    parsed = _SECTION_ORDINAL.match(title)
+    if parsed is None:
+        return ""
+    count = sum(1 for h in outline.get("headings") or [] if h["title"] == parsed["title"])
+    if count >= 2:
+        return f"; the revision has only {count} headings titled {parsed['title']!r}"
+    if count == 1:
+        return (
+            f"; {parsed['title']!r} is carried by one heading only, so it is named by its "
+            f"title alone ({SECTION_ORDINAL_SYNTAX} is for a repeated title)"
+        )
+    return ""
+
+
 def _verify_source_section_bindings(
     corpus: Corpus, *, enforce_bindings: bool = False, enforce_for_block: str | None = None,
 ) -> None:
@@ -490,10 +578,11 @@ def _verify_source_section_bindings(
        segment_markdown`) into a `{title: count}` memo, keyed by
        `(root, lineage)` — one file read per distinct pair for the WHOLE
        corpus (design.md Decision E), never one per binding. Every binding
-       naming that pair is then a dict lookup: a zero count refuses
+       naming that pair is then a lookup (`match_section_title`, which
+       also reads `<title>#<n>` for a repeated title): a zero count refuses
        `SECTION_NOT_IN_SOURCE`, a count above one refuses
        `SECTION_TITLE_AMBIGUOUS`, both naming the owning block and the
-       title.
+       title, the ambiguous one also every occurrence's `<title>#<n>`.
 
     0. (U3b correctness repair, `the-requirement-names-the-section-that-
        feeds-it` — U3's own unconditional version of this step forced an
@@ -554,19 +643,21 @@ def _verify_source_section_bindings(
             if memo_key not in memo:
                 memo[memo_key] = resolve_section_index(corpus.source_roots, root, lineage)
 
-            revision_path, counts, _outline = memo[memo_key]
-            count = counts.get(section_title, 0)
+            revision_path, _counts, outline = memo[memo_key]
+            count = len(match_section_title(outline, section_title))
             if count == 0:
                 raise Refused(
                     "SECTION_NOT_IN_SOURCE",
                     f"{qualified_id}: section {section_title!r} is not a heading in "
-                    f"{revision_path.name} (lineage {lineage!r})",
+                    f"{revision_path.name} (lineage {lineage!r})"
+                    + section_not_in_source_detail(outline, section_title),
                 )
             if count > 1:
                 raise Refused(
                     "SECTION_TITLE_AMBIGUOUS",
                     f"{qualified_id}: section {section_title!r} matches {count} headings in "
-                    f"{revision_path.name} (lineage {lineage!r})",
+                    f"{revision_path.name} (lineage {lineage!r})"
+                    + section_title_ambiguous_detail(revision_path, outline, section_title),
                 )
 
 

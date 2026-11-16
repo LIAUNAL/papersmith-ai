@@ -9,6 +9,61 @@ const INITIAL_CHANGE_SUMMARY = { what: 'Initial revision.', why: 'First publishe
 export type InitialRevisionGuideFragment = { path: string; content: string };
 export type ComposedInitialRevision = { markdown: string; slug: string; canonicalMetadata: CanonicalProposalMetadata };
 
+/** An ATX heading opener as a Markdown reader sees it: up to three spaces, one to six `#`, then a space, a tab or the end of the line. */
+const ATX_OPENER = /^( {0,3})(#{1,6})(?=[ \t\r]|$)/u;
+/** A setext underline: a run of `=` or of `-`, alone on its line. It makes the line above it a heading. */
+const SETEXT_UNDERLINE = /^( {0,3})([=-]+[ \t\r]*)$/u;
+/** A fenced code block's opening or closing delimiter. */
+const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
+/** A line that opens a block a setext underline cannot turn into a heading: a table row, a block quote, a list item. */
+const NOT_PARAGRAPH = /^ {0,3}(?:\||>|[-*+](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/u;
+
+/**
+ * A source document's text with every one of its own headings turned into plain text, so it
+ * can be pasted into a managed document as reference material without becoming part of that
+ * document's structure.
+ *
+ * Pasted verbatim, a source's headings were the document's headings: a source whose `#` title
+ * equals the new document's own title left several identical level-1 headings, every locus
+ * query on that title tied, and the last pasted section ran over `## Changes`. The escape is
+ * the smallest change that ends that: a backslash before the heading marker (`\#`, `\=`,
+ * `\-`), which every CommonMark reader prints as the literal character. Every other byte --
+ * tables, display blocks, declarations, URLs -- is left as it was, so the gates that judge
+ * pasted sources see what they saw before.
+ *
+ * ATX openers are escaped everywhere, inside fenced code too: a fence hides them from a
+ * Markdown reader but not from this engine's structural index or from `paper-writing`'s
+ * outline, both of which read any line that opens with `#` as a heading. A setext underline
+ * is escaped only outside a fence and only under a paragraph line (an escaped ATX line is
+ * one), which is the only place it makes a heading. Idempotent: an escaped line no longer
+ * matches. `neutralized` counts the lines changed.
+ */
+export function neutralizeSourceHeadings(text: string): { text: string; neutralized: number } {
+	let neutralized = 0;
+	let fence: string | undefined;
+	let previousParagraph = false;
+	const lines = text.split('\n').map((line) => {
+		const fenceMatch = FENCE.exec(line);
+		const insideFence = fence !== undefined;
+		if (fenceMatch) {
+			const marker = fenceMatch[1]!;
+			if (fence === undefined) fence = marker;
+			else if (marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) fence = undefined;
+		}
+		let out = line;
+		const atx = ATX_OPENER.exec(line);
+		if (atx) out = `${atx[1]}\\${line.slice(atx[1]!.length)}`;
+		else if (!insideFence && !fenceMatch && previousParagraph) {
+			const setext = SETEXT_UNDERLINE.exec(line);
+			if (setext) out = `${setext[1]}\\${setext[2]}`;
+		}
+		if (out !== line) neutralized++;
+		previousParagraph = !insideFence && !fenceMatch && out.trim() !== '' && !NOT_PARAGRAPH.test(out);
+		return out;
+	});
+	return { text: lines.join('\n'), neutralized };
+}
+
 function splitIdeaSentences(idea: string): string[] {
 	return idea.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
 }
@@ -87,7 +142,8 @@ export class InitialRevisionRenderer {
 	 * `render()` (which only ever renders immutable accepted scientific decisions for the gated
 	 * scientific-workflow route), this never requires accepted decisions and never emits a fixed
 	 * generic skeleton: title/sectionHeading and the filename slug are both derived from the idea
-	 * text itself, and the guide fragments (when present) are included verbatim as reference context.
+	 * text itself, and the guide fragments (when present) are included as reference context,
+	 * verbatim except that each fragment's own headings are escaped into plain text.
 	 */
 	renderFromIdea(input: { idea: string; guideFragments?: readonly InitialRevisionGuideFragment[] }): ComposedInitialRevision {
 		const idea = input.idea.trim();
@@ -103,7 +159,10 @@ export class InitialRevisionRenderer {
 			// defaults to the exact prior literal when undeclared, so this is zero migration
 			// for a domain that never opts in.
 			sections.push(`## ${DOMAIN.artifact.sourceReferenceHeading ?? 'Paper Guide Reference'}`, '');
-			for (const fragment of guideFragments) sections.push(`### ${fragment.path}`, '', fragment.content.trim(), '');
+			// Each fragment under its own `### <path>`, its own headings escaped as text
+			// (`neutralizeSourceHeadings`): the engine's headings above are the only ones this
+			// section carries, so it ends where the next engine-written section begins.
+			for (const fragment of guideFragments) sections.push(`### ${fragment.path}`, '', neutralizeSourceHeadings(fragment.content.trim()).text, '');
 		}
 		if (DOMAIN.artifact.changeHeader) sections.push(DOMAIN.artifact.changeHeader.render(INITIAL_CHANGE_SUMMARY), '');
 		const markdown = `${sections.join('\n').replace(/\n+$/, '')}\n`;

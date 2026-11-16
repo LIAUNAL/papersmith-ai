@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -61,6 +61,15 @@ class BlockContract:
     #: `source_bindings` precedent, so every construction site that
     #: predates this field stays green unchanged.
     source_sections: tuple = ()
+    #: The ids a `declaration:` binding may name: the block's own
+    #: `requires_declarations`, plus `paper_bindings.AI_USAGE_DECLARATION`
+    #: for a block whose packet carries the `ai_usage` record. Defaulted
+    #: empty, so a construction site that predates it licenses none.
+    licensed_declarations: tuple = ()
+    #: Licensed id -> its value, already read from disk by the CLI: a
+    #: recorded declaration's string, or the `ai_usage` record's
+    #: `(components, extra)` pair. An id with no recorded value is absent.
+    declared: dict = field(default_factory=dict)
 
 
 def _attempt_key(contract: BlockContract) -> str:
@@ -126,8 +135,9 @@ def _stage_evidence_audit(contract: BlockContract, draft: dict) -> list:
     bindings = paper_bindings.reconcile(draft["latex"], draft["bindings"])
     evidence_ids = {entry["id"] for entry in contract.evidence_set}
     facts = set(contract.requires_facts)
-    paper_bindings.resolve_bindings(bindings, evidence_ids, facts)
+    paper_bindings.resolve_bindings(bindings, evidence_ids, facts, contract.licensed_declarations)
     paper_bindings.type_structural(bindings, contract.contract_prose)
+    paper_bindings.check_declarations(bindings, contract.declared, contract.contract_prose)
     evidence_by_id = {entry["id"]: entry for entry in contract.evidence_set}
     paper_bindings.check_mode_admissibility(bindings, contract.mode, evidence_by_id)
     return bindings
@@ -360,7 +370,15 @@ def write_block(
         source_grounding = paper_grounding.source_grounding_report(subjects, reconciled)
 
     body = own_paragraph_body(contract.block_id, draft["latex"])
-    result = paper_block.substitute(paper_dir, contract.block_id, new_body=body.encode("utf-8"))
+    # Record the contract this block was judged against, the same provenance
+    # `substitute --contract` records, so `verify`'s `contract-currency` reads
+    # a block written here as current rather than against an older record.
+    contract_path = Path(contract.contract_source) if contract.contract_source else None
+    if contract_path is not None and not contract_path.is_file():
+        contract_path = None
+    result = paper_block.substitute(
+        paper_dir, contract.block_id, new_body=body.encode("utf-8"), contract=contract_path,
+    )
 
     # `the-block-asserts-only-what-its-section-carries` skill's own
     # falsifier ("over ten or more recorded real `write` runs...") needs a

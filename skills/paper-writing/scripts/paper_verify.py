@@ -39,6 +39,10 @@ Public surface:
                              `check_gap`'s own front extraction and
                              `paper_cli._resolve_expected_components`'s
                              produced-fact route)
+    subsection_titles(body: bytes) -> list[str]  -- every `\\subsection{...}`
+                             title, whitespace-collapsed, in document order
+                             (the produced-fact route's second form, read
+                             only when the block has no `\\item` roster)
     STRUCTURE_CHECKS     -> structural checks reported apart, under `structure`
     check_back_matter_order(evidence) -> dict -- declarations before the
                              references, appendices after them
@@ -120,6 +124,11 @@ _CITE_RE = re.compile(
 )
 _BIB_ENTRY_RE = re.compile(rb"@[A-Za-z]+\{\s*([^,\s]+)\s*,")
 _ITEM_RE = re.compile(r"^\\item (.*)$", re.MULTILINE)
+#: A `\subsection` heading opening its own line (leading blanks allowed, so a
+#: `%`-commented heading never matches): starred or not, an optional
+#: `[short title]`, then the `{` that opens the printed title. Never matches
+#: `\subsubsection`, whose name does not start with `\subsection`.
+_SUBSECTION_OPEN_RE = re.compile(r"^[ \t]*\\subsection\*?[ \t]*(?:\[[^\]\n]*\][ \t]*)?\{", re.MULTILINE)
 _CLOSING_RE = re.compile(r"^Closing: (.*)$", re.MULTILINE)
 _CHAIN_ROLES: tuple[str, ...] = ("Problem", "Contribution", "Property", "Instrument", "Evidence")
 _CHAIN_ROLE_RE = {
@@ -237,6 +246,52 @@ def item_lines(body: bytes) -> list[str]:
     the bytes it is given, never disk (`ReadOnlyTests`)."""
     text = body.decode("utf-8", errors="replace")
     return [match.group(1).strip() for match in _ITEM_RE.finditer(text)]
+
+
+def subsection_titles(body: bytes) -> list[str]:
+    """The second form a produced list fact may take: one `\\subsection`
+    per element, its printed title naming the element, in document order
+    (`sections/01-materials-and-methods.md`, slot 3: "Each contribution is
+    its own subsection. The sectioning already is the ordered list").
+    `paper_cli._resolve_expected_components` reads it only when
+    `item_lines` finds no roster in the same block.
+
+    What counts, decided once here so every consumer reads the same list:
+
+    - `\\subsection{...}` and `\\subsection*{...}` both count: an
+      unnumbered heading is still a heading the reader meets as structure.
+    - `\\subsection[short]{long}` yields the long title, the one printed
+      in the body; the bracketed short title only feeds the table of
+      contents.
+    - The title is read brace-balanced (a title holding `$\\mathcal{L}$`
+      stays whole), may span lines, and has every whitespace run
+      collapsed to one space and its ends stripped. A `\\label{...}` after
+      the closing brace is not part of it.
+    - Only headings that open their own line count; a `%`-commented one
+      does not. `\\subsubsection` and deeper levels never count: they
+      subdivide an element, they are not elements.
+    - A heading whose title brace never closes inside the block is
+      skipped, never guessed.
+
+    Allowlist stays `{"re"}`; reads only the bytes it is given."""
+    text = body.decode("utf-8", errors="replace")
+    titles: list[str] = []
+    for match in _SUBSECTION_OPEN_RE.finditer(text):
+        depth, index = 1, match.end()
+        while index < len(text) and depth:
+            char = text[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+            index += 1
+        if depth:
+            continue
+        titles.append(" ".join(text[match.end():index - 1].split()))
+    return titles
 
 
 def _gap_shape(body: bytes) -> dict:
@@ -818,6 +873,15 @@ def check_references(evidence, *, optional_block_ids: frozenset = frozenset(),
 #: Their markers are comments, so a block that follows another with no blank
 #: line in between would run into its last paragraph.
 OWN_PARAGRAPH_BLOCKS: frozenset = frozenset({
+    # Introduction: paragraphs 2-7 (block-4b continues block-4a's paragraph).
+    "introduction.block-2", "introduction.block-3", "introduction.block-4a",
+    "introduction.block-5", "introduction.block-6",
+    # Related work: the panorama, the closing and the synthesis pointer.
+    "related-work.rw-panorama", "related-work.rw-closing", "related-work.rw-synthesis-artefact",
+    # Limitations: one paragraph, or a second that carries the failure mode.
+    "limitations.lim-failure-mode",
+    # Conclusions: block 1 never merges, so block 2 opens its own paragraph.
+    "conclusions.concl-block-2",
     "conclusions.concl-block-4",
     "back-matter.bm-author-contributions", "back-matter.bm-funding",
     "back-matter.bm-data-availability", "back-matter.bm-code-availability",

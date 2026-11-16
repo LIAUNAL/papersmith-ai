@@ -57,6 +57,7 @@ PAPER_VERBS: tuple[str, ...] = (
     "venue",
     "ai_audit",
     "humanize",
+    "review",
 )
 
 #: The orchestrator CLI's own command roster (``cli._REGISTRY``).
@@ -79,6 +80,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "team",
     "colab",
     "doctor",
+    "gpu",
     "novelty",
     "keys",
 )
@@ -1613,6 +1615,10 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # account; `status` probes that sign-in. Both are an operator's acts.
     "colab": "out",
     "doctor": "exposed",
+    # `gpu` diagnoses the operator's own machine and its remedies are the
+    # operator's acts (`sudo usermod`, a re-login, a multi-gigabyte wheel
+    # install); ingestion already applies the one remedy it can (`sg render`).
+    "gpu": "out",
     # `novelty approve|iterate|reset` commits the G-NOVELTY gate decision that
     # unlocks manuscript drafting: the operator's verdict on whether the results
     # support the novelty claims, never an agent's. `status` is the same data the
@@ -1639,6 +1645,9 @@ PAPER_DISPOSITIONS: dict[str, str] = {
         # mixed like `figure`, so declared out for the same reason.
         else "out" if verb == "venue"
         else "out" if verb in {"ai_audit", "humanize"}
+        # `review` records the paper-reviewer's round, which `/paper-writing`
+        # receives from the agent and writes itself; not an agent-facing tool.
+        else "out" if verb == "review"
         else "exposed"
     )
     for verb in PAPER_VERBS

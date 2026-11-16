@@ -11,6 +11,202 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.76.4
+
+- `write` and `verify`'s `own-paragraph` check now cover every block whose
+  section contract opens a paragraph with it: the introduction's paragraphs
+  2–7, the related-work panorama, closing and synthesis pointer, the
+  limitations' failure-mode paragraph and the conclusions' findings block, as
+  well as the future-work block and the declarations as before. Before, those
+  blocks were written right after the previous block's end marker, a comment,
+  so LaTeX ran them into one paragraph (an introduction of seven paragraphs in
+  the source printed as three). The abstract slots, the introduction's
+  contribution list and the limitations' items still continue their paragraph.
+
+## 0.76.3
+
+- The SOTA atlas renderer no longer carries an invalid `\/` escape in its page
+  template, which Python 3.15 warns about on every render and a later Python
+  will reject; the rendered HTML is byte-identical.
+- `bib build` braces an author's non-ASCII initial as `{\relax Ó}scar`, so
+  BibTeX keeps it whole when it abbreviates a given name. Before, a name such
+  as `Óscar`, `Jean-Éric` or one with an opening `“` was cut in the middle of a
+  UTF-8 character and `pdflatex` stopped on "Invalid UTF-8 byte sequence".
+
+## 0.76.2
+
+- `paper_cli.py place` measures a plot at the width the manuscript prints:
+  the `\geometry` text width when the preamble sets one, the class width
+  otherwise. Before, it always used the class width (360 pt for an 11 pt
+  article), so it refused every correctly sized figure in a manuscript with
+  wider margins set by `geometry` (`FIGURE_TEXT_BELOW_PRINT_FLOOR`).
+- `engine: marker` no longer runs on a CPU-only machine: without a GPU
+  PyTorch can see (CUDA, ROCm or Apple Silicon) ingestion falls back to the
+  page-routed `auto` engine, which keeps display equations as LaTeX with
+  `formulas_on_cpu: true`. `marker_on_cpu: true` forces Marker anyway.
+- `smith gpu [--json] [--python <interpreter>]` reports this machine's GPU and
+  the exact command for each blocker: vendor (NVIDIA, AMD, Apple Silicon),
+  the AMD gfx target from the KFD topology, VRAM/GTT, whether this process
+  can open `/dev/kfd` and `/dev/dri/renderD*`, the `render` group state, the
+  Vulkan devices `llama-server` lists and the PyTorch backend (`cuda`, `hip`,
+  `mps`, `cpu`). It runs the new shared stdlib probe
+  `skills/_core/gpu/gpu_probe.py`, which ingestion and `setup_env.py` use too.
+- Marker now runs on AMD and Intel GPUs: a ROCm build of PyTorch counts as a
+  GPU, and so does a Vulkan GPU `llama-server --list-devices` names
+  (`Vulkan (llama.cpp)`), which carries Marker's recognition model on an
+  integrated GPU without ROCm (Radeon 890M measured). On Vulkan only the run
+  sets `TORCH_DEVICE=cpu`, `SURYA_INFERENCE_BACKEND=llamacpp` and
+  `LLAMA_CPP_NGL=99`; on ROCm it sets `SURYA_INFERENCE_BACKEND=llamacpp` (Surya
+  would otherwise start vllm) and `DOCLING_DEVICE=cuda`, never overriding a
+  value already set, and the formula note says "CodeFormulaV2 on ROCm". The
+  probed `llama-server` (`LLAMA_CPP_BINARY`, else beside the interpreter, else
+  PATH) is exported as `LLAMA_CPP_BINARY` so the one probed is the one spawned.
+- When a GPU node exists but this session cannot open it and the account is
+  already listed in `render` (a session older than the `usermod`),
+  `extract_pdf.py` re-runs itself once under `sg render -c` with the same
+  arguments (`PAPERSMITH_GPU_SG_REEXEC` stops a second re-run). Not listed: the
+  fallback note names the node and `sudo usermod -aG render,video $USER`.
+- `setup_env.py install` (and `smith env install`) installs AMD's ROCm 10.1
+  PyTorch wheels with the `device-<gfx>` extra from
+  `https://stable.repo.amd.com/rocm/whl-next/` on an AMD GPU whose gfx target is
+  in `ROCM_SUPPORTED_TARGETS` (gfx1100-1102, gfx1150-1151, gfx1200-1201,
+  gfx942), instead of the CPU build; the runtime is bundled, so no system ROCm
+  is needed. `--rocm` forces them for another detected target, `--cpu` forbids
+  them, NVIDIA keeps conda-forge's CUDA build, and the run prints what it chose
+  and why.
+- A first revision no longer pastes a source document's own headings as
+  headings. The v1 render escapes every source heading (`\# Title`,
+  `\## Part`, setext underlines) so it prints as text, and `loadSourceWindow`
+  reports `headingsNeutralized` per source. Before, a source whose title equalled
+  the document's title produced several identical level-1 headings, which
+  every successor copied forward.
+- A repeated heading title can now be named by `<title>#<n>` (the n-th
+  occurrence in document order). `paper_cli.py separate` and `bind` accept it,
+  and `SECTION_TITLE_AMBIGUOUS` now lists each occurrence with its line. The
+  deliberation engine's `RESOLVE_TARGET` and `CREATE_SUCCESSOR` accept the
+  same form, and a heading's span no longer runs over the change header, so
+  an already affected lineage can be repaired through an ordinary successor.
+  A title that occurs once resolves exactly as before.
+- New binding kind `declaration:<id>` (or `declaration:<id>,<id>`), licensed
+  by the block's `requires_declarations`, plus `declaration:ai-usage` for the
+  AI-use blocks. A sentence bound this way may print the recorded value's
+  numerals and names; `write` refuses `DECLARATION_NOT_LICENSED`,
+  `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT` or
+  `DECLARATION_CARRIES_CLAIM`. Before, funding, code-availability and AI-use
+  blocks could not be written at all. The packet carries a `declarations`
+  map, and the redactor and ai-auditor definitions know the new kind. A
+  `declaration:` sentence may not carry a comparative its values do not hold.
+- A produced list fact (such as `contributions`) now resolves from the
+  producer block's `\subsection` titles, in order, when the block has no
+  `\item` roster. Before, `render --section/--block` and `figure audit
+  --block` refused `COMPONENTS_FACT_NOT_A_LIST` for the subsection form the
+  materials-and-methods contract allows.
+- The experimental-deliberation docs now say what the engine does: the
+  `## Changes` block is written from `changeSummary` on mixed
+  `replace`/`delete` batches too (target it yourself and the batch is
+  refused), and a pasted section is removed with `delete`, since an empty
+  `replace` is refused `SUCCESSOR_OUTSIDE_TARGET_FORBIDDEN`.
+- `paper_cli.py venue select --journal <name> --issn <issn>` takes
+  `--publisher <name>`. Before, a manual selection always recorded no
+  publisher, so an Elsevier journal chosen by hand read as the `neutral`
+  back-matter family (funding as its own block, "Declaration of AI use").
+- `write` records the contract digest it judged a block against in the
+  `provenance` region, as `substitute --contract` does. Before, a block
+  written through `write` kept whatever older record `substitute` had left,
+  so `verify` reported it `contract-currency` stale after any later contract
+  edit even when it had just been rewritten.
+- A `separate` assignment may carry `"shares": true`: it names source
+  sections the block is grounded against without claiming them, such as an
+  abstract that compresses the sections the experimental set-up transposes.
+  A share is left out of the orphan/overlap/gap scoring, need not be
+  contiguous, and each section it names must be claimed by a non-sharing
+  assignment of the same cut, or `separate` refuses
+  `SEPARATION_SHARE_UNCLAIMED`. `bind` licenses it from the settled round and
+  `packet`/`write` resolve its sections as for a claim. Before, every section
+  belonged to exactly one block, so a compressing block could only be bound
+  to sections that did not hold what it had to name. A cut without the key
+  scores and records exactly as before.
+
+## 0.76.1
+
+- The final judge panel now has a writer. `paper_cli.py review --input
+  <round.json>` (or `-` for stdin) records one round of the `paper-reviewer`'s
+  review in `.papersmith/paper_review.json`: it checks overall 1-6, confidence
+  1-5 and the Quality, Clarity, Significance and Originality ratings 1-4,
+  numbers and dates the round, and from the second round on requires one
+  verdict (`resolved`, `partly`, `not resolved`) on every revision the
+  previous round raised. The agent returns the round and never writes;
+  `/paper-writing` records it. A refused round, or an existing file that
+  cannot be read, leaves the file unchanged.
+
+## 0.76.0
+
+- `smith init --kind review` starts a PRISMA 2020 systematic-review workspace:
+  nine review section contracts (title and keywords, abstract, introduction,
+  background, methods, results, discussion, limitations, conclusions) served
+  at `sections/`, a `review/` folder, and the `/systematic-review` skill with
+  `review_cli.py` (protocol, search log, screening, the 27-item PRISMA
+  checklist). The results section asks for a comparative thematic synthesis:
+  sub-themes that compare studies along one dimension, one comparison table
+  per theme, and reconciled category counts. Experimental workspaces keep
+  their ten section contracts unchanged.
+- The dashboard refreshes itself: `/api/events` streams workspace changes over
+  server-sent events and each open tab reloads only what changed (proposals,
+  sections, preview, Kaggle inbox), with no manual reload.
+- The PDF preview tab shows the final judge's verdict per round from
+  `.papersmith/paper_review.json` (`GET /api/paper/review`, read-only, capped
+  at 2 MB, in English and Spanish), refreshed live with the preview
+  (PR #179 by Carlos Canamejoy).
+
+## 0.75.0
+
+- Every workspace now ships the SCImago Journal & Country Rank 2025 snapshot
+  (`skills/journal-finder/data/scimagojr-2025.csv.gz`, 2.7 MB, copied by
+  `smith init` and refreshed by `smith upgrade`), so `/journal-finder` and the
+  dashboard's journals panel give SJR quartiles out of the box instead of the
+  `openalex-proxy` approximation. A newer year imported with `sjr-import`
+  still wins, and so does an import of the same year.
+- `journal_cli.py` reads gzip-compressed SCImago CSVs, reports which file it
+  used in `sjr.source` (`bundled`, `imported` or `explicit` for `--sjr`), and
+  ignores a damaged snapshot with a note. `PAPERSMITH_SJR_BUNDLED_DIR` points
+  at another snapshot folder; set empty, it disables the snapshot.
+
+## 0.74.0
+
+- `smith ui --lan` opens the dashboard to the other devices on your network
+  in one switch: it binds `0.0.0.0`, accepts only this machine's own
+  addresses and names in the `Host` check (`<hostname>`, `<hostname>.local`
+  and, when `tailscaled` runs, its Tailscale MagicDNS name), and puts the
+  support terminal behind a login secret kept in
+  `~/.config/papersmith/terminal-token` (mode `600`, created and printed
+  once, inside the login URLs to bookmark). `PAPERSMITH_UI_LAN=1` makes it
+  the default; `--no-lan` turns it off for one run. When the machine has a
+  public IPv4 address it warns that the port may be open to the Internet.
+- The support terminal and the API-key panel can run on a network bind
+  (`--network-terminal`, optionally with `--terminal-token-file <path>`),
+  but only behind that secret: every terminal and key route answers 403
+  without the session cookie, state-changing calls must carry this
+  server's `Origin`, and without the opt-in a network bind keeps the
+  terminal off as before. The login secret only buys the cookie, which is
+  a second secret new at each start.
+- A device that opens the plain dashboard (a phone, another laptop) logs
+  in from the terminal window itself: on a network bind it shows a
+  password box, and the secret it posts (in a JSON body, never a URL) sets
+  the cookie. After 10 wrong secrets in a minute it answers 429. Before,
+  the window stayed blank with "Could not open a browser here".
+- uvicorn's access log no longer records the login secret
+  (`token=[REDACTED]`, also in `--log-level trace` scopes), and a terminal
+  cookie with non-ASCII bytes is a wrong secret (403) instead of a 500.
+- A keyed Asta lookup silent for 5 s is asked again instead of waited out
+  (Asta answers in about 0.5 s or only after 30 to 60 s), in key
+  verification and in resolver lookups.
+- `citations_cli.py rank` ranks an arXiv entry whose pool record names its
+  published DOI by that journal, as a journal article, instead of as a
+  preprint that needs an accepted lab.
+- The math panel's novelty card fills its novelty, detail, problem and
+  contributions from the concept map when the revision's overlay names
+  none.
+
 ## 0.73.0
 
 - The Agents Office is sharp and fluid without a GPU: every static piece

@@ -6,14 +6,21 @@ is on ``PATH``. The browser receives the PTY output over Server-Sent Events and
 sends keystrokes, resizes and closes over POST/DELETE (the installed uvicorn
 has no WebSocket library, and this keeps it that way).
 
-SECURITY: a session is a shell with the user's privileges. The server only
-offers it on a loopback bind (see ``server.terminal_allowed``), the Host
-allow-list already stops DNS rebinding, and :func:`guard` refuses any request a
-page from another origin could send: a ``Sec-Fetch-Site`` other than
-same-origin, an ``Origin`` that is not this server, and, for state-changing
-calls, a missing ``X-Papersmith-Terminal: 1`` header or a non-JSON body. A
-custom header and a JSON content type both force a CORS preflight that this
-server never approves, so a cross-origin page cannot open or drive a session.
+SECURITY: a session is a shell with the user's privileges. The server offers
+it on a loopback bind, and on any other bind only when the operator opts in
+with ``smith ui --network-terminal`` (see ``server.terminal_allowed``). Either
+way a browser must first present the login secret once, in the login URL the
+server prints, and gets in exchange a session secret held as an HttpOnly,
+SameSite=Strict cookie that every terminal route checks
+(:meth:`TerminalManager.authorized`). The Host allow-list stops DNS rebinding,
+and :func:`guard` refuses any request a page from another origin could send: a
+``Sec-Fetch-Site`` other than same-origin, an ``Origin`` that is not this
+server, and, for state-changing calls, a missing ``X-Papersmith-Terminal: 1``
+header or a non-JSON body. A custom header and a JSON content type both force
+a CORS preflight that this server never approves, so a cross-origin page cannot
+open or drive a session. On a network bind a state-changing call must also
+carry ``Origin``: browsers send no ``Sec-Fetch-Site`` over plain HTTP to a
+network address, so the origin is the check that remains.
 """
 
 from __future__ import annotations
@@ -240,6 +247,99 @@ def colab_mcp_status(root: Path) -> dict[str, Any]:
 
 class TerminalError(Exception):
     """A request the terminal refuses (unknown agent, session cap, bad size)."""
+
+
+# --------------------------------------------------------------------------
+# secrets
+# --------------------------------------------------------------------------
+#: An operator's login secret (``smith ui --terminal-token-file``): 32 to 256
+#: characters of the URL's unreserved set, so it travels in the login URL with
+#: no escaping. A generated one (``secrets.token_urlsafe(32)``) has 43.
+LOGIN_TOKEN_MIN_CHARS = 32
+LOGIN_TOKEN_MAX_CHARS = 256
+_LOGIN_TOKEN_RE = re.compile(r"[A-Za-z0-9._~-]+")
+#: Largest token file read; a secret is far shorter.
+LOGIN_TOKEN_FILE_BYTES = 4096
+
+
+class LoginTokenError(ValueError):
+    """Why a login secret, or the file that should hold one, cannot be used.
+
+    The message names the rule or the file, never the secret.
+    """
+
+
+def valid_login_token(value: Any) -> bool:
+    return (isinstance(value, str)
+            and LOGIN_TOKEN_MIN_CHARS <= len(value) <= LOGIN_TOKEN_MAX_CHARS
+            and _LOGIN_TOKEN_RE.fullmatch(value) is not None)
+
+
+def read_login_token(path: Path) -> str:
+    """The login secret stored in ``path``, or :class:`LoginTokenError`.
+
+    The rule of the per-user API keys (``skills/_core/api_keys.py``): a
+    regular file, not a symlink, that this user owns and nobody else may read
+    or write (mode ``0600``), in a directory that is not a symlink. The checks
+    run again on the open descriptor, so a file swapped in between is caught.
+    """
+    path = Path(path)
+    posix = os.name != "nt"
+    try:
+        info = path.lstat()
+    except OSError as error:
+        raise LoginTokenError(f"cannot read {path}: {error.strerror or error}") from None
+    problem = _token_file_problem(info, posix)
+    if problem is None and posix and path.parent.is_symlink():
+        problem = "insecure: its directory is a symlink"
+    if problem is not None:
+        raise LoginTokenError(f"{path} is {problem}")
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as error:
+        raise LoginTokenError(f"cannot read {path}: {error.strerror or error}") from None
+    try:
+        problem = _token_file_problem(os.fstat(fd), posix)
+        if problem is not None:
+            raise LoginTokenError(f"{path} is {problem}")
+        raw = os.read(fd, LOGIN_TOKEN_FILE_BYTES + 1)
+    except OSError as error:
+        raise LoginTokenError(f"cannot read {path}: {error.strerror or error}") from None
+    finally:
+        os.close(fd)
+    try:
+        value = raw.decode("ascii").strip() if len(raw) <= LOGIN_TOKEN_FILE_BYTES else ""
+    except UnicodeDecodeError:
+        value = ""
+    if not valid_login_token(value):
+        raise LoginTokenError(
+            f"{path} must hold one secret of {LOGIN_TOKEN_MIN_CHARS} to {LOGIN_TOKEN_MAX_CHARS} "
+            "characters from A-Z a-z 0-9 . _ ~ - (for example the output of "
+            "`python -c 'import secrets; print(secrets.token_urlsafe(32))'`)")
+    return value
+
+
+def _token_file_problem(info: os.stat_result, posix: bool) -> str | None:
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        return "insecure: not a regular file"
+    if posix:
+        if hasattr(os, "getuid") and info.st_uid != os.getuid():
+            return "insecure: owned by another user"
+        if stat.S_IMODE(info.st_mode) & 0o077:
+            return f"insecure: mode {stat.S_IMODE(info.st_mode):04o}, expected 0600"
+    return None
+
+
+def _same_secret(presented: Any, expected: str) -> bool:
+    """Constant-time comparison. A missing, non-string or non-encodable value
+    is simply a wrong one, never an error."""
+    if not isinstance(presented, str) or not presented or not expected:
+        return False
+    try:
+        given = presented.encode("utf-8")
+    except UnicodeEncodeError:  # a lone surrogate from a malformed query
+        return False
+    return hmac.compare_digest(given, expected.encode("utf-8"))
 
 
 #: Where agent CLIs usually live when the server's PATH (a GUI launch, a
@@ -529,17 +629,32 @@ def session_env(agent_id: str, root: Path) -> dict[str, str]:
 
 
 class TerminalManager:
-    def __init__(self, root: Path, agents: dict[str, Agent] | None = None) -> None:
+    def __init__(self, root: Path, agents: dict[str, Agent] | None = None, *,
+                 login_token: str | None = None) -> None:
         self.root = Path(root)
         self.agents_by_id = dict(agents) if agents is not None else default_agents()
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
-        #: Per-server secret: the browser receives it once, through the login
-        #: URL the server prints and opens, and then only as an HttpOnly cookie.
+        if login_token is not None and not valid_login_token(login_token):
+            raise LoginTokenError("the login secret does not follow the rule of a token file")
+        #: The login secret: the operator's (``--terminal-token-file``) or one
+        #: of this server's own. A browser presents it once, in the login URL
+        #: the server prints (and opens, on a loopback bind), and receives
+        #: :attr:`token` in exchange.
+        self.login_token = login_token or secrets.token_urlsafe(32)
+        #: The session secret the browser then holds as an HttpOnly cookie,
+        #: new at every server start. It is never the login secret, so an
+        #: operator's long-lived secret is neither stored in a browser nor sent
+        #: with every request, and a cookie dies with its server.
         self.token = secrets.token_urlsafe(32)
 
     def authorized(self, presented: str | None) -> bool:
-        return bool(presented) and hmac.compare_digest(presented, self.token)
+        """Whether ``presented`` (the terminal cookie) is this server's session secret."""
+        return _same_secret(presented, self.token)
+
+    def accepts_login(self, presented: str | None) -> bool:
+        """Whether ``presented`` (the login URL's ``token``) is the login secret."""
+        return _same_secret(presented, self.login_token)
 
     # -- queries ---------------------------------------------------------
     def agents(self) -> list[dict[str, Any]]:
@@ -721,8 +836,13 @@ class TerminalManager:
 # --------------------------------------------------------------------------
 # request guard
 # --------------------------------------------------------------------------
-def guard(headers: Any, *, mutating: bool) -> str | None:
-    """The reason to refuse this request, or ``None`` when it is same-origin."""
+def guard(headers: Any, *, mutating: bool, require_origin: bool = False) -> str | None:
+    """The reason to refuse this request, or ``None`` when it is same-origin.
+
+    With ``require_origin`` (a terminal served on a network bind) a
+    state-changing request must also carry ``Origin``, which browsers send on
+    every POST, PUT and DELETE.
+    """
     site = headers.get("sec-fetch-site")
     if site is not None and site not in ("same-origin", "none"):
         return "cross-site request"
@@ -731,6 +851,8 @@ def guard(headers: Any, *, mutating: bool) -> str | None:
     if origin is not None and (urlsplit(origin).netloc.lower() != host or not host):
         return "foreign origin"
     if mutating:
+        if require_origin and origin is None:
+            return "missing Origin header"
         if headers.get("x-papersmith-terminal") != "1":
             return "missing X-Papersmith-Terminal header"
         content_type = (headers.get("content-type") or "").split(";")[0].strip().lower()
@@ -740,4 +862,5 @@ def guard(headers: Any, *, mutating: bool) -> str | None:
 
 
 __all__ = ["Agent", "Session", "TerminalError", "TerminalManager", "guard",
-           "default_agents", "MAX_SESSIONS", "SHELL_QUICK"]
+           "default_agents", "MAX_SESSIONS", "SHELL_QUICK", "LoginTokenError",
+           "read_login_token", "valid_login_token"]

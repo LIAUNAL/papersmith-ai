@@ -172,4 +172,6 @@ def validate_config_json(data: Any) -> dict:
         _number(engine["max_retries"], "config.execution_engine.max_retries", integer=True)
     _string(root.get("created_at"), "config.created_at")
     _string(root.get("updated_at"), "config.updated_at")
+    if "paper_kind" in root and root["paper_kind"] not in ("experimental", "review"):
+        _fail("config.paper_kind", "must be experimental or review")
     return root

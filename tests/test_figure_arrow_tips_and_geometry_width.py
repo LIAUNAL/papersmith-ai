@@ -104,3 +104,26 @@ class GeometryTextWidthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlaceTextWidthReadsGeometryTests(unittest.TestCase):
+    """`place` measures a plot at the width the manuscript actually prints:
+    the `geometry` width when the preamble sets one, the class width
+    otherwise."""
+
+    def _width(self, preamble: str) -> tuple:
+        import paper_place  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            tex = Path(tmp) / "main.tex"
+            tex.write_text(preamble + "\\begin{document}\nx\n\\end{document}\n", encoding="utf-8")
+            return paper_place.text_width_pt(tex, print_scale)
+
+    def test_geometry_margins_set_the_width(self) -> None:
+        width, source = self._width(
+            "\\documentclass[11pt,a4paper]{article}\n\\usepackage[left=2.5cm,right=2.5cm]{geometry}\n")
+        self.assertAlmostEqual(width, A4_TEX_PT - 2 * 2.5 / 2.54 * 72.27, places=2)
+        self.assertEqual(source, "geometry")
+
+    def test_without_geometry_the_class_width_holds(self) -> None:
+        self.assertEqual(self._width("\\documentclass[11pt,a4paper]{article}\n"),
+                         (print_scale.TEXTWIDTH_PT["article-a4-11pt"], "class"))

@@ -271,5 +271,17 @@ Return, always and in this order:
   In proposal mode and findings mode, `state` also carries the
   `contribution_type` object `{"type", "why", "affinity"}` exactly as the caller writes it;
   in findings mode it carries only that object.
+- **`round`** — only when you reviewed the whole paper, the same review as one
+  JSON object the caller records with `paper_cli.py review --input <file>`
+  (you never write it yourself): `overall` (1-6), `confidence` (1-5),
+  `recommendation` (the field-10 label), `ratings` with exactly `Quality`,
+  `Clarity`, `Significance` and `Originality` (1-4), `revisions` as
+  `[{"rank", "text"}]` (the revisions that would raise the overall score,
+  ranked), optional `excluded` (text you deliberately left unjudged), and
+  `report` (the full review form as text). When
+  `.papersmith/paper_review.json` already holds a round, read its last round
+  first and add `items`: one `{"rank", "verdict", "evidence"}` per revision it
+  raised, `verdict` one of `resolved`, `partly`, `not resolved`, with quoted
+  evidence from the current manuscript; a missing or unknown rank is refused.
 - **`owed`** — the questions (field 8) that the operator must answer or the
   revisions that would raise the overall score, or nothing.

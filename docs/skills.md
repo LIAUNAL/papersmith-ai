@@ -162,7 +162,9 @@ dashboard's Doctor → API keys, or `smith keys set asta`), the scout searches A
 (the Semantic Scholar corpus, an MCP server every harness registers) before the
 web, but only when `smith keys status asta --json` reports the key loaded in its
 session; candidates resolve with `--resolver auto`, Asta first, OpenAlex next,
-keeping the first whole record that carries an abstract. Asta's `tldr` and its
+keeping the first whole record that carries an abstract. A keyed Asta lookup
+answers within a second or only after 30 s or more, so one silent for 5 s is
+asked again, within 30 s per paper. Asta's `tldr` and its
 snippets are never abstracts or quotes. Without the key nothing changes. Details
 in [mcp.md](mcp.md#literature-discovery-ai2s-asta-asta).
 
@@ -2251,6 +2253,7 @@ is the order in which those groups enable one another.
 | The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it**. `resolve --references` stores every cited paper's metadata and abstract in `paper/.paper-writing/references.json` after the citations change, because `refs.bib` comes from `bib build` and carries no abstract |
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
 | Style audit & style revision | `ai_audit`, `humanize` | Measures writing quality — cadence (sentence-length $CV \ge 0.38$), overused academic phrasing, lexical diversity — as a `style_score`, plus a located `flow` report (connector density and repetition, repeated sentence openings, *because*/*where*/*, which* density with the equation *where* exempt, cross-paragraph repeated phrases and near-duplicate sentences, template phrasing) whose `needs_revision` verdict also blocks `--apply`, and applies a revised block only when it meets `--style-target` (or `--force`) under the untouchable F5 invariant gate (citations, statistics, and formulas). A readability check, never an AI detector: it does not change the obligation to declare AI use |
+| Final judge's rounds | `review` | Records one round of the `paper-reviewer`'s review of the whole paper (`--input <file>`, or `-` for stdin) in `.papersmith/paper_review.json`, which the dashboard's final-judge panel reads: numbers and dates it, requires overall 1-6, confidence 1-5 and the four 1-4 ratings, and from the second round on a verdict (`resolved`, `partly`, `not resolved`) on every revision the previous round raised. A refused round leaves the file unchanged |
 | Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads |
 | Structure, sources and reuse | `phases`, `skeleton`, `bind`, `separate`, `mark`, `packet`, `full_text`, `reuse`, `exhaustion` | The derived "what can I write now" report and the one-time opening of the empty section/block structure; the source-section binding loop and the revision/class declarations of a source root or `guidance/` folder; the redactor's own context; one already-resolved identifier's PDF placed under `guidance/<section>/`; and the read-only reports of which ingested papers carry no verdict yet and of the exhaustion state of the evidence papers |
 | Venue adaptation | `venue select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` | Measures the manuscript against a chosen journal's guidelines and template and builds the journal's own `main.tex` under `paper/venues/<slug>/`, never touching the canonical one (below) |
@@ -2324,7 +2327,7 @@ nothing was asserted without a run having checked it.
 | File | What it does and why it exists |
 |---------|---------------------------|
 | `SKILL.md` | The conduct contract: the 31 verbs, their refusals, the shuttle procedure to the 10 agents. |
-| `scripts/paper_cli.py` | The front door — 31 verbs: `scaffold, status, open, substitute, contract, readiness, phases, skeleton, order, declare, bind, mark, separate, observe, resolve, full_text, bib, validate, plan, write, render, couplings, verify, place, figure, venue, packet, reuse, exhaustion, ai_audit, humanize`; `mark` (`revisions`, `class`), `bib` (`build`, `refresh`), `figure` (`optimize`, `audit`) and `venue` (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list`) take a sub-verb. No external dependencies. |
+| `scripts/paper_cli.py` | The front door — 32 verbs: `scaffold, status, open, substitute, contract, readiness, phases, skeleton, order, declare, bind, mark, separate, observe, resolve, full_text, bib, validate, plan, write, render, couplings, verify, place, figure, venue, packet, reuse, exhaustion, ai_audit, humanize, review`; `mark` (`revisions`, `class`), `bib` (`build`, `refresh`), `figure` (`optimize`, `audit`) and `venue` (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list`) take a sub-verb. No external dependencies. |
 | `scripts/paper_ai_metrics.py` | Writing-quality metrics: cadence (sentence-length coefficient of variation), a closed catalog of overused academic phrasing, lexical diversity, the composite `style_score` (`analyze_style`; `analyze_ai_signatures` and the `composite_score`/`verdict` keys are deprecated aliases for one release), and the F5 invariant gate. Every report carries a `disclosure_notice`: a style score never changes the AI-use declaration. |
 | `scripts/paper_venue.py` | The `venue` verbs: the venue folder under `paper/venues/<slug>/`, the requirements schema (every requirement quoted and sourced), the audit against smith's section contracts and `main.tex`, the plan and its sha256-bound approval, and the build of the journal's own `main.tex`. It never writes `paper/main.tex` or `sections/`. |
 | `scripts/paper_scaffold.py` | Creates and re-enters `paper/` without clobbering — the same pattern as `proposals/`/`experiments/`. |
@@ -3381,3 +3384,47 @@ masked AI history (default yes; `--no-ai-history` leaves it out) before it adds
 **What it refuses.** A workspace without the remote, a remote that is not on
 github.com, a failed export, and a non-interactive run without `--yes`; each
 exits non-zero with nothing pushed.
+
+### 21. `systematic-review` — a review paper on an accepted method, with every number on record
+
+**When.** Only in a review workspace (`smith init --kind review`): the paper is
+a systematic review, with no proposal and no experiments, reported after the
+PRISMA 2020 statement (Page et al., 2021, doi:10.1136/bmj.n71). An
+experimental workspace never receives this skill.
+
+**How it runs.** `/systematic-review` drives
+`skills/systematic-review/scripts/review_cli.py` (standard library only; every
+verb prints one JSON object and a refusal exits 2) through the stages, each
+leaving its record under `review/`:
+
+| Verb | Writes | PRISMA 2020 items |
+|---|---|---|
+| `scope --query` | `review/scope.json`: existing reviews (OpenAlex, `type:review`) | 3 |
+| `init`, `protocol check\|approve\|amend` | `review/protocol.json`, `review/protocol.lock.json` (G-PROTOCOL, amendments) | 4, 5, 7, 10, 24 |
+| `search --source openalex\|crossref\|europepmc`, `import --file --source --query` | `review/searches.jsonl`, `review/records.jsonl` | 6, 7, 16 |
+| `dedupe` | `duplicate_of` on `review/records.jsonl` | 16 |
+| `queue`, `screen`, `conflicts`, `kappa` (stages `ta`, `ft`) | `review/screening.jsonl` | 8, 16 |
+| `appraise`, `extract` | `review/appraisal.jsonl`, `review/extraction.jsonl` | 9, 11, 17, 18 |
+| `prisma`, `flow`, `biblio` | `review/prisma.json`, `paper/Figures/prisma-flow.svg`, `review/biblio.json` | 16 |
+| `checklist`, `status` | nothing; reports the 27 items and the records | all |
+
+**Human gates.** The operator approves the protocol before any search and
+records every amendment with its reason; the operator is always one of the two
+screeners and settles conflicts (`screen --final`). The agent may be the other
+screener and extracts data with the quote that holds each value.
+
+**Writing.** The review section contracts (`sections-review/` in the kit,
+served at `sections/` in a review workspace) are written with `/paper-writing`;
+they require the `review-registration` declaration and copy every count from
+`review/prisma.json`. They add a Background section (definitions, evolution,
+open problems) and write the results as a comparative thematic synthesis: one
+subsection per theme, sub-themes with a bold label that compare several studies
+along one dimension, a closing sentence on what the evidence supports, and one
+comparison table per theme. Their house style and disqualifiers are measured
+on the group's MDPI review A029; the experimental contracts are untouched.
+
+**What it refuses.** A search or a decision on an unapproved or silently
+changed protocol, a source the protocol does not name, a full-text exclusion
+without a protocol criterion, a decision on a duplicate or a record the
+previous stage excluded, an incomplete appraisal, and an extracted value
+without its quote.

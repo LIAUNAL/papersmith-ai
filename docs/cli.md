@@ -20,6 +20,7 @@ to the current directory and has to point at an initialized workspace, except fo
 | `target` | Lists, selects and checks compute targets |
 | `audit` | Audits the structure and detects drift in what was generated |
 | `doctor` | One health table: framework, packages, tools, skills, agents and phases |
+| `gpu` | Reports this machine's GPU (NVIDIA, AMD, Apple Silicon), what blocks it and the exact fix |
 | `novelty` | Reads the novelty assessment and records the `G-NOVELTY` decision (approve, iterate, reset) |
 | `ui` | Serves the local Paper Command Center (DAG, gates, sections, wiring) |
 | `atlas` | SOTA atlas actions: `build`, `cited`, `coverage`, `summary`, `novelty` (the dashboard's graph buttons) |
@@ -45,6 +46,7 @@ smith init ~/papers/sparse-ae \
 | `--topic TEXT` | Research topic |
 | `--tools TEXT` | Runtimes to provision, comma-separated |
 | `--remote {kaggle,local,slurm}` | Default compute target (default: `kaggle`) |
+| `--kind {experimental,review}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. An experimental workspace never receives the review-only files. See [The review line](../README.md#the-review-line-systematic-reviews) |
 | `<dir>` | Where the workspace goes; omitted, it is the current directory (`smith init` alone sets up the folder you are in, on every operating system) |
 | `--import-existing` | Explicitly initialize a nonempty directory while preserving existing files: keeps its `README.md`, merges papersmith's block into its `.gitignore`, and refuses any other file or symlink collision before copying |
 | `--no-npm` | Skips the best-effort `npm install` (offline/hermetic use) |
@@ -502,6 +504,44 @@ interpreter as `PAPERSMITH_CLI_PYTHON` and the tab builds its rows there.
 Exits `0` unless a row is `fail` (a skill without its `SKILL.md`, a missing
 agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).
 
+### `smith gpu [<dir>]`
+
+```bash
+smith gpu                                   # readable report
+smith gpu --json                            # the probe as JSON
+smith gpu --python .micromamba/envs/papersmith-marker/bin/python
+```
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Prints the whole probe: `vendor`, `cards` (PCI id, VRAM/GTT bytes), `gfx_targets`, `rocm_supported`, `nodes`, `accessible`, `group`, `sg_remedy`, `llama`, `torch`, `accelerators`, `remedies` |
+| `--python <interpreter>` | Probes that interpreter's PyTorch (default: the workspace interpreter, else this one) |
+
+Read-only. Runs the kit's shared probe (`skills/_core/gpu/gpu_probe.py`, the
+one paper ingestion and `scripts/setup_env.py` use) and reports the GPU
+vendor, the AMD gfx target (`gfx_target_version` 110500 is `gfx1150`), VRAM
+and GTT, whether this process can open `/dev/kfd` and `/dev/dri/renderD*`,
+the `render` group state, the Vulkan devices of the `llama-server` beside the
+interpreter (`LLAMA_CPP_BINARY` overrides it) and the PyTorch backend (`cuda`,
+`hip`, `mps` or `cpu`). Each blocker is one `remedies` entry with its code
+and exact command:
+
+| Code | Command |
+|------|---------|
+| `GPU_GROUP_MISSING` | `sudo usermod -aG render,video $USER`, then log in again |
+| `GPU_GROUP_NOT_IN_SESSION` | `sg render -c '<command>'` (ingestion re-runs itself this way) |
+| `ROCM_TORCH_MISSING` | `<python> -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ ... torch[device-<gfx>]==... torchvision[device-<gfx>]==...`, or `smith env install --rocm` |
+| `ROCM_TARGET_UNSUPPORTED` | none; Vulkan still serves Marker, `smith env install --rocm` forces the wheels |
+| `HSA_OVERRIDE_SET` | `unset HSA_OVERRIDE_GFX_VERSION` (a natively supported target needs no override) |
+| `CUDA_TORCH_MISSING` | `smith env install --cuda` |
+| `LLAMA_SERVER_MISSING` | `smith env install` |
+| `VULKAN_MISSING` | none; install your distribution's Mesa Vulkan driver |
+
+Works outside a workspace (the probe then comes from the kit). Always exits `0`.
+`smith env install` takes `--rocm` to force AMD's ROCm PyTorch wheels and
+`--cpu` to forbid every GPU build; without either it picks CUDA on NVIDIA,
+ROCm on a supported AMD target and the CPU build otherwise, and prints why.
+
 ### `smith ui [<dir>]`
 
 ```bash
@@ -529,7 +569,10 @@ smith ui . --publish-pages --yes --no-ai-history
 | `--yes` | With `--publish-pages`: publishes without the interactive confirmation |
 | `--allowed-host HOST:PORT` | Also accepts that `Host` header (repeatable); only forwarded to the backend when supplied |
 | `--allow-unauthenticated-network` | Permits a non-loopback `--host` (see *Network exposure* below); only forwarded when supplied |
-| `--no-terminal` | Does not offer the dashboard's support terminal (it is only ever offered on a loopback bind) |
+| `--no-terminal` | Does not offer the dashboard's support terminal (offered by default on a loopback bind only; see `--network-terminal`) |
+| `--network-terminal` | Also offers the support terminal and the API keys panel on a non-loopback `--host`, behind a secret (see *Network exposure* below); needs `--allow-unauthenticated-network`; only forwarded when supplied |
+| `--lan` / `--no-lan` | Serves the dashboard to the other machines on your network in one switch: `0.0.0.0`, this machine's own addresses and names for the `Host` check, and the terminal behind a secret kept in `~/.config/papersmith/terminal-token` (see *One switch for your home network* below); `PAPERSMITH_UI_LAN=1` makes it the default |
+| `--terminal-token-file <path>` | With `--network-terminal`: reads the secret from `<path>` (mode `600`, 32 to 256 characters from `A-Z a-z 0-9 . _ ~ -`) instead of generating one at each start, and never prints it; a relative path is resolved from where `smith ui` runs |
 
 **Read-only snapshot.** `--export-snapshot <dir>` runs the workspace's own
 backend once, in-process, and writes every read-only answer the dashboard needs
@@ -610,8 +653,18 @@ when that install fails (offline) does it refuse, naming `smith env install`.
 Serves the **Paper Command Center**: a local dashboard inside the workspace with
 its twelve tabs, the eleven phases of the paper flow, the gates (`G-EXP-POC`,
 `G-NOVELTY` and `G1` to `G4`), the ten-section matrix and the health of the
-harness wiring. It updates live over Server-Sent Events, with a 300 ms
-debounce on `sections/`, `openspec/`, `experiments/` and `papersmith.yaml`.
+harness wiring. It updates by itself as the phases advance: the server watches
+`sections/`, `openspec/`, `experiments/`, `paper/`, `sota-pool/`,
+`proposals/`, `implementations/`, `guidance/`, `kaggle-inbox/`, `review/`,
+`.papersmith/` and `papersmith.yaml` (a folder created after the server
+started is picked up within 2 s), coalesces a burst of writes into one flush
+(300 ms debounce, at most one flush per second), and pushes a `state_update`
+over Server-Sent Events (`/api/events`). The page redraws the phase board and
+refreshes the tab in view; any other tab refreshes when it is opened, and the
+open artifact reloads when it is the file that changed. The server's own
+writes (`.papersmith/ai-history/`, `.papersmith/cache/`) wake nothing. While
+the event stream is down the page polls `/api/status` every 5 s, and every
+30 s while it is up.
 
 The backend lives in `skills/_core/command_center/` (part of the kit, so it
 travels with every workspace) and runs standalone without Node/npm:
@@ -814,6 +867,59 @@ trust, such as a container whose port is published only to its host,
 `--allow-unauthenticated-network` lifts the refusal. The `Host` check stays on,
 so name every address clients use with `--allowed-host`.
 
+**The support terminal on a network bind.** A non-loopback `--host` does not
+offer the support terminal (a shell with your privileges) or the API keys
+panel, not even with `--allow-unauthenticated-network`; the console says
+"Terminal disabled". `--network-terminal` offers both behind a secret. The
+server prints it once at start, inside one login URL per address a browser may
+use (`http://<address>/api/terminal/login?token=…`, the bind address unless it
+is a wildcard, then each `--allowed-host`); it is new at each start, or read
+from `--terminal-token-file <path>` (a mode-`600` file you own, never printed).
+Opening that URL once in a browser trades the secret for an HttpOnly,
+SameSite=Strict session cookie, new at each start. Every terminal and key route
+answers `403` without it, a state-changing call must also carry this server's
+`Origin`, and the access log shows the URL as `token=[REDACTED]`. A bad token
+file, `--network-terminal` with `--no-terminal`, or `--network-terminal` on a
+loopback `--host` stops the server with exit code 2. The rest of the dashboard
+stays unauthenticated, and plain HTTP carries the secret and every keystroke
+unencrypted, so the SSH tunnel above remains the safer route. Details:
+[terminals.md](terminals.md#on-a-network-bind---network-terminal).
+
+```bash
+smith ui --host 0.0.0.0 --allow-unauthenticated-network \
+  --allowed-host 192.168.1.10:8080 --network-terminal
+```
+
+**One switch for your home network: `--lan`.** `smith ui --lan` does all of the
+above without naming any address: it binds `0.0.0.0`, adds
+`--allow-unauthenticated-network` and `--network-terminal`, and feeds the
+`Host` check this machine's own names: each of its non-loopback IP addresses
+(VPN interfaces such as Tailscale included), its host name,
+`<hostname>.local`, its Tailscale MagicDNS name (`<host>.<tailnet>.ts.net`, when
+`tailscaled` runs) and the loopback names. It never accepts an arbitrary name,
+so a DNS-rebinding page is still refused (`421`). The terminal's secret lives in
+`~/.config/papersmith/terminal-token` (or `--terminal-token-file`), created on
+the first `--lan` start with mode `600` in a mode-`700` folder and printed that
+once, inside the login URLs to bookmark; later starts read it and never print
+it. A bookmarked login URL keeps working across restarts; open it once after
+each start, because the session cookie is still new at each start. A device
+without it opens the plain dashboard and pastes the secret into the terminal
+window's password box (the browser can remember it). An existing
+token file is never rewritten: delete it to get a new secret. `--no-terminal`
+creates none. Put `export PAPERSMITH_UI_LAN=1` in your shell profile to make
+`--lan` the default of every `smith ui`; `--no-lan` turns it off for one run.
+The same warnings apply: plain HTTP, an unauthenticated dashboard, so only on a
+network you trust. When the machine has a public IPv4 address, `--lan` warns
+that the dashboard is reachable from the Internet unless a firewall blocks the
+port; to reach it from outside your network, use Tailscale (its name and
+address are picked up automatically) or an SSH tunnel, never a public port.
+The addresses are read once at start: restart after the machine changes
+networks.
+
+```bash
+smith ui --lan --no-browser --port 8765
+```
+
 **A new workspace starts clean.** `smith init` copies only the framework (the
 kit's skills, section contracts, agents and setup scripts) into an empty folder
 and seeds `papersmith.yaml`; it never copies artifacts, graphs or data from
@@ -929,12 +1035,15 @@ liveness, for a reload to reattach), `POST /api/terminal/sessions/<id>/input` (`
 it waits for output and pings every 15 s). A closed console drops its stream
 unless a phase is running, and reattaches when opened again.
 At most four live sessions; they close with the server. The console is a shell
-with your privileges, so it is only offered on a loopback bind
-(`smith ui --no-terminal` turns it off). Each server start creates a secret: the
-browser it opens (or the `dashboard login URL` it prints, for `--no-browser`) goes
-through `GET /api/terminal/login?token=…`, which sets an HttpOnly, SameSite=Strict
-cookie, and every terminal route requires it, so another local user or a `curl`
-without the token gets `403`. Every call must also be same-origin: a foreign
+with your privileges, so it is only offered on a loopback bind, or on a network
+bind started with `--network-terminal` (see *The support terminal on a network
+bind* above; `smith ui --no-terminal` turns it off). Each server start creates a
+secret: the browser it opens (or the `dashboard login URL` it prints, for
+`--no-browser`) goes through `GET /api/terminal/login?token=…`, which trades it
+for an HttpOnly, SameSite=Strict session cookie (a second secret, never the
+login one), and every terminal route requires that cookie, so another local user
+or a `curl` without the token gets `403`; the access log shows the login URL as
+`token=[REDACTED]`. Every call must also be same-origin: a foreign
 `Origin` or `Sec-Fetch-Site`, a missing `X-Papersmith-Terminal: 1` header or a
 non-JSON body answers `403`.
 
@@ -977,8 +1086,8 @@ no content), each section contract 256 KiB, 32 KiB of text per block and 200 KiB
 of text in total (with `truncated`). Every read resolves the path, requires it to
 stay inside the workspace (a symlink that escapes gives `unsafe`/404) and
 requires it to be a regular file. papersmith does not generate `main.pdf`: the
-file not existing is normal. The `Host` protection (421) covers these routes only
-on a loopback bind; on a non-loopback bind there is no `Host` filtering.
+file not existing is normal. The `Host` protection (421) covers these routes on
+every bind (see *Allowed-host list*).
 
 **The *Preview* tab.** Shows the text of the written blocks and the compiled PDF
 in one view. On the left the sections appear in order with their state; each block
@@ -1110,8 +1219,8 @@ only) rewrites it and answers `200` or `422`. The **✨ Novelty & Findings** tab
 shows that view at its top, with a rebuild button. `GET /api/atlas/coverage`
 returns what `smith atlas coverage` prints, and `GET /api/atlas/reference?id=`
 returns one cited reference's pool record and its constellation system (`400`
-without `id`), for the citation buttons. The `Host` protection (421) covers these routes only on a loopback
-bind; on a non-loopback bind there is no `Host` filtering.
+without `id`), for the citation buttons. The `Host` protection (421) covers these routes on every
+bind (see *Allowed-host list*).
 
 **The Atlas tab.** `#atlas` consumes the routes above. On the left, a native
 summary (text always escaped): a table of systems with planets and families, the
@@ -1166,8 +1275,7 @@ malformed lines are skipped and counted in `detail`). Optional filters: `source=
 (comma-separated list; 422 on an unknown name) and `limit=` (1 to 1000). Every
 read resolves the path, requires it to stay inside the workspace and to be a
 regular file, and checks the size before reading. There is no author field: it is
-never recorded. The `Host` protection (421) covers the route only on a loopback
-bind.
+never recorded. The `Host` protection (421) covers the route on every bind.
 
 **The Decisions tab.** `#decisions` consumes `/api/decisions` when it opens and
 with the *Refresh* button (the sources are not watched; without overlapping
@@ -1456,7 +1564,9 @@ for the same keys in **Doctor → API keys**.
   one in its JSON. `--verify` sends it only to its own service (Asta: one
   `get_paper` call in the `x-api-key` header; OpenAlex: one `/works?per-page=1`
   call with `api_key`), follows no redirect, and reports `ok`, `refused` or
-  `unreachable` — for OpenAlex with the remaining daily budget.
+  `unreachable` — for OpenAlex with the remaining daily budget. A keyed Asta
+  lookup answers within a second or only after 30 s or more, so a call silent
+  for 5 s is asked again, within 30 s in all.
 - **Sessions:** the dashboard exports each stored key into the sessions its CLI
   assistant starts (unless already exported). For an agent started elsewhere,
   `status` prints the line to export it from the file, e.g.

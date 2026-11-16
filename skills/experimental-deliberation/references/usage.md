@@ -132,7 +132,7 @@ Add `"sourceWindowBytes": <1..262144>` to the request to widen the window for th
 
 ### v1 is checked before it is written
 
-**v1 is checked, not exempt.** Source fragments are pasted in verbatim under a `## Reference Sources` heading (this profile's `sourceReferenceHeading`), one `### <path>` per fragment — but `CREATE_INITIAL_REVISION` runs the composed candidate through the identical `violations()` gate `CREATE_SUCCESSOR` runs, before any write (see [SKILL.md](../SKILL.md#creating-v1-checked-by-the-same-gate-as-every-successor)). If a pasted fragment carries a filled report-table cell, or a URL with no verification tag, v1 is refused outright:
+**v1 is checked, not exempt.** Source fragments are pasted under a `## Reference Sources` heading (this profile's `sourceReferenceHeading`), one `### <path>` per fragment, verbatim except for their own headings: every line a source opens with `#` to `######` gets a backslash before the marker (`\# Title`), and a setext underline (`===` or `---` under a paragraph line) gets one too, so a Markdown reader prints them as text and the only headings v1 carries are the ones the engine writes. The source window reports how many lines of each source were escaped (`headingsNeutralized`). But `CREATE_INITIAL_REVISION` runs the composed candidate through the identical `violations()` gate `CREATE_SUCCESSOR` runs, before any write (see [SKILL.md](../SKILL.md#creating-v1-checked-by-the-same-gate-as-every-successor)). If a pasted fragment carries a filled report-table cell, or a URL with no verification tag, v1 is refused outright:
 
 ```json
 {
@@ -155,6 +155,15 @@ Before 0.14.0, v1 pasted each proposal revision verbatim, including its reserved
 ```
 
 The pasted proposal brought its own `# ` heading, so the copies can sit in more than one section. Resolve each section the message names, and send one replace decision per section (`selectedEntryIds`, one query per section) whose `replacementText` is that section without the marker line. Your other edits can go in the same successor. Once that successor is published it holds no copies, and every later successor reads it normally. A replacement that writes a marker back is refused `successor-patch-limit`.
+
+### A v1 that pasted its sources' own headings
+
+Before this rule, v1 pasted each source with its own headings. A proposal revision whose `#` title equals the experiments title then left several byte-identical level-1 headings, and the last pasted `#` section ran to the end of the file, over `## Changes`. Such a lineage is repaired through an ordinary successor:
+
+- **Name a repeated title by its occurrence.** `<title>#<n>` (no space before `#`) names the n-th heading, in document order, whose title is exactly `<title>`; with level marks (`# <title>#2`) only headings of that level are counted. It applies only to a title two or more headings share — any other query reads exactly as before — and an ordinal past the last occurrence resolves nothing. A blocked `RESOLVE_TARGET` on a repeated title lists the `<title>#<n>` form of each candidate.
+- **A section never spans the change header.** A heading's span ends where `## Changes` begins, so the last pasted section is a target of its own instead of one that overlaps the header every successor replaces.
+
+Resolve each pasted copy with `<title>#<n>` and send one replace decision per section whose `replacementText` is that section with its heading markers escaped (`\# <title>`, `\## <part>`) or removed. To drop a pasted copy entirely, send a `delete` decision for it: a `replace` whose `replacementText` is empty is refused `SUCCESSOR_OUTSIDE_TARGET_FORBIDDEN`. Leave `## Changes` to `changeSummary`; the engine writes it on mixed `replace`/`delete` batches too. A backslash-escaped marker is text, so `atx-heading-standalone` does not refuse it. `paper-writing`'s `separate`/`bind` accept the same `<title>#<n>` form for a section title the source repeats.
 
 ## Adopting an existing document as v1
 

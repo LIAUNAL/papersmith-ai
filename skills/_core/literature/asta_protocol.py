@@ -24,6 +24,11 @@ What the live server answered on 2026-11-09, which these functions encode:
   arrive as HTTP 200, so :func:`classify` reads the text;
 * an empty ``x-api-key`` header is keyless; searches without a key stall.
 
+On 2026-11-11 about half of the keyed lookups answered only after 30 or 60 s
+while the others took under a second, so a lookup is asked again after
+:data:`LOOKUP_ATTEMPT_SECONDS` of silence (:attr:`AstaError.timed_out` says
+the silence ran out).
+
 Model-generated fields (``tldr``) and excerpted passages (``snippet_search``)
 point at a paper; they are never an abstract or a quote, and nothing here
 returns them as one.
@@ -43,6 +48,12 @@ KEY_HEADER = "x-api-key"
 REQUEST_ID = 1
 #: Largest reply read before giving up, pings included.
 MAX_RESPONSE_BYTES = 8 << 20
+#: How long a single-paper lookup (``get_paper``) is waited for before it is
+#: asked again. Measured live on 2026-11-11 with a key, a lookup answered in
+#: 0.4-0.7 s or only after 30.5-30.8 s or 60.6 s (keyless, always under a
+#: second), and a fresh request usually answered at once: waiting out a slow
+#: one costs half a minute, asking again about a second.
+LOOKUP_ATTEMPT_SECONDS = 5.0
 
 #: Why a call failed, as :class:`AstaError.kind`.
 NOT_FOUND = "not_found"
@@ -60,10 +71,12 @@ _ARXIV_VERSION_RE = re.compile(r"v\d+$")
 class AstaError(Exception):
     """A call that did not produce an answer: :attr:`kind` says which way."""
 
-    def __init__(self, kind: str, detail: str) -> None:
+    def __init__(self, kind: str, detail: str, *, timed_out: bool = False) -> None:
         super().__init__(detail)
         self.kind = kind if kind in KINDS else UNAVAILABLE
         self.detail = detail
+        #: The deadline passed with no answer: the call may be asked again.
+        self.timed_out = timed_out
 
 
 def paper_id(kind: str, value: str) -> str:
@@ -128,7 +141,7 @@ def read_message(readline: Callable[[], bytes], *, deadline: float,
     while True:
         raw = readline()
         if clock() > deadline:
-            raise AstaError(UNAVAILABLE, "no answer within the deadline")
+            raise AstaError(UNAVAILABLE, "no answer within the deadline", timed_out=True)
         if not raw:
             break
         received += len(raw)

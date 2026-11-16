@@ -9269,6 +9269,12 @@ FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
                   "skill's directory name, the slash command the operator types "
                   "when a remote run cannot authenticate",
     },
+    "_core/command_center/watcher.py": {
+        "kaggle": "the live-refresh watcher names the workspace folders it "
+                  "watches, and `kaggle-inbox/` is the folder the remote "
+                  "execution flow fetches runs into; a workspace path, not a "
+                  "loan from any research project",
+    },
     "_core/command_center/static/experiments-panel.js": {
         "kaggle": "the experiments panel's help box explains how to launch and "
                   "monitor runs on that one hosted service through its CLI, its "
