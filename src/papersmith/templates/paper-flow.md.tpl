@@ -142,7 +142,7 @@ skill refuses when its input is missing.
    `resolve --references`: it stores each cited paper's metadata and abstract
    in `paper/.paper-writing/references.json`, and `verify` fails while a cited
    key has no record there. A paper it cannot resolve, offline included, keeps
-   a record and passes with a note. Then `smith atlas coverage .` lists the cited papers the SOTA constellation draws only as placeholders: their abstracts go to the pool (`sota-scout`) and their systems to the constellation (`sota-grapher`).
+   a record and passes, listed under the report's `warnings` (`CITED_SOURCE_WITHOUT_TITLE`, `CITED_SOURCE_WITHOUT_ABSTRACT`). Then `smith atlas coverage .` lists the cited papers the SOTA constellation draws only as placeholders: their abstracts go to the pool (`sota-scout`) and their systems to the constellation (`sota-grapher`).
 9. **Figures**: `/figure-review <figure id>` checks a compiled
    `paper/Figures/<id>.pdf`.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:
