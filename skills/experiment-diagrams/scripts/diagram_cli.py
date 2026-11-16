@@ -560,6 +560,10 @@ ROW_GAP_CM = 0.9
 CONTEXT_GAP_CM = 0.35
 #: Horizontal padding inside a box (TeX pt), the `inner sep` of `ps base`.
 INNER_SEP_PT = 4.0
+#: The `inner sep` of `ps context` (TeX pt): a context note's node is its
+#: text width plus twice this, so a note placed against the right edge must
+#: leave that much room or its (invisible) node box widens the page.
+CONTEXT_INNER_SEP_PT = 2.0
 
 
 def font_macros(sizes: dict) -> list[str]:
@@ -657,12 +661,21 @@ def plan_layout(spec: dict, settings: dict, gap_cm: float = GAP_CM) -> dict:
     spine = [n for n in nodes if n.get("row", "spine") == "spine"]
     count = max(len(spine), 1)
     box = min(MAX_BOX_CM, (inner - gap_cm * (count - 1)) / count)
-    used = count * box + gap_cm * (count - 1)
+    # A short spine whose boxes reached MAX_BOX_CM spreads them over the
+    # whole content width (wider gaps, longer arrows) rather than centring
+    # them: the first box starts at the left edge and the last ends at the
+    # right one, so the drawn content spans the printed width on both sides
+    # instead of leaving the ragged claim line to decide where it ends.
+    # The evidence row keeps `gap_cm`; only the spine's own gap widens.
+    spine_gap = gap_cm
+    if count > 1:
+        spine_gap = max(gap_cm, (inner - count * box) / (count - 1))
+    used = count * box + spine_gap * (count - 1)
     start = inset + (inner - used) / 2
     text_cm = max(box - 2 * INNER_SEP_PT / PT_PER_CM - 0.07, 0.5)
     place = {}
     for index, node in enumerate(spine):
-        place[node["id"]] = {"x": start + box / 2 + index * (box + gap_cm), "y": 0.0,
+        place[node["id"]] = {"x": start + box / 2 + index * (box + spine_gap), "y": 0.0,
                              "row": "spine", "anchor": "center", "text_cm": text_cm}
     spine_h = max([_box_height_cm(n["label"], text_cm, fonts["spine"], n["role"] == "focal")
                    for n in spine] or [1.0])
@@ -697,9 +710,13 @@ def plan_layout(spec: dict, settings: dict, gap_cm: float = GAP_CM) -> dict:
                     "text_cm": max(width - 2 * INNER_SEP_PT / PT_PER_CM - 0.07, 0.5)}
         else:
             note_cm = min(inner * 0.6, 7.0)
+            # The note's node is `note_cm` plus its inner sep on both sides:
+            # clamped against the right edge without that room, its box ran
+            # 4 pt past the content width and widened the page on that side.
+            note_node_cm = note_cm + 2 * CONTEXT_INNER_SEP_PT / PT_PER_CM
             for index, node in enumerate(members):
                 left = anchored.get(node["id"], inset + box / 2) - box / 2
-                left = max(inset, min(left, inset + inner - note_cm))
+                left = max(inset, min(left, inset + inner - note_node_cm))
                 place[node["id"]] = {"x": left, "y": context_bottom, "row": "context",
                                      "anchor": "south west", "text_cm": note_cm}
     return {"width_cm": width_cm, "spine_h_cm": spine_h, "evidence_top_cm": evidence_top,
@@ -794,6 +811,19 @@ def build_tex(spec: dict, settings: dict | None = None, *, gap_cm: float = GAP_C
             side = "above" if start in ("east", "west") else "right"
             label = f" node[ps edge label, midway, {side}] {{{tex_escape(edge['label'])}}}"
         lines.append(f"\\draw[{', '.join(styles)}] {path}{label} ({edge['to']}.{end});")
+    # The page is the content width, exactly, whatever the picture holds:
+    # TikZ grows its bounding box with every node box, drawn or not (a
+    # ragged note's full text width, a curve's control points), so an
+    # invisible extent on one side used to widen the page there and leave a
+    # margin the audit refused. The drawn spine spans [0, width] (see
+    # `plan_layout`), so the page's horizontal extent is set to that span
+    # and its vertical extent kept; ink outside it would show as a clipped
+    # side in the margin audit, never be hidden.
+    lines.append(r"\coordinate (ps sw) at (current bounding box.south west);")
+    lines.append(r"\coordinate (ps ne) at (current bounding box.north east);")
+    lines.append(r"\pgfresetboundingbox")
+    lines.append(f"\\path[use as bounding box] (0,0 |- ps sw) rectangle "
+                 f"({plan['width_cm']:.2f},0 |- ps ne);")
     lines += [r"\end{tikzpicture}", r"\end{document}", ""]
     return "\n".join(lines)
 

@@ -54,7 +54,12 @@ explicit `\fontsize` per role (claim = 0.88 x body, spine = 0.82 x body,
 notes and evidence = 0.76 x body), never a relative switch and always
 between 0.70 and 0.90 x the body size at the printed width. Boxes share the width the layout has; fonts never shrink to fit.
 The export draws no background (the PNG rasterizes on white) and keeps a
-2 pt border.
+2 pt border. The spine always spans the content width, first box at the left
+edge and last at the right (a short spine whose boxes reach their maximum
+width spreads them apart rather than centring them), and the page's
+horizontal extent is set to exactly that span: a node TikZ counts but does
+not draw (a context note's full text width, a curve's control points) can no
+longer widen one side, so the left and right margins match.
 
 `render` keeps the TeX log. When it reports an `Overfull \hbox` the boxes
 are widened once (the gap between them narrows); still overfull, `render`

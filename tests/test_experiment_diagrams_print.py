@@ -167,6 +167,58 @@ class RenderAuditTests(_Base):
                 for check in ("overfull", "size_switches", "text_overlap", "font_range", "margins"):
                     self.assertEqual(record["report"]["checks"][check]["verdict"], "pass", check)
 
+    def test_the_drawn_content_spans_the_printed_width_symmetrically(self) -> None:
+        """Every margin at most 4 pt, left and right within 1 pt of each
+        other: for the derived specs, a context note placed near the last
+        spine node (its node box used to run 4 pt past the content width and
+        widen the page on the right), and a short spine whose boxes reach
+        their maximum width (they used to be centred, leaving the ragged
+        claim to set the right edge)."""
+        def near_last(spec: dict) -> None:
+            spine = [n["id"] for n in spec["nodes"] if n.get("row", "spine") == "spine"]
+            for node in spec["nodes"]:
+                if node.get("row") == "context":
+                    node["near"] = spine[-1]
+
+        def two_node_spine(spec: dict) -> None:
+            spine = [n["id"] for n in spec["nodes"] if n.get("row", "spine") == "spine"]
+            keep = {spine[0], spec["focal"]} if spec["focal"] != spine[0] else {spine[0], spine[1]}
+            spec["nodes"] = [n for n in spec["nodes"]
+                             if n.get("row", "spine") != "spine" or n["id"] in keep]
+            ids = {n["id"] for n in spec["nodes"]}
+            first, second = [n["id"] for n in spec["nodes"] if n.get("row", "spine") == "spine"]
+            spec["edges"] = [e for e in spec["edges"] if e["from"] in ids and e["to"] in ids
+                             and (e["from"], e["to"]) != (first, second)]
+            spec["edges"].append({"from": first, "to": second, "semantics": "data",
+                                  "prominence": "primary"})
+            for node in spec["nodes"]:
+                if node.get("under") not in (None, *ids):
+                    node["under"] = second
+                if node.get("near") not in (None, *ids):
+                    node["near"] = first
+            spec["claim"] = "A short claim."
+
+        for kind in ("poc", "experiments"):
+            for variant, change in (("derived", None), ("context near the last node", near_last),
+                                    ("two-node spine", two_node_spine)):
+                with self.subTest(kind=kind, variant=variant):
+                    spec_path = self.spec(kind)
+                    if change is not None:
+                        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+                        change(spec)
+                        spec_path.write_text(json.dumps(spec), encoding="utf-8")
+                    code, payload = run_cli("render", "--spec", str(spec_path))
+                    self.assertEqual(code, 0, payload)
+                    record = json.loads(spec_path.with_name(f"{kind}.audit.json")
+                                        .read_text(encoding="utf-8"))
+                    margins = record["report"]["checks"]["margins"]
+                    self.assertEqual(margins["verdict"], "pass", margins)
+                    sides = margins["margins"]
+                    for side, value in sides.items():
+                        self.assertLessEqual(value, 4.0, (side, sides))
+                        self.assertGreaterEqual(value, 0.0, (side, sides))
+                    self.assertLess(abs(sides["left"] - sides["right"]), 1.0, sides)
+
     def test_a_label_too_long_for_its_box_is_refused_overfull(self) -> None:
         spec_path = self.spec()
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
