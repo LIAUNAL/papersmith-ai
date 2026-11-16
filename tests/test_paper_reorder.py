@@ -23,6 +23,7 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "skills" / "paper-writing" / "scripts"))
 import paper_cli  # noqa: E402
+import paper_reorder  # noqa: E402
 import paper_verify  # noqa: E402
 
 
@@ -138,6 +139,12 @@ class ReorderRefusalTests(_ReorderFixture):
         self.assertIn(fragment, payload["detail"])
         self.assertEqual(self.main_tex.read_bytes(), text.encode("utf-8"))
         self.assertFalse((self.paper_dir / ".paper-writing").exists())
+
+    def test_a_paper_with_no_back_matter_and_no_reference_list_is_a_no_op(self) -> None:
+        # Review finding R4-reorder-nonpass-not-fail: nothing to place is not an ambiguous layout.
+        result = paper_reorder.plan((_HEAD + _TAIL).encode("utf-8"))
+        self.assertEqual(result["moves"], [])
+        self.assertEqual(result["candidate"], (_HEAD + _TAIL).encode("utf-8"))
 
     def test_no_reference_list_refuses(self) -> None:
         self.assert_refused(_HEAD + _APPENDIX + _FUNDING + _TAIL, "no reference list")

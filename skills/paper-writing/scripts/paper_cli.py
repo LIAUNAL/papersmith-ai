@@ -873,10 +873,21 @@ def compute_readiness_report(
             result["supposed"] = supposed
         # #184 item 7: a fixed fact whose source changed since it was
         # declared -- a warning, never a refusal.
-        stale_facts = paper_declarations.read_stale_facts(paper_dir)
+        stale_facts, unmeasured = _stale_facts(paper_dir)
         if stale_facts:
             result["stale_facts"] = stale_facts
+        if unmeasured:
+            result["stale_facts_unmeasured"] = unmeasured
     return result
+
+
+def _stale_facts(paper_dir: Path) -> tuple[dict, str | None]:
+    """`read_stale_facts`, advisory all the way down: a source that cannot be
+    digested reports why instead of failing `readiness` or `phases`."""
+    try:
+        return paper_declarations.read_stale_facts(paper_dir), None
+    except (OSError, ValueError) as exc:
+        return {}, f"stale facts could not be measured ({type(exc).__name__}: {exc})"
 
 
 def cmd_readiness(args: argparse.Namespace) -> dict:
@@ -2412,6 +2423,7 @@ def compute_phases(
         })
         previous_complete = previous_complete and wave_complete
 
+    stale_facts, stale_unmeasured = _stale_facts(paper_dir)
     return {
         "declared": {
             "facts": sorted(declared_facts),
@@ -2419,7 +2431,8 @@ def compute_phases(
         },
         "waves": wave_reports,
         # #184 item 7: fixed facts whose source changed since they were declared.
-        "stale_facts": paper_declarations.read_stale_facts(paper_dir),
+        "stale_facts": stale_facts,
+        **({"stale_facts_unmeasured": stale_unmeasured} if stale_unmeasured else {}),
     }
 
 
@@ -3256,7 +3269,7 @@ def cmd_verify(args: argparse.Namespace) -> dict:
                               references=references)
     # #180, #183: advisory caption and coherence warnings, never counted.
     report = paper_verify.attach_coherence(
-        report, paper_coherence.run(evidence.main_tex_bytes, evidence.record))
+        report, paper_coherence.run_guarded(evidence.main_tex_bytes, evidence.record))
     citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)
@@ -3696,6 +3709,8 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         try:
             draft_path = _resolve_repo_path(args.draft)
         except Refused as exc:
+            if exc.code != "PAPER_OUTSIDE_REPOSITORY":
+                raise
             # #184 item 1: the containment rule stays; the refusal names the
             # way a scratch draft outside the repository gets in.
             raise Refused(

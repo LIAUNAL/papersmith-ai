@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 FORGE_ROOT = Path(__file__).resolve().parents[1]
@@ -159,6 +160,19 @@ class CoherencePurityTests(unittest.TestCase):
                 self.assertNotIn(node.func.id, {"open", "__import__", "exec", "eval"})
         self.assertEqual(imports, {"re", "__future__"})
 
+
+
+class GuardedRunTests(unittest.TestCase):
+    def test_a_failing_check_reports_unmeasured_instead_of_aborting_verify(self) -> None:
+        # Review finding R4-verify-coherence-unguarded: the checks are advisory all the way down.
+        import paper_coherence
+        import paper_verify
+        with unittest.mock.patch.object(paper_coherence, "segments", side_effect=ValueError("odd bytes")):
+            entries = paper_coherence.run_guarded(b"\\documentclass{article}")
+        self.assertEqual([e["check"] for e in entries], list(paper_coherence.COHERENCE_CHECKS))
+        self.assertEqual({(e["verdict"], e["unmeasured_reason"]) for e in entries}, {("unmeasured", "CHECK_FAILED")})
+        report = paper_verify.attach_coherence({"clean": True}, entries)
+        self.assertTrue(report["clean"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -89,6 +89,7 @@ COHERENCE_UNMEASURED_REASONS: tuple[str, ...] = (
     "METHODS_SECTION_ABSENT",
     "NO_SYMBOL_DEFINED",
     "NO_DECLARED_NAMES",
+    "CHECK_FAILED",
 )
 SEVERITY = "warning"
 
@@ -689,3 +690,14 @@ def run(main_tex: bytes, record: dict | None = None) -> list[dict]:
     ]
     assert [e["check"] for e in entries] == list(COHERENCE_CHECKS)
     return entries
+
+
+def run_guarded(main_tex: bytes, record: dict | None = None) -> list[dict]:
+    """`run`, but advisory all the way down: a failure on unusual manuscript
+    bytes reports every check `unmeasured` (`CHECK_FAILED`) instead of
+    aborting the `verify` report these warnings ride on."""
+    try:
+        return run(main_tex, record)
+    except Exception as exc:  # noqa: BLE001 -- an advisory check must never fail verify
+        rule = f"the coherence checks could not run ({type(exc).__name__})"
+        return [_result(check, "unmeasured", [], reason="CHECK_FAILED", rule=rule) for check in COHERENCE_CHECKS]

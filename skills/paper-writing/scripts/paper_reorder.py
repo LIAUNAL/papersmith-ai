@@ -108,8 +108,13 @@ def plan(data: bytes) -> dict:
         block_id: (begin["start"], end["end"]) for block_id, (begin, end) in parsed.pairs.items()
     }
     before = _order_check(data)
-    if before["verdict"] == "pass":
-        return {"moves": [], "candidate": data, "verdict": "pass"}
+    nothing_to_place = before["verdict"] == "unmeasured" and not (before.get("evidence") or {}).get(
+        "back_matter_blocks")
+    if before["verdict"] == "pass" or nothing_to_place:
+        # In order, or no back-matter block to place at all (with no reference
+        # list either): no move, an idempotent no-op. Back-matter blocks with no
+        # reference list to place them around still refuse below.
+        return {"moves": [], "candidate": data, "verdict": before["verdict"]}
 
     refs_start, refs_end = _reference_span(data, regions)
     late = before["evidence"]["declarations_after_references"]

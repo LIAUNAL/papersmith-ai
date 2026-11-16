@@ -12,6 +12,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 FORGE_ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +108,18 @@ class StaleFactTests(unittest.TestCase):
         for record in self._records():
             self.assertNotIn("basis", record, record)
 
+
+
+class StaleFactsAdvisoryTests(unittest.TestCase):
+    def test_an_unreadable_source_is_reported_not_raised(self) -> None:
+        # Review finding R4-stale-facts-unguarded: phases and readiness never fail on this warning.
+        import paper_cli
+        import paper_declarations
+        with unittest.mock.patch.object(paper_declarations, "read_stale_facts",
+                                        side_effect=PermissionError(13, "Permission denied")):
+            facts, reason = paper_cli._stale_facts(Path("."))
+        self.assertEqual(facts, {})
+        self.assertIn("PermissionError", reason)
 
 if __name__ == "__main__":
     unittest.main()
