@@ -11,6 +11,44 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.78.0
+
+- **Writes never overwrite newer prose (#185).** `substitute`, `write` and
+  `humanize --apply` take `--expect-digest <sha256>` (the digest `status`
+  lists) and refuse `BLOCK_CHANGED_SINCE_READ` when the block changed since
+  it was read; delegated writers pass it by default. A new `reorder` verb
+  moves back-matter blocks into the order `verify` expects, byte for byte.
+- **paper-writing defects (#184).** `humanize --draft` outside the repository
+  names `--replacement`; discussion scaffolding reads protocol labels in
+  Spanish, Portuguese and French and names the fields it could not read;
+  `\foreignlanguage` and `otherlanguage` spans are exempt from the Spanish
+  check; `separate` binds a single-section source; a declared fact records
+  its source digest and `readiness`/`phases` list `stale_facts` when it
+  changed. Every skill CLI refuses Python below 3.11 by name
+  (`PYTHON_VERSION_UNSUPPORTED`) instead of crashing.
+- **Deterministic coherence warnings in `verify` (#180, #183).** Nine advisory
+  checks under a `coherence` key: caption result values, interpretive verbs,
+  sentences repeated from the body and identifier codes; overclaiming, claims
+  without findings, not-performed work, symbol redefinition and naming
+  consistency. They never change `clean`.
+- **figure-review measures the compiled document (#181).** `measure` reads the
+  body size from `main.log` and printed widths from `main.tex`, and adds
+  advisories for floats under 90% of the text width, float-only pages and
+  large gaps, and numbers inside figures. `figure provenance` records each
+  figure's script and data inputs, and `render`/`figure audit` warn when they
+  are missing, outside the repository, changed or unreadable.
+- **Citations (#182).** `bib build` prefers the published record over arXiv
+  when one is on disk (else warns), normalizes HTML entities and entry types;
+  `verify` lists cited sources without a title or abstract under `warnings`.
+- **Run records name their machine (#186).** `bootstrap.json`, `shard.json`,
+  the kit benchmark and `timing.json` carry a `runtime` block (host label as a
+  digest, hardware, libraries, threads); `parallelism estimate`/`plan` and
+  `verify --shards` warn when they combine different hosts or thread settings.
+- **pixelrag (#13).** A keyless, local skill that turns an extracted figure
+  into evidence: `facts`, `record` (the session agent's description, validated
+  and bound to the image's sha256) and `status`.
+- The journal finder asks each identical request once per search (#166).
+
 ## 0.77.1
 
 - Remote execution refuses a bare worker id (`--worker carlos`) everywhere
