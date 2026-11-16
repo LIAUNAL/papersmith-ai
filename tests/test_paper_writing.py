@@ -14642,13 +14642,10 @@ class PythonFloorGuardTests(unittest.TestCase):
     own front door now refuses `PYTHON_VERSION_UNSUPPORTED` by name before
     any command runs.
 
-    `SKILL_PYTHON_FLOOR = (3, 7)` is MEASURED, not picked: every one of the
-    31 shipped `paper_*.py` modules (and the shared `impl_refusals.py`)
-    opens with `from __future__ import annotations` (PEP 563, 3.7+), the
-    highest-versioned feature any of them use -- no walrus operator, no
-    `match`/`case`, no PEP 604 `X | Y` outside an annotation, no dict-union
-    `|`, no `str.removeprefix`/`removesuffix`, scanned for across every
-    shipped script and found nowhere.
+    `SKILL_PYTHON_FLOOR = (3, 11)` is the package's own floor
+    (`pyproject.toml` requires-python >=3.11, #184 item 5): skills run with
+    an older system `python3` crashed on runtime-evaluated PEP 604 unions,
+    so the floor is enforced rather than kept compatible.
 
     A pre-3.7 interpreter cannot even PARSE `paper_cli.py` to reach this
     check (`from __future__ import annotations` is itself the 3.7+ syntax
@@ -14674,8 +14671,8 @@ class PythonFloorGuardTests(unittest.TestCase):
             with self.assertRaises(paper_cli.Refused) as ctx:
                 paper_cli._require_supported_python()
         self.assertEqual(ctx.exception.code, "PYTHON_VERSION_UNSUPPORTED")
-        self.assertIn("3.6", ctx.exception.detail)
-        self.assertIn("3.7", ctx.exception.detail)
+        self.assertIn("3.10", ctx.exception.detail)
+        self.assertIn("3.11", ctx.exception.detail)
 
     def test_main_itself_refuses_before_dispatching_any_command(self) -> None:
         """The check runs inside `main()`, ahead of argument parsing and

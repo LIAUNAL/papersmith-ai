@@ -76,6 +76,14 @@ will ever grow.
 """
 from __future__ import annotations
 
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import argparse
 import hashlib
 import json
@@ -137,29 +145,20 @@ from impl_refusals import Refused  # noqa: E402
 #: bare relative name.
 CLI_PATH = Path(__file__).resolve()
 
-#: The floor this skill's own scripts need, MEASURED rather than picked:
-#: every one of the 31 shipped `paper_*.py` modules (and the shared
-#: `impl_refusals.py` under `_core/implementation/`) opens with `from
-#: __future__ import annotations` (PEP 563, 3.7+) -- the highest-versioned
-#: feature any of them uses. Scanned for and found nowhere in this skill's
-#: own scripts: the walrus operator, `match`/`case`, a PEP 604 `X | Y`
-#: outside an annotation, the dict-union `|` operator, `str.removeprefix`/
-#: `removesuffix`, `pathlib.Path.is_relative_to`. A future change that adds
-#: any of those moves this number; nothing here should be read as a
-#: forecast of what this skill will always need. This is the same
-#: `SKILL_PYTHON_FLOOR` shape `implementation_engine.py` already carries
-#: for its own layout templates, applied here to this skill's own
-#: interpreter instead of a target's.
-SKILL_PYTHON_FLOOR: tuple[int, int] = (3, 7)
+#: The floor this skill's scripts are run under: the package's own
+#: (`pyproject.toml` requires-python >=3.11, #184 item 5). The module-level
+#: guard at the top of this file refuses an older interpreter before any
+#: import; `_require_supported_python` repeats the comparison inside `main`
+#: so it stays provable with a patched `sys.version_info`.
+SKILL_PYTHON_FLOOR: tuple[int, int] = (3, 11)
 
 
 def _require_supported_python() -> None:
     """Refuses by name instead of a bare traceback naming a module the
     caller never asked about -- exactly the gap this skill shipped with no
-    declared floor at all until now. A pre-3.7 interpreter cannot even
-    PARSE this file to reach this call (`from __future__ import
-    annotations` is itself the 3.7+ syntax feature that makes every other
-    module's annotations safe to write), so this comparison can only ever
+    declared floor at all until now. An interpreter below the floor is
+    already stopped by the module-level guard at the top of this file,
+    before any import, so this comparison can only ever
     be exercised by an interpreter capable enough to load the file but
     told, at runtime, that it is older (`PythonFloorGuardTests`,
     `tests/test_paper_writing.py` -- there is no other way to prove the

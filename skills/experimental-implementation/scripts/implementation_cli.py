@@ -23,6 +23,14 @@
 # wherever it lives. A sibling in this tree is still refused by path even
 # when it cannot be loaded. A profile this launcher cannot read declares
 # nothing here; the engine refuses it on load.
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import importlib.util
 import os
 import sys
