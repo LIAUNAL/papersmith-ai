@@ -37,6 +37,7 @@
   <script src="./doctor-panel.js?v=0.73.0"></script>
   <script src="./keys-panel.js?v=0.73.0"></script>
   <script src="./journals-panel.js?v=0.73.0"></script>
+  <script src="./translation-panel.js?v=0.73.0"></script>
   <script src="./ai-history-panel.js?v=0.73.0"></script>
   <script src="./phase-console.js?v=0.73.0"></script>
   <script src="./phase-run.js?v=0.73.0"></script>
@@ -3784,6 +3785,11 @@
             <div id="journalsPanel"></div>
           </details>
 
+          <details id="translationDetails" class="journals-details" ontoggle="if (this.open) window.refreshTranslationPanel?.()">
+            <summary data-i18n="translation.title">Manuscript version (English or Spanish)</summary>
+            <div id="translationPanel"></div>
+          </details>
+
           <details id="manuscriptQaDetails" class="journals-details" ontoggle="if (this.open) window.refreshManuscriptQa?.()">
             <summary data-i18n="qa.title">Visual QA of the manuscript</summary>
             <p class="qa-sub" data-i18n="qa.sub">Measured on the compiled PDF after every compile: text past the text block, figure and table text below 0.70 times the body size, and Overfull boxes.</p>
@@ -6022,13 +6028,18 @@
     // The venue whose compiled PDF is shown instead of the canonical one
     // (journals-panel.js toggles it); null shows paper/main.pdf.
     let pdfVenueSlug = null;
+    // The translation shown instead (translation-panel.js toggles it): 'es'
+    // shows paper/translations/es/main.pdf; null keeps the English manuscript.
+    let pdfTranslation = null;
     function pdfUrl(query) {
-      const url = `/api/pdf?${query}${pdfVenueSlug ? `&venue=${encodeURIComponent(pdfVenueSlug)}` : ''}`;
+      const url = `/api/pdf?${query}${pdfVenueSlug ? `&venue=${encodeURIComponent(pdfVenueSlug)}` : ''}`
+        + `${!pdfVenueSlug && pdfTranslation ? `&translation=${encodeURIComponent(pdfTranslation)}` : ''}`;
       // The read-only snapshot (snapshot.js) maps it to its file; live, unchanged.
       return window.psRewrite ? window.psRewrite(url) : url;
     }
     function setPdfVenue(slug) {
       pdfVenueSlug = slug || null;
+      if (pdfVenueSlug) pdfTranslation = null;
       const direct = document.getElementById('linkPdfDirect');
       if (direct) direct.href = pdfVenueSlug ? `/api/pdf?venue=${encodeURIComponent(pdfVenueSlug)}` : '/api/pdf';
       const title = document.querySelector('.pdf-doc-title');
@@ -6038,6 +6049,19 @@
       if (pdfDoc) initPdfViewer(true);
     }
     window.setPdfVenue = setPdfVenue;
+    function setPdfTranslation(lang) {
+      pdfTranslation = lang || null;
+      // One alternative document at a time: the translation replaces a venue view.
+      if (pdfTranslation) pdfVenueSlug = null;
+      const direct = document.getElementById('linkPdfDirect');
+      if (direct) direct.href = pdfTranslation ? `/api/pdf?translation=${encodeURIComponent(pdfTranslation)}` : '/api/pdf';
+      const title = document.querySelector('.pdf-doc-title');
+      if (title) title.textContent = pdfTranslation ? `📄 translations/${pdfTranslation}/main.pdf` : '📄 main.pdf';
+      const native = document.getElementById('pdfNativeIframe');
+      if (native && isNativePdfViewer) native.src = pdfUrl(`t=${Date.now()}`);
+      if (pdfDoc) initPdfViewer(true);
+    }
+    window.setPdfTranslation = setPdfTranslation;
 
     let currentSelectedText = '';
     let currentSelectedPage = 1;
@@ -6064,7 +6088,7 @@
       const iframe = document.getElementById('pdfNativeIframe');
       iframe.style.display = 'block';
       if (iframe.getAttribute('src') === 'about:blank') iframe.src = `/api/pdf?t=${Date.now()}`;
-      if (pdfVenueSlug) iframe.src = pdfUrl(`t=${Date.now()}`);
+      if (pdfVenueSlug || pdfTranslation) iframe.src = pdfUrl(`t=${Date.now()}`);
     }
 
     function ensurePdfLoaded() {
@@ -6087,8 +6111,8 @@
       const previous = lastPdfToken;
       lastPdfToken = token;
       if (previous === null) { loadedPdfToken = token; return; }
-      // The token follows the canonical build; the venue view reloads when it is toggled.
-      if (pdfVenueSlug) return;
+      // The token follows the canonical build; the venue and translation views reload when toggled.
+      if (pdfVenueSlug || pdfTranslation) return;
       if (!token || token === loadedPdfToken) return;
       const native = document.getElementById('pdfNativeIframe');
       if (native && isNativePdfViewer) native.src = `/api/pdf?v=${token}`;

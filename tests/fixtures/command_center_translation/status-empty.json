@@ -1,0 +1,4 @@
+{"ok": true, "lang": "es",
+ "blocks": [{"id": "intro.motivation", "state": "missing", "source_digest": "a1", "stored_at": null}],
+ "counts": {"total": 1, "current": 0, "stale": 0, "missing": 1},
+ "built": false, "main_tex": null, "pdf": null, "audit": null}

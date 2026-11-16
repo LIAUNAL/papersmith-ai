@@ -1,0 +1,17 @@
+{"ok": true, "lang": "es", "generated_at": "2026-11-11T09:30:00Z",
+ "notice": "This is a writing-quality index of the Spanish text, not an authorship detector: it cannot tell who or what wrote it.",
+ "document": {"index": 78, "style_score": 0.21, "flow_score": 0.18, "redundancy_score": 0.12, "verdict": "uneven"},
+ "blocks": [
+  {"id": "intro.motivation", "index": 91, "style_score": 0.08, "flow_score": 0.1, "redundancy_score": 0.05,
+   "verdict": "clear", "findings": []},
+  {"id": "method.model", "index": 62, "style_score": 0.35, "flow_score": 0.3, "redundancy_score": 0.2,
+   "verdict": "needs_revision",
+   "findings": [
+    {"category": "calque", "fragment": "juega un rol clave", "hint": "Use desempeña un papel or rephrase.", "paragraph": 1, "sentence": 2},
+    {"category": "connector", "fragment": "<img src=x onerror=alert(1)>", "hint": "Vary the connectors.", "paragraph": 2, "sentence": 1}]}],
+ "cross_block_redundancy": [
+  {"phrase": "señales electroencefalográficas", "blocks": ["intro.motivation", "method.model"]},
+  {"sentence": "El modelo propuesto supera a los métodos de referencia.", "blocks": ["intro.gap", "results.main"]}],
+ "fidelity": [
+  {"id": "intro.motivation", "ok": true, "differences": []},
+  {"id": "method.model", "ok": false, "differences": ["citation key smith2024 missing", "number 0.93 missing"]}]}

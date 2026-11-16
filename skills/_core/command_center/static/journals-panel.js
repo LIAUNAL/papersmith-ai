@@ -295,7 +295,11 @@
     const declared = list(info.declared).map((d) => obj(d)).filter((d) => d.quote)
       .map((d) => `<li>“${esc(oneLine(d.quote))}” ${d.url ? link(d.url, '↗') : ''}</li>`).join('');
     const declaredHtml = declared ? `<details class="journals-works"><summary>${esc(t('journals.lang.quotes'))}</summary><ul>${declared}</ul></details>` : '';
-    return `<div>${line}</div>${sharesHtml}${declaredHtml}`;
+    // A journal that receives Spanish only needs the Spanish translation of the English manuscript.
+    const translation = info.english === false && info.spanish === true
+      ? `<div><span class="badge badge--warn">${esc(t('journals.lang.needsTranslation'))}</span> `
+        + `<code>/paper-writing translate es</code></div>` : '';
+    return `<div>${line}</div>${translation}${sharesHtml}${declaredHtml}`;
   }
 
   function accessCell(c) {

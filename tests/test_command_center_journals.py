@@ -1724,6 +1724,22 @@ class PanelNationalTests(unittest.TestCase):
         self.assertIn("según lo que publica", es)
         self.assertIn("Idiomas sin confirmar", unknown)
 
+    def test_a_spanish_only_journal_asks_for_the_spanish_translation(self) -> None:
+        base = json.dumps(NATIONAL_DOC, ensure_ascii=False)
+        script = f"""
+          const doc = {base};
+          const view = (languages) => P.resultsHtml({{ journals: {{ candidates: {{ ...doc, candidates: [{{ ...doc.candidates[0], languages }}] }} }}, sort: 'fit', busy: {{}} }});
+          out([view({{ accepts: ['es'], basis: 'declared', spanish: true, english: false }}),
+               view({{ accepts: ['en', 'es'], basis: 'declared', spanish: true, english: true }}),
+               view({{ accepts: [], basis: 'unknown', spanish: null, english: null }})]);"""
+        only_es, both, unknown = self.node(script)
+        self.assertIn("Requiere la traducción al español del manuscrito", only_es)
+        self.assertIn("<code>/paper-writing translate es</code>", only_es)
+        self.assert_only_known_markup(only_es)
+        for html in (both, unknown):
+            self.assertNotIn("/paper-writing translate es", html)
+        self.assertIn("Needs the Spanish translation of the manuscript", self.node(script, lang="en")[0])
+
     def test_international_rows_show_submission_to_publication(self) -> None:
         html = self.node("""
           const row = { display_name: 'Intl', quartile: 'Q1', quartile_source: 'sjr',

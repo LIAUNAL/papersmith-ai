@@ -743,6 +743,12 @@ _SKILLS = Path(__file__).resolve().parents[2]
 JOURNAL_CLI = _SKILLS / "journal-finder" / "scripts" / "journal_cli.py"
 #: The venue verbs, imported by file path so `approve` can record `via=dashboard`.
 PAPER_VENUE = _SKILLS / "paper-writing" / "scripts" / "paper_venue.py"
+#: The paper-writing CLI; the dashboard runs its `translate` verb as a child process.
+PAPER_CLI = _SKILLS / "paper-writing" / "scripts" / "paper_cli.py"
+#: The only manuscript translations the dashboard knows (paper/translations/<lang>/).
+TRANSLATION_LANGS = ("es",)
+TRANSLATE_STATUS_TIMEOUT_SECONDS = 30.0
+TRANSLATE_AUDIT_TIMEOUT_SECONDS = 180.0
 #: The writing-quality style metrics module (cadence, overused phrasing, lexical diversity).
 PAPER_AI_METRICS = _SKILLS / "paper-writing" / "scripts" / "paper_ai_metrics.py"
 #: The visual QA of the compiled manuscript (pypdfium2 geometry, pdftoppm pages).
@@ -952,6 +958,76 @@ def _run_journal_cli(root: Path, argv: list[str], timeout: float) -> tuple[dict[
     if payload.get("ok") is False:
         return payload, _JOURNAL_ERROR_STATUS.get(str(payload.get("error")), 500)
     return payload, 200
+
+
+_TRANSLATE_ERROR_STATUS = {
+    "USAGE": 422, "LANG_UNSUPPORTED": 422, "TRANSLATION_LANG_INVALID": 422,
+    "TRANSLATION_LANGUAGE_UNSUPPORTED": 422, "WORKSPACE_ABSENT": 404,
+    "PAPER_CLI_ABSENT": 503, "PAPER_CLI_FAILED": 502, "TIMEOUT": 504, "INTERNAL_ERROR": 500,
+}
+
+
+def _translate_error(code: str, message: str, status: int | None = None) -> tuple[dict[str, Any], int]:
+    # A refusal the table does not name is a conflict with the workspace state
+    # (nothing translated, no paper, a stale build): 409.
+    return {"ok": False, "error": code, "message": message}, status or _TRANSLATE_ERROR_STATUS.get(code, 409)
+
+
+def _translation_lang_refusal(value: str | None, field: str) -> tuple[dict[str, Any], int] | None:
+    """None when `value` names a known translation; a typed 422 otherwise."""
+    if value in TRANSLATION_LANGS:
+        return None
+    return _translate_error("TRANSLATION_LANG_INVALID",
+                            f"{field} must be one of {', '.join(TRANSLATION_LANGS)}", 422)
+
+
+def _run_translate_cli(root: Path, verb: str, lang: str, timeout: float) -> tuple[dict[str, Any], int]:
+    """`paper_cli.py translate <verb> --lang <lang>` from the workspace root:
+    (its JSON object, HTTP status). Blocking: callers run it off the event
+    loop. Never raises."""
+    if not PAPER_CLI.is_file():
+        return _translate_error("PAPER_CLI_ABSENT", f"{PAPER_CLI.name} is not installed beside the dashboard")
+    try:
+        # The workspace's paper is named explicitly, never left to the CLI's own default location.
+        done = subprocess.run([sys.executable, str(PAPER_CLI), "translate", verb, "--lang", lang,
+                               "--paper", str(root / "paper")], cwd=str(root),
+                              capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return _translate_error("TIMEOUT", f"translate {verb} did not finish in {timeout:g} s and was stopped")
+    except OSError as exc:
+        return _translate_error("PAPER_CLI_FAILED", f"the paper CLI could not start: {exc}")
+    # One JSON object, indented or on one line; a stray line before it is tolerated.
+    payload = None
+    lines = [line for line in done.stdout.splitlines() if line.strip()]
+    for text in (done.stdout, lines[-1] if lines else ""):
+        try:
+            payload = json.loads(text)
+            break
+        except ValueError:
+            continue
+    if not isinstance(payload, dict):
+        tail = (done.stderr or done.stdout or "no output").strip()[-300:]
+        return _translate_error("PAPER_CLI_FAILED",
+                                f"translate {verb} answered no JSON (exit {done.returncode}): {tail}")
+    if payload.get("ok") is False:
+        return payload, _TRANSLATE_ERROR_STATUS.get(str(payload.get("error")), 409)
+    return payload, 200
+
+
+def _compile_translation(root: Path, lang: str) -> tuple[dict[str, Any], int]:
+    """paper/translations/<lang>/main.tex, compiled in place. The canonical
+    paper/ stays on the TeX and BibTeX search paths so the translation reaches
+    its figures and refs.bib. Blocking: the caller runs it off the event loop,
+    holding _PAPER_LOCK."""
+    directory = paper_preview.translation_directory(root, lang)
+    if directory is None or paper_preview._contained(directory, directory / "main.tex") is None:
+        body, status = _translate_error(
+            "TRANSLATION_NOT_BUILT",
+            f"paper/translations/{lang}/main.tex does not exist: run `translate build --lang {lang}` first.")
+        return {**body, "outputs": []}, status
+    paper = str((root / "paper").resolve())
+    search = {key: f".{os.pathsep}{paper}{os.pathsep}" for key in ("TEXINPUTS", "BIBINPUTS", "BSTINPUTS")}
+    return _compile_tex(root, directory, directory / "main.pdf", search)
 
 
 def _read_candidates(root: Path) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
@@ -2418,9 +2494,23 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             **_PAPER_HEADERS, "Content-Disposition": "inline"})
 
     @app.get("/api/pdf")
-    def api_pdf_direct(request: Request, venue: str | None = None) -> Response:
-        # `?venue=<slug>` serves paper/venues/<slug>/main.pdf instead.
+    def api_pdf_direct(request: Request, venue: str | None = None, translation: str | None = None) -> Response:
+        # `?venue=<slug>` serves paper/venues/<slug>/main.pdf instead, and
+        # `?translation=es` paper/translations/es/main.pdf.
         pdf_path = root_path / "paper" / "main.pdf"
+        if translation is not None:
+            if venue is not None:
+                body, code = _translate_error("TRANSLATION_WITH_VENUE", "pass venue or translation, not both", 422)
+                return JSONResponse(body, status_code=code)
+            refused = _translation_lang_refusal(translation, "translation")
+            if refused is not None:
+                return JSONResponse(refused[0], status_code=refused[1])
+            found, resolved = paper_preview.resolve_translation_pdf(root_path, translation)
+            if found == "too_large":
+                return JSONResponse({"detail": "artifact exceeds the 100 MiB limit"}, status_code=413)
+            if resolved is None:
+                return JSONResponse({"detail": "translation main.pdf not found"}, status_code=404)
+            pdf_path = resolved
         if venue is not None:
             found, resolved = paper_preview.resolve_venue_pdf(root_path, venue)
             if found == "bad":
@@ -2511,6 +2601,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not origin_is_same(request):
             return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
                                 status_code=403)
+        translation = request.query_params.get("translation")
+        if translation is not None:
+            # `?translation=es`: the Spanish quality audit of the translation
+            # (`translate audit`); the English audit below is not involved.
+            refused = _translation_lang_refusal(translation, "translation")
+            if refused is not None:
+                return JSONResponse(refused[0], status_code=refused[1])
+            body, code = await asyncio.to_thread(_run_translate_cli, root_path, "audit", translation,
+                                                 TRANSLATE_AUDIT_TIMEOUT_SECONDS)
+            return JSONResponse(body, status_code=code, headers=dict(_PAPER_HEADERS))
         try:
             payload = await request.json()
         except Exception as e:
@@ -3327,6 +3427,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                              "message": "cross-origin request rejected"},
                             status_code=403, headers=dict(_PAPER_HEADERS))
 
+    @app.get("/api/translations")
+    async def api_translations(lang: str = "es") -> JSONResponse:
+        """`translate status --lang <lang>`: which blocks are translated, built, audited."""
+        refused = _translation_lang_refusal(lang, "lang")
+        if refused is not None:
+            return JSONResponse(refused[0], status_code=refused[1], headers=dict(_PAPER_HEADERS))
+        body, code = await asyncio.to_thread(_run_translate_cli, root_path, "status", lang,
+                                             TRANSLATE_STATUS_TIMEOUT_SECONDS)
+        return JSONResponse(body, status_code=code, headers=dict(_PAPER_HEADERS))
+
     @app.get("/api/journals")
     def api_journals() -> JSONResponse:
         return JSONResponse(_journals_state(root_path), headers=dict(_PAPER_HEADERS))
@@ -3486,7 +3596,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not origin_is_same(request):
             return _forbidden()
         slug = request.query_params.get("venue")
-        if slug is not None:
+        translation = request.query_params.get("translation")
+        if translation is not None:
+            # `?translation=es` compiles paper/translations/es/main.tex in place.
+            refused = (_translate_error("TRANSLATION_WITH_VENUE", "pass venue or translation, not both", 422)
+                       if slug is not None else _translation_lang_refusal(translation, "translation"))
+            if refused is not None:
+                return JSONResponse(refused[0], status_code=refused[1], headers=dict(_PAPER_HEADERS))
+        elif slug is not None:
             refused = _slug_or_400(slug)
             if refused is not None:
                 return refused
@@ -3500,6 +3617,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
         def locked_compile() -> tuple[dict[str, Any], int]:
             try:
+                if translation is not None:
+                    return _compile_translation(root_path, translation)
                 return _compile_paper(root_path) if slug is None else _compile_venue(root_path, slug)
             finally:
                 _PAPER_LOCK.release()
