@@ -192,7 +192,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Hashed in 1 MiB chunks: a recorded data input can be a large dataset."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def provenance_entry(path: Path, repo_root: Path | None = None) -> dict:
@@ -243,7 +248,15 @@ def _entry_warning(entry: object, role: str, root: Path) -> dict | None:
             "code": "FIGURE_PROVENANCE_MISSING", "role": role, "path": raw,
             "message": f"{role} {raw!r} no longer exists",
         }
-    if entry.get("sha256") != _file_sha256(target):
+    try:
+        actual = _file_sha256(target)
+    except OSError as exc:
+        # Advisory by contract: an unreadable file is reported, never allowed to abort render or audit.
+        return {
+            "code": "FIGURE_PROVENANCE_UNREADABLE", "role": role, "path": raw,
+            "message": f"{role} {raw!r} cannot be read ({exc.strerror or type(exc).__name__})",
+        }
+    if entry.get("sha256") != actual:
         return {
             "code": "FIGURE_PROVENANCE_CHANGED", "role": role, "path": raw,
             "message": f"{role} {raw!r} differs from its recorded sha256 (or none was recorded)",

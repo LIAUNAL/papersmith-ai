@@ -3409,6 +3409,11 @@ def _cmd_figure_provenance(args: argparse.Namespace) -> dict:
         target = _resolve_repo_path(raw)
         if not target.is_file():
             raise Refused("TARGET_UNREADABLE", f"{raw}: file not found")
+        try:
+            with open(target, "rb") as handle:
+                handle.read(1)
+        except OSError as exc:
+            raise Refused("TARGET_UNREADABLE", f"{raw}: {exc.strerror or type(exc).__name__}") from exc
         resolved.append(target)
     provenance = paper_figure.record_provenance(
         paths, resolved[0], resolved[1:], repo_root=paper_scaffold.FORGE_ROOT,

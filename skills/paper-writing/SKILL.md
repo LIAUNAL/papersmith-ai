@@ -1851,7 +1851,8 @@ the list itself), and never refuse or spend a repair attempt on them:
 `FIGURE_PROVENANCE_OUTSIDE_REPOSITORY` (an absolute path or one escaping
 the repository), `FIGURE_PROVENANCE_MISSING` (the file is gone) and
 `FIGURE_PROVENANCE_CHANGED` (its sha256 differs; re-run `figure provenance`
-after a deliberate change). A manifest without the key renders and audits
+after a deliberate change) and `FIGURE_PROVENANCE_UNREADABLE` (the file exists
+but cannot be read). A manifest without the key renders and audits
 exactly as before, with the two `UNRECORDED` warnings.
 
 | Verb | What it does | Refuses |

@@ -166,6 +166,42 @@ class FigureProvenanceTests(unittest.TestCase):
         self.assertEqual(payload["verdict"], "success")
         self.assertEqual(self._codes(payload), [("FIGURE_PROVENANCE_MISSING", "script")])
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a chmod 000 file")
+    def test_an_unreadable_input_warns_and_never_aborts_render(self) -> None:
+        # Review finding R3-unreadable-provenance-crashes-render: the check is advisory.
+        self._record()
+        self.data.chmod(0)
+        try:
+            code, payload = self._render()
+        finally:
+            self.data.chmod(0o644)
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(payload["verdict"], "success")
+        self.assertEqual(self._codes(payload), [("FIGURE_PROVENANCE_UNREADABLE", "input")])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a chmod 000 file")
+    def test_provenance_refuses_an_unreadable_input_and_writes_nothing(self) -> None:
+        # Review finding R3-provenance-unreadable-not-refused.
+        before = self.manifest.read_bytes()
+        self.data.chmod(0)
+        try:
+            code, payload = self._record()
+        finally:
+            self.data.chmod(0o644)
+        self.assertEqual(code, 2, payload)
+        self.assertEqual(payload["code"], "TARGET_UNREADABLE")
+        self.assertEqual(self.manifest.read_bytes(), before)
+
+    def test_repository_relative_arguments_are_recorded(self) -> None:
+        # Review finding R3-coverage-gaps: arguments resolved through _resolve_repo_path.
+        code, payload = self._run(
+            "figure", "provenance", "--paper", str(self.paper_dir), "--figure-id", "diagP",
+            "--script", self._rel(self.script), "--input", self._rel(self.data),
+        )
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(payload["provenance"]["script"]["path"], self._rel(self.script))
+        self.assertEqual(payload["provenance"]["inputs"][0]["sha256"], _sha256(self.data))
+
     def test_a_path_outside_the_repository_warns_on_render(self) -> None:
         manifest = {
             "components": ["box"],
