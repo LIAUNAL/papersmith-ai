@@ -136,7 +136,8 @@ def smoke_stamps(**kwargs):
         "evidence": evidence,
         "seen": {"cwd": os.getcwd(), "kwargs": kwargs,
                  "cloneRoot": os.environ.get("FORGE_CLONE_ROOT"),
-                 "inputs": os.environ.get("FORGE_INPUT_DATASETS")},
+                 "inputs": os.environ.get("FORGE_INPUT_DATASETS"),
+                 "jobEnv": {name: os.environ.get(name) for name in ("A", "MVIA_E8_DEVICE")}},
     }), encoding="utf-8")
     return evidence
 

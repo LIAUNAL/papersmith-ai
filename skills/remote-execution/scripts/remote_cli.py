@@ -4877,6 +4877,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "or forge default.",
     )
     generate_job.add_argument(
+        "--env", dest="job_env", action="append", default=None, metavar="KEY=VALUE",
+        help="repeatable: a job-specific environment variable the runner exports to "
+        "the run and smoke blocks (e.g. a device or a timing host label), written to "
+        "run-config.json's env block. FORGE_* names, the runner's and the interpreter's "
+        "own names (PATH, HOME, PYTHONPATH, LD_*) and anything that looks like a "
+        "credential, by name or by value, are refused.",
+    )
+    generate_job.add_argument(
         "--environment-index-url", dest="environment_index_url", default=None,
         help="optional index URL for --environment-requirement; given "
         "without at least one --environment-requirement, refused.",
@@ -5596,6 +5604,7 @@ def main(argv: list[str] | None = None) -> int:
                 code_bundle=args.code_bundle,
                 input_datasets=input_datasets,
                 dataset_checks=dataset_checks,
+                env=JOBFOLDER.parse_env_assignments(args.job_env),
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)

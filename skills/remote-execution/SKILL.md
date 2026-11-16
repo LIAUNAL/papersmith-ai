@@ -2518,6 +2518,25 @@ only when none was refused.
 
 ### From the workspace registry
 
+**Job environment variables.** `generate-job --env KEY=VALUE` (repeatable)
+writes an `env` object into `run-config.json`, and the runner exports it to
+whichever block runs, run or smoke, callable or notebook kernel (and so to
+`preflight`'s local rehearsal), beneath the forge's own names. It is for a
+fact that belongs to the job rather than to the forge: the device a notebook
+should use (`--env MVIA_E8_DEVICE=cuda`), the host label its timing rows
+carry (`--env MVIA_TIMING_HOST=colab:<owner>`, which `remote-parallelism`
+schema 2 reads for a remote row), a thread count. Generation refuses, and
+the reader of every job folder refuses again: a `FORGE_*` name (the runner
+sets those per submission); a name the runner or the interpreter decides
+(`PATH`, `HOME`, `PYTHONPATH`, `PYTHONHOME`, `LD_*`, `DYLD_*`); a name with a
+credential segment (`TOKEN`, `SECRET`, `PASSWORD`, `KEY`, `AUTH`, …); a value
+that looks like a credential (a known token shape, a private key, a URL with
+a password); a name given twice; more than 64 entries, or a value over 4096
+characters or holding a NUL or a line break. `run-config.json` is uploaded
+and kept beside the job, so a credential never travels this way. The runner
+re-checks the structural half (`runner_invoke.job_environment`). Without
+`--env`, no block is written and nothing changes.
+
 `generate-job --dataset <slug>` (repeatable; also on `generate-jobs`) resolves
 the slug in the workspace's `datasets/registry.json` (`--workspace` overrides
 which workspace) through the datasets skill's own `job_input()`. Its ref is
