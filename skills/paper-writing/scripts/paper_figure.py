@@ -185,6 +185,109 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+#: The repository root provenance paths are relative to: the same root
+#: `paper_scaffold.FORGE_ROOT` names (this file is
+#: `<root>/skills/paper-writing/scripts/paper_figure.py`).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def provenance_entry(path: Path, repo_root: Path | None = None) -> dict:
+    """One `{"path", "sha256"}` record for an existing file inside the
+    repository: the path repository-relative in POSIX form. The caller has
+    already checked containment and existence."""
+    root = (repo_root or _REPO_ROOT).resolve()
+    resolved = Path(path).resolve()
+    return {"path": resolved.relative_to(root).as_posix(), "sha256": _file_sha256(resolved)}
+
+
+def record_provenance(paths: dict, script: Path, inputs: list, repo_root: Path | None = None) -> dict:
+    """Writes the manifest's `provenance` key — the generating script and
+    every data input, each repository-relative with its sha256 — replacing
+    any earlier record and keeping every other manifest key. Atomic: a
+    failure leaves the manifest byte-identical."""
+    manifest = read_manifest(paths)
+    provenance = {
+        "script": provenance_entry(script, repo_root),
+        "inputs": [provenance_entry(item, repo_root) for item in inputs],
+    }
+    manifest["provenance"] = provenance
+    _atomic_replace(paths["manifest"], json.dumps(manifest, indent=2).encode("utf-8"))
+    return provenance
+
+
+def _entry_warning(entry: object, role: str, root: Path) -> dict | None:
+    if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not entry["path"]:
+        return {
+            "code": "FIGURE_PROVENANCE_UNRECORDED", "role": role, "path": None,
+            "message": f"a {role} entry records no path",
+        }
+    raw = entry["path"]
+    candidate = Path(raw)
+    target = (candidate if candidate.is_absolute() else root / candidate).resolve()
+    try:
+        target.relative_to(root)
+        inside = not candidate.is_absolute()
+    except ValueError:
+        inside = False
+    if not inside:
+        return {
+            "code": "FIGURE_PROVENANCE_OUTSIDE_REPOSITORY", "role": role, "path": raw,
+            "message": f"{role} {raw!r} is not a repository-relative path inside the repository",
+        }
+    if not target.is_file():
+        return {
+            "code": "FIGURE_PROVENANCE_MISSING", "role": role, "path": raw,
+            "message": f"{role} {raw!r} no longer exists",
+        }
+    if entry.get("sha256") != _file_sha256(target):
+        return {
+            "code": "FIGURE_PROVENANCE_CHANGED", "role": role, "path": raw,
+            "message": f"{role} {raw!r} differs from its recorded sha256 (or none was recorded)",
+        }
+    return None
+
+
+def provenance_warnings(manifest: dict, repo_root: Path | None = None) -> list:
+    """Advisory findings over the manifest's optional `provenance` key
+    (#181 item 5): an unrecorded script or input list, a path outside the
+    repository, a path that no longer exists, or a file whose sha256 no
+    longer matches. Each is `{"code", "role", "path", "message"}`; `role`
+    is `script`, `input` or `inputs` (the list itself). Never a refusal:
+    a manifest without `provenance` keeps rendering and auditing exactly as
+    before, with these warnings beside the result. An empty `inputs` list
+    is a recorded fact (a hand-drawn diagram plots no data), not a gap."""
+    root = (repo_root or _REPO_ROOT).resolve()
+    provenance = manifest.get("provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+    warnings = []
+    if "script" not in provenance:
+        warnings.append({
+            "code": "FIGURE_PROVENANCE_UNRECORDED", "role": "script", "path": None,
+            "message": "the manifest records no generating script (`figure provenance --script`)",
+        })
+    else:
+        finding = _entry_warning(provenance["script"], "script", root)
+        if finding:
+            warnings.append(finding)
+    inputs = provenance.get("inputs")
+    if not isinstance(inputs, list):
+        warnings.append({
+            "code": "FIGURE_PROVENANCE_UNRECORDED", "role": "inputs", "path": None,
+            "message": "the manifest records no data inputs (`figure provenance --input`)",
+        })
+    else:
+        for entry in inputs:
+            finding = _entry_warning(entry, "input", root)
+            if finding:
+                warnings.append(finding)
+    return warnings
+
+
 def _atomic_replace(path: Path, data: bytes) -> None:
     directory = path.parent
     fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=path.name + ".")
@@ -316,12 +419,17 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
     the PDF stays in scratch (`preview`) instead of `Figures/<id>.pdf`. An
     audit that cannot measure (an unreadable PDF) reads `unmeasured` and
     does not block; every success carries its `audit`.
+
+    Every non-refused result carries `provenanceWarnings`
+    (`provenance_warnings`): advisory only, never a refusal and never a
+    spent attempt.
     """
     paths = figure_paths(paper_dir, figure_id)
     manifest = read_manifest(paths)
     tex_text = paths["tex"].read_text(encoding="utf-8")
     cross_check_manifest(manifest, tex_text)
     scan_data_boundary(tex_text)
+    provenance = provenance_warnings(manifest)
 
     source_digest = _digest(tex_text)
     ledger = _read_ledger(paths["ledger"])
@@ -373,7 +481,7 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
                 "figureId": figure_id, "verdict": "failure", "attemptsUsed": len(attempts),
                 "budgetRemaining": REPAIR_BUDGET - len(attempts),
                 "diagnostics": _audit_messages(audit), "audit": audit,
-                "preview": str(scratch_pdf),
+                "preview": str(scratch_pdf), "provenanceWarnings": provenance,
             }
         pdf_bytes = scratch_pdf.read_bytes()
         paths["pdf"].parent.mkdir(parents=True, exist_ok=True)
@@ -381,7 +489,7 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
         return {
             "figureId": figure_id, "pdf": str(paths["pdf"]), "verdict": "success",
             "ledgerCreated": bool(attempts), "attemptsUsed": len(attempts),
-            "audit": audit,
+            "audit": audit, "provenanceWarnings": provenance,
         }
 
     # result.verdict == "failure": a repairable outcome, or a package
@@ -403,6 +511,7 @@ def render(paper_dir: Path, figure_id: str, *, path: str | None = None) -> dict:
         "figureId": figure_id, "verdict": "failure", "attemptsUsed": len(attempts),
         "budgetRemaining": REPAIR_BUDGET - len(attempts),
         "diagnostics": [d.message for d in result.diagnostics],
+        "provenanceWarnings": provenance,
     }
 
 

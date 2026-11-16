@@ -3373,8 +3373,10 @@ def cmd_place(args: argparse.Namespace) -> dict:
 
 def cmd_figure(args: argparse.Namespace) -> dict:
     """`figure`: one nested namespace over the two halves of this skill's
-    diagram capability — `optimize` (rewrite a source, compile-validated)
-    and `audit` (compare a source against the prose that describes it).
+    diagram capability — `optimize` (rewrite a source, compile-validated),
+    `provenance` (record the generating script and data inputs in the
+    manifest) and `audit` (compare a source against the prose that
+    describes it).
 
     Nested the way `bib build` already is. `render`/`place` stay top-level:
     moving them would break every call site and every document that names
@@ -3382,7 +3384,38 @@ def cmd_figure(args: argparse.Namespace) -> dict:
     """
     if args.figure_command == "optimize":
         return _cmd_figure_optimize(args)
+    if args.figure_command == "provenance":
+        return _cmd_figure_provenance(args)
     return _cmd_figure_audit(args)
+
+
+def _cmd_figure_provenance(args: argparse.Namespace) -> dict:
+    """`figure provenance`: records the generating script and its data
+    inputs in `<id>.diagram.json`'s `provenance` key, each as a
+    repository-relative path with its sha256, so a figure can be redrawn
+    later from what the repository holds (#181 item 5). Every path must
+    resolve inside the repository (`PAPER_OUTSIDE_REPOSITORY`, through
+    `_resolve_repo_path`) and name an existing file (`TARGET_UNREADABLE`);
+    both are checked before the manifest is touched, so a refusal leaves
+    it byte-identical. `render` and `figure audit` warn, never refuse, on
+    what this records going missing or changing.
+    """
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    paths = paper_figure.figure_paths(paper_dir, args.figure_id)
+    if not paths["manifest"].is_file():
+        raise Refused("DIAGRAM_SOURCE_ABSENT", f"{paths['manifest']} does not exist")
+    resolved = []
+    for raw in [args.script, *(args.input or [])]:
+        target = _resolve_repo_path(raw)
+        if not target.is_file():
+            raise Refused("TARGET_UNREADABLE", f"{raw}: file not found")
+        resolved.append(target)
+    provenance = paper_figure.record_provenance(
+        paths, resolved[0], resolved[1:], repo_root=paper_scaffold.FORGE_ROOT,
+    )
+    return {
+        "figureId": args.figure_id, "manifest": str(paths["manifest"]), "provenance": provenance,
+    }
 
 
 def _cmd_figure_optimize(args: argparse.Namespace) -> dict:
@@ -3537,6 +3570,10 @@ def _cmd_figure_audit(args: argparse.Namespace) -> dict:
     )
     report["figureId"] = args.figure_id or tex_path.stem
     report["evidence"]["section"] = f"{args.section}.md"
+    # Advisory provenance findings (#181 item 5) ride beside the semantic
+    # verdict and never change it: `audit_semantics` stays a pure function
+    # of its inputs, and a manifest without `provenance` audits as before.
+    report["provenanceWarnings"] = paper_figure.provenance_warnings(manifest)
     if scratch_dir is not None:
         scratch_dir.mkdir(parents=True, exist_ok=True)
         (scratch_dir / "figure_audit.json").write_text(
@@ -4286,7 +4323,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_expect_digest(p_write)
 
     p_render = sub.add_parser(
-        "render", help="compile one diagram id standalone, exactly once, via latexmk",
+        "render",
+        help="compile one diagram id standalone, exactly once, via latexmk; the result "
+             "carries provenanceWarnings (advisory) for an unrecorded, missing, "
+             "outside-the-repository or changed script/data input",
     )
     p_render.add_argument(
         "--paper", default=None,
@@ -4356,7 +4396,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p_figure = sub.add_parser(
-        "figure", help="optimize a diagram's TikZ source, or audit it against the prose",
+        "figure",
+        help="optimize a diagram's TikZ source, record its generating script and data "
+             "inputs (provenance), or audit it against the prose",
     )
     figure_sub = p_figure.add_subparsers(dest="figure_command", required=True)
 
@@ -4398,10 +4440,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="test-only: override the PATH shutil.which searches for latexmk",
     )
 
+    p_figure_provenance = figure_sub.add_parser(
+        "provenance",
+        help="record the script that generates a diagram and its data inputs in "
+             "<id>.diagram.json (repository-relative paths with a sha256 each); render and "
+             "figure audit then warn when one is missing, outside the repository or changed",
+    )
+    p_figure_provenance.add_argument(
+        "--paper", default=None,
+        help="override paper/ location; must resolve inside the repository root",
+    )
+    p_figure_provenance.add_argument(
+        "--figure-id", required=True, help="the diagram id under paper/Figures/",
+    )
+    p_figure_provenance.add_argument(
+        "--script", required=True,
+        help="the script that generates the figure; must be a file inside the repository",
+    )
+    p_figure_provenance.add_argument(
+        "--input", action="append", default=None,
+        help="a data file the script reads (repeatable); must be inside the repository. "
+             "Omitted, the manifest records an empty input list",
+    )
+
     p_figure_audit = figure_sub.add_parser(
         "audit",
         help="verify a diagram's declared components against its section's prose "
-             "(pass | fail | unmeasured; a content finding is never a refusal)",
+             "(pass | fail | unmeasured; a content finding is never a refusal); also "
+             "reports provenanceWarnings for the manifest's script and data inputs",
     )
     p_figure_audit.add_argument(
         "--paper", default=None,
