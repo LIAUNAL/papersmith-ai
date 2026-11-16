@@ -9255,6 +9255,12 @@ class ForgeVocabularyDefinitionTests(unittest.TestCase):
 #: the other fails on an admission whose file no longer carries the word, so an
 #: entry cannot outlive the argument that bought it.
 FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
+    "journal-finder/data/publindex-ibn.json": {
+        "transfer": "the bundled Publindex IBN 2026 list quotes each Colombian "
+                    "journal's own scope and OpenAlex topics verbatim (\"heat "
+                    "transfer\", \"technology transfer\"); data the national "
+                    "search ranks against, not the forge teaching a target's word",
+    },
     "skill-audit/SKILL.md": {
         "kaggle": "one row of the asset table, naming the probe recipe whose "
                   "SUBJECT is the skill three entries below -- the word is in "

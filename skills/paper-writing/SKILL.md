@@ -164,7 +164,8 @@ Each stretch this skill delegates is defined in full by its own agent file:
 `.claude/agents/figure-auditor.md`, `.claude/agents/figure-visual-reviewer.md`,
 `.claude/agents/insumos-observer.md`,
 `.claude/agents/paper-reviewer.md`, `.claude/agents/redactor.md`, `.claude/agents/section-grounding-auditor.md`,
-`.claude/agents/style-sampler.md`, `.claude/agents/venue-adapter.md`. When an agent cannot be spawned — the
+`.claude/agents/style-sampler.md`, `.claude/agents/translation-style-reviewer.md`, `.claude/agents/translator.md`,
+`.claude/agents/venue-adapter.md`. When an agent cannot be spawned — the
 harness has no sub-agent mechanism, the agent is not registered in this
 session, or the spawn itself fails — perform the stretch inline: read that
 agent's definition file and follow it as written, from the beginning it states

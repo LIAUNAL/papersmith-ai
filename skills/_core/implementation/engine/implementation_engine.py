@@ -17267,9 +17267,9 @@ def _launch_position_state(target: Path, name: str, evidence: dict,
 
 def _refuse_bare_worker(rcli, service: str | None, worker: str | None) -> None:
     """`gate` and `launch-plan` refuse a worker named by its bare team owner
-    (`carlos` for `colab:carlos`) with remote-execution's own message
+    (`carlos` for `colab:carlos`) with the execution skill's own message
     (`BARE_WORKER_ID`), the one `submit`, `preflight` and `readiness` give:
-    a gate recorded under one form never matches a submit made under the
+    a gate written under one form never matches a submit made under the
     other."""
     try:
         rcli.refuse_bare_worker_for_service(service, worker)
