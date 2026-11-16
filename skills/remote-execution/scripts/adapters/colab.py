@@ -812,6 +812,20 @@ class ColabAdapter(ADAPTER.Adapter):
             f"{', '.join(account.worker_id for account in team)}"
         )
 
+    def canonical_worker(self, worker: str) -> str:
+        """This adapter's worker id for `worker`: a bare team owner
+        (`carlos`) becomes `colab:carlos`; anything else, ids included, is
+        returned as given. Not one of the seam's six operations: an ordinary
+        hook `remote_cli` reads to refuse the bare form with one message
+        everywhere (`BARE_WORKER_ID`). Registry only, no subprocess."""
+        team = self._team()
+        if not team or any(account.worker_id == worker for account in team):
+            return worker
+        for account in team:
+            if account.owner == worker:
+                return account.worker_id
+        return worker
+
     def campaign_refusal(self, worker: str) -> str | None:
         """Why `worker` may not take part in a split campaign, or `None`
         when it may. Not one of the seam's six operations: an ordinary
@@ -1343,7 +1357,7 @@ class ColabAdapter(ADAPTER.Adapter):
     def _endpoint_for(self, session_name: str, account: TeamAccount | None = None) -> str:
         """The `m-…` endpoint token from the measured `status` line. An
         unparseable endpoint refuses the launch BEFORE any upload: a
-        session without keep-alive idles out mid-run and wastes the run.
+        session this process cannot observe is not one to launch into.
         """
         result = self._run_read(
             [*self._cli(account), "status", "-s", session_name], account=account
@@ -1362,31 +1376,6 @@ class ColabAdapter(ADAPTER.Adapter):
                 f"{result.stdout.strip() or result.stderr.strip()}"
             )
         return found[1]
-
-    def _spawn_keep_alive(
-        self, endpoint: str, session_name: str, account: TeamAccount | None = None
-    ) -> None:
-        """Best-effort keep-alive, detached, output to DEVNULL (parent
-        plan D9). A spawn failure is deliberately NOT a refusal: the plan
-        calls this best-effort, the session is already usable, and the
-        endpoint above was the load-bearing parse. The invocation shape
-        is the plan's (`keep-alive <endpoint> <name>`); the live daemon
-        probe measured on this CLI was the module-form of the same hidden
-        command, and S5 verifies this form against the real service
-        (ledger S2-J5).
-        """
-        argv = [*self._cli(account), "keep-alive", endpoint, session_name]
-        env = self._env_for(account)
-        try:
-            subprocess.Popen(
-                argv,
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except OSError:
-            return
 
     def _upload(
         self,
@@ -1603,7 +1592,7 @@ class ColabAdapter(ADAPTER.Adapter):
 
     def submit(self, job: "ADAPTER.Job") -> "ADAPTER.Submission":
         """The full session lifecycle, in the parent plan's own order:
-        job-folder checks → `new` → endpoint → keep-alive → remote mkdir →
+        job-folder checks → `new` → endpoint → remote mkdir →
         uploads (plus the credential material, when one is configured —
         after the three payload uploads, before the probe) → dependency
         probe (install only what is missing) → the detached launch → the
@@ -1727,8 +1716,12 @@ class ColabAdapter(ADAPTER.Adapter):
                     accelerator_variant=accelerator_variant,
                     account=account,
                 )
-                endpoint = self._endpoint_for(session_name, account)
-                self._spawn_keep_alive(endpoint, session_name, account)
+                # The endpoint parse stays the check that the new session is
+                # observable before any upload. No keep-alive is spawned:
+                # google-colab-cli 0.8.0 (the pin) has no `keep-alive`
+                # command (0.6.0 shipped a hidden one), and spawning it only
+                # started a child that exited "No such command".
+                self._endpoint_for(session_name, account)
 
                 payload = self._parse_json_line(
                     self._exec_result(mkdir_helper, session_name, account=account),

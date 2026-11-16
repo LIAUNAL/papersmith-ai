@@ -34907,6 +34907,11 @@ _ENGLISH_COUNTS = {
     131: "One hundred and thirty-one",
     # parallel campaigns: `JOB_SERVICE_AMBIGUOUS` (gate/launch-plan --service), one invocation-defect code -- 59 -> 60, 131 -> 132, measured by running the derivation.
     60: "Sixty",
+    # `BARE_WORKER_ID` (gate/launch-plan --worker naming a bare team owner),
+    # one invocation-defect code -- 60 -> 61, 132 -> 133, measured by running
+    # the derivation.
+    61: "Sixty-one",
+    133: "One hundred and thirty-three",
     132: "One hundred and thirty-two",
 }
 
@@ -35328,9 +35333,12 @@ class GatingRefusalRosterTests(unittest.TestCase):
         One hundred and thirty-one (#67) is that reading plus
         `POSITION_SESSION_INVALID`, raised by
         `impl_position.require_session_token` at the top of `cmd_position`
-        -- measured here at exactly +1.
+        -- measured here at exactly +1. One hundred and thirty-three is that
+        reading plus `BARE_WORKER_ID`, raised by `_refuse_bare_worker` from
+        `cmd_gate` and `cmd_launch_plan` (a `--worker` naming a bare team
+        owner, `carlos` for `colab:carlos`) -- measured here at exactly +1.
         """
-        self.assertEqual(len(reachable_refusal_codes()), 132)
+        self.assertEqual(len(reachable_refusal_codes()), 133)
 
     def test_agree_joins_gating_commands_unconditionally_never_this_profiles_own_commands(self):
         """`the-agreement-nothing-computes` (Slice D, design.md D9, tasks.md

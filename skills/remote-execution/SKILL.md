@@ -1626,6 +1626,8 @@ can branch on it without parsing prose.
 | `STEP_SELECTION_CONFLICT` | `generate-jobs --only`, `--skip` | one step is named by both `--only` and `--skip`, a `--*-for` flag names a step the selection leaves out, or the selection leaves no remote step. Refused before anything is written |
 | `STEP_DECLARATION_MALFORMED` | `generate-jobs` (that job's row) | the step's `smoke` is not an object of `module`, `function` (strings), `kwargs` (an object) and `requiredEvidence` (a list of strings), or its `carry` is not a list of paths; only that job is refused |
 | `SCHEDULE_IS_A_PLAN` | `generate-jobs --from-schedule` | the file is the schedule's input plan (it carries `schema` and no `makespanMinutes`), whose `services` are only the allowed ones; the fix names `parallelism_cli.py schedule --plan <file>` and passing its output instead |
+| `EMPTY_SMOKE_SHARD` (a warning, never a refusal) | `smoke record` (its `warnings`), `readiness` (its `warnings`), `preflight` (`local-rehearsal` and `account` rows read `warn`) | the smoke's `shard.json` is complete but records no work: a `runs.jsonl` beside it holding no record, or a `runs` summary of `0`, `[]`, `{}` or one whose `units`/`runs`/`count`/`result` counts are all `0` (`shard_io.recorded_work`, positive evidence only: a stamp with no `runs` and no `runs.jsonl` is not flagged). The smoke still passes, so `readiness` stays `true`; the `smokeResult` event carries `work: "none"` and `workEvidence`, and the fix is a smoke that runs at least one unit |
+| `BARE_WORKER_ID` | `preflight` (an `account` row), `submit`, `reconcile`, `readiness`, `smoke record`; the implementation engine's `gate` and `launch-plan` | `--worker` names a bare team owner (`carlos`) on a backend whose worker id for that owner differs (`colab:carlos`, from the adapter's optional `canonical_worker` hook); every command refuses it with the same message naming the id to pass, so no record is written under one form and checked under the other. A backend without the hook (Kaggle, whose worker ids are account names) takes `--worker` as given |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Before the first rehearsal
@@ -1989,8 +1991,10 @@ The pin is 0.8.0, the version a paper workspace runs live. Read from its
 own `--help` and installed source: `new`, `exec`, `upload`, `download`,
 `install`, `status`, `stop` and `sessions` keep the flags the adapter
 passes; `new --gpu` accepts T4, L4, G4, H100 and A100; and the hidden
-`keep-alive` command 0.6.0 shipped is gone, so the adapter's best-effort
-keep-alive spawn does nothing there.
+`keep-alive` command 0.6.0 shipped is gone (its commands are download,
+drivemount, edit, exec, install, log, ls, new, pay, repl, restart-kernel, rm,
+run, sessions, ssh, status, stop, upload, url, usage and version), so the
+adapter no longer spawns one.
 
 Authentication is the CLI's own oauth2 copy-paste ritual, and the adapter
 never reads what the CLI stores: the CLI's own child process resolves its
@@ -2100,14 +2104,16 @@ byte-identical files.
 
 Sessions are expensive and idle-reclaimed, so release is part of the flow,
 not housekeeping: `fetch` stops a session only AFTER the manifest has
-landed AND the run is terminal; the adapter spawns the CLI's own keep-alive
-(best-effort) to hold a session through a long run; a released or expired
+landed AND the run is terminal; nothing holds a session through a long run
+(the pinned CLI has no keep-alive command, so the adapter spawns none, and
+whether the service idle-reclaims a VM whose kernel is idle while the
+detached executor runs is untested live: the executor's running manifest and
+`fetch`'s kept snapshots are what survive a reclaim); a released or expired
 session is simply gone, and the operator's own `colab stop -s <name>` is
 the manual exit. When you are done with a session, stop it — an abandoned
 one burns the account's capacity until the service reclaims it.
 
-**Fetch as soon as the run is terminal.** The keep-alive holds a session
-through the run, not after it: once the executor exits, the session idles
+**Fetch as soon as the run is terminal.** Once the executor exits, the session idles
 and the service reclaims it, taking every result with it (`poll` then
 answers `unknown`, `session not found`). Whoever waits on a Colab run fetches
 in the same loop that sees `complete`, never later.

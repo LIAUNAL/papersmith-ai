@@ -2492,7 +2492,9 @@ than one service and no `--service <service>` selects one, `SEQUENCE_NOT_REACHED
 when an earlier item in the sequence is still open — a launch that would skip
 a rung is refused rather than authorized around it —
 `GATE_WORKER_UNIT_CONFLICT`/`GATE_WORKER_REQUIRED` when `--worker` and
-`--unit` are both given or neither is, six authorization codes:
+`--unit` are both given or neither is, `BARE_WORKER_ID` when `--worker` names a
+bare team owner (`carlos`) on a backend whose worker id for it differs
+(`colab:carlos`; `launch-plan` refuses it the same way), six authorization codes:
 `GATE_AUTHORIZATION_REQUIRED` (`--authorization` omitted — there is no
 default), `GATE_AUTHORIZATION_UNKNOWN` (no ledger record vouches for the
 token, or it no longer re-digests to its own recorded fields),
@@ -3000,7 +3002,7 @@ them. Which refusals carry the extra key is itself the answer to a question:
 > the repository?
 
 **Yes — an invocation defect.** The detail already names the flag, the token or
-the mutual exclusion. Sixty codes, and nothing is published beside them:
+the mutual exclusion. Sixty-one codes, and nothing is published beside them:
 `SETTLE_STDIN_CONFLICT`, `OFFER_ANSWER_NOT_A_TOKEN`, `MATERIALIZE_MODE_REQUIRED`,
 `NOT_A_GIT_REPO`, `GATE_ELECTION_REQUIRED` and the rest. Retype the call.
 

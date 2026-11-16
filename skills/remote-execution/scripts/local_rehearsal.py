@@ -55,6 +55,7 @@ SESSION_DIRNAME = "session"
 DRIVER_FILENAME = "rehearse.py"
 RUN_CONFIG_FILENAME = "run-config.json"
 SHARD_FILENAME = "shard.json"
+RUNS_FILENAME = "runs.jsonl"
 #: The environment names a rehearsal child inherits; everything else is the
 #: runner's own handoff, composed below.
 ENV_ALLOWLIST = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT")
@@ -219,12 +220,16 @@ def rehearse(
     session_limit_seconds: int | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     keep: Path | None = None,
+    recorded_work=None,
 ) -> dict:
     """Run the job's smoke locally and judge its `shard.json`.
 
     Returns `{status, evidence, fix, details}` with `status` `pass` or
     `fail`. `completeness(stamp, required)` is `shard_io.completeness`,
     handed in so this module and `smoke record` hold one predicate.
+    `recorded_work(stamp, runs_path)`, when given, is
+    `shard_io.recorded_work`: a complete stamp that records no work (zero
+    units) is a `warn`, since `smoke record` would pass it.
     `keep`, when given, is where the scratch directory is left (it must not
     exist yet and must lie outside the target; both are refused before
     anything is written); otherwise the scratch directory is removed, passing
@@ -253,7 +258,7 @@ def rehearse(
         return _run(scratch=scratch, config=config, required=required, job_dir=Path(job_dir),
                     target=resolved_target, interpreter=interpreter,
                     completeness=completeness, timeout=timeout, details=details,
-                    finish=finish)
+                    finish=finish, recorded_work=recorded_work)
     except Exception as exc:  # noqa: BLE001 -- a row, never a traceback
         return finish("fail", f"the rehearsal stopped on an unexpected error: "
                       f"{type(exc).__name__}: {exc}",
@@ -457,7 +462,7 @@ def deadline_rehearse(
 
 def _run(*, scratch: Path, config: Mapping[str, Any], required: list, job_dir: Path,
          target: Path, interpreter: Path, completeness, timeout: float,
-         details: dict, finish) -> dict:
+         details: dict, finish, recorded_work=None) -> dict:
     """Everything after the scratch directory exists; `rehearse` turns any
     exception it lets through into a `fail` row and removes the scratch."""
     session = scratch / SESSION_DIRNAME
@@ -526,6 +531,15 @@ def _run(*, scratch: Path, config: Mapping[str, Any], required: list, job_dir: P
                       "make the stamp carry every requiredEvidence path; in a code-bundle "
                       "job read the commit from FORGE_CLONE_COMMIT when `git rev-parse` fails")
     ran = f"the smoke ran in {details['seconds']} s under {interpreter} ({how})"
+    if recorded_work is not None:
+        work = recorded_work(stamp, session / RUNS_FILENAME)
+        if work["empty"]:
+            details["work"] = "none"
+            return finish("warn", f"{ran} and its {SHARD_FILENAME} is complete, but it records "
+                          f"no work ({work['evidence']}): a smoke that ran zero units passes "
+                          "`smoke record` without proving the run path works",
+                          "have the smoke run at least one unit at its smoke scale (check the "
+                          "unit selection it reads, e.g. FORGE_RUN_UNITS, and its smoke kwargs)")
     if not required:
         return finish("warn", f"{ran}, but the job names no requiredEvidence, so `smoke "
                       "record` would pass any stamp", "regenerate with "

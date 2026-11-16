@@ -133,6 +133,14 @@ class ColabHooksTests(unittest.TestCase):
         self.assertFalse(missing["ok"])
         self.assertIn("sign", missing["fix"])
 
+    def test_canonical_worker_maps_a_bare_owner_to_its_worker_id(self) -> None:
+        adapter = self.adapter()
+        self.assertEqual(adapter.canonical_worker("ana"), "colab:ana")
+        self.assertEqual(adapter.canonical_worker("colab:ana"), "colab:ana")
+        self.assertEqual(adapter.canonical_worker("eva"), "eva")
+        legacy = COLAB.ColabAdapter(team_registry=self.root / "absent.json")
+        self.assertEqual(legacy.canonical_worker("ana"), "ana")
+
     def test_account_check_refuses_an_undeclared_worker(self) -> None:
         self.assertFalse(self.adapter().account_check("colab:eva")["ok"])
 

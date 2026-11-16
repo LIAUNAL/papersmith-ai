@@ -146,6 +146,12 @@ def smoke_silent(**kwargs):
     return 1
 
 
+def smoke_ran_nothing(**kwargs):
+    Path("shard.json").write_text(json.dumps({"evidence": {"commit": _commit()}, "runs": 0}),
+                                  encoding="utf-8")
+    return 0
+
+
 def smoke_sleeps(**kwargs):
     time.sleep(float(kwargs.get("seconds", 30)))
 '''

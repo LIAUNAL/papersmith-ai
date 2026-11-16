@@ -165,6 +165,109 @@ class JobEnvTests(PreflightCase):
         self.assertEqual(env["FORGE_CLONE_COMMIT"], "c" * 40)
 
 
+class BareWorkerIdTests(PreflightCase):
+    """A worker named by its bare team owner is refused with one message by
+    every command that takes --worker (BARE_WORKER_ID), instead of being
+    accepted by some and refused by others."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _PreflightBackend.accounts = {"svc:carlos": {"ok": True, "evidence": "signed in"}}
+        hook = unittest.mock.patch.object(
+            _PreflightBackend, "canonical_worker", create=True,
+            new=lambda self, worker: "svc:carlos" if worker == "carlos" else worker)
+        hook.start()
+        self.addCleanup(hook.stop)
+
+    def test_preflight_fails_the_bare_owner_naming_the_worker_id(self) -> None:
+        job = self.generate()
+        _, payload, _ = self.preflight(job, "--skip-rehearsal", "--worker", "carlos")
+        row = self.row(payload, "account")
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("BARE_WORKER_ID", row["evidence"])
+        self.assertIn("--worker svc:carlos", row["fix"])
+        _, payload, _ = self.preflight(job, "--skip-rehearsal", "--worker", "svc:carlos")
+        self.assertNotIn("BARE_WORKER_ID", self.row(payload, "account")["evidence"])
+
+    def test_readiness_refuses_the_bare_owner_with_the_same_message(self) -> None:
+        job = self.generate()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = REMOTE_CLI.main(["readiness", "--job-dir", str(job), "--worker", "carlos"])
+        self.assertNotEqual(code, 0)
+        self.assertIn(REMOTE_CLI.bare_worker_message("carlos", "svc:carlos"), err.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = REMOTE_CLI.main(["readiness", "--job-dir", str(job), "--worker", "svc:carlos"])
+        self.assertEqual(code, 0)
+
+    def test_a_backend_without_the_hook_takes_the_worker_as_given(self) -> None:
+        self.assertEqual(REMOTE_CLI.canonical_worker(object(), "carlos"), "carlos")
+        REMOTE_CLI.refuse_bare_worker(object(), "carlos")
+        with self.assertRaises(REMOTE_CLI.RemoteCLIError) as caught:
+            REMOTE_CLI.refuse_bare_worker(_PreflightBackend(), "carlos")
+        self.assertIn("BARE_WORKER_ID", str(caught.exception))
+
+
+class EmptySmokeShardTests(PreflightCase):
+    """A smoke whose notebook ran zero units still writes a complete stamp
+    (`"runs": 0`); `smoke record` passes it but says so, and `readiness`
+    and `preflight` warn rather than call it a proven rehearsal."""
+
+    def test_recorded_work_reads_positive_evidence_only(self) -> None:
+        shard_io = REMOTE_CLI.SHARD_IO
+        for runs in (0, 0.0, [], {}, {"units": 0, "seconds": 1.5}, {"result": 0}):
+            with self.subTest(runs=runs):
+                self.assertTrue(shard_io.recorded_work({"runs": runs})["empty"])
+        for stamp in ({}, {"runs": 3}, {"runs": {"units": 1}}, {"runs": True},
+                      {"runs": {"seconds": 0}}, {"runs": "done"}):
+            with self.subTest(stamp=stamp):
+                self.assertFalse(shard_io.recorded_work(stamp)["empty"])
+        log = self.root / "runs.jsonl"
+        log.write_text("\n", encoding="utf-8")
+        self.assertTrue(shard_io.recorded_work({"runs": 5}, log)["empty"])
+        log.write_text('{"unit": "u1"}\n', encoding="utf-8")
+        self.assertFalse(shard_io.recorded_work({"runs": 0}, log)["empty"])
+
+    def test_smoke_record_passes_but_readiness_and_preflight_warn(self) -> None:
+        _PreflightBackend.accounts = {"w1": {"ok": True, "evidence": "ok"}}
+        job = self.generate()
+        artifact = self.root / "shard.json"
+        artifact.write_text(json.dumps({"evidence": {"commit": self.commit}, "runs": 0}),
+                            encoding="utf-8")
+        recorded = REMOTE_CLI.cmd_smoke_record(job_dir=job, artifact_path=artifact, worker="w1")
+        self.assertEqual(recorded["result"], "pass")
+        self.assertEqual(recorded["event"]["work"], "none")
+        self.assertIn("EMPTY_SMOKE_SHARD", recorded["warnings"][0])
+        readiness = REMOTE_CLI.cmd_readiness(job_dir=job, worker="w1")
+        self.assertTrue(readiness["ready"])
+        self.assertIn("EMPTY_SMOKE_SHARD", readiness["warnings"][0])
+        _, payload, _ = self.preflight(job, "--skip-rehearsal")
+        row = self.row(payload, "account")
+        self.assertEqual(row["status"], "warn")
+        self.assertIn("EMPTY_SMOKE_SHARD", row["evidence"])
+
+    def test_a_smoke_that_did_work_records_no_warning(self) -> None:
+        _PreflightBackend.accounts = {"w1": {"ok": True, "evidence": "ok"}}
+        job = self.generate()
+        artifact = self.root / "shard.json"
+        artifact.write_text(json.dumps({"evidence": {"commit": self.commit},
+                                        "runs": {"units": 1}}), encoding="utf-8")
+        recorded = REMOTE_CLI.cmd_smoke_record(job_dir=job, artifact_path=artifact, worker="w1")
+        self.assertEqual(recorded["warnings"], [])
+        self.assertNotIn("work", recorded["event"])
+        self.assertNotIn("warnings", REMOTE_CLI.cmd_readiness(job_dir=job, worker="w1"))
+        _, payload, _ = self.preflight(job, "--skip-rehearsal")
+        self.assertEqual(self.row(payload, "account")["status"], "pass")
+
+    def test_the_local_rehearsal_warns_on_a_smoke_that_ran_nothing(self) -> None:
+        job = self.generate(smoke="smoke_ran_nothing")
+        _, payload, err = self.preflight(job)
+        row = self.row(payload, "local-rehearsal")
+        self.assertEqual(row["status"], "warn", (row, err))
+        self.assertIn("records no work", row["evidence"])
+        self.assertIn("at least one unit", row["fix"])
+
+
 class InterpreterCheckTests(PreflightCase):
     def test_an_unimportable_driver_fails_and_names_the_workspace_env(self) -> None:
         env_python = self.workspace / ".micromamba" / "envs" / "papersmith" / "bin" / "python"

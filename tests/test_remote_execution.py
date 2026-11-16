@@ -24344,6 +24344,21 @@ class ColabSessionLifecycleTests(unittest.TestCase):
                     self.assertEqual(tokens[tokens.index("--timeout") + 1], "600.0")
             self.assertNotIn(30.0, [value for values in captured.values() for value in values])
 
+    def test_colab_submit_spawns_no_keep_alive(self) -> None:
+        """google-colab-cli 0.8.0 (the pin) has no `keep-alive` command; the
+        adapter used to spawn one anyway, a child that exited "No such
+        command". A full submit and cancel now never invoke it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(**self._fast_knobs())
+            folder = self._job_folder(tmp)
+            adapter = self._adapter(sim)
+            submission = self._submit(adapter, folder)
+            adapter.cancel(submission.id)
+            commands = [tokens[0] for tokens in sim.invocations()]
+            self.assertIn("new", commands)
+            self.assertNotIn("keep-alive", commands)
+
     def test_colab_argv_vocabulary_is_exactly_the_captured_help_surface(self) -> None:
         """The S2 done-when: every subcommand and flag this adapter uses
         appears in the captured `help-*.log` surface (0.6.0) — no flag

@@ -17265,6 +17265,17 @@ def _launch_position_state(target: Path, name: str, evidence: dict,
     return position
 
 
+def _refuse_bare_worker(rcli, service: str | None, worker: str | None) -> None:
+    """`gate` and `launch-plan` refuse a worker named by its bare team owner
+    (`carlos` for `colab:carlos`) with remote-execution's own message
+    (`BARE_WORKER_ID`), the one `submit`, `preflight` and `readiness` give:
+    a gate recorded under one form never matches a submit made under the
+    other."""
+    try:
+        rcli.refuse_bare_worker_for_service(service, worker)
+    except rcli.RemoteCLIError as exc:
+        raise Refused("BARE_WORKER_ID", str(exc)) from exc
+
 def _job_folder_named(target: Path, rcli, job: str, service: str | None = None):
     """`(job_dir, run_config)` for the discovered job folder whose own
     `jobName` (or folder name) is `job`, or `(None, None)`.
@@ -17577,6 +17588,7 @@ def cmd_gate(args: argparse.Namespace) -> dict:
         # invocation always carries.
         units = list(run_config.get("units") or [])
         worker = args.worker
+        _refuse_bare_worker(rcli, run_config.get("service"), worker)
 
     # The full authorization check (design "What `gate` refuses"), over
     # THIS invocation's own fresh re-derivation -- `rung` is the identical
@@ -18215,6 +18227,8 @@ def cmd_launch_plan(args: argparse.Namespace) -> dict:
     campaign = _campaign_identity(target, rcli)
     service = getattr(args, "service", None)
     job_dir, run_config = _job_folder_named(target, rcli, job, service)
+    if run_config is not None:
+        _refuse_bare_worker(rcli, run_config.get("service"), args.worker)
     commit = (run_config or {}).get("commit")
     entrypoint = (str((job_dir / rcli.JOBFOLDER.RUNNER_FILENAME).relative_to(target))
                   if job_dir is not None else None)
@@ -21187,6 +21201,9 @@ GATING_REFUSALS: dict[str, str] = {
     # --- gate --------------------------------------------------------------
     "GATE_WORKER_UNIT_CONFLICT": INVOCATION_DEFECT,
     "GATE_WORKER_REQUIRED": INVOCATION_DEFECT,
+    # A bare team owner as --worker (`carlos` for `colab:carlos`): the
+    # message names the worker id, so the invocation alone clears it.
+    "BARE_WORKER_ID": INVOCATION_DEFECT,
     # Folders of one job name under several services (S3, parallel
     # campaigns): `--service` selects one, so the invocation alone clears it.
     "JOB_SERVICE_AMBIGUOUS": INVOCATION_DEFECT,
