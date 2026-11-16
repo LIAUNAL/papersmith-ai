@@ -3270,6 +3270,8 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     # #180, #183: advisory caption and coherence warnings, never counted.
     report = paper_verify.attach_coherence(
         report, paper_coherence.run_guarded(evidence.main_tex_bytes, evidence.record))
+    # #182 item 1: a cited source with no title or abstract on disk is a visible warning, never a failure.
+    report = paper_verify.attach_reference_warnings(report)
     citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)

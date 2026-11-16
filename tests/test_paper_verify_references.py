@@ -80,6 +80,24 @@ class VerifyReferencesTests(unittest.TestCase):
         self.assertEqual(entry["evidence"]["unreachable"], ["beta2021"])
         self.assertTrue(entry["limits"])
 
+    def test_a_source_without_title_or_abstract_is_a_report_warning_never_a_failure(self) -> None:
+        # #182 item 1 (decision L8): visible in the report's `warnings`, while `clean` is unchanged.
+        self.cite("alpha2020", "beta2021", "gamma2022")
+        self.write(alpha2020="not_found", beta2021="unreachable", gamma2022="resolved")
+        records = json.loads(self.sidecar.read_text(encoding="utf-8"))
+        records["references"]["gamma2022"]["abstract"] = None
+        self.sidecar.write_text(json.dumps(records), encoding="utf-8")
+        report = self.verify()
+        self.assertEqual(self.entry(report)["verdict"], "pass")
+        warnings = {w["code"]: w["keys"] for w in report["warnings"]}
+        self.assertEqual(warnings, {"CITED_SOURCE_WITHOUT_TITLE": ["alpha2020", "beta2021"],
+                                    "CITED_SOURCE_WITHOUT_ABSTRACT": ["gamma2022"]})
+
+    def test_fully_resolved_citations_add_no_warnings_key(self) -> None:
+        self.cite("alpha2020")
+        self.write(alpha2020="resolved")
+        self.assertNotIn("warnings", self.verify())
+
     def test_a_bad_sidecar_covers_nothing_and_never_refuses(self) -> None:
         self.cite("alpha2020")
         self.sidecar.parent.mkdir(parents=True, exist_ok=True)

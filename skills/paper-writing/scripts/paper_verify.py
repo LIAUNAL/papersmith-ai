@@ -1078,6 +1078,34 @@ def run(evidence, *, optional_block_ids: frozenset = frozenset(), language: dict
     }
 
 
+def attach_reference_warnings(report: dict) -> dict:
+    """`report` plus `warnings` when the `references` check found cited keys
+    whose source has no title (`not_found`, `unreachable`) or no abstract on
+    disk (#182 item 1). A warning, never a verdict: offline work is never
+    blocked, so `clean`, `holds`, `fails` and `unmeasured` are untouched and
+    the key is absent when there is nothing to warn about."""
+    check = next((c for c in report.get("checks", []) if c.get("check") == "references"), None)
+    if check is None:
+        return report
+    evidence = check.get("evidence") or {}
+    untitled = sorted(set(evidence.get("not_found") or []) | set(evidence.get("unreachable") or []))
+    abstractless = list(evidence.get("without_abstract") or [])
+    warnings = []
+    if untitled:
+        warnings.append({
+            "code": "CITED_SOURCE_WITHOUT_TITLE", "check": "references", "keys": untitled,
+            "message": (f"{len(untitled)} cited key(s) have no title on disk: the claim they support cannot "
+                        "be checked against the source; rerun `resolve --references` online or replace them"),
+        })
+    if abstractless:
+        warnings.append({
+            "code": "CITED_SOURCE_WITHOUT_ABSTRACT", "check": "references", "keys": abstractless,
+            "message": (f"{len(abstractless)} cited key(s) have no abstract on disk: confirm by hand that "
+                        "each source holds the claim it is cited for"),
+        })
+    return {**report, "warnings": warnings} if warnings else report
+
+
 def attach_coherence(report: dict, coherence: list) -> dict:
     """`report` plus `coherence`: one entry per `COHERENCE_CHECKS` member, in
     roster order, each a warning (`severity` `warning`, verdict `pass`,
