@@ -3428,3 +3428,29 @@ changed protocol, a source the protocol does not name, a full-text exclusion
 without a protocol criterion, a decision on a duplicate or a record the
 previous stage excluded, an incomplete appraisal, and an extracted value
 without its quote.
+
+### 22. `pixelrag` — a figure that ingestion extracted, described as evidence
+
+**When.** After `paper-ingestion`, as a separate pass over an already-ingested
+paper (`/pixelrag <ingested paper folder>`). Ingestion writes each figure as an
+image file the Markdown references; until pixelrag runs, nothing downstream can
+read, cite or reason about what a figure shows.
+
+**Keyless and local.** Like `paper-ingestion`, it calls no model and no network
+(decision L8 of #13). The session's own agent looks at the image and writes the
+description; `skills/pixelrag/scripts/pixelrag_cli.py` (standard library only;
+every verb prints one JSON object and a refusal exits 2) makes it evidence:
+
+| Verb | Does |
+| --- | --- |
+| `facts --figure <image>` | path, sha256, pixel size, page, the caption and figure number from the ingested Markdown, the text ingestion extracted around it; says when the page has no text layer and that it runs no OCR |
+| `record --figure <image> --sha256 <hex> --description <text\|@file> [--markdown]` | refuses a description that is empty, too short or long, speculative, carries Markdown markers, or names a figure number the caption contradicts, and an image whose sha256 changed since `facts`; stores `<image>.pixelrag.json` beside the image |
+| `status --paper <folder>` | each referenced figure `current`, `missing` or `stale` |
+
+**Where the description lives.** Beside the image, always, bound to the image's
+sha256, so a re-extracted figure reads as stale instead of inheriting a
+description of a different picture. With `--markdown` it is also written as a
+marker-delimited, idempotent block right under the image reference, and the
+`.json` page map's character offsets are shifted so `pdf_fragment.py` keeps
+answering with the right text. The full contract is
+[`skills/pixelrag/SKILL.md`](../skills/pixelrag/SKILL.md).

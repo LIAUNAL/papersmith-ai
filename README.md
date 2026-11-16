@@ -1241,7 +1241,7 @@ each `probe` state's section in its own file,
 
 ## Anatomy of each skill
 
-The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). The workspace ships nineteen skills; each one's `SKILL.md` is its source of truth:
+The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). The workspace ships twenty skills; each one's `SKILL.md` is its source of truth:
 
 - [`datasets`](skills/datasets/SKILL.md)
 - [`experiment-diagrams`](skills/experiment-diagrams/SKILL.md)
@@ -1255,6 +1255,7 @@ The guided tour of every skill, with its flow diagram, is in [docs/skills.md](do
 - [`math-tutor`](skills/math-tutor/SKILL.md)
 - [`paper-ingestion`](skills/paper-ingestion/SKILL.md)
 - [`paper-writing`](skills/paper-writing/SKILL.md)
+- [`pixelrag`](skills/pixelrag/SKILL.md)
 - [`plausibility`](skills/plausibility/SKILL.md)
 - [`proposal-deliberation`](skills/proposal-deliberation/SKILL.md)
 - [`proposal-implementation`](skills/proposal-implementation/SKILL.md)

@@ -193,7 +193,7 @@ class HarnessProjectionTests(unittest.TestCase):
 
 
 class HarnessCommandProjectionTests(unittest.TestCase):
-    """The twenty skills arrive as slash commands, plus the OpenCode safety plugin."""
+    """The twenty-one skills arrive as slash commands, plus the OpenCode safety plugin."""
 
     COMMAND_NAMES = (
         "datasets",
@@ -208,6 +208,7 @@ class HarnessCommandProjectionTests(unittest.TestCase):
         "math-tutor",
         "paper-ingestion",
         "paper-writing",
+        "pixelrag",
         "plausibility",
         "proposal-deliberation",
         "proposal-implementation",
