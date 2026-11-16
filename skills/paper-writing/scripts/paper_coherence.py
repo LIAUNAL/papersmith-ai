@@ -34,7 +34,7 @@ Checks, in report order (`COHERENCE_CHECKS`):
   `10Hz`), ordinals, compounds of a number and a word (`32-channel`),
   common technical names (`F1`, `L1`, `L2`, `R2`, `2D`, `3D`), and anything
   inside `\\ref`, `\\label`, `\\cite` or `\\eqref`. Product names such
-  as `ADS1299` are flagged too: advisory, for the author to keep or move.
+  as `XYZ1234` are flagged too: advisory, for the author to keep or move.
 - `overclaiming` (#183): an abstract or introduction sentence uses an
   overclaiming word (solves, proves, guarantees, always, outperforms all,
   eliminates, perfectly, ...).
