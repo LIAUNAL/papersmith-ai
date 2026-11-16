@@ -1103,7 +1103,7 @@ def attach_reference_warnings(report: dict) -> dict:
             "message": (f"{len(abstractless)} cited key(s) have no abstract on disk: confirm by hand that "
                         "each source holds the claim it is cited for"),
         })
-    return {**report, "warnings": warnings} if warnings else report
+    return {**report, "warnings": list(report.get("warnings") or []) + warnings} if warnings else report
 
 
 def attach_coherence(report: dict, coherence: list) -> dict:

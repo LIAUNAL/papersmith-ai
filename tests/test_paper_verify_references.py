@@ -125,6 +125,15 @@ class RemediationTests(unittest.TestCase):
         self.assertTrue(any("abstract" in line for line in report["limits"]))
 
 
+class WarningsMergeTests(unittest.TestCase):
+    def test_reference_warnings_extend_warnings_already_in_the_report(self) -> None:
+        # Review finding R3-warnings-overwrite.
+        report = {"checks": [{"check": "references", "evidence": {"not_found": ["a"]}}],
+                  "warnings": [{"code": "EARLIER"}]}
+        merged = paper_verify.attach_reference_warnings(report)
+        self.assertEqual([w["code"] for w in merged["warnings"]], ["EARLIER", "CITED_SOURCE_WITHOUT_TITLE"])
+
+
 class NoCitationsTests(unittest.TestCase):
     def test_an_asta_resolved_key_earns_an_acknowledgement_note_not_a_failure(self) -> None:
         evidence = types.SimpleNamespace(main_tex_bytes=b"See \\cite{a,b}.\n")

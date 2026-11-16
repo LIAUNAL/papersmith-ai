@@ -83,6 +83,17 @@ class PixelragTests(unittest.TestCase):
         self.assertEqual((facts["width"], facts["height"]), (2, 5))
         self.assertEqual(facts["page"], 2)
 
+    def test_prose_that_names_a_figure_is_not_its_caption(self) -> None:
+        # Review finding R3-caption-heuristic: "Fig. 5 compares ..." is body text, not a caption.
+        md = self.paper / "demo.md"
+        md.write_text(md.read_text(encoding="utf-8").replace(
+            "Removing the attention block", "Fig. 5 compares it with Fig. 3, and removing the attention block"),
+            encoding="utf-8")
+        code, out = self.run_cli("facts", "--figure", str(self.figure(UNCAPTIONED)))
+        self.assertEqual(code, 0, out)
+        self.assertIsNone(out["facts"]["caption"])
+        self.assertIsNone(out["facts"]["number"])
+
     def test_facts_reports_an_unavailable_text_layer(self) -> None:
         sidecar = self.paper / "demo.json"
         data = json.loads(sidecar.read_text())
@@ -175,6 +186,18 @@ class PixelragTests(unittest.TestCase):
         self.assert_refused(self.record(description=GOOD + " This probably means the model overfits."),
                             "DESCRIPTION_SPECULATIVE")
         self.assert_refused(self.record(description=GOOD + " <!-- page 9 -->"), "DESCRIPTION_MARKUP")
+
+    def test_a_non_utf8_description_file_is_a_json_refusal(self) -> None:
+        # Review finding R3-non-utf8-traceback.
+        bad = self.root / "bad.txt"
+        bad.write_bytes(b"\xff\xfe not utf-8 \x80\x81 at all, and long enough to pass the length bound")
+        self.assert_refused(self.record(description=f"@{bad}"), "DESCRIPTION_UNREADABLE")
+
+    def test_record_markdown_leaves_no_temporary_file(self) -> None:
+        # Review finding R1-001: writes go through a temporary file replaced in one step.
+        code, out = self.record("--markdown")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(p.name for p in self.paper.glob(".*pixelrag-tmp")), [])
 
     def test_refuses_an_image_changed_since_facts(self) -> None:
         stale = self.sha()

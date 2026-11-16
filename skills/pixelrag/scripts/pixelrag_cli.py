@@ -29,6 +29,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import re
 import struct
 import sys
@@ -43,7 +44,10 @@ NEARBY_CHARS = 600
 
 _PAGE_MARKER = re.compile(r"^<!-- page (\d+) -->$", re.MULTILINE)
 _IMAGE_REF = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
-_CAPTION = re.compile(r"^\s*(?:\*\*|__|\*|_)?\s*(fig(?:ure)?\.?)\s*(\d+)([a-z]?)\b", re.IGNORECASE)
+#: A caption opens with its label and a delimiter ("Figure 3:", "**Fig. 3.**"), so prose that merely
+#: names a figure ("Fig. 5 compares ...") is never taken for one.
+_CAPTION = re.compile(r"^\s*(?:\*\*|__|\*|_)?\s*(fig(?:ure)?\.?)\s*(\d+)([a-z]?)\s*(?:\*\*|__|\*|_)?\s*[.:]",
+                      re.IGNORECASE)
 _MENTION = re.compile(r"\bfig(?:ure)?\.?\s*(\d+)", re.IGNORECASE)
 _SPECULATION = re.compile(
     r"\b(probably|presumably|perhaps|maybe|possibly|apparently|likely|seems?|seemingly|might|"
@@ -111,6 +115,21 @@ def _image(figure: str) -> Path:
 
 # -- reading the ingested paper -----------------------------------------------
 
+def _read_text(path: Path) -> str:
+    """A sibling file's text, or "" when it is unreadable or not UTF-8: it then references no image."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Write beside the target, then replace it in one step, so an interruption never truncates it."""
+    tmp = path.with_name(f".{path.name}.pixelrag-tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _strip_blocks(markdown: str) -> str:
     """The Markdown without pixelrag's own blocks, so facts never read a description as the paper's text."""
     return re.sub(r"\n<!-- pixelrag:begin .*? -->\n.*?\n<!-- pixelrag:end .*? -->\n", "", markdown, flags=re.DOTALL)
@@ -118,8 +137,7 @@ def _strip_blocks(markdown: str) -> str:
 
 def _markdown_for(image: Path) -> Path:
     folder = image.parent
-    candidates = [md for md in sorted(folder.glob("*.md"))
-                  if image.name in _IMAGE_REF.findall(md.read_text(encoding="utf-8"))]
+    candidates = [md for md in sorted(folder.glob("*.md")) if image.name in _IMAGE_REF.findall(_read_text(md))]
     if not candidates:
         raise Refused("NOT_INGESTED", f"no ingested Markdown in {_display(folder)} references {image.name}; "
                                       "run /paper-ingestion on the paper first")
@@ -225,8 +243,8 @@ def _read_description(value: str) -> str:
     if value.startswith("@"):
         try:
             value = Path(value[1:]).expanduser().read_text(encoding="utf-8")
-        except OSError as exc:
-            raise Refused("DESCRIPTION_UNREADABLE", f"cannot read {value[1:]}: {exc}") from None
+        except (OSError, UnicodeDecodeError) as exc:
+            raise Refused("DESCRIPTION_UNREADABLE", f"cannot read {value[1:]} as UTF-8 text: {exc}") from None
     return value.strip()
 
 
@@ -266,14 +284,14 @@ def _block_pattern(name: str) -> re.Pattern:
                       r"<!-- pixelrag:end " + re.escape(name) + r" -->\n", re.DOTALL)
 
 
-def _shift_map(page_map_path: Path, at: int, delta: int, chars: int) -> None:
+def _shift_map(page_map_path: Path, at: int, delta: int, chars: int) -> str | None:
     """Keep the ingestion map's character offsets true after the Markdown grew or shrank at `at`."""
     try:
         data = json.loads(page_map_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return
+        return None
     if not isinstance(data, dict) or data.get("schema") != "papersmith.ingestion/v1":
-        return
+        return None
     for key in ("pages", "headings", "equations", "figures"):
         for row in data.get(key) or []:
             for field in ("md_start", "md_end", "md_offset"):
@@ -281,7 +299,7 @@ def _shift_map(page_map_path: Path, at: int, delta: int, chars: int) -> None:
                     row[field] += delta
     if isinstance(data.get("markdown"), dict):
         data["markdown"]["chars"] = chars
-    page_map_path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    return json.dumps(data, indent=1, ensure_ascii=False)
 
 
 def write_block(markdown_path: Path, image: Path, sha: str, description: str) -> str:
@@ -305,8 +323,13 @@ def write_block(markdown_path: Path, image: Path, sha: str, description: str) ->
             line_end = len(markdown) - 1
         start = end = line_end + 1
     updated = markdown[:start] + block + markdown[end:]
-    markdown_path.write_text(updated, encoding="utf-8")
-    _shift_map(markdown_path.with_suffix(".json"), end, len(block) - (end - start), len(updated))
+    page_map_path = markdown_path.with_suffix(".json")
+    shifted = _shift_map(page_map_path, end, len(block) - (end - start), len(updated))
+    # Both new texts exist before either file is replaced, and each replacement is atomic, so the
+    # ingested Markdown is never truncated and the map is never shifted for a Markdown that did not land.
+    _atomic_write(markdown_path, updated)
+    if shifted is not None:
+        _atomic_write(page_map_path, shifted)
     return "written"
 
 
@@ -343,7 +366,7 @@ def cmd_record(args: argparse.Namespace) -> dict:
             "recorded_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "tool": TOOL,
         }
-        sidecar.write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        _atomic_write(sidecar, json.dumps(record, indent=1, ensure_ascii=False) + "\n")
     markdown = "skipped"
     if args.markdown:
         markdown = write_block(_markdown_for(image), image, facts["sha256"], description)
