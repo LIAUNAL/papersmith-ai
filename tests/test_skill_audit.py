@@ -9058,7 +9058,8 @@ class NewlyCoveredSubjectRosterTests(unittest.TestCase):
         # 28 -> 29: the `venue` group (journal-finder), which adapts the
         # manuscript to a chosen journal's template.
         # 32 -> 33: `translate`, the Spanish translation of the finished paper.
-        ("paper-writing", 33),
+        # 33 -> 34: `reorder`, the canonical back-matter order (#184 item 4).
+        ("paper-writing", 34),
     )
 
     def test_each_new_recipe_derives_a_real_nonempty_roster(self):

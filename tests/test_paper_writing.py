@@ -8986,8 +8986,12 @@ class RefusalRosterTests(unittest.TestCase):
         section no non-sharing assignment of the same cut claims
         (SEPARATION_SHARE_UNCLAIMED).
 
-        226 -> 238: `translate` adds 12 TRANSLATION_* codes."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 238)
+        226 -> 238: `translate` adds 12 TRANSLATION_* codes.
+
+        238 -> 240 (daprosero-backlog T2): `--expect-digest` on substitute,
+        humanize --apply and write refuses BLOCK_CHANGED_SINCE_READ (#185), and
+        `reorder` refuses REORDER_LAYOUT_AMBIGUOUS (#184 item 4)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 240)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

@@ -125,6 +125,8 @@ import paper_style_es  # noqa: E402,F401 -- manuscript-translation-es T1: the Sp
 import paper_translate  # noqa: E402 -- manuscript-translation-es T2: the `translate` verb group (plan, store, build, audit, status) under paper/translations/<lang>/; never writes paper/main.tex
 import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
 import paper_review  # noqa: E402 -- the final judge's rounds, read by the dashboard's panel
+import paper_reorder  # noqa: E402 -- daprosero-backlog S6.4 (#184 item 4): `reorder` moves canonical back-matter blocks into the order `verify`'s back-matter-order check expects
+import paper_coherence  # noqa: E402 -- daprosero-backlog T5: `verify`'s caption and coherence checks; imported for the roster derivation and ModuleCompletenessTests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -213,6 +215,9 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "BLOCK_ID_MALFORMED": INVOCATION_DEFECT,
     # --- marker grammar --------------------------------------------------
     "MARKER_MALFORMED": WORK_STATE,
+    # --- #185: `--expect-digest` on substitute, humanize --apply and write:
+    # the block's recorded digest moved since the caller read it ----------
+    "BLOCK_CHANGED_SINCE_READ": WORK_STATE,
     "BLOCK_DUPLICATED": WORK_STATE,
     "BLOCK_UNPAIRED": WORK_STATE,
     "BLOCK_NESTED": WORK_STATE,
@@ -678,6 +683,8 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "REVIEW_ITEM_UNKNOWN": INVOCATION_DEFECT,
     "REVIEW_ITEMS_MISSING": INVOCATION_DEFECT,
     "REVIEW_FILE_INVALID": WORK_STATE,
+    # --- reorder (paper_reorder.py): no single place to move a block to ---
+    "REORDER_LAYOUT_AMBIGUOUS": WORK_STATE,
 }
 
 
@@ -721,10 +728,15 @@ def cmd_substitute(args: argparse.Namespace) -> dict:
             "--body and --adopt were given together; --adopt takes no body.",
         )
     contract = Path(args.contract) if args.contract else None
+    expected = getattr(args, "expect_digest", None)
     if args.adopt:
-        return paper_block.substitute(paper_dir, args.block, adopt=True, contract=contract)
+        return paper_block.substitute(
+            paper_dir, args.block, adopt=True, contract=contract, expected_digest=expected,
+        )
     raw = sys.stdin.buffer.read() if args.body == "-" else Path(args.body).read_bytes()
-    return paper_block.substitute(paper_dir, args.block, new_body=raw, contract=contract)
+    return paper_block.substitute(
+        paper_dir, args.block, new_body=raw, contract=contract, expected_digest=expected,
+    )
 
 
 def cmd_contract(args: argparse.Namespace) -> dict:
@@ -860,6 +872,11 @@ def compute_readiness_report(
         supposed = sorted((flag_facts | flag_declarations) - (declared_facts | declared_declarations))
         if supposed:
             result["supposed"] = supposed
+        # #184 item 7: a fixed fact whose source changed since it was
+        # declared -- a warning, never a refusal.
+        stale_facts = paper_declarations.read_stale_facts(paper_dir)
+        if stale_facts:
+            result["stale_facts"] = stale_facts
     return result
 
 
@@ -2402,6 +2419,8 @@ def compute_phases(
             "declarations": sorted(declared_declarations),
         },
         "waves": wave_reports,
+        # #184 item 7: fixed facts whose source changed since they were declared.
+        "stale_facts": paper_declarations.read_stale_facts(paper_dir),
     }
 
 
@@ -2860,8 +2879,12 @@ def cmd_write(args: argparse.Namespace) -> dict:
     and possibly after a judge-cycle attempt was already spent.
     """
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
-    sections_dir = paper_contract.resolve_sections_dir(args.sections)
     qualified_id = f"{args.section}.{args.block}"
+    # #185: a stale base refuses before any gate runs or any attempt is
+    # recorded; `write_block` checks it again at `substitute` time.
+    expected_digest = getattr(args, "expect_digest", None)
+    paper_block.check_base_digest(paper_dir, qualified_id, expected_digest)
+    sections_dir = paper_contract.resolve_sections_dir(args.sections)
     corpus = _resolve_write_gate(paper_dir, sections_dir, qualified_id)
 
     guidance_dir = paper_guidance.resolve_guidance_dir(args.guidance)
@@ -2938,6 +2961,7 @@ def cmd_write(args: argparse.Namespace) -> dict:
     )
     res = paper_write.write_block(
         paper_dir, contract, draft, audit_account, grounding_account=grounding_account,
+        expected_digest=expected_digest,
     )
     sec_name = str(getattr(args, "section", "") or "").lower()
     block_name = str(getattr(args, "block", "") or "").lower()
@@ -3231,6 +3255,9 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     report = paper_verify.run(evidence, optional_block_ids=optional_block_ids,
                               language=_scan_manuscript_language(evidence.main_tex_bytes),
                               references=references)
+    # #180, #183: advisory caption and coherence warnings, never counted.
+    report = paper_verify.attach_coherence(
+        report, paper_coherence.run(evidence.main_tex_bytes, evidence.record))
     citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)
@@ -3625,7 +3652,16 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         raise Refused("BLOCK_REQUIRED", "--block <id> is required for humanize")
     draft_body = ""
     if args.draft:
-        draft_path = _resolve_repo_path(args.draft)
+        try:
+            draft_path = _resolve_repo_path(args.draft)
+        except Refused as exc:
+            # #184 item 1: the containment rule stays; the refusal names the
+            # way a scratch draft outside the repository gets in.
+            raise Refused(
+                "PAPER_OUTSIDE_REPOSITORY",
+                f"{exc.detail}; pass a draft kept outside the repository inline with "
+                "--replacement \"$(cat <path>)\" instead of --draft",
+            )
         if not draft_path.is_file():
             raise Refused("DRAFT_UNREADABLE", f"{args.draft}: draft not found")
         draft_body = draft_path.read_text(encoding="utf-8")
@@ -3642,6 +3678,9 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         raise Refused("BLOCK_UNKNOWN", f"{args.block}: block not found in {main_tex}")
 
     begin, end = doc.pairs[args.block]
+    expected_digest = getattr(args, "expect_digest", None)
+    # #185: refuse a stale base before judging a draft written against it.
+    paper_block.check_expected_digest(args.block, begin, expected_digest)
     orig_body = data[begin["end"]:end["start"]].decode("utf-8", errors="replace")
 
     # 1. Enforce F5 invariant gate
@@ -3677,7 +3716,10 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         paper_write.check_lead_ins(args.block, draft_body)
         contract = Path(args.contract) if args.contract else None
         body = paper_write.own_paragraph_body(args.block, draft_body)
-        paper_block.substitute(paper_dir, args.block, new_body=body.encode("utf-8"), contract=contract)
+        paper_block.substitute(
+            paper_dir, args.block, new_body=body.encode("utf-8"), contract=contract,
+            expected_digest=expected_digest,
+        )
         applied = True
 
     return {
@@ -3698,6 +3740,30 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         "meets_target": meets_target,
         "deprecated_keys": ["target_score", "meets_target"],
     }
+
+
+def _sha256_hex(value: str) -> str:
+    """argparse type for `--expect-digest`: 64 hexadecimal characters."""
+    digest = value.strip().lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise argparse.ArgumentTypeError(f"{value!r} is not a sha256 hex digest (64 hexadecimal characters)")
+    return digest
+
+
+def _add_expect_digest(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--expect-digest", default=None, type=_sha256_hex, dest="expect_digest", metavar="SHA256",
+        help="the block's digest as `status` listed it when you read the block; refuses "
+             "BLOCK_CHANGED_SINCE_READ, writing nothing, when the block changed since. "
+             "Omitted, nothing is compared",
+    )
+
+
+def cmd_reorder(args: argparse.Namespace) -> dict:
+    """Moves canonical back-matter blocks into `back-matter-order`'s order:
+    a report by default, a byte-preserving write with `--apply`."""
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    return paper_reorder.reorder(paper_dir, apply=bool(args.apply))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -3740,6 +3806,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--contract", default=None,
         help="record this substitution's provenance against this contract file's current digest",
     )
+    _add_expect_digest(p_substitute)
 
     p_contract = sub.add_parser(
         "contract", help="validate the section corpus, or show one file's parsed header",
@@ -4217,6 +4284,7 @@ def build_parser() -> argparse.ArgumentParser:
              "{support: [{sentence, fact, verdict, span}, ...]}; must resolve inside the "
              "repository root",
     )
+    _add_expect_digest(p_write)
 
     p_render = sub.add_parser(
         "render", help="compile one diagram id standalone, exactly once, via latexmk",
@@ -4554,6 +4622,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_humanize.add_argument("--inplace", action="store_true", default=False, dest="apply", help="substitute into paper/main.tex if verified (alias for --apply)")
     p_humanize.add_argument("--force", action="store_true", default=False, help="apply even if target score is not met")
     p_humanize.add_argument("--contract", default=None, help="path to the section contract")
+    _add_expect_digest(p_humanize)
+
+    p_reorder = sub.add_parser(
+        "reorder",
+        help="move canonical back-matter blocks into verify's back-matter-order: declarations before "
+             "the reference list, appendices after it; reports the moves unless --apply",
+        description="Move canonical back-matter blocks into the order verify's back-matter-order "
+                    "check expects: declaration blocks before the reference list, appendices after "
+                    "it. Each block moves whole and byte for byte; nothing else changes. Reports "
+                    "the moves unless --apply; refuses REORDER_LAYOUT_AMBIGUOUS when there is no "
+                    "single reference list outside every block.",
+    )
+    p_reorder.add_argument(
+        "--paper", default=None,
+        help="override paper/ location; must resolve inside the repository root",
+    )
+    p_reorder.add_argument(
+        "--apply", action="store_true", default=False,
+        help="write the moves (byte-preserving, with the one-deep pre-image); without it nothing is written",
+    )
     p_humanize.add_argument("--paper", default=None, help="override paper/ location")
 
     p_review = sub.add_parser(
@@ -4572,7 +4660,7 @@ COMMANDS = (
     "scaffold", "status", "open", "substitute", "contract", "readiness", "phases", "skeleton", "order",
     "declare", "bind", "mark", "separate", "observe", "plan", "resolve", "full_text", "bib", "validate",
     "write", "render", "place", "couplings", "verify", "figure", "packet", "reuse", "exhaustion", "venue",
-    "ai_audit", "humanize", "review", "translate",
+    "ai_audit", "humanize", "review", "translate", "reorder",
 )
 _COMMANDS = {
     "scaffold": cmd_scaffold,
@@ -4608,6 +4696,7 @@ _COMMANDS = {
     "humanize": cmd_humanize,
     "review": cmd_review,
     "translate": cmd_translate,
+    "reorder": cmd_reorder,
 }
 
 

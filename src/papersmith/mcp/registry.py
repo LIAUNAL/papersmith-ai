@@ -25,6 +25,12 @@ FULL_TEXT_TIMEOUT = 1800.0
 
 #: The paper-writing CLI's own verb roster (``paper_cli.COMMANDS``), in
 #: ``paper_cli.COMMANDS`` order.
+#: `--expect-digest` (#185): the compare-and-swap base a block writer passes.
+_EXPECT_DIGEST_DESCRIPTION = (
+    "The block's sha256 as paper_status listed it when the block was read; the child refuses "
+    "BLOCK_CHANGED_SINCE_READ, writing nothing, when the block changed since"
+)
+
 PAPER_VERBS: tuple[str, ...] = (
     "scaffold",
     "status",
@@ -59,6 +65,7 @@ PAPER_VERBS: tuple[str, ...] = (
     "humanize",
     "review",
     "translate",
+    "reorder",
 )
 
 #: The orchestrator CLI's own command roster (``cli._REGISTRY``).
@@ -1005,6 +1012,7 @@ _PAPER_MUTATING = (
                 Flag("body", "--body", path=True),
                 Flag("adopt", "--adopt", kind="bool"),
                 Flag("contract", "--contract", path=True),
+                Flag("expect_digest", "--expect-digest", description=_EXPECT_DIGEST_DESCRIPTION),
             )
         ),
         build=_paper_builder(
@@ -1015,6 +1023,7 @@ _PAPER_MUTATING = (
                 Flag("body", "--body", path=True),
                 Flag("adopt", "--adopt", kind="bool"),
                 Flag("contract", "--contract", path=True),
+                Flag("expect_digest", "--expect-digest", description=_EXPECT_DIGEST_DESCRIPTION),
             ),
         ),
         precondition=_refuse_stdin_body,
@@ -1090,6 +1099,7 @@ _PAPER_MUTATING = (
                 Flag("style", "--style", path=True),
                 Flag("guidance", "--guidance", path=True),
                 Flag("transcript", "--transcript", path=True),
+                Flag("expect_digest", "--expect-digest", description=_EXPECT_DIGEST_DESCRIPTION),
             )
         ),
         build=_paper_builder(
@@ -1105,6 +1115,7 @@ _PAPER_MUTATING = (
                 Flag("style", "--style", path=True),
                 Flag("guidance", "--guidance", path=True),
                 Flag("transcript", "--transcript", path=True),
+                Flag("expect_digest", "--expect-digest", description=_EXPECT_DIGEST_DESCRIPTION),
             ),
         ),
         result_json=True,
@@ -1652,6 +1663,9 @@ PAPER_DISPOSITIONS: dict[str, str] = {
         # `translate` writes paper/translations/<lang>/ (`plan`, `store`, `build`,
         # `audit`) next to read-only `status`: mixed like `venue`, so declared out.
         else "out" if verb == "translate"
+        # `reorder` reports its moves by default and rewrites main.tex with
+        # `--apply`: read-only and writing halves under one verb, like `venue`.
+        else "out" if verb == "reorder"
         else "exposed"
     )
     for verb in PAPER_VERBS
