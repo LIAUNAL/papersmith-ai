@@ -245,11 +245,15 @@ MEASUREMENT_KEYS = set(MEASUREMENT_REQUIRED) | {"setupSeconds"}
 #: epoch into time spent waiting on data and time spent computing. Schema 1
 #: records keep loading exactly as before.
 TIMING_SCHEMAS = (1, 2)
-TIMING_KEYS_V2 = TIMING_KEYS | {"hosts"}
+#: `runtimes` (optional) maps each machine's label to its hardware model,
+#: library versions and thread settings, as the probe records them (#186).
+TIMING_KEYS_V2 = TIMING_KEYS | {"hosts", "runtimes"}
 HOST_INFO_KEYS = ("cpuCount", "ramGB", "mps", "cuda")
 SETTING_KEYS = ("threads", "batchSize", "numWorkers", "pinMemory", "prefetch", "dtype", "dataSource")
+#: `hostLabel` and `threadSettings` (optional) name the machine a row ran on and
+#: the thread settings it ran under, so a pool over several machines is flagged.
 MEASUREMENT_KEYS_V2 = MEASUREMENT_KEYS | {"candidate", "processes", "loadSeconds", "computeSeconds",
-                                         *SETTING_KEYS}
+                                         "hostLabel", "threadSettings", *SETTING_KEYS}
 #: `local-cpu-<processes>`, `local-mps`, `local-cuda`, or `<host>:<owner>/<machine>`
 #: for a remote host, where a machine named `cpu` is a CPU-only session.
 CANDIDATE_PATTERN = re.compile(r"^(local-cpu-[1-9][0-9]*|local-mps|local-cuda|"
@@ -581,6 +585,9 @@ def load_timing(path: Path, name: str) -> dict:
         bad(f"schema must be 1 or 2, got {schema!r}")
     if v2:
         check_hosts(data.get("hosts"), bad)
+        runtimes = data.get("runtimes", {})
+        if not isinstance(runtimes, dict) or not all(isinstance(info, dict) for info in runtimes.values()):
+            bad("runtimes must map each machine label to its runtime object")
     measurements = data.get("measurements")
     if not isinstance(measurements, list) or not measurements:
         bad("measurements must be a non-empty list")
@@ -617,6 +624,10 @@ def load_timing(path: Path, name: str) -> dict:
             bad(f"{where}.setupSeconds must be a non-negative number, got {item['setupSeconds']!r}")
         if v2:
             check_candidate_row(where, item, bad)
+            if "hostLabel" in item and (not isinstance(item["hostLabel"], str) or not item["hostLabel"].strip()):
+                bad(f"{where}.hostLabel must be a non-empty machine label, got {item['hostLabel']!r}")
+            if "threadSettings" in item and not isinstance(item["threadSettings"], dict):
+                bad(f"{where}.threadSettings must be an object, got {item['threadSettings']!r}")
     scales = data.get("scales")
     if not isinstance(scales, dict) or sorted(scales) != sorted(STAGES):
         bad("scales must hold exactly poc and full, copied from the approved protocol and the declared pilot")
@@ -771,6 +782,31 @@ def measured_candidates(data: dict) -> tuple[dict[str, list[dict]], dict[str, li
     return by_host, by_candidate
 
 
+def runtime_warnings(by_candidate: dict[str, list[dict]]) -> list[dict]:
+    """Where a candidate's pooled rows (its fastest setting, the rows `estimate`
+    and `plan` average) came from more than one machine or ran under differing
+    thread settings. A warning, never a refusal: the rows are still one
+    candidate, but the average no longer describes one machine. Rows that do
+    not name their machine (older probes) are not compared."""
+    found = []
+    for candidate, items in sorted(by_candidate.items()):
+        rows, _ = best_setting(items)
+        labels = sorted({row["hostLabel"] for row in rows if "hostLabel" in row})
+        if len(labels) > 1:
+            found.append({"candidate": candidate, "kind": "cross-host", "hosts": labels,
+                          "message": f"{candidate}'s pooled rows came from more than one host "
+                                     f"({', '.join(labels)}): the estimate averages machines; probe again "
+                                     "on one machine, or keep each machine's rows apart"})
+        threads = sorted({json.dumps(row["threadSettings"], sort_keys=True) for row in rows
+                          if "threadSettings" in row})
+        if len(threads) > 1:
+            found.append({"candidate": candidate, "kind": "thread-settings",
+                          "threadSettings": [json.loads(item) for item in threads],
+                          "message": f"{candidate}'s pooled rows ran under differing thread settings: "
+                                     "torch threads and OMP/MKL/OPENBLAS_NUM_THREADS change speed and results"})
+    return found
+
+
 def host_estimate(measurements: list[dict], scale: dict) -> dict:
     """The one formula: mean(secondsPerUnit, per arm) x epochs x folds x seeds x
     arms + setupSeconds x folds x seeds, reported as a +/-20% range."""
@@ -873,6 +909,9 @@ def cmd_estimate(args, root: Path, today: str) -> dict:
         result["candidateNote"] = ("each candidate is estimated from its own rows at its fastest measured "
                                    "setting; the estimate is serial work (processes and accounts are "
                                    "counted by plan)")
+        warnings = runtime_warnings(by_candidate)
+        if warnings:
+            result["runtimeWarnings"] = warnings
     if args.record is not None:
         result["recorded"] = record(root, args.record, result, today, prefix="estimate")
     return result
@@ -2197,6 +2236,9 @@ def cmd_plan(args, root: Path, today: str) -> dict:
                         "order": "smallest makespan upper bound, then fewest accelerator hours, then CPU, then local"},
               "unmeasuredMeans": "no row of that candidate: it is never extrapolated from another host or device",
               "readOnly": True, "launchAuthorization": False}
+    warnings = runtime_warnings(by_candidate) if data["schema"] == 2 else []
+    if warnings:
+        result["runtimeWarnings"] = warnings
     if args.record is not None:
         result["recorded"] = record(root, args.record, result, today, prefix="plan")
     return result
