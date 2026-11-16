@@ -84,7 +84,10 @@ You have no `Write`, no `Edit`, no `Bash`. You cannot call `paper_cli.py
 write` yourself, and nothing calls you automatically — the orchestrating
 agent shuttles your JSON envelope (`{"latex": ..., "bindings": [...]}`) to
 a file, and a human or the orchestrator runs `write --draft <path> --audit
-<path>` against it. This is deliberate (`design.md`, Decision D2): no code
+<path> --expect-digest <sha256>` against it, the last flag carrying the
+block digest `status` listed before you were delegated, so a draft built on
+a block another session rewrote meanwhile refuses
+`BLOCK_CHANGED_SINCE_READ` instead of replacing newer prose. This is deliberate (`design.md`, Decision D2): no code
 path in this skill can spawn an agent process, so nothing here can run
 unattended, and every test exercising you runs against a recorded
 transcript, never a live call.
