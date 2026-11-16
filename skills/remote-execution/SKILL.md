@@ -2062,11 +2062,17 @@ launched. `ColabAdapter.campaign_refusal(worker)` returns that reason (or
 than refuse. The declared capacity counts distinct owners on paid tiers.
 
 GPU variants by tier: `colab new --gpu` accepts `T4`, `L4`, `G4`, `A100`
-and `H100` (0.7.5 help). Expect `T4` on a free account and `L4`, `A100`
-or `H100` on paid compute; the FAQ itself names no models — free access to
-GPUs "is heavily restricted", premium GPUs come with a paid plan "subject
-to availability", and the types "vary over time". The adapter maps only
-`sm_75 → T4`, `sm_80 → A100`, `sm_90 → H100` (`COLAB_ACCELERATOR_VARIANTS`).
+and `H100` (0.7.5 and 0.8.0 help). Expect `T4` on a free account and `L4`,
+`G4`, `A100` or `H100` on paid compute; the FAQ itself names no models —
+free access to GPUs "is heavily restricted", premium GPUs come with a paid
+plan "subject to availability", and the types "vary over time". The
+adapter maps `sm_75 → T4`, `sm_80 → A100`, `sm_89 → L4` (Ada Lovelace),
+`sm_90 → H100` and `sm_120 → G4` (RTX PRO 6000 Blackwell)
+(`COLAB_ACCELERATOR_VARIANTS`); any other declared architecture is refused
+by name. The VM-side `check_accelerator()` compares architectures by name
+against the installed torch build's arch list, so an `sm_89` or `sm_120`
+job also needs a torch build that lists that architecture (CUDA 11.8+ for
+`sm_89`, 12.8+ for `sm_120`).
 
 **A Colab job asks for a GPU by default.** The adapter registers its own
 default accelerator, `cuda` with `sm_75` (`COLAB_ACCELERATOR_KIND`,
@@ -2077,8 +2083,8 @@ passes `--gpu T4`. Before this, a from-zero Colab job carried no block, got no
 declared, the VM-side `check_accelerator()` refuses a runtime that arrives
 without CUDA (its arch list is empty), so the smoke fails and `readiness` stays
 `false` instead of counting a CPU rehearsal as ready. Pass
-`--accelerator-kind cuda --accelerator-architecture sm_80` (or `sm_90`) to ask
-a paid account for an A100 (or H100).
+`--accelerator-kind cuda --accelerator-architecture sm_80` (or `sm_89`,
+`sm_90`, `sm_120`) to ask a paid account for an A100 (or an L4, H100, G4).
 
 **CPU-only jobs.** The GPU default stays for compatibility, and it is a
 default, not a measured choice: `remote-parallelism plan` decides from the

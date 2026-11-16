@@ -16918,6 +16918,24 @@ class RunnerBootstrapTests(unittest.TestCase):
             run_config, {"capability": "sm_75", "archList": ["sm_60", "sm_75"]}
         )
 
+    def test_check_accelerator_accepts_an_l4_and_a_g4_runtime(self) -> None:
+        """`sm_89` (L4) and `sm_120` (G4) are what Colab's `--gpu L4|G4`
+        hand back; the gate compares by name, so a build that lists them
+        passes, and one that does not is refused."""
+        for capability, (major, minor) in (("sm_89", (8, 9)), ("sm_120", (12, 0))):
+            with self.subTest(capability=capability):
+                self.assertEqual(RUNNER_BOOTSTRAP._capability_to_arch((major, minor)), capability)
+                run_config = self._fake_run_config(
+                    accelerator={"kind": "cuda", "architectures": [capability]}
+                )
+                RUNNER_BOOTSTRAP.check_accelerator(
+                    run_config, {"capability": capability, "archList": ["sm_75", capability]}
+                )
+                with self.assertRaises(RUNNER_BOOTSTRAP.AcceleratorError):
+                    RUNNER_BOOTSTRAP.check_accelerator(
+                        run_config, {"capability": capability, "archList": ["sm_75"]}
+                    )
+
     def test_runner_bootstrap_module_names_no_service(self) -> None:
         """This asset's own no-service guard — in the same family as
         `test_adapter_module_names_no_service`,

@@ -148,6 +148,20 @@ class ColabHooksTests(unittest.TestCase):
         self.assertIsNone(request["problem"])
         self.assertEqual(self.adapter().accelerator_request({})["name"], "cpu")
 
+    def test_accelerator_request_maps_l4_and_g4(self) -> None:
+        for architecture, variant in (("sm_89", "L4"), ("sm_120", "G4")):
+            with self.subTest(architecture=architecture):
+                request = self.adapter().accelerator_request(
+                    {"accelerator": {"kind": "cuda", "architectures": [architecture]}})
+                self.assertEqual(request["name"], variant)
+                self.assertEqual(request["architectures"], [architecture])
+                self.assertIsNone(request["problem"])
+
+    def test_every_gpu_variant_colab_new_offers_is_mapped_once(self) -> None:
+        variants = list(COLAB.COLAB_ACCELERATOR_VARIANTS.values())
+        self.assertEqual(sorted(variants), ["A100", "G4", "H100", "L4", "T4"])
+        self.assertEqual(len(set(variants)), len(variants))
+
 
 FAKE_COLAB = """#!{python}
 import json, os, sys

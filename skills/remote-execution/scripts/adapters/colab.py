@@ -280,13 +280,19 @@ PROBE_PACKAGES = ("nbclient", "nbformat", "jupyter_client")
 
 # D13's declared-architecture → GPU-variant table: the `sm_*` names this
 # project's dual-architecture torch builds declare, mapped to the variant
-# names `colab new --gpu` accepts (all three are in the captured
-# `help-new.log` surface, S0 fact 4). A declared architecture outside this
+# names `colab new --gpu` accepts. T4, A100 and H100 are in the captured
+# `help-new.log` surface (S0 fact 4); 0.8.0's `colab new --help` lists
+# `--gpu` T4, L4, G4, H100 and A100, so L4 (Ada Lovelace, compute
+# capability 8.9) and G4 (RTX PRO 6000 Blackwell Server Edition, 12.0)
+# are mapped too. Each architecture names exactly one variant, so the
+# table stays invertible. A declared architecture outside this
 # table refuses by name — never a fallback to CPU — and TPU kinds are
 # refused outright, because no `--tpu` mapping is invented here. This table
 # only decides which machine arrives; the VM-side `check_accelerator()`
 # remains the authority on whether that machine can run the build.
-COLAB_ACCELERATOR_VARIANTS = {"sm_75": "T4", "sm_80": "A100", "sm_90": "H100"}
+COLAB_ACCELERATOR_VARIANTS = {
+    "sm_75": "T4", "sm_80": "A100", "sm_89": "L4", "sm_90": "H100", "sm_120": "G4",
+}
 
 # The accelerator a job generated with no `--accelerator-*` flags declares,
 # registered below exactly as `adapters/kaggle.py` registers its own. Without
