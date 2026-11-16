@@ -1,0 +1,63 @@
+{
+ "schema": "papersmith.ingestion/v1",
+ "source": {
+  "file": "demo.pdf",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "pages": 2
+ },
+ "markdown": {
+  "file": "demo.md",
+  "chars": 349
+ },
+ "engine": {
+  "name": "routed"
+ },
+ "pages": [
+  {
+   "page": 1,
+   "route": "fast",
+   "engine": "pypdfium2",
+   "md_start": 15,
+   "md_end": 232
+  },
+  {
+   "page": 2,
+   "route": "fast",
+   "engine": "pypdfium2",
+   "md_start": 247,
+   "md_end": 349
+  }
+ ],
+ "headings": [
+  {
+   "level": 1,
+   "text": "Results",
+   "md_offset": 16,
+   "page": 1
+  },
+  {
+   "level": 2,
+   "text": "Ablation",
+   "md_offset": 248,
+   "page": 2
+  }
+ ],
+ "equations": [],
+ "figures": [
+  {
+   "file": "_page_0_Figure_1.png",
+   "md_offset": 91,
+   "page": 1
+  },
+  {
+   "file": "_page_1_Figure_0.png",
+   "md_offset": 261,
+   "page": 2
+  }
+ ],
+ "references": [],
+ "timing": {
+  "seconds": 0.1,
+  "heavy_seconds": 0.0
+ }
+}

@@ -802,9 +802,10 @@ class ProxyQuartileTests(JournalFinderCase):
         self.assertAlmostEqual(first["proxy"]["share_of_field_above"], 0.10, places=4)
         self.assertEqual(first["proxy"]["journals_in_field"], 100)
         self.assertEqual(result.json["quartile_source_summary"], {"sjr": 0, "openalex-proxy": 4})
-        # exactly two count queries per source, restricted to journals of the field
+        # one count of journals above per source plus the field's total, asked once for the four sources
+        # of field 17 (#166), all restricted to journals of the field
         counts = [r for r in api.requests if r["path"] == "/openalex/sources"]
-        self.assertEqual(len(counts), 8)
+        self.assertEqual(len(counts), 4 + 1)
         for call in counts:
             self.assertIn("topics.field.id:17", call["params"]["filter"])
             self.assertEqual(call["params"]["per-page"], "1")
@@ -2035,19 +2036,33 @@ class CacheTests(JournalFinderCase):
     def candidates_of(self, result: Result) -> list:
         return result.json["candidates"]
 
+    @staticmethod
+    def request_keys(requests: list) -> list:
+        return [(r["path"], tuple(sorted((r.get("params") or {}).items()))) for r in requests]
+
+    def test_one_search_never_asks_the_same_request_twice(self):
+        """#166: two candidates of one field share that field's total; asked concurrently, it reached the API
+        twice or once depending on thread timing, so `cached` of a first search was 0 or 1 under load."""
+        api = self.start_api()
+        first = self.search()
+        keys = self.request_keys(api.requests)
+        self.assertEqual(len(keys), len(set(keys)), "a request reached the API twice in one search")
+        self.assertEqual(first.json["api_calls"]["made"], len(api.requests))
+        self.assertGreater(first.json["api_calls"]["cached"], 0, "the shared field total is read once")
+
     def test_a_repeated_search_is_served_from_the_cache(self):
         api = self.start_api()
         first = self.search()
         served = len(api.requests)
         self.assertGreater(served, 5)
         self.assertEqual(first.json["api_calls"]["made"], served)
-        self.assertEqual(first.json["api_calls"]["cached"], 0)
+        shared = first.json["api_calls"]["cached"]
         second = self.search()
         self.assertEqual(second.code, 0, second.stdout + second.stderr)
         again = [r["path"] for r in api.requests[served:]]
         self.assertEqual(set(again), self.UNCACHED, "only the answers that were errors are asked again")
         self.assertEqual(second.json["api_calls"]["made"], len(again))
-        self.assertEqual(second.json["api_calls"]["cached"], served - len(again))
+        self.assertEqual(second.json["api_calls"]["cached"], served + shared - len(again))
         self.assertEqual(second.json["api_calls"]["by_service"]["openalex"]["made"], 0)
         self.assertEqual(self.candidates_of(second), self.candidates_of(first))
 

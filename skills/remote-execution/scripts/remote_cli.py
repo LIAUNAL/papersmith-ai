@@ -30,10 +30,18 @@ needs one. `--credential-dir` is an override only, for tests and
 already-materialized credentials — the default is lazy materialization,
 and no target configuration file is ever consulted for a credential path.
 
-Run with any Python 3.10+ (stdlib-only):
+Run with Python 3.11+ (stdlib-only; older interpreters are refused by name):
     python3 -m unittest tests.test_remote_execution
 """
 from __future__ import annotations
+
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
 
 import argparse
 import hashlib

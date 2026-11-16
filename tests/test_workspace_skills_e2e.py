@@ -42,6 +42,7 @@ SKILL_NAMES = (
     "math-tutor",
     "paper-ingestion",
     "paper-writing",
+    "pixelrag",
     "plausibility",
     "proposal-deliberation",
     "proposal-implementation",

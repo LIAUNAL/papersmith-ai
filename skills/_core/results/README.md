@@ -40,6 +40,8 @@ Refusal codes: `USAGE`, `PRODUCT_ABSENT` (not a directory), `APPROVAL_ABSENT` (s
 
 The stage comes from the holder (`Experimental_AGREED.md` → `full`, else `AGREED.md` → `poc`). The workspace root is `product.parents[2]`. From the latest `experiments/experiments-*-vNN.md` (highest `NN`), each heading of any level carrying `[exp:<id>]` (such as `## Experiment [exp:<id>]`) becomes one hypothesis `H1..Hn` (in order) with its **Hypothesis** and **Success criterion** bullets copied verbatim; `verdict` is `pending`, `observed` and `summary` are empty. `metrics` starts empty. `available_evidence` lists the figures, tables, qualitative artifacts (`Results/qualitative/**`) and significance comparisons found on disk, to help the author; it is ignored by the check. No number is ever written.
 
+`scaffold` reads the Hypothesis and Success criterion bullets in English, Spanish, Portuguese or French, and warns, naming the experiment and field, for each one it could not read.
+
 **A fresh scaffold is `invalid` on purpose** (empty `summary`, no `metrics`, no qualitative entry or reason). The author fills it, then runs `check` until it is `complete`. If no protocol exists, `protocol` is `""` and the hypotheses must be added by hand (the CLI warns).
 
 ## Schema 1

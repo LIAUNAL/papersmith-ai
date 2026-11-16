@@ -1239,6 +1239,17 @@ executable — no test in this suite reaches the network or a real account).
     installed arch list the verdict was computed from by the time the
     refusal fires — a refusal whose evidence was never written is
     unreadable no matter how early it fires.
+  - **`bootstrap.json` names the host it ran on (#186).**
+    `detect_hardware()` also returns `environment.runtime`: `host` (the
+    job's `MVIA_TIMING_HOST` when `generate-job --env` set it, else
+    `host-<12 hex>`, a digest of the machine's node name, or `unknown-host`;
+    `hostSource` says which), `hardware` (`machine`,
+    the CPU model, `cpuCount`, the GPU model or `null`), `libraries`
+    (`python`, and `numpy`, `torch`, `scikit-learn` when installed) and
+    `threads` (`torch.get_num_threads()` and `OMP_NUM_THREADS`,
+    `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS` as set, `null` when unset).
+    The keys `device`, `torch`, `archList` and `capability` are unchanged.
+    No username, home path or machine name is recorded.
   - `runner_invoke.py`'s `invoke()` selects the normal `run` block or its
     `smoke` variant (when `run_config["mode"] == "smoke"`, the mode a
     later slice's `submit --smoke` sets) via `select_block()`, resolves
@@ -1828,7 +1839,20 @@ reports a `warnings` entry when a smoke block declares none, because
 `completeness(stamp, [])` passes on any JSON at all. `smoke record
 --from-artifact` takes either the `shard.json` itself or the fetched
 rehearsal folder, and a folder with no stamp is refused with what the
-smoke must write.
+smoke must write. The kit's `remote_stamp.write_shard` also writes a
+top-level `runtime` block (the host label, hardware model, library versions
+and thread settings, the same shape as `bootstrap.json`'s
+`environment.runtime`), beside `mode`, `evidence`, `environment` and `runs`,
+which are unchanged; being a key of its own, it never makes shards disagree
+on a declared `environment` field. `identicalAcrossShards` compares
+top-level stamp keys, so declaring `runtime` there refuses a merge whose
+shards differ in any part of that block (host, hardware, libraries or
+threads). Without that declaration, `verify --shards` still flags a merge
+whose shards differ in `runtime.host` or `runtime.threads`: a non-blocking
+`distribution.runtimeWarnings` entry `{kind: "cross-host" |
+"thread-settings", shards, values}` (`shard_io.runtime_warnings`) that
+changes neither `status` nor `shardsDisagree`, present only when shards
+differ; shards with no `runtime` block are skipped.
 
 **Readiness, and no clock.** `remote_cli.py readiness --job-dir <dir>
 --worker <worker>` reports whether a job is ready for its full submission

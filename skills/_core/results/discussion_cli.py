@@ -17,6 +17,14 @@ Refusal codes: ``USAGE``, ``PRODUCT_ABSENT``, ``APPROVAL_ABSENT``,
 
 from __future__ import annotations
 
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import argparse
 import importlib.util
 import json
@@ -122,7 +130,7 @@ def _scaffold(product: Path, shown: str) -> int:
             except OSError:
                 pass
     checked = contract.check_discussion(product, data)
-    warnings = list(checked["warnings"])
+    warnings = list(checked["warnings"]) + contract.unread_fields(data)
     if not data["protocol"]:
         warnings.append("no experiments/experiments-*-vNN.md found: add the hypotheses by hand")
     return _emit({"ok": True, "file": contract.DISCUSSION_FILE, "stage": data["stage"],

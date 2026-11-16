@@ -98,6 +98,14 @@ Environment
 """
 from __future__ import annotations
 
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import argparse
 import csv
 import datetime as dt
@@ -451,9 +459,21 @@ class Http:
         contact = _contact()
         agent = "papersmith-journal-finder/1.0"
         self.user_agent = f"{agent} (mailto:{contact})" if contact else agent
+        self._in_flight: dict[str, threading.Lock] = {}
+        self._in_flight_guard = threading.Lock()
 
     def get_json(self, url: str, params: dict, limiter: RateLimiter | None = None,
                  service: str = "http", headers: dict | None = None) -> dict:
+        """One GET, asked once per search: an identical request made concurrently by another worker (two
+        candidates of one field share their field's total) waits for that answer and reads it from the cache,
+        so how many calls a search makes never depends on thread timing."""
+        with self._in_flight_guard:
+            gate = self._in_flight.setdefault(ResponseCache._canonical(url, params), threading.Lock())
+        with gate:
+            return self._get_json(url, params, limiter, service, headers)
+
+    def _get_json(self, url: str, params: dict, limiter: RateLimiter | None,
+                  service: str, headers: dict | None) -> dict:
         cached = self.cache.get(url, params)
         if cached is not None:
             self.stats.record(service, cached=True)

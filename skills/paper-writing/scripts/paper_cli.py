@@ -76,6 +76,14 @@ will ever grow.
 """
 from __future__ import annotations
 
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import argparse
 import hashlib
 import json
@@ -125,6 +133,8 @@ import paper_style_es  # noqa: E402,F401 -- manuscript-translation-es T1: the Sp
 import paper_translate  # noqa: E402 -- manuscript-translation-es T2: the `translate` verb group (plan, store, build, audit, status) under paper/translations/<lang>/; never writes paper/main.tex
 import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
 import paper_review  # noqa: E402 -- the final judge's rounds, read by the dashboard's panel
+import paper_reorder  # noqa: E402 -- daprosero-backlog S6.4 (#184 item 4): `reorder` moves canonical back-matter blocks into the order `verify`'s back-matter-order check expects
+import paper_coherence  # noqa: E402 -- daprosero-backlog T5: `verify`'s caption and coherence checks; imported for the roster derivation and ModuleCompletenessTests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -135,29 +145,20 @@ from impl_refusals import Refused  # noqa: E402
 #: bare relative name.
 CLI_PATH = Path(__file__).resolve()
 
-#: The floor this skill's own scripts need, MEASURED rather than picked:
-#: every one of the 31 shipped `paper_*.py` modules (and the shared
-#: `impl_refusals.py` under `_core/implementation/`) opens with `from
-#: __future__ import annotations` (PEP 563, 3.7+) -- the highest-versioned
-#: feature any of them uses. Scanned for and found nowhere in this skill's
-#: own scripts: the walrus operator, `match`/`case`, a PEP 604 `X | Y`
-#: outside an annotation, the dict-union `|` operator, `str.removeprefix`/
-#: `removesuffix`, `pathlib.Path.is_relative_to`. A future change that adds
-#: any of those moves this number; nothing here should be read as a
-#: forecast of what this skill will always need. This is the same
-#: `SKILL_PYTHON_FLOOR` shape `implementation_engine.py` already carries
-#: for its own layout templates, applied here to this skill's own
-#: interpreter instead of a target's.
-SKILL_PYTHON_FLOOR: tuple[int, int] = (3, 7)
+#: The floor this skill's scripts are run under: the package's own
+#: (`pyproject.toml` requires-python >=3.11, #184 item 5). The module-level
+#: guard at the top of this file refuses an older interpreter before any
+#: import; `_require_supported_python` repeats the comparison inside `main`
+#: so it stays provable with a patched `sys.version_info`.
+SKILL_PYTHON_FLOOR: tuple[int, int] = (3, 11)
 
 
 def _require_supported_python() -> None:
     """Refuses by name instead of a bare traceback naming a module the
     caller never asked about -- exactly the gap this skill shipped with no
-    declared floor at all until now. A pre-3.7 interpreter cannot even
-    PARSE this file to reach this call (`from __future__ import
-    annotations` is itself the 3.7+ syntax feature that makes every other
-    module's annotations safe to write), so this comparison can only ever
+    declared floor at all until now. An interpreter below the floor is
+    already stopped by the module-level guard at the top of this file,
+    before any import, so this comparison can only ever
     be exercised by an interpreter capable enough to load the file but
     told, at runtime, that it is older (`PythonFloorGuardTests`,
     `tests/test_paper_writing.py` -- there is no other way to prove the
@@ -213,6 +214,9 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "BLOCK_ID_MALFORMED": INVOCATION_DEFECT,
     # --- marker grammar --------------------------------------------------
     "MARKER_MALFORMED": WORK_STATE,
+    # --- #185: `--expect-digest` on substitute, humanize --apply and write:
+    # the block's recorded digest moved since the caller read it ----------
+    "BLOCK_CHANGED_SINCE_READ": WORK_STATE,
     "BLOCK_DUPLICATED": WORK_STATE,
     "BLOCK_UNPAIRED": WORK_STATE,
     "BLOCK_NESTED": WORK_STATE,
@@ -678,6 +682,8 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "REVIEW_ITEM_UNKNOWN": INVOCATION_DEFECT,
     "REVIEW_ITEMS_MISSING": INVOCATION_DEFECT,
     "REVIEW_FILE_INVALID": WORK_STATE,
+    # --- reorder (paper_reorder.py): no single place to move a block to ---
+    "REORDER_LAYOUT_AMBIGUOUS": WORK_STATE,
 }
 
 
@@ -721,10 +727,15 @@ def cmd_substitute(args: argparse.Namespace) -> dict:
             "--body and --adopt were given together; --adopt takes no body.",
         )
     contract = Path(args.contract) if args.contract else None
+    expected = getattr(args, "expect_digest", None)
     if args.adopt:
-        return paper_block.substitute(paper_dir, args.block, adopt=True, contract=contract)
+        return paper_block.substitute(
+            paper_dir, args.block, adopt=True, contract=contract, expected_digest=expected,
+        )
     raw = sys.stdin.buffer.read() if args.body == "-" else Path(args.body).read_bytes()
-    return paper_block.substitute(paper_dir, args.block, new_body=raw, contract=contract)
+    return paper_block.substitute(
+        paper_dir, args.block, new_body=raw, contract=contract, expected_digest=expected,
+    )
 
 
 def cmd_contract(args: argparse.Namespace) -> dict:
@@ -860,7 +871,23 @@ def compute_readiness_report(
         supposed = sorted((flag_facts | flag_declarations) - (declared_facts | declared_declarations))
         if supposed:
             result["supposed"] = supposed
+        # #184 item 7: a fixed fact whose source changed since it was
+        # declared -- a warning, never a refusal.
+        stale_facts, unmeasured = _stale_facts(paper_dir)
+        if stale_facts:
+            result["stale_facts"] = stale_facts
+        if unmeasured:
+            result["stale_facts_unmeasured"] = unmeasured
     return result
+
+
+def _stale_facts(paper_dir: Path) -> tuple[dict, str | None]:
+    """`read_stale_facts`, advisory all the way down: a source that cannot be
+    digested reports why instead of failing `readiness` or `phases`."""
+    try:
+        return paper_declarations.read_stale_facts(paper_dir), None
+    except (OSError, ValueError) as exc:
+        return {}, f"stale facts could not be measured ({type(exc).__name__}: {exc})"
 
 
 def cmd_readiness(args: argparse.Namespace) -> dict:
@@ -2396,12 +2423,16 @@ def compute_phases(
         })
         previous_complete = previous_complete and wave_complete
 
+    stale_facts, stale_unmeasured = _stale_facts(paper_dir)
     return {
         "declared": {
             "facts": sorted(declared_facts),
             "declarations": sorted(declared_declarations),
         },
         "waves": wave_reports,
+        # #184 item 7: fixed facts whose source changed since they were declared.
+        "stale_facts": stale_facts,
+        **({"stale_facts_unmeasured": stale_unmeasured} if stale_unmeasured else {}),
     }
 
 
@@ -2860,8 +2891,12 @@ def cmd_write(args: argparse.Namespace) -> dict:
     and possibly after a judge-cycle attempt was already spent.
     """
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
-    sections_dir = paper_contract.resolve_sections_dir(args.sections)
     qualified_id = f"{args.section}.{args.block}"
+    # #185: a stale base refuses before any gate runs or any attempt is
+    # recorded; `write_block` checks it again at `substitute` time.
+    expected_digest = getattr(args, "expect_digest", None)
+    paper_block.check_base_digest(paper_dir, qualified_id, expected_digest)
+    sections_dir = paper_contract.resolve_sections_dir(args.sections)
     corpus = _resolve_write_gate(paper_dir, sections_dir, qualified_id)
 
     guidance_dir = paper_guidance.resolve_guidance_dir(args.guidance)
@@ -2938,6 +2973,7 @@ def cmd_write(args: argparse.Namespace) -> dict:
     )
     res = paper_write.write_block(
         paper_dir, contract, draft, audit_account, grounding_account=grounding_account,
+        expected_digest=expected_digest,
     )
     sec_name = str(getattr(args, "section", "") or "").lower()
     block_name = str(getattr(args, "block", "") or "").lower()
@@ -3231,6 +3267,11 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     report = paper_verify.run(evidence, optional_block_ids=optional_block_ids,
                               language=_scan_manuscript_language(evidence.main_tex_bytes),
                               references=references)
+    # #180, #183: advisory caption and coherence warnings, never counted.
+    report = paper_verify.attach_coherence(
+        report, paper_coherence.run_guarded(evidence.main_tex_bytes, evidence.record))
+    # #182 item 1: a cited source with no title or abstract on disk is a visible warning, never a failure.
+    report = paper_verify.attach_reference_warnings(report)
     citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)
@@ -3347,8 +3388,10 @@ def cmd_place(args: argparse.Namespace) -> dict:
 
 def cmd_figure(args: argparse.Namespace) -> dict:
     """`figure`: one nested namespace over the two halves of this skill's
-    diagram capability — `optimize` (rewrite a source, compile-validated)
-    and `audit` (compare a source against the prose that describes it).
+    diagram capability — `optimize` (rewrite a source, compile-validated),
+    `provenance` (record the generating script and data inputs in the
+    manifest) and `audit` (compare a source against the prose that
+    describes it).
 
     Nested the way `bib build` already is. `render`/`place` stay top-level:
     moving them would break every call site and every document that names
@@ -3356,7 +3399,43 @@ def cmd_figure(args: argparse.Namespace) -> dict:
     """
     if args.figure_command == "optimize":
         return _cmd_figure_optimize(args)
+    if args.figure_command == "provenance":
+        return _cmd_figure_provenance(args)
     return _cmd_figure_audit(args)
+
+
+def _cmd_figure_provenance(args: argparse.Namespace) -> dict:
+    """`figure provenance`: records the generating script and its data
+    inputs in `<id>.diagram.json`'s `provenance` key, each as a
+    repository-relative path with its sha256, so a figure can be redrawn
+    later from what the repository holds (#181 item 5). Every path must
+    resolve inside the repository (`PAPER_OUTSIDE_REPOSITORY`, through
+    `_resolve_repo_path`) and name an existing file (`TARGET_UNREADABLE`);
+    both are checked before the manifest is touched, so a refusal leaves
+    it byte-identical. `render` and `figure audit` warn, never refuse, on
+    what this records going missing or changing.
+    """
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    paths = paper_figure.figure_paths(paper_dir, args.figure_id)
+    if not paths["manifest"].is_file():
+        raise Refused("DIAGRAM_SOURCE_ABSENT", f"{paths['manifest']} does not exist")
+    resolved = []
+    for raw in [args.script, *(args.input or [])]:
+        target = _resolve_repo_path(raw)
+        if not target.is_file():
+            raise Refused("TARGET_UNREADABLE", f"{raw}: file not found")
+        try:
+            with open(target, "rb") as handle:
+                handle.read(1)
+        except OSError as exc:
+            raise Refused("TARGET_UNREADABLE", f"{raw}: {exc.strerror or type(exc).__name__}") from exc
+        resolved.append(target)
+    provenance = paper_figure.record_provenance(
+        paths, resolved[0], resolved[1:], repo_root=paper_scaffold.FORGE_ROOT,
+    )
+    return {
+        "figureId": args.figure_id, "manifest": str(paths["manifest"]), "provenance": provenance,
+    }
 
 
 def _cmd_figure_optimize(args: argparse.Namespace) -> dict:
@@ -3511,6 +3590,10 @@ def _cmd_figure_audit(args: argparse.Namespace) -> dict:
     )
     report["figureId"] = args.figure_id or tex_path.stem
     report["evidence"]["section"] = f"{args.section}.md"
+    # Advisory provenance findings (#181 item 5) ride beside the semantic
+    # verdict and never change it: `audit_semantics` stays a pure function
+    # of its inputs, and a manifest without `provenance` audits as before.
+    report["provenanceWarnings"] = paper_figure.provenance_warnings(manifest)
     if scratch_dir is not None:
         scratch_dir.mkdir(parents=True, exist_ok=True)
         (scratch_dir / "figure_audit.json").write_text(
@@ -3625,7 +3708,18 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         raise Refused("BLOCK_REQUIRED", "--block <id> is required for humanize")
     draft_body = ""
     if args.draft:
-        draft_path = _resolve_repo_path(args.draft)
+        try:
+            draft_path = _resolve_repo_path(args.draft)
+        except Refused as exc:
+            if exc.code != "PAPER_OUTSIDE_REPOSITORY":
+                raise
+            # #184 item 1: the containment rule stays; the refusal names the
+            # way a scratch draft outside the repository gets in.
+            raise Refused(
+                "PAPER_OUTSIDE_REPOSITORY",
+                f"{exc.detail}; pass a draft kept outside the repository inline with "
+                "--replacement \"$(cat <path>)\" instead of --draft",
+            )
         if not draft_path.is_file():
             raise Refused("DRAFT_UNREADABLE", f"{args.draft}: draft not found")
         draft_body = draft_path.read_text(encoding="utf-8")
@@ -3642,6 +3736,9 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         raise Refused("BLOCK_UNKNOWN", f"{args.block}: block not found in {main_tex}")
 
     begin, end = doc.pairs[args.block]
+    expected_digest = getattr(args, "expect_digest", None)
+    # #185: refuse a stale base before judging a draft written against it.
+    paper_block.check_expected_digest(args.block, begin, expected_digest)
     orig_body = data[begin["end"]:end["start"]].decode("utf-8", errors="replace")
 
     # 1. Enforce F5 invariant gate
@@ -3677,7 +3774,10 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         paper_write.check_lead_ins(args.block, draft_body)
         contract = Path(args.contract) if args.contract else None
         body = paper_write.own_paragraph_body(args.block, draft_body)
-        paper_block.substitute(paper_dir, args.block, new_body=body.encode("utf-8"), contract=contract)
+        paper_block.substitute(
+            paper_dir, args.block, new_body=body.encode("utf-8"), contract=contract,
+            expected_digest=expected_digest,
+        )
         applied = True
 
     return {
@@ -3698,6 +3798,30 @@ def cmd_humanize(args: argparse.Namespace) -> dict:
         "meets_target": meets_target,
         "deprecated_keys": ["target_score", "meets_target"],
     }
+
+
+def _sha256_hex(value: str) -> str:
+    """argparse type for `--expect-digest`: 64 hexadecimal characters."""
+    digest = value.strip().lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise argparse.ArgumentTypeError(f"{value!r} is not a sha256 hex digest (64 hexadecimal characters)")
+    return digest
+
+
+def _add_expect_digest(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--expect-digest", default=None, type=_sha256_hex, dest="expect_digest", metavar="SHA256",
+        help="the block's digest as `status` listed it when you read the block; refuses "
+             "BLOCK_CHANGED_SINCE_READ, writing nothing, when the block changed since. "
+             "Omitted, nothing is compared",
+    )
+
+
+def cmd_reorder(args: argparse.Namespace) -> dict:
+    """Moves canonical back-matter blocks into `back-matter-order`'s order:
+    a report by default, a byte-preserving write with `--apply`."""
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    return paper_reorder.reorder(paper_dir, apply=bool(args.apply))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -3740,6 +3864,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--contract", default=None,
         help="record this substitution's provenance against this contract file's current digest",
     )
+    _add_expect_digest(p_substitute)
 
     p_contract = sub.add_parser(
         "contract", help="validate the section corpus, or show one file's parsed header",
@@ -4217,9 +4342,13 @@ def build_parser() -> argparse.ArgumentParser:
              "{support: [{sentence, fact, verdict, span}, ...]}; must resolve inside the "
              "repository root",
     )
+    _add_expect_digest(p_write)
 
     p_render = sub.add_parser(
-        "render", help="compile one diagram id standalone, exactly once, via latexmk",
+        "render",
+        help="compile one diagram id standalone, exactly once, via latexmk; the result "
+             "carries provenanceWarnings (advisory) for an unrecorded, missing, "
+             "outside-the-repository or changed script/data input",
     )
     p_render.add_argument(
         "--paper", default=None,
@@ -4289,7 +4418,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p_figure = sub.add_parser(
-        "figure", help="optimize a diagram's TikZ source, or audit it against the prose",
+        "figure",
+        help="optimize a diagram's TikZ source, record its generating script and data "
+             "inputs (provenance), or audit it against the prose",
     )
     figure_sub = p_figure.add_subparsers(dest="figure_command", required=True)
 
@@ -4331,10 +4462,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="test-only: override the PATH shutil.which searches for latexmk",
     )
 
+    p_figure_provenance = figure_sub.add_parser(
+        "provenance",
+        help="record the script that generates a diagram and its data inputs in "
+             "<id>.diagram.json (repository-relative paths with a sha256 each); render and "
+             "figure audit then warn when one is missing, outside the repository or changed",
+    )
+    p_figure_provenance.add_argument(
+        "--paper", default=None,
+        help="override paper/ location; must resolve inside the repository root",
+    )
+    p_figure_provenance.add_argument(
+        "--figure-id", required=True, help="the diagram id under paper/Figures/",
+    )
+    p_figure_provenance.add_argument(
+        "--script", required=True,
+        help="the script that generates the figure; must be a file inside the repository",
+    )
+    p_figure_provenance.add_argument(
+        "--input", action="append", default=None,
+        help="a data file the script reads (repeatable); must be inside the repository. "
+             "Omitted, the manifest records an empty input list",
+    )
+
     p_figure_audit = figure_sub.add_parser(
         "audit",
         help="verify a diagram's declared components against its section's prose "
-             "(pass | fail | unmeasured; a content finding is never a refusal)",
+             "(pass | fail | unmeasured; a content finding is never a refusal); also "
+             "reports provenanceWarnings for the manifest's script and data inputs",
     )
     p_figure_audit.add_argument(
         "--paper", default=None,
@@ -4554,6 +4709,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_humanize.add_argument("--inplace", action="store_true", default=False, dest="apply", help="substitute into paper/main.tex if verified (alias for --apply)")
     p_humanize.add_argument("--force", action="store_true", default=False, help="apply even if target score is not met")
     p_humanize.add_argument("--contract", default=None, help="path to the section contract")
+    _add_expect_digest(p_humanize)
+
+    p_reorder = sub.add_parser(
+        "reorder",
+        help="move canonical back-matter blocks into verify's back-matter-order: declarations before "
+             "the reference list, appendices after it; reports the moves unless --apply",
+        description="Move canonical back-matter blocks into the order verify's back-matter-order "
+                    "check expects: declaration blocks before the reference list, appendices after "
+                    "it. Each block moves whole and byte for byte; nothing else changes. Reports "
+                    "the moves unless --apply; refuses REORDER_LAYOUT_AMBIGUOUS when there is no "
+                    "single reference list outside every block.",
+    )
+    p_reorder.add_argument(
+        "--paper", default=None,
+        help="override paper/ location; must resolve inside the repository root",
+    )
+    p_reorder.add_argument(
+        "--apply", action="store_true", default=False,
+        help="write the moves (byte-preserving, with the one-deep pre-image); without it nothing is written",
+    )
     p_humanize.add_argument("--paper", default=None, help="override paper/ location")
 
     p_review = sub.add_parser(
@@ -4572,7 +4747,7 @@ COMMANDS = (
     "scaffold", "status", "open", "substitute", "contract", "readiness", "phases", "skeleton", "order",
     "declare", "bind", "mark", "separate", "observe", "plan", "resolve", "full_text", "bib", "validate",
     "write", "render", "place", "couplings", "verify", "figure", "packet", "reuse", "exhaustion", "venue",
-    "ai_audit", "humanize", "review", "translate",
+    "ai_audit", "humanize", "review", "translate", "reorder",
 )
 _COMMANDS = {
     "scaffold": cmd_scaffold,
@@ -4608,6 +4783,7 @@ _COMMANDS = {
     "humanize": cmd_humanize,
     "review": cmd_review,
     "translate": cmd_translate,
+    "reorder": cmd_reorder,
 }
 
 

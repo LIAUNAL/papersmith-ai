@@ -1,0 +1,22 @@
+%% KOMA-Script sets its 11 pt body internally: no size option to read.
+\documentclass{scrartcl}
+\usepackage{graphicx}
+\begin{document}
+Body text.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.5\textwidth]{Figures/numeric}
+  \caption{A half-width figure.}
+\end{figure}
+\begin{figure}[t]
+  \centering
+  \begin{minipage}{0.45\textwidth}
+    \includegraphics[width=\linewidth]{Figures/plain}
+  \end{minipage}\hfill
+  \begin{minipage}{0.45\textwidth}
+    \includegraphics[width=\linewidth]{Figures/plain-b}
+  \end{minipage}
+  \caption{Two panels side by side.}
+\end{figure}
+\input{sections/extra}
+\end{document}

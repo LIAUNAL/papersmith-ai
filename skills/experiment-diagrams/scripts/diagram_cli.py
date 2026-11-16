@@ -37,6 +37,14 @@ spawned from an argument list, never a shell string.
 """
 from __future__ import annotations
 
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import argparse
 import glob
 import hashlib

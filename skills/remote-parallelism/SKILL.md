@@ -449,6 +449,25 @@ from the candidate's own rows at its fastest measured setting (settings are
 never pooled), and each host's row in `estimates` is its fastest candidate.
 The estimate stays serial work; `plan` counts processes and accounts.
 
+**Which machine a row ran on (#186).** A host slug such as `local` or
+`colab:<owner>` names a place, not one machine: two laptops both write
+`local`, and two Colab sessions rarely get the same hardware. So the probe
+also writes, per row, `hostLabel` (`MVIA_TIMING_HOST` when the job set it,
+else the machine's node name) and `threadSettings` (`torch`, the thread count
+torch ran with, and `OMP_NUM_THREADS`, `MKL_NUM_THREADS`,
+`OPENBLAS_NUM_THREADS` as set, `null` when unset), and, per record,
+`runtimes: {"<hostLabel>": {host, hostSource, hardware: {machine, cpu,
+cpuCount, gpu}, libraries: {python, numpy, torch, scikit-learn}, threads}}`
+(a library appears only when installed). All three keys are optional, so
+older records load unchanged. When the rows `estimate` or `plan` pools for a
+candidate (its fastest setting) name more than one `hostLabel`, or more than
+one `threadSettings`, the output gains `runtimeWarnings: [{candidate, kind:
+"cross-host" | "thread-settings", hosts | threadSettings, message}]`. It is a
+warning, never a refusal: the numbers are still computed, and the fix is to
+probe again on one machine or keep each machine's rows in its own record.
+Rows that do not name their machine are not compared, and without a warning
+the key is absent.
+
 **The one formula.** For a stage `s` and a host `h` with measurements:
 
 ```

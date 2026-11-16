@@ -58,6 +58,10 @@ Public surface:
         {fact_id: {"reason", "condition", "holds", "detail"}}, condition
         re-evaluated fresh from disk on every call)
     read_satisfied(paper_dir) -> (set[str], set[str])  (read-only; fixed facts, fixed declarations)
+    source_basis(base, fact_id) -> dict  (pure disk read; {root: sha256} of the
+        source roots a fact is read from, stored by set_fact as `basis`)
+    read_stale_facts(paper_dir, *, source_base=None) -> dict  (read-only; every
+        fixed fact whose source changed since it was declared -- a warning)
     reopen(paper_dir, id, *, clock=...)                  -> dict
     affected_blocks(corpus, id)  -> set[str]  (pure; the reopen scan)
     infer_related_work(corpus, opened_ids) -> bool  (pure; skeleton inference)
@@ -308,13 +312,142 @@ def set_fact(
     record is ever read or written. Defaults to `()`, so every existing
     caller — declaring one of the five externally-sourced observable facts
     — is unaffected.
+
+    The new record also carries `basis` (`source_basis`): the digest of the
+    source root(s) the fact is read from, so `read_stale_facts` can warn
+    when they change after the declaration (issue #184 item 7). A fact with
+    no digestible root (a REPOSITORY root, a derived or structural fact)
+    records none. Existing records are never rewritten to add one.
     """
     paper_vocabulary.validate_fact(fact_id)
     _refuse_if_produced(fact_id, produced_by)
+    basis = source_basis(paper_dir.parent, fact_id)
     return _set_record(
         paper_dir, kind="fact", id_=fact_id, value_field="resolution", value=resolution,
-        clock=clock,
+        clock=clock, extra={"basis": basis} if basis else None,
     )
+
+
+#: Bounds on what one basis digest reads, so a huge evidence tree never
+#: stalls `declare`.
+_BASIS_MAX_FILES = 2000
+_BASIS_MAX_BYTES = 64 * 1024 * 1024
+
+
+def _basis_roots(fact_id: str) -> tuple:
+    """The `FACT_SOURCE_ROOT` roots a fact's declared value was read from:
+    its own root when it is read as prose or as ingested evidence (a
+    REPOSITORY root is measured by running it, never digested), plus the
+    experimental protocol's root for `dataset`, since the protocol names the
+    dataset an experiment uses (issue #184 item 7)."""
+    own = FACT_SOURCE_ROOT.get(fact_id)
+    if own is None or own.kind is SourceRootKind.REPOSITORY:
+        return ()
+    roots = [own]
+    protocol = FACT_SOURCE_ROOT["experimental-design"]
+    if fact_id == "dataset" and protocol not in roots:
+        roots.append(protocol)
+    return tuple(roots)
+
+
+def _root_files(base: Path, root) -> list | None:
+    """The `*.md` files a root's digest covers, or None when it cannot be read.
+    A PROSE root is the top-level `*.md` of `base / root.name` (what
+    `source_root_status` counts); an INGESTED root is every `*.md` under its
+    evidence folders. An absent root is an empty list: a root that appears
+    later is a change too."""
+    if root.kind is SourceRootKind.PROSE:
+        folder = base / root.name
+        return sorted(folder.glob("*.md")) if folder.is_dir() else []
+    try:
+        status = _ingested_root_status(base)
+    except (Refused, OSError, ValueError):
+        return None
+    files: list = []
+    for folder in status.get("paths") or []:
+        if Path(folder).is_dir():
+            files.extend(sorted(Path(folder).rglob("*.md")))
+    return files
+
+
+def _root_digest(base: Path, root) -> str | None:
+    """sha256 over each covered file's base-relative path and bytes, in
+    sorted order; None when the root cannot be read or exceeds the bounds."""
+    files = _root_files(base, root)
+    if files is None or len(files) > _BASIS_MAX_FILES:
+        return None
+    digest = hashlib.sha256()
+    total = 0
+    for path in files:
+        try:
+            data = path.read_bytes()
+            rel = path.relative_to(base).as_posix()
+        except (OSError, ValueError):
+            return None
+        total += len(data)
+        if total > _BASIS_MAX_BYTES:
+            return None
+        digest.update(rel.encode("utf-8") + b"\0" + hashlib.sha256(data).digest())
+    return digest.hexdigest()
+
+
+def source_basis(base: Path, fact_id: str) -> dict:
+    """`{root name: sha256}` for every source root `fact_id` is read from,
+    measured under `base` (the repository root, `paper_dir.parent` under the
+    default layout, as `decline_fact` resolves its condition). `set_fact`
+    stores it in the new record as `basis`; `read_stale_facts` compares it
+    against the same measurement taken again. A root that cannot be read is
+    left out, never guessed. `{}` for a fact with no digestible root."""
+    out = {}
+    for root in _basis_roots(fact_id):
+        digest = _root_digest(Path(base), root)
+        if digest is not None:
+            out[root.name] = digest
+    return out
+
+
+def read_stale_facts(paper_dir: Path, *, source_base: Path | None = None) -> dict:
+    """Read-only: every FIXED, non-declined fact whose recorded `basis` no
+    longer matches its source on disk, as `{fact_id: {"roots": [root, ...],
+    "recorded": str, "detail": str}}` (issue #184 item 7: a dataset or
+    experimental-design declaration that stayed stale after the protocol
+    changed, without any warning). A warning, never a refusal: the operator
+    decides whether the declared value still holds, and `declare --reopen`
+    then `declare --fact` records it again against the current source.
+
+    A record written before `basis` existed carries none and is never
+    reported: there is nothing to compare, and this reader never rewrites a
+    record. `source_base` defaults to `paper_dir.parent`, the base `set_fact`
+    measured against.
+    """
+    _tex_path, _pre, record = _read_declarations(paper_dir)
+    _verify_not_hand_edited(record)
+    body = _body_or_default(record)
+    base = Path(source_base) if source_base is not None else paper_dir.parent
+    stale = {}
+    for entry in body["records"]:
+        if entry["kind"] != "fact" or not entry.get("fixed") or entry.get("declined"):
+            continue
+        basis = entry.get("basis")
+        if not isinstance(basis, dict) or not basis:
+            continue
+        current = source_basis(base, entry["id"])
+        changed = sorted(name for name, digest in basis.items()
+                         if name in current and current[name] != digest)
+        if not changed:
+            continue
+        folders = ", ".join(f"{name}/" for name in changed)
+        stale[entry["id"]] = {
+            "roots": changed,
+            "recorded": entry.get("recorded", ""),
+            "detail": (
+                f"fact {entry['id']!r} was declared at {entry.get('recorded', 'an unknown time')} "
+                f"from {folders}, which changed since; check that "
+                f"{entry.get('resolution', '')!r} still holds, and if not run "
+                f"`declare --reopen {entry['id']}` then `declare --fact {entry['id']} --value ...`"
+            ),
+        }
+    return stale
 
 
 def _validate_condition_shape(condition, root: Path) -> None:

@@ -2124,7 +2124,13 @@ apart, and each is cheap enough that skipping it is never the economical choice.
   subdirectory per shard, each holding its own `shard.json` stamp — and
   `distribution.shardsDisagree` names every `identicalAcrossShards` field the
   stamps disagree on, while `distribution.shardsArrived` lists the shards that
-  were actually read. Omit the flag and both are empty, which means nothing was
+  were actually read. `distribution.runtimeWarnings` flags, without refusing,
+  shards whose stamp `runtime` block names different hosts (`kind:
+  "cross-host"`) or thread settings (`kind: "thread-settings"`), each with the
+  `shards` compared and the distinct `values`; shards without a `runtime`
+  block are skipped, the warning moves neither `status` nor
+  `shardsDisagree`, and the key is absent when nothing differs. Omit the flag
+  and the other two are empty and the warnings absent, which means nothing was
   checked rather than nothing was wrong: a refusal nobody attempted reads
   exactly like a merge nobody objected to, and that is what this flag exists to
   separate.

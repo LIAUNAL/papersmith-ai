@@ -34,6 +34,14 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import sys as _floor_sys
+if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-python >=3.11)
+    _floor_sys.stdout.write('{"ok": false, "error": "PYTHON_VERSION_UNSUPPORTED", "message": "this skill needs '
+                            'Python 3.11+; the running interpreter is %d.%d. Run it with the workspace '
+                            'environment (.micromamba/envs/papersmith/bin/python) or the smith interpreter."}\n'
+                            % _floor_sys.version_info[:2])
+    raise SystemExit(2)
+
 import argparse
 import datetime as dt
 import hashlib
@@ -942,9 +950,12 @@ def flow_svg(counts: dict, criteria: dict[str, str]) -> str:
 
     def box(x, y, w, lines, *, bold=False):
         h = 16 * len(lines) + 16
+        # Kept out of the f-string: a backslash-escaped quote inside a replacement field is a
+        # SyntaxError before Python 3.12, and this module must parse for its floor guard to run.
+        weight = ' font-weight="bold"'
         text = "".join(
             f'<text x="{x + 10}" y="{y + 22 + 16 * i}" font-size="12"'
-            f'{" font-weight=\"bold\"" if bold and i == 0 else ""}>{html.escape(line)}</text>'
+            f'{weight if bold and i == 0 else ""}>{html.escape(line)}</text>'
             for i, line in enumerate(lines))
         return h, f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="#fff" stroke="#000"/>' + text
 

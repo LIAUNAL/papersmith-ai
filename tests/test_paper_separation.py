@@ -114,16 +114,30 @@ class ClaimableSectionsTests(unittest.TestCase):
         self.assertEqual(result["titles"], ())
         self.assertEqual(result["reason"], "NO_HEADINGS")
 
-    def test_a_title_only_document_has_an_empty_remainder_and_is_unmeasured(self):
-        """The lone heading is a root span vacuously -- "every other
-        remaining heading" is an empty set, so the fixed point it reaches
-        is empty too."""
+    def test_a_single_section_document_claims_its_one_section(self):
+        """Issue #184 item 6: a document with one heading (a dataset page)
+        never partitions, so elimination would leave nothing and the source
+        could never be bound. Its one section is claimable instead."""
         outline = _outline("# Solo Title\n\nBody only, nothing else.\n")
         result = paper_separation.claimable_sections(outline)
-        self.assertEqual(result["state"], "unmeasured")
-        self.assertIsNone(result["level"])
-        self.assertEqual(result["titles"], ())
-        self.assertIsNotNone(result["reason"])
+        self.assertEqual(result["state"], "measured")
+        self.assertEqual(result["level"], 1)
+        self.assertEqual(result["titles"], ("Solo Title",))
+        self.assertIsNone(result["reason"])
+
+    def test_a_chain_of_single_headings_claims_the_last_section_standing(self):
+        """A title wrapping exactly one section is still eliminated; the
+        section it wraps is the one claimable heading."""
+        outline = _outline("# Dataset Page\n\nIntro.\n\n## Description\n\nBody.\n")
+        result = paper_separation.claimable_sections(outline)
+        self.assertEqual(result["state"], "measured")
+        self.assertEqual(result["titles"], ("Description",))
+
+    def test_a_multi_section_document_still_excludes_its_title(self):
+        outline = _outline("# Title\n\n## A\n\nBody.\n\n## B\n\nBody.\n")
+        result = paper_separation.claimable_sections(outline)
+        self.assertEqual(result["titles"], ("A", "B"))
+        self.assertNotIn("Title", result["titles"])
 
     def test_no_bare_heading_level_literal_governs_claimability(self):
         """Task 1.4's own generality check, run from within the suite too:
@@ -146,15 +160,14 @@ class ClaimableSectionsTests(unittest.TestCase):
         )
         _assert_mutation_reddened(self, proc)
 
-    def test_mutation_dropping_root_span_elimination_breaks_title_only_unmeasured(self):
-        """The second of the two fixtures 1.5 names explicitly: the lone
-        title must stop being reported as unmeasured once elimination is
-        skipped, because nothing removes it any more."""
+    def test_mutation_dropping_root_span_elimination_breaks_the_single_section_chain(self):
+        """The second fixture: a title wrapping one section must claim the
+        section, not the title, which only elimination ensures."""
         proc = _run_against_mutant(
             "remaining = _eliminate_root_spans(headings)",
             "remaining = list(headings)",
             "tests.test_paper_separation.ClaimableSectionsTests"
-            ".test_a_title_only_document_has_an_empty_remainder_and_is_unmeasured",
+            ".test_a_chain_of_single_headings_claims_the_last_section_standing",
             source_path=SKILL_SCRIPTS / "paper_separation.py",
         )
         _assert_mutation_reddened(self, proc)
@@ -333,6 +346,40 @@ class ScoreCutTests(unittest.TestCase):
             source_path=SKILL_SCRIPTS / "paper_separation.py",
         )
         _assert_mutation_reddened(self, proc)
+
+
+import test_paper_writing as tpw  # noqa: E402 -- the `separate` corpus fixture
+
+
+class SingleSectionSeparateTests(tpw._SeparationCorpusMixin, unittest.TestCase):
+    """Issue #184 item 6 through `separate` itself: a single-section source
+    is bound, and a multi-section document's own title is still refused."""
+
+    def test_a_single_section_dataset_page_settles_and_names_its_bind(self):
+        (self.proposals / "field-survey-r07.md").write_text(
+            "# CHB-MIT Scalp EEG Database\n\nRecordings from pediatric subjects.\n",
+            encoding="utf-8",
+        )
+        proposal = {"lineage": "field-survey", "assignments": [
+            {"block": "overview.block-a", "fact": "formulation",
+             "sections": ["CHB-MIT Scalp EEG Database"]},
+        ]}
+        result = self._compute(proposal)
+        self.assertEqual(result["total"], 0)
+        self.assertEqual(len(result["bind_invocations"]), 1)
+        self.assertIn("overview.block-a", result["bind_invocations"][0])
+        rounds = self._read_rounds()
+        self.assertEqual(len(rounds), 1)
+
+    def test_a_multi_section_documents_title_is_still_unclaimable(self):
+        proposal = {"lineage": "field-survey", "assignments": [
+            {"block": "overview.block-a", "fact": "formulation",
+             "sections": ["Field Survey of Widget Alignment"]},
+        ]}
+        with self.assertRaises(tpw.Refused) as ctx:
+            self._compute(proposal)
+        self.assertEqual(ctx.exception.code, "SEPARATION_SECTION_UNCLAIMABLE")
+        self.assertEqual(self._read_rounds(), ())
 
 
 class PurityTests(unittest.TestCase):

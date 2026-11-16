@@ -47,9 +47,11 @@ full-text URL, and places it loose under `guidance/<section>/`), `reuse`
 (read-only: for one block's open claims, which already-ingested,
 evidence-classed papers carry no verdict yet), and `exhaustion`
 (read-only, corpus-wide: every evidence-classed ingested paper's
-exhaustion state -- lists only, never deletes), `figure optimize`/`figure audit` (the TikZ optimizer and the figure-prose semantic auditor), and the `venue` group
+exhaustion state -- lists only, never deletes), `figure optimize`/`figure provenance`/`figure audit` (the TikZ optimizer, the manifest's script-and-data record, and the figure-prose semantic auditor), and the `venue` group
 (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` -- adapting the
-manuscript to a chosen journal under `paper/venues/<slug>/`; "Venue adaptation" below). To the
+manuscript to a chosen journal under `paper/venues/<slug>/`; "Venue adaptation" below), and
+`reorder` (moves canonical back-matter blocks into the order `verify`'s
+`back-matter-order` check expects; "Putting back matter in order" below). To the
 substitution engine, block ids
 stay opaque strings — shape only (`[A-Za-z0-9._-]+`), no meaning. The
 contract reader is what says which ids exist, what each requires, and where
@@ -91,6 +93,13 @@ byte region, and writes nothing:
 (Every verb accepts `--paper <dir>` to override the default `paper/` at the
 repository root; omit it and the default is used.)
 
+**Keep the digest you read.** The `digest` `status` lists for a block is its
+base: pass it back as `--expect-digest <sha256>` to `substitute`, `write` or
+`humanize --apply`, and the write refuses `BLOCK_CHANGED_SINCE_READ`,
+writing nothing, when another session wrote that block after you read it.
+Without the flag nothing is compared, exactly as before; with it, a stale
+copy can never silently replace newer prose.
+
 ## The four verbs
 
 | Verb | What it does | Refuses |
@@ -98,7 +107,7 @@ repository root; omit it and the default is used.)
 | `scaffold` | Creates `paper/main.tex`, `paper/refs.bib`, `paper/Figures/`, `paper/.gitkeep` if absent. Idempotent — a second run never touches an existing byte, hand edits included | `PAPER_OUTSIDE_REPOSITORY`, `PAPER_NOT_A_DIRECTORY`, `SCAFFOLD_ENTRY_WRONG_TYPE` |
 | `status` | Read-only block table: id, digest, byte region, per block | `PAPER_ABSENT`, `TEX_UNDECODABLE`, `MARKER_MALFORMED`, `BLOCK_DUPLICATED`, `BLOCK_UNPAIRED`, `BLOCK_NESTED` |
 | `open --block <id> (--after <id> \| --at-end)` | Installs an EMPTY begin/end pair at the named position. Never writes content — the first write to a new block is always `open` then `substitute` | adds `BLOCK_DUPLICATED`, `ANCHOR_ABSENT`, `OPEN_POSITION_REQUIRED`, `OPEN_POSITION_CONFLICT` |
-| `substitute --block <id> (--body <path\|-> \| --adopt)` | Replaces one block's body, or (`--adopt`) accepts the on-disk body as the new baseline without changing it | adds `BLOCK_ABSENT`, `BLOCK_HAND_EDITED`, `CONTENT_CARRIES_MARKER`, `NOTHING_TO_ADOPT`, `SUBSTITUTE_MODE_REQUIRED`, `ADOPT_BODY_CONFLICT`, `SUBSTITUTION_NOT_LOCAL`, `TEX_MOVED` |
+| `substitute --block <id> (--body <path\|-> \| --adopt) [--expect-digest <sha256>]` | Replaces one block's body, or (`--adopt`) accepts the on-disk body as the new baseline without changing it. `--expect-digest` is the block digest `status` listed when you read it; the write refuses when the block's recorded digest has moved since | adds `BLOCK_ABSENT`, `BLOCK_HAND_EDITED`, `BLOCK_CHANGED_SINCE_READ`, `CONTENT_CARRIES_MARKER`, `NOTHING_TO_ADOPT`, `SUBSTITUTE_MODE_REQUIRED`, `ADOPT_BODY_CONFLICT`, `SUBSTITUTION_NOT_LOCAL`, `TEX_MOVED` |
 
 Every JSON reply carries `"status": "ok"` (exit 0) or `"status": "refused",
 "code": "<CODE>", "detail": "<why>"` (exit 2). A successful `substitute`
@@ -190,6 +199,7 @@ in the reply that the audit was not separated from the draft.
 | `substitute` refuses `SUBSTITUTE_MODE_REQUIRED` / `ADOPT_BODY_CONFLICT` | Exactly one of `--body <path\|->` / `--adopt`, never zero, never both |
 | `substitute` refuses `CONTENT_CARRIES_MARKER` | The replacement body itself contains a line starting `%% paper-writing block` — strip it, this grammar cannot nest |
 | `substitute`/`open` refuses `SUBSTITUTION_NOT_LOCAL` | The in-memory candidate would have changed a byte outside the target block; nothing was written. This should never fire from ordinary use — report it as a defect if it does |
+| `substitute`, `write` or `humanize --apply` refuses `BLOCK_CHANGED_SINCE_READ` | Another write landed on that block after you read it; the detail names both digests. Run `status`, read the current body, rebuild the replacement on it and pass the new digest. Never drop `--expect-digest` to force the write |
 | `substitute`/`open` refuses `TEX_MOVED` | Something else wrote to `main.tex` between this call's read and its write. Re-run the command against the current file — never retry blind against stale offsets |
 | Any command refuses `PAPER_ABSENT` | Run `scaffold` first |
 
@@ -458,6 +468,8 @@ resolution (one of the ten fact ids). Recording either fixes it immediately
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py declare \
     --reopen repository-url
 ```
+
+`declare --fact` records the digest of the fact's source (`proposals/`, `experiments/`, the ingested evidence; `dataset` also covers `experiments/`). `readiness` and `phases` list `stale_facts` when that source changed since the declaration; that is a warning, not a refusal: check the value, then `declare --reopen <fact>` and declare it again.
 
 **A fact can also be DECLINED, not just resolved.** `declare --decline
 <fact-id> --reason <text> --condition <json>` records a fact the operator
@@ -828,6 +840,8 @@ cached resolved metadata — never appended, never hand-typed:
 | --- | --- | --- |
 | `bib build [--guidance <dir>]` | Rebuilds `refs.bib` from the cached, resolved AND ingested evidence records of the keys `main.tex` cites; a key dropped from the text leaves the bibliography while its records stay in the append-only store; checks both `\cite{}`/entry directions; a cited entry already in `refs.bib` with no evidence record refuses `ENTRY_UNSOURCED` before writing, leaving the file byte for byte | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED`, `CITE_WITHOUT_ENTRY` |
 | `bib refresh --cite-key <key> --metadata-digest <digest> [--resolver <r>] [--guidance <dir>]` | Relinks the record `bib build` reads for `<key>` to fresher cached metadata of the same work: appends one copy changing only `resolver` and `metadata_digest` | `ENTRY_UNSOURCED`, `ENTRY_NOT_INGESTED` |
+
+**`bib build` prefers the published record and normalizes what connectors send.** An entry whose metadata is the arXiv preprint (venue `arXiv`/`CoRR`, or a `10.48550/` DOI) takes the venue, year and DOI of a published record of the same normalized title already on disk: first the key's `resolved` record in `.paper-writing/references.json`, then any cached resolution under `.paper-writing/metadata/`. Authors and title stay the evidence record's own, and a `% published record: <provenance>` comment rides above the entry. With no such record it stays arXiv and the verb's JSON names the key under `warnings`; nothing is fetched, so offline it warns and never fails. HTML character references (`&amp;`, `&amp;amp;`, `&lt;`, `&#38;`) are decoded until none remain, then LaTeX-escaped once, so the rebuild is idempotent. Entry types follow the venue: none is `@misc`; a data-repository DOI (Zenodo, figshare, Dryad, Dataverse, PhysioNet, OpenNeuro, Mendeley Data, UCI) whose venue is not a journal or proceedings is `@misc` with `howpublished`; a proceedings venue (proceedings, conference, workshop, PMLR, NeurIPS, ICML, ICLR, ...) is `@inproceedings` with `booktitle`; anything else, including *Proceedings of the IEEE*, PNAS and *Proc. R. Soc.*, is `@article` with `journal`. Entries no rule touches are written byte for byte as before.
 
 **The SOTA atlas follows the citations.** When the workspace holding
 `paper/` also holds `sota-pool/atlas.json`, a `bib build` (or a `bib
@@ -1303,6 +1317,8 @@ titles a binding claims. That list is the repeatable `--section <title>`
 (singular), a different flag entirely; do not confuse the two when reading
 either command's own `--help`.
 
+A document with a single section (an ingested dataset page) claims that section; a title wrapping two or more sections is never claimable.
+
 ### Decision Gates (separate, bind)
 
 | Situation | Action |
@@ -1357,6 +1373,7 @@ capitalized accented words (names, institutions) are never read as Spanish.
 A paper that declares another main language in `main.tex` (babel's `main=`
 or last option, polyglossia's `\setmainlanguage`) is exempt from the Spanish
 check, never from the placeholder check.
+A span the paper marks as another language, `\foreignlanguage{<lang>}{…}` or an `otherlanguage` environment, is exempt from the Spanish check; a placeholder inside it still counts.
 
 A journal that receives only Spanish does not change this: the paper is written
 and verified in English, then translated as a derived file under
@@ -1398,6 +1415,11 @@ it refuses `F5_INVARIANT_VIOLATION` when a citation, number, statistic, or displ
 equation changed, and with `--apply` it substitutes the block only when the draft
 meets `--style-target` (default 0.20) unless `--force`, refusing
 `TARGET_SCORE_UNMET` otherwise. The audit delegates to the `ai-auditor` agent.
+Pass `--expect-digest <sha256>`, the block digest `status` listed when the
+revision started: `humanize` refuses `BLOCK_CHANGED_SINCE_READ` before judging
+a draft written against a block that has changed since. `--draft` must sit
+inside the repository (`PAPER_OUTSIDE_REPOSITORY`, whose detail says so); a
+scratch draft kept elsewhere goes in inline with `--replacement "$(cat <path>)"`.
 
 **Flow and redundancy.** Every style report also carries a `flow` key
 (`flow_score`, `flow_verdict` in the same three bands, and `findings`, each
@@ -1451,7 +1473,7 @@ anything itself.**
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>]` | Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>] [--expect-digest <sha256>]` | With `--expect-digest`, first refuses `BLOCK_CHANGED_SINCE_READ` when the block's recorded digest is no longer the one read, and checks it again at `substitute`. Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `BLOCK_CHANGED_SINCE_READ`, `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -1513,7 +1535,11 @@ named, currently-unused exception reserved for a sibling skill's own
    `{"latex": ..., "bindings": [...]}`. Write that JSON to a file.
 2. The orchestrating agent also delegates to the `contract-auditor` agent
    and writes its JSON verdict envelope to a second file.
-3. Run `write --draft <path> --audit <path>`. On `"status": "written"` the
+3. Run `write --draft <path> --audit <path> --expect-digest <sha256>`,
+   passing the block digest `status` listed before step 1 (record it then,
+   every time you delegate a draft). A block another session wrote in the
+   meantime refuses `BLOCK_CHANGED_SINCE_READ` before any gate runs or any
+   attempt is spent. On `"status": "written"` the
    block is done. On `"status": "audit-fired"`, hand the returned `fired`
    bullets and spans back to the redactor as explicit feedback and re-draft
    **exactly once** — a third submission under the same contract/evidence/
@@ -1810,15 +1836,35 @@ manifest (`components`, `encodings`, `caption`), and — once compiled —
 existing `substitute` verb's `\includegraphics`; no TikZ byte ever enters
 `main.tex`.
 
+**Provenance (optional `provenance` key).** So a figure can be redrawn
+later (a font fix, a renamed symbol) from what the repository holds, the
+manifest records the script that generates it and the data it plots:
+`"provenance": {"script": {"path": "<repo-relative>", "sha256": "<hex>"},
+"inputs": [{"path": "<repo-relative>", "sha256": "<hex>"}, ...]}`.
+`figure provenance` writes it; never hand-compute the digests. A
+hand-drawn diagram records its own `paper/Figures/<id>.tex` as the script
+and no `--input` (an empty `inputs` list is a recorded fact, not a gap).
+`render` and `figure audit` add `provenanceWarnings`, a list of
+`{code, role, path, message}` (`role` is `script`, `input`, or `inputs` for
+the list itself), and never refuse or spend a repair attempt on them:
+`FIGURE_PROVENANCE_UNRECORDED` (no script, or no input list),
+`FIGURE_PROVENANCE_OUTSIDE_REPOSITORY` (an absolute path or one escaping
+the repository), `FIGURE_PROVENANCE_MISSING` (the file is gone) and
+`FIGURE_PROVENANCE_CHANGED` (its sha256 differs; re-run `figure provenance`
+after a deliberate change) and `FIGURE_PROVENANCE_UNREADABLE` (the file exists
+but cannot be read). A manifest without the key renders and audits
+exactly as before, with the two `UNRECORDED` warnings.
+
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `render --figure-id <id> [--paper <dir>]` | Compiles `<id>.tex` standalone via exactly one `latexmk` call, cross-checks the manifest both directions, and scans stop A before ever spawning the compiler | `DIAGRAM_SOURCE_ABSENT`, `MANIFEST_SOURCE_MISMATCH`, `DIAGRAM_PLOTS_DATA`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_LOG_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED`, `LATEX_PACKAGE_ABSENT`, `REPAIR_BUDGET_SPENT` |
+| `render --figure-id <id> [--paper <dir>]` | Compiles `<id>.tex` standalone via exactly one `latexmk` call, cross-checks the manifest both directions, and scans stop A before ever spawning the compiler; every non-refused result carries `provenanceWarnings` (advisory) | `DIAGRAM_SOURCE_ABSENT`, `MANIFEST_SOURCE_MISMATCH`, `DIAGRAM_PLOTS_DATA`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_LOG_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED`, `LATEX_PACKAGE_ABSENT`, `REPAIR_BUDGET_SPENT` |
 | `render --figure-id <id> --section <section-id> --block <id> [--sections <dir>] [--paper <dir>]` | The same compile, and then the full obligation suite (components — only when the block declares `components_from`, excludes, caption, mandatory, cross-diagram separation) against the block's own `figure:` declaration | adds `MALFORMED_FIGURE_OBLIGATION`, `COMPONENT_MISMATCH`, `COMPONENTS_FACT_UNRESOLVED`, `COMPONENTS_FACT_NOT_A_LIST`, `EXCLUDED_COMPONENT`, `SHARED_COMPONENT`, `CAPTION_INCOMPLETE`, `MANDATORY_DIAGRAM_ABSENT` |
 | `render --figure-id <id> --acknowledge-reset [--paper <dir>]` | The explicit operator acknowledgement that clears a spent ledger — compiles nothing, never combined with a compile in the same call | (none beyond `render`'s own) |
 | `place --figure-id <id> --pdf <path> --provenance <path> [--paper <dir>]` | Places an already-measured figure's PDF — compiles nothing, requires a provenance record naming the run that produced it, and measures the PDF first (`paper_place.py`, the same rules `figure-review measure` reports): a plot carries a text layer, no full-page background, no margin wider than 4 pt, no in-figure title, and every text span prints between 0.70 and 0.90 x the body at the provenance's `printedWidthFraction` of `\textwidth` (1.0 by default; `figureKind: image` exempts a photograph from the text-layer rule only). No override: the fix is the figure or its declared width | `DIAGRAM_SOURCE_ABSENT` (reused: the named artifact this call needs is absent), `FIGURE_PDF_UNREADABLE`, `FIGURE_PROVENANCE_INVALID`, `FIGURE_MEASUREMENT_UNAVAILABLE`, `FIGURE_NO_TEXT_LAYER`, `FIGURE_FULL_PAGE_BACKGROUND`, `FIGURE_MARGIN_WASTE`, `FIGURE_IN_FIGURE_TITLE`, `FIGURE_TEXT_BELOW_PRINT_FLOOR`, `FIGURE_TEXT_ABOVE_PRINT_CAP` |
 | `figure optimize --figure-id <id> [--in-place \| --output <path>] [--strip-comments] [--no-compile] [--paper <dir>]` | Rewrites one diagram's TikZ source: prunes the libraries it can **prove** unused, adds the ones it detects as missing, factors repeated option lists into one `\tikzset`, then compiles the candidate and commits it only on a `success` verdict. `background=2pt` headers, relative positioning, and `% node:` markers are preserved by construction | `DIAGRAM_SOURCE_ABSENT`, `DIAGRAM_PLOTS_DATA`, `MANIFEST_SOURCE_MISMATCH`, `LATEX_TOOLCHAIN_ABSENT`, `LATEX_PACKAGE_ABSENT`, `LATEX_OUTCOME_UNEXPLAINED` |
 | `figure optimize --file <path.tex> [--strip-comments]` | Dry run: prints the optimized candidate for one source path and writes nothing (no manifest, so no cross-check applies) | `DIAGRAM_SOURCE_ABSENT` |
-| `figure audit --figure-id <id> --section <id> [--block <id>] [--sections <dir>] [--paper <dir>]` | Compares the manifest's declared components — **not** every `\node{}` string — against the section prose (the contract body plus the section's own `<section>.*` blocks in `paper/main.tex`; an absent or unparseable `main.tex` leaves the contract body alone), and the `components_from` fact's list against both. Emits `verdict` (`pass`/`fail`/`unmeasured`) plus `unmatched_nodes`, `missing_pipeline_steps`, `label_mismatches`, `warnings`, `remediation`, and writes `figure_audit.json` beside the figure's ledger | `DIAGRAM_SOURCE_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `SECTION_UNKNOWN`, `BLOCK_ABSENT` |
+| `figure provenance --figure-id <id> --script <path> [--input <path> ...] [--paper <dir>]` | Records the generating script and every data input in `<id>.diagram.json`'s `provenance` key, each as a repository-relative path with its sha256, replacing an earlier record and keeping every other key; checks every path before writing, so a refusal leaves the manifest byte-identical | `DIAGRAM_SOURCE_ABSENT` (no manifest), `PAPER_OUTSIDE_REPOSITORY`, `TARGET_UNREADABLE` |
+| `figure audit --figure-id <id> --section <id> [--block <id>] [--sections <dir>] [--paper <dir>]` | Compares the manifest's declared components — **not** every `\node{}` string — against the section prose (the contract body plus the section's own `<section>.*` blocks in `paper/main.tex`; an absent or unparseable `main.tex` leaves the contract body alone), and the `components_from` fact's list against both. Emits `verdict` (`pass`/`fail`/`unmeasured`) plus `unmatched_nodes`, `missing_pipeline_steps`, `label_mismatches`, `warnings`, `remediation`, `provenanceWarnings` (advisory, never changes the verdict), and writes `figure_audit.json` beside the figure's ledger | `DIAGRAM_SOURCE_ABSENT`, `SECTION_CONTRACTS_UNREADABLE`, `SECTION_UNKNOWN`, `BLOCK_ABSENT` |
 | `figure audit --file <path.tex> --manifest <path.json> --section <id> [--block <id>]` | The same audit for a figure outside `paper/Figures/`; `--file` requires `--manifest` | as above |
 
 **`figure optimize`'s two guards run even under `--no-compile`.** The manifest
@@ -2052,7 +2098,7 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
-| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (every block whose section contract opens a paragraph with it — the introduction's paragraphs 2–7, the related-work panorama, closing and synthesis pointer, the limitations' failure-mode paragraph, the conclusions' findings and future-work blocks, and every declaration — opens a paragraph of its own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
+| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required; a cited key with no title on disk (`not_found`, `unreachable`) or no abstract also lands in the report's top-level `warnings` as `CITED_SOURCE_WITHOUT_TITLE` or `CITED_SOURCE_WITHOUT_ABSTRACT` with its keys: visible, never a failure, so offline work is never blocked); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (every block whose section contract opens a paragraph with it — the introduction's paragraphs 2–7, the related-work panorama, closing and synthesis pointer, the limitations' failure-mode paragraph, the conclusions' findings and future-work blocks, and every declaration — opens a paragraph of its own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
 **`contribution-list` holds only the blocks that enumerate.** A block that
 requires the contributions fact and names at least one declared contribution
@@ -2139,6 +2185,32 @@ byte offsets, both front lists with counts, and three mechanical
 sub-results (both closings present, fronts equal, front counts equal) as
 named booleans — evidence a human can act on without making the reading
 themselves.
+
+**Coherence warnings (#180, #183).** `verify` also reports, under its own `coherence` key, nine advisory checks computed by `paper_coherence.py`: `caption-results`, `caption-interpretation`, `caption-duplicates`, `caption-identifiers` (a caption states what the artefact is and decodes its key: no result values, interpretive verbs, sentences repeated from the body, or identifier codes such as `K1`, `r0h0`, `subject-v300`), `overclaiming` and `claims-findings` (abstract and introduction claims need a results sentence sharing a number or two key terms), `not-performed` (excluded or not-run work outside the limitations), `symbol-redefinition` (the methods' `$x$ denotes ...` table against later definitions) and `naming-consistency` (variants of the declared contribution and chain names). Each entry is `severity: warning` with verdict `pass`, `warn` or `unmeasured`, its findings and its rule; none counts toward `holds`/`fails`/`unmeasured` or changes `clean`.
+
+### Putting back matter in order: `reorder`
+
+`verify` reports `back-matter-order`; `reorder` repairs it, using the same
+check to decide which blocks are out of place. A declaration block
+(`back-matter.*`, not an appendix) found after the reference list moves to
+just above it (above a `\bibliographystyle` line directly over it); an
+appendix block found before the reference list moves to just after its last
+line (`\end{thebibliography}` for a hand-written list). Each block moves whole
+and byte for byte, every byte outside the blocks keeps its order, and the
+result must pass `back-matter-order` before anything is written.
+
+```bash
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py reorder          # report the moves
+.venv/bin/python skills/paper-writing/scripts/paper_cli.py reorder --apply  # write them
+```
+
+| Verb | What it does | Refuses |
+| --- | --- | --- |
+| `reorder [--apply]` | Reports `moves` (`block`, `from_line`, `to`: `before-references` or `after-references`, in document order), `changed`, `applied` and the resulting `back_matter_order` verdict. Writes only with `--apply`, through the same compare-and-swap, one-deep pre-image and atomic replace `substitute` uses. Already in order: no moves and nothing written, so a second `--apply` is a no-op | `REORDER_LAYOUT_AMBIGUOUS` (no reference list, more than one, a reference list inside a block, a `thebibliography` with no end, or a block to move that ends the file without a newline), `TEX_MOVED`, plus the marker codes `status` refuses |
+
+`reorder` refusing `REORDER_LAYOUT_AMBIGUOUS` names the layout it could not
+read; fix that by hand (keep one reference list, outside every block), then
+run it again.
 
 ### Decision Gates (verify)
 

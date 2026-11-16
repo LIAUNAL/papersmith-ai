@@ -1,5 +1,5 @@
 {
-  "pinned_commit": "e36a5393",
+  "pinned_commit": "7fa3f241",
   "roots": [
     {
       "key": "tracker",
@@ -195,13 +195,14 @@
     },
     {
       "key": "pixelrag",
-      "tier": 3,
-      "state": "needs-decision",
+      "tier": 2,
+      "state": "fixed-on-branch",
       "title": "Describe extracted figures",
-      "fix": "Keyless vs model decision.",
+      "fix": "Keyless, local pixelrag skill: deterministic figure facts plus the session agent's description, validated and stored beside the image (decision: keyless, like paper-ingestion).",
       "issues": [
         13
-      ]
+      ],
+      "proof": "tests/test_pixelrag.py; commit 7fa3f241"
     },
     {
       "key": "experiment-disclosure",
@@ -257,15 +258,62 @@
       "key": "gate-decoy-flakes",
       "title": "Tests that pass under the empty home and fail intermittently under the decoy home",
       "tier": 2,
-      "state": "open",
-      "fix": "Keep test fixtures from starting background work that reads the home (AI-archive sync); capture the failing assertion of the remaining flake and fix its cause.",
-      "proof": "tests/test_command_center_terminal.py footer test patched; gate prints E lines since #161",
+      "state": "fixed-on-branch",
+      "fix": "Ask each identical request once per search (single-flight per cache key in journal_cli Http.get_json), so a first search's cached count no longer depends on thread timing.",
+      "proof": "tests/test_journal_finder.py::CacheTests::test_one_search_never_asks_the_same_request_twice; 16/16 concurrent runs; commit 1aeaaa38",
       "issues": [
         166
       ],
       "evidence": {
         "166": "tests/test_journal_finder.py:1963 failed once under the decoy home on CI"
       }
+    },
+    {
+      "key": "writer-tool-defects",
+      "tier": 2,
+      "state": "fixed-on-branch",
+      "title": "paper-writing tools lose or misplace work: stale overwrites, English-only parsers, missing verbs, a floor nobody enforced",
+      "fix": "--expect-digest compare-and-swap on substitute/write/humanize, reorder verb, multilingual discussion labels, \\foreignlanguage exemption, single-section separate, stale-fact warnings, and a Python 3.11 floor guard in every skill CLI.",
+      "proof": "tests/test_paper_block_cas.py, test_paper_reorder.py, test_paper_declarations_stale.py, test_python_floor.py; independent verifier PASS on 5b772644; reviews acknowledged",
+      "issues": [
+        184,
+        185
+      ]
+    },
+    {
+      "key": "deterministic-coherence",
+      "tier": 2,
+      "state": "fixed-on-branch",
+      "title": "Coherence, caption and figure checks existed only as agent judgement",
+      "fix": "paper_coherence.py advisory checks in verify (captions, overclaiming, claims-findings, not-performed, symbols, names) and figure-review measuring from the compiled document with width, whitespace, numeric-text advisories and figure provenance.",
+      "proof": "tests/test_paper_coherence.py, test_figure_review_measure.py, test_paper_figure_provenance.py",
+      "issues": [
+        180,
+        181,
+        183
+      ]
+    },
+    {
+      "key": "reproducibility-records",
+      "tier": 2,
+      "state": "fixed-on-branch",
+      "title": "Run records did not name host, hardware or threads, and cross-host combinations went unflagged",
+      "fix": "runtime block in bootstrap.json, shard.json, the kit benchmark and timing.json; runtimeWarnings in parallelism estimate/plan and verify --shards.",
+      "proof": "tests/test_run_record_host.py, test_shard_runtime_warnings.py",
+      "issues": [
+        186
+      ]
+    },
+    {
+      "key": "citation-integrity",
+      "tier": 3,
+      "state": "partly-fixed-on-branch",
+      "title": "Citations can rest on sources whose support is never checked",
+      "fix": "Done: bib build prefers published records and normalizes entities and types; verify warns on cited sources without title or abstract. Open: the opt-in cite-once policy and an auditor pass on claim/quote support, which need a maintainer decision.",
+      "proof": "tests/test_paper_bib_published.py, test_paper_verify_references.py",
+      "issues": [
+        182
+      ]
     }
   ]
 }

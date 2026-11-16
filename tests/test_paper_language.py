@@ -122,6 +122,34 @@ class ManuscriptScanTests(unittest.TestCase):
                 self.assertEqual(report["spanish"], [])
                 self.assertEqual(len(report["placeholders"]), 1)
 
+    def test_a_foreignlanguage_span_is_exempt(self) -> None:
+        # Issue #184 item 3: a funding-programme title kept in its original language.
+        title = "Convocatoria para el fortalecimiento de la investigación en las regiones"
+        tex = ("\\begin{document}\nThis work was funded by the programme "
+               "\\foreignlanguage{spanish}{" + title + "} under grant 123.\n\\end{document}\n")
+        report = paper_language.scan(tex)
+        self.assertEqual(report["spanish"], [])
+        self.assertTrue(report["clean"])
+
+    def test_a_multiline_foreignlanguage_span_with_nested_braces_is_exempt(self) -> None:
+        tex = ("\\begin{document}\nFunded by \\foreignlanguage{spanish}{Programa de "
+               "\\textit{ciencia} para\n" + SPANISH_LINE + "} in 2024.\n\\end{document}\n")
+        self.assertEqual(paper_language.scan(tex)["spanish"], [])
+
+    def test_an_otherlanguage_environment_is_exempt(self) -> None:
+        for env in ("otherlanguage", "otherlanguage*"):
+            with self.subTest(env=env):
+                tex = ("\\begin{document}\nEnglish prose.\n\\begin{" + env + "}{spanish}\n"
+                       + SPANISH_LINE + "\n\\end{" + env + "}\n\\end{document}\n")
+                self.assertEqual(paper_language.scan(tex)["spanish"], [])
+
+    def test_spanish_outside_the_span_is_still_reported_and_placeholders_inside_still_count(self) -> None:
+        tex = ("\\begin{document}\n\\foreignlanguage{spanish}{Programa nacional} TODO\n"
+               "\\foreignlanguage{spanish}{pendiente}\n" + SPANISH_LINE + "\n\\end{document}\n")
+        report = paper_language.scan(tex)
+        self.assertEqual([hit["line"] for hit in report["spanish"]], [4])
+        self.assertEqual([hit["marker"] for hit in report["placeholders"]], ["TODO", "pendiente"])
+
     def test_babel_with_english_as_main_language_is_still_checked(self) -> None:
         tex = ("\\documentclass{article}\n\\usepackage[spanish,english]{babel}\n\\begin{document}\n"
                + SPANISH_LINE + "\n\\end{document}\n")

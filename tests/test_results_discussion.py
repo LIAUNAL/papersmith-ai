@@ -781,6 +781,59 @@ class CliScaffoldTest(CliCase):
         self.assertEqual(json.loads(proc.stdout)["stage"], "poc")
 
 
+SPANISH_PROTOCOL = """<!-- proposal-workspace:artifact:v1 -->
+# Un título
+
+## Experimento [exp:E1] — Clasificación híbrida
+
+- **Hipótesis:** El modelo híbrido supera a la línea base.
+- **Criterio de éxito:** Exactitud balanceada de al menos 0.85.
+
+### Reporte esperado: Experimento E1
+
+- **Hipótesis:** se ignora dentro del reporte esperado
+
+## Experimento [exp:E2] — Ablación
+
+- **Prioridad:** ablación
+"""
+
+
+class CliScaffoldLanguageTest(CliCase):
+    """Issue #184 item 2: a protocol written in Spanish still yields its hypotheses,
+    and a field the scaffold cannot read is named, never left silently empty."""
+
+    def scaffold_with(self, text: str) -> tuple[int, dict, dict]:
+        _write(self.product.root / "experiments" / "experiments-demo-v01.md", text)
+        exit_code, out, _ = self.run_cli("scaffold", "--product", str(self.product.folder))
+        written = json.loads((self.product.folder / "Results" / "discussion.json").read_text(encoding="utf-8"))
+        return exit_code, out, written
+
+    def test_spanish_labels_are_read(self) -> None:
+        exit_code, out, written = self.scaffold_with(SPANISH_PROTOCOL)
+        self.assertEqual((exit_code, out["ok"], out["hypotheses"]), (0, True, 2))
+        first = written["hypotheses"][0]
+        self.assertEqual(first["statement"], "El modelo híbrido supera a la línea base.")
+        self.assertEqual(first["criterion"], "Exactitud balanceada de al menos 0.85.")
+
+    def test_unreadable_fields_are_named(self) -> None:
+        _exit, out, written = self.scaffold_with(SPANISH_PROTOCOL)
+        self.assertEqual(written["hypotheses"][1]["statement"], "")
+        unread = [w for w in out["warnings"] if "could not read" in w]
+        self.assertEqual(len(unread), 2, out["warnings"])
+        self.assertTrue(any("E2" in w and "Hypothesis" in w for w in unread), unread)
+        self.assertTrue(any("E2" in w and "Success criterion" in w for w in unread), unread)
+        self.assertFalse(any("E1" in w for w in unread), unread)
+
+    def test_english_protocol_still_parsed_without_spurious_warnings(self) -> None:
+        _exit, out, written = self.scaffold_with(PROTOCOL)
+        self.assertEqual(written["hypotheses"][0]["statement"],
+                         "The hybrid model beats the baseline, with `p < 0.05`.")
+        unread = [w for w in out["warnings"] if "could not read" in w]
+        self.assertEqual(unread, [f"experiment E2: could not read its Success criterion from "
+                                  f"experiments/experiments-demo-v01.md; fill it by hand"])
+
+
 class CliCheckTest(CliCase):
     def test_complete_exits_zero(self) -> None:
         self.product.write_discussion(good())

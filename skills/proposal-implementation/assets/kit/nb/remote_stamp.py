@@ -26,11 +26,13 @@ the repository from its own path. Standard library only at import time;
 from __future__ import annotations
 
 import functools
+import importlib.metadata
 import importlib.util
 import json
 import os
 import platform
 import subprocess
+import sys
 from pathlib import Path
 
 #: The variable the remote runner exports around the call it makes.
@@ -72,6 +74,108 @@ def sources_digest(repository: Path | None = None) -> str:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.source_digest(repository, Path(__file__).resolve().parent.name)
+
+
+# --- The run's runtime: host, hardware, libraries, threads (#186) -----------
+# The same block is written by every run record (the runner's `bootstrap.json`,
+# the kit's `shard.json` and bounded-benchmark summary, the timing probe's
+# `timing.json`), each file keeping its own copy because each runs alone in a
+# different interpreter. Re-running one configuration on another machine moves
+# per-seed results, so a record names where it ran; an analysis that pools
+# records from several hosts can then say so. Standard library only; `torch`
+# is read only when the caller holds it or it is already imported.
+
+#: The label a job exports for the host it runs on (`generate-job --env
+#: MVIA_TIMING_HOST=<host>:<owner>`); without it, the machine's node name.
+HOST_LABEL_ENV = "MVIA_TIMING_HOST"
+#: The thread-count variables that change a run's speed and, through the order
+#: of floating-point reductions, its results.
+THREAD_ENV = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+#: The libraries whose installed version the record names, when installed.
+LIBRARIES = ("numpy", "torch", "scikit-learn")
+
+
+def host_label() -> str:
+    """`MVIA_TIMING_HOST` when the job set it, else `host-<12 hex>`: a digest of the machine's node name,
+    stable per machine but never the name itself, which on a personal machine often carries its owner's
+    name. `unknown-host` when the machine reports no node name, so a record never holds a null label."""
+    label = os.environ.get(HOST_LABEL_ENV, "").strip()
+    if label:
+        return label
+    node = platform.node()
+    if not node:
+        return "unknown-host"
+    import hashlib
+    return "host-" + hashlib.sha256(node.encode("utf-8")).hexdigest()[:12]
+
+
+def cpu_model() -> str | None:
+    """The CPU's model name, read where the operating system states it."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True,
+                                 text=True, timeout=5, check=False)
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+        elif sys.platform.startswith("linux"):
+            text = Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                key, _, value = line.partition(":")
+                if key.strip().lower() == "model name" and value.strip():
+                    return value.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return platform.processor() or None
+
+
+def gpu_model(torch=None) -> str | None:
+    """The CUDA device's name when `torch` sees one, else `None`."""
+    torch = torch if torch is not None else sys.modules.get("torch")
+    try:
+        cuda = getattr(torch, "cuda", None)
+        if cuda is not None and cuda.is_available():
+            return str(cuda.get_device_name(0))
+    except Exception:  # noqa: BLE001  (a broken driver names no GPU; the run goes on)
+        return None
+    return None
+
+
+def library_versions(torch=None) -> dict:
+    """Python and each of `LIBRARIES` that is installed, by installed version."""
+    versions = {"python": platform.python_version()}
+    for name in LIBRARIES:
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except Exception:  # noqa: BLE001  (not installed, or installed without metadata)
+            continue
+    if torch is not None and getattr(torch, "__version__", None):
+        versions["torch"] = str(torch.__version__)
+    return versions
+
+
+def thread_settings(torch=None) -> dict:
+    """`torch.get_num_threads()` (or `None`) and each of `THREAD_ENV` as set (or `None`)."""
+    torch = torch if torch is not None else sys.modules.get("torch")
+    threads = None
+    getter = getattr(torch, "get_num_threads", None)
+    if callable(getter):
+        try:
+            threads = int(getter())
+        except Exception:  # noqa: BLE001
+            threads = None
+    settings = {"torch": threads}
+    settings.update({name: os.environ.get(name) for name in THREAD_ENV})
+    return settings
+
+
+def runtime_record(torch=None) -> dict:
+    """`{host, hostSource, hardware, libraries, threads}` for this process."""
+    torch = torch if torch is not None else sys.modules.get("torch")
+    labelled = bool(os.environ.get(HOST_LABEL_ENV, "").strip())
+    return {"host": host_label(), "hostSource": HOST_LABEL_ENV if labelled else "platform.node digest",
+            "hardware": {"machine": platform.machine() or None, "cpu": cpu_model(),
+                         "cpuCount": os.cpu_count(), "gpu": gpu_model(torch)},
+            "libraries": library_versions(torch), "threads": thread_settings(torch)}
 
 
 def device_record(device=None) -> dict:
@@ -116,7 +220,8 @@ def write_shard(summary: dict, directory=None, *, device=None,
     """Write `shard.json` under the runner; do nothing anywhere else.
 
     `summary` lands under `runs`; the stamp adds `mode`, `evidence.commit`,
-    `evidence.sourcesDigest` and `environment.device`. Written into the
+    `evidence.sourcesDigest`, `environment.device` and `runtime` (host,
+    hardware, library versions, thread settings). Written into the
     working directory -- the runner's own, where it collects outputs -- unless
     `directory` names another. Returns the path written, or `None` when
     `FORGE_RUN_MODE` is not set.
@@ -130,6 +235,9 @@ def write_shard(summary: dict, directory=None, *, device=None,
         "evidence": {"commit": commit(repository),
                      "sourcesDigest": sources_digest(repository)},
         "environment": {"device": device_record(device)},
+        # A top-level key of its own, so a distribution that declares
+        # `environment` identical across shards is not refused by it.
+        "runtime": runtime_record(),
         "runs": summary,
     }
     folder = Path(directory) if directory is not None else Path.cwd()

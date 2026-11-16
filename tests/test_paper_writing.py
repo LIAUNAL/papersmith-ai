@@ -8986,8 +8986,12 @@ class RefusalRosterTests(unittest.TestCase):
         section no non-sharing assignment of the same cut claims
         (SEPARATION_SHARE_UNCLAIMED).
 
-        226 -> 238: `translate` adds 12 TRANSLATION_* codes."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 238)
+        226 -> 238: `translate` adds 12 TRANSLATION_* codes.
+
+        238 -> 240 (daprosero-backlog T2): `--expect-digest` on substitute,
+        humanize --apply and write refuses BLOCK_CHANGED_SINCE_READ (#185), and
+        `reorder` refuses REORDER_LAYOUT_AMBIGUOUS (#184 item 4)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 240)
 
 
 class ObjectiveNorthTests(unittest.TestCase):
@@ -14638,19 +14642,18 @@ class PythonFloorGuardTests(unittest.TestCase):
     own front door now refuses `PYTHON_VERSION_UNSUPPORTED` by name before
     any command runs.
 
-    `SKILL_PYTHON_FLOOR = (3, 7)` is MEASURED, not picked: every one of the
-    31 shipped `paper_*.py` modules (and the shared `impl_refusals.py`)
-    opens with `from __future__ import annotations` (PEP 563, 3.7+), the
-    highest-versioned feature any of them use -- no walrus operator, no
-    `match`/`case`, no PEP 604 `X | Y` outside an annotation, no dict-union
-    `|`, no `str.removeprefix`/`removesuffix`, scanned for across every
-    shipped script and found nowhere.
+    `SKILL_PYTHON_FLOOR = (3, 11)` is the package's own floor
+    (`pyproject.toml` requires-python >=3.11, #184 item 5): skills run with
+    an older system `python3` crashed on runtime-evaluated PEP 604 unions,
+    so the floor is enforced rather than kept compatible.
 
-    A pre-3.7 interpreter cannot even PARSE `paper_cli.py` to reach this
-    check (`from __future__ import annotations` is itself the 3.7+ syntax
-    feature), so the comparison can only be proven by telling a real,
-    fully-capable interpreter that it is older -- `sys.version_info`
-    patched for the duration of one call, restored immediately after.
+    A real interpreter below the floor never reaches this check: the
+    module-level guard at the top of `paper_cli.py` refuses it before any
+    import (`tests/test_python_floor.py` runs that with a real old
+    interpreter when one exists). So this in-`main` comparison is proven by
+    telling a fully-capable interpreter that it is older --
+    `sys.version_info` patched for the duration of one call, restored
+    immediately after.
     """
 
     def test_an_interpreter_at_the_floor_is_accepted(self) -> None:
@@ -14670,8 +14673,8 @@ class PythonFloorGuardTests(unittest.TestCase):
             with self.assertRaises(paper_cli.Refused) as ctx:
                 paper_cli._require_supported_python()
         self.assertEqual(ctx.exception.code, "PYTHON_VERSION_UNSUPPORTED")
-        self.assertIn("3.6", ctx.exception.detail)
-        self.assertIn("3.7", ctx.exception.detail)
+        self.assertIn("3.10", ctx.exception.detail)
+        self.assertIn("3.11", ctx.exception.detail)
 
     def test_main_itself_refuses_before_dispatching_any_command(self) -> None:
         """The check runs inside `main()`, ahead of argument parsing and

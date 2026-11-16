@@ -35,6 +35,11 @@ And the pure engine underneath, reusable without touching disk:
     build_open_candidate(...) -> bytes              (pure; the in-memory half
                                                        of open)
     identity_invariant(...)   -> None               (raises SUBSTITUTION_NOT_LOCAL)
+    check_expected_digest(...) -> None              (raises BLOCK_CHANGED_SINCE_READ)
+    check_base_digest(paper_dir, block_id, expected) -> None (disk-reading
+                                                       twin of the above)
+    commit_candidate(...)     -> None               (CAS, pre-image, atomic
+                                                       replace; raises TEX_MOVED)
 """
 from __future__ import annotations
 
@@ -304,12 +309,52 @@ def _rewrite_begin_digest(pre: bytes, begin: dict, new_digest: str) -> bytes:
     )
 
 
+def check_expected_digest(block_id: str, begin: dict, expected_digest: str | None) -> None:
+    """The compare-and-swap on a block's base (#185): refuses
+    `BLOCK_CHANGED_SINCE_READ` when the digest the block's begin marker
+    records now differs from `expected_digest`, the one the caller read
+    (the `digest` `status` lists). `None` checks nothing, so every caller
+    that never passes a base keeps its previous behaviour exactly.
+
+    The recorded digest is the one shape compared: it is what `status`
+    reports, what `substitute` rewrites on every write and what `--adopt`
+    re-baselines, so any write another session made since the read moves
+    it. A hand edit that left the marker alone is `BLOCK_HAND_EDITED`'s
+    business, not this check's.
+    """
+    if expected_digest is None:
+        return
+    if begin["digest"] != expected_digest.lower():
+        raise Refused(
+            "BLOCK_CHANGED_SINCE_READ",
+            f"{block_id!r}: read at sha256={expected_digest.lower()}, now records "
+            f"sha256={begin['digest']}; another write landed since it was read. Run status, "
+            "read the current body and rebuild the replacement on it",
+        )
+
+
+def check_base_digest(paper_dir: Path, block_id: str, expected_digest: str | None) -> None:
+    """`check_expected_digest` against `<paper_dir>/main.tex` as it is now,
+    for a verb that wants to refuse a stale base before any of its own work
+    (`write`, before its gates spend an attempt). Writes nothing.
+    Refuses `BLOCK_ABSENT` when `block_id` has no pair.
+    """
+    if expected_digest is None:
+        return
+    validate_block_id(block_id)
+    parsed = parse(resolve_main_tex(paper_dir).read_bytes())
+    if block_id not in parsed.pairs:
+        raise Refused("BLOCK_ABSENT", f"no block named {block_id!r}")
+    check_expected_digest(block_id, parsed.pairs[block_id][0], expected_digest)
+
+
 def build_candidate(
     pre: bytes,
     parsed: ParsedDocument,
     block_id: str,
     new_body: bytes | None,
     adopt: bool,
+    expected_digest: str | None = None,
 ) -> tuple[bytes, bytes]:
     """The in-memory half of the substitution algorithm (design steps 1–6).
 
@@ -324,7 +369,10 @@ def build_candidate(
     content check). In adopt mode (`adopt=True`): refuses `NOTHING_TO_ADOPT`
     when the on-disk body already matches the recorded digest; otherwise
     rewrites the digest to match the on-disk body and leaves that body
-    untouched.
+    untouched. With `expected_digest`, either mode then refuses
+    `BLOCK_CHANGED_SINCE_READ` when the recorded digest is no longer the one
+    the caller read (`check_expected_digest`), after the mode's own first
+    check so every earlier refusal keeps its order.
     """
     if block_id not in parsed.pairs:
         raise Refused("BLOCK_ABSENT", f"no block named {block_id!r}")
@@ -339,6 +387,7 @@ def build_candidate(
                 "NOTHING_TO_ADOPT",
                 f"{block_id!r}: on-disk digest already matches the recorded sha256={begin['digest']}",
             )
+        check_expected_digest(block_id, begin, expected_digest)
         written_body = on_disk_body
         written_digest = on_disk_digest
     else:
@@ -347,6 +396,7 @@ def build_candidate(
                 "BLOCK_HAND_EDITED",
                 f"{block_id!r}: expected sha256={begin['digest']}, found sha256={on_disk_digest}",
             )
+        check_expected_digest(block_id, begin, expected_digest)
         assert new_body is not None
         for _, _, content in _iter_lines(new_body):
             if content.startswith(MARKER_PREFIX):
@@ -434,6 +484,21 @@ def read_status(paper_dir: Path) -> dict:
     return status(tex_path.read_bytes())
 
 
+def commit_candidate(paper_dir: Path, tex_path: Path, pre: bytes, candidate: bytes) -> None:
+    """Steps 8–9 of `substitute` for any verb that built a whole-file
+    candidate from `pre`: refuses `TEX_MOVED` when `main.tex` changed since
+    `pre` was read, then writes the one-deep pre-image and atomically
+    replaces `main.tex`. The caller has already run `identity_invariant`.
+    """
+    if hashlib.sha256(tex_path.read_bytes()).hexdigest() != hashlib.sha256(pre).hexdigest():
+        raise Refused(
+            "TEX_MOVED",
+            "main.tex changed on disk between this call's read and its write",
+        )
+    _atomic_replace(_pre_image_path(paper_dir), pre)
+    _atomic_replace(tex_path, candidate)
+
+
 def substitute(
     paper_dir: Path,
     block_id: str,
@@ -441,6 +506,7 @@ def substitute(
     new_body: bytes | None = None,
     adopt: bool = False,
     contract: Path | None = None,
+    expected_digest: str | None = None,
     clock=paper_region.default_clock,
 ) -> dict:
     """The full algorithm against `<paper_dir>/main.tex`, 9 steps plus one
@@ -449,7 +515,9 @@ def substitute(
     1–2. Read `main.tex` binary; digest it.
     3.   Scan and pair every marker (`MARKER_MALFORMED`, `BLOCK_UNPAIRED`,
          `BLOCK_DUPLICATED`, `BLOCK_NESTED`, `BLOCK_ABSENT`).
-    4–6. `build_candidate` — hand-edit check, marker-in-body check, build.
+    4–6. `build_candidate` — hand-edit check, the optional base-digest
+         check (`expected_digest`, `BLOCK_CHANGED_SINCE_READ`), marker-in-
+         body check, build.
     7.   `identity_invariant` on the candidate, in memory
          (`SUBSTITUTION_NOT_LOCAL`).
     8.   Re-read `main.tex`; compare against the digest from step 2 — a
@@ -481,7 +549,9 @@ def substitute(
     pre_digest = hashlib.sha256(pre).hexdigest()
 
     parsed = parse(pre)
-    candidate, written_body = build_candidate(pre, parsed, block_id, new_body, adopt)
+    candidate, written_body = build_candidate(
+        pre, parsed, block_id, new_body, adopt, expected_digest=expected_digest,
+    )
     identity_invariant(pre, candidate)
 
     current = tex_path.read_bytes()

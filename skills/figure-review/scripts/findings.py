@@ -31,6 +31,8 @@ import figure_dimensions  # noqa: E402
 #: A locally-owned duplicate of paper_tikz's `_DOCUMENTCLASS_RE` shape --
 #: a LaTeX fact this skill reads independently, never imported.
 _DOCUMENTCLASS_RE = re.compile(r"\\documentclass(?:\[(?P<options>[^\]]*)\])?\{(?P<cls>[^}]*)\}")
+#: Advisory checks reported beside the roster (never a failing verdict).
+ADVISORY_NAMES = ("numeric-text", "width-share", "page-whitespace")
 _BORDER_RE = re.compile(r"\bborder\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*pt")
 
 
@@ -64,7 +66,7 @@ def _point_box(box, pt_per_px: float | None) -> list | None:
 def build_visual(
     *, width: int, height: int, gray, tool: str, dpi, dpi_source: str,
     color_model: str, declared_border_pt: float | None, boxes: list | None = None,
-    vector: dict | None = None,
+    vector: dict | None = None, advisories: dict | None = None, sources: dict | None = None,
 ) -> dict:
     """Assemble the full `visual` dict: every roster dimension present
     exactly once (`visual-finding-boundary`, `Requirement: Every
@@ -82,6 +84,14 @@ def build_visual(
     `printed-font-range`, `background`, `whitespace`, `in-figure-title`);
     when omitted they stay `unmeasured` with the roster's
     `PDF_NOT_MEASURED`, the way the raster dimensions do without a raster.
+
+    `advisories` (spec S2 of `odd/tasks/daprosero-backlog.md`) sit beside
+    the roster, never inside it: `numeric-text` (from `vector`),
+    `width-share` and `page-whitespace` (from the compiled manuscript,
+    `page_space`). Each is always present; an advisory reads `advisory`,
+    `pass` or `unmeasured` with a reason, and never fails the figure.
+    `sources` records where the body size, printed width and text width
+    came from.
     """
     dimensions = {
         name: {"verdict": "unmeasured", "reason": figure_dimensions.DEFAULT_REASONS[name]}
@@ -130,12 +140,21 @@ def build_visual(
         "pixelHeight": height, "ptPerPx": pt_per_px,
         "declaredBorderPt": declared_border_pt,
     }
-    return {"provenance": provenance, "dimensions": dimensions}
+    advisory = {
+        name: {"verdict": "unmeasured", "reason": "PDF_NOT_MEASURED"} for name in ADVISORY_NAMES
+    }
+    if (vector or {}).get("numeric-text"):
+        advisory["numeric-text"] = vector["numeric-text"]
+    for name, value in (advisories or {}).items():
+        if name in advisory and value:
+            advisory[name] = value
+    return {"provenance": provenance, "dimensions": dimensions,
+            "advisories": advisory, "sources": dict(sources or {})}
 
 
 def measure_figure(
     png_path: Path, raster_provenance: dict, *, tex_path: Path | None = None,
-    vector: dict | None = None,
+    vector: dict | None = None, advisories: dict | None = None, sources: dict | None = None,
 ) -> dict:
     """The end-to-end entry point `review_cli.py measure` calls:
     `png_read` -> `geometry` -> this module's assembly, using the
@@ -154,5 +173,5 @@ def measure_figure(
         dpi_source=raster_provenance.get("dpiSource"),
         color_model=raster_provenance.get("colorModel"),
         declared_border_pt=declared_border_pt,
-        vector=vector,
+        vector=vector, advisories=advisories, sources=sources,
     )

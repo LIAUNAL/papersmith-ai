@@ -216,7 +216,7 @@ def _stage_contract_audit(contract: BlockContract, draft: dict, audit_account: d
 
 def write_block(
     paper_dir: Path, contract: BlockContract, draft: dict, audit_account: dict,
-    *, grounding_account: dict | None = None,
+    *, grounding_account: dict | None = None, expected_digest: str | None = None,
 ) -> dict:
     """One `write` invocation for one block (`writing-orchestration` spec,
     `Requirement: Pipeline Stage Order`). Stages run in order: readiness,
@@ -235,6 +235,10 @@ def write_block(
     (`Requirement: Exhaustion Leaves The Block Unwritten`) — `substitute` is
     never reached on that path, so `main.tex` stays byte-identical to its
     pre-`write` state.
+
+    `expected_digest` (#185) is the block digest the orchestrator read before
+    delegating the draft; `substitute` refuses `BLOCK_CHANGED_SINCE_READ`
+    when another write moved it meanwhile. `None` compares nothing.
     """
     _stage_readiness(contract)
     if not isinstance(draft, dict) or "latex" not in draft or not isinstance(draft["latex"], str):
@@ -378,6 +382,7 @@ def write_block(
         contract_path = None
     result = paper_block.substitute(
         paper_dir, contract.block_id, new_body=body.encode("utf-8"), contract=contract_path,
+        expected_digest=expected_digest,
     )
 
     # `the-block-asserts-only-what-its-section-carries` skill's own
