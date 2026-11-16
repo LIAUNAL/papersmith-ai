@@ -19493,6 +19493,7 @@ def cmd_verify(args: argparse.Namespace) -> dict:
         # value, and two answers to "what is current" inside one `verify`
         # would be worse than none.
         merged = {"disagreements": shard_io.disagreements(shards, fields),
+                  "runtimeWarnings": shard_io.runtime_warnings(shards),
                   "shardsArrived": [entry["shard"] for entry in shards],
                   "shardsCurrent": _shards_current(
                       shards, distribution_declaration,
@@ -19504,6 +19505,9 @@ def cmd_verify(args: argparse.Namespace) -> dict:
         declaration_status=resolved["status"])
     distribution["dimensionSource"] = (
         sorted(dimension_names) if dimension_names is not None else None)
+    # Cross-host or thread-setting shards: a warning only, never a refusal,
+    # so `status` and `shardsDisagree` stay as `distribution_state` left them.
+    distribution["runtimeWarnings"] = list((merged or {}).get("runtimeWarnings") or [])
     if dimension_names is None and distribution["status"] not in (
             "none", "absent", "undeclared"):
         distribution["note"] = (

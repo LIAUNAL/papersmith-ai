@@ -1847,7 +1847,12 @@ which are unchanged; being a key of its own, it never makes shards disagree
 on a declared `environment` field. `identicalAcrossShards` compares
 top-level stamp keys, so declaring `runtime` there refuses a merge whose
 shards differ in any part of that block (host, hardware, libraries or
-threads).
+threads). Without that declaration, `verify --shards` still flags a merge
+whose shards differ in `runtime.host` or `runtime.threads`: a non-blocking
+`distribution.runtimeWarnings` entry `{kind: "cross-host" |
+"thread-settings", shards, values}` (`shard_io.runtime_warnings`) that
+changes neither `status` nor `shardsDisagree`; shards with no `runtime`
+block are skipped.
 
 **Readiness, and no clock.** `remote_cli.py readiness --job-dir <dir>
 --worker <worker>` reports whether a job is ready for its full submission

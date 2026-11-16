@@ -70,6 +70,38 @@ def disagreements(shards: list[dict], fields: list[str]) -> list[dict]:
     return found
 
 
+#: The `runtime` keys (written by the stamp kit's `write_shard`) whose
+#: disagreement across shards is flagged, with the warning kind each raises.
+_RUNTIME_WARNING_KEYS = (("cross-host", "host"), ("thread-settings", "threads"))
+
+
+def runtime_warnings(shards: list[dict]) -> list[dict]:
+    """Non-blocking warnings for shards that ran on different hosts or under
+    different thread settings.
+
+    Unlike `disagreements`, this never refuses a merge: pooling shards from two
+    machines is allowed, but an analysis over them should say so. Reads each
+    stamp's top-level `runtime` block; a shard without one (written before the
+    block existed), or whose `runtime` lacks the compared key, is skipped for
+    that key. Each warning names the shards that carried the key and the
+    distinct values seen, in order of first appearance.
+    """
+    found = []
+    for kind, key in _RUNTIME_WARNING_KEYS:
+        names: list[str] = []
+        values: dict[str, object] = {}
+        for entry in shards:
+            runtime = entry["stamp"].get("runtime")
+            if not isinstance(runtime, dict) or key not in runtime:
+                continue
+            names.append(entry["shard"])
+            values.setdefault(json.dumps(runtime[key], sort_keys=True), runtime[key])
+        if len(values) > 1:
+            found.append({"kind": kind, "shards": names,
+                          "values": list(values.values())})
+    return found
+
+
 def completeness(stamp: dict, required: list[str]) -> dict:
     """Which of the caller's declared fields this one stamp actually has.
 
