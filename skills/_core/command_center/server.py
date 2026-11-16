@@ -761,12 +761,19 @@ VENUE_TEXT_MAX_BYTES = 256 * 1024
 SJR_FIRST_YEAR = 1999
 JOURNAL_MAX_LIMIT = 50
 JOURNAL_SOURCES = ("auto", "asta", "openalex", "crossref")
+JOURNAL_SCOPES = ("international", "national")
+#: The Publindex categories the national match ranks, best first (C and RC are left out).
+PUBLINDEX_CATEGORIES = ("A1", "A2", "B")
+#: Body fields that only the international (OpenAlex/SJR) search reads.
+_INTERNATIONAL_FIELDS = ("quartiles", "oa_only", "max_apc", "max_review_days", "source",
+                         "include_unknown_quartile", "no_cache")
 #: One journal search at a time: it spends a shared API budget and writes
 #: `paper/journal-candidates.json`.
 _JOURNAL_LOCK = threading.Lock()
 
 _JOURNAL_ERROR_STATUS = {
-    "QUARTILE_RANGE_INVALID": 422, "FILTER_INVALID": 422, "SJR_FILE_INVALID": 422, "USAGE": 422,
+    "QUARTILE_RANGE_INVALID": 422, "CATEGORY_RANGE_INVALID": 422, "PUBLINDEX_DATA_INVALID": 500,
+    "FILTER_INVALID": 422, "SJR_FILE_INVALID": 422, "USAGE": 422,
     "PAPER_ABSENT": 409, "CANDIDATES_UNREADABLE": 409, "WORKSPACE_ABSENT": 404,
     "NETWORK_UNAVAILABLE": 502, "TIMEOUT": 504, "INTERNAL_ERROR": 500,
 }
@@ -777,6 +784,7 @@ _VENUE_ERROR_STATUS = {
     "REQUIREMENTS_ABSENT": 409, "TEMPLATE_ABSENT": 409, "BLOCK_HAND_EDITED": 409,
 }
 _QUARTILE_RE = re.compile(r"^\s*[Qq]([1-4])\s*(?:-\s*[Qq]([1-4]))?\s*$")
+_CATEGORY_RE = re.compile(r"^\s*(A1|A2|B)\s*(?:-\s*(A1|A2|B))?\s*$", re.IGNORECASE)
 
 
 def _journal_error(code: str, message: str, status: int | None = None) -> tuple[dict[str, Any], int]:
@@ -981,14 +989,48 @@ def _journals_state(root: Path) -> dict[str, Any]:
     return state
 
 
+def _national_search_arguments(payload: dict, refuse) -> tuple[list[str] | None, dict[str, Any] | None]:
+    """scope national: the Publindex list, filtered by category; no international option applies."""
+    given = [name for name in _INTERNATIONAL_FIELDS
+             if payload.get(name) is not None and payload.get(name) is not False]
+    if given:
+        return refuse("FILTER_INVALID", f"{', '.join(given)} applies to scope international only; scope national "
+                      "accepts categories and limit")
+    argv = ["--scope", "national"]
+    raw = payload.get("categories")
+    if raw is not None:
+        match = _CATEGORY_RE.match(raw) if isinstance(raw, str) else None
+        low = PUBLINDEX_CATEGORIES.index(match.group(1).upper()) if match else 0
+        high = PUBLINDEX_CATEGORIES.index((match.group(2) or match.group(1)).upper()) if match else 0
+        if not match or low > high:
+            return refuse("CATEGORY_RANGE_INVALID", "categories must be one ranked Publindex category or an ascending "
+                          "range of A1, A2 and B such as A1, A1-A2 or A1-B")
+        low_name, high_name = PUBLINDEX_CATEGORIES[low], PUBLINDEX_CATEGORIES[high]
+        argv += ["--categories", low_name if low == high else f"{low_name}-{high_name}"]
+    limit = payload.get("limit")
+    if limit is not None:
+        if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit != int(limit) \
+                or not 1 <= int(limit) <= JOURNAL_MAX_LIMIT:
+            return refuse("FILTER_INVALID", f"limit must be a whole number from 1 to {JOURNAL_MAX_LIMIT}")
+        argv += ["--limit", str(int(limit))]
+    return argv, None
+
+
 def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | None]:
     """The CLI flags for a search body, or the 422 body that refuses it."""
     def refuse(code: str, message: str):
         return None, _journal_error(code, message)[0]
 
     if not isinstance(payload, dict):
-        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit, no_cache, "
-                      "source, include_unknown_quartile}")
+        return refuse("FILTER_INVALID", "expected a JSON object {scope, quartiles, oa_only, max_apc, max_review_days, limit, "
+                      "no_cache, source, include_unknown_quartile, categories}")
+    scope = payload.get("scope", "international")
+    if not isinstance(scope, str) or scope not in JOURNAL_SCOPES:
+        return refuse("FILTER_INVALID", f"scope must be one of {', '.join(JOURNAL_SCOPES)}")
+    if scope == "national":
+        return _national_search_arguments(payload, refuse)
+    if payload.get("categories") is not None:
+        return refuse("FILTER_INVALID", "categories applies to scope national only (Publindex categories)")
     raw = payload.get("quartiles")
     match = _QUARTILE_RE.match(raw) if isinstance(raw, str) else None
     low = int(match.group(1)) if match else 0

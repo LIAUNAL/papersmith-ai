@@ -54,6 +54,16 @@
   const oneLine = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 
   const QUARTILES = ['Q1', 'Q2', 'Q3', 'Q4'];
+  // Colombia's IBN - Publindex categories, best first (RC: recognized, not classified).
+  const CATEGORIES = ['A1', 'A2', 'B', 'C', 'RC'];
+  // The national match ranks the classified top of the list only.
+  const NATIONAL_CATEGORIES = ['A1', 'A2', 'B'];
+  const CATEGORY_BADGE = { A1: 'badge--ok', A2: 'badge--ok', B: 'badge--info', C: 'badge--warn', RC: 'badge--absent' };
+  const SCOPES = ['international', 'national'];
+  const SCOPE_LABEL = {
+    international: () => t('journals.form.scope.international'),
+    national: () => t('journals.form.scope.national'),
+  };
   const QUARTILE_BADGE = { Q1: 'badge--ok', Q2: 'badge--info', Q3: 'badge--warn', Q4: 'badge--bad' };
   const SEVERITY_BADGE = { blocker: 'badge--bad', major: 'badge--warn', minor: 'badge--info' };
   const SEVERITY_LABEL = {
@@ -118,14 +128,26 @@
     note: '',
     sjrYear: '',
     form: { from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '15', noCache: false,
-      source: 'auto', includeUnknown: false },
+      source: 'auto', includeUnknown: false, scope: 'international', catFrom: 'A1', catTo: 'B' },
   };
 
   // ---------------------------------------------------------------- commands
 
   const rangeText = (form) => (form.from === form.to ? form.from : `${form.from}-${form.to}`);
-  const rangeValid = (form) => QUARTILES.indexOf(form.from) >= 0 && QUARTILES.indexOf(form.to) >= 0
-    && QUARTILES.indexOf(form.from) <= QUARTILES.indexOf(form.to);
+  const isNational = (form) => form.scope === 'national';
+  const catFrom = (form) => (NATIONAL_CATEGORIES.indexOf(form.catFrom) >= 0 ? form.catFrom : 'A1');
+  const catTo = (form) => (NATIONAL_CATEGORIES.indexOf(form.catTo) >= 0 ? form.catTo : 'B');
+  // The categories argument; null for the whole ranked range (A1-B, the CLI default).
+  const categoryText = (form) => {
+    const low = catFrom(form);
+    const high = catTo(form);
+    if (low === 'A1' && high === 'B') return null;
+    return low === high ? low : `${low}-${high}`;
+  };
+  const rangeValid = (form) => (isNational(form)
+    ? NATIONAL_CATEGORIES.indexOf(catFrom(form)) <= NATIONAL_CATEGORIES.indexOf(catTo(form))
+    : QUARTILES.indexOf(form.from) >= 0 && QUARTILES.indexOf(form.to) >= 0
+      && QUARTILES.indexOf(form.from) <= QUARTILES.indexOf(form.to));
   const wholeOrNull = (text, min, max) => {
     const raw = String(text ?? '').trim();
     if (!/^\d+$/.test(raw)) return null;
@@ -140,6 +162,15 @@
 
   // The slash command "Analyze with agent" sends.
   function agentCommand(form) {
+    if (isNational(form)) {
+      // The national scope reads the bundled Publindex list: only categories and limit apply.
+      const parts = ['/journal-finder', '--scope', 'national'];
+      const categories = categoryText(form);
+      if (categories) parts.push('--categories', categories);
+      const limit = wholeOrNull(form.limit, 1, 50);
+      if (limit !== null) parts.push('--limit', String(limit));
+      return parts.join(' ');
+    }
     const parts = ['/journal-finder', rangeText(form)];
     if (form.oaOnly) parts.push('--oa-only');
     const apc = numberOrNull(form.maxApc);
@@ -155,6 +186,14 @@
 
   // The JSON body of POST /api/journals/search.
   function searchBody(form) {
+    if (isNational(form)) {
+      const body = { scope: 'national' };
+      const categories = categoryText(form);
+      if (categories) body.categories = categories;
+      const limit = wholeOrNull(form.limit, 1, 50);
+      if (limit !== null) body.limit = limit;
+      return body;
+    }
     const body = { quartiles: rangeText(form), oa_only: !!form.oaOnly };
     const apc = numberOrNull(form.maxApc);
     if (apc !== null) body.max_apc = apc;
@@ -201,6 +240,16 @@
 
   function quartileCell(c) {
     const source = c.quartile_source;
+    if (source === 'publindex') {
+      // A Publindex category is the national classification, never an SJR quartile.
+      const info = obj(c.publindex);
+      const category = CATEGORIES.indexOf(info.category) >= 0 ? info.category : '';
+      const badge = category
+        ? `<span class="badge ${esc(CATEGORY_BADGE[category])}">Publindex ${esc(category)}</span>`
+        : `<span class="badge badge--absent">${esc(t('journals.quartile.none'))}</span>`;
+      const period = info.period ? esc(t('journals.quartile.publindex', { period: oneLine(info.period) })) : '';
+      return `${badge}<div class="panel__meta">${period}</div>`;
+    }
     // An unknown quartile is never a Q badge, whatever value the file carries.
     const q = source === 'unknown' ? null : c.quartile;
     const badge = q
@@ -224,7 +273,37 @@
     return `${badge}<div class="panel__meta">${detail}</div>`;
   }
 
+  // National journals: whether they receive manuscripts in Spanish and English, and on what evidence.
+  function languagesHtml(c) {
+    const info = obj(c.languages);
+    const accepts = list(info.accepts).map(oneLine).filter(Boolean);
+    let line;
+    if (!accepts.length || info.basis === 'unknown') {
+      line = `<span class="badge badge--absent">${esc(t('journals.lang.unknown'))}</span>`;
+    } else {
+      const key = info.spanish && info.english ? 'journals.lang.both'
+        : (info.spanish && accepts.length === 1 ? 'journals.lang.esOnly'
+          : (info.english && accepts.length === 1 ? 'journals.lang.enOnly' : 'journals.lang.other'));
+      const basis = info.basis === 'declared' ? t('journals.lang.declared') : t('journals.lang.published');
+      line = `<span class="badge ${info.spanish && info.english ? 'badge--ok' : 'badge--info'}">`
+        + `${esc(t(key, { langs: accepts.join(', ') }))}</span> <span class="panel__meta">${esc(basis)}</span>`;
+    }
+    const shares = Object.keys(obj(info.published)).filter((k) => isNum(info.published[k]))
+      .map((k) => `${Math.round(info.published[k] * 100)}% ${oneLine(k)}`);
+    const sharesHtml = shares.length
+      ? `<div class="panel__meta">${esc(t('journals.lang.shares', { shares: shares.join(' · ') }))}</div>` : '';
+    const declared = list(info.declared).map((d) => obj(d)).filter((d) => d.quote)
+      .map((d) => `<li>“${esc(oneLine(d.quote))}” ${d.url ? link(d.url, '↗') : ''}</li>`).join('');
+    const declaredHtml = declared ? `<details class="journals-works"><summary>${esc(t('journals.lang.quotes'))}</summary><ul>${declared}</ul></details>` : '';
+    return `<div>${line}</div>${sharesHtml}${declaredHtml}`;
+  }
+
   function accessCell(c) {
+    if (c.quartile_source === 'publindex') return `${accessCellPlain(c)}${languagesHtml(c)}`;
+    return accessCellPlain(c);
+  }
+
+  function accessCellPlain(c) {
     const open = c.is_oa
       ? `<span class="badge badge--ok">${esc(t('journals.oa'))}</span>`
       : `<span class="badge badge--absent">${esc(t('journals.subscription'))}</span>`;
@@ -250,14 +329,31 @@
       const extra = n ? ` <span class="panel__meta">n=${esc(n)}</span>` : '';
       return `<span class="panel__meta" title="${esc(t('journals.review.estimate'))}">${esc(t('journals.review.none'))}</span>${extra}`;
     }
+    const website = r.source === 'journal-website';
     const value = t('journals.review.value', {
       median: weeks(r.median_days),
       p25: isNum(r.p25_days) ? weeks(r.p25_days) : '?',
       p75: isNum(r.p75_days) ? weeks(r.p75_days) : '?',
       n,
     });
+    if (website) {
+      // Measured on the journal's own site: submission to publication, revisions and production included.
+      const declared = list(r.declared).map((d) => obj(d)).filter((d) => d.quote)
+        .map((d) => `<li>“${esc(oneLine(d.quote))}” ${d.url ? link(d.url, '↗') : ''}</li>`).join('');
+      return `<span title="${esc(t('journals.review.estimateWebsite'))}">${esc(value)}</span> `
+        + `<span class="badge badge--info">${esc(t('journals.review.website'))}</span>`
+        + (declared ? `<details class="journals-works"><summary>${esc(t('journals.review.declared'))}</summary><ul>${declared}</ul></details>` : '');
+    }
+    // Submission to online publication over the same articles, when at least five are dated.
+    const publication = isNum(r.publication_median_days)
+      ? `<div class="panel__meta" title="${esc(t('journals.review.publicationTitle'))}">${esc(t('journals.review.publication', {
+        median: weeks(r.publication_median_days),
+        p25: isNum(r.publication_p25_days) ? weeks(r.publication_p25_days) : '?',
+        p75: isNum(r.publication_p75_days) ? weeks(r.publication_p75_days) : '?',
+        n: isNum(r.publication_n) ? r.publication_n : 0,
+      }))}</div>` : '';
     return `<span title="${esc(t('journals.review.estimate'))}">${esc(value)}</span> `
-      + `<span class="badge badge--info">${esc(r.source)}</span>`;
+      + `<span class="badge badge--info">${esc(r.source)}</span>${publication}`;
   }
 
   function fitCell(c) {
@@ -287,6 +383,16 @@
       const label = FLAG_LABEL[flag] ? FLAG_LABEL[flag]() : flag;
       return `<span class="badge badge--warn">${esc(label)}</span>`;
     }).join(' ');
+    if (c.quartile_source === 'publindex') {
+      // National journals: the paper terms found in the journal's scope or topics, and the scope itself.
+      const terms = list(c.matched_terms).map(oneLine).filter(Boolean);
+      const matched = terms.length
+        ? `<div class="panel__meta">${esc(t('journals.matched', { terms: terms.join(', ') }))}</div>` : '';
+      const scope = oneLine(c.scope);
+      const scopeHtml = scope
+        ? `<details class="journals-works"><summary>${esc(t('journals.scope'))}</summary><p>${esc(scope)}</p></details>` : '';
+      return `${matched}${flags ? `<div>${flags}</div>` : ''}${scopeHtml}`;
+    }
     const works = list(c.similar_works);
     const count = isNum(c.similar_works_count) ? c.similar_works_count : works.length;
     const items = works.map((w) => {
@@ -340,12 +446,30 @@
     const form = s.form;
     const options = (selected) => QUARTILES.map((q) =>
       `<option value="${q}"${q === selected ? ' selected' : ''}>${q}</option>`).join('');
-    const bad = rangeValid(form) ? '' : `<div class="journals-msg journals-msg--bad">${esc(t('journals.form.rangeInvalid'))}</div>`;
+    const national = isNational(form);
+    const bad = rangeValid(form) ? ''
+      : `<div class="journals-msg journals-msg--bad">${esc(t(national ? 'journals.form.categoryInvalid' : 'journals.form.rangeInvalid'))}</div>`;
+    const scopeOptions = SCOPES.map((key) =>
+      `<option value="${key}"${key === (national ? 'national' : 'international') ? ' selected' : ''}>${esc(SCOPE_LABEL[key]())}</option>`).join('');
+    const scopeField = `<label title="${esc(t('journals.form.scopeTitle'))}">${esc(t('journals.form.scope'))}<select data-jp-field="scope">${scopeOptions}</select></label>`;
+    const categoryOptions = (selected) => NATIONAL_CATEGORIES.map((c) =>
+      `<option value="${c}"${c === selected ? ' selected' : ''}>${c}</option>`).join('');
     const sorts = Object.keys(SORT_LABEL).map((key) =>
       `<option value="${key}"${key === s.sort ? ' selected' : ''}>${esc(SORT_LABEL[key]())}</option>`).join('');
     const sourceOptions = SOURCES.map((key) =>
       `<option value="${key}"${key === (SOURCES.indexOf(form.source) >= 0 ? form.source : 'auto') ? ' selected' : ''}>${esc(SOURCE_LABEL[key]())}</option>`).join('');
-    return `<div class="journals-form">`
+    const actions = `<label>${esc(t('journals.form.limit'))}<input type="number" min="1" max="50" step="1" data-jp-field="limit" value="${esc(form.limit)}"></label>`
+      + `<button type="button" class="btn btn--primary btn--sm" data-jp-action="search"${s.busy.search ? ' disabled' : ''}>`
+      + `${esc(s.busy.search ? t('journals.searching') : t('journals.search'))}</button>`
+      + `<button type="button" class="btn btn--sm" data-jp-action="analyze" title="${esc(t('journals.analyzeTitle'))}">${esc(t('journals.analyze'))}</button>`
+      + `<label>${esc(t('journals.sort.label'))}<select data-jp-field="sort">${sorts}</select></label>`;
+    if (national) {
+      return `<div class="journals-form">${scopeField}`
+        + `<label>${esc(t('journals.form.catFrom'))}<select data-jp-field="catFrom">${categoryOptions(catFrom(form))}</select></label>`
+        + `<label>${esc(t('journals.form.catTo'))}<select data-jp-field="catTo">${categoryOptions(catTo(form))}</select></label>`
+        + `${actions}</div>${bad}`;
+    }
+    return `<div class="journals-form">${scopeField}`
       + `<label>${esc(t('journals.form.from'))}<select data-jp-field="from">${options(form.from)}</select></label>`
       + `<label>${esc(t('journals.form.to'))}<select data-jp-field="to">${options(form.to)}</select></label>`
       + `<label class="journals-check"><input type="checkbox" data-jp-field="oaOnly"${form.oaOnly ? ' checked' : ''}> ${esc(t('journals.form.oaOnly'))}</label>`
@@ -354,12 +478,7 @@
       + `<label class="journals-check" title="${esc(t('journals.form.noCacheTitle'))}"><input type="checkbox" data-jp-field="noCache"${form.noCache ? ' checked' : ''}> ${esc(t('journals.form.noCache'))}</label>`
       + `<label>${esc(t('journals.form.maxApc'))}<input type="number" min="0" step="1" data-jp-field="maxApc" value="${esc(form.maxApc)}"></label>`
       + `<label>${esc(t('journals.form.maxReview'))}<input type="number" min="1" step="1" data-jp-field="maxReview" value="${esc(form.maxReview)}"></label>`
-      + `<label>${esc(t('journals.form.limit'))}<input type="number" min="1" max="50" step="1" data-jp-field="limit" value="${esc(form.limit)}"></label>`
-      + `<button type="button" class="btn btn--primary btn--sm" data-jp-action="search"${s.busy.search ? ' disabled' : ''}>`
-      + `${esc(s.busy.search ? t('journals.searching') : t('journals.search'))}</button>`
-      + `<button type="button" class="btn btn--sm" data-jp-action="analyze" title="${esc(t('journals.analyzeTitle'))}">${esc(t('journals.analyze'))}</button>`
-      + `<label>${esc(t('journals.sort.label'))}<select data-jp-field="sort">${sorts}</select></label>`
-      + `</div>${bad}`;
+      + `${actions}</div>${bad}`;
   }
 
   function sjrHtml(s) {
@@ -384,6 +503,7 @@
   };
   const providerName = (name) => {
     if (name === 'sjr') return 'SJR';
+    if (name === 'publindex') return 'Publindex';
     if (name === 'openalex-proxy') return t('journals.providers.proxy');
     if (name === 'unknown') return t('journals.providers.unknown');
     return SERVICE_NAME[name] || oneLine(name);
@@ -875,6 +995,12 @@
       state.form.noCache = !!el.checked;
     } else if (field === 'includeUnknown') {
       state.form.includeUnknown = !!el.checked;
+    } else if (field === 'scope') {
+      state.form.scope = SCOPES.indexOf(el.value) >= 0 ? el.value : 'international';
+      render();
+    } else if (field === 'catFrom' || field === 'catTo') {
+      state.form[field] = NATIONAL_CATEGORIES.indexOf(el.value) >= 0 ? el.value : (field === 'catFrom' ? 'A1' : 'B');
+      render();
     } else if (field === 'source') {
       state.form.source = SOURCES.indexOf(el.value) >= 0 ? el.value : 'auto';
     } else if (field === 'sort') {

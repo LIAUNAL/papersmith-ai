@@ -197,6 +197,46 @@ class JournalSearchTests(JournalCase):
                                 "--oa-only", "--max-apc", "2000", "--max-review-days", "180",
                                 "--limit", "10"])
 
+    def test_the_national_scope_passes_scope_categories_and_limit(self) -> None:
+        self.stub(SEARCH_OK)
+        self.assertEqual(self.post({"scope": "national", "categories": "a1-b", "limit": 20}).status_code, 200)
+        self.assertEqual(self.post({"scope": "national"}).status_code, 200)
+        self.assertEqual(self.post({"scope": "international", "quartiles": "Q1"}).status_code, 200)
+        national, everything, international = self.calls()
+        self.assertEqual(national, ["search", "--workspace", str(self.root), "--scope", "national",
+                                    "--categories", "A1-B", "--limit", "20"])
+        self.assertEqual(everything, ["search", "--workspace", str(self.root), "--scope", "national"])
+        self.assertEqual(international, ["search", "--workspace", str(self.root), "--quartiles", "Q1"])
+
+    def test_a_bad_scope_or_category_range_is_422_without_running_the_cli(self) -> None:
+        self.stub(SEARCH_OK)
+        for body, code in (({"scope": "local"}, "FILTER_INVALID"), ({"scope": 1}, "FILTER_INVALID"),
+                           ({"scope": "national", "categories": "B-A1"}, "CATEGORY_RANGE_INVALID"),
+                           ({"scope": "national", "categories": "Q1"}, "CATEGORY_RANGE_INVALID"),
+                           ({"scope": "national", "categories": "C"}, "CATEGORY_RANGE_INVALID"),
+                           ({"scope": "national", "categories": "A1-RC"}, "CATEGORY_RANGE_INVALID"),
+                           ({"scope": "national", "categories": 3}, "CATEGORY_RANGE_INVALID"),
+                           ({"scope": "national", "limit": 0}, "FILTER_INVALID"),
+                           ({"quartiles": "Q1", "categories": "A1"}, "FILTER_INVALID")):
+            with self.subTest(body=body):
+                response = self.post(body)
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json()["error"], code)
+        self.assertEqual(self.calls(), [])
+
+    def test_international_fields_are_refused_with_the_national_scope(self) -> None:
+        self.stub(SEARCH_OK)
+        for patch in ({"quartiles": "Q1"}, {"oa_only": True}, {"max_apc": 10}, {"max_review_days": 30},
+                      {"source": "crossref"}, {"include_unknown_quartile": True}, {"no_cache": True}):
+            with self.subTest(patch=patch):
+                response = self.post({"scope": "national", **patch})
+                self.assertEqual(response.status_code, 422)
+                body = response.json()
+                self.assertEqual(body["error"], "FILTER_INVALID")
+                self.assertIn("international", body["message"])
+        self.assertEqual(self.post({"scope": "national", "oa_only": False, "no_cache": False}).status_code, 200)
+        self.assertEqual(len(self.calls()), 1)
+
     def test_force_refresh_passes_no_cache_through(self) -> None:
         self.stub(SEARCH_OK)
         self.assertEqual(self.post({"quartiles": "Q1", "no_cache": True, "limit": 5}).status_code, 200)
@@ -1569,6 +1609,130 @@ class PanelRenderTests(unittest.TestCase):
         self.assertIn("pdfUrl(`v=${forceReload ? (lastPdfToken || Date.now()) : 'doc'}`)", PAGE)
         # The canonical viewer lines other tests pin stay as they were.
         self.assertIn("native.src = `/api/pdf?v=${token}`;", PAGE)
+
+
+NATIONAL_CANDIDATE = {
+    "id": "publindex:7", "openalex_id": "S42", "display_name": "Revista de Ingeniería Nacional", "issn_l": "1111-1111",
+    "publisher": "UNIVERSIDAD UNO", "homepage_url": "https://uno.example/rin", "is_oa": True, "is_in_doaj": True,
+    "apc_usd": 0, "h_index": 9, "quartile": None, "quartile_source": "publindex",
+    "publindex": {"category": "A2", "period": "2026-II", "valid_until": "2026-12-31"},
+    "scope": "Publica investigación en ingeniería eléctrica y procesamiento de señales.",
+    "matched_terms": ["electroencephalography", "signals"], "topics": ["EEG and Brain-Computer Interfaces"],
+    "cited_in_paper_count": 0, "similar_works_count": 0, "similar_works": [],
+    "fit": {"topic_overlap": 1.0, "cited_in_paper": 0.0}, "fit_score": 1.0, "flags": [], "rank": 1,
+    "languages": {"accepts": ["en", "es"], "basis": "declared", "spanish": True, "english": True,
+                  "published": {"es": 0.7, "en": 0.3},
+                  "declared": [{"quote": "Las contribuciones pueden ser escritas en español o inglés",
+                                "url": "https://uno.example/rin/about"}]},
+    "review_time": {"source": "journal-website", "basis": "submission-to-publication", "n": 9, "median_days": 140,
+                    "p25_days": 98, "p75_days": 210, "url": "https://uno.example/rin",
+                    "declared": [{"quote": "La evaluación por pares tarda 8 semanas", "url": "https://uno.example/rin/about"}]},
+    "sources": ["publindex"],
+}
+NATIONAL_DOC = {"scope": "national", "source": "publindex", "quartiles": ["A1", "A2", "B"],
+                "providers": {"similar_works": [], "cited_venues": [], "metadata": ["publindex"], "quartile": "publindex"},
+                "publindex": {"period": "2026-II", "resolution": "0707-2026", "valid_until": "2026-12-31"},
+                "candidates": [NATIONAL_CANDIDATE], "excluded_count": 0, "excluded_reasons": {"category_range": 0},
+                "query": {"title": "T", "scoring": {"formula": "fit_score = 0.7 * topic_overlap + 0.3 * cited_in_paper",
+                                                    "active": ["topic_overlap"]}}}
+
+
+@unittest.skipUnless(shutil.which("node"), "node is required to run the panel")
+class PanelNationalTests(unittest.TestCase):
+    node = PanelRenderTests.node
+    assert_only_known_markup = PanelRenderTests.assert_only_known_markup
+    FORM = ("{ from: 'Q1', to: 'Q2', oaOnly: false, maxApc: '', maxReview: '', limit: '', source: 'auto', "
+            "includeUnknown: false, noCache: false, scope: 'international', catFrom: 'A1', catTo: 'B', ...patch }")
+
+    def test_the_national_scope_builds_its_own_body_and_command(self) -> None:
+        result = self.node(f"""
+          const f = (patch) => ({self.FORM});
+          out({{ narrow: P.searchBody(f({{ scope: 'national', catFrom: 'A1', catTo: 'A2' }})),
+                 body: P.searchBody(f({{ scope: 'national', catFrom: 'A1', catTo: 'B', limit: '20', oaOnly: true }})),
+                 all: P.searchBody(f({{ scope: 'national' }})),
+                 command: P.agentCommand(f({{ scope: 'national', catFrom: 'A1', catTo: 'B', limit: '20', oaOnly: true }})),
+                 allCommand: P.agentCommand(f({{ scope: 'national' }})),
+                 single: P.agentCommand(f({{ scope: 'national', catFrom: 'B', catTo: 'B' }})),
+                 stale: P.searchBody(f({{ scope: 'national', catFrom: 'C', catTo: 'RC' }})),
+                 international: P.searchBody(f({{}})),
+                 bad: P.rangeValid(f({{ scope: 'national', catFrom: 'B', catTo: 'A1' }})),
+                 badQuartilesIgnored: P.rangeValid(f({{ scope: 'national', from: 'Q4', to: 'Q1' }})) }});""")
+        self.assertEqual(result["body"], {"scope": "national", "limit": 20})
+        self.assertEqual(result["all"], {"scope": "national"})
+        self.assertEqual(result["narrow"], {"scope": "national", "categories": "A1-A2"})
+        self.assertEqual(result["command"], "/journal-finder --scope national --limit 20")
+        self.assertEqual(result["allCommand"], "/journal-finder --scope national")
+        self.assertEqual(result["single"], "/journal-finder --scope national --categories B")
+        # C and RC are not offered: an old value falls back to the A1-B default
+        self.assertEqual(result["stale"], {"scope": "national"})
+        self.assertEqual(result["international"], {"quartiles": "Q1-Q2", "oa_only": False})
+        self.assertFalse(result["bad"])
+        self.assertTrue(result["badQuartilesIgnored"])
+
+    def test_the_form_offers_the_scope_and_the_national_form_drops_international_fields(self) -> None:
+        script = f"""
+          const f = (patch) => ({self.FORM});
+          const base = {{ busy: {{}}, sort: 'fit', sjrYear: '' }};
+          out([P.formHtml({{ ...base, form: f({{}}) }}), P.formHtml({{ ...base, form: f({{ scope: 'national', catFrom: 'A2', catTo: 'B' }}) }}),
+               P.formHtml({{ ...base, form: f({{ scope: 'national', catFrom: 'B', catTo: 'A1' }}) }})]);"""
+        international, national, bad = self.node(script)
+        self.assertIn('data-jp-field="scope"', international)
+        self.assertIn('<option value="international" selected>', international)
+        self.assertIn("Nacionales de Colombia (Publindex)", international)
+        self.assertIn('data-jp-field="oaOnly"', international)
+        self.assertNotIn('data-jp-field="catFrom"', international)
+        self.assertIn('<option value="national" selected>', national)
+        self.assertIn('data-jp-field="catFrom"', national)
+        self.assertIn('<option value="A2" selected>', national)
+        self.assertIn('<option value="B" selected>', national)
+        self.assertNotIn('<option value="C"', national)
+        self.assertNotIn('<option value="RC"', national)
+        for absent in ('data-jp-field="from"', 'data-jp-field="oaOnly"', 'data-jp-field="source"',
+                       'data-jp-field="includeUnknown"', 'data-jp-field="maxApc"', 'data-jp-field="maxReview"',
+                       'data-jp-field="noCache"'):
+            self.assertNotIn(absent, national)
+        self.assertIn('data-jp-field="limit"', national)
+        self.assertIn("La categoría inicial no puede ir después de la final", bad)
+        self.assertIn("Scope", self.node(script, lang="en")[0])
+
+    def test_a_national_result_shows_category_review_time_scope_and_matches(self) -> None:
+        doc = json.dumps(NATIONAL_DOC, ensure_ascii=False)
+        es = self.node(f"const doc = {doc}; out(P.resultsHtml({{ journals: {{ candidates: doc }}, sort: 'fit', busy: {{}} }}));")
+        for expected in ("Publindex A2", "IBN 2026-II", "Revista de Ingeniería Nacional", "sitio de la revista",
+                         "20 sem (RIC 14–30) · n=9", "La evaluación por pares tarda 8 semanas",
+                         "https://uno.example/rin/about", "Declarado por la revista", "Enfoque editorial",
+                         "procesamiento de señales", "Términos en común: electroencephalography, signals",
+                         ">publindex<", "Publindex", "A1–A2–B", "Recibe en español e inglés",
+                         "declarado por la revista", "publica 70% es · 30% en"):
+            self.assertIn(expected, es)
+        self.assertNotIn("Sin cuartil", es)
+        self.assert_only_known_markup(es)
+        en = self.node(f"const doc = {doc}; out(P.resultsHtml({{ journals: {{ candidates: doc }}, sort: 'fit', busy: {{}} }}));",
+                       lang="en")
+        for expected in ("journal site", "Declared by the journal", "Editorial scope", "Terms in common",
+                         "Accepts Spanish and English"):
+            self.assertIn(expected, en)
+
+    def test_language_lines_for_one_language_and_unknown(self) -> None:
+        base = json.dumps(NATIONAL_DOC, ensure_ascii=False)
+        es, unknown = self.node(f"""
+          const doc = {base};
+          const view = (languages) => P.resultsHtml({{ journals: {{ candidates: {{ ...doc, candidates: [{{ ...doc.candidates[0], languages }}] }} }}, sort: 'fit', busy: {{}} }});
+          out([view({{ accepts: ['es'], basis: 'published', spanish: true, english: false, published: {{ es: 1 }} }}),
+               view({{ accepts: [], basis: 'unknown', spanish: null, english: null }})]);""")
+        self.assertIn("Recibe solo en español", es)
+        self.assertIn("según lo que publica", es)
+        self.assertIn("Idiomas sin confirmar", unknown)
+
+    def test_international_rows_show_submission_to_publication(self) -> None:
+        html = self.node("""
+          const row = { display_name: 'Intl', quartile: 'Q1', quartile_source: 'sjr',
+            review_time: { source: 'crossref', median_days: 35, p25_days: 22.5, p75_days: 47.5, n: 6,
+                           publication_median_days: 42, publication_p25_days: 27, publication_p75_days: 57, publication_n: 6 } };
+          const few = { ...row, display_name: 'Few', review_time: { ...row.review_time, publication_median_days: null, publication_n: 3 } };
+          out(P.resultsHtml({ journals: { candidates: { candidates: [row, few] } }, sort: 'fit', busy: {} }));""")
+        self.assertIn("envío → publicación 6 sem (RIC 3.9–8.1) · n=6", html)
+        self.assertEqual(html.count("envío → publicación"), 1)
 
 
 if __name__ == "__main__":
