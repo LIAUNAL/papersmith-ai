@@ -39,7 +39,8 @@ Public surface:
     entry_from_record(paper_dir, record, *, guidance_dir) -> dict
         (raises ENTRY_UNSOURCED / ENTRY_NOT_INGESTED)
     build_refs_bib(paper_dir, records, *, guidance_dir) -> dict
-        (rebuilds refs.bib whole, sorted)
+        (rebuilds refs.bib whole, sorted; an arXiv entry takes the published
+        record already on disk, else it is named in `warnings`)
     source_identity(identifier, resolver) -> tuple[str, str] | None
     refresh_metadata(paper_dir, cite_key, metadata_digest, *, guidance_dir, resolver=None) -> dict
         (relinks existing evidence to fresher metadata of the same work)
@@ -54,6 +55,7 @@ Public surface:
 """
 from __future__ import annotations
 
+import html
 import http.client
 import json
 import re
@@ -418,22 +420,105 @@ def _bibtex_name(value: str) -> str:
     return _NON_ASCII_INITIAL_RE.sub(lambda m: "{\\relax " + m.group(1) + "}", _latex_escape(value))
 
 
+#: One HTML character reference with its closing `;` (`&amp;`, `&#38;`,
+#: `&#x26;`). A bare `&` or a `&name` with no `;` is ordinary text and is
+#: left alone, so `R&D` or `AT&T` never decode into something else.
+_HTML_ENTITY_RE = re.compile(r"&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
+
+
+def _decode_entities(value: str) -> str:
+    """Connector text with every HTML character reference decoded until none
+    is left: Crossref and OpenAlex titles arrive as `&amp;`, and a record
+    escaped twice upstream as `&amp;amp;`. Decoding to a fixed point makes the
+    rule idempotent, so `_latex_escape` then escapes the decoded `&` exactly
+    once (`\\&`). Text holding no reference is returned unchanged."""
+    for _ in range(8):
+        decoded = _HTML_ENTITY_RE.sub(lambda m: html.unescape(m.group(0)), value)
+        if decoded == value:
+            return value
+        value = decoded
+    return value
+
+
+#: A venue naming a preprint server: `arXiv`, `arXiv.org`, `ArXiv`,
+#: `arXiv (Cornell University)` (OpenAlex), `CoRR` (DBLP).
+_ARXIV_VENUE_RE = re.compile(r"\barxiv\b|^corr$", re.IGNORECASE)
+_ARXIV_DOI_PREFIX = "10.48550/"
+#: A venue that is a conference's proceedings, not a journal.
+_PROCEEDINGS_RE = re.compile(
+    r"\b(?:proceedings|conference|symposium|workshop|pmlr|neurips|nips|icml|iclr|aaai|ijcai|cvpr|"
+    r"iccv|eccv|emnlp|naacl|sigir|sigkdd|kdd|miccai|interspeech|icassp)\b"
+    r"|advances in neural information processing systems",
+    re.IGNORECASE,
+)
+#: Journals whose name opens with "Proceedings" (PNAS, Proc. IEEE, Proc. R. Soc.)
+#: or that carry a conference word in their own title.
+_JOURNAL_RE = re.compile(
+    r"\b(?:journal|transactions|letters|magazine|review)\b|^proceedings of the (?:ieee|national academy|royal society)",
+    re.IGNORECASE,
+)
+#: DOI prefixes of data repositories (Zenodo, figshare, Dryad, Dataverse,
+#: PhysioNet, OpenNeuro, Mendeley Data, UCI): a work there is a dataset unless
+#: its venue is a journal or a proceedings.
+_DATASET_DOI_PREFIXES = ("10.5281/", "10.6084/", "10.5061/", "10.7910/", "10.13026/", "10.18112/",
+                         "10.17632/", "10.24432/")
+
+
+def _bare_doi(doi: object) -> str:
+    text = str(doi or "").strip()
+    for prefix in _DOI_PREFIXES + ("doi:",):
+        if text.lower().startswith(prefix):
+            return text[len(prefix):]
+    return text
+
+
+def _is_arxiv(metadata: dict) -> bool:
+    """The record names the arXiv preprint: an arXiv venue, or arXiv's own
+    DataCite DOI (`10.48550/arXiv.<id>`)."""
+    venue = str(metadata.get("venue") or "").strip()
+    return bool(_ARXIV_VENUE_RE.search(venue)) or _bare_doi(metadata.get("doi")).lower().startswith(
+        _ARXIV_DOI_PREFIX)
+
+
+def _is_published_venue(venue: object) -> bool:
+    text = str(venue or "").strip()
+    return bool(text) and not _ARXIV_VENUE_RE.search(text)
+
+
+def _entry_kind(entry: dict) -> tuple[str, str | None]:
+    """`(entry type, venue field)`. Without a venue an entry stays `@misc`
+    with no venue field: the `plain` style prints `journal` for an article and
+    ignores it on a `@misc`, so it never renders as an article with a blank
+    journal. A dataset (a data-repository DOI whose venue is not a journal or
+    proceedings) is `@misc` with `howpublished`; a proceedings venue is
+    `@inproceedings` with `booktitle`; every other venue is `@article` with
+    `journal`."""
+    venue = str(entry.get("venue") or "")
+    if not venue:
+        return "misc", None
+    journal = bool(_JOURNAL_RE.search(venue))
+    proceedings = not journal and bool(_PROCEEDINGS_RE.search(venue))
+    if (not journal and not proceedings
+            and _bare_doi(entry.get("doi")).lower().startswith(_DATASET_DOI_PREFIXES)):
+        return "misc", "howpublished"
+    if proceedings:
+        return "inproceedings", "booktitle"
+    return "article", "journal"
+
+
 def _entry_text(entry: dict) -> str:
-    # `@article` only when a venue was actually captured: the `plain` style
-    # prints `journal` for an article and ignores it on a `@misc`, so an
-    # entry with no venue stays `@misc` rather than rendering as an article
-    # with a blank journal.
-    kind = "article" if entry.get("venue") else "misc"
+    kind, venue_field = _entry_kind(entry)
     lines = [f"@{kind}{{{entry['cite_key']},"]
-    # `author`, `title` and `journal` share the identical exposure to raw,
-    # unescaped connector text; all three are escaped here.
+    # `author`, `title` and the venue share the identical exposure to raw,
+    # connector text; all three have their HTML references decoded, then are
+    # escaped once here.
     if entry.get("authors"):
-        authors = " and ".join(_bibtex_name(a) for a in entry["authors"])
+        authors = " and ".join(_bibtex_name(_decode_entities(a)) for a in entry["authors"])
         lines.append(f"  author = {{{authors}}},")
     if entry.get("title"):
-        lines.append(f"  title = {{{_latex_escape(entry['title'])}}},")
-    if entry.get("venue"):
-        lines.append(f"  journal = {{{_latex_escape(entry['venue'])}}},")
+        lines.append(f"  title = {{{_latex_escape(_decode_entities(entry['title']))}}},")
+    if venue_field:
+        lines.append(f"  {venue_field} = {{{_latex_escape(_decode_entities(entry['venue']))}}},")
     if entry.get("doi"):
         lines.append(f"  doi = {{{entry['doi']}}},")
     if entry.get("year") is not None:
@@ -450,7 +535,71 @@ def _entry_text(entry: dict) -> str:
     # Nothing reads this back: `parse_bib` skips bytes between entries, and
     # `_BIB_ENTRY_RE` matches cite keys alone.
     comment = f"% resolver={entry['resolver']}; metadata_digest={entry['metadata_digest']}"
+    if entry.get("published_from"):
+        comment += f"\n% published record: {entry['published_from']}"
     return comment + "\n" + "\n".join(lines) + "\n"
+
+
+def _published_candidates(paper_dir: Path, cite_key: str) -> list[tuple[dict, str]]:
+    """`(metadata, provenance)` of the published records already on disk for
+    `cite_key`, offline only: the `resolve --references` sidecar record of the
+    key, then every cached resolution under `.paper-writing/metadata/` (for
+    example the DOI of the proceedings version resolved with `resolve`).
+    An unreadable sidecar or blob is skipped, never an error."""
+    candidates: list[tuple[dict, str]] = []
+    try:
+        reference = read_references(paper_dir).get(cite_key)
+    except (OSError, ValueError):
+        reference = None
+    if reference and reference.get("status") == "resolved":
+        doi = _bare_doi(reference.get("identifier"))
+        if not doi.startswith("10."):
+            doi = _bare_doi(reference.get("link"))
+        candidates.append(({
+            "title": reference.get("title"), "venue": reference.get("venue"),
+            "year": reference.get("year"), "doi": doi if doi.startswith("10.") else None,
+        }, f"references.json ({reference.get('resolver') or 'unknown'})"))
+    directory = paper_resolve.metadata_dir(paper_dir)
+    if directory.is_dir():
+        for path in sorted(directory.glob("*.json")):
+            try:
+                blob = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(blob, dict):
+                candidates.append((blob, f"metadata_digest={blob.get('metadata_digest') or path.stem}"))
+    return candidates
+
+
+def _prefer_published(paper_dir: Path, entry: dict) -> tuple[dict, str | None]:
+    """`(entry, warning)`. An entry whose metadata names the arXiv preprint
+    takes the venue, year and DOI of a published record of the same work
+    (same normalized title, a venue that is not arXiv) when one is already on
+    disk; its authors and title stay the evidence record's own. With none it
+    stays the arXiv record and the warning names the key. Any other entry is
+    returned as it is, with no warning."""
+    if not _is_arxiv(entry):
+        return entry, None
+    wanted = title_key(entry.get("title"))
+    for metadata, provenance in _published_candidates(paper_dir, entry["cite_key"]):
+        if not wanted or title_key(metadata.get("title")) != wanted:
+            continue
+        if not _is_published_venue(metadata.get("venue")) or _is_arxiv(metadata):
+            continue
+        doi = _bare_doi(metadata.get("doi")) or None
+        return {
+            **entry,
+            "venue": metadata["venue"],
+            "year": metadata.get("year") if metadata.get("year") is not None else entry.get("year"),
+            "doi": doi,
+            "authors": entry.get("authors") or metadata.get("authors") or [],
+            "published_from": provenance,
+        }, None
+    return entry, (
+        f"{entry['cite_key']}: rendered as the arXiv preprint; no published version (journal, "
+        "proceedings, PMLR, JMLR) of the same title is on record -- if one exists, resolve its DOI "
+        "or run `resolve --references`, then `bib build` again"
+    )
 
 
 def build_refs_bib(paper_dir: Path, records: list[dict], *, guidance_dir: Path,
@@ -491,9 +640,23 @@ def build_refs_bib(paper_dir: Path, records: list[dict], *, guidance_dir: Path,
     entries = [
         entry_from_record(paper_dir, by_key[key], guidance_dir=guidance_dir) for key in sorted(by_key)
     ]
+    warnings: list[str] = []
+    published: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        entries[index], warning = _prefer_published(paper_dir, entry)
+        if warning:
+            warnings.append(warning)
+        if entries[index].get("published_from"):
+            published[entry["cite_key"]] = entries[index]["venue"]
     text = "".join(_entry_text(entry) for entry in entries)
     refs_path.write_text(text, encoding="utf-8")
-    return {"path": str(refs_path), "entries": [entry["cite_key"] for entry in entries]}
+    result = {"path": str(refs_path), "entries": [entry["cite_key"] for entry in entries]}
+    # Only when a rule fired, so a bibliography with no arXiv entry reads as before.
+    if published:
+        result["published"] = published
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def source_identity(identifier: str, resolver: str) -> tuple[str, str] | None:
