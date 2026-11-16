@@ -1,0 +1,34 @@
+%% Compiled at test time: page 1 ends early because a forced [H] float does not
+%% fit (large gap), page 2 carries that float, page 3 holds only floats.
+\documentclass[11pt]{article}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{lipsum}
+\begin{document}
+\lipsum[1-2]
+\begin{figure}[H]
+  \centering
+  \rule{0.9\textwidth}{0.6\textheight}
+  \caption{A forced float that does not fit on the first page.}
+\end{figure}
+\lipsum[5]
+\clearpage
+\begin{figure}[p]
+  \centering
+  \rule{0.95\textwidth}{0.3\textheight}
+  \caption{A float on a page of its own.}
+\end{figure}
+\begin{table}[p]
+  \centering
+  \caption{A narrow table.}
+  \begin{tabular}{ll}
+    \hline
+    a & b \\
+    \hline
+    c & d \\
+    \hline
+  \end{tabular}
+\end{table}
+\clearpage
+\lipsum[6]
+\end{document}

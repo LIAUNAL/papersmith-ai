@@ -1,0 +1,16 @@
+%% A plot carrying values inside the figure: a panel title with a score, an
+%% isolated value annotation, plus ordinary aligned tick labels (not values).
+\documentclass[border=0pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{tikz}
+\begin{document}
+\begin{tikzpicture}[x=1.33cm, every node/.style={font=\fontsize{7.5}{9}\selectfont}]
+\draw (0,0) rectangle (8,4);
+\draw[thick] (0,0.5) -- (2,1.5) -- (4,2.2) -- (6,3) -- (8,3.4);
+\foreach \x in {0.0,0.5,1.0,1.5,2.0} {\node[below] at (\x*4,-0.1) {\x};}
+\foreach \y in {0.25,0.50,0.75} {\node[left] at (-0.1,\y*4) {\y};}
+\node[below left] at (7.8,3.9) {Model A (acc = 0.93)};
+\node at (5,1.2) {0.87};
+\end{tikzpicture}
+\end{document}

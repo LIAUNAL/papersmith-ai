@@ -20,7 +20,11 @@ repair-budget ledger.
 `measure` turns an already-produced raster into computed findings
 (out-of-bounds, overlap, canvas occupancy), and reads the figure PDF itself
 for the vector verdicts (`printed-font-range`, `background`, `whitespace`,
-`in-figure-title`; see `typeset.py`): it reads the PNG and
+`in-figure-title`; see `typeset.py`), the compiled manuscript around it
+(`main.log` for the body size and `\\textwidth`, `main.tex` for the printed
+width, `main.pdf` for table widths and per-page whitespace; see
+`page_space.py`), and reports the advisories `numeric-text`, `width-share`
+and `page-whitespace` beside the roster: it reads the PNG and
 `raster-provenance.json` a prior `raster` call already wrote, decodes
 and measures via `png_read`/`geometry`/`findings`, and writes a
 plain-data `visual-report.json` beside them. It refuses
@@ -43,6 +47,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import findings  # noqa: E402
+import page_space  # noqa: E402
 import raster  # noqa: E402
 import typeset  # noqa: E402
 
@@ -88,22 +93,80 @@ def cmd_measure(args: argparse.Namespace) -> dict:
         )
     raster_provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
     tex_path = Path(args.tex) if args.tex else pdf.with_suffix(".tex")
+    main_tex = Path(args.main_tex) if args.main_tex else pdf.resolve().parent.parent / "main.tex"
+    main_log = Path(args.main_log) if args.main_log else main_tex.with_suffix(".log")
+    main_pdf = Path(args.main_pdf) if args.main_pdf else main_tex.with_suffix(".pdf")
+    log_text = page_space.read_log(main_log if main_log.is_file() else None)
+    manuscript = page_space.read_manuscript(main_tex if main_tex.is_file() else None)
+
+    body_evidence = None
+    from_log = page_space.body_pt_from_log(log_text)
     if args.body_pt is not None:
         body_pt, body_source = float(args.body_pt), "flag"
+    elif from_log is not None:
+        (body_pt, body_evidence), body_source = from_log, "log"
     else:
-        main_tex = Path(args.main_tex) if args.main_tex else pdf.resolve().parent.parent / "main.tex"
         body_pt, body_source = typeset.body_pt_from_main_tex(main_tex if main_tex.is_file() else None)
+
+    widths = page_space.text_widths(manuscript, log_text, body_pt)
+    float_list = page_space.floats(manuscript, widths)
+    printed_width_pt, width_source, width_detail = args.printed_width_pt, "flag", None
+    if printed_width_pt is None:
+        printed_width_pt, width_source, width_detail = typeset.printed_width_from_manuscript(
+            pdf, page_space.placement_for(pdf.stem, float_list))
+
     vector = typeset.measure_pdf(
-        pdf, body_pt=body_pt, body_source=body_source, printed_width_pt=args.printed_width_pt,
+        pdf, body_pt=body_pt, body_source=body_source, printed_width_pt=printed_width_pt,
+        printed_width_source=width_source,
     )
+    advisories, pdf_tables = _manuscript_advisories(main_pdf, widths)
+    if manuscript is None:
+        advisories["width-share"] = {"verdict": "unmeasured", "reason": "MANUSCRIPT_SOURCE_ABSENT",
+                                     "floor": page_space.WIDTH_SHARE_FLOOR, "floats": []}
+    else:
+        advisories["width-share"] = page_space.width_share(float_list, widths, pdf_tables, pdf.stem)
+    sources = {
+        "bodyPt": {"value": body_pt, "source": body_source, "evidence": body_evidence,
+                   "log": str(main_log) if log_text is not None else None},
+        "printedWidthPt": {"value": printed_width_pt, "source": width_source,
+                           "detail": width_detail},
+        "textWidthPt": {"value": widths["textWidthPt"], "source": widths["textWidthSource"],
+                        "columnWidthPt": widths["columnWidthPt"], "twocolumn": widths["twocolumn"]},
+    }
     visual = findings.measure_figure(
         png_path, raster_provenance,
         tex_path=tex_path if tex_path.is_file() else None,
-        vector=vector,
+        vector=vector, advisories=advisories, sources=sources,
     )
     report_path = out_dir / "visual-report.json"
     raster._atomic_write_json(report_path, visual)
     return {"visualReport": str(report_path), **visual}
+
+
+def _manuscript_advisories(main_pdf: Path, widths: dict) -> tuple:
+    """`page-whitespace` read from the compiled manuscript, and its table
+    rule widths for `width-share`; unmeasured with a reason when the PDF is
+    absent, unreadable, or this interpreter cannot read PDFs."""
+    def unmeasured(reason: str) -> tuple:
+        return {"page-whitespace": {"verdict": "unmeasured", "reason": reason, "pages": []}}, None
+
+    if not main_pdf.is_file():
+        return unmeasured("MANUSCRIPT_PDF_ABSENT")
+    try:
+        import print_scale
+    except ImportError:
+        return unmeasured("PDF_READER_ABSENT")
+    if not print_scale.pdf_reader_available():
+        return unmeasured("PDF_READER_ABSENT")
+    try:
+        pages = page_space.read_pages(main_pdf)
+    except (print_scale.pdfium.PdfiumError, OSError):
+        return unmeasured("PDF_UNREADABLE")
+    text_width = widths["textWidthPt"]
+    text_width_pdf = None if text_width is None else text_width * page_space.TEX_PT_TO_PDF_PT
+    report = page_space.page_whitespace(pages, text_width_pdf)
+    report["pdf"] = str(main_pdf)
+    return {"page-whitespace": report}, page_space.table_widths(pages)
 
 
 _COMMANDS = {
@@ -151,15 +214,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="override the sibling .tex path used for the border precondition")
     p_measure.add_argument(
         "--body-pt", type=float, default=None, metavar="pt",
-        help="manuscript body size in TeX points (default: read from --main-tex)")
+        help="manuscript body size in TeX points (default: --main-log, else --main-tex)")
     p_measure.add_argument(
         "--main-tex", default=None, metavar="path",
         help="the manuscript whose \\documentclass[<N>pt] sets the body size "
              "(default: <paper>/main.tex two levels above --pdf; 10 pt when absent)")
     p_measure.add_argument(
+        "--main-log", default=None, metavar="path",
+        help="the compiled manuscript's log, read for the effective body size and "
+             "\\textwidth (default: <main-tex>.log)")
+    p_measure.add_argument(
+        "--main-pdf", default=None, metavar="path",
+        help="the compiled manuscript, read for table widths and per-page whitespace "
+             "(default: <main-tex>.pdf)")
+    p_measure.add_argument(
         "--printed-width-pt", type=float, default=None, metavar="pt",
         help="the width the figure prints at, in PDF points (e.g. 0.8\\textwidth of 345 pt = "
-             "0.8 * 345 * 72/72.27); default: natural size")
+             "0.8 * 345 * 72/72.27); default: the figure's \\includegraphics width in "
+             "--main-tex, else natural size")
     p_measure.add_argument("--json", action="store_true", help="machine-readable output")
     p_measure.set_defaults(func=cmd_measure)
 

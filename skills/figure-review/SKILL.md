@@ -1,6 +1,6 @@
 ---
 name: figure-review
-description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints between 0.70 and 0.90 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension."
+description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints between 0.70 and 0.90 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Reports advisories beside them: values printed inside the figure, floats under 90% of the text width, float-only pages and large gaps in the compiled manuscript. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension."
 ---
 
 # Figure Review
@@ -41,9 +41,18 @@ rules read from the figure PDF itself — it never repairs a figure.
   `TEXT_BELOW_PRINT_FLOOR` or `TEXT_ABOVE_PRINT_CAP` and each offending
   span its `bound`. It was the floor-only `min-printed-font` before 0.54
   (`figure_dimensions.DEPRECATED_DIMENSION_ALIASES` maps the old key). The printed size is the span size
-  times `--printed-width-pt` / the PDF width (natural size when omitted); the
-  body comes from `--body-pt`, else `--main-tex` (default `<paper>/main.tex`),
-  else 10 pt. A PDF without a text layer is `unmeasured` (`NO_TEXT_LAYER`).
+  times the printed width / the PDF width. The printed width is
+  `--printed-width-pt`, else the figure's `\includegraphics` `width=`/`scale=`
+  in `--main-tex` (default `<paper>/main.tex`, `\input` files included),
+  resolved against `\textwidth`, `\linewidth` and an enclosing minipage or
+  subfigure, else natural size. The body is `--body-pt`, else the size the
+  compiled `--main-log` (default `<main-tex>.log`) shows the class loaded
+  (`size11.clo`, `scrsize11pt.clo`, `mem11.clo`, IEEEtran's "This is a 10
+  point document."), else the `\documentclass[<N>pt]` option, else 10 pt.
+  `\textwidth` is geometry's or typearea's line in the log, else a known
+  one-column class default. The report's `sources` names where each of the
+  three values came from. A PDF without a text layer is `unmeasured`
+  (`NO_TEXT_LAYER`).
 - `background` — a filled rectangle covering the page (`FULL_PAGE_BACKGROUND`).
 - `whitespace` — a margin wider than 4 pt between the drawn content and the
   page (`MARGIN_WASTE`, naming the sides).
@@ -53,6 +62,26 @@ rules read from the figure PDF itself — it never repairs a figure.
 
 An unreadable PDF leaves these four `unmeasured` with `PDF_UNREADABLE`; the
 raster dimensions are still reported.
+
+**Advisories** (the report's `advisories`, beside the roster; each reads
+`advisory`, `pass` or `unmeasured` with a reason, and none fails the figure
+or the call):
+
+- `numeric-text` — a row of words carrying a value (`acc = 0.93`, `n = 120`,
+  `87.5%`) or an isolated decimal or percentage not aligned with two other
+  numbers the way tick labels are (`NUMERIC_TEXT_IN_FIGURE`): values belong
+  in the prose or a table, not the picture.
+- `width-share` — every figure and table float printed under 90 % of
+  `\textwidth` (`NARROW_FLOAT`). A figure's width is its widest row of
+  graphics or minipages in `main.tex`; a table's is its declared width
+  (`tabularx`, `tabular*`, `\resizebox`), else its widest rule in
+  `--main-pdf` (default `<main-tex>.pdf`). `TEXT_WIDTH_UNKNOWN` or
+  `MANUSCRIPT_SOURCE_ABSENT` when it cannot be read.
+- `page-whitespace` — per page of the compiled manuscript, whether it holds
+  only floats (`FLOAT_ONLY_PAGE`) and every vertical gap of at least 72 pt
+  (`LARGE_GAP`, as a forced `[H]` float leaves); the last page's trailing gap
+  is not reported. `MANUSCRIPT_PDF_ABSENT`, `PDF_UNREADABLE` or
+  `PDF_READER_ABSENT` when it cannot be read.
 
 **Never answerable from pixels, and never claimed to be:** arrow
 or connection correctness, style, aesthetics, legend quality, and which
@@ -72,7 +101,8 @@ machine will use.
 python scripts/review_cli.py probe [--json]
 python scripts/review_cli.py raster --pdf <path/to/example-figure.pdf> [--dpi 150] [--out <dir>]
 python scripts/review_cli.py measure --pdf <path/to/example-figure.pdf> [--out <dir>] [--tex <path>]
-                                     [--body-pt <pt>] [--main-tex <path>] [--printed-width-pt <pt>]
+                                     [--body-pt <pt>] [--main-tex <path>] [--main-log <path>]
+                                     [--main-pdf <path>] [--printed-width-pt <pt>]
 ```
 
 `probe` names the first tool this skill's fallback chain finds — in order,
