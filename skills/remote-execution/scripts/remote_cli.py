@@ -30,7 +30,7 @@ needs one. `--credential-dir` is an override only, for tests and
 already-materialized credentials — the default is lazy materialization,
 and no target configuration file is ever consulted for a credential path.
 
-Run with any Python 3.10+ (stdlib-only):
+Run with Python 3.11+ (stdlib-only; older interpreters are refused by name):
     python3 -m unittest tests.test_remote_execution
 """
 from __future__ import annotations

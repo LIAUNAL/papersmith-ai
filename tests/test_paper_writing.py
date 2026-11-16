@@ -14647,11 +14647,13 @@ class PythonFloorGuardTests(unittest.TestCase):
     an older system `python3` crashed on runtime-evaluated PEP 604 unions,
     so the floor is enforced rather than kept compatible.
 
-    A pre-3.7 interpreter cannot even PARSE `paper_cli.py` to reach this
-    check (`from __future__ import annotations` is itself the 3.7+ syntax
-    feature), so the comparison can only be proven by telling a real,
-    fully-capable interpreter that it is older -- `sys.version_info`
-    patched for the duration of one call, restored immediately after.
+    A real interpreter below the floor never reaches this check: the
+    module-level guard at the top of `paper_cli.py` refuses it before any
+    import (`tests/test_python_floor.py` runs that with a real old
+    interpreter when one exists). So this in-`main` comparison is proven by
+    telling a fully-capable interpreter that it is older --
+    `sys.version_info` patched for the duration of one call, restored
+    immediately after.
     """
 
     def test_an_interpreter_at_the_floor_is_accepted(self) -> None:

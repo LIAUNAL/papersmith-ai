@@ -73,11 +73,12 @@ class PythonFloorTests(unittest.TestCase):
                 done = subprocess.run([interpreter, str(path), "--help"], capture_output=True, text=True,
                                       timeout=60, cwd=FORGE_ROOT)
                 self.assertEqual(done.returncode, 2, done.stderr[-400:])
-                answer = json.loads(done.stdout)
+                # Each CLI answers on its own refusal channel: stdout, or stderr for datasets_cli.
+                answer = json.loads(done.stdout or done.stderr)
                 self.assertEqual(answer["error"], "PYTHON_VERSION_UNSUPPORTED")
                 self.assertFalse(answer["ok"])
                 self.assertIn("3.11", answer["message"])
-                self.assertNotIn("Traceback", done.stderr)
+                self.assertNotIn("Traceback", done.stdout + done.stderr)
 
 
 if __name__ == "__main__":

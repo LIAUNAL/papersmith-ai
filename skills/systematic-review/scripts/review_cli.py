@@ -950,6 +950,8 @@ def flow_svg(counts: dict, criteria: dict[str, str]) -> str:
 
     def box(x, y, w, lines, *, bold=False):
         h = 16 * len(lines) + 16
+        # Kept out of the f-string: a backslash-escaped quote inside a replacement field is a
+        # SyntaxError before Python 3.12, and this module must parse for its floor guard to run.
         weight = ' font-weight="bold"'
         text = "".join(
             f'<text x="{x + 10}" y="{y + 22 + 16 * i}" font-size="12"'
