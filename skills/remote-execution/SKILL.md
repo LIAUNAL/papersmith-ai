@@ -1851,8 +1851,8 @@ threads). Without that declaration, `verify --shards` still flags a merge
 whose shards differ in `runtime.host` or `runtime.threads`: a non-blocking
 `distribution.runtimeWarnings` entry `{kind: "cross-host" |
 "thread-settings", shards, values}` (`shard_io.runtime_warnings`) that
-changes neither `status` nor `shardsDisagree`; shards with no `runtime`
-block are skipped.
+changes neither `status` nor `shardsDisagree`, present only when shards
+differ; shards with no `runtime` block are skipped.
 
 **Readiness, and no clock.** `remote_cli.py readiness --job-dir <dir>
 --worker <worker>` reports whether a job is ready for its full submission

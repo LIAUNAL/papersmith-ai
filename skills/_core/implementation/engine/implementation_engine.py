@@ -19507,7 +19507,10 @@ def cmd_verify(args: argparse.Namespace) -> dict:
         sorted(dimension_names) if dimension_names is not None else None)
     # Cross-host or thread-setting shards: a warning only, never a refusal,
     # so `status` and `shardsDisagree` stay as `distribution_state` left them.
-    distribution["runtimeWarnings"] = list((merged or {}).get("runtimeWarnings") or [])
+    differing = list((merged or {}).get("runtimeWarnings") or [])
+    if differing:
+        # Present only when shards differ, so every existing output stays byte-identical.
+        distribution["runtimeWarnings"] = differing
     if dimension_names is None and distribution["status"] not in (
             "none", "absent", "undeclared"):
         distribution["note"] = (

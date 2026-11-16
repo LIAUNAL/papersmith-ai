@@ -123,7 +123,7 @@ class VerifyShardsRuntimeWarnings(unittest.TestCase):
             "a": {"epochs": 5, "runtime": runtime("host-aaaaaaaaaaaa")},
             "b": {"epochs": 5, "runtime": runtime("host-aaaaaaaaaaaa")}}))
 
-        self.assertEqual(distribution["runtimeWarnings"], [])
+        self.assertNotIn("runtimeWarnings", distribution)
 
     def test_older_shards_without_runtime_are_skipped(self):
         box = self.build_target()
@@ -131,7 +131,7 @@ class VerifyShardsRuntimeWarnings(unittest.TestCase):
             "a": {"epochs": 5},
             "b": {"epochs": 5, "runtime": runtime("host-bbbbbbbbbbbb")}}))
 
-        self.assertEqual(distribution["runtimeWarnings"], [])
+        self.assertNotIn("runtimeWarnings", distribution)
         self.assertEqual(distribution["shardsArrived"], ["a", "b"])
 
     def test_disagreement_refusal_is_unchanged_alongside_a_warning(self):
@@ -149,7 +149,7 @@ class VerifyShardsRuntimeWarnings(unittest.TestCase):
         box = self.build_target()
         proc = self.verify(box)
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(json.loads(proc.stdout)["distribution"]["runtimeWarnings"], [])
+        self.assertNotIn("runtimeWarnings", json.loads(proc.stdout)["distribution"])
 
 
 if __name__ == "__main__":
