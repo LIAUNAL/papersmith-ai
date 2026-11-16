@@ -122,7 +122,7 @@ def _scaffold(product: Path, shown: str) -> int:
             except OSError:
                 pass
     checked = contract.check_discussion(product, data)
-    warnings = list(checked["warnings"])
+    warnings = list(checked["warnings"]) + contract.unread_fields(data)
     if not data["protocol"]:
         warnings.append("no experiments/experiments-*-vNN.md found: add the hypotheses by hand")
     return _emit({"ok": True, "file": contract.DISCUSSION_FILE, "stage": data["stage"],

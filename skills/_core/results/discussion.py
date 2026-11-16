@@ -13,7 +13,7 @@ the folder deliberately has no package ``__init__``.
 Public API: ``STAGES``, ``VERDICTS``, ``NOVELTY_VERDICTS``,
 ``QUALITATIVE_KINDS``, ``DISCUSSION_TYPES``, ``DiscussionRefusal``,
 ``product_stage``, ``check_discussion``, ``load_and_check``,
-``significance_comparisons`` and ``scaffold``.
+``significance_comparisons``, ``scaffold`` and ``unread_fields``.
 
 Every read is bounded (bytes per file, files, rows) and contained in the
 product folder: an absolute path, a ``..`` escape or a symlink resolving
@@ -68,9 +68,23 @@ _PROTOCOL_RE = re.compile(r"^experiments-.+-v(\d+)\.md$")
 #: An experiment declares [exp:<id>] in its own heading, at any level
 #: (skills/_core/conventions/experiments.json), as the Experiments tab reads it.
 _EXPERIMENT_RE = re.compile(r"^#{1,6}\s+.*?\[exp:([^\]]+)\]")
-_REPORT_RE = re.compile(r"^###\s+Expected Report:?\s*(.*)$")
+#: The expected-report heading, in the languages a protocol may be written in
+#: (English, Spanish, Portuguese, French); matched without accents or case.
+_REPORT_RE = re.compile(r"^###\s+(?:expected report|reporte esperado|informe esperado|"
+                        r"relatorio esperado|rapport attendu):?\s*(.*)$", re.IGNORECASE)
 _BULLET_RE = re.compile(r"^-\s+\*\*([^*]+?):?\*\*:?\s*(.*)$")
-_BULLET_FIELDS = {"hypothesis": "statement", "success criterion": "criterion"}
+#: The bullet labels the scaffold copies, keyed by their accent-folded, lower-case
+#: form: English first, then the Spanish, Portuguese and French equivalents, so a
+#: protocol written in its declared language still yields its hypotheses (#184).
+_BULLET_FIELDS = {
+    "hypothesis": "statement", "hipotesis": "statement", "hipotese": "statement",
+    "hypothese": "statement",
+    "success criterion": "criterion", "criterio de exito": "criterion",
+    "criterio de sucesso": "criterion", "critere de succes": "criterion",
+    "critere de reussite": "criterion",
+}
+#: The English label of each copied field, used to name an unread one.
+_FIELD_LABELS = {"statement": "Hypothesis", "criterion": "Success criterion"}
 
 _KNOWN_KEYS = {
     "top": {"schema", "stage", "protocol", "generated_at", "summary", "discussion_type", "metrics",
@@ -544,6 +558,43 @@ def _latest_protocol(root: Path) -> Path | None:
     return folder / best[1] if best else None
 
 
+def _fold(label: str) -> str:
+    """``label`` lower-cased, accents stripped and spaces collapsed (``Hipótesis`` -> ``hipotesis``)."""
+    import unicodedata
+
+    decomposed = unicodedata.normalize("NFKD", label)
+    plain = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(plain.lower().split())
+
+
+def _fold_heading(line: str) -> str:
+    """A ``###`` heading with its title folded by ``_fold``, so the report regex matches any spelling."""
+    if not line.startswith("### "):
+        return line
+    return "### " + _fold(line[4:])
+
+
+def unread_fields(data: dict) -> list[str]:
+    """One plain sentence per scaffolded hypothesis field the protocol did not yield.
+
+    ``data`` is a ``scaffold`` result. A protocol bullet the scaffold cannot read
+    (another language, another label) leaves its field empty; this names the
+    experiment and the field instead of letting the empty value pass silently.
+    """
+    if not isinstance(data, dict):
+        return []
+    protocol = data.get("protocol") or "the protocol"
+    out: list[str] = []
+    for item in data.get("hypotheses") or []:
+        if not isinstance(item, dict):
+            continue
+        for field, label in _FIELD_LABELS.items():
+            if not item.get(field):
+                out.append(f"experiment {item.get('experiment', '?')}: could not read its {label} "
+                           f"from {protocol}; fill it by hand")
+    return out
+
+
 def _protocol_experiments(path: Path) -> list[dict[str, str]]:
     """Each experiment heading carrying ``[exp:<id>]`` (any level) with its first ``Hypothesis`` and ``Success criterion`` bullets, verbatim."""
     try:
@@ -567,7 +618,7 @@ def _protocol_experiments(path: Path) -> list[dict[str, str]]:
             continue
         if current is None:
             continue
-        if _REPORT_RE.match(stripped):
+        if _REPORT_RE.match(_fold_heading(stripped)):
             in_report = True
             continue
         if stripped.startswith("### "):
@@ -577,7 +628,7 @@ def _protocol_experiments(path: Path) -> list[dict[str, str]]:
             continue
         bullet = _BULLET_RE.match(stripped)
         if bullet:
-            field = _BULLET_FIELDS.get(bullet.group(1).strip().lower())
+            field = _BULLET_FIELDS.get(_fold(bullet.group(1)))
             if field and not current[field]:
                 current[field] = bullet.group(2).strip()
     return experiments
