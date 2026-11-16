@@ -184,6 +184,22 @@ class PlanTests(TranslateCase):
     def test_plan_refuses_a_language_other_than_spanish(self) -> None:
         self.refused("plan", "TRANSLATION_LANGUAGE_UNSUPPORTED", lang="fr")
 
+    def test_the_argparse_dispatch_reaches_translate(self) -> None:
+        """`paper_cli.main(["translate", ...])` is the verb's front door; it
+        answers `status` without writing anything under the paper."""
+        import contextlib
+        import io
+        before = tree_hash(self.paper)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exit_code = paper_cli.main(["translate", "status", "--lang", "es", "--paper", str(self.paper)])
+        self.assertEqual(exit_code, 0, buffer.getvalue())
+        out = json.loads(buffer.getvalue())
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["lang"], "es")
+        self.assertFalse(out["built"])
+        self.assertEqual(tree_hash(self.paper), before)
+
     def test_plan_refuses_without_main_tex(self) -> None:
         (self.paper / "main.tex").unlink()
         self.refused("plan", "PAPER_ABSENT")

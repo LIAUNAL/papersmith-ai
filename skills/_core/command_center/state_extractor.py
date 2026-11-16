@@ -179,6 +179,9 @@ AGENT_STAGES = {
     "contract-auditor": "writing",
     "style-sampler": "writing",
     "ai-auditor": "writing",
+    # Translate the finished English paper to Spanish and review its style.
+    "translator": "writing",
+    "translation-style-reviewer": "writing",
     # Reviews the compiled paper against the main-track review form.
     "paper-reviewer": "audit",
     "diagram-author": "figures",

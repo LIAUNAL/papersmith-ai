@@ -58,6 +58,7 @@ PAPER_VERBS: tuple[str, ...] = (
     "ai_audit",
     "humanize",
     "review",
+    "translate",
 )
 
 #: The orchestrator CLI's own command roster (``cli._REGISTRY``).
@@ -1648,6 +1649,9 @@ PAPER_DISPOSITIONS: dict[str, str] = {
         # `review` records the paper-reviewer's round, which `/paper-writing`
         # receives from the agent and writes itself; not an agent-facing tool.
         else "out" if verb == "review"
+        # `translate` writes paper/translations/<lang>/ (`plan`, `store`, `build`,
+        # `audit`) next to read-only `status`: mixed like `venue`, so declared out.
+        else "out" if verb == "translate"
         else "exposed"
     )
     for verb in PAPER_VERBS

@@ -2553,6 +2553,7 @@ _PAPER_CLI_SUITE_FILES = (
     "test_paper_contract.py",
     "test_paper_decisions.py",
     "test_paper_ai_metrics.py",
+    "test_paper_translate.py",
 )
 
 
