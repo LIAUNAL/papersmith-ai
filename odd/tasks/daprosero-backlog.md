@@ -24,7 +24,7 @@ Objective: fix the open issues filed by Daprosero (#180-#186) and the maintainer
 - T6 [x] S4 (items 2, 4) — bib build prefers published records over arXiv and normalizes entities and entry types. Route: delegated writer W5 (parallel batch A).
 - T7 [x] S6.5 — Python floor raised to 3.11 and enforced in every skill CLI (user: "raise to 3.11"). Route: inline. Commit 3b86ed69.
 - T8 [ ] S4 (items 1, 3, auditor pass) — pending user decision on failing offline citations and cite-once.
-- T9 [ ] S8, S3 — run-record host/threads and figure provenance. Route: batch B.
+- T9 [x] S8, S3 — run records carry host (digest label), hardware, libraries, threads; parallelism estimate/plan warn on cross-host or thread-setting pools (ce129dc4, fbec9ed5); figure provenance recorded and warned (2af4c158, 6872c59c). Route: delegated writers W6, W7 (parallel). Open: shard merge (`verify --shards`, implementation_engine.py:19487) does not yet warn on cross-host shards.
 - T10 [ ] S11 — pixelrag. Route: pending user decision (keyless vs model).
 - T11 [ ] S10 — roots.json roots R1-R5 and re-render #110. Route: inline, last.
 
@@ -35,3 +35,4 @@ Objective: fix the open issues filed by Daprosero (#180-#186) and the maintainer
 - L4 (2026-11-16) #166 cause measured: the failing assertion is `first.json["api_calls"]["cached"] == 0`; the four candidates of field 17 each asked the field's total concurrently, so it reached the API 2-4 times or came from the cache depending on timing. Not the decoy home.
 - L5 (2026-11-16) "raise to 3.11"
 - L6 (2026-11-16) Batch A landed as work units: 03785bd1 (T6 bib), 063aa234 + e5e3759d (T3), 9ea468b9 (T5 coherence), df7405e0 (T4 figure-review), 5b772644 (T2 CAS, reorder, coherence/stale-facts wiring), bf314cc2, 3b86ed69 (T7), 533116f8 (docs, harness sync), and a fix for the skill-audit pinned line and an old-project word. Full suite: only Mac-environment failures (GPU probe, Linux launcher), xdist-only flakes (toy targets, skill_audit) and the release version bump. Next: T8/T10 decisions, T9 batch B, T11, independent verifier for T2 (concurrency: compare-and-swap).
+- L7 (2026-11-16) RDD: whole-branch review exceeded the lens budget (4920 lines). User chose "Solo los críticos": 4 commits reviewed in isolation (ce129dc4, 2af4c158, 3b86ed69, 5b772644), all approved and acknowledged; their findings fixed in fbec9ed5, 6872c59c, 7b973673, 2a43e75e. Independent verifier on 5b772644: PASS for S7, S6.1, S6.4.
