@@ -1974,40 +1974,51 @@ rather than surfacing a raw traceback and leaving a reader to guess.
 headless CLI, pinned exactly:
 
 ```
-uv tool install --force --python 3.14 "google-colab-cli==0.6.0" --with "jupyter-kernel-client<1"
+uv tool install --force --python 3.14 "google-colab-cli==0.8.0" --with "jupyter-kernel-client<1"
 ```
 
 The pin is not decorative: `google-colab-cli` 0.6.0 with
 `jupyter-kernel-client` 1.x crashes every `exec` (`AttributeError: module
-'jupyter_kernel_client' has no attribute 'KernelClient'`; upstream #94), so
-the working combination is 0.6.0 with the 0.x client that a bare dependency
-resolution does not pick. The adapter shells out to `colab` on `PATH` by
+'jupyter_kernel_client' has no attribute 'KernelClient'`; upstream #94), and
+0.8.0 itself requires `jupyter-kernel-client==0.9.0`, which the `--with`
+constraint still admits. The adapter shells out to `colab` on `PATH` by
 default; a non-default location can be supplied as `colab_executable` when
 constructing `ColabAdapter` directly.
 
-`google-colab-cli` 0.7.5 is **untested live** and the pin stays at 0.6.0.
-Read from 0.7.5's own `--help` and installed source (never authenticated):
-it depends on `jupyter-kernel-client==0.9.0` and resolves either kernel
-client class name, so #94 looks fixed there; the `sessions` line gained a
-`Shape:` field, which the adapter's line parser still reads; `new`,
-`exec`, `upload`, `download`, `install`, `status` and `stop` keep the flags
-the adapter passes. But 0.7.5 no longer ships the hidden `keep-alive`
-command the adapter spawns (0.6.0 does), so on 0.7.5 that best-effort
-keep-alive would silently do nothing and a long run could be idle-reclaimed.
-Moving the pin waits for a live rehearsal that settles that.
+The pin is 0.8.0, the version a paper workspace runs live. Read from its
+own `--help` and installed source: `new`, `exec`, `upload`, `download`,
+`install`, `status`, `stop` and `sessions` keep the flags the adapter
+passes; `new --gpu` accepts T4, L4, G4, H100 and A100; and the hidden
+`keep-alive` command 0.6.0 shipped is gone, so the adapter's best-effort
+keep-alive spawn does nothing there.
 
 Authentication is the CLI's own oauth2 copy-paste ritual, and the adapter
-never reads the token file the CLI writes: the CLI's own child process
-resolves it from the `HOME` the adapter forwards, and no module above the
-seam learns a path to it. Measured in the CLI's source (0.6.0 and 0.7.5
-alike): the token lives at `~/.config/colab-cli/token.json`, resolved from
-`HOME` when the CLI starts, and the global `--config PATH` flag names the
-session state FILE (`sessions.json`) only — it never moves the token. No
-OAuth client file is needed: the CLI ships Google's public installed-app
-client (`colab_cli/oauth_config.json`) and uses it whenever
-`~/.colab-cli-oauth-config.json` does not exist; its copy-paste redirect
-is registered to that client, so substituting your own client would break
-the flow (`redirect_uri_mismatch`, per the CLI's own `auth.py`).
+never reads what the CLI stores: the CLI's own child process resolves its
+sign-in from the `HOME` the adapter forwards, and no module above the seam
+learns a path to it. Where it lives depends on the version. 0.6.0 keeps the
+token at `~/.config/colab-cli/token.json`. 0.8.0 keeps it in a Python
+keyring (service `google-colab-cli`), migrates and deletes a legacy
+`token.json` on first use, and writes no `token.json` at all. Because the
+child gets only `PATH` and `HOME` (no `DBUS_SESSION_BUS_ADDRESS`), the
+keyring cannot reach a desktop Secret Service and falls back to the file
+backend under that `HOME` (`~/.local/share/python_keyring/`), so one
+owner's sign-in stays inside their own `configDir`. The global
+`--config PATH` flag names the session state FILE (`sessions.json`) only —
+it never moves the sign-in. No OAuth client file is needed: the CLI ships
+Google's public installed-app client (`colab_cli/oauth_config.json`) and
+uses it whenever `~/.colab-cli-oauth-config.json` does not exist; its
+copy-paste redirect is registered to that client, so substituting your own
+client would break the flow (`redirect_uri_mismatch`, per the CLI's own
+`auth.py`).
+
+**Signed in, one definition.** `preflight`'s account check
+(`ColabAdapter.account_check`) and `smith colab status` agree on what
+"signed in" means: `colab sessions`, run under the owner's `HOME` and
+`--config` with the allowlisted environment and stdin closed, exits 0. The
+adapter takes the existence of `token.json` as a fast path (one stat, never
+a read), so a 0.6.0 sign-in needs no subprocess; without it (every 0.8.0
+sign-in) the probe decides. The probe's output, which carries a consent URL
+when the owner is signed out, is discarded unread.
 
 **Team accounts: one worker per owner.** When
 `<workspace>/.papersmith/team.json` declares Colab accounts, the adapter

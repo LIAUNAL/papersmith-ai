@@ -3,13 +3,19 @@
 Each team member with a Colab account (``smith team add --colab``) gets a
 private state directory, ``$XDG_CONFIG_HOME/papersmith/colab/<owner>/``
 (``0700``). ``google-colab-cli`` (pinned at :data:`PINNED_VERSION`) keeps its
-oauth token at ``~/.config/colab-cli/token.json`` resolved from ``HOME`` at
-import time; its global ``--config PATH`` names the session STATE FILE
-(``sessions.json``) and does not move the token (measured against the 0.7.5
-source and ``colab --help``; the remote-execution Colab adapter records the
-same in the 0.6.0 source). So an owner's isolation is the child's ``HOME``: every invocation
-runs ``HOME=<configDir> colab --config <configDir>/.config/colab-cli/sessions.json
-<command>``, and the token lands at ``<configDir>/.config/colab-cli/token.json``.
+sign-in under ``HOME``: 0.6.0 at ``~/.config/colab-cli/token.json``, 0.8.0 in a
+Python keyring that, with no desktop session bus forwarded, is the file backend
+under ``~/.local/share/python_keyring/``. Its global ``--config PATH`` names the
+session STATE FILE (``sessions.json``) and moves neither (measured against the
+0.7.5 and 0.8.0 sources and ``colab --help``). So an owner's isolation is the
+child's ``HOME``: every invocation runs ``HOME=<configDir> colab --config
+<configDir>/.config/colab-cli/sessions.json <command>``, and the sign-in lands
+under ``<configDir>``.
+
+"Signed in" has one definition, shared with the remote-execution Colab
+adapter's ``account_check``: ``colab sessions`` under the owner's ``HOME``
+exits 0 (:data:`STATUS_ARGS`). The adapter also accepts a present 0.6.0
+``token.json`` as a fast path; 0.8.0 writes none.
 
 **Nothing here opens, copies or prints a file inside a configDir.** The token
 and ``sessions.json`` are credential-grade; papersmith only creates the
@@ -41,7 +47,7 @@ from . import team
 from .kaggle_mcp import detect_environment
 
 CLI_NAME = "colab"
-PINNED_VERSION = "0.6.0"
+PINNED_VERSION = "0.8.0"
 #: The install line ``skills/remote-execution/SKILL.md`` documents; the two are
 #: the same pin and must change together.
 INSTALL_COMMAND = (f'uv tool install --force --python 3.14 "google-colab-cli=={PINNED_VERSION}" '
