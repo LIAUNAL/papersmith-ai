@@ -11,6 +11,30 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.77.0
+
+- The journal match chooses its scope: international journals (as before) or
+  Colombian national journals from the Publindex IBN 2026 list
+  (`journal_cli.py search --scope national`, and an International / National
+  selector in the PDF tab). The national match ranks only categories A1, A2
+  and B, and each row shows the measured submission-to-publication time read
+  from the journal's own site and whether it receives manuscripts in Spanish,
+  English or both (declared on its pages, else inferred from what it
+  publishes). The bundled data and the scripts that rebuild it live under
+  `skills/journal-finder/data/publindex-ibn.json` and `scripts/fetch-publindex*.py`.
+- International matches also report the median submission-to-publication time
+  next to the time to acceptance.
+- `paper_cli.py translate` (`plan`, `store`, `build`, `audit`, `status`)
+  translates the finished English manuscript to neutral academic Spanish for
+  journals that only receive Spanish. The English paper stays the source; the
+  translation lives under `paper/translations/es/`, and every block passes a
+  fidelity gate (citations, labels and references, math, numbers, paragraph
+  count) before it is stored. Two agents, `translator` and
+  `translation-style-reviewer`, write and review it, and `translate audit`
+  scores style, flow and redundancy (adapted from Morfeo's `estilo_es.py`,
+  Apache-2.0). The PDF tab compiles, previews and audits the Spanish version,
+  and a Spanish-only national journal points to the step.
+
 ## 0.76.4
 
 - `write` and `verify`'s `own-paragraph` check now cover every block whose
