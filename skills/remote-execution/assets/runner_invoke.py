@@ -488,6 +488,43 @@ def kernel_python_path(clone_root: str | Path, existing: str | None) -> str:
     return clone_src
 
 
+# `run-config.json`'s `env` block (generate-job `--env KEY=VALUE`): the
+# job's own variables, exported to whichever block runs, under the forge's
+# names. Generation already refused a forge name, a name the runner or the
+# interpreter owns and anything credential-shaped (`jobfolder.
+# validate_job_env`); this asset re-checks the structural half on the
+# worker, because it is the one that exports them and a hand-edited config
+# reaches it too.
+JOB_ENV_KEY = "env"
+_JOB_ENV_RESERVED = frozenset({
+    "PATH", "HOME", "USERPROFILE", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
+    "PYTHONSAFEPATH", "PYTHONNOUSERSITE",
+})
+
+
+def job_environment(run_config: Mapping[str, Any]) -> dict:
+    """The job's declared `env` block as the mapping to export, `{}` when it
+    declares none. Refuses a block that is not string pairs, a `FORGE_*`
+    name (the forge's handoff sets those, per submission) and a name the
+    runner or the interpreter decides."""
+    declared = run_config.get(JOB_ENV_KEY)
+    if declared is None:
+        return {}
+    if not isinstance(declared, Mapping):
+        raise InvokeError("run-config.json's env must be an object of NAME: value strings")
+    exported: dict[str, str] = {}
+    for name, value in declared.items():
+        if not isinstance(name, str) or not isinstance(value, str) or not name \
+                or "=" in name or "\0" in name or "\0" in value:
+            raise InvokeError(f"run-config.json's env entry {name!r} is not a NAME: value "
+                              "string pair")
+        upper = name.upper()
+        if upper.startswith(("FORGE_", "LD_", "DYLD_")) or upper in _JOB_ENV_RESERVED:
+            raise InvokeError(f"run-config.json's env declares {name!r}, which the runner "
+                              "or the interpreter decides")
+        exported[name] = value
+    return exported
+
 def submission_environment(
     mode: Any = None,
     units: list[str] | None = None,
@@ -552,6 +589,7 @@ def kernel_environment(
     carry_in: str | None = None,
     input_datasets: str | None = None,
     dataset_checks: str | None = None,
+    job_env: Mapping[str, str] | None = None,
 ) -> dict:
     """Everything the kernel receives from this cell, composed in one place.
 
@@ -582,11 +620,14 @@ def kernel_environment(
     distinction that governs what either becomes when it is passed.
     """
     existing = {} if existing is None else existing
-    composed = {
+    # The job's own `env` block first, so no forge name below can be
+    # shadowed by it (`job_environment()` refuses one anyway).
+    composed = dict(job_env or {})
+    composed.update({
         "PYTHONPATH": kernel_python_path(clone_root, existing.get("PYTHONPATH")),
         CLONE_ROOT_ENV: str(Path(clone_root).resolve()),
         CLONE_COMMIT_ENV: str(commit),
-    }
+    })
     composed.update(submission_environment(mode, units, session_deadline, carry_in,
                                            input_datasets, dataset_checks))
     return composed
@@ -712,6 +753,7 @@ def execute_notebook(
     carry_in: str | None = None,
     input_datasets: str | None = None,
     dataset_checks: str | None = None,
+    job_env: Mapping[str, str] | None = None,
     client_factory: Callable[..., Any] = _default_notebook_client,
 ) -> dict:
     """Execute the declared notebook — the notebook half of cell 1.
@@ -814,7 +856,8 @@ def execute_notebook(
                                  session_deadline=session_deadline,
                                  carry_in=carry_in,
                                  input_datasets=input_datasets,
-                                 dataset_checks=dataset_checks)
+                                 dataset_checks=dataset_checks,
+                                 job_env=job_env)
     saved = {variable: os.environ.get(variable) for variable in handoff}
     os.environ.update(handoff)
     try:
@@ -901,6 +944,7 @@ def invoke(
     input_datasets = discover_input_datasets(run_config)
     checks = run_config.get("datasetChecks")
     dataset_checks = json.dumps(checks, sort_keys=True) if checks else None
+    job_env = job_environment(run_config)
     if kind == "notebook":
         return execute_notebook(block, base_dir,
                                 commit=run_config.get("commit"),
@@ -909,11 +953,13 @@ def invoke(
                                 carry_in=carry_in,
                                 input_datasets=input_datasets,
                                 dataset_checks=dataset_checks,
+                                job_env=job_env,
                                 client_factory=client_factory)
     func = resolve_callable(block, import_module=import_module)
     kwargs = dict(block.get("kwargs") or {})
-    handoff = submission_environment(mode, units, deadline, carry_in, input_datasets,
-                                     dataset_checks)
+    handoff = dict(job_env)
+    handoff.update(submission_environment(mode, units, deadline, carry_in, input_datasets,
+                                          dataset_checks))
     # remote-preflight F1: a callable job is handed the clone root and the
     # pinned commit under the same two names a notebook kernel receives, so
     # a target that stamps its commit on a code-bundle worker (no git

@@ -16918,6 +16918,24 @@ class RunnerBootstrapTests(unittest.TestCase):
             run_config, {"capability": "sm_75", "archList": ["sm_60", "sm_75"]}
         )
 
+    def test_check_accelerator_accepts_an_l4_and_a_g4_runtime(self) -> None:
+        """`sm_89` (L4) and `sm_120` (G4) are what Colab's `--gpu L4|G4`
+        hand back; the gate compares by name, so a build that lists them
+        passes, and one that does not is refused."""
+        for capability, (major, minor) in (("sm_89", (8, 9)), ("sm_120", (12, 0))):
+            with self.subTest(capability=capability):
+                self.assertEqual(RUNNER_BOOTSTRAP._capability_to_arch((major, minor)), capability)
+                run_config = self._fake_run_config(
+                    accelerator={"kind": "cuda", "architectures": [capability]}
+                )
+                RUNNER_BOOTSTRAP.check_accelerator(
+                    run_config, {"capability": capability, "archList": ["sm_75", capability]}
+                )
+                with self.assertRaises(RUNNER_BOOTSTRAP.AcceleratorError):
+                    RUNNER_BOOTSTRAP.check_accelerator(
+                        run_config, {"capability": capability, "archList": ["sm_75"]}
+                    )
+
     def test_runner_bootstrap_module_names_no_service(self) -> None:
         """This asset's own no-service guard — in the same family as
         `test_adapter_module_names_no_service`,
@@ -24325,6 +24343,21 @@ class ColabSessionLifecycleTests(unittest.TestCase):
                 if tokens[0] == "exec":
                     self.assertEqual(tokens[tokens.index("--timeout") + 1], "600.0")
             self.assertNotIn(30.0, [value for values in captured.values() for value in values])
+
+    def test_colab_submit_spawns_no_keep_alive(self) -> None:
+        """google-colab-cli 0.8.0 (the pin) has no `keep-alive` command; the
+        adapter used to spawn one anyway, a child that exited "No such
+        command". A full submit and cancel now never invoke it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sim = _ColabCLISimulator(tmp)
+            sim.scenario(**self._fast_knobs())
+            folder = self._job_folder(tmp)
+            adapter = self._adapter(sim)
+            submission = self._submit(adapter, folder)
+            adapter.cancel(submission.id)
+            commands = [tokens[0] for tokens in sim.invocations()]
+            self.assertIn("new", commands)
+            self.assertNotIn("keep-alive", commands)
 
     def test_colab_argv_vocabulary_is_exactly_the_captured_help_surface(self) -> None:
         """The S2 done-when: every subcommand and flag this adapter uses

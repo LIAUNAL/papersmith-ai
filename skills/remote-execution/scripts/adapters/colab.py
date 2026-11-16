@@ -17,10 +17,12 @@ even reach — never by convention:
    (`google-colab-cli`), which is the service's own headless client.
 
    2. Colab authentication is the CLI's own business, read by the CLI's own
-    child process: it resolves `~/.config/colab-cli/token.json` from the
-    `HOME` this adapter forwards, and this module never opens that file,
-    never learns a path to it, and never sees a token value. There is no
-    `credentials` parameter on this adapter and no `CREDENTIAL_CLI` class
+    child process: it resolves its sign-in from the `HOME` this adapter
+    forwards (`~/.config/colab-cli/token.json` in 0.6.0, a Python keyring
+    under `~/.local/share/python_keyring/` in 0.8.0), and this module never
+    opens either, never learns a path into the keyring, and never sees a
+    token value (`account_check` only stats whether `token.json` exists).
+    There is no `credentials` parameter on this adapter and no `CREDENTIAL_CLI` class
     attribute, so `remote_cli._construct_adapter()` never hands it a
     credential provider at all.
 
@@ -47,7 +49,9 @@ even reach — never by convention:
    0.7.5 alike): the OAuth token path is
    `os.path.expanduser("~/.config/colab-cli/token.json")`, fixed at import
    from `HOME`, and the global `--config PATH` flag names the session
-   state FILE (`sessions.json`) only — it never moves the token. So the
+   state FILE (`sessions.json`) only — it never moves the token. 0.8.0
+   keeps the sign-in in a keyring under `HOME` instead, so `HOME` stays
+   the one thing that separates two owners. So the
    child's `HOME` is what keeps one owner's credential apart from
    another's, and `--config <configDir>/.config/colab-cli/sessions.json`
    is passed besides, on every argv, so the state file a worker uses is
@@ -214,10 +218,19 @@ def restore_notebook_json(path: Path) -> None:
 # states the file rather than changing it.
 CLI_SESSIONS_FILE_RELATIVE = Path(".config") / "colab-cli" / "sessions.json"
 
-# The token the CLI authenticates itself from under a given HOME. Only its
-# EXISTENCE is ever asked (`account_check`, preflight's sign-in probe): one
-# stat, never a read, the same rule the command center's sign-in row keeps.
+# Where google-colab-cli 0.6.0 keeps its oauth token under a given HOME.
+# 0.8.0 keeps its sign-in in a Python keyring under HOME instead
+# (`~/.local/share/python_keyring/`) and writes no such file. Only this
+# file's EXISTENCE is ever asked (`account_check`'s fast path): one stat,
+# never a read.
 CLI_TOKEN_FILE_RELATIVE = Path(".config") / "colab-cli" / "token.json"
+
+# The sign-in probe `account_check` falls back on, and the same one
+# `smith colab status` runs (`papersmith.core.colab.STATUS_ARGS`): `sessions`
+# lists the owner's sessions and starts nothing. Exit 0 under the owner's
+# HOME means the CLI holds a working sign-in, wherever it keeps it.
+SIGN_IN_PROBE_ARGS = ("sessions",)
+SIGN_IN_PROBE_TIMEOUT_SECONDS = 30.0
 
 # Every session this adapter creates carries this name prefix. The CLI
 # lists the ACCOUNT's sessions, not this skill's — `list_active()` claims
@@ -267,13 +280,19 @@ PROBE_PACKAGES = ("nbclient", "nbformat", "jupyter_client")
 
 # D13's declared-architecture → GPU-variant table: the `sm_*` names this
 # project's dual-architecture torch builds declare, mapped to the variant
-# names `colab new --gpu` accepts (all three are in the captured
-# `help-new.log` surface, S0 fact 4). A declared architecture outside this
+# names `colab new --gpu` accepts. T4, A100 and H100 are in the captured
+# `help-new.log` surface (S0 fact 4); 0.8.0's `colab new --help` lists
+# `--gpu` T4, L4, G4, H100 and A100, so L4 (Ada Lovelace, compute
+# capability 8.9) and G4 (RTX PRO 6000 Blackwell Server Edition, 12.0)
+# are mapped too. Each architecture names exactly one variant, so the
+# table stays invertible. A declared architecture outside this
 # table refuses by name — never a fallback to CPU — and TPU kinds are
 # refused outright, because no `--tpu` mapping is invented here. This table
 # only decides which machine arrives; the VM-side `check_accelerator()`
 # remains the authority on whether that machine can run the build.
-COLAB_ACCELERATOR_VARIANTS = {"sm_75": "T4", "sm_80": "A100", "sm_90": "H100"}
+COLAB_ACCELERATOR_VARIANTS = {
+    "sm_75": "T4", "sm_80": "A100", "sm_89": "L4", "sm_90": "H100", "sm_120": "G4",
+}
 
 # The accelerator a job generated with no `--accelerator-*` flags declares,
 # registered below exactly as `adapters/kaggle.py` registers its own. Without
@@ -793,6 +812,20 @@ class ColabAdapter(ADAPTER.Adapter):
             f"{', '.join(account.worker_id for account in team)}"
         )
 
+    def canonical_worker(self, worker: str) -> str:
+        """This adapter's worker id for `worker`: a bare team owner
+        (`carlos`) becomes `colab:carlos`; anything else, ids included, is
+        returned as given. Not one of the seam's six operations: an ordinary
+        hook `remote_cli` reads to refuse the bare form with one message
+        everywhere (`BARE_WORKER_ID`). Registry only, no subprocess."""
+        team = self._team()
+        if not team or any(account.worker_id == worker for account in team):
+            return worker
+        for account in team:
+            if account.owner == worker:
+                return account.worker_id
+        return worker
+
     def campaign_refusal(self, worker: str) -> str | None:
         """Why `worker` may not take part in a split campaign, or `None`
         when it may. Not one of the seam's six operations: an ordinary
@@ -814,8 +847,17 @@ class ColabAdapter(ADAPTER.Adapter):
                 "on PATH", "fix": "install the official colab CLI and put it on PATH"}
 
     def account_check(self, worker: str) -> dict:
-        """Whether `worker` is declared and signed in: its state directory
-        holds the CLI's token file (existence only, never its bytes)."""
+        """Whether `worker` is declared and signed in, by the one definition
+        `smith colab status` uses too (`SIGN_IN_PROBE_ARGS`): the CLI's own
+        `colab sessions`, run under the owner's `HOME` and `--config` with
+        this adapter's allowlisted environment and stdin closed, exits 0.
+
+        The token file's EXISTENCE is the fast path (one stat, never a
+        read): google-colab-cli 0.6.0 keeps its sign-in there. 0.8.0 keeps
+        it in a Python keyring under `HOME` instead and writes no
+        `token.json`, so without one the probe decides. Nothing here opens
+        the token or the keyring; the probe's output is discarded unread
+        (a signed-out CLI prints a consent URL there)."""
         try:
             account = self._account_for(worker, allow_legacy=False)
         except ColabAdapterError as exc:
@@ -823,13 +865,34 @@ class ColabAdapter(ADAPTER.Adapter):
                     "fix": "register the owner (`smith team add ... --attest`) with a Colab "
                            "tier and configDir"}
         home = account.config_dir if account is not None else Path.home()
+        tier = f", tier {account.tier}" if account is not None else ""
         token = home / CLI_TOKEN_FILE_RELATIVE
         if token.exists():
-            tier = f", tier {account.tier}" if account is not None else ""
-            return {"ok": True, "evidence": f"{worker} is signed in ({home}{tier})"}
-        return {"ok": False, "evidence": f"{worker} is not signed in: no CLI token under {home}",
-                "fix": f"sign in once with `HOME={home} colab` (the CLI's own login), then "
-                       "preflight again"}
+            return {"ok": True, "evidence": f"{worker} is signed in ({home}{tier}; CLI token "
+                                            "file present)"}
+        fix = (f"sign in once with `HOME={home} colab` (the CLI's own login, or "
+               "`smith colab login --owner <owner>`), then preflight again")
+        probe = f"`colab {' '.join(SIGN_IN_PROBE_ARGS)}`"
+        try:
+            completed = subprocess.run(
+                [*self._cli(account), *SIGN_IN_PROBE_ARGS],
+                shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, env=self._env_for(account),
+                timeout=SIGN_IN_PROBE_TIMEOUT_SECONDS,
+            )
+        except ColabAdapterError as exc:
+            return {"ok": False, "evidence": f"{worker} is not signed in: {exc}", "fix": fix}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "evidence": f"{worker}: no CLI token under {home}, and {probe} "
+                    f"did not answer within {SIGN_IN_PROBE_TIMEOUT_SECONDS:g} s", "fix": fix}
+        except OSError as exc:
+            return {"ok": False, "evidence": f"{worker}: no CLI token under {home}, and the "
+                    f"colab CLI could not start ({exc.strerror or exc})", "fix": fix}
+        if completed.returncode == 0:
+            return {"ok": True, "evidence": f"{worker} is signed in ({home}{tier}; {probe} "
+                                            "succeeded, keyring-backed CLI)"}
+        return {"ok": False, "evidence": f"{worker} is not signed in: no CLI token under {home} "
+                f"and {probe} exited {completed.returncode}", "fix": fix}
 
     def accelerator_request(self, run_config: dict) -> dict:
         """The `--gpu` variant `colab new` will request for this job's
@@ -860,16 +923,17 @@ class ColabAdapter(ADAPTER.Adapter):
         `PATH` and `HOME`. Nothing else is ever forwarded.
 
         `HOME` is load-bearing, not convenience: the CLI authenticates
-        ITSELF out of `~/.config/colab-cli/token.json`, and it resolves
-        that directory from the child's own `HOME`. This adapter never
-        touches that file or its contents — the child is the only party
+        ITSELF from its sign-in under the child's own `HOME`
+        (`~/.config/colab-cli/token.json` in 0.6.0, a Python keyring under
+        `~/.local/share/python_keyring/` in 0.8.0). This adapter never
+        touches either or their contents — the child is the only party
         that does. A process with no `HOME` is refused here rather than
         passed a child that would fail authentication for a reason no
         caller could read.
 
         For a team worker the same two names are forwarded, and `HOME` is
         the owner's `configDir` — the one route by which that owner's own
-        token file is the one the child resolves. The directory itself is
+        sign-in is the one the child resolves. The directory itself is
         stat'ed (it must exist and be mode 0700, since what the CLI keeps
         in it is credential-grade) and nothing inside it is touched; a
         missing directory refuses naming the owner's one-time login.
@@ -955,7 +1019,7 @@ class ColabAdapter(ADAPTER.Adapter):
                 remedy = (
                     f" — this adapter shells out to the {argv[0]!r} command "
                     "line, which arrives with `"
-                    'uv tool install --force --python 3.14 "google-colab-cli==0.6.0" --with "jupyter-kernel-client<1"'
+                    'uv tool install --force --python 3.14 "google-colab-cli==0.8.0" --with "jupyter-kernel-client<1"'
                     "`; "
                     "install it and make sure the tool bin directory it "
                     "reports is on PATH"
@@ -1293,7 +1357,7 @@ class ColabAdapter(ADAPTER.Adapter):
     def _endpoint_for(self, session_name: str, account: TeamAccount | None = None) -> str:
         """The `m-…` endpoint token from the measured `status` line. An
         unparseable endpoint refuses the launch BEFORE any upload: a
-        session without keep-alive idles out mid-run and wastes the run.
+        session this process cannot observe is not one to launch into.
         """
         result = self._run_read(
             [*self._cli(account), "status", "-s", session_name], account=account
@@ -1312,31 +1376,6 @@ class ColabAdapter(ADAPTER.Adapter):
                 f"{result.stdout.strip() or result.stderr.strip()}"
             )
         return found[1]
-
-    def _spawn_keep_alive(
-        self, endpoint: str, session_name: str, account: TeamAccount | None = None
-    ) -> None:
-        """Best-effort keep-alive, detached, output to DEVNULL (parent
-        plan D9). A spawn failure is deliberately NOT a refusal: the plan
-        calls this best-effort, the session is already usable, and the
-        endpoint above was the load-bearing parse. The invocation shape
-        is the plan's (`keep-alive <endpoint> <name>`); the live daemon
-        probe measured on this CLI was the module-form of the same hidden
-        command, and S5 verifies this form against the real service
-        (ledger S2-J5).
-        """
-        argv = [*self._cli(account), "keep-alive", endpoint, session_name]
-        env = self._env_for(account)
-        try:
-            subprocess.Popen(
-                argv,
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except OSError:
-            return
 
     def _upload(
         self,
@@ -1553,7 +1592,7 @@ class ColabAdapter(ADAPTER.Adapter):
 
     def submit(self, job: "ADAPTER.Job") -> "ADAPTER.Submission":
         """The full session lifecycle, in the parent plan's own order:
-        job-folder checks → `new` → endpoint → keep-alive → remote mkdir →
+        job-folder checks → `new` → endpoint → remote mkdir →
         uploads (plus the credential material, when one is configured —
         after the three payload uploads, before the probe) → dependency
         probe (install only what is missing) → the detached launch → the
@@ -1677,8 +1716,12 @@ class ColabAdapter(ADAPTER.Adapter):
                     accelerator_variant=accelerator_variant,
                     account=account,
                 )
-                endpoint = self._endpoint_for(session_name, account)
-                self._spawn_keep_alive(endpoint, session_name, account)
+                # The endpoint parse stays the check that the new session is
+                # observable before any upload. No keep-alive is spawned:
+                # google-colab-cli 0.8.0 (the pin) has no `keep-alive`
+                # command (0.6.0 shipped a hidden one), and spawning it only
+                # started a child that exited "No such command".
+                self._endpoint_for(session_name, account)
 
                 payload = self._parse_json_line(
                     self._exec_result(mkdir_helper, session_name, account=account),

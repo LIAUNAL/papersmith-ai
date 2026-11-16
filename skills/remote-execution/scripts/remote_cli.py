@@ -1815,6 +1815,7 @@ def cmd_submit(
     Either way, `plan()`/`select()` runs BEFORE `adapter.submit()`, so a
     refusal on either path costs no quota.
     """
+    refuse_bare_worker(adapter, worker)
     target = Path(target).resolve()
     if not target.is_dir():
         raise RemoteCLIError(
@@ -3033,6 +3034,7 @@ def cmd_reconcile(
     ledger: none of those reached the service, and answering "the service
     could not be asked" about them would name the wrong side of the fault.
     """
+    refuse_bare_worker(adapter, worker)
     target = Path(target).resolve()
     if not target.is_dir():
         raise RemoteCLIError(
@@ -3386,6 +3388,9 @@ def cmd_smoke_record(
 
     verdict = SHARD_IO.completeness(stamp, required)
     result = "pass" if verdict["complete"] else "fail"
+    # A complete stamp from a smoke that ran zero units still passes, but
+    # the record says so: `readiness` and `preflight` warn on it.
+    work = SHARD_IO.recorded_work(stamp, artifact.with_name(SHARD_RUNS_FILENAME))
 
     target = _target_for_job_dir(resolved_job_dir)
     smoke_ledger_path = _smoke_ledger_path(target, run_config["product"])
@@ -3399,15 +3404,31 @@ def cmd_smoke_record(
         "worker": worker,
         "missing": verdict["missing"],
     }
+    warnings = []
+    if work["empty"]:
+        event["work"] = "none"
+        event["workEvidence"] = work["evidence"]
+        warnings.append(_empty_smoke_warning(work["evidence"]))
     LEDGER.append(smoke_ledger_path, event)
 
     return {
+        "warnings": warnings,
         "result": result,
         "missing": verdict["missing"],
         "requiredEvidence": required,
         "smokeLedgerPath": smoke_ledger_path,
         "event": event,
     }
+
+
+#: The forge shard contract's run log, read beside a smoke's `shard.json`.
+SHARD_RUNS_FILENAME = "runs.jsonl"
+
+
+def _empty_smoke_warning(evidence: str) -> str:
+    return (f"EMPTY_SMOKE_SHARD: the smoke's shard records no work ({evidence}); it passed "
+            "on a complete stamp, but a smoke that ran zero units does not prove the run "
+            "path works. Have it run at least one unit and rehearse again")
 
 
 def latest_smoke_event(
@@ -3503,12 +3524,16 @@ def cmd_readiness(*, job_dir: str | Path, worker: str) -> dict:
             f"worker {latest.get('worker')!r}"
         )
 
-    return {
+    result = {
         "ready": ready,
         "reason": reason,
         "latestSmokeRecord": latest,
         "staleness": dict(job_folder.staleness),
     }
+    if latest.get("work") == "none":
+        result["warnings"] = [_empty_smoke_warning(str(latest.get("workEvidence") or
+                                                       "recorded by smoke record"))]
+    return result
 
 
 def _construct_adapter(
@@ -4051,6 +4076,72 @@ def _preflight_session_fit(adapter: "ADAPTER.Adapter", run_config: Mapping, serv
         "or checkpoint and regenerate with `--carry-path <checkpoint dir>`")
 
 
+# ---------------------------------------------------------------------------
+# worker ids: one form everywhere
+# ---------------------------------------------------------------------------
+
+#: A worker named by its bare team owner (`carlos`) on a backend whose worker
+#: ids carry a prefix (`colab:carlos`). Refused by every command that takes
+#: `--worker` -- preflight, submit, reconcile, readiness, smoke record and the
+#: implementation engine's gate and launch-plan -- with this one message,
+#: rather than accepted by some and refused by others: a record written
+#: under one form never matches a check made under the other.
+BARE_WORKER_ID = "BARE_WORKER_ID"
+
+
+def bare_worker_message(worker: str, canonical: str) -> str:
+    return (f"{BARE_WORKER_ID}: worker {worker!r} is a bare team owner; this backend's "
+            f"worker id for that owner is {canonical!r}. Pass --worker {canonical} (every "
+            "command takes the same id: preflight, submit, reconcile, readiness, smoke "
+            "record, gate and launch-plan)")
+
+
+def canonical_worker(adapter: "ADAPTER.Adapter | None", worker: str | None) -> str | None:
+    """The adapter's own worker id for `worker` (its optional
+    `canonical_worker` hook), or `worker` itself when the backend declares
+    no hook, the hook fails, or `worker` already is an id."""
+    hook = getattr(adapter, "canonical_worker", None) if adapter is not None else None
+    if worker is None or not callable(hook):
+        return worker
+    try:
+        canonical = hook(worker)
+    except Exception:  # noqa: BLE001 - a failing hook decides nothing
+        return worker
+    return canonical if isinstance(canonical, str) and canonical else worker
+
+
+def refuse_bare_worker(adapter: "ADAPTER.Adapter | None", worker: str | None) -> None:
+    """Raise `RemoteCLIError(BARE_WORKER_ID ...)` when `worker` is a bare
+    owner whose worker id on this backend differs."""
+    canonical = canonical_worker(adapter, worker)
+    if worker is not None and canonical != worker:
+        raise RemoteCLIError(bare_worker_message(worker, canonical))
+
+
+def refuse_bare_worker_for_service(service: str | None, worker: str | None,
+                                   workspace: str | Path | None = None) -> None:
+    """`refuse_bare_worker` for a job's own service, constructing its adapter
+    without credentials (a backend that cannot be constructed decides
+    nothing here; the command's own checks still run)."""
+    if not service or worker is None:
+        return
+    try:
+        _load_backend_module(service)
+        adapter = _construct_adapter(ADAPTER.resolve(service), _no_credentials,
+                                     workspace=workspace)
+    except Exception:  # noqa: BLE001
+        return
+    refuse_bare_worker(adapter, worker)
+
+
+def refuse_bare_worker_for_job(job_dir: str | Path, worker: str | None) -> None:
+    try:
+        service = JOBFOLDER.read(Path(job_dir).resolve()).run_config.get("service")
+    except (JOBFOLDER.JobFolderError, OSError):
+        return
+    refuse_bare_worker_for_service(service, worker)
+
+
 def _preflight_accounts(adapter: "ADAPTER.Adapter", job_dir: Path, workers: Sequence[str] | None,
                         smoke_command: str) -> list[dict]:
     if workers:
@@ -4068,6 +4159,12 @@ def _preflight_accounts(adapter: "ADAPTER.Adapter", job_dir: Path, workers: Sequ
     hook = getattr(adapter, "account_check", None)
     rows = []
     for worker in names:
+        canonical = canonical_worker(adapter, worker)
+        if canonical != worker:
+            rows.append(_preflight_row("account", "fail", bare_worker_message(worker, canonical),
+                                       f"preflight again with --worker {canonical}",
+                                       worker=worker))
+            continue
         if callable(hook):
             try:
                 result = dict(hook(worker))
@@ -4086,6 +4183,13 @@ def _preflight_accounts(adapter: "ADAPTER.Adapter", job_dir: Path, workers: Sequ
             readiness = {"ready": False, "reason": str(exc)}
         if readiness["ready"]:
             status = "pass" if result.get("ok") else "warn"
+            if readiness.get("warnings"):
+                rows.append(_preflight_row(
+                    "account", "warn", f"{evidence}; its rehearsal at this pin passed, but "
+                    f"{'; '.join(readiness['warnings'])}",
+                    f"rehearse again with a smoke that runs a unit: `{smoke_command} --worker "
+                    f"{worker}`, then `fetch --smoke` and `smoke record`", worker=worker))
+                continue
             rows.append(_preflight_row("account", status, f"{evidence}; it has its own passing "
                                        "rehearsal at this pin", "", worker=worker))
             continue
@@ -4118,7 +4222,7 @@ def _preflight_rehearsal(
             job_dir=job_dir, target=target, run_config=run_config, interpreter=python,
             completeness=SHARD_IO.completeness, smoke_kwargs=smoke_kwargs,
             session_limit_seconds=_declared_session_limit(adapter) if adapter else None,
-            timeout=timeout, keep=keep)
+            timeout=timeout, keep=keep, recorded_work=SHARD_IO.recorded_work)
     except local.RehearsalError as exc:
         return _preflight_row("local-rehearsal", "fail", str(exc),
                               exc.fix or "regenerate the job with a smoke block")
@@ -4877,6 +4981,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "or forge default.",
     )
     generate_job.add_argument(
+        "--env", dest="job_env", action="append", default=None, metavar="KEY=VALUE",
+        help="repeatable: a job-specific environment variable the runner exports to "
+        "the run and smoke blocks (e.g. a device or a timing host label), written to "
+        "run-config.json's env block. FORGE_* names, the runner's and the interpreter's "
+        "own names (PATH, HOME, PYTHONPATH, LD_*) and anything that looks like a "
+        "credential, by name or by value, are refused.",
+    )
+    generate_job.add_argument(
         "--environment-index-url", dest="environment_index_url", default=None,
         help="optional index URL for --environment-requirement; given "
         "without at least one --environment-requirement, refused.",
@@ -5596,6 +5708,7 @@ def main(argv: list[str] | None = None) -> int:
                 code_bundle=args.code_bundle,
                 input_datasets=input_datasets,
                 dataset_checks=dataset_checks,
+                env=JOBFOLDER.parse_env_assignments(args.job_env),
             )
         except (JOBFOLDER.JobFolderError, ADAPTER.AdapterError, KeyError) as exc:
             return _refused(exc)
@@ -5646,6 +5759,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "smoke":
         if args.smoke_command == "record":
             try:
+                refuse_bare_worker_for_job(args.job_dir, args.worker)
                 result = cmd_smoke_record(
                     job_dir=args.job_dir,
                     artifact_path=args.from_artifact,
@@ -5756,6 +5870,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "readiness":
         try:
+            refuse_bare_worker_for_job(args.job_dir, args.worker)
             result = cmd_readiness(job_dir=args.job_dir, worker=args.worker)
         except (RemoteCLIError, JOBFOLDER.JobFolderError) as exc:
             return _refused(exc)

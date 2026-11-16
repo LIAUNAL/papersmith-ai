@@ -779,3 +779,30 @@ class LaunchPlanReportsConcurrentLaunchesTests(_ParallelFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BareWorkerIdRefusalTests(unittest.TestCase):
+    """`gate` and `launch-plan` refuse a bare team owner through
+    remote-execution's own check, under its own code."""
+
+    def test_the_engine_turns_the_remote_refusal_into_its_code(self) -> None:
+        import types
+
+        class RemoteCLIError(Exception):
+            pass
+
+        calls = []
+
+        def refuse(service, worker):
+            calls.append((service, worker))
+            if worker == "carlos":
+                raise RemoteCLIError("BARE_WORKER_ID: worker 'carlos' ... colab:carlos")
+
+        rcli = types.SimpleNamespace(RemoteCLIError=RemoteCLIError, BARE_WORKER_ID="BARE_WORKER_ID",
+                                     refuse_bare_worker_for_service=refuse)
+        with self.assertRaises(impl.Refused) as caught:
+            impl._refuse_bare_worker(rcli, "colab", "carlos")
+        self.assertEqual(caught.exception.code, "BARE_WORKER_ID")
+        self.assertIn("colab:carlos", str(caught.exception))
+        impl._refuse_bare_worker(rcli, "colab", "colab:carlos")
+        self.assertEqual(calls, [("colab", "carlos"), ("colab", "colab:carlos")])

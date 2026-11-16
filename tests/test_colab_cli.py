@@ -150,7 +150,7 @@ class LoginTests(_Env):
             code, out, _ = self.run_cli("login", "--owner", "ana")
         self.assertNotEqual(code, 0)
         self.assertIn(colab.INSTALL_COMMAND, out)
-        self.assertIn("google-colab-cli==0.6.0", colab.INSTALL_COMMAND)
+        self.assertIn("google-colab-cli==0.8.0", colab.INSTALL_COMMAND)
 
 
 class StatusTests(_Env):
@@ -214,7 +214,7 @@ class ConventionTests(unittest.TestCase):
 
     def test_the_login_ritual_is_one_module_constant(self) -> None:
         self.assertEqual(colab.LOGIN_ARGS, ("sessions",))
-        self.assertEqual(colab.PINNED_VERSION, "0.6.0")
+        self.assertEqual(colab.PINNED_VERSION, "0.8.0")
 
 
 if __name__ == "__main__":

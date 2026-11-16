@@ -396,6 +396,101 @@ def validate_dataset_checks(checks: object, input_datasets: object) -> dict:
     return {ref: dict(check) for ref, check in checks.items()}
 
 
+# `env` (generate-job `--env KEY=VALUE`): job-specific environment variables
+# the runner exports to the run and smoke blocks, for facts that belong to
+# the job and not to the forge (a device, a timing host label, a thread
+# count). The forge's own names stay the forge's: a `FORGE_*` key is
+# refused, and so are the names the runner or the interpreter decides
+# (`PATH`, `HOME`, `PYTHONPATH`, loader variables). `run-config.json` is
+# uploaded beside the job and kept in the ledger's job folder, so nothing
+# that looks like a credential is accepted either, by name or by value.
+JOB_ENV_KEY = "env"
+JOB_ENV_MAX_ENTRIES = 64
+JOB_ENV_MAX_VALUE_CHARS = 4096
+_JOB_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+JOB_ENV_RESERVED_NAMES = frozenset({
+    "PATH", "HOME", "USERPROFILE", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
+    "PYTHONSAFEPATH", "PYTHONNOUSERSITE", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT",
+    "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+})
+#: Name segments (split on `_`) that mark a credential: `HF_TOKEN`,
+#: `API_KEY`, `DB_PASSWORD`, `AWS_SECRET_ACCESS_KEY`, `GIT_ASKPASS`.
+_JOB_ENV_CREDENTIAL_SEGMENTS = frozenset({
+    "TOKEN", "TOKENS", "SECRET", "SECRETS", "PASSWORD", "PASSWD", "PASS", "PWD",
+    "ASKPASS", "CREDENTIAL", "CREDENTIALS", "CREDS", "KEY", "KEYS", "APIKEY",
+    "AUTH", "COOKIE", "SESSION", "PRIVATE", "BEARER", "OAUTH",
+})
+#: Value shapes of well-known credentials, and a URL carrying userinfo.
+_JOB_ENV_CREDENTIAL_VALUE = re.compile(
+    r"(?:^|[^A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+    r"|glpat-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}"
+    r"|xox[abpors]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}"
+    r"|ya29\.[0-9A-Za-z_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+    r"|[a-z][a-z0-9+.-]*://[^/\s@]+:[^/\s@]*@"
+)
+
+
+def validate_job_env(env: object) -> dict[str, str]:
+    """The `env` block's shape, checked at generation and on every read: an
+    object of at most `JOB_ENV_MAX_ENTRIES` string pairs, each name a shell
+    identifier that is neither a forge name (`FORGE_*`), nor a name the
+    runner or the interpreter owns (`JOB_ENV_RESERVED_NAMES`), nor one that
+    names a credential; each value at most `JOB_ENV_MAX_VALUE_CHARS`
+    characters, with no NUL or line break, that does not look like a
+    credential either."""
+    if not isinstance(env, Mapping):
+        raise JobFolderError("run-config.json's env must be an object of NAME: value strings")
+    if len(env) > JOB_ENV_MAX_ENTRIES:
+        raise JobFolderError(f"run-config.json's env declares {len(env)} variables; at most "
+                             f"{JOB_ENV_MAX_ENTRIES}")
+    validated: dict[str, str] = {}
+    for name, value in env.items():
+        if not isinstance(name, str) or not _JOB_ENV_NAME.fullmatch(name):
+            raise JobFolderError(f"refusing env name {name!r}: letters, digits and '_', not "
+                                 "starting with a digit, at most 128 characters")
+        upper = name.upper()
+        if upper.startswith("FORGE_"):
+            raise JobFolderError(f"refusing env name {name!r}: FORGE_* names belong to the "
+                                 "runner, which sets them per submission")
+        if upper in JOB_ENV_RESERVED_NAMES or upper.startswith(("LD_", "DYLD_")):
+            raise JobFolderError(f"refusing env name {name!r}: the runner and the interpreter "
+                                 "decide it")
+        if set(upper.split("_")) & _JOB_ENV_CREDENTIAL_SEGMENTS:
+            raise JobFolderError(
+                f"refusing env name {name!r}: it names a credential, and run-config.json is "
+                "uploaded and kept beside the job. A credential reaches a worker only through "
+                "the service's own secret store, never through --env")
+        if not isinstance(value, str):
+            raise JobFolderError(f"refusing env {name}: its value must be a string, got "
+                                 f"{type(value).__name__}")
+        if len(value) > JOB_ENV_MAX_VALUE_CHARS:
+            raise JobFolderError(f"refusing env {name}: its value is {len(value)} characters; "
+                                 f"at most {JOB_ENV_MAX_VALUE_CHARS}")
+        if any(ch in value for ch in "\0\r\n"):
+            raise JobFolderError(f"refusing env {name}: its value carries a NUL or a line break")
+        if _JOB_ENV_CREDENTIAL_VALUE.search(value):
+            raise JobFolderError(
+                f"refusing env {name}: its value looks like a credential (a token shape, a "
+                "private key or a URL with a password), and run-config.json is uploaded and "
+                "kept beside the job")
+        validated[name] = value
+    return validated
+
+
+def parse_env_assignments(assignments: Sequence[str] | None) -> dict[str, str]:
+    """`generate-job --env KEY=VALUE` (repeatable) as a validated mapping;
+    a name given twice is refused rather than silently overwritten."""
+    env: dict[str, str] = {}
+    for raw in assignments or ():
+        name, sep, value = str(raw).partition("=")
+        if not sep or not name:
+            raise JobFolderError(f"refusing --env {raw!r}: expected KEY=VALUE")
+        if name in env:
+            raise JobFolderError(f"refusing --env {raw!r}: {name} is given more than once")
+        env[name] = value
+    return validate_job_env(env)
+
+
 def with_entry_notebooks(
     clone_paths: Sequence[str], notebooks: Sequence[str]
 ) -> list[str]:
@@ -1779,6 +1874,8 @@ def validate_run_config(run_config: Mapping[str, object]) -> None:
         validate_dataset_checks(run_config["datasetChecks"], run_config.get("inputDatasets"))
     if "codeBundle" in run_config:
         validate_code_bundle_block(run_config["codeBundle"])
+    if JOB_ENV_KEY in run_config:
+        validate_job_env(run_config[JOB_ENV_KEY])
 
 
 def validate_code_bundle_block(block: object) -> Mapping[str, object]:
@@ -1994,6 +2091,7 @@ def build_run_config(
     code_bundle: Mapping[str, object] | None = None,
     input_datasets: Sequence[str] | None = None,
     dataset_checks: Mapping[str, Mapping[str, object]] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> dict:
     """Assemble `run-config.json`'s exact shape from target-supplied values.
 
@@ -2195,6 +2293,8 @@ def build_run_config(
         run_config["datasetChecks"] = validate_dataset_checks(dataset_checks, input_datasets)
     if code_bundle is not None:
         run_config["codeBundle"] = dict(code_bundle)
+    if env:
+        run_config[JOB_ENV_KEY] = validate_job_env(env)
     if has_environment_install:
         install_block: dict = {"requirements": list(environment_requirements)}
         if environment_index_url:
@@ -2292,6 +2392,7 @@ def generate_job(
     code_bundle: bool = False,
     input_datasets: Sequence[str] | None = None,
     dataset_checks: Mapping[str, Mapping[str, object]] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> Path:
     """Generate one job folder, atomically, refusing to overwrite an
     existing one unless `regenerate=True`.
@@ -2623,6 +2724,7 @@ def generate_job(
         code_bundle=bundle_block,
         input_datasets=input_datasets,
         dataset_checks=dataset_checks,
+        env=env,
     )
     notebook = build_notebook(resolved_bootstrap, resolved_invoke)
 

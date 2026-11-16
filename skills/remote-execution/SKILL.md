@@ -1626,6 +1626,8 @@ can branch on it without parsing prose.
 | `STEP_SELECTION_CONFLICT` | `generate-jobs --only`, `--skip` | one step is named by both `--only` and `--skip`, a `--*-for` flag names a step the selection leaves out, or the selection leaves no remote step. Refused before anything is written |
 | `STEP_DECLARATION_MALFORMED` | `generate-jobs` (that job's row) | the step's `smoke` is not an object of `module`, `function` (strings), `kwargs` (an object) and `requiredEvidence` (a list of strings), or its `carry` is not a list of paths; only that job is refused |
 | `SCHEDULE_IS_A_PLAN` | `generate-jobs --from-schedule` | the file is the schedule's input plan (it carries `schema` and no `makespanMinutes`), whose `services` are only the allowed ones; the fix names `parallelism_cli.py schedule --plan <file>` and passing its output instead |
+| `EMPTY_SMOKE_SHARD` (a warning, never a refusal) | `smoke record` (its `warnings`), `readiness` (its `warnings`), `preflight` (`local-rehearsal` and `account` rows read `warn`) | the smoke's `shard.json` is complete but records no work: a `runs.jsonl` beside it holding no record, or a `runs` summary of `0`, `[]`, `{}` or one whose `units`/`runs`/`count`/`result` counts are all `0` (`shard_io.recorded_work`, positive evidence only: a stamp with no `runs` and no `runs.jsonl` is not flagged). The smoke still passes, so `readiness` stays `true`; the `smokeResult` event carries `work: "none"` and `workEvidence`, and the fix is a smoke that runs at least one unit |
+| `BARE_WORKER_ID` | `preflight` (an `account` row), `submit`, `reconcile`, `readiness`, `smoke record`; the implementation engine's `gate` and `launch-plan` | `--worker` names a bare team owner (`carlos`) on a backend whose worker id for that owner differs (`colab:carlos`, from the adapter's optional `canonical_worker` hook); every command refuses it with the same message naming the id to pass, so no record is written under one form and checked under the other. A backend without the hook (Kaggle, whose worker ids are account names) takes `--worker` as given |
 | `CARRY_WORKER_MISMATCH` | campaign `submit` (a job declaring `--carry-path`) | a continuation unit's earlier output was produced on another worker than the one it is placed on; an earlier output carries only within its own account. The message names that worker and `--no-carry`; checked for every slot before the first submission, so nothing is sent |
 
 ## Before the first rehearsal
@@ -1974,40 +1976,53 @@ rather than surfacing a raw traceback and leaving a reader to guess.
 headless CLI, pinned exactly:
 
 ```
-uv tool install --force --python 3.14 "google-colab-cli==0.6.0" --with "jupyter-kernel-client<1"
+uv tool install --force --python 3.14 "google-colab-cli==0.8.0" --with "jupyter-kernel-client<1"
 ```
 
 The pin is not decorative: `google-colab-cli` 0.6.0 with
 `jupyter-kernel-client` 1.x crashes every `exec` (`AttributeError: module
-'jupyter_kernel_client' has no attribute 'KernelClient'`; upstream #94), so
-the working combination is 0.6.0 with the 0.x client that a bare dependency
-resolution does not pick. The adapter shells out to `colab` on `PATH` by
+'jupyter_kernel_client' has no attribute 'KernelClient'`; upstream #94), and
+0.8.0 itself requires `jupyter-kernel-client==0.9.0`, which the `--with`
+constraint still admits. The adapter shells out to `colab` on `PATH` by
 default; a non-default location can be supplied as `colab_executable` when
 constructing `ColabAdapter` directly.
 
-`google-colab-cli` 0.7.5 is **untested live** and the pin stays at 0.6.0.
-Read from 0.7.5's own `--help` and installed source (never authenticated):
-it depends on `jupyter-kernel-client==0.9.0` and resolves either kernel
-client class name, so #94 looks fixed there; the `sessions` line gained a
-`Shape:` field, which the adapter's line parser still reads; `new`,
-`exec`, `upload`, `download`, `install`, `status` and `stop` keep the flags
-the adapter passes. But 0.7.5 no longer ships the hidden `keep-alive`
-command the adapter spawns (0.6.0 does), so on 0.7.5 that best-effort
-keep-alive would silently do nothing and a long run could be idle-reclaimed.
-Moving the pin waits for a live rehearsal that settles that.
+The pin is 0.8.0, the version a paper workspace runs live. Read from its
+own `--help` and installed source: `new`, `exec`, `upload`, `download`,
+`install`, `status`, `stop` and `sessions` keep the flags the adapter
+passes; `new --gpu` accepts T4, L4, G4, H100 and A100; and the hidden
+`keep-alive` command 0.6.0 shipped is gone (its commands are download,
+drivemount, edit, exec, install, log, ls, new, pay, repl, restart-kernel, rm,
+run, sessions, ssh, status, stop, upload, url, usage and version), so the
+adapter no longer spawns one.
 
 Authentication is the CLI's own oauth2 copy-paste ritual, and the adapter
-never reads the token file the CLI writes: the CLI's own child process
-resolves it from the `HOME` the adapter forwards, and no module above the
-seam learns a path to it. Measured in the CLI's source (0.6.0 and 0.7.5
-alike): the token lives at `~/.config/colab-cli/token.json`, resolved from
-`HOME` when the CLI starts, and the global `--config PATH` flag names the
-session state FILE (`sessions.json`) only — it never moves the token. No
-OAuth client file is needed: the CLI ships Google's public installed-app
-client (`colab_cli/oauth_config.json`) and uses it whenever
-`~/.colab-cli-oauth-config.json` does not exist; its copy-paste redirect
-is registered to that client, so substituting your own client would break
-the flow (`redirect_uri_mismatch`, per the CLI's own `auth.py`).
+never reads what the CLI stores: the CLI's own child process resolves its
+sign-in from the `HOME` the adapter forwards, and no module above the seam
+learns a path to it. Where it lives depends on the version. 0.6.0 keeps the
+token at `~/.config/colab-cli/token.json`. 0.8.0 keeps it in a Python
+keyring (service `google-colab-cli`), migrates and deletes a legacy
+`token.json` on first use, and writes no `token.json` at all. Because the
+child gets only `PATH` and `HOME` (no `DBUS_SESSION_BUS_ADDRESS`), the
+keyring cannot reach a desktop Secret Service and falls back to the file
+backend under that `HOME` (`~/.local/share/python_keyring/`), so one
+owner's sign-in stays inside their own `configDir`. The global
+`--config PATH` flag names the session state FILE (`sessions.json`) only —
+it never moves the sign-in. No OAuth client file is needed: the CLI ships
+Google's public installed-app client (`colab_cli/oauth_config.json`) and
+uses it whenever `~/.colab-cli-oauth-config.json` does not exist; its
+copy-paste redirect is registered to that client, so substituting your own
+client would break the flow (`redirect_uri_mismatch`, per the CLI's own
+`auth.py`).
+
+**Signed in, one definition.** `preflight`'s account check
+(`ColabAdapter.account_check`) and `smith colab status` agree on what
+"signed in" means: `colab sessions`, run under the owner's `HOME` and
+`--config` with the allowlisted environment and stdin closed, exits 0. The
+adapter takes the existence of `token.json` as a fast path (one stat, never
+a read), so a 0.6.0 sign-in needs no subprocess; without it (every 0.8.0
+sign-in) the probe decides. The probe's output, which carries a consent URL
+when the owner is signed out, is discarded unread.
 
 **Team accounts: one worker per owner.** When
 `<workspace>/.papersmith/team.json` declares Colab accounts, the adapter
@@ -2051,11 +2066,17 @@ launched. `ColabAdapter.campaign_refusal(worker)` returns that reason (or
 than refuse. The declared capacity counts distinct owners on paid tiers.
 
 GPU variants by tier: `colab new --gpu` accepts `T4`, `L4`, `G4`, `A100`
-and `H100` (0.7.5 help). Expect `T4` on a free account and `L4`, `A100`
-or `H100` on paid compute; the FAQ itself names no models — free access to
-GPUs "is heavily restricted", premium GPUs come with a paid plan "subject
-to availability", and the types "vary over time". The adapter maps only
-`sm_75 → T4`, `sm_80 → A100`, `sm_90 → H100` (`COLAB_ACCELERATOR_VARIANTS`).
+and `H100` (0.7.5 and 0.8.0 help). Expect `T4` on a free account and `L4`,
+`G4`, `A100` or `H100` on paid compute; the FAQ itself names no models —
+free access to GPUs "is heavily restricted", premium GPUs come with a paid
+plan "subject to availability", and the types "vary over time". The
+adapter maps `sm_75 → T4`, `sm_80 → A100`, `sm_89 → L4` (Ada Lovelace),
+`sm_90 → H100` and `sm_120 → G4` (RTX PRO 6000 Blackwell)
+(`COLAB_ACCELERATOR_VARIANTS`); any other declared architecture is refused
+by name. The VM-side `check_accelerator()` compares architectures by name
+against the installed torch build's arch list, so an `sm_89` or `sm_120`
+job also needs a torch build that lists that architecture (CUDA 11.8+ for
+`sm_89`, 12.8+ for `sm_120`).
 
 **A Colab job asks for a GPU by default.** The adapter registers its own
 default accelerator, `cuda` with `sm_75` (`COLAB_ACCELERATOR_KIND`,
@@ -2066,8 +2087,8 @@ passes `--gpu T4`. Before this, a from-zero Colab job carried no block, got no
 declared, the VM-side `check_accelerator()` refuses a runtime that arrives
 without CUDA (its arch list is empty), so the smoke fails and `readiness` stays
 `false` instead of counting a CPU rehearsal as ready. Pass
-`--accelerator-kind cuda --accelerator-architecture sm_80` (or `sm_90`) to ask
-a paid account for an A100 (or H100).
+`--accelerator-kind cuda --accelerator-architecture sm_80` (or `sm_89`,
+`sm_90`, `sm_120`) to ask a paid account for an A100 (or an L4, H100, G4).
 
 **CPU-only jobs.** The GPU default stays for compatibility, and it is a
 default, not a measured choice: `remote-parallelism plan` decides from the
@@ -2083,14 +2104,16 @@ byte-identical files.
 
 Sessions are expensive and idle-reclaimed, so release is part of the flow,
 not housekeeping: `fetch` stops a session only AFTER the manifest has
-landed AND the run is terminal; the adapter spawns the CLI's own keep-alive
-(best-effort) to hold a session through a long run; a released or expired
+landed AND the run is terminal; nothing holds a session through a long run
+(the pinned CLI has no keep-alive command, so the adapter spawns none, and
+whether the service idle-reclaims a VM whose kernel is idle while the
+detached executor runs is untested live: the executor's running manifest and
+`fetch`'s kept snapshots are what survive a reclaim); a released or expired
 session is simply gone, and the operator's own `colab stop -s <name>` is
 the manual exit. When you are done with a session, stop it — an abandoned
 one burns the account's capacity until the service reclaims it.
 
-**Fetch as soon as the run is terminal.** The keep-alive holds a session
-through the run, not after it: once the executor exits, the session idles
+**Fetch as soon as the run is terminal.** Once the executor exits, the session idles
 and the service reclaims it, taking every result with it (`poll` then
 answers `unknown`, `session not found`). Whoever waits on a Colab run fetches
 in the same loop that sees `complete`, never later.
@@ -2500,6 +2523,25 @@ only when none was refused.
 ## Job inputs
 
 ### From the workspace registry
+
+**Job environment variables.** `generate-job --env KEY=VALUE` (repeatable)
+writes an `env` object into `run-config.json`, and the runner exports it to
+whichever block runs, run or smoke, callable or notebook kernel (and so to
+`preflight`'s local rehearsal), beneath the forge's own names. It is for a
+fact that belongs to the job rather than to the forge: the device a notebook
+should use (`--env MVIA_E8_DEVICE=cuda`), the host label its timing rows
+carry (`--env MVIA_TIMING_HOST=colab:<owner>`, which `remote-parallelism`
+schema 2 reads for a remote row), a thread count. Generation refuses, and
+the reader of every job folder refuses again: a `FORGE_*` name (the runner
+sets those per submission); a name the runner or the interpreter decides
+(`PATH`, `HOME`, `PYTHONPATH`, `PYTHONHOME`, `LD_*`, `DYLD_*`); a name with a
+credential segment (`TOKEN`, `SECRET`, `PASSWORD`, `KEY`, `AUTH`, …); a value
+that looks like a credential (a known token shape, a private key, a URL with
+a password); a name given twice; more than 64 entries, or a value over 4096
+characters or holding a NUL or a line break. `run-config.json` is uploaded
+and kept beside the job, so a credential never travels this way. The runner
+re-checks the structural half (`runner_invoke.job_environment`). Without
+`--env`, no block is written and nothing changes.
 
 `generate-job --dataset <slug>` (repeatable; also on `generate-jobs`) resolves
 the slug in the workspace's `datasets/registry.json` (`--workspace` overrides

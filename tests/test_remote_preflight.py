@@ -86,6 +86,188 @@ class DiagramCheckTests(PreflightCase):
         self.assertEqual(self.row(payload, "diagrams")["status"], "pass")
 
 
+class JobEnvTests(PreflightCase):
+    """`generate-job --env KEY=VALUE`: job-specific variables the runner
+    exports to the run and smoke blocks, refused when they are forge names
+    or look like a credential."""
+
+    def generate_cli(self, *extra: str) -> tuple[int, str, str]:
+        argv = ["generate-job", "--target", str(self.target), "--service", SERVICE,
+                "--job-name", "job-a", "--product", "P", "--commit", self.commit,
+                "--repo-url", "https://example.invalid/private.git", "--repo-ref", "main",
+                "--clone-path", "src/pkg", "--run-module", "pkg.mod", "--run-function", "run",
+                "--smoke-module", "pkg.mod", "--smoke-function", "smoke_stamps",
+                "--smoke-required-evidence", "evidence.commit", "--code-bundle", *extra]
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = REMOTE_CLI.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def job_dir(self) -> Path:
+        [run_config] = list(self.target.rglob("run-config.json"))
+        return run_config.parent
+
+    def test_a_generated_job_with_env_runs_its_smoke_with_it_visible(self) -> None:
+        code, out, err = self.generate_cli("--env", "A=1", "--env", "MVIA_E8_DEVICE=cuda")
+        self.assertEqual(code, 0, (out, err))
+        job = self.job_dir()
+        run_config = json.loads((job / "run-config.json").read_text(encoding="utf-8"))
+        self.assertEqual(run_config["env"], {"A": "1", "MVIA_E8_DEVICE": "cuda"})
+        keep = self.root / "kept"
+        _, payload, err = self.preflight(job, "--keep-rehearsal", str(keep))
+        self.assertEqual(self.row(payload, "local-rehearsal")["status"], "pass", err)
+        shard = json.loads((keep / "session" / "shard.json").read_text(encoding="utf-8"))
+        self.assertEqual(shard["seen"]["jobEnv"], {"A": "1", "MVIA_E8_DEVICE": "cuda"})
+
+    def test_without_env_no_block_is_written_and_nothing_is_exported(self) -> None:
+        code, out, err = self.generate_cli()
+        self.assertEqual(code, 0, (out, err))
+        job = self.job_dir()
+        self.assertNotIn("env", json.loads((job / "run-config.json").read_text(encoding="utf-8")))
+        keep = self.root / "kept"
+        self.preflight(job, "--keep-rehearsal", str(keep))
+        shard = json.loads((keep / "session" / "shard.json").read_text(encoding="utf-8"))
+        self.assertEqual(shard["seen"]["jobEnv"], {"A": None, "MVIA_E8_DEVICE": None})
+
+    def test_forge_runtime_and_credential_names_and_values_are_refused(self) -> None:
+        refused = ["FORGE_RUN_MODE=full", "forge_worker=x", "PYTHONPATH=/x", "PATH=/x",
+                   "LD_PRELOAD=/x.so", "HF_TOKEN=abc", "KAGGLE_KEY=abc", "DB_PASSWORD=x",
+                   "AWS_SECRET_ACCESS_KEY=x", "NOEQUALS", "=x", "1A=x", "A-B=x",
+                   "REPO=https://user:pw@example.invalid/r.git",
+                   "NOTE=ghp_" + "a" * 36, "A=1"]
+        for assignment in refused:
+            with self.subTest(assignment=assignment):
+                extra = ["--env", assignment]
+                if assignment == "A=1":
+                    extra += ["--env", "A=2"]
+                code, out, err = self.generate_cli(*extra)
+                self.assertEqual(code, 1, (assignment, out))
+                self.assertIn("env", err)
+                self.assertEqual(list(self.target.rglob("run-config.json")), [])
+
+    def test_a_hand_edited_forge_name_is_refused_on_read_and_by_the_runner(self) -> None:
+        job = self.generate()
+        config_path = job / "run-config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["env"] = {"FORGE_RUN_MODE": "full"}
+        with self.assertRaises(JOBFOLDER.JobFolderError):
+            JOBFOLDER.validate_run_config(config)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "runner_invoke_job_env", REPOSITORY_ROOT / "skills/remote-execution/assets/runner_invoke.py")
+        invoke = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(invoke)
+        with self.assertRaises(invoke.InvokeError):
+            invoke.job_environment(config)
+        self.assertEqual(invoke.job_environment({"env": {"A": "1"}}), {"A": "1"})
+        env = invoke.kernel_environment("/clone", "c" * 40, {}, job_env={"A": "1"})
+        self.assertEqual(env["A"], "1")
+        self.assertEqual(env["FORGE_CLONE_COMMIT"], "c" * 40)
+
+
+class BareWorkerIdTests(PreflightCase):
+    """A worker named by its bare team owner is refused with one message by
+    every command that takes --worker (BARE_WORKER_ID), instead of being
+    accepted by some and refused by others."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _PreflightBackend.accounts = {"svc:carlos": {"ok": True, "evidence": "signed in"}}
+        hook = unittest.mock.patch.object(
+            _PreflightBackend, "canonical_worker", create=True,
+            new=lambda self, worker: "svc:carlos" if worker == "carlos" else worker)
+        hook.start()
+        self.addCleanup(hook.stop)
+
+    def test_preflight_fails_the_bare_owner_naming_the_worker_id(self) -> None:
+        job = self.generate()
+        _, payload, _ = self.preflight(job, "--skip-rehearsal", "--worker", "carlos")
+        row = self.row(payload, "account")
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("BARE_WORKER_ID", row["evidence"])
+        self.assertIn("--worker svc:carlos", row["fix"])
+        _, payload, _ = self.preflight(job, "--skip-rehearsal", "--worker", "svc:carlos")
+        self.assertNotIn("BARE_WORKER_ID", self.row(payload, "account")["evidence"])
+
+    def test_readiness_refuses_the_bare_owner_with_the_same_message(self) -> None:
+        job = self.generate()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = REMOTE_CLI.main(["readiness", "--job-dir", str(job), "--worker", "carlos"])
+        self.assertNotEqual(code, 0)
+        self.assertIn(REMOTE_CLI.bare_worker_message("carlos", "svc:carlos"), err.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = REMOTE_CLI.main(["readiness", "--job-dir", str(job), "--worker", "svc:carlos"])
+        self.assertEqual(code, 0)
+
+    def test_a_backend_without_the_hook_takes_the_worker_as_given(self) -> None:
+        self.assertEqual(REMOTE_CLI.canonical_worker(object(), "carlos"), "carlos")
+        REMOTE_CLI.refuse_bare_worker(object(), "carlos")
+        with self.assertRaises(REMOTE_CLI.RemoteCLIError) as caught:
+            REMOTE_CLI.refuse_bare_worker(_PreflightBackend(), "carlos")
+        self.assertIn("BARE_WORKER_ID", str(caught.exception))
+
+
+class EmptySmokeShardTests(PreflightCase):
+    """A smoke whose notebook ran zero units still writes a complete stamp
+    (`"runs": 0`); `smoke record` passes it but says so, and `readiness`
+    and `preflight` warn rather than call it a proven rehearsal."""
+
+    def test_recorded_work_reads_positive_evidence_only(self) -> None:
+        shard_io = REMOTE_CLI.SHARD_IO
+        for runs in (0, 0.0, [], {}, {"units": 0, "seconds": 1.5}, {"result": 0}):
+            with self.subTest(runs=runs):
+                self.assertTrue(shard_io.recorded_work({"runs": runs})["empty"])
+        for stamp in ({}, {"runs": 3}, {"runs": {"units": 1}}, {"runs": True},
+                      {"runs": {"seconds": 0}}, {"runs": "done"}):
+            with self.subTest(stamp=stamp):
+                self.assertFalse(shard_io.recorded_work(stamp)["empty"])
+        log = self.root / "runs.jsonl"
+        log.write_text("\n", encoding="utf-8")
+        self.assertTrue(shard_io.recorded_work({"runs": 5}, log)["empty"])
+        log.write_text('{"unit": "u1"}\n', encoding="utf-8")
+        self.assertFalse(shard_io.recorded_work({"runs": 0}, log)["empty"])
+
+    def test_smoke_record_passes_but_readiness_and_preflight_warn(self) -> None:
+        _PreflightBackend.accounts = {"w1": {"ok": True, "evidence": "ok"}}
+        job = self.generate()
+        artifact = self.root / "shard.json"
+        artifact.write_text(json.dumps({"evidence": {"commit": self.commit}, "runs": 0}),
+                            encoding="utf-8")
+        recorded = REMOTE_CLI.cmd_smoke_record(job_dir=job, artifact_path=artifact, worker="w1")
+        self.assertEqual(recorded["result"], "pass")
+        self.assertEqual(recorded["event"]["work"], "none")
+        self.assertIn("EMPTY_SMOKE_SHARD", recorded["warnings"][0])
+        readiness = REMOTE_CLI.cmd_readiness(job_dir=job, worker="w1")
+        self.assertTrue(readiness["ready"])
+        self.assertIn("EMPTY_SMOKE_SHARD", readiness["warnings"][0])
+        _, payload, _ = self.preflight(job, "--skip-rehearsal")
+        row = self.row(payload, "account")
+        self.assertEqual(row["status"], "warn")
+        self.assertIn("EMPTY_SMOKE_SHARD", row["evidence"])
+
+    def test_a_smoke_that_did_work_records_no_warning(self) -> None:
+        _PreflightBackend.accounts = {"w1": {"ok": True, "evidence": "ok"}}
+        job = self.generate()
+        artifact = self.root / "shard.json"
+        artifact.write_text(json.dumps({"evidence": {"commit": self.commit},
+                                        "runs": {"units": 1}}), encoding="utf-8")
+        recorded = REMOTE_CLI.cmd_smoke_record(job_dir=job, artifact_path=artifact, worker="w1")
+        self.assertEqual(recorded["warnings"], [])
+        self.assertNotIn("work", recorded["event"])
+        self.assertNotIn("warnings", REMOTE_CLI.cmd_readiness(job_dir=job, worker="w1"))
+        _, payload, _ = self.preflight(job, "--skip-rehearsal")
+        self.assertEqual(self.row(payload, "account")["status"], "pass")
+
+    def test_the_local_rehearsal_warns_on_a_smoke_that_ran_nothing(self) -> None:
+        job = self.generate(smoke="smoke_ran_nothing")
+        _, payload, err = self.preflight(job)
+        row = self.row(payload, "local-rehearsal")
+        self.assertEqual(row["status"], "warn", (row, err))
+        self.assertIn("records no work", row["evidence"])
+        self.assertIn("at least one unit", row["fix"])
+
+
 class InterpreterCheckTests(PreflightCase):
     def test_an_unimportable_driver_fails_and_names_the_workspace_env(self) -> None:
         env_python = self.workspace / ".micromamba" / "envs" / "papersmith" / "bin" / "python"

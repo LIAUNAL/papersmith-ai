@@ -106,6 +106,48 @@ def completeness(stamp: dict, required: list[str]) -> dict:
     return {"complete": not missing, "missing": missing}
 
 
+#: The values a stamp's `runs` summary takes when the run did no work, and
+#: the count keys inside a `runs` mapping that say how much it did. `runs`
+#: is the contract's own name (the stamp kit's `write_shard(summary)` puts
+#: the summary there, a non-mapping under `result`), never a target's field.
+_RUNS_COUNT_KEYS = ("units", "runs", "count", "result")
+
+
+def _is_zero(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0
+
+
+def recorded_work(stamp: dict, runs_path: Path | None = None) -> dict:
+    """Whether a shard records any work: `{"empty": bool, "evidence": str}`.
+
+    Empty only on positive evidence, never on silence: a `runs.jsonl`
+    beside the stamp that exists and holds no record, or a stamp whose
+    `runs` summary is `0`, `[]`, `{}`, or a mapping whose count keys
+    (`units`, `runs`, `count`, `result`) are all `0`. A `runs.jsonl` with
+    at least one record is work, whatever the stamp says; a stamp with no
+    `runs` and no `runs.jsonl` says nothing either way and is not empty. A
+    smoke that ran zero units still writes a complete stamp, so
+    completeness alone cannot see this; `smoke record`, `readiness` and
+    `preflight` warn on it rather than refuse.
+    """
+    if runs_path is not None and Path(runs_path).is_file():
+        records = sum(1 for line in Path(runs_path).read_text(
+            encoding="utf-8", errors="replace").splitlines() if line.strip())
+        if records:
+            return {"empty": False, "evidence": f"{Path(runs_path).name} holds {records} record(s)"}
+        return {"empty": True, "evidence": f"{Path(runs_path).name} holds no record"}
+    if not isinstance(stamp, dict) or "runs" not in stamp:
+        return {"empty": False, "evidence": "the stamp carries no runs summary"}
+    runs = stamp["runs"]
+    if _is_zero(runs) or (isinstance(runs, (list, dict)) and not runs):
+        return {"empty": True, "evidence": f"the stamp's runs summary is {json.dumps(runs)}"}
+    if isinstance(runs, dict):
+        counts = {key: runs[key] for key in _RUNS_COUNT_KEYS if key in runs}
+        if counts and all(_is_zero(value) for value in counts.values()):
+            return {"empty": True,
+                    "evidence": f"the stamp's runs summary counts {json.dumps(counts, sort_keys=True)}"}
+    return {"empty": False, "evidence": "the stamp's runs summary records work"}
+
 def unit_records(root: Path, field: str) -> set[str]:
     """The unit names `runs.jsonl` records under `root` declare complete.
 

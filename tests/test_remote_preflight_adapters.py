@@ -133,6 +133,14 @@ class ColabHooksTests(unittest.TestCase):
         self.assertFalse(missing["ok"])
         self.assertIn("sign", missing["fix"])
 
+    def test_canonical_worker_maps_a_bare_owner_to_its_worker_id(self) -> None:
+        adapter = self.adapter()
+        self.assertEqual(adapter.canonical_worker("ana"), "colab:ana")
+        self.assertEqual(adapter.canonical_worker("colab:ana"), "colab:ana")
+        self.assertEqual(adapter.canonical_worker("eva"), "eva")
+        legacy = COLAB.ColabAdapter(team_registry=self.root / "absent.json")
+        self.assertEqual(legacy.canonical_worker("ana"), "ana")
+
     def test_account_check_refuses_an_undeclared_worker(self) -> None:
         self.assertFalse(self.adapter().account_check("colab:eva")["ok"])
 
@@ -147,6 +155,99 @@ class ColabHooksTests(unittest.TestCase):
         self.assertEqual(request["name"], "A100")
         self.assertIsNone(request["problem"])
         self.assertEqual(self.adapter().accelerator_request({})["name"], "cpu")
+
+    def test_accelerator_request_maps_l4_and_g4(self) -> None:
+        for architecture, variant in (("sm_89", "L4"), ("sm_120", "G4")):
+            with self.subTest(architecture=architecture):
+                request = self.adapter().accelerator_request(
+                    {"accelerator": {"kind": "cuda", "architectures": [architecture]}})
+                self.assertEqual(request["name"], variant)
+                self.assertEqual(request["architectures"], [architecture])
+                self.assertIsNone(request["problem"])
+
+    def test_every_gpu_variant_colab_new_offers_is_mapped_once(self) -> None:
+        variants = list(COLAB.COLAB_ACCELERATOR_VARIANTS.values())
+        self.assertEqual(sorted(variants), ["A100", "G4", "H100", "L4", "T4"])
+        self.assertEqual(len(set(variants)), len(variants))
+
+
+FAKE_COLAB = """#!{python}
+import json, os, sys
+with open({log!r}, "a") as handle:
+    handle.write(json.dumps({{"argv": sys.argv[1:], "env": sorted(os.environ),
+                              "home": os.environ.get("HOME"),
+                              "stdin_tty": sys.stdin is not None and sys.stdin.isatty()}}) + "\\n")
+sys.exit({code} if sys.argv[-1:] == ["sessions"] else 2)
+"""
+
+
+class ColabKeyringSignInTests(unittest.TestCase):
+    """google-colab-cli 0.8.0 keeps its sign-in in a keyring under HOME and
+    writes no `token.json`; `account_check` must then ask the CLI itself,
+    the same `colab sessions` probe `smith colab status` runs."""
+
+    def setUp(self) -> None:
+        box = tempfile.TemporaryDirectory()
+        self.addCleanup(box.cleanup)
+        self.root = Path(box.name)
+        self.state = self.root / "carlos-state"
+        self.state.mkdir(mode=0o700)
+        self.state.chmod(0o700)
+        self.registry = self.root / "team.json"
+        members = [{"owner": "carlos",
+                    "accounts": {"colab": {"tier": "pro", "configDir": str(self.state)}}}]
+        self.registry.write_text(json.dumps({"schema": 1, "members": members}), encoding="utf-8")
+        self.log = self.root / "colab.log"
+
+    def adapter_with_cli(self, exit_code: int):
+        exe = self.root / f"colab-{exit_code}"
+        exe.write_text(FAKE_COLAB.format(python=sys.executable, log=str(self.log), code=exit_code),
+                       encoding="utf-8")
+        exe.chmod(0o755)
+        return COLAB.ColabAdapter(team_registry=self.registry, colab_executable=str(exe))
+
+    def calls(self) -> list[dict]:
+        if not self.log.exists():
+            return []
+        return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
+
+    def test_a_keyring_backed_sign_in_passes_when_colab_sessions_succeeds(self) -> None:
+        self.assertFalse((self.state / COLAB.CLI_TOKEN_FILE_RELATIVE).exists())
+        result = self.adapter_with_cli(0).account_check("colab:carlos")
+        self.assertTrue(result["ok"], result)
+        self.assertIn("colab sessions", result["evidence"])
+        [call] = self.calls()
+        self.assertEqual(call["argv"], ["--config", str(self.state / COLAB.CLI_SESSIONS_FILE_RELATIVE),
+                                        "sessions"])
+        self.assertEqual(call["home"], str(self.state))
+        # LC_CTYPE is the child interpreter's own C-locale coercion (PEP 538).
+        self.assertEqual(sorted(set(call["env"]) - {"LC_CTYPE"}), ["HOME", "PATH"])
+        self.assertFalse(call["stdin_tty"])
+
+    def test_a_failing_colab_sessions_without_a_token_is_not_signed_in(self) -> None:
+        result = self.adapter_with_cli(1).account_check("colab:carlos")
+        self.assertFalse(result["ok"])
+        self.assertIn("exited 1", result["evidence"])
+        self.assertIn("sign in", result["fix"])
+
+    def test_a_present_token_file_needs_no_probe(self) -> None:
+        token = self.state / COLAB.CLI_TOKEN_FILE_RELATIVE
+        token.parent.mkdir(parents=True)
+        token.write_text("{}", encoding="utf-8")
+        self.assertTrue(self.adapter_with_cli(1).account_check("colab:carlos")["ok"])
+        self.assertEqual(self.calls(), [])
+
+    def test_a_config_dir_open_to_others_is_refused_before_any_probe(self) -> None:
+        self.state.chmod(0o755)
+        result = self.adapter_with_cli(0).account_check("colab:carlos")
+        self.assertFalse(result["ok"])
+        self.assertIn("0700", result["evidence"])
+        self.assertEqual(self.calls(), [])
+
+    def test_the_adapter_and_smith_colab_status_probe_the_same_command(self) -> None:
+        sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
+        from papersmith.core import colab as smith_colab
+        self.assertEqual(tuple(COLAB.SIGN_IN_PROBE_ARGS), tuple(smith_colab.STATUS_ARGS))
 
 
 class HooksStayOptionalTests(unittest.TestCase):

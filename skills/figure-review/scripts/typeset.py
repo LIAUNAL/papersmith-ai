@@ -66,6 +66,8 @@ def measure_pdf(pdf: Path, *, body_pt: float, body_source: str,
         import print_scale
     except ImportError:
         return _unmeasured("PDF_READER_ABSENT")
+    if not getattr(print_scale, "pdf_reader_available", lambda: True)():
+        return _unmeasured("PDF_READER_ABSENT")
     try:
         bounds = print_scale.content_bbox(pdf)
         spans = print_scale.pdf_text_spans(pdf)

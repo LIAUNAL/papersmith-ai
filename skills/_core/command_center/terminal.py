@@ -218,7 +218,7 @@ def asta_mcp_status(root: Path) -> dict[str, Any]:
 #: Headless runs go through the official `colab` CLI, installed with the exact
 #: pin the remote-execution skill documents (a test holds the two equal).
 COLAB_MCP_SERVER = "colab"
-COLAB_CLI_INSTALL = 'uv tool install --force --python 3.14 "google-colab-cli==0.6.0" --with "jupyter-kernel-client<1"'
+COLAB_CLI_INSTALL = 'uv tool install --force --python 3.14 "google-colab-cli==0.8.0" --with "jupyter-kernel-client<1"'
 COLAB_PAID_TIERS = ("pro", "payg", "enterprise")
 COLAB_FAQ_URL = "https://research.google.com/colaboratory/faq.html"
 #: Commands the Colab box offers. Typed by the dashboard into the CLI

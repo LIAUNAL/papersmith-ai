@@ -174,8 +174,8 @@ def _closed_shapes(pdf: Path, page_index: int) -> list:
     shape is the first thing drawn."""
     import ctypes
 
-    import pypdfium2 as pdfium
-    import pypdfium2.raw as pdfium_c
+    pdfium = print_scale.pdfium  # its stand-in raises PdfReaderAbsent when absent
+    pdfium_c = print_scale.pdfium_c
 
     shapes = []
     document = pdfium.PdfDocument(str(pdf))
@@ -271,6 +271,10 @@ def audit_diagram(pdf: Path, *, body_pt: float, printed_width_pt: float | None,
         collisions = text_collisions(pdf)
         font = print_scale.printed_font_report(pdf, printed_width_pt, body_pt)
         box = print_scale.content_bbox(pdf)
+    except print_scale.PdfReaderAbsent as exc:  # no reader here: unmeasured, typed
+        for name in ("text_overlap", "font_range", "margins"):
+            checks[name] = _check("unmeasured", print_scale.PDF_RASTERIZER_ABSENT,
+                                  message=str(exc))
     except Exception as exc:  # an unreadable PDF measures nothing, never passes
         reason = f"PDF_UNREADABLE: {type(exc).__name__}: {exc}"
         for name in ("text_overlap", "font_range", "margins"):
