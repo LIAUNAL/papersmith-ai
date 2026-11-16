@@ -8984,8 +8984,10 @@ class RefusalRosterTests(unittest.TestCase):
 
         225 -> 226: `separate` refuses a `"shares": true` assignment naming a
         section no non-sharing assignment of the same cut claims
-        (SEPARATION_SHARE_UNCLAIMED)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 226)
+        (SEPARATION_SHARE_UNCLAIMED).
+
+        226 -> 238: `translate` adds 12 TRANSLATION_* codes."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 238)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

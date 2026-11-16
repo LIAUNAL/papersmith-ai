@@ -1231,6 +1231,18 @@ class ReviewTimeTests(JournalFinderCase):
         terms = " ".join(r["params"]["term"] for r in esearches)
         self.assertNotIn("1111-111X", terms)
 
+    def test_review_time_also_reports_submission_to_publication(self):
+        self.start_api()
+        by_name = self.by_name(self.search())
+        crossref = by_name["Neural Fixtures Letters"]["review_time"]
+        self.assertEqual((crossref["publication_median_days"], crossref["publication_p25_days"],
+                          crossref["publication_p75_days"], crossref["publication_n"]), (42.0, 27.0, 57.0, 6))
+        # PubMed dates three of the six articles' online publication: below five, the median is withheld
+        pubmed = by_name["Open Signal Processing"]["review_time"]
+        self.assertEqual((pubmed["publication_median_days"], pubmed["publication_n"]), (None, 3))
+        none = by_name["Obscure Quarterly"]["review_time"]
+        self.assertEqual((none["publication_median_days"], none["publication_n"]), (None, 0))
+
     def test_fewer_than_five_dated_crossref_articles_falls_through_to_pubmed(self):
         api = self.start_api()
         result = self.search()
@@ -1273,7 +1285,8 @@ class ReviewTimeTests(JournalFinderCase):
         for candidate in result.json["candidates"]:
             review = candidate["review_time"]
             for key in ("median_days", "p25_days", "p75_days", "n",
-                        "accept_to_online_median_days", "source", "window"):
+                        "accept_to_online_median_days", "source", "window", "publication_median_days",
+                        "publication_p25_days", "publication_p75_days", "publication_n"):
                 self.assertIn(key, review)
             self.assertIn(review["source"], ("crossref", "pubmed", "none"))
 
@@ -2473,6 +2486,8 @@ class AggregationTests(FallbackCase):
         self.assertIsNone(fallback["mean_citedness_2yr"])
         self.assertEqual(set(fallback["review_time"]), {"median_days", "p25_days", "p75_days", "n",
                                                         "accept_to_online_median_days", "accept_to_online_n",
+                                                        "publication_median_days", "publication_p25_days",
+                                                        "publication_p75_days", "publication_n",
                                                         "source", "kind", "window"})
 
 

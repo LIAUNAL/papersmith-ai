@@ -815,6 +815,12 @@ _SKILLS = Path(__file__).resolve().parents[2]
 JOURNAL_CLI = _SKILLS / "journal-finder" / "scripts" / "journal_cli.py"
 #: The venue verbs, imported by file path so `approve` can record `via=dashboard`.
 PAPER_VENUE = _SKILLS / "paper-writing" / "scripts" / "paper_venue.py"
+#: The paper-writing CLI; the dashboard runs its `translate` verb as a child process.
+PAPER_CLI = _SKILLS / "paper-writing" / "scripts" / "paper_cli.py"
+#: The only manuscript translations the dashboard knows (paper/translations/<lang>/).
+TRANSLATION_LANGS = ("es",)
+TRANSLATE_STATUS_TIMEOUT_SECONDS = 30.0
+TRANSLATE_AUDIT_TIMEOUT_SECONDS = 180.0
 #: The writing-quality style metrics module (cadence, overused phrasing, lexical diversity).
 PAPER_AI_METRICS = _SKILLS / "paper-writing" / "scripts" / "paper_ai_metrics.py"
 #: The visual QA of the compiled manuscript (pypdfium2 geometry, pdftoppm pages).
@@ -833,12 +839,19 @@ VENUE_TEXT_MAX_BYTES = 256 * 1024
 SJR_FIRST_YEAR = 1999
 JOURNAL_MAX_LIMIT = 50
 JOURNAL_SOURCES = ("auto", "asta", "openalex", "crossref")
+JOURNAL_SCOPES = ("international", "national")
+#: The Publindex categories the national match ranks, best first (C and RC are left out).
+PUBLINDEX_CATEGORIES = ("A1", "A2", "B")
+#: Body fields that only the international (OpenAlex/SJR) search reads.
+_INTERNATIONAL_FIELDS = ("quartiles", "oa_only", "max_apc", "max_review_days", "source",
+                         "include_unknown_quartile", "no_cache")
 #: One journal search at a time: it spends a shared API budget and writes
 #: `paper/journal-candidates.json`.
 _JOURNAL_LOCK = threading.Lock()
 
 _JOURNAL_ERROR_STATUS = {
-    "QUARTILE_RANGE_INVALID": 422, "FILTER_INVALID": 422, "SJR_FILE_INVALID": 422, "USAGE": 422,
+    "QUARTILE_RANGE_INVALID": 422, "CATEGORY_RANGE_INVALID": 422, "PUBLINDEX_DATA_INVALID": 500,
+    "FILTER_INVALID": 422, "SJR_FILE_INVALID": 422, "USAGE": 422,
     "PAPER_ABSENT": 409, "CANDIDATES_UNREADABLE": 409, "WORKSPACE_ABSENT": 404,
     "NETWORK_UNAVAILABLE": 502, "TIMEOUT": 504, "INTERNAL_ERROR": 500,
 }
@@ -849,6 +862,7 @@ _VENUE_ERROR_STATUS = {
     "REQUIREMENTS_ABSENT": 409, "TEMPLATE_ABSENT": 409, "BLOCK_HAND_EDITED": 409,
 }
 _QUARTILE_RE = re.compile(r"^\s*[Qq]([1-4])\s*(?:-\s*[Qq]([1-4]))?\s*$")
+_CATEGORY_RE = re.compile(r"^\s*(A1|A2|B)\s*(?:-\s*(A1|A2|B))?\s*$", re.IGNORECASE)
 
 
 def _journal_error(code: str, message: str, status: int | None = None) -> tuple[dict[str, Any], int]:
@@ -1018,6 +1032,76 @@ def _run_journal_cli(root: Path, argv: list[str], timeout: float) -> tuple[dict[
     return payload, 200
 
 
+_TRANSLATE_ERROR_STATUS = {
+    "USAGE": 422, "LANG_UNSUPPORTED": 422, "TRANSLATION_LANG_INVALID": 422,
+    "TRANSLATION_LANGUAGE_UNSUPPORTED": 422, "WORKSPACE_ABSENT": 404,
+    "PAPER_CLI_ABSENT": 503, "PAPER_CLI_FAILED": 502, "TIMEOUT": 504, "INTERNAL_ERROR": 500,
+}
+
+
+def _translate_error(code: str, message: str, status: int | None = None) -> tuple[dict[str, Any], int]:
+    # A refusal the table does not name is a conflict with the workspace state
+    # (nothing translated, no paper, a stale build): 409.
+    return {"ok": False, "error": code, "message": message}, status or _TRANSLATE_ERROR_STATUS.get(code, 409)
+
+
+def _translation_lang_refusal(value: str | None, field: str) -> tuple[dict[str, Any], int] | None:
+    """None when `value` names a known translation; a typed 422 otherwise."""
+    if value in TRANSLATION_LANGS:
+        return None
+    return _translate_error("TRANSLATION_LANG_INVALID",
+                            f"{field} must be one of {', '.join(TRANSLATION_LANGS)}", 422)
+
+
+def _run_translate_cli(root: Path, verb: str, lang: str, timeout: float) -> tuple[dict[str, Any], int]:
+    """`paper_cli.py translate <verb> --lang <lang>` from the workspace root:
+    (its JSON object, HTTP status). Blocking: callers run it off the event
+    loop. Never raises."""
+    if not PAPER_CLI.is_file():
+        return _translate_error("PAPER_CLI_ABSENT", f"{PAPER_CLI.name} is not installed beside the dashboard")
+    try:
+        # The workspace's paper is named explicitly, never left to the CLI's own default location.
+        done = subprocess.run([sys.executable, str(PAPER_CLI), "translate", verb, "--lang", lang,
+                               "--paper", str(root / "paper")], cwd=str(root),
+                              capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return _translate_error("TIMEOUT", f"translate {verb} did not finish in {timeout:g} s and was stopped")
+    except OSError as exc:
+        return _translate_error("PAPER_CLI_FAILED", f"the paper CLI could not start: {exc}")
+    # One JSON object, indented or on one line; a stray line before it is tolerated.
+    payload = None
+    lines = [line for line in done.stdout.splitlines() if line.strip()]
+    for text in (done.stdout, lines[-1] if lines else ""):
+        try:
+            payload = json.loads(text)
+            break
+        except ValueError:
+            continue
+    if not isinstance(payload, dict):
+        tail = (done.stderr or done.stdout or "no output").strip()[-300:]
+        return _translate_error("PAPER_CLI_FAILED",
+                                f"translate {verb} answered no JSON (exit {done.returncode}): {tail}")
+    if payload.get("ok") is False:
+        return payload, _TRANSLATE_ERROR_STATUS.get(str(payload.get("error")), 409)
+    return payload, 200
+
+
+def _compile_translation(root: Path, lang: str) -> tuple[dict[str, Any], int]:
+    """paper/translations/<lang>/main.tex, compiled in place. The canonical
+    paper/ stays on the TeX and BibTeX search paths so the translation reaches
+    its figures and refs.bib. Blocking: the caller runs it off the event loop,
+    holding _PAPER_LOCK."""
+    directory = paper_preview.translation_directory(root, lang)
+    if directory is None or paper_preview._contained(directory, directory / "main.tex") is None:
+        body, status = _translate_error(
+            "TRANSLATION_NOT_BUILT",
+            f"paper/translations/{lang}/main.tex does not exist: run `translate build --lang {lang}` first.")
+        return {**body, "outputs": []}, status
+    paper = str((root / "paper").resolve())
+    search = {key: f".{os.pathsep}{paper}{os.pathsep}" for key in ("TEXINPUTS", "BIBINPUTS", "BSTINPUTS")}
+    return _compile_tex(root, directory, directory / "main.pdf", search)
+
+
 def _read_candidates(root: Path) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
     """paper/journal-candidates.json as (document, error); both None when absent."""
     path = root / "paper" / "journal-candidates.json"
@@ -1078,14 +1162,48 @@ def _journals_state(root: Path) -> dict[str, Any]:
     return state
 
 
+def _national_search_arguments(payload: dict, refuse) -> tuple[list[str] | None, dict[str, Any] | None]:
+    """scope national: the Publindex list, filtered by category; no international option applies."""
+    given = [name for name in _INTERNATIONAL_FIELDS
+             if payload.get(name) is not None and payload.get(name) is not False]
+    if given:
+        return refuse("FILTER_INVALID", f"{', '.join(given)} applies to scope international only; scope national "
+                      "accepts categories and limit")
+    argv = ["--scope", "national"]
+    raw = payload.get("categories")
+    if raw is not None:
+        match = _CATEGORY_RE.match(raw) if isinstance(raw, str) else None
+        low = PUBLINDEX_CATEGORIES.index(match.group(1).upper()) if match else 0
+        high = PUBLINDEX_CATEGORIES.index((match.group(2) or match.group(1)).upper()) if match else 0
+        if not match or low > high:
+            return refuse("CATEGORY_RANGE_INVALID", "categories must be one ranked Publindex category or an ascending "
+                          "range of A1, A2 and B such as A1, A1-A2 or A1-B")
+        low_name, high_name = PUBLINDEX_CATEGORIES[low], PUBLINDEX_CATEGORIES[high]
+        argv += ["--categories", low_name if low == high else f"{low_name}-{high_name}"]
+    limit = payload.get("limit")
+    if limit is not None:
+        if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit != int(limit) \
+                or not 1 <= int(limit) <= JOURNAL_MAX_LIMIT:
+            return refuse("FILTER_INVALID", f"limit must be a whole number from 1 to {JOURNAL_MAX_LIMIT}")
+        argv += ["--limit", str(int(limit))]
+    return argv, None
+
+
 def _search_arguments(payload: Any) -> tuple[list[str] | None, dict[str, Any] | None]:
     """The CLI flags for a search body, or the 422 body that refuses it."""
     def refuse(code: str, message: str):
         return None, _journal_error(code, message)[0]
 
     if not isinstance(payload, dict):
-        return refuse("FILTER_INVALID", "expected a JSON object {quartiles, oa_only, max_apc, max_review_days, limit, no_cache, "
-                      "source, include_unknown_quartile}")
+        return refuse("FILTER_INVALID", "expected a JSON object {scope, quartiles, oa_only, max_apc, max_review_days, limit, "
+                      "no_cache, source, include_unknown_quartile, categories}")
+    scope = payload.get("scope", "international")
+    if not isinstance(scope, str) or scope not in JOURNAL_SCOPES:
+        return refuse("FILTER_INVALID", f"scope must be one of {', '.join(JOURNAL_SCOPES)}")
+    if scope == "national":
+        return _national_search_arguments(payload, refuse)
+    if payload.get("categories") is not None:
+        return refuse("FILTER_INVALID", "categories applies to scope national only (Publindex categories)")
     raw = payload.get("quartiles")
     match = _QUARTILE_RE.match(raw) if isinstance(raw, str) else None
     low = int(match.group(1)) if match else 0
@@ -2492,9 +2610,23 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             **_PAPER_HEADERS, "Content-Disposition": "inline"})
 
     @app.get("/api/pdf")
-    def api_pdf_direct(request: Request, venue: str | None = None) -> Response:
-        # `?venue=<slug>` serves paper/venues/<slug>/main.pdf instead.
+    def api_pdf_direct(request: Request, venue: str | None = None, translation: str | None = None) -> Response:
+        # `?venue=<slug>` serves paper/venues/<slug>/main.pdf instead, and
+        # `?translation=es` paper/translations/es/main.pdf.
         pdf_path = root_path / "paper" / "main.pdf"
+        if translation is not None:
+            if venue is not None:
+                body, code = _translate_error("TRANSLATION_WITH_VENUE", "pass venue or translation, not both", 422)
+                return JSONResponse(body, status_code=code)
+            refused = _translation_lang_refusal(translation, "translation")
+            if refused is not None:
+                return JSONResponse(refused[0], status_code=refused[1])
+            found, resolved = paper_preview.resolve_translation_pdf(root_path, translation)
+            if found == "too_large":
+                return JSONResponse({"detail": "artifact exceeds the 100 MiB limit"}, status_code=413)
+            if resolved is None:
+                return JSONResponse({"detail": "translation main.pdf not found"}, status_code=404)
+            pdf_path = resolved
         if venue is not None:
             found, resolved = paper_preview.resolve_venue_pdf(root_path, venue)
             if found == "bad":
@@ -2585,6 +2717,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not origin_is_same(request):
             return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
                                 status_code=403)
+        translation = request.query_params.get("translation")
+        if translation is not None:
+            # `?translation=es`: the Spanish quality audit of the translation
+            # (`translate audit`); the English audit below is not involved.
+            refused = _translation_lang_refusal(translation, "translation")
+            if refused is not None:
+                return JSONResponse(refused[0], status_code=refused[1])
+            body, code = await asyncio.to_thread(_run_translate_cli, root_path, "audit", translation,
+                                                 TRANSLATE_AUDIT_TIMEOUT_SECONDS)
+            return JSONResponse(body, status_code=code, headers=dict(_PAPER_HEADERS))
         try:
             payload = await request.json()
         except Exception as e:
@@ -3405,6 +3547,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     def api_paper_review() -> JSONResponse:
         return JSONResponse(_paper_review_state(root_path), headers=dict(_PAPER_HEADERS))
 
+    @app.get("/api/translations")
+    async def api_translations(lang: str = "es") -> JSONResponse:
+        """`translate status --lang <lang>`: which blocks are translated, built, audited."""
+        refused = _translation_lang_refusal(lang, "lang")
+        if refused is not None:
+            return JSONResponse(refused[0], status_code=refused[1], headers=dict(_PAPER_HEADERS))
+        body, code = await asyncio.to_thread(_run_translate_cli, root_path, "status", lang,
+                                             TRANSLATE_STATUS_TIMEOUT_SECONDS)
+        return JSONResponse(body, status_code=code, headers=dict(_PAPER_HEADERS))
+
     @app.get("/api/journals")
     def api_journals() -> JSONResponse:
         return JSONResponse(_journals_state(root_path), headers=dict(_PAPER_HEADERS))
@@ -3564,7 +3716,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not origin_is_same(request):
             return _forbidden()
         slug = request.query_params.get("venue")
-        if slug is not None:
+        translation = request.query_params.get("translation")
+        if translation is not None:
+            # `?translation=es` compiles paper/translations/es/main.tex in place.
+            refused = (_translate_error("TRANSLATION_WITH_VENUE", "pass venue or translation, not both", 422)
+                       if slug is not None else _translation_lang_refusal(translation, "translation"))
+            if refused is not None:
+                return JSONResponse(refused[0], status_code=refused[1], headers=dict(_PAPER_HEADERS))
+        elif slug is not None:
             refused = _slug_or_400(slug)
             if refused is not None:
                 return refused
@@ -3578,6 +3737,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
         def locked_compile() -> tuple[dict[str, Any], int]:
             try:
+                if translation is not None:
+                    return _compile_translation(root_path, translation)
                 return _compile_paper(root_path) if slug is None else _compile_venue(root_path, slug)
             finally:
                 _PAPER_LOCK.release()

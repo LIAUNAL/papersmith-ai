@@ -434,6 +434,54 @@ def resolve_venue_pdf(root: Path | str, slug: str) -> tuple[str, Path | None]:
     return "ok", resolved
 
 
+#: The manuscript translations a workspace may hold under paper/translations/.
+TRANSLATION_LANGS = ("es",)
+
+
+def translation_directory(root: Path | str, lang: str) -> Path | None:
+    """The real directory ``paper/translations/<lang>``, or ``None``.
+
+    ``None`` for an unknown language, a missing directory, or one that
+    resolves anywhere but directly under ``paper/translations/`` inside the
+    workspace (a symlink out is not followed).
+    """
+    if lang not in TRANSLATION_LANGS:
+        return None
+    root = Path(root).expanduser().resolve()
+    try:
+        base = (root / "paper" / "translations").resolve(strict=True)
+        base.relative_to(root)
+        real = (base / lang).resolve(strict=True)
+    except (OSError, ValueError, RuntimeError):
+        return None
+    if real.parent != base or real.name != lang or not real.is_dir():
+        return None
+    return real
+
+
+def resolve_translation_pdf(root: Path | str, lang: str) -> tuple[str, Path | None]:
+    """Resolve ``paper/translations/<lang>/main.pdf`` to ``(status, path)``.
+
+    ``status`` is ``ok``, ``bad`` (unknown language, HTTP 422), ``absent``
+    (HTTP 404) or ``too_large`` (HTTP 413). Only that exact file is served,
+    and it must resolve inside the translation's own directory.
+    """
+    if lang not in TRANSLATION_LANGS:
+        return "bad", None
+    directory = translation_directory(root, lang)
+    if directory is None:
+        return "absent", None
+    resolved = _contained(directory, directory / "main.pdf")
+    if resolved is None:
+        return "absent", None
+    try:
+        if resolved.stat().st_size > FILE_MAX_BYTES:
+            return "too_large", None
+    except OSError:
+        return "absent", None
+    return "ok", resolved
+
+
 def read_capped_bytes(root: Path | str, path: Path, cap: int) -> tuple[str, bytes | None]:
     """Like :func:`bounded_read` but returns the raw bytes, so a hash taken
     from them is the hash of the file on disk."""

@@ -43,9 +43,17 @@ PERSONAL_HOME_PATH = re.compile(
     re.IGNORECASE)
 
 
+#: Colombia's science ministry runs Publindex, the national journal index the journal finder ranks: its
+#: official domain is a source address, not a trace of an older project, and the bundled Publindex list
+#: quotes the journals' own scopes verbatim (some name the ministry). Both are excused; any other mention
+#: of the old project's funder is still caught.
+PUBLINDEX_DOMAIN = "minciencias.gov.co"
+VERBATIM_PUBLINDEX = "skills/journal-finder/data/publindex-ibn.json"
+
+
 def old_project_hits(text: str) -> list[str]:
     """What `text` carries of an older project, case-insensitively."""
-    lowered = text.lower()
+    lowered = text.lower().replace(PUBLINDEX_DOMAIN, "")
     hits = [m for m in OLD_PROJECT_MARKERS if m in lowered]
     if PERSONAL_HOME_PATH.search(text):
         # Named by kind, never by the path itself: the report must not
@@ -68,6 +76,10 @@ class OldProjectDetectorTests(unittest.TestCase):
                      "path:/home/quillon/x", "-v/Users/Quillon:/w"):
             self.assertNotEqual(old_project_hits(text), [], text)
 
+    def test_the_publindex_domain_is_a_source_not_an_old_project(self) -> None:
+        self.assertEqual(old_project_hits("https://scienti.minciencias.gov.co/publindex/api"), [])
+        self.assertEqual(old_project_hits("funded by Minciencias"), ["minciencias"])
+
     def test_relative_paths_placeholders_and_prose_are_accepted(self) -> None:
         for text in ("./users/list.md", "~/Proyectos/paper", "/Users/<you>/paper",
                      "/home/$USER/paper", "https://api.example.org/users/42",
@@ -85,6 +97,8 @@ class KitTests(unittest.TestCase):
     def test_nothing_the_kit_ships_names_an_older_project(self) -> None:
         hits = []
         for rel in sorted(walk_kit_files(REPO)):
+            if Path(rel).as_posix() == VERBATIM_PUBLINDEX:
+                continue
             path = REPO / rel
             try:
                 text = path.read_text(encoding="utf-8")

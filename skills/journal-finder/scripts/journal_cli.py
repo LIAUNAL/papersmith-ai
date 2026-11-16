@@ -114,6 +114,7 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -180,6 +181,17 @@ MAX_CROSSREF_DOIS = 100
 UNAVAILABLE_STATUSES = (200, 401, 402, 403, 429)  # 200: an answer that is not JSON
 PROVIDER_ORDER = ("asta", "openalex", "crossref", "europepmc", "semanticscholar", "sjr", "doaj")
 SOURCE_CHOICES = ("auto", "asta", "openalex", "crossref")
+SCOPE_CHOICES = ("international", "national")
+#: Colombia's IBN - Publindex categories, best first; RC is "reconocida" (recognized, not classified).
+PUBLINDEX_CATEGORIES = ("A1", "A2", "B", "C", "RC")
+#: The categories the national match ranks: the classified journals of the top of the list.
+NATIONAL_CATEGORIES = ("A1", "A2", "B")
+PUBLINDEX_DEFAULT = Path(__file__).resolve().parents[1] / "data" / "publindex-ibn.json"
+NATIONAL_FIT_WEIGHTS = {"topic_overlap": 0.7, "cited_in_paper": 0.3}
+NATIONAL_MIN_PREFIX = 5
+#: A median below this many days from submission to publication means OJS dated articles loaded after acceptance.
+NATIONAL_MIN_PLAUSIBLE_DAYS = 30
+NATIONAL_PREFIX_SHARE = 0.75
 OPENALEX_KEY_URL = "openalex.org/settings/api-key"
 OPENALEX_KEY_GUIDE = ("OpenAlex now asks for a free API key for real use: keyless calls are a small demo "
                       "allowance and a free key gives about USD 1 per day, 10x the keyless budget. Create a free "
@@ -196,6 +208,7 @@ SOURCE_SELECT = ("id,display_name,issn_l,issn,type,host_organization_name,is_oa,
 REFUSAL_CODES = (
     "QUARTILE_RANGE_INVALID", "PAPER_ABSENT", "NETWORK_UNAVAILABLE", "SJR_FILE_INVALID",
     "WORKSPACE_ABSENT", "FILTER_INVALID", "CANDIDATES_UNREADABLE", "USAGE", "INTERNAL_ERROR",
+    "CATEGORY_RANGE_INVALID", "PUBLINDEX_DATA_INVALID",
 )
 
 
@@ -1696,18 +1709,35 @@ def apply_fit(details: list[dict]) -> dict:
 # --------------------------------------------------------------------------- review time
 
 
-def _empty_review(n: int, window: dict) -> dict:
+def publication_deltas(triples) -> list[int]:
+    """Received -> online publication days per article (Crossref first_online, PubMed epublish)."""
+    return [(online - received).days for received, _, online in triples
+            if received is not None and online is not None and online >= received]
+
+
+def _publication(published: list[int]) -> dict:
+    """Submission to publication over the same articles; withheld below REVIEW_MIN_N dated articles."""
+    if len(published) < REVIEW_MIN_N:
+        return {"publication_median_days": None, "publication_p25_days": None, "publication_p75_days": None,
+                "publication_n": len(published)}
+    median, p25, p75 = summarize_days(published)
+    return {"publication_median_days": median, "publication_p25_days": p25, "publication_p75_days": p75,
+            "publication_n": len(published)}
+
+
+def _empty_review(n: int, window: dict, published: list[int] | None = None) -> dict:
     return {"median_days": None, "p25_days": None, "p75_days": None, "n": n,
             "accept_to_online_median_days": None, "accept_to_online_n": 0, "source": "none",
-            "kind": "submission-to-acceptance-estimate", "window": window}
+            "kind": "submission-to-acceptance-estimate", "window": window, **_publication(published or [])}
 
 
-def _review_result(source: str, review: list[int], online: list[int], window: dict) -> dict:
+def _review_result(source: str, review: list[int], online: list[int], window: dict,
+                   published: list[int] | None = None) -> dict:
     median, p25, p75 = summarize_days(review)
     return {"median_days": median, "p25_days": p25, "p75_days": p75, "n": len(review),
             "accept_to_online_median_days": summarize_days(online)[0] if online else None,
             "accept_to_online_n": len(online), "source": source,
-            "kind": "submission-to-acceptance-estimate", "window": window}
+            "kind": "submission-to-acceptance-estimate", "window": window, **_publication(published or [])}
 
 
 def estimate_review_time(services: Services, candidate: dict, today: dt.date) -> tuple[dict, list[str]]:
@@ -1717,6 +1747,7 @@ def estimate_review_time(services: Services, candidate: dict, today: dt.date) ->
     name = candidate["display_name"]
     notes: list[str] = []
     best_n = 0
+    best_published: list[int] = []
 
     for issn in issns:
         try:
@@ -1732,10 +1763,14 @@ def estimate_review_time(services: Services, candidate: dict, today: dt.date) ->
         items = ((data.get("message") or {}).get("items")) or []
         if not items:
             continue
-        review, online = review_deltas(crossref_item_dates(i) for i in items)
+        dates = [crossref_item_dates(i) for i in items]
+        review, online = review_deltas(dates)
+        published = publication_deltas(dates)
         best_n = max(best_n, len(review))
+        if len(published) > len(best_published):
+            best_published = published
         if len(review) >= REVIEW_MIN_N:
-            return _review_result("crossref", review, online, window), notes
+            return _review_result("crossref", review, online, window, published), notes
         break
 
     for issn in issns:
@@ -1753,13 +1788,16 @@ def estimate_review_time(services: Services, candidate: dict, today: dt.date) ->
             notes.append(f"review time: PubMed failed for {name} ({exc})")
             break
         result = summary.get("result") or {}
-        review, online = review_deltas(
-            pubmed_history_dates((result.get(uid) or {}).get("history")) for uid in result.get("uids") or [])
+        dates = [pubmed_history_dates((result.get(uid) or {}).get("history")) for uid in result.get("uids") or []]
+        review, online = review_deltas(dates)
+        published = publication_deltas(dates)
         best_n = max(best_n, len(review))
+        if len(published) > len(best_published):
+            best_published = published
         if len(review) >= REVIEW_MIN_N:
-            return _review_result("pubmed", review, online, window), notes
+            return _review_result("pubmed", review, online, window, published), notes
         break
-    return _empty_review(best_n, window), notes
+    return _empty_review(best_n, window, best_published), notes
 
 
 # --------------------------------------------------------------------------- the fallback chain (no OpenAlex)
@@ -2360,7 +2398,248 @@ def run_fallback(services: Services, profile: dict, terms: list[str], facets: di
                 "europepmc": found["europepmc"], "semanticscholar": found["semanticscholar"]}}
 
 
+# --------------------------------------------------------------------------- national scope (Publindex)
+
+
+def publindex_file() -> Path:
+    override = os.environ.get("PAPERSMITH_PUBLINDEX_FILE")
+    return Path(override).expanduser() if override else PUBLINDEX_DEFAULT
+
+
+def parse_category_range(text: str | None) -> list[str]:
+    """`A1`, `A1-B`, `a2-b` -> the categories of that range, best first; only A1, A2 and B are ranked."""
+    if text is None:
+        return list(NATIONAL_CATEGORIES)
+    names = "|".join(NATIONAL_CATEGORIES)
+    match = re.fullmatch(rf"\s*({names})\s*(?:-\s*({names})\s*)?", text.upper())
+    if not match:
+        raise Refusal("CATEGORY_RANGE_INVALID", f"{text!r} is not a ranked Publindex category or range: the "
+                                                "national match covers A1, A2 and B (for example A1, A1-A2 or A1-B)")
+    low = NATIONAL_CATEGORIES.index(match.group(1))
+    high = NATIONAL_CATEGORIES.index(match.group(2) or match.group(1))
+    if low > high:
+        raise Refusal("CATEGORY_RANGE_INVALID", f"{text!r} is not ascending: write the better category first "
+                                                "(A1 before A2 and B)")
+    return list(NATIONAL_CATEGORIES[low:high + 1])
+
+
+def load_publindex(path: Path) -> dict:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        journals = document["journals"]
+        if not isinstance(journals, list) or not all(
+                isinstance(j, dict) and j.get("name") and j.get("category") in PUBLINDEX_CATEGORIES for j in journals):
+            raise ValueError("every journal needs a name and a category among " + ", ".join(PUBLINDEX_CATEGORIES))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise Refusal("PUBLINDEX_DATA_INVALID", f"{path} is not a Publindex list ({exc}); rebuild it with "
+                                                "scripts/fetch-publindex.py") from exc
+    return document
+
+
+def _bilingual_word(token: str) -> str:
+    """One spelling for English and Spanish cognates: classification and clasificación both read `clasificacion`."""
+    text = _bilingual_ascii(token).lower()
+    for old, new in (("tion", "cion"), ("ph", "f"), ("th", "t"), ("y", "i"), ("k", "c")):
+        text = text.replace(old, new)
+    return re.sub(r"(.)\1+", r"\1", text)
+
+
+def _same_word(a: str, b: str) -> bool:
+    """Short words match exactly; longer ones when they share a prefix of 75% of the shorter one (at least 5)."""
+    shorter = min(len(a), len(b))
+    if shorter < NATIONAL_MIN_PREFIX:
+        return a == b
+    need = max(NATIONAL_MIN_PREFIX, math.ceil(NATIONAL_PREFIX_SHARE * shorter))
+    return a[:need] == b[:need]
+
+
+def _journal_words(journal: dict) -> set[str]:
+    topics = (journal.get("openalex") or {}).get("topics") or []
+    names = [t.get(k) or "" for t in topics for k in ("name", "subfield", "field")]
+    text = " ".join([journal.get("name") or "", journal.get("scope") or "", *names])
+    return {_bilingual_word(w) for w in re.findall(r"[^\W\d_]{3,}", text)}
+
+
+def _international_only(args: argparse.Namespace) -> list[str]:
+    given = [("--quartiles", args.quartiles is not None), ("--oa-only", args.oa_only),
+             ("--max-apc", args.max_apc is not None), ("--max-review-days", args.max_review_days is not None),
+             ("--source", args.source is not None), ("--include-unknown-quartile", args.include_unknown_quartile),
+             ("--sjr", args.sjr is not None), ("--no-cache", args.no_cache)]
+    return [flag for flag, present in given if present]
+
+
+def cmd_search_national(args: argparse.Namespace) -> dict:
+    """Rank the journals of the Publindex list by lexical fit with the paper and by the paper's references."""
+    refused = _international_only(args)
+    if refused:
+        raise Refusal("FILTER_INVALID", f"{', '.join(refused)} applies to --scope international only; "
+                                        "--scope national accepts --categories, --limit and --out")
+    categories = parse_category_range(args.categories)
+    filters, notes = _validated_filters(args)
+    filters = {"categories": categories, "limit": filters["limit"]}
+    workspace = Path(args.workspace).expanduser()
+    if not workspace.is_dir():
+        raise Refusal("WORKSPACE_ABSENT", f"{workspace} is not a directory")
+    path = publindex_file()
+    listing = load_publindex(path)
+    profile = extract_profile(workspace)
+    terms = build_terms(profile)
+    out = Path(args.out).expanduser() if args.out else workspace / "paper" / "journal-candidates.json"
+    references_file, entries = load_bibliography(workspace)
+    if references_file is None:
+        notes.append("no references file (paper/refs.bib) was found: the cited-venues signal is inactive")
+    cited_names: dict[str, int] = {}
+    for entry in entries:
+        key = _name_key(_bilingual_ascii(entry.get("journal") or ""))
+        if key:
+            cited_names[key] = cited_names.get(key, 0) + 1
+
+    journals = listing["journals"]
+    words = [_journal_words(j) for j in journals]
+    spelled = [(term, _bilingual_word(term)) for term in terms]
+    # hits[i]: the indexes of the paper's terms that journal i's name or scope contains
+    hits = [{k for k, (_, word) in enumerate(spelled) if any(_same_word(word, w) for w in found)} for found in words]
+    total = len(journals) or 1
+    frequency = [sum(k in h for h in hits) for k in range(len(spelled))]
+    # earlier terms weigh more (build_terms ranks them), terms that few journals share weigh more
+    weight = [(len(terms) - k) / len(terms) * math.log((1 + total) / (1 + frequency[k])) for k in range(len(terms))]
+
+    def raw_overlap(found: set[int]) -> tuple[float, list[str]]:
+        ordered = sorted(found)
+        return sum(weight[k] for k in ordered), [spelled[k][0] for k in ordered]
+
+    rows = []
+    reasons = {"category_range": 0}
+    for journal, found in zip(journals, hits):
+        if journal["category"] not in categories:
+            reasons["category_range"] += 1
+            continue
+        score, matched = raw_overlap(found)
+        cited = cited_names.get(_name_key(_bilingual_ascii(journal["name"])), 0)
+        rows.append((journal, score, matched, cited))
+    top_overlap = max((r[1] for r in rows), default=0.0) or 1.0
+    top_cited = max((r[3] for r in rows), default=0) or 1
+    active = [name for name, present in (("topic_overlap", any(r[1] for r in rows)),
+                                         ("cited_in_paper", any(r[3] for r in rows))) if present]
+    weight_total = sum(NATIONAL_FIT_WEIGHTS[name] for name in active) or 1.0
+
+    candidates = []
+    for journal, score, matched, cited in rows:
+        fit = {"topic_overlap": round(score / top_overlap, 4), "cited_in_paper": round(cited / top_cited, 4)}
+        fit_score = sum(NATIONAL_FIT_WEIGHTS[name] * fit[name] for name in active) / weight_total
+        issns = journal.get("issn") or []
+        openalex = journal.get("openalex") or {}
+        candidates.append({
+            "id": f"publindex:{journal.get('publindex_id')}", "openalex_id": openalex.get("id"),
+            "display_name": journal["name"], "issn_l": issns[0] if issns else None, "issn": issns,
+            "publisher": "; ".join(journal.get("institutions") or []) or None,
+            "homepage_url": journal.get("homepage_url"), "is_oa": openalex.get("is_oa"),
+            "is_in_doaj": openalex.get("is_in_doaj"), "apc_usd": openalex.get("apc_usd"),
+            "h_index": openalex.get("h_index"), "topics": [t.get("name") for t in openalex.get("topics") or []],
+            "quartile": None, "quartile_source": "publindex", "proxy": None, "sjr": None,
+            "publindex": {"category": journal["category"], "period": listing.get("period"),
+                          "valid_until": listing.get("valid_until"), "institutions": journal.get("institutions") or []},
+            "scope": journal.get("scope") or "", "matched_terms": matched,
+            "cited_in_paper_count": cited, "similar_works_count": 0, "similar_works": [],
+            "fit": fit, "fit_score": round(fit_score, 4), "flags": [],
+            "review_time": _national_review_time(journal.get("review_time")),
+            "languages": _national_languages(journal.get("languages")),
+            "sources": ["publindex"],
+        })
+    candidates.sort(key=lambda c: (-c["fit_score"], PUBLINDEX_CATEGORIES.index(c["publindex"]["category"]),
+                                   c["display_name"].lower()))
+    if len(candidates) > filters["limit"]:
+        notes.append(f"{len(candidates) - filters['limit']} further journals of the list ranked below the limit")
+    candidates = candidates[:filters["limit"]]
+    for rank, candidate in enumerate(candidates, start=1):
+        candidate["rank"] = rank
+
+    valid_until = listing.get("valid_until")
+    if valid_until and valid_until < dt.date.today().isoformat():
+        notes.append(f"The Publindex list ({listing.get('period')}) was valid until {valid_until}; Colombia's Ministry of Science may "
+                     "have published a newer classification. Refresh it with `python scripts/fetch-publindex.py`.")
+    notes.append(f"National scope: journals of Colombia's IBN - Publindex {listing.get('period')} "
+                 f"(resolution {listing.get('resolution') or 'unrecorded'}), ranked offline. topic_overlap is a "
+                 "lexical match of the paper's terms with each journal's name and editorial scope (English and "
+                 "Spanish share crude stems), so read the scope before choosing; categories are Publindex's, "
+                 "not SJR quartiles.")
+    scoring = {"formula": "fit_score = " + " + ".join(f"{NATIONAL_FIT_WEIGHTS[n]:g} * {n}" for n in NATIONAL_FIT_WEIGHTS)
+               + (f" (renormalized over {', '.join(active)})" if active and len(active) < 2 else ""),
+               "weights": NATIONAL_FIT_WEIGHTS, "active": active}
+    document = {
+        "schema": SCHEMA,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "scope": "national",
+        "source": "publindex",
+        "providers": {"similar_works": [], "cited_venues": [], "metadata": ["publindex"], "quartile": "publindex"},
+        "fallback": {"used": False, "reason": None, "code": None},
+        "publindex": {"file": str(path), "source": listing.get("source"), "period": listing.get("period"),
+                      "resolution": listing.get("resolution"), "valid_until": valid_until,
+                      "retrieved_at": listing.get("retrieved_at"), "journals": len(journals)},
+        "query": {"title": profile["title"], "keywords": profile["keywords"], "terms": terms, "phrases": [],
+                  "search_mode": "publindex-lexical", "facets": {"tail": [], "queries": []}, "topics": [],
+                  "cited": {"references_file": references_file, "entries": len(entries)},
+                  "fallback": None, "asta": {"queried": False, "answered": False}, "scoring": scoring},
+        "quartiles": categories,
+        "filters": filters,
+        "quartile_source_summary": {"publindex": len(candidates)},
+        "sjr": None,
+        "candidates": candidates,
+        "excluded_count": sum(reasons.values()),
+        "excluded_reasons": reasons,
+        "notes": list(dict.fromkeys(notes)),
+        "api_calls": None,
+    }
+    _write_json(out, document)
+    return {"ok": True, "out": str(out), "works_scanned": 0, **document}
+
+
+def _national_review_time(survey: dict | None) -> dict:
+    """The journal-website survey of scripts/fetch-publindex-review-times.py, as a candidate's review_time.
+
+    `measured` is submission to publication (OJS article dates), so it includes production time; fewer than
+    REVIEW_MIN_N dated articles reads as `source: "none"` with `n` kept, like the international estimate."""
+    survey = survey or {}
+    measured = survey.get("measured") or {}
+    n = measured.get("n") or 0
+    declared = survey.get("declared") or []
+    base = {"basis": "submission-to-publication", "declared": declared, "surveyed_at": survey.get("surveyed_at"),
+            "survey_status": survey.get("status", "not-surveyed"), "url": survey.get("url")}
+    if n < REVIEW_MIN_N or measured.get("median_days") is None:
+        return {"source": "none", "n": n, "median_days": None, **base}
+    if measured["median_days"] < NATIONAL_MIN_PLAUSIBLE_DAYS:
+        return {"source": "none", "n": n, "median_days": None, **base, "survey_status": "implausible-dates",
+                "measured_median_days": measured["median_days"]}
+    return {"source": "journal-website", "n": n, "median_days": measured["median_days"],
+            "p25_days": measured.get("p25_days"), "p75_days": measured.get("p75_days"),
+            "accept_median_days": measured.get("accept_median_days"), "years": measured.get("years"), **base}
+
+
+def _national_languages(survey: dict | None) -> dict:
+    """The languages a journal receives (scripts/fetch-publindex-languages.py): declared on its own pages, else
+    those that make up at least 10% of what it published; `spanish`/`english` are null when nothing is known."""
+    survey = survey or {}
+    accepts = sorted(survey.get("accepts") or [])
+    basis = survey.get("basis") or "unknown"
+    known = bool(accepts) and basis != "unknown"
+    return {"accepts": accepts if known else [], "basis": basis if known else "unknown",
+            "spanish": ("es" in accepts) if known else None, "english": ("en" in accepts) if known else None,
+            "published": (survey.get("published") or {}).get("shares") or {},
+            "declared": [{"quote": d.get("quote"), "url": d.get("url")} for d in survey.get("declared") or []]}
+
+
+def _bilingual_ascii(text: str) -> str:
+    return unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+
+
 def cmd_search(args: argparse.Namespace) -> dict:
+    if args.scope == "national":
+        return cmd_search_national(args)
+    if args.categories is not None:
+        raise Refusal("FILTER_INVALID", "--categories applies to --scope national only (Publindex categories)")
+    if args.quartiles is None:
+        raise Refusal("USAGE", "--quartiles is required for --scope international (Q1, Q2-Q3, Q1-Q4 ...)")
+    args.source = args.source or "auto"
     low, high = parse_quartile_range(args.quartiles)
     filters, notes = _validated_filters(args)
     filters["include_unknown_quartile"] = bool(args.include_unknown_quartile)
@@ -2608,7 +2887,8 @@ def cmd_status(args: argparse.Namespace) -> dict:
                        "filters": document["filters"],
                        "quartile_source_summary": document["quartile_source_summary"],
                        "excluded_count": document.get("excluded_count"),
-                       "title": (document.get("query") or {}).get("title"), "sjr": document.get("sjr")}
+                       "title": (document.get("query") or {}).get("title"), "sjr": document.get("sjr"),
+                       "scope": document.get("scope", "international")}
         except (ValueError, KeyError, TypeError, OSError) as exc:
             raise Refusal("CANDIDATES_UNREADABLE", f"{path} cannot be read as journal candidates ({exc})") from exc
     found = latest_sjr()
@@ -2630,7 +2910,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     search = sub.add_parser("search", help="rank journals for the paper in a workspace")
     search.add_argument("--workspace", required=True)
-    search.add_argument("--quartiles", required=True, help="Q1, Q2-Q3, Q1-Q4 ...")
+    search.add_argument("--scope", choices=SCOPE_CHOICES, default="international",
+                        help="international: journals found through OpenAlex and ranked by SJR quartile; "
+                             "national: Colombian journals of the IBN - Publindex list")
+    search.add_argument("--quartiles", default=None, help="Q1, Q2-Q3, Q1-Q4 ... (required for --scope international)")
+    search.add_argument("--categories", default=None,
+                        help="--scope national only: a Publindex category or range such as A1, A1-B or A1-RC "
+                             "(default A1-RC, every journal of the list)")
     search.add_argument("--oa-only", action="store_true", help="fully open-access journals only")
     search.add_argument("--max-apc", default=None, help="maximum APC in USD (unknown APC is kept, flagged)")
     search.add_argument("--max-review-days", default=None,
@@ -2640,7 +2926,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--out", default=None, help="default <workspace>/paper/journal-candidates.json")
     search.add_argument("--no-cache", action="store_true",
                         help="neither read nor write the on-disk response cache")
-    search.add_argument("--source", choices=SOURCE_CHOICES, default="auto",
+    search.add_argument("--source", choices=SOURCE_CHOICES, default=None,
                         help="auto: OpenAlex, falling back to Crossref/Europe PMC/DOAJ when it is unavailable; "
                              "openalex: refuse when unavailable; crossref: skip OpenAlex")
     search.add_argument("--include-unknown-quartile", action="store_true",

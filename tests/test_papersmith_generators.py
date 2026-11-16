@@ -96,6 +96,8 @@ AGENT_NAMES = (
     "sota-grapher",
     "sota-scout",
     "style-sampler",
+    "translation-style-reviewer",
+    "translator",
     "venue-adapter",
 )
 

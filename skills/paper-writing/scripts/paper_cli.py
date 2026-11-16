@@ -66,7 +66,11 @@ the operator deletes by hand, per the operator's own ruling); and `venue`
 journal under `paper/venues/<slug>/`: `select`, `requirements`, `acquire`,
 `diff`, `plan`, `approve`, `build`, `status`, `list`; `paper_venue.py` does
 every real read and write, and never writes `paper/main.tex` or `sections/`
--- text changes the plan calls for go through `write`, after `approve`). Left
+-- text changes the plan calls for go through `write`, after `approve`); and
+`translate` (from `manuscript-translation-es` -- the Spanish translation of
+the finished English paper under `paper/translations/<lang>/`: `plan`,
+`store`, `build`, `audit`, `status`; `paper_translate.py` does every real
+read and write and never writes `paper/main.tex`). Left
 extensible on purpose; nothing here assumes it is the last verb this file
 will ever grow.
 """
@@ -117,6 +121,8 @@ import paper_venue  # noqa: E402 -- journal-finder, S9-S11: the `venue` verb gro
 import paper_separation  # noqa: E402 -- the-whole-cut-is-argued-before-any-section-is-claimed, U1: the pure claimable-section/score-cut core; wired to the `separate` verb in U2 (`compute_separation`/`cmd_separate` below); raises no `Refused` of its own
 import paper_ai_metrics  # noqa: E402 -- closing-sections-and-manuscript-graphs S4: writing-quality metrics (cadence, overused phrasing, lexical diversity) and F5 invariant checks; never an AI-detection score
 import paper_language  # noqa: E402 -- manuscript-polish-0-54 S4: the English-only manuscript scan `write` refuses on and `verify`'s `language` check reports; raises no `Refused` of its own
+import paper_style_es  # noqa: E402,F401 -- manuscript-translation-es T1: the Spanish readability index and the EN->ES fidelity check `translate` runs; raises no `Refused` of its own
+import paper_translate  # noqa: E402 -- manuscript-translation-es T2: the `translate` verb group (plan, store, build, audit, status) under paper/translations/<lang>/; never writes paper/main.tex
 import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
 import paper_review  # noqa: E402 -- the final judge's rounds, read by the dashboard's panel
 
@@ -642,6 +648,22 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "PLAN_HASH_MISMATCH": INVOCATION_DEFECT,
     "STATEMENT_EMPTY": INVOCATION_DEFECT,
     "PLAN_NOT_APPROVED": WORK_STATE,
+    # --- manuscript-translation-es: the `translate` verb group
+    # (paper_translate.py). `PAPER_ABSENT`, `BLOCK_ABSENT`,
+    # `BLOCK_HAND_EDITED`, `BLOCK_ID_MALFORMED`, `CONTENT_CARRIES_MARKER`,
+    # `TARGET_UNREADABLE` and the marker codes are reused verbatim ----------
+    "TRANSLATION_LANGUAGE_UNSUPPORTED": INVOCATION_DEFECT,
+    "TRANSLATION_NO_BLOCKS": WORK_STATE,
+    "TRANSLATION_SOURCE_PLACEHOLDER": WORK_STATE,
+    "TRANSLATION_SOURCE_INCOMPLETE": WORK_STATE,
+    "TRANSLATION_NOT_PLANNED": WORK_STATE,
+    "TRANSLATION_EMPTY": INVOCATION_DEFECT,
+    "TRANSLATION_PLACEHOLDER_TEXT": INVOCATION_DEFECT,
+    "TRANSLATION_NOT_SPANISH": INVOCATION_DEFECT,
+    "TRANSLATION_FIDELITY": INVOCATION_DEFECT,
+    "TRANSLATION_INCOMPLETE": WORK_STATE,
+    "TRANSLATION_NOTHING_STORED": WORK_STATE,
+    "TRANSLATION_FRAGMENT_UNKNOWN": WORK_STATE,
     # --- writing-quality audit and style revision (ai_audit, humanize) ----
     "TARGET_REQUIRED": INVOCATION_DEFECT,
     "TARGET_UNREADABLE": INVOCATION_DEFECT,
@@ -3288,6 +3310,27 @@ def cmd_venue(args: argparse.Namespace) -> dict:
     return paper_venue.list_venues(paper_dir)
 
 
+def cmd_translate(args: argparse.Namespace) -> dict:
+    """`translate <verb> --lang es`: the Spanish translation of the finished
+    English paper, under `paper/translations/<lang>/` (`paper_translate.py`
+    does every read and write). `store --file` resolves inside the
+    repository root like every other shuttled file. Never writes
+    `paper/main.tex`."""
+    paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
+    verb = args.translate_command
+    if verb == "plan":
+        return paper_translate.plan(paper_dir, args.lang, terms=args.term)
+    if verb == "store":
+        if args.fragment is not None:
+            return paper_translate.store_fragment(paper_dir, args.lang, args.fragment, _resolve_repo_path(args.file))
+        return paper_translate.store(paper_dir, args.lang, args.block, _resolve_repo_path(args.file))
+    if verb == "build":
+        return paper_translate.build(paper_dir, args.lang)
+    if verb == "audit":
+        return paper_translate.audit(paper_dir, args.lang)
+    return paper_translate.status(paper_dir, args.lang)
+
+
 def cmd_place(args: argparse.Namespace) -> dict:
     """`place`: places an already-measured figure's PDF — compiles nothing,
     requires provenance naming the run (`authored-diagram` spec,
@@ -4389,6 +4432,42 @@ def build_parser() -> argparse.ArgumentParser:
     _venue_verb("status", "the venue's state machine and its next action, read-only")
     _venue_verb("list", "every venue and its state, read-only", slug=False)
 
+    p_translate = sub.add_parser(
+        "translate",
+        help="translate the finished English paper block by block under paper/translations/<lang>/ "
+             "(fidelity-gated, style-audited) -- never writes paper/main.tex",
+    )
+    translate_sub = p_translate.add_subparsers(dest="translate_command", required=True)
+
+    def _translate_verb(name: str, help_text: str) -> argparse.ArgumentParser:
+        verb_parser = translate_sub.add_parser(name, help=help_text)
+        verb_parser.add_argument("--lang", required=True, help="the target language; only 'es' is supported")
+        verb_parser.add_argument(
+            "--paper", default=None,
+            help="override paper/ location; must resolve inside the repository root",
+        )
+        return verb_parser
+
+    p_translate_plan = _translate_verb(
+        "plan", "write translation.json (states, glossary) and list the per-block work")
+    p_translate_plan.add_argument(
+        "--term", action="append", default=[],
+        help="a protected term to add to the glossary (repeatable); kept across plans")
+    p_translate_store = _translate_verb(
+        "store", "store one block's or one fragment's Spanish text after the fidelity, placeholder and "
+                 "language checks")
+    translate_target = p_translate_store.add_mutually_exclusive_group(required=True)
+    translate_target.add_argument("--block", help="the canonical block id")
+    translate_target.add_argument(
+        "--fragment", help="a fragment id outside every block, as `translate plan` lists it "
+                           "(<kind>-<n>-<sha8>: title, section ... paragraph, caption)")
+    p_translate_store.add_argument(
+        "--file", required=True, help="the Spanish body; must resolve inside the repository root")
+    _translate_verb("build", "assemble paper/translations/<lang>/main.tex once every block is current")
+    _translate_verb("audit", "style, flow and redundancy audit of the stored blocks plus per-block fidelity; "
+                             "writes audit.json (a readability estimate, not an authorship test)")
+    _translate_verb("status", "read-only: block states, built and compiled paths, last audit")
+
     p_packet = sub.add_parser(
         "packet",
         help="read-only: this block's own contract prose plus every style-reference "
@@ -4493,7 +4572,7 @@ COMMANDS = (
     "scaffold", "status", "open", "substitute", "contract", "readiness", "phases", "skeleton", "order",
     "declare", "bind", "mark", "separate", "observe", "plan", "resolve", "full_text", "bib", "validate",
     "write", "render", "place", "couplings", "verify", "figure", "packet", "reuse", "exhaustion", "venue",
-    "ai_audit", "humanize", "review",
+    "ai_audit", "humanize", "review", "translate",
 )
 _COMMANDS = {
     "scaffold": cmd_scaffold,
@@ -4528,17 +4607,25 @@ _COMMANDS = {
     "ai_audit": cmd_ai_audit,
     "humanize": cmd_humanize,
     "review": cmd_review,
+    "translate": cmd_translate,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
+    args = None
     try:
         _require_supported_python()
         parser = build_parser()
         args = parser.parse_args(argv)
         result = _COMMANDS[args.command](args)
     except Refused as exc:
-        print(json.dumps({"status": "refused", "code": exc.code, "detail": exc.detail}))
+        refusal = {"status": "refused", "code": exc.code, "detail": exc.detail}
+        if getattr(args, "command", None) == "translate":
+            # The translation contract shared with the dashboard
+            # (odd/tasks/manuscript-translation-es.md) also names the refusal
+            # `{"ok": false, "error", "message"}`; both shapes ride together.
+            refusal.update(ok=False, error=exc.code, message=exc.detail)
+        print(json.dumps(refusal))
         return 2
     print(json.dumps({"status": "ok", "command": args.command, **result}))
     return 0

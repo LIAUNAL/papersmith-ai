@@ -1,0 +1,9 @@
+{"ok": true, "lang": "es",
+ "blocks": [
+  {"id": "intro.motivation", "state": "current", "source_digest": "a1", "stored_at": "2026-11-10T10:00:00Z"},
+  {"id": "intro.gap", "state": "current", "source_digest": "a2", "stored_at": "2026-11-10T10:00:00Z"},
+  {"id": "method.model", "state": "stale", "source_digest": "a3", "stored_at": "2026-11-09T10:00:00Z"},
+  {"id": "results.main", "state": "missing", "source_digest": "a4", "stored_at": null}],
+ "counts": {"total": 4, "current": 2, "stale": 1, "missing": 1},
+ "built": true, "main_tex": "paper/translations/es/main.tex", "pdf": "paper/translations/es/main.pdf",
+ "audit": {"generated_at": "2026-11-11T09:30:00Z", "index": 78, "verdict": "uneven"}}

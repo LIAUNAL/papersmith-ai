@@ -1,6 +1,6 @@
 ---
 name: journal-finder
-description: "Trigger: the paper has a title and an abstract and the operator wants journals worth sending it to, in a quartile range they choose (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--limit N]`). Runs a bounded OpenAlex search for works like the paper (Ai2's Asta picks them first when its key is set; free Crossref, Europe PMC and DOAJ fallbacks when OpenAlex is unavailable), ranks the journals that published them with quartile (SCImago SJR when imported, a labelled OpenAlex proxy, else unknown), open-access state, APC, h-index and a review-time estimate, then reads each shortlisted journal's aims and scope and writes `paper/journal-candidates.md`. Never submits, never contacts an editor, never invents a quartile, impact factor, APC or acceptance rate."
+description: "Trigger: the paper has a title and an abstract and the operator wants journals worth sending it to, in a quartile range they choose (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--limit N]`), or Colombian A1/A2/B journals of Publindex (`/journal-finder --scope national`), with submission-to-publication time and whether they take Spanish and English. Runs a bounded OpenAlex search for works like the paper (Ai2's Asta picks them first when its key is set; free Crossref, Europe PMC and DOAJ fallbacks when OpenAlex is unavailable), ranks the journals that published them with quartile (SCImago SJR when imported, a labelled OpenAlex proxy, else unknown), open-access state, APC, h-index and a review-time estimate, then reads each shortlisted journal's aims and scope and writes `paper/journal-candidates.md`. Never submits, never contacts an editor, never invents a quartile, impact factor, APC or acceptance rate."
 ---
 
 # Journal finder
@@ -16,7 +16,13 @@ submitted, and no editor is contacted.
 
 ```
 /journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--max-review-days N] [--limit N] [--source auto|asta|openalex|crossref] [--include-unknown-quartile]
+/journal-finder --scope national [--categories A1-B] [--limit N]
 ```
+
+`--scope international` (the default) is everything below: journals found
+through OpenAlex and ranked by SJR quartile. `--scope national` ranks the
+Colombian journals of the IBN - Publindex list instead; see
+"National scope (Publindex)".
 
 The quartile argument is a single quartile (`Q1`) or an ascending contiguous
 range (`Q2-Q3`, `Q1-Q4`), case-insensitive. The default `--limit` is 15, the
@@ -80,6 +86,7 @@ Run from the workspace root. One JSON object on stdout per call; a refusal is
 
 ```
 python3 skills/journal-finder/scripts/journal_cli.py search --workspace . --quartiles Q1-Q2 [--oa-only] [--max-apc N] [--max-review-days N] [--limit N] [--source auto|asta|openalex|crossref] [--include-unknown-quartile] [--sjr <csv>] [--out <path>] [--no-cache]
+python3 skills/journal-finder/scripts/journal_cli.py search --workspace . --scope national [--categories A1-B] [--limit N] [--out <path>]
 python3 skills/journal-finder/scripts/journal_cli.py sjr-import --file <path> [--year YYYY]
 python3 skills/journal-finder/scripts/journal_cli.py status --workspace .
 ```
@@ -118,6 +125,90 @@ null), `candidates`, `excluded_count`, `excluded_reasons`, `notes`,
 `similar_works_count`, `similar_works`, `cited_in_paper_count`, `topics`, `quartile`, `quartile_source`, `sjr` or
 `proxy`, `is_oa`, `is_in_doaj`, `apc_usd`, `doaj`, `h_index`,
 `mean_citedness_2yr`, `review_time`, `sources` and `flags`.
+
+### National scope (Publindex)
+
+`--scope national` reads no network. It ranks the journals of the national
+classification Colombia's Ministry of Science publishes as **IBN - Publindex**
+(https://scienti.minciencias.gov.co/publindex/#/revistasPublindex/clasificacion),
+bundled as `skills/journal-finder/data/publindex-ibn.json` (the 2026-II list of
+resolution 0707-2026, valid until 2026-12-31: 515 journals, A1 12, A2 30, B 132,
+C 199, RC 142; `PAPERSMITH_PUBLINDEX_FILE` points at another file). Each
+journal carries its name, ISSNs, publishing institutions, website, Publindex
+category and editorial scope, its OpenAlex record found by ISSN (`openalex`:
+id, open-access and DOAJ state, APC, h-index, main topics with subfield and
+field), a survey of its own website (`review_time`) and, for A1, A2 and B,
+the languages it receives (`languages`). A maintainer
+refreshes the file from the public Publindex API with
+`python scripts/fetch-publindex.py --resolution <number>` when the Ministry
+publishes a new classification, then surveys the websites again with
+`python scripts/fetch-publindex-review-times.py` and records the languages
+with `python scripts/fetch-publindex-languages.py`; when `valid_until` has
+passed, the output carries a note saying so.
+
+The website survey reads, per journal, up to 12 recent articles of its Open
+Journal Systems archive and measures the days from submission
+(`DC.Date.dateSubmitted`, or a printed "Recibido/Received" date) to
+publication (`citation_publication_date` / `DC.Date.issued`): the median,
+p25 and p75 with `n`, so it includes revision rounds and production time
+and is longer than the international submission-to-acceptance estimate. It
+also quotes, with their URL, the sentences the journal publishes about its
+own review or publication times (`declared`). A site that cannot be reached
+or carries no dates keeps its `status` (`unreachable`, `no-dates`,
+`not-ojs`, `no-website`) and is never guessed.
+
+- **Categories.** The national match ranks the A1, A2 and B journals only;
+  C and RC (*reconocida*, recognized but not classified) stay in the data file
+  as base information but are never ranked. `--categories` is one category or
+  an ascending range of `A1`, `A2`, `B`, case-insensitive; the default `A1-B`
+  keeps all three. Journals outside the range, C and RC included, are counted
+  in `excluded_reasons.category_range`.
+- **Fit.** `fit_score = 0.7 * topic_overlap + 0.3 * cited_in_paper`, each in
+  0..1 and divided by its maximum over the list. `topic_overlap` is a lexical
+  match of the paper's terms (`query.terms`) with the journal's name and
+  editorial scope and with the English names of its OpenAlex topics, subfields
+  and fields: English and Spanish cognates are spelled alike before comparing
+  (*classification* / *clasificación*) and two words match when they share a
+  prefix of 75% of the shorter one (short words match exactly); terms that
+  few journals share weigh more. Each
+  candidate lists its `matched_terms`. `cited_in_paper` counts the paper's
+  `refs.bib` entries whose journal name is the journal's. A component that is
+  zero for every journal drops out, as on the international path. Journals
+  with no fit stay in the list, ranked last.
+- **Output.** The same `paper/journal-candidates.json`, with `scope:
+  "national"`, `source: "publindex"`, `publindex` (`period`, `resolution`,
+  `valid_until`, `file`) and `quartiles` holding the categories kept. Each
+  candidate has `id: "publindex:<id>"`, `quartile: null`,
+  `quartile_source: "publindex"`, `publindex.category`, `scope`, `topics`,
+  `sources: ["publindex"]`, the OpenAlex `openalex_id`, `is_oa`,
+  `is_in_doaj`, `apc_usd` and `h_index`, and `review_time` from the website
+  survey: `source: "journal-website"` with `basis:
+  "submission-to-publication"`, `n`, `median_days`, `p25_days`, `p75_days`
+  and the `declared` quotes, or `source: "none"` (with `survey_status`) when
+  fewer than five articles were dated, or `survey_status:
+  "implausible-dates"` (with `measured_median_days`) when the median is under
+  30 days: such a journal loaded its articles into OJS after accepting them,
+  so the dates do not measure its review. The markdown writes it as
+  "submission to publication, measured on n articles of the journal's site"
+  and quotes `declared` with its URL.
+- **Languages.** Each candidate carries `languages`: `accepts` (language
+  codes), `basis` (`declared` when the journal's own about, submissions or
+  author-guidelines pages say which languages it receives, quoted in
+  `declared` with their URL; `published` when it says nothing and the codes
+  are the languages of at least 10% of its OpenAlex works of the last three
+  years, shown in `published`; `unknown` otherwise), and `spanish` /
+  `english` (true, false, or null when unknown). The markdown writes
+  `languages.accepts` with its basis and never claims a language the journal
+  did not declare or publish in.
+- **Refusals.** The international options (`--quartiles`, `--oa-only`,
+  `--max-apc`, `--max-review-days`, `--source`, `--include-unknown-quartile`,
+  `--sjr`) refuse `FILTER_INVALID` under `--scope national`, and
+  `--categories` refuses it under `--scope international`.
+
+The markdown reads each journal's scope from its own website as in the flow
+above, writes the Publindex category with its period ("Publindex A2,
+IBN 2026-II"), and never presents a category as an SJR quartile or the lexical
+fit as evidence that the journal publishes similar work.
 
 ### Providers and the fallback chain
 
@@ -350,7 +441,11 @@ history (NCBI etiquette: `tool=papersmith`, the contact email and
 `NCBI_API_KEY` when set, at most three requests per second), then
 `source: "none"`. Fewer than five dated articles also reads as `none`, with
 `n` kept. It estimates submission-to-acceptance and includes revision rounds;
-it is **not** the time to first decision, and the markdown says so.
+it is **not** the time to first decision, and the markdown says so. Over the
+same articles it also reports submission to online publication (Crossref
+`first_online`, PubMed `epublish`) as `publication_median_days`,
+`publication_p25_days`, `publication_p75_days` and `publication_n`; with
+fewer than five such dates the median is `null` and `publication_n` is kept.
 
 ## Refusals
 
@@ -360,7 +455,9 @@ it is **not** the time to first decision, and the markdown says so.
 | `PAPER_ABSENT` | no title and no abstract can be read | send the operator to write them; never search on a topic they typed instead |
 | `NETWORK_UNAVAILABLE` | `--source openalex`: OpenAlex cannot be reached within the bounded retries and deadline, or its daily quota is spent (the message gives the wait and names `OPENALEX_API_KEY`); `auto`/`crossref`: the fallback providers could not be reached either; the total deadline passed | report it and point to the OpenAlex key guide; never fall back to remembered journals |
 | `SJR_FILE_INVALID` | the CSV lacks `Title`, `Issn`, `SJR`, `SJR Best Quartile`, `Categories` or `Publisher`, is empty, or has no year | say which column is missing and point to the download page |
-| `FILTER_INVALID` | `--limit`, `--max-apc` or `--max-review-days` is not a valid number | correct the flag |
+| `FILTER_INVALID` | `--limit`, `--max-apc` or `--max-review-days` is not a valid number, or an option of one scope was given with the other | correct the flag |
+| `CATEGORY_RANGE_INVALID` | `--categories` is not `A1`, `A2`, `B` or an ascending range of them (C and RC are not ranked) | ask for a valid range; never guess one |
+| `PUBLINDEX_DATA_INVALID` | the Publindex list cannot be read or a journal lacks its name or category | rebuild it with `scripts/fetch-publindex.py`; never edit it by hand |
 | `WORKSPACE_ABSENT` | `--workspace` is not a directory | fix the path |
 | `CANDIDATES_UNREADABLE` | `status` found a `journal-candidates.json` that is not valid | re-run `search`; never repair it by hand |
 | `USAGE` | a flag or verb the CLI does not know | read the usage above |
