@@ -11,6 +11,23 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.77.1
+
+- Remote execution refuses a bare worker id (`--worker carlos`) everywhere
+  with BARE_WORKER_ID and names the `colab:<owner>` id to pass, instead of
+  accepting it in `launch-plan` and failing later. The Colab adapter no longer
+  spawns a `keep-alive` command the pinned google-colab-cli 0.8.0 lacks. A
+  smoke shard that ran zero units still passes but is marked `work: none` with
+  an EMPTY_SMOKE_SHARD warning that `readiness` and preflight repeat.
+- `generate-job --env KEY=VALUE` (repeatable) exports job-specific variables
+  to the run.
+- Colab maps sm_89 to L4 and sm_120 to G4, and counts a keyring-backed sign-in
+  as signed in.
+- `diagram_cli.py render` no longer dies on an interpreter without pypdfium2:
+  the PDF measurements are reported as unmeasured (PDF_RASTERIZER_ABSENT).
+- Experiment diagrams keep the page to the drawn width, so a context note near
+  the right edge no longer widens the right margin.
+
 ## 0.77.0
 
 - The journal match chooses its scope: international journals (as before) or
