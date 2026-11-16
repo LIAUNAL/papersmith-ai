@@ -1,5 +1,5 @@
 {
-  "pinned_commit": "7fa3f241",
+  "pinned_commit": "06eb1fb7",
   "roots": [
     {
       "key": "tracker",
@@ -196,13 +196,11 @@
     {
       "key": "pixelrag",
       "tier": 2,
-      "state": "fixed-on-branch",
+      "state": "closed",
       "title": "Describe extracted figures",
       "fix": "Keyless, local pixelrag skill: deterministic figure facts plus the session agent's description, validated and stored beside the image (decision: keyless, like paper-ingestion).",
-      "issues": [
-        13
-      ],
-      "proof": "tests/test_pixelrag.py; commit 7fa3f241"
+      "issues": [],
+      "proof": "tests/test_pixelrag.py; commit 7fa3f241; released in 0.78.0"
     },
     {
       "key": "experiment-disclosure",
@@ -258,12 +256,10 @@
       "key": "gate-decoy-flakes",
       "title": "Tests that pass under the empty home and fail intermittently under the decoy home",
       "tier": 2,
-      "state": "fixed-on-branch",
+      "state": "closed",
       "fix": "Ask each identical request once per search (single-flight per cache key in journal_cli Http.get_json), so a first search's cached count no longer depends on thread timing.",
-      "proof": "tests/test_journal_finder.py::CacheTests::test_one_search_never_asks_the_same_request_twice; 16/16 concurrent runs; commit 1aeaaa38",
-      "issues": [
-        166
-      ],
+      "proof": "tests/test_journal_finder.py::CacheTests::test_one_search_never_asks_the_same_request_twice; 16/16 concurrent runs; commit 1aeaaa38; released in 0.78.0",
+      "issues": [],
       "evidence": {
         "166": "tests/test_journal_finder.py:1963 failed once under the decoy home on CI"
       }
@@ -271,46 +267,37 @@
     {
       "key": "writer-tool-defects",
       "tier": 2,
-      "state": "fixed-on-branch",
+      "state": "closed",
       "title": "paper-writing tools lose or misplace work: stale overwrites, English-only parsers, missing verbs, a floor nobody enforced",
       "fix": "--expect-digest compare-and-swap on substitute/write/humanize, reorder verb, multilingual discussion labels, \\foreignlanguage exemption, single-section separate, stale-fact warnings, and a Python 3.11 floor guard in every skill CLI.",
-      "proof": "tests/test_paper_block_cas.py, test_paper_reorder.py, test_paper_declarations_stale.py, test_python_floor.py; independent verifier PASS on 5b772644; reviews acknowledged",
-      "issues": [
-        184,
-        185
-      ]
+      "proof": "tests/test_paper_block_cas.py, test_paper_reorder.py, test_paper_declarations_stale.py, test_python_floor.py; independent verifier PASS on 5b772644; reviews acknowledged; released in 0.78.0",
+      "issues": []
     },
     {
       "key": "deterministic-coherence",
       "tier": 2,
-      "state": "fixed-on-branch",
+      "state": "closed",
       "title": "Coherence, caption and figure checks existed only as agent judgement",
       "fix": "paper_coherence.py advisory checks in verify (captions, overclaiming, claims-findings, not-performed, symbols, names) and figure-review measuring from the compiled document with width, whitespace, numeric-text advisories and figure provenance.",
-      "proof": "tests/test_paper_coherence.py, test_figure_review_measure.py, test_paper_figure_provenance.py",
-      "issues": [
-        180,
-        181,
-        183
-      ]
+      "proof": "tests/test_paper_coherence.py, test_figure_review_measure.py, test_paper_figure_provenance.py; released in 0.78.0",
+      "issues": []
     },
     {
       "key": "reproducibility-records",
       "tier": 2,
-      "state": "fixed-on-branch",
+      "state": "closed",
       "title": "Run records did not name host, hardware or threads, and cross-host combinations went unflagged",
       "fix": "runtime block in bootstrap.json, shard.json, the kit benchmark and timing.json; runtimeWarnings in parallelism estimate/plan and verify --shards.",
-      "proof": "tests/test_run_record_host.py, test_shard_runtime_warnings.py",
-      "issues": [
-        186
-      ]
+      "proof": "tests/test_run_record_host.py, test_shard_runtime_warnings.py; released in 0.78.0",
+      "issues": []
     },
     {
       "key": "citation-integrity",
       "tier": 3,
-      "state": "partly-fixed-on-branch",
+      "state": "needs-decision",
       "title": "Citations can rest on sources whose support is never checked",
       "fix": "Done: bib build prefers published records and normalizes entities and types; verify warns on cited sources without title or abstract. Open: the opt-in cite-once policy and an auditor pass on claim/quote support, which need a maintainer decision.",
-      "proof": "tests/test_paper_bib_published.py, test_paper_verify_references.py",
+      "proof": "tests/test_paper_bib_published.py, test_paper_verify_references.py; items 2, 4 and the visible warning released in 0.78.0",
       "issues": [
         182
       ]
