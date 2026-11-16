@@ -98,15 +98,23 @@ class BootstrapRecordTests(RuntimeShape, unittest.TestCase):
         self.assertEqual(environment["torch"], "9.9.9")
         self.assertIsNone(environment["runtime"]["hardware"]["gpu"])
 
-    def test_without_a_label_the_host_is_the_machine_node_name(self) -> None:
-        saved = os.environ.pop("MVIA_TIMING_HOST", None)
-        try:
-            runtime = BOOTSTRAP.detect_hardware(import_module=lambda name: fake_torch(cuda=False))["runtime"]
-        finally:
-            if saved is not None:
-                os.environ["MVIA_TIMING_HOST"] = saved
-        self.assertEqual(runtime["hostSource"], "platform.node")
-        self.assertEqual(runtime["host"], __import__("platform").node() or None)
+    def test_without_a_label_the_host_is_a_digest_of_the_node_name_never_the_name(self) -> None:
+        # Review findings R1-001 / R3-hostname-privacy: a personal machine's node name often carries
+        # its owner's name, and these records are fetched, pooled and committed.
+        modules = (BOOTSTRAP, STAMP, PROBE)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MVIA_TIMING_HOST", None)
+            with mock.patch("platform.node", return_value="alices-MacBook-Pro.local"):
+                runtime = BOOTSTRAP.detect_hardware(import_module=lambda name: fake_torch(cuda=False))["runtime"]
+                labels = {module.host_label() for module in modules}
+            with mock.patch("platform.node", return_value=""):
+                empty = {module.host_label() for module in modules}
+        expected = "host-" + __import__("hashlib").sha256(b"alices-MacBook-Pro.local").hexdigest()[:12]
+        self.assertEqual(runtime["hostSource"], "platform.node digest")
+        self.assertEqual(runtime["host"], expected)
+        self.assertEqual(labels, {expected})
+        self.assertNotIn("alice", json.dumps(runtime).lower())
+        self.assertEqual(empty, {"unknown-host"}, "a record never holds a null host label")
 
 
 class ShardStampTests(RuntimeShape, unittest.TestCase):

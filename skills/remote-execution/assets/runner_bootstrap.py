@@ -802,10 +802,18 @@ THREAD_ENV = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
 LIBRARIES = ("numpy", "torch", "scikit-learn")
 
 
-def host_label() -> str | None:
-    """`MVIA_TIMING_HOST` when the job set it, else `platform.node()`."""
+def host_label() -> str:
+    """`MVIA_TIMING_HOST` when the job set it, else `host-<12 hex>`: a digest of the machine's node name,
+    stable per machine but never the name itself, which on a personal machine often carries its owner's
+    name. `unknown-host` when the machine reports no node name, so a record never holds a null label."""
     label = os.environ.get(HOST_LABEL_ENV, "").strip()
-    return label or platform.node() or None
+    if label:
+        return label
+    node = platform.node()
+    if not node:
+        return "unknown-host"
+    import hashlib
+    return "host-" + hashlib.sha256(node.encode("utf-8")).hexdigest()[:12]
 
 
 def cpu_model() -> str | None:
@@ -871,7 +879,7 @@ def runtime_record(torch=None) -> dict:
     """`{host, hostSource, hardware, libraries, threads}` for this process."""
     torch = torch if torch is not None else sys.modules.get("torch")
     labelled = bool(os.environ.get(HOST_LABEL_ENV, "").strip())
-    return {"host": host_label(), "hostSource": HOST_LABEL_ENV if labelled else "platform.node",
+    return {"host": host_label(), "hostSource": HOST_LABEL_ENV if labelled else "platform.node digest",
             "hardware": {"machine": platform.machine() or None, "cpu": cpu_model(),
                          "cpuCount": os.cpu_count(), "gpu": gpu_model(torch)},
             "libraries": library_versions(torch), "threads": thread_settings(torch)}

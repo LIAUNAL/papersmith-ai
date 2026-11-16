@@ -1241,14 +1241,15 @@ executable — no test in this suite reaches the network or a real account).
     unreadable no matter how early it fires.
   - **`bootstrap.json` names the host it ran on (#186).**
     `detect_hardware()` also returns `environment.runtime`: `host` (the
-    job's `MVIA_TIMING_HOST` when `generate-job --env` set it, else the
-    machine's node name; `hostSource` says which), `hardware` (`machine`,
+    job's `MVIA_TIMING_HOST` when `generate-job --env` set it, else
+    `host-<12 hex>`, a digest of the machine's node name, or `unknown-host`;
+    `hostSource` says which), `hardware` (`machine`,
     the CPU model, `cpuCount`, the GPU model or `null`), `libraries`
     (`python`, and `numpy`, `torch`, `scikit-learn` when installed) and
     `threads` (`torch.get_num_threads()` and `OMP_NUM_THREADS`,
     `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS` as set, `null` when unset).
     The keys `device`, `torch`, `archList` and `capability` are unchanged.
-    No username or home path is recorded.
+    No username, home path or machine name is recorded.
   - `runner_invoke.py`'s `invoke()` selects the normal `run` block or its
     `smoke` variant (when `run_config["mode"] == "smoke"`, the mode a
     later slice's `submit --smoke` sets) via `select_block()`, resolves
