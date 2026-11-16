@@ -8969,7 +8969,7 @@ class RefusalRosterTests(unittest.TestCase):
 
         215 -> 216: `resolve` refuses a connector that rejected the operator's
         configured key (RESOLVER_REFUSED), never as IDENTIFIER_UNRESOLVED."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 216)
+        self.assertEqual(len(reachable_paper_refusal_codes()), 228)
 
 
 class ObjectiveNorthTests(unittest.TestCase):
