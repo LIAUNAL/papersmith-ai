@@ -9,13 +9,20 @@ number it carries:
 - `2a`: the optional thematic help before `/plausibility` (keywords typed in the
   phase-2 box, the `banco-lia` MCP's `search_bank`, and the operator's approval
   of the proposed prompt, launched as `/plausibility <draft>`);
+- `3`: ingestion, and below `guidance/` the `/pixelrag` skill, which turns an
+  extracted figure into evidence bound to the image's sha256 (keyless, local);
 - `4a`: the proposal's ordered steps on the *Mapa Conceptual* tab — the central
   problem and its pillars, then the hypotheses, then the mathematics, then the
   SOTA citations (`.papersmith/citations.json`, each with a verbatim quote of its
   abstract; `citations_cli.py check · routes`, then `smith atlas coverage`), then
   the judge-reviewer (the `paper-reviewer` classifying the contribution type,
   `.papersmith/model_spec.json`), each locked until the one before it exists —
-  and the `/math-tutor`;
+  and the `/math-tutor`; its last row holds `smith ui` and the topbar's
+  *Update board*: each dashboard start regenerates the board's derived
+  artifacts (the SOTA atlas page, the atlas manuscript layer, the manuscript
+  graph, the novelty graph and the wiring health; `--no-refresh` skips it),
+  and the button (`POST /api/board/refresh`) does it again and reports the
+  current phase, its missing steps and the open or failed gates;
 - `5` and `5a` to `5g`: Phase 5 in the order the harness entrypoints state it —
   the protocol (`/experimental-deliberation`), the datasets (toy set, then the
   official preparation), the replication of the comparison methods and the proof
@@ -27,18 +34,36 @@ number it carries:
   the credentials, the remote rehearsal and launch, and the findings: their
   contribution type and the `G-NOVELTY` operator gate
   (`.papersmith/novelty_gate.json`, `smith novelty`), which releases the writing;
-- `6` to `10`: scaffolding, declarations, writing, figures and the paper, whose
-  PDF preview carries the style and redundancy panel;
-- `10a`: journal choice and venue adaptation after the compiled PDF
-  (`/journal-finder` ranks journals from OpenAlex works and sources, with the SJR
-  quartile from an imported CSV or a labelled OpenAlex proxy and a review time
-  estimated from Crossref and then PubMed; the operator chooses a journal in the
-  PDF Preview tab; the `venue-adapter` agent states each requirement with a quote
-  and a url; the operator approves the plan bound to its sha256, text changes go
-  only through `write`, and `venue build` assembles
-  `paper/venues/<slug>/main.pdf` without writing `paper/main.tex`). It is a
-  serpentine of three rows, so that every turn between rows is a short vertical
-  edge; `venue-adapter` is mapped to `paper` in `AGENT_STAGES`.
+  `/remote-parallelism` hangs off the credentials and `/experiments-tutor`
+  off the reviewer's report, while `/hyperparameter-search` and
+  `/experiment-diagrams` are named in the *Flow rules* card;
+- `6` to `10`: scaffolding, declarations, writing, figures and the paper. Lane 6
+  also draws the review line: `smith init --kind review` serves the nine PRISMA
+  2020 review section contracts and `/systematic-review` (`review_cli.py`)
+  replaces the experimental phases. Lane 8 draws `ai-auditor` (the writing
+  quality behind `ai_audit` and `humanize`) and lane 9 `figure-visual-reviewer`
+  (a rendered diagram judged by eye once its mechanical audit passed). Lane 10
+  draws the PDF preview tab, which carries the style and redundancy panel and
+  the final judge panel: the `paper-reviewer` returns one round, `/paper-writing`
+  records it with `paper_cli.py review --input <round.json>` in
+  `.papersmith/paper_review.json`, and the tab shows the verdict per round;
+- `10a`: journal choice, venue adaptation and Spanish translation after the
+  compiled PDF. `/journal-finder` ranks international journals from OpenAlex
+  works and sources, with the SJR quartile from the bundled SCImago 2025
+  snapshot (a newer `sjr-import` wins) and a review time estimated from Crossref
+  and then PubMed, or, with `--scope national`, the Colombian journals of the
+  Publindex IBN 2026 list (categories A1, A2 and B) by measured review time; the
+  operator chooses a journal in the PDF Preview tab; the `venue-adapter` agent
+  states each requirement with a quote and a url; the operator approves the plan
+  bound to its sha256, text changes go only through `write`, and `venue build`
+  assembles `paper/venues/<slug>/main.pdf` without writing `paper/main.tex`. For
+  a journal that only receives Spanish, `paper_cli.py translate` (`plan`,
+  `store`, `build`, `audit`, `status`) translates the verified English paper
+  into `paper/translations/es/` block by block through the `translator` and
+  `translation-style-reviewer` agents, each block behind a fidelity gate. It is
+  a serpentine of three rows, so that every turn between rows is a short
+  vertical edge, plus a fourth row for the translation entered straight down
+  from the venue PDF; `venue-adapter` is mapped to `paper` in `AGENT_STAGES`.
 
 The dashboard's workspace board transcribes it — `PIPELINE_STAGES`,
 `PIPELINE_CHAIN`, `GATE_SOURCES` and `AGENT_STAGES` in
@@ -87,6 +112,11 @@ cp "$SCRATCH/papersmith-pi-flow.html" docs/diagrams/papersmith-pi-flow.html
 cp "$SCRATCH/papersmith-pi-flow.html" skills/_core/command_center/static/papersmith-flow.html
 ```
 
+When the browser check cannot start Chrome (it reports
+`viewer/browser-check-runtime`), point it at a Chrome or Chromium binary with
+`ARCHIFY_CHROME=<path>`, and add `ARCHIFY_CHROME_NO_SANDBOX=1` where the sandbox
+cannot start; Playwright's Chromium under `~/.cache/ms-playwright/` works.
+
 The dashboard serves the second copy in its *Flujo Archify* tab, and
 `tests/test_command_center_neutral_defaults.py` holds the two byte-identical.
 
@@ -114,7 +144,7 @@ gate's: Archify's grid search, which routes an edge around nodes it has no
 relationship with, gives up on a scene of more than 80 obstacles
 (`maximumObstacleCount`), and an authored `via` cannot replace it, because only
 two automatic routes may cross (with a halo) -- an authored crossing is a
-showcase error. The flow is at 105 components, so every edge has to be routable
+showcase error. The flow is at 121 components, so every edge has to be routable
 without the grid: between row neighbours, straight down a column, or through
 the corridor between two rows. That is why the dashed `replication` ->
 `expBuild` arrow is gone (its relation lives in the `expBuild` tag and in the
@@ -127,7 +157,7 @@ Any new edge that only the grid can route fails at the current size.
 The page draws at whatever width the viewport gives it, so the frame is a
 capture decision rather than part of the artifact. The committed PNG is 1400px
 wide at **device pixel ratio 1**, captured full-page with `?embed=1` (which is
-what drops the viewer's own chrome); it is 1400x4163 for the current drawing. A browser driver needs those three
+what drops the viewer's own chrome); it is 1400x4764 for the current drawing. A browser driver needs those three
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.
