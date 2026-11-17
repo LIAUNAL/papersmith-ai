@@ -421,7 +421,7 @@ number is `0`, breaking changes can still arrive without a major bump.
 - Adversarial review: `redactor.md` ships the Anti-Skim protocol (quote-verify
   before citing; `UNVERIFIED` flags) and `paper-reviewer.md` the
   `HALLUCINATION` checks, identical across the four harness projections.
-- Venues: a machine-readable catalog (`smith venue catalog`) covers NeurIPS,
+- Venues: a machine-readable catalog (`paper_cli.py venue catalog`) covers NeurIPS,
   ICML, IEEE conferences/Transactions, Elsevier, Springer LNCS, Frontiers and
   MDPI as data — the forge still ships no document class.
 - New docs page `docs/terminals.md` (platforms, agents, activation).

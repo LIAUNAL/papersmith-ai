@@ -43,7 +43,12 @@ without guessing the order. The minimum path:
    What it leaves inside, in [Inside the workspace](#inside-the-workspace).
 3. **Open the dashboard** — `cd ~/papers/my-paper && smith ui`. It works right
    after `init`: the first run installs the dashboard's own runtime once, outside
-   the workspace, and then serves the eleven phases in order. To use it from
+   the workspace, and then serves the eleven phases in order. Each start
+   regenerates the board's own artifacts (the SOTA atlas, the manuscript graph,
+   the novelty graph, the wiring health) and the **Update board** button in the
+   top bar does it again on demand, then tells you which phase the project is
+   in, which steps it still owes and which gates are open (`--no-refresh` keeps
+   the start read-only). To use it from
    your phone or another computer at home, `smith ui --lan` (see
    [Open the dashboard from another device](#open-the-dashboard-from-another-device)).
 4. **Check that the idea is plausible** — with your idea in two sentences,
@@ -95,8 +100,10 @@ The full path, from a PDF to a compiled paper:
 | 10 | `/remote-execution` | Sends work to a remote worker and keeps the record of what came back | the target repo's ledger |
 | 10b | `smith novelty {status,approve,iterate,reset}` (or the dashboard's Novedad & Hallazgos tab) | Not a skill but a gate between the experiments and the paper: you contrast the discussions' hypothesis verdicts with the SOTA pool, read the reviewer-defense checklist and record whether the evidence supports the novelty (`G-NOVELTY`), with the paper-reviewer's contribution type of the findings beside the matrix, or record that the work returns to experiments, proposal or plausibility | `.papersmith/novelty_gate.json` (the decision and its history) |
 | 11 | `/paper-writing` | Writes the paper block by block, with every claim tied to its evidence, stylometric burstiness analysis ($CV$), AI cliché detection and humanization under F5 invariant preservation | `paper/` |
-| 11b | `/journal-finder` (or the PDF Preview tab's *Revistas sugeridas* block) | Once the paper compiles: you pick a quartile range (`Q1`, `Q2-Q3`, `Q1-Q4`) and it ranks the journals that already publish work like the paper, each with its quartile and where it came from, open-access state, APC, h-index, a review-time estimate and the similar works that justify the fit; an agent then reads each journal's aims and scope and writes the case for it. It never submits and never contacts an editor | `paper/journal-candidates.json` and `paper/journal-candidates.md` |
+| 11b | `/journal-finder` (or the PDF Preview tab's *Revistas sugeridas* block) | Once the paper compiles: you pick a quartile range (`Q1`, `Q2-Q3`, `Q1-Q4`) and it ranks the journals that already publish work like the paper, each with its quartile and where it came from, open-access state, APC, h-index, a review-time estimate and the similar works that justify the fit; an agent then reads each journal's aims and scope and writes the case for it. `--scope national` (the tab's International / National selector) ranks Colombian journals of the Publindex IBN 2026 list instead, only categories A1, A2 and B, with each one's measured submission-to-publication time and the languages it receives. It never submits and never contacts an editor | `paper/journal-candidates.json` and `paper/journal-candidates.md` |
 | 11c | `paper-writing` `venue` verbs and the `venue-adapter` agent (the PDF Preview tab's *Revista elegida* card) | After you choose a journal: reads its author guidelines and template, measures the manuscript against them and alerts on sections to adjust, sections missing and inconsistencies with smith's base template, proposes an adjustment plan only when it is prudent, and builds the journal's own `main.tex` once you approve the plan. Text changes go only through the `write` loop | `paper/venues/<slug>/` (the canonical `paper/main.tex` is never written) |
+| 11d | `paper-writing` `translate` verbs and the `translator` and `translation-style-reviewer` agents (the PDF Preview tab) | For a journal that only receives Spanish: translates the finished English manuscript into neutral academic Spanish block by block, each block passing a fidelity gate (citations, labels, math, numbers, paragraphs) before it is stored; `translate audit` scores style, flow and redundancy, and the tab compiles and previews the Spanish PDF. The English paper stays the source | `paper/translations/es/` |
+| 11e | the `paper-reviewer` final judge (the PDF Preview tab's judge panel) | Reviews the compiled paper round by round with the main-track form (overall 1-6, confidence 1-5, Quality, Clarity, Significance, Originality 1-4); `paper_cli.py review --input <round.json>` records each round and, from the second on, a verdict on every revision the previous one raised | `.papersmith/paper_review.json` |
 | 12 | `/figure-review` | Looks at the render: rasterizes every `Figures/<id>.pdf` and measures what a raster can support (ink outside the canvas, collisions) | a visual report, never a change |
 | 13 | `/skill-audit` | Audits any of the above: what the code accepts versus what its documentation promises | a report, never a change |
 | 14 | `/upgrade-project` | Brings the workspace to the version of the CLI you have installed: it syncs the kit files and migrates the artifacts, delegating everything to `smith upgrade` | the workspace itself |
@@ -913,7 +920,11 @@ constellation draws only as placeholders.
 ### Step 12 — Compile, review and choose a journal
 
 The *Previsualización PDF* tab compiles `paper/main.tex` to `paper/main.pdf`,
-scores each section's style and redundancy from 0 to 100, and ranks journals for a quartile range you choose
+scores each section's style and redundancy from 0 to 100, shows the final
+judge's verdict per round (`.papersmith/paper_review.json`), ranks
+international journals for a quartile range you choose or Colombian Publindex
+journals (A1, A2, B) by review time, and compiles the Spanish translation when
+the chosen journal only receives Spanish
 ([Choosing and adapting to a journal](#choosing-and-adapting-to-a-journal)).
 `smith audit .` and `/skill-audit` report across every phase; they never
 repair.
@@ -938,7 +949,7 @@ my-paper/
 │   ├── manifest.json            #   hashes of everything the framework generated
 │   ├── runs_ledger.jsonl        #   every dispatched run, in order
 │   └── version                  #   framework version that created it
-├── .claude/agents/              # the twenty-nine subagents (single source of truth)
+├── .claude/agents/              # the thirty-one subagents (single source of truth)
 ├── skills/                      # the kit copy: the skills + _core
 │   └── _core/                   #   the two shared engines (deliberation, implementation)
 ├── sections/                    # the ten section contracts (they travel WITH content, like skills/)
@@ -1165,7 +1176,7 @@ repo-only).
 
 ## The agents
 
-A workspace ships **twenty-nine subagents** in `.claude/agents/`. They are short
+A workspace ships **thirty-one subagents** in `.claude/agents/`. They are short
 bursts of work that a harness launches (for example, with the Task tool) on
 request, not replacements for the CLI. The shape is always the
 same — **one burst between two operator gates**: the agent decides
@@ -1201,6 +1212,8 @@ to establish it. The operator opens and closes the gates.
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
 | `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 7 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
 | `sota-grapher` | Maps the pool to its constellation —one solar system per paper grouped by family, 20 planets maximum, edges between sibling systems— as `atlas.json` plus the single `atlas.html`, running checker and renderer until green. | `plausibility` |
+| `translator` | Translates one block (or one fragment outside the blocks: title, heading, caption) of the finished, verified English manuscript into neutral academic Spanish, from the English text, the paper's glossary of protected terms and the block's last style findings; keeps every citation key, label, formula, number and paragraph. It hands the Spanish body to `paper_cli.py translate store`, which judges it, and never edits `paper/main.tex`. | `paper-writing` |
+| `translation-style-reviewer` | Reads `translate audit` (style, flow, redundancy, cross-block repetition, per-block fidelity) and the stored Spanish blocks against their English, judges what the script cannot see (a restated idea, a sentence that drifted, a calque) and proposes a fix per finding with each location quoted. It never edits a file nor assigns a score. | `paper-writing` |
 | `venue-adapter` | Reads a chosen journal's author guidelines and template and measures the manuscript against them: requirements (each one a quote and a url), sections to adjust, sections missing and inconsistencies with smith's base template; proposes an adjustment plan only when prudent and iterates it with the operator until they approve its exact text. It writes nothing and never submits. | `paper-writing` |
 | `audit-report` | Audits a subject that enumerates a closed set —operations, subcommands, codes, assets— looking for the gap between what its code accepts and what its documentation promises. It reports; it never repairs. | `skill-audit` |
 
@@ -1209,7 +1222,7 @@ Three rules that order everything else:
 - **The source of truth is `.claude/agents/`.** Each harness's routing docs
   (`CLAUDE.md`, `.pi/APPEND_SYSTEM.md`, `OPENCODE.md`,
   `.agents/AGENTS.md`) list
-  all twenty-nine, and they are generated: an agent is changed
+  all thirty-one, and they are generated: an agent is changed
   there, not in the projection.
 - **Each agent declares the skill it loads** (`skills/<name>/SKILL.md`), and that
   binding is verified: an agent that points at a skill the workspace does not
@@ -1241,7 +1254,7 @@ each `probe` state's section in its own file,
 
 ## Anatomy of each skill
 
-The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). The workspace ships twenty skills; each one's `SKILL.md` is its source of truth:
+The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). The workspace ships twenty-two skills; each one's `SKILL.md` is its source of truth:
 
 - [`datasets`](skills/datasets/SKILL.md)
 - [`experiment-diagrams`](skills/experiment-diagrams/SKILL.md)
@@ -1262,6 +1275,8 @@ The guided tour of every skill, with its flow diagram, is in [docs/skills.md](do
 - [`remote-execution`](skills/remote-execution/SKILL.md)
 - [`remote-parallelism`](skills/remote-parallelism/SKILL.md)
 - [`skill-audit`](skills/skill-audit/SKILL.md)
+- [`systematic-review`](skills/systematic-review/SKILL.md)
+- [`ui-github`](skills/ui-github/SKILL.md)
 - [`upgrade-project`](skills/upgrade-project/SKILL.md)
 
 ## The CLI commands

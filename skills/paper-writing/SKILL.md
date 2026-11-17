@@ -13,7 +13,7 @@ it — before a single byte reaches disk.
 
 ## What this skill ships today
 
-Thirty-one verbs, wired into one front door (`scripts/paper_cli.py`):
+Thirty-four verbs, wired into one front door (`scripts/paper_cli.py`):
 `scaffold`, `status`, `open`, `substitute` (the block-substitution engine),
 `contract`, `readiness`, `order` (the section contract reader —
 `the-contract-is-data-not-code`), `phases` (the read-only "what can I write
@@ -51,7 +51,13 @@ exhaustion state -- lists only, never deletes), `figure optimize`/`figure proven
 (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` -- adapting the
 manuscript to a chosen journal under `paper/venues/<slug>/`; "Venue adaptation" below), and
 `reorder` (moves canonical back-matter blocks into the order `verify`'s
-`back-matter-order` check expects; "Putting back matter in order" below). To the
+`back-matter-order` check expects; "Putting back matter in order" below),
+`bib` (`refs.bib` management, never hand-typed), `ai_audit` and `humanize`
+(the writing-style measure and the invariant-preserving revision of one
+block), `translate` (`plan`, `store`, `build`, `audit`, `status`: the
+fidelity-gated Spanish translation under `paper/translations/<lang>/`) and
+`review` (records one round of the `paper-reviewer`'s final review in
+`.papersmith/paper_review.json`). To the
 substitution engine, block ids
 stay opaque strings — shape only (`[A-Za-z0-9._-]+`), no meaning. The
 contract reader is what says which ids exist, what each requires, and where
