@@ -264,3 +264,5 @@ an internal-chain row.
 - Limitations developed here instead of in the limitations section.
 - Over 950 or under 350 words.
 - A section that cannot be read without having read the paper.
+- A mention of the iteration behind the final experiments: rounds, attempts, pilot
+  runs or a proof of concept.

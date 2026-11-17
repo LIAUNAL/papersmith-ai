@@ -269,3 +269,4 @@ una fila de cadena interna.
 - Limitaciones desarrolladas aquí en lugar de en la sección de limitaciones.
 - Más de 950 o menos de 350 palabras.
 - Una sección que no puede leerse sin haber leído el artículo.
+- Una mención de la iteración detrás de los experimentos finales: rondas, intentos, corridas piloto o una prueba de concepto.

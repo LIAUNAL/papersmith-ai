@@ -430,3 +430,5 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 - Una tabla escalada con `\resizebox`, `\scalebox` o `adjustbox` por debajo de 0,85, o
   escalada a `\textwidth`.
 - Una tabla con reglas verticales, o una tabla cuya leyenda queda debajo de ella.
+- Una ronda, un intento, una corrida piloto, una prueba de concepto o un experimento reemplazado narrado o discutido: solo aparecen los experimentos finales aprobados y sus resultados.
+- Una idea, un modelo o un resultado discutido que ninguna figura ni tabla del artículo muestra.

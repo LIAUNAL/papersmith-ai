@@ -199,7 +199,13 @@ instead of these phases.
 7. **Declarations**: `/paper-writing mark …` records each decision of the
    paper (authorship, funding, data and code, ethics, language, style).
 8. **Writing**: `/paper-writing` writes one named block at a time. Every
-   claim needs a source that holds it (`resolve`). `refs.bib` comes from
+   claim needs a source that holds it (`resolve`). The paper describes and
+   discusses only the final, approved experiments, models and results, and
+   only what its figures and tables show: never the rounds, pilot runs, proof
+   of concept or superseded revisions behind them. A limitation names a
+   restriction of what the paper reports; a future-work direction answers one
+   and cites a reference that supports it (`verify` warns with
+   `iteration-history` and `future-work-uncited`). `refs.bib` comes from
    `bib build`, never from hand edits. After the citations change, run
    `resolve --references`: it stores each cited paper's metadata and abstract
    in `paper/.paper-writing/references.json`, and `verify` fails while a cited

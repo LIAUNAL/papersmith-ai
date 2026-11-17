@@ -61,6 +61,18 @@ Checks, in report order (`COHERENCE_CHECKS`):
   the title-cased `Adaptive Caching`) is flagged; the first letter alone and
   lowercasing a sentence-cased name are not. Abbreviations are not matched.
   `unmeasured`, `NO_DECLARED_NAMES`, when none are declared.
+- `iteration-history`: the paper describes only the final, approved
+  experiments, models and results. A sentence in any section, the limitations
+  and conclusions included, that narrates the iteration behind them is
+  flagged: rounds or attempts (`after several rounds`, `round 2`,
+  `first attempt`), pilot or preliminary runs, a proof of concept, or what
+  was tried first (`we initially tried`). An algorithm's own iterations
+  (`500 iterations per fold`) are not.
+- `future-work-uncited`: in the conclusions (a section titled with
+  `conclusion` or `future`), a sentence that proposes future work (`future
+  work`, `could be extended`, `we plan to`, `a promising direction`, ...)
+  without a `\\cite` in that sentence: every direction for overcoming a
+  stated limitation carries a reference that supports it.
 
 Sections are found two ways: a block marker `<section>.<block>` names its
 section; elsewhere `\\begin{abstract}` and each `\\section{...}` title
@@ -80,6 +92,8 @@ COHERENCE_CHECKS: tuple[str, ...] = (
     "not-performed",
     "symbol-redefinition",
     "naming-consistency",
+    "iteration-history",
+    "future-work-uncited",
 )
 COHERENCE_VERDICTS: tuple[str, ...] = ("pass", "warn", "unmeasured")
 COHERENCE_UNMEASURED_REASONS: tuple[str, ...] = (
@@ -103,6 +117,7 @@ CLAIM_SECTIONS = ("abstract", "introduction")
 RESULTS_SECTIONS = ("results-and-discussion",)
 METHODS_SECTIONS = ("materials-and-methods",)
 NOT_PERFORMED_EXEMPT = ("limitations",)
+FUTURE_WORK_SECTIONS = ("conclusions",)
 
 # --------------------------------------------------------------------------
 # Manuscript reading
@@ -117,6 +132,7 @@ _SECTION_KEYWORDS: tuple[tuple[str, str], ...] = (
     ("related", "related-work"),
     ("limitation", "limitations"),
     ("conclusion", "conclusions"),
+    ("future", "conclusions"),
     ("result", "results-and-discussion"),
     ("discussion", "results-and-discussion"),
     ("evaluation", "results-and-discussion"),
@@ -552,6 +568,59 @@ def check_not_performed(segs) -> dict:
                    evidence={"exempt_sections": list(NOT_PERFORMED_EXEMPT)}, rule=rule)
 
 
+# The paper reports the final, approved experiments only: the rounds,
+# pilots and proofs of concept that led to them stay in the workspace.
+_ITERATION_RE = re.compile(
+    r"\b((?:after|across|over|through) (?:several|multiple|successive|many|repeated|a few) "
+    r"(?:rounds|iterations|attempts|trials|versions)|"
+    r"(?:first|second|third|earlier|previous|initial|prior|intermediate|preliminary) "
+    r"(?:rounds?|attempts?|iterations? of (?:the|our) (?:model|method|experiments?|design))|"
+    r"(?:round|iteration) \d+|"
+    r"pilot (?:studies|study|runs?|experiments?|tests?|trials?)|"
+    r"preliminary (?:runs?|experiments?|tests?|trials?|versions?)|"
+    r"we (?:initially|first|originally) (?:tried|attempted|tested|used|ran|trained|considered)|"
+    r"proofs? of concept|proof-of-concept|PoC)\b",
+    re.I)
+
+
+def check_iteration_history(segs) -> dict:
+    rule = ("a sentence about the iteration that led to the final experiments (rounds, attempts, "
+            "pilot or preliminary runs, a proof of concept, what was tried first); the paper "
+            "describes only the final, approved experiments, models and results")
+    findings = []
+    for section, sentence in _section_sentences(segs):
+        phrases = [m.group(0) for m in _ITERATION_RE.finditer(sentence)]
+        if phrases:
+            findings.append({"section": section, "sentence": _excerpt(sentence), "phrases": phrases})
+    return _result("iteration-history", _verdict(findings), findings, rule=rule)
+
+
+_FUTURE_RE = re.compile(
+    r"\b(future (?:work|research|studies|directions?)|in the future|further (?:work|research)|"
+    r"(?:could|can|may|might) be (?:extended|explored|investigated|addressed|improved)|"
+    r"we (?:plan|intend|aim) to|we will|remains? to be (?:explored|studied|investigated)|"
+    r"(?:a )?promising (?:direction|avenue)|next steps?)\b",
+    re.I)
+_CITE_RE = re.compile(r"\\(?:cite|citep|citet|parencite|textcite|autocite)\w*\*?\s*(?:\[[^\]]*\]\s*)*\{")
+
+
+def check_future_work_uncited(segs) -> dict:
+    rule = ("a future-work sentence with no citation: every direction proposed to overcome a "
+            "stated limitation carries a reference that supports it")
+    findings = []
+    for section, text in segs:
+        if section not in FUTURE_WORK_SECTIONS:
+            continue
+        raw = re.sub(r"\s+", " ", _prose(text)).strip()
+        for raw_sentence in _SENTENCE_SPLIT_RE.split(raw):
+            sentence = _plain(raw_sentence)
+            markers = [m.group(0) for m in _FUTURE_RE.finditer(sentence)]
+            if markers and not _CITE_RE.search(raw_sentence):
+                findings.append({"section": section, "sentence": _excerpt(sentence), "markers": markers})
+    return _result("future-work-uncited", _verdict(findings), findings,
+                   evidence={"sections": list(FUTURE_WORK_SECTIONS)}, rule=rule)
+
+
 _SYMBOL_DEF_RES = (
     re.compile(r"\$([^$]{1,40})\$\s*,?\s*(?:denotes|represents|stands for|is defined as|is(?=\s+(?:the|a|an)\s))\s+([^.;:$]+)"),
     re.compile(r"\bwhere\s+\$([^$]{1,40})\$\s*(?:denotes|represents|stands for|is)\s+([^.;:$]+)"),
@@ -687,6 +756,8 @@ def run(main_tex: bytes, record: dict | None = None) -> list[dict]:
         check_not_performed(segs),
         check_symbol_redefinition(segs),
         check_naming_consistency(segs, record or {}),
+        check_iteration_history(segs),
+        check_future_work_uncited(segs),
     ]
     assert [e["check"] for e in entries] == list(COHERENCE_CHECKS)
     return entries

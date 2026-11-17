@@ -132,6 +132,8 @@ COHERENCE_CHECKS: tuple[str, ...] = (
     "not-performed",
     "symbol-redefinition",
     "naming-consistency",
+    "iteration-history",
+    "future-work-uncited",
 )
 _COHERENCE_VERDICTS = ("pass", "warn", "unmeasured")
 

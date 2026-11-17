@@ -1471,6 +1471,23 @@ contract's own `## Disqualifiers` bullets verbatim against the draft. `write`
 is the judge that sequences both — **it never drafts and never audits
 anything itself.**
 
+**The evidence is the final, approved experiment only.** The paper describes
+and discusses the experiments, models and results that ended as definitive and
+approved, never the iteration that led to them. When you assemble a block's
+`--evidence`, take results only from the full experiment the operator approved
+(the folder with `Experimental_AGREED.md` and its complete
+`Results/discussion.json`, with `G-NOVELTY` approved) and the design only from
+the latest protocol revision; leave out the proof of concept, pilot and
+preliminary runs, hyperparameter-search trials (`Results/hpo/`, beyond the
+final configuration they chose), superseded protocol or proposal revisions and
+every round of deliberation. A results or discussion block discusses only what
+a figure or table of the paper shows. A limitation names a restriction of the
+models and tests the paper reports, never of an intermediate test that did not
+become a definitive experiment; a future-work direction answers one of those
+limitations and carries a reference that supports it. `verify` flags a
+sentence that narrates the iteration (`iteration-history`) and a future-work
+sentence without a citation (`future-work-uncited`).
+
 ```bash
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py write \
     --section materials-and-methods --block mm-proposal \
@@ -2192,7 +2209,7 @@ sub-results (both closings present, fronts equal, front counts equal) as
 named booleans — evidence a human can act on without making the reading
 themselves.
 
-**Coherence warnings (#180, #183).** `verify` also reports, under its own `coherence` key, nine advisory checks computed by `paper_coherence.py`: `caption-results`, `caption-interpretation`, `caption-duplicates`, `caption-identifiers` (a caption states what the artefact is and decodes its key: no result values, interpretive verbs, sentences repeated from the body, or identifier codes such as `K1`, `r0h0`, `subject-v300`), `overclaiming` and `claims-findings` (abstract and introduction claims need a results sentence sharing a number or two key terms), `not-performed` (excluded or not-run work outside the limitations), `symbol-redefinition` (the methods' `$x$ denotes ...` table against later definitions) and `naming-consistency` (variants of the declared contribution and chain names). Each entry is `severity: warning` with verdict `pass`, `warn` or `unmeasured`, its findings and its rule; none counts toward `holds`/`fails`/`unmeasured` or changes `clean`.
+**Coherence warnings (#180, #183).** `verify` also reports, under its own `coherence` key, eleven advisory checks computed by `paper_coherence.py`: `caption-results`, `caption-interpretation`, `caption-duplicates`, `caption-identifiers` (a caption states what the artefact is and decodes its key: no result values, interpretive verbs, sentences repeated from the body, or identifier codes such as `K1`, `r0h0`, `subject-v300`), `overclaiming` and `claims-findings` (abstract and introduction claims need a results sentence sharing a number or two key terms), `not-performed` (excluded or not-run work outside the limitations), `symbol-redefinition` (the methods' `$x$ denotes ...` table against later definitions) `naming-consistency` (variants of the declared contribution and chain names), `iteration-history` (a sentence narrating the rounds, attempts, pilot runs or proof of concept behind the final experiments, in any section) and `future-work-uncited` (a future-work sentence in the conclusions with no `\cite`). Each entry is `severity: warning` with verdict `pass`, `warn` or `unmeasured`, its findings and its rule; none counts toward `holds`/`fails`/`unmeasured` or changes `clean`.
 
 ### Putting back matter in order: `reorder`
 

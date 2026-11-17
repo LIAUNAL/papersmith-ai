@@ -599,3 +599,4 @@ Nada aquí espera a un experimento. Pero sí espera a que exista el código.
 - Una variable usada antes de declarar su espacio y sus dimensiones.
 - Una ecuación destacada sin número, o una referida como *Eq.* en lugar de *Equation (n)*.
 - Una transpuesta escrita como superíndice *T* en lugar de `^{\top}`.
+- Una variante, un componente o un ajuste del modelo que se probó y se descartó durante la iteración, descrito en lugar del modelo final aprobado o junto a él.
