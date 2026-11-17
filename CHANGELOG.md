@@ -11,6 +11,43 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.79.0
+
+- **The board refreshes itself.** `smith ui` now regenerates, in the
+  background at every start, the artifacts the board draws from local files:
+  the SOTA atlas page (through the workspace's own checker and renderer,
+  written only when the check passes), the atlas manuscript layer, the
+  manuscript graph, the novelty graph's viewer copy and the wiring health.
+  An artifact whose input is missing is skipped, and one generator that fails
+  never stops the others. `--no-refresh` keeps the read-only start.
+- **Update board.** The topbar's refresh button becomes *Update board*
+  (`POST /api/board/refresh`, same origin only, one refresh at a time). It
+  runs the same refresh, re-reads the status and reports, in English or
+  Spanish, the current phase, the steps still missing in it, the phases
+  locked behind it, the open and failed gates and which artifacts were
+  regenerated, skipped or failed. `GET /api/board/summary` answers the same
+  summary read-only with the last refresh, and the page shows the start-up
+  refresh once per server run.
+- **The paper reports only the final, approved experiments.** The
+  experimental section contracts (methods, setup, results and discussion,
+  limitations, conclusions) disqualify narrating the iteration behind the
+  final experiments (rounds, attempts, pilot runs, a proof of concept,
+  superseded revisions), discussing what no figure or table shows and
+  limitations drawn from intermediate tests; a future-work direction answers
+  a stated limitation with a reference. The `redactor` and the orchestrator's
+  evidence rule keep a block's evidence to the approved full experiment and
+  the latest protocol. `verify` adds two advisory checks,
+  `iteration-history` and `future-work-uncited`. The review line is
+  unchanged.
+- **Docs and the flow diagram catch up with 0.68-0.78.** The Archify flow
+  draws the board refresh, pixelrag, the review line, the experiments tutor,
+  remote parallelism, ai-auditor, figure-visual-reviewer, the final judge
+  panel and the Spanish translation row, the Publindex national scope and the
+  bundled SCImago snapshot, with about 45 drifted source ranges fixed. README
+  counts thirty-one agents and twenty-two skills, the harness flow adds the
+  final judge, journal and translation steps of phase 10, and
+  `paper-writing` counts thirty-four verbs.
+
 ## 0.78.0
 
 - **Writes never overwrite newer prose (#185).** `substitute`, `write` and
