@@ -41,7 +41,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import doctor_view, keys_view, localize, toolchain
+from . import board_refresh, doctor_view, keys_view, localize, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -3520,6 +3520,61 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             status_code = 422
         return JSONResponse(result, status_code=status_code, headers=dict(_PAPER_HEADERS))
 
+    # ------------------------------------------------- board refresh
+    # "Update board": regenerate every derived artifact (board_refresh.py),
+    # then summarize the phase, the missing steps and the gates. main() runs
+    # it once when the server starts; one refresh at a time.
+    board_lock = threading.Lock()
+    app.state.board_refresh_lock = board_lock
+    app.state.board_refresh_last = None
+
+    def _utc_now() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    def _current_status() -> dict[str, Any]:
+        return json.loads(bytes(status_payload().body).decode("utf-8"))
+
+    def refresh_board() -> dict[str, Any] | None:
+        """Regenerate and summarize; ``None`` while another refresh runs."""
+        if not board_lock.acquire(blocking=False):
+            return None
+        try:
+            started = _utc_now()
+            artifacts = board_refresh.refresh_artifacts(
+                root_path, health=lambda: measure_health(force=True))
+            result = {"ok": True, "busy": False, "started_at": started,
+                      "finished_at": _utc_now(), "artifacts": artifacts,
+                      "summary": board_refresh.summarize(_current_status(), artifacts)}
+            app.state.board_refresh_last = result
+            return result
+        finally:
+            board_lock.release()
+
+    app.state.refresh_board = refresh_board
+
+    @app.post("/api/board/refresh")
+    def api_board_refresh(request: Request) -> JSONResponse:
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "detail": "cross-origin request rejected"},
+                                status_code=403, headers=dict(_PAPER_HEADERS))
+        result = refresh_board()
+        if result is None:
+            return JSONResponse({"ok": False, "busy": True,
+                                 "detail": "a board refresh is already running"},
+                                status_code=409, headers=dict(_PAPER_HEADERS))
+        return JSONResponse(result, headers=dict(_PAPER_HEADERS))
+
+    @app.get("/api/board/summary")
+    def api_board_summary() -> JSONResponse:
+        # Read-only: the status as it stands, plus the last refresh (the one
+        # main() ran at start, or the button's), so the page can report it.
+        last = app.state.board_refresh_last
+        return JSONResponse({"summary": board_refresh.summarize(
+                                 _current_status(), (last or {}).get("artifacts")),
+                             "last_refresh": last,
+                             "refreshing": board_lock.locked()},
+                            headers=dict(_PAPER_HEADERS))
+
     # ------------------------------------------------- journals and venues
     # The PDF Preview tab's journal finder and venue adapter. Reads are
     # bounded and contained; every POST is same-origin; nothing here submits
@@ -4456,6 +4511,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--no-browser", action="store_true",
                         help="never open a browser window")
+    parser.add_argument("--no-refresh", action="store_true",
+                        help="do not regenerate the board's derived artifacts at start")
     parser.add_argument("--debounce-ms", type=int, default=300)
     parser.add_argument("--health-ttl", type=float, default=DEFAULT_HEALTH_TTL_SECONDS)
     parser.add_argument("--export-static", metavar="<dir>", default=None,
@@ -4637,6 +4694,15 @@ def warm_caches(root: Path, *extra: Callable[[], Any]) -> None:
             _log.debug("warming a dashboard cache failed", exc_info=True)
 
 
+def refresh_board_quietly(app: Any) -> None:
+    """The start-up board refresh; a failure only means the board shows what
+    was on disk."""
+    try:
+        app.state.refresh_board()
+    except Exception:  # noqa: BLE001 - the start-up refresh is best effort
+        _log.warning("the start-up board refresh failed", exc_info=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -4677,6 +4743,12 @@ def main(argv: list[str] | None = None) -> int:
         url = f"{url}api/terminal/login?token={app.state.terminal.login_token}"
         print(f"support terminal enabled; dashboard login URL: {url}", flush=True)
     threading.Thread(target=warm_caches, args=(root, app.state.warm_doctor), name="warm-caches", daemon=True).start()
+    if not args.no_refresh:
+        # Regenerate the atlas, the graphs and the health so the first visit
+        # shows the project as it stands; the files land in watched folders,
+        # so the live channel repaints the board when they do.
+        threading.Thread(target=refresh_board_quietly, args=(app,), name="board-refresh",
+                         daemon=True).start()
     if not args.no_browser:
         threading.Timer(1.0, open_browser, args=(url,)).start()
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)

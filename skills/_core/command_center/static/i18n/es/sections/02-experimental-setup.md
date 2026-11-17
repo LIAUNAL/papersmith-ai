@@ -499,3 +499,4 @@ ablación — el resto los presenta en los resultados, lo que este contrato proh
 - Una tabla escalada con `\resizebox`, `\scalebox` o `adjustbox` por debajo de 0,85, o
   escalada a `\textwidth`.
 - Una tabla con reglas verticales, o una tabla cuya leyenda queda debajo de ella.
+- Una configuración, ronda o revisión del protocolo piloto, preliminar o reemplazada: solo se describen los experimentos finales aprobados.

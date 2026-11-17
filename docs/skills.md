@@ -2241,8 +2241,8 @@ $ paper_cli.py resolve --identifier 10.1038/nature14539 --resolver crossref
 ```
 
 **The flow, by groups of verbs.** This skill declares no stage table: it declares
-**thirty-one verbs behind a single door** (`scripts/paper_cli.py`; `mark`, `bib`,
-`figure` and `venue` count once each and carry their own sub-verbs), and the flow
+**thirty-four verbs behind a single door** (`scripts/paper_cli.py`; `mark`, `bib`,
+`figure`, `venue` and `translate` count once each and carry their own sub-verbs), and the flow
 is the order in which those groups enable one another.
 
 | Group | Verbs | What it establishes |
@@ -2254,9 +2254,10 @@ is the order in which those groups enable one another.
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
 | Style audit & style revision | `ai_audit`, `humanize` | Measures writing quality — cadence (sentence-length $CV \ge 0.38$), overused academic phrasing, lexical diversity — as a `style_score`, plus a located `flow` report (connector density and repetition, repeated sentence openings, *because*/*where*/*, which* density with the equation *where* exempt, cross-paragraph repeated phrases and near-duplicate sentences, template phrasing) whose `needs_revision` verdict also blocks `--apply`, and applies a revised block only when it meets `--style-target` (or `--force`) under the untouchable F5 invariant gate (citations, statistics, and formulas). A readability check, never an AI detector: it does not change the obligation to declare AI use |
 | Final judge's rounds | `review` | Records one round of the `paper-reviewer`'s review of the whole paper (`--input <file>`, or `-` for stdin) in `.papersmith/paper_review.json`, which the dashboard's final-judge panel reads: numbers and dates it, requires overall 1-6, confidence 1-5 and the four 1-4 ratings, and from the second round on a verdict (`resolved`, `partly`, `not resolved`) on every revision the previous round raised. A refused round leaves the file unchanged |
-| Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads |
+| Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads `verify` also warns, without failing, on a sentence that narrates the iteration behind the final experiments (rounds, pilot runs, a proof of concept: `iteration-history`) and on a future-work sentence with no citation (`future-work-uncited`); the paper reports only the final, approved experiments |
 | Structure, sources and reuse | `phases`, `skeleton`, `bind`, `separate`, `mark`, `packet`, `full_text`, `reuse`, `exhaustion` | The derived "what can I write now" report and the one-time opening of the empty section/block structure; the source-section binding loop and the revision/class declarations of a source root or `guidance/` folder; the redactor's own context; one already-resolved identifier's PDF placed under `guidance/<section>/`; and the read-only reports of which ingested papers carry no verdict yet and of the exhaustion state of the evidence papers |
 | Venue adaptation | `venue select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` | Measures the manuscript against a chosen journal's guidelines and template and builds the journal's own `main.tex` under `paper/venues/<slug>/`, never touching the canonical one (below) |
+| Spanish translation | `translate plan`, `store`, `build`, `audit`, `status` | For a journal that only receives Spanish: the finished, verified English paper translated block by block to neutral academic Spanish under `paper/translations/es/`. The `translator` agent writes each block from the English text, the glossary of protected terms and its last style findings; `store` refuses a block that loses a citation key, label or reference target, formula, number or paragraph; `audit` scores style, flow and redundancy and the `translation-style-reviewer` agent proposes fixes with each location quoted. The English paper stays the source, and the PDF tab compiles and previews the Spanish version |
 
 **Venue adaptation: the `venue` verbs and the `venue-adapter` agent.** A journal
 asks for its own document class, section list, limits, declarations and
@@ -3083,7 +3084,13 @@ where it goes is a separate decision, and a hunch is a poor basis for it. This
 skill turns the paper's own title, abstract, keywords and references into a
 ranked shortlist of journals that already publish work like it, in a quartile
 range the operator chooses, and lets an agent read what each journal says about
-its own scope. Nothing is ever submitted and no editor is contacted.
+its own scope. `--scope national` (the PDF tab's International / National
+selector) ranks Colombian journals of the bundled Publindex IBN 2026 list
+instead (`data/publindex-ibn.json`): only categories A1, A2 and B, each with its
+measured submission-to-publication time read from the journal's own site and
+the languages it receives; a Spanish-only journal points to the `translate`
+step of `paper-writing`. International quartiles come from the bundled SCImago
+2025 snapshot. Nothing is ever submitted and no editor is contacted.
 
 **What it receives and what it hands on.** It reads `paper/main.tex` (`\title`,
 the `abstract` environment, `\keywords` or a keywords block; else the title and

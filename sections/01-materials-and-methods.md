@@ -598,3 +598,5 @@ Nothing here waits for an experiment. But it does wait for the code to exist.
 - A variable used before its space and dimensions are declared.
 - A displayed equation without a number, or one referred to as *Eq.* instead of *Equation (n)*.
 - A transpose written as a superscript *T* instead of `^{\top}`.
+- A model variant, component or setting that was tried and discarded during the
+  iteration, described in place of, or beside, the final approved one.

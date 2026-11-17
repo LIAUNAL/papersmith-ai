@@ -429,3 +429,6 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 - A table scaled with `\resizebox`, `\scalebox` or `adjustbox` below 0.85, or scaled
   to `\textwidth`.
 - A table with vertical rules, or a table whose caption sits below it.
+- A round, attempt, pilot run, proof of concept or superseded experiment narrated or
+  discussed: only the final, approved experiments and their results appear.
+- An idea, model or result discussed that no figure or table of the paper shows.

@@ -44,7 +44,13 @@ These are the eleven phases the command center (`smith ui`) shows under
 `/<skill> <text>` typed into an agent, a `smith` command, or a link to the
 panel that owns the work. The dashboard locks each phase until the one before
 it is verified from its evidence on disk, with an explicit override, and every
-skill refuses when its input is missing.
+skill refuses when its input is missing. Each `smith ui` start regenerates the
+board's derived artifacts (the SOTA atlas page, the manuscript graph, the
+novelty graph, the wiring health; `--no-refresh` skips it), and the topbar's
+"Update board" button does it again and reports the current phase, the steps
+it still owes and the open or failed gates. A review workspace (`smith init
+--kind review`) follows the systematic-review flow (`/systematic-review`)
+instead of these phases.
 
 1. **Harness**: `smith status .` and `smith audit . --check-drift`;
    `/upgrade-project` when the workspace runs an older release.
@@ -176,7 +182,13 @@ skill refuses when its input is missing.
 7. **Declarations**: `/paper-writing mark …` records each decision of the
    paper (authorship, funding, data and code, ethics, language, style).
 8. **Writing**: `/paper-writing` writes one named block at a time. Every
-   claim needs a source that holds it (`resolve`). `refs.bib` comes from
+   claim needs a source that holds it (`resolve`). The paper describes and
+   discusses only the final, approved experiments, models and results, and
+   only what its figures and tables show: never the rounds, pilot runs, proof
+   of concept or superseded revisions behind them. A limitation names a
+   restriction of what the paper reports; a future-work direction answers one
+   and cites a reference that supports it (`verify` warns with
+   `iteration-history` and `future-work-uncited`). `refs.bib` comes from
    `bib build`, never from hand edits. After the citations change, run
    `resolve --references`: it stores each cited paper's metadata and abstract
    in `paper/.paper-writing/references.json`, and `verify` fails while a cited
@@ -187,6 +199,20 @@ skill refuses when its input is missing.
 10. **Paper**: compile `paper/main.tex` to `paper/main.pdf` (dashboard:
     the PDF preview tab, whose style and redundancy panel scores each
     section from 0 to 100).
+    - **Final judge**: the `paper-reviewer` reviews the compiled paper round
+      by round; `/paper-writing` records each round with `paper_cli.py review
+      --input <round.json>` in `.papersmith/paper_review.json`, and the PDF
+      tab shows the verdict per round.
+    - **Journal and venue**: `/journal-finder` ranks international journals
+      by SJR quartile (the bundled SCImago 2025 snapshot) or, with `--scope
+      national`, Colombian Publindex IBN 2026 journals (A1, A2, B) by
+      measured review time; the operator chooses one in the PDF tab and the
+      `venue-adapter` agent measures the manuscript against its guidelines.
+    - **Translation**: for a journal that only receives Spanish,
+      `paper_cli.py translate plan|store|build|audit|status` translates the
+      verified English paper block by block into `paper/translations/es/`
+      (agents `translator` and `translation-style-reviewer`); every block
+      passes a fidelity gate before it is stored.
 11. **Audit** (transversal): `smith audit .` and `/skill-audit <subject>`.
     Audits report; they never repair.
 

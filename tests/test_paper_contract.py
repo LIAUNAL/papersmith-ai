@@ -1043,14 +1043,16 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: the 0.70-0.90 x body text range for tables and figures; 05 sizes the synthesis
 #: table at 7-12 works; 09 writes the blinded author placeholder in English; 10
 #: places the back matter before the references and the appendices after them.
+#: 01, 02, 03, 04 and 07 re-captured (0.79.0): a disqualifier keeps the paper to
+#: the final, approved experiments, never the iteration rounds behind them.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "5a87e71dc4fb48256977b8e773c0cac478a16de6e5dd45a620bf20005fda683a",
-    "02-experimental-setup.md": "2d092c8555940a6b4cc6373f1ef8c0f42b55812960bb80911f8cd02296827207",
-    "03-results-and-discussion.md": "a84dfb8133dff360a3966bdfba8dfa8b874dc4b0c2787e7bfaa3670af3a32235",
-    "04-limitations.md": "8a033d8d3c872a251699eec24f10e22c656d38bb0b4f14e4e3ad10da6daba9e8",
+    "01-materials-and-methods.md": "6828a8784f4e8691e5d51b9c9700ad56b1fcc5ce1e93d098eb574dce1af9d689",
+    "02-experimental-setup.md": "0401b51cfa803aa473786a853f2c693a65188615ad4661dbaf1ae5147087d5b3",
+    "03-results-and-discussion.md": "a98b275010c20e51d99839942c5ccfd3c700bdf8001ed4b085b892002f27584c",
+    "04-limitations.md": "42bb9e8fa82c6b5b2734f25b06b8d2f772a25540a060de4097098ed2437ea66a",
     "05-related-work.md": "35461f08cd877a198b13f19202ee6a2091024d35e736f91563b45002fbc80c76",
     "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",
-    "07-conclusions.md": "c956d406bc200361379e61c8730e9a28ca728a64aa79639b49a0914980b688d0",
+    "07-conclusions.md": "cfc56c03753c4c2c570b0b4ac6e622141c2109027c7b475f26d46ad1403d1ef6",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
     "09-title-and-keywords.md": "e91df770daef297c33bbabfe54ec49d1c09c7e2d43b48e8807f252eb465f545d",
     "10-back-matter.md": "b33d99493d781fbc8513a8487be052cebd328311fe4424c78437b46e5d72674d",

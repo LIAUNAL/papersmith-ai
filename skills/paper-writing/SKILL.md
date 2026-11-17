@@ -13,7 +13,7 @@ it — before a single byte reaches disk.
 
 ## What this skill ships today
 
-Thirty-one verbs, wired into one front door (`scripts/paper_cli.py`):
+Thirty-four verbs, wired into one front door (`scripts/paper_cli.py`):
 `scaffold`, `status`, `open`, `substitute` (the block-substitution engine),
 `contract`, `readiness`, `order` (the section contract reader —
 `the-contract-is-data-not-code`), `phases` (the read-only "what can I write
@@ -51,7 +51,13 @@ exhaustion state -- lists only, never deletes), `figure optimize`/`figure proven
 (`select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` -- adapting the
 manuscript to a chosen journal under `paper/venues/<slug>/`; "Venue adaptation" below), and
 `reorder` (moves canonical back-matter blocks into the order `verify`'s
-`back-matter-order` check expects; "Putting back matter in order" below). To the
+`back-matter-order` check expects; "Putting back matter in order" below),
+`bib` (`refs.bib` management, never hand-typed), `ai_audit` and `humanize`
+(the writing-style measure and the invariant-preserving revision of one
+block), `translate` (`plan`, `store`, `build`, `audit`, `status`: the
+fidelity-gated Spanish translation under `paper/translations/<lang>/`) and
+`review` (records one round of the `paper-reviewer`'s final review in
+`.papersmith/paper_review.json`). To the
 substitution engine, block ids
 stay opaque strings — shape only (`[A-Za-z0-9._-]+`), no meaning. The
 contract reader is what says which ids exist, what each requires, and where
@@ -1465,6 +1471,23 @@ contract's own `## Disqualifiers` bullets verbatim against the draft. `write`
 is the judge that sequences both — **it never drafts and never audits
 anything itself.**
 
+**The evidence is the final, approved experiment only.** The paper describes
+and discusses the experiments, models and results that ended as definitive and
+approved, never the iteration that led to them. When you assemble a block's
+`--evidence`, take results only from the full experiment the operator approved
+(the folder with `Experimental_AGREED.md` and its complete
+`Results/discussion.json`, with `G-NOVELTY` approved) and the design only from
+the latest protocol revision; leave out the proof of concept, pilot and
+preliminary runs, hyperparameter-search trials (`Results/hpo/`, beyond the
+final configuration they chose), superseded protocol or proposal revisions and
+every round of deliberation. A results or discussion block discusses only what
+a figure or table of the paper shows. A limitation names a restriction of the
+models and tests the paper reports, never of an intermediate test that did not
+become a definitive experiment; a future-work direction answers one of those
+limitations and carries a reference that supports it. `verify` flags a
+sentence that narrates the iteration (`iteration-history`) and a future-work
+sentence without a citation (`future-work-uncited`).
+
 ```bash
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py write \
     --section materials-and-methods --block mm-proposal \
@@ -2186,7 +2209,7 @@ sub-results (both closings present, fronts equal, front counts equal) as
 named booleans — evidence a human can act on without making the reading
 themselves.
 
-**Coherence warnings (#180, #183).** `verify` also reports, under its own `coherence` key, nine advisory checks computed by `paper_coherence.py`: `caption-results`, `caption-interpretation`, `caption-duplicates`, `caption-identifiers` (a caption states what the artefact is and decodes its key: no result values, interpretive verbs, sentences repeated from the body, or identifier codes such as `K1`, `r0h0`, `subject-v300`), `overclaiming` and `claims-findings` (abstract and introduction claims need a results sentence sharing a number or two key terms), `not-performed` (excluded or not-run work outside the limitations), `symbol-redefinition` (the methods' `$x$ denotes ...` table against later definitions) and `naming-consistency` (variants of the declared contribution and chain names). Each entry is `severity: warning` with verdict `pass`, `warn` or `unmeasured`, its findings and its rule; none counts toward `holds`/`fails`/`unmeasured` or changes `clean`.
+**Coherence warnings (#180, #183).** `verify` also reports, under its own `coherence` key, eleven advisory checks computed by `paper_coherence.py`: `caption-results`, `caption-interpretation`, `caption-duplicates`, `caption-identifiers` (a caption states what the artefact is and decodes its key: no result values, interpretive verbs, sentences repeated from the body, or identifier codes such as `K1`, `r0h0`, `subject-v300`), `overclaiming` and `claims-findings` (abstract and introduction claims need a results sentence sharing a number or two key terms), `not-performed` (excluded or not-run work outside the limitations), `symbol-redefinition` (the methods' `$x$ denotes ...` table against later definitions) `naming-consistency` (variants of the declared contribution and chain names), `iteration-history` (a sentence narrating the rounds, attempts, pilot runs or proof of concept behind the final experiments, in any section) and `future-work-uncited` (a future-work sentence in the conclusions with no `\cite`). Each entry is `severity: warning` with verdict `pass`, `warn` or `unmeasured`, its findings and its rule; none counts toward `holds`/`fails`/`unmeasured` or changes `clean`.
 
 ### Putting back matter in order: `reorder`
 

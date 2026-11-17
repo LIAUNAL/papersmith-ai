@@ -483,8 +483,9 @@ class TokenFileTests(unittest.TestCase):
 
 
 def run_main(*argv: str) -> dict:
-    """``server.main`` with uvicorn, the cache warmer and the browser timer
-    stubbed: what it served, printed and opened, and its exit code."""
+    """``server.main`` with uvicorn, the cache warmer, the start-up board
+    refresh and the browser timer stubbed: what it served, printed and
+    opened, and its exit code."""
     seen: dict = {"app": None, "opened": []}
     out, err = io.StringIO(), io.StringIO()
 
@@ -496,6 +497,7 @@ def run_main(*argv: str) -> dict:
         return mock.MagicMock()
 
     with mock.patch("uvicorn.run", serve), mock.patch.object(server, "warm_caches"), \
+            mock.patch.object(server, "refresh_board_quietly"), \
             mock.patch.object(server.threading, "Timer", side_effect=timer), \
             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:

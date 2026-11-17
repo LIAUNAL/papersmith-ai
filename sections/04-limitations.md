@@ -277,3 +277,5 @@ The mathematical section reaches this block already transposed, as the methods s
 - A worst-performing cell softened here while stated plainly in the results, or the
   reverse.
 - A figure, a table, or an equation.
+- An item about an intermediate test, pilot or iteration round that did not become a
+  definitive experiment of the paper.

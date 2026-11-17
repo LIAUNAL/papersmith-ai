@@ -60,6 +60,12 @@ def _under(prefix: str, *keys: str) -> list[str]:
 
 _PHASE_FIELDS = (["name", "desc", "detail"] + _under("subfases", "name", "detail", "desc")
                  + _under("actions", "label", "desc", "guide", "placeholder") + _under("evidence", "label"))
+#: The board summary (board_refresh.summarize) repeats the status labels.
+_BOARD_FIELDS = (_under("summary.current", "name", "detail")
+                 + _under("summary.missing", "name", "detail") + _under("summary.blocked", "name")
+                 + _under("summary.open_gates", "name") + _under("summary.failed_gates", "name")
+                 + _under("last_refresh.summary.current", "name", "detail")
+                 + _under("last_refresh.summary.missing", "name", "detail"))
 _STAGES = ("poc", "full")
 _HARNESSES = ("claude-code", "pi", "opencode", "antigravity")
 
@@ -87,6 +93,8 @@ DISPLAY_FIELDS: dict[str, frozenset[str]] = {
                        "artifacts.label"),
         [f"sources.chats.{harness}.detail" for harness in _HARNESSES],
     ),
+    "/api/board/refresh": _paths(*_BOARD_FIELDS),
+    "/api/board/summary": _paths(*_BOARD_FIELDS),
     "/api/agents": _paths("agents.phases"),
     "/api/terminal/agents": _paths("agents.desc"),
     "/api/model": _paths(

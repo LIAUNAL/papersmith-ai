@@ -496,3 +496,5 @@ ablation here — the rest surface them in the results, which this contract forb
 - A table scaled with `\resizebox`, `\scalebox` or `adjustbox` below 0.85, or scaled
   to `\textwidth`.
 - A table with vertical rules, or a table whose caption sits below it.
+- A pilot, preliminary or superseded configuration, round or protocol revision:
+  only the final, approved experiments are described.

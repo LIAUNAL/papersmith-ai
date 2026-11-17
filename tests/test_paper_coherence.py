@@ -37,6 +37,8 @@ EXPECTED = {
     "not-performed": ("phrases", ["We did not", "excluded"]),
     "symbol-redefinition": ("meaning", "cache eviction threshold"),
     "naming-consistency": ("variant", "adaptive caching"),
+    "iteration-history": ("phrases", ["After several rounds", "pilot study"]),
+    "future-work-uncited": ("markers", ["Future work"]),
 }
 
 
@@ -123,13 +125,29 @@ class CoherenceVerifyTests(unittest.TestCase):
         variants = {f["variant"] for f in self.coherence(report)["naming-consistency"]["findings"]}
         self.assertEqual(variants, {"adaptive caching", "Bounded Retries"})
 
+    # Only the final, approved experiments are written about.
+    def test_iteration_rounds_pilots_and_proofs_of_concept_are_flagged(self) -> None:
+        self._rule("iteration-history")
+
+    def test_iteration_vocabulary_is_flagged_in_the_limitations_too(self) -> None:
+        self.append("iteration-history-limitations.tex")
+        _, report = self.verify()
+        entry = self.coherence(report)["iteration-history"]
+        self.assertEqual(entry["verdict"], "warn")
+        self.assertEqual(entry["findings"][0]["section"], "limitations")
+        self.assertEqual(entry["findings"][0]["phrases"], ["proof of concept"])
+
+    def test_a_future_work_sentence_without_a_citation_is_flagged(self) -> None:
+        self._rule("future-work-uncited")
+
     def test_existing_paper_verifies_with_the_same_exit_code_and_counts(self) -> None:
         code, before = self.verify()
         self.assertEqual(code, 0)
         self.assertEqual([e["check"] for e in before["coherence"]],
                          ["caption-results", "caption-interpretation", "caption-duplicates",
                           "caption-identifiers", "overclaiming", "claims-findings",
-                          "not-performed", "symbol-redefinition", "naming-consistency"])
+                          "not-performed", "symbol-redefinition", "naming-consistency",
+                          "iteration-history", "future-work-uncited"])
         self.assertNotIn("warn", {e["verdict"] for e in before["coherence"]})
         for fixture in ("caption-results-positive.tex", "overclaiming-positive.tex",
                         "naming-consistency-positive.tex"):

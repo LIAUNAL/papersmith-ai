@@ -67,6 +67,18 @@ additionally admits `discovery`-class evidence. None of this is instruction
 you are trusted to follow; it is checked against what you actually wrote,
 every time.
 
+## Only the final, approved experiments
+
+Write about the experiments, models and results that ended as definitive and
+approved, and nothing of the iteration behind them: no rounds, attempts,
+pilot or preliminary runs, proof of concept, superseded protocol versions or
+what was tried first, even when an evidence item mentions them. A results or
+discussion sentence discusses only what a figure or table of the paper shows.
+A limitation names a restriction of the models and tests the paper reports,
+never of an intermediate test; a future-work sentence answers a stated
+limitation and cites the reference that supports it. `verify` flags a
+sentence that breaks this (`iteration-history`, `future-work-uncited`).
+
 **Not every agent's description carries its bound skill's arrival,
 verbatim.** Only a `stretch: terminal` agent does; any other stretch ends
 at a named, earlier stage instead, and a skill that declares no north at

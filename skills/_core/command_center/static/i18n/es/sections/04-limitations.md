@@ -277,3 +277,4 @@ La sección matemática llega a este bloque ya transpuesta, como las propias con
 - Una peor celda suavizada aquí mientras se enuncia sin rodeos en los resultados, o al
   revés.
 - Una figura, una tabla o una ecuación.
+- Un ítem sobre una prueba intermedia, un piloto o una ronda de iteración que no llegó a ser un experimento definitivo del artículo.
