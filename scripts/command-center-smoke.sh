@@ -112,9 +112,11 @@ PYEOF
 )" || fail 1 "no free port at or after $PREFERRED_PORT"
 BASE="http://$HOST:$PORT"
 
-# Check 1: start the standalone backend from the workspace root.
+# Check 1: start the standalone backend from the workspace root. --no-refresh:
+# the repository is not a paper workspace, so the start-up board refresh must
+# not write its graphs into it.
 cd "$ROOT"
-"$PY" -m skills._core.command_center.server --port "$PORT" --no-browser --root "$ROOT" \
+"$PY" -m skills._core.command_center.server --port "$PORT" --no-browser --no-refresh --root "$ROOT" \
   >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 

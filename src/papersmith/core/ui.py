@@ -271,7 +271,8 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
                       allow_unauthenticated_network: bool = False,
                       no_terminal: bool = False,
                       network_terminal: bool = False,
-                      terminal_token_file: str | None = None) -> list[str]:
+                      terminal_token_file: str | None = None,
+                      no_refresh: bool = False) -> list[str]:
     """Build the child command that runs the workspace's backend."""
     argv = [
         interpreter or sys.executable,
@@ -309,6 +310,8 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
     if terminal_token_file is not None:
         # A path, never the secret: argv is readable by every local user.
         argv.extend(["--terminal-token-file", str(terminal_token_file)])
+    if no_refresh:
+        argv.append("--no-refresh")
     return argv
 
 
@@ -632,7 +635,8 @@ def run_cli(args) -> int:
                              # The backend runs in the workspace: a relative
                              # path is the operator's, from where they typed it.
                              terminal_token_file=(os.path.abspath(os.path.expanduser(token_file))
-                                                  if token_file else None))
+                                                  if token_file else None),
+                             no_refresh=getattr(args, "no_refresh", False))
     return _run_child(argv, workspace)
 
 
@@ -713,6 +717,9 @@ def register(subparsers) -> None:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
                         help="preferred port; a busy port moves to the next free one")
     parser.add_argument("--no-browser", action="store_true", help="never open a browser window")
+    parser.add_argument("--no-refresh", action="store_true",
+                        help="do not regenerate the board's derived artifacts (SOTA atlas, "
+                             "manuscript layer and graph, novelty graph, wiring health) at start")
     parser.add_argument("--export-static", metavar="<dir>", default=None,
                         help="copy the dashboard build to <dir> and exit")
     parser.add_argument("--export-snapshot", metavar="<dir>", default=None,

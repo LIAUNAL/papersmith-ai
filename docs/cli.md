@@ -559,6 +559,7 @@ smith ui . --publish-pages --yes --no-ai-history
 | `--host HOST` | Bind address (default `127.0.0.1`) |
 | `--port PORT` | Preferred port; if it is taken, the next free one |
 | `--no-browser` | Does not open the browser |
+| `--no-refresh` | Does not regenerate the board's derived artifacts when the server starts (see *Board refresh* below); only forwarded when supplied |
 | `--export-static <dir>` | Copies the dashboard build to `<dir>` and exits |
 | `--export-snapshot <dir>` | Writes a static, read-only snapshot of this workspace's dashboard to `<dir>` (for GitHub Pages) and exits; see *Read-only snapshot* below |
 | `--snapshot-lang en,es` | Languages the snapshot answers in (default `en,es`) |
@@ -573,6 +574,25 @@ smith ui . --publish-pages --yes --no-ai-history
 | `--network-terminal` | Also offers the support terminal and the API keys panel on a non-loopback `--host`, behind a secret (see *Network exposure* below); needs `--allow-unauthenticated-network`; only forwarded when supplied |
 | `--lan` / `--no-lan` | Serves the dashboard to the other machines on your network in one switch: `0.0.0.0`, this machine's own addresses and names for the `Host` check, and the terminal behind a secret kept in `~/.config/papersmith/terminal-token` (see *One switch for your home network* below); `PAPERSMITH_UI_LAN=1` makes it the default |
 | `--terminal-token-file <path>` | With `--network-terminal`: reads the secret from `<path>` (mode `600`, 32 to 256 characters from `A-Z a-z 0-9 . _ ~ -`) instead of generating one at each start, and never prints it; a relative path is resolved from where `smith ui` runs |
+
+**Board refresh.** When the server starts it regenerates, in the background,
+every artifact the board draws from local files without a key or the network:
+the SOTA atlas page (`sota-pool/atlas.html`, through the workspace's own
+`check_atlas.py` and `render_atlas.py`, written only when the check passes),
+the atlas manuscript layer, the manuscript graph
+(`.papersmith/manuscript_graph.json`), the novelty graph's viewer copy
+(`.papersmith/novelty_graph.html`) and the wiring health. An artifact whose
+input is not there yet is skipped, and one generator that fails never stops
+the others. The files land in watched folders, so the board repaints itself;
+the page then reports where the project stands. The topbar's **Update board**
+button (`POST /api/board/refresh`, same origin only, one refresh at a time)
+runs the same refresh on demand and shows the current phase, the steps still
+missing in it, the phases locked behind it, the open and failed gates, and
+which artifacts were regenerated, skipped or failed. `GET /api/board/summary`
+answers the same summary read-only, with the last refresh. What an agent
+writes (the proposal sky, the journal ranks that need OpenAlex) is not
+regenerated: the summary names it as a missing step instead. `--no-refresh`
+keeps the start read-only.
 
 **Read-only snapshot.** `--export-snapshot <dir>` runs the workspace's own
 backend once, in-process, and writes every read-only answer the dashboard needs
