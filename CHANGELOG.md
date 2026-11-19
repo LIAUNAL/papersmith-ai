@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.79.1
 
 - **`smith ui` finds the desktop from a terminal outside the session.** A
   terminal multiplexer started outside the graphical session inherits no
