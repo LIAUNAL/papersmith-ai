@@ -92,6 +92,27 @@ class JournalsStateTests(JournalCase):
         self.assertEqual(body["sjr_download_url"], "https://www.scimagojr.com/journalrank.php")
         self.assertFalse(body["notes_md"])
 
+    def test_each_scope_reads_its_own_result_and_reports_its_own_search(self) -> None:
+        # Spec S1: the panel shows the results of the scope it is on.
+        paper = self.root / "paper"
+        national = {"schema": 1, "scope": "national", "candidates": [{"display_name": "Revista Nacional"}]}
+        international = {"schema": 1, "candidates": [{"display_name": "Open Journal"}]}
+        (paper / "journal-candidates-national.json").write_text(json.dumps(national), encoding="utf-8")
+        (paper / "journal-candidates.json").write_text(json.dumps(international), encoding="utf-8")
+        names = lambda body: [c["display_name"] for c in body["candidates"]["candidates"]]
+        self.assertEqual(names(self.client.get("/api/journals?scope=national").json()), ["Revista Nacional"])
+        # no international file yet: the latest result counts when its scope is international (no scope key)
+        self.assertEqual(names(self.client.get("/api/journals?scope=international").json()), ["Open Journal"])
+        self.assertEqual(names(self.client.get("/api/journals").json()), ["Open Journal"])
+        (paper / "journal-candidates.json").write_text(json.dumps(national), encoding="utf-8")
+        self.assertIsNone(self.client.get("/api/journals?scope=international").json()["candidates"])
+        server._JOURNAL_LOCKS["national"].acquire()
+        try:
+            body = self.client.get("/api/journals?scope=international").json()
+        finally:
+            server._JOURNAL_LOCKS["national"].release()
+        self.assertEqual((body["busy"], body["busy_scopes"]), (False, {"international": False, "national": True}))
+
     def test_the_candidates_file_is_returned_with_every_field(self) -> None:
         self.candidates()
         body = self.client.get("/api/journals").json()
@@ -341,6 +362,19 @@ class JournalSearchTests(JournalCase):
             self.assertLess(time.monotonic() - started, 1.0)
             worker.join(10)
         self.assertEqual(result["status"], 200)
+
+    def test_a_national_search_runs_while_an_international_one_holds_its_lock(self) -> None:
+        # Spec S1 of odd/tasks/journal-scope-and-fit.md: one lock per scope.
+        self.stub(SEARCH_OK)
+        self.assertTrue(server._JOURNAL_LOCKS["international"].acquire(blocking=False))
+        try:
+            national = self.post({"scope": "national"})
+            international = self.post({"quartiles": "Q1"})
+        finally:
+            server._JOURNAL_LOCKS["international"].release()
+        self.assertEqual(national.status_code, 200)
+        self.assertEqual(international.status_code, 409)
+        self.assertEqual(self.calls(), [["search", "--workspace", str(self.root), "--scope", "national"]])
 
     def test_the_lock_is_released_after_a_failure(self) -> None:
         self.stub({"ok": False, "error": "PAPER_ABSENT", "message": "x"}, exit_code=2)
@@ -1415,7 +1449,7 @@ class PanelRenderTests(unittest.TestCase):
                 names: s.journals.candidates.candidates.length });""")
         self.assertEqual(result["calls"][0], ["POST", "/api/journals/search",
                                               json.dumps({"quartiles": "Q1-Q2", "oa_only": True, "limit": 5}, separators=(",", ":"))])
-        self.assertEqual(result["calls"][1][:2], ["GET", "/api/journals"])
+        self.assertEqual(result["calls"][1][:2], ["GET", "/api/journals?scope=international"])
         self.assertEqual(result["message"], {"kind": "ok", "text": "Búsqueda terminada: 3 revistas."})
         self.assertEqual(result["names"], 5)
 
@@ -1695,6 +1729,61 @@ class PanelNationalTests(unittest.TestCase):
         self.assertIn('data-jp-field="limit"', national)
         self.assertIn("La categoría inicial no puede ir después de la final", bad)
         self.assertIn("Scope", self.node(script, lang="en")[0])
+
+    def test_a_slow_international_search_never_strands_the_national_button(self) -> None:
+        # Spec S1 of odd/tasks/journal-scope-and-fit.md, reproduced in a browser: the single busy flag kept
+        # the national button disabled for the whole international search, and the international result
+        # then replaced the table while the form said national.
+        nat = json.dumps(NATIONAL_DOC, ensure_ascii=False)
+        result = self.node(f"""
+          const nat = {nat};
+          const intl = {{ schema: 1, candidates: [{{ display_name: 'Open International Journal', rank: 1 }}] }};
+          let release; const gate = new Promise((r) => {{ release = r; }});
+          const plain = global.fetch;
+          global.fetch = async (url, init) => {{
+            if (url === '/api/journals/search' && !JSON.parse(init.body).scope) await gate;
+            return plain(url, init);
+          }};
+          __routes.push(['POST', '/api/journals/search', {{ status: 200, body: {{ ok: true, candidates: [1, 2] }} }}]);
+          __routes.push(['GET', '/api/journals?scope=national', {{ status: 200, body: {{ ok: true, candidates: nat }} }}]);
+          __routes.push(['GET', '/api/journals?scope=international', {{ status: 200, body: {{ ok: true, candidates: intl }} }}]);
+          const button = () => (host.innerHTML.match(/data-jp-action="search"( disabled)?>([^<]*)</) || []).slice(1);
+          const names = () => P.state.journals.candidates.candidates.map((c) => c.display_name);
+          await click({{ 'data-jp-action': 'search' }});
+          const intlRunning = button();
+          await field({{ 'data-jp-field': 'scope' }}, {{ value: 'national' }}, 'change');
+          const nationalIdle = button();
+          await click({{ 'data-jp-action': 'search' }});
+          await new Promise((r) => setTimeout(r, 0));
+          const nationalDone = [button(), names(), P.state.message && P.state.message.text];
+          release();
+          await new Promise((r) => setTimeout(r, 10));
+          const afterIntl = [button(), names(), P.state.message && P.state.message.text];
+          await field({{ 'data-jp-field': 'scope' }}, {{ value: 'international' }}, 'change');
+          await new Promise((r) => setTimeout(r, 0));
+          const backToIntl = [button(), names(), P.state.message && P.state.message.text];
+          const urls = calls.filter((c) => c.method === 'GET' && c.url.startsWith('/api/journals')).map((c) => c.url);
+          out({{ intlRunning, nationalIdle, nationalDone, afterIntl, backToIntl, urls }});""")
+        self.assertEqual(result["intlRunning"][0], " disabled")
+        self.assertTrue(result["intlRunning"][1].startswith("Buscando…"))
+        self.assertEqual(result["nationalIdle"], [None, "Buscar revistas"])
+        national_names = [c["display_name"] for c in NATIONAL_DOC["candidates"]]
+        self.assertEqual(result["nationalDone"], [[None, "Buscar revistas"], national_names,
+                                                  "Búsqueda terminada: 2 revistas."])
+        # the international result arrives while the form is on national: the table stays national
+        self.assertEqual(result["afterIntl"][:2], [[None, "Buscar revistas"], national_names])
+        self.assertEqual(result["backToIntl"], [[None, "Buscar revistas"], ["Open International Journal"],
+                                                "Búsqueda terminada: 2 revistas."])
+        self.assertIn("/api/journals?scope=national", result["urls"])
+        self.assertIn("/api/journals?scope=international", result["urls"])
+
+    def test_the_search_button_counts_the_seconds_of_a_running_search(self) -> None:
+        script = f"""
+          const f = (patch) => ({self.FORM});
+          out(P.formHtml({{ busy: {{}}, sort: 'fit', sjrYear: '', form: f({{}}),
+                           searching: {{ international: Date.now() - 12000 }} }}));"""
+        html = self.node(script)
+        self.assertRegex(html, r'data-jp-action="search" disabled>Buscando… 1[12] s<')
 
     def test_a_national_result_shows_category_review_time_scope_and_matches(self) -> None:
         doc = json.dumps(NATIONAL_DOC, ensure_ascii=False)

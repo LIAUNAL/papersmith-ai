@@ -1620,6 +1620,7 @@ window.PAPERSMITH_I18N.es = {
   "journals.form.rangeInvalid": "El primer cuartil no puede ir después del último.",
   "journals.search": "Buscar revistas",
   "journals.searching": "Buscando…",
+  "journals.searchingFor": "Buscando… {seconds} s",
   "journals.searchDone": "Búsqueda terminada: {count} revistas.",
   "journals.searchFailed": "La búsqueda falló: {error}",
   "journals.analyze": "Analizar con agente",

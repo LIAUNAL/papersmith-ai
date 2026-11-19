@@ -848,7 +848,9 @@ _INTERNATIONAL_FIELDS = ("quartiles", "oa_only", "max_apc", "max_review_days", "
                          "include_unknown_quartile", "no_cache")
 #: One journal search at a time: it spends a shared API budget and writes
 #: `paper/journal-candidates.json`.
-_JOURNAL_LOCK = threading.Lock()
+#: One search per scope at a time: a slow international search never blocks a national one.
+_JOURNAL_LOCKS = {scope: threading.Lock() for scope in JOURNAL_SCOPES}
+_JOURNAL_LOCK = _JOURNAL_LOCKS["international"]
 
 _JOURNAL_ERROR_STATUS = {
     "QUARTILE_RANGE_INVALID": 422, "CATEGORY_RANGE_INVALID": 422, "PUBLINDEX_DATA_INVALID": 500,
@@ -1103,22 +1105,37 @@ def _compile_translation(root: Path, lang: str) -> tuple[dict[str, Any], int]:
     return _compile_tex(root, directory, directory / "main.pdf", search)
 
 
-def _read_candidates(root: Path) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
-    """paper/journal-candidates.json as (document, error); both None when absent."""
-    path = root / "paper" / "journal-candidates.json"
+def _read_candidates(root: Path, scope: str | None = None) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    """The journal search result as (document, error); both None when absent.
+
+    Without a scope, paper/journal-candidates.json (the latest search). With one, that scope's own
+    paper/journal-candidates-<scope>.json, else the latest search when it is of that scope."""
+    if scope is not None:
+        document, error = _read_candidates_file(root, f"journal-candidates-{scope}.json")
+        if document is not None or error is not None:
+            return document, error
+        document, error = _read_candidates_file(root, "journal-candidates.json")
+        if document is not None and (document.get("scope") or "international") != scope:
+            return None, None
+        return document, error
+    return _read_candidates_file(root, "journal-candidates.json")
+
+
+def _read_candidates_file(root: Path, name: str) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    path = root / "paper" / name
     status, text = paper_preview.bounded_read(root, path, JOURNALS_FILE_MAX_BYTES)
     if status == "absent":
         return None, None
     if status != "ok" or text is None:
         return None, {"code": "CANDIDATES_UNREADABLE",
-                      "message": f"paper/journal-candidates.json is {status.replace('_', ' ')}"}
+                      "message": f"paper/{name} is {status.replace('_', ' ')}"}
     try:
         document = json.loads(text)
         if not isinstance(document, dict) or not isinstance(document.get("candidates"), list):
             raise ValueError("no candidates list")
     except ValueError as exc:
         return None, {"code": "CANDIDATES_UNREADABLE",
-                      "message": f"paper/journal-candidates.json cannot be read ({exc})"}
+                      "message": f"paper/{name} cannot be read ({exc})"}
     return document, None
 
 
@@ -1147,8 +1164,8 @@ def _paper_review_state(root: Path) -> dict[str, Any]:
     return {"status": "ok", "rounds": [r for r in rounds if isinstance(r, dict)]}
 
 
-def _journals_state(root: Path) -> dict[str, Any]:
-    document, error = _read_candidates(root)
+def _journals_state(root: Path, scope: str | None = None) -> dict[str, Any]:
+    document, error = _read_candidates(root, scope)
     sjr = None
     status_payload, status_code = _run_journal_cli(
         root, ["status", "--workspace", str(root)], JOURNAL_QUICK_TIMEOUT_SECONDS)
@@ -1157,7 +1174,8 @@ def _journals_state(root: Path) -> dict[str, Any]:
     notes = paper_preview.bounded_read(root, root / "paper" / "journal-candidates.md", 1)[0] in ("ok", "too_large")
     state: dict[str, Any] = {"ok": True, "candidates": document, "sjr": sjr,
                              "sjr_download_url": SJR_DOWNLOAD_URL, "notes_md": notes,
-                             "busy": _JOURNAL_LOCK.locked()}
+                             "busy": _JOURNAL_LOCKS[scope or "international"].locked(),
+                             "busy_scopes": {name: lock.locked() for name, lock in _JOURNAL_LOCKS.items()}}
     if error:
         state["candidates_error"] = error
     return state
@@ -3614,8 +3632,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse(body, status_code=code, headers=dict(_PAPER_HEADERS))
 
     @app.get("/api/journals")
-    def api_journals() -> JSONResponse:
-        return JSONResponse(_journals_state(root_path), headers=dict(_PAPER_HEADERS))
+    def api_journals(scope: str | None = None) -> JSONResponse:
+        return JSONResponse(_journals_state(root_path, scope if scope in JOURNAL_SCOPES else None),
+                            headers=dict(_PAPER_HEADERS))
 
     @app.post("/api/journals/search")
     async def api_journals_search(request: Request) -> JSONResponse:
@@ -3628,8 +3647,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         argv, refusal = _search_arguments(payload)
         if refusal is not None:
             return JSONResponse(refusal, status_code=422, headers=dict(_PAPER_HEADERS))
-        if not _JOURNAL_LOCK.acquire(blocking=False):
-            body, status_code = _journal_error("SEARCH_RUNNING", "a journal search is already running", 409)
+        scope = payload.get("scope", "international")  # validated by _search_arguments
+        lock = _JOURNAL_LOCKS[scope]
+        if not lock.acquire(blocking=False):
+            body, status_code = _journal_error("SEARCH_RUNNING", f"a {scope} journal search is already running", 409)
             return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))
 
         def locked_search() -> tuple[dict[str, Any], int]:
@@ -3639,7 +3660,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 return _run_journal_cli(root_path, ["search", "--workspace", str(root_path), *argv],
                                         JOURNAL_SEARCH_TIMEOUT_SECONDS)
             finally:
-                _JOURNAL_LOCK.release()
+                lock.release()
 
         body, status_code = await asyncio.to_thread(locked_search)
         return JSONResponse(body, status_code=status_code, headers=dict(_PAPER_HEADERS))

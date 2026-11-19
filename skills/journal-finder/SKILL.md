@@ -163,8 +163,24 @@ or carries no dates keeps its `status` (`unreachable`, `no-dates`,
   an ascending range of `A1`, `A2`, `B`, case-insensitive; the default `A1-B`
   keeps all three. Journals outside the range, C and RC included, are counted
   in `excluded_reasons.category_range`.
-- **Fit.** `fit_score = 0.7 * topic_overlap + 0.3 * cited_in_paper`, each in
-  0..1 and divided by its maximum over the list. `topic_overlap` is a lexical
+- **Topic.** A journal is ranked only when it is on the paper's topic. The
+  paper's OpenAlex subfield profile comes from one `group_by=
+  primary_topic.subfield.id` works query per facet phrase (at most four, an
+  application phrase counting double), recorded in `query.subfields` and
+  cached in `paper/.journal-subfields.json` under a digest of the phrases, so
+  a later national search needs no network. A journal is on topic when the
+  paper cites it, or when its `subfield_affinity` (the mean over its OpenAlex
+  topics of the paper's share of each topic's subfield, weighted by how rare
+  that subfield is in the list: Education, carried by a third of the
+  journals, weighs little) reaches 25% of the best journal's. When OpenAlex
+  does not answer and nothing is cached, a note says so and the gate falls
+  back to the lexical match: at least two distinct paper terms (by stem, so
+  *classification* and *classify* are one) in the journal's name, scope or
+  topics. Off-topic journals are counted in `excluded_reasons.off_topic` and
+  never listed; the list may hold fewer journals than `--limit`.
+- **Fit.** `fit_score = 0.5 * subfield_affinity + 0.3 * topic_overlap + 0.2 *
+  cited_in_paper`, each in 0..1 and divided by its maximum over the journals
+  on topic. `topic_overlap` is a lexical
   match of the paper's terms (`query.terms`) with the journal's name and
   editorial scope and with the English names of its OpenAlex topics, subfields
   and fields: English and Spanish cognates are spelled alike before comparing
@@ -173,9 +189,11 @@ or carries no dates keeps its `status` (`unreachable`, `no-dates`,
   few journals share weigh more. Each
   candidate lists its `matched_terms`. `cited_in_paper` counts the paper's
   `refs.bib` entries whose journal name is the journal's. A component that is
-  zero for every journal drops out, as on the international path. Journals
-  with no fit stay in the list, ranked last.
-- **Output.** The same `paper/journal-candidates.json`, with `scope:
+  zero for every journal drops out, as on the international path.
+- **Output.** The same `paper/journal-candidates.json` (the latest search of
+  either scope; each search at the default path also keeps its own
+  `paper/journal-candidates-<scope>.json`, which the dashboard shows for the
+  scope it is on and `venue select` also reads), with `scope:
   "national"`, `source: "publindex"`, `publindex` (`period`, `resolution`,
   `valid_until`, `file`) and `quartiles` holding the categories kept. Each
   candidate has `id: "publindex:<id>"`, `quartile: null`,

@@ -122,6 +122,11 @@
     pdfView: 'canonical',
     sort: 'fit',
     busy: {},
+    // A search per scope can run at once: scope -> the time it started (ms). The button and the
+    // results follow the scope the form is on, so a slow international search never strands national.
+    searching: {},
+    // The outcome of a search that ended while the form was on the other scope, shown on return.
+    scopeMessages: {},
     message: null,
     sjrMessage: null,
     statement: '',
@@ -446,6 +451,14 @@
     return `<div class="journals-msg journals-msg--${kind}" role="status">${esc(message.text)}</div>`;
   }
 
+  // When the search of the form's scope started (ms), or 0 when none runs.
+  const searchingSince = (s, form) => ((s.searching || {})[isNational(form) ? 'national' : 'international'] || 0);
+  function searchLabel(s, form) {
+    const since = searchingSince(s, form);
+    if (!since) return t('journals.search');
+    return t('journals.searchingFor', { seconds: Math.max(0, Math.round((Date.now() - since) / 1000)) });
+  }
+
   function formHtml(s) {
     const form = s.form;
     const options = (selected) => QUARTILES.map((q) =>
@@ -463,8 +476,8 @@
     const sourceOptions = SOURCES.map((key) =>
       `<option value="${key}"${key === (SOURCES.indexOf(form.source) >= 0 ? form.source : 'auto') ? ' selected' : ''}>${esc(SOURCE_LABEL[key]())}</option>`).join('');
     const actions = `<label>${esc(t('journals.form.limit'))}<input type="number" min="1" max="50" step="1" data-jp-field="limit" value="${esc(form.limit)}"></label>`
-      + `<button type="button" class="btn btn--primary btn--sm" data-jp-action="search"${s.busy.search ? ' disabled' : ''}>`
-      + `${esc(s.busy.search ? t('journals.searching') : t('journals.search'))}</button>`
+      + `<button type="button" class="btn btn--primary btn--sm" data-jp-action="search"${searchingSince(s, form) ? ' disabled' : ''}>`
+      + `${esc(searchLabel(s, form))}</button>`
       + `<button type="button" class="btn btn--sm" data-jp-action="analyze" title="${esc(t('journals.analyzeTitle'))}">${esc(t('journals.analyze'))}</button>`
       + `<label>${esc(t('journals.sort.label'))}<select data-jp-field="sort">${sorts}</select></label>`;
     if (national) {
@@ -815,9 +828,31 @@
     if (el) el.innerHTML = panelHtml(state);
   }
 
+  const scopeOf = (form) => (isNational(form) ? 'national' : 'international');
+
+  // The results of the scope the form is on (each scope keeps its own result file).
   async function loadJournals() {
-    const res = await api('/api/journals');
-    if (res.ok) state.journals = res.body;
+    const scope = scopeOf(state.form);
+    const res = await api(`/api/journals?scope=${scope}`);
+    if (res.ok && scopeOf(state.form) === scope) state.journals = res.body;
+  }
+
+  let ticker = null;
+  // Count the seconds on the search button without redrawing the panel (a redraw would drop focus).
+  function tick() {
+    const running = Object.keys(state.searching).length > 0;
+    if (!running) {
+      if (ticker) clearInterval(ticker);
+      ticker = null;
+      return;
+    }
+    const button = host() && host().querySelector ? host().querySelector('[data-jp-action="search"]') : null;
+    if (button && searchingSince(state, state.form)) button.textContent = searchLabel(state, state.form);
+  }
+  function startTicker() {
+    if (ticker || typeof setInterval !== 'function') return;
+    ticker = setInterval(tick, 1000);
+    if (ticker && typeof ticker.unref === 'function') ticker.unref();
   }
 
   async function loadVenues() {
@@ -854,17 +889,26 @@
   }
 
   async function doSearch() {
-    if (!rangeValid(state.form) || state.busy.search) return;
+    const scope = scopeOf(state.form);
+    if (!rangeValid(state.form) || state.searching[scope]) return;
+    state.searching[scope] = Date.now();
     state.busy.search = true;
     state.message = null;
+    delete state.scopeMessages[scope];
+    startTicker();
     render();
     const res = await api('/api/journals/search', 'POST', searchBody(state.form));
-    state.busy.search = false;
-    if (res.ok && res.body.ok !== false) {
-      await loadJournals();
-      state.message = { kind: 'ok', text: t('journals.searchDone', { count: list(res.body.candidates).length }) };
+    delete state.searching[scope];
+    state.busy.search = Object.keys(state.searching).length > 0;
+    const message = res.ok && res.body.ok !== false
+      ? { kind: 'ok', text: t('journals.searchDone', { count: list(res.body.candidates).length }) }
+      : { kind: 'bad', text: t('journals.searchFailed', { error: failure(res) }) };
+    if (scopeOf(state.form) === scope) {
+      if (message.kind === 'ok') await loadJournals();
+      state.message = message;
     } else {
-      state.message = { kind: 'bad', text: t('journals.searchFailed', { error: failure(res) }) };
+      // The form moved to the other scope meanwhile: keep its table, tell this outcome on return.
+      state.scopeMessages[scope] = message;
     }
     render();
   }
@@ -1001,7 +1045,11 @@
       state.form.includeUnknown = !!el.checked;
     } else if (field === 'scope') {
       state.form.scope = SCOPES.indexOf(el.value) >= 0 ? el.value : 'international';
+      const scope = scopeOf(state.form);
+      state.message = state.scopeMessages[scope] || null;
+      delete state.scopeMessages[scope];
       render();
+      loadJournals().then(render);
     } else if (field === 'catFrom' || field === 'catTo') {
       state.form[field] = NATIONAL_CATEGORIES.indexOf(el.value) >= 0 ? el.value : (field === 'catFrom' ? 'A1' : 'B');
       render();
