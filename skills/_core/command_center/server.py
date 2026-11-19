@@ -846,9 +846,10 @@ PUBLINDEX_CATEGORIES = ("A1", "A2", "B")
 #: Body fields that only the international (OpenAlex/SJR) search reads.
 _INTERNATIONAL_FIELDS = ("quartiles", "oa_only", "max_apc", "max_review_days", "source",
                          "include_unknown_quartile", "no_cache")
-#: One journal search at a time: it spends a shared API budget and writes
-#: `paper/journal-candidates.json`.
-#: One search per scope at a time: a slow international search never blocks a national one.
+#: One search per scope at a time: a slow international search never blocks a national one. The two can
+#: share the OpenAlex budget at once, but a national search asks it at most SUBFIELD_PHRASES group_by
+#: queries, once per paper (its profile is cached in the workspace), against the hundreds an international
+#: search spends.
 _JOURNAL_LOCKS = {scope: threading.Lock() for scope in JOURNAL_SCOPES}
 _JOURNAL_LOCK = _JOURNAL_LOCKS["international"]
 
@@ -1174,7 +1175,9 @@ def _journals_state(root: Path, scope: str | None = None) -> dict[str, Any]:
     notes = paper_preview.bounded_read(root, root / "paper" / "journal-candidates.md", 1)[0] in ("ok", "too_large")
     state: dict[str, Any] = {"ok": True, "candidates": document, "sjr": sjr,
                              "sjr_download_url": SJR_DOWNLOAD_URL, "notes_md": notes,
-                             "busy": _JOURNAL_LOCKS[scope or "international"].locked(),
+                             # without a scope, busy means any search runs (as before the per-scope locks)
+                             "busy": (_JOURNAL_LOCKS[scope].locked() if scope
+                                      else any(lock.locked() for lock in _JOURNAL_LOCKS.values())),
                              "busy_scopes": {name: lock.locked() for name, lock in _JOURNAL_LOCKS.items()}}
     if error:
         state["candidates_error"] = error

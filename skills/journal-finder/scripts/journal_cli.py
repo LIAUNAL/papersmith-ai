@@ -207,6 +207,9 @@ SUBFIELD_MIN_SHARE = 0.03
 SUBFIELD_FLOOR = 0.25
 #: Without a profile, a journal is on topic when its name, scope or topics share this many distinct paper terms.
 LEXICAL_MIN_TERMS = 2
+#: After OpenAlex fails to answer the profile, it is not asked again for this many seconds (the national search
+#: then ranks with its lexical gate at once instead of paying the deadline on every search).
+SUBFIELD_RETRY_SECONDS = 900
 #: Each search also keeps its own result, so the dashboard can show the scope it is on.
 SCOPED_CANDIDATES = "journal-candidates-{scope}.json"
 NATIONAL_MIN_PREFIX = 5
@@ -2530,10 +2533,17 @@ def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[st
         return {}
     digest = hashlib.sha256(json.dumps(phrases, ensure_ascii=False).encode("utf-8")).hexdigest()
     cache = workspace / "paper" / SUBFIELD_PROFILE_FILE
+    fallback = "the national match falls back to its lexical gate, two distinct paper terms at least"
     try:
         cached = json.loads(cache.read_text(encoding="utf-8"))
         if cached.get("digest") == digest and isinstance(cached.get("subfields"), dict):
             return {str(k): float(v) for k, v in cached["subfields"].items()}
+        failed_at = float(cached.get("failed_at") or 0) if cached.get("digest") == digest else 0.0
+        if failed_at and time.time() - failed_at < SUBFIELD_RETRY_SECONDS:
+            retry = dt.datetime.fromtimestamp(failed_at + SUBFIELD_RETRY_SECONDS, dt.timezone.utc)
+            notes.append(f"OpenAlex did not answer the paper's subfield profile recently and is not asked again "
+                         f"before {retry.isoformat(timespec='minutes')}: {fallback}")
+            return {}
     except (OSError, ValueError, AttributeError, TypeError):
         pass
     services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_NATIONAL_DEADLINE", 45.0)),
@@ -2552,9 +2562,12 @@ def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[st
                 if share >= SUBFIELD_MIN_SHARE:
                     name = group["key_display_name"]
                     shares[name] = shares.get(name, 0.0) + share * weight / total_weight
-    except HttpFailure as exc:
-        notes.append(f"OpenAlex did not answer the paper's subfield profile ({exc}): the national match falls back "
-                     f"to its lexical gate, two distinct paper terms at least")
+    except Exception as exc:  # noqa: BLE001 - any failure here degrades to the offline gate, never fails the search
+        notes.append(f"OpenAlex did not answer the paper's subfield profile ({type(exc).__name__}: {exc}): {fallback}")
+        try:
+            _write_json(cache, {"digest": digest, "failed_at": time.time()})
+        except OSError:
+            pass
         return {}
     total = sum(shares.values())
     if not total:
@@ -2643,6 +2656,10 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
     # A journal the paper cites is always on topic; otherwise the subfield profile decides, or, without one,
     # at least LEXICAL_MIN_TERMS distinct paper terms in the journal's name, scope or topics.
     top_affinity = max((r[4] for r in rows), default=0.0)
+    if shares and not top_affinity:
+        notes.append("no journal of the list shares the paper's OpenAlex subfields (or only subfields every journal "
+                     "carries): the national match falls back to its lexical gate, two distinct paper terms at least")
+        shares = {}
     on_topic = []
     for row in rows:
         _, _, matched, cited, affinity = row

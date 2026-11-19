@@ -319,7 +319,7 @@ def _with_topics(document: dict, subfields: dict[int, list[str]]) -> dict:
 class SubfieldOpenAlex:
     """A stand-in OpenAlex answering `group_by=primary_topic.subfield.id` for any works search."""
 
-    def __init__(self, groups):
+    def __init__(self, groups, status=200, body=None):
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from urllib.parse import parse_qs, urlparse
@@ -333,12 +333,13 @@ class SubfieldOpenAlex:
             def do_GET(self):
                 params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
                 outer.requests.append(params)
-                body = json.dumps({"meta": {"count": 100}, "group_by": groups}).encode()
-                self.send_response(200)
+                payload = body if body is not None else {"meta": {"count": 100}, "group_by": groups}
+                data = json.dumps(payload).encode()
+                self.send_response(status)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(body)
+                self.wfile.write(data)
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.server.daemon_threads = True
@@ -404,6 +405,35 @@ class NationalTopicalFitTests(NationalCase):
         self.assertIn("Revista de Neurociencia Computacional", names)
         self.assertEqual(doc["query"]["subfields"], [])
         self.assertTrue(any("two distinct paper terms" in note for note in doc["notes"]))
+
+    def use(self, server):
+        self.openalex.close()
+        self.openalex = server
+        self.addCleanup(server.close)
+
+    def test_a_profile_no_journal_shares_falls_back_to_the_lexical_gate(self):
+        self.use(SubfieldOpenAlex([{"key": "x", "key_display_name": "Quantum Optics", "count": 10}]))
+        self.assertEqual(self.with_openalex().code, 0)
+        doc = self.written()
+        names = [c["display_name"] for c in doc["candidates"]]
+        self.assertEqual(sorted(names), ["Ingeniería y Señales", "Revista de Neurociencia Computacional"])
+        self.assertTrue(any("no journal of the list shares" in note for note in doc["notes"]))
+
+    def test_an_unexpected_openalex_answer_degrades_to_the_lexical_gate(self):
+        self.use(SubfieldOpenAlex([], body=["not", "an", "object"]))
+        result = self.with_openalex()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        self.assertEqual(self.written()["query"]["subfields"], [])
+        self.assertTrue(any("two distinct paper terms" in note for note in self.written()["notes"]))
+
+    def test_a_failed_profile_is_not_asked_again_for_a_while(self):
+        self.use(SubfieldOpenAlex([], status=500))
+        self.assertEqual(self.with_openalex().code, 0)
+        asked = len(self.openalex.requests)
+        self.assertGreater(asked, 0)
+        self.assertEqual(self.with_openalex().code, 0)
+        self.assertEqual(len(self.openalex.requests), asked)
+        self.assertTrue(any("not asked again before" in note for note in self.written()["notes"]))
 
     def test_each_scope_keeps_its_own_result_beside_the_latest_one(self):
         self.assertEqual(self.with_openalex().code, 0)

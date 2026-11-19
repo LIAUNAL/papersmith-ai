@@ -112,6 +112,12 @@ class JournalsStateTests(JournalCase):
         finally:
             server._JOURNAL_LOCKS["national"].release()
         self.assertEqual((body["busy"], body["busy_scopes"]), (False, {"international": False, "national": True}))
+        server._JOURNAL_LOCKS["national"].acquire()
+        try:
+            unscoped = self.client.get("/api/journals").json()
+        finally:
+            server._JOURNAL_LOCKS["national"].release()
+        self.assertTrue(unscoped["busy"])  # without a scope, busy means any search runs
 
     def test_the_candidates_file_is_returned_with_every_field(self) -> None:
         self.candidates()
