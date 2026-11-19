@@ -11,6 +11,21 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **`smith ui` finds the desktop from a terminal outside the session.** A
+  terminal multiplexer started outside the graphical session inherits no
+  `DISPLAY` or `WAYLAND_DISPLAY`, so `smith ui` printed the dashboard URL
+  instead of opening it, and the terminal banner's *Activate* button only
+  reported that no browser could be opened. On Linux the server now also
+  looks for this user's own display socket: the compositor's `wayland-N` in
+  `XDG_RUNTIME_DIR` (never the `.lock` file), else `/tmp/.X11-unix/X<N>`.
+  Found only that way, the URL goes to `xdg-open` with that display named in
+  the child's environment (the server's own is left alone, and the login URL
+  never reaches the child's output); when `xdg-open` is missing or fails, the
+  URL is printed as before. Without any display, Linux still prints the URL
+  and never starts a text browser; WSL and macOS are unchanged.
+
 ## 0.79.0
 
 - **The board refreshes itself.** `smith ui` now regenerates, in the

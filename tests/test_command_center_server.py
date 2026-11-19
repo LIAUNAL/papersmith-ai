@@ -282,8 +282,10 @@ class BrowserLaunchTests(unittest.TestCase):
         launch.assert_not_called()
 
     def test_non_wsl_does_not_launch_windows_browser(self) -> None:
+        # The host's own display sockets must not decide this test.
         with (mock.patch("webbrowser.open", return_value=False),
               mock.patch.object(server, "_is_wsl", return_value=False),
+              mock.patch.object(server, "_socket_display", return_value=None),
               mock.patch.object(server.subprocess, "Popen") as launch):
             server.open_browser("http://localhost:8080/")
         launch.assert_not_called()

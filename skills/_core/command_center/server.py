@@ -26,6 +26,7 @@ import json
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import logging
@@ -4615,8 +4616,83 @@ def _is_wsl() -> bool:
 WSL_BROWSER_LAUNCHERS = ("wslview", "explorer.exe")
 
 
-def _has_graphical_display() -> bool:
+#: Where an X server listens on its local socket, one ``X<N>`` per display.
+X11_SOCKET_DIR = Path("/tmp/.X11-unix")
+_WAYLAND_SOCKET = re.compile(r"wayland-(\d+)")
+_X11_SOCKET = re.compile(r"X(\d+)")
+#: Seconds open_browser waits for ``xdg-open`` to report a failure; one still
+#: running after that started a browser in the foreground.
+XDG_OPEN_WAIT_S = 5.0
+
+
+def _own_sockets(directory: str | Path, pattern: re.Pattern[str]) -> list[tuple[int, str]]:
+    """``(N, name)`` of each Unix socket in ``directory`` whose whole name
+    matches ``pattern`` and that belongs to this user, lowest ``N`` first.
+    A ``wayland-0.lock`` file, a plain file and another user's socket do not
+    count: the login URL must never reach another user's display."""
+    try:
+        entries = list(os.scandir(directory))
+    except OSError:
+        return []
+    found: list[tuple[int, str]] = []
+    for entry in entries:
+        match = pattern.fullmatch(entry.name)
+        if match is None:
+            continue
+        try:
+            info = entry.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        if stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid():
+            found.append((int(match.group(1)), entry.name))
+    return sorted(found)
+
+
+def _socket_display() -> dict[str, str] | None:
+    """The variable that names a graphical session this user can reach when
+    the environment names none: a terminal multiplexer started outside the
+    desktop session inherits no DISPLAY or WAYLAND_DISPLAY, but the
+    compositor's ``wayland-N`` socket in XDG_RUNTIME_DIR, or an X server's
+    ``/tmp/.X11-unix/X<N>``, is still there. ``None`` without one."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        wayland = _own_sockets(runtime, _WAYLAND_SOCKET)
+        if wayland:
+            return {"WAYLAND_DISPLAY": wayland[0][1]}
+    x11 = _own_sockets(X11_SOCKET_DIR, _X11_SOCKET)
+    if x11:
+        return {"DISPLAY": f":{x11[0][0]}"}
+    return None
+
+
+def _named_display() -> bool:
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _has_graphical_display() -> bool:
+    return _named_display() or _socket_display() is not None
+
+
+def _open_on_display(url: str, display: dict[str, str]) -> bool:
+    """Hand ``url`` to ``xdg-open`` with ``display`` added to a copy of the
+    environment (the server's own is left alone); print it when that fails."""
+    launcher = shutil.which("xdg-open")
+    if launcher:
+        try:
+            # argv keeps the query string intact; the login URL never travels
+            # through the child's output.
+            child = subprocess.Popen([launcher, url], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     close_fds=True, env={**os.environ, **display})
+            try:
+                if child.wait(timeout=XDG_OPEN_WAIT_S) == 0:
+                    return True
+            except subprocess.TimeoutExpired:
+                return True
+        except OSError:
+            pass
+    _print_url(url)
+    return False
 
 
 def _print_url(url: str) -> None:
@@ -4649,8 +4725,9 @@ def open_browser(url: str) -> bool:
     Under WSL the Windows browser is reached through ``wslview`` (wslu), then
     ``explorer.exe``. On Linux without a graphical display Python's
     ``webbrowser`` would start a text browser (w3m, lynx) on the server's own
-    terminal, so the URL is printed instead. macOS and desktop Linux use
-    ``webbrowser``.
+    terminal, so the URL is printed instead. A display found only through its
+    socket (a terminal outside the desktop session) is named to ``xdg-open``
+    in the child's environment. macOS and desktop Linux use ``webbrowser``.
     """
     if _is_wsl():
         for launcher in WSL_BROWSER_LAUNCHERS:
@@ -4667,9 +4744,12 @@ def open_browser(url: str) -> bool:
                 return True
             except OSError:
                 continue
-    if sys.platform.startswith("linux") and not _has_graphical_display():
-        _print_url(url)
-        return False
+    if sys.platform.startswith("linux") and not _named_display():
+        display = _socket_display()
+        if display is None:
+            _print_url(url)
+            return False
+        return _open_on_display(url, display)
     import webbrowser
 
     try:
