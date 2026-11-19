@@ -4320,6 +4320,8 @@
           if (doc && doc.documentElement && doc.URL !== 'about:blank') doc.documentElement.setAttribute('data-theme', theme);
         } catch (_) { /* another origin keeps its own theme */ }
       });
+      // Caztor runs on another origin: it gets the theme as a message.
+      sendThemeToCaztor(theme);
     }
 
     function toggleTheme() {
@@ -7418,6 +7420,11 @@
       const frame = document.getElementById('caztorFrame');
       if (!frame || event.source !== frame.contentWindow) return;
       const data = event.data;
+      // Caztor listens now: give it the dashboard's theme.
+      if (data && data.type === 'caztor:ready') {
+        sendThemeToCaztor(document.documentElement.getAttribute('data-theme') || 'dark');
+        return;
+      }
       if (!data || data.type !== 'caztor:pdf-selection' || typeof data.text !== 'string') return;
       const text = data.text.trim();
       if (!text) return;
@@ -7427,6 +7434,15 @@
       savedSelectedRangeRects = null;
       showSelectionCard(text, currentSelectedPage);
     });
+
+    function sendThemeToCaztor(theme) {
+      let origin;
+      // The page applies its theme before this script declares the Caztor state: nothing to send yet then.
+      try { origin = caztorOrigin; } catch (_) { return; }
+      const frame = document.getElementById('caztorFrame');
+      if (!frame || !frame.contentWindow || !origin) return;
+      frame.contentWindow.postMessage({ type: 'caztor:theme', theme: theme === 'light' ? 'light' : 'dark' }, origin);
+    }
 
     function sendToCaztorChat(text) {
       const frame = document.getElementById('caztorFrame');
