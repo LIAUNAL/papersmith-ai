@@ -874,6 +874,7 @@ staleness is detectable) and 100 dpi page images under `paper/.qa/pages/`; the
 dashboard's PDF preview tab lists the findings with page thumbnails
 (`GET /api/paper/qa`), and `smith audit` prints the stored count and staleness.
 A QA error is a `warning` under `manuscript_qa` and never fails the compile.
+**Length budget (both lines).** A manuscript runs at most 45 pages in Elsevier's submission layout (elsarticle `preprint,12pt`, one column), references included, or 25 in its two-column layout (`5p`). The canonical review-mode manuscript is not Elsevier-sized, so the QA pass estimates Elsevier pages from `main.tex`: 1 front-matter page + prose words / 450 + 0.5 per figure or table + unique cited references / 14 (`page_budget` in `qa.json`; a compiled elsarticle is measured against its own layout instead). Past the limit it reports a `page-budget` finding and a warning line in the PDF tab. Plan for it while drafting: about 11,000 words of body for a review at 200 references and 8 floats, about 13,000 for an experimental paper at 40 references and 12 floats; shorten the prose, merge floats, or cut references to the most relevant when it runs over. Every `tabular` of two columns or fewer, or two rows or fewer, is a `table-shape` finding: a bar or pie chart, or the sentence, carries those values better.
 **Why not Playwright:** it renders HTML, not PDFs, so it cannot see where
 pdfTeX placed a glyph; the check reads the PDF itself (pypdfium2 geometry,
 poppler rasters). Playwright stays for the dashboard UI (`ui/e2e`).

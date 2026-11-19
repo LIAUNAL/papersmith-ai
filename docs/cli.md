@@ -1537,7 +1537,11 @@ interpreter (it needs pypdfium2). It infers the text block of each page of
 or drawing passing it by more than 1 pt (`overflow`), text inside a figure or a
 ruled table that prints outside 0.70–0.90 × the body size (`figure-font`,
 `table-font`), and every `Overfull \hbox` of `paper/main.log` with its source
-lines and page (`overfull`). It writes `paper/.qa/qa.json`, holding the sha256
+lines and page (`overfull`). It flags every `tabular` of two columns or two rows
+(`table-shape`: a bar or pie chart, or the sentence, carries it better) and
+estimates the length in Elsevier pages, references included, from `main.tex`
+(`page_budget`; past 45 single-column or 25 two-column pages, a `page-budget`
+finding). It writes `paper/.qa/qa.json`, holding the sha256
 of the `main.pdf` it measured, and 100 dpi page images under `paper/.qa/pages/`
 (`pdftoppm`). It reports; it never repairs. Exit `0` when the report was written,
 findings or not; `1` without `paper/main.pdf` or the module. A successful
