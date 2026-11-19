@@ -376,6 +376,15 @@ document): never smaller, and never at the body size.
 - **A table wider than `\textwidth` is split, transposed, or moved** to a `table*` or
   a landscape page when the venue allows either — never shrunk below the floor.
 - **The caption goes above the table.**
+- **A table has at least three columns and three rows.** A table of two
+  columns (a label and one value) or of two rows (a header and one record, or
+  two records) is a grid with nothing to cross: explore first whether a chart
+  reads better. Counts or measures across categories become a bar chart; the
+  shares of one whole, with at most six parts, become a pie chart; one or two
+  values go in the sentence. The chart is drawn by a script from the recorded
+  values, its provenance recorded with `paper_cli.py figure provenance`, and
+  placed with `paper_cli.py place`. Keep such a small table only when its
+  cells are words no chart can carry.
 
 ## LIA house style
 
@@ -453,6 +462,8 @@ ablation here — the rest surface them in the results, which this contract forb
 
 ## Disqualifiers
 
+- A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
+- A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
 - A real dataset described here whose explanation does not close on its
   acquisition-protocol diagram, or whose diagram is boxes alone.
 - A preprocessing step, partition protocol, statistical test or comparison criterion

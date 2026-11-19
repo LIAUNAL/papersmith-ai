@@ -3413,6 +3413,7 @@ leaving its record under `review/`:
 | `queue`, `screen`, `conflicts`, `kappa` (stages `ta`, `ft`) | `review/screening.jsonl` | 8, 16 |
 | `appraise`, `extract` | `review/appraisal.jsonl`, `review/extraction.jsonl` | 9, 11, 17, 18 |
 | `prisma`, `flow`, `biblio` | `review/prisma.json`, `paper/Figures/prisma-flow.svg`, `review/biblio.json` | 16 |
+| `prioritize [--floor 100 --cap 200 --other-references N] [--apply --criterion E<n> --reviewer <name>]` | `review/prioritization.json`; with `--apply`, final full-text exclusions in `review/screening.jsonl` | 5, 16 |
 | `checklist`, `status` | nothing; reports the 27 items and the records | all |
 
 **Human gates.** The operator approves the protocol before any search and
@@ -3427,7 +3428,14 @@ they require the `review-registration` declaration and copy every count from
 open problems) and write the results as a comparative thematic synthesis: one
 subsection per theme, sub-themes with a bold label that compare several studies
 along one dimension, a closing sentence on what the evidence supports, and one
-comparison table per theme. Their house style and disqualifiers are measured
+comparison table per theme. The introduction tells the review's idea, novelty
+and key points in one proposal paragraph before the agenda (no RQ labels or
+short contribution items), the open problems and the discussion's challenges
+are linked paragraphs of six to eight lines with citations, never bold items,
+and the methods draw the protocol as a topic-adapted flow diagram
+(`protocol-flow`, by `diagram-author`) instead of a table. The paper cites 100
+to 200 references, cut with `prioritize` when the search yields more. Their
+house style and disqualifiers are measured
 on the group's MDPI review A029; the experimental contracts are untouched.
 
 **What it refuses.** A search or a decision on an unapproved or silently

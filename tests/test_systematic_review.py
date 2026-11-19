@@ -6,6 +6,7 @@ server, the way an agent runs it in a review workspace.
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import shutil
@@ -365,6 +366,77 @@ class ScreeningAndSynthesisTests(ReviewCase):
         umask = os.umask(0)
         os.umask(umask)
         self.assertEqual(mode, 0o666 & ~umask)
+
+
+class ReferenceBudgetTests(ReviewCase):
+    """`prioritize` keeps the review within 100-200 references, ranking by quartile and topical relation."""
+
+    BIB = """@article{a, title={Graph neural network for drug discovery}, journal={Journal Alpha}, year={2021}, doi={10.9/a}}
+@article{b, title={Graph neural network molecule toxicity}, journal={Journal Beta}, year={2022}, doi={10.9/b}}
+@article{c, title={Graph neural network drug screening}, journal={Journal Gamma}, year={2023}, doi={10.9/c}}
+@article{d, title={Weather forecasting with recurrent models}, journal={Journal Delta}, year={2020}, doi={10.9/d}}
+"""
+
+    def setUp(self):
+        super().setUp()
+        protocol = json.loads(json.dumps(PROTOCOL))
+        protocol["criteria"]["exclusion"].append(
+            {"id": "E3", "text": "Ranked below the reference budget", "reason": "keep 100-200 references"})
+        self.write_protocol(protocol)
+        self.ok("protocol", "approve", "--by", "Operator")
+        bib = self.tmp / "export.bib"
+        bib.write_text(self.BIB, encoding="utf-8")
+        self.ok("import", "--file", str(bib), "--source", "scopus", "--query", "graph neural network")
+        self.ok("dedupe")
+        for record in ("R0001", "R0002", "R0003", "R0004"):
+            for stage in ("ta", "ft"):
+                for reviewer in ("agent", "operator"):
+                    self.ok("screen", "--stage", stage, "--record", record, "--reviewer", reviewer,
+                            "--decision", "include")
+        self.sjr = self.tmp / "sjr.csv.gz"
+        with gzip.open(self.sjr, "wt", encoding="utf-8") as handle:
+            handle.write("Rank;Sourceid;Title;Type;Issn;SJR Best Quartile\n"
+                         '1;1;"Journal Alpha";journal;"1";Q1\n'
+                         '2;2;"Journal Beta";journal;"2";Q3\n'
+                         '3;4;"Journal Delta";journal;"4";Q1\n')
+
+    def budget(self, *extra: str) -> tuple[str, ...]:
+        return ("prioritize", "--sjr", str(self.sjr), "--floor", "1", "--cap", "3", "--other-references", "1",
+                *extra)
+
+    def test_within_the_budget_nothing_is_dropped(self):
+        result = self.ok("prioritize", "--sjr", str(self.sjr), "--floor", "1", "--cap", "10")
+        self.assertEqual((result["budget"], result["drop"]), (10, []))
+        self.assertEqual(len(result["keep"]), 4)
+
+    def test_above_the_budget_the_least_relevant_and_lowest_impact_studies_are_dropped(self):
+        result = self.ok(*self.budget())
+        self.assertEqual(result["budget"], 2)
+        self.assertEqual([s["id"] for s in result["keep"]], ["R0001", "R0002"])
+        self.assertEqual([s["id"] for s in result["drop"]], ["R0003", "R0004"])
+        by_id = {s["id"]: s for s in result["keep"] + result["drop"]}
+        self.assertEqual([by_id[i]["quartile"] for i in ("R0001", "R0002", "R0003", "R0004")],
+                         ["Q1", "Q3", None, "Q1"])
+        self.assertEqual(by_id["R0004"]["relation"], 0.0)
+        self.assertGreater(by_id["R0001"]["score"], by_id["R0002"]["score"])
+        written = json.loads((self.root / "review" / "prioritization.json").read_text(encoding="utf-8"))
+        self.assertEqual([s["id"] for s in written["drop"]], ["R0003", "R0004"])
+        self.assertFalse(any(r["decision"] == "exclude" for r in self.jsonl("screening.jsonl")))  # a dry run
+
+        self.refused("CRITERION_MISSING", *self.budget("--apply", "--reviewer", "operator"))
+        self.refused("CRITERION_UNKNOWN", *self.budget("--apply", "--reviewer", "operator", "--criterion", "E9"))
+        self.refused("REVIEWER_MISSING", *self.budget("--apply", "--criterion", "E3"))
+        applied = self.ok(*self.budget("--apply", "--reviewer", "operator", "--criterion", "E3"))
+        self.assertEqual(applied["recorded"], ["R0003", "R0004"])
+        counts = self.ok("prisma")["counts"]
+        self.assertEqual((counts["screening"]["reports_excluded"], counts["included"]["studies"]), ({"E3": 2}, 2))
+        self.assertEqual(self.ok(*self.budget())["drop"], [])  # applied once, nothing left to drop
+
+    def test_the_default_budget_is_100_to_200_and_a_short_review_is_flagged(self):
+        result = self.ok("prioritize", "--sjr", str(self.sjr))
+        self.assertEqual((result["floor"], result["cap"], result["drop"]), (100, 200, []))
+        self.assertTrue(any("below the floor of 100" in note for note in result["notes"]))
+        self.refused("ARGUMENT_INVALID", "prioritize", "--floor", "50", "--cap", "40")
 
 
 if __name__ == "__main__":

@@ -556,7 +556,10 @@ conclusions, and the shared back matter); and its
    logged with its date, query and count; duplicates removed by DOI and title.
 4. **Screening**: title/abstract, then full text, by two reviewers (the agent
    can be one, the operator is always the other), with conflicts settled by
-   the operator and Cohen's kappa reported.
+   the operator and Cohen's kappa reported. The review cites 100 to 200
+   references: when more studies pass, `review_cli.py prioritize` ranks them by
+   topical relation and journal quartile (SJR) and records the excess as a
+   full-text exclusion with its own criterion.
 5. **Appraisal and extraction**, every value with the quote that holds it.
 6. **Synthesis**: the PRISMA flow counts and diagram
    (`paper/Figures/prisma-flow.svg`), bibliometrics, taxonomy and the answer

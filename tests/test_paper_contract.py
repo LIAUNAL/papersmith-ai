@@ -1045,10 +1045,12 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: places the back matter before the references and the appendices after them.
 #: 01, 02, 03, 04 and 07 re-captured (0.79.0): a disqualifier keeps the paper to
 #: the final, approved experiments, never the iteration rounds behind them.
+#: 02 and 03 re-captured (0.80.0): a table of two columns or two rows becomes a
+#: bar or pie chart, or the sentence.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "6828a8784f4e8691e5d51b9c9700ad56b1fcc5ce1e93d098eb574dce1af9d689",
-    "02-experimental-setup.md": "0401b51cfa803aa473786a853f2c693a65188615ad4661dbaf1ae5147087d5b3",
-    "03-results-and-discussion.md": "a98b275010c20e51d99839942c5ccfd3c700bdf8001ed4b085b892002f27584c",
+    "02-experimental-setup.md": "8fe59226a57a41f970bd4e5d8e9d7a21c60369d3681ae6dead8b988e703e0682",
+    "03-results-and-discussion.md": "58e4f2a6ecb3ef9b19e0bc348a41cc7590f1ee9e49a6f186718d44e103cd4305",
     "04-limitations.md": "42bb9e8fa82c6b5b2734f25b06b8d2f772a25540a060de4097098ed2437ea66a",
     "05-related-work.md": "35461f08cd877a198b13f19202ee6a2091024d35e736f91563b45002fbc80c76",
     "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",

@@ -40,7 +40,11 @@ board still shows the experimental phases; follow this list instead.
    reviewer still owes, `review_cli.py conflicts --stage ta` the disagreements
    to resolve (`screen --final`), and `review_cli.py kappa --stage ta` the
    agreement. Full texts are retrieved and turned into Markdown with
-   `/paper-ingestion`.
+   `/paper-ingestion`. The review cites 100 to 200 references: when more
+   studies pass, `review_cli.py prioritize` ranks them by topical relation to
+   the protocol and journal quartile (SJR), and, once the operator agrees,
+   `prioritize --apply --criterion E<n> --reviewer <name>` records the excess
+   as full-text exclusions under the protocol's budget criterion.
 6. **Appraisal and extraction** (items 9-11): `review_cli.py appraise` records
    each included study's quality answers with the protocol's checklist, and
    `review_cli.py extract` its data items, validated against the protocol's
@@ -52,7 +56,13 @@ board still shows the experimental phases; follow this list instead.
    counts per year and venue and the keyword co-occurrence
    (`review/biblio.json`), and the agent builds, with the operator, the
    taxonomy of themes, the problem classes and one comparison table per theme
-   from `review/extraction.jsonl`.
+   from `review/extraction.jsonl`. The methods' protocol flow diagram
+   (`protocol-flow`, the PRISMA phases adapted to the topic, no counts) is
+   drawn by the `diagram-author` agent, compiled with `paper_cli.py render`
+   and checked with `/figure-review` before its block is written.
+   The whole paper fits 45 single-column Elsevier pages (25 two-column),
+   references included: about 11,000 words of body at 200 references;
+   `smith paper qa` estimates it (`page_budget`).
 8. **Scaffolding, declarations and writing**: `/paper-writing` opens the
    `paper/` tree from the review section contracts in `sections/` (title,
    abstract after PRISMA 2020 for Abstracts, introduction, background, methods,
