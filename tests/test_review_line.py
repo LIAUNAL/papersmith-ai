@@ -310,7 +310,7 @@ class ReviewWritingRulesTests(unittest.TestCase):
             with self.subTest(contract=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertIn(rule, text)
-                self.assertIn(disqualifier, text.split("\n## Disqualifiers\n", 1)[1])
+                self.assertEqual(text.split("\n## Disqualifiers\n", 1)[1].count(disqualifier), 1)
 
     def test_the_experimental_contracts_carry_no_review_rule(self) -> None:
         for name in EXPERIMENTAL_SECTIONS:

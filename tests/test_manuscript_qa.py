@@ -237,6 +237,18 @@ class ElsevierPageEstimateTests(unittest.TestCase):
                           preamble=r"\documentclass{article}\title{eight nine}")
         self.assertEqual(manuscript_qa.elsevier_page_estimate(tex)["words"], 3)
 
+    def test_input_and_include_files_count_toward_the_length(self) -> None:
+        # LaTeX resolves a nested \input against the main document's folder, not the including file's.
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            (base / "sections").mkdir()
+            (base / "sections" / "intro.tex").write_text("alpha beta gamma \\input{sections/deeper}", encoding="utf-8")
+            (base / "sections" / "deeper.tex").write_text("delta", encoding="utf-8")
+            (base / "methods.tex").write_text("epsilon zeta", encoding="utf-8")
+            tex = _manuscript(r"one \input{sections/intro} \include{methods} \input{absent}")
+            expanded = manuscript_qa.expand_inputs(tex, base)
+            self.assertEqual(manuscript_qa.elsevier_page_estimate(expanded)["words"], 7)
+
     def test_a_compiled_elsarticle_is_measured_against_its_own_layout(self) -> None:
         two = manuscript_qa.elsevier_page_estimate(_manuscript("x", r"\documentclass[5p,times]{elsarticle}"), pages=26)
         self.assertEqual((two["measured_layout"], two["measured_pages"], two["within"]), ("two-column", 26, False))

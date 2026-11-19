@@ -400,7 +400,6 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 ## Disqualifiers
 
 - A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
-- A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
 - An interpretive mechanism, a baseline analysis or a qualitative-interpretability
   argument stated without a citation that supports it.
 - A numbered equation.

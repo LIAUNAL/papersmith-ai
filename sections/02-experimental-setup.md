@@ -463,7 +463,6 @@ ablation here — the rest surface them in the results, which this contract forb
 ## Disqualifiers
 
 - A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
-- A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
 - A real dataset described here whose explanation does not close on its
   acquisition-protocol diagram, or whose diagram is boxes alone.
 - A preprocessing step, partition protocol, statistical test or comparison criterion

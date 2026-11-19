@@ -1049,8 +1049,8 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: bar or pie chart, or the sentence.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "6828a8784f4e8691e5d51b9c9700ad56b1fcc5ce1e93d098eb574dce1af9d689",
-    "02-experimental-setup.md": "8fe59226a57a41f970bd4e5d8e9d7a21c60369d3681ae6dead8b988e703e0682",
-    "03-results-and-discussion.md": "58e4f2a6ecb3ef9b19e0bc348a41cc7590f1ee9e49a6f186718d44e103cd4305",
+    "02-experimental-setup.md": "658d74bd7a9696bfe481a6973d760efb13e13f5d777beb08be4b13c1ee7d349d",
+    "03-results-and-discussion.md": "26726784f15694375482955d0cbf2b13baf3752af1e1726549ec5b89c8e9052f",
     "04-limitations.md": "42bb9e8fa82c6b5b2734f25b06b8d2f772a25540a060de4097098ed2437ea66a",
     "05-related-work.md": "35461f08cd877a198b13f19202ee6a2091024d35e736f91563b45002fbc80c76",
     "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",

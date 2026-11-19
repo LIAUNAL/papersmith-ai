@@ -400,6 +400,33 @@ def _count_columns(spec: str) -> int:
     return columns
 
 
+_INPUT_RE = re.compile(r"\\(?:input|include)\s*\{(?P<name>[^}]+)\}")
+#: Nested \input levels followed before the rest is left as written.
+MAX_INPUT_DEPTH = 8
+
+
+def expand_inputs(tex_text: str, base_dir: Path, depth: int = 0) -> str:
+    """`tex_text` with every `\\input{f}` and `\\include{f}` replaced by the file
+    it names (`.tex` added when absent), resolved against `base_dir` and kept
+    inside it, as LaTeX does for nested inputs too; a missing or escaping file
+    is left as written."""
+    if depth >= MAX_INPUT_DEPTH:
+        return tex_text
+    base = Path(base_dir).resolve()
+
+    def replace(match: re.Match) -> str:
+        name = match.group("name").strip()
+        path = (base / name).resolve()
+        if path.suffix != ".tex":
+            path = path.with_name(path.name + ".tex")
+        if base not in path.parents or not path.is_file():
+            return match.group(0)
+        text = _strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+        return expand_inputs(text, base, depth + 1)
+
+    return _INPUT_RE.sub(replace, _strip_comments(tex_text))
+
+
 def table_shape_findings(tex_text: str) -> list[dict]:
     """A `table-shape` finding per tabular of two columns or fewer, or of two
     rows or fewer (header included): a grid with nothing to cross, whose
@@ -611,7 +638,7 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
     if tex.is_file():
         try:
             tex_text = tex.read_text(encoding="utf-8", errors="replace")
-            page_budget = elsevier_page_estimate(tex_text, pages=len(pages))
+            page_budget = elsevier_page_estimate(expand_inputs(tex_text, paper_dir), pages=len(pages))
             shapes = table_shape_findings(tex_text)
             budget_findings = page_budget_findings(page_budget)
             for finding in shapes + budget_findings:

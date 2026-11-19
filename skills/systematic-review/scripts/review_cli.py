@@ -45,6 +45,7 @@ if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-p
     raise SystemExit(2)
 
 import argparse
+import csv
 import datetime as dt
 import hashlib
 import html
@@ -1138,7 +1139,6 @@ def _default_sjr(root: Path) -> Path:
 
 def _sjr_quartiles(path: Path) -> dict[str, str]:
     """normalized journal title -> best SJR quartile, from the SCImago export journal-finder bundles."""
-    import csv
     import gzip
     opener = gzip.open if path.suffix == ".gz" else open
     with opener(path, "rt", encoding="utf-8", newline="") as handle:
@@ -1190,7 +1190,7 @@ def cmd_prioritize(args) -> dict:
     sjr_path = Path(args.sjr) if args.sjr else _default_sjr(root)
     try:
         quartiles = _sjr_quartiles(sjr_path)
-    except OSError:
+    except (OSError, UnicodeDecodeError, EOFError, csv.Error):  # absent, corrupt or not UTF-8
         quartiles = {}
         notes.append(f"no SJR table at {sjr_path}: every venue counts as unranked")
     terms = _protocol_terms(protocol)

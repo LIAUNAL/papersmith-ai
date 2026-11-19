@@ -432,6 +432,14 @@ class ReferenceBudgetTests(ReviewCase):
         self.assertEqual((counts["screening"]["reports_excluded"], counts["included"]["studies"]), ({"E3": 2}, 2))
         self.assertEqual(self.ok(*self.budget())["drop"], [])  # applied once, nothing left to drop
 
+    def test_an_unreadable_sjr_table_counts_every_venue_as_unranked(self):
+        broken = self.tmp / "broken.csv.gz"
+        with gzip.open(broken, "wb") as handle:
+            handle.write(b"Title;SJR Best Quartile\n\xff\xfe\xfa;Q1\n")
+        result = self.ok("prioritize", "--sjr", str(broken), "--floor", "1", "--cap", "10")
+        self.assertTrue(all(s["quartile"] is None for s in result["keep"]))
+        self.assertTrue(any("every venue counts as unranked" in note for note in result["notes"]))
+
     def test_the_default_budget_is_100_to_200_and_a_short_review_is_flagged(self):
         result = self.ok("prioritize", "--sjr", str(self.sjr))
         self.assertEqual((result["floor"], result["cap"], result["drop"]), (100, 200, []))
