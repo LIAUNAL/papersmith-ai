@@ -1098,6 +1098,16 @@ origin may frame it, it cannot switch to another project, and it stops with the
 dashboard. Without Caztor or Node the tab falls back to the viewer above and
 says why. Add `.caztor/` to the workspace's `.gitignore`.
 
+Inside the dashboard Caztor shows no top bar of its own and takes the dashboard's
+light or dark theme, when it loads and on every toggle (`caztor:ready` and
+`caztor:theme` messages, pinned to Caztor's origin). Its chat offers opencode,
+Claude Code, Pi and Antigravity, counts a provider you are already signed in to on
+this computer as signed in, and lists the workspace's PaperSmith agents in the `/`
+menu: `/math-tutor <message>` runs the message with that agent's instructions, and
+its skill is read from `skills/`. The passages the latest reply quotes are marked
+in soft yellow in the LaTeX editor and on the PDF; **Highlight explained passages**
+above the message box turns that off and on.
+
 **Paper preview (read-only).** Two GET routes, no writes:
 `GET /api/paper/preview` returns the sections in the same order and with the same
 ids as `/api/state`, with the plain text of each block of `paper/main.tex`
