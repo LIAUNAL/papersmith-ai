@@ -248,6 +248,15 @@ def select(
         except (OSError, ValueError, AttributeError) as exc:
             raise Refused("CANDIDATES_ABSENT", f"{candidates_path} is unreadable: {exc}")
         wanted = _candidate_key(candidate)
+        # Each scope also keeps its own result (journal-candidates-<scope>.json): a later search of the other
+        # scope must not hide the journal the operator picked from the results on screen.
+        for scoped in sorted(paper_dir.glob("journal-candidates-*.json")):
+            try:
+                extra_entries = _read_json(scoped).get("candidates", [])
+            except (OSError, ValueError, AttributeError):
+                continue
+            if isinstance(extra_entries, list):
+                candidates = candidates + extra_entries
         match = None
         for entry in candidates:
             if isinstance(entry, dict) and wanted and wanted in (

@@ -195,7 +195,23 @@ PUBLINDEX_CATEGORIES = ("A1", "A2", "B", "C", "RC")
 #: The categories the national match ranks: the classified journals of the top of the list.
 NATIONAL_CATEGORIES = ("A1", "A2", "B")
 PUBLINDEX_DEFAULT = Path(__file__).resolve().parents[1] / "data" / "publindex-ibn.json"
-NATIONAL_FIT_WEIGHTS = {"topic_overlap": 0.7, "cited_in_paper": 0.3}
+NATIONAL_FIT_WEIGHTS = {"subfield_affinity": 0.5, "topic_overlap": 0.3, "cited_in_paper": 0.2}
+#: The paper's OpenAlex subfield profile, cached beside the paper so a later national search needs no network.
+SUBFIELD_PROFILE_FILE = ".journal-subfields.json"
+#: Facet phrases asked to OpenAlex for the profile (one `group_by` call each; an application phrase weighs double).
+SUBFIELD_PHRASES = 4
+#: Subfields kept per phrase, and the smallest share one must hold.
+SUBFIELD_TOP = 8
+SUBFIELD_MIN_SHARE = 0.03
+#: With a profile, a journal is on topic when its subfield affinity reaches this share of the best journal's.
+SUBFIELD_FLOOR = 0.25
+#: Without a profile, a journal is on topic when its name, scope or topics share this many distinct paper terms.
+LEXICAL_MIN_TERMS = 2
+#: After OpenAlex fails to answer the profile, it is not asked again for this many seconds (the national search
+#: then ranks with its lexical gate at once instead of paying the deadline on every search).
+SUBFIELD_RETRY_SECONDS = 900
+#: Each search also keeps its own result, so the dashboard can show the scope it is on.
+SCOPED_CANDIDATES = "journal-candidates-{scope}.json"
 NATIONAL_MIN_PREFIX = 5
 #: A median below this many days from submission to publication means OJS dated articles loaded after acceptance.
 NATIONAL_MIN_PLAUSIBLE_DAYS = 30
@@ -2488,6 +2504,104 @@ def _international_only(args: argparse.Namespace) -> list[str]:
     return [flag for flag, present in given if present]
 
 
+
+def _write_candidates(out: Path, document: dict, workspace: Path) -> None:
+    """Write the result; at the default path also keep `journal-candidates-<scope>.json` beside it."""
+    _write_json(out, document)
+    default = workspace / "paper" / "journal-candidates.json"
+    if out.resolve() == default.resolve():
+        _write_json(default.with_name(SCOPED_CANDIDATES.format(scope=document.get("scope") or "international")),
+                    document)
+
+
+def _subfield_phrases(profile: dict) -> list[tuple[str, float]]:
+    """The facet phrases asked for the subfield profile, each with its weight (an application phrase counts double)."""
+    facets = build_phrase_facets(profile)
+    application = [(phrase, 2.0) for phrase in facets.get("application") or []][:2]
+    method = [(phrase, 1.0) for phrase in facets.get("method") or []]
+    chosen = (application + method)[:SUBFIELD_PHRASES]
+    return chosen or ([(profile["title"], 1.0)] if profile.get("title") else [])
+
+
+def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[str, float]:
+    """The paper's OpenAlex subfield shares, from `group_by=primary_topic.subfield.id` over each facet phrase.
+
+    Cached in `paper/.journal-subfields.json` under a digest of the phrases; empty when OpenAlex does not
+    answer and nothing is cached (the national match then falls back to its lexical gate)."""
+    phrases = _subfield_phrases(profile)
+    if not phrases:
+        return {}
+    digest = hashlib.sha256(json.dumps(phrases, ensure_ascii=False).encode("utf-8")).hexdigest()
+    cache = workspace / "paper" / SUBFIELD_PROFILE_FILE
+    fallback = "the national match falls back to its lexical gate, two distinct paper terms at least"
+    try:
+        cached = json.loads(cache.read_text(encoding="utf-8"))
+        if cached.get("digest") == digest and isinstance(cached.get("subfields"), dict):
+            return {str(k): float(v) for k, v in cached["subfields"].items()}
+        failed_at = float(cached.get("failed_at") or 0) if cached.get("digest") == digest else 0.0
+        if failed_at and time.time() - failed_at < SUBFIELD_RETRY_SECONDS:
+            retry = dt.datetime.fromtimestamp(failed_at + SUBFIELD_RETRY_SECONDS, dt.timezone.utc)
+            notes.append(f"OpenAlex did not answer the paper's subfield profile recently and is not asked again "
+                         f"before {retry.isoformat(timespec='minutes')}: {fallback}")
+            return {}
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_NATIONAL_DEADLINE", 45.0)),
+                        ResponseCache(cache_dir(), enabled=True))
+    since = f"{dt.date.today().year - 6}-01-01"
+    total_weight = sum(weight for _, weight in phrases)
+    shares: dict[str, float] = {}
+    try:
+        for phrase, weight in phrases:
+            data = services.openalex_get("/works", {"search": phrase, "group_by": "primary_topic.subfield.id",
+                                                    "filter": f"from_publication_date:{since}"})
+            groups = [g for g in data.get("group_by") or [] if g.get("key_display_name") and g.get("count")]
+            counted = sum(g["count"] for g in groups) or 1
+            for group in groups[:SUBFIELD_TOP]:
+                share = group["count"] / counted
+                if share >= SUBFIELD_MIN_SHARE:
+                    name = group["key_display_name"]
+                    shares[name] = shares.get(name, 0.0) + share * weight / total_weight
+    except Exception as exc:  # noqa: BLE001 - any failure here degrades to the offline gate, never fails the search
+        notes.append(f"OpenAlex did not answer the paper's subfield profile ({type(exc).__name__}: {exc}): {fallback}")
+        try:
+            _write_json(cache, {"digest": digest, "failed_at": time.time()})
+        except OSError:
+            pass
+        return {}
+    total = sum(shares.values())
+    if not total:
+        notes.append("OpenAlex returned no subfield for the paper's phrases: the national match falls back to its "
+                     "lexical gate, two distinct paper terms at least")
+        return {}
+    shares = {name: round(value / total, 4) for name, value in sorted(shares.items(), key=lambda kv: -kv[1])}
+    _write_json(cache, {"digest": digest, "phrases": [p for p, _ in phrases], "subfields": shares,
+                        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")})
+    return shares
+
+
+def subfield_rarity(journals: list[dict]) -> dict[str, float]:
+    """log((1 + N) / (1 + journals carrying the subfield)): a subfield most journals carry (Education is in a
+    third of the Publindex list) says little about a journal's topic, a rare one says much."""
+    total = len(journals)
+    counts: dict[str, int] = {}
+    for journal in journals:
+        for name in {t.get("subfield") or "" for t in (journal.get("openalex") or {}).get("topics") or []}:
+            counts[name] = counts.get(name, 0) + 1
+    return {name: math.log((1 + total) / (1 + count)) for name, count in counts.items()}
+
+
+def subfield_affinity(journal: dict, shares: dict[str, float], rarity: dict[str, float] | None = None) -> float:
+    """The mean, over the journal's OpenAlex topics, of the paper's share of each topic's subfield, weighted
+    by the subfield's rarity across the list when given."""
+    topics = (journal.get("openalex") or {}).get("topics") or []
+    if not topics or not shares:
+        return 0.0
+    def weight(name: str) -> float:
+        return shares.get(name, 0.0) * (rarity.get(name, 0.0) if rarity is not None else 1.0)
+    return sum(weight(t.get("subfield") or "") for t in topics) / len(topics)
+
+
 def cmd_search_national(args: argparse.Namespace) -> dict:
     """Rank the journals of the Publindex list by lexical fit with the paper and by the paper's references."""
     refused = _international_only(args)
@@ -2528,24 +2642,47 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
         ordered = sorted(found)
         return sum(weight[k] for k in ordered), [spelled[k][0] for k in ordered]
 
+    shares = paper_subfields(workspace, profile, notes)
+    rarity = subfield_rarity(journals)
     rows = []
-    reasons = {"category_range": 0}
+    reasons = {"category_range": 0, "off_topic": 0}
     for journal, found in zip(journals, hits):
         if journal["category"] not in categories:
             reasons["category_range"] += 1
             continue
         score, matched = raw_overlap(found)
         cited = cited_names.get(_name_key(_bilingual_ascii(journal["name"])), 0)
-        rows.append((journal, score, matched, cited))
+        rows.append((journal, score, matched, cited, subfield_affinity(journal, shares, rarity)))
+    # A journal the paper cites is always on topic; otherwise the subfield profile decides, or, without one,
+    # at least LEXICAL_MIN_TERMS distinct paper terms in the journal's name, scope or topics.
+    top_affinity = max((r[4] for r in rows), default=0.0)
+    if shares and not top_affinity:
+        notes.append("no journal of the list shares the paper's OpenAlex subfields (or only subfields every journal "
+                     "carries): the national match falls back to its lexical gate, two distinct paper terms at least")
+        shares = {}
+    on_topic = []
+    for row in rows:
+        _, _, matched, cited, affinity = row
+        # distinct by stem: "classification" and "classify", or "signal" and "signals", are one term
+        stems = {_bilingual_word(term)[:NATIONAL_MIN_PREFIX] for term in matched}
+        if cited or (affinity > 0 and affinity >= SUBFIELD_FLOOR * top_affinity if shares
+                     else len(stems) >= LEXICAL_MIN_TERMS):
+            on_topic.append(row)
+        else:
+            reasons["off_topic"] += 1
+    rows = on_topic
     top_overlap = max((r[1] for r in rows), default=0.0) or 1.0
     top_cited = max((r[3] for r in rows), default=0) or 1
-    active = [name for name, present in (("topic_overlap", any(r[1] for r in rows)),
+    top_affinity = max((r[4] for r in rows), default=0.0) or 1.0
+    active = [name for name, present in (("subfield_affinity", any(r[4] for r in rows)),
+                                         ("topic_overlap", any(r[1] for r in rows)),
                                          ("cited_in_paper", any(r[3] for r in rows))) if present]
     weight_total = sum(NATIONAL_FIT_WEIGHTS[name] for name in active) or 1.0
 
     candidates = []
-    for journal, score, matched, cited in rows:
-        fit = {"topic_overlap": round(score / top_overlap, 4), "cited_in_paper": round(cited / top_cited, 4)}
+    for journal, score, matched, cited, affinity in rows:
+        fit = {"subfield_affinity": round(affinity / top_affinity, 4), "topic_overlap": round(score / top_overlap, 4),
+               "cited_in_paper": round(cited / top_cited, 4)}
         fit_score = sum(NATIONAL_FIT_WEIGHTS[name] * fit[name] for name in active) / weight_total
         issns = journal.get("issn") or []
         openalex = journal.get("openalex") or {}
@@ -2578,10 +2715,16 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
     if valid_until and valid_until < dt.date.today().isoformat():
         notes.append(f"The Publindex list ({listing.get('period')}) was valid until {valid_until}; Colombia's Ministry of Science may "
                      "have published a newer classification. Refresh it with `python scripts/fetch-publindex.py`.")
+    if reasons["off_topic"]:
+        notes.append(f"{reasons['off_topic']} journals of the list were left out as off topic: "
+                     + ("their OpenAlex subfields do not meet the paper's" if shares
+                        else f"they share fewer than {LEXICAL_MIN_TERMS} distinct paper terms"))
     notes.append(f"National scope: journals of Colombia's IBN - Publindex {listing.get('period')} "
-                 f"(resolution {listing.get('resolution') or 'unrecorded'}), ranked offline. topic_overlap is a "
-                 "lexical match of the paper's terms with each journal's name and editorial scope (English and "
-                 "Spanish share crude stems), so read the scope before choosing; categories are Publindex's, "
+                 f"(resolution {listing.get('resolution') or 'unrecorded'}). subfield_affinity compares the "
+                 "paper's OpenAlex subfields (from its key phrases) with each journal's topics, a subfield most "
+                 "journals of the list carry weighing less; topic_overlap is a "
+                 "lexical match of the paper's terms with each journal's name, editorial scope and topics (English "
+                 "and Spanish share crude stems), so read the scope before choosing; categories are Publindex's, "
                  "not SJR quartiles.")
     scoring = {"formula": "fit_score = " + " + ".join(f"{NATIONAL_FIT_WEIGHTS[n]:g} * {n}" for n in NATIONAL_FIT_WEIGHTS)
                + (f" (renormalized over {', '.join(active)})" if active and len(active) < 2 else ""),
@@ -2597,7 +2740,9 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
                       "resolution": listing.get("resolution"), "valid_until": valid_until,
                       "retrieved_at": listing.get("retrieved_at"), "journals": len(journals)},
         "query": {"title": profile["title"], "keywords": profile["keywords"], "terms": terms, "phrases": [],
-                  "search_mode": "publindex-lexical", "facets": {"tail": [], "queries": []}, "topics": [],
+                  "search_mode": "publindex-subfields" if shares else "publindex-lexical",
+                  "subfields": [{"name": name, "share": share} for name, share in shares.items()],
+                  "facets": {"tail": [], "queries": []}, "topics": [],
                   "cited": {"references_file": references_file, "entries": len(entries)},
                   "fallback": None, "asta": {"queried": False, "answered": False}, "scoring": scoring},
         "quartiles": categories,
@@ -2610,7 +2755,7 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
         "notes": list(dict.fromkeys(notes)),
         "api_calls": None,
     }
-    _write_json(out, document)
+    _write_candidates(out, document, workspace)
     return {"ok": True, "out": str(out), "works_scanned": 0, **document}
 
 
@@ -2886,7 +3031,7 @@ def cmd_search(args: argparse.Namespace) -> dict:
         "notes": notes,
         "api_calls": services.stats.summary(services.cache),
     }
-    _write_json(out, document)
+    _write_candidates(out, document, workspace)
     return {"ok": True, "out": str(out), "works_scanned": found["scanned"], **document}
 
 

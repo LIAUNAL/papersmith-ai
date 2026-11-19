@@ -1621,6 +1621,7 @@ window.PAPERSMITH_I18N.en = {
   "journals.form.rangeInvalid": "The first quartile cannot come after the last one.",
   "journals.search": "Search journals",
   "journals.searching": "Searching…",
+  "journals.searchingFor": "Searching… {seconds} s",
   "journals.searchDone": "Search finished: {count} journals.",
   "journals.searchFailed": "The search failed: {error}",
   "journals.analyze": "Analyze with agent",

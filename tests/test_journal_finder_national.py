@@ -32,7 +32,10 @@ FIXTURE_LIST = {
          "scope": "Entomología, ornitología y ecología de los bosques andinos."},
         {"publindex_id": 3, "name": "Ingeniería y Señales", "category": "B",
          "issn": ["3333-3333"], "institutions": ["UNIVERSIDAD TRES"], "homepage_url": None,
-         "scope": "Procesamiento de señales, clasificación de patrones, electrónica e ingeniería eléctrica."},
+         "scope": "Procesamiento de señales, clasificación de patrones, electrónica e ingeniería eléctrica.",
+         # like the bundled list, where 514 of 515 journals carry their OpenAlex topics (English)
+         "openalex": {"topics": [{"name": "Image Processing Hardware", "subfield": "Electrical and Electronic Engineering",
+                                  "field": "Engineering"}]}},
         {"publindex_id": 4, "name": "Revista Reconocida de Educación", "category": "C",
          "issn": ["4444-4444"], "institutions": ["UNIVERSIDAD CUATRO"], "homepage_url": None,
          "scope": "Pedagogía y didáctica."},
@@ -108,21 +111,25 @@ class NationalSearchTests(NationalCase):
         self.assertTrue(result.json["ok"])
         self.assertEqual(result.json["scope"], "national")
 
-    def test_journals_without_any_fit_are_kept_below_the_ones_that_fit(self):
+    def test_journals_without_topical_evidence_are_left_out_not_ranked_last(self):
         doc = (self.national(), self.written())[1]
         scores = [c["fit_score"] for c in doc["candidates"]]
         self.assertEqual(scores, sorted(scores, reverse=True))
-        self.assertEqual(len(doc["candidates"]), 3)
-        self.assertEqual(doc["candidates"][-1]["fit_score"], 0)
+        names = [c["display_name"] for c in doc["candidates"]]
+        self.assertEqual(names, ["Revista de Neurociencia Computacional", "Ingeniería y Señales"])
+        self.assertEqual(doc["excluded_reasons"]["off_topic"], 1)  # the natural-history bulletin
+        self.assertTrue(all(c["fit_score"] > 0 for c in doc["candidates"]))
 
     def test_categories_range_keeps_only_those_categories(self):
         result = self.national("--categories", "A1-A2")
         self.assertEqual(result.code, 0, result.stdout)
         doc = self.written()
-        self.assertEqual({c["publindex"]["category"] for c in doc["candidates"]}, {"A1", "A2"})
+        self.assertEqual({c["publindex"]["category"] for c in doc["candidates"]}, {"A2"})
         self.assertEqual(doc["quartiles"], ["A1", "A2"])
         self.assertEqual(doc["excluded_reasons"]["category_range"], 2)
-        self.assertEqual(doc["excluded_count"], 2)
+        # the A1 natural-history bulletin is in range but off topic
+        self.assertEqual(doc["excluded_reasons"]["off_topic"], 1)
+        self.assertEqual(doc["excluded_count"], 3)
         self.assertEqual(doc["filters"]["categories"], ["A1", "A2"])
 
     def test_one_category_and_lowercase_are_accepted(self):
@@ -144,12 +151,15 @@ class NationalSearchTests(NationalCase):
 
     def test_a_journal_cited_in_refs_bib_counts(self):
         (self.workspace / "paper" / "refs.bib").write_text(
-            "@article{a, title={X}, journal={Ingenieria y Senales}, year={2024}}\n", encoding="utf-8")
+            "@article{a, title={X}, journal={Ingenieria y Senales}, year={2024}}\n"
+            "@article{b, title={Y}, journal={Boletin de Historia Natural}, year={2023}}\n", encoding="utf-8")
         self.assertEqual(self.national().code, 0)
         doc = self.written()
         by_name = {c["display_name"]: c for c in doc["candidates"]}
         self.assertEqual(by_name["Ingeniería y Señales"]["cited_in_paper_count"], 1)
-        self.assertEqual(by_name["Boletín de Historia Natural"]["cited_in_paper_count"], 0)
+        self.assertEqual(by_name["Revista de Neurociencia Computacional"]["cited_in_paper_count"], 0)
+        # a journal the paper cites is on topic even when no term or subfield is shared
+        self.assertEqual(by_name["Boletín de Historia Natural"]["cited_in_paper_count"], 1)
 
     def test_openalex_and_website_survey_data_fill_the_candidate(self):
         listing = json.loads(json.dumps(FIXTURE_LIST))
@@ -200,6 +210,8 @@ class NationalSearchTests(NationalCase):
                           "url": "https://uno.example/about", "languages": ["en", "es"]}]}
         listing["journals"][2]["languages"] = {"accepts": ["es"], "basis": "published",
                                                "published": {"shares": {"es": 1.0}, "works": 12}, "declared": []}
+        # on topic here, so the journal without language data is ranked and shown
+        listing["journals"][1]["scope"] += " Clasificación de señales de electroencefalografía."
         self.write_list(listing)
         self.assertEqual(self.national().code, 0)
         by_name = {c["display_name"]: c for c in self.written()["candidates"]}
@@ -260,7 +272,7 @@ class NationalSearchTests(NationalCase):
         self.assertEqual(self.national().code, 0)
         result = self.run_cli("status", "--workspace", str(self.workspace))
         self.assertEqual(result.code, 0, result.stdout)
-        self.assertEqual(result.json["candidates"]["count"], 3)
+        self.assertEqual(result.json["candidates"]["count"], 2)
         self.assertEqual(result.json["candidates"]["scope"], "national")
 
 
@@ -287,6 +299,146 @@ class NationalSkillTextTests(unittest.TestCase):
                        "fetch-publindex-languages.py", "languages.accepts",
                        "fetch-publindex.py", "category_range", "CATEGORY_RANGE_INVALID", "PUBLINDEX_DATA_INVALID"):
             self.assertIn(phrase, text, phrase)
+
+
+ONE_WORD_JOURNAL = {"publindex_id": 5, "name": "Cuestiones de Teología", "category": "B", "issn": ["5555-5555"],
+                    "institutions": ["UNIVERSIDAD CINCO"], "homepage_url": None,
+                    "scope": "Teología pastoral y clasificación de textos sagrados."}
+
+
+def _with_topics(document: dict, subfields: dict[int, list[str]]) -> dict:
+    """The fixture list with OpenAlex topics whose subfields are given per publindex_id."""
+    journals = []
+    for journal in document["journals"]:
+        topics = [{"name": f"{name} topic", "subfield": name, "field": "Field"}
+                  for name in subfields.get(journal["publindex_id"], [])]
+        journals.append({**journal, "openalex": {"topics": topics}} if topics else journal)
+    return {**document, "journals": journals}
+
+
+class SubfieldOpenAlex:
+    """A stand-in OpenAlex answering `group_by=primary_topic.subfield.id` for any works search."""
+
+    def __init__(self, groups, status=200, body=None):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from urllib.parse import parse_qs, urlparse
+        self.requests = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+                outer.requests.append(params)
+                payload = body if body is not None else {"meta": {"count": 100}, "group_by": groups}
+                data = json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/openalex"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class NationalTopicalFitTests(NationalCase):
+    """Spec S2 of odd/tasks/journal-scope-and-fit.md: suggested journals match the paper's topic."""
+
+    GROUPS = [{"key": "https://openalex.org/subfields/2805", "key_display_name": "Cognitive Neuroscience", "count": 70},
+              {"key": "https://openalex.org/subfields/1711", "key_display_name": "Signal Processing", "count": 30}]
+
+    def setUp(self):
+        super().setUp()
+        document = {**FIXTURE_LIST, "journals": FIXTURE_LIST["journals"] + [ONE_WORD_JOURNAL]}
+        self.write_list(_with_topics(document, {1: ["Cognitive Neuroscience"], 2: ["Insect Science"],
+                                                 3: ["Signal Processing"],
+                                                 5: ["Religious studies"]}))
+        self.openalex = SubfieldOpenAlex(self.GROUPS)
+        self.addCleanup(self.openalex.close)
+
+    def with_openalex(self, *extra):
+        env = {**OFFLINE, "PAPERSMITH_PUBLINDEX_FILE": str(self.list_file),
+               "PAPERSMITH_OPENALEX_URL": self.openalex.url, "PAPERSMITH_OPENALEX_MIN_INTERVAL": "0"}
+        return self.run_cli("search", "--workspace", str(self.workspace), "--scope", "national", *extra,
+                            extra_env=env)
+
+    def test_the_paper_subfields_rank_the_journals_and_off_topic_ones_are_left_out(self):
+        result = self.with_openalex()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        doc = self.written()
+        names = [c["display_name"] for c in doc["candidates"]]
+        self.assertEqual(names, ["Revista de Neurociencia Computacional", "Ingeniería y Señales"])
+        self.assertEqual(doc["excluded_reasons"]["off_topic"], 2)  # natural history and theology
+        self.assertEqual(doc["query"]["subfields"][0], {"name": "Cognitive Neuroscience", "share": 0.7})
+        self.assertIn("subfield_affinity", doc["query"]["scoring"]["active"])
+        first = doc["candidates"][0]
+        self.assertGreater(first["fit"]["subfield_affinity"], 0)
+        self.assertTrue(self.openalex.requests)
+        self.assertTrue(all(r.get("group_by") == "primary_topic.subfield.id" for r in self.openalex.requests))
+
+    def test_the_subfield_profile_is_cached_in_the_workspace(self):
+        self.assertEqual(self.with_openalex().code, 0)
+        asked = len(self.openalex.requests)
+        self.assertTrue((self.workspace / "paper" / ".journal-subfields.json").is_file())
+        self.assertEqual(self.national().code, 0)  # every provider closed: the cached profile answers
+        self.assertEqual(len(self.openalex.requests), asked)
+        doc = self.written()
+        self.assertEqual(doc["excluded_reasons"]["off_topic"], 2)
+        self.assertEqual(doc["query"]["subfields"][0]["name"], "Cognitive Neuroscience")
+
+    def test_without_openalex_one_shared_word_is_not_a_fit(self):
+        result = self.national()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        doc = self.written()
+        names = [c["display_name"] for c in doc["candidates"]]
+        self.assertNotIn("Cuestiones de Teología", names)  # shares only "clasificación" with the paper
+        self.assertIn("Revista de Neurociencia Computacional", names)
+        self.assertEqual(doc["query"]["subfields"], [])
+        self.assertTrue(any("two distinct paper terms" in note for note in doc["notes"]))
+
+    def use(self, server):
+        self.openalex.close()
+        self.openalex = server
+        self.addCleanup(server.close)
+
+    def test_a_profile_no_journal_shares_falls_back_to_the_lexical_gate(self):
+        self.use(SubfieldOpenAlex([{"key": "x", "key_display_name": "Quantum Optics", "count": 10}]))
+        self.assertEqual(self.with_openalex().code, 0)
+        doc = self.written()
+        names = [c["display_name"] for c in doc["candidates"]]
+        self.assertEqual(sorted(names), ["Ingeniería y Señales", "Revista de Neurociencia Computacional"])
+        self.assertTrue(any("no journal of the list shares" in note for note in doc["notes"]))
+
+    def test_an_unexpected_openalex_answer_degrades_to_the_lexical_gate(self):
+        self.use(SubfieldOpenAlex([], body=["not", "an", "object"]))
+        result = self.with_openalex()
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        self.assertEqual(self.written()["query"]["subfields"], [])
+        self.assertTrue(any("two distinct paper terms" in note for note in self.written()["notes"]))
+
+    def test_a_failed_profile_is_not_asked_again_for_a_while(self):
+        self.use(SubfieldOpenAlex([], status=500))
+        self.assertEqual(self.with_openalex().code, 0)
+        asked = len(self.openalex.requests)
+        self.assertGreater(asked, 0)
+        self.assertEqual(self.with_openalex().code, 0)
+        self.assertEqual(len(self.openalex.requests), asked)
+        self.assertTrue(any("not asked again before" in note for note in self.written()["notes"]))
+
+    def test_each_scope_keeps_its_own_result_beside_the_latest_one(self):
+        self.assertEqual(self.with_openalex().code, 0)
+        scoped = self.workspace / "paper" / "journal-candidates-national.json"
+        self.assertEqual(json.loads(scoped.read_text(encoding="utf-8")), self.written())
 
 
 if __name__ == "__main__":

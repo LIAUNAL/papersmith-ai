@@ -29,6 +29,11 @@ Spec S6 of `odd/tasks/figure-and-table-quality.md`. Given `paper/main.pdf`,
   `odd/tasks/manuscript-polish-0-54.md`): the manuscript is English unless
   it declares another language. Each names its source line and, when found
   in the compiled text, its page.
+- **table-shape** / **page-budget** (specs S5 and S7 of
+  `odd/tasks/review-prose-and-length.md`): a `tabular` of two columns or two
+  rows, which a bar or pie chart carries better, and a manuscript estimated
+  past 45 single-column (25 two-column) Elsevier pages, references included
+  (`page_budget` holds the estimate and its constants).
 
 Why the PDF and not a browser: Playwright renders HTML, not PDFs, so it
 cannot see where pdfTeX put a glyph. The geometry comes from pypdfium2
@@ -322,6 +327,191 @@ def language_findings(tex_text: str, page_texts: list[str] | None = None) -> lis
     return findings
 
 
+
+# ---------------------------------------------------------------------------
+# table shape and Elsevier page budget (specs S5 and S7 of
+# odd/tasks/review-prose-and-length.md)
+# ---------------------------------------------------------------------------
+
+#: The length limit, references included: 45 pages in Elsevier's submission
+#: layout (elsarticle `preprint,12pt`, one column) or 25 in its two-column
+#: layout (`5p`).
+LIMIT_SINGLE_COLUMN_PAGES = 45
+LIMIT_TWO_COLUMN_PAGES = 25
+#: Estimate constants for elsarticle `preprint,12pt`, declared so a
+#: calibration against the real class can replace them: running prose per
+#: page, numbered references per page, one figure or table with its caption,
+#: and the title, authors and abstract page.
+WORDS_PER_PAGE = 450
+REFERENCES_PER_PAGE = 14
+PAGES_PER_FLOAT = 0.5
+FRONT_MATTER_PAGES = 1.0
+
+_DOCCLASS_RE = re.compile(r"\\documentclass\s*(?:\[(?P<options>[^\]]*)\])?\s*\{(?P<cls>[^}]*)\}")
+_TABULAR_RE = re.compile(r"\\begin\{(?P<env>tabularx|tabular\*|tabulary|tabular|longtable)\}")
+_CITE_RE = re.compile(r"\\[A-Za-z]*cite[A-Za-z]*\*?\s*(?:\[[^\]]*\]\s*){0,2}\{(?P<keys>[^}]*)\}")
+_FLOAT_RE = re.compile(r"\\begin\{(?P<env>figure\*?|table\*?|sidewaystable|sidewaysfigure)\}(?P<body>.*?)\\end\{(?P=env)\}", re.S)
+_DROP_ENV_RE = re.compile(r"\\begin\{(?P<env>equation\*?|align\*?|gather\*?|multline\*?|displaymath|tabular[x*]?|thebibliography)\}.*?\\end\{(?P=env)\}", re.S)
+_DROP_CMD_RE = re.compile(r"\\(?:[A-Za-z]*cite[A-Za-z]*|ref|eqref|autoref|cref|Cref|label|includegraphics|"
+                          r"bibliography|bibliographystyle|input|include|url|begin|end)\*?\s*(?:\[[^\]]*\]\s*)*(?:\{[^}]*\}\s*)*")
+
+
+def _strip_comments(text: str) -> str:
+    return re.sub(r"(?<!\\)%[^\n]*", "", text)
+
+
+def _body(tex_text: str) -> str:
+    text = _strip_comments(tex_text)
+    start = text.find("\\begin{document}")
+    end = text.find("\\end{document}")
+    return text[start + len("\\begin{document}") if start >= 0 else 0: end if end >= 0 else len(text)]
+
+
+def _braced(text: str, start: int) -> tuple[str, int]:
+    """The content of the brace group opening at `start` and the index after it."""
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start + 1:index], index + 1
+    return text[start + 1:], len(text)
+
+
+def _count_columns(spec: str) -> int:
+    spec = re.sub(r"[@!<>]\s*\{", "{", spec)  # decorations take a brace group that holds no column
+    columns, index = 0, 0
+    while index < len(spec):
+        char = spec[index]
+        if char == "{":
+            _, index = _braced(spec, index)
+            continue
+        if char == "*" and index + 1 < len(spec) and spec[index + 1] == "{":
+            repeat, after = _braced(spec, index + 1)
+            inner, after = _braced(spec, after) if after < len(spec) and spec[after] == "{" else ("", after)
+            columns += int(repeat) * _count_columns(inner) if repeat.strip().isdigit() else 0
+            index = after
+            continue
+        if char in "lcrXSLCRJ" or char in "pmb":
+            columns += 1
+        index += 1
+    return columns
+
+
+_INPUT_RE = re.compile(r"\\(?:input|include)\s*\{(?P<name>[^}]+)\}")
+#: Nested \input levels followed before the rest is left as written.
+MAX_INPUT_DEPTH = 8
+
+
+def expand_inputs(tex_text: str, base_dir: Path, depth: int = 0) -> str:
+    """`tex_text` with every `\\input{f}` and `\\include{f}` replaced by the file
+    it names (`.tex` added when absent), resolved against `base_dir` and kept
+    inside it, as LaTeX does for nested inputs too; a missing or escaping file
+    is left as written."""
+    if depth >= MAX_INPUT_DEPTH:
+        return tex_text
+    base = Path(base_dir).resolve()
+
+    def replace(match: re.Match) -> str:
+        name = match.group("name").strip()
+        path = (base / name).resolve()
+        if path.suffix != ".tex":
+            path = path.with_name(path.name + ".tex")
+        if base not in path.parents or not path.is_file():
+            return match.group(0)
+        text = _strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+        return expand_inputs(text, base, depth + 1)
+
+    return _INPUT_RE.sub(replace, _strip_comments(tex_text))
+
+
+def table_shape_findings(tex_text: str) -> list[dict]:
+    """A `table-shape` finding per tabular of two columns or fewer, or of two
+    rows or fewer (header included): a grid with nothing to cross, whose
+    values a bar or pie chart, or the sentence, carries better."""
+    text = _strip_comments(tex_text)
+    findings = []
+    for match in _TABULAR_RE.finditer(text):
+        env, cursor = match.group("env"), match.end()
+        groups = 2 if env in ("tabularx", "tabular*", "tabulary") else 1
+        spec = ""
+        for _ in range(groups):
+            while cursor < len(text) and text[cursor] in " \t\n":
+                cursor += 1
+            if cursor < len(text) and text[cursor] == "[":
+                cursor = text.find("]", cursor) + 1
+            if cursor >= len(text) or text[cursor] != "{":
+                break
+            spec, cursor = _braced(text, cursor)
+        closing = text.find(f"\\end{{{env}}}", cursor)
+        body = text[cursor: closing if closing >= 0 else len(text)]
+        body = re.sub(r"\\(?:toprule|midrule|bottomrule|hline|addlinespace|cmidrule\S*|cline\{[^}]*\})(?:\[[^\]]*\])?", "", body)
+        rows = [row for row in re.split(r"\\\\(?:\[[^\]]*\])?", body) if row.strip()]
+        columns = _count_columns(spec)
+        if columns and (columns <= 2 or len(rows) <= 2):
+            findings.append({"kind": "table-shape", "page": None, "line": text.count("\n", 0, match.start()) + 1,
+                             "object": "table", "columns": columns, "rows": len(rows),
+                             "snippet": " ".join(rows[0].split())[:80] if rows else "",
+                             "advice": "two columns or two rows: draw the values as a bar or pie chart, "
+                                       "or state them in the sentence"})
+    return findings
+
+
+def elsevier_page_estimate(tex_text: str, pages: int | None = None) -> dict[str, Any]:
+    """Estimate the manuscript's length in Elsevier pages, references included.
+
+    The canonical manuscript is a review-mode `article`, whose page count is
+    not Elsevier's, so the estimate counts what fills an elsarticle
+    `preprint,12pt` page: prose words (preamble, comments, floats, equations
+    and tables left out), unique cited references and floats. When the
+    compiled manuscript is itself an elsarticle, its measured `pages` are
+    compared with the limit of its layout instead (`5p` or `twocolumn`: 25;
+    otherwise 45)."""
+    body = _body(tex_text)
+    floats = len(_FLOAT_RE.findall(body))
+    keys = {key.strip() for match in _CITE_RE.finditer(body) for key in match.group("keys").split(",") if key.strip()}
+    prose = _FLOAT_RE.sub(" ", body)
+    prose = _DROP_ENV_RE.sub(" ", prose)
+    prose = re.sub(r"\$\$.*?\$\$|\\\[.*?\\\]|\$[^$]*\$", " ", prose, flags=re.S)
+    prose = _DROP_CMD_RE.sub(" ", prose)
+    prose = re.sub(r"\\[A-Za-z@]+\*?", " ", prose)
+    words = len(re.findall(r"[A-Za-z0-9][A-Za-z0-9'’-]*", prose))
+    single = FRONT_MATTER_PAGES + words / WORDS_PER_PAGE + floats * PAGES_PER_FLOAT + len(keys) / REFERENCES_PER_PAGE
+    two = single * LIMIT_TWO_COLUMN_PAGES / LIMIT_SINGLE_COLUMN_PAGES
+    match = _DOCCLASS_RE.search(_strip_comments(tex_text))
+    measured_layout = None
+    if match and match.group("cls").strip() == "elsarticle" and pages is not None:
+        options = {o.strip() for o in (match.group("options") or "").split(",")}
+        measured_layout = "two-column" if options & {"5p", "twocolumn"} else "single-column"
+    limit = LIMIT_TWO_COLUMN_PAGES if measured_layout == "two-column" else LIMIT_SINGLE_COLUMN_PAGES
+    within = (pages <= limit) if measured_layout else single <= LIMIT_SINGLE_COLUMN_PAGES
+    return {"basis": "elsarticle preprint 12pt (Elsevier submission layout), references included",
+            "words": words, "references": len(keys), "floats": floats,
+            "estimated_pages_single_column": round(single, 1), "limit_single_column": LIMIT_SINGLE_COLUMN_PAGES,
+            "estimated_pages_two_column": round(two, 1), "limit_two_column": LIMIT_TWO_COLUMN_PAGES,
+            "measured_layout": measured_layout, "measured_pages": pages if measured_layout else None,
+            "within": within,
+            "assumptions": {"words_per_page": WORDS_PER_PAGE, "references_per_page": REFERENCES_PER_PAGE,
+                            "pages_per_float": PAGES_PER_FLOAT, "front_matter_pages": FRONT_MATTER_PAGES}}
+
+
+def page_budget_findings(estimate: dict[str, Any]) -> list[dict]:
+    """One `page-budget` finding when the manuscript runs past the limit."""
+    if estimate["within"]:
+        return []
+    if estimate["measured_layout"]:
+        limit = estimate["limit_two_column"] if estimate["measured_layout"] == "two-column" else estimate["limit_single_column"]
+        snippet = f"{estimate['measured_pages']} {estimate['measured_layout']} Elsevier pages, limit {limit}"
+    else:
+        limit = estimate["limit_single_column"]
+        snippet = (f"about {estimate['estimated_pages_single_column']} single-column Elsevier pages (limit {limit}; "
+                   f"about {estimate['estimated_pages_two_column']} two-column, limit {estimate['limit_two_column']})")
+    return [{"kind": "page-budget", "page": None, "object": "manuscript", "limit": limit, "snippet": snippet,
+             "advice": "shorten the prose, merge or drop floats, or cut references to the most relevant"}]
+
+
 def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
     """Measure `paper_dir/main.pdf` and return the report (not written)."""
     paper_dir = Path(paper_dir)
@@ -444,6 +634,21 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - a language scan failure never fails the pass
             language_warning = f"language scan not run: {type(exc).__name__}: {exc}"[:300]
 
+    page_budget, length_warnings = None, []
+    if tex.is_file():
+        try:
+            tex_text = tex.read_text(encoding="utf-8", errors="replace")
+            page_budget = elsevier_page_estimate(expand_inputs(tex_text, paper_dir), pages=len(pages))
+            shapes = table_shape_findings(tex_text)
+            budget_findings = page_budget_findings(page_budget)
+            for finding in shapes + budget_findings:
+                _keep(findings, counts, finding)
+            length_warnings += [f"Length: {f['snippet']}: {f['advice']}." for f in budget_findings]
+            length_warnings += [f"Table at main.tex line {f['line']} has {f['columns']} column(s) and {f['rows']} "
+                                f"row(s): {f['advice']}." for f in shapes]
+        except Exception as exc:  # noqa: BLE001 - a length estimate failure never fails the pass
+            length_warnings.append(f"length estimate not run: {type(exc).__name__}: {exc}"[:300])
+
     rendered, render_warning = ({}, None)
     if render:
         rendered, render_warning = render_pages(pdf, paper_dir / ".qa" / PAGES_DIR_NAME)
@@ -469,10 +674,11 @@ def analyze(paper_dir: Path, *, render: bool = True) -> dict[str, Any]:
         "pages": page_rows,
         "figures": figures,
         "tables": tables,
+        "page_budget": page_budget,
         "findings": findings,
         "summary": {"findings": sum(counts.values()), "by_kind": dict(sorted(by_kind.items())),
                     "pages": len(page_rows)},
-        "warnings": [w for w in (render_warning, language_warning) if w],
+        "warnings": [w for w in (render_warning, language_warning) if w] + length_warnings,
     }
 
 

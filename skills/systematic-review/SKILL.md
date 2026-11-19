@@ -109,6 +109,24 @@ recorded as the `review-registration` declaration of `/paper-writing`.
 
 - `prisma` writes `review/prisma.json`; `flow` draws the PRISMA 2020 flow
   diagram to `paper/Figures/prisma-flow.svg` from those counts.
+- The protocol flow diagram of the methods (`protocol-flow`) is a different
+  figure: the PRISMA phases adapted to this review's topic (its sources, query
+  concepts, criteria, data items and themes), with no counts. Delegate it to
+  the `diagram-author` agent, compile it with `paper_cli.py render
+  --figure-id protocol-flow --section methods --block m-protocol-registration`
+  and check it with `/figure-review protocol-flow` before drafting that block.
+- `prioritize` keeps the review between 100 and 200 references (`--floor`,
+  `--cap`; `--other-references` counts those cited outside the included
+  studies). It ranks the included studies by topical relation to the
+  protocol (its queries, questions and PICOC terms in each title, abstract and
+  keywords) weighted by the journal's best SJR quartile (journal-finder's
+  bundled SCImago table), writes `review/prioritization.json`, and lists the
+  studies past the budget. Declare the budget as an exclusion criterion of
+  the protocol (an amendment when the protocol is already approved), review
+  the drop list with the operator, then `prioritize --apply --criterion E<n>
+  --reviewer <name>` records each one as a final full-text exclusion, so the
+  PRISMA flow counts it. A review below the floor is reported in `notes`:
+  widen the sources or snowball before writing.
 - `biblio` writes per-year and per-venue counts and keyword co-occurrence to
   `review/biblio.json` (from the included studies, or the screened records
   before any is included).

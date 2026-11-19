@@ -312,6 +312,21 @@ class SelectTests(VenueCase):
         (self.paper / "journal-candidates.json").write_text(json.dumps({"schema": 1, "candidates": entries}),
                                                             encoding="utf-8")
 
+    def test_a_candidate_of_the_other_scope_is_found_in_its_own_result(self) -> None:
+        # Spec S1 of odd/tasks/journal-scope-and-fit.md: an international search that ended later does not
+        # hide the national journal the operator picked from the national results.
+        (self.paper / "journal-candidates.json").write_text(json.dumps({"schema": 1, "candidates": [
+            {"openalex_id": "https://openalex.org/S1001", "id": "S1001", "display_name": "OpenAlex Journal",
+             "issn": ["0957-4174"], "quartile": "Q1", "quartile_source": "sjr"}]}), encoding="utf-8")
+        (self.paper / "journal-candidates-national.json").write_text(json.dumps({"schema": 1, "scope": "national",
+            "candidates": [{"openalex_id": None, "id": "publindex:7", "display_name": "Revista Nacional",
+                            "issn": ["1234-5678"], "quartile": None, "quartile_source": "publindex"}]}),
+            encoding="utf-8")
+        self.ok("select", "--slug", "rn", "--candidate", "publindex:7")
+        record = json.loads((self.venue_dir("rn") / "venue.json").read_text())
+        self.assertEqual(record["journal"]["name"], "Revista Nacional")
+        self.ok("select", "--slug", "oj", "--candidate", "S1001")
+
     def test_an_issn_candidate_is_found_by_its_id_as_written(self) -> None:
         self.fallback_candidates()
         self.ok("select", "--slug", "bfr", "--candidate", "issn:4444444X")

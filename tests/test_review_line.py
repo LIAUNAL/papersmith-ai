@@ -242,6 +242,76 @@ class ReviewWritingRulesTests(unittest.TestCase):
         synthesis = next(b for b in header["blocks"] if b["id"] == "r-thematic-synthesis")
         self.assertIn("background.bg-open-problems", [edge["target"] for edge in synthesis["after"]])
 
+    def test_the_introduction_tells_the_proposal_in_one_paragraph_before_the_agenda(self) -> None:
+        text = review_body("03-introduction.md")
+        objectives = text.split("\n## Block `intro-objectives`\n", 1)[1].split("\n## Block ", 1)[0]
+        self.assertIn("one proposal paragraph", objectives)
+        self.assertIn("immediately before the agenda paragraph", objectives)
+        for point in ("**The idea**", "**The novelty**", "**The key points**"):
+            with self.subTest(point=point):
+                self.assertIn(point, objectives)
+        self.assertNotIn("list the research\nquestions (RQ1, RQ2", text)
+        self.assertNotIn("contributions as a numbered list", text)
+        disqualifiers = text.split("\n## Disqualifiers\n", 1)[1]
+        for rule in ("Research questions set apart under RQ1, RQ2 … labels",
+                     "Contributions or innovation points given as short lines",
+                     "No proposal paragraph before the agenda paragraph"):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, disqualifiers)
+
+    def test_open_problems_and_challenges_are_linked_paragraphs_not_bold_items(self) -> None:
+        for name, block, rule in (
+                ("04-background.md", "bg-open-problems", "Open problems written as items"),
+                ("07-discussion.md", "d-challenges-directions", "Challenges or directions written as items")):
+            with self.subTest(contract=name):
+                text = review_body(name)
+                prose = " ".join(text.split(f"\n## Block `{block}`\n", 1)[1].split("\n## ", 1)[0].split())
+                self.assertIn("six to eight lines", prose)
+                self.assertIn("no bold or italic lead-in", prose)
+                self.assertIn("The paragraphs read as one argument.", prose)
+                self.assertIn("*Prose flow*", prose)
+                self.assertIn(rule, text.split("\n## Disqualifiers\n", 1)[1])
+
+    def test_the_methods_draw_the_protocol_as_a_topic_adapted_flow_diagram(self) -> None:
+        raw = (ROOT / "sections-review" / "05-methods.md").read_text(encoding="utf-8")
+        header = json.loads(raw.split("---\n", 2)[1])
+        block = next(b for b in header["blocks"] if b["id"] == "m-protocol-registration")
+        self.assertEqual(block["figure"], {"ordered": True, "excludes": ["record count", "included study's finding"],
+                                           "caption_enumerates": True, "caption_decodes": True, "mandatory": True})
+        text = review_body("05-methods.md")
+        self.assertIn("A flow diagram, not a table, summarizes the protocol", text)
+        self.assertIn("`diagram-author`", text)
+        self.assertIn("--figure-id protocol-flow --section methods --block\nm-protocol-registration", text)
+        self.assertNotIn("one protocol table", text)
+        disqualifiers = text.split("\n## Disqualifiers\n", 1)[1]
+        for rule in ("The protocol summarized as a table instead of the protocol flow diagram.",
+                     "A protocol diagram generic to any review",
+                     "A protocol diagram that carries record counts"):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, disqualifiers)
+
+    def test_the_results_use_no_rq_notation_and_read_as_connected_paragraphs(self) -> None:
+        text = review_body("06-results.md")
+        self.assertNotIn("naming the research question it answers", text)
+        self.assertIn("The results never use RQ notation", text)
+        self.assertIn("The paragraphs read as one connected synthesis", text)
+        disqualifiers = text.split("\n## Disqualifiers\n", 1)[1]
+        self.assertIn("RQ notation anywhere in the results", disqualifiers)
+        self.assertIn("starts from zero, with no link to the claim the previous one closed", disqualifiers)
+
+    def test_both_lines_turn_two_column_or_two_row_tables_into_charts(self) -> None:
+        rule = "A table has at least three columns and three rows."
+        disqualifier = "A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry."
+        for name in REVIEW_SECTIONS:
+            with self.subTest(contract=name):
+                self.assertIn(rule, review_body(name))
+        for path in (ROOT / "sections" / "02-experimental-setup.md", ROOT / "sections" / "03-results-and-discussion.md",
+                     ROOT / "sections-review" / "05-methods.md", ROOT / "sections-review" / "06-results.md"):
+            with self.subTest(contract=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn(rule, text)
+                self.assertEqual(text.split("\n## Disqualifiers\n", 1)[1].count(disqualifier), 1)
+
     def test_the_experimental_contracts_carry_no_review_rule(self) -> None:
         for name in EXPERIMENTAL_SECTIONS:
             with self.subTest(contract=name):

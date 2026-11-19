@@ -180,5 +180,84 @@ class OverfullLogTests(unittest.TestCase):
             "snippet": "Overfull \\hbox (12.5pt too wide) in alignment at lines 7--9"}])
 
 
+def _manuscript(body: str, preamble: str = r"\documentclass[11pt,onecolumn]{article}") -> str:
+    return preamble + "\n\\begin{document}\n" + body + "\n\\end{document}\n"
+
+
+class TableShapeTests(unittest.TestCase):
+    """Spec S5 of odd/tasks/review-prose-and-length.md: two columns or two rows suggest a chart."""
+
+    def test_a_two_column_table_and_a_two_row_table_are_flagged(self) -> None:
+        tex = _manuscript("\n".join([
+            r"\begin{table}\begin{tabular}{@{}lr@{}}\toprule Venue & Studies \\ \midrule",
+            r"Journal & 40 \\ Conference & 12 \\ \bottomrule\end{tabular}\end{table}",
+            r"\begin{table}\begin{tabularx}{\linewidth}{lXcc}\toprule A & B & C & D \\ \midrule",
+            r"1 & 2 & 3 & 4 \\ \bottomrule\end{tabularx}\end{table}",
+            r"\begin{table}\begin{tabular}{lcc}\toprule A & B & C \\ \midrule 1 & 2 & 3 \\",
+            r"4 & 5 & 6 \\ \bottomrule\end{tabular}\end{table}",
+        ]))
+        findings = manuscript_qa.table_shape_findings(tex)
+        self.assertEqual([(f["kind"], f["columns"], f["rows"]) for f in findings],
+                         [("table-shape", 2, 3), ("table-shape", 4, 2)])
+        self.assertEqual(findings[0]["line"], 3)
+        self.assertIn("bar or pie chart", findings[0]["advice"])
+
+    def test_p_and_x_columns_count_and_decorations_do_not(self) -> None:
+        tex = _manuscript(r"\begin{tabular}{|p{2cm}|>{\centering}m{1cm}|c|}a & b & c \\ d & e & f \\ g & h & i \\ \end{tabular}")
+        self.assertEqual(manuscript_qa.table_shape_findings(tex), [])
+
+
+class ElsevierPageEstimateTests(unittest.TestCase):
+    """Spec S7: at most 45 single-column (25 two-column) Elsevier pages, references included."""
+
+    def test_a_short_manuscript_is_within_both_limits(self) -> None:
+        estimate = manuscript_qa.elsevier_page_estimate(_manuscript("Short text " * 50 + r"\cite{a,b}\citep{b,c}"))
+        self.assertEqual((estimate["words"], estimate["references"], estimate["floats"]), (100, 3, 0))
+        self.assertEqual((estimate["limit_single_column"], estimate["limit_two_column"]), (45, 25))
+        self.assertTrue(estimate["within"])
+        self.assertEqual(manuscript_qa.page_budget_findings(estimate), [])
+
+    def test_words_references_and_floats_add_up_and_an_excess_is_a_finding(self) -> None:
+        cites = "".join(f"\\cite{{r{i}}} " for i in range(210))
+        floats = r"\begin{figure}x\end{figure}\begin{table*}y\end{table*}" * 5
+        body = ("word " * 15000) + cites + floats
+        estimate = manuscript_qa.elsevier_page_estimate(_manuscript(body))
+        self.assertEqual((estimate["references"], estimate["floats"]), (210, 10))
+        a = estimate["assumptions"]
+        expected = round(a["front_matter_pages"] + estimate["words"] / a["words_per_page"]
+                         + 10 * a["pages_per_float"] + 210 / a["references_per_page"], 1)
+        self.assertEqual(estimate["estimated_pages_single_column"], expected)
+        self.assertGreater(estimate["estimated_pages_single_column"], 45)
+        self.assertFalse(estimate["within"])
+        [finding] = manuscript_qa.page_budget_findings(estimate)
+        self.assertEqual((finding["kind"], finding["limit"], finding["page"]), ("page-budget", 45, None))
+
+    def test_preamble_comments_and_floats_are_not_prose(self) -> None:
+        tex = _manuscript("one two three % four five\n" + r"\begin{figure}\caption{six seven}\end{figure}",
+                          preamble=r"\documentclass{article}\title{eight nine}")
+        self.assertEqual(manuscript_qa.elsevier_page_estimate(tex)["words"], 3)
+
+    def test_input_and_include_files_count_toward_the_length(self) -> None:
+        # LaTeX resolves a nested \input against the main document's folder, not the including file's.
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            (base / "sections").mkdir()
+            (base / "sections" / "intro.tex").write_text("alpha beta gamma \\input{sections/deeper}", encoding="utf-8")
+            (base / "sections" / "deeper.tex").write_text("delta", encoding="utf-8")
+            (base / "methods.tex").write_text("epsilon zeta", encoding="utf-8")
+            tex = _manuscript(r"one \input{sections/intro} \include{methods} \input{absent}")
+            expanded = manuscript_qa.expand_inputs(tex, base)
+            self.assertEqual(manuscript_qa.elsevier_page_estimate(expanded)["words"], 7)
+
+    def test_a_compiled_elsarticle_is_measured_against_its_own_layout(self) -> None:
+        two = manuscript_qa.elsevier_page_estimate(_manuscript("x", r"\documentclass[5p,times]{elsarticle}"), pages=26)
+        self.assertEqual((two["measured_layout"], two["measured_pages"], two["within"]), ("two-column", 26, False))
+        one = manuscript_qa.elsevier_page_estimate(_manuscript("x", r"\documentclass[preprint,12pt]{elsarticle}"), pages=44)
+        self.assertEqual((one["measured_layout"], one["within"]), ("single-column", True))
+        canonical = manuscript_qa.elsevier_page_estimate(_manuscript("x"), pages=80)
+        self.assertIsNone(canonical["measured_layout"])
+        self.assertTrue(canonical["within"])  # 80 review-mode article pages are not Elsevier pages
+
+
 if __name__ == "__main__":
     unittest.main()

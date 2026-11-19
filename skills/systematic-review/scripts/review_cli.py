@@ -19,13 +19,15 @@ from memory:
     appraisal.jsonl      quality / risk-of-bias answers per included study
     extraction.jsonl     extracted data items, each with the quote holding it
     prisma.json          the flow counts; biblio.json the bibliometrics;
+    prioritization.json  the reference budget: included studies ranked by
+                         topical relation and journal quartile, kept or dropped
     scope.json           the existing reviews found while scoping
 
 Verbs (every one prints one JSON object; a refusal exits 2):
 
     init | protocol check|approve|amend | scope | search | import | dedupe |
     queue | screen | conflicts | kappa | appraise | extract | prisma | flow |
-    biblio | checklist | status
+    biblio | prioritize | checklist | status
 
 Environment: PAPERSMITH_CONTACT_EMAIL (polite pool), OPENALEX_API_KEY,
 PAPERSMITH_OPENALEX_URL, PAPERSMITH_CROSSREF_URL, PAPERSMITH_EUROPEPMC_URL
@@ -43,6 +45,7 @@ if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-p
     raise SystemExit(2)
 
 import argparse
+import csv
 import datetime as dt
 import hashlib
 import html
@@ -1121,6 +1124,110 @@ def _target_written(target: str, written: set[str]) -> bool:
     return any(block.startswith(target + ".") for block in written)
 
 
+QUARTILE_WEIGHT = {"Q1": 4, "Q2": 3, "Q3": 2, "Q4": 1}
+_TERM_STOPWORDS = frozenset(
+    "about after among and are based between does from have into more over such than that their them these "
+    "this those under used uses using what when where which while with within without review reviews study "
+    "studies".split())
+
+
+def _default_sjr(root: Path) -> Path:
+    name = Path("skills") / "journal-finder" / "data" / "scimagojr-2025.csv.gz"
+    in_workspace = root / name
+    return in_workspace if in_workspace.is_file() else Path(__file__).resolve().parents[3] / name
+
+
+def _sjr_quartiles(path: Path) -> dict[str, str]:
+    """normalized journal title -> best SJR quartile, from the SCImago export journal-finder bundles."""
+    import gzip
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8", newline="") as handle:
+        rows = csv.DictReader(handle, delimiter=";")
+        return {normalize_title(row.get("Title", "")): row.get("SJR Best Quartile", "").strip()
+                for row in rows if row.get("SJR Best Quartile", "").strip() in QUARTILE_WEIGHT}
+
+
+def _terms(text: str) -> set[str]:
+    words = re.findall(r"[a-z][a-z0-9-]+", (text or "").lower())
+    return {w[:-1] if w.endswith("s") and len(w) > 4 else w
+            for w in words if len(w) >= 4 and w not in _TERM_STOPWORDS}
+
+
+def _protocol_terms(protocol: dict) -> set[str]:
+    texts = [source.get("query", "") for source in protocol.get("sources", [])]
+    for question in protocol.get("research_questions", []):
+        texts.append(question.get("question", ""))
+        texts.extend(str(v) for v in (question.get("picoc") or {}).values())
+    return set().union(*(_terms(text) for text in texts)) if texts else set()
+
+
+def cmd_prioritize(args) -> dict:
+    """Keep the review's references within the floor-cap budget (100-200 by default).
+
+    The included studies are ranked by topical relation to the protocol (the share of the
+    protocol's query, question and PICOC terms a study's title, abstract and keywords carry)
+    weighted by the impact of its journal (best SJR quartile; an unranked venue weighs half of
+    a Q1): score = relation / max relation x (0.5 + 0.5 x quartile weight / 4). Studies past the
+    budget (cap minus the references cited outside the included studies) are the drop list;
+    `--apply` records each as a final full-text exclusion under the protocol's criterion, so
+    the PRISMA flow counts them.
+    """
+    root = Path(args.root)
+    if args.floor < 0 or args.cap < 1 or args.floor > args.cap:
+        raise Refusal("ARGUMENT_INVALID", "--floor must be at most --cap, and --cap at least 1")
+    if args.other_references < 0 or args.other_references >= args.cap:
+        raise Refusal("ARGUMENT_INVALID", "--other-references must be below --cap")
+    protocol = require_approved(root) if args.apply else load_protocol(root)
+    if args.apply:
+        if not args.criterion:
+            raise Refusal("CRITERION_MISSING", "--apply names the protocol's exclusion criterion for the "
+                          "reference budget (--criterion E<n>); amend the protocol to add it when it has none")
+        if args.criterion not in {c["id"] for c in protocol["criteria"]["exclusion"]}:
+            raise Refusal("CRITERION_UNKNOWN", f"{args.criterion} is not an exclusion criterion of the protocol")
+        if not (args.reviewer or "").strip():
+            raise Refusal("REVIEWER_MISSING", "--reviewer names who applied the reference budget")
+    notes: list[str] = []
+    sjr_path = Path(args.sjr) if args.sjr else _default_sjr(root)
+    try:
+        quartiles = _sjr_quartiles(sjr_path)
+    except (OSError, UnicodeDecodeError, EOFError, csv.Error):  # absent, corrupt or not UTF-8
+        quartiles = {}
+        notes.append(f"no SJR table at {sjr_path}: every venue counts as unranked")
+    terms = _protocol_terms(protocol)
+    studies = []
+    for record in _included(root):
+        found = _terms(" ".join([record.get("title", ""), record.get("abstract", ""),
+                                 " ".join(record.get("keywords") or [])]))
+        quartile = quartiles.get(normalize_title(record.get("venue", ""))) or None
+        studies.append({"id": record["id"], "title": record.get("title", ""), "venue": record.get("venue", ""),
+                        "year": record.get("year"), "quartile": quartile,
+                        "relation": round(len(found & terms) / len(terms), 4) if terms else 0.0})
+    top = max((s["relation"] for s in studies), default=0.0)
+    for s in studies:
+        impact = 0.5 + 0.5 * QUARTILE_WEIGHT.get(s["quartile"] or "", 0) / 4
+        s["score"] = round((s["relation"] / top if top else 0.0) * impact, 4)
+    studies.sort(key=lambda s: (-s["score"], -(s["year"] or 0), s["id"]))
+    budget = args.cap - args.other_references
+    keep, drop = studies[:budget], studies[budget:]
+    total = len(keep) + args.other_references
+    if total < args.floor:
+        notes.append(f"{total} reference(s) is below the floor of {args.floor}: widen the sources or "
+                     "snowball before writing")
+    document = {"floor": args.floor, "cap": args.cap, "other_references": args.other_references,
+                "budget": budget, "included": len(studies), "terms": sorted(terms),
+                "sjr": str(sjr_path), "keep": keep, "drop": drop, "at": _now()}
+    _write_json(review_dir(root) / "prioritization.json", document)
+    recorded = []
+    if args.apply and drop:
+        rows = [{"record_id": s["id"], "stage": "ft", "reviewer": args.reviewer.strip(), "decision": "exclude",
+                 "reason": args.criterion, "note": f"reference budget: rank {budget + i + 1}, score {s['score']}",
+                 "final": True, "at": _now()} for i, s in enumerate(drop)]
+        _append_jsonl(review_dir(root) / "screening.jsonl", rows)
+        recorded = [s["id"] for s in drop]
+    return {"ok": True, "path": str(review_dir(root) / "prioritization.json"), **document,
+            "recorded": recorded, "notes": notes}
+
+
 def cmd_checklist(args) -> dict:
     root = Path(args.root)
     evidence = _evidence(root)
@@ -1256,6 +1363,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("biblio", help="counts per year and venue, keyword co-occurrence")
     p.add_argument("--top", type=int, default=20)
     p.set_defaults(func=cmd_biblio)
+
+    p = sub.add_parser("prioritize", help="keep 100-200 references: rank the included studies by topical "
+                                          "relation and journal quartile, and drop those past the budget")
+    p.add_argument("--floor", type=int, default=100, help="fewest references the review should cite")
+    p.add_argument("--cap", type=int, default=200, help="most references the review may cite")
+    p.add_argument("--other-references", type=int, default=0,
+                   help="references cited outside the included studies (background, introduction, methods)")
+    p.add_argument("--sjr", default=None, help="SCImago export (default: journal-finder's bundled 2025 table)")
+    p.add_argument("--apply", action="store_true", help="record the drop list as final full-text exclusions")
+    p.add_argument("--criterion", default=None, help="the protocol's exclusion criterion for the budget, E<n>")
+    p.add_argument("--reviewer", default=None, help="who applied the budget")
+    p.set_defaults(func=cmd_prioritize)
 
     p = sub.add_parser("checklist", help="the 27 PRISMA 2020 items and what each still owes")
     p.set_defaults(func=cmd_checklist)

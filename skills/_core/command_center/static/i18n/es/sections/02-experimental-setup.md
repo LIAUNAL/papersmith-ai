@@ -378,6 +378,16 @@ del cuerpo.
   `table*` o a una página apaisada cuando la revista permite cualquiera de los dos —
   nunca se encoge por debajo del mínimo.
 - **La leyenda va encima de la tabla.**
+- **Una tabla tiene al menos tres columnas y tres filas.** Una tabla de dos
+  columnas (una etiqueta y un valor) o de dos filas (un encabezado y un
+  registro, o dos registros) es una cuadrícula sin nada que cruzar: explore
+  primero si una gráfica se lee mejor. Los conteos o medidas por categoría se
+  vuelven un diagrama de barras; las partes de un todo, con seis partes como
+  máximo, un diagrama de pastel; uno o dos valores van en la oración. La
+  gráfica la dibuja un script a partir de los valores registrados, su
+  procedencia se registra con `paper_cli.py figure provenance` y se coloca con
+  `paper_cli.py place`. Conserve una tabla tan pequeña solo cuando sus celdas
+  sean palabras que ninguna gráfica puede llevar.
 
 ## Estilo de la casa LIA
 
@@ -455,6 +465,7 @@ ablación — el resto los presenta en los resultados, lo que este contrato proh
 
 ## Descalificadores
 
+- Una tabla de dos columnas o dos filas cuyos valores podría llevar un diagrama de barras o de pastel, o la oración.
 - Un conjunto de datos real descrito aquí cuya explicación no cierra con su diagrama del
   protocolo de adquisición, o cuyo diagrama es solo de cajas.
 - Un paso de preprocesamiento, protocolo de partición, prueba estadística o criterio de

@@ -51,7 +51,9 @@ class SmithPaperQaTests(unittest.TestCase):
         report = json.loads(out)
         self.assertEqual(report["summary"]["pages"], 4)
         self.assertEqual(set(report["summary"]["by_kind"]),
-                         {"overflow", "overfull", "table-font", "figure-font"})
+                         {"overflow", "overfull", "table-font", "figure-font", "table-shape"})
+        # The wide fixture table has a header and one row: two rows, a chart candidate (spec S5).
+        self.assertIn("page_budget", report)
         self.assertTrue((self.root / "paper" / ".qa" / "qa.json").is_file())
 
     def test_the_default_output_is_one_summary_line_and_the_findings(self) -> None:
