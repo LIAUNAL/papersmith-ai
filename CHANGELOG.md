@@ -11,6 +11,75 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.80.0
+
+- **Review introduction: one proposal paragraph before the agenda.** The
+  review line's introduction no longer lists RQ1, RQ2 … or short
+  contribution items. One proposal paragraph of 120–220 words tells the
+  review's idea, its novelty against the closest existing reviews, and its
+  key points (each protocol question as a clause, with what the review
+  delivers for it), right before the agenda paragraph.
+- **Open problems and challenges are linked paragraphs.** The background's
+  open problems and the discussion's challenges are written as paragraphs of
+  six to eight lines, each naming its problem in plain text, illustrated by
+  two to four citations and linked to the one before, under the redactor's
+  prose-flow rules and the patterns `ai-auditor` flags. Bold or italic
+  lead-ins, bullets and one-line problems are disqualifiers.
+- **The protocol is a flow diagram, not a table.** The review methods draw
+  the PRISMA phases as `protocol-flow`, adapted to the review's topic (its
+  sources, query concepts, criteria, data items and themes, no counts),
+  through a `figure:` obligation: `diagram-author` writes it, `paper_cli.py
+  render --figure-id protocol-flow --section methods --block
+  m-protocol-registration` compiles and checks it, and `/figure-review`
+  reviews it before the block is drafted.
+- **Review results without RQ notation.** Themes are titled by their theme,
+  no RQ label appears in the results, and subsections and sub-theme
+  paragraphs pick up the claim the previous one closed.
+- **A review cites 100 to 200 references: `review_cli.py prioritize`.** It
+  ranks the included studies by topical relation to the protocol (its
+  queries, questions and PICOC terms) weighted by the journal's best SJR
+  quartile (journal-finder's bundled SCImago 2025 table), writes
+  `review/prioritization.json`, and with `--apply --criterion E<n>
+  --reviewer <name>` records the studies past the budget as final full-text
+  exclusions under the protocol's budget criterion, so the PRISMA flow
+  counts them. A review below the floor is reported in `notes`.
+- **Both lines: no table of two columns or two rows.** The experimental
+  contracts (02, 03, with their Spanish copies) and every review contract
+  turn such a table into a bar chart (counts across categories), a pie chart
+  (shares of one whole, at most six parts) or the sentence; `smith paper qa`
+  reports each one as a `table-shape` finding.
+- **Length budget: 45 single-column Elsevier pages, references included.**
+  `smith paper qa` estimates the manuscript's length in elsarticle
+  `preprint,12pt` pages from `main.tex` (1 front-matter page + prose words /
+  450 + 0.5 per float + cited references / 14; `page_budget` in `qa.json`),
+  or measures a compiled elsarticle against its own layout (25 pages for
+  `5p`/`twocolumn`). Past the limit it adds a `page-budget` finding and a
+  warning line in the PDF tab. The constants are declared so a calibration
+  against the real class can replace them.
+- **Suggested journals: switching between national and international no
+  longer strands the search.** The panel kept one busy flag and the server
+  one lock for both scopes, so a slow international search (tens of seconds,
+  minutes with OpenAlex rate limits) left the national button disabled and
+  then replaced the national table. Each scope now has its own lock and its
+  own result file (`paper/journal-candidates-<scope>.json`, beside the
+  latest `journal-candidates.json`), `GET /api/journals?scope=` returns the
+  scope the panel is on, a result that ends while the form is on the other
+  scope is shown on return, `venue select` also finds a journal in the scoped
+  files, and the button counts the seconds of a running search.
+- **National suggestions match the paper's topic.** One word in common used
+  to be enough (a theology journal on *attention*, surgery on *disorder*).
+  The paper's OpenAlex subfield profile (one `group_by` query per facet
+  phrase, cached in `paper/.journal-subfields.json`) now gates the list: a
+  journal is listed when the paper cites it or when its subfield affinity,
+  weighted by how rare each subfield is in the Publindex list, reaches a
+  quarter of the best journal's; without OpenAlex, it needs two distinct
+  paper terms by stem. Off-topic journals are counted in
+  `excluded_reasons.off_topic`, and the list may be shorter than `--limit`.
+- **Review fixes.** The table-shape disqualifier is no longer duplicated in
+  contracts 02 and 03, `prioritize` reads an unreadable SJR table as
+  unranked with a note, and the Elsevier page estimate expands `\input` and
+  `\include` files.
+
 ## 0.79.1
 
 - **`smith ui` finds the desktop from a terminal outside the session.** A
