@@ -293,6 +293,7 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   prefs={prefs}
                   onOpenDiagnostic={openAt}
                   highlights={highlights}
+                  focus={explained.on ? explained.focus : null}
                   {...(embedOrigin === undefined ? {} : { onTextSelected: (selection) => postSelection(embedOrigin, selection) })}
                 />
               ),
@@ -301,10 +302,10 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   controller={chat}
                   onOpenFile={(path) => void openAt(path, 1)}
                   onCompile={() => void compiler.start()}
-                  explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle }}
+                  explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle, current: explained.current, onStep: explained.step }}
                 />
               ),
-              ...(editing.active === null ? {} : { editor: <EditorPane session={session} highlights={highlights} /> }),
+              ...(editing.active === null ? {} : { editor: <EditorPane session={session} highlights={highlights} focus={explained.on ? explained.focus : null} /> }),
             }}
           />
         </main>

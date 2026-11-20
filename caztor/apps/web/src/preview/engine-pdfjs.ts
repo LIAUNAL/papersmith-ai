@@ -44,6 +44,12 @@ export const pdfjsEngine: PdfEngine = {
         done.catch(() => {});
         return { done, cancel: () => layer.cancel() };
       },
+      async pageText(index) {
+        const page = pages[index];
+        if (page === undefined) return "";
+        const content = await page.getTextContent();
+        return content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+      },
       destroy() {
         void loading.destroy();
       },

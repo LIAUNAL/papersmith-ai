@@ -14,6 +14,8 @@ export interface PdfDocument {
   render(index: number, canvas: HTMLCanvasElement, scale: number): RenderTask;
   /** Lays the selectable text of page `index` into `container`, one point per `scale` CSS pixels. Optional: without it no text can be selected. */
   renderText?(index: number, container: HTMLElement, scale: number): RenderTask;
+  /** The text of page `index`, its pieces joined by spaces as the text layer lays them. Optional. */
+  pageText?(index: number): Promise<string>;
   /** Frees the document. Nothing may be drawn afterwards. */
   destroy(): void;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PdfSelection } from "../embed/bridge.ts";
+import type { PassageFocus } from "../explain/focus.ts";
 import { findPassages, plainText } from "../explain/passages.ts";
 import type { PdfDocument } from "./engine.ts";
 import { anchorAt, canvasRatio, layoutPages, PAGE_GAP, percentOf, resolveScale, scrollTopFor, visiblePages, type Anchor, type Zoom } from "./layout.ts";
@@ -18,12 +19,23 @@ interface PdfViewerProps {
   onTextSelected?: (selection: PdfSelection) => void;
   /** Passages to mark in soft yellow wherever a page shows them. When set, the pages carry a text layer. */
   highlights?: readonly string[];
+  /** The explained passage to scroll to, once per nonce. */
+  focus?: PassageFocus | null;
 }
 
-/** Marks the text pieces of one page that hold a passage, as written or as LaTeX prints it; clears the others. */
+/** Whether `text` holds `passage`, as written or as LaTeX prints it. */
+const holds = (text: string, passage: string): boolean => findPassages(text, [passage, plainText(passage)]).length > 0;
+
+/**
+ * Marks the text pieces of one page that hold a passage, as written or as LaTeX prints it; clears the others. Each
+ * marked piece names, in `data-explained`, the passages it belongs to, so a step can find one passage's pieces.
+ */
 function markPassages(layer: HTMLElement, passages: readonly string[]): void {
   const pieces = [...layer.querySelectorAll<HTMLElement>("span")].filter((span) => !span.classList.contains("markedContent"));
-  for (const piece of pieces) piece.classList.remove("pdf-viewer__explained");
+  for (const piece of pieces) {
+    piece.classList.remove("pdf-viewer__explained");
+    delete piece.dataset["explained"];
+  }
   if (passages.length === 0 || pieces.length === 0) return;
   const starts: number[] = [];
   let joined = "";
@@ -31,14 +43,17 @@ function markPassages(layer: HTMLElement, passages: readonly string[]): void {
     starts.push(joined.length);
     joined += `${piece.textContent ?? ""} `;
   }
-  const wanted = [...new Set(passages.flatMap((passage) => [passage, plainText(passage)]))];
-  for (const range of findPassages(joined, wanted)) {
-    pieces.forEach((piece, at) => {
-      const start = starts[at]!;
-      const end = start + (piece.textContent ?? "").length;
-      if (start < range.to && end > range.from) piece.classList.add("pdf-viewer__explained");
-    });
-  }
+  passages.forEach((passage, which) => {
+    for (const range of findPassages(joined, [...new Set([passage, plainText(passage)])])) {
+      pieces.forEach((piece, at) => {
+        const start = starts[at]!;
+        const end = start + (piece.textContent ?? "").length;
+        if (start >= range.to || end <= range.from) return;
+        piece.classList.add("pdf-viewer__explained");
+        piece.dataset["explained"] = `${piece.dataset["explained"] ?? ""} ${which} `;
+      });
+    }
+  });
 }
 
 /** Used until the container has been measured (and in environments without layout). */
@@ -99,7 +114,7 @@ function PageText({ document: pdf, index, scale, passages }: { document: PdfDocu
 }
 
 /** The pages of a PDF in one scrolling column. Only the pages near the viewport are drawn. */
-export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleChange, onTextSelected, highlights }: PdfViewerProps) {
+export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleChange, onTextSelected, highlights, focus }: PdfViewerProps) {
   const withText = onTextSelected !== undefined || highlights !== undefined;
   const scroller = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(FALLBACK_SIZE);
@@ -156,6 +171,50 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     if (page === null || page === undefined || scroller.current?.contains(page) !== true) return;
     onTextSelected({ text, page: Number(page.getAttribute("data-page")) });
   }
+
+  // A step to an explained passage: find its page from the pages' text (drawn or not), scroll there, then centre the
+  // marked pieces once that page's text layer is in.
+  const texts = useRef<{ of: PdfDocument; pages: Map<number, Promise<string>> } | null>(null);
+  const layoutNow = useRef(layout);
+  layoutNow.current = layout;
+  useEffect(() => {
+    const element = scroller.current;
+    if (focus === null || focus === undefined || element === null || pdf.pageText === undefined) return;
+    if (texts.current?.of !== pdf) texts.current = { of: pdf, pages: new Map() };
+    const cache = texts.current.pages;
+    const which = (highlights ?? []).indexOf(focus.passage);
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    void (async () => {
+      for (let index = 0; index < pdf.pageSizes.length && live; index += 1) {
+        if (!cache.has(index)) cache.set(index, pdf.pageText!(index).catch(() => ""));
+        if (!holds(await cache.get(index)!, focus.passage)) continue;
+        if (!live) return;
+        const box = layoutNow.current.boxes[index];
+        if (box !== undefined) element.scrollTop = Math.max(0, box.top - PAGE_GAP);
+        let tries = 0;
+        const centre = () => {
+          if (!live) return;
+          const page = element.querySelector(`[data-page="${index + 1}"]`);
+          const pieces = [...(page?.querySelectorAll<HTMLElement>(".pdf-viewer__explained") ?? [])].filter((piece) => which < 0 || (piece.dataset["explained"] ?? "").includes(` ${which} `));
+          for (const old of element.querySelectorAll(".pdf-viewer__explained--current")) old.classList.remove("pdf-viewer__explained--current");
+          if (pieces.length > 0) {
+            for (const piece of pieces) piece.classList.add("pdf-viewer__explained--current");
+            const first = pieces[0]!;
+            element.scrollTop += first.getBoundingClientRect().top - element.getBoundingClientRect().top - element.clientHeight / 3;
+          } else if ((tries += 1) < 30) timer = setTimeout(centre, 100);
+        };
+        timer = setTimeout(centre, 50);
+        return;
+      }
+    })();
+    return () => {
+      live = false;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+    // Only a new step moves the view; new highlights alone do not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.nonce, pdf]);
 
   const range = visiblePages(layout, scrollTop, size.height, size.height);
   const columnWidth = Math.max(layout.width + 2 * PAGE_GAP, size.width);

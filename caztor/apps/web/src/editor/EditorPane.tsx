@@ -1,4 +1,5 @@
 import { endOfDocumentMisplaced, moveEndOfDocument } from "@caztor/core";
+import type { PassageFocus } from "../explain/focus.ts";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { CodeEditor } from "./CodeEditor.tsx";
@@ -11,6 +12,7 @@ interface EditorPaneProps {
   session: EditorSession;
   /** Passages to mark in soft yellow in the file shown. */
   highlights?: readonly string[];
+  focus?: PassageFocus | null;
 }
 
 const STATUS_LABEL: Record<BufferStatus, string> = {
@@ -22,7 +24,7 @@ const STATUS_LABEL: Record<BufferStatus, string> = {
 };
 
 /** The editor for the file the session has active: its name, save state and the text itself. */
-export function EditorPane({ session, highlights }: EditorPaneProps) {
+export function EditorPane({ session, highlights, focus }: EditorPaneProps) {
   const { buffers, active, jump } = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const buffer = active === null ? undefined : buffers.get(active);
   const [comparing, setComparing] = useState(false);
@@ -81,6 +83,7 @@ export function EditorPane({ session, highlights }: EditorPaneProps) {
             onChange={(text) => session.edit(buffer.path, text)}
             onSave={() => void session.saveNow(buffer.path)}
             {...(highlights === undefined ? {} : { highlights })}
+            {...(focus === undefined ? {} : { focus })}
             {...(jump !== null && jump.path === buffer.path ? { reveal: { line: jump.line, id: jump.id } } : {})}
           />
         )}

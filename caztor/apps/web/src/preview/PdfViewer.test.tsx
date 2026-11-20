@@ -1,7 +1,7 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeDocument, type FakeDocument } from "../testing/fake-pdf.ts";
-import { CSS_UNITS, layoutPages, scrollTopFor } from "./layout.ts";
+import { CSS_UNITS, layoutPages, PAGE_GAP, scrollTopFor } from "./layout.ts";
 import { PdfViewer } from "./PdfViewer.tsx";
 
 const VIEWPORT = { width: 900, height: 700 };
@@ -237,5 +237,40 @@ describe("PdfViewer explained passages", () => {
     rerender(<PdfViewer {...props} highlights={[]} />);
     await flush();
     expect(marked(container)).toEqual([]);
+  });
+});
+
+describe("PdfViewer stepping to an explained passage", () => {
+  const passage = "each colour class is updated in parallel without conflicts";
+
+  it("finds the page that holds the passage, drawn or not, and scrolls to it", async () => {
+    const doc = fakeDocument("a", 20);
+    const asked: number[] = [];
+    doc.pageText = async (index: number) => {
+      asked.push(index);
+      return index === 12 ? "Results. Each colour class is up- dated in parallel without conflicts. More." : "Other text.";
+    };
+    const { container, rerender } = render(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} highlights={[passage]} focus={null} />);
+    await flush();
+    const start = scroller(container).scrollTop;
+    expect(start).toBeLessThan(100);
+    rerender(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} highlights={[passage]} focus={{ passage, nonce: 1 }} />);
+    await flush();
+    await flush();
+    const layout = layoutPages(doc.pageSizes, CSS_UNITS);
+    expect(scroller(container).scrollTop).toBeCloseTo(layout.boxes[12]!.top - PAGE_GAP, 3);
+    expect(asked.slice(0, 13)).toEqual(Array.from({ length: 13 }, (_, index) => index));
+  });
+
+  it("stays where it is when no page holds the passage", async () => {
+    const doc = fakeDocument("a", 5);
+    doc.pageText = async () => "nothing relevant";
+    const { container, rerender } = render(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} highlights={[passage]} focus={null} />);
+    await flush();
+    const start = scroller(container).scrollTop;
+    rerender(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} highlights={[passage]} focus={{ passage, nonce: 1 }} />);
+    await flush();
+    await flush();
+    expect(scroller(container).scrollTop).toBe(start);
   });
 });

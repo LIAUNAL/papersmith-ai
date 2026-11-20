@@ -551,3 +551,33 @@ describe("a command sent with the Send button", () => {
   });
 });
 
+
+describe("ChatPanel arrows between explained passages", () => {
+  async function withExplain(explain: NonNullable<Parameters<typeof ChatPanel>[0]["explain"]>) {
+    const fake = createFakeApi({ providers: { selected: "claude", providers: [{ id: "claude", installed: true, requiresModel: false, model: null }] } });
+    const controller = new ChatController({ api: fake.api, wait: async () => {} });
+    render(<ChatPanel controller={controller} explain={explain} />);
+    await act(() => controller.load());
+  }
+
+  it("steps back and forth and says which passage is shown", async () => {
+    const steps: number[] = [];
+    await withExplain({ on: true, count: 5, onToggle: () => {}, current: 1, onStep: (direction) => steps.push(direction) });
+    const nav = screen.getByRole("group", { name: "Explained passages" });
+    expect(nav).toHaveTextContent("2 / 5");
+    await userEvent.click(within(nav).getByRole("button", { name: "Next explained passage" }));
+    await userEvent.click(within(nav).getByRole("button", { name: "Previous explained passage" }));
+    expect(steps).toEqual([1, -1]);
+  });
+
+  it("shows the count before the first step, and no arrows when the marks are off or there is nothing to show", async () => {
+    await withExplain({ on: true, count: 3, onToggle: () => {}, current: null, onStep: () => {} });
+    expect(screen.getByRole("group", { name: "Explained passages" })).toHaveTextContent("3 in the last reply");
+  });
+
+  it("hides the arrows when highlighting is off", async () => {
+    await withExplain({ on: false, count: 3, onToggle: () => {}, current: null, onStep: () => {} });
+    expect(screen.queryByRole("group", { name: "Explained passages" })).toBeNull();
+    expect(screen.getByText("3 in the last reply")).toBeTruthy();
+  });
+});

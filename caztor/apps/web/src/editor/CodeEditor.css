@@ -30,3 +30,10 @@
     background-color: rgb(250 204 21 / 0.22);
   }
 }
+
+/* The explained passage the arrows last brought into view. */
+.cm-explained-current {
+  background-color: rgb(250 204 21 / 0.6);
+  outline: 2px solid rgb(234 179 8 / 0.9);
+  border-radius: 2px;
+}

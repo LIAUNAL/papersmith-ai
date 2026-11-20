@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { PassageFocus } from "../explain/focus.ts";
 import type { ApiClient } from "../api/types.ts";
 import type { CompileState } from "../compile/compile-state.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
@@ -20,6 +21,7 @@ interface PdfPreviewProps {
   onTextSelected?: (selection: PdfSelection) => void;
   /** Passages to mark in soft yellow on the pages. */
   highlights?: readonly string[];
+  focus?: PassageFocus | null;
 }
 
 /** Wait after the last scroll before the position is written to storage. */
@@ -30,7 +32,7 @@ function messageOf(error: unknown, fallback: string): string {
 }
 
 /** The preview pane: the latest PDF on canvas, zoom controls, and the empty, out-of-date and error states. */
-export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highlights }: PdfPreviewProps) {
+export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highlights, focus }: PdfPreviewProps) {
   const initial = useMemo(() => prefs.load(), [prefs]);
   const [state, dispatch] = useReducer(previewReducer, INITIAL_PREVIEW_STATE);
   const [doc, setDoc] = useState<PdfDocument | null>(null);
@@ -164,7 +166,7 @@ export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highli
             }}
             onScaleChange={setFitPercent}
             {...(onTextSelected === undefined ? {} : { onTextSelected })}
-            {...(highlights === undefined ? {} : { highlights })}
+            {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })}
           />
         )}
       </div>

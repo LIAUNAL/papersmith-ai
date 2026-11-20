@@ -3,7 +3,8 @@ import { bracketMatching } from "@codemirror/language";
 import { Annotation, EditorState, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
-import { explainedPassages, setExplained } from "../explain/editor-highlight.ts";
+import { currentExplainedPassage, explainedPassages, setCurrentExplained, setExplained } from "../explain/editor-highlight.ts";
+import type { PassageFocus } from "../explain/focus.ts";
 import { findPassages } from "../explain/passages.ts";
 import { minimalChange } from "./diff.ts";
 import { languageFor } from "./languages.ts";
@@ -26,6 +27,8 @@ interface CodeEditorProps {
   reveal?: { line: number; id: number };
   /** Passages to mark in soft yellow wherever the text holds them; none or an empty list marks nothing. */
   highlights?: readonly string[];
+  /** The explained passage to bring into view and mark more strongly, once per nonce. */
+  focus?: PassageFocus | null;
 }
 
 /** Marks a change that came from outside the user's typing, so it is not reported back as an edit. */
@@ -49,6 +52,7 @@ function baseExtensions(path: string, label: string, save: () => void): Extensio
     EditorView.contentAttributes.of({ "aria-label": label, spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),
     editorTheme,
     explainedPassages,
+    currentExplainedPassage,
     ...(language === null ? [] : [language]),
     ...(path.toLowerCase().endsWith(".tex") ? [protectPaperMarkers((transaction) => transaction.annotation(External) === true)] : []),
   ];
@@ -58,7 +62,7 @@ function baseExtensions(path: string, label: string, save: () => void): Extensio
  * A thin wrapper around a CodeMirror 6 view. It owns the view and nothing else: documents, hashes and saving
  * live in the editor session, which feeds this component `text` and listens to `onChange`.
  */
-export function CodeEditor({ path, text, onChange, label, onSave, reveal, highlights }: CodeEditorProps) {
+export function CodeEditor({ path, text, onChange, label, onSave, reveal, highlights, focus }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const shown = useRef({ path, text });
@@ -139,6 +143,19 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
     const passages = wanted === "" ? [] : wanted.split("\n");
     editor.dispatch({ effects: setExplained.of(passages.length === 0 ? [] : findPassages(editor.state.doc.toString(), passages)) });
   }, [wanted, path, text]);
+
+  // A step to an explained passage: mark it more strongly and scroll to it when this file holds it.
+  useEffect(() => {
+    const editor = view.current;
+    if (editor === null || focus === null || focus === undefined) return;
+    const ranges = findPassages(editor.state.doc.toString(), [focus.passage]);
+    const first = ranges[0];
+    editor.dispatch({
+      effects: [setCurrentExplained.of(ranges), ...(first === undefined ? [] : [EditorView.scrollIntoView(first.from, { y: "center" })])],
+    });
+    // Only a new step (or a new file) moves the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.nonce, path]);
 
   return <div ref={host} className="code-editor" />;
 }

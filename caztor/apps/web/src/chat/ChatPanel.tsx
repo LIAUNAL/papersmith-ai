@@ -22,7 +22,7 @@ interface ChatPanelProps {
   /** What `/compile` does. */
   onCompile?: () => void;
   /** The switch that marks, in the editor and the PDF, the passages the latest reply explains. */
-  explain?: { on: boolean; count: number; onToggle: () => void };
+  explain?: { on: boolean; count: number; onToggle: () => void; current?: number | null; onStep?: (direction: 1 | -1) => void };
 }
 
 /** The body of the chat pane: the conversation, what went wrong, and the message box. */
@@ -215,7 +215,21 @@ export function ChatPanel({ controller, onOpenFile, onCompile, explain }: ChatPa
             <span className="chat-panel__explain-swatch" aria-hidden="true" />
             Highlight explained passages
           </button>
-          <span className="chat-panel__explain-count">{explain.count === 0 ? "none in the last reply" : `${explain.count} in the last reply`}</span>
+          {explain.on && explain.count > 0 && explain.onStep !== undefined ? (
+            <span className="chat-panel__explain-nav" role="group" aria-label="Explained passages">
+              <button type="button" className="chat-panel__explain-step" aria-label="Previous explained passage" title="Previous explained passage" onClick={() => explain.onStep?.(-1)}>
+                ‹
+              </button>
+              <span className="chat-panel__explain-count" aria-live="polite">
+                {explain.current === null || explain.current === undefined ? `${explain.count} in the last reply` : `${explain.current + 1} / ${explain.count}`}
+              </span>
+              <button type="button" className="chat-panel__explain-step" aria-label="Next explained passage" title="Next explained passage" onClick={() => explain.onStep?.(1)}>
+                ›
+              </button>
+            </span>
+          ) : (
+            <span className="chat-panel__explain-count">{explain.count === 0 ? "none in the last reply" : `${explain.count} in the last reply`}</span>
+          )}
         </div>
       )}
       <AgentBar

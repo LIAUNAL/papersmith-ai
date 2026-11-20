@@ -1,4 +1,5 @@
 import type { ApiClient, Capability, Settings } from "../api/types.ts";
+import type { PassageFocus } from "../explain/focus.ts";
 import { CompileOptions } from "../compile/CompileOptions.tsx";
 import { LogPanel } from "../compile/LogPanel.tsx";
 import type { CompileState } from "../compile/compile-state.ts";
@@ -27,10 +28,11 @@ interface PreviewPaneProps {
   onTextSelected?: (selection: PdfSelection) => void;
   /** Passages to mark in soft yellow on the pages. */
   highlights?: readonly string[];
+  focus?: PassageFocus | null;
 }
 
 /** The body of the preview pane: compile switches, notices, the PDF and the log panel below it. */
-export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile, settings, onSettingsChange, prefs, onOpenDiagnostic, onTextSelected, highlights }: PreviewPaneProps) {
+export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile, settings, onSettingsChange, prefs, onOpenDiagnostic, onTextSelected, highlights, focus }: PreviewPaneProps) {
   return (
     <div className="preview-pane">
       <CompileOptions settings={settings} sandbox={sandboxStatus} onChange={onSettingsChange} />
@@ -45,7 +47,7 @@ export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile,
         </p>
       ) : null}
       <div className="preview-pane__body">
-        <PdfPreview api={api} engine={engine} compile={compile} prefs={prefs} {...(onTextSelected === undefined ? {} : { onTextSelected })} {...(highlights === undefined ? {} : { highlights })} />
+        <PdfPreview api={api} engine={engine} compile={compile} prefs={prefs} {...(onTextSelected === undefined ? {} : { onTextSelected })} {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })} />
       </div>
       <LogPanel api={api} last={compile.last} onOpen={onOpenDiagnostic} />
     </div>

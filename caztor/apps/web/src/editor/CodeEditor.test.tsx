@@ -161,6 +161,24 @@ describe("CodeEditor", () => {
   });
 });
 
+describe("CodeEditor stepping to an explained passage", () => {
+  const text = "Intro.\n" + "filler line\n".repeat(80) + "Each colour class is updated in parallel without conflicts.\nEnd.";
+  const passage = "each colour class is updated in parallel without conflicts";
+  const current = (container: HTMLElement) => [...container.querySelectorAll(".cm-explained-current")].map((element) => element.textContent).join("");
+
+  it("marks the passage more strongly on a step, and moves the mark on the next step", () => {
+    const { container, rerender } = render(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} highlights={[passage]} focus={{ passage, nonce: 1 }} />);
+    expect(current(container)).toBe("Each colour class is updated in parallel without conflicts");
+    rerender(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} highlights={[passage, "intro"]} focus={{ passage: "nothing like this anywhere", nonce: 2 }} />);
+    expect(container.querySelector(".cm-explained-current")).toBeNull();
+  });
+
+  it("marks nothing more strongly without a step", () => {
+    const { container } = render(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} highlights={[passage]} />);
+    expect(container.querySelector(".cm-explained-current")).toBeNull();
+  });
+});
+
 describe("CodeEditor explained passages", () => {
   const text = "Intro.\nEach colour class is updated in parallel without conflicts.\nEnd.";
   const passage = ["each colour class is updated in parallel without conflicts"];

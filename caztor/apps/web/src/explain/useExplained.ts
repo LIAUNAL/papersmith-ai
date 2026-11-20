@@ -1,4 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
+import type { PassageFocus } from "./focus.ts";
 import type { ChatController } from "../chat/controller.ts";
 import type { StorageLike } from "../layout/storage.ts";
 import { explainedPassages } from "./passages.ts";
@@ -11,6 +12,12 @@ export interface Explained {
   toggle(): void;
   /** The passages the latest reply quotes, whether or not they are marked. */
   passages: readonly string[];
+  /** Which passage the arrows last brought into view (zero-based), or null before the first step. */
+  current: number | null;
+  /** Brings the next (1) or previous (-1) passage into view, going round at either end. */
+  step(direction: 1 | -1): void;
+  /** What the editor and the PDF bring into view; null until a step. */
+  focus: PassageFocus | null;
 }
 
 /** The passages of the paper the assistant's latest reply explains, and the switch that marks them. */
@@ -26,9 +33,21 @@ export function useExplained(chat: ChatController, storage: StorageLike | null):
   const latest = [...view.chat.turns].reverse().find((turn) => turn.items.some((item) => item.kind === "text"));
   const reply = latest?.items.flatMap((item) => (item.kind === "text" ? [item.text] : [])).join("\n") ?? "";
   const passages = useMemo(() => explainedPassages(reply), [reply]);
+  // The position belongs to one list of passages: a new reply starts again before the first.
+  const [position, setPosition] = useState<{ of: readonly string[]; index: number; nonce: number } | null>(null);
+  const current = position !== null && position.of === passages && position.index < passages.length ? position : null;
   return {
     on,
     passages,
+    current: current?.index ?? null,
+    focus: current === null ? null : { passage: passages[current.index]!, nonce: current.nonce },
+    step(direction) {
+      if (passages.length === 0) return;
+      setPosition((last) => {
+        const from = last !== null && last.of === passages ? last.index : direction === 1 ? -1 : 0;
+        return { of: passages, index: (from + direction + passages.length) % passages.length, nonce: (last?.nonce ?? 0) + 1 };
+      });
+    },
     toggle() {
       setOn((current) => {
         try {

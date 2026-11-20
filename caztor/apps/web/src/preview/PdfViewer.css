@@ -86,3 +86,9 @@
   background-color: rgb(253 224 71 / 0.42);
   border-radius: 2px;
 }
+
+/* The passage the arrows last brought into view. */
+.pdf-viewer__text.textLayer .pdf-viewer__explained--current {
+  background-color: rgb(250 204 21 / 0.62);
+  box-shadow: 0 0 0 2px rgb(234 179 8 / 0.9);
+}
