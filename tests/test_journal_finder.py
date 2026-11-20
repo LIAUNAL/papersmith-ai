@@ -98,8 +98,13 @@ class FakeApi:
 
     def __init__(self, *, script: dict[str, list] | None = None, max_terms_matching: int | None = None,
                  or_count: int | None = None, topics: bool = False, facet_split: bool = False,
-                 app_count: int | None = None, budget: tuple[float, float] | None = (0.05, 0.1)):
+                 app_count: int | None = None, budget: tuple[float, float] | None = (0.05, 0.1),
+                 source_works: dict[str, list] | None = None, source_misses: set[str] | None = None):
         self.max_terms_matching = max_terms_matching
+        #: the articles each journal (short OpenAlex id) returns to a `primary_location.source.id` works query
+        self.source_works = source_works or {}
+        #: journals whose phrase-searched works query matches nothing (their latest articles still answer)
+        self.source_misses = source_misses or set()
         #: when set, a quoted-phrase (OR) works query matches this many works and returns none
         self.or_count = or_count
         #: attach OpenAlex `topics` to the matched works, by hosting source
@@ -209,6 +214,10 @@ class FakeApi:
         if path == "/openalex/works":
             if params.get("filter", "").startswith("doi:"):
                 return 200, self._cited_works(params["filter"][4:])
+            if "primary_location.source.id:" in params.get("filter", ""):
+                sid = params["filter"].split("primary_location.source.id:")[1].split(",")[0]
+                works = [] if "search" in params and sid in self.source_misses else self.source_works.get(sid, [])
+                return 200, {"meta": {"count": len(works)}, "results": works}
             search = params.get("search", "")
             quoted = search.lstrip().startswith('"')
             is_application = "attention deficit" in search
@@ -337,6 +346,8 @@ class JournalFinderCase(unittest.TestCase):
             "PAPERSMITH_HTTP_RETRIES": "2",
             "PAPERSMITH_CROSSREF_MIN_INTERVAL": "0",
             "PAPERSMITH_FALLBACK_MIN_INTERVAL": "0",
+            # the similar-papers second stage asks OpenAlex more; tests of it turn it on with --refine-top
+            "PAPERSMITH_JOURNAL_REFINE_TOP": "0",
             "HOME": str(self.tmp / "home"),
         })
         if use_api and self.api is not None:
