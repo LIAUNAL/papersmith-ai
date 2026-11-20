@@ -5,7 +5,7 @@ import { Markdown } from "./Markdown.tsx";
 import { NoticeBanner } from "./NoticeBanner.tsx";
 import { TurnSummary } from "./TurnSummary.tsx";
 import { ToolActivityCard } from "./ToolActivityCard.tsx";
-import { splitTutorAnswer, TutorReply } from "./TutorReply.tsx";
+import { splitTutorAnswer, streamingTutorAnswer, TutorReply } from "./TutorReply.tsx";
 import { splitAddressed } from "./papersmith-agents.ts";
 import "./MessageList.css";
 
@@ -29,8 +29,21 @@ interface MessageListProps {
 
 /** One item of a reply. */
 /** An assistant's text; a PaperSmith tutor's JSON answer inside it is shown as readable sections. */
-function AssistantText({ text }: { text: string }) {
+function AssistantText({ text, running }: { text: string; running: boolean }) {
   const tutor = splitTutorAnswer(text);
+  // While a tutor's JSON answer is arriving, its reply reads as text and the rest waits for the closed block.
+  const arriving = tutor === null && running ? streamingTutorAnswer(text) : null;
+  if (arriving !== null) {
+    return (
+      <>
+        {arriving.before === "" ? null : <Markdown text={arriving.before} />}
+        {arriving.reply === null || arriving.reply === "" ? null : <Markdown text={arriving.reply} />}
+        <p className="tutor-reply__writing" role="status">
+          Writing the answer…
+        </p>
+      </>
+    );
+  }
   if (tutor === null) return <Markdown text={text} />;
   return (
     <>
@@ -75,12 +88,12 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
   );
 }
 
-function ReplyItem({ item, onReplaceDefinition, signIn }: { item: ChatItem; onReplaceDefinition: (() => void) | undefined; signIn: SignInContext | undefined }) {
+function ReplyItem({ item, onReplaceDefinition, signIn, running }: { item: ChatItem; onReplaceDefinition: (() => void) | undefined; signIn: SignInContext | undefined; running: boolean }) {
   switch (item.kind) {
     case "text":
       return (
         <div className="message message--assistant">
-          <AssistantText text={item.text} />
+          <AssistantText text={item.text} running={running} />
         </div>
       );
     case "tool":
@@ -122,7 +135,7 @@ function Turn({ turn, canUndo, undone, onUndo, onOpenFile, onReplaceDefinition, 
         entry.kind === "steps" ? (
           <ToolGroup key={`steps-${entry.tools[0]!.toolId}`} tools={entry.tools} />
         ) : (
-          <ReplyItem key={entry.kind === "text" ? `text-${entry.id}` : `${entry.kind}-${index}`} item={entry} onReplaceDefinition={onReplaceDefinition} signIn={signIn} />
+          <ReplyItem key={entry.kind === "text" ? `text-${entry.id}` : `${entry.kind}-${index}`} item={entry} onReplaceDefinition={onReplaceDefinition} signIn={signIn} running={turn.status === "running"} />
         ),
       )}
       {turn.status === "cancelled" ? <p className="turn__note">Stopped</p> : null}

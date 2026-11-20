@@ -31,3 +31,9 @@
   max-height: 14rem;
   overflow: auto;
 }
+
+.tutor-reply__writing {
+  margin: var(--space-1) 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}

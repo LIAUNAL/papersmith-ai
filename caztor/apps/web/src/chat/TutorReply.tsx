@@ -24,6 +24,45 @@ export function splitTutorAnswer(text: string): { before: string; answer: TutorA
   return { before: text.slice(0, match.index).trim(), answer: parsed as TutorAnswer, raw: match[1]!, after: text.slice(match.index + match[0].length).trim() };
 }
 
+const OPEN_FENCE = /```json[ \t]*\n/;
+
+/**
+ * The `reply` of a tutor's JSON answer that is still arriving: the fence is open and the object not finished, so
+ * only the part of `reply` written so far is read, its escapes decoded. Null when the text is not such an answer.
+ * `reply` is null while the fields before it are still being written.
+ */
+export function streamingTutorAnswer(text: string): { before: string; reply: string | null } | null {
+  if (FENCE.test(text)) return null;
+  const open = OPEN_FENCE.exec(text);
+  if (open === null) return null;
+  const body = text.slice(open.index + open[0].length);
+  if (!body.trimStart().startsWith("{") && body.trim() !== "") return null;
+  const before = text.slice(0, open.index).trim();
+  const key = /"reply"\s*:\s*"/.exec(body);
+  if (key === null) return { before, reply: null };
+  let reply = "";
+  for (let i = key.index + key[0].length; i < body.length; i += 1) {
+    const char = body[i]!;
+    if (char === '"') break;
+    if (char !== "\\") {
+      reply += char;
+      continue;
+    }
+    const next = body[i + 1];
+    if (next === undefined) break; // an escape cut in two: wait for the rest
+    if (next === "u") {
+      const hex = body.slice(i + 2, i + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
+      reply += String.fromCharCode(Number.parseInt(hex, 16));
+      i += 5;
+      continue;
+    }
+    reply += ({ n: "\n", t: "\t", r: "", b: "", f: "" } as Record<string, string>)[next] ?? next;
+    i += 1;
+  }
+  return { before, reply };
+}
+
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
 const list = (value: unknown): string[] => (Array.isArray(value) ? value.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).filter((item) => item.trim() !== "") : []);
 

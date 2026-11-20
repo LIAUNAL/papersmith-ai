@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { chatReducer, INITIAL_CHAT_STATE, type ChatState, type TurnEvent } from "@caztor/core";
 import { MessageList } from "./MessageList.tsx";
+import { streamingTutorAnswer } from "./TutorReply.tsx";
 
 const play = (events: TurnEvent[], prompt = "Please help"): ChatState =>
   events.reduce<ChatState>((state, event) => chatReducer(state, { type: "event", event }), chatReducer(INITIAL_CHAT_STATE, { type: "prompt_sent", prompt }));
@@ -127,6 +128,50 @@ describe("MessageList messages to a PaperSmith agent", () => {
     expect(render(<MessageList timeline={play([begin], "/experiments-tutor").timeline} />).container.querySelector(".message--user")).toHaveTextContent("Experiments tutorBegin");
     const other = render(<MessageList timeline={play([begin], "/paper/main.tex has a typo").timeline} />).container.querySelector(".message--user")!;
     expect(other.textContent).toBe("/paper/main.tex has a typo");
+  });
+});
+
+describe("MessageList a PaperSmith tutor answer while it arrives", () => {
+  const partial = '```json\n{\n  "image_reading": "none",\n  "reply": "Equation 3 is **exact** because\\nthe colouring is pro';
+
+  it("shows the reply written so far as text, and none of the JSON", () => {
+    const state = play([begin, { type: "text", messageId: "m", text: "I read the skill.\n" + partial }]);
+    const { container } = render(<MessageList timeline={state.timeline} />);
+    const reply = container.querySelector(".message--assistant")!;
+    expect(reply).toHaveTextContent("I read the skill.");
+    expect(reply.querySelector("strong")?.textContent).toBe("exact");
+    expect(reply).toHaveTextContent("the colouring is pro");
+    expect(reply).not.toHaveTextContent("image_reading");
+    expect(reply).not.toHaveTextContent("{");
+    expect(reply).toHaveTextContent("Writing the answer…");
+  });
+
+  it("before the reply field arrives, shows only that the answer is being written", () => {
+    const state = play([begin, { type: "text", messageId: "m", text: '```json\n{\n  "image_reading": "the pa' }]);
+    const reply = render(<MessageList timeline={state.timeline} />).container.querySelector(".message--assistant")!;
+    expect(reply.textContent).toBe("Writing the answer…");
+  });
+
+  it("once the turn ends, a block that never closed is shown as it is", () => {
+    const state = play([begin, { type: "text", messageId: "m", text: partial }, { type: "done", reason: "completed" }]);
+    const reply = render(<MessageList timeline={state.timeline} />).container.querySelector(".message--assistant")!;
+    expect(reply).toHaveTextContent('"image_reading"');
+    expect(reply).not.toHaveTextContent("Writing the answer…");
+  });
+});
+
+describe("streamingTutorAnswer", () => {
+  it("decodes escapes and waits on one cut in two", () => {
+    expect(streamingTutorAnswer('```json\n{"reply": "a\\"b\\u00e9\\tc')).toEqual({ before: "", reply: 'a"b\u00e9\tc' });
+    expect(streamingTutorAnswer('```json\n{"reply": "ab\\')).toEqual({ before: "", reply: "ab" });
+    expect(streamingTutorAnswer('```json\n{"reply": "ab\\u00')).toEqual({ before: "", reply: "ab" });
+    expect(streamingTutorAnswer('```json\n{"reply": "done", "question": "q')).toEqual({ before: "", reply: "done" });
+  });
+
+  it("leaves other text alone: no fence, a closed fence, or a fence that does not hold an object", () => {
+    expect(streamingTutorAnswer("plain text")).toBeNull();
+    expect(streamingTutorAnswer('```json\n{"reply": "x"}\n```')).toBeNull();
+    expect(streamingTutorAnswer("```json\n[1, 2")).toBeNull();
   });
 });
 
