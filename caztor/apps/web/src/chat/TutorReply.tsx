@@ -1,4 +1,5 @@
 import { Markdown } from "./Markdown.tsx";
+import { TexMath } from "./TexMath.tsx";
 import "./TutorReply.css";
 
 /** A PaperSmith tutor's structured turn (math-tutor, experiments-tutor), as its JSON block says it. */
@@ -59,9 +60,7 @@ export function TutorReply({ answer, raw }: { answer: TutorAnswer; raw: string }
       {formulas.length === 0 ? null : (
         <Section label="Formulas">
           {formulas.map((formula, index) => (
-            <pre key={index} className="tutor-reply__formula">
-              {formula}
-            </pre>
+            <TexMath key={index} tex={formula.trim().replace(/^\$\$?|\$\$?$/g, "")} display />
           ))}
         </Section>
       )}

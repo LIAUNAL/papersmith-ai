@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from "react";
 import { parseMarkdown, type Block, type Inline } from "./markdown.ts";
+import { TexMath } from "./TexMath.tsx";
 import "./Markdown.css";
 
 function renderInlines(inlines: Inline[]): ReactNode[] {
@@ -13,6 +14,8 @@ function renderInlines(inlines: Inline[]): ReactNode[] {
         return <strong key={index}>{renderInlines(inline.children)}</strong>;
       case "em":
         return <em key={index}>{renderInlines(inline.children)}</em>;
+      case "math":
+        return <TexMath key={index} tex={inline.tex} display={inline.display} />;
       case "link":
         return (
           <a key={index} href={inline.href} target="_blank" rel="noopener noreferrer nofollow">
@@ -36,6 +39,8 @@ function renderBlock(block: Block, index: number): ReactNode {
           <code>{block.text}</code>
         </pre>
       );
+    case "math":
+      return <TexMath key={index} tex={block.tex} display />;
     case "list": {
       const items = block.items.map((item, at) => <li key={at}>{renderInlines(item)}</li>);
       return block.ordered ? <ol key={index}>{items}</ol> : <ul key={index}>{items}</ul>;
@@ -47,7 +52,7 @@ function renderBlock(block: Block, index: number): ReactNode {
   }
 }
 
-/** Assistant text as safe elements: nothing in it can become markup, a script, or a request. */
+/** Assistant text as safe elements: nothing in it can become markup, a script, or a request; formulas are typeset. */
 export function Markdown({ text }: { text: string }) {
   return <div className="markdown">{parseMarkdown(text).map(renderBlock)}</div>;
 }

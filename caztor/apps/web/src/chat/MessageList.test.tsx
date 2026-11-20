@@ -151,6 +151,7 @@ describe("MessageList PaperSmith tutor answers", () => {
     const sections = [...reply.querySelectorAll(".tutor-reply__label")].map((label) => label.textContent);
     expect(sections).toEqual(["Question", "Formulas", "Assessment", "Why it matters for the novelty", "Next step"]);
     expect(reply).toHaveTextContent("partial (level 1)");
+    expect(reply.querySelector(".tutor-reply .tex-math--display .katex")).not.toBeNull();
     expect(reply).toHaveTextContent("detailed balance");
     const raw = reply.querySelector<HTMLDetailsElement>("details.tutor-reply__raw")!;
     expect(raw.open).toBe(false);

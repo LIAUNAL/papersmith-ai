@@ -89,3 +89,56 @@ describe("Markdown", () => {
     expect(code?.textContent).toBe("\\begin{document}\n\\end{document}");
   });
 });
+
+describe("mathematics in assistant text", () => {
+  it("reads $…$ and \\(…\\) as inline math before emphasis, so a subscript's underscore survives", () => {
+    expect(parseInline("the offset $\\mathbf{o}_\\alpha$ of site _a_")).toEqual([
+      { type: "text", text: "the offset " },
+      { type: "math", tex: "\\mathbf{o}_\\alpha", display: false },
+      { type: "text", text: " of site " },
+      { type: "em", children: [{ type: "text", text: "a" }] },
+    ]);
+    expect(parseInline("with \\(x_1\\) here")).toContainEqual({ type: "math", tex: "x_1", display: false });
+  });
+
+  it("reads $$…$$ and \\[…\\] as display math, inline or on their own lines", () => {
+    expect(parseInline("so $$a = b$$ holds")).toContainEqual({ type: "math", tex: "a = b", display: true });
+    expect(parseMarkdown("Before\n$$\n\\gamma = Kc\n$$\nafter")).toEqual([
+      { type: "paragraph", inlines: [{ type: "text", text: "Before" }] },
+      { type: "math", tex: "\\gamma = Kc" },
+      { type: "paragraph", inlines: [{ type: "text", text: "after" }] },
+    ]);
+    expect(parseMarkdown("\\[\nx\n\\]")).toEqual([{ type: "math", tex: "x" }]);
+  });
+
+  it("leaves prices, an escaped dollar and an unclosed one as text", () => {
+    for (const text of ["costs $5 and $10", "a \\$ sign", "an open $x and nothing", "spaced $ x $ here"]) {
+      expect(parseInline(text).some((inline) => inline.type === "math")).toBe(false);
+    }
+  });
+
+  it("takes a math fence, and a latex or tex fence holding a formula, as a formula; LaTeX source stays code", () => {
+    for (const tag of ["latex", "tex", "math"]) expect(parseMarkdown(`\`\`\`${tag}\nx^2\n\`\`\``)).toEqual([{ type: "math", tex: "x^2" }]);
+    expect(parseMarkdown("```latex\n\\gamma(\\mathbf{c}, \\alpha) \\neq \\gamma(\\mathbf{c} + \\boldsymbol{\\delta}, \\alpha')\n```")[0]).toMatchObject({ type: "math" });
+    for (const source of ["\\section{Intro}", "x \\label{eq:a}", "see \\cite{key}", "% a comment", "\\begin{figure}\n\\end{figure}", "\\emph{word}"]) {
+      expect(parseMarkdown(`\`\`\`latex\n${source}\n\`\`\``)[0]).toMatchObject({ type: "code", language: "latex" });
+    }
+    expect(parseMarkdown("```python\nx^2\n```")[0]).toMatchObject({ type: "code" });
+  });
+
+  it("typesets the formulas, inline and display, with no source left visible", () => {
+    const { container } = render(<Markdown text={"Colour $\\gamma(\\mathbf{c},\\alpha)$:\n$$\n\\mathbf{K}\\boldsymbol{\\delta} \\not\\equiv \\mathbf{0} \\pmod{\\boldsymbol{\\omega}}\n$$"} />);
+    expect(container.querySelectorAll(".tex-math .katex")).toHaveLength(2);
+    expect(container.querySelector(".tex-math--display .katex-display")).not.toBeNull();
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex annotation")?.textContent).toBe("\\gamma(\\mathbf{c},\\alpha)");
+  });
+
+  it("shows TeX that KaTeX cannot read as code, and never runs markup from it", () => {
+    const { container } = render(<Markdown text={"$\\unknowncommand{x}$ and $\\href{javascript:alert(1)}{x}$ and $<img src=x onerror=alert(1)>$"} />);
+    expect(container.querySelector("code.tex-math--source")?.textContent).toBe("\\unknowncommand{x}");
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.querySelector("[href]")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+  });
+});
