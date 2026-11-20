@@ -2539,7 +2539,7 @@ def _subfield_phrases(profile: dict) -> list[tuple[str, float]]:
     return chosen or ([(profile["title"], 1.0)] if profile.get("title") else [])
 
 
-def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[str, float]:
+def paper_subfields(workspace: Path, profile: dict, notes: list[str], status: dict | None = None) -> dict[str, float]:
     """The paper's OpenAlex subfield shares, from `group_by=primary_topic.subfield.id` over each facet phrase.
 
     Cached in `paper/.journal-subfields.json` under a digest of the phrases; empty when OpenAlex does not
@@ -2559,6 +2559,8 @@ def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[st
             retry = dt.datetime.fromtimestamp(failed_at + SUBFIELD_RETRY_SECONDS, dt.timezone.utc)
             notes.append(f"OpenAlex did not answer the paper's subfield profile recently and is not asked again "
                          f"before {retry.isoformat(timespec='minutes')}: {fallback}")
+            if status is not None:
+                status["openalex_failed"] = True
             return {}
     except (OSError, ValueError, AttributeError, TypeError):
         pass
@@ -2580,6 +2582,8 @@ def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[st
                     shares[name] = shares.get(name, 0.0) + share * weight / total_weight
     except Exception as exc:  # noqa: BLE001 - any failure here degrades to the offline gate, never fails the search
         notes.append(f"OpenAlex did not answer the paper's subfield profile ({type(exc).__name__}: {exc}): {fallback}")
+        if status is not None:
+            status["openalex_failed"] = True
         try:
             _write_json(cache, {"digest": digest, "failed_at": time.time()})
         except OSError:
@@ -2681,7 +2685,7 @@ def refine_candidates(services: Services | None, workspace: Path, profile: dict,
                       skipped: str | None = None) -> dict:
     """Second stage: sample the works of each of the first `top` candidates that are like the paper, read
     their research profile and re-order those candidates by `refined_score`. Never fails the search: a
-    journal OpenAlex does not answer for keeps its first-stage place, with a note."""
+    journal with no sample (no record, no article, no answer) keeps its first-stage place, with a note."""
     research = _research_profile()
     paper = research.paper_profile(profile.get("title", ""), profile.get("abstract", ""), profile.get("keywords"),
                                    _paper_body(workspace), _recorded_contribution_type(workspace))
@@ -2730,16 +2734,21 @@ def refine_candidates(services: Services | None, workspace: Path, profile: dict,
         style = matched["score"]
         candidate["refined_score"] = round(REFINE_FIT_SHARE * relative + (1 - REFINE_FIT_SHARE) * style, 4) \
             if style is not None else None
-        candidate["_refine_key"] = candidate["refined_score"] if style is not None else relative
         if style is not None:
             summary["sampled"] += 1
     summary["unavailable"] = len(failures)
     summary["applied"] = bool(summary["sampled"])
-    order = sorted(range(len(head)), key=lambda i: (-head[i].pop("_refine_key"), i))
-    candidates[:len(head)] = [head[i] for i in order]
+    # Only the journals that have a refined_score trade places, among the places they held; a journal with
+    # no sample keeps its first-stage place (its relative fit is on another scale than a refined_score).
+    places = [i for i, c in enumerate(head) if c["refined_score"] is not None]
+    ranked = sorted(places, key=lambda i: (-head[i]["refined_score"], i))
+    reordered = list(head)
+    for place, source in zip(places, ranked):
+        reordered[place] = head[source]
+    candidates[:len(head)] = reordered
     if failures:
         notes.append(f"OpenAlex did not answer the similar-papers sample of {len(failures)} of the top "
-                     f"{len(head)} journal(s) ({failures[0]}); they keep their first-stage fit in the second stage.")
+                     f"{len(head)} journal(s) ({failures[0]}); they keep their first-stage place.")
     if summary["applied"]:
         notes.append(f"Second stage: the top {len(head)} journals were re-ordered by refined_score, which mixes the "
                      "first-stage fit with style_match, how their recent articles like the paper agree with it in "
@@ -2790,7 +2799,8 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
         ordered = sorted(found)
         return sum(weight[k] for k in ordered), [spelled[k][0] for k in ordered]
 
-    shares = paper_subfields(workspace, profile, notes)
+    profile_status: dict = {}
+    shares = paper_subfields(workspace, profile, notes, profile_status)
     rarity = subfield_rarity(journals)
     rows = []
     reasons = {"category_range": 0, "off_topic": 0}
@@ -2858,8 +2868,10 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
     candidates = candidates[:filters["limit"]]
     refine_services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_REFINE_DEADLINE", 60.0)),
                                ResponseCache(cache_dir(), enabled=True)) if top else None
+    skipped = ("it reads the journals' articles from OpenAlex, which did not answer the paper's subfield profile"
+               if profile_status.get("openalex_failed") else None)
     refinement = refine_candidates(refine_services, workspace, profile, terms, build_phrases(profile), candidates,
-                                   top, notes)
+                                   top, notes, skipped=skipped)
     for rank, candidate in enumerate(candidates, start=1):
         candidate["rank"] = rank
 

@@ -108,10 +108,34 @@ class InternationalRefinementTests(JournalFinderCase):
         doc = self.refined()
         entry = next(c for c in doc["candidates"] if short(c) == short(first))
         self.assertEqual(entry["refinement"]["status"], "unavailable")
+        self.assertEqual(entry["rank"], 1, "a journal whose sample failed keeps its first-stage place")
         self.assertIsNone(entry["refinement"]["style_match"])
         self.assertIsNone(entry["refined_score"])
         self.assertEqual(doc["query"]["refinement"]["unavailable"], 1)
         self.assertTrue(any("did not answer the similar-papers sample" in n for n in doc["notes"]))
+
+    def test_an_unsampled_journal_keeps_its_place_between_sampled_ones(self):
+        api = self.start_api()
+        baseline = self.baseline(api)
+        first, second, third = baseline[:3]
+        api.source_works = {short(first): [work(1, "Rural teachers", QUALITATIVE)],
+                            short(third): [work(3, "EEG decoding", QUANT_AI)]}
+        doc = self.refined()
+        ranks = {short(c): c["rank"] for c in doc["candidates"]}
+        self.assertEqual(ranks[short(second)], 2, "no article sampled: its place is the first-stage one")
+        self.assertEqual({ranks[short(first)], ranks[short(third)]}, {1, 3})
+
+    def test_the_second_stage_is_on_by_default(self):
+        api = self.start_api()
+        first = self.baseline(api)[0]
+        api.source_works = {short(first): [work(1, "EEG decoding", QUANT_AI)]}
+        result = self.search("--no-cache", extra_env={"PAPERSMITH_JOURNAL_REFINE_TOP": None})
+        self.assertEqual(result.code, 0, result.stdout + result.stderr)
+        self.assertEqual(result.json["query"]["refinement"]["top"], 5)
+        self.assertEqual(result.json["filters"]["refine_top"], 5)
+        self.assertTrue(result.json["query"]["refinement"]["applied"])
+        refused = self.search(extra_env={"PAPERSMITH_JOURNAL_REFINE_TOP": "lots"})
+        self.assertEqual((refused.code, refused.json["error"]), (2, "FILTER_INVALID"))
 
     def test_the_recorded_contribution_type_sets_the_paper_kind(self):
         self.start_api()
@@ -149,6 +173,41 @@ class InternationalRefinementTests(JournalFinderCase):
 
 def head_best(head: list[dict]) -> float:
     return max(c["fit_score"] for c in head) or 1.0
+
+
+class RefineOrderUnitTests(unittest.TestCase):
+    """refine_candidates on its own: a journal whose sample failed keeps its first-stage place."""
+
+    class Services:
+        def __init__(self, works):
+            self.works = works
+
+        def openalex_get(self, path, params):
+            sid = params["filter"].split("primary_location.source.id:")[1].split(",")[0]
+            if self.works.get(sid) == "fail":
+                raise RuntimeError("down")
+            return {"results": self.works.get(sid, [])}
+
+    def test_a_failed_sample_does_not_jump_above_a_sampled_journal(self):
+        import tempfile
+        from pathlib import Path
+        from test_journal_finder import load_module
+        module = load_module()
+        candidates = [{"openalex_id": "S1", "fit_score": 1.0}, {"openalex_id": "S2", "fit_score": 0.95},
+                      {"openalex_id": "S3", "fit_score": 0.5}]
+        services = self.Services({"S1": [work(1, "Teachers", QUALITATIVE)], "S2": "fail",
+                                  "S3": [work(3, "EEG decoding", QUANT_AI)]})
+        notes: list[str] = []
+        with tempfile.TemporaryDirectory() as folder:
+            summary = module.refine_candidates(services, Path(folder), {"title": "EEG decoding with deep learning",
+                                               "abstract": QUANT_AI, "keywords": []},
+                                               ["electroencephalography", "decoding", "learning"], [], candidates, 5,
+                                               notes)
+        order = [c["openalex_id"] for c in candidates]
+        self.assertEqual(order[1], "S2", order)
+        self.assertEqual(summary["unavailable"], 1)
+        self.assertGreater(candidates[0 if order[0] == "S3" else 2]["refinement"]["style_match"],
+                           next(c for c in candidates if c["openalex_id"] == "S1")["refinement"]["style_match"])
 
 
 class NationalRefinementTests(NationalCase):
@@ -196,6 +255,17 @@ class NationalRefinementTests(NationalCase):
         self.assertEqual(engineering["fit_score"], before["candidates"][1]["fit_score"])
         self.assertTrue(after["query"]["refinement"]["applied"])
         self.assertEqual(after["filters"]["refine_top"], 5)
+
+    def test_when_the_subfield_profile_got_no_answer_the_second_stage_is_skipped(self):
+        down = SubfieldOpenAlex(self.GROUPS, status=503, body={"error": "down"})
+        self.addCleanup(down.close)
+        self.openalex.close()
+        self.openalex = down
+        doc = self.run_national("--refine-top", "5")
+        self.assertFalse(doc["query"]["refinement"]["applied"])
+        self.assertTrue(any(n.startswith("Second stage skipped") for n in doc["notes"]))
+        self.assertFalse(any("primary_location.source.id" in r.get("filter", "") for r in down.requests),
+                         "OpenAlex already failed this search: no per-journal sample is asked")
 
     def test_offline_the_national_order_stays_and_says_why(self):
         result = self.national("--refine-top", "5")

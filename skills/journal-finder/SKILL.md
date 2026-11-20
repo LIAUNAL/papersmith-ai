@@ -432,15 +432,17 @@ paper's.
   * style_match`; the top N are re-ordered by it and `rank` follows. A journal
   with no OpenAlex record, no article or no answer (`status` `no-record`,
   `none`, `unavailable`) has `refined_score: null` and keeps its first-stage
-  relative fit as its key. `fit_score` is never changed, and the journals
-  below the top N keep their order.
+  place; only the refined journals trade places, among the places they held.
+  `fit_score` is never changed, and the journals below the top N keep their
+  order.
 - **Where it is**: `query.refinement` (`top`, `applied`, `paper`, `weights`,
   `formula`, `sampled`, `unavailable`) and, on each refined candidate,
   `refinement` (`status`, `works_sampled`, `shares`, `dimensions`, `active`,
   `style_match`, `works`) and `refined_score`. It costs one or two OpenAlex
-  calls per journal (cached); when OpenAlex is not answering the search
-  (`fallback.used`) the stage is skipped with a note, and a journal's failed
-  sample never fails the search.
+  calls per journal (cached); when OpenAlex already failed this search (the
+  international `fallback.used`, or the national subfield profile it did not
+  answer) the stage is skipped with a note, and a journal's failed sample
+  never fails the search.
 
 ### Calls, the cache and the OpenAlex budget
 
