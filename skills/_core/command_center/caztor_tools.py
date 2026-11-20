@@ -18,6 +18,7 @@ Stdlib only.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import os
 import platform
@@ -202,8 +203,8 @@ class Tools:
             raise ToolError(f"{INSTALL_HINT[name]}; {NO_DOWNLOAD_ENV} keeps it from being downloaded.")
         try:
             archive = self.fetch(release.url)
-        except OSError as exc:
-            raise ToolError(f"{INSTALL_HINT[name]}: downloading {release.url} failed ({exc}).") from None
+        except (OSError, http.client.HTTPException) as exc:
+            raise ToolError(f"{INSTALL_HINT[name]}: downloading {release.url} failed ({exc!r}).") from None
         if len(archive) > MAX_ARCHIVE_BYTES:
             raise ToolError(f"{release.url} is larger than expected; nothing was installed.")
         digest = hashlib.sha256(archive).hexdigest()

@@ -145,8 +145,11 @@ class CaztorSidecar:
 
     def _start(self, node: str, home: Path, origin: str, programs: list[str]) -> dict:
         env = {k: v for k, v in self.env.items() if k not in DROPPED_ENV}
-        # Caztor runs `tectonic` (and its agents `node`) by name: the folders of the programs found come first.
-        folders = list(dict.fromkeys(str(Path(program).parent) for program in programs))
+        # Caztor runs `tectonic` (and its agents `node`) by name: a downloaded program's folder goes first.
+        # A program already on the PATH leaves the PATH as it is, so other names keep resolving as before.
+        on_path = set((env.get("PATH") or "").split(os.pathsep))
+        folders = list(dict.fromkeys(str(Path(program).parent) for program in programs
+                                     if str(Path(program).parent) not in on_path))
         env["PATH"] = os.pathsep.join([*folders, *([env["PATH"]] if env.get("PATH") else [])])
         self._tail.clear()
         ready = threading.Event()

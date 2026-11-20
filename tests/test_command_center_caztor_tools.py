@@ -120,6 +120,16 @@ class ToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(ToolError, "Install Node.js 26.*network unreachable"):
             tools.find("node")
 
+    def test_a_download_cut_off_mid_body_is_reported_not_raised(self) -> None:
+        import http.client
+
+        def cut_off(_url: str) -> bytes:
+            raise http.client.IncompleteRead(b"partial")
+        tools = Tools({"PATH": str(self.bin)}, cache_dir=self.cache, platform="linux-x64", fetch=cut_off,
+                      node_version=lambda _path: 26)
+        with self.assertRaisesRegex(ToolError, "Install Tectonic.*IncompleteRead"):
+            tools.find("tectonic")
+
     def test_a_platform_without_a_pinned_release_says_what_to_install(self) -> None:
         with self.assertRaisesRegex(ToolError, "no node release pinned for this platform"):
             self.tools(plat=None or "plan9-mips").find("node")

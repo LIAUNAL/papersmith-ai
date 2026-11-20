@@ -1088,7 +1088,7 @@ install (`pipx install papersmith-ai`) carries it prebuilt in
 (Node.js 26 or newer) and compiles with `tectonic`. The ones on the `PATH` are
 used; when one is missing (or `node` is older), the first time the PDF tab opens
 smith downloads it from its official release (Node.js 26.13.1, Tectonic 0.17.0;
-about 45 MB, Linux, macOS and Windows on x64 and arm64), checks it against the
+about 45 MB; Linux and macOS on x64 and arm64, Windows on x64), checks it against the
 SHA-256 pinned in `skills/_core/command_center/caztor_tools.py`, and keeps only
 the executable under `~/.cache/papersmith/tools/`.
 `PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns the download off. Tectonic itself fetches

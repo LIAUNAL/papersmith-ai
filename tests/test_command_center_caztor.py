@@ -190,6 +190,21 @@ class SidecarTests(unittest.TestCase):
                     if line.startswith("PATH="))
         self.assertEqual(path, f"PATH={bin_dir}:{fetched}:/usr/bin:/bin")
 
+    def test_a_program_already_on_the_path_leaves_the_path_order_alone(self) -> None:
+        home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
+
+        class OnPath:
+            def find(self, name: str) -> str:
+                return str(bin_dir / name)
+
+        sidecar = caztor.CaztorSidecar(self.root, env={"PATH": f"/opt/first:{bin_dir}:/usr/bin", "CAZTOR_HOME": str(home)},
+                                       startup_timeout=5.0, tools=OnPath())
+        self.addCleanup(sidecar.stop)
+        self.assertTrue(sidecar.ensure(ORIGIN)["available"])
+        path = next(line for line in (bin_dir / "env").read_text(encoding="utf-8").splitlines()
+                    if line.startswith("PATH="))
+        self.assertEqual(path, f"PATH=/opt/first:{bin_dir}:/usr/bin")
+
     def test_without_tectonic_caztor_still_opens(self) -> None:
         home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
 
