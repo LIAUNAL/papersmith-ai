@@ -11,6 +11,34 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.81.0
+
+- **Suggested journals: a second stage reads each top journal's own
+  articles.** After the first ranking, the first `--refine-top N` journals
+  (5 by default, both scopes; `0` turns it off) each have up to 10 recent
+  articles like the paper sampled from OpenAlex (filtered by the journal,
+  the paper's key phrases as the search, else its latest articles). The
+  paper and those articles get a lexical research profile: approach
+  (quantitative, qualitative, mixed), AI use, contribution kind (general,
+  theory, use-inspired, concept, review) and mathematical depth
+  (mathematical, moderate, descriptive). The paper's kind follows its
+  recorded `contribution_type`, its math level the density of LaTeX math in
+  its body. Those top journals are re-ordered by `refined_score = 0.5 *
+  fit_score / best fit_score of the top + 0.5 * style_match`; `fit_score` is
+  unchanged, and a journal with no sample keeps its place. The candidates
+  file adds `query.refinement` and, per refined journal, `refinement` and
+  `refined_score`; the panel shows the paper's profile, each journal's style
+  match per dimension and the sampled articles with their reading. The stage
+  costs one or two OpenAlex calls per journal (cached) and is skipped with a
+  note when OpenAlex already failed the search.
+
+### Behaviour changes
+
+- A search now re-orders its top 5 journals by default. Pass
+  `--refine-top 0` (or set `PAPERSMITH_JOURNAL_REFINE_TOP=0`) for the
+  first-stage order. Candidate files written by earlier releases have no
+  `refinement` fields and read and sort as before, so no migration is needed.
+
 ## 0.80.0
 
 - **Review introduction: one proposal paragraph before the agenda.** The
