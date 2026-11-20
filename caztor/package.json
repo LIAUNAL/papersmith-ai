@@ -9,11 +9,13 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "start": "node apps/server-local/src/main.ts"
+    "start": "node apps/server-local/src/main.ts",
+    "build:server": "node scripts/bundle-server.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "jsdom": "^30.1.2",
+    "rolldown": "^1.2.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   }

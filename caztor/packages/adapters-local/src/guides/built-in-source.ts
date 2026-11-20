@@ -1,6 +1,6 @@
 import { isGuideName, type GuideDocument, type GuideSourcePort } from "@caztor/core";
-import { fileURLToPath } from "node:url";
 import type { FileSystem } from "../infra.ts";
+import { repositoryPath } from "../repository-path.ts";
 
 export interface BuiltInGuideSourceOptions {
   fs: FileSystem;
@@ -12,8 +12,6 @@ export interface BuiltInGuideSourceOptions {
 
 /** The license copy travels with the guides under this name. */
 export const LICENSE_GUIDE_NAME = "LICENSE-papersmith-ai.txt";
-
-const repositoryPath = (relative: string) => fileURLToPath(new URL(`../../../../${relative}`, import.meta.url)).replace(/\/$/, "");
 
 /** The `guides` folder of the repository, found from this file's location. */
 export const defaultGuidesDir = (): string => repositoryPath("guides");
