@@ -219,3 +219,32 @@ class CaztorRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SmithUiHandsTheBundledCaztorTests(unittest.TestCase):
+    """The dashboard runs in the workspace's environment, which does not hold papersmith; smith ui names Caztor."""
+
+    def test_smith_ui_names_this_checkouts_caztor_unless_caztor_home_is_set(self) -> None:
+        from unittest import mock
+        from papersmith.core import ui
+
+        with tempfile.TemporaryDirectory() as holder:
+            home = Path(holder) / "caztor"
+            with mock.patch.object(ui, "bundled_caztor", return_value=home), \
+                    mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CAZTOR_HOME", None)
+                self.assertEqual(ui._child_env(Path(holder))["CAZTOR_HOME"], str(home))
+                os.environ["CAZTOR_HOME"] = "/mine"
+                self.assertEqual(ui._child_env(Path(holder))["CAZTOR_HOME"], "/mine")
+            with mock.patch.object(ui, "bundled_caztor", return_value=None), \
+                    mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CAZTOR_HOME", None)
+                self.assertNotIn("CAZTOR_HOME", ui._child_env(Path(holder)))
+
+    def test_the_bundled_caztor_is_the_checkouts_caztor_folder(self) -> None:
+        from papersmith.core import ui
+
+        found = ui.bundled_caztor()
+        if found is not None:
+            self.assertEqual(found.name, "caztor")
+

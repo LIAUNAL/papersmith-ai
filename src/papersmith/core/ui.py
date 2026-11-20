@@ -315,6 +315,12 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
     return argv
 
 
+def bundled_caztor() -> Path | None:
+    """The ``caztor/`` folder of the papersmith checkout this CLI runs from, when it is there."""
+    home = Path(__file__).resolve().parents[3] / "caztor"
+    return home if (home / "apps" / "server-local" / "src" / "main.ts").is_file() else None
+
+
 def _child_env(workspace: Path) -> dict[str, str]:
     env = dict(os.environ)
     existing = env.get("PYTHONPATH")
@@ -328,6 +334,11 @@ def _child_env(workspace: Path) -> dict[str, str]:
     # The workspace's environment does not hold `papersmith`; the Smith Doctor
     # tab builds its rows with this interpreter instead.
     env["PAPERSMITH_CLI_PYTHON"] = sys.executable
+    # Nor does it know where this checkout keeps Caztor, the PDF tab's editor;
+    # an operator's own CAZTOR_HOME wins.
+    caztor = bundled_caztor()
+    if caztor is not None and not env.get("CAZTOR_HOME"):
+        env["CAZTOR_HOME"] = str(caztor)
     return env
 
 
