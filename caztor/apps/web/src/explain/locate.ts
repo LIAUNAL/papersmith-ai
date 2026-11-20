@@ -22,7 +22,7 @@ const lineAt = (text: string, offset: number): number => text.slice(0, offset).s
 
 /**
  * The file that holds `passage`: the open one when it does, else the first project file that does, LaTeX sources
- * first, then Markdown, BibTeX and plain text, at most `MAX_FILES` of them. `texts` keeps what was read, so the next
+ * first, then Markdown, BibTeX and plain text, the latest revision of a numbered file first, at most `MAX_FILES`. `texts` keeps what was read, so the next
  * step does not read it again. Null when no searched file holds it.
  */
 export async function locatePassage(passage: string, sources: LocateSources, texts: Map<string, string>): Promise<PassagePlace | null> {
@@ -37,7 +37,8 @@ export async function locatePassage(passage: string, sources: LocateSources, tex
   const rank = (path: string) => SEARCHED.findIndex((extension) => path.toLowerCase().endsWith(extension));
   const candidates = (await sources.listFiles())
     .filter((entry) => entry.kind === "file" && entry.size <= MAX_BYTES && rank(entry.path) !== -1 && entry.path !== sources.open?.path)
-    .sort((a, b) => rank(a.path) - rank(b.path) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    // Within a kind, later names first: PaperSmith numbers revisions (-r15, -v19), so the current one wins.
+    .sort((a, b) => rank(a.path) - rank(b.path) || b.path.localeCompare(a.path, "en", { numeric: true }))
     .slice(0, MAX_FILES);
   for (const { path } of candidates) {
     let text = texts.get(path);

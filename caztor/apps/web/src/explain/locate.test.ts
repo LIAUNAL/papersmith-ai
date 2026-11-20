@@ -26,9 +26,14 @@ describe("locatePassage", () => {
   });
 
   it("otherwise searches LaTeX sources before Markdown, and returns the first file that holds it", async () => {
-    const { source, read } = sources({ "notes.md": holding, "paper/a.tex": "nothing", "paper/b.tex": holding }, { path: "paper/main.tex", text: "nothing" });
-    expect(await locatePassage(passage, source, new Map())).toEqual({ path: "paper/b.tex", line: 3 });
-    expect(read).toEqual(["paper/a.tex", "paper/b.tex"]);
+    const { source, read } = sources({ "notes.md": holding, "paper/b.tex": "nothing", "paper/a.tex": holding }, { path: "paper/main.tex", text: "nothing" });
+    expect(await locatePassage(passage, source, new Map())).toEqual({ path: "paper/a.tex", line: 3 });
+    expect(read).toEqual(["paper/b.tex", "paper/a.tex"]);
+  });
+
+  it("prefers the latest revision of a numbered file", async () => {
+    const { source } = sources({ "experiments/protocol-v2.md": holding, "experiments/protocol-v19.md": holding, "experiments/protocol-v8.md": holding });
+    expect(await locatePassage(passage, source, new Map())).toEqual({ path: "experiments/protocol-v19.md", line: 3 });
   });
 
   it("finds a passage only Markdown holds, such as an experiments protocol", async () => {
