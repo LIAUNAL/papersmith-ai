@@ -7382,6 +7382,12 @@
 
     async function requestCaztor() {
       let state;
+      const pending = document.getElementById('caztorNotice');
+      // The first start on a machine may download Caztor's programs: say so while the request runs.
+      if (pending && document.getElementById('caztorHost')?.hidden) {
+        pending.hidden = false;
+        pending.textContent = t('caztor.preparing');
+      }
       try {
         const response = await fetch('/api/caztor', { method: 'POST' });
         state = await response.json();

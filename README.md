@@ -374,7 +374,7 @@ start.
 | **Python** | ≥ 3.11 (CI: 3.11, 3.12) | the `smith` CLI and all the Python skills | there's no possible installation |
 | **Node.js** | ≥ 21 (CI: 24; local check: 26.13.0) | the deliberation engine (`jiti`, `typebox`) and the dashboard | `init` warns and `deliberate` refuses |
 | `npm` | compatible with the selected Node (local check: 12.2.2 with Node 26.13.0) | installing those two dependencies in the workspace | same as above |
-| **Node.js 26** and `tectonic` | Node ≥ 26 (CI: 26) | Caztor, the LaTeX editor of the dashboard's PDF tab, which comes with the install and compiles with Tectonic | the PDF tab keeps its read-only viewer |
+| **Node.js 26** and `tectonic` | Node ≥ 26 (CI: 26) | Caztor, the LaTeX editor of the dashboard's PDF tab, which comes with the install and compiles with Tectonic | downloaded once, checked against pinned SHA-256, into `~/.cache/papersmith/tools/` the first time the PDF tab opens (`PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns that off) |
 
 Both are checked at once:
 

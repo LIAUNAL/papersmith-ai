@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import threading
 import importlib.util
@@ -27,6 +26,11 @@ import time
 from collections import deque
 from pathlib import Path
 from typing import Callable, Mapping
+
+try:  # imported as a package module by the server, as a plain module by the tests
+    from . import caztor_tools
+except ImportError:  # pragma: no cover
+    import caztor_tools  # type: ignore[no-redef]
 
 CAZTOR_HOME_ENV = "CAZTOR_HOME"
 #: Where the repository keeps Caztor, beside ``src/papersmith``.
@@ -78,11 +82,13 @@ class CaztorSidecar:
 
     def __init__(self, root: Path | str, *, env: Mapping[str, str] | None = None,
                  startup_timeout: float = 60.0,
-                 bundled: Callable[[], Path | None] | None = None) -> None:
+                 bundled: Callable[[], Path | None] | None = None,
+                 tools: "caztor_tools.Tools | None" = None) -> None:
         self.root = Path(root)
         self.bundled = bundled_home if bundled is None else bundled
         self.env = dict(os.environ if env is None else env)
         self.startup_timeout = startup_timeout
+        self._tools = tools
         self._lock = threading.Lock()
         self._process: subprocess.Popen[str] | None = None
         self._origin: str | None = None
@@ -116,10 +122,17 @@ class CaztorSidecar:
             home, reason = self.locate()
             if home is None:
                 return {"available": False, "reason": reason}
-            node = shutil.which("node", path=self.env.get("PATH", ""))
-            if node is None:
-                return {"available": False, "reason": "Node.js (`node`) is not on the PATH; Caztor needs Node.js 26."}
-            return self._start(node, home, origin)
+            # The first time on a machine without them, this downloads node and tectonic (a minute at most).
+            tools = self._tools or caztor_tools.Tools(self.env)
+            try:
+                node = tools.find("node")
+            except caztor_tools.ToolError as error:
+                return {"available": False, "reason": f"Caztor needs Node.js 26: {error}"}
+            try:
+                tectonic: str | None = tools.find("tectonic")
+            except caztor_tools.ToolError:
+                tectonic = None  # Caztor still opens; its compile reports the missing engine.
+            return self._start(node, home, origin, [node] + ([tectonic] if tectonic else []))
 
     def stop(self) -> None:
         with self._lock:
@@ -130,8 +143,11 @@ class CaztorSidecar:
     def _alive(self) -> bool:
         return self._process is not None and self._process.poll() is None
 
-    def _start(self, node: str, home: Path, origin: str) -> dict:
+    def _start(self, node: str, home: Path, origin: str, programs: list[str]) -> dict:
         env = {k: v for k, v in self.env.items() if k not in DROPPED_ENV}
+        # Caztor runs `tectonic` (and its agents `node`) by name: the folders of the programs found come first.
+        folders = list(dict.fromkeys(str(Path(program).parent) for program in programs))
+        env["PATH"] = os.pathsep.join([*folders, *([env["PATH"]] if env.get("PATH") else [])])
         self._tail.clear()
         ready = threading.Event()
         found: list[str] = []

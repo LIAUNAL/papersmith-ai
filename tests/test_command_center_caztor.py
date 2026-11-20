@@ -11,7 +11,29 @@ import time
 import unittest
 from pathlib import Path
 
-from skills._core.command_center import caztor, server
+from unittest import mock
+
+from skills._core.command_center import caztor, caztor_tools, server
+
+_PATCHES: list = []
+_CACHE = tempfile.TemporaryDirectory()
+
+
+def setUpModule() -> None:
+    """Every sidecar here runs a fake `node`: it counts as Node 26, nothing is downloaded and no real cache is read."""
+    def no_network(url: str) -> bytes:
+        raise OSError(f"no network in tests ({url})")
+    for patch in (mock.patch.object(caztor_tools, "node_major", lambda _path: 26),
+                  mock.patch.object(caztor_tools, "_download", no_network),
+                  mock.patch.object(caztor_tools, "default_cache_dir", lambda _env: Path(_CACHE.name))):
+        patch.start()
+        _PATCHES.append(patch)
+
+
+def tearDownModule() -> None:
+    for patch in _PATCHES:
+        patch.stop()
+    _CACHE.cleanup()
 
 ORIGIN = "http://127.0.0.1:8080"
 
@@ -150,6 +172,37 @@ class SidecarTests(unittest.TestCase):
         self.assertEqual(caztor.server_entry(home), home / caztor.SERVER_ENTRY)
         (home / "node_modules").rmdir()
         self.assertEqual(caztor.server_entry(home), home / caztor.SERVER_BUNDLE)
+
+    def test_the_folders_of_the_programs_found_come_first_on_caztors_path(self) -> None:
+        home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
+        fetched = self.base / "cache" / "tectonic-0.17.0-linux-x64"
+        fetched.mkdir(parents=True)
+
+        class Found:
+            def find(self, name: str) -> str:
+                return str(bin_dir / "node") if name == "node" else str(fetched / "tectonic")
+
+        sidecar = caztor.CaztorSidecar(self.root, env={"PATH": "/usr/bin:/bin", "CAZTOR_HOME": str(home)},
+                                       startup_timeout=5.0, tools=Found())
+        self.addCleanup(sidecar.stop)
+        self.assertTrue(sidecar.ensure(ORIGIN)["available"])
+        path = next(line for line in (bin_dir / "env").read_text(encoding="utf-8").splitlines()
+                    if line.startswith("PATH="))
+        self.assertEqual(path, f"PATH={bin_dir}:{fetched}:/usr/bin:/bin")
+
+    def test_without_tectonic_caztor_still_opens(self) -> None:
+        home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
+
+        class NoTectonic:
+            def find(self, name: str) -> str:
+                if name == "tectonic":
+                    raise caztor_tools.ToolError("Install Tectonic")
+                return str(bin_dir / "node")
+
+        sidecar = caztor.CaztorSidecar(self.root, env={"PATH": "/usr/bin:/bin", "CAZTOR_HOME": str(home)},
+                                       startup_timeout=5.0, tools=NoTectonic())
+        self.addCleanup(sidecar.stop)
+        self.assertTrue(sidecar.ensure(ORIGIN)["available"])
 
     def test_caztor_home_wins_over_the_bundled_copy(self) -> None:
         home, _ = _fake_caztor(self.base, READY_SCRIPT)

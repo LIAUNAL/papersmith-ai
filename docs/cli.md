@@ -1084,9 +1084,15 @@ reloads in place and keeps the page you were reading.
 **LaTeX editor in the PDF tab (Caztor).** Caztor comes with papersmith: an
 install (`pipx install papersmith-ai`) carries it prebuilt in
 `papersmith/_caztor` (its server bundled into one file and its web app), and
-`pipx upgrade papersmith-ai` brings the matching version. It needs `node`
-(Node.js 26) on the `PATH`, and the `tectonic` binary to compile; nothing from
-npm. Its source lives in this repository's `caztor/` folder: in a checkout,
+`pipx upgrade papersmith-ai` brings the matching version. It runs on `node`
+(Node.js 26 or newer) and compiles with `tectonic`. The ones on the `PATH` are
+used; when one is missing (or `node` is older), the first time the PDF tab opens
+smith downloads it from its official release (Node.js 26.13.1, Tectonic 0.17.0;
+about 45 MB, Linux, macOS and Windows on x64 and arm64), checks it against the
+SHA-256 pinned in `skills/_core/command_center/caztor_tools.py`, and keeps only
+the executable under `~/.cache/papersmith/tools/`.
+`PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns the download off. Tectonic itself fetches
+the TeX packages a document needs on its first compile. Nothing from npm is needed. Its source lives in this repository's `caztor/` folder: in a checkout,
 `npm run setup:caztor` (part of `npm run setup`) installs its dependencies and
 builds it, and smith then runs that source; `scripts/build-caztor.py` packages
 it (an install from a checkout or a git URL runs it when `npm` is present).

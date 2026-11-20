@@ -330,6 +330,7 @@ window.PAPERSMITH_I18N.en = {
   "annot.selectForHumanize": "Please first select a text fragment in the PDF viewer to mark it for humanizing with the estilo-natural-es skill.",
   "annot.humanizeMarked": "Text marked for humanizing (green underline)",
   "annot.sentToChat": "{n} annotations sent to the chat box: review the message and send it",
+  "caztor.preparing": "Starting the LaTeX editor (Caztor). The first time, this downloads Node.js and Tectonic (about 45 MB) and can take a minute.",
   "caztor.unavailable": "The LaTeX editor (Caztor) is not running, so the viewer is shown: {reason}",
   "caztor.frameTitle": "Caztor LaTeX editor",
   "annot.layer.comment": "Comments",
