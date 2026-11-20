@@ -236,7 +236,10 @@ export function parseMarkdown(src: string): Block[] {
       endParagraph();
       const body = [quote[1]!];
       while (i + 1 < lines.length && QUOTE.test(lines[i + 1]!)) body.push(QUOTE.exec(lines[++i]!)![1]!);
-      blocks.push({ type: "quote", inlines: parseInline(body.join(" ")) });
+      const quoted = body.join(" ").trim();
+      // A quoted equation of the paper's source (a command, no `$`, nothing only prose has) is shown typeset.
+      const formula = !quoted.includes("$") && /\\[a-zA-Z]/.test(quoted) && looksLikeFormula(quoted);
+      blocks.push({ type: "quote", inlines: formula ? [{ type: "math", tex: quoted, display: true }] : parseInline(quoted) });
       continue;
     }
     const ordered = NUMBERED.test(line);

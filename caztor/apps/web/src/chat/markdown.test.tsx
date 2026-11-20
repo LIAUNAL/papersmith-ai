@@ -141,4 +141,15 @@ describe("mathematics in assistant text", () => {
     expect(container.querySelector("[href]")).toBeNull();
     expect(container.querySelector("img")).toBeNull();
   });
+
+  it("typesets a quoted equation of the paper's source, and keeps a quoted sentence as text with its inline math", () => {
+    expect(parseMarkdown("> \\mathbf{K}\\boldsymbol{\\delta} + \\mathbf{o}_{\\alpha'} \\not\\equiv \\mathbf{0} \\pmod{\\boldsymbol{\\omega}}")).toEqual([
+      { type: "quote", inlines: [{ type: "math", tex: "\\mathbf{K}\\boldsymbol{\\delta} + \\mathbf{o}_{\\alpha'} \\not\\equiv \\mathbf{0} \\pmod{\\boldsymbol{\\omega}}", display: true }] },
+    ]);
+    const sentence = parseMarkdown("> The independence of $\\mathcal{A}$ in Equation~\\eqref{eq:local-field} holds.")[0];
+    expect(sentence).toMatchObject({ type: "quote" });
+    expect((sentence as { inlines: unknown[] }).inlines).toContainEqual({ type: "math", tex: "\\mathcal{A}", display: false });
+    expect(parseMarkdown("> plain words only")[0]).toEqual({ type: "quote", inlines: [{ type: "text", text: "plain words only" }] });
+    expect(parseMarkdown("> as in \\cite{key}")[0]).toEqual({ type: "quote", inlines: [{ type: "text", text: "as in \\cite{key}" }] });
+  });
 });
