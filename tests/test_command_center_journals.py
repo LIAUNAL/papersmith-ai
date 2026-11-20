@@ -1042,6 +1042,63 @@ class PanelRenderTests(unittest.TestCase):
         self.assertIn("Todavía no hay búsqueda", empty)
         self.assertIn("&lt;b&gt;bad&lt;/b&gt;", broken)
 
+    REFINED_JS = """
+      doc.query = { ...doc.query, refinement: { applied: true, top: 5,
+        formula: 'refined_score = 0.5 * fit_score / best fit_score of the top + 0.5 * style_match',
+        paper: { approach: 'quantitative', ai: true, kind: 'general', math: 'mathematical' } } };
+      const [first, second] = doc.candidates;
+      first.refined_score = 0.9;
+      first.refinement = { status: 'similar', works_sampled: 2, style_match: 0.81, active: ['topic', 'approach', 'ai'],
+        dimensions: { topic: 1, approach: 0.5, ai: 1 },
+        works: [{ title: 'EEG <b>decoding</b>', year: 2025, doi: '10.1/x', approach: 'quantitative', ai: true,
+                  kind: 'general', math: 'moderate' }] };
+      second.refined_score = null;
+      second.refinement = { status: 'unavailable', works_sampled: 0, style_match: null, dimensions: {}, works: [] };
+      const national = { candidates: [{ display_name: 'Revista Nacional', quartile_source: 'publindex', fit_score: 0.4,
+        refinement: { status: 'latest', works_sampled: 1, style_match: 0.3, dimensions: { kind: 0 },
+                      works: [{ title: 'Narrativas', approach: 'qualitative', ai: false, kind: 'unclear', math: 'descriptive' }] } }],
+        query: { refinement: { applied: true, top: 5, paper: { approach: 'mixed', ai: false, kind: 'review', math: 'unclear' } } } };
+      out([P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} }),
+           P.resultsHtml({ journals: { candidates: national }, sort: 'fit', busy: {} })]);"""
+
+    def test_the_second_stage_shows_the_paper_profile_and_each_journal_style_match(self) -> None:
+        html, national = self.node(self.candidates_js() + self.REFINED_JS)
+        for expected in ("Perfil del artículo: cuantitativo · usa IA · general (método) · matemático",
+                         "Segunda etapa (top 5): refined_score = 0.5 * fit_score",
+                         "<em>Afinidad de estilo 0.81</em> · tema 1.00 · enfoque 0.50 · IA 1.00",
+                         "ajuste refinado 0.90", "2 artículos muestreados (parecidos al artículo)",
+                         "EEG &lt;b&gt;decoding&lt;/b&gt; (2025)", "cuantitativo · usa IA · general (método) · matemática moderada",
+                         "OpenAlex no respondió la segunda etapa"):
+            self.assertIn(expected, html)
+        self.assertNotIn("<b>", html)
+        self.assert_only_known_markup(html)
+        for expected in ("Perfil del artículo: mixto · sin IA · revisión · matemática no clara",
+                         "Afinidad de estilo 0.30</em> · contribución 0.00",
+                         "1 artículos muestreados (los más recientes; ninguno parecido al artículo)",
+                         "cualitativo · sin IA · contribución no clara · descriptivo"):
+            self.assertIn(expected, national)
+
+    def test_the_second_stage_renders_in_english(self) -> None:
+        html, _ = self.node(self.candidates_js() + self.REFINED_JS, lang="en")
+        for expected in ("Paper profile: quantitative · uses AI · general (method) · mathematical",
+                         "Style match 0.81</em> · topic 1.00 · approach 0.50 · AI 1.00", "refined 0.90",
+                         "2 sampled articles (like the paper)", "OpenAlex did not answer the second stage"):
+            self.assertIn(expected, html)
+
+    def test_after_the_second_stage_the_fit_sort_follows_the_cli_rank(self) -> None:
+        order = self.node(self.candidates_js() + """
+          const names = () => { const html = P.resultsHtml({ journals: { candidates: doc }, sort: 'fit', busy: {} });
+            return [...html.matchAll(/<strong>([^<]*)<\\/strong>/g)].map((m) => m[1]).filter((n) => /[a-z]/.test(n)); };
+          const before = names();
+          const ranks = [...doc.candidates].sort((a, b) => a.fit_score - b.fit_score);
+          ranks.forEach((c, i) => { c.rank = i + 1; });
+          const unchanged = names();
+          doc.query = { ...doc.query, refinement: { applied: true } };
+          out([before, unchanged, names()]);""")
+        before, unchanged, refined = order
+        self.assertEqual(unchanged, before, "without a second stage the order is the fit score's")
+        self.assertEqual(refined, list(reversed(before)))
+
     def test_sorting_by_review_time_puts_journals_without_data_last(self) -> None:
         order = self.node(self.candidates_js() + """
           doc.candidates.reverse();
