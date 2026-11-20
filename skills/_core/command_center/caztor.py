@@ -2,8 +2,10 @@
 
 Caztor is a Node.js application kept in this repository's ``caztor/`` folder:
 a file tree, a LaTeX editor, a PDF compiled by Tectonic and an assistant chat.
-The dashboard runs the ``caztor/`` of the papersmith checkout smith is
-installed from (``CAZTOR_HOME`` names another copy), starts its server on this
+A papersmith install carries it prebuilt in ``papersmith/_caztor`` (its server
+bundled into one file, so only ``node`` is needed); a checkout whose
+``caztor/`` is set up runs that source instead. ``smith ui`` names the copy in
+``CAZTOR_HOME``, which an operator may also set. The dashboard starts its server on this
 workspace with ``--embed-origin <the dashboard's origin>`` and shows it in a
 frame. In that mode Caztor stays on this one workspace, hides its project
 navigator, and only the dashboard's origin may frame it.
@@ -32,6 +34,8 @@ BUNDLED_DIR = "caztor"
 #: The command, run in the papersmith checkout, that installs Caztor's dependencies and builds its web app.
 SETUP_COMMAND = "npm run setup:caztor"
 SERVER_ENTRY = Path("apps") / "server-local" / "src" / "main.ts"
+#: The server built into one file, as a papersmith install ships it.
+SERVER_BUNDLE = Path("apps") / "server-local" / "dist" / "main.mjs"
 WEB_INDEX = Path("apps") / "web" / "dist" / "index.html"
 
 #: The line Caztor prints once it listens, naming the address to open.
@@ -50,10 +54,22 @@ def bundled_home() -> Path | None:
         return None
     if spec is None or spec.origin is None:
         return None
-    # An editable install: <checkout>/src/papersmith/__init__.py.
-    for parent in Path(spec.origin).resolve().parents[:4]:
-        if (parent / BUNDLED_DIR / SERVER_ENTRY).is_file():
-            return parent / BUNDLED_DIR
+    package = Path(spec.origin).resolve().parent
+    # An editable install: <checkout>/src/papersmith/__init__.py, with <checkout>/caztor set up.
+    checkout = package.parent.parent / BUNDLED_DIR
+    if server_entry(checkout) is not None:
+        return checkout
+    packaged = package / "_caztor"
+    return packaged if server_entry(packaged) is not None else None
+
+
+def server_entry(home: Path) -> Path | None:
+    """The file ``node`` runs for the Caztor copy in ``home``: its source when its dependencies are
+    installed (a checkout), else its one-file bundle (an install), else nothing."""
+    if (home / SERVER_ENTRY).is_file() and (home / "node_modules").is_dir():
+        return home / SERVER_ENTRY
+    if (home / SERVER_BUNDLE).is_file():
+        return home / SERVER_BUNDLE
     return None
 
 
@@ -81,10 +97,10 @@ class CaztorSidecar:
             return None, ("Caztor was not found: smith is not installed from a papersmith checkout "
                           f"with its {BUNDLED_DIR}/ folder. Set {CAZTOR_HOME_ENV} to a Caztor copy and "
                           "reload the dashboard.")
-        if not (home / SERVER_ENTRY).is_file():
+        if not (home / SERVER_ENTRY).is_file() and not (home / SERVER_BUNDLE).is_file():
             return None, (f"Caztor was not found in {home}. Set {CAZTOR_HOME_ENV} to a Caztor copy "
                           "and reload the dashboard.")
-        if not (home / WEB_INDEX).is_file() or not (home / "node_modules").is_dir():
+        if not (home / WEB_INDEX).is_file() or server_entry(home) is None:
             return None, (f"Caztor is not set up in {home}. Run `{SETUP_COMMAND}` in the papersmith "
                           "checkout, then reload.")
         return home, None
@@ -121,7 +137,7 @@ class CaztorSidecar:
         found: list[str] = []
         try:
             process = subprocess.Popen(
-                [node, str(home / SERVER_ENTRY), str(self.root), "--embed-origin", origin],
+                [node, str(server_entry(home)), str(self.root), "--embed-origin", origin],
                 cwd=str(home), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
             )

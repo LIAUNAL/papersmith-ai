@@ -131,6 +131,26 @@ class SidecarTests(unittest.TestCase):
         self.assertEqual(sidecar.locate(), (home, None))
         self.assertTrue(sidecar.ensure(ORIGIN)["available"])
 
+    def test_an_installed_copy_runs_its_one_file_server_without_node_modules(self) -> None:
+        home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
+        (home / "node_modules").rmdir()
+        (home / "apps" / "server-local" / "src" / "main.ts").unlink()
+        (home / caztor.SERVER_BUNDLE).parent.mkdir(parents=True)
+        (home / caztor.SERVER_BUNDLE).write_text("// bundle", encoding="utf-8")
+        sidecar = caztor.CaztorSidecar(self.root, env={"PATH": f"{bin_dir}:/usr/bin:/bin", "CAZTOR_HOME": str(home)},
+                                       startup_timeout=5.0)
+        self.addCleanup(sidecar.stop)
+        self.assertTrue(sidecar.ensure(ORIGIN)["available"])
+        self.assertTrue((bin_dir / "args").read_text(encoding="utf-8").startswith(str(home / caztor.SERVER_BUNDLE)))
+
+    def test_a_set_up_checkout_runs_its_source_even_with_a_bundle_beside_it(self) -> None:
+        home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
+        (home / caztor.SERVER_BUNDLE).parent.mkdir(parents=True)
+        (home / caztor.SERVER_BUNDLE).write_text("// bundle", encoding="utf-8")
+        self.assertEqual(caztor.server_entry(home), home / caztor.SERVER_ENTRY)
+        (home / "node_modules").rmdir()
+        self.assertEqual(caztor.server_entry(home), home / caztor.SERVER_BUNDLE)
+
     def test_caztor_home_wins_over_the_bundled_copy(self) -> None:
         home, _ = _fake_caztor(self.base, READY_SCRIPT)
         sidecar = caztor.CaztorSidecar(self.root, env={"CAZTOR_HOME": str(home)}, bundled=lambda: self.base / "other")
@@ -240,6 +260,24 @@ class SmithUiHandsTheBundledCaztorTests(unittest.TestCase):
                     mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("CAZTOR_HOME", None)
                 self.assertNotIn("CAZTOR_HOME", ui._child_env(Path(holder)))
+
+    def test_without_a_set_up_checkout_it_names_the_installed_package_copy(self) -> None:
+        from papersmith.core import ui
+
+        with tempfile.TemporaryDirectory() as holder:
+            package = Path(holder) / "site-packages" / "papersmith"
+            bundle = package / "_caztor" / "apps" / "server-local" / "dist" / "main.mjs"
+            bundle.parent.mkdir(parents=True)
+            self.assertIsNone(ui.bundled_caztor(package))
+            bundle.write_text("// bundle", encoding="utf-8")
+            self.assertEqual(ui.bundled_caztor(package), package / "_caztor")
+            # A checkout's caztor/ wins once its dependencies are installed.
+            checkout = Path(holder) / "caztor"
+            (checkout / "apps" / "server-local" / "src").mkdir(parents=True)
+            (checkout / "apps" / "server-local" / "src" / "main.ts").write_text("//", encoding="utf-8")
+            self.assertEqual(ui.bundled_caztor(package), package / "_caztor")
+            (checkout / "node_modules").mkdir()
+            self.assertEqual(ui.bundled_caztor(package), checkout)
 
     def test_the_bundled_caztor_is_the_checkouts_caztor_folder(self) -> None:
         from papersmith.core import ui

@@ -47,6 +47,18 @@ jobs:
       - name: Build the kit
         run: python3 scripts/build-kit.py
 
+      # Caztor, the PDF tab's LaTeX editor, ships prebuilt in src/papersmith/_caztor/
+      # (gitignored, like the kit): its server bundled into one file and its web
+      # app, so an install needs node and nothing from npm. --require: a release
+      # without it would silently lose the editor.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.x
+      - name: Build Caztor
+        run: |
+          npm ci --prefix caztor
+          python3 scripts/build-caztor.py --require
+
       - name: Build the wheel and the sdist
         run: |
           python3 -m pip install --upgrade build
@@ -72,6 +84,7 @@ jobs:
           test -f /tmp/probe-ws/.papersmith/version
           test -d /tmp/probe-ws/skills/upgrade-project
           test -f /tmp/probe-ws/.claude/commands/upgrade-project.md
+          test -f /tmp/probe/lib/python3.12/site-packages/papersmith/_caztor/apps/server-local/dist/main.mjs
           echo "a wheel-installed CLI produced a complete workspace"
 
       - uses: actions/upload-artifact@v4

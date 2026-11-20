@@ -6,6 +6,7 @@ build/
 dist/
 *.egg-info/
 src/papersmith/_kit/
+src/papersmith/_caztor/
 # paper-ingestion's per-page cache (skills/paper-ingestion/scripts/pdf_pipeline.py)
 .papersmith/cache/
 .papersmith/ai-history/

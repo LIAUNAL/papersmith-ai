@@ -315,10 +315,19 @@ def build_server_argv(workspace: Path, host: str, port: int, *, no_browser: bool
     return argv
 
 
-def bundled_caztor() -> Path | None:
-    """The ``caztor/`` folder of the papersmith checkout this CLI runs from, when it is there."""
-    home = Path(__file__).resolve().parents[3] / "caztor"
-    return home if (home / "apps" / "server-local" / "src" / "main.ts").is_file() else None
+def bundled_caztor(package: Path | None = None) -> Path | None:
+    """The Caztor copy this CLI brings: the ``caztor/`` of its papersmith checkout
+    when that is set up (``npm run setup:caztor``), else the prebuilt
+    ``papersmith/_caztor`` an install carries; None when neither is there."""
+    package = Path(__file__).resolve().parents[1] if package is None else package
+    checkout = package.parents[1] / "caztor"
+    if (checkout / "apps" / "server-local" / "src" / "main.ts").is_file() \
+            and (checkout / "node_modules").is_dir():
+        return checkout
+    packaged = package / "_caztor"
+    if (packaged / "apps" / "server-local" / "dist" / "main.mjs").is_file():
+        return packaged
+    return None
 
 
 def _child_env(workspace: Path) -> dict[str, str]:

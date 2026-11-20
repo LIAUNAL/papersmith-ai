@@ -1081,12 +1081,16 @@ with pdf.js 3.11.174, vendored in `skills/_core/command_center/static/vendor/`
 `run_details.pdf_mtime`; when a recompile moves that token the open preview
 reloads in place and keeps the page you were reading.
 
-**LaTeX editor in the PDF tab (Caztor).** Caztor's source lives in this
-repository's `caztor/` folder; `npm run setup:caztor` (part of `npm run setup`)
-installs its dependencies and builds its web app. It compiles with the
-`tectonic` binary, which must be on the `PATH`. When smith runs from a papersmith
-checkout whose `caztor/` is set up (or `CAZTOR_HOME` names another Caztor copy)
-and `node` (Node.js 26) is on the `PATH`, the tab shows Caztor's four vertical panes
+**LaTeX editor in the PDF tab (Caztor).** Caztor comes with papersmith: an
+install (`pipx install papersmith-ai`) carries it prebuilt in
+`papersmith/_caztor` (its server bundled into one file and its web app), and
+`pipx upgrade papersmith-ai` brings the matching version. It needs `node`
+(Node.js 26) on the `PATH`, and the `tectonic` binary to compile; nothing from
+npm. Its source lives in this repository's `caztor/` folder: in a checkout,
+`npm run setup:caztor` (part of `npm run setup`) installs its dependencies and
+builds it, and smith then runs that source; `scripts/build-caztor.py` packages
+it (an install from a checkout or a git URL runs it when `npm` is present).
+`CAZTOR_HOME` names another Caztor copy. With Caztor available, the tab shows Caztor's four vertical panes
 in place of the viewer: files, LaTeX editor, the PDF it compiles with Tectonic
 (into `.caztor/build`, never `paper/main.pdf`), and the assistant chat. The
 change-control panel stays to the right of the chat: text selected in Caztor's

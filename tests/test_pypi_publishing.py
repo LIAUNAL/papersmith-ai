@@ -206,6 +206,20 @@ class BuiltArtifactsCarryTheKitTests(unittest.TestCase):
         skills = [name for name in names if name.startswith("papersmith/_kit/skills/")]
         self.assertTrue(skills, "the wheel carries no kit skills")
 
+    def test_the_wheel_carries_caztor_when_it_was_built(self) -> None:
+        # Caztor is built only where node and npm are present; the publishing
+        # workflow requires it (scripts/build-caztor.py --require).
+        if not (REPO / "src" / "papersmith" / "_caztor" / "apps" / "server-local" / "dist" / "main.mjs").is_file():
+            self.skipTest("Caztor was not built in this checkout (scripts/build-caztor.py)")
+        with zipfile.ZipFile(self.wheel) as archive:
+            names = set(archive.namelist())
+        for sentinel in ("papersmith/_caztor/apps/server-local/dist/main.mjs",
+                         "papersmith/_caztor/apps/web/dist/index.html",
+                         "papersmith/_caztor/agents/claude.md",
+                         "papersmith/_caztor/guides/INDEX.md",
+                         "papersmith/_caztor/LICENSES/Apache-2.0.txt"):
+            self.assertIn(sentinel, names, f"the wheel has no {sentinel}: the PDF tab would lose its editor")
+
     def test_the_sdist_carries_the_generated_kit(self) -> None:
         with tarfile.open(self.sdist) as archive:
             names = set(archive.getnames())
@@ -227,6 +241,17 @@ class BuiltArtifactsCarryTheKitTests(unittest.TestCase):
                 size, limit,
                 f"{artifact.name} is {size / 1024 / 1024:.1f} MB, over the "
                 "index's 100 MB per-file limit")
+
+
+class CaztorPublishingTests(unittest.TestCase):
+    def test_the_workflow_builds_caztor_before_packaging_and_requires_it(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("scripts/build-caztor.py --require", text)
+        build_at = min(text.index(token) for token in ("python -m build", "python3 -m build") if token in text)
+        self.assertLess(text.index("scripts/build-caztor.py"), build_at)
+
+    def test_the_package_declares_caztor_as_data(self) -> None:
+        self.assertIn('"_caztor/**/*"', (REPO / "pyproject.toml").read_text(encoding="utf-8"))
 
 
 class PublishingWorkflowTests(unittest.TestCase):
