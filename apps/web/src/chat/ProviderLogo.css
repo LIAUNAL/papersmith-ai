@@ -1,0 +1,33 @@
+.provider-logo {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.provider-logo img {
+  display: block;
+  width: auto;
+  object-fit: contain;
+}
+
+.provider-logo--small img {
+  height: 1.25rem;
+}
+
+.provider-logo--large img {
+  height: 1.75rem;
+}
+
+.provider-logo--text {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.provider-logo--large.provider-logo--text {
+  font-size: var(--text-lg);
+}
+
+.provider-logo--small.provider-logo--text {
+  font-size: var(--text-sm);
+}

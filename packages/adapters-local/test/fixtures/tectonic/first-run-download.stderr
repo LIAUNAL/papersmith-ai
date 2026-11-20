@@ -1,0 +1,19 @@
+note: "version 2" Tectonic command-line interface activated
+note: generating format "latex"
+note: downloading tectonic-format-latex.tex
+note: downloading xelatex.ini
+note: downloading latex.ltx
+note: downloading texsys.cfg
+note: downloading expl3.ltx
+note: downloading expl3-code.tex
+note: downloading cmr10.tfm
+note: downloading UnicodeData.txt
+note: downloading CaseFolding.txt
+note: downloading SpecialCasing.txt
+note: downloading cmr10.tfm
+note: downloading ckx.map
+note: downloading texglyphlist.txt
+note: downloading pdfglyphlist.txt
+note: downloading glyphlist.txt
+note: Writing `o7/ref.pdf` (4.4384765625 KiB)
+note: Skipped writing 1 intermediate files (use --keep-intermediates to keep them)

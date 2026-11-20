@@ -1,0 +1,21 @@
+{"type":"session","version":3,"id":"00000000-0000-4000-8000-000000000001","timestamp":"2026-11-02T10:00:00.000Z","cwd":"/work/project"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"user","content":"In main.tex change the word cat to dog.","timestamp":1733234401000}}
+{"type":"message_end","message":{"role":"user","content":"In main.tex change the word cat to dog.","timestamp":1733234401000}}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":1733234402000}}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1733234402000,"errorMessage":"429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit"}}
+{"type":"agent_end","messages":[],"willRetry":true}
+{"type":"auto_retry_start","attempt":1,"maxAttempts":2,"delayMs":2000,"errorMessage":"429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":1733234402000}}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1733234402000,"errorMessage":"429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit"}}
+{"type":"auto_retry_start","attempt":2,"maxAttempts":2,"delayMs":4000,"errorMessage":"429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":1733234402000}}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1733234402000,"errorMessage":"429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit"}}
+{"type":"auto_retry_end","success":false,"attempt":2,"finalError":"429 Too Many Requests: rate limit exceeded after 2 retries"}
+{"type":"agent_end","messages":[],"willRetry":false}
+{"type":"agent_settled","aborted":false}

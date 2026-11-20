@@ -1,0 +1,33 @@
+.tutor-reply__section {
+  margin-top: var(--space-2);
+}
+
+.tutor-reply__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.tutor-reply__formula {
+  margin: var(--space-1) 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85em;
+}
+
+.tutor-reply__raw {
+  margin-top: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.tutor-reply__raw summary {
+  cursor: pointer;
+}
+
+.tutor-reply__raw pre {
+  max-height: 14rem;
+  overflow: auto;
+}

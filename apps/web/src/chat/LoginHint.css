@@ -1,0 +1,14 @@
+.login-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+
+.login-hint code {
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
