@@ -19,6 +19,9 @@ submitted, and no editor is contacted.
 /journal-finder --scope national [--categories A1-B] [--limit N]
 ```
 
+Both scopes accept `--refine-top N` (default 5, `0` turns it off, max 10): the
+second stage described in "Second stage: similar papers in the top journals".
+
 `--scope international` (the default) is everything below: journals found
 through OpenAlex and ranked by SJR quartile. `--scope national` ranks the
 Colombian journals of the IBN - Publindex list instead; see
@@ -60,6 +63,12 @@ maximum 50.
      published there, shared topics) as the evidence of fit.
    - *Scope risks*: what the scope page excludes or emphasises that the paper
      does not match.
+   - *Style match* (the top `query.refinement.top` journals): the paper's
+     profile from `query.refinement.paper` beside the journal's
+     `refinement.shares`, the `refinement.dimensions` that agree or not, and the
+     sampled articles (`refinement.works`: title, year, DOI and their reading).
+     Read at least two of those articles' abstracts and say whether they are
+     really like the paper: the profile is lexical, never a verdict.
    - *OA and APC*: copied from the JSON; `apc_usd: null` reads "APC not
      published", never a guess (a DOAJ price in another currency is in
      `doaj.apc_max` and is never converted).
@@ -390,6 +399,50 @@ A failing cited-venue lookup never fails the search: the signal degrades and
 `notes` says why. The agent reports the components when it explains a rank and
 never presents a journal that appears only through a citation as one that
 publishes similar work.
+
+### Second stage: similar papers in the top journals
+
+The first stage ranks every journal by `fit_score` (the name, scope and topics
+of the journal, the similar works and the paper's references, per scope). The
+second stage then reads, for each of the first `--refine-top N` journals (5 by
+default; `PAPERSMITH_JOURNAL_REFINE_TOP` sets the default), up to 10 of its
+articles of the last 6 years from OpenAlex
+(`/works?filter=primary_location.source.id:<id>,type:article` with the paper's
+key phrases as an OR search; when none matches, its latest articles,
+`refinement.status: "latest"`), and compares their research profile with the
+paper's.
+
+- **Profiles** (`skills/journal-finder/scripts/research_profile.py`): English
+  and Spanish cue phrases counted over a title and abstract with accents
+  folded. `approach` quantitative, qualitative or mixed; `ai` true or false;
+  `kind` general, theory, use-inspired, concept or review; `math`
+  mathematical, moderate or descriptive; `unclear` when no cue appears. The
+  paper's `kind` comes from its recorded `contribution_type`
+  (`.papersmith/model_spec.json`) when there is one, and its `math` from the
+  density of LaTeX math in its body (display environments and inline
+  formulas per 1000 words: >= 8 mathematical, >= 2 moderate) when the body has
+  at least 100 words (`kind_basis`, `math_basis`, `math_density`).
+- **`style_match`** (0..1): per dimension, the share of sampled articles that
+  agree with the paper (mixed against quantitative or qualitative, and
+  adjacent math levels, count half), plus `topic`, the share of articles that
+  contain at least two of the paper's terms; weights `topic` 0.3, `approach`
+  0.2, `kind` 0.2, `math` 0.15, `ai` 0.15, rescaled over the dimensions the
+  paper reads clearly (`refinement.active`).
+- **Order**: `refined_score = 0.5 * fit_score / best fit_score of the top + 0.5
+  * style_match`; the top N are re-ordered by it and `rank` follows. A journal
+  with no OpenAlex record, no article or no answer (`status` `no-record`,
+  `none`, `unavailable`) has `refined_score: null` and keeps its first-stage
+  place; only the refined journals trade places, among the places they held.
+  `fit_score` is never changed, and the journals below the top N keep their
+  order.
+- **Where it is**: `query.refinement` (`top`, `applied`, `paper`, `weights`,
+  `formula`, `sampled`, `unavailable`) and, on each refined candidate,
+  `refinement` (`status`, `works_sampled`, `shares`, `dimensions`, `active`,
+  `style_match`, `works`) and `refined_score`. It costs one or two OpenAlex
+  calls per journal (cached); when OpenAlex already failed this search (the
+  international `fallback.used`, or the national subfield profile it did not
+  answer) the stage is skipped with a note, and a journal's failed sample
+  never fails the search.
 
 ### Calls, the cache and the OpenAlex budget
 

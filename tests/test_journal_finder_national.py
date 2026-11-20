@@ -319,7 +319,7 @@ def _with_topics(document: dict, subfields: dict[int, list[str]]) -> dict:
 class SubfieldOpenAlex:
     """A stand-in OpenAlex answering `group_by=primary_topic.subfield.id` for any works search."""
 
-    def __init__(self, groups, status=200, body=None):
+    def __init__(self, groups, status=200, body=None, source_works=None):
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from urllib.parse import parse_qs, urlparse
@@ -334,6 +334,10 @@ class SubfieldOpenAlex:
                 params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
                 outer.requests.append(params)
                 payload = body if body is not None else {"meta": {"count": 100}, "group_by": groups}
+                if "primary_location.source.id:" in params.get("filter", ""):
+                    sid = params["filter"].split("primary_location.source.id:")[1].split(",")[0]
+                    works = (source_works or {}).get(sid, [])
+                    payload = {"meta": {"count": len(works)}, "results": works}
                 data = json.dumps(payload).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
