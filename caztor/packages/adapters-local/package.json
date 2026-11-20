@@ -1,0 +1,12 @@
+{
+  "name": "@caztor/adapters-local",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@caztor/core": "*"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

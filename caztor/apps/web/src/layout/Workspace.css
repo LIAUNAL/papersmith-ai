@@ -1,0 +1,29 @@
+.workspace {
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.workspace__divider {
+  position: relative;
+  flex: 0 0 var(--divider-size) !important;
+  background: var(--color-bg);
+  cursor: col-resize;
+  transition: background-color var(--duration-fast);
+}
+
+/* A thin line in the middle of the wider grab area. */
+.workspace__divider::after {
+  position: absolute;
+  inset: 0 calc(var(--divider-size) / 2 - 0.5px);
+  background: var(--color-border-strong);
+  content: "";
+}
+
+.workspace__divider:hover,
+.workspace__divider[data-separator="active"] {
+  background: var(--color-surface-selected);
+}
+
+.workspace__divider:focus-visible {
+  outline-offset: -2px;
+}

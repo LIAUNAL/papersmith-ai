@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/core/test" },
+    { "path": "packages/api" },
+    { "path": "packages/api/test" },
+    { "path": "packages/adapters-local" },
+    { "path": "packages/adapters-local/test" },
+    { "path": "apps/server-local" },
+    { "path": "apps/server-local/test" },
+    { "path": "apps/web" },
+    { "path": "agents" },
+    { "path": "guides" }
+  ]
+}

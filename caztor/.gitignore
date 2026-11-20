@@ -1,0 +1,7 @@
+node_modules
+dist
+.caztor
+.codegraph
+openspec/changes/archive/2026-10-26-caztor-mvp/spike-raw/
+dist-test
+dist-types

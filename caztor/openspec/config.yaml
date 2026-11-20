@@ -1,0 +1,55 @@
+schema: spec-driven
+
+context: |
+  Project: Caztor - local-first web LaTeX compiler/editor with a chat panel driving local AI CLIs (opencode, claude, codex).
+  Stack (planned, confirm in sdd-design): TypeScript on Node.js v26.8.2, npm, web frontend + local Node server. Greenfield, no code yet.
+  Engine: tectonic 0.17.0 (only LaTeX engine installed; no pdflatex/xelatex/lualatex/latexmk).
+  AI CLIs: opencode 1.19.0, claude 2.1.296 present; codex NOT installed.
+  Future deploy target: Cloudflare or similar.
+  Testing: Vitest planned (npx vitest run), not installed yet.
+
+# Strict TDD is active: Vitest is installed and the workspace "test" script exists.
+strict_tdd: true
+intended_strict_tdd: true
+
+projects: []
+
+testing:
+  runner: vitest
+  command: "npx vitest run"
+  status: "installed (vitest 5, npx vitest run)"
+  layers:
+    unit: planned
+    integration: planned
+    e2e: not_planned
+  coverage: planned (vitest --coverage)
+  linter: none
+  type_checker: planned (tsc --noEmit)
+  formatter: none
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Account for tectonic as the only LaTeX engine and codex being absent
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Confirm the TypeScript/Node/npm stack and Cloudflare portability here
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - First apply batch installs Vitest and enables strict TDD
+  apply:
+    guidelines:
+      - Follow conventional commits; no AI attribution lines
+    tdd: true
+    test_command: "npx vitest run"
+  verify:
+    test_command: "npx vitest run"
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas

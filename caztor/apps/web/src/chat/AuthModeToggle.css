@@ -1,0 +1,66 @@
+.auth-toggle {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.auth-toggle__group {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+
+.auth-toggle__option {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.auth-toggle__option:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.auth-toggle__option--checked {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+  font-weight: var(--weight-medium);
+}
+
+.auth-toggle__option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.auth-toggle__tag {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+  font-size: var(--text-xs);
+}
+
+.auth-toggle__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.auth-toggle__problem {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}

@@ -1,0 +1,47 @@
+.login-dialog__text {
+  max-height: 18rem;
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.login-dialog__lead,
+.login-dialog__code,
+.login-dialog__done,
+.login-dialog__problem {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+}
+
+.login-dialog__code code {
+  font-family: var(--font-mono);
+  font-size: var(--text-md, 1rem);
+  font-weight: 600;
+  user-select: all;
+}
+
+.login-dialog__problem {
+  color: var(--color-danger, #b42318);
+}
+
+.login-dialog__input,
+.login-dialog__keys,
+.login-dialog__methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.login-dialog__input .input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}

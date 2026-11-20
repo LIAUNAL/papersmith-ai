@@ -1,0 +1,28 @@
+.compile-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: var(--border-width) solid var(--color-border);
+  font-size: var(--text-xs);
+}
+
+.compile-options__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.compile-options__switch input {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.compile-options__problem {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--color-danger);
+}

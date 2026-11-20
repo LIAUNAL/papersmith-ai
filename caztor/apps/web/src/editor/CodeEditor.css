@@ -1,0 +1,32 @@
+.code-editor {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor .cm-editor {
+  height: 100%;
+}
+
+/* PaperSmith block markers: shown, but out of reach of typing. */
+.code-editor .cm-paper-marker {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* The passages the assistant's last reply explains. */
+.cm-explained {
+  background-color: rgb(253 224 71 / 0.38);
+  border-radius: 2px;
+}
+
+[data-theme="dark"] .cm-explained {
+  background-color: rgb(250 204 21 / 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cm-explained {
+    background-color: rgb(250 204 21 / 0.22);
+  }
+}
