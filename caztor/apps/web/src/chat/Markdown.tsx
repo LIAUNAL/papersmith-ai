@@ -1,5 +1,5 @@
 import { createElement, type ReactNode } from "react";
-import { parseMarkdown, type Block, type Inline } from "./markdown.ts";
+import { parseInline, parseMarkdown, type Block, type Inline } from "./markdown.ts";
 import { TexMath } from "./TexMath.tsx";
 import "./Markdown.css";
 
@@ -55,4 +55,9 @@ function renderBlock(block: Block, index: number): ReactNode {
 /** Assistant text as safe elements: nothing in it can become markup, a script, or a request; formulas are typeset. */
 export function Markdown({ text }: { text: string }) {
   return <div className="markdown">{parseMarkdown(text).map(renderBlock)}</div>;
+}
+
+/** One line of assistant text (a list item of a tutor's answer): emphasis, code, links and formulas, no blocks. */
+export function InlineMarkdown({ text }: { text: string }) {
+  return <>{renderInlines(parseInline(text))}</>;
 }

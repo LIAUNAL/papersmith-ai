@@ -1,4 +1,4 @@
-import { Markdown } from "./Markdown.tsx";
+import { InlineMarkdown, Markdown } from "./Markdown.tsx";
 import { TexMath } from "./TexMath.tsx";
 import "./TutorReply.css";
 
@@ -110,7 +110,9 @@ export function TutorReply({ answer, raw }: { answer: TutorAnswer; raw: string }
           {gaps.length === 0 ? null : (
             <ul>
               {gaps.map((gap, index) => (
-                <li key={index}>{gap}</li>
+                <li key={index}>
+                  <InlineMarkdown text={gap} />
+                </li>
               ))}
             </ul>
           )}
@@ -120,7 +122,9 @@ export function TutorReply({ answer, raw }: { answer: TutorAnswer; raw: string }
         <Section label="Risks">
           <ul>
             {risks.map((risk, index) => (
-              <li key={index}>{risk}</li>
+              <li key={index}>
+                <InlineMarkdown text={risk} />
+              </li>
             ))}
           </ul>
         </Section>

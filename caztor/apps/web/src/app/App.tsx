@@ -20,6 +20,7 @@ import { PreviewPane } from "../preview/PreviewPane.tsx";
 import type { StorageLike } from "../layout/storage.ts";
 import { ProjectRail } from "../projects/ProjectRail.tsx";
 import { listenForCompose, listenForTheme, postReady, postSelection } from "../embed/bridge.ts";
+import { locatePassage } from "../explain/locate.ts";
 import { useExplained } from "../explain/useExplained.ts";
 import { createThemeStore, type ThemeStore } from "../theme/theme.ts";
 import { ThemeControl } from "../theme/ThemeControl.tsx";
@@ -135,6 +136,31 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
   // The passages the latest reply explains, marked in the editor and the PDF while the chat's switch is on.
   const explained = useExplained(chat, previewStorage);
   const highlights = explained.on ? explained.passages : [];
+  // A step to a passage the open file does not hold opens the project file that does; the files read stay cached
+  // for the passages of this reply.
+  const searched = useRef<{ of: readonly string[]; texts: Map<string, string> }>({ of: [], texts: new Map() });
+  const [passageMissing, setPassageMissing] = useState(false);
+  useEffect(() => {
+    const focus = explained.on ? explained.focus : null;
+    if (focus === null) return;
+    if (searched.current.of !== explained.passages) searched.current = { of: explained.passages, texts: new Map() };
+    const active = session.getSnapshot().active;
+    const open = active === null ? null : { path: active, text: session.get(active)?.text ?? "" };
+    let live = true;
+    void locatePassage(focus.passage, { open, listFiles: () => api.listFiles(), readFile: (path) => api.readFile(path) }, searched.current.texts).then(
+      (place) => {
+        if (!live) return;
+        setPassageMissing(place === null);
+        if (place !== null && place.path !== open?.path) void openAt(place.path, place.line);
+      },
+      () => live && setPassageMissing(false),
+    );
+    return () => {
+      live = false;
+    };
+    // Only a new step searches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [explained.focus?.nonce]);
 
   // Shown inside a PaperSmith dashboard: its change-control panel sends text for the chat box and hears PDF selections.
   const embedOrigin = projectSession.embed?.origin;
@@ -302,7 +328,7 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   controller={chat}
                   onOpenFile={(path) => void openAt(path, 1)}
                   onCompile={() => void compiler.start()}
-                  explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle, current: explained.current, onStep: explained.step }}
+                  explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle, current: explained.current, onStep: explained.step, missing: passageMissing }}
                 />
               ),
               ...(editing.active === null ? {} : { editor: <EditorPane session={session} highlights={highlights} focus={explained.on ? explained.focus : null} /> }),

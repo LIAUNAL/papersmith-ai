@@ -22,7 +22,7 @@ interface ChatPanelProps {
   /** What `/compile` does. */
   onCompile?: () => void;
   /** The switch that marks, in the editor and the PDF, the passages the latest reply explains. */
-  explain?: { on: boolean; count: number; onToggle: () => void; current?: number | null; onStep?: (direction: 1 | -1) => void };
+  explain?: { on: boolean; count: number; onToggle: () => void; current?: number | null; onStep?: (direction: 1 | -1) => void; missing?: boolean };
 }
 
 /** The body of the chat pane: the conversation, what went wrong, and the message box. */
@@ -222,6 +222,7 @@ export function ChatPanel({ controller, onOpenFile, onCompile, explain }: ChatPa
               </button>
               <span className="chat-panel__explain-count" aria-live="polite">
                 {explain.current === null || explain.current === undefined ? `${explain.count} in the last reply` : `${explain.current + 1} / ${explain.count}`}
+                {explain.current !== null && explain.current !== undefined && explain.missing === true ? " · not in the project files" : ""}
               </span>
               <button type="button" className="chat-panel__explain-step" aria-label="Next explained passage" title="Next explained passage" onClick={() => explain.onStep?.(1)}>
                 ›
