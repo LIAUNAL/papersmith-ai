@@ -1,8 +1,9 @@
 """Caztor, the LaTeX editor of the dashboard's PDF tab, run as a sidecar.
 
-Caztor (the CaozCompilator project) is a separate Node.js application: a file tree, a LaTeX editor, a Tectonic-compiled PDF and
-an assistant chat. The dashboard does not vendor it. It finds a checkout in
-``CAZTOR_HOME`` (default ``~/CaozCompilator``), starts its server on this
+Caztor is a Node.js application kept in this repository's ``caztor/`` folder:
+a file tree, a LaTeX editor, a PDF compiled by Tectonic and an assistant chat.
+The dashboard runs the ``caztor/`` of the papersmith checkout smith is
+installed from (``CAZTOR_HOME`` names another copy), starts its server on this
 workspace with ``--embed-origin <the dashboard's origin>`` and shows it in a
 frame. In that mode Caztor stays on this one workspace, hides its project
 navigator, and only the dashboard's origin may frame it.
@@ -19,13 +20,17 @@ import re
 import shutil
 import subprocess
 import threading
+import importlib.util
 import time
 from collections import deque
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 CAZTOR_HOME_ENV = "CAZTOR_HOME"
-DEFAULT_HOME_NAME = "CaozCompilator"
+#: Where the repository keeps Caztor, beside ``src/papersmith``.
+BUNDLED_DIR = "caztor"
+#: The command, run in the papersmith checkout, that installs Caztor's dependencies and builds its web app.
+SETUP_COMMAND = "npm run setup:caztor"
 SERVER_ENTRY = Path("apps") / "server-local" / "src" / "main.ts"
 WEB_INDEX = Path("apps") / "web" / "dist" / "index.html"
 
@@ -37,12 +42,29 @@ ORIGIN = re.compile(r"^https?://(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})
 DROPPED_ENV = ("CAZTOR_HOST", "CAZTOR_PUBLIC_NAME", "CAZTOR_SECURE", "CAZTOR_EMBED_ORIGIN", "INIT_CWD")
 
 
+def bundled_home() -> Path | None:
+    """The ``caztor/`` folder of the papersmith checkout smith is installed from, when there is one."""
+    try:
+        spec = importlib.util.find_spec("papersmith")
+    except (ImportError, ValueError):
+        return None
+    if spec is None or spec.origin is None:
+        return None
+    # An editable install: <checkout>/src/papersmith/__init__.py.
+    for parent in Path(spec.origin).resolve().parents[:4]:
+        if (parent / BUNDLED_DIR / SERVER_ENTRY).is_file():
+            return parent / BUNDLED_DIR
+    return None
+
+
 class CaztorSidecar:
     """One Caztor server for one workspace, started on demand."""
 
     def __init__(self, root: Path | str, *, env: Mapping[str, str] | None = None,
-                 startup_timeout: float = 60.0) -> None:
+                 startup_timeout: float = 60.0,
+                 bundled: Callable[[], Path | None] | None = None) -> None:
         self.root = Path(root)
+        self.bundled = bundled_home if bundled is None else bundled
         self.env = dict(os.environ if env is None else env)
         self.startup_timeout = startup_timeout
         self._lock = threading.Lock()
@@ -52,16 +74,19 @@ class CaztorSidecar:
         self._tail: deque[str] = deque(maxlen=12)
 
     def locate(self) -> tuple[Path | None, str | None]:
-        """The Caztor checkout to run, or why there is none."""
+        """The Caztor copy to run, or why there is none."""
         configured = self.env.get(CAZTOR_HOME_ENV)
-        home = (Path(configured).expanduser() if configured
-                else Path(self.env.get("HOME") or Path.home()) / DEFAULT_HOME_NAME)
+        home = Path(configured).expanduser() if configured else self.bundled()
+        if home is None:
+            return None, ("Caztor was not found: smith is not installed from a papersmith checkout "
+                          f"with its {BUNDLED_DIR}/ folder. Set {CAZTOR_HOME_ENV} to a Caztor copy and "
+                          "reload the dashboard.")
         if not (home / SERVER_ENTRY).is_file():
-            return None, (f"Caztor was not found in {home}. Set {CAZTOR_HOME_ENV} to the CaozCompilator "
-                          "checkout and reload the dashboard.")
-        if not (home / WEB_INDEX).is_file():
-            return None, (f"Caztor's web app is not built in {home}. Run `npm install` and "
-                          "`npm run build -w @caztor/web` there, then reload.")
+            return None, (f"Caztor was not found in {home}. Set {CAZTOR_HOME_ENV} to a Caztor copy "
+                          "and reload the dashboard.")
+        if not (home / WEB_INDEX).is_file() or not (home / "node_modules").is_dir():
+            return None, (f"Caztor is not set up in {home}. Run `{SETUP_COMMAND}` in the papersmith "
+                          "checkout, then reload.")
         return home, None
 
     def ensure(self, origin: str) -> dict:

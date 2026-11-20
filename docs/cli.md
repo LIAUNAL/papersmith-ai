@@ -1081,10 +1081,12 @@ with pdf.js 3.11.174, vendored in `skills/_core/command_center/static/vendor/`
 `run_details.pdf_mtime`; when a recompile moves that token the open preview
 reloads in place and keeps the page you were reading.
 
-**LaTeX editor in the PDF tab (Caztor).** When a Caztor checkout
-(the CaozCompilator project) is found in `CAZTOR_HOME` (default
-`~/CaozCompilator`, with `npm install` and `npm run build -w @caztor/web` done) and
-`node` (Node.js 26) is on the `PATH`, the tab shows Caztor's four vertical panes
+**LaTeX editor in the PDF tab (Caztor).** Caztor's source lives in this
+repository's `caztor/` folder; `npm run setup:caztor` (part of `npm run setup`)
+installs its dependencies and builds its web app. It compiles with the
+`tectonic` binary, which must be on the `PATH`. When smith runs from a papersmith
+checkout whose `caztor/` is set up (or `CAZTOR_HOME` names another Caztor copy)
+and `node` (Node.js 26) is on the `PATH`, the tab shows Caztor's four vertical panes
 in place of the viewer: files, LaTeX editor, the PDF it compiles with Tectonic
 (into `.caztor/build`, never `paper/main.pdf`), and the assistant chat. The
 change-control panel stays to the right of the chat: text selected in Caztor's
@@ -1102,9 +1104,13 @@ Inside the dashboard Caztor shows no top bar of its own and takes the dashboard'
 light or dark theme, when it loads and on every toggle (`caztor:ready` and
 `caztor:theme` messages, pinned to Caztor's origin). Its chat offers opencode,
 Claude Code, Pi and Antigravity, counts a provider you are already signed in to on
-this computer as signed in, and lists the workspace's PaperSmith agents in the `/`
-menu: `/math-tutor <message>` runs the message with that agent's instructions, and
-its skill is read from `skills/`. The passages the latest reply quotes are marked
+this computer as signed in, and offers the workspace's conversational PaperSmith
+agents as switches above the message box: **Math tutor** and **Experiments tutor**,
+with **Paper reviewer** and **Writing auditor** under **More**. While one is on,
+every message runs with that agent's instructions (its skill is read from
+`skills/`), and the agent is told the exact paths of the latest proposal revision,
+`.papersmith/model_spec.json`, the latest experiments protocol and
+`paper/main.tex`; switching one on sends nothing. The passages the latest reply quotes are marked
 in soft yellow in the LaTeX editor and on the PDF; **Highlight explained passages**
 above the message box turns that off and on.
 

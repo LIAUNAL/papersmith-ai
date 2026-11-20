@@ -23,6 +23,7 @@ def _fake_caztor(base: Path, script: str) -> tuple[Path, Path]:
     (home / "apps" / "server-local" / "src" / "main.ts").write_text("// fake", encoding="utf-8")
     (home / "apps" / "web" / "dist").mkdir(parents=True)
     (home / "apps" / "web" / "dist" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (home / "node_modules").mkdir()
     bin_dir = base / "bin"
     bin_dir.mkdir()
     node = bin_dir / "node"
@@ -110,12 +111,43 @@ class SidecarTests(unittest.TestCase):
         self.assertFalse(result["available"])
         self.assertIn("CAZTOR_HOME", result["reason"])
 
-    def test_an_unbuilt_web_app_is_reported(self) -> None:
-        sidecar, _ = self.sidecar()
-        (Path(sidecar.env["CAZTOR_HOME"]) / "apps" / "web" / "dist" / "index.html").unlink()
+    def test_an_unbuilt_web_app_or_missing_dependencies_name_the_setup_command(self) -> None:
+        for missing in (Path("apps") / "web" / "dist" / "index.html", Path("node_modules")):
+            with self.subTest(missing=str(missing)):
+                base = Path(tempfile.mkdtemp(dir=self.base))
+                home, _ = _fake_caztor(base, READY_SCRIPT)
+                target = home / missing
+                target.rmdir() if target.is_dir() else target.unlink()
+                sidecar = caztor.CaztorSidecar(self.root, env={"PATH": "/usr/bin:/bin", "CAZTOR_HOME": str(home)})
+                result = sidecar.ensure(ORIGIN)
+                self.assertFalse(result["available"])
+                self.assertIn("npm run setup:caztor", result["reason"])
+
+    def test_without_caztor_home_it_runs_the_bundled_copy(self) -> None:
+        home, bin_dir = _fake_caztor(self.base, READY_SCRIPT)
+        sidecar = caztor.CaztorSidecar(self.root, env={"PATH": f"{bin_dir}:/usr/bin:/bin"}, startup_timeout=5.0,
+                                       bundled=lambda: home)
+        self.addCleanup(sidecar.stop)
+        self.assertEqual(sidecar.locate(), (home, None))
+        self.assertTrue(sidecar.ensure(ORIGIN)["available"])
+
+    def test_caztor_home_wins_over_the_bundled_copy(self) -> None:
+        home, _ = _fake_caztor(self.base, READY_SCRIPT)
+        sidecar = caztor.CaztorSidecar(self.root, env={"CAZTOR_HOME": str(home)}, bundled=lambda: self.base / "other")
+        self.assertEqual(sidecar.locate(), (home, None))
+
+    def test_no_bundled_copy_and_no_caztor_home_is_reported(self) -> None:
+        sidecar = caztor.CaztorSidecar(self.root, env={"PATH": "/usr/bin:/bin"}, bundled=lambda: None)
         result = sidecar.ensure(ORIGIN)
         self.assertFalse(result["available"])
-        self.assertIn("npm run build -w @caztor/web", result["reason"])
+        self.assertIn("papersmith checkout", result["reason"])
+        self.assertIn("CAZTOR_HOME", result["reason"])
+
+    def test_the_bundled_copy_is_this_checkouts_caztor_folder(self) -> None:
+        found = caztor.bundled_home()
+        if found is not None:
+            self.assertEqual(found.name, "caztor")
+            self.assertTrue((found / caztor.SERVER_ENTRY).is_file())
 
     def test_missing_node_is_reported(self) -> None:
         sidecar, bin_dir = self.sidecar()
