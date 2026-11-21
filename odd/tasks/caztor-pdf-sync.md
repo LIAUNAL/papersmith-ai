@@ -8,10 +8,11 @@ Branch: papersmith-ai `pr/caztor-embed` (worktree ~/papersmith-ai-worktrees/pr-c
 
 ## Tasks
 
-- [ ] T1 [S1] The unconfirmed-recipe message names the running server's own command (`<node> <entry> trust-build "<root>"`). Route: inline. Risk: item 2 (touches the message of a security gate, not the gate).
-- [ ] T2 [S2] Double click in the editor -> candidates around the clicked word -> the PDF finds the page, scrolls and marks the printed text for a moment. Route: inline.
+- [x] T1 [S1] The unconfirmed-recipe message names the running server's own command (`<node> <entry> trust-build "<root>"`). Route: inline. Risk: item 2 (touches the message of a security gate, not the gate). Commit: 14ff1874.
+- [x] T2 [S2] Double click in the editor -> candidates around the clicked word -> the PDF finds the page, scrolls and marks the printed text for a moment. Route: inline. Commit: 423a7c2c.
 
 ## Log
 
 - L1 (2026-11-20) "compilé el paper y no se ve, ademas, sigue habiendo un problema con el out of date. tambien quiero agregarle que cuando le de doble click al codigo latex me lleve a esa parte del pdf"
 - L2 (2026-11-20) Evidence: .caztor/build/preview.pdf and last-compile.log date from 2026-11-16 21:52; .caztor/build.seal does not exist; trust-build gating entered Caztor on 2026-11-15 (089f6dd). The PDF shown is therefore older than the passages.
+- L3 (2026-11-20) Verification: Caztor 3591 tests green, tsc clean. The bundled server (`dist/main.mjs trust-build`) confirms a scratch recipe and writes its seal. Live, on a scratch copy compiled to the current main.pdf: a double click on "emerges" in main.tex line 3 scrolled the PDF to page 2 and marked "Classical spin models describe how magnetic order emerges from the in- | teractions between localized moments, from the Ising model with two states" for 1.6 s. The user's own recipe stays unconfirmed until they run trust-build themselves.
