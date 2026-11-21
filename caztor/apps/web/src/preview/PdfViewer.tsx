@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PdfSelection } from "../embed/bridge.ts";
 import type { PassageFocus } from "../explain/focus.ts";
-import { findPassages, plainText } from "../explain/passages.ts";
+import { findPrinted } from "../explain/passages.ts";
 import type { PdfDocument } from "./engine.ts";
 import { anchorAt, canvasRatio, layoutPages, PAGE_GAP, percentOf, resolveScale, scrollTopFor, visiblePages, type Anchor, type Zoom } from "./layout.ts";
 import "./PdfViewer.css";
@@ -24,7 +24,7 @@ interface PdfViewerProps {
 }
 
 /** Whether `text` holds `passage`, as written or as LaTeX prints it. */
-const holds = (text: string, passage: string): boolean => findPassages(text, [passage, plainText(passage)]).length > 0;
+const holds = (text: string, passage: string): boolean => findPrinted(text, passage).length > 0;
 
 /**
  * Marks the text pieces of one page that hold a passage, as written or as LaTeX prints it; clears the others. Each
@@ -44,7 +44,7 @@ function markPassages(layer: HTMLElement, passages: readonly string[]): void {
     joined += `${piece.textContent ?? ""} `;
   }
   passages.forEach((passage, which) => {
-    for (const range of findPassages(joined, [...new Set([passage, plainText(passage)])])) {
+    for (const range of findPrinted(joined, passage)) {
       pieces.forEach((piece, at) => {
         const start = starts[at]!;
         const end = start + (piece.textContent ?? "").length;
