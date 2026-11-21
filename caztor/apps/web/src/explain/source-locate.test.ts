@@ -40,6 +40,17 @@ describe("where a PDF line is in the LaTeX source", () => {
     expect(locateInSource(SOURCE, ["3.3. Exact linear colourings"], "linear")).toEqual({ line: 9, column: "\\subsection{Exact ".length, length: 6 });
   });
 
+  it("takes the wider candidate when the narrowest is in the source more than once", () => {
+    const source = [
+      "The proposal has three parts: exact linear colourings, one kernel and replica batching.",
+      "\\subsection{Exact linear colourings}",
+      "%% paper-writing block colourings.block-1 begin",
+      "The kernel generator proposed in this work turns the triple into one kernel.",
+    ].join("\n");
+    const place = locateInSource(source, ["3.3. Exact linear colourings", "3.3. Exact linear colourings The kernel generator proposed in this work turns the"], "linear");
+    expect(place?.line).toBe(2);
+  });
+
   it("finds nothing for text the source does not hold, such as the graphical abstract", () => {
     expect(locateInSource(SOURCE, ["One generated GPU kernel writes one kernel per system"], "kernel")).toBeNull();
   });

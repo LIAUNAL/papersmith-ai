@@ -4,7 +4,7 @@
  * for in that, so a citation printed as "[3]", "Equation (3)", a heading number and a word hyphenated at a line end do
  * not stop it.
  */
-import { findPassages, plainText } from "./passages.ts";
+import { findPassages, plainText, type Range } from "./passages.ts";
 
 /** A place in the source: 1-based line, and the clicked word's column and length in it (0 when it is not found). */
 export interface SourcePlace {
@@ -44,9 +44,7 @@ export function locateInSource(source: string, candidates: readonly string[], wo
     return index;
   };
   const clicked = bare(word);
-  for (const candidate of candidates) {
-    const range = findPassages(printed, [withoutDigits(candidate)], MIN_LETTERS)[0];
-    if (range === undefined) continue;
+  const placeOf = (range: Range): SourcePlace => {
     const first = lineAt(range.from);
     const last = lineAt(range.to - 1);
     for (let index = first; index <= last; index += 1) {
@@ -54,6 +52,16 @@ export function locateInSource(source: string, candidates: readonly string[], wo
       if (column !== -1) return { line: index + 1, column, length: clicked.length };
     }
     return { line: first + 1, column: 0, length: 0 };
+  };
+  // The narrowest candidate the source holds says where; when it is there more than once, a wider one says which.
+  let narrow: Range[] | null = null;
+  for (const [index, candidate] of candidates.entries()) {
+    const ranges = findPassages(printed, [withoutDigits(candidate)], MIN_LETTERS);
+    if (ranges.length === 0) continue;
+    narrow ??= ranges;
+    if (ranges.length > 1 && index < candidates.length - 1) continue;
+    const wide = ranges[0]!;
+    return placeOf(narrow.find((range) => range.from >= wide.from && range.to <= wide.to) ?? wide);
   }
-  return null;
+  return narrow === null ? null : placeOf(narrow[0]!);
 }
