@@ -75,6 +75,9 @@ export function buildPiEnv(parent: Readonly<Record<string, string | undefined>>,
     PI_OFFLINE: "1",
     PI_SKIP_VERSION_CHECK: "1",
     PI_TELEMETRY: "0",
+    // The prompt cache lasts an hour instead of five minutes: a question asked after a pause then reads the
+    // conversation from the cache instead of sending all of it again, which made the first reply of a turn slow.
+    PI_CACHE_RETENTION: "long",
   };
 }
 

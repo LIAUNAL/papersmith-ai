@@ -230,6 +230,8 @@ describe("the Pi runner", () => {
         PI_OFFLINE: "1",
         PI_SKIP_VERSION_CHECK: "1",
         PI_TELEMETRY: "0",
+        // A tutor question often comes more than five minutes after the last answer: the prompt cache lasts an hour.
+        PI_CACHE_RETENTION: "long",
       });
       expect(call?.args.join(" ")).not.toContain("--api-key");
     });
