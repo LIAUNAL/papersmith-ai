@@ -145,15 +145,37 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
     }
   }
 
+  // Manifests already read or written, by path: each turn read all of them (megabytes of JSON) to find the latest.
+  // One is read again only when its file changed size or modification time; a manifest is never changed in place.
+  const known = new Map<string, { size: number; mtimeMs: number; manifest: Manifest | null }>();
+  async function readManifest(path: string, id: string): Promise<Manifest | null> {
+    const stats = await fs.lstat(path);
+    const seen = known.get(path);
+    if (seen !== undefined && seen.size === stats.size && seen.mtimeMs === stats.mtimeMs) return seen.manifest;
+    const manifest = parseManifest(new TextDecoder().decode(await fs.readFile(path)), id);
+    known.set(path, { size: stats.size, mtimeMs: stats.mtimeMs, manifest });
+    return manifest;
+  }
+  async function writeManifest(path: string, manifest: Manifest): Promise<void> {
+    known.delete(path);
+    await writeAtomic(path, new TextEncoder().encode(serializeManifest(manifest)));
+    const stats = await fs.lstat(path).catch(() => null);
+    if (stats !== null) known.set(path, { size: stats.size, mtimeMs: stats.mtimeMs, manifest });
+  }
+
   async function readManifests(folder: string): Promise<Manifest[]> {
     const found: Manifest[] = [];
+    const listed = new Set<string>();
     for (const entry of await fs.readdir(folder)) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
       const id = entry.name.slice(0, -".json".length);
       if (!isTurnId(id)) continue;
-      const manifest = parseManifest(new TextDecoder().decode(await fs.readFile(joinPath(folder, entry.name))), id);
+      const path = joinPath(folder, entry.name);
+      listed.add(path);
+      const manifest = await readManifest(path, id);
       if (manifest !== null) found.push(manifest);
     }
+    for (const path of known.keys()) if (path.startsWith(`${folder}/`) && !listed.has(path)) known.delete(path);
     return found;
   }
 
@@ -192,6 +214,9 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
   /** Copies the project into a manifest. Throws a `SnapshotError` or the file system's error when anything fails. */
   async function buildManifest(kind: Manifest["kind"], turnId: string, seq: number, blobs: string, previous: Manifest | null): Promise<{ manifest: Manifest; unprotected: RelPath[] }> {
     const now = clock.now();
+    // One listing of the stored copies instead of asking the disk about each file's copy: the copy runs under the
+    // store's lock, so the listing stays true while it runs.
+    const stored = new Set((await fs.readdir(blobs)).map((entry) => entry.name));
     const walked = await walk();
     const files = new Map<RelPath, ManifestFile>();
     const unprotected: RelPath[] = [...walked.unreadable];
@@ -214,7 +239,7 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
       let bytes: Uint8Array | null = null;
       const before = previous?.files.get(path);
       const trusted = before !== undefined && before.hash !== null && unchangedSince(before, stats) && settledBefore(stats, previous!.createdAt);
-      if (trusted && before.hash !== null && (await exists(joinPath(blobs, blobName(before.hash))))) {
+      if (trusted && before.hash !== null && stored.has(blobName(before.hash))) {
         hash = before.hash;
       } else {
         try {
@@ -226,7 +251,7 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
       }
 
       const blobPath = joinPath(blobs, blobName(hash));
-      if (!(await exists(blobPath))) {
+      if (!stored.has(blobName(hash))) {
         const content = bytes ?? (await fs.readFile(full));
         if (newBytes + content.length > limits.maxNewBytes) {
           skip();
@@ -238,6 +263,7 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
           throw new SnapshotError(`Could not store a copy of ${path}: ${errorText(error)}`);
         }
         newBytes += content.length;
+        stored.add(blobName(hash));
       }
       protectedFiles += 1;
       files.set(path, { ...base, size: bytes?.length ?? stats.size, hash, undoable: true });
@@ -267,15 +293,14 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
   async function loadTurn(turns: string, turnId: string): Promise<Manifest | null> {
     if (!isTurnId(turnId)) return null;
     try {
-      return parseManifest(new TextDecoder().decode(await fs.readFile(joinPath(turns, `${turnId}.json`))), turnId);
+      return await readManifest(joinPath(turns, `${turnId}.json`), turnId);
     } catch (error) {
       if (codeOf(error) === "ENOENT") return null;
       throw error;
     }
   }
 
-  const saveManifest = (folder: string, manifest: Manifest) =>
-    writeAtomic(joinPath(folder, `${manifest.turnId}.json`), new TextEncoder().encode(serializeManifest(manifest)));
+  const saveManifest = (folder: string, manifest: Manifest) => writeManifest(joinPath(folder, `${manifest.turnId}.json`), manifest);
 
   /** What is on disk now compared with the snapshot, before any attribution to the user. */
   async function compareWithDisk(manifest: Manifest): Promise<{ changes: StoredChange[]; dirs: RelPath[] }> {
@@ -468,7 +493,7 @@ export function createSnapshotStore(options: SnapshotStoreOptions): Pick<Snapsho
           if (await exists(manifestPath)) throw new SnapshotError(`A snapshot for turn ${turnId} already exists`);
           const { previous, nextSeq } = await latestTurn(turns);
           const { manifest, unprotected } = await buildManifest("turn", turnId, nextSeq, blobs, previous);
-          await writeAtomic(manifestPath, new TextEncoder().encode(serializeManifest(manifest)));
+          await writeManifest(manifestPath, manifest);
           return { ok: true, value: { partial: manifest.partial, unprotected } };
         } catch (error) {
           return { ok: false, error: { message: `The project snapshot could not be taken: ${errorText(error)}` } };

@@ -143,7 +143,8 @@ describe.each(implementations)("snapshot hardening: %s", (_name, create) => {
       await counting.snapshots.capture("c2");
 
       expect(afterFirst).toBeGreaterThan(0);
-      expect(reads).toBe(afterFirst + 1);
+      // Neither the file nor the first turn's manifest, which this store wrote and still knows, is read again.
+      expect(reads).toBe(afterFirst);
     });
   });
 

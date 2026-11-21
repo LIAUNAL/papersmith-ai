@@ -22,6 +22,21 @@ describe.each(implementations)("snapshot capture: %s", (_name, create) => {
     expect(files["run.sh"]?.["mode"]).toBe(0o755);
   });
 
+  it("does not read again, on each turn, the manifests of earlier turns it already knows", async () => {
+    const reads: string[] = [];
+    const t = await setupSnapshots(create, { hooks: { readFile: (path) => void reads.push(path) } });
+    await t.put("main.tex", "hello");
+    for (const id of ["t1", "t2", "t3"]) await t.snapshots.capture(id);
+    await t.snapshots.prune(20);
+    reads.length = 0;
+    await t.put("main.tex", "hello again");
+    expect(await t.snapshots.capture("t4")).toMatchObject({ ok: true });
+    await t.snapshots.prune(20);
+    expect(reads.filter((path) => path.includes("/snapshots/turns/"))).toEqual([]);
+    // The previous turn is still found: an unchanged file keeps its hash, the changed one is read.
+    expect(reads.filter((path) => path.endsWith("main.tex"))).toHaveLength(1);
+  });
+
   it("keeps one blob for files with the same content", async () => {
     const t = await setupSnapshots(create);
     await t.put("a.tex", "same");
