@@ -1119,13 +1119,13 @@ _FOLD = str.maketrans("\u00e1\u00e0\u00e4\u00e2\u00e3\u00e9\u00e8\u00eb\u00ea\u0
 _TERM_RE = re.compile(r"[a-z]{4,}")
 _LATEX_COMMAND_RE = re.compile(r"\\[A-Za-z]+\*?")
 _TEX_COMMENT_RE = re.compile(rb"(?<!\\)%[^\n]*")
-_TITLE_RE = re.compile(rb"\\title\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}")
+_TITLE_RE = re.compile(rb"\\title\s*(?:\[[^\]]*\])?\s*\{((?:[^{}]|\{[^{}]*\})*)\}")
 _ABSTRACT_RE = re.compile(rb"\\begin\{abstract\}(.*?)\\end\{abstract\}", re.S)
 _STOP_PREFIXES = frozenset(word[:TERM_PREFIX] for word in """
     that this with from have been were which their these those into than then also such when where
     while there what they them more most other some only over under between about each both very
     will would could should using used based show shows shown result results paper study studies
-    propose proposed approach method methods model models data present work works first second new
+    propose proposed approach method methods model models data work works first new
     para como entre sobre este esta estos estas pero porque cuando donde desde hasta tambien segun
     cada otro otra otros otras puede pueden tiene tienen modelo modelos metodo metodos datos
     resultado resultados estudio estudios propuesta trabajo nuevo nueva
@@ -1155,11 +1155,16 @@ def _paper_terms(main_tex_bytes: bytes, record: dict) -> set:
         found = pattern.search(main_tex_bytes)
         if found:
             text.append(found.group(1).decode("utf-8", errors="replace"))
-    facts = record.get("facts") if isinstance(record, dict) else None
-    text.extend(name for name in (facts or {}).get("contributions") or [] if isinstance(name, str))
-    chain = record.get("chain") if isinstance(record, dict) else None
-    text.extend(link["word"] for link in (chain or {}).get("links") or []
-                if isinstance(link, dict) and isinstance(link.get("word"), str))
+    # A hand-edited record may hold any shape; a wrong one adds no vocabulary.
+    facts = record.get("facts")
+    contributions = facts.get("contributions") if isinstance(facts, dict) else None
+    if isinstance(contributions, list):
+        text.extend(name for name in contributions if isinstance(name, str))
+    chain = record.get("chain")
+    links = chain.get("links") if isinstance(chain, dict) else None
+    if isinstance(links, list):
+        text.extend(link["word"] for link in links
+                    if isinstance(link, dict) and isinstance(link.get("word"), str))
     return _terms(" ".join(text))
 
 

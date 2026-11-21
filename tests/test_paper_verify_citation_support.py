@@ -115,6 +115,17 @@ class OffFieldSourceTests(unittest.TestCase):
         self.assertNotIn("SOURCE_SHARES_NO_TERM_WITH_PAPER",
                          codes(attach(record={}, tex=b"\\cite{adam2015}\n")))
 
+    def test_a_malformed_hand_edited_record_never_breaks_the_screen(self) -> None:
+        for record in ({"facts": ["x"]}, {"facts": {"contributions": "x"}}, {"chain": {"links": "x"}},
+                       {"chain": []}, {"citation_policy": "yes"}):
+            with self.subTest(record=record):
+                attach(record=record)
+
+    def test_a_title_with_nested_braces_keeps_its_words(self) -> None:
+        tex = b"\\title{\\emph{Kernel} decoding of electroencephalography}\n\\cite{eeg2020}\n"
+        refs = {"eeg2020": {"status": "resolved", "title": "Electroencephalography decoding review"}}
+        self.assertNotIn("SOURCE_SHARES_NO_TERM_WITH_PAPER", codes(attach(record={}, tex=tex, references=refs)))
+
     def test_a_source_without_title_or_abstract_is_left_to_its_own_warning(self) -> None:
         refs = {**REFERENCES, "adam2015": {"status": "not_found"}}
         self.assertNotIn("SOURCE_SHARES_NO_TERM_WITH_PAPER", codes(attach(references=refs)))
