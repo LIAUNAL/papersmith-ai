@@ -163,7 +163,12 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
   // A step to an explained passage: mark it more strongly and scroll to it when this file holds it.
   useEffect(() => {
     const editor = view.current;
-    if (editor === null || focus === null || focus === undefined) return;
+    if (editor === null) return;
+    // No step (highlighting turned off, or a new reply): no stronger mark either.
+    if (focus === null || focus === undefined) {
+      editor.dispatch({ effects: setCurrentExplained.of([]) });
+      return;
+    }
     const ranges = findPassages(editor.state.doc.toString(), [focus.passage]);
     const first = ranges[0];
     editor.dispatch({
@@ -171,7 +176,7 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
     });
     // Only a new step (or a new file) moves the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus?.nonce, path]);
+  }, [focus?.nonce ?? null, path]);
 
   return <div ref={host} className="code-editor" />;
 }

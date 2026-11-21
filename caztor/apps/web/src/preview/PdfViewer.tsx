@@ -48,7 +48,7 @@ const holds = (text: string, passage: string, fewestLetters?: number): boolean =
 function markPassages(layer: HTMLElement, passages: readonly string[]): void {
   const pieces = [...layer.querySelectorAll<HTMLElement>("span")].filter((span) => !span.classList.contains("markedContent"));
   for (const piece of pieces) {
-    piece.classList.remove("pdf-viewer__explained");
+    piece.classList.remove("pdf-viewer__explained", "pdf-viewer__explained--current");
     delete piece.dataset["explained"];
   }
   if (passages.length === 0 || pieces.length === 0) return;
@@ -211,6 +211,11 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
   layoutNow.current = layout;
   useEffect(() => {
     const element = scroller.current;
+    if (element !== null && (focus === null || focus === undefined)) {
+      // No step (highlighting turned off, or a new reply): no stronger mark either.
+      for (const old of element.querySelectorAll(".pdf-viewer__explained--current")) old.classList.remove("pdf-viewer__explained--current");
+      return;
+    }
     if (focus === null || focus === undefined || element === null || pdf.pageText === undefined) return;
     if (texts.current?.of !== pdf) texts.current = { of: pdf, pages: new Map() };
     const cache = texts.current.pages;
@@ -251,7 +256,7 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     };
     // Only a new step moves the view; new highlights alone do not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus?.nonce, pdf]);
+  }, [focus?.nonce ?? null, pdf]);
 
   const [missed, setMissed] = useState(false);
   // A double click in the source: the narrowest candidate a page prints, on the first page that prints it.

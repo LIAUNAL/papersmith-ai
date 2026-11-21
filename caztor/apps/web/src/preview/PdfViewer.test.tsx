@@ -226,6 +226,22 @@ describe("PdfViewer explained passages", () => {
     expect(marked(container)).toEqual(["Each colour class is up-", "dated in parallel without conflicts.", "Critical points of the Heisenberg model"]);
   });
 
+  it("removes the stronger mark of the current passage too when highlighting is turned off", async () => {
+    const passage = "each colour class is updated in parallel without conflicts";
+    const doc = fakeDocument("a", 1);
+    lines(doc, [["Each colour class is updated in parallel without conflicts."]]);
+    doc.pageText = async () => "Each colour class is updated in parallel without conflicts.";
+    const props = { document: doc, zoom: percent(100), anchor: top, onViewChange: () => {} };
+    const { container, rerender } = render(<PdfViewer {...props} highlights={[passage]} focus={{ passage, nonce: 1 }} />);
+    await flush();
+    await flush();
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 120))));
+    expect(container.querySelectorAll(".pdf-viewer__explained--current")).toHaveLength(1);
+    rerender(<PdfViewer {...props} highlights={[]} focus={null} />);
+    await flush();
+    expect(container.querySelectorAll(".pdf-viewer__explained, .pdf-viewer__explained--current")).toHaveLength(0);
+  });
+
   it("removes the marks when the passages go away", async () => {
     const doc = fakeDocument("a", 1);
     lines(doc, [["Each colour class is updated in parallel without conflicts."]]);

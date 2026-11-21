@@ -173,6 +173,14 @@ describe("CodeEditor stepping to an explained passage", () => {
     expect(container.querySelector(".cm-explained-current")).toBeNull();
   });
 
+  it("removes the stronger mark when highlighting is turned off", () => {
+    const { container, rerender } = render(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} highlights={[passage]} focus={{ passage, nonce: 1 }} />);
+    expect(current(container)).toBe("Each colour class is updated in parallel without conflicts");
+    rerender(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} highlights={[]} focus={null} />);
+    expect(container.querySelector(".cm-explained-current")).toBeNull();
+    expect(container.querySelector(".cm-explained")).toBeNull();
+  });
+
   it("marks nothing more strongly without a step", () => {
     const { container } = render(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} highlights={[passage]} />);
     expect(container.querySelector(".cm-explained-current")).toBeNull();
