@@ -79,6 +79,7 @@ global.window.fetch = async (url, init) => {
   const queued = path === '/api/prompt/review' && input.reviewSequence && input.reviewSequence.length
     ? input.reviewSequence.shift() : null;
   const r = queued || (input.fetchResponses || {})[path] || input.fetchResponse || { status: 200, body: {} };
+  if (path === '/api/prompt/review' && input.reviewDelay) await new Promise((res) => setTimeout(res, input.reviewDelay));
   return { ok: r.status < 400, status: r.status, json: async () => r.body };
 };
 if (input.agents) agents = input.agents;
@@ -93,6 +94,7 @@ function click(i) {
   listeners.click({ target: { closest: (sel) => (sel.includes('data-kw-help') ? null : { dataset: { phaseAction: String(i) } }) } });
 }
 for (const step of input.steps) {
+  if (step.wait) await new Promise((r) => setTimeout(r, step.wait));
   if (step.kw) {
     step.kw.forEach((word, n) => { el('kwInput' + step.i + '_' + n).value = word; });
     listeners.input({ target: { closest: () => ({ dataset: { kwInput: String(step.i) } }) } });
@@ -108,6 +110,7 @@ for (const step of input.steps) {
   } else if (!step.kw) click(step.i);
   await new Promise((r) => setTimeout(r, 10));
 }
+if (input.settle) await new Promise((r) => setTimeout(r, input.settle));
 console.log(JSON.stringify({ html, calls, options, fetches, select: el('phaseAgent0').innerHTML, note: el('phaseAgentNote0').textContent, hints: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, v.textContent])), els: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, { value: v.value, textContent: v.textContent, innerHTML: v.innerHTML, hidden: v.hidden, disabled: v.disabled }])) }));
 })();
 """
@@ -451,9 +454,6 @@ class PageWiringTests(unittest.TestCase):
         self.assertIn("if (kind === 'slash' && STARTUP_QUESTIONS.test(screenText()))", script)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 # ---- prompt quality gate in the phase cards ---------------------------------
 GATE_FAIL = {"status": 200, "body": {"ok": True, "verdict": "fail", "score": 50, "threshold": 60, "critical": True,
@@ -574,3 +574,38 @@ class PromptGateCardTests(unittest.TestCase):
     def test_an_unreachable_check_never_blocks_the_launch(self) -> None:
         result = run(phase("figures"), [{"i": 0, "type": self.TEXT}], fetchError="offline")
         self.assertEqual(result["calls"], [["send", "/figure-review " + self.TEXT, True, "slash"]])
+
+    def test_cancel_while_the_reviewer_works_drops_its_answer(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "cancel"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE},
+                     reviewDelay=60, settle=120)
+        self.assertEqual(result["calls"], [])
+        self.assertEqual(self.gate(result), "", "a late answer does not reopen a cancelled box")
+
+    def test_launch_as_is_is_offered_while_the_reviewer_works(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "asis"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE},
+                     reviewDelay=60, settle=120)
+        self.assertEqual(result["calls"],
+                         [["send", f"/figure-review {self.TEXT} [prompt-gate: approved]", True, "slash"]])
+        self.assertEqual(self.gate(result), "")
+
+    def test_cancel_while_composing_launches_nothing(self) -> None:
+        result = run(phase("figures"), [
+            {"i": 0, "type": self.TEXT},
+            {"i": 0, "wait": 80, "checks": ["gateOpt0_0_0"], "gate": "compose"},
+            {"i": 0, "gate": "cancel"},
+        ], fetchResponses={"/api/prompt/check": GATE_FAIL}, reviewSequence=[REVIEW_CLARIFY, REVIEW_IMPROVE],
+            reviewDelay=40, settle=150)
+        reviews = [f for f in result["fetches"] if f[0].startswith("/api/prompt/review")]
+        self.assertEqual(len(reviews), 2, "the compose request was sent")
+        self.assertEqual(result["calls"], [])
+
+    def test_the_card_marker_is_the_gate_marker(self) -> None:
+        from skills._core.command_center import prompt_gate
+        self.assertIn(f"const GATE_MARKER = '{prompt_gate.APPROVED_MARKER}';",
+                      (STATIC / "phase-console.js").read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -450,7 +450,7 @@
 
   async function gateHold(a, i, args, gate) {
     const ticket = (gateRuns[i] = { args, gate, n: ((gateRuns[i] && gateRuns[i].n) || 0) + 1 }).n;
-    gateShow(i, `${gateHead(a, gate)}<p class="phase-gate__note">${esc(t('promptGate.reviewing'))}</p>`);
+    gateShow(i, `${gateHead(a, gate)}<p class="phase-gate__note">${esc(t('promptGate.reviewing'))}</p>${gatePendingActions(i)}`);
     let data;
     try {
       data = await postJson('/api/prompt/review', { skill: skillOf(a), text: args, optional: Boolean(a.optional), language: gateLang() });
@@ -459,6 +459,10 @@
     }
     if (gateRuns[i] && gateRuns[i].n === ticket) gateRender(a, i, gate, data);  // a newer launch owns the box
   }
+
+  // While the reviewer works the operator can still launch as is or cancel;
+  // either one retires the pending answer (its ticket no longer matches).
+  const gatePendingActions = (i) => `<div class="phase-gate__actions">${gateButton('asis', i, 'promptGate.asIs')}${gateButton('cancel', i, 'promptGate.cancel')}</div>`;
 
   function gateRender(a, i, gate, data) {
     const head = gateHead(a, gate);
@@ -510,13 +514,17 @@
     const answers = gateAnswers(i);
     if (!answers.length) return showError(i, t('promptGate.answerFirst'));
     clearError(i);
-    gateShow(i, `${gateHead(a, run.gate)}<p class="phase-gate__note">${esc(t('promptGate.composing'))}</p>`);
+    const ticket = (run.n += 1);
+    gateShow(i, `${gateHead(a, run.gate)}<p class="phase-gate__note">${esc(t('promptGate.composing'))}</p>${gatePendingActions(i)}`);
     let data;
     try {
       data = await postJson('/api/prompt/review', { skill: skillOf(a), text: run.args, optional: Boolean(a.optional), language: gateLang(), answers });
     } catch (err) {
       data = { available: false, reason: (err && err.message) || String(err) };
     }
+    // Cancelled, launched as is, or superseded while composing: launch nothing.
+    if (gateRuns[i] !== run || run.n !== ticket) return;
+    delete gateRuns[i];
     if (data && data.available !== false && data.verdict === 'improve' && data.improved_prompt) {
       gateShow(i, `<p class="phase-gate__note">${esc(t('promptGate.launched'))}</p><pre class="phase-gate__sent">${esc(data.improved_prompt)}</pre>`);
       const input = document.getElementById(`phaseInput${i}`);
@@ -524,6 +532,7 @@
       launch(a, i, data.improved_prompt, true);
       return;
     }
+    gateRuns[i] = run;
     gateRender(a, i, run.gate, data);
   }
 
@@ -535,9 +544,11 @@
       if (!text) return showError(i, t('phaseConsole.writeFirst'));
       const input = document.getElementById(`phaseInput${i}`);
       if (input) input.value = text;
+      delete gateRuns[i];
       gateShow(i, '');
       launch(a, i, text, true);
     } else if (what === 'asis') {
+      delete gateRuns[i];
       gateShow(i, '');
       launch(a, i, run.args, true);
     } else if (what === 'compose') {
