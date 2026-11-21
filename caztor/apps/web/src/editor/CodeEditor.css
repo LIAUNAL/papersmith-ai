@@ -38,3 +38,10 @@
   outline: 1.5px solid rgb(234 179 8 / 0.85);
   border-radius: 2px;
 }
+
+/* The word a double click in the PDF brought into view, for a moment: the same blue as the PDF's mark. */
+.cm-jump {
+  background-color: rgb(96 165 250 / 0.45);
+  outline: 1.5px solid rgb(37 99 235 / 0.85);
+  border-radius: 2px;
+}

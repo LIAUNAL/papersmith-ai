@@ -131,6 +131,19 @@ describe("CodeEditor", () => {
       expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("three");
     });
 
+    it("marks the requested word for a moment, so it can be seen after a double click in the PDF", () => {
+      vi.useFakeTimers();
+      try {
+        const { container, rerender } = render(show());
+        rerender(show({ line: 3, id: 1, select: { column: 5, length: 5 } }));
+        expect([...container.querySelectorAll(".cm-jump")].map((node) => node.textContent).join("")).toBe("three");
+        act(() => void vi.advanceTimersByTime(2000));
+        expect(container.querySelector(".cm-jump")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("moves to another line for a new request, and again for the same line with a new id", () => {
       const { container, rerender } = render(show({ line: 2, id: 1 }));
       const view = viewOf(container);

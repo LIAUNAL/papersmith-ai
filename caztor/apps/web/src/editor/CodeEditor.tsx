@@ -3,7 +3,7 @@ import { bracketMatching } from "@codemirror/language";
 import { Annotation, EditorState, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
-import { currentExplainedPassage, explainedPassages, setCurrentExplained, setExplained } from "../explain/editor-highlight.ts";
+import { currentExplainedPassage, explainedPassages, jumpMark, setCurrentExplained, setExplained, setJumpMark } from "../explain/editor-highlight.ts";
 import type { PassageFocus } from "../explain/focus.ts";
 import { jumpCandidates } from "../explain/source-jump.ts";
 import { findPassages } from "../explain/passages.ts";
@@ -34,6 +34,9 @@ interface CodeEditorProps {
   onJumpToPdf?: (candidates: readonly string[]) => void;
 }
 
+/** How long the word a double click in the PDF brought into view stays marked. */
+const JUMP_MARK_MS = 1600;
+
 /** Marks a change that came from outside the user's typing, so it is not reported back as an edit. */
 const External = Annotation.define<boolean>();
 
@@ -56,6 +59,7 @@ function baseExtensions(path: string, label: string, save: () => void): Extensio
     editorTheme,
     explainedPassages,
     currentExplainedPassage,
+    jumpMark,
     ...(language === null ? [] : [language]),
     ...(path.toLowerCase().endsWith(".tex") ? [protectPaperMarkers((transaction) => transaction.annotation(External) === true)] : []),
   ];
@@ -141,6 +145,8 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
 
   // A jump asked for from outside (a log entry). It runs after the text sync above, so it lands in the right file.
   const revealed = useRef<number | null>(null);
+  const jumpTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(jumpTimer.current), []);
   useEffect(() => {
     const editor = view.current;
     if (editor === null || reveal === undefined || revealed.current === reveal.id) return;
@@ -150,7 +156,13 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
     // A word to select stays inside its line.
     const from = Math.min(line.from + (reveal.select?.column ?? 0), line.to);
     const to = Math.min(from + (reveal.select?.length ?? 0), line.to);
-    editor.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    editor.dispatch({
+      selection: { anchor: from, head: to },
+      effects: [EditorView.scrollIntoView(from, { y: "center" }), setJumpMark.of(to > from ? [{ from, to }] : [])],
+    });
+    // The mark goes after a moment, as the PDF's does; typing meanwhile does not keep it.
+    clearTimeout(jumpTimer.current);
+    if (to > from) jumpTimer.current = setTimeout(() => view.current?.dispatch({ effects: setJumpMark.of([]) }), JUMP_MARK_MS);
     editor.focus();
   }, [reveal, path, text]);
 

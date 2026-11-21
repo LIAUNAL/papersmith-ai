@@ -7,6 +7,9 @@ export const setExplained = StateEffect.define<readonly Range[]>();
 /** Replaces the passage the arrows brought into view; an empty list removes it. */
 export const setCurrentExplained = StateEffect.define<readonly Range[]>();
 
+/** Replaces the word a double click in the PDF brought into view; an empty list removes it. */
+export const setJumpMark = StateEffect.define<readonly Range[]>();
+
 /** Marks set by `effect`, moving with edits until they are set again. */
 function marks(effect: typeof setExplained, decoration: Decoration): Extension {
   return StateField.define<DecorationSet>({
@@ -29,3 +32,5 @@ function marks(effect: typeof setExplained, decoration: Decoration): Extension {
 export const explainedPassages: Extension = marks(setExplained, Decoration.mark({ class: "cm-explained" }));
 /** The stronger mark of the passage the arrows brought into view. */
 export const currentExplainedPassage: Extension = marks(setCurrentExplained, Decoration.mark({ class: "cm-explained-current" }));
+/** The blue mark of the word a double click in the PDF brought into view, for a moment. */
+export const jumpMark: Extension = marks(setJumpMark, Decoration.mark({ class: "cm-jump" }));
