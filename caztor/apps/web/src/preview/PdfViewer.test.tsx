@@ -378,3 +378,51 @@ describe("PdfViewer jumping to the source text a double click names", () => {
     expect(scroller(container).scrollTop).toBeCloseTo(layout.boxes[1]!.top - PAGE_GAP, 3);
   });
 });
+
+describe("PdfViewer double click on the page text", () => {
+  const page = ["Methods.", "Each colour class is up-", "dated in parallel without conflicts.", "More text here."];
+  const setup = (answer: boolean) => {
+    const doc = fakeDocument("a", 1);
+    doc.renderText = (_index, container) => {
+      container.replaceChildren(...page.map((text) => Object.assign(window.document.createElement("span"), { textContent: text })));
+      return { done: Promise.resolve(), cancel() {} };
+    };
+    const asked: Array<{ candidates: readonly string[]; word: string }> = [];
+    const utils = render(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} onJumpToSource={(target) => (asked.push(target), answer)} />);
+    return { ...utils, asked };
+  };
+  const doubleClick = (span: Element, word: string) => {
+    const text = span.firstChild!;
+    const at = (text.textContent ?? "").indexOf(word);
+    const range = document.createRange();
+    range.setStart(text, at);
+    range.setEnd(text, at + word.length);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent.doubleClick(span);
+  };
+
+  it("asks for the source of the clicked line, then of the lines around it, with the clicked word", async () => {
+    const { container, asked } = setup(true);
+    await flush();
+    await flush();
+    const span = [...container.querySelectorAll(".pdf-viewer__text span")].find((node) => node.textContent === page[2])!;
+    doubleClick(span, "parallel");
+    expect(asked).toEqual([
+      {
+        candidates: [page[2], `${page[1]} ${page[2]} ${page[3]}`, `${page[0]} ${page[1]} ${page[2]} ${page[3]}`],
+        word: "parallel",
+      },
+    ]);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it("says so when the source does not hold the clicked text", async () => {
+    const { container } = setup(false);
+    await flush();
+    await flush();
+    doubleClick(container.querySelectorAll(".pdf-viewer__text span")[0]!, "Methods");
+    await flush();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Not found in the LaTeX source.");
+  });
+});

@@ -37,6 +37,8 @@ export interface Jump {
   readonly path: string;
   /** 1-based. */
   readonly line: number;
+  /** A word to select in that line: its 0-based column and its length. */
+  readonly select?: { readonly column: number; readonly length: number };
   readonly id: number;
 }
 
@@ -216,9 +218,9 @@ export class EditorSession {
     return null;
   }
 
-  /** Asks the editor to put the cursor at the start of `line` (1-based) of `path`, once that file is shown. */
-  reveal(path: string, line: number): void {
-    this.jump = { path, line, id: (this.jump?.id ?? 0) + 1 };
+  /** Asks the editor to put the cursor at the start of `line` (1-based) of `path`, or to select `select` in it, once that file is shown. */
+  reveal(path: string, line: number, select?: { column: number; length: number }): void {
+    this.jump = { path, line, ...(select === undefined ? {} : { select }), id: (this.jump?.id ?? 0) + 1 };
     this.publish();
   }
 

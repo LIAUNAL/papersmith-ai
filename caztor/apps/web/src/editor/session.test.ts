@@ -316,6 +316,15 @@ describe("EditorSession reveal", () => {
     expect(second!.id).toBeGreaterThan(first!.id);
   });
 
+  it("carries the word to select when one is given, and none otherwise", async () => {
+    const { session, open } = setup();
+    await open("main.tex");
+    session.reveal("main.tex", 3, { column: 12, length: 8 });
+    expect(session.getSnapshot().jump).toMatchObject({ path: "main.tex", line: 3, select: { column: 12, length: 8 } });
+    session.reveal("main.tex", 4);
+    expect(session.getSnapshot().jump).not.toHaveProperty("select");
+  });
+
   it("tells subscribers about the jump", async () => {
     const { session } = setup();
     let notified = 0;

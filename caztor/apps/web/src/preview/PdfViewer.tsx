@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PdfSelection } from "../embed/bridge.ts";
 import type { PassageFocus } from "../explain/focus.ts";
 import { findPrinted } from "../explain/passages.ts";
@@ -23,6 +24,11 @@ interface PdfViewerProps {
   focus?: PassageFocus | null;
   /** Texts a double click in the source names, narrowest first: the first a page prints is brought into view and marked for a moment. */
   jump?: SourceJump | null;
+  /**
+   * Called on a double click in the page text with the printed line clicked, then wider runs of lines around it, and
+   * the clicked word. Returns whether the source holds it; when it does not, the viewer says so.
+   */
+  onJumpToSource?: (target: { candidates: readonly string[]; word: string }) => boolean;
 }
 
 /** What a double click in the source asks the PDF to show, once per nonce. */
@@ -35,8 +41,10 @@ export interface SourceJump {
 const JUMP_MARK_MS = 1600;
 /** A double click names a short line too, such as a table row: fewer letters than a quoted passage needs. */
 const JUMP_LETTERS = 6;
-/** How long the viewer says the clicked text is not in this PDF. */
-const MISSED_NOTICE_MS = 3000;
+/** How long the viewer shows a notice about a double click. */
+const NOTICE_MS = 3000;
+/** Lines taken on each side of the clicked one, narrowest first, for a double click in the page text. */
+const SOURCE_RADII = [0, 1, 2];
 
 /** Whether `text` holds `passage`, as written or as LaTeX prints it. */
 const holds = (text: string, passage: string, fewestLetters?: number): boolean => findPrinted(text, passage, fewestLetters).length > 0;
@@ -146,8 +154,16 @@ function PageText({ document: pdf, index, scale, passages }: { document: PdfDocu
 }
 
 /** The pages of a PDF in one scrolling column. Only the pages near the viewport are drawn. */
-export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleChange, onTextSelected, highlights, focus, jump }: PdfViewerProps) {
-  const withText = onTextSelected !== undefined || highlights !== undefined || jump !== undefined;
+export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleChange, onTextSelected, highlights, focus, jump, onJumpToSource }: PdfViewerProps) {
+  const withText = onTextSelected !== undefined || highlights !== undefined || jump !== undefined || onJumpToSource !== undefined;
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const say = useCallback((message: string | null) => {
+    if (noticeTimer.current !== undefined) clearTimeout(noticeTimer.current);
+    setNotice(message);
+    noticeTimer.current = message === null ? undefined : setTimeout(() => setNotice(null), NOTICE_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
   const scroller = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(FALLBACK_SIZE);
   const [scrollTop, setScrollTop] = useState(0);
@@ -190,6 +206,21 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     setScrollTop(element.scrollTop);
     place.current = anchorAt(layout, element.scrollTop);
     report.current({ anchor: place.current, zoom });
+  }
+
+  // A double click in the page text: the printed lines around it go to the source, narrowest first.
+  function onDoubleClick(event: React.MouseEvent): void {
+    if (onJumpToSource === undefined || !(event.target instanceof Element)) return;
+    const piece = event.target.closest("span");
+    const layer = event.target.closest(".pdf-viewer__text");
+    if (piece === null || layer === null || !layer.contains(piece)) return;
+    const pieces = [...layer.querySelectorAll<HTMLElement>("span")].filter((span) => !span.classList.contains("markedContent") && (span.textContent ?? "").trim() !== "");
+    const at = pieces.indexOf(piece);
+    if (at === -1) return;
+    const around = (radius: number) => pieces.slice(Math.max(0, at - radius), at + radius + 1).map((span) => span.textContent ?? "").join(" ");
+    const candidates = [...new Set(SOURCE_RADII.map(around))];
+    const word = window.getSelection()?.toString().trim() ?? "";
+    if (!onJumpToSource({ candidates, word })) say("Not found in the LaTeX source.");
   }
 
   function onMouseUp(): void {
@@ -258,7 +289,6 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.nonce ?? null, pdf]);
 
-  const [missed, setMissed] = useState(false);
   // A double click in the source: the narrowest candidate a page prints, on the first page that prints it.
   useEffect(() => {
     const element = scroller.current;
@@ -269,7 +299,7 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
       for (const old of element.querySelectorAll(".pdf-viewer__jump")) old.classList.remove("pdf-viewer__jump");
     };
     clear();
-    setMissed(false);
+    say(null);
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
@@ -299,8 +329,7 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
       }
       // No page prints it: most often a line written after this PDF was compiled.
       if (!live) return;
-      setMissed(true);
-      timer = setTimeout(() => setMissed(false), MISSED_NOTICE_MS);
+      say("Not in this PDF. Compile to bring it up to date.");
     })();
     return () => {
       live = false;
@@ -315,11 +344,11 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
   const columnWidth = Math.max(layout.width + 2 * PAGE_GAP, size.width);
 
   return (
-    <div ref={scroller} className="pdf-viewer" onScroll={onScroll} onMouseUp={onMouseUp} tabIndex={0} role="region" aria-label="PDF pages">
-      {missed ? (
+    <div ref={scroller} className="pdf-viewer" onScroll={onScroll} onMouseUp={onMouseUp} onDoubleClick={onDoubleClick} tabIndex={0} role="region" aria-label="PDF pages">
+      {notice !== null ? (
         <div className="pdf-viewer__notice-anchor">
           <p role="status" className="pdf-viewer__notice">
-            Not in this PDF. Compile to bring it up to date.
+            {notice}
           </p>
         </div>
       ) : null}

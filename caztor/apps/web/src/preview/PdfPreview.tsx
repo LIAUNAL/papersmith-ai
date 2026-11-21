@@ -24,6 +24,8 @@ interface PdfPreviewProps {
   focus?: PassageFocus | null;
   /** What a double click in the source asks the PDF to bring into view. */
   jump?: SourceJump | null;
+  /** A double click in the PDF text: whether the source holds it (it then opens there). */
+  onJumpToSource?: (target: { candidates: readonly string[]; word: string }) => boolean;
 }
 
 /** Wait after the last scroll before the position is written to storage. */
@@ -34,7 +36,7 @@ function messageOf(error: unknown, fallback: string): string {
 }
 
 /** The preview pane: the latest PDF on canvas, zoom controls, and the empty, out-of-date and error states. */
-export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highlights, focus, jump }: PdfPreviewProps) {
+export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highlights, focus, jump, onJumpToSource }: PdfPreviewProps) {
   const initial = useMemo(() => prefs.load(), [prefs]);
   const [state, dispatch] = useReducer(previewReducer, INITIAL_PREVIEW_STATE);
   const [doc, setDoc] = useState<PdfDocument | null>(null);
@@ -170,6 +172,7 @@ export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highli
             {...(onTextSelected === undefined ? {} : { onTextSelected })}
             {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })}
             {...(jump === undefined ? {} : { jump })}
+            {...(onJumpToSource === undefined ? {} : { onJumpToSource })}
           />
         )}
       </div>

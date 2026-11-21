@@ -87,7 +87,7 @@ export function EditorPane({ session, highlights, focus, onJumpToPdf }: EditorPa
             {...(highlights === undefined ? {} : { highlights })}
             {...(focus === undefined ? {} : { focus })}
             {...(onJumpToPdf === undefined ? {} : { onJumpToPdf })}
-            {...(jump !== null && jump.path === buffer.path ? { reveal: { line: jump.line, id: jump.id } } : {})}
+            {...(jump !== null && jump.path === buffer.path ? { reveal: { line: jump.line, id: jump.id, ...(jump.select === undefined ? {} : { select: jump.select }) } } : {})}
           />
         )}
       </div>

@@ -22,6 +22,7 @@ import type { StorageLike } from "../layout/storage.ts";
 import { ProjectRail } from "../projects/ProjectRail.tsx";
 import { listenForCompose, listenForTheme, postReady, postSelection } from "../embed/bridge.ts";
 import { findPassages } from "../explain/passages.ts";
+import { locateInSource } from "../explain/source-locate.ts";
 import { useExplained } from "../explain/useExplained.ts";
 import { createThemeStore, type ThemeStore } from "../theme/theme.ts";
 import { ThemeControl } from "../theme/ThemeControl.tsx";
@@ -157,6 +158,15 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
   // A double click in the source: what the PDF should bring into view, a new nonce each time.
   const [sourceJump, setSourceJump] = useState<SourceJump | null>(null);
   const jumpToPdf = useCallback((candidates: readonly string[]) => setSourceJump((last) => ({ candidates, nonce: (last?.nonce ?? 0) + 1 })), []);
+  // A double click in the PDF: the paper's main file opens with the clicked word selected, when the source holds it.
+  const jumpToSource = (target: { candidates: readonly string[]; word: string }): boolean => {
+    if (mainPath === null || paperText === null) return false;
+    const place = locateInSource(paperText, target.candidates, target.word);
+    if (place === null) return false;
+    void openAt(mainPath, place.line, place.length > 0 ? { column: place.column, length: place.length } : undefined);
+    return true;
+  };
+
   // A step opens the paper's main file at the passage when another file is shown; the editor then marks it.
   useEffect(() => {
     const focus = explained.on ? explained.focus : null;
@@ -209,11 +219,11 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
   };
 
   /** Opens a file and puts the cursor on a line. A file that is already open keeps its unsaved text. */
-  async function openAt(path: string, line: number): Promise<string | null> {
+  async function openAt(path: string, line: number, select?: { column: number; length: number }): Promise<string | null> {
     try {
       if (session.get(path) === undefined) session.open(await api.readFile(path));
       session.setActive(path);
-      session.reveal(path, line);
+      session.reveal(path, line, select);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : `${path} could not be opened.`;
@@ -326,6 +336,7 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   highlights={highlights}
                   focus={explained.on ? explained.focus : null}
                   jump={sourceJump}
+                  onJumpToSource={jumpToSource}
                   {...(embedOrigin === undefined ? {} : { onTextSelected: (selection) => postSelection(embedOrigin, selection) })}
                 />
               ),

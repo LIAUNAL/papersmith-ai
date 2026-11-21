@@ -32,10 +32,12 @@ interface PreviewPaneProps {
   focus?: PassageFocus | null;
   /** What a double click in the source asks the PDF to bring into view. */
   jump?: SourceJump | null;
+  /** A double click in the PDF text: whether the source holds it (it then opens there). */
+  onJumpToSource?: (target: { candidates: readonly string[]; word: string }) => boolean;
 }
 
 /** The body of the preview pane: compile switches, notices, the PDF and the log panel below it. */
-export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile, settings, onSettingsChange, prefs, onOpenDiagnostic, onTextSelected, highlights, focus, jump }: PreviewPaneProps) {
+export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile, settings, onSettingsChange, prefs, onOpenDiagnostic, onTextSelected, highlights, focus, jump, onJumpToSource }: PreviewPaneProps) {
   return (
     <div className="preview-pane">
       <CompileOptions settings={settings} sandbox={sandboxStatus} onChange={onSettingsChange} />
@@ -50,7 +52,7 @@ export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile,
         </p>
       ) : null}
       <div className="preview-pane__body">
-        <PdfPreview api={api} engine={engine} compile={compile} prefs={prefs} {...(onTextSelected === undefined ? {} : { onTextSelected })} {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })} {...(jump === undefined ? {} : { jump })} />
+        <PdfPreview api={api} engine={engine} compile={compile} prefs={prefs} {...(onTextSelected === undefined ? {} : { onTextSelected })} {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })} {...(jump === undefined ? {} : { jump })} {...(onJumpToSource === undefined ? {} : { onJumpToSource })} />
       </div>
       <LogPanel api={api} last={compile.last} onOpen={onOpenDiagnostic} />
     </div>

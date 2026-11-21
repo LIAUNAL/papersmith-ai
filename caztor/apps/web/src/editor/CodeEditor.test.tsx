@@ -111,7 +111,7 @@ describe("CodeEditor", () => {
 
   describe("revealing a line", () => {
     const text = "line one\nline two\nline three\nline four";
-    const show = (reveal?: { line: number; id: number }) => (
+    const show = (reveal?: { line: number; id: number; select?: { column: number; length: number } }) => (
       <CodeEditor path="main.tex" text={text} label="a" onChange={() => {}} {...(reveal === undefined ? {} : { reveal })} />
     );
 
@@ -122,6 +122,13 @@ describe("CodeEditor", () => {
       expect(view.state.selection.main.head).toBe(text.indexOf("line three"));
       expect(view.state.selection.main.empty).toBe(true);
       expect(view.hasFocus).toBe(true);
+    });
+
+    it("selects the requested word in the line when the request names one", () => {
+      const { container, rerender } = render(show());
+      const view = viewOf(container);
+      rerender(show({ line: 3, id: 1, select: { column: 5, length: 5 } }));
+      expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("three");
     });
 
     it("moves to another line for a new request, and again for the same line with a new id", () => {

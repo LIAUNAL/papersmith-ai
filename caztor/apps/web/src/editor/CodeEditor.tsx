@@ -25,7 +25,7 @@ interface CodeEditorProps {
   /** Called when the user asks to save now (Ctrl or Cmd+S). */
   onSave?: () => void;
   /** Moves the cursor to the start of `line` (1-based) and scrolls it into view. A request is applied once, whatever the `id`. */
-  reveal?: { line: number; id: number };
+  reveal?: { line: number; id: number; select?: { column: number; length: number } };
   /** Passages to mark in soft yellow wherever the text holds them; none or an empty list marks nothing. */
   highlights?: readonly string[];
   /** The explained passage to bring into view and mark more strongly, once per nonce. */
@@ -147,7 +147,10 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
     if (shown.current.path !== path || editor.state.doc.toString() !== text) return;
     revealed.current = reveal.id;
     const line = editor.state.doc.line(Math.min(Math.max(reveal.line, 1), editor.state.doc.lines));
-    editor.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
+    // A word to select stays inside its line.
+    const from = Math.min(line.from + (reveal.select?.column ?? 0), line.to);
+    const to = Math.min(from + (reveal.select?.length ?? 0), line.to);
+    editor.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: "center" }) });
     editor.focus();
   }, [reveal, path, text]);
 
