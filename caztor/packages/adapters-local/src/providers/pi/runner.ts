@@ -10,6 +10,10 @@ import { createPiMapper, PI_ALLOWED_TOOLS, PI_ISOLATION_TIER, PI_LOGIN_HINT, PI_
 
 export { PI_ALLOWED_TOOLS, PI_ISOLATION_TIER, PI_LOGIN_HINT, PI_TESTED_VERSION, STOP_ESCALATION_MS };
 
+/**
+ * What Pi's partial isolation means. The chat panel shows it for as long as Pi is chosen (and the first-run notice
+ * covers it), so a turn does not repeat it in the conversation.
+ */
 export const PI_PARTIAL_ISOLATION_NOTICE =
   "Pi runs with partial isolation: your global Pi settings and sign-in in ~/.pi/agent/ still load, and Caztor cannot turn them off. The project's own .pi/ folder, extensions, skills, MCP servers and context files are switched off. Caztor allows only file reading and editing tools and stops the turn when another tool appears, though that tool may already have started.";
 
@@ -220,7 +224,6 @@ export function createPiRunner(options: PiRunnerOptions): AgentRunnerPort {
       env = buildPiEnv(req.env ?? options.env, root);
     }
 
-    yield { type: "notice", level: "info", message: PI_PARTIAL_ISOLATION_NOTICE };
 
     const sessionId = req.sessionId !== null && SESSION_ID_REGEX.test(req.sessionId) ? req.sessionId : newSessionId();
     const args = [

@@ -253,6 +253,12 @@ describe("the partial isolation notice", () => {
     await setup([provider("claude")]);
     expect(notice()).toBeNull();
   });
+  it("stays visible for Pi too, since a Pi turn no longer repeats it", async () => {
+    await setup([provider("claude"), provider("pi", { modes: ["account"], keys: [], slot: null })], "pi");
+    const pi = screen.queryByRole("note", { name: "Pi isolation" });
+    expect(pi).toHaveTextContent("~/.pi/agent");
+    expect(pi).toHaveTextContent(/may already have started/i);
+  });
 });
 
 describe("Pi in the header", () => {

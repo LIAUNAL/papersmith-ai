@@ -86,13 +86,13 @@ describe("the Pi runner", () => {
   });
 
   describe("a whole turn", () => {
-    it("reads, edits and answers, with the notice first and the exact argv", async () => {
+    it("reads, edits and answers with the exact argv, without repeating the isolation notice the chat panel already shows", async () => {
       const { events, call } = await turn({ stdout: fixture("synthetic-edit-turn.jsonl"), exit: ok }, { prompt: "Change cat to dog" });
       expect(call?.file).toBe(BINARY);
       expect(call?.cwd).toBe(ROOT);
       expect(call?.args).toEqual([...ARGS_BEFORE_SESSION, "--session-id", NEW_SESSION, "--session-dir", SESSION_DIR]);
       expect(call?.stdin).toBe("Change cat to dog");
-      expect(events[0]).toEqual({ type: "notice", level: "info", message: PI_PARTIAL_ISOLATION_NOTICE });
+      expect(events).not.toContainEqual({ type: "notice", level: "info", message: PI_PARTIAL_ISOLATION_NOTICE });
       expect(events).toContainEqual({ type: "session", sessionId: SESSION_1 });
       expect(events.filter((event) => event.type === "tool_start").map((event) => event.type === "tool_start" && event.name)).toEqual(["read", "edit"]);
       expect(events.at(-1)).toEqual({ type: "done", reason: "completed", usage: { inputTokens: 3900, outputTokens: 105 } });

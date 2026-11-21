@@ -85,7 +85,8 @@ describe("the Pi adapter in the running server", () => {
     const text = await response.text();
     const frames = parseFrames(text);
     expect(response.status, text).toBe(200);
-    expect(frames.some((frame) => frame.event === "notice" && JSON.stringify(frame.data).includes("partial isolation"))).toBe(true);
+    // The chat panel shows the isolation note for as long as Pi is chosen; a turn does not repeat it.
+    expect(frames.some((frame) => frame.event === "notice" && JSON.stringify(frame.data).includes("partial isolation"))).toBe(false);
     expect(frames.find((frame) => frame.event === "done")).toMatchObject({ data: { reason: "completed" } });
     const run = spawner.calls.find((spawn) => spawn.args.includes("--mode"))!;
     const promptFile = join(dir, ".caztor", "agents", "pi.md");
