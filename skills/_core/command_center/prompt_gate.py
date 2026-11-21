@@ -15,7 +15,7 @@ scored 0-100 before the skill runs, with no model call:
 An issue is ``critical`` (the skill cannot start: the gate fails whatever the
 score), ``major`` (-25) or ``minor`` (-10). The prompt fails on a critical issue
 or a score under :data:`THRESHOLD`. A failed prompt is where the gate doctrine
-(``prompt_gate.md`` next to this file) has the agent, or the dashboard's
+(``skills/prompt-gate/SKILL.md``) has the agent, or the dashboard's
 headless reviewer, propose an improved prompt or ask clarifying questions.
 
 A prompt the operator already approved carries :data:`APPROVED_MARKER`; it
@@ -91,19 +91,25 @@ _PROPOSAL_ANCHOR = (r"first version|primera versi|change|cambi|revis|\br\d{2}\b|
 CONTRACTS: dict[str, Contract] = {
     "plausibility": Contract(min_words=15, min_sentences=2, needs=(
         Need("problem", "the problem or limitation the idea addresses",
-             r"problem|issue|challenge|limitation|\black|\bgap\b|fail|\blos[es]|suffer|struggl|difficult|cannot|"
-             r"\bpoor|degrad|costly|expensive|problema|limitaci|reto|desaf|carec|falta|brecha|falla|pierde|"
-             r"dificult|no logra|no pued|deficien|costos|degrad"),
+             r"problem|issue|challenge|limitation|\black|\bgap\b|fail|\blos[es]|suffer|struggl|difficult|\bhard\b|"
+             r"cannot|can't|unable|\bpoor|degrad|costly|expensive|\bslow|inefficien|unstable|noisy|\bbias|"
+             r"bottleneck|inaccura|limited|insufficient|\bdrop|decreas|oversmooth|overfit|underfit|\bonly\b|"
+             r"problema|limitaci|reto|desaf|carec|falta|brecha|falla|pierde|dificil|dificult|no logra|no pued|"
+             r"deficien|costos|lent[oa]|inestable|ruido|sesgo|cuello de botella|impreci|limitad|insuficien|"
+             r"cae\b|disminu|sobre-?suaviz|sobreajust|solo\b"),
         Need("proposal", "what you propose (method, approach or hypothesis)",
-             r"propos|we present|introduc|approach|method|framework|hypothes|leverag|combin|propon|propuesta|"
-             r"plante|enfoque|metodo|metodo|hipotesis|hipotesis|aprovech|combinar"),
+             r"propos|we present|introduc|approach|method|framework|hypothes|leverag|combin|\bidea\b|"
+             r"i want|we want|i plan|we plan|\btry|\badd|\buse\b|\busing\b|apply|design|develop|build|replac|"
+             r"exploit|explor|propon|propuesta|plante|enfoque|metodo|hipotesis|aprovech|combinar|quiero|"
+             r"queremos|probar|anadir|agregar|\busar|utiliz|aplicar|disenar|desarrollar|construir|reemplaz|explorar"),
     )),
     "paper-ingestion": Contract(min_words=1, needs=(
         Need("source", "the path, glob or URL of the PDFs to ingest",
              r"https?://|doi\.org|\b10\.\d{4,}/|\S+\.pdf\b|[\w.*-]+/[\w*.-]+|\binbox\b|\btop ?\d+\b|accepted|aceptad",
              "critical"),
     )),
-    "proposal-deliberation": Contract(min_words=6, needs=(
+    # Without text the skill asks for the idea itself (SKILL.md), so empty is allowed.
+    "proposal-deliberation": Contract(optional=True, min_words=6, needs=(
         Need("anchor", "what to deliberate: a first version, a change, a revision (rNN) or an element "
                        "(problem, pillar, hypothesis, equation)", _PROPOSAL_ANCHOR, "minor"),
     )),
@@ -122,10 +128,13 @@ CONTRACTS: dict[str, Contract] = {
         Need("figure", "the id of a compiled figure (paper/Figures/<id>.pdf), e.g. fig-architecture",
              r"\bfig[-_:][\w-]+|figures?/|\bfigur[ea]s?\s+[\w-]+", "critical"),
     )),
-    "paper-writing": Contract(min_words=2, needs=(
+    "paper-writing": Contract(min_words=1, needs=(
         Need("target", "the verb or block to work on (skeleton, mark, write <block>, resolve, translate...)",
              r"skeleton|esqueleto|\bmark\b|\bwrite\b|escrib|redact|resolve|\bbib\b|translate|traduc|review|revis|"
-             r"venue|apply|aplica|compile|compil|block|bloque|section|secci|\b[a-z]+\.[a-z_]+\b"),
+             r"venue|apply|aplica|compile|compil|block|bloque|section|secci|\b[a-z]+\.[a-z_]+\b|"
+             r"\b(?:scaffold|status|open|substitute|contract|readiness|order|reorder|declare|observe|validate|plan|"
+             r"render|verify|place|figure|full_text|acquire|approve|bind|build|couplings|diff|exhaustion|list|"
+             r"packet|phases|requirements|reuse|select|separate)\b"),
     )),
     "skill-audit": Contract(min_words=2, needs=(
         Need("subject", "the subject to audit: a skill, a CLI or a closed set",
@@ -168,6 +177,10 @@ def normalize_skill(skill: str) -> str:
     return str(skill or "").strip().lstrip("/").strip().lower()
 
 
+def has_marker(text: str) -> bool:
+    return _MARKER_RE.search(str(text or "")) is not None
+
+
 def strip_marker(text: str) -> str:
     return _MARKER_RE.sub(" ", str(text or "")).strip()
 
@@ -183,8 +196,13 @@ def _words(text: str) -> list[str]:
     return [w for w in text.split() if re.search(r"\w", w)]
 
 
+#: A skill with no contract here handles its own empty input (the tutors,
+#: journal-finder...), so only the generic rubric applies to its text.
+GENERIC = Contract(optional=True)
+
+
 def contract_for(skill: str) -> Contract:
-    return CONTRACTS.get(normalize_skill(skill), Contract())
+    return CONTRACTS.get(normalize_skill(skill), GENERIC)
 
 
 def check(skill: str, text: str, *, optional: bool | None = None,

@@ -253,6 +253,9 @@ class HarnessTranscriptTests(unittest.TestCase):
             "<command-name>/plausibility</command-name><command-args>idea [prompt-gate: approved]"
             "</command-args>": ("plausibility", "idea"),
             "/plausibility idea [prompt-gate: approved]": ("plausibility", "idea"),
+            # Only the approval marker is removed; other bracketed text keeps its spacing.
+            "<command-name>/plausibility</command-name><command-args>  [prompt-gate: pending] y  "
+            "</command-args>": ("plausibility", "  [prompt-gate: pending] y  "),
         }
         for text, expected in shapes.items():
             with self.subTest(text=text[:30]):

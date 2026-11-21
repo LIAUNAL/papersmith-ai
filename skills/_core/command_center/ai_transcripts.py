@@ -131,7 +131,7 @@ def skill_stages() -> dict[str, str]:
 
 def _unmarked(args: str) -> str:
     """``args`` without the prompt gate's approval marker, untouched otherwise."""
-    return prompt_gate.strip_marker(args) if "[prompt-gate:" in args.lower() else args
+    return prompt_gate.strip_marker(args) if prompt_gate.has_marker(args) else args
 
 
 def command_of(text: str) -> tuple[str, str] | None:

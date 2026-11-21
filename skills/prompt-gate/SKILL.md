@@ -143,9 +143,12 @@ operator approves, edits, answers or launches as is in the card.
 
 **Measure this before delegating.** The deterministic check must have run and
 returned `fail`: the reviewer is never asked about a prompt that passed, and it
-receives that check (`score`, `issues`, `needs`) with the prompt. What the card
-launches carries `[prompt-gate: approved]`, so the agent does not gate it a
-second time.
+receives that check (`score`, `issues`, `needs`) with the prompt.
+
+A prompt the card launches after the operator's decision (approved, launched as
+is, or built from the answers) carries `[prompt-gate: approved]`, so the agent
+does not gate it a second time; a prompt that passed the card's check goes
+unmarked, and the agent scores it again, which is cheap and passes.
 
 ## Headless reviewer contract
 

@@ -58,7 +58,14 @@ class GenericRubric(unittest.TestCase):
 
     def test_unknown_skill_uses_the_generic_rubric(self) -> None:
         self.assertEqual(prompt_gate.check("journal-finder", "Q1 Q2 journals for EEG decoding")["verdict"], "pass")
-        self.assertEqual(prompt_gate.check("journal-finder", "")["verdict"], "fail")
+        self.assertEqual(prompt_gate.check("journal-finder", "fix it")["verdict"], "fail")
+
+    def test_a_skill_without_a_contract_handles_its_own_empty_input(self) -> None:
+        for skill in ("math-tutor", "experiments-tutor", "journal-finder", "pixelrag", "ui-github",
+                      "proposal-deliberation"):
+            with self.subTest(skill=skill):
+                self.assertEqual(prompt_gate.check(skill, "")["verdict"], "pass")
+        self.assertEqual(prompt_gate.check("plausibility", "")["verdict"], "fail")
 
     def test_approval_marker_passes_and_is_stripped(self) -> None:
         result = prompt_gate.check("plausibility", f"hazlo {prompt_gate.APPROVED_MARKER}")
@@ -95,6 +102,24 @@ class SkillContracts(unittest.TestCase):
                 result = prompt_gate.check("plausibility", text)
                 self.assertEqual(result["verdict"], "pass", result)
                 self.assertGreaterEqual(result["score"], prompt_gate.THRESHOLD)
+
+    def test_common_wordings_of_a_two_sentence_idea_pass(self) -> None:
+        # Verifier probes: clear ideas the first keyword lists missed.
+        for text in (
+            "Graph neural networks oversmooth when stacked deeply. My idea is to add a learnable residual "
+            "gate per layer that preserves node identity.",
+            "Federated learning is slow on heterogeneous clients. I want to try asynchronous aggregation "
+            "with staleness-aware weights.",
+            "Las redes neuronales en grafos sobre-suavizan cuando se apilan muchas capas. Mi idea es añadir "
+            "una compuerta residual aprendible por capa.",
+        ):
+            with self.subTest(text=text[:30]):
+                self.assertEqual(prompt_gate.check("plausibility", text)["verdict"], "pass")
+
+    def test_paper_writing_single_verbs_pass(self) -> None:
+        for verb in ("status", "verify", "reorder", "full_text", "render", "readiness"):
+            with self.subTest(verb=verb):
+                self.assertEqual(prompt_gate.check("paper-writing", verb)["verdict"], "pass")
 
     def test_ingestion_needs_a_path_or_url(self) -> None:
         bad = prompt_gate.check("paper-ingestion", "ingest the papers please now")
