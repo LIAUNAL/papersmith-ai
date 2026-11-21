@@ -265,18 +265,19 @@
       ]
     },
     {
-      "id": "lab-measurement",
-      "name": "Laboratory and measurement",
+      "id": "hardware",
+      "name": "Hardware or instrument",
       "status": "planned",
       "line": null,
-      "summary": "A built device or instrument validated against a reference, or a materials or process study that relates process variables to measured properties.",
-      "novelty": "The artefact and its measured performance, or what the process does to the material.",
+      "summary": "A device, sensor or instrument built and validated against a reference instrument, with open design files, bill of materials and measured performance.",
+      "novelty": "The artefact, its cost and its measured performance against existing devices.",
       "stages": [
-        "Specifications or sample matrix",
-        "Build or synthesis",
-        "Characterization and calibration",
-        "Uncertainty and replicates",
-        "Comparison with a reference",
+        "Requirements and specifications",
+        "Design and bill of materials",
+        "Build",
+        "Calibration and uncertainty",
+        "Agreement with a reference device",
+        "Field or user validation",
         "Open design files and data"
       ],
       "guidelines": [
@@ -295,20 +296,59 @@
         "device",
         "instrument",
         "hardware",
-        "calibration",
-        "uncertainty",
+        "microcontroller",
+        "embedded",
+        "iot",
+        "wearable",
         "bill of materials",
+        "low-cost",
+        "acquisition board",
+        "prototipo",
+        "dispositivo",
+        "instrumento",
+        "bajo costo",
+        "embebido"
+      ]
+    },
+    {
+      "id": "materials",
+      "name": "Materials and processes",
+      "status": "planned",
+      "line": null,
+      "summary": "A synthesis, deposition or processing study that varies process conditions and relates them to structure and properties measured by several techniques.",
+      "novelty": "What the process does to the material and the properties it reaches.",
+      "stages": [
+        "Sample matrix and process variables",
+        "Synthesis or deposition",
+        "Multi-technique characterization",
+        "Uncertainty and replicates",
+        "Structure-property relations",
+        "Comparison with reported values"
+      ],
+      "guidelines": [
+        {
+          "name": "GUM, JCGM 100:2008",
+          "url": "https://www.bipm.org/en/doi/10.59161/jcgm100-2008e"
+        }
+      ],
+      "signals": [
         "deposition",
         "sputtering",
         "thin film",
+        "synthesis",
+        "annealing",
         "xrd",
-        "characterization",
-        "prototipo",
-        "dispositivo",
-        "calibracion",
-        "incertidumbre",
-        "pelicula",
-        "caracterizacion"
+        "xps",
+        "sem",
+        "band gap",
+        "crystalline",
+        "nanowire",
+        "electrodeposition",
+        "deposicion",
+        "sintesis",
+        "pelicula delgada",
+        "recocido",
+        "nanohilos"
       ]
     },
     {

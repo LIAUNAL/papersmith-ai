@@ -17,7 +17,8 @@ from skills._core.paper_types import registry
 REPO = Path(__file__).resolve().parents[1]
 PLANNED_CATALOGUE = (
     "applied-ai", "review", "observational", "intervention", "qualitative-mixed",
-    "diagnostic-validation", "lab-measurement", "computational", "data-resource", "composite-index",
+    "diagnostic-validation", "hardware", "materials", "computational", "data-resource",
+    "composite-index",
 )
 
 
