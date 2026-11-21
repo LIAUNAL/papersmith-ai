@@ -183,6 +183,11 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     if (texts.current?.of !== pdf) texts.current = { of: pdf, pages: new Map() };
     const cache = texts.current.pages;
     const which = (highlights ?? []).indexOf(focus.passage);
+    const clearCurrent = () => {
+      for (const old of element.querySelectorAll(".pdf-viewer__explained--current")) old.classList.remove("pdf-viewer__explained--current");
+    };
+    // A step leaves no stronger mark behind, also when the PDF does not print its passage.
+    clearCurrent();
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
@@ -197,12 +202,12 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
           if (!live) return;
           const page = element.querySelector(`[data-page="${index + 1}"]`);
           const pieces = [...(page?.querySelectorAll<HTMLElement>(".pdf-viewer__explained") ?? [])].filter((piece) => which < 0 || (piece.dataset["explained"] ?? "").includes(` ${which} `));
-          for (const old of element.querySelectorAll(".pdf-viewer__explained--current")) old.classList.remove("pdf-viewer__explained--current");
+          clearCurrent();
           if (pieces.length > 0) {
             for (const piece of pieces) piece.classList.add("pdf-viewer__explained--current");
             const first = pieces[0]!;
             element.scrollTop += first.getBoundingClientRect().top - element.getBoundingClientRect().top - element.clientHeight / 3;
-          } else if ((tries += 1) < 30) timer = setTimeout(centre, 100);
+          } else if ((tries += 1) < 80) timer = setTimeout(centre, 100);
         };
         timer = setTimeout(centre, 50);
         return;

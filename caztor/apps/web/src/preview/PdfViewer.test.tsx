@@ -273,4 +273,18 @@ describe("PdfViewer stepping to an explained passage", () => {
     await flush();
     expect(scroller(container).scrollTop).toBe(start);
   });
+
+  it("drops the previous step's stronger mark when the next passage is not in the PDF", async () => {
+    const doc = fakeDocument("a", 5);
+    doc.pageText = async () => "nothing relevant";
+    const { container, rerender } = render(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} highlights={[passage]} focus={null} />);
+    await flush();
+    const previous = document.createElement("span");
+    previous.className = "pdf-viewer__explained pdf-viewer__explained--current";
+    scroller(container).append(previous);
+    rerender(<PdfViewer document={doc} zoom={percent(100)} anchor={top} onViewChange={() => {}} highlights={[passage]} focus={{ passage, nonce: 2 }} />);
+    await flush();
+    expect(previous.classList.contains("pdf-viewer__explained--current")).toBe(false);
+    expect(previous.classList.contains("pdf-viewer__explained")).toBe(true);
+  });
 });
