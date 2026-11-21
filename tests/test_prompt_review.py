@@ -55,6 +55,29 @@ class Endpoints(unittest.TestCase):
         self.assertEqual(self.post("/api/prompt/check", {"skill": "plausibility", "text": GOOD}).json()["verdict"],
                          "pass")
 
+    def test_check_issues_read_in_spanish_on_request(self) -> None:
+        body = self.client.post("/api/prompt/check?lang=es", json={"skill": "figure-review", "text": "review it"}).json()
+        messages = [issue["message"] for issue in body["issues"]]
+        self.assertIn("Falta: el id de una figura compilada (paper/Figures/<id>.pdf), p. ej. fig-architecture.",
+                      messages)
+        self.assertEqual([issue["id"] for issue in body["issues"]], ["figure"])  # machine values stay English
+        short = self.client.post("/api/prompt/check?lang=es", json={"skill": "plausibility", "text": "x y"}).json()
+        self.assertIn("El prompt es demasiado corto para este skill (menos de 15 palabras).",
+                      [issue["message"] for issue in short["issues"]])
+        english = self.post("/api/prompt/check", {"skill": "figure-review", "text": "review it"}).json()
+        self.assertEqual([issue["message"] for issue in english["issues"]],
+                         ["Missing: the id of a compiled figure (paper/Figures/<id>.pdf), e.g. fig-architecture."])
+
+    def test_every_gate_message_has_a_spanish_entry(self) -> None:
+        from skills._core.command_center import localize
+        texts = [need.label for contract in prompt_gate.CONTRACTS.values() for need in contract.needs]
+        texts += [issue["message"] for issue in prompt_gate.check("plausibility", "E.g.: <idea> hazlo")["issues"]]
+        texts += [issue["message"] for issue in prompt_gate.check("plausibility", "")["issues"]]
+        texts += [issue["message"] for issue in prompt_gate.check("plausibility", "hazlo")["issues"]]
+        for text in texts:
+            with self.subTest(text=text[:40]):
+                self.assertNotEqual(localize.translate(text, "es"), text)
+
     def test_check_honours_optional(self) -> None:
         body = self.post("/api/prompt/check", {"skill": "journal-finder", "text": "", "optional": True}).json()
         self.assertEqual(body["verdict"], "pass")

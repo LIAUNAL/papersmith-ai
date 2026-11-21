@@ -87,6 +87,9 @@ class SkillContracts(unittest.TestCase):
             "I propose a quantum kernel that aligns subject covariances before classification.",
             "Los clasificadores EEG de imaginación motora pierden precisión entre sujetos. "
             "Propongo un kernel cuántico que alinea las covarianzas de cada sujeto antes de clasificar.",
+            # Written without accents, as typed on many keyboards.
+            "Los clasificadores EEG actuales tienen una limitacion entre sujetos y su precision cae. "
+            "Planteo un metodo hibrido que alinea las covarianzas de cada sujeto antes de clasificar.",
         ):
             with self.subTest(text=text[:20]):
                 result = prompt_gate.check("plausibility", text)

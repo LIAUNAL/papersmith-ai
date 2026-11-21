@@ -36,6 +36,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -54,8 +55,8 @@ _PLACEHOLDER_RE = re.compile(r"^\s*(e\.g\.|ej\.|ej:|por ejemplo:|for example:)|<
                              re.IGNORECASE)
 #: Words that carry no task on their own: a prompt made only of them is vague.
 _VAGUE = frozenset("""
-    hazlo haz hacer algo eso esto lo mismo mejora mejoralo mejóralo arregla arreglalo arréglalo ayuda ayudame
-    ayúdame sigue seguir continua continúa continuar dale ok vale si sí please por favor favor bien todo
+    hazlo haz hacer algo eso esto lo mismo mejora mejoralo mejoralo arregla arreglalo arreglalo ayuda ayudame
+    ayudame sigue seguir continua continua continuar dale ok vale si si please por favor favor bien todo
     do it this that fix improve help continue go on again same thing stuff something ok yes now just make
     anything whatever etc
 """.split())
@@ -70,7 +71,7 @@ class Need:
     severity: str = "major"
 
     def found(self, text: str) -> bool:
-        return re.search(self.pattern, text, re.IGNORECASE) is not None
+        return re.search(self.pattern, fold(text), re.IGNORECASE) is not None
 
 
 @dataclass(frozen=True)
@@ -81,10 +82,10 @@ class Contract:
     needs: tuple[Need, ...] = field(default_factory=tuple)
 
 
-_EXPERIMENT_ANCHOR = (r"claim|\bC\d+\b|afirmaci|experiment|\bE\d+\b|metric|métric|baseline|línea base|protocol|"
-                      r"dataset|design|diseñ|ablat|ablaci|first version|primera versi|revis|\br\d{2}\b|citation|cita")
+_EXPERIMENT_ANCHOR = (r"claim|\bC\d+\b|afirmaci|experiment|\bE\d+\b|metric|metric|baseline|linea base|protocol|"
+                      r"dataset|design|disen|ablat|ablaci|first version|primera versi|revis|\br\d{2}\b|citation|cita")
 _PROPOSAL_ANCHOR = (r"first version|primera versi|change|cambi|revis|\br\d{2}\b|discuss|discut|deliber|hypothes|"
-                    r"hipótesis|hipotesis|\bH\d+\b|pillar|pilar|equation|ecuaci|mathemat|matemát|problem|"
+                    r"hipotesis|hipotesis|\bH\d+\b|pillar|pilar|equation|ecuaci|mathemat|matemat|problem|"
                     r"citation|cita|judge|juez|novelty|novedad|layer|capa|concept|concepto|sota")
 
 CONTRACTS: dict[str, Contract] = {
@@ -95,7 +96,7 @@ CONTRACTS: dict[str, Contract] = {
              r"dificult|no logra|no pued|deficien|costos|degrad"),
         Need("proposal", "what you propose (method, approach or hypothesis)",
              r"propos|we present|introduc|approach|method|framework|hypothes|leverag|combin|propon|propuesta|"
-             r"plante|enfoque|método|metodo|hipótesis|hipotesis|aprovech|combinar"),
+             r"plante|enfoque|metodo|metodo|hipotesis|hipotesis|aprovech|combinar"),
     )),
     "paper-ingestion": Contract(min_words=1, needs=(
         Need("source", "the path, glob or URL of the PDFs to ingest",
@@ -128,7 +129,7 @@ CONTRACTS: dict[str, Contract] = {
     )),
     "skill-audit": Contract(min_words=2, needs=(
         Need("subject", "the subject to audit: a skill, a CLI or a closed set",
-             r"skills?/|\bskill\b|\bcli\b|[\w-]+\.py|\bsmith\b|subcommand|subcomando|error code|código|"
+             r"skills?/|\bskill\b|\bcli\b|[\w-]+\.py|\bsmith\b|subcommand|subcomando|error code|codigo|"
              r"operation|operaci|[a-z]+-[a-z]+"),
     )),
     "datasets": Contract(optional=True, needs=(
@@ -137,7 +138,7 @@ CONTRACTS: dict[str, Contract] = {
     )),
     "remote-execution": Contract(optional=True, needs=(
         Need("verb", "the step: generate-job, submit, fetch, smoke, readiness, gate, status or poll",
-             r"generate|genera|submit|env[ií]a|fetch|smoke|readiness|\bgate\b|status|estado|poll|launch|lanza"),
+             r"generate|genera|submit|env[ii]a|fetch|smoke|readiness|\bgate\b|status|estado|poll|launch|lanza"),
     )),
     "kaggle-accounts": Contract(optional=True, min_words=1, needs=(
         Need("verb", "the verb (validate)", r"validat|valida|inbox|account|cuenta"),
@@ -155,6 +156,12 @@ CONTRACTS: dict[str, Contract] = {
     )),
     "upgrade-project": Contract(optional=True, min_words=1),
 }
+
+
+def fold(text: str) -> str:
+    """``text`` without diacritics, so the patterns match "metodo" and its
+    accented spelling alike (and stay plain ASCII)."""
+    return "".join(c for c in unicodedata.normalize("NFD", str(text or "")) if not unicodedata.combining(c))
 
 
 def normalize_skill(skill: str) -> str:
@@ -201,11 +208,11 @@ def check(skill: str, text: str, *, optional: bool | None = None,
         if not allow_empty:
             add("empty", "critical", "The prompt is empty: the skill has nothing to work on.")
     else:
-        tokens = [re.sub(r"[^\wáéíóúñü]", "", w.lower()) for w in words]
+        tokens = [re.sub(r"[^\w]", "", fold(w).lower()) for w in words]
         tokens = [t for t in tokens if t]
         if tokens and len(tokens) <= 5 and all(t in _VAGUE for t in tokens):
             add("vague", "major", "The prompt names no task, object or goal: say what to do and on what.")
-        if _PLACEHOLDER_RE.search(clean):
+        if _PLACEHOLDER_RE.search(fold(clean)):
             add("placeholder", "major", "The prompt still holds the example prefix or an unfilled <placeholder>.")
         if len(words) < contract.min_words:
             add("short", "major", f"The prompt is too short for this skill (fewer than {contract.min_words} words).")
