@@ -134,6 +134,11 @@ def validate_couplings_shape(record: dict) -> None:
                             "COUPLINGS_RECORD_MALFORMED",
                             f"each 'future_work.directions[*]' needs a string {key!r}",
                         )
+    if "citation_policy" in record:
+        # #182: the opt-in cite-once policy `verify` reads (CITED_MORE_THAN_ONCE).
+        policy = _require_dict(record["citation_policy"], "citation_policy")
+        if "cite_once" in policy and not isinstance(policy["cite_once"], bool):
+            raise Refused("COUPLINGS_RECORD_MALFORMED", "'citation_policy.cite_once' must be true or false")
 
 
 def _atomic_replace(path: Path, data: bytes) -> None:
