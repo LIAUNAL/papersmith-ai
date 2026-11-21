@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.82.0
 
 - **Prompt quality gate.** Every prompt a phase skill receives is scored
   before the skill runs: a deterministic per-skill score
