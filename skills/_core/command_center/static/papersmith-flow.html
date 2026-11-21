@@ -7697,7 +7697,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <li>The operator picks a journal in the PDF Preview tab; venue-adapter reads its guidelines and every requirement carries a quote and a url</li>
           <li>The operator approves the adaptation plan by its sha256; text changes go only through write, and venue build never writes paper/main.tex</li>
           <li>For a journal that only receives Spanish, paper_cli.py translate turns the verified English paper into paper/translations/es/ block by block (translator, then translation-style-reviewer); every block passes a fidelity gate (citations, labels, math, numbers, paragraphs) and the English paper stays the source</li>
-          <li>The final judge panel: paper-reviewer reviews the compiled paper and returns a round; /paper-writing records it with paper_cli.py review --input in .papersmith/paper_review.json, and the PDF tab shows the verdict per round</li>
+          <li>The final judge panel: paper-reviewer reviews the compiled paper and returns a round; /paper-writing records it with paper_cli.py review --input in .papersmith/paper_review.json, and the PDF tab shows the verdict per round and launches the next round from its button</li>
           <li>pixelrag turns an extracted figure into evidence bound to the image sha256; ai-auditor scores writing quality for ai_audit and humanize; figure-visual-reviewer judges a rendered diagram by eye once its mechanical audit passed</li>
           <li>smith ui: each pipeline phase card sends its /&lt;skill&gt; with the rules as a guide, or opens the panel that owns the work</li>
         </ul>
