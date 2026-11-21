@@ -216,6 +216,7 @@
         <textarea class="phase-action__input" id="phaseInput${i}" rows="4"
           placeholder="${esc(a.placeholder)}" aria-label="${esc(a.label)}"></textarea>
         <div class="phase-action__error" id="phaseError${i}" role="alert" hidden></div>
+        <div class="phase-gate" id="phaseGate${i}" aria-live="polite" hidden></div>
         <div class="phase-action__agent">
           <label>${esc(t('phaseConsole.agent'))} <select id="phaseAgent${i}" data-phase-agent="${i}" aria-label="${esc(t('phaseConsole.agentLabel'))}"></select></label>
           <label title="${esc(t('phaseConsole.freshTitle'))}"><input type="checkbox" id="phaseFresh${i}" data-phase-agent="${i}"> ${esc(t('phaseConsole.fresh'))}</label>
@@ -371,7 +372,6 @@
   async function runPrompt(a, i) {
     await refreshAgentInfo();
     const input = document.getElementById(`phaseInput${i}`);
-    const hint = document.getElementById(`phaseHint${i}`);
     const text = String(input ? input.value : '').replace(/\s+/g, ' ').trim();
     const fail = (msg) => { showError(i, msg); input?.focus(); };
     clearError(i);
@@ -381,12 +381,185 @@
     if (a.min_sentences && phaseSentenceCount(text) < a.min_sentences) {
       return fail(t('phaseConsole.needSentences', { n: a.min_sentences }));
     }
-    const command = [a.slash, `${a.prefix || ''}${text}`.trim()].filter(Boolean).join(' ');
+    const args = `${a.prefix || ''}${text}`.trim();
+    const gate = await gateCheck(a, args);
+    if (gate && gate.verdict === 'fail') return gateHold(a, i, args, gate);
+    gateShow(i, '');
+    launch(a, i, args, false);
+  }
+
+  // Sends `/<skill> <args>`; an approved prompt carries the gate's marker so
+  // the agent's own gate lets it through (the hint shows it without).
+  function launch(a, i, args, approved) {
+    const hint = document.getElementById(`phaseHint${i}`);
+    const shown = [a.slash, args].filter(Boolean).join(' ');
+    const command = approved ? `${shown} ${GATE_MARKER}` : shown;
     const agent = document.getElementById(`phaseAgent${i}`)?.value || undefined;
     const fresh = Boolean(document.getElementById(`phaseFresh${i}`)?.checked);
     if (agent) remember(agent);
-    if (hint) { hint.textContent = t('phaseConsole.sending', { command: `${command.slice(0, 80)}${command.length > 80 ? '…' : ''}` }); hint.classList.remove('is-error'); }
+    if (hint) { hint.textContent = t('phaseConsole.sending', { command: `${shown.slice(0, 80)}${shown.length > 80 ? '…' : ''}` }); hint.classList.remove('is-error'); }
     send(command, true, 'slash', i, { agent, fresh });
+  }
+
+  // ---- prompt quality gate ---------------------------------------------------
+  // Every launch is scored first (/api/prompt/check, deterministic). A prompt
+  // under the threshold or with a critical issue is held: the card alerts that
+  // it is not clear, asks the prompt-reviewer agent (/api/prompt/review) for an
+  // improved prompt or for questions, and launches only on the operator's
+  // click. A check that cannot be reached never blocks a launch: the agent's
+  // own gate (skills/prompt-gate/SKILL.md) still applies there.
+  const GATE_MARKER = '[prompt-gate: approved]';
+  const gateRuns = {};
+  const gateLang = () => (window.i18n && window.i18n.getLanguage ? window.i18n.getLanguage() : 'es');
+  const skillOf = (a) => String(a.slash || '').replace(/^\//, '');
+
+  async function postJson(url, body) {
+    const response = await window.fetch(`${url}?lang=${gateLang()}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error((data && data.error) || String(response.status));
+    return data;
+  }
+
+  async function gateCheck(a, args) {
+    try {
+      const data = await postJson('/api/prompt/check', { skill: skillOf(a), text: args, optional: Boolean(a.optional) });
+      return data && (data.verdict === 'pass' || data.verdict === 'fail') ? data : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function gateShow(i, html) {
+    const box = document.getElementById(`phaseGate${i}`);
+    if (!box) return;
+    box.innerHTML = html;
+    box.hidden = !html;
+  }
+
+  const gateList = (items) => (items || []).map((x) => `<li>${esc(x)}</li>`).join('');
+  const gateButton = (what, i, key, primary) => `<button type="button" class="btn btn--sm${primary ? ' btn--primary' : ''}"
+      data-gate="${what}" data-gate-index="${i}">${esc(t(key))}</button>`;
+
+  function gateHead(a, gate) {
+    const issues = (gate.issues || []).map((x) => x.message);
+    return `<p class="phase-gate__title" role="alert">⚠ ${esc(t('promptGate.unclear', { skill: a.slash, score: gate.score, threshold: gate.threshold }))}</p>
+      ${issues.length ? `<ul class="phase-gate__issues">${gateList(issues)}</ul>` : ''}`;
+  }
+
+  async function gateHold(a, i, args, gate) {
+    const ticket = (gateRuns[i] = { args, gate, n: ((gateRuns[i] && gateRuns[i].n) || 0) + 1 }).n;
+    gateShow(i, `${gateHead(a, gate)}<p class="phase-gate__note">${esc(t('promptGate.reviewing'))}</p>${gatePendingActions(i)}`);
+    let data;
+    try {
+      data = await postJson('/api/prompt/review', { skill: skillOf(a), text: args, optional: Boolean(a.optional), language: gateLang() });
+    } catch (err) {
+      data = { available: false, reason: (err && err.message) || String(err) };
+    }
+    if (gateRuns[i] && gateRuns[i].n === ticket) gateRender(a, i, gate, data);  // a newer launch owns the box
+  }
+
+  // While the reviewer works the operator can still launch as is or cancel;
+  // either one retires the pending answer (its ticket no longer matches).
+  const gatePendingActions = (i) => `<div class="phase-gate__actions">${gateButton('asis', i, 'promptGate.asIs')}${gateButton('cancel', i, 'promptGate.cancel')}</div>`;
+
+  function gateRender(a, i, gate, data) {
+    const head = gateHead(a, gate);
+    const asIs = gateButton('asis', i, 'promptGate.asIs');
+    const cancel = gateButton('cancel', i, 'promptGate.cancel');
+    if (!data || data.available === false || !(data.verdict === 'improve' || data.verdict === 'clarify')) {
+      gateShow(i, `${head}<p class="phase-gate__note">${esc(t('promptGate.unavailable', { reason: (data && data.reason) || '' }))}</p>
+        <div class="phase-gate__actions">${gateButton('edit', i, 'promptGate.edit', true)}${asIs}${cancel}</div>`);
+      return;
+    }
+    const reply = data.reply ? `<p class="phase-gate__note">${esc(data.reply)}</p>` : '';
+    if (data.verdict === 'clarify') {
+      gateRuns[i].questions = data.questions || [];
+      const questions = gateRuns[i].questions.map((q, n) => {
+        const options = (q.options || []).map((o, m) => `<label class="phase-gate__option"><input type="radio"
+            name="gateAns${i}_${n}" id="gateOpt${i}_${n}_${m}" value="${esc(o)}"> ${esc(o)}</label>`).join('');
+        return `<fieldset class="phase-gate__question"><legend>${esc(q.question)}</legend>${options}
+            <input type="text" class="phase-gate__free" id="gateFree${i}_${n}" placeholder="${esc(t('promptGate.freeAnswer'))}"
+              aria-label="${esc(q.question)}"></fieldset>`;
+      }).join('');
+      gateShow(i, `${head}${reply}<p class="phase-gate__note">${esc(t('promptGate.clarify'))}</p>${questions}
+        <div class="phase-gate__actions">${gateButton('compose', i, 'promptGate.compose', true)}${asIs}${cancel}</div>`);
+      return;
+    }
+    const kept = (data.preserved_requirements || []).length
+      ? `<p class="phase-gate__label">${esc(t('promptGate.preserved'))}</p><ul class="phase-gate__kept">${gateList(data.preserved_requirements)}</ul>` : '';
+    const score = data.improved_check ? `<p class="phase-gate__note">${esc(t('promptGate.newScore', { score: data.improved_check.score }))}</p>` : '';
+    gateShow(i, `${head}${reply}
+      <label class="phase-gate__label" for="gateDraft${i}">${esc(t('promptGate.suggestion'))}</label>
+      <textarea class="phase-action__input phase-gate__draft" id="gateDraft${i}" rows="6">${esc(data.improved_prompt)}</textarea>
+      ${score}${kept}
+      <div class="phase-gate__actions">${gateButton('approve', i, 'promptGate.approve', true)}${asIs}${cancel}</div>`);
+  }
+
+  // The operator's answers: the chosen option, or the free text when typed.
+  function gateAnswers(i) {
+    return ((gateRuns[i] && gateRuns[i].questions) || []).map((q, n) => {
+      const free = String(document.getElementById(`gateFree${i}_${n}`)?.value || '').trim();
+      const chosen = (q.options || []).find((_, m) => document.getElementById(`gateOpt${i}_${n}_${m}`)?.checked);
+      return { id: q.id, question: q.question, answer: free || chosen || '' };
+    }).filter((x) => x.answer);
+  }
+
+  // With the answers the reviewer builds the prompt, and the card launches it
+  // (the answers are the operator's approval); a still-open gap asks again.
+  async function gateCompose(a, i) {
+    const run = gateRuns[i];
+    if (!run) return;
+    const answers = gateAnswers(i);
+    if (!answers.length) return showError(i, t('promptGate.answerFirst'));
+    clearError(i);
+    const ticket = (run.n += 1);
+    gateShow(i, `${gateHead(a, run.gate)}<p class="phase-gate__note">${esc(t('promptGate.composing'))}</p>${gatePendingActions(i)}`);
+    let data;
+    try {
+      data = await postJson('/api/prompt/review', { skill: skillOf(a), text: run.args, optional: Boolean(a.optional), language: gateLang(), answers });
+    } catch (err) {
+      data = { available: false, reason: (err && err.message) || String(err) };
+    }
+    // Cancelled, launched as is, or superseded while composing: launch nothing.
+    if (gateRuns[i] !== run || run.n !== ticket) return;
+    delete gateRuns[i];
+    if (data && data.available !== false && data.verdict === 'improve' && data.improved_prompt) {
+      gateShow(i, `<p class="phase-gate__note">${esc(t('promptGate.launched'))}</p><pre class="phase-gate__sent">${esc(data.improved_prompt)}</pre>`);
+      const input = document.getElementById(`phaseInput${i}`);
+      if (input) input.value = data.improved_prompt;
+      launch(a, i, data.improved_prompt, true);
+      return;
+    }
+    gateRuns[i] = run;
+    gateRender(a, i, run.gate, data);
+  }
+
+  function gateAct(what, a, i) {
+    const run = gateRuns[i];
+    if (!run) return;
+    if (what === 'approve') {
+      const text = String(document.getElementById(`gateDraft${i}`)?.value || '').replace(/\s+/g, ' ').trim();
+      if (!text) return showError(i, t('phaseConsole.writeFirst'));
+      const input = document.getElementById(`phaseInput${i}`);
+      if (input) input.value = text;
+      delete gateRuns[i];
+      gateShow(i, '');
+      launch(a, i, text, true);
+    } else if (what === 'asis') {
+      delete gateRuns[i];
+      gateShow(i, '');
+      launch(a, i, run.args, true);
+    } else if (what === 'compose') {
+      gateCompose(a, i);
+    } else if (what === 'edit') {
+      gateShow(i, '');
+      document.getElementById(`phaseInput${i}`)?.focus();
+    } else if (what === 'cancel') {
+      gateShow(i, '');
+      delete gateRuns[i];
+    }
   }
 
   function redirect(a) {
@@ -418,6 +591,12 @@
       else if (what === 'add') kwAdd(i);
       else if (what === 'approve') kwApprove(a, i);
       else if (what === 'discard') kwShow(i, '');
+      return;
+    }
+    const gateEl = event.target.closest('[data-gate]');
+    if (gateEl && gateEl.dataset && gateEl.dataset.gate) {
+      const i = Number(gateEl.dataset.gateIndex);
+      if (current[i] && current[i].kind === 'prompt') gateAct(gateEl.dataset.gate, current[i], i);
       return;
     }
     const el = event.target.closest('[data-phase-action]');

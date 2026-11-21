@@ -42,6 +42,9 @@ TRAMO_PHASES: dict[str, tuple[str, ...]] = {
 EXTRA_PHASES: dict[str, tuple[str, ...]] = {
     # Its report is what the operator reads before running `declare`.
     "insumos-observer": ("declarations",),
+    # The prompt gate reviews the prompt of every phase box that runs a skill.
+    "prompt-reviewer": tuple(stage for stage, entry in phase_actions.ACTIONS.items()
+                             if any(action["kind"] == "prompt" for action in entry["actions"])),
 }
 
 MAX_AGENTS = 200

@@ -44,6 +44,7 @@ SKILL_NAMES = (
     "paper-writing",
     "pixelrag",
     "plausibility",
+    "prompt-gate",
     "proposal-deliberation",
     "proposal-implementation",
     "remote-execution",

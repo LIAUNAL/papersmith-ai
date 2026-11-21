@@ -243,6 +243,19 @@ class HarnessTranscriptTests(unittest.TestCase):
             "/skill:plausibility idea": ("plausibility", "idea"),
             "/plausibility idea": ("plausibility", "idea"),
             "lee skills/plausibility/SKILL.md por favor": None,
+            # The projected body with the prompt gate sentence, and a prompt the
+            # dashboard launched after approval: the marker is not the operator's.
+            "Read `skills/plausibility/SKILL.md` and follow it for this task. Before you act on the text "
+            "below, apply the prompt gate of `skills/prompt-gate/SKILL.md` to it (skip the gate when the "
+            "text carries `[prompt-gate: approved]`, when the operator asked to launch it as is, or when "
+            "this skill is `prompt-gate`). Treat the text below as `$ARGUMENTS`:\n\n"
+            "idea [prompt-gate: approved]": ("plausibility", "idea"),
+            "<command-name>/plausibility</command-name><command-args>idea [prompt-gate: approved]"
+            "</command-args>": ("plausibility", "idea"),
+            "/plausibility idea [prompt-gate: approved]": ("plausibility", "idea"),
+            # Only the approval marker is removed; other bracketed text keeps its spacing.
+            "<command-name>/plausibility</command-name><command-args>  [prompt-gate: pending] y  "
+            "</command-args>": ("plausibility", "  [prompt-gate: pending] y  "),
         }
         for text, expected in shapes.items():
             with self.subTest(text=text[:30]):

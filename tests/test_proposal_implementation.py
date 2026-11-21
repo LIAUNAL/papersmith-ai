@@ -9269,6 +9269,11 @@ FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
                   "recipe it means. Not a loan from any research project: the "
                   "auditor names what it audits",
     },
+    "_core/command_center/prompt_gate.py": {
+        "kaggle": "the prompt gate keys each skill's input contract by the skill's "
+                  "directory name, and one of them is `kaggle-accounts`: the word is "
+                  "that skill's name, not a loan from any research project",
+    },
     "_core/command_center/phase_actions.py": {
         "kaggle": "the experiments phase of the dashboard lists the skills it "
                   "runs, and one of them is `kaggle-accounts`: the word is that "

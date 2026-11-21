@@ -109,6 +109,11 @@ DISPLAY_FIELDS: dict[str, frozenset[str]] = {
                "metrics", "novelty_claim", "thesis_ref", "section_ref"),
     ),
     "/api/phase/run": _paths("message", "error"),
+    # The prompt gate's deterministic issues and the skill's needs; the
+    # reviewer's own text already comes in the operator's language.
+    "/api/prompt/check": _paths("issues.message", "needs"),
+    "/api/prompt/review": _paths("check.issues.message", "check.needs", "improved_check.issues.message",
+                                 "improved_check.needs"),
     "/api/pdf/execute": _paths("message", "error"),
 }
 

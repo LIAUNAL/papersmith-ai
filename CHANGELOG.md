@@ -11,6 +11,23 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Prompt quality gate.** Every prompt a phase skill receives is scored
+  before the skill runs: a deterministic per-skill score
+  (`python -m skills._core.command_center.prompt_gate check`) and a rubric
+  from published prompt-engineering guidance. Under the threshold (60) or on
+  a critical failure, the agent alerts that the prompt is not clear and
+  proposes an improved prompt for approval, or asks clarifying questions and
+  launches the prompt built from the answers. It works in the agent terminal,
+  the dashboard's embedded terminal and the dashboard's phase boxes, for
+  Claude Code, OpenCode, Pi and Antigravity: the projected slash commands and
+  the Antigravity rules apply the new `prompt-gate` skill, and the phase boxes
+  use `POST /api/prompt/check` and `POST /api/prompt/review` (the headless
+  `prompt-reviewer` agent). An approved prompt carries
+  `[prompt-gate: approved]` and is not gated twice; the AI history strips the
+  marker.
+
 ## 0.81.0
 
 - **Suggested journals: a second stage reads each top journal's own
