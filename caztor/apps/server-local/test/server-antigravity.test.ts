@@ -79,7 +79,7 @@ describe("the Antigravity adapter in the running server", () => {
     await server.close();
   });
 
-  it("runs a turn over HTTP: provisions the definition, attaches the prompt, keeps keys out, shows the notice", async () => {
+  it("runs a turn over HTTP: provisions the definition, attaches the prompt, keeps keys out, without repeating the notice", async () => {
     const { server, call, spawner, dir } = await start();
     spawner.enqueue({ stdout: ["1.4.12\n"], exit: ok });
     spawner.enqueue({ stdout: [], exit: ok });
@@ -88,7 +88,8 @@ describe("the Antigravity adapter in the running server", () => {
     const text = await response.text();
     const frames = parseFrames(text);
     expect(response.status, text).toBe(200);
-    expect(frames.some((frame) => frame.event === "notice" && JSON.stringify(frame.data).includes("partial isolation"))).toBe(true);
+    // The chat panel shows the isolation note for as long as Antigravity is chosen; a turn does not repeat it.
+    expect(frames.some((frame) => frame.event === "notice" && JSON.stringify(frame.data).includes("partial isolation"))).toBe(false);
     expect(frames.map((frame) => frame.event)).toContain("text");
     expect(frames.find((frame) => frame.event === "done")).toMatchObject({ data: { reason: "completed" } });
     const run = spawner.calls.find((spawn) => spawn.args.includes("--agent"))!;

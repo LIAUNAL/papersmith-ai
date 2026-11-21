@@ -37,16 +37,18 @@ describe("MessageList", () => {
     expect(order).toEqual(["Looking.", "tool", "Finished."]);
   });
 
-  it("leaves out the Pi isolation notice earlier turns carried, which the chat panel shows, and keeps other notices", () => {
+  it("leaves out the Pi and Antigravity isolation notices earlier turns carried, which the chat panel shows, and keeps other notices", () => {
     const state = play([
       begin,
       { type: "notice", level: "info", message: "Pi runs with partial isolation: your global Pi settings and sign-in in ~/.pi/agent/ still load." },
+      { type: "notice", level: "info", message: "Antigravity runs with partial isolation: your global Antigravity settings may load." },
       { type: "notice", level: "warning", message: "The model changed during the turn." },
       { type: "text", messageId: "m", text: "Done." },
       { type: "done", reason: "completed" },
     ]);
     render(<MessageList timeline={state.timeline} />);
     expect(screen.queryByText(/Pi runs with partial isolation/)).toBeNull();
+    expect(screen.queryByText(/Antigravity runs with partial isolation/)).toBeNull();
     expect(screen.getByText("The model changed during the turn.")).toBeTruthy();
   });
 

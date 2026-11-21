@@ -41,10 +41,10 @@ export const ANTIGRAVITY_ISOLATION_NOTICE =
   "Partial isolation: settings and MCP servers in ~/.gemini may load, and your prompts are stored there. Caztor stops a disallowed tool, but it may already have started.";
 
 /**
- * The start of the isolation notice Pi turns carried before the panel took it over: such a notice, stored in earlier
- * turns, is left out of the conversation, since the panel already says it.
+ * The start of the isolation notices Pi and Antigravity turns carried before the panel took them over: such a notice,
+ * stored in earlier turns, is left out of the conversation, since the panel already says it.
  */
-export const PI_TURN_NOTICE_START = "Pi runs with partial isolation:";
+export const TURN_ISOLATION_NOTICE_STARTS: readonly string[] = ["Pi runs with partial isolation:", "Antigravity runs with partial isolation:"];
 
 /** Shown for as long as Pi is the active provider. */
 export const PI_ISOLATION_NOTICE =

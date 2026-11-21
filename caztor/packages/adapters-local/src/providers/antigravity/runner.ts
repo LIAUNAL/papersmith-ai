@@ -24,6 +24,10 @@ export {
   STOP_ESCALATION_MS,
 };
 
+/**
+ * What Antigravity's partial isolation means. The chat panel shows it for as long as Antigravity is chosen (and the
+ * first-run notice covers it), so a turn does not repeat it in the conversation.
+ */
 export const ANTIGRAVITY_PARTIAL_ISOLATION_NOTICE =
   "Antigravity runs with partial isolation: your global Antigravity settings, skills, agents and MCP servers in ~/.gemini/ may load, conversation transcripts and state are written there, and Caztor cannot turn them off. Caztor allows only file reading and editing tools and stops the turn when another tool appears, though that tool may already have started.";
 
@@ -181,12 +185,6 @@ export function createAntigravityRunner(options: AntigravityRunnerOptions): Agen
       yield* failed("isolation_failed", `Caztor did not start Antigravity. ${definitionProblem}`);
       return;
     }
-
-    yield {
-      type: "notice",
-      level: "info",
-      message: ANTIGRAVITY_PARTIAL_ISOLATION_NOTICE,
-    };
 
     const env = buildAntigravityEnv(req.env ?? options.env);
     const args = [

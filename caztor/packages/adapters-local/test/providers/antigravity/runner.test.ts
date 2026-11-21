@@ -164,12 +164,12 @@ describe("the Antigravity runner", () => {
   });
 
   describe("partial isolation notice", () => {
-    it("emits the partial-isolation notice on every turn", async () => {
+    it("does not repeat the partial-isolation notice in a turn, as the chat panel shows it", async () => {
       const { runner, spawner } = await setup();
       spawner.enqueue({ stdout: fixture("edit-turn.jsonl"), exit: ok });
       const events = await collect(runner.runTurn(request(), new AbortController().signal));
 
-      expect(events).toContainEqual({ type: "notice", level: "info", message: ANTIGRAVITY_PARTIAL_ISOLATION_NOTICE });
+      expect(events).not.toContainEqual({ type: "notice", level: "info", message: ANTIGRAVITY_PARTIAL_ISOLATION_NOTICE });
     });
   });
 
