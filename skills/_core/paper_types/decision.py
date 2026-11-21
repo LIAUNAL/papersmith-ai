@@ -1,0 +1,130 @@
+"""The plausibility acceptance and the paper-type decision, on disk.
+
+* ``.papersmith/plausibility.json``: the idea the operator accepted at the end
+  of plausibility, who accepted it and when, the hash of the SOTA pool it was
+  judged against, and the top references carried to ingestion.
+* ``.papersmith/paper_type.json``: the deterministic scores of every catalogue
+  type for that idea, the suggested type and its confidence, and, once the
+  operator agrees one (``smith kind set``, paper-type-lines S5), the agreed
+  type. Rescoring keeps the agreed type and flags it ``agreed_stale`` when the
+  idea it was agreed for has changed.
+
+Nothing in the applied-AI flow reads these files: a workspace without them is
+``experimental``, as before. Writes are atomic (temporary file, then replace).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from . import score as scoring
+
+PLAUSIBILITY = Path(".papersmith") / "plausibility.json"
+PAPER_TYPE = Path(".papersmith") / "paper_type.json"
+POOL = Path("sota-pool") / "candidates.json"
+_AGREED_KEYS = ("agreed", "agreed_by", "agreed_at", "agreed_idea_sha256")
+
+
+class DecisionError(ValueError):
+    """A refused write: no operator, no idea, or an unreadable record."""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _write(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=1)
+            handle.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _read(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        raise DecisionError(f"{path.name} cannot be read: {error}") from error
+    return data if isinstance(data, dict) else None
+
+
+def pool_sha256(root: Path) -> str | None:
+    try:
+        return _sha((Path(root) / POOL).read_bytes())
+    except OSError:
+        return None
+
+
+def pool_text(root: Path) -> str:
+    """The SOTA pool's titles, abstracts and families as one text, or ``""``."""
+    try:
+        data = json.loads((Path(root) / POOL).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    listed = data.get("candidates") if isinstance(data, dict) else data
+    parts = []
+    for item in listed if isinstance(listed, list) else []:
+        if isinstance(item, dict):
+            parts.extend(str(item.get(key) or "") for key in ("title", "abstract", "family"))
+    return "\n".join(part for part in parts if part)
+
+
+def read(root: Path) -> dict[str, Any]:
+    root = Path(root)
+    return {"plausibility": _read(root / PLAUSIBILITY), "paper_type": _read(root / PAPER_TYPE)}
+
+
+def record_acceptance(root: Path, idea: str, *, by: str, top5: list[str] | None = None) -> dict:
+    idea = str(idea or "").strip()
+    by = str(by or "").strip()
+    if not idea:
+        raise DecisionError("the accepted idea is empty")
+    if not by:
+        raise DecisionError("name the operator who accepted the plausibility report (--by)")
+    record = {"idea": idea, "idea_sha256": _sha(idea.encode("utf-8")), "accepted_by": by,
+              "accepted_at": _now(), "pool_sha256": pool_sha256(root),
+              "top5": [str(item) for item in top5 or []]}
+    _write(Path(root) / PLAUSIBILITY, record)
+    return record
+
+
+def compute(root: Path, idea: str) -> dict:
+    """The scores for ``idea`` against this workspace's pool, without writing."""
+    idea = str(idea or "").strip()
+    if not idea:
+        raise DecisionError("there is no idea to score")
+    result = scoring.score(idea, pool_text(root))
+    return {**result, "idea_sha256": _sha(idea.encode("utf-8")), "pool_sha256": pool_sha256(root),
+            "computed_at": _now()}
+
+
+def record_scores(root: Path, idea: str) -> dict:
+    record = compute(root, idea)
+    previous = _read(Path(root) / PAPER_TYPE) or {}
+    for key in _AGREED_KEYS:
+        record[key] = previous.get(key)
+    record["agreed_stale"] = bool(record["agreed"]) and record["agreed_idea_sha256"] != record["idea_sha256"]
+    _write(Path(root) / PAPER_TYPE, record)
+    return record
+
+
+__all__ = ["DecisionError", "PAPER_TYPE", "PLAUSIBILITY", "compute", "pool_sha256", "pool_text", "read",
+           "record_acceptance", "record_scores"]
