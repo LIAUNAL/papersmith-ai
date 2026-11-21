@@ -90,8 +90,9 @@
 
 /* The passage the arrows last brought into view. */
 .pdf-viewer__text.textLayer .pdf-viewer__explained--current {
-  background-color: rgb(250 204 21 / 0.62);
-  box-shadow: 0 0 0 2px rgb(234 179 8 / 0.9);
+  /* The same soft fill as the other passages, set apart by a thin ring only, so it reads as easily. */
+  background-color: rgb(253 224 71 / 0.3);
+  box-shadow: 0 0 0 1.5px rgb(234 179 8 / 0.85);
 }
 
 /* The text a double click in the source brought into view, for a moment. */

@@ -32,8 +32,9 @@
 }
 
 /* The explained passage the arrows last brought into view. */
+/* The passage the arrows brought into view: the same soft fill underneath, set apart by a thin ring only, so it reads as easily. */
 .cm-explained-current {
-  background-color: rgb(250 204 21 / 0.6);
-  outline: 2px solid rgb(234 179 8 / 0.9);
+  background-color: transparent;
+  outline: 1.5px solid rgb(234 179 8 / 0.85);
   border-radius: 2px;
 }
