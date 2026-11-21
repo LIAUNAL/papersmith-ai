@@ -50,8 +50,9 @@ async function run(compiler: CompilerPort, main: string, extra: Partial<CompileR
 
 const finished = (events: CompileEvent[]) => events.find((event) => event.type === "finished") as Extract<CompileEvent, { type: "finished" }>;
 
-function wrap(root: string, inner: CompilerPort, timeoutMs?: number) {
+function wrap(root: string, inner: CompilerPort, timeoutMs?: number, trustCommand?: readonly string[]) {
   return withBuildRecipe(inner, {
+    ...(trustCommand === undefined ? {} : { trustCommand }),
     fs: nodeFileSystem,
     spawner: createNodeSpawner(),
     clock: systemClock,
@@ -75,6 +76,14 @@ describe("build recipe (.caztor/build.json)", () => {
     expect(result.diagnostics[0]?.message).toContain(`npm start -- trust-build "${root}"`);
     expect(inner.asked).toEqual([]);
     expect(() => readFileSync(join(root, "ran"))).toThrow();
+  });
+
+  it("names the command of the running Caztor when it knows it, as a packaged copy has no npm start", async () => {
+    const root = await project(touching, false);
+    const result = finished(await run(wrap(root, innerCompiler(), undefined, ["/opt/node 26/bin/node", "/site/papersmith/_caztor/main.mjs"]), "paper/main.tex")).result;
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics[0]?.message).toContain(`confirm it on this computer with: "/opt/node 26/bin/node" "/site/papersmith/_caztor/main.mjs" trust-build "${root}"`);
+    expect(result.diagnostics[0]?.message).not.toContain("npm start");
   });
 
   it("does not run a recipe changed after it was confirmed, or one sealed with another computer's key", async () => {

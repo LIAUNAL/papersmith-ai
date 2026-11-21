@@ -62,6 +62,8 @@ export interface ServerOptions {
   /** Absolute path of the built web app. */
   webRoot: string;
   env: Readonly<Record<string, string | undefined>>;
+  /** The program and script that run this server, named in the message that asks the host to confirm a build recipe. */
+  trustCommand?: readonly string[];
   fs: FileSystem;
   listen: ListenFn;
   startPort?: number;
@@ -195,7 +197,7 @@ function createProjectRuntime(root: string, shared: Shared): ProjectRuntime {
       store,
       parentEnv: options.env,
     }),
-    { spawner, clock: systemClock, fs: options.fs, root, parentEnv: options.env, trustKey: shared.trustKey },
+    { spawner, clock: systemClock, fs: options.fs, root, parentEnv: options.env, trustKey: shared.trustKey, ...(options.trustCommand === undefined ? {} : { trustCommand: options.trustCommand }) },
   );
   const coordinator = createCompileCoordinator({ compiler });
   // Every collaborator's agent turn runs inside bubblewrap; the host's turns never do. Probed per CLI and person on first use.

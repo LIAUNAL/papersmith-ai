@@ -27,6 +27,8 @@ try {
     projectDir: resolve(process.env["INIT_CWD"] ?? process.cwd(), args.projectDir),
     webRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
     env: process.env,
+    // The source under npm start, or the bundle a papersmith install carries: either confirms a recipe the same way.
+    trustCommand: [process.execPath, process.argv[1] ?? fileURLToPath(import.meta.url)],
     fs: nodeFileSystem,
     listen: nodeListen,
     host: exposure.host,

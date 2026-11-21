@@ -36,6 +36,8 @@ export interface BuildRecipeOptions {
   parentEnv: Readonly<Record<string, string | undefined>>;
   /** Caztor's trust key (`createTrustKey`); null when it cannot be used, and then no recipe runs. */
   trustKey: () => Promise<Uint8Array | null>;
+  /** The program and script of the running Caztor, so the message names a command that confirms the recipe here. */
+  trustCommand?: readonly string[];
   timeoutMs?: number;
 }
 
@@ -129,6 +131,12 @@ export function withBuildRecipe(inner: CompilerPort, options: BuildRecipeOptions
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   }
 
+  function howToConfirm(folder: string): string {
+    const command = options.trustCommand;
+    if (command === undefined || command.length === 0) return `confirm it from the Caztor folder with: npm start -- trust-build "${folder}"`;
+    return `confirm it on this computer with: ${[...command, "trust-build"].map((part) => (part === "trust-build" ? part : `"${part}"`)).join(" ")} "${folder}"`;
+  }
+
   type StepOutcome = { status: "ok" } | { status: Exclude<CompileResult["status"], "success">; diagnostic?: Diagnostic };
 
   async function runStep(recipe: BuildRecipe, signal: AbortSignal): Promise<StepOutcome> {
@@ -187,7 +195,7 @@ export function withBuildRecipe(inner: CompilerPort, options: BuildRecipeOptions
     const { recipe } = loaded;
     if (!(await confirmed(loaded.bytes))) {
       yield { type: "started", compileId };
-      yield finish("failed", problem(`${RECIPE_FILE} would run \`${recipe.before.join(" ")}\` before compiling ${req.main}, and it is not confirmed on this computer. Read it, then confirm it from the Caztor folder with: npm start -- trust-build "${root}"`));
+      yield finish("failed", problem(`${RECIPE_FILE} would run \`${recipe.before.join(" ")}\` before compiling ${req.main}, and it is not confirmed on this computer. Read it, then ${howToConfirm(root)}`));
       return;
     }
     if (req.sandboxed === true) {
