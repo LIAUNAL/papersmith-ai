@@ -84,6 +84,7 @@ class ValidationTests(unittest.TestCase):
         self.refuses([entry(summary="x" * (registry.MAX_SUMMARY + 1))], "summary")
         self.refuses([entry(signals=[])], "signals")
         self.refuses([entry(signals=["Survey"])], "signals")
+        self.refuses([entry(signals=["survey", "survey"])], "repeat")
 
     def test_guideline_urls_must_be_https(self) -> None:
         self.refuses([entry(guidelines=[{"name": "X", "url": "http://example.org"}])], "https")
@@ -91,6 +92,16 @@ class ValidationTests(unittest.TestCase):
     def test_the_document_shape_is_checked(self) -> None:
         with self.assertRaises(registry.RegistryError):
             registry.validate({"types": "nope"})
+
+
+class SignalDiscriminationTests(unittest.TestCase):
+    def test_no_signal_is_shared_by_two_types(self) -> None:
+        # A shared signal scores two types alike and tells the advisor nothing (T2).
+        owners: dict[str, list[str]] = {}
+        for item in registry.load():
+            for signal in item["signals"]:
+                owners.setdefault(signal, []).append(item["id"])
+        self.assertEqual({s: ids for s, ids in owners.items() if len(ids) > 1}, {})
 
 
 class CliTests(unittest.TestCase):
@@ -101,6 +112,21 @@ class CliTests(unittest.TestCase):
         payload = json.loads(done.stdout)
         self.assertTrue(payload["ok"])
         self.assertEqual([t["id"] for t in payload["types"]], list(PLANNED_CATALOGUE))
+
+    def test_usage_and_a_broken_catalogue_are_typed_refusals(self) -> None:
+        import contextlib, io, tempfile
+        from unittest import mock
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(registry.main(["nope"]), 2)
+        self.assertEqual(json.loads(out.getvalue())["error"], "USAGE")
+        with tempfile.TemporaryDirectory() as tmp:
+            broken = Path(tmp) / "paper_types.json"
+            broken.write_text("{not json", encoding="utf-8")
+            out = io.StringIO()
+            with mock.patch.object(registry, "CATALOGUE", broken), contextlib.redirect_stdout(out):
+                self.assertEqual(registry.main(["list"]), 1)
+        self.assertEqual(json.loads(out.getvalue())["error"], "CATALOGUE_INVALID")
 
 
 if __name__ == "__main__":

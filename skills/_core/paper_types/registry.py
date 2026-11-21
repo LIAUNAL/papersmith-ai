@@ -74,6 +74,8 @@ def _check(item: Any) -> dict:
     if not isinstance(item["signals"], list) or not item["signals"] or not all(
             isinstance(s, str) and _SIGNAL_RE.match(s) for s in item["signals"]):
         _fail(type_id, "signals must be a non-empty list of lowercase ASCII stems")
+    if len(set(item["signals"])) != len(item["signals"]):
+        _fail(type_id, "signals must not repeat")
     return item
 
 

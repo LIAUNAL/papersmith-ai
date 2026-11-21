@@ -8,9 +8,39 @@
       "line": "experimental",
       "summary": "A new or adapted AI method for a problem, shown against state-of-the-art baselines through a proof of concept and full experiments.",
       "novelty": "The method and the evidence that it improves on the state of the art.",
-      "stages": ["SOTA and gap", "Proposal and mathematics", "Proof of concept", "Experiments against baselines", "Novelty decision", "Writing"],
-      "guidelines": [{"name": "TRIPOD+AI (when the model is clinical)", "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"}],
-      "signals": ["propos", "model", "network", "neural", "deep learning", "machine learning", "algorithm", "architecture", "baseline", "outperform", "state of the art", "transformer", "classifier", "red neuronal", "aprendizaje", "algoritmo", "arquitectura", "supera"]
+      "stages": [
+        "SOTA and gap",
+        "Proposal and mathematics",
+        "Proof of concept",
+        "Experiments against baselines",
+        "Novelty decision",
+        "Writing"
+      ],
+      "guidelines": [
+        {
+          "name": "TRIPOD+AI (when the model is clinical)",
+          "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
+        }
+      ],
+      "signals": [
+        "propos",
+        "model",
+        "network",
+        "neural",
+        "deep learning",
+        "machine learning",
+        "algorithm",
+        "architecture",
+        "baseline",
+        "outperform",
+        "transformer",
+        "classifier",
+        "red neuronal",
+        "aprendizaje",
+        "algoritmo",
+        "arquitectura",
+        "supera"
+      ]
     },
     {
       "id": "review",
@@ -19,9 +49,34 @@
       "line": "review",
       "summary": "A systematic, scoping or bibliometric review that maps and synthesizes the literature on a question under a registered protocol.",
       "novelty": "The synthesis: what the literature shows, where it disagrees and what is missing.",
-      "stages": ["Scoping", "Protocol", "Search", "Screening", "Appraisal and extraction", "Synthesis", "Writing"],
-      "guidelines": [{"name": "PRISMA 2020", "url": "https://www.prisma-statement.org/"}],
-      "signals": ["review", "systematic", "scoping", "bibliometric", "state of the art", "literature", "meta-analysis", "survey of", "revision sistematica", "estado del arte", "literatura", "bibliometric"]
+      "stages": [
+        "Scoping",
+        "Protocol",
+        "Search",
+        "Screening",
+        "Appraisal and extraction",
+        "Synthesis",
+        "Writing"
+      ],
+      "guidelines": [
+        {
+          "name": "PRISMA 2020",
+          "url": "https://www.prisma-statement.org/"
+        }
+      ],
+      "signals": [
+        "review",
+        "systematic",
+        "scoping",
+        "bibliometric",
+        "state of the art",
+        "literature",
+        "meta-analysis",
+        "survey of",
+        "revision sistematica",
+        "estado del arte",
+        "literatura"
+      ]
     },
     {
       "id": "observational",
@@ -30,12 +85,44 @@
       "line": null,
       "summary": "A study of a population, territory or dataset as it is: surveys, cohorts, cross-sectional or econometric and spatial analyses of own or secondary data.",
       "novelty": "The population, territory or dataset studied and what its analysis reveals.",
-      "stages": ["Question and outcome", "Ethics and consent", "Sampling and instruments", "Data dictionary and quality", "Analysis plan and analysis", "Discussion against prior studies"],
-      "guidelines": [
-        {"name": "STROBE", "url": "https://www.equator-network.org/reporting-guidelines/strobe/"},
-        {"name": "CROSS (surveys)", "url": "https://www.equator-network.org/reporting-guidelines/a-consensus-based-checklist-for-reporting-of-survey-studies-cross/"}
+      "stages": [
+        "Question and outcome",
+        "Ethics and consent",
+        "Sampling and instruments",
+        "Data dictionary and quality",
+        "Analysis plan and analysis",
+        "Discussion against prior studies"
       ],
-      "signals": ["survey", "cohort", "cross-sectional", "prevalence", "population", "patients", "households", "municipalit", "territor", "regression", "econometric", "panel data", "encuesta", "cohorte", "poblacion", "pacientes", "hogares", "municipio"]
+      "guidelines": [
+        {
+          "name": "STROBE",
+          "url": "https://www.equator-network.org/reporting-guidelines/strobe/"
+        },
+        {
+          "name": "CROSS (surveys)",
+          "url": "https://www.equator-network.org/reporting-guidelines/a-consensus-based-checklist-for-reporting-of-survey-studies-cross/"
+        }
+      ],
+      "signals": [
+        "survey",
+        "cohort",
+        "cross-sectional",
+        "prevalence",
+        "population",
+        "patients",
+        "households",
+        "municipalit",
+        "territor",
+        "regression",
+        "econometric",
+        "panel data",
+        "encuesta",
+        "cohorte",
+        "poblacion",
+        "pacientes",
+        "hogares",
+        "municipio"
+      ]
     },
     {
       "id": "intervention",
@@ -44,13 +131,46 @@
       "line": null,
       "summary": "A trial that assigns an intervention and measures its effect: clinical, educational, field or agronomic, or consumer experiments.",
       "novelty": "The measured effect of the intervention on its participants, students, plots or animals.",
-      "stages": ["Protocol and registration", "Ethics and consent", "Allocation and sample size", "Intervention and follow-up", "Pre-specified analysis", "Flow diagram and results"],
-      "guidelines": [
-        {"name": "CONSORT 2025", "url": "https://www.equator-network.org/reporting-guidelines/consort/"},
-        {"name": "SPIRIT 2025 (protocols)", "url": "https://www.equator-network.org/reporting-guidelines/spirit-2013-statement-defining-standard-protocol-items-for-clinical-trials/"},
-        {"name": "ARRIVE 2.0 (animals)", "url": "https://arriveguidelines.org/"}
+      "stages": [
+        "Protocol and registration",
+        "Ethics and consent",
+        "Allocation and sample size",
+        "Intervention and follow-up",
+        "Pre-specified analysis",
+        "Flow diagram and results"
       ],
-      "signals": ["trial", "randomi", "intervention", "control group", "treatment", "placebo", "field trial", "plots", "block design", "pre-test", "ensayo", "aleatori", "intervencion", "grupo control", "tratamiento", "parcelas"]
+      "guidelines": [
+        {
+          "name": "CONSORT 2025",
+          "url": "https://www.equator-network.org/reporting-guidelines/consort/"
+        },
+        {
+          "name": "SPIRIT (protocols)",
+          "url": "https://www.equator-network.org/reporting-guidelines/spirit-2013-statement-defining-standard-protocol-items-for-clinical-trials/"
+        },
+        {
+          "name": "ARRIVE 2.0 (animals)",
+          "url": "https://arriveguidelines.org/"
+        }
+      ],
+      "signals": [
+        "trial",
+        "randomi",
+        "intervention",
+        "control group",
+        "treatment",
+        "placebo",
+        "field trial",
+        "plots",
+        "block design",
+        "pre-test",
+        "ensayo",
+        "aleatori",
+        "intervencion",
+        "grupo control",
+        "tratamiento",
+        "parcelas"
+      ]
     },
     {
       "id": "qualitative-mixed",
@@ -59,13 +179,47 @@
       "line": null,
       "summary": "A case study, participatory or foresight study, or a mixed-methods design built on interviews, focus groups, workshops or observation.",
       "novelty": "The case, community or process understood in depth.",
-      "stages": ["Case and framework", "Ethics and consent", "Fieldwork", "Coding and themes", "Integration of methods", "Implications"],
-      "guidelines": [
-        {"name": "SRQR", "url": "https://www.equator-network.org/reporting-guidelines/srqr/"},
-        {"name": "COREQ", "url": "https://www.equator-network.org/reporting-guidelines/coreq/"},
-        {"name": "GRAMMS (mixed methods)", "url": "https://www.equator-network.org/reporting-guidelines/guidance-for-reporting-mixed-methods-research-gramms/"}
+      "stages": [
+        "Case and framework",
+        "Ethics and consent",
+        "Fieldwork",
+        "Coding and themes",
+        "Integration of methods",
+        "Implications"
       ],
-      "signals": ["interview", "focus group", "case study", "qualitative", "thematic", "participatory", "workshop", "delphi", "foresight", "mixed method", "entrevista", "grupo focal", "estudio de caso", "cualitativ", "participativ", "taller", "prospectiva"]
+      "guidelines": [
+        {
+          "name": "SRQR",
+          "url": "https://www.equator-network.org/reporting-guidelines/srqr/"
+        },
+        {
+          "name": "COREQ",
+          "url": "https://www.equator-network.org/reporting-guidelines/coreq/"
+        },
+        {
+          "name": "GRAMMS (mixed methods)",
+          "url": "https://www.equator-network.org/reporting-guidelines/guidance-for-reporting-mixed-methods-research-gramms/"
+        }
+      ],
+      "signals": [
+        "interview",
+        "focus group",
+        "case study",
+        "qualitative",
+        "thematic",
+        "participatory",
+        "workshop",
+        "delphi",
+        "foresight",
+        "mixed method",
+        "entrevista",
+        "grupo focal",
+        "estudio de caso",
+        "cualitativ",
+        "participativ",
+        "taller",
+        "prospectiva"
+      ]
     },
     {
       "id": "diagnostic-validation",
@@ -74,12 +228,41 @@
       "line": null,
       "summary": "An accuracy, agreement or prediction study that validates a test, measure or model against a reference standard, across sites or languages.",
       "novelty": "Evidence that the measure agrees with the reference and holds beyond its first setting.",
-      "stages": ["Reference standard", "Ethics and consent", "Recruitment and flow", "Agreement or accuracy analysis", "External validation", "Clinical implications"],
-      "guidelines": [
-        {"name": "STARD 2015", "url": "https://www.equator-network.org/reporting-guidelines/stard/"},
-        {"name": "TRIPOD+AI", "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"}
+      "stages": [
+        "Reference standard",
+        "Ethics and consent",
+        "Recruitment and flow",
+        "Agreement or accuracy analysis",
+        "External validation",
+        "Clinical implications"
       ],
-      "signals": ["diagnos", "accuracy", "sensitivity", "specificity", "agreement", "reference standard", "gold standard", "biomarker", "validation", "prediction", "diagnostico", "sensibilidad", "especificidad", "concordancia", "validacion"]
+      "guidelines": [
+        {
+          "name": "STARD 2015",
+          "url": "https://www.equator-network.org/reporting-guidelines/stard/"
+        },
+        {
+          "name": "TRIPOD+AI",
+          "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
+        }
+      ],
+      "signals": [
+        "diagnos",
+        "accuracy",
+        "sensitivity",
+        "specificity",
+        "agreement",
+        "reference standard",
+        "gold standard",
+        "biomarker",
+        "validation",
+        "prediction",
+        "diagnostico",
+        "sensibilidad",
+        "especificidad",
+        "concordancia",
+        "validacion"
+      ]
     },
     {
       "id": "lab-measurement",
@@ -88,12 +271,45 @@
       "line": null,
       "summary": "A built device or instrument validated against a reference, or a materials or process study that relates process variables to measured properties.",
       "novelty": "The artefact and its measured performance, or what the process does to the material.",
-      "stages": ["Specifications or sample matrix", "Build or synthesis", "Characterization and calibration", "Uncertainty and replicates", "Comparison with a reference", "Open design files and data"],
-      "guidelines": [
-        {"name": "HardwareX template", "url": "https://zenodo.org/records/5078227"},
-        {"name": "GUM, JCGM 100:2008", "url": "https://www.bipm.org/en/doi/10.59161/jcgm100-2008e"}
+      "stages": [
+        "Specifications or sample matrix",
+        "Build or synthesis",
+        "Characterization and calibration",
+        "Uncertainty and replicates",
+        "Comparison with a reference",
+        "Open design files and data"
       ],
-      "signals": ["sensor", "prototype", "device", "instrument", "hardware", "calibration", "uncertainty", "bill of materials", "deposition", "sputtering", "thin film", "xrd", "characterization", "prototipo", "dispositivo", "calibracion", "incertidumbre", "pelicula", "caracterizacion"]
+      "guidelines": [
+        {
+          "name": "HardwareX template",
+          "url": "https://zenodo.org/records/5078227"
+        },
+        {
+          "name": "GUM, JCGM 100:2008",
+          "url": "https://www.bipm.org/en/doi/10.59161/jcgm100-2008e"
+        }
+      ],
+      "signals": [
+        "sensor",
+        "prototype",
+        "device",
+        "instrument",
+        "hardware",
+        "calibration",
+        "uncertainty",
+        "bill of materials",
+        "deposition",
+        "sputtering",
+        "thin film",
+        "xrd",
+        "characterization",
+        "prototipo",
+        "dispositivo",
+        "calibracion",
+        "incertidumbre",
+        "pelicula",
+        "caracterizacion"
+      ]
     },
     {
       "id": "computational",
@@ -102,9 +318,31 @@
       "line": null,
       "summary": "A simulation or modelling study: a defined model, calibrated against known values, explored over its parameters with stated statistical error.",
       "novelty": "The model or the region of parameter space it explores, and the regimes it reveals.",
-      "stages": ["Model definition", "Virtual sample", "Calibration against known values", "Simulation protocol", "Parametric sweep and error", "Code and data release"],
+      "stages": [
+        "Model definition",
+        "Virtual sample",
+        "Calibration against known values",
+        "Simulation protocol",
+        "Parametric sweep and error",
+        "Code and data release"
+      ],
       "guidelines": [],
-      "signals": ["simulation", "monte carlo", "molecular dynamics", "hamiltonian", "ising", "heisenberg", "finite element", "numerical model", "parameter sweep", "ab initio", "simulacion", "dinamica molecular", "modelo numerico", "hamiltoniano"]
+      "signals": [
+        "simulation",
+        "monte carlo",
+        "molecular dynamics",
+        "hamiltonian",
+        "ising",
+        "heisenberg",
+        "finite element",
+        "numerical model",
+        "parameter sweep",
+        "ab initio",
+        "simulacion",
+        "dinamica molecular",
+        "modelo numerico",
+        "hamiltoniano"
+      ]
     },
     {
       "id": "data-resource",
@@ -113,9 +351,30 @@
       "line": null,
       "summary": "A corpus, dataset or benchmark released for others: its collection protocol, consent, documentation, licence and baseline results.",
       "novelty": "The resource itself and the questions it lets others answer.",
-      "stages": ["Collection protocol", "Ethics, consent and licence", "Curation and documentation", "Quality checks", "Baselines", "Deposit with a persistent identifier"],
+      "stages": [
+        "Collection protocol",
+        "Ethics, consent and licence",
+        "Curation and documentation",
+        "Quality checks",
+        "Baselines",
+        "Deposit with a persistent identifier"
+      ],
       "guidelines": [],
-      "signals": ["dataset", "corpus", "benchmark", "database", "repository", "recordings", "annotation", "data descriptor", "challenge", "base de datos", "corpus", "grabaciones", "anotacion", "repositorio"]
+      "signals": [
+        "dataset",
+        "corpus",
+        "benchmark",
+        "database",
+        "repository",
+        "recordings",
+        "annotation",
+        "data descriptor",
+        "challenge",
+        "base de datos",
+        "grabaciones",
+        "anotacion",
+        "repositorio"
+      ]
     },
     {
       "id": "composite-index",
@@ -124,9 +383,29 @@
       "line": null,
       "summary": "An index or instrument built from indicators, often with stakeholders, tested for robustness and meant for adoption by an institution.",
       "novelty": "The instrument, its dimensions and weights, and its institutional use.",
-      "stages": ["Conceptual framework", "Dimensions and indicators", "Normalization and weighting", "Robustness and sensitivity", "Results by unit", "Institutional adoption"],
+      "stages": [
+        "Conceptual framework",
+        "Dimensions and indicators",
+        "Normalization and weighting",
+        "Robustness and sensitivity",
+        "Results by unit",
+        "Institutional adoption"
+      ],
       "guidelines": [],
-      "signals": ["index", "composite", "indicator", "multidimensional", "weighting", "policy", "ranking", "alkire", "indice", "indicador", "ponderacion", "politica publica"]
+      "signals": [
+        "index",
+        "composite",
+        "indicator",
+        "multidimensional",
+        "weighting",
+        "policy",
+        "ranking",
+        "alkire",
+        "indice",
+        "indicador",
+        "ponderacion",
+        "politica publica"
+      ]
     }
   ]
 }
