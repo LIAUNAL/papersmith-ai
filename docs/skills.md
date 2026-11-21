@@ -97,6 +97,7 @@ skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
 `hyperparameter-search`, `remote-parallelism`, `math-tutor`,
 `experiments-tutor` and `journal-finder` — and each names its own seams.
 Section 20, `ui-github`, publishes the dashboard itself, read-only.
+Section 23, `prompt-gate`, measures the prompt every skill receives before it runs.
 
 ---
 
@@ -3469,3 +3470,35 @@ marker-delimited, idempotent block right under the image reference, and the
 `.json` page map's character offsets are shifted so `pdf_fragment.py` keeps
 answering with the right text. The full contract is
 [`skills/pixelrag/SKILL.md`](../skills/pixelrag/SKILL.md).
+
+### 23. `prompt-gate` — the prompt each skill receives, measured before it runs
+
+**When.** Before every skill above acts on its text: each projected slash
+command (`.claude/commands`, `.opencode/commands`, `.pi/prompts`) and the
+Antigravity rules (`.agents/AGENTS.md`) tell the agent to apply the gate to
+`$ARGUMENTS` first. It can also be called on its own,
+`/prompt-gate /<skill> <prompt>`, to debug a prompt before sending it.
+
+**Measure, then judge.** `python -m skills._core.command_center.prompt_gate check
+--skill <name>` (standard library; the prompt on stdin or `--text`; one JSON
+object) scores the prompt 0-100 from a generic rubric (empty, vague, leftover
+example or `<placeholder>`, too short) and the input contract of that skill
+(two sentences with the problem and the proposal for `/plausibility`, a path or
+URL for `/paper-ingestion`, a figure id for `/figure-review`, a target for the
+implementations...). A `critical` issue or a score under 60 fails. On a failure
+the agent judges the prompt against a rubric drawn from Anthropic's prompting
+best practices, The Prompt Report (arXiv 2406.06608), Google's and OpenAI's
+prompting guides, and either **improves** it (an alert, the improved prompt,
+the requirements it keeps, and Approve / Edit / Launch as is / Cancel) or
+**clarifies** it (up to four questions with options; the answers build the
+prompt, which then launches). It never invents a requirement and runs one round.
+
+**In the dashboard.** Each phase box scores its prompt on every launch
+(`POST /api/prompt/check`); a failed prompt is held in the box with the alert
+and the headless `prompt-reviewer` agent's suggestion or questions
+(`POST /api/prompt/review`, through `claude -p`, else `agy`, else `pi`). What the
+box launches after the operator's decision carries `[prompt-gate: approved]`, so
+the agent does not gate it again. If the check cannot be reached, the box
+launches as before and the agent's own gate still applies. The full contract is
+[`skills/prompt-gate/SKILL.md`](../skills/prompt-gate/SKILL.md).
+

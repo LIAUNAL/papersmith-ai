@@ -184,6 +184,8 @@ AGENT_STAGES = {
     "translation-style-reviewer": "writing",
     # Reviews the compiled paper against the main-track review form.
     "paper-reviewer": "audit",
+    # Transversal: reviews the prompt of every phase box that fails the prompt gate.
+    "prompt-reviewer": "audit",
     "diagram-author": "figures",
     "figure-auditor": "figures",
     # One visual pass over a rendered diagram whose mechanical audit passed.
