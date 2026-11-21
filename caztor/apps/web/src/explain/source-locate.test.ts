@@ -20,6 +20,12 @@ describe("where a PDF line is in the LaTeX source", () => {
     expect(place).toEqual({ line: 3, column: SOURCE.split("\n")[2]!.indexOf("anisotropy"), length: "anisotropy".length });
   });
 
+  it("selects the whole clicked word nearest the clicked text, not the first letters that spell it", () => {
+    const line = SOURCE.split("\n")[2]!;
+    const place = locateInSource(SOURCE, ["anisotropy [1]. Their phase transitions are a long-standing benchmark."], "a");
+    expect(place).toEqual({ line: 3, column: line.indexOf(" a long-standing") + 1, length: 1 });
+  });
+
   it("finds a printed line that runs across two source lines, on the line of the clicked word", () => {
     const place = locateInSource(SOURCE, ["topological textures, in which bimerons, skyrmions or polarised states are"], "skyrmions");
     expect(place).toEqual({ line: 5, column: 0, length: "skyrmions".length });

@@ -23,10 +23,22 @@ const MIN_LETTERS = 8;
 
 const bare = (word: string) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 
-function columnOf(line: string, word: string): number {
+const isLetter = (char: string | undefined) => char !== undefined && /[\p{L}\p{N}]/u.test(char);
+
+/** Where `word` starts in `line`: the whole-word occurrence nearest `near` (a column), else any occurrence; -1 when none. */
+function columnOf(line: string, word: string, near: number): number {
   if (word === "") return -1;
-  const exact = line.indexOf(word);
-  return exact !== -1 ? exact : line.toLowerCase().indexOf(word.toLowerCase());
+  const occurrences = (text: string, wanted: string) => {
+    const found: number[] = [];
+    for (let at = text.indexOf(wanted); at !== -1; at = text.indexOf(wanted, at + 1)) found.push(at);
+    return found;
+  };
+  let all = occurrences(line, word);
+  if (all.length === 0) all = occurrences(line.toLowerCase(), word.toLowerCase());
+  if (all.length === 0) return -1;
+  const whole = all.filter((at) => !isLetter(line[at - 1]) && !isLetter(line[at + word.length]));
+  const pool = whole.length > 0 ? whole : all;
+  return pool.reduce((best, at) => (Math.abs(at - near) < Math.abs(best - near) ? at : best));
 }
 
 /** The place of the first candidate (narrowest first) the source holds, or null when it holds none of them. */
@@ -47,8 +59,13 @@ export function locateInSource(source: string, candidates: readonly string[], wo
   const placeOf = (range: Range): SourcePlace => {
     const first = lineAt(range.from);
     const last = lineAt(range.to - 1);
+    // Where in each line the clicked text sits, as a share of the line printed, scaled to the source line.
+    const middle = (range.from + range.to) / 2;
     for (let index = first; index <= last; index += 1) {
-      const column = columnOf(lines[index]!, clicked);
+      const start = starts[index]!;
+      const end = starts[index + 1] ?? printed.length;
+      const share = Math.min(Math.max((middle - start) / Math.max(end - start, 1), 0), 1);
+      const column = columnOf(lines[index]!, clicked, share * lines[index]!.length);
       if (column !== -1) return { line: index + 1, column, length: clicked.length };
     }
     return { line: first + 1, column: 0, length: 0 };
