@@ -65,3 +65,29 @@ export function locateInSource(source: string, candidates: readonly string[], wo
   }
   return narrow === null ? null : placeOf(narrow[0]!);
 }
+
+const isWordChar = (char: string | undefined) => char !== undefined && /[\p{L}\p{N}'’-]/u.test(char);
+
+/**
+ * The word at `offset` of `text`, for a double click the browser resolved to the space between two words: the word
+ * around the offset, else the nearest one before it, else the nearest one after it; empty when there is none.
+ */
+export function wordAround(text: string, offset: number): string {
+  let at = offset;
+  if (!isWordChar(text[at])) {
+    let left = at - 1;
+    while (left >= 0 && !isWordChar(text[left])) left -= 1;
+    if (left >= 0) at = left;
+    else {
+      let right = at + 1;
+      while (right < text.length && !isWordChar(text[right])) right += 1;
+      if (right >= text.length) return "";
+      at = right;
+    }
+  }
+  let from = at;
+  let to = at + 1;
+  while (from > 0 && isWordChar(text[from - 1])) from -= 1;
+  while (to < text.length && isWordChar(text[to])) to += 1;
+  return text.slice(from, to);
+}

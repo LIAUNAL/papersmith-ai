@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { locateInSource } from "./source-locate.ts";
+import { locateInSource, wordAround } from "./source-locate.ts";
 
 const SOURCE = [
   "\\section{Introduction}\\label{sec:introduction}",
@@ -53,5 +53,20 @@ describe("where a PDF line is in the LaTeX source", () => {
 
   it("finds nothing for text the source does not hold, such as the graphical abstract", () => {
     expect(locateInSource(SOURCE, ["One generated GPU kernel writes one kernel per system"], "kernel")).toBeNull();
+  });
+});
+
+describe("the word a double click lands on", () => {
+  const text = "are a long-standing benchmark of";
+
+  it("is the word around the offset", () => {
+    expect(wordAround(text, text.indexOf("standing") + 2)).toBe("long-standing");
+    expect(wordAround(text, 1)).toBe("are");
+  });
+
+  it("is the nearest word when the offset falls between words", () => {
+    expect(wordAround(text, text.indexOf(" benchmark"))).toBe("long-standing");
+    expect(wordAround(text, text.indexOf(" benchmark") + 1)).toBe("benchmark");
+    expect(wordAround("   ", 1)).toBe("");
   });
 });

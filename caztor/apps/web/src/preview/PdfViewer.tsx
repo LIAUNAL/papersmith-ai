@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { PdfSelection } from "../embed/bridge.ts";
 import type { PassageFocus } from "../explain/focus.ts";
 import { findPrinted } from "../explain/passages.ts";
+import { wordAround } from "../explain/source-locate.ts";
 import type { PdfDocument } from "./engine.ts";
 import { anchorAt, canvasRatio, layoutPages, PAGE_GAP, percentOf, resolveScale, scrollTopFor, visiblePages, type Anchor, type Zoom } from "./layout.ts";
 import "./PdfViewer.css";
@@ -94,6 +95,24 @@ function piecesPrinting(layer: Element, passage: string, fewestLetters?: number)
     const end = start + (piece.textContent ?? "").length;
     return ranges.some((range) => start < range.to && end > range.from);
   });
+}
+
+/**
+ * The word under a point of a text piece, for a double click the browser resolved to a space: from the caret position
+ * at that point when the browser gives one inside the piece, else the middle of the piece.
+ */
+function wordUnder(piece: HTMLElement, x: number, y: number): string {
+  const text = piece.textContent ?? "";
+  const doc = window.document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const position = doc.caretPositionFromPoint?.(x, y);
+  const range = position == null ? doc.caretRangeFromPoint?.(x, y) : null;
+  const node = position?.offsetNode ?? range?.startContainer ?? null;
+  const offset = position?.offset ?? range?.startOffset ?? 0;
+  if (node !== null && piece.contains(node) && node.textContent === text) return wordAround(text, offset);
+  return wordAround(text, Math.floor(text.length / 2));
 }
 
 /** Used until the container has been measured (and in environments without layout). */
@@ -219,7 +238,8 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     if (at === -1) return;
     const around = (radius: number) => pieces.slice(Math.max(0, at - radius), at + radius + 1).map((span) => span.textContent ?? "").join(" ");
     const candidates = [...new Set(SOURCE_RADII.map(around))];
-    const word = window.getSelection()?.toString().trim() ?? "";
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    const word = selected !== "" ? selected : wordUnder(piece, event.clientX, event.clientY);
     if (!onJumpToSource({ candidates, word })) say("Not found in the LaTeX source.");
   }
 

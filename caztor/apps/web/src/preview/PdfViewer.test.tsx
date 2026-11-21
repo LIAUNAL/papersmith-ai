@@ -417,6 +417,15 @@ describe("PdfViewer double click on the page text", () => {
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
+  it("takes the word under the click when the browser selected only the space between two words", async () => {
+    const { container, asked } = setup(true);
+    await flush();
+    await flush();
+    const span = [...container.querySelectorAll(".pdf-viewer__text span")].find((node) => node.textContent === page[2])!;
+    doubleClick(span, " ");
+    expect(asked[0]?.word).toBe("without");
+  });
+
   it("says so when the source does not hold the clicked text", async () => {
     const { container } = setup(false);
     await flush();
