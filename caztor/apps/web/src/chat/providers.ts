@@ -40,6 +40,12 @@ export const EXTRA_PROVIDER_ORDER: readonly ProviderId[] = [];
 export const ANTIGRAVITY_ISOLATION_NOTICE =
   "Partial isolation: settings and MCP servers in ~/.gemini may load, and your prompts are stored there. Caztor stops a disallowed tool, but it may already have started.";
 
+/**
+ * The start of the isolation notice Pi turns carried before the panel took it over: such a notice, stored in earlier
+ * turns, is left out of the conversation, since the panel already says it.
+ */
+export const PI_TURN_NOTICE_START = "Pi runs with partial isolation:";
+
 /** Shown for as long as Pi is the active provider. */
 export const PI_ISOLATION_NOTICE =
   "Partial isolation: your global Pi settings and sign-in in ~/.pi/agent still load. Caztor stops a disallowed tool, but it may already have started.";

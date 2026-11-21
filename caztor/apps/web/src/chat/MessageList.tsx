@@ -8,6 +8,7 @@ import { ToolActivityCard } from "./ToolActivityCard.tsx";
 import { splitTutorAnswer, streamingTutorAnswer, TutorReply } from "./TutorReply.tsx";
 import { splitAddressed } from "./papersmith-agents.ts";
 import "./MessageList.css";
+import { PI_TURN_NOTICE_START } from "./providers.ts";
 
 /** How close to the end the reader must be for new output to keep the view at the end. */
 const STICK_DISTANCE_PX = 48;
@@ -99,6 +100,7 @@ function ReplyItem({ item, onReplaceDefinition, signIn, running }: { item: ChatI
     case "tool":
       return <ToolActivityCard tool={item} />;
     case "notice":
+      if (item.message.startsWith(PI_TURN_NOTICE_START)) return null;
       return <NoticeBanner level={item.level} message={item.message} {...(item.action === undefined ? {} : { action: item.action })} {...(onReplaceDefinition === undefined ? {} : { onReplace: onReplaceDefinition })} />;
     case "error":
       return <ErrorCard code={item.code} message={item.message} {...(item.detail === undefined ? {} : { detail: item.detail })} {...(signIn === undefined ? {} : { signIn })} />;
