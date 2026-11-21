@@ -57,7 +57,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-from . import phase_actions
+from . import phase_actions, prompt_gate
 
 MAX_SESSIONS = 40
 SESSION_MAX_BYTES = 64 * 1024 * 1024
@@ -129,17 +129,23 @@ def skill_stages() -> dict[str, str]:
     return out
 
 
+def _unmarked(args: str) -> str:
+    """``args`` without the prompt gate's approval marker, untouched otherwise."""
+    return prompt_gate.strip_marker(args) if "[prompt-gate:" in args.lower() else args
+
+
 def command_of(text: str) -> tuple[str, str] | None:
     """The ``(skill, args)`` a user turn invokes, in any harness's shape."""
     found = _COMMAND_RE.search(text)
     if found:
         args = _ARGS_RE.search(text)
-        return found.group(1).split(":")[-1], args.group(1) if args else ""
+        return found.group(1).split(":")[-1], _unmarked(args.group(1)) if args else ""
     stripped = text.strip()
     for pattern in (_PI_SKILL_RE, _EXPANDED_RE, _SLASH_RE):
         found = pattern.match(stripped)
         if found:
-            return found.group(1).split(":")[-1], (found.group(2) or "").strip()
+            # The prompt gate's approval marker is plumbing, not the operator's words.
+            return found.group(1).split(":")[-1], prompt_gate.strip_marker(found.group(2) or "")
     return None
 
 
