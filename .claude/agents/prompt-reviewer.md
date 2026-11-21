@@ -6,7 +6,7 @@ tools: Read, Glob, Grep
 
 # Prompt Reviewer — one review
 
-Skill: `skills/prompt-gate/SKILL.md`. Load it and follow it. Every rule is
+Skill: `.claude/skills/prompt-gate/SKILL.md`. Load it and follow it. Every rule is
 there and none is repeated here.
 
 ## Your stretch, and its two ends

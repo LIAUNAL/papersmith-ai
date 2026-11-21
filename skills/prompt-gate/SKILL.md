@@ -159,6 +159,19 @@ is, or built from the answers) carries `[prompt-gate: approved]`, so the agent
 does not gate it a second time; a prompt that passed the card's check goes
 unmarked, and the agent scores it again, which is cheap and passes.
 
+## When a delegated agent cannot be spawned
+
+The review this skill delegates is defined in full by its own agent file:
+`.claude/agents/prompt-reviewer.md`. When that agent cannot be spawned — the
+command center finds no agent CLI (`claude`, `agy`, `pi`), or the run fails —
+the phase card says so and offers to edit the prompt, launch it as is, or
+cancel; the agent's own gate (Steps 1-3 above) still applies when the prompt
+reaches the agent. In a session without sub-agents, perform the review inline:
+read that agent's definition file and follow it as written, returning the same
+JSON object. Its `tools:` line still bounds the review: it reads, and never
+writes or launches. Say in the reply that the review ran inline and why the
+agent could not be spawned.
+
 ## Headless reviewer contract
 
 When the command center runs this gate headless (`.claude/agents/prompt-reviewer.md`),
