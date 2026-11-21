@@ -11,6 +11,15 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **WSL: the dashboard opens the login URL in the Windows browser again
+  (#188).** Without `wslview`, `smith ui` and the **Activate** button handed
+  the terminal login URL to `explorer.exe`, which opens the Documents folder
+  for a URL with a query string while reporting a launch. They now use
+  `rundll32.exe url.dll,FileProtocolHandler`, and never Explorer; with no
+  launcher the page says to open the login URL `smith ui` printed.
+
 ## 0.82.0
 
 - **Prompt quality gate.** Every prompt a phase skill receives is scored

@@ -1,6 +1,7 @@
 """`smith ui` opens the dashboard in a browser that fits the platform.
 
-Under WSL it hands the URL to Windows (`wslview`, then `explorer.exe`); on a
+Under WSL it hands the URL to Windows (`wslview`, then `rundll32.exe
+url.dll,FileProtocolHandler`; never `explorer.exe`, issue #188); on a
 Linux without a graphical display it prints the URL instead of letting
 Python's `webbrowser` start a text browser on the server's terminal; macOS
 keeps `webbrowser`. A missing launcher never raises. Nothing is launched:
@@ -50,7 +51,7 @@ class OpenBrowserTests(unittest.TestCase):
                 mock.patch.object(server.subprocess, "Popen", fake_popen), \
                 mock.patch.object(webbrowser, "open", fake_open), \
                 contextlib.redirect_stdout(out):
-            server.open_browser(URL)
+            self.result = server.open_browser(URL)
         return launched, opened, out.getvalue()
 
     def test_wsl_prefers_wslview(self) -> None:
@@ -60,12 +61,30 @@ class OpenBrowserTests(unittest.TestCase):
         self.assertEqual(launched, [["/usr/bin/wslview", URL]])
         self.assertEqual(opened, [])
 
-    def test_wsl_falls_back_to_explorer(self) -> None:
-        launched, opened, _ = self._run(
+    def test_wsl_falls_back_to_the_url_protocol_handler(self) -> None:
+        # Issue #188: without wslview the URL, query string included, goes to
+        # the default Windows browser through url.dll, not to Explorer.
+        token_url = URL + "api/terminal/login?token=abc"
+        launched: list[list[str]] = []
+        with mock.patch.object(server, "_is_wsl", lambda: True), \
+                mock.patch.object(server.shutil, "which",
+                                  {"rundll32.exe": "/mnt/c/Windows/System32/rundll32.exe",
+                                   "explorer.exe": "/mnt/c/Windows/explorer.exe"}.get), \
+                mock.patch.object(server.subprocess, "Popen",
+                                  lambda argv, **_: launched.append(list(argv)) or mock.Mock()):
+            self.assertTrue(server.open_browser(token_url))
+        self.assertEqual(launched, [["/mnt/c/Windows/System32/rundll32.exe",
+                                     "url.dll,FileProtocolHandler", token_url]])
+
+    def test_wsl_never_hands_a_url_to_explorer(self) -> None:
+        # Explorer opens the Documents folder for a URL with a query string and
+        # still "starts", so it would report a launch that never happened.
+        launched, opened, out = self._run(
             platform="linux", wsl=True, env={},
             tools={"explorer.exe": "/mnt/c/Windows/explorer.exe"})
-        self.assertEqual(launched, [["/mnt/c/Windows/explorer.exe", URL]])
-        self.assertEqual(opened, [])
+        self.assertEqual((launched, opened), ([], []))
+        self.assertIn(URL, out)
+        self.assertFalse(self.result, "nothing opened, so the page shows the printed-URL hint")
 
     def test_wsl_without_launchers_or_display_prints_the_url(self) -> None:
         launched, opened, out = self._run(platform="linux", wsl=True, env={}, tools={})
