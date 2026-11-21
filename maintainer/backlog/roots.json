@@ -203,6 +203,18 @@
       "proof": "tests/test_pixelrag.py; commit 7fa3f241; released in 0.78.0"
     },
     {
+      "key": "wsl-url-launcher",
+      "tier": 2,
+      "state": "closed",
+      "title": "Under WSL the dashboard hands URLs to a launcher that opens a folder instead",
+      "fix": "Open URLs from WSL with wslview, else rundll32 url.dll,FileProtocolHandler; never explorer.exe, which opens Documents for a URL with a query string while reporting a launch.",
+      "proof": "tests/test_command_center_open_browser.py::OpenBrowserTests::test_wsl_falls_back_to_the_url_protocol_handler and ::test_wsl_never_hands_a_url_to_explorer (RED on main, GREEN on fix/wsl-url-launcher)",
+      "issues": [],
+      "evidence": {
+        "188": "skills/_core/command_center/server.py:4672 WSL_BROWSER_LAUNCHERS = (\"wslview\", \"explorer.exe\") on 30441ea3"
+      }
+    },
+    {
       "key": "experiment-disclosure",
       "tier": 2,
       "state": "closed",
