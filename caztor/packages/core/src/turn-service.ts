@@ -9,6 +9,7 @@ import type {
   ProjectAgentsPort,
   AgentDefinition,
   AgentRunnerPort,
+  ProviderStatus,
   AuthMode,
   ChangedFile,
   CredentialStorePort,
@@ -29,6 +30,8 @@ import type {
 export const KEEP_TURNS = 20;
 /** Longest message the chat accepts. */
 export const MAX_PROMPT_CHARS = 100_000;
+/** How long a provider found installed is trusted before its CLI is checked again. */
+export const PROVIDER_CHECK_REUSE_MS = 60_000;
 
 /** Why a turn did not start. Nothing was provisioned, captured or spawned. */
 export type StartRefusal =
@@ -193,6 +196,16 @@ export function createTurnService(deps: TurnServiceDeps): TurnService {
   const { runners, provisioner, snapshots, state, userWrites, history } = deps;
   const newId = deps.newId ?? (() => crypto.randomUUID());
   const now = deps.now ?? (() => Date.now());
+  // A provider found installed is not checked again for a minute: the check spawns its CLI, which every turn waited on.
+  const installedSeen = new Map<ProviderId, { at: number; status: ProviderStatus }>();
+  async function checkProvider(provider: ProviderId, runner: AgentRunnerPort): Promise<ProviderStatus> {
+    const seen = installedSeen.get(provider);
+    if (seen !== undefined && now() - seen.at < PROVIDER_CHECK_REUSE_MS) return seen.status;
+    const status = await runner.detect();
+    if (status.installed) installedSeen.set(provider, { at: now(), status });
+    else installedSeen.delete(provider);
+    return status;
+  }
   const keepTurns = deps.keepTurns ?? KEEP_TURNS;
   const startTimer = deps.setTimeout ?? platformTimer;
   /** Per person id, then per provider. */
@@ -547,7 +560,7 @@ export function createTurnService(deps: TurnServiceDeps): TurnService {
         runner = found;
         let status;
         try {
-          status = await runner.detect();
+          status = await checkProvider(provider, runner);
         } catch (error) {
           return { ok: false, error: { code: "not_installed", message: `${provider} could not be checked: ${errorText(error)}` } };
         }

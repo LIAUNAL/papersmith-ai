@@ -17,7 +17,7 @@ import {
   type FakeRunner,
 } from "./support/turn-fakes.ts";
 
-function setup(options: { providers?: ProviderId[]; state?: Parameters<typeof memoryState>[0] } = {}) {
+function setup(options: { providers?: ProviderId[]; state?: Parameters<typeof memoryState>[0]; now?: () => number } = {}) {
   const log: CallLog = [];
   const runners = Object.fromEntries((options.providers ?? ["claude"]).map((id) => [id, fakeRunner(log, id)])) as Record<ProviderId, FakeRunner>;
   const provisioner = fakeProvisioner(log);
@@ -40,6 +40,7 @@ function setup(options: { providers?: ProviderId[]; state?: Parameters<typeof me
     },
     history,
     newId: () => `t${(ids += 1)}`,
+    ...(options.now === undefined ? {} : { now: options.now }),
     setTimeout: (fn, ms) => {
       const timer = { fn, ms, live: true };
       timers.push(timer);
@@ -702,6 +703,28 @@ describe("requests that are refused before anything happens", () => {
     const t = setup();
     expect(await t.service.start({ provider: "codex", prompt: "hi" })).toMatchObject({ ok: false, error: { code: "unknown_provider" } });
     nothingHappened(t);
+  });
+
+  it("checks a provider once a minute, not before every turn", async () => {
+    let clock = 1_000_000;
+    const t = setup({ now: () => clock });
+    let checks = 0;
+    const detect = t.runner.detect.bind(t.runner);
+    t.runner.detect = async () => ((checks += 1), detect());
+    await t.turn();
+    await t.turn();
+    expect(checks).toBe(1);
+    clock += 61_000;
+    await t.turn();
+    expect(checks).toBe(2);
+  });
+
+  it("checks again after finding a provider not installed, so installing it shows at once", async () => {
+    const t = setup({ now: () => 1_000_000 });
+    t.runner.status = { provider: "claude", installed: false, unavailableReason: "claude is not installed", requiresModel: false };
+    expect(await t.service.start({ provider: "claude", prompt: "hi" })).toMatchObject({ ok: false, error: { code: "not_installed" } });
+    t.runner.status = { provider: "claude", installed: true, requiresModel: false };
+    expect((await t.turn()).events.map((event) => event.type)).toContain("done");
   });
 
   it("refuses a provider that is not installed, with the reason", async () => {
