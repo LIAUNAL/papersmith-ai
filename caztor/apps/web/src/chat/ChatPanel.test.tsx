@@ -572,12 +572,12 @@ describe("ChatPanel arrows between explained passages", () => {
 
   it("shows the count before the first step, and no arrows when the marks are off or there is nothing to show", async () => {
     await withExplain({ on: true, count: 3, onToggle: () => {}, current: null, onStep: () => {} });
-    expect(screen.getByRole("group", { name: "Explained passages" })).toHaveTextContent("3 in the last reply");
+    expect(screen.getByRole("group", { name: "Explained passages" })).toHaveTextContent("3 in the paper");
   });
 
   it("hides the arrows when highlighting is off", async () => {
     await withExplain({ on: false, count: 3, onToggle: () => {}, current: null, onStep: () => {} });
     expect(screen.queryByRole("group", { name: "Explained passages" })).toBeNull();
-    expect(screen.getByText("3 in the last reply")).toBeTruthy();
+    expect(screen.getByText("3 in the paper")).toBeTruthy();
   });
 });

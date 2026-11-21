@@ -21,7 +21,7 @@ import { PreviewPane } from "../preview/PreviewPane.tsx";
 import type { StorageLike } from "../layout/storage.ts";
 import { ProjectRail } from "../projects/ProjectRail.tsx";
 import { listenForCompose, listenForTheme, postReady, postSelection } from "../embed/bridge.ts";
-import { locatePassage } from "../explain/locate.ts";
+import { findPassages } from "../explain/passages.ts";
 import { useExplained } from "../explain/useExplained.ts";
 import { createThemeStore, type ThemeStore } from "../theme/theme.ts";
 import { ThemeControl } from "../theme/ThemeControl.tsx";
@@ -135,34 +135,35 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
   }, [chat]);
 
   // The passages the latest reply explains, marked in the editor and the PDF while the chat's switch is on.
-  const explained = useExplained(chat, previewStorage);
-  const highlights = explained.on ? explained.passages : [];
-  // A double click in the source: what the PDF should bring into view, a new nonce each time.
-  const [sourceJump, setSourceJump] = useState<SourceJump | null>(null);
-  const jumpToPdf = useCallback((candidates: readonly string[]) => setSourceJump((last) => ({ candidates, nonce: (last?.nonce ?? 0) + 1 })), []);
-  // A step to a passage the open file does not hold opens the project file that does; the files read stay cached
-  // for the passages of this reply.
-  const searched = useRef<{ of: readonly string[]; texts: Map<string, string> }>({ of: [], texts: new Map() });
-  const [passageMissing, setPassageMissing] = useState(false);
+  // The paper's main file: only what it holds is marked and stepped through. Its text is the editor's when it is open
+  // (unsaved edits included), else read again for each new reply.
+  const mainPath = settings.mainFile ?? projectSession.papersmith?.main ?? null;
+  const turnCount = useSyncExternalStore(chat.subscribe, () => chat.getSnapshot().chat.turns.length);
+  const [savedMain, setSavedMain] = useState<{ path: string; text: string } | null>(null);
   useEffect(() => {
-    const focus = explained.on ? explained.focus : null;
-    if (focus === null) return;
-    if (searched.current.of !== explained.passages) searched.current = { of: explained.passages, texts: new Map() };
-    const active = session.getSnapshot().active;
-    const open = active === null ? null : { path: active, text: session.get(active)?.text ?? "" };
+    if (mainPath === null) return;
     let live = true;
-    void locatePassage(focus.passage, { open, listFiles: () => api.listFiles(), readFile: (path) => api.readFile(path) }, searched.current.texts).then(
-      (place) => {
-        if (!live) return;
-        setPassageMissing(place === null);
-        if (place !== null && place.path !== open?.path) void openAt(place.path, place.line);
-      },
-      () => live && setPassageMissing(false),
+    api.readFile(mainPath).then(
+      (file) => live && setSavedMain({ path: mainPath, text: file.content }),
+      () => live && setSavedMain(null),
     );
     return () => {
       live = false;
     };
-    // Only a new step searches.
+  }, [api, mainPath, turnCount]);
+  const paperText = mainPath === null ? null : (editing.buffers.get(mainPath)?.text ?? (savedMain?.path === mainPath ? savedMain.text : null));
+  const explained = useExplained(chat, previewStorage, paperText);
+  const highlights = explained.on ? explained.passages : [];
+  // A double click in the source: what the PDF should bring into view, a new nonce each time.
+  const [sourceJump, setSourceJump] = useState<SourceJump | null>(null);
+  const jumpToPdf = useCallback((candidates: readonly string[]) => setSourceJump((last) => ({ candidates, nonce: (last?.nonce ?? 0) + 1 })), []);
+  // A step opens the paper's main file at the passage when another file is shown; the editor then marks it.
+  useEffect(() => {
+    const focus = explained.on ? explained.focus : null;
+    if (focus === null || mainPath === null || paperText === null || session.getSnapshot().active === mainPath) return;
+    const found = findPassages(paperText, [focus.passage])[0];
+    void openAt(mainPath, found === undefined ? 1 : paperText.slice(0, found.from).split("\n").length);
+    // Only a new step opens the file.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explained.focus?.nonce]);
 
@@ -333,7 +334,7 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   controller={chat}
                   onOpenFile={(path) => void openAt(path, 1)}
                   onCompile={() => void compiler.start()}
-                  explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle, current: explained.current, onStep: explained.step, missing: passageMissing }}
+                  explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle, current: explained.current, onStep: explained.step }}
                 />
               ),
               ...(editing.active === null ? {} : { editor: <EditorPane session={session} highlights={highlights} focus={explained.on ? explained.focus : null} onJumpToPdf={jumpToPdf} /> }),
