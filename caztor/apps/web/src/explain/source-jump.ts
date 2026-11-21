@@ -9,7 +9,7 @@ import { plainText } from "./passages.ts";
 const RADII = [6, 12];
 /** Commands that print nothing a reader could find on the page; a line of only these looks for nothing. */
 const STRUCTURE =
-  /\\(?:begin|end|label|input|include|usepackage|documentclass|bibliographystyle|bibliography|includegraphics|newcommand|renewcommand|vspace|hspace|centering|maketitle|clearpage|newpage)\*?(?:\[[^\]]*\])?(?:\{[^}]*\})*/g;
+  /\\(?:begin|end|label|input|includegraphics|include|usepackage|documentclass|bibliographystyle|bibliography|newcommand|renewcommand|vspace|hspace|centering|maketitle|clearpage|newpage)\*?(?:\[[^\]]*\])?(?:\{[^}]*\})*/g;
 /** A printed form with fewer letters and digits than this names no place. */
 const MIN_LETTERS = 6;
 
@@ -18,6 +18,8 @@ const letters = (text: string) => [...text.normalize("NFKD")].filter((char) => /
 /** The texts to look for, narrowest first, for a double click at `column` (0-based) of `line`. */
 export function jumpCandidates(line: string, column: number): string[] {
   const source = line.replace(/(?<!\\)%.*$/, "").trimEnd();
+  // An environment's opening or closing line prints nothing, whatever its arguments (column specifications included).
+  if (/^\s*\\(?:begin|end)\{/.test(source)) return [];
   if (letters(plainText(source.replace(STRUCTURE, " "))) < MIN_LETTERS) return [];
   const words = [...source.matchAll(/\S+/g)].map((match) => ({ from: match.index, to: match.index + match[0].length }));
   let clicked = words.findIndex((word) => column < word.to);

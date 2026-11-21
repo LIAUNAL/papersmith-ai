@@ -105,6 +105,21 @@ describe("where a passage is printed in a PDF page", () => {
     expect(printed("the N\\'{e}el order of the antiferromagnet")).toEqual(["the Néel order of the antiferromagnet"]);
   });
 
+  it("reads the increment sign the PDF prints for \\Delta as the Greek letter", () => {
+    const formula = "ϱM(∆Ei) = min(1, e−β∆Ei), (4)";
+    expect(findPrinted(formula, "\\varrho_{\\mathrm{M}}(\\Delta E_i) = \\min\\bigl(1, e^{-\\beta \\Delta E_i}\\bigr),").map((range) => formula.slice(range.from, range.to))).toEqual(["ϱM(∆Ei) = min(1, e−β∆Ei"]);
+  });
+
+  it("prints only the text of a table's multicolumn cell", () => {
+    expect(plainText("\\multicolumn{6}{@{}l}{\\emph{Array and tensor compilers}} \\\\")).toBe("Array and tensor compilers \\\\");
+  });
+
+  it("finds a short line when the caller asks for fewer letters", () => {
+    const row = "Software Python 3.11.5 Triton 3.1.0";
+    expect(findPrinted(row, "Python & 3.11.5 \\\\")).toEqual([]);
+    expect(findPrinted(row, "Python & 3.11.5 \\\\", 6).map((range) => row.slice(range.from, range.to))).toEqual(["Python 3.11.5"]);
+  });
+
   it("does not take a short prose quotation for a passage", () => {
     expect(printed("the Néel order")).toEqual([]);
   });

@@ -21,5 +21,7 @@ describe("what a double click in the source looks for in the PDF", () => {
     expect(jumpCandidates("%% paper-writing block introduction.block-1 begin", 5)).toEqual([]);
     expect(jumpCandidates("   ", 1)).toEqual([]);
     expect(jumpCandidates("\\end{equation}", 2)).toEqual([]);
+    expect(jumpCandidates("\\begin{tabularx}{\\textwidth}{@{}>{\\raggedright\\arraybackslash}p{3.4cm}lll@{}}", 9)).toEqual([]);
+    expect(jumpCandidates("\\includegraphics[width=\\linewidth]{Figures/rd-ising-scan.pdf}", 9)).toEqual([]);
   });
 });

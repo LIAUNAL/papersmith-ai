@@ -33,9 +33,13 @@ export interface SourceJump {
 
 /** How long the mark of a jump stays on the page. */
 const JUMP_MARK_MS = 1600;
+/** A double click names a short line too, such as a table row: fewer letters than a quoted passage needs. */
+const JUMP_LETTERS = 6;
+/** How long the viewer says the clicked text is not in this PDF. */
+const MISSED_NOTICE_MS = 3000;
 
 /** Whether `text` holds `passage`, as written or as LaTeX prints it. */
-const holds = (text: string, passage: string): boolean => findPrinted(text, passage).length > 0;
+const holds = (text: string, passage: string, fewestLetters?: number): boolean => findPrinted(text, passage, fewestLetters).length > 0;
 
 /**
  * Marks the text pieces of one page that hold a passage, as written or as LaTeX prints it; clears the others. Each
@@ -68,7 +72,7 @@ function markPassages(layer: HTMLElement, passages: readonly string[]): void {
 }
 
 /** The text pieces of a page's text layer that print `passage`. */
-function piecesPrinting(layer: Element, passage: string): HTMLElement[] {
+function piecesPrinting(layer: Element, passage: string, fewestLetters?: number): HTMLElement[] {
   const pieces = [...layer.querySelectorAll<HTMLElement>("span")].filter((span) => !span.classList.contains("markedContent"));
   const starts: number[] = [];
   let joined = "";
@@ -76,7 +80,7 @@ function piecesPrinting(layer: Element, passage: string): HTMLElement[] {
     starts.push(joined.length);
     joined += `${piece.textContent ?? ""} `;
   }
-  const ranges = findPrinted(joined, passage);
+  const ranges = findPrinted(joined, passage, fewestLetters);
   return pieces.filter((piece, at) => {
     const start = starts[at]!;
     const end = start + (piece.textContent ?? "").length;
@@ -249,6 +253,7 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.nonce, pdf]);
 
+  const [missed, setMissed] = useState(false);
   // A double click in the source: the narrowest candidate a page prints, on the first page that prints it.
   useEffect(() => {
     const element = scroller.current;
@@ -259,13 +264,14 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
       for (const old of element.querySelectorAll(".pdf-viewer__jump")) old.classList.remove("pdf-viewer__jump");
     };
     clear();
+    setMissed(false);
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
       for (const candidate of jump.candidates) {
         for (let index = 0; index < pdf.pageSizes.length && live; index += 1) {
           if (!cache.has(index)) cache.set(index, pdf.pageText!(index).catch(() => ""));
-          if (!holds(await cache.get(index)!, candidate)) continue;
+          if (!holds(await cache.get(index)!, candidate, JUMP_LETTERS)) continue;
           if (!live) return;
           const box = layoutNow.current.boxes[index];
           if (box !== undefined) element.scrollTop = Math.max(0, box.top - PAGE_GAP);
@@ -273,7 +279,7 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
           const mark = () => {
             if (!live) return;
             const layer = element.querySelector(`[data-page="${index + 1}"] .pdf-viewer__text`);
-            const pieces = layer === null ? [] : piecesPrinting(layer, candidate);
+            const pieces = layer === null ? [] : piecesPrinting(layer, candidate, JUMP_LETTERS);
             if (pieces.length === 0) {
               if ((tries += 1) < 80) timer = setTimeout(mark, 100);
               return;
@@ -286,6 +292,10 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
           return;
         }
       }
+      // No page prints it: most often a line written after this PDF was compiled.
+      if (!live) return;
+      setMissed(true);
+      timer = setTimeout(() => setMissed(false), MISSED_NOTICE_MS);
     })();
     return () => {
       live = false;
@@ -301,6 +311,13 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
 
   return (
     <div ref={scroller} className="pdf-viewer" onScroll={onScroll} onMouseUp={onMouseUp} tabIndex={0} role="region" aria-label="PDF pages">
+      {missed ? (
+        <div className="pdf-viewer__notice-anchor">
+          <p role="status" className="pdf-viewer__notice">
+            Not in this PDF. Compile to bring it up to date.
+          </p>
+        </div>
+      ) : null}
       <div className="pdf-viewer__column" style={{ height: `${layout.height}px`, width: `${columnWidth}px` }}>
         {layout.boxes.map((box, index) => (
           <div

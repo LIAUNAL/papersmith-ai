@@ -18,8 +18,10 @@ const MAX_PASSAGES = 30;
 
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 const isWordChar = (char: string) => /[\p{L}\p{N}]/u.test(char);
+/** Math symbols fonts print for a Greek letter: the increment sign for \Delta. */
+const LOOK_ALIKE: Record<string, string> = { "∆": "Δ" };
 /** The letters and digits of one character as compared: compatibility forms folded (ﬁ, µ, 𝐊), accents dropped, lowercase. */
-const fold = (char: string) => [...char.normalize("NFKD").toLowerCase()].filter(isWordChar).join("");
+const fold = (char: string) => [...(LOOK_ALIKE[char] ?? char).normalize("NFKD").toLowerCase()].filter(isWordChar).join("");
 const keyOf = (text: string) => [...text].map(fold).join("");
 /** Prose of a few words, or a formula long enough to name one place. */
 const looksLikePassage = (text: string) => keyOf(text).length >= MIN_KEY_LENGTH && (text.split(" ").length >= MIN_WORDS || text.includes("\\"));
@@ -96,8 +98,8 @@ const REFERENCE = /\\(?:cite[pt]?|ref|eqref|label|autoref|cref|Cref)\*?(?:\[[^\]
  * Every place a PDF page prints a passage, quoted as written or as LaTeX source, in order. A passage that holds a
  * reference is also looked for piece by piece around it, since the page prints a number there.
  */
-export function findPrinted(text: string, passage: string): Range[] {
-  const minLength = /\\[a-zA-Z]/.test(passage) ? MIN_FORMULA_KEY_LENGTH : MIN_KEY_LENGTH;
+export function findPrinted(text: string, passage: string, fewestLetters?: number): Range[] {
+  const minLength = fewestLetters ?? (/\\[a-zA-Z]/.test(passage) ? MIN_FORMULA_KEY_LENGTH : MIN_KEY_LENGTH);
   const pieces = passage.split(REFERENCE).map(plainText);
   const forms = new Set([passage, plainText(passage), ...(pieces.length > 1 ? pieces : [])]);
   const merged: Range[] = [];
@@ -129,6 +131,7 @@ const OPERATORS = new Set(["sin", "cos", "tan", "sinh", "cosh", "tanh", "exp", "
 export function plainText(latex: string): string {
   let text = latex
     .replace(REFERENCE, "")
+    .replace(/\\multicolumn\{[^{}]*\}\{(?:[^{}]|\{[^{}]*\})*\}/g, "")
     .replace(/\\['"`^~=.]\{?([a-zA-Z])\}?/g, "$1");
   // Innermost first, until nothing changes, so \pmod{\boldsymbol{\omega}} keeps its "mod". An unwrapped argument stays
   // fenced until the end, so \times\mathbb{Z} does not become the command \timesZ.

@@ -325,4 +325,40 @@ describe("PdfViewer jumping to the source text a double click names", () => {
       vi.useRealTimers();
     }
   });
+
+  it("says when no page prints the clicked text, then lets the notice go", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const doc = fakeDocument("a", 3);
+      doc.pageText = async () => "Other text.";
+      const props = { document: doc, zoom: percent(100), anchor: top, onViewChange: () => {} };
+      const { container, rerender } = render(<PdfViewer {...props} jump={null} />);
+      await flush();
+      const start = scroller(container).scrollTop;
+      rerender(<PdfViewer {...props} jump={{ candidates: ["a sentence written after this PDF was compiled"], nonce: 1 }} />);
+      await flush();
+      await flush();
+      expect(container.querySelector('[role="status"]')?.textContent).toBe("Not in this PDF. Compile to bring it up to date.");
+      expect(scroller(container).scrollTop).toBe(start);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(container.querySelector('[role="status"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("finds a short table row", async () => {
+    const doc = fakeDocument("a", 2);
+    doc.pageText = async (index: number) => (index === 1 ? "Software Python 3.11.5 Triton 3.1.0" : "Other text.");
+    const props = { document: doc, zoom: percent(100), anchor: top, onViewChange: () => {} };
+    const { container, rerender } = render(<PdfViewer {...props} jump={null} />);
+    await flush();
+    rerender(<PdfViewer {...props} jump={{ candidates: ["Python & 3.11.5 \\\\"], nonce: 1 }} />);
+    await flush();
+    await flush();
+    const layout = layoutPages(doc.pageSizes, CSS_UNITS);
+    expect(scroller(container).scrollTop).toBeCloseTo(layout.boxes[1]!.top - PAGE_GAP, 3);
+  });
 });

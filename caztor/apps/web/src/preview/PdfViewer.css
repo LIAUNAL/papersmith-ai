@@ -83,7 +83,8 @@
 
 /* The passages the assistant's last reply explains: the text layer is transparent, so the mark shows over the page. */
 .pdf-viewer__text.textLayer .pdf-viewer__explained {
-  background-color: rgb(253 224 71 / 0.42);
+  background-color: rgb(253 224 71 / 0.3);
+  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.45);
   border-radius: 2px;
 }
 
@@ -98,4 +99,28 @@
   background-color: rgb(96 165 250 / 0.45);
   box-shadow: 0 0 0 2px rgb(37 99 235 / 0.85);
   border-radius: 2px;
+}
+
+/* Sticky and without height, so the notice stays at the top of the view and moves no page. */
+.pdf-viewer__notice-anchor {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 2;
+}
+
+.pdf-viewer__notice {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
 }
