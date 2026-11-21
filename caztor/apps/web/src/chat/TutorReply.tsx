@@ -2,66 +2,9 @@ import { InlineMarkdown, Markdown } from "./Markdown.tsx";
 import { TexMath } from "./TexMath.tsx";
 import "./TutorReply.css";
 
-/** A PaperSmith tutor's structured turn (math-tutor, experiments-tutor), as its JSON block says it. */
-interface TutorAnswer {
-  reply: string;
-  [field: string]: unknown;
-}
+import { type TutorAnswer } from "./tutor-answer.ts";
 
-const FENCE = /```json[ \t]*\n([\s\S]*?)\n```/;
-
-/** The text around a tutor's JSON answer, and the answer; null when the text holds no such block. */
-export function splitTutorAnswer(text: string): { before: string; answer: TutorAnswer; raw: string; after: string } | null {
-  const match = FENCE.exec(text);
-  if (match === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(match[1]!);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || typeof (parsed as { reply?: unknown }).reply !== "string") return null;
-  return { before: text.slice(0, match.index).trim(), answer: parsed as TutorAnswer, raw: match[1]!, after: text.slice(match.index + match[0].length).trim() };
-}
-
-const OPEN_FENCE = /```json[ \t]*\n/;
-
-/**
- * The `reply` of a tutor's JSON answer that is still arriving: the fence is open and the object not finished, so
- * only the part of `reply` written so far is read, its escapes decoded. Null when the text is not such an answer.
- * `reply` is null while the fields before it are still being written.
- */
-export function streamingTutorAnswer(text: string): { before: string; reply: string | null } | null {
-  if (FENCE.test(text)) return null;
-  const open = OPEN_FENCE.exec(text);
-  if (open === null) return null;
-  const body = text.slice(open.index + open[0].length);
-  if (!body.trimStart().startsWith("{") && body.trim() !== "") return null;
-  const before = text.slice(0, open.index).trim();
-  const key = /"reply"\s*:\s*"/.exec(body);
-  if (key === null) return { before, reply: null };
-  let reply = "";
-  for (let i = key.index + key[0].length; i < body.length; i += 1) {
-    const char = body[i]!;
-    if (char === '"') break;
-    if (char !== "\\") {
-      reply += char;
-      continue;
-    }
-    const next = body[i + 1];
-    if (next === undefined) break; // an escape cut in two: wait for the rest
-    if (next === "u") {
-      const hex = body.slice(i + 2, i + 6);
-      if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
-      reply += String.fromCharCode(Number.parseInt(hex, 16));
-      i += 5;
-      continue;
-    }
-    reply += ({ n: "\n", t: "\t", r: "", b: "", f: "" } as Record<string, string>)[next] ?? next;
-    i += 1;
-  }
-  return { before, reply };
-}
+export { closePartialJson, splitTutorAnswer, streamingTutorAnswer } from "./tutor-answer.ts";
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
 const list = (value: unknown): string[] => (Array.isArray(value) ? value.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).filter((item) => item.trim() !== "") : []);
@@ -75,7 +18,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-/** A tutor's answer as readable sections, with the raw JSON folded below for whoever needs it. */
+/** A tutor's answer as readable sections, with the raw JSON folded below for whoever needs it (none while it arrives). */
 export function TutorReply({ answer, raw }: { answer: TutorAnswer; raw: string }) {
   const assessment = typeof answer["assessment"] === "object" && answer["assessment"] !== null ? (answer["assessment"] as Record<string, unknown>) : null;
   const level = assessment?.["level"];
@@ -144,10 +87,12 @@ export function TutorReply({ answer, raw }: { answer: TutorAnswer; raw: string }
           <pre className="tutor-reply__formula">{answer["deliberation_prompt"] as string}</pre>
         </Section>
       )}
-      <details className="tutor-reply__raw">
-        <summary>Raw answer (JSON)</summary>
-        <pre>{raw}</pre>
-      </details>
+      {raw === "" ? null : (
+        <details className="tutor-reply__raw">
+          <summary>Raw answer (JSON)</summary>
+          <pre>{raw}</pre>
+        </details>
+      )}
     </div>
   );
 }

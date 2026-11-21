@@ -32,13 +32,14 @@ interface MessageListProps {
 /** An assistant's text; a PaperSmith tutor's JSON answer inside it is shown as readable sections. */
 function AssistantText({ text, running }: { text: string; running: boolean }) {
   const tutor = splitTutorAnswer(text);
-  // While a tutor's JSON answer is arriving, its reply reads as text and the rest waits for the closed block.
+  // While a tutor's JSON answer is arriving, each field shows as soon as it begins, in the same sections as at the end.
   const arriving = tutor === null && running ? streamingTutorAnswer(text) : null;
   if (arriving !== null) {
+    const shown = arriving.answer !== null && Object.values(arriving.answer).some((value) => value !== "" && value !== null);
     return (
       <>
         {arriving.before === "" ? null : <Markdown text={arriving.before} />}
-        {arriving.reply === null || arriving.reply === "" ? null : <Markdown text={arriving.reply} />}
+        {!shown || arriving.answer === null ? null : <TutorReply answer={arriving.answer} raw="" />}
         <p className="tutor-reply__writing" role="status">
           Writing the answer…
         </p>

@@ -161,10 +161,26 @@ describe("MessageList a PaperSmith tutor answer while it arrives", () => {
     expect(reply).toHaveTextContent("Writing the answer…");
   });
 
-  it("before the reply field arrives, shows only that the answer is being written", () => {
-    const state = play([begin, { type: "text", messageId: "m", text: '```json\n{\n  "image_reading": "the pa' }]);
+  it("before any field has text, shows only that the answer is being written", () => {
+    const state = play([begin, { type: "text", messageId: "m", text: '```json\n{\n  "image_reading": "' }]);
     const reply = render(<MessageList timeline={state.timeline} />).container.querySelector(".message--assistant")!;
     expect(reply.textContent).toBe("Writing the answer…");
+  });
+
+  it("shows each later field as it arrives, not only the reply", () => {
+    const text = '```json\n{\n  "reply": "Equation 3 holds.",\n  "question": "Which bond would bre';
+    const reply = render(<MessageList timeline={play([begin, { type: "text", messageId: "m", text }]).timeline} />).container.querySelector(".message--assistant")!;
+    expect(reply).toHaveTextContent("Equation 3 holds.");
+    expect(reply).toHaveTextContent("Question");
+    expect(reply).toHaveTextContent("Which bond would bre");
+    expect(reply).not.toHaveTextContent("{");
+    expect(reply).toHaveTextContent("Writing the answer…");
+  });
+
+  it("shows a list field with the items written so far", () => {
+    const text = '```json\n{"reply": "Two risks.", "risks": ["The seed is shared", "The ti';
+    const reply = render(<MessageList timeline={play([begin, { type: "text", messageId: "m", text }]).timeline} />).container.querySelector(".message--assistant")!;
+    expect([...reply.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["The seed is shared", "The ti"]);
   });
 
   it("once the turn ends, a block that never closed is shown as it is", () => {
@@ -177,10 +193,13 @@ describe("MessageList a PaperSmith tutor answer while it arrives", () => {
 
 describe("streamingTutorAnswer", () => {
   it("decodes escapes and waits on one cut in two", () => {
-    expect(streamingTutorAnswer('```json\n{"reply": "a\\"b\\u00e9\\tc')).toEqual({ before: "", reply: 'a"b\u00e9\tc' });
-    expect(streamingTutorAnswer('```json\n{"reply": "ab\\')).toEqual({ before: "", reply: "ab" });
-    expect(streamingTutorAnswer('```json\n{"reply": "ab\\u00')).toEqual({ before: "", reply: "ab" });
-    expect(streamingTutorAnswer('```json\n{"reply": "done", "question": "q')).toEqual({ before: "", reply: "done" });
+    expect(streamingTutorAnswer('```json\n{"reply": "a\\"b\\u00e9\\tc')).toMatchObject({ before: "", reply: 'a"b\u00e9\tc' });
+    expect(streamingTutorAnswer('```json\n{"reply": "ab\\')).toMatchObject({ before: "", reply: "ab" });
+    expect(streamingTutorAnswer('```json\n{"reply": "ab\\u00')).toMatchObject({ before: "", reply: "ab" });
+    // A cut right after an escaped backslash keeps it: it is complete.
+    expect(streamingTutorAnswer('```json\n{"reply": "in $\\\\')).toMatchObject({ reply: "in $\\" });
+    expect(streamingTutorAnswer('```json\n{"reply": "done", "question": "q')).toMatchObject({ before: "", reply: "done", answer: { reply: "done", question: "q" } });
+    expect(streamingTutorAnswer('```json\n{"reply": "done", "assessment": {"level": 2, "lab')).toMatchObject({ answer: { reply: "done", assessment: { level: 2 } } });
   });
 
   it("leaves other text alone: no fence, a closed fence, or a fence that does not hold an object", () => {
