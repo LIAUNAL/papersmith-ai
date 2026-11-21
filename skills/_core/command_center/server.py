@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, localize, toolchain
+from . import board_refresh, doctor_view, keys_view, localize, prompt_gate, prompt_review, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -2899,6 +2899,38 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 root=root_path)
         except banco_suggest.KeywordsInvalid as exc:
             return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
+        return JSONResponse(result)
+
+    async def _prompt_payload(request: Request) -> Any:
+        try:
+            return await request.json()
+        except Exception:
+            return None
+
+    @app.post("/api/prompt/check")
+    async def api_prompt_check(request: Request) -> JSONResponse:
+        """The prompt gate's deterministic score of a phase prompt (no model
+        call): the phase cards run it on every launch. Read only."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        try:
+            skill, text, optional = prompt_review.validate(await _prompt_payload(request))
+        except prompt_review.ReviewInvalid as exc:
+            return JSONResponse({"ok": False, "code": "PROMPT_INVALID", "error": str(exc)}, status_code=422)
+        return JSONResponse(prompt_gate.check(skill, text, optional=optional))
+
+    @app.post("/api/prompt/review")
+    async def api_prompt_review(request: Request) -> JSONResponse:
+        """A failed phase prompt handed to the headless prompt-reviewer agent:
+        an improved prompt, or clarifying questions (and, with the operator's
+        answers, the composed prompt). Read only; the operator launches."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        payload = await _prompt_payload(request)
+        try:
+            result = await asyncio.to_thread(prompt_review.review, root_path, payload)
+        except prompt_review.ReviewInvalid as exc:
+            return JSONResponse({"ok": False, "code": "PROMPT_INVALID", "error": str(exc)}, status_code=422)
         return JSONResponse(result)
 
     async def _phase_check(request: Request) -> JSONResponse:
