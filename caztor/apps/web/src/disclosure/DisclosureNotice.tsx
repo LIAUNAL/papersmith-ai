@@ -38,7 +38,6 @@ export function DisclosureNotice({ onAcknowledge }: DisclosureNoticeProps) {
         <li>Compiling can read any file you can read. Shell escape stays disabled.</li>
         <li>An AI agent works with file tools, and its reads may reach beyond the project folder.</li>
         <li>Whatever an agent reads is sent to the model provider.</li>
-        <li>Codex can also run commands, inside its own sandbox.</li>
       </ul>
       <p>Open only projects you trust.</p>
       {error === null ? null : (
