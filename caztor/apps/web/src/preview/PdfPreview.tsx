@@ -6,7 +6,7 @@ import { EmptyState } from "../components/EmptyState.tsx";
 import { Icon } from "../components/Icon.tsx";
 import type { PdfDocument, PdfEngine } from "./engine.ts";
 import { stepZoom, type Anchor, type Zoom } from "./layout.ts";
-import { PdfViewer } from "./PdfViewer.tsx";
+import { PdfViewer, type SourceJump } from "./PdfViewer.tsx";
 import { INITIAL_PREVIEW_STATE, needsLoad, previewReducer } from "./preview-state.ts";
 import type { PrefsStore } from "./prefs.ts";
 import type { PdfSelection } from "../embed/bridge.ts";
@@ -22,6 +22,8 @@ interface PdfPreviewProps {
   /** Passages to mark in soft yellow on the pages. */
   highlights?: readonly string[];
   focus?: PassageFocus | null;
+  /** What a double click in the source asks the PDF to bring into view. */
+  jump?: SourceJump | null;
 }
 
 /** Wait after the last scroll before the position is written to storage. */
@@ -32,7 +34,7 @@ function messageOf(error: unknown, fallback: string): string {
 }
 
 /** The preview pane: the latest PDF on canvas, zoom controls, and the empty, out-of-date and error states. */
-export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highlights, focus }: PdfPreviewProps) {
+export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highlights, focus, jump }: PdfPreviewProps) {
   const initial = useMemo(() => prefs.load(), [prefs]);
   const [state, dispatch] = useReducer(previewReducer, INITIAL_PREVIEW_STATE);
   const [doc, setDoc] = useState<PdfDocument | null>(null);
@@ -167,6 +169,7 @@ export function PdfPreview({ api, engine, compile, prefs, onTextSelected, highli
             onScaleChange={setFitPercent}
             {...(onTextSelected === undefined ? {} : { onTextSelected })}
             {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })}
+            {...(jump === undefined ? {} : { jump })}
           />
         )}
       </div>

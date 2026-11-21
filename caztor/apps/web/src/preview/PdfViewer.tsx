@@ -21,7 +21,18 @@ interface PdfViewerProps {
   highlights?: readonly string[];
   /** The explained passage to scroll to, once per nonce. */
   focus?: PassageFocus | null;
+  /** Texts a double click in the source names, narrowest first: the first a page prints is brought into view and marked for a moment. */
+  jump?: SourceJump | null;
 }
+
+/** What a double click in the source asks the PDF to show, once per nonce. */
+export interface SourceJump {
+  candidates: readonly string[];
+  nonce: number;
+}
+
+/** How long the mark of a jump stays on the page. */
+const JUMP_MARK_MS = 1600;
 
 /** Whether `text` holds `passage`, as written or as LaTeX prints it. */
 const holds = (text: string, passage: string): boolean => findPrinted(text, passage).length > 0;
@@ -53,6 +64,23 @@ function markPassages(layer: HTMLElement, passages: readonly string[]): void {
         piece.dataset["explained"] = `${piece.dataset["explained"] ?? ""} ${which} `;
       });
     }
+  });
+}
+
+/** The text pieces of a page's text layer that print `passage`. */
+function piecesPrinting(layer: Element, passage: string): HTMLElement[] {
+  const pieces = [...layer.querySelectorAll<HTMLElement>("span")].filter((span) => !span.classList.contains("markedContent"));
+  const starts: number[] = [];
+  let joined = "";
+  for (const piece of pieces) {
+    starts.push(joined.length);
+    joined += `${piece.textContent ?? ""} `;
+  }
+  const ranges = findPrinted(joined, passage);
+  return pieces.filter((piece, at) => {
+    const start = starts[at]!;
+    const end = start + (piece.textContent ?? "").length;
+    return ranges.some((range) => start < range.to && end > range.from);
   });
 }
 
@@ -114,8 +142,8 @@ function PageText({ document: pdf, index, scale, passages }: { document: PdfDocu
 }
 
 /** The pages of a PDF in one scrolling column. Only the pages near the viewport are drawn. */
-export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleChange, onTextSelected, highlights, focus }: PdfViewerProps) {
-  const withText = onTextSelected !== undefined || highlights !== undefined;
+export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleChange, onTextSelected, highlights, focus, jump }: PdfViewerProps) {
+  const withText = onTextSelected !== undefined || highlights !== undefined || jump !== undefined;
   const scroller = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(FALLBACK_SIZE);
   const [scrollTop, setScrollTop] = useState(0);
@@ -220,6 +248,53 @@ export function PdfViewer({ document: pdf, zoom, anchor, onViewChange, onScaleCh
     // Only a new step moves the view; new highlights alone do not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.nonce, pdf]);
+
+  // A double click in the source: the narrowest candidate a page prints, on the first page that prints it.
+  useEffect(() => {
+    const element = scroller.current;
+    if (jump === null || jump === undefined || element === null || pdf.pageText === undefined) return;
+    if (texts.current?.of !== pdf) texts.current = { of: pdf, pages: new Map() };
+    const cache = texts.current.pages;
+    const clear = () => {
+      for (const old of element.querySelectorAll(".pdf-viewer__jump")) old.classList.remove("pdf-viewer__jump");
+    };
+    clear();
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    void (async () => {
+      for (const candidate of jump.candidates) {
+        for (let index = 0; index < pdf.pageSizes.length && live; index += 1) {
+          if (!cache.has(index)) cache.set(index, pdf.pageText!(index).catch(() => ""));
+          if (!holds(await cache.get(index)!, candidate)) continue;
+          if (!live) return;
+          const box = layoutNow.current.boxes[index];
+          if (box !== undefined) element.scrollTop = Math.max(0, box.top - PAGE_GAP);
+          let tries = 0;
+          const mark = () => {
+            if (!live) return;
+            const layer = element.querySelector(`[data-page="${index + 1}"] .pdf-viewer__text`);
+            const pieces = layer === null ? [] : piecesPrinting(layer, candidate);
+            if (pieces.length === 0) {
+              if ((tries += 1) < 80) timer = setTimeout(mark, 100);
+              return;
+            }
+            for (const piece of pieces) piece.classList.add("pdf-viewer__jump");
+            element.scrollTop += pieces[0]!.getBoundingClientRect().top - element.getBoundingClientRect().top - element.clientHeight / 3;
+            timer = setTimeout(clear, JUMP_MARK_MS);
+          };
+          timer = setTimeout(mark, 50);
+          return;
+        }
+      }
+    })();
+    return () => {
+      live = false;
+      if (timer !== undefined) clearTimeout(timer);
+      clear();
+    };
+    // Only a new double click moves the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump?.nonce, pdf]);
 
   const range = visiblePages(layout, scrollTop, size.height, size.height);
   const columnWidth = Math.max(layout.width + 2 * PAGE_GAP, size.width);

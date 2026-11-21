@@ -5,6 +5,7 @@ import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutt
 import { useEffect, useRef } from "react";
 import { currentExplainedPassage, explainedPassages, setCurrentExplained, setExplained } from "../explain/editor-highlight.ts";
 import type { PassageFocus } from "../explain/focus.ts";
+import { jumpCandidates } from "../explain/source-jump.ts";
 import { findPassages } from "../explain/passages.ts";
 import { minimalChange } from "./diff.ts";
 import { languageFor } from "./languages.ts";
@@ -29,6 +30,8 @@ interface CodeEditorProps {
   highlights?: readonly string[];
   /** The explained passage to bring into view and mark more strongly, once per nonce. */
   focus?: PassageFocus | null;
+  /** Called on a double click with the texts around the clicked word, narrowest first, for the PDF to bring into view. */
+  onJumpToPdf?: (candidates: readonly string[]) => void;
 }
 
 /** Marks a change that came from outside the user's typing, so it is not reported back as an edit. */
@@ -62,7 +65,7 @@ function baseExtensions(path: string, label: string, save: () => void): Extensio
  * A thin wrapper around a CodeMirror 6 view. It owns the view and nothing else: documents, hashes and saving
  * live in the editor session, which feeds this component `text` and listens to `onChange`.
  */
-export function CodeEditor({ path, text, onChange, label, onSave, reveal, highlights, focus }: CodeEditorProps) {
+export function CodeEditor({ path, text, onChange, label, onSave, reveal, highlights, focus, onJumpToPdf }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const shown = useRef({ path, text });
@@ -74,6 +77,8 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
   const save = useRef(() => saveRef.current?.()).current;
   report.current = onChange;
   labelRef.current = label;
+  const jumpRef = useRef(onJumpToPdf);
+  jumpRef.current = onJumpToPdf;
 
   useEffect(() => {
     const parent = host.current;
@@ -91,8 +96,19 @@ export function CodeEditor({ path, text, onChange, label, onSave, reveal, highli
       },
     });
     view.current = created;
+    // The double click has already selected the word by now: its line names what to look for in the PDF.
+    const jump = () => {
+      const editor = view.current;
+      if (editor === null || jumpRef.current === undefined) return;
+      const at = editor.state.selection.main.from;
+      const line = editor.state.doc.lineAt(at);
+      const candidates = jumpCandidates(line.text, at - line.from);
+      if (candidates.length > 0) jumpRef.current(candidates);
+    };
+    created.contentDOM.addEventListener("dblclick", jump);
     const files = remembered.current;
     return () => {
+      created.contentDOM.removeEventListener("dblclick", jump);
       created.destroy();
       view.current = null;
       files.clear();

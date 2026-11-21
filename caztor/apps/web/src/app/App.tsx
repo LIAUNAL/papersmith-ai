@@ -1,3 +1,4 @@
+import type { SourceJump } from "../preview/PdfViewer.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ApiClient, FileContent, Session } from "../api/types.ts";
 import { EditorPane } from "../editor/EditorPane.tsx";
@@ -136,6 +137,9 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
   // The passages the latest reply explains, marked in the editor and the PDF while the chat's switch is on.
   const explained = useExplained(chat, previewStorage);
   const highlights = explained.on ? explained.passages : [];
+  // A double click in the source: what the PDF should bring into view, a new nonce each time.
+  const [sourceJump, setSourceJump] = useState<SourceJump | null>(null);
+  const jumpToPdf = useCallback((candidates: readonly string[]) => setSourceJump((last) => ({ candidates, nonce: (last?.nonce ?? 0) + 1 })), []);
   // A step to a passage the open file does not hold opens the project file that does; the files read stay cached
   // for the passages of this reply.
   const searched = useRef<{ of: readonly string[]; texts: Map<string, string> }>({ of: [], texts: new Map() });
@@ -320,6 +324,7 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   onOpenDiagnostic={openAt}
                   highlights={highlights}
                   focus={explained.on ? explained.focus : null}
+                  jump={sourceJump}
                   {...(embedOrigin === undefined ? {} : { onTextSelected: (selection) => postSelection(embedOrigin, selection) })}
                 />
               ),
@@ -331,7 +336,7 @@ function Project({ api, layoutStore, previewStorage, pdfEngine, theme, reloadPag
                   explain={{ on: explained.on, count: explained.passages.length, onToggle: explained.toggle, current: explained.current, onStep: explained.step, missing: passageMissing }}
                 />
               ),
-              ...(editing.active === null ? {} : { editor: <EditorPane session={session} highlights={highlights} focus={explained.on ? explained.focus : null} /> }),
+              ...(editing.active === null ? {} : { editor: <EditorPane session={session} highlights={highlights} focus={explained.on ? explained.focus : null} onJumpToPdf={jumpToPdf} /> }),
             }}
           />
         </main>

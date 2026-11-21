@@ -92,3 +92,10 @@
   background-color: rgb(250 204 21 / 0.62);
   box-shadow: 0 0 0 2px rgb(234 179 8 / 0.9);
 }
+
+/* The text a double click in the source brought into view, for a moment. */
+.pdf-viewer__text.textLayer .pdf-viewer__jump {
+  background-color: rgb(96 165 250 / 0.45);
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 0.85);
+  border-radius: 2px;
+}

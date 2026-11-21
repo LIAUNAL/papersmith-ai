@@ -288,3 +288,41 @@ describe("PdfViewer stepping to an explained passage", () => {
     expect(previous.classList.contains("pdf-viewer__explained")).toBe(true);
   });
 });
+
+describe("PdfViewer jumping to the source text a double click names", () => {
+  const sentence = "each colour class is updated in parallel without conflicts";
+
+  it("scrolls to the page that prints the narrowest candidate it finds and marks it there for a moment", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const doc = fakeDocument("a", 20);
+      doc.pageText = async (index: number) => (index === 7 ? "Methods. Each colour class is up- dated in parallel without conflicts. More." : "Other text.");
+      doc.renderText = (index, container) => {
+        container.replaceChildren(...(index === 7 ? ["Methods.", "Each colour class is up-", "dated in parallel without conflicts.", "More."] : ["Other text."]).map((text) => Object.assign(window.document.createElement("span"), { textContent: text })));
+        return { done: Promise.resolve(), cancel() {} };
+      };
+      const props = { document: doc, zoom: percent(100), anchor: top, onViewChange: () => {} };
+      const { container, rerender } = render(<PdfViewer {...props} jump={null} />);
+      await flush();
+      rerender(<PdfViewer {...props} jump={{ candidates: ["nowhere in this document at all", sentence], nonce: 1 }} />);
+      await flush();
+      await flush();
+      const layout = layoutPages(doc.pageSizes, CSS_UNITS);
+      expect(scroller(container).scrollTop).toBeCloseTo(layout.boxes[7]!.top - PAGE_GAP, 3);
+      // A browser reports the scroll the viewer made; jsdom does not, so the test does.
+      fireEvent.scroll(scroller(container));
+      await flush();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      const jumped = () => [...container.querySelectorAll(".pdf-viewer__jump")].map((span) => span.textContent);
+      expect(jumped()).toEqual(["Each colour class is up-", "dated in parallel without conflicts."]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(jumped()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

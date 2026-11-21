@@ -203,3 +203,26 @@ describe("CodeEditor explained passages", () => {
     expect(marked(container)).toContain("Each colour class");
   });
 });
+
+describe("CodeEditor double click", () => {
+  it("names the texts around the clicked word for the PDF to find", () => {
+    const text = "Intro.\nClassical spin models describe how magnetic order emerges from the interactions between localized moments.\nEnd.";
+    const asked: string[][] = [];
+    const { container } = render(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} onJumpToPdf={(candidates) => asked.push([...candidates])} />);
+    const view = viewOf(container);
+    const at = text.indexOf("emerges");
+    act(() => view.dispatch({ selection: { anchor: at, head: at + "emerges".length } }));
+    view.contentDOM.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(asked).toEqual([
+      ["spin models describe how magnetic order emerges from the interactions between localized moments.", "Classical spin models describe how magnetic order emerges from the interactions between localized moments."],
+    ]);
+  });
+
+  it("asks nothing on a comment line", () => {
+    const text = "% a note to myself about the introduction\nBody.";
+    const asked: string[][] = [];
+    const { container } = render(<CodeEditor path="main.tex" text={text} label="main.tex" onChange={() => {}} onJumpToPdf={(candidates) => asked.push([...candidates])} />);
+    viewOf(container).contentDOM.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(asked).toEqual([]);
+  });
+});

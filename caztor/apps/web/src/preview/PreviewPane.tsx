@@ -6,6 +6,7 @@ import type { CompileState } from "../compile/compile-state.ts";
 import type { PdfEngine } from "./engine.ts";
 import type { PdfSelection } from "../embed/bridge.ts";
 import { PdfPreview } from "./PdfPreview.tsx";
+import type { SourceJump } from "./PdfViewer.tsx";
 import type { PrefsStore } from "./prefs.ts";
 import "./PreviewPane.css";
 
@@ -29,10 +30,12 @@ interface PreviewPaneProps {
   /** Passages to mark in soft yellow on the pages. */
   highlights?: readonly string[];
   focus?: PassageFocus | null;
+  /** What a double click in the source asks the PDF to bring into view. */
+  jump?: SourceJump | null;
 }
 
 /** The body of the preview pane: compile switches, notices, the PDF and the log panel below it. */
-export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile, settings, onSettingsChange, prefs, onOpenDiagnostic, onTextSelected, highlights, focus }: PreviewPaneProps) {
+export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile, settings, onSettingsChange, prefs, onOpenDiagnostic, onTextSelected, highlights, focus, jump }: PreviewPaneProps) {
   return (
     <div className="preview-pane">
       <CompileOptions settings={settings} sandbox={sandboxStatus} onChange={onSettingsChange} />
@@ -47,7 +50,7 @@ export function PreviewPane({ api, engine, engineStatus, sandboxStatus, compile,
         </p>
       ) : null}
       <div className="preview-pane__body">
-        <PdfPreview api={api} engine={engine} compile={compile} prefs={prefs} {...(onTextSelected === undefined ? {} : { onTextSelected })} {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })} />
+        <PdfPreview api={api} engine={engine} compile={compile} prefs={prefs} {...(onTextSelected === undefined ? {} : { onTextSelected })} {...(highlights === undefined ? {} : { highlights })} {...(focus === undefined ? {} : { focus })} {...(jump === undefined ? {} : { jump })} />
       </div>
       <LogPanel api={api} last={compile.last} onOpen={onOpenDiagnostic} />
     </div>

@@ -13,6 +13,8 @@ interface EditorPaneProps {
   /** Passages to mark in soft yellow in the file shown. */
   highlights?: readonly string[];
   focus?: PassageFocus | null;
+  /** Called on a double click in the text with what the PDF should bring into view. */
+  onJumpToPdf?: (candidates: readonly string[]) => void;
 }
 
 const STATUS_LABEL: Record<BufferStatus, string> = {
@@ -24,7 +26,7 @@ const STATUS_LABEL: Record<BufferStatus, string> = {
 };
 
 /** The editor for the file the session has active: its name, save state and the text itself. */
-export function EditorPane({ session, highlights, focus }: EditorPaneProps) {
+export function EditorPane({ session, highlights, focus, onJumpToPdf }: EditorPaneProps) {
   const { buffers, active, jump } = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const buffer = active === null ? undefined : buffers.get(active);
   const [comparing, setComparing] = useState(false);
@@ -84,6 +86,7 @@ export function EditorPane({ session, highlights, focus }: EditorPaneProps) {
             onSave={() => void session.saveNow(buffer.path)}
             {...(highlights === undefined ? {} : { highlights })}
             {...(focus === undefined ? {} : { focus })}
+            {...(onJumpToPdf === undefined ? {} : { onJumpToPdf })}
             {...(jump !== null && jump.path === buffer.path ? { reveal: { line: jump.line, id: jump.id } } : {})}
           />
         )}
