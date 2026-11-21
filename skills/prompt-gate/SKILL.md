@@ -33,15 +33,24 @@ Skip the gate entirely, and say nothing about it, when:
   "tal cual", "sin revisar");
 - the skill being run is `prompt-gate` itself.
 
+When nobody can answer — a non-interactive run (`claude -p`, `pi -p`, a
+scheduled or remote job) — never stop on a failed gate: follow the skill with
+the prompt as written and state the score and the issues at the start of your
+output, so the operator sees them afterwards.
+
 ## Step 1 — measure (deterministic, no model)
 
 Run the score with the prompt on stdin, so no quoting can break it:
 
 ```bash
-python -m skills._core.command_center.prompt_gate check --skill <skill> <<'PROMPT_EOF'
+python -m skills._core.command_center.prompt_gate check --skill <skill> <<'PROMPT_EOF_7f3a91'
 <the $ARGUMENTS, verbatim>
-PROMPT_EOF
+PROMPT_EOF_7f3a91
 ```
+
+Use a delimiter that does not occur in the prompt (change its suffix if it
+does): a line equal to the delimiter would end the input early and hand the
+rest of the prompt to the shell.
 
 It prints one JSON object: `score` (0-100), `threshold` (60), `verdict`
 (`pass`/`fail`), `critical`, `issues` (`id`, `severity`, `message`) and `needs`
