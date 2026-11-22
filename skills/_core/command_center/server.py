@@ -2446,10 +2446,15 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/flow")
     def api_flow() -> Response:
         # A workspace's own flow wins; otherwise the framework's, shipped with
-        # the dashboard (a copy of docs/diagrams/papersmith-pi-flow.html).
+        # the dashboard: the review line's (a copy of
+        # docs/diagrams/papersmith-review-flow.html) for a review workspace,
+        # read per request like the board, else the Pi flow (a copy of
+        # docs/diagrams/papersmith-pi-flow.html).
         flow_path = root_path / "docs" / "papersmith-flow.html"
         if not flow_path.is_file():
-            flow_path = Path(__file__).resolve().parent / "static" / "papersmith-flow.html"
+            shipped = ("papersmith-review-flow.html" if paper_type_view.decision.current_line(root_path) == "review"
+                       else "papersmith-flow.html")
+            flow_path = Path(__file__).resolve().parent / "static" / shipped
         if flow_path.is_file():
             return HTMLResponse(flow_path.read_text(encoding="utf-8"))
         return JSONResponse({"detail": "flow diagram not found"}, status_code=404)
