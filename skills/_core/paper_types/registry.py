@@ -11,8 +11,11 @@ signal it in an idea, and whether smith already has a flow (``line``) for it:
   the ``paper_kind`` values ``smith init --kind`` accepts);
 * ``planned`` types have no line yet (``line`` is null).
 
-Names and summaries are English; the dashboard translates its own labels.
-Signals are lowercase ASCII stems matched against the folded idea text.
+A type may group ``variants`` (each with its own name, summary, guidelines
+and signals): the family is one flow and the variant chooses its checklist.
+A family's signals are its own plus its variants'; no signal appears twice in
+the catalogue. Names and summaries are English; the dashboard translates its
+own labels. Signals are lowercase ASCII stems matched against the folded idea.
 
     python -m skills._core.paper_types.registry list   # one JSON object
 """
@@ -33,6 +36,7 @@ MAX_SUMMARY = 200
 _ID_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 _SIGNAL_RE = re.compile(r"^[a-z0-9][a-z0-9 +-]*$")
 _REQUIRED = ("id", "name", "status", "line", "summary", "novelty", "stages", "guidelines", "signals")
+_VARIANT_REQUIRED = ("id", "name", "summary", "guidelines", "signals")
 
 
 class RegistryError(ValueError):
@@ -64,19 +68,49 @@ def _check(item: Any) -> dict:
     if not isinstance(item["stages"], list) or not item["stages"] or not all(
             isinstance(s, str) and s.strip() for s in item["stages"]):
         _fail(type_id, "stages must be a non-empty list of text")
-    if not isinstance(item["guidelines"], list):
+    _check_guidelines(type_id, item["guidelines"])
+    variants = item.get("variants", [])
+    if not isinstance(variants, list):
+        _fail(type_id, "variants must be a list")
+    for variant in variants:
+        if not isinstance(variant, dict):
+            _fail(type_id, "each variant must be an object")
+        for field in _VARIANT_REQUIRED:
+            if field not in variant:
+                _fail(type_id, f"variant {variant.get('id', '?')!r} is missing {field!r}")
+        if not isinstance(variant["id"], str) or not _ID_RE.match(variant["id"]):
+            _fail(type_id, "a variant id must be lowercase kebab-case")
+        for field, limit in (("name", MAX_NAME), ("summary", MAX_SUMMARY)):
+            if not isinstance(variant[field], str) or not variant[field].strip() or len(variant[field]) > limit:
+                _fail(type_id, f"variant {variant['id']!r}: {field} must be non-empty text of at most {limit} characters")
+        _check_guidelines(type_id, variant["guidelines"])
+        _check_signals(type_id, variant["signals"], allow_empty=False)
+    _check_signals(type_id, item["signals"], allow_empty=bool(variants))
+    every = all_signals(item)
+    if len(set(every)) != len(every):
+        _fail(type_id, "signals must not repeat")
+    return item
+
+
+def _check_guidelines(type_id: str, guidelines: Any) -> None:
+    if not isinstance(guidelines, list):
         _fail(type_id, "guidelines must be a list")
-    for guideline in item["guidelines"]:
+    for guideline in guidelines:
         if not isinstance(guideline, dict) or not str(guideline.get("name") or "").strip():
             _fail(type_id, "each guideline needs a name")
         if not str(guideline.get("url") or "").startswith("https://"):
             _fail(type_id, "each guideline url must start with https://")
-    if not isinstance(item["signals"], list) or not item["signals"] or not all(
-            isinstance(s, str) and _SIGNAL_RE.match(s) for s in item["signals"]):
+
+
+def _check_signals(type_id: str, signals: Any, *, allow_empty: bool) -> None:
+    if not isinstance(signals, list) or (not signals and not allow_empty) or not all(
+            isinstance(s, str) and _SIGNAL_RE.match(s) for s in signals):
         _fail(type_id, "signals must be a non-empty list of lowercase ASCII stems")
-    if len(set(item["signals"])) != len(item["signals"]):
-        _fail(type_id, "signals must not repeat")
-    return item
+
+
+def all_signals(item: dict) -> list[str]:
+    """The family's own signals followed by every variant's, in order."""
+    return list(item["signals"]) + [s for variant in item.get("variants", []) for s in variant["signals"]]
 
 
 def validate(document: Any) -> list[dict]:
@@ -86,9 +120,16 @@ def validate(document: Any) -> list[dict]:
     types = [_check(item) for item in document["types"]]
     seen: set[str] = set()
     for item in types:
-        if item["id"] in seen:
-            _fail(item["id"], "duplicate id")
-        seen.add(item["id"])
+        for any_id in [item["id"]] + [v["id"] for v in item.get("variants", [])]:
+            if any_id in seen:
+                _fail(item["id"], f"duplicate id {any_id!r}")
+            seen.add(any_id)
+    owner: dict[str, str] = {}
+    for item in types:
+        for signal in all_signals(item):
+            if signal in owner and owner[signal] != item["id"]:
+                _fail(item["id"], f"signal {signal!r} is also a signal of {owner[signal]!r}")
+            owner[signal] = item["id"]
     return types
 
 
@@ -136,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["CATALOGUE", "LINES", "MAX_SUMMARY", "RegistryError", "STATUSES", "available", "by_line", "get",
+__all__ = ["CATALOGUE", "LINES", "MAX_SUMMARY", "RegistryError", "STATUSES", "all_signals", "available", "by_line", "get",
            "load", "main", "validate"]
 
 if __name__ == "__main__":

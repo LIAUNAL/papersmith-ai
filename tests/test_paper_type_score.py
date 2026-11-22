@@ -39,27 +39,28 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual([row["type"] for row in result["scores"]], [t["id"] for t in registry.load()])
         for row in result["scores"]:
             self.assertTrue(0 <= row["score"] <= 100)
-            self.assertEqual(set(row), {"type", "score", "raw", "matched", "pool_matched", "status", "line"})
+            self.assertEqual(set(row), {"type", "score", "raw", "matched", "pool_matched", "status", "line", "variant"})
 
     def test_the_clear_leader_is_suggested(self) -> None:
-        for idea, expected in ((AI_IDEA, "applied-ai"), (SURVEY_IDEA, "observational"), (SIM_IDEA, "computational")):
+        for idea, expected in ((AI_IDEA, "applied-ai"), (SURVEY_IDEA, "observational-measurement"),
+                               (SIM_IDEA, "lab-simulation")):
             with self.subTest(expected=expected):
                 result = score.score(idea)
                 self.assertEqual(result["suggested"], expected, result["scores"])
                 self.assertEqual(by_type(result)[expected]["score"], 100)
 
     def test_accents_and_inflections_match(self) -> None:
-        matched = by_type(score.score("Simulación con dinámica molecular de nanopartículas"))["computational"]["matched"]
+        matched = by_type(score.score("Simulación con dinámica molecular de nanopartículas"))["lab-simulation"]["matched"]
         self.assertIn("dinamica molecular", matched)
         self.assertIn("simulacion", matched)
 
     def test_matches_start_on_a_word_boundary(self) -> None:
         # "sem" (materials) must not fire inside "semantic" or "assembly".
-        self.assertNotIn("sem", by_type(score.score("semantic assembly of documents"))["materials"]["matched"])
+        self.assertNotIn("sem", by_type(score.score("semantic assembly of documents"))["lab-simulation"]["matched"])
 
     def test_the_longest_overlapping_signal_wins(self) -> None:
         rows = by_type(score.score("A numerical model of heat flow"))
-        self.assertIn("numerical model", rows["computational"]["matched"])
+        self.assertIn("numerical model", rows["lab-simulation"]["matched"])
         self.assertNotIn("model", rows["applied-ai"]["matched"])
 
     def test_no_signal_suggests_nothing(self) -> None:
@@ -75,10 +76,10 @@ class ScoreTests(unittest.TestCase):
     def test_the_pool_adds_a_light_bounded_weight(self) -> None:
         idea_only = by_type(score.score(SURVEY_IDEA))
         with_pool = by_type(score.score(SURVEY_IDEA, pool_text="cohort survey prevalence households " * 20))
-        gained = with_pool["observational"]["raw"] - idea_only["observational"]["raw"]
+        gained = with_pool["observational-measurement"]["raw"] - idea_only["observational-measurement"]["raw"]
         self.assertGreater(gained, 0)
         self.assertLessEqual(gained, score.POOL_CAP)
-        self.assertTrue(with_pool["observational"]["pool_matched"])
+        self.assertTrue(with_pool["observational-measurement"]["pool_matched"])
 
     def test_confidence_reflects_the_margin(self) -> None:
         self.assertEqual(score.score(AI_IDEA)["confidence"], "high")
@@ -91,35 +92,52 @@ class CatalogueDiscriminationTests(unittest.TestCase):
     their own type (paper-type-lines L8-L10)."""
 
     IDEAS = {
-        "observational": "Cohorte retrospectiva de 124 pacientes con estado migrañoso atendidos en sala de infusión; "
+        ("observational-measurement", "observational"): "Cohorte retrospectiva de 124 pacientes con estado migrañoso atendidos en sala de infusión; "
                          "describimos la respuesta y sus predictores clínicos.",
-        "intervention": "Ensayo aleatorizado en dos colegios: un grupo control y un grupo con una intervención de "
+        ("experiment-intervention", "human-trial"): "Ensayo aleatorizado en dos colegios: un grupo control y un grupo con una intervención de "
                         "aprendizaje basado en proyectos; medimos el rendimiento antes y después.",
-        "qualitative-mixed": "Estudio de caso de la cadena de la panela con entrevistas semiestructuradas, talleres "
+        ("qualitative-participatory", "qualitative-mixed"): "Estudio de caso de la cadena de la panela con entrevistas semiestructuradas, talleres "
                              "participativos y análisis temático.",
-        "diagnostic-validation": "Validamos una medida automática de inteligibilidad del habla contra la evaluación "
+        ("observational-measurement", "diagnostic-validation"): "Validamos una medida automática de inteligibilidad del habla contra la evaluación "
                                  "clínica de referencia, con concordancia y sensibilidad en tres idiomas.",
-        "hardware": "Diseñamos un prototipo de bajo costo de adquisición EEG con microcontrolador y lo comparamos "
+        ("hardware", None): "Diseñamos un prototipo de bajo costo de adquisición EEG con microcontrolador y lo comparamos "
                     "con un equipo comercial.",
-        "materials": "Películas delgadas de CuInSe2 depositadas por sputtering RF a distintas temperaturas; "
+        ("lab-simulation", "materials"): "Películas delgadas de CuInSe2 depositadas por sputtering RF a distintas temperaturas; "
                      "caracterizamos por XRD, XPS y UV-Vis el band gap.",
-        "computational": "Simulación Monte Carlo de un hamiltoniano de Heisenberg en nanotubos magnéticos variando "
+        ("lab-simulation", "modelling-simulation"): "Simulación Monte Carlo de un hamiltoniano de Heisenberg en nanotubos magnéticos variando "
                          "la anisotropía.",
-        "data-resource": "Presentamos un corpus de grabaciones de habla en español, con su protocolo de anotación "
+        ("data-resource", None): "Presentamos un corpus de grabaciones de habla en español, con su protocolo de anotación "
                          "y resultados de referencia.",
-        "composite-index": "Construimos un índice de pobreza multidimensional con indicadores y ponderación "
+        ("observational-measurement", "measurement-instrument"): "Construimos un índice de pobreza multidimensional con indicadores y ponderación "
                            "acordados con la alcaldía para la política pública.",
-        "review": "Revisión sistemática del estado del arte sobre biomarcadores de habla, siguiendo PRISMA.",
-        "applied-ai": AI_IDEA,
+        ("review", None): "Revisión sistemática del estado del arte sobre biomarcadores de habla, siguiendo PRISMA.",
+        ("applied-ai", None): AI_IDEA,
     }
 
-    def test_each_idea_reaches_its_type(self) -> None:
-        for expected, idea in self.IDEAS.items():
-            with self.subTest(expected=expected):
-                self.assertEqual(score.score(idea)["suggested"], expected, score.score(idea)["scores"])
+    def test_each_idea_reaches_its_family_and_variant(self) -> None:
+        for (family, variant), idea in self.IDEAS.items():
+            with self.subTest(family=family, variant=variant):
+                result = score.score(idea)
+                self.assertEqual(result["suggested"], family, result["scores"])
+                self.assertEqual(by_type(result)[family]["variant"], variant)
+
+    def test_extra_variants_reach_their_family(self) -> None:
+        cases = {
+            ("experiment-intervention", "field-experiment"):
+                "Ensayo en parcelas con diseño de bloques para comparar dos cultivares de café.",
+            ("qualitative-participatory", "consensus-foresight"):
+                "Un panel de expertos con método Delphi y análisis MICMAC construye escenarios para la cadena del cacao.",
+            ("qualitative-participatory", "experience-report"):
+                "Relatamos una experiencia docente de enseñanza de física en el aula con guías de laboratorio.",
+        }
+        for (family, variant), idea in cases.items():
+            with self.subTest(variant=variant):
+                result = score.score(idea)
+                self.assertEqual(result["suggested"], family, result["scores"])
+                self.assertEqual(by_type(result)[family]["variant"], variant)
 
     def test_each_word_of_a_multi_word_signal_may_inflect(self) -> None:
-        self.assertIn("pelicula delgada", by_type(score.score("peliculas delgadas de oro"))["materials"]["matched"])
+        self.assertIn("pelicula delgada", by_type(score.score("peliculas delgadas de oro"))["lab-simulation"]["matched"])
 
 
 class DecisionStoreTests(unittest.TestCase):
@@ -148,16 +166,16 @@ class DecisionStoreTests(unittest.TestCase):
 
     def test_scores_are_stored_and_an_agreed_type_survives_a_rescore(self) -> None:
         first = decision.record_scores(self.root, SURVEY_IDEA)
-        self.assertEqual(first["suggested"], "observational")
+        self.assertEqual(first["suggested"], "observational-measurement")
         path = self.root / ".papersmith" / "paper_type.json"
         data = json.loads(path.read_text(encoding="utf-8"))
-        data.update({"agreed": "observational", "agreed_by": "operator", "agreed_idea_sha256": data["idea_sha256"]})
+        data.update({"agreed": "observational-measurement", "agreed_by": "operator", "agreed_idea_sha256": data["idea_sha256"]})
         path.write_text(json.dumps(data), encoding="utf-8")
         same = decision.record_scores(self.root, SURVEY_IDEA)
-        self.assertEqual(same["agreed"], "observational")
+        self.assertEqual(same["agreed"], "observational-measurement")
         self.assertFalse(same["agreed_stale"])
         changed = decision.record_scores(self.root, SIM_IDEA)
-        self.assertEqual(changed["agreed"], "observational")
+        self.assertEqual(changed["agreed"], "observational-measurement")
         self.assertTrue(changed["agreed_stale"], "the idea changed after the type was agreed")
 
     def test_read_of_an_empty_workspace_is_empty(self) -> None:
@@ -179,24 +197,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         payload = json.loads(done.stdout)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["suggested"], "computational")
+        self.assertEqual(payload["suggested"], "lab-simulation")
         self.assertTrue((self.root / ".papersmith" / "paper_type.json").is_file())
 
     def test_dry_run_writes_nothing(self) -> None:
         done = self.run_cli("score", "--root", str(self.root), "--dry-run", "--idea-file", "-", stdin=SIM_IDEA)
-        self.assertEqual(json.loads(done.stdout)["suggested"], "computational")
+        self.assertEqual(json.loads(done.stdout)["suggested"], "lab-simulation")
         self.assertFalse((self.root / ".papersmith").exists())
 
     def test_accept_records_the_acceptance_then_scores_from_it(self) -> None:
         done = self.run_cli("accept", "--root", str(self.root), "--by", "operator", "--idea-file", "-",
                             stdin=SURVEY_IDEA)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(json.loads(done.stdout)["suggested"], "observational")
+        self.assertEqual(json.loads(done.stdout)["suggested"], "observational-measurement")
         rescored = self.run_cli("score", "--root", str(self.root))  # no stdin: the accepted idea
-        self.assertEqual(json.loads(rescored.stdout)["suggested"], "observational")
+        self.assertEqual(json.loads(rescored.stdout)["suggested"], "observational-measurement")
         shown = json.loads(self.run_cli("show", "--root", str(self.root)).stdout)
         self.assertEqual(shown["plausibility"]["accepted_by"], "operator")
-        self.assertEqual(shown["paper_type"]["suggested"], "observational")
+        self.assertEqual(shown["paper_type"]["suggested"], "observational-measurement")
 
     def test_score_without_any_idea_is_a_typed_refusal(self) -> None:
         done = self.run_cli("score", "--root", str(self.root))

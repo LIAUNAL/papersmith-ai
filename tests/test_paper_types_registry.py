@@ -16,10 +16,15 @@ from skills._core.paper_types import registry
 
 REPO = Path(__file__).resolve().parents[1]
 PLANNED_CATALOGUE = (
-    "applied-ai", "review", "observational", "intervention", "qualitative-mixed",
-    "diagnostic-validation", "hardware", "materials", "computational", "data-resource",
-    "composite-index",
+    "applied-ai", "review", "observational-measurement", "experiment-intervention", "qualitative-participatory",
+    "hardware", "lab-simulation", "data-resource",
 )
+VARIANTS = {
+    "observational-measurement": ["observational", "diagnostic-validation", "measurement-instrument"],
+    "experiment-intervention": ["human-trial", "field-experiment"],
+    "qualitative-participatory": ["qualitative-mixed", "consensus-foresight", "experience-report"],
+    "lab-simulation": ["materials", "modelling-simulation"],
+}
 
 
 def entry(**overrides) -> dict:
@@ -49,9 +54,16 @@ class ShippedCatalogueTests(unittest.TestCase):
             with self.subTest(type=item["id"]):
                 self.assertLessEqual(len(item["summary"]), registry.MAX_SUMMARY)
                 self.assertTrue(item["stages"])
-                self.assertTrue(item["signals"])
+                self.assertTrue(registry.all_signals(item))
                 for guideline in item["guidelines"]:
                     self.assertTrue(guideline["url"].startswith("https://"))
+
+    def test_the_families_group_their_variants(self) -> None:
+        found = {t["id"]: [v["id"] for v in t.get("variants", [])] for t in registry.load() if t.get("variants")}
+        self.assertEqual(found, VARIANTS)
+        for item in registry.load():
+            with self.subTest(type=item["id"]):
+                self.assertTrue(registry.all_signals(item))
 
     def test_get_names_an_unknown_type(self) -> None:
         self.assertEqual(registry.get("review")["line"], "review")
@@ -87,6 +99,17 @@ class ValidationTests(unittest.TestCase):
         self.refuses([entry(signals=["Survey"])], "signals")
         self.refuses([entry(signals=["survey", "survey"])], "repeat")
 
+    def test_variants_are_validated(self) -> None:
+        variant = {"id": "cohort", "name": "Cohort", "summary": "A cohort.", "guidelines": [], "signals": ["cohort"]}
+        family = entry(signals=[], variants=[variant])
+        self.assertEqual(registry.validate({"version": 2, "types": [family]})[0]["variants"][0]["id"], "cohort")
+        self.refuses([entry(signals=[], variants=[{**variant, "signals": []}])], "signals")
+        self.refuses([entry(signals=[], variants=[{**variant, "id": "Bad"}])], "variant id")
+        self.refuses([entry(signals=["cohort"], variants=[variant])], "repeat")
+        self.refuses([entry(id="observational", signals=[], variants=[{**variant, "id": "observational"}])], "duplicate")
+        other = entry(id="other", signals=["cohort"])
+        self.refuses([entry(signals=[], variants=[variant]), other], "also a signal")
+
     def test_guideline_urls_must_be_https(self) -> None:
         self.refuses([entry(guidelines=[{"name": "X", "url": "http://example.org"}])], "https")
 
@@ -100,7 +123,7 @@ class SignalDiscriminationTests(unittest.TestCase):
         # A shared signal scores two types alike and tells the advisor nothing (T2).
         owners: dict[str, list[str]] = {}
         for item in registry.load():
-            for signal in item["signals"]:
+            for signal in registry.all_signals(item):
                 owners.setdefault(signal, []).append(item["id"])
         self.assertEqual({s: ids for s, ids in owners.items() if len(ids) > 1}, {})
 

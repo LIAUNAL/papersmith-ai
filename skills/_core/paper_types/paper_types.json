@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "types": [
     {
       "id": "applied-ai",
@@ -80,189 +80,295 @@
       ]
     },
     {
-      "id": "observational",
-      "name": "Observational study",
+      "id": "observational-measurement",
+      "name": "Observational and measurement study",
       "status": "planned",
       "line": null,
-      "summary": "A study of a population, territory or dataset as it is: surveys, cohorts, cross-sectional or econometric and spatial analyses of own or secondary data.",
-      "novelty": "The population, territory or dataset studied and what its analysis reveals.",
+      "summary": "Studies that measure what exists without assigning an intervention: populations and datasets, diagnostic or prediction accuracy, and measurement instruments.",
+      "novelty": "The population, dataset or measure studied, and what its analysis or validation shows.",
       "stages": [
         "Question and outcome",
-        "Ethics and consent",
-        "Sampling and instruments",
+        "Ethics and consent when people take part",
+        "Sampling, data sources and instruments",
         "Data dictionary and quality",
         "Analysis plan and analysis",
         "Discussion against prior studies"
       ],
-      "guidelines": [
+      "guidelines": [],
+      "signals": [],
+      "variants": [
         {
-          "name": "STROBE",
-          "url": "https://www.equator-network.org/reporting-guidelines/strobe/"
+          "id": "observational",
+          "name": "Observational study",
+          "summary": "Surveys, cohorts, cross-sectional, econometric, spatial or network analyses of own or secondary data.",
+          "guidelines": [
+            {
+              "name": "STROBE",
+              "url": "https://www.equator-network.org/reporting-guidelines/strobe/"
+            },
+            {
+              "name": "CROSS (surveys)",
+              "url": "https://www.equator-network.org/reporting-guidelines/a-consensus-based-checklist-for-reporting-of-survey-studies-cross/"
+            }
+          ],
+          "signals": [
+            "survey",
+            "cohort",
+            "cross-sectional",
+            "prevalence",
+            "population",
+            "patients",
+            "households",
+            "municipalit",
+            "territor",
+            "regression",
+            "econometric",
+            "panel data",
+            "encuesta",
+            "cohorte",
+            "poblacion",
+            "pacientes",
+            "hogares",
+            "municipio"
+          ]
         },
         {
-          "name": "CROSS (surveys)",
-          "url": "https://www.equator-network.org/reporting-guidelines/a-consensus-based-checklist-for-reporting-of-survey-studies-cross/"
+          "id": "diagnostic-validation",
+          "name": "Diagnostic or clinical validation",
+          "summary": "Accuracy, agreement or prediction of a test, measure or model against a reference standard, across sites or languages.",
+          "guidelines": [
+            {
+              "name": "STARD 2015",
+              "url": "https://www.equator-network.org/reporting-guidelines/stard/"
+            },
+            {
+              "name": "TRIPOD+AI",
+              "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
+            }
+          ],
+          "signals": [
+            "diagnos",
+            "accuracy",
+            "sensitivity",
+            "specificity",
+            "agreement",
+            "reference standard",
+            "gold standard",
+            "biomarker",
+            "validation",
+            "prediction",
+            "diagnostico",
+            "sensibilidad",
+            "especificidad",
+            "concordancia",
+            "validacion"
+          ]
+        },
+        {
+          "id": "measurement-instrument",
+          "name": "Measurement instrument",
+          "summary": "An index, scale or questionnaire: dimensions and items, weighting, reliability, validity, robustness and adoption.",
+          "guidelines": [
+            {
+              "name": "COSMIN (health measurement instruments)",
+              "url": "https://www.cosmin.nl/"
+            }
+          ],
+          "signals": [
+            "index",
+            "composite",
+            "indicator",
+            "multidimensional",
+            "weighting",
+            "policy",
+            "ranking",
+            "alkire",
+            "indice",
+            "indicador",
+            "ponderacion",
+            "politica publica",
+            "questionnaire",
+            "psychometric",
+            "cronbach",
+            "test-retest",
+            "cuestionario",
+            "psicometric"
+          ]
         }
-      ],
-      "signals": [
-        "survey",
-        "cohort",
-        "cross-sectional",
-        "prevalence",
-        "population",
-        "patients",
-        "households",
-        "municipalit",
-        "territor",
-        "regression",
-        "econometric",
-        "panel data",
-        "encuesta",
-        "cohorte",
-        "poblacion",
-        "pacientes",
-        "hogares",
-        "municipio"
       ]
     },
     {
-      "id": "intervention",
-      "name": "Intervention or experiment",
+      "id": "experiment-intervention",
+      "name": "Experiment or intervention",
       "status": "planned",
       "line": null,
-      "summary": "A trial that assigns an intervention and measures its effect: clinical, educational, field or agronomic, or consumer experiments.",
-      "novelty": "The measured effect of the intervention on its participants, students, plots or animals.",
+      "summary": "Studies that assign a treatment and measure its effect against a control: trials with people, or field, crop and animal experiments.",
+      "novelty": "The measured effect of the treatment on its participants, plots, crops or animals.",
       "stages": [
-        "Protocol and registration",
-        "Ethics and consent",
-        "Allocation and sample size",
+        "Protocol (and registration with people)",
+        "Ethics and consent with people or animals",
+        "Allocation, blocks and sample size",
         "Intervention and follow-up",
         "Pre-specified analysis",
-        "Flow diagram and results"
+        "Flow of units and results"
       ],
-      "guidelines": [
-        {
-          "name": "CONSORT 2025",
-          "url": "https://www.equator-network.org/reporting-guidelines/consort/"
-        },
-        {
-          "name": "SPIRIT (protocols)",
-          "url": "https://www.equator-network.org/reporting-guidelines/spirit-2013-statement-defining-standard-protocol-items-for-clinical-trials/"
-        },
-        {
-          "name": "ARRIVE 2.0 (animals)",
-          "url": "https://arriveguidelines.org/"
-        }
-      ],
+      "guidelines": [],
       "signals": [
-        "trial",
-        "randomi",
-        "intervention",
-        "control group",
         "treatment",
-        "placebo",
-        "field trial",
-        "plots",
-        "block design",
-        "pre-test",
-        "ensayo",
-        "aleatori",
-        "intervencion",
-        "grupo control",
         "tratamiento",
-        "parcelas"
+        "control group",
+        "grupo control"
+      ],
+      "variants": [
+        {
+          "id": "human-trial",
+          "name": "Trial with people",
+          "summary": "Clinical, educational or consumer trials that assign an intervention to people; ethics, consent and prospective registration.",
+          "guidelines": [
+            {
+              "name": "CONSORT 2025",
+              "url": "https://www.equator-network.org/reporting-guidelines/consort/"
+            },
+            {
+              "name": "SPIRIT (protocols)",
+              "url": "https://www.equator-network.org/reporting-guidelines/spirit-2013-statement-defining-standard-protocol-items-for-clinical-trials/"
+            }
+          ],
+          "signals": [
+            "trial",
+            "randomi",
+            "intervention",
+            "placebo",
+            "pre-test",
+            "ensayo",
+            "aleatori",
+            "intervencion"
+          ]
+        },
+        {
+          "id": "field-experiment",
+          "name": "Field or agricultural experiment",
+          "summary": "Plots, blocks, crops or animals under controlled treatments, with true replication and mixed models.",
+          "guidelines": [
+            {
+              "name": "ARRIVE 2.0 (animals)",
+              "url": "https://arriveguidelines.org/"
+            }
+          ],
+          "signals": [
+            "field trial",
+            "plots",
+            "block design",
+            "parcelas",
+            "split-plot",
+            "crop",
+            "cultivar",
+            "livestock",
+            "ganado",
+            "cultivo",
+            "bloques"
+          ]
+        }
       ]
     },
     {
-      "id": "qualitative-mixed",
-      "name": "Qualitative or mixed methods",
+      "id": "qualitative-participatory",
+      "name": "Qualitative, participatory and consensus study",
       "status": "planned",
       "line": null,
-      "summary": "A case study, participatory or foresight study, or a mixed-methods design built on interviews, focus groups, workshops or observation.",
-      "novelty": "The case, community or process understood in depth.",
+      "summary": "Studies built on people's accounts and judgement: case studies and mixed methods, expert consensus, foresight and guidelines, and experience reports.",
+      "novelty": "The case, the agreed judgement of experts, or the experience and what it teaches.",
       "stages": [
-        "Case and framework",
+        "Case, panel or experience and its framework",
         "Ethics and consent",
-        "Fieldwork",
-        "Coding and themes",
-        "Integration of methods",
+        "Fieldwork, rounds or implementation",
+        "Coding, consensus or reflection",
+        "Integration with prior work",
         "Implications"
       ],
-      "guidelines": [
+      "guidelines": [],
+      "signals": [],
+      "variants": [
         {
-          "name": "SRQR",
-          "url": "https://www.equator-network.org/reporting-guidelines/srqr/"
+          "id": "qualitative-mixed",
+          "name": "Qualitative or mixed methods",
+          "summary": "Case studies, interviews, focus groups, participatory research and mixed-methods designs.",
+          "guidelines": [
+            {
+              "name": "SRQR",
+              "url": "https://www.equator-network.org/reporting-guidelines/srqr/"
+            },
+            {
+              "name": "COREQ",
+              "url": "https://www.equator-network.org/reporting-guidelines/coreq/"
+            },
+            {
+              "name": "GRAMMS (mixed methods)",
+              "url": "https://www.equator-network.org/reporting-guidelines/guidance-for-reporting-mixed-methods-research-gramms/"
+            }
+          ],
+          "signals": [
+            "interview",
+            "focus group",
+            "case study",
+            "qualitative",
+            "thematic",
+            "participatory",
+            "workshop",
+            "mixed method",
+            "entrevista",
+            "grupo focal",
+            "estudio de caso",
+            "cualitativ",
+            "participativ",
+            "taller"
+          ]
         },
         {
-          "name": "COREQ",
-          "url": "https://www.equator-network.org/reporting-guidelines/coreq/"
+          "id": "consensus-foresight",
+          "name": "Consensus, foresight and guidelines",
+          "summary": "Expert panels: Delphi, structural foresight (MICMAC, MACTOR), scenarios, and clinical practice guidelines agreed by consensus.",
+          "guidelines": [
+            {
+              "name": "AGREE II (practice guidelines)",
+              "url": "https://www.agreetrust.org/"
+            }
+          ],
+          "signals": [
+            "delphi",
+            "foresight",
+            "prospectiva",
+            "consensus",
+            "expert panel",
+            "micmac",
+            "mactor",
+            "scenario",
+            "practice guideline",
+            "clinical guideline",
+            "consenso",
+            "panel de expertos",
+            "guia de practica",
+            "guia clinica",
+            "escenario"
+          ]
         },
         {
-          "name": "GRAMMS (mixed methods)",
-          "url": "https://www.equator-network.org/reporting-guidelines/guidance-for-reporting-mixed-methods-research-gramms/"
+          "id": "experience-report",
+          "name": "Experience report",
+          "summary": "A teaching innovation or a programme described with what it taught, without a formal evaluation of its effect.",
+          "guidelines": [],
+          "signals": [
+            "experience report",
+            "teaching",
+            "classroom",
+            "course design",
+            "pedagog",
+            "experiencia docente",
+            "ensenanza",
+            "aula",
+            "didactic"
+          ]
         }
-      ],
-      "signals": [
-        "interview",
-        "focus group",
-        "case study",
-        "qualitative",
-        "thematic",
-        "participatory",
-        "workshop",
-        "delphi",
-        "foresight",
-        "mixed method",
-        "entrevista",
-        "grupo focal",
-        "estudio de caso",
-        "cualitativ",
-        "participativ",
-        "taller",
-        "prospectiva"
-      ]
-    },
-    {
-      "id": "diagnostic-validation",
-      "name": "Diagnostic or clinical validation",
-      "status": "planned",
-      "line": null,
-      "summary": "An accuracy, agreement or prediction study that validates a test, measure or model against a reference standard, across sites or languages.",
-      "novelty": "Evidence that the measure agrees with the reference and holds beyond its first setting.",
-      "stages": [
-        "Reference standard",
-        "Ethics and consent",
-        "Recruitment and flow",
-        "Agreement or accuracy analysis",
-        "External validation",
-        "Clinical implications"
-      ],
-      "guidelines": [
-        {
-          "name": "STARD 2015",
-          "url": "https://www.equator-network.org/reporting-guidelines/stard/"
-        },
-        {
-          "name": "TRIPOD+AI",
-          "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
-        }
-      ],
-      "signals": [
-        "diagnos",
-        "accuracy",
-        "sensitivity",
-        "specificity",
-        "agreement",
-        "reference standard",
-        "gold standard",
-        "biomarker",
-        "validation",
-        "prediction",
-        "diagnostico",
-        "sensibilidad",
-        "especificidad",
-        "concordancia",
-        "validacion"
       ]
     },
     {
@@ -313,19 +419,19 @@
       ]
     },
     {
-      "id": "materials",
-      "name": "Materials and processes",
+      "id": "lab-simulation",
+      "name": "Laboratory and simulation science",
       "status": "planned",
       "line": null,
-      "summary": "A synthesis, deposition or processing study that varies process conditions and relates them to structure and properties measured by several techniques.",
-      "novelty": "What the process does to the material and the properties it reaches.",
+      "summary": "Physical-science studies that define a sample or a model, calibrate it against known values, sweep its parameters and quantify the error.",
+      "novelty": "What the process does to the material, or the regimes the model reveals.",
       "stages": [
-        "Sample matrix and process variables",
-        "Synthesis or deposition",
-        "Multi-technique characterization",
-        "Uncertainty and replicates",
-        "Structure-property relations",
-        "Comparison with reported values"
+        "Sample matrix or model definition",
+        "Synthesis or simulation protocol",
+        "Characterization or observables",
+        "Calibration against known values",
+        "Uncertainty, replicates or statistical error",
+        "Open data and code"
       ],
       "guidelines": [
         {
@@ -333,57 +439,58 @@
           "url": "https://www.bipm.org/en/doi/10.59161/jcgm100-2008e"
         }
       ],
-      "signals": [
-        "deposition",
-        "sputtering",
-        "thin film",
-        "synthesis",
-        "annealing",
-        "xrd",
-        "xps",
-        "sem",
-        "band gap",
-        "crystalline",
-        "nanowire",
-        "electrodeposition",
-        "deposicion",
-        "sintesis",
-        "pelicula delgada",
-        "recocido",
-        "nanohilos"
-      ]
-    },
-    {
-      "id": "computational",
-      "name": "Computational simulation",
-      "status": "planned",
-      "line": null,
-      "summary": "A simulation or modelling study: a defined model, calibrated against known values, explored over its parameters with stated statistical error.",
-      "novelty": "The model or the region of parameter space it explores, and the regimes it reveals.",
-      "stages": [
-        "Model definition",
-        "Virtual sample",
-        "Calibration against known values",
-        "Simulation protocol",
-        "Parametric sweep and error",
-        "Code and data release"
-      ],
-      "guidelines": [],
-      "signals": [
-        "simulation",
-        "monte carlo",
-        "molecular dynamics",
-        "hamiltonian",
-        "ising",
-        "heisenberg",
-        "finite element",
-        "numerical model",
-        "parameter sweep",
-        "ab initio",
-        "simulacion",
-        "dinamica molecular",
-        "modelo numerico",
-        "hamiltoniano"
+      "signals": [],
+      "variants": [
+        {
+          "id": "materials",
+          "name": "Materials and processes",
+          "summary": "Synthesis, deposition or processing that varies the process and measures structure and properties by several techniques.",
+          "guidelines": [],
+          "signals": [
+            "deposition",
+            "sputtering",
+            "thin film",
+            "synthesis",
+            "annealing",
+            "xrd",
+            "xps",
+            "sem",
+            "band gap",
+            "crystalline",
+            "nanowire",
+            "electrodeposition",
+            "deposicion",
+            "sintesis",
+            "pelicula delgada",
+            "recocido",
+            "nanohilos"
+          ]
+        },
+        {
+          "id": "modelling-simulation",
+          "name": "Modelling and simulation",
+          "summary": "A model solved by simulation (Monte Carlo, molecular dynamics, finite elements) or analytically, calibrated and explored over its parameters.",
+          "guidelines": [],
+          "signals": [
+            "simulation",
+            "monte carlo",
+            "molecular dynamics",
+            "hamiltonian",
+            "ising",
+            "heisenberg",
+            "finite element",
+            "numerical model",
+            "parameter sweep",
+            "ab initio",
+            "simulacion",
+            "dinamica molecular",
+            "modelo numerico",
+            "hamiltoniano",
+            "analytical model",
+            "modelo analitico",
+            "closed-form"
+          ]
+        }
       ]
     },
     {
@@ -416,37 +523,6 @@
         "grabaciones",
         "anotacion",
         "repositorio"
-      ]
-    },
-    {
-      "id": "composite-index",
-      "name": "Composite index or policy instrument",
-      "status": "planned",
-      "line": null,
-      "summary": "An index or instrument built from indicators, often with stakeholders, tested for robustness and meant for adoption by an institution.",
-      "novelty": "The instrument, its dimensions and weights, and its institutional use.",
-      "stages": [
-        "Conceptual framework",
-        "Dimensions and indicators",
-        "Normalization and weighting",
-        "Robustness and sensitivity",
-        "Results by unit",
-        "Institutional adoption"
-      ],
-      "guidelines": [],
-      "signals": [
-        "index",
-        "composite",
-        "indicator",
-        "multidimensional",
-        "weighting",
-        "policy",
-        "ranking",
-        "alkire",
-        "indice",
-        "indicador",
-        "ponderacion",
-        "politica publica"
       ]
     }
   ]

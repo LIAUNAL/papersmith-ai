@@ -10,6 +10,9 @@ longest wins, so ``numerical model`` counts for the computational type and its
 the idea and :data:`POOL_WEIGHT` per distinct signal in the SOTA pool's titles,
 abstracts and families, at most :data:`POOL_CAP` from the pool.
 
+A family's signals are its own plus its variants'; each row also names the
+variant whose signals the idea matched most (``variant``, null on a tie or none).
+
 Scores are relative: the leading type scores 100 and the others their share of
 it. The leader is suggested only when it leads strictly; ``confidence`` says
 how clearly. No model is called; the advisor agent reads this and argues.
@@ -47,11 +50,11 @@ def _pattern(signal: str) -> re.Pattern[str]:
 
 
 def matches(text: str, types: list[dict]) -> dict[str, list[str]]:
-    """Distinct signals found per type, longest first where spans overlap."""
+    """Distinct signals found per type (family), longest first where spans overlap."""
     folded = fold(text)
     found = []
     for item in types:
-        for signal in item["signals"]:
+        for signal in registry.all_signals(item):
             for hit in _pattern(signal).finditer(folded):
                 found.append((hit.end() - hit.start(), hit.start(), hit.end(), item["id"], signal))
     found.sort(key=lambda f: (-f[0], f[1]))
@@ -66,6 +69,17 @@ def matches(text: str, types: list[dict]) -> dict[str, list[str]]:
     return out
 
 
+def _variant(item: dict, matched: list[str]) -> str | None:
+    """The variant whose signals were matched most; None on a tie or without one."""
+    counts = [(sum(1 for s in variant["signals"] if s in matched), variant["id"])
+              for variant in item.get("variants", [])]
+    counts = [c for c in counts if c[0] > 0]
+    if not counts:
+        return None
+    counts.sort(reverse=True)
+    return counts[0][1] if len(counts) == 1 or counts[0][0] > counts[1][0] else None
+
+
 def score(idea: str, pool_text: str = "", types: list[dict] | None = None) -> dict[str, Any]:
     types = types if types is not None else registry.load()
     in_idea = matches(idea, types)
@@ -77,6 +91,7 @@ def score(idea: str, pool_text: str = "", types: list[dict] | None = None) -> di
         "type": item["id"], "status": item["status"], "line": item["line"],
         "score": round(100 * raw[item["id"]] / best) if best else 0,
         "raw": raw[item["id"]], "matched": in_idea[item["id"]], "pool_matched": in_pool[item["id"]],
+        "variant": _variant(item, in_idea[item["id"]] + in_pool[item["id"]]),
     } for item in types]
     ranked = sorted(raw.values(), reverse=True)
     second = ranked[1] if len(ranked) > 1 else 0
