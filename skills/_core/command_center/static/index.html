@@ -28,6 +28,7 @@
   <script src="./math-panel.js?v=0.82.0"></script>
   <script src="./contribution-affinity.js?v=0.82.0"></script>
   <script src="./model-panel.js?v=0.82.0"></script>
+<script src="./paper-type-panel.js?v=0.82.0"></script>
   <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
   <script type="module" src="./office3d.js?v=0.82.0"></script>
   <script src="./office-panel.js?v=0.82.0"></script>
@@ -2733,6 +2734,25 @@
     .kw-help__actions { display: flex; gap: 0.5rem; }
     .kw-help__unavailable { border: 1px solid var(--bad); background: rgba(248, 113, 113, 0.12); border-radius: 6px; padding: 0.5rem 0.65rem; font-size: 0.8rem; }
     .kw-help__unavailable span { color: var(--text-dim); font-size: 0.76rem; }
+    /* Paper type pane: one card per catalogue type (paper-type-panel.js). */
+    .pt-head { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.8rem; }
+    .pt-head p { margin: 0; }
+    .pt-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+    .pt-card { border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; background: var(--surface-2); }
+    .pt-card p { margin: 0; }
+    .pt-card--suggested { border-color: var(--warn); }
+    .pt-card--agreed { border-color: var(--ok); }
+    .pt-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+    .pt-card__summary, .pt-card__guidelines, .pt-card__score { color: var(--text-muted); }
+    .pt-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .pt-bar span { display: block; height: 100%; background: var(--accent); }
+    .pt-agree { display: flex; flex-direction: column; gap: 0.35rem; }
+    .pt-agree input, .pt-agree select { font: inherit; width: 100%; padding: 0.25rem 0.4rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+    .pt-agree__actions { display: flex; gap: 0.5rem; }
+    .pt-error { margin: 0; color: var(--bad); }
+    .pt-notice { margin: 0 0 0.5rem; color: var(--text-muted); }
+    .pt-empty { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
     /* Prompt quality gate: the alert a failed phase prompt raises in its card. */
     .phase-gate { margin-top: 0.5rem; border: 1px solid var(--warn); background: rgba(245, 158, 11, 0.1); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; }
     .phase-gate__title { margin: 0; font-weight: 600; }
@@ -3234,6 +3254,7 @@
   <nav class="tabs-nav" aria-label="Dashboard navigation" data-i18n-attr="aria-label:nav.label">
     <button class="tab-nav__btn active" onclick="navigateTab('flow')" data-i18n="nav.flow">Archify Flow</button>
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
+    <button class="tab-nav__btn" onclick="navigateTab('papertype')" data-i18n="nav.paperType">🧭 Paper Type</button>
     <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
     <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-i18n="nav.experiments">🧪 Experiments</button>
     <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
@@ -3337,6 +3358,17 @@
     </div>
 
     <!-- TAB: CONCEPT MAP AND MATHEMATICAL MODEL -->
+    <div id="pane-papertype" class="tab-pane">
+      <!-- PAPER TYPE: the accepted idea scored against the catalogue (paper-type-panel.js, GET /api/paper-type) -->
+      <section class="panel" id="paperTypeCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="paperType.title">🧭 Paper type: which kind of paper the idea becomes</div>
+          <span class="panel__meta" data-i18n="paperType.meta">Scored against smith's catalogue after plausibility; you agree the type</span>
+        </div>
+        <div id="paperTypePanel" data-i18n="paperType.loading">Loading the paper type…</div>
+      </section>
+    </div>
+
     <div id="pane-modelo" class="tab-pane">
       <!-- Header Banner -->
       <div class="model-header-banner">
@@ -4344,6 +4376,9 @@
       }
       if (tabId === 'novelty') {
         window.refreshNoveltyPanel?.();
+      }
+      if (tabId === 'papertype') {
+        window.refreshPaperTypePanel?.();
       }
       if (tabId === 'novelty') window.showManuscriptGraph?.();
       else window.hideManuscriptGraph?.();
