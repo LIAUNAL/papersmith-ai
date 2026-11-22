@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import importlib.util
 import re
 import threading
@@ -319,9 +320,11 @@ _ITEMS = re.compile(r"\((?P<word>items?)\s+(?P<numbers>\d[\d\-–]*)")
 _SIGNOFF_UNITS = 1
 
 _CACHE_LOCK = threading.Lock()
-#: path -> (mtime_ns, module or ``None``, why it did not load or ``None``);
+#: path -> (content sha256, module or ``None``, why it did not load or ``None``);
 #: a failed load is cached too, so a broken file is not re-executed per request.
-_LOADED: dict[str, tuple[int, Any, str | None]] = {}
+#: Keyed by content, not mtime: a fix written within the same clock tick as
+#: the broken file still reloads.
+_LOADED: dict[str, tuple[str, Any, str | None]] = {}
 
 
 # --------------------------------------------------------------------------- review_cli
@@ -331,7 +334,7 @@ def _load(path: Path) -> tuple[Any | None, str | None] | None:
     """``(module, None)``, ``(None, why)`` when the file fails to load, or
     ``None`` when it does not exist. Reloaded when the file changes."""
     try:
-        stamp = path.stat().st_mtime_ns
+        stamp = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return None
     key = str(path)

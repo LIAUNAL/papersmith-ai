@@ -14,6 +14,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
 import tempfile
 import unittest
@@ -312,9 +313,12 @@ class ReviewPipelineTests(BoardCase):
         spanish = self.phase(self.status(root, "es"), "protocol")["detail"]
         self.assertIn("SyntaxError", spanish)
         self.assertNotIn("did not load", spanish)
-        # Repaired, the warning goes away.
+        # Repaired, the warning goes away, even when the fix keeps the broken
+        # file's timestamp (written within the same clock tick).
+        stamp = workspace_cli.stat()
         workspace_cli.write_text((REPO / "skills/systematic-review/scripts/review_cli.py").read_text(encoding="utf-8"),
                                  encoding="utf-8")
+        os.utime(workspace_cli, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
         self.assertNotIn("did not load", self.phase(self.status(root), "protocol")["detail"])
 
     def test_every_review_card_runs_a_real_command(self) -> None:
