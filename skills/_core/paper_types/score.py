@@ -11,7 +11,9 @@ the idea and :data:`POOL_WEIGHT` per distinct signal in the SOTA pool's titles,
 abstracts and families, at most :data:`POOL_CAP` from the pool.
 
 A family's signals are its own plus its variants'; each row also names the
-variant whose signals the idea matched most (``variant``, null on a tie or none).
+variant whose signals the idea matched most (``variant``). The pool decides the
+variant only when the idea matches none of the family's variants; a tie, or no
+match anywhere, leaves it null.
 
 Scores are relative: the leading type scores 100 and the others their share of
 it. The leader is suggested only when it leads strictly; ``confidence`` says
@@ -91,7 +93,7 @@ def score(idea: str, pool_text: str = "", types: list[dict] | None = None) -> di
         "type": item["id"], "status": item["status"], "line": item["line"],
         "score": round(100 * raw[item["id"]] / best) if best else 0,
         "raw": raw[item["id"]], "matched": in_idea[item["id"]], "pool_matched": in_pool[item["id"]],
-        "variant": _variant(item, in_idea[item["id"]] + in_pool[item["id"]]),
+        "variant": _variant(item, in_idea[item["id"]]) or _variant(item, in_pool[item["id"]]),
     } for item in types]
     ranked = sorted(raw.values(), reverse=True)
     second = ranked[1] if len(ranked) > 1 else 0

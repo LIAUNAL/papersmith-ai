@@ -164,6 +164,10 @@ def agree(root: Path, type_id: str, *, by: str, variant: str | None = None, rati
     record = _read(Path(root) / PAPER_TYPE)
     if record is None:
         raise AgreeError("SCORES_ABSENT", "score the idea first (paper_type_cli.py accept or score)")
+    accepted = _read(Path(root) / PLAUSIBILITY)
+    if accepted and accepted.get("idea_sha256") != record.get("idea_sha256"):
+        raise AgreeError("SCORES_STALE", "the scores belong to another idea than the accepted one; "
+                                         "run paper_type_cli.py score --root . first")
     try:
         item = registry.get(type_id)
     except registry.RegistryError as error:

@@ -17,8 +17,8 @@ idea from ``--idea-file`` or, without it, the accepted one, and writes
 only when asked with ``-``. Each verb prints one JSON object. A refusal prints
 ``{"ok": false, "error": <CODE>, "message": ...}`` and exits 1 (usage errors
 exit 2). Refusal codes: ``USAGE``, ``IDEA_ABSENT``, ``IDEA_UNREADABLE``,
-``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``, ``SCORES_ABSENT``, ``TYPE_UNKNOWN``,
-``VARIANT_UNKNOWN``.
+``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``, ``SCORES_ABSENT``, ``SCORES_STALE``,
+``TYPE_UNKNOWN``, ``VARIANT_UNKNOWN``.
 """
 
 from __future__ import annotations
