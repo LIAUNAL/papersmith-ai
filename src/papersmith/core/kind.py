@@ -159,6 +159,20 @@ def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = Fals
             raise UserError(f"the paper has started on the {previous} line ({', '.join(markers)}); "
                             "moving it would leave its proposals and sections behind. "
                             "Re-run with --force to move it anyway")
+    config_path = root / CONFIG
+    if line != previous:
+        # Everything that can refuse without writing runs before the
+        # agreement is recorded: the kit, its layouts and the config.
+        kit_root, _ = resolve_and_validate_origin()
+        leaving = sorted(set(manifest.kit_layout(kit_root, previous))
+                         - set(manifest.kit_layout(kit_root, line)))
+        original = _read_bytes(config_path)
+        try:
+            config = json.loads(original.decode("utf-8")) if original else {}
+        except (UnicodeDecodeError, ValueError):
+            config = None
+        if not isinstance(config, dict):
+            raise UserError(f"{config_path} is not a readable JSON object; repair it before moving the workspace")
     agreed_before = _read_bytes(root / PAPER_TYPE)
     agreement = _agree(root, type_id, by)
     result = {"workspace": str(root), "type": type_id, "agreed_by": by, "from": previous, "to": line,
@@ -167,21 +181,16 @@ def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = Fals
     if line == previous:
         return result
 
-    kit_root, _ = resolve_and_validate_origin()
-    leaving = sorted(set(manifest.kit_layout(kit_root, previous)) - set(manifest.kit_layout(kit_root, line)))
-    config_path = root / CONFIG
-    original = fs.read_text(config_path)
-    config = json.loads(original) if original else {}
     config["paper_kind"] = line
-    if not fs.write_text(config_path, json.dumps(config, indent=2, sort_keys=False) + "\n"):
-        raise UserError(f"could not write {config_path}")
     try:
+        if not fs.write_text(config_path, json.dumps(config, indent=2, sort_keys=False) + "\n"):
+            raise UserError(f"could not write {config_path}")
         report = upgrade_module.upgrade(root, allow_dirty_kit=allow_dirty_kit)
     except PapersmithError:
         # ``upgrade`` refuses before its first write (dirty kit, downgrade), so
         # restoring the line and the agreement leaves the workspace exactly as
         # it was.
-        fs.write_text(config_path, original or "")
+        _restore(config_path, original)
         _restore(root / PAPER_TYPE, agreed_before)
         raise
     init_module.create_topology(root, line)

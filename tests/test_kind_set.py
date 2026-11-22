@@ -191,6 +191,15 @@ class KindSetTests(KindCase):
         self.assertEqual(before, {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()})
         self.assertIn("01-materials-and-methods.md", self.sections(workspace))
 
+    def test_an_unreadable_config_refuses_before_the_agreement(self) -> None:
+        workspace = self.init()
+        (workspace / ".papersmith" / "config.json").write_text("{not json", encoding="utf-8")
+        code, _, err = self.smith("kind", "set", "review", "--by", "Ana", str(workspace))
+        self.assertNotEqual(code, 0)
+        self.assertIn("config.json", err)
+        self.assertIsNone(self.paper_type(workspace)["agreed"])
+        self.assertEqual((workspace / ".papersmith" / "config.json").read_text(encoding="utf-8"), "{not json")
+
     def test_a_skill_with_an_edited_file_stays_whole(self) -> None:
         workspace = self.init("review")
         edited = workspace / "skills" / "systematic-review" / "scripts" / "review_cli.py"
