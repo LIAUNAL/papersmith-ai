@@ -1578,15 +1578,18 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         ai_archive.sync_in_background(root_path)
         return status_payload()
 
-    def status_payload() -> JSONResponse:
+    def status_payload(paper_kind: str | None = None) -> JSONResponse:
         """What ``/api/status`` answers, without the archive sync its route
-        starts, so a read-only caller (``smith doctor``) writes nothing."""
+        starts, so a read-only caller (``smith doctor``) writes nothing.
+        ``paper_kind`` is the paper line a caller already read for the same
+        request; read here otherwise."""
         import re
         from datetime import datetime, timezone
 
         # The paper line, read on every call: `smith kind set` can move the
         # workspace to another line while the dashboard runs.
-        paper_kind = paper_line.current_line(root_path)
+        if paper_kind is None:
+            paper_kind = paper_line.current_line(root_path)
         state = get_workspace_state(root_path)
         paper_meta = state.get("paper_metadata", {})
         project_name = root_path.name
@@ -2899,17 +2902,29 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not origin_is_same(request):
             return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
                                 status_code=403)
-        response = await _phase_check(request)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        # The paper line, read once: the stage is resolved, run and verified
+        # under the same line even when `smith kind set` moves it meanwhile.
+        line = paper_line.current_line(root_path)
+        response = await _phase_check(payload, line)
         try:
             body = json.loads(bytes(response.body))
-            payload = await request.json()
         except ValueError:
             return response
-        stage = _stage_of(str((payload or {}).get("phase_id", "")))
+        stage = _stage_of(str(payload.get("phase_id", "")), line)
         if stage:
-            fases = json.loads(bytes(api_status_adapter().body)).get("fases", [])
+            ai_archive.sync_in_background(root_path)
+            fases = json.loads(bytes(status_payload(line).body)).get("fases", [])
             phase = next((f for f in fases if f.get("stage_id") == stage), {})
-            body["stage"] = stage
+            if line == "review":
+                # A review step that shares a check (writing, paper, audit)
+                # answers with its own step id; the experimental body is
+                # unchanged.
+                body["stage"] = stage
             body["status"] = phase.get("status", "PENDING")
             body["verified"] = body["status"] == "PASS"
             body["evidence"] = phase.get("evidence", [])
@@ -2999,22 +3014,18 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({"ok": False, "code": "PROMPT_INVALID", "error": str(exc)}, status_code=422)
         return JSONResponse(result)
 
-    def _stage_of(phase_id: str) -> str | None:
-        """The stage a phase id names in the workspace's paper line."""
-        if paper_line.current_line(root_path) == "review":
+    def _stage_of(phase_id: str, line: str) -> str | None:
+        """The stage a phase id names in the paper line ``line``."""
+        if line == "review":
             return review_board.stage_for(phase_id)
         return phase_actions.stage_for(phase_id)
 
-    async def _phase_check(request: Request) -> JSONResponse:
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
+    async def _phase_check(payload: dict, line: str) -> JSONResponse:
         phase_id = str(payload.get("phase_id", ""))
-        stage = _stage_of(phase_id)
+        stage = _stage_of(phase_id, line)
         if stage is None:
             return JSONResponse({"ok": False, "error": f"unknown phase: {phase_id}"}, status_code=422)
-        if paper_line.current_line(root_path) == "review":
+        if line == "review":
             # A review step that compiles, builds or audits shares that check;
             # every other one runs from its card.
             shared = {"writing": "writing", "paper": "paper", "reporting_audit": "audit"}.get(stage)

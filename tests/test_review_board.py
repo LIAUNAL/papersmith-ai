@@ -290,6 +290,33 @@ class ReviewPipelineTests(BoardCase):
         self.assertEqual([f["stage_id"] for f in status["fases"]], list(review_board.REVIEW_STAGES))
         self.assertIn("review_cli.py", self.phase(status, "protocol")["detail"])
 
+    def test_a_broken_workspace_review_cli_falls_back_visibly(self) -> None:
+        root = self.workspace()
+        self.approved(root)
+        workspace_cli = root / "skills" / "systematic-review" / "scripts" / "review_cli.py"
+        workspace_cli.write_text("def broken(:\n", encoding="utf-8")
+        status = self.status(root)
+        protocol = self.phase(status, "protocol")
+        # The bundled copy still reads the records...
+        self.assertEqual(protocol["status"], "PASS")
+        # ...and every step it read says why the workspace's own copy was not used.
+        for stage in ("scoping", "protocol", "identification", "screening", "appraisal_extraction", "synthesis"):
+            with self.subTest(stage=stage):
+                detail = self.phase(status, stage)["detail"]
+                self.assertIn("the workspace's review_cli.py did not load (SyntaxError", detail)
+                self.assertIn(str(workspace_cli), detail)
+        for stage in ("harness", "writing", "paper", "reporting_audit"):
+            with self.subTest(stage=stage):
+                self.assertNotIn("did not load", self.phase(status, stage)["detail"])
+        self.assertEqual(self.spanish_gaps(status), [])
+        spanish = self.phase(self.status(root, "es"), "protocol")["detail"]
+        self.assertIn("SyntaxError", spanish)
+        self.assertNotIn("did not load", spanish)
+        # Repaired, the warning goes away.
+        workspace_cli.write_text((REPO / "skills/systematic-review/scripts/review_cli.py").read_text(encoding="utf-8"),
+                                 encoding="utf-8")
+        self.assertNotIn("did not load", self.phase(self.status(root), "protocol")["detail"])
+
     def test_every_review_card_runs_a_real_command(self) -> None:
         root = self.workspace()
         smith = {a for a in build_parser()._actions if a.__class__.__name__ == "_SubParsersAction"}
@@ -332,6 +359,60 @@ class ReviewPipelineTests(BoardCase):
         body = client.post("/api/phase/run", json={"phase_id": "Fase 3"}).json()
         self.assertEqual((body["stage"], body["status"], body["verified"]), ("protocol", "PENDING", False))
         self.assertIn("Phase 3", body["message"])
+
+
+    def test_a_phase_run_reads_the_paper_line_once(self) -> None:
+        # `smith kind set` moves the line while the request runs: the stage is
+        # resolved, dispatched and verified under the line read first.
+        root = self.workspace()
+        client = TestClient(server.create_app(root))
+        lines = iter(["review"])
+        calls = []
+
+        def moving_line(path):
+            calls.append(path)
+            return next(lines, "experimental")
+
+        original = server.paper_line.current_line
+        server.paper_line.current_line = moving_line
+        self.addCleanup(setattr, server.paper_line, "current_line", original)
+        body = client.post("/api/phase/run", json={"phase_id": "Fase 3"}).json()
+        self.assertEqual((body["stage"], body["status"], body["verified"]), ("protocol", "PENDING", False))
+        self.assertIn("Phase 3: it runs from its card", body["message"])
+        self.assertTrue(calls)
+
+
+class ExperimentalPhaseRunTests(BoardCase):
+    """`/api/phase/run` answers an experimental workspace exactly as before the review board."""
+
+    def test_the_experimental_phase_run_keys_are_unchanged(self) -> None:
+        root = self.workspace("experimental")
+        client = TestClient(server.create_app(root))
+        common = ["evidence", "message", "ok", "outputs", "phase_id", "stage", "status", "verified"]
+        stages = ["harness", "plausibility", "ingestion", "proposal", "poc_experiments", "scaffolding",
+                  "declarations", "writing", "figures", "paper", "audit"]
+        for number, stage in enumerate(stages, 1):
+            with self.subTest(phase=number):
+                response = client.post("/api/phase/run", json={"phase_id": f"Fase {number}"})
+                body = response.json()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(sorted(body), sorted(common + (["log"] if stage == "audit" else [])))
+                self.assertEqual(body["stage"], stage)
+        unknown = client.post("/api/phase/run", json={"phase_id": "Fase 12"})
+        self.assertEqual((unknown.status_code, sorted(unknown.json())), (422, ["error", "ok"]))
+
+    def test_a_failed_experimental_build_gets_no_stage_key(self) -> None:
+        root = self.workspace("experimental")
+
+        def broken(_root):
+            raise RuntimeError("build failed")
+
+        original = server._build_manuscript
+        server._build_manuscript = broken
+        self.addCleanup(setattr, server, "_build_manuscript", original)
+        response = TestClient(server.create_app(root)).post("/api/phase/run", json={"phase_id": "Fase 8"})
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(sorted(response.json()), ["error", "evidence", "ok", "status", "verified"])
 
 
 class ReviewSectionsTests(BoardCase):

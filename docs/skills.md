@@ -3422,8 +3422,10 @@ leaving its record under `review/`:
 records every amendment with its reason; the operator is always one of the two
 screeners and settles conflicts (`screen --final`), signs the screening off
 once every record is decided without conflict and accepts the synthesis once
-its PRISMA counts and flow diagram exist (`signoff`, refused before then; a
-sign-off is current only while what it signed is unchanged). The dashboard
+its PRISMA counts and flow diagram exist (`signoff`, refused before then:
+`SCREENING_PENDING`, `SCREENING_CONFLICTS`, `SCREENING_EMPTY` while nothing has
+been screened yet, `SYNTHESIS_INCOMPLETE`; a sign-off is current only while
+what it signed is unchanged, `SIGNOFF_UNCHANGED` otherwise). The dashboard
 (`smith ui`) shows these gates on the review line's ten steps. The agent may be the other
 screener and extracts data with the quote that holds each value.
 

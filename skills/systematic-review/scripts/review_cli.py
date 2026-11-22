@@ -1322,11 +1322,16 @@ def cmd_signoff(args) -> dict:
     require_approved(root)
     if args.gate == "screening":
         _screening_open(root)
-    elif signoff_basis(root, "synthesis") is None:
+    digest = signoff_basis(root, args.gate)
+    # A sign-off always pins the hash of what it signed: never record one
+    # over a state that does not exist.
+    if digest is None and args.gate == "screening":
+        raise Refusal("SCREENING_EMPTY",
+                      "nothing has been screened yet: review/screening.jsonl holds no decision to sign off")
+    if digest is None:
         raise Refusal("SYNTHESIS_INCOMPLETE",
                       "the synthesis is accepted after its counts and flow diagram exist: "
                       "run `prisma` and `flow` (review/prisma.json, paper/Figures/prisma-flow.svg)")
-    digest = signoff_basis(root, args.gate)
     data = read_signoffs(root)
     entries = data["gates"].setdefault(args.gate, [])
     if entries and isinstance(entries[-1], dict) and entries[-1].get("sha256") == digest:

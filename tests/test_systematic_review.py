@@ -451,6 +451,20 @@ class SignoffProtocolTests(ReviewCase):
         self.refused("PROTOCOL_NOT_APPROVED", "signoff", "--gate", "screening", "--by", "Operator")
         self.refused("USAGE", "signoff", "--gate", "writing", "--by", "Operator")
 
+    def test_no_screening_signoff_before_anything_is_screened(self):
+        self.approved()
+        self.refused("NO_RECORDS", "signoff", "--gate", "screening", "--by", "Operator")
+        # Nothing is left to screen (every record marks itself a duplicate) and
+        # no decision was ever logged: there is no screening state to sign.
+        (self.root / "review" / "records.jsonl").write_text(
+            json.dumps({"id": "R0001", "source": "openalex", "title": "x", "duplicate_of": "R0002"}) + "\n",
+            encoding="utf-8")
+        refusal = self.refused("SCREENING_EMPTY", "signoff", "--gate", "screening", "--by", "Operator")
+        self.assertIn("nothing has been screened yet", refusal["message"])
+        self.refused("SYNTHESIS_INCOMPLETE", "signoff", "--gate", "synthesis", "--by", "Operator")
+        self.assertFalse((self.root / "review" / "signoffs.json").exists())
+        self.assertEqual(self.ok("status")["signoffs"], {"screening": None, "synthesis": None})
+
 
 class ReferenceBudgetTests(ReviewCase):
     """`prioritize` keeps the review within 100-200 references, ranking by quartile and topical relation."""

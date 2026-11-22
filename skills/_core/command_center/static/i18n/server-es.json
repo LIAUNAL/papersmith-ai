@@ -868,6 +868,7 @@
   "Stale: the counts or the flow diagram changed after the acceptance": "Desactualizada: los conteos o el diagrama de flujo cambiaron después de la aceptación",
   "Not accepted yet: the counts and the flow diagram first": "Aún sin aceptar: primero los conteos y el diagrama de flujo",
   "Review records unreadable ({code}): {message}": "Registros de la revisión ilegibles ({code}): {message}",
+  "{detail} (the workspace's review_cli.py did not load ({warning}); read with the dashboard's own copy)": "{detail} (el review_cli.py del workspace no cargó ({warning}); se leyó con la copia propia del tablero)",
   "review_cli.py is not available in this workspace (skills/systematic-review/scripts/); the review records cannot be read": "review_cli.py no está disponible en este workspace (skills/systematic-review/scripts/); los registros de la revisión no se pueden leer",
   "Existing reviews (review/scope.json)": "Revisiones existentes (review/scope.json)",
   "Protocol written and checked": "Protocolo redactado y verificado",

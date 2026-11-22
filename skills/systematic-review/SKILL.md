@@ -102,7 +102,8 @@ recorded as the `review-registration` declaration of `/paper-writing`.
   `review/screening.jsonl`; the sign-off is current only while that hash
   still matches, so a later decision asks for a new one. It refuses with
   `SCREENING_CONFLICTS` or `SCREENING_PENDING` while a record is in conflict
-  or undecided. The agent never runs `signoff`: it tells the operator the
+  or undecided, and with `SCREENING_EMPTY` while nothing has been screened
+  yet (no `review/screening.jsonl`). The agent never runs `signoff`: it tells the operator the
   screening is ready and gives them the command.
 
 ### 5. Appraisal and extraction
@@ -192,7 +193,7 @@ ten review steps and gates.
 `REVIEWERS_AMBIGUOUS`, `RECORD_NOT_INCLUDED`, `ANSWERS_INCOMPLETE`,
 `ANSWER_UNKNOWN`, `FIELD_UNKNOWN`, `DATA_INVALID`, `ARGUMENT_INVALID`,
 `RECORDS_CORRUPT`, `SCREENING_CONFLICTS`, `SCREENING_PENDING`,
-`SYNTHESIS_INCOMPLETE`, `SIGNOFF_UNCHANGED`, `SIGNOFFS_CORRUPT`,
+`SCREENING_EMPTY`, `SYNTHESIS_INCOMPLETE`, `SIGNOFF_UNCHANGED`, `SIGNOFFS_CORRUPT`,
 `PRISMA_CORRUPT`, `USAGE`.
 
 ## Rules

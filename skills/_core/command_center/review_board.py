@@ -37,7 +37,7 @@ from typing import Any
 
 from . import phase_actions
 from . import state_extractor as _ex
-from .phase_actions import _command, _prompt, _redirect
+from .phase_actions import _command, _prompt
 
 REVIEW_CLI = "python skills/systematic-review/scripts/review_cli.py"
 #: The dashboard's own copy, used when the workspace carries none.
@@ -314,35 +314,61 @@ _SECTION_TEXT: dict[str, tuple[str, str, bool]] = {
 _HEADING = re.compile(r"^##\s+(?:Block|Slot)\s+`(?P<id>[^`]+)`(?P<rest>[^\n]*)$", re.M)
 _ITEMS = re.compile(r"\((?P<word>items?)\s+(?P<numbers>\d[\d\-–]*)")
 
+#: The operator's sign-off (screening) or acceptance (synthesis) counts as one
+#: unit of a step's progress, after the records it signs.
+_SIGNOFF_UNITS = 1
+
 _CACHE_LOCK = threading.Lock()
-_LOADED: dict[str, tuple[int, Any]] = {}
+#: path -> (mtime_ns, module or ``None``, why it did not load or ``None``);
+#: a failed load is cached too, so a broken file is not re-executed per request.
+_LOADED: dict[str, tuple[int, Any, str | None]] = {}
 
 
 # --------------------------------------------------------------------------- review_cli
 
 
-def review_cli(root: Path) -> Any | None:
-    """The workspace's ``review_cli.py`` (else the dashboard's own copy) as a
-    module, or ``None`` when neither loads. Reloaded when the file changes."""
-    for path in (Path(root) / "skills" / "systematic-review" / "scripts" / "review_cli.py", DASHBOARD_REVIEW_CLI):
+def _load(path: Path) -> tuple[Any | None, str | None] | None:
+    """``(module, None)``, ``(None, why)`` when the file fails to load, or
+    ``None`` when it does not exist. Reloaded when the file changes."""
+    try:
+        stamp = path.stat().st_mtime_ns
+    except OSError:
+        return None
+    key = str(path)
+    with _CACHE_LOCK:
+        cached = _LOADED.get(key)
+        if cached and cached[0] == stamp:
+            return cached[1], cached[2]
         try:
-            stamp = path.stat().st_mtime_ns
-        except OSError:
-            continue
-        key = str(path)
-        with _CACHE_LOCK:
-            cached = _LOADED.get(key)
-            if cached and cached[0] == stamp:
-                return cached[1]
-            try:
-                spec = importlib.util.spec_from_file_location(f"_papersmith_review_cli_{len(_LOADED)}", path)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-            except (Exception, SystemExit):
-                continue
-            _LOADED[key] = (stamp, module)
-            return module
-    return None
+            spec = importlib.util.spec_from_file_location(f"_papersmith_review_cli_{len(_LOADED)}", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            loaded: tuple[Any | None, str | None] = (module, None)
+        except (Exception, SystemExit) as exc:
+            loaded = (None, f"{type(exc).__name__} at {path}")
+        _LOADED[key] = (stamp, *loaded)
+        return loaded
+
+
+def load_review_cli(root: Path) -> tuple[Any | None, str | None]:
+    """The workspace's ``review_cli.py`` (else the dashboard's own copy) as a
+    module, or ``None`` when neither loads, and why the workspace's own copy
+    was passed over when it exists but fails to load (``None`` otherwise)."""
+    workspace = _load(Path(root) / "skills" / "systematic-review" / "scripts" / "review_cli.py")
+    if workspace is not None and workspace[0] is not None:
+        return workspace
+    warning = workspace[1] if workspace is not None else None
+    bundled = _load(DASHBOARD_REVIEW_CLI)
+    return (bundled[0] if bundled is not None else None), warning
+
+
+def review_cli(root: Path) -> Any | None:
+    """The module :func:`load_review_cli` resolves, without the warning."""
+    return load_review_cli(root)[0]
+
+
+def _fallback_note(detail: str, warning: str) -> str:
+    return f"{detail} (the workspace's review_cli.py did not load ({warning}); read with the dashboard's own copy)"
 
 
 def _failure(rc: Any, exc: BaseException) -> str:
@@ -464,9 +490,11 @@ def _screening(rc: Any, root: Path, signoffs: dict) -> dict[str, Any]:
                   f"{ta_conflicts + ft_conflicts} conflict(s)")
     else:
         detail = "No record to screen yet"
-    total = ta_total + ft_total
+    # One unit per screening decision owed, plus one for the operator's
+    # sign-off: an ACTIVE step never reads as complete before it is signed.
+    units = ta_total + ft_total + _SIGNOFF_UNITS
     return {"status": gate, "gate": gate, "detail": detail,
-            "progress": round((ta_done + ft_done) / (total + 1), 3) if gate == "ACTIVE" else None, "subfases": [
+            "progress": round((ta_done + ft_done) / units, 3) if gate == "ACTIVE" else None, "subfases": [
         _sub("5.1", "Title/abstract screening", _state(ta_done, ta_total, ta_done > 0),
              f"{ta_done} of {ta_total} records decided; {ta_conflicts} conflict(s)"),
         _sub("5.2", "Full-text screening", _state(ft_done, ft_total, ft_done > 0),
@@ -509,6 +537,9 @@ def _synthesis(rc: Any, root: Path, signoffs: dict) -> dict[str, Any]:
     signoff = signoffs.get("synthesis")
     current = bool(signoff and signoff["current"])
     present = sum(on_file.values())
+    # One unit per synthesis record ("N of 3 synthesis records on file") plus
+    # one for the operator's acceptance, which an ACTIVE step still owes.
+    units = len(on_file) + _SIGNOFF_UNITS
     gate = "PASS" if current else ("ACTIVE" if present or signoff else "PENDING")
     if current:
         detail = f"Synthesis accepted by {signoff.get('by') or '?'}"
@@ -516,7 +547,7 @@ def _synthesis(rc: Any, root: Path, signoffs: dict) -> dict[str, Any]:
         detail = ("The synthesis changed after its acceptance: accept it again "
                   "(review_cli.py signoff --gate synthesis)")
     elif present:
-        detail = f"{present} of 3 synthesis records on file; awaiting the operator's acceptance (G-SYNTHESIS)"
+        detail = f"{present} of {len(on_file)} synthesis records on file; awaiting the operator's acceptance (G-SYNTHESIS)"
     else:
         detail = "No synthesis record yet (review_cli.py prisma, flow, biblio)"
 
@@ -524,7 +555,7 @@ def _synthesis(rc: Any, root: Path, signoffs: dict) -> dict[str, Any]:
         return "PASS" if on_file[key] else "PENDING"
 
     return {"status": gate, "gate": gate, "detail": detail,
-            "progress": round(present / 4, 3) if gate == "ACTIVE" else None, "subfases": [
+            "progress": round(present / units, 3) if gate == "ACTIVE" else None, "subfases": [
         _sub("7.1", "PRISMA flow counts (review/prisma.json)", done("prisma"),
              "Counted from the records by review_cli.py prisma"),
         _sub("7.2", "PRISMA 2020 flow diagram (paper/Figures/prisma-flow.svg)", done("flow"),
@@ -601,7 +632,7 @@ def board(root: Path, facts: dict[str, Any]) -> tuple[list[dict[str, Any]], list
     ``blocks_total``, ``words``, ``figures``, ``pdf_exists``, ``pdf_pages``,
     ``pdf_kb`` and ``audit`` (True, False or None)."""
     root = Path(root)
-    rc = review_cli(root)
+    rc, cli_warning = load_review_cli(root)
     absent = ("review_cli.py is not available in this workspace (skills/systematic-review/scripts/); "
               "the review records cannot be read")
     signoffs: dict = {}
@@ -633,6 +664,8 @@ def board(root: Path, facts: dict[str, Any]) -> tuple[list[dict[str, Any]], list
             computed[stage] = read()
         except Exception as exc:
             computed[stage] = {"status": "PENDING", "detail": _failure(rc, exc), "subfases": []}
+        if cli_warning:
+            computed[stage]["detail"] = _fallback_note(computed[stage]["detail"], cli_warning)
 
     fases = []
     for number, stage in enumerate(REVIEW_STAGES, 1):
