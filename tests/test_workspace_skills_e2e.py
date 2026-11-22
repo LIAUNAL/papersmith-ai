@@ -41,6 +41,7 @@ SKILL_NAMES = (
     "kaggle-accounts",
     "math-tutor",
     "paper-ingestion",
+    "paper-type",
     "paper-writing",
     "pixelrag",
     "plausibility",

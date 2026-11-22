@@ -158,6 +158,8 @@ AGENT_STAGES = {
     "sota-scout": "plausibility",
     "sota-grapher": "plausibility",
     "novelty-screener": "plausibility",
+    # Relates the accepted idea to the paper-type catalogue at the end of plausibility.
+    "paper-type-advisor": "plausibility",
     "paper-ingestion": "ingestion",
     "deliberation-publish": "proposal",
     # Tutors the proposal's own mathematics and novelty from the math panel.

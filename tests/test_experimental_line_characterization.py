@@ -52,7 +52,8 @@ DECLARED_ADDITIONS: dict[str, tuple[str, ...]] = {
     "status-es.json": (),
     "phase-actions.json": (),
     "harness-flow.json": (),
-    "kit.json": (),
+    # T3: the paper-type skill ships to every workspace; the AI flow does not call it.
+    "kit.json": (r"^/skills/\+:paper-type$",),
 }
 
 
