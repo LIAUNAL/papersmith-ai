@@ -141,7 +141,7 @@ class PanelActionTests(unittest.TestCase):
                  {"action": "agree-confirm", "type": "review", "values": {"ptBy": "Ana"}}]
         out = run(view(), steps=steps, responses={"/api/paper-type/agree": {"status": 200, "body": {
             "ok": True, "layout": "switch:review"}}})
-        self.assertIn('smith kind set review --by "Ana" moves this workspace to it', out["rendered"])
+        self.assertIn('smith kind set review --by &quot;Ana&quot; moves this workspace to it', out["rendered"])
         self.assertIn("smith init --kind review", out["rendered"])
 
     def test_agree_form_offers_the_family_variants(self) -> None:

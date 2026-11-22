@@ -176,7 +176,8 @@ def _section_paths(root: Path) -> tuple[list[Path], dict[str, Any]]:
     reported as ``truncated`` instead of making later sections look absent.
     """
     sections_dir = root / "sections"
-    canonical = set(_ex.SECTION_ORDER)
+    order = _ex.section_order(root)
+    canonical = set(order)
     by_name: dict[str, Path] = {}
     extras: list[Path] = []
     status, truncated = "absent", False
@@ -201,7 +202,7 @@ def _section_paths(root: Path) -> tuple[list[Path], dict[str, Any]]:
                         extras.append(path)
                     else:
                         truncated = True
-    paths = [by_name.get(name, sections_dir / f"{name}.md") for name in _ex.SECTION_ORDER]
+    paths = [by_name.get(name, sections_dir / f"{name}.md") for name in order]
     paths.extend(extras)
     return paths, {"status": status, "truncated": truncated}
 

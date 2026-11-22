@@ -95,6 +95,15 @@ recorded as the `review-registration` declaration of `/paper-writing`.
 - Full text (`--stage ft`) repeats this on the records kept, after
   `/paper-ingestion` retrieves them: `include`, `exclude --reason E<n>`
   (mandatory) or `not-retrieved`.
+- When every record is decided at both stages and no conflict is left, the
+  operator signs the screening off: `signoff --gate screening --by
+  "<operator name>" [--note …]` (gate **G-SCREENING**). It writes
+  `review/signoffs.json` with who signed, when, and the sha256 of
+  `review/screening.jsonl`; the sign-off is current only while that hash
+  still matches, so a later decision asks for a new one. It refuses with
+  `SCREENING_CONFLICTS` or `SCREENING_PENDING` while a record is in conflict
+  or undecided. The agent never runs `signoff`: it tells the operator the
+  screening is ready and gives them the command.
 
 ### 5. Appraisal and extraction
 
@@ -130,6 +139,13 @@ recorded as the `review-registration` declaration of `/paper-writing`.
 - `biblio` writes per-year and per-venue counts and keyword co-occurrence to
   `review/biblio.json` (from the included studies, or the screened records
   before any is included).
+- The operator accepts the synthesis before the writing starts: `signoff
+  --gate synthesis --by "<operator name>" [--note …]` (gate **G-SYNTHESIS**),
+  refused with `SYNTHESIS_INCOMPLETE` until `review/prisma.json` and
+  `paper/Figures/prisma-flow.svg` exist. It pins the hash of the PRISMA counts
+  (their `generated_at` aside) and of the flow diagram, so counting the same
+  records again keeps it current and new counts make it stale. As with the
+  screening, only the operator signs.
 - The taxonomy is built by the agent with the operator from
   `review/extraction.jsonl`: the themes (each answering a research question),
   the problem classes (the background's open problems, with the same names)
@@ -159,7 +175,10 @@ applied at screening through the protocol's exclusion criteria.
 `review/protocol.json`, `review/protocol.lock.json`, `review/searches.jsonl`,
 `review/records.jsonl`, `review/screening.jsonl`, `review/appraisal.jsonl`,
 `review/extraction.jsonl`, `review/prisma.json`, `review/biblio.json`,
-`review/scope.json`, `paper/Figures/prisma-flow.svg`.
+`review/scope.json`, `review/signoffs.json`, `paper/Figures/prisma-flow.svg`.
+`status` reports each sign-off (`signoffs`: who, when, and whether it is
+still current). The dashboard (`smith ui`) reads the same records for its
+ten review steps and gates.
 
 ## Refusals
 
@@ -172,12 +191,14 @@ applied at screening through the protocol's exclusion criteria.
 `REASON_UNKNOWN`, `REASON_UNEXPECTED`, `REVIEWER_MISSING`,
 `REVIEWERS_AMBIGUOUS`, `RECORD_NOT_INCLUDED`, `ANSWERS_INCOMPLETE`,
 `ANSWER_UNKNOWN`, `FIELD_UNKNOWN`, `DATA_INVALID`, `ARGUMENT_INVALID`,
-`RECORDS_CORRUPT`, `USAGE`.
+`RECORDS_CORRUPT`, `SCREENING_CONFLICTS`, `SCREENING_PENDING`,
+`SYNTHESIS_INCOMPLETE`, `SIGNOFF_UNCHANGED`, `SIGNOFFS_CORRUPT`,
+`PRISMA_CORRUPT`, `USAGE`.
 
 ## Rules
 
 - The agent never approves the protocol, never settles a conflict with
-  `--final` and never signs as the operator.
+  `--final`, never runs `signoff` and never signs as the operator.
 - A stage never runs on an unapproved or silently changed protocol.
 - Nothing is scraped: databases without an open API come in as the
   operator's exports.

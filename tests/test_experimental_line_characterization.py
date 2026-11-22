@@ -49,9 +49,11 @@ WORKSPACE = "characterized-paper"
 #: Empty until a task declares one (paper-type-lines S1).
 DECLARED_ADDITIONS: dict[str, tuple[str, ...]] = {
     # T4: Phase 2's advisory sub-step 2.5 "Paper Type" (locks nothing).
-    "status-en.json": ("/fases/1/subfases/4", "/pipeline_stages/1/subfases/4"),
+    # T6a: the workspace's paper line (`paper_kind`), read on every request.
+    "status-en.json": ("/fases/1/subfases/4", "/pipeline_stages/1/subfases/4", "/paper_kind"),
     # T4: Phase 2's advisory sub-step 2.5 "Paper Type" (locks nothing).
-    "status-es.json": ("/fases/1/subfases/4", "/pipeline_stages/1/subfases/4"),
+    # T6a: the workspace's paper line (`paper_kind`), read on every request.
+    "status-es.json": ("/fases/1/subfases/4", "/pipeline_stages/1/subfases/4", "/paper_kind"),
     "phase-actions.json": (),
     # T3: plausibility hands over to /paper-type; three added lines in step 2.
     "harness-flow.json": (r"/\+:   On acceptance, `/paper-type` scores the idea against smith's paper types,$",

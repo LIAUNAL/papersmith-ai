@@ -32,6 +32,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from ..paper_types import decision
+except ImportError:
+    # The paper-writing scripts import this package as top-level
+    # ``command_center`` (``skills/_core`` on ``sys.path``), where the relative
+    # import has no parent; ``paper_types`` is then a sibling top-level package.
+    from paper_types import decision  # type: ignore[no-redef]
+
 #: Sections a paper always declares, in rendering order.
 SECTION_ORDER = (
     "01-materials-and-methods",
@@ -45,6 +53,28 @@ SECTION_ORDER = (
     "09-title-and-keywords",
     "10-back-matter",
 )
+
+#: The review line's sections (``smith init --kind review``): the contracts of
+#: the kit's ``sections-review/``, served at ``sections/``, and the back matter
+#: both lines share (``papersmith.core.manifest.REVIEW_SHARED_SECTIONS``).
+REVIEW_SECTION_ORDER = (
+    "01-title-and-keywords",
+    "02-abstract",
+    "03-introduction",
+    "04-background",
+    "05-methods",
+    "06-results",
+    "07-discussion",
+    "08-limitations",
+    "09-conclusions",
+    "10-back-matter",
+)
+
+
+def section_order(root: Path | str) -> tuple[str, ...]:
+    """The canonical sections of the workspace's paper line, read on every call
+    (``smith kind set`` can change the line while the dashboard runs)."""
+    return REVIEW_SECTION_ORDER if decision.current_line(Path(root)) == "review" else SECTION_ORDER
 
 #: The pipeline's stages, in the order the paper-construction flow fixes them.
 #:
@@ -1097,14 +1127,15 @@ def get_workspace_state(root: Path | str) -> dict[str, Any]:
     paths: list[Path] = []
     present = sorted(sections_dir.glob("*.md")) if sections_dir.is_dir() else []
     by_name = {path.stem: path for path in present}
-    canonical = set(SECTION_ORDER)
-    # The ten canonical slots are always rendered, whether or not their
-    # contract file exists. A partially scaffolded sections/ directory must
-    # report the missing contracts instead of passing readiness over the files
-    # it happens to hold.
+    order = section_order(root_path)
+    canonical = set(order)
+    # The ten canonical slots of the workspace's line are always rendered,
+    # whether or not their contract file exists. A partially scaffolded
+    # sections/ directory must report the missing contracts instead of passing
+    # readiness over the files it happens to hold.
     paths = [
         by_name.get(name, root_path / "sections" / f"{name}.md")
-        for name in SECTION_ORDER
+        for name in order
     ]
     paths.extend(path for path in present if path.stem not in canonical)
 

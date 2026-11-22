@@ -256,7 +256,9 @@ class IdentificationTests(ReviewCase):
         self.refused("QUERY_TOO_SHORT", "scope", "--query", "gnn")
 
 
-class ScreeningAndSynthesisTests(ReviewCase):
+class ScreenedCase(ReviewCase):
+    """Four records identified (R0004 a duplicate of R0003) under an approved protocol."""
+
     def setUp(self):
         super().setUp()
         self.approved()
@@ -268,6 +270,8 @@ class ScreeningAndSynthesisTests(ReviewCase):
         return self.ok("screen", "--stage", stage, "--record", record, "--reviewer", reviewer,
                        "--decision", decision, *extra)
 
+
+class ScreeningAndSynthesisTests(ScreenedCase):
     def test_two_reviewers_conflicts_final_and_kappa(self):
         self.assertEqual(self.ok("queue", "--stage", "ta", "--reviewer", "agent")["pending"], 3)
         self.screen("ta", "R0001", "agent", "include")
@@ -366,6 +370,86 @@ class ScreeningAndSynthesisTests(ReviewCase):
         umask = os.umask(0)
         os.umask(umask)
         self.assertEqual(mode, 0o666 & ~umask)
+
+
+class SignoffTests(ScreenedCase):
+    """`signoff`: the operator's screening sign-off and synthesis acceptance, current while their state holds."""
+
+    def screen_everything(self):
+        for record in ("R0001", "R0002", "R0003"):
+            decision = "exclude" if record == "R0003" else "include"
+            extra = ("--reason", "E2") if decision == "exclude" else ()
+            for reviewer in ("agent", "operator"):
+                self.screen("ta", record, reviewer, decision, *extra)
+        self.screen("ft", "R0001", "agent", "include")
+        self.screen("ft", "R0001", "operator", "include")
+        self.screen("ft", "R0002", "agent", "exclude", "--reason", "E1")
+        self.screen("ft", "R0002", "operator", "exclude", "--reason", "E1")
+
+    def signoffs(self) -> dict:
+        return json.loads((self.root / "review" / "signoffs.json").read_text(encoding="utf-8"))
+
+    def sha(self, name: str) -> str:
+        import hashlib
+        return hashlib.sha256((self.root / "review" / name).read_bytes()).hexdigest()
+
+    def test_screening_is_signed_only_when_every_record_is_decided_without_conflict(self):
+        self.refused("APPROVER_MISSING", "signoff", "--gate", "screening", "--by", "  ")
+        self.refused("SCREENING_PENDING", "signoff", "--gate", "screening", "--by", "Operator")
+        self.screen("ta", "R0001", "agent", "include")
+        self.screen("ta", "R0001", "operator", "exclude", "--reason", "E2")
+        conflict = self.refused("SCREENING_CONFLICTS", "signoff", "--gate", "screening", "--by", "Operator")
+        self.assertIn("R0001", conflict["message"])
+        self.screen("ta", "R0001", "operator", "include", "--final")
+        self.refused("SCREENING_PENDING", "signoff", "--gate", "screening", "--by", "Operator")
+        self.assertFalse((self.root / "review" / "signoffs.json").exists())
+        self.screen_everything()
+        signed = self.ok("signoff", "--gate", "screening", "--by", "Operator", "--note", "read every conflict")
+        entry = self.signoffs()["gates"]["screening"][-1]
+        self.assertEqual((entry["by"], entry["note"], entry["sha256"], entry["basis"]),
+                         ("Operator", "read every conflict", self.sha("screening.jsonl"), "review/screening.jsonl"))
+        self.assertTrue(entry["at"])
+        self.assertTrue(signed["signoffs"]["screening"]["current"])
+        self.refused("SIGNOFF_UNCHANGED", "signoff", "--gate", "screening", "--by", "Operator")
+        # A later decision changes what was signed: the sign-off is no longer current.
+        self.screen("ft", "R0002", "operator", "include", "--final")
+        self.assertFalse(self.ok("status")["signoffs"]["screening"]["current"])
+        self.ok("signoff", "--gate", "screening", "--by", "Operator")
+        self.assertEqual(len(self.signoffs()["gates"]["screening"]), 2)
+        self.assertTrue(self.ok("status")["signoffs"]["screening"]["current"])
+
+    def test_the_synthesis_is_accepted_after_its_counts_and_flow_diagram(self):
+        self.screen_everything()
+        self.refused("SYNTHESIS_INCOMPLETE", "signoff", "--gate", "synthesis", "--by", "Operator")
+        self.ok("prisma")
+        self.refused("SYNTHESIS_INCOMPLETE", "signoff", "--gate", "synthesis", "--by", "Operator")
+        self.ok("flow")
+        self.ok("signoff", "--gate", "synthesis", "--by", "Operator")
+        entry = self.signoffs()["gates"]["synthesis"][-1]
+        self.assertEqual(entry["basis"], "review/prisma.json + paper/Figures/prisma-flow.svg")
+        # Counting again with the same records keeps the acceptance current.
+        self.ok("prisma")
+        self.assertTrue(self.ok("status")["signoffs"]["synthesis"]["current"])
+        # New counts make it stale.
+        self.screen("ft", "R0002", "operator", "include", "--final")
+        self.ok("flow")
+        self.assertFalse(self.ok("status")["signoffs"]["synthesis"]["current"])
+        self.assertIsNone(self.ok("status")["signoffs"]["screening"])
+
+    def test_status_keeps_its_summary_and_reports_the_signoffs(self):
+        status = self.ok("status")
+        self.assertEqual(status["protocol"], {"valid": True, "problems": [], "approved": True})
+        self.assertEqual([s["source"] for s in status["searches"]], ["openalex", "europepmc"])
+        self.assertEqual(status["prisma"]["identification"]["records"], 4)
+        self.assertEqual((status["appraised"], status["extracted"]), (0, 0))
+        self.assertEqual(status["signoffs"], {"screening": None, "synthesis": None})
+
+
+class SignoffProtocolTests(ReviewCase):
+    def test_no_signoff_on_an_unapproved_protocol(self):
+        self.write_protocol()
+        self.refused("PROTOCOL_NOT_APPROVED", "signoff", "--gate", "screening", "--by", "Operator")
+        self.refused("USAGE", "signoff", "--gate", "writing", "--by", "Operator")
 
 
 class ReferenceBudgetTests(ReviewCase):

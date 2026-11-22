@@ -317,10 +317,23 @@ def stage_for(phase_id: str) -> str | None:
     return None
 
 
-def primary_command(stage: str) -> str:
+def _line(kind: str) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[tuple[str, str], ...]],
+                             frozenset[str], dict[str, str], str]:
+    """The definitions of a paper line: actions, evidence, ungated stages,
+    operator gates and the transversal stage. The review line's live in
+    ``review_board``; every other kind reads this module's (experimental)."""
+    if kind == "review":
+        from . import review_board
+
+        return (review_board.REVIEW_ACTIONS, review_board.REVIEW_EVIDENCE, review_board.REVIEW_UNGATED,
+                review_board.REVIEW_PHASE_GATES, review_board.REVIEW_TRANSVERSAL)
+    return ACTIONS, EVIDENCE, UNGATED, PHASE_GATES, "audit"
+
+
+def primary_command(stage: str, kind: str = "experimental") -> str:
     """The text the drawer shows as the phase's command: its first slash
     command or ``smith`` subcommand, or ``""`` when only a panel runs it."""
-    for action in ACTIONS.get(stage, {}).get("actions", []):
+    for action in _line(kind)[0].get(stage, {}).get("actions", []):
         if action["kind"] == "prompt":
             return f"{action['slash']} <text>" if not action["optional"] else action["slash"]
         if action["kind"] == "command":
@@ -360,12 +373,12 @@ PHASE_GATES = {"scaffolding": "G-NOVELTY"}
 MAX_MATCHES = 500
 
 
-def evidence(root: Path, stage: str) -> list[dict[str, Any]]:
+def evidence(root: Path, stage: str, kind: str = "experimental") -> list[dict[str, Any]]:
     """Each evidence item with how many files match and the newest change
     (epoch ms), bounded so a large tree never stalls the status poll."""
     root = Path(root)
     items = []
-    for label, pattern in EVIDENCE.get(stage, ()):
+    for label, pattern in _line(kind)[1].get(stage, ()):
         count, newest = 0, 0
         try:
             matches = root.glob(pattern)
@@ -387,15 +400,17 @@ def evidence(root: Path, stage: str) -> list[dict[str, Any]]:
 
 
 def attach(fases: list[dict[str, Any]], root: Path | None = None,
-           gates: dict[str, str] | None = None) -> list[dict[str, Any]]:
+           gates: dict[str, str] | None = None, *, kind: str = "experimental") -> list[dict[str, Any]]:
     """Add each phase's actions, real skills, command, evidence and lock to
     the status view. An action that ``requires`` gates is ``locked`` until
-    each one's status in ``gates`` is ``PASS``."""
+    each one's status in ``gates`` is ``PASS``. ``kind`` is the workspace's
+    paper line: the review line reads its own steps (``review_board``)."""
     gates = gates or {}
+    actions, _evidence, ungated, phase_gates, transversal = _line(kind)
     previous: dict[str, Any] | None = None
     for phase in fases:
         stage = phase.get("stage_id", "")
-        entry = ACTIONS.get(stage)
+        entry = actions.get(stage)
         if entry:
             phase["actions"] = copy.deepcopy(entry["actions"])
             for action in phase["actions"]:
@@ -406,7 +421,7 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
                     action["requires"] = open_gates[0] if open_gates else needed[0]
             phase["skills"] = list(entry["skills"])
             phase["agent"] = entry["agent"]
-            command = primary_command(stage)
+            command = primary_command(stage, kind)
             if command:
                 phase["cli_command"] = command
             else:
@@ -414,14 +429,14 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
                 # compiles from its panel), so the card names none.
                 phase.pop("cli_command", None)
         if root is not None:
-            phase["evidence"] = evidence(root, stage)
-        gated = stage not in UNGATED and previous is not None
+            phase["evidence"] = evidence(root, stage, kind)
+        gated = stage not in ungated and previous is not None
         blocked = gated and previous.get("status") != "PASS"
-        gate = PHASE_GATES.get(stage)
+        gate = phase_gates.get(stage)
         gate_blocked = gated and not blocked and gate is not None and gates.get(gate) != "PASS"
         phase["unlocked"] = not (blocked or gate_blocked)
         phase["blocked_by"] = previous.get("id") if blocked else (gate if gate_blocked else None)
-        if stage != "audit":
+        if stage != transversal:
             previous = phase
     return fases
 

@@ -6,8 +6,12 @@ proposal, no remote runs. It was created with `smith init --kind review`
 (`paper_kind: "review"` in `.papersmith/config.json`). Every stage writes its
 records under `review/`, and `/systematic-review` (its
 `skills/systematic-review/scripts/review_cli.py`) runs and checks them; the
-skill refuses when a stage's input is missing. The command center's phase
-board still shows the experimental phases; follow this list instead.
+skill refuses when a stage's input is missing. The command center (`smith ui`)
+shows these ten steps as its phases, each read from its records under
+`review/` and locked until the one before it passes, with the operator's
+gates among them: G-PROTOCOL, the screening sign-off and the synthesis
+acceptance. It hides the experimental line's views (concept map, experiments,
+novelty, SOTA constellation).
 
 1. **Harness**: `smith status .` and `smith audit . --check-drift`;
    `/upgrade-project` when the workspace runs an older release.
@@ -44,7 +48,10 @@ board still shows the experimental phases; follow this list instead.
    studies pass, `review_cli.py prioritize` ranks them by topical relation to
    the protocol and journal quartile (SJR), and, once the operator agrees,
    `prioritize --apply --criterion E<n> --reviewer <name>` records the excess
-   as full-text exclusions under the protocol's budget criterion.
+   as full-text exclusions under the protocol's budget criterion. When every
+   record is decided and no conflict is left, the operator signs the screening
+   off (`review_cli.py signoff --gate screening --by <name>`); the sign-off
+   stays current while `review/screening.jsonl` is unchanged.
 6. **Appraisal and extraction** (items 9-11): `review_cli.py appraise` records
    each included study's quality answers with the protocol's checklist, and
    `review_cli.py extract` its data items, validated against the protocol's
@@ -60,6 +67,9 @@ board still shows the experimental phases; follow this list instead.
    (`protocol-flow`, the PRISMA phases adapted to the topic, no counts) is
    drawn by the `diagram-author` agent, compiled with `paper_cli.py render`
    and checked with `/figure-review` before its block is written.
+   The operator accepts the synthesis (`review_cli.py signoff --gate synthesis
+   --by <name>`, current while `review/prisma.json` and the flow diagram are
+   unchanged) before the writing starts.
    The whole paper fits 45 single-column Elsevier pages (25 two-column),
    references included: about 11,000 words of body at 200 references;
    `smith paper qa` estimates it (`page_budget`).
@@ -79,6 +89,7 @@ board still shows the experimental phases; follow this list instead.
     `smith audit .` and `/skill-audit <subject>` report; they never repair.
 
 The human gates are the protocol approval (G-PROTOCOL), the screening
-decisions the operator signs as a reviewer, the resolution of conflicts, and
-the acceptance of the synthesis. An agent never decides a gate or signs as
-the second reviewer on the operator's behalf.
+decisions the operator signs as a reviewer, the resolution of conflicts, the
+screening sign-off and the acceptance of the synthesis (`review/signoffs.json`).
+An agent never decides a gate or signs as the second reviewer on the
+operator's behalf.

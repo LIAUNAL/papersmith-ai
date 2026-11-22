@@ -3415,11 +3415,16 @@ leaving its record under `review/`:
 | `appraise`, `extract` | `review/appraisal.jsonl`, `review/extraction.jsonl` | 9, 11, 17, 18 |
 | `prisma`, `flow`, `biblio` | `review/prisma.json`, `paper/Figures/prisma-flow.svg`, `review/biblio.json` | 16 |
 | `prioritize [--floor 100 --cap 200 --other-references N] [--apply --criterion E<n> --reviewer <name>]` | `review/prioritization.json`; with `--apply`, final full-text exclusions in `review/screening.jsonl` | 5, 16 |
-| `checklist`, `status` | nothing; reports the 27 items and the records | all |
+| `signoff --gate screening\|synthesis --by <operator> [--note]` | `review/signoffs.json`: the operator's screening sign-off (G-SCREENING) or synthesis acceptance (G-SYNTHESIS), with the hash of what was signed | 8, 16 |
+| `checklist`, `status` | nothing; reports the 27 items and the records (`status` also the sign-offs) | all |
 
 **Human gates.** The operator approves the protocol before any search and
 records every amendment with its reason; the operator is always one of the two
-screeners and settles conflicts (`screen --final`). The agent may be the other
+screeners and settles conflicts (`screen --final`), signs the screening off
+once every record is decided without conflict and accepts the synthesis once
+its PRISMA counts and flow diagram exist (`signoff`, refused before then; a
+sign-off is current only while what it signed is unchanged). The dashboard
+(`smith ui`) shows these gates on the review line's ten steps. The agent may be the other
 screener and extracts data with the quote that holds each value.
 
 **Writing.** The review section contracts (`sections-review/` in the kit,

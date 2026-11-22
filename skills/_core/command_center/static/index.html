@@ -3200,6 +3200,10 @@
   .office-card-host .office-card { max-height: 46vh; overflow: auto; }
   .office-card__open { margin-top: 6px; background: #1d4ed8; color: #fff; border: 0;
     border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 12px system-ui, sans-serif; }
+  /* A review workspace (paper_kind "review") has no concept map, experiments,
+     novelty gate or SOTA constellation: the views only the experimental line
+     uses carry data-kinds="experimental" and are hidden for it. */
+  body[data-paper-kind="review"] [data-kinds="experimental"] { display: none !important; }
   </style>
 </head>
 <body>
@@ -3255,9 +3259,9 @@
     <button class="tab-nav__btn active" onclick="navigateTab('flow')" data-i18n="nav.flow">Archify Flow</button>
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
     <button class="tab-nav__btn" onclick="navigateTab('papertype')" data-i18n="nav.paperType">🧭 Paper Type</button>
-    <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
-    <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-i18n="nav.experiments">🧪 Experiments</button>
-    <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
+    <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-kinds="experimental" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
+    <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-kinds="experimental" data-i18n="nav.experiments">🧪 Experiments</button>
+    <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-kinds="experimental" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
     <button class="tab-nav__btn" onclick="navigateTab('office')" data-i18n="nav.office">🏢 Agents Office</button>
     <button class="tab-nav__btn" onclick="navigateTab('sections')" data-i18n="nav.sections">Paper Sections</button>
     <button class="tab-nav__btn" onclick="navigateTab('atlas')" data-i18n="nav.atlas">Graph Atlas</button>
@@ -3677,13 +3681,13 @@
             <span id="atlasPanelTitle" data-i18n="atlas.title.atlas">🌌 3D SOTA Constellation — Literature and Plausibility Atlas</span>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-            <button id="btnGraphAtlas" class="btn btn--primary" onclick="switchGraph('atlas')" data-i18n="atlas.btn.atlas">🌌 3D Constellation (Solar Atlas)</button>
-            <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
+            <button id="btnGraphAtlas" class="btn btn--primary" onclick="switchGraph('atlas')" data-kinds="experimental" data-i18n="atlas.btn.atlas">🌌 3D Constellation (Solar Atlas)</button>
+            <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-kinds="experimental" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
             <button id="btnGraphPapers" class="btn" onclick="switchGraph('papers')" data-i18n="atlas.btn.papers">📊 Candidate Matrix</button>
             <button id="btnGraphCited" class="btn" onclick="switchGraph('cited')" title="Search every paper the manuscript cites, by title, author, year, journal, section or abstract" data-i18n-attr="title:explorer.btnTitle" data-i18n="explorer.btn">🔎 Cited papers</button>
-            <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
-            <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
-            <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
+            <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" data-kinds="experimental" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
+            <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" data-kinds="experimental" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
+            <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" data-kinds="experimental" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
             <a id="linkOpenGraph" href="/api/atlas/view" target="_blank" class="btn" data-i18n="common.openInNewTab">Open in a new tab ↗</a>
           </div>
         </div>
@@ -4345,7 +4349,30 @@
     renderThemeButton();
     syncFrameThemes(savedTheme);
 
+    // A tab the workspace's paper line hides (data-kinds) opens the pipeline instead.
+    function visibleTab(tabId) {
+      const kind = document.body.dataset.paperKind;
+      const btn = Array.from(document.querySelectorAll('.tab-nav__btn')).find(b => b.getAttribute('onclick')?.includes(`'${tabId}'`));
+      const kinds = btn?.dataset.kinds;
+      return kind && kinds && !kinds.split(/\s+/).includes(kind) ? 'pipeline' : tabId;
+    }
+
+    // The paper line of the workspace (/api/status paper_kind), read on every
+    // poll: `smith kind set` can change it while the dashboard runs.
+    function applyPaperKind(kind) {
+      const line = kind === 'review' ? 'review' : 'experimental';
+      if (document.body.dataset.paperKind === line) return;
+      document.body.dataset.paperKind = line;
+      if (line !== 'review') return;
+      if (currentGraphKind === 'atlas' || currentGraphKind === 'novelty') {
+        if (graphFramePath() === 'blank') currentGraphKind = 'cited';
+        else switchGraph('cited');
+      }
+      if (visibleTab(activeTab) !== activeTab) navigateTab(activeTab);
+    }
+
     function navigateTab(tabId) {
+      tabId = visibleTab(tabId);
       activeTab = tabId;
       window.location.hash = `#${tabId}`;
       document.querySelectorAll('.tab-nav__btn').forEach(b => b.classList.remove('active'));
@@ -4637,6 +4664,8 @@
     });
 
     function switchGraph(kind) {
+      // The SOTA constellation and the novelty graph belong to the experimental line.
+      if (document.body.dataset.paperKind === 'review' && (kind === 'atlas' || kind === 'novelty')) kind = 'cited';
       currentGraphKind = kind;
       clearAtlasSelection();
       const btnAtlas = document.getElementById('btnGraphAtlas');
@@ -5788,6 +5817,7 @@
         liveChannel.lastStatusAt = Date.now();
         currentStatus = data;
         window.currentStatus = data;
+        applyPaperKind(data.paper_kind);
         if (window.phaseRuns) window.phaseRuns.onStatus(data);
         refreshDrawerStatus(data);
 
@@ -6053,15 +6083,17 @@
         (data.telemetria || []).forEach(row => {
           const tr = document.createElement('tr');
           const tokVal = Number(row.tokens);
-          const tokDisplay = !isNaN(tokVal) ? tokVal.toLocaleString() : row.tokens;
+          // A row without numbers (the review steps) shows a dash and says why.
+          const noData = row.tokens == null;
+          const tokDisplay = noData ? '—' : (!isNaN(tokVal) ? tokVal.toLocaleString() : row.tokens);
           tr.innerHTML = `
-            <td><strong>${row.fase}</strong></td>
+            <td><strong>${row.fase}</strong>${row.note ? `<div style="color: var(--text-dim); font-size: 0.72rem;">${escapeHtml(row.note)}</div>` : ''}</td>
             <td><code>${row.gate}</code></td>
             <td><span class="badge badge--ok">${row.veredicto}</span></td>
             <td>${row.fecha}</td>
             <td><strong>${tokDisplay}</strong></td>
-            <td>${row.tool_uses}</td>
-            <td>${row.duracion}</td>
+            <td>${row.tool_uses == null ? '—' : row.tool_uses}</td>
+            <td>${row.duracion == null ? '—' : row.duracion}</td>
           `;
           teleTbody.appendChild(tr);
         });
