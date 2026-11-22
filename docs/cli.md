@@ -94,7 +94,7 @@ smith upgrade ~/papers/sparse-ae
 | Flag | Effect |
 |------|--------|
 | `--tools TEXT` | Replaces the active runtime generators |
-| `--force` | Forces framework files to be written |
+| `--force` | Forces framework files to be written, replacing edited section contracts with the kit's |
 | `--allow-downgrade` | Allows installing a framework version older than the one the workspace records |
 | `--no-migrate` | Syncs the framework files without migrating artifacts; the recorded version does not advance |
 | `--plan-migrations` | Reports the pending artifact migrations and exits without writing anything |
@@ -103,6 +103,10 @@ smith upgrade ~/papers/sparse-ae
 It only touches files the framework manages — never `guidance/`,
 `proposals/`, `paper/`, `experiments/`, `implementations/`, `kaggle-inbox/`,
 `papersmith.yaml`, `package.json`, `README.md` or the `.env*` files.
+A section contract in `sections/` that the workspace edited (its bytes differ
+from the copy the manifest records) is kept and reported as
+`Kept edited contract: <path>`; `status` lists it as drift, and `--force`
+replaces it with the kit's.
 Against a kit checkout without reinstalling:
 `PAPERSMITH_KIT_ROOT=/path/to/papersmith-ai smith upgrade <dir>`.
 
@@ -197,6 +201,30 @@ byte, alongside the downgrade guard and for the same reason. Reading it as empty
 would re-apply every migration it was recording. `status` answers differently on
 purpose: it reports it as a warning, because a command that only informs and
 also crashes leaves the workspace with no way to ask what is wrong with it.
+
+### `smith kind set <type> [<dir>]`
+
+```bash
+smith kind set review --by "Ana" ~/papers/gnn-drug
+```
+
+Moves a workspace to the line of the paper type the operator agreed after
+plausibility (`/paper-type`). `<type>` is a catalogue id
+(`skills/_core/paper_types/paper_types.json`): `applied-ai` maps to the
+`experimental` line and `review` to the `review` line; a planned type has no
+line yet and refuses. The command records the agreement in
+`.papersmith/paper_type.json` (the idea must be scored first, or it refuses
+with `SCORES_ABSENT`), writes `paper_kind` in `.papersmith/config.json` and
+runs `smith upgrade`, which applies the line's section contracts and
+regenerates the flow text of every harness entrypoint. The other line's files
+are removed only when unedited; an edited one stays and is reported as
+`Stranded (edited, kept): <path>`. When the workspace already follows the
+type's line, only the agreement is recorded.
+
+| Flag | Effect |
+|------|--------|
+| `--by TEXT` | The operator who agreed the type (required) |
+| `--force` | Moves the workspace even when a proposal revision (`proposals/*-r*.md`) or `paper/main.tex` exists |
 
 ### `smith status [<dir>]`
 

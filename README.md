@@ -540,6 +540,13 @@ smith init ~/papers/gnn-drug-review --kind review \
   --title "Graph neural networks in drug discovery: a systematic review"
 ```
 
+An existing workspace whose idea turns out to be a review after plausibility
+moves to this line with `smith kind set review --by "<operator>"` once
+`/paper-type` has scored the idea: it records the agreed type, applies the
+review contracts and flow text, removes the experimental contracts the
+workspace did not edit and keeps (and reports) the ones it did. It refuses once
+a proposal revision or `paper/main.tex` exists, unless `--force`.
+
 A review workspace has `review/` instead of `proposals/`, `experiments/`,
 `implementations/` and `kaggle-inbox/`; its `sections/` hold the review
 contracts (title, PRISMA 2020 for Abstracts, introduction, background, methods,

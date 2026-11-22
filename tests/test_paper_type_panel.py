@@ -136,6 +136,14 @@ class PanelActionTests(unittest.TestCase):
         self.assertEqual(posted[0][2], {"type": "observational-measurement", "variant": "observational",
                                         "by": "Juli", "rationale": "own survey"})
 
+    def test_a_switch_names_the_kind_set_command(self) -> None:
+        steps = [{"action": "agree-open", "type": "review"},
+                 {"action": "agree-confirm", "type": "review", "values": {"ptBy": "Ana"}}]
+        out = run(view(), steps=steps, responses={"/api/paper-type/agree": {"status": 200, "body": {
+            "ok": True, "layout": "switch:review"}}})
+        self.assertIn('smith kind set review --by "Ana" moves this workspace to it', out["rendered"])
+        self.assertIn("smith init --kind review", out["rendered"])
+
     def test_agree_form_offers_the_family_variants(self) -> None:
         out = run(view(), steps=[{"action": "agree-open", "type": "observational-measurement"}])
         for variant in ("observational", "diagnostic-validation", "measurement-instrument"):

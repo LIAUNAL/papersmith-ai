@@ -1070,7 +1070,7 @@ window.PAPERSMITH_I18N.en = {
   "paperType.confidence.low": "low confidence",
   "paperType.layout.current": "Agreed. This workspace's line already fits; continue with ingestion.",
   "paperType.layout.planned": "Agreed. Smith has no flow for this type yet; the workspace keeps its line.",
-  "paperType.layout.switch": "Agreed. This type needs the {line} line: a new workspace for it starts with smith init --kind {line}.",
+  "paperType.layout.switch": "Agreed. This type needs the {line} line: smith kind set {type} --by \"{by}\" moves this workspace to it, or a new workspace starts with smith init --kind {line}.",
   "paperType.status.available": "flow available",
   "paperType.status.planned": "flow planned",
   "paperType.suggestedBadge": "suggested",

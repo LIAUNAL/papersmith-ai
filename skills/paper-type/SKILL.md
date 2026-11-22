@@ -69,8 +69,13 @@ Read its `layout`:
 
 - `current`: the workspace's line already fits; continue with ingestion.
 - `switch:<line>`: the agreed type needs the `<line>` line. The workspace
-  keeps its present line; a new workspace for this paper starts with
-  `smith init --kind <line>`. Say so and let the operator decide.
+  keeps its present line until the operator moves it with
+  `smith kind set <id> --by "<operator>"` (it applies the line's section
+  contracts and flow text, removes the other line's unedited files and keeps
+  the edited ones, and refuses once a proposal revision or `paper/main.tex`
+  exists unless `--force`), or starts a new workspace with
+  `smith init --kind <line>`. Say so and let the operator decide; never run
+  `smith kind set` on the operator's behalf.
 - `planned`: no flow yet; the workspace keeps its line, and the agreement is
   on record for when the flow exists.
 

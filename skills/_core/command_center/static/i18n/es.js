@@ -1069,7 +1069,7 @@ window.PAPERSMITH_I18N.es = {
   "paperType.confidence.low": "confianza baja",
   "paperType.layout.current": "Acordado. La línea de este espacio de trabajo ya corresponde; continúa con la ingestión.",
   "paperType.layout.planned": "Acordado. Smith aún no tiene flujo para este tipo; el espacio de trabajo conserva su línea.",
-  "paperType.layout.switch": "Acordado. Este tipo necesita la línea {line}: un espacio de trabajo nuevo para él empieza con smith init --kind {line}.",
+  "paperType.layout.switch": "Acordado. Este tipo necesita la línea {line}: smith kind set {type} --by \"{by}\" mueve este espacio de trabajo a ella, o uno nuevo empieza con smith init --kind {line}.",
   "paperType.status.available": "flujo disponible",
   "paperType.status.planned": "flujo planificado",
   "paperType.suggestedBadge": "sugerido",

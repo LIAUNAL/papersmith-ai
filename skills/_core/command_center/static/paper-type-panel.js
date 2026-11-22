@@ -193,7 +193,7 @@
       if (ok) {
         const layout = String(data.layout || '');
         const kind = layout.startsWith('switch:') ? 'switch' : layout;
-        notice = t(LAYOUT_KEYS[kind] || 'paperType.layout.current', { line: layout.slice('switch:'.length) });
+        notice = t(LAYOUT_KEYS[kind] || 'paperType.layout.current', { line: layout.slice('switch:'.length), type: typeId, by });
         openAgree = null;
       } else {
         notice = t('paperType.refused', { error: data.error || data.code || '' });
