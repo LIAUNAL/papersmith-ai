@@ -736,6 +736,30 @@ Pipeline and Progress, Concept Map & Model, Experiments, Novelty & Findings, Pap
 Sections, Graph Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and
 Smith Doctor.
 
+**The Review tab (review workspaces only).** A workspace whose `paper_kind` is
+`review` shows a *Review* tab (*Revisión* in Spanish) right after *Pipeline and
+Progress*; an experimental workspace never shows it, and its routes answer `409`
+with `{"ok": false, "code": "NOT_A_REVIEW_WORKSPACE", "paper_kind": ...}`.
+`GET /api/review` reads the `review/` records through the workspace's own
+`review_cli.py` (the dashboard's copy, with a visible warning, when that one does
+not load) and answers one section per panel: `summary` (`review_cli.py status`),
+`protocol` (research questions, criteria, sources and queries, dates, the G-PROTOCOL
+approval, whether the protocol changed after it, and the amendments; the
+registration is the `review-registration` declaration of `/paper-writing`), `searches`
+(the search log and the protocol sources not searched yet), `screening` (per stage:
+eligible, decided, partial, conflicts with each reviewer's vote, pending per reviewer,
+and Cohen's kappa or why it is not computable, since it needs exactly two reviewers),
+`prisma` (the PRISMA 2020 counts, whether `review/prisma.json` still matches them, and
+the flow figure `paper/Figures/prisma-flow.svg`, embedded through `/api/artifact`),
+`extraction` (the protocol's fields by included study, each value with its quote or
+page), `appraisal` (the risk of bias as the protocol records it: each study's
+appraisal score against the protocol's threshold; no risk-of-bias domains are
+invented) and `signoffs` (G-SCREENING and G-SYNTHESIS, and whether each is still
+current). A record that cannot be read turns only its section into
+`{"available": false, "code", "message"}`. The 27-item PRISMA 2020 checklist runs
+`paper_cli.py`, so it loads only when the operator clicks its button, from
+`GET /api/review/checklist`, off the server's event loop.
+
 **Experiment protocol visibility.** In *Experiments*, the protocol and its
 hypotheses appear immediately after any launch-blocking warnings, before service
 and environment setup. Expand an experiment to inspect its hypothesis, success

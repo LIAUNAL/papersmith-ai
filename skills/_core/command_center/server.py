@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, localize, paper_type_view, prompt_gate, prompt_review, review_board, toolchain
+from . import board_refresh, doctor_view, keys_view, localize, paper_type_view, prompt_gate, prompt_review, review_board, review_view, toolchain
 from ..paper_types import decision as paper_line
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -2987,6 +2987,24 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse(await asyncio.to_thread(paper_type_view.agree, root_path, payload))
         except paper_type_view.decision.DecisionError as exc:
             return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
+
+    @app.get("/api/review")
+    def api_review() -> JSONResponse:
+        """The Review tab of a review workspace: protocol, search log, screening,
+        PRISMA flow, extraction, risk of bias and sign-offs; 409 elsewhere."""
+        refused = review_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(review_view.view(root_path))
+
+    @app.get("/api/review/checklist")
+    async def api_review_checklist() -> JSONResponse:
+        """The 27 PRISMA 2020 items, on the operator's click only: the verb runs
+        paper_cli.py as subprocesses, so it runs off the event loop."""
+        refused = review_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(await asyncio.to_thread(review_view.checklist, root_path))
 
     @app.post("/api/prompt/check")
     async def api_prompt_check(request: Request) -> JSONResponse:

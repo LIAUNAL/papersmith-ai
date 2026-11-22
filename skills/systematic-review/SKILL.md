@@ -179,7 +179,12 @@ applied at screening through the protocol's exclusion criteria.
 `review/scope.json`, `review/signoffs.json`, `paper/Figures/prisma-flow.svg`.
 `status` reports each sign-off (`signoffs`: who, when, and whether it is
 still current). The dashboard (`smith ui`) reads the same records for its
-ten review steps and gates.
+ten review steps and gates, and its *Review* tab shows them panel by panel:
+the protocol and its approval and amendments, the search log, the screening
+progress (pending per reviewer, conflicts, Cohen's kappa or why it is not
+computable), the PRISMA counts and flow figure, the extraction table, the
+appraisal scores against the protocol's threshold and the sign-offs. The tab
+runs the slow `checklist` verb only when the operator asks for it.
 
 ## Refusals
 

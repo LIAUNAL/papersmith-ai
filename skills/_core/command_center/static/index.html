@@ -29,6 +29,7 @@
   <script src="./contribution-affinity.js?v=0.82.0"></script>
   <script src="./model-panel.js?v=0.82.0"></script>
   <script src="./paper-type-panel.js?v=0.82.0"></script>
+  <script src="./review-panel.js?v=0.82.0"></script>
   <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
   <script type="module" src="./office3d.js?v=0.82.0"></script>
   <script src="./office-panel.js?v=0.82.0"></script>
@@ -2753,6 +2754,25 @@
     .pt-error { margin: 0; color: var(--bad); }
     .pt-notice { margin: 0 0 0.5rem; color: var(--text-muted); }
     .pt-empty { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+    /* Review tab: the review/ records of a review workspace (review-panel.js). */
+    .rv-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .rv-summary { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; padding: 0; list-style: none; }
+    .rv-summary li { border: 1px solid var(--border); border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.78rem; color: var(--text-muted); }
+    .rv-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.8rem; margin-bottom: 0.75rem; background: var(--surface-2); font-size: 0.82rem; }
+    .rv-section h3 { margin: 0 0 0.45rem; font-size: 0.92rem; }
+    .rv-section h4 { margin: 0.6rem 0 0.3rem; font-size: 0.84rem; }
+    .rv-section p { margin: 0.2rem 0; }
+    .rv-section ul { margin: 0.2rem 0; padding-left: 1.1rem; }
+    .rv-table-wrap { overflow-x: auto; }
+    .rv-table { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
+    .rv-table th, .rv-table td { border: 1px solid var(--border); padding: 0.25rem 0.4rem; text-align: left; vertical-align: top; }
+    .rv-table th { color: var(--text-muted); font-weight: 600; }
+    .rv-quote { display: block; color: var(--text-muted); font-style: italic; }
+    .rv-muted { color: var(--text-muted); }
+    .rv-error { color: var(--bad); }
+    .rv-warn { color: var(--warn); }
+    .rv-ok { color: var(--ok); }
+    .rv-flow img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--border); border-radius: 4px; }
     /* Prompt quality gate: the alert a failed phase prompt raises in its card. */
     .phase-gate { margin-top: 0.5rem; border: 1px solid var(--warn); background: rgba(245, 158, 11, 0.1); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; }
     .phase-gate__title { margin: 0; font-weight: 600; }
@@ -3204,6 +3224,9 @@
      novelty gate or SOTA constellation: the views only the experimental line
      uses carry data-kinds="experimental" and are hidden for it. */
   body[data-paper-kind="review"] [data-kinds="experimental"] { display: none !important; }
+  /* The Review tab (review-panel.js) is the review line's own: hidden in an
+     experimental workspace and until the page knows the workspace's line. */
+  body:not([data-paper-kind="review"]) [data-kinds="review"] { display: none !important; }
   </style>
 </head>
 <body>
@@ -3258,6 +3281,7 @@
   <nav class="tabs-nav" aria-label="Dashboard navigation" data-i18n-attr="aria-label:nav.label">
     <button class="tab-nav__btn active" onclick="navigateTab('flow')" data-i18n="nav.flow">Archify Flow</button>
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
+    <button class="tab-nav__btn" onclick="navigateTab('review')" data-kinds="review" data-i18n="nav.review">📋 Review</button>
     <button class="tab-nav__btn" onclick="navigateTab('papertype')" data-i18n="nav.paperType">🧭 Paper Type</button>
     <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-kinds="experimental" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
     <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-kinds="experimental" data-i18n="nav.experiments">🧪 Experiments</button>
@@ -3359,6 +3383,17 @@
         </div>
         <div id="agentsPanel"><p class="agents-empty" data-i18n="agents.loading">Loading agents…</p></div>
       </div>
+    </div>
+
+    <!-- TAB: REVIEW (review workspaces only; review-panel.js, GET /api/review) -->
+    <div id="pane-review" class="tab-pane">
+      <section class="panel" id="reviewCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="sysreview.title">📋 Review records</div>
+          <span class="panel__meta" data-i18n="sysreview.meta">Protocol, searches, screening, PRISMA flow, extraction and risk of bias, read from review/</span>
+        </div>
+        <div id="reviewPanel" data-i18n="sysreview.loading">Loading the review records…</div>
+      </section>
     </div>
 
     <!-- TAB: PAPER TYPE -->
@@ -4363,11 +4398,11 @@
       const line = kind === 'review' ? 'review' : 'experimental';
       if (document.body.dataset.paperKind === line) return;
       document.body.dataset.paperKind = line;
-      if (line !== 'review') return;
-      if (currentGraphKind === 'atlas' || currentGraphKind === 'novelty') {
+      if (line === 'review' && (currentGraphKind === 'atlas' || currentGraphKind === 'novelty')) {
         if (graphFramePath() === 'blank') currentGraphKind = 'cited';
         else switchGraph('cited');
       }
+      // Either line may hide the tab in view (the Review tab is the review line's).
       if (visibleTab(activeTab) !== activeTab) navigateTab(activeTab);
     }
 
@@ -4378,7 +4413,8 @@
       document.querySelectorAll('.tab-nav__btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
       
-      const targetBtn = Array.from(document.querySelectorAll('.tab-nav__btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
+      // Matched by the quoted id: 'review' is a substring of 'preview'.
+      const targetBtn = Array.from(document.querySelectorAll('.tab-nav__btn')).find(b => b.getAttribute('onclick')?.includes(`'${tabId}'`));
       if (targetBtn) targetBtn.classList.add('active');
       const targetPane = document.getElementById(`pane-${tabId}`);
       if (targetPane) targetPane.classList.add('active');
@@ -4407,6 +4443,9 @@
       }
       if (tabId === 'papertype') {
         window.refreshPaperTypePanel?.();
+      }
+      if (tabId === 'review') {
+        window.refreshReviewPanel?.();
       }
       if (tabId === 'novelty') window.showManuscriptGraph?.();
       else window.hideManuscriptGraph?.();
@@ -7445,7 +7484,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'review', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();
@@ -7464,6 +7503,7 @@
       flow: () => window.refreshAgentsPanel?.(),
       experiments: () => { window.refreshExperimentsPanel?.(); window.refreshExperimentsTutor?.(); },
       novelty: () => window.refreshNoveltyPanel?.(),
+      review: () => window.refreshReviewPanel?.(),
       historia: () => window.refreshAiHistoryPanel?.(),
       doctor: () => { window.refreshDoctorPanel?.(); window.refreshKeysPanel?.(); },
       modelo: () => { refreshModelData(); window.refreshMathPanel?.(); },
