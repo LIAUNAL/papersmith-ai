@@ -2079,11 +2079,39 @@ round that is not an object (never overwritten), or a history that would grow
 past the dashboard's 2 MB cap with this round. A refused round leaves the file unchanged: send the agent's
 round back with the refusal detail rather than editing it yourself.
 
+**A review paper is judged on its own rubric.** A round declares the form it
+was judged on in `rubric`: absent (or `ml-conference`) it is the main-track
+form above, validated and stored exactly as always. In a review workspace
+(`paper_kind: review` in `.papersmith/config.json`) the `paper-reviewer`
+returns a `"rubric": "systematic-review"` round instead: no `overall`,
+`confidence` or `ratings`, but `amstar2`, one `{"item", "answer",
+"justification"}` per AMSTAR 2 item 1-16 (Shea et al., 2017, BMJ 358:j4008),
+`answer` one of `yes`, `partial yes` (items 2, 4, 7, 8, 9 only), `no` or `not
+applicable` (items 11, 12, 15 only, without a meta-analysis); and
+`prisma_gaps`, `{"item": 1-27, "gap"}` per PRISMA 2020 item the manuscript
+does not fully report (Page et al., 2021, BMJ 372:n71). The verb marks the
+seven critical domains (items 2, 4, 7, 9, 11, 13, 15) and derives the
+`overall_confidence` by the AMSTAR 2 rule from the `no` answers, storing
+`critical_flaws` and `non_critical_weaknesses` beside it: no or one
+non-critical weakness is `high`, more than one `moderate`, one critical flaw
+`low`, more than one `critically low` (`partial yes` and `not applicable`
+count as neither). A round may state `overall_confidence`, but one that
+disagrees with the rule is refused (`REVIEW_ROUND_INVALID`), as are a missing
+or repeated item, an answer outside the scale or where AMSTAR 2 does not offer
+it, an empty justification and a gap without an item 1-27. `recommendation`,
+`items`, `revisions`, `excluded` and `report` keep their rules on both
+rubrics, so a review round from the second on still judges every revision the
+previous round raised. The PDF tab's final-judge panel shows the confidence,
+the flaws and weaknesses, the sixteen answers and the PRISMA gaps of such a
+round.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
 judge an unfinished paper or novelty without a pool cannot tell a weak paper
-from a missing input.
+from a missing input. In a review workspace note instead whether
+`review/protocol.lock.json` and `review/prisma.json` exist: AMSTAR 2 judges
+the protocol and the flow the paper reports against those records.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,

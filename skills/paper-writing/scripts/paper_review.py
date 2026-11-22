@@ -20,6 +20,26 @@ The file is `{"rounds": [...]}`. Each round:
   "note"}`, `status` defaulting to `pending`;
 - `excluded` (optional list of text) and `report` (the full review form).
 
+`rubric` names the form the round was judged on. Absent (or
+`ml-conference`) it is the main-track form of a machine-learning conference
+above, and the stored round carries no `rubric` key, exactly as before. For a
+review paper (`paper_kind: review`) it is `systematic-review`: the round
+carries no `overall`, `confidence` or `ratings`, and instead
+
+- `amstar2`: one `{"item", "answer", "justification"}` per AMSTAR 2 item 1-16
+  (Shea et al., 2017, BMJ 358:j4008), `answer` one of `yes`, `partial yes`
+  (items 2, 4, 7, 8, 9 only), `no`, `not applicable` (items 11, 12, 15 only:
+  no meta-analysis); `critical` is filled here for the seven critical domains;
+- `overall_confidence` is derived here by the AMSTAR 2 rule from the `no`
+  answers (`critical_flaws` and `non_critical_weaknesses`, also stored): no or
+  one non-critical weakness is `high`, more than one `moderate`, one critical
+  flaw `low`, more than one `critically low`. A round that asserts it must
+  match the rule;
+- `prisma_gaps`: the PRISMA 2020 reporting gaps (Page et al., 2021, BMJ
+  372:n71), `{"item": 1-27, "gap"}`.
+
+`recommendation`, `items`, `revisions`, `excluded` and `report` apply to both.
+
 A refused round leaves the file byte for byte as it was, and a file that is
 already malformed is reported, never overwritten.
 """
@@ -42,6 +62,19 @@ MAX_BYTES = 2 * 1024 * 1024
 RATINGS = ("Quality", "Clarity", "Significance", "Originality")
 ITEM_VERDICTS = ("resolved", "partly", "not resolved")
 REVISION_STATUSES = ("pending", "done", "applied", "not done", "skipped")
+#: The final judge's forms; the first is the default of a round without one.
+RUBRICS = ("ml-conference", "systematic-review")
+AMSTAR2_ITEMS = tuple(range(1, 17))
+#: AMSTAR 2's seven critical domains (Shea et al., 2017, Box 2).
+AMSTAR2_CRITICAL = (2, 4, 7, 9, 11, 13, 15)
+AMSTAR2_ANSWERS = ("yes", "partial yes", "no", "not applicable")
+#: The items whose AMSTAR 2 scale offers "partial yes", and those that offer
+#: "no meta-analysis conducted" (stored as "not applicable").
+AMSTAR2_PARTIAL = (2, 4, 7, 8, 9)
+AMSTAR2_NOT_APPLICABLE = (11, 12, 15)
+AMSTAR2_CONFIDENCE = ("high", "moderate", "low", "critically low")
+#: PRISMA 2020 main checklist items run 1-27.
+PRISMA_ITEMS = 27
 
 
 def review_path(paper_dir: Path) -> Path:
@@ -90,7 +123,31 @@ def read_input(raw: str) -> dict:
     return data
 
 
-def _validate(data: dict) -> list[str]:
+def rubric_of(data: dict) -> str:
+    """The rubric a round declares; `ml-conference` when it declares none."""
+    return data.get("rubric", RUBRICS[0])
+
+
+def amstar2_confidence(answers: dict[int, str]) -> tuple[str, list[int], list[int]]:
+    """The AMSTAR 2 overall confidence, its critical flaws and non-critical weaknesses.
+
+    A flaw or weakness is a `no` (a critical or a non-critical item); `partial
+    yes` and `not applicable` count as neither.
+    """
+    flaws = sorted(i for i, a in answers.items() if a == "no" and i in AMSTAR2_CRITICAL)
+    weaknesses = sorted(i for i, a in answers.items() if a == "no" and i not in AMSTAR2_CRITICAL)
+    if len(flaws) > 1:
+        level = "critically low"
+    elif flaws:
+        level = "low"
+    elif len(weaknesses) > 1:
+        level = "moderate"
+    else:
+        level = "high"
+    return level, flaws, weaknesses
+
+
+def _validate_ml_conference(data: dict) -> list[str]:
     errors = []
     if not _int_in(data.get("overall"), 1, 6):
         errors.append("overall must be an integer 1-6")
@@ -103,6 +160,51 @@ def _validate(data: dict) -> list[str]:
         errors.append(f"ratings must hold exactly {', '.join(RATINGS)}")
     else:
         errors += [f"ratings.{k} must be an integer 1-4" for k in RATINGS if not _int_in(ratings[k], 1, 4)]
+    return errors
+
+
+def _validate_systematic_review(data: dict) -> list[str]:
+    errors = []
+    if not _text(data.get("recommendation")):
+        errors.append("recommendation must be non-empty text")
+    answers = data.get("amstar2")
+    numbers = [a.get("item") for a in answers if isinstance(a, dict)] if isinstance(answers, list) else []
+    if (not isinstance(answers, list) or len(numbers) != len(answers)
+            or not all(_int_in(n, 1, 16) for n in numbers) or sorted(numbers) != list(AMSTAR2_ITEMS)):
+        errors.append("amstar2 must answer each item 1-16 once")
+    else:
+        for a in sorted(answers, key=lambda a: a["item"]):
+            item, answer = a["item"], a.get("answer")
+            if answer not in AMSTAR2_ANSWERS:
+                errors.append(f"amstar2 item {item} answer must be one of {', '.join(AMSTAR2_ANSWERS)}")
+            elif answer == "partial yes" and item not in AMSTAR2_PARTIAL:
+                errors.append(f'amstar2 item {item} cannot be "partial yes" (only items '
+                              f'{", ".join(map(str, AMSTAR2_PARTIAL))})')
+            elif answer == "not applicable" and item not in AMSTAR2_NOT_APPLICABLE:
+                errors.append(f'amstar2 item {item} cannot be "not applicable" (only items '
+                              f'{", ".join(map(str, AMSTAR2_NOT_APPLICABLE))}, without a meta-analysis)')
+            if not _text(a.get("justification")):
+                errors.append(f"amstar2 item {item} needs a non-empty justification")
+        asserted = data.get("overall_confidence")
+        if not errors and asserted is not None:
+            level = amstar2_confidence({a["item"]: a["answer"] for a in answers})[0]
+            if asserted != level:
+                errors.append(f'overall_confidence "{asserted}" does not match the AMSTAR 2 rule: {level}')
+    gaps = data.get("prisma_gaps", [])
+    if not isinstance(gaps, list):
+        errors.append("prisma_gaps must be a list")
+    else:
+        for n, gap in enumerate(gaps, 1):
+            if not isinstance(gap, dict) or not _int_in(gap.get("item"), 1, PRISMA_ITEMS) or not _text(gap.get("gap")):
+                errors.append(f"prisma_gaps[{n}] needs an item 1-27 and non-empty gap text")
+    return errors
+
+
+def _validate(data: dict) -> list[str]:
+    rubric = rubric_of(data)
+    if rubric not in RUBRICS:
+        return [f"rubric must be one of {', '.join(RUBRICS)}"]
+    errors = _validate_systematic_review(data) if rubric == "systematic-review" else _validate_ml_conference(data)
     items = data.get("items", [])
     if not isinstance(items, list):
         errors.append("items must be a list")
@@ -180,20 +282,35 @@ def record(paper_dir: Path, data: dict, *, today: _dt.date | None = None) -> dic
         raise Refused("REVIEW_ROUND_INVALID", "; ".join(errors))
     previous = rounds[-1] if rounds else None
     number = (max((r.get("round") for r in rounds if _int_in(r.get("round"), 1, 10**6)), default=0)) + 1
-    entry = {
-        "round": number,
-        "date": (today or _dt.date.today()).isoformat(),
-        "overall": data["overall"],
-        "confidence": data["confidence"],
-        "recommendation": data["recommendation"].strip(),
-        "ratings": {k: data["ratings"][k] for k in RATINGS},
+    entry = {"round": number, "date": (today or _dt.date.today()).isoformat()}
+    if rubric_of(data) == "systematic-review":
+        answers = sorted(data["amstar2"], key=lambda a: a["item"])
+        level, flaws, weaknesses = amstar2_confidence({a["item"]: a["answer"] for a in answers})
+        entry.update({
+            "rubric": "systematic-review",
+            "recommendation": data["recommendation"].strip(),
+            "amstar2": [{"item": a["item"], "critical": a["item"] in AMSTAR2_CRITICAL, "answer": a["answer"],
+                         "justification": a["justification"].strip()} for a in answers],
+            "critical_flaws": flaws,
+            "non_critical_weaknesses": weaknesses,
+            "overall_confidence": level,
+            "prisma_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("prisma_gaps", [])],
+        })
+    else:
+        entry.update({
+            "overall": data["overall"],
+            "confidence": data["confidence"],
+            "recommendation": data["recommendation"].strip(),
+            "ratings": {k: data["ratings"][k] for k in RATINGS},
+        })
+    entry.update({
         "items": _judged_items(data.get("items", []), previous),
         "revisions": [{"rank": r["rank"], "text": r["text"].strip(), "status": r.get("status", "pending"),
                        "note": _optional_text(r.get("note"))} for r in sorted(data.get("revisions", []),
                                                                      key=lambda r: r["rank"])],
         "excluded": list(data.get("excluded", [])),
         "report": data["report"],
-    }
+    })
     payload = (json.dumps({"rounds": rounds + [entry]}, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     if len(payload) > MAX_BYTES:
         raise Refused("REVIEW_FILE_INVALID", f"recording this round would exceed {MAX_BYTES} bytes")

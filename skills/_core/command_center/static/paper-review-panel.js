@@ -4,7 +4,11 @@
  * .papersmith/paper_review.json through GET /api/paper/review: per round the
  * overall score (1-6), confidence (1-5), recommendation and the four 1-4
  * ratings; the verdict on each item the previous round raised; the remaining
- * revisions with their status; and the full report text. Read-only: nothing
+ * revisions with their status; and the full report text. A round judged on
+ * the systematic-review rubric (`rubric: "systematic-review"`, review papers)
+ * shows instead its AMSTAR 2 overall confidence, critical flaws and
+ * non-critical weaknesses, the 16 item answers and the PRISMA 2020 reporting
+ * gaps; a round without `rubric` renders exactly as before. Read-only: nothing
  * here launches the judge or edits the paper.
  *
  * Every value is escaped before insertion. Public surface (window):
@@ -42,6 +46,37 @@
       ${chips ? `<p style="margin:0.3rem 0;"><strong>${esc(t('review.ratings'))}:</strong> ${chips}</p>` : ''}`;
   }
 
+  const isReview = (r) => r.rubric === 'systematic-review';
+  const key = (v) => String(v ?? '').replace(/ /g, '_');
+  const ANSWER_BADGE = { yes: 'badge--ok', 'partial yes': 'badge--warn', no: 'badge--bad', 'not applicable': 'badge--info' };
+  const LEVEL_BADGE = { high: 'badge--ok', moderate: 'badge--warn', low: 'badge--bad', 'critically low': 'badge--bad' };
+  const answerBadge = (a) => `<span class="badge ${ANSWER_BADGE[a] || 'badge--info'}">${esc(t(`review.amstar2.answer.${key(a)}`))}</span>`;
+  const levelText = (v) => t(`review.amstar2.level.${key(v)}`);
+  const itemList = (v) => (list(v).length ? list(v).map(esc).join(', ') : esc(t('review.amstar2.none')));
+
+  // The systematic-review rubric (AMSTAR 2 and PRISMA 2020): head and tables.
+  function reviewSummary(r) {
+    const answers = list(r.amstar2).map((a) => `<tr><td>${esc(a.item)}</td>
+      <td>${a.critical ? `<span class="badge badge--info">${esc(t('review.amstar2.critical'))}</span>` : ''}</td>
+      <td>${answerBadge(a.answer)}</td><td>${esc(a.justification || '')}</td></tr>`);
+    const gaps = list(r.prisma_gaps).map((g) => `<tr><td>${esc(g.item)}</td><td>${esc(g.gap || '')}</td></tr>`);
+    return `
+      <div class="review-round__head" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+        <strong>${esc(t('review.round'))} ${esc(r.round)}</strong>
+        <span class="panel__meta">${esc(r.date || '')}</span>
+        <span class="badge badge--info">${esc(t('review.rubric.systematic'))}</span>
+        <span class="badge ${LEVEL_BADGE[r.overall_confidence] || 'badge--info'}">${esc(t('review.amstar2.confidence'))}: ${esc(levelText(r.overall_confidence))}</span>
+      </div>
+      <p style="margin:0.4rem 0;"><strong>${esc(t('review.recommendation'))}:</strong> ${esc(r.recommendation || '')}</p>
+      <p style="margin:0.3rem 0;"><strong>${esc(t('review.amstar2.flaws'))}:</strong> ${itemList(r.critical_flaws)}
+        · <strong>${esc(t('review.amstar2.weaknesses'))}:</strong> ${itemList(r.non_critical_weaknesses)}</p>
+      ${answers.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.amstar2.items'))}</h4>${table([t('review.amstar2.item'), t('review.amstar2.critical'), t('review.amstar2.answer'), t('review.amstar2.justification')], answers)}` : ''}
+      ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.prisma.gaps'))}</h4>${table([t('review.prisma.item'), t('review.prisma.gap')], gaps)}` : ''}`;
+  }
+
+  const summary = (r) => (isReview(r) ? reviewSummary(r) : roundSummary(r));
+  const headline = (r) => (isReview(r) ? esc(levelText(r.overall_confidence)) : `${esc(r.overall)}/6`);
+
   function table(head, rows) {
     if (!rows.length) return '';
     return `<div class="table-responsive"><table class="data-table"><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
@@ -67,10 +102,10 @@
     if (!rounds.length) return `<p class="panel__empty">${esc(t('review.empty'))}</p>`;
     const [latest, ...older] = rounds;
     return `
-      <div class="review-round">${roundSummary(latest)}${roundDetail(latest)}</div>
+      <div class="review-round">${summary(latest)}${roundDetail(latest)}</div>
       ${older.length ? `<h4 style="margin:1rem 0 0.3rem;">${esc(t('review.history'))}</h4>${older.map((r) => `
-        <details class="review-round" style="margin:0.3rem 0;"><summary>${esc(t('review.round'))} ${esc(r.round)} · ${esc(r.overall)}/6 · ${esc(r.recommendation || '')}</summary>
-          ${roundSummary(r)}${roundDetail(r)}</details>`).join('')}` : ''}`;
+        <details class="review-round" style="margin:0.3rem 0;"><summary>${esc(t('review.round'))} ${esc(r.round)} · ${headline(r)} · ${esc(r.recommendation || '')}</summary>
+          ${summary(r)}${roundDetail(r)}</details>`).join('')}` : ''}`;
   }
 
   async function refreshPaperReview() {

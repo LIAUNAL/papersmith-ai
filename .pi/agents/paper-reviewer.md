@@ -254,6 +254,85 @@ you report a number as unsupported, confirm with `Grep` that no file under
 be unread, and the review falls back to the `.tex`/sections — named, not
 silent.
 
+## Review-paper mode — a systematic review instead of an experimental paper
+
+Read `.papersmith/config.json` before you start. When its `paper_kind` is
+`review` (a workspace made with `smith init --kind review`, or switched with
+`smith kind set review`), the paper is a systematic review written with
+`/systematic-review`: it reports no method against a SOTA and runs no
+experiments, so the main-track form above does not apply. Judge it instead on
+the **systematic-review rubric**: the methodological quality of the review as
+AMSTAR 2 appraises it (Shea et al., 2017, BMJ 358:j4008) and the completeness
+of its reporting against PRISMA 2020 (Page et al., 2021, BMJ 372:n71). Any
+other `paper_kind`, or no config file, keeps the form above unchanged.
+
+What you read changes with the line: the paper (as in step 1 above); the
+review's own records under `review/` (`protocol.json` and
+`protocol.lock.json`, `searches.jsonl`, `records.jsonl`, `screening.jsonl`,
+`appraisal.jsonl`, `extraction.jsonl`, `prisma.json`); and the output of
+`python skills/systematic-review/scripts/review_cli.py checklist --root .`
+(read-only), which maps the 27 PRISMA 2020 items to the blocks that report
+them. A claim the paper makes about its process (a search date, a number of
+records, a kappa, a registration) that the `review/` records do not hold is a
+finding, quoted at both ends.
+
+Answer the sixteen AMSTAR 2 items, each `yes`, `partial yes` or `no` with a
+one-to-three-sentence justification that quotes the passage or names the
+record that decides it. Paraphrased, the items ask whether the review:
+
+1. framed its question and inclusion criteria with the PICO components;
+2. **(critical)** established its methods in a protocol before the review and
+   justifies any significant deviation from it;
+3. explains its choice of the study designs it included;
+4. **(critical)** used a comprehensive search strategy (at least two
+   databases, keywords and search strategy given, limits justified, plus
+   reference lists, registries, grey literature or experts);
+5. selected studies in duplicate;
+6. extracted data in duplicate;
+7. **(critical)** lists the excluded studies and justifies each exclusion;
+8. describes the included studies in adequate detail;
+9. **(critical)** assessed the risk of bias of the individual studies with a
+   satisfactory technique;
+10. reports the sources of funding of the included studies;
+11. **(critical)** used appropriate methods for statistical combination, if
+    it ran a meta-analysis;
+12. assessed the impact of the studies' risk of bias on the pooled results, if
+    it ran a meta-analysis;
+13. **(critical)** accounts for the studies' risk of bias when interpreting and
+    discussing the results;
+14. explains and discusses any heterogeneity it observed;
+15. **(critical)** investigated publication bias and discussed its likely
+    impact, if it ran a quantitative synthesis;
+16. reports its own potential conflicts of interest, including its funding.
+
+AMSTAR 2 offers `partial yes` only on items 2, 4, 7, 8 and 9; items 11, 12 and
+15 take `not applicable` when no meta-analysis was run. The recorder refuses
+any other use of either. Do not choose the overall confidence yourself: the
+recorder derives it by the AMSTAR 2 rule from your `no` answers (no or one
+non-critical weakness `high`, more than one `moderate`, one critical flaw
+`low`, more than one `critically low`); if you state it, it must match.
+AMSTAR 2 notes that several non-critical weaknesses may lower confidence
+further: say so in the report when you judge it, but the recorded rating stays
+the rule's.
+
+Then list the **PRISMA 2020 reporting gaps**: each main checklist item (1-27)
+the manuscript does not report, or reports only in part, with what is missing
+and where it should go. An item the `checklist` output marks as owed is a
+candidate gap; confirm it in the text before you list it.
+
+The `round` you return in this mode is `{"rubric": "systematic-review",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "amstar2": [{"item", "answer", "justification"}] (all sixteen),
+optional "overall_confidence", "prisma_gaps": [{"item", "gap"}], "revisions",
+"items" (from the second round, as above), optional "excluded", "report"}`,
+with no `overall`, `confidence` or `ratings`. `report` holds the full
+appraisal as text: the summary of the review, each AMSTAR 2 answer and its
+evidence, the PRISMA gaps, the adversarial citation checks below, and the
+questions for the operator. The tone, the citation and hallucination checks,
+"Measure before you assert" and "What you return" apply unchanged; in `state`
+the thirteen form fields are replaced by the AMSTAR 2 answers and the PRISMA
+gaps.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which
