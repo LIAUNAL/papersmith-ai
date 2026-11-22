@@ -255,17 +255,17 @@ class SseFramingTests(unittest.TestCase):
 class BrowserLaunchTests(unittest.TestCase):
     def test_wsl_hands_the_url_to_windows_before_python_webbrowser(self) -> None:
         url = "http://127.0.0.1:8080/api/terminal/login?token=private&next=home"
-        explorer = "/mnt/c/Windows/explorer.exe"
+        rundll32 = "/mnt/c/Windows/System32/rundll32.exe"
         with (mock.patch("webbrowser.open", return_value=False) as browser,
               mock.patch.object(server, "_is_wsl", return_value=True),
               mock.patch.object(server.shutil, "which",
-                                lambda name: explorer if name == "explorer.exe" else None),
+                                lambda name: rundll32 if name == "rundll32.exe" else None),
               mock.patch.object(server.subprocess, "Popen") as launch):
             server.open_browser(url)
 
         browser.assert_not_called()
         launch.assert_called_once_with(
-            [explorer, url], stdin=server.subprocess.DEVNULL,
+            [rundll32, "url.dll,FileProtocolHandler", url], stdin=server.subprocess.DEVNULL,
             stdout=server.subprocess.DEVNULL, stderr=server.subprocess.DEVNULL,
             close_fds=True,
         )

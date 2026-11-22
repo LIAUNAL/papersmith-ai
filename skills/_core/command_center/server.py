@@ -4668,8 +4668,16 @@ def _is_wsl() -> bool:
     return sys.platform == "linux" and "microsoft" in platform.release().lower()
 
 
-#: Launchers that hand a URL to the Windows browser from WSL, in order.
-WSL_BROWSER_LAUNCHERS = ("wslview", "explorer.exe")
+#: Launchers that hand a URL to the Windows browser from WSL, in order: the
+#: executable, then the arguments before the URL. ``rundll32 url.dll`` passes
+#: the URL to the default browser with its query string intact. Never
+#: ``explorer.exe``: given a URL with a query string (the terminal login
+#: ``?token=``) it opens the Documents folder, yet starts, so it would report a
+#: launch that never happened (issue #188).
+WSL_BROWSER_LAUNCHERS: tuple[tuple[str, ...], ...] = (
+    ("wslview",),
+    ("rundll32.exe", "url.dll,FileProtocolHandler"),
+)
 
 
 #: Where an X server listens on its local socket, one ``X<N>`` per display.
@@ -4779,14 +4787,14 @@ def open_browser(url: str) -> bool:
     printed on the server's console.
 
     Under WSL the Windows browser is reached through ``wslview`` (wslu), then
-    ``explorer.exe``. On Linux without a graphical display Python's
+    ``rundll32.exe url.dll,FileProtocolHandler``. On Linux without a graphical display Python's
     ``webbrowser`` would start a text browser (w3m, lynx) on the server's own
     terminal, so the URL is printed instead. A display found only through its
     socket (a terminal outside the desktop session) is named to ``xdg-open``
     in the child's environment. macOS and desktop Linux use ``webbrowser``.
     """
     if _is_wsl():
-        for launcher in WSL_BROWSER_LAUNCHERS:
+        for launcher, *args in WSL_BROWSER_LAUNCHERS:
             executable = shutil.which(launcher)
             if not executable:
                 continue
@@ -4794,7 +4802,7 @@ def open_browser(url: str) -> bool:
             # interpolation). Do not expose the terminal login URL through
             # child process output.
             try:
-                subprocess.Popen([executable, url], stdin=subprocess.DEVNULL,
+                subprocess.Popen([executable, *args, url], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  close_fds=True)
                 return True
