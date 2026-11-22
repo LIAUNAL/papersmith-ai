@@ -141,6 +141,11 @@ class CatalogueDiscriminationTests(unittest.TestCase):
 
 
 class VariantSourceTests(unittest.TestCase):
+    def test_a_tie_in_the_idea_stays_null_whatever_the_pool_says(self) -> None:
+        idea = "Una encuesta y una medida de sensibilidad."  # one observational, one diagnostic signal
+        pool = "diagnostic accuracy specificity agreement " * 5
+        self.assertIsNone(by_type(score.score(idea, pool_text=pool))["observational-measurement"]["variant"])
+
     def test_the_idea_decides_the_variant_and_the_pool_only_breaks_silence(self) -> None:
         idea = "Una encuesta en hogares rurales."  # observational in the idea
         pool = "diagnostic accuracy sensitivity specificity agreement " * 5  # diagnostic in the pool
@@ -284,6 +289,11 @@ class CliTests(unittest.TestCase):
         from skills._core.paper_types import decision as store
         store.record_acceptance(self.root, SIM_IDEA, by="op")  # a new idea accepted, not rescored
         self.assertEqual(self.agree("--type", "applied-ai", "--by", "op")["error"], "SCORES_STALE")
+
+    def test_agree_works_again_after_rescoring_the_new_idea(self) -> None:
+        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=AI_IDEA)
+        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=SIM_IDEA)
+        self.assertTrue(self.agree("--type", "lab-simulation", "--by", "op")["ok"])
 
     def test_agree_refusals(self) -> None:
         self.assertEqual(self.agree("--type", "review", "--by", "op")["error"], "SCORES_ABSENT")

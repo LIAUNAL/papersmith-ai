@@ -48,6 +48,16 @@ def subphase(root: Path) -> dict[str, str]:
     return {"id": SUB_ID, "name": SUB_NAME, "status": status, "detail": detail}
 
 
+def safe_subphase(root: Path) -> dict[str, str]:
+    """``subphase`` that never breaks ``/api/status``: any failure reads as a
+    pending sub-step that names the unreadable record."""
+    try:
+        return subphase(root)
+    except Exception:  # noqa: BLE001 - the board must render whatever the record holds
+        return {"id": SUB_ID, "name": SUB_NAME, "status": "PENDING",
+                "detail": "The paper-type record cannot be read"}
+
+
 def view(root: Path) -> dict[str, Any]:
     root = Path(root)
     accepted, record, error = _records(root)
@@ -79,4 +89,4 @@ def agree(root: Path, payload: Any) -> dict[str, Any]:
     return {"ok": True, **result}
 
 
-__all__ = ["SUB_ID", "SUB_NAME", "agree", "rescore", "subphase", "view"]
+__all__ = ["SUB_ID", "SUB_NAME", "agree", "rescore", "safe_subphase", "subphase", "view"]

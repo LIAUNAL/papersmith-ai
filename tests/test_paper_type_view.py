@@ -122,6 +122,28 @@ class EndpointTests(Case):
         self.assertEqual(self.client.post("/api/paper-type/agree", json={"type": "review"}).json()["code"],
                          "OPERATOR_ABSENT")
 
+    def test_spanish_templated_details(self) -> None:
+        self.accept()
+        detail = self.client.get("/api/status?lang=es").json()["fases"][1]["subfases"][4]["detail"]
+        self.assertEqual(detail, "Tipo de paper sugerido: observational-measurement, a la espera del acuerdo del operador")
+        decision.agree(self.root, "observational-measurement", by="op")
+        detail = self.client.get("/api/status?lang=es").json()["fases"][1]["subfases"][4]["detail"]
+        self.assertEqual(detail, "Tipo de paper acordado: observational-measurement")
+
+    def test_a_status_never_breaks_on_the_sub_step(self) -> None:
+        from unittest import mock
+        with mock.patch.object(paper_type_view, "subphase", side_effect=RuntimeError("boom")):
+            response = self.client.get("/api/status")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["fases"][1]["subfases"][4]["detail"], "The paper-type record cannot be read")
+
+    def test_rescore_failures_are_typed(self) -> None:
+        decision.record_acceptance(self.root, AI_IDEA, by="op")
+        (self.root / ".papersmith" / "paper_type.json").write_text("[]", encoding="utf-8")
+        response = self.client.post("/api/paper-type/score", json={})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["code"], "RECORD_UNREADABLE")
+
     def test_writes_refuse_cross_origin(self) -> None:
         for path in ("/api/paper-type/score", "/api/paper-type/agree"):
             with self.subTest(path=path):

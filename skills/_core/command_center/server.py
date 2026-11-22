@@ -1827,7 +1827,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "2.3", "name": "Spatial Embedding & 3D Constellation", "status": fase2_status, "detail": "Generation of atlas.json for the WebGL view"},
                     {"id": "2.4", "name": "Novelty Gap Detection", "status": fase2_status, "detail": "Identification of conceptual voids and opportunity"},
                     # Advisory: the type agreed after plausibility; it locks nothing (paper-type-lines S1).
-                    paper_type_view.subphase(root_path),
+                    paper_type_view.safe_subphase(root_path),
                 ]
             },
             {
@@ -2919,7 +2919,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         """Score the accepted idea again; the operator's click."""
         if not origin_is_same(request):
             return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
-        result = await asyncio.to_thread(paper_type_view.rescore, root_path)
+        try:
+            result = await asyncio.to_thread(paper_type_view.rescore, root_path)
+        except paper_type_view.decision.DecisionError as exc:
+            result = {"ok": False, "code": exc.code, "error": str(exc)}
         return JSONResponse(result, status_code=200 if result.get("ok") else 422)
 
     @app.post("/api/paper-type/agree")

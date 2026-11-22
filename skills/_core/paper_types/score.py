@@ -82,6 +82,12 @@ def _variant(item: dict, matched: list[str]) -> str | None:
     return counts[0][1] if len(counts) == 1 or counts[0][0] > counts[1][0] else None
 
 
+def _variant_from(item: dict, idea: list[str], pool: list[str]) -> str | None:
+    """The idea decides (a tie stays null); the pool only when the idea matches no variant."""
+    idea_hits = any(s in idea for variant in item.get("variants", []) for s in variant["signals"])
+    return _variant(item, idea) if idea_hits else _variant(item, pool)
+
+
 def score(idea: str, pool_text: str = "", types: list[dict] | None = None) -> dict[str, Any]:
     types = types if types is not None else registry.load()
     in_idea = matches(idea, types)
@@ -93,7 +99,7 @@ def score(idea: str, pool_text: str = "", types: list[dict] | None = None) -> di
         "type": item["id"], "status": item["status"], "line": item["line"],
         "score": round(100 * raw[item["id"]] / best) if best else 0,
         "raw": raw[item["id"]], "matched": in_idea[item["id"]], "pool_matched": in_pool[item["id"]],
-        "variant": _variant(item, in_idea[item["id"]]) or _variant(item, in_pool[item["id"]]),
+        "variant": _variant_from(item, in_idea[item["id"]], in_pool[item["id"]]),
     } for item in types]
     ranked = sorted(raw.values(), reverse=True)
     second = ranked[1] if len(ranked) > 1 else 0
