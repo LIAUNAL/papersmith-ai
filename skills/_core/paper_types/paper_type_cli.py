@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """CLI for the paper-type decision (``decision.py``, ``score.py`` in this folder).
 
-    paper_type_cli.py accept --root . --by <operator> [--top5 <id> ...] [--idea-file <f>]
-    paper_type_cli.py score  --root . [--idea-file <f>] [--dry-run]
+    paper_type_cli.py accept --root . --by <operator> --idea-file <f|-> [--top5 <id> ...]
+    paper_type_cli.py score  --root . [--idea-file <f|->] [--dry-run]
     paper_type_cli.py show   --root .
 
-``accept`` records the plausibility acceptance (the idea, read from
-``--idea-file`` or stdin) in ``.papersmith/plausibility.json`` and scores it.
-``score`` scores an idea from ``--idea-file``, stdin, or else the accepted one,
-and writes ``.papersmith/paper_type.json`` (``--dry-run`` writes nothing).
-Each verb prints one JSON object. A refusal prints ``{"ok": false, "error":
-<CODE>, "message": ...}`` and exits 1 (usage errors exit 2). Refusal codes:
-``USAGE``, ``IDEA_ABSENT``, ``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``.
+``accept`` records the plausibility acceptance (the idea read from
+``--idea-file``; ``-`` reads stdin) in ``.papersmith/plausibility.json`` and
+scores it; it scores first, so a failure writes nothing. ``score`` scores the
+idea from ``--idea-file`` or, without it, the accepted one, and writes
+``.papersmith/paper_type.json`` (``--dry-run`` writes nothing). stdin is read
+only when asked with ``-``. Each verb prints one JSON object. A refusal prints
+``{"ok": false, "error": <CODE>, "message": ...}`` and exits 1 (usage errors
+exit 2). Refusal codes: ``USAGE``, ``IDEA_ABSENT``, ``IDEA_UNREADABLE``,
+``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``.
 """
 
 from __future__ import annotations
@@ -51,13 +53,12 @@ class _Parser(argparse.ArgumentParser):
 
 
 def _idea(args: argparse.Namespace) -> str:
-    if args.idea_file:
-        return Path(args.idea_file).read_text(encoding="utf-8")
-    if not sys.stdin.isatty():
-        text = sys.stdin.read()
-        if text.strip():
-            return text
-    return ""
+    """The idea from ``--idea-file`` (``-`` is stdin), or ``""`` without one."""
+    if not args.idea_file:
+        return ""
+    if args.idea_file == "-":
+        return sys.stdin.read()
+    return Path(args.idea_file).read_text(encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -77,19 +78,23 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.verb == "show":
             return _out({"ok": True, **decision.read(root)})
-        idea = _idea(args)
+        try:
+            idea = _idea(args)
+        except (OSError, UnicodeDecodeError) as error:
+            return _refuse("IDEA_UNREADABLE", f"--idea-file cannot be read: {error}")
         if args.verb == "accept":
             if not str(args.by).strip():
                 return _refuse("OPERATOR_ABSENT", "name the operator who accepted the report with --by")
             if not idea.strip():
-                return _refuse("IDEA_ABSENT", "give the accepted idea on stdin or with --idea-file")
+                return _refuse("IDEA_ABSENT", "give the accepted idea with --idea-file <file> or --idea-file -")
+            decision.compute(root, idea)  # score first: a failure leaves nothing half written
             accepted = decision.record_acceptance(root, idea, by=args.by, top5=args.top5)
             return _out({"ok": True, "plausibility": accepted, **decision.record_scores(root, idea)})
         if not idea.strip():
             accepted = decision.read(root)["plausibility"] or {}
             idea = str(accepted.get("idea") or "")
         if not idea.strip():
-            return _refuse("IDEA_ABSENT", "no idea on stdin or --idea-file and no accepted plausibility")
+            return _refuse("IDEA_ABSENT", "no idea in --idea-file and no accepted plausibility")
         result = decision.compute(root, idea) if args.dry_run else decision.record_scores(root, idea)
         return _out({"ok": True, **result})
     except decision.DecisionError as error:

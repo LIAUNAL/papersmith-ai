@@ -26,6 +26,10 @@ from . import registry
 POOL_WEIGHT = 0.25
 POOL_CAP = 1.0
 SHORT_SIGNAL = 4
+#: ``high``: the leader has at least this raw score and this many times the runner-up's.
+HIGH_RAW, HIGH_RATIO = 3, 1.5
+#: ``medium``: the leader has at least this raw score and leads strictly.
+MEDIUM_RAW = 2
 
 
 def fold(text: str) -> str:
@@ -34,7 +38,9 @@ def fold(text: str) -> str:
 
 
 def _pattern(signal: str) -> re.Pattern[str]:
-    # Every word but the last may inflect ("peliculas delgadas" for "pelicula delgada").
+    # Every word may inflect: inner words through ``[a-z]*`` ("peliculas delgadas"
+    # for "pelicula delgada"), the last because a signal is a stem with no end
+    # boundary unless it is short.
     body = r"[a-z]*[\s-]+".join(re.escape(part) for part in signal.split())
     tail = r"(?![a-z0-9])" if len(signal) <= SHORT_SIGNAL else ""
     return re.compile(r"(?<![a-z0-9])" + body + tail)
@@ -76,9 +82,9 @@ def score(idea: str, pool_text: str = "", types: list[dict] | None = None) -> di
     second = ranked[1] if len(ranked) > 1 else 0
     leader = [item["id"] for item in types if raw[item["id"]] == best]
     suggested = leader[0] if best > 0 and len(leader) == 1 else None
-    if best >= 3 and best >= 1.5 * second:
+    if best >= HIGH_RAW and best >= HIGH_RATIO * second:
         confidence = "high"
-    elif best >= 2 and best > second:
+    elif best >= MEDIUM_RAW and best > second:
         confidence = "medium"
     else:
         confidence = "low"

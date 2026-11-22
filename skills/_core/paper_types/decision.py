@@ -63,7 +63,10 @@ def _read(path: Path) -> dict | None:
         return None
     except (OSError, ValueError) as error:
         raise DecisionError(f"{path.name} cannot be read: {error}") from error
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        # Never overwrite a record we cannot read as ours: the operator decides.
+        raise DecisionError(f"{path.name} does not hold a JSON object; move it aside and run again")
+    return data
 
 
 def pool_sha256(root: Path) -> str | None:

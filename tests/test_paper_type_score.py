@@ -82,7 +82,8 @@ class ScoreTests(unittest.TestCase):
 
     def test_confidence_reflects_the_margin(self) -> None:
         self.assertEqual(score.score(AI_IDEA)["confidence"], "high")
-        self.assertIn(score.score("a sensor")["confidence"], ("low", "medium"))
+        self.assertEqual(score.score("a sensor")["confidence"], "low")
+        self.assertEqual(score.score("a low-cost sensor prototype")["confidence"], "high")
 
 
 class CatalogueDiscriminationTests(unittest.TestCase):
@@ -174,7 +175,7 @@ class CliTests(unittest.TestCase):
                               capture_output=True, text=True, check=False)
 
     def test_score_reads_the_idea_from_stdin_and_writes_the_decision(self) -> None:
-        done = self.run_cli("score", "--root", str(self.root), stdin=SIM_IDEA)
+        done = self.run_cli("score", "--root", str(self.root), "--idea-file", "-", stdin=SIM_IDEA)
         self.assertEqual(done.returncode, 0, done.stderr)
         payload = json.loads(done.stdout)
         self.assertTrue(payload["ok"])
@@ -182,12 +183,13 @@ class CliTests(unittest.TestCase):
         self.assertTrue((self.root / ".papersmith" / "paper_type.json").is_file())
 
     def test_dry_run_writes_nothing(self) -> None:
-        done = self.run_cli("score", "--root", str(self.root), "--dry-run", stdin=SIM_IDEA)
+        done = self.run_cli("score", "--root", str(self.root), "--dry-run", "--idea-file", "-", stdin=SIM_IDEA)
         self.assertEqual(json.loads(done.stdout)["suggested"], "computational")
         self.assertFalse((self.root / ".papersmith").exists())
 
     def test_accept_records_the_acceptance_then_scores_from_it(self) -> None:
-        done = self.run_cli("accept", "--root", str(self.root), "--by", "operator", stdin=SURVEY_IDEA)
+        done = self.run_cli("accept", "--root", str(self.root), "--by", "operator", "--idea-file", "-",
+                            stdin=SURVEY_IDEA)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(json.loads(done.stdout)["suggested"], "observational")
         rescored = self.run_cli("score", "--root", str(self.root))  # no stdin: the accepted idea
@@ -200,6 +202,26 @@ class CliTests(unittest.TestCase):
         done = self.run_cli("score", "--root", str(self.root))
         self.assertEqual(done.returncode, 1)
         self.assertEqual(json.loads(done.stdout)["error"], "IDEA_ABSENT")
+
+    def test_stdin_is_read_only_when_asked(self) -> None:
+        done = self.run_cli("score", "--root", str(self.root), stdin=SIM_IDEA)
+        self.assertEqual(json.loads(done.stdout)["error"], "IDEA_ABSENT")
+
+    def test_accept_refusals(self) -> None:
+        no_operator = self.run_cli("accept", "--root", str(self.root), "--idea-file", "-", stdin=SIM_IDEA)
+        self.assertEqual(json.loads(no_operator.stdout)["error"], "OPERATOR_ABSENT")
+        unreadable = self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file",
+                                  str(self.root / "missing.txt"))
+        self.assertEqual(json.loads(unreadable.stdout)["error"], "IDEA_UNREADABLE")
+        self.assertFalse((self.root / ".papersmith").exists(), "a refusal writes nothing")
+
+    def test_a_record_that_is_not_an_object_is_never_overwritten(self) -> None:
+        path = self.root / ".papersmith" / "paper_type.json"
+        path.parent.mkdir()
+        path.write_text("[1, 2]", encoding="utf-8")
+        done = self.run_cli("score", "--root", str(self.root), "--idea-file", "-", stdin=SIM_IDEA)
+        self.assertEqual(json.loads(done.stdout)["error"], "RECORD_UNREADABLE")
+        self.assertEqual(path.read_text(encoding="utf-8"), "[1, 2]")
 
     def test_usage_error(self) -> None:
         done = self.run_cli("nope")
