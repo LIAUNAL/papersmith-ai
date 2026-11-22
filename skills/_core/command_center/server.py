@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, localize, prompt_gate, prompt_review, toolchain
+from . import board_refresh, doctor_view, keys_view, localize, paper_type_view, prompt_gate, prompt_review, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -1825,7 +1825,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "2.1", "name": "SOTA Article Discovery", "status": fase2_status, "detail": "Search and filtering of Q1/Q2 literature"},
                     {"id": "2.2", "name": "Metadata & Family Extraction", "status": fase2_status, "detail": "Taxonomic classification of candidates"},
                     {"id": "2.3", "name": "Spatial Embedding & 3D Constellation", "status": fase2_status, "detail": "Generation of atlas.json for the WebGL view"},
-                    {"id": "2.4", "name": "Novelty Gap Detection", "status": fase2_status, "detail": "Identification of conceptual voids and opportunity"}
+                    {"id": "2.4", "name": "Novelty Gap Detection", "status": fase2_status, "detail": "Identification of conceptual voids and opportunity"},
+                    # Advisory: the type agreed after plausibility; it locks nothing (paper-type-lines S1).
+                    paper_type_view.subphase(root_path),
                 ]
             },
             {
@@ -2906,6 +2908,33 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return await request.json()
         except Exception:
             return None
+
+    @app.get("/api/paper-type")
+    def api_paper_type() -> JSONResponse:
+        """The Paper type panel: catalogue, accepted idea, scores, agreement."""
+        return JSONResponse(paper_type_view.view(root_path))
+
+    @app.post("/api/paper-type/score")
+    async def api_paper_type_score(request: Request) -> JSONResponse:
+        """Score the accepted idea again; the operator's click."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        result = await asyncio.to_thread(paper_type_view.rescore, root_path)
+        return JSONResponse(result, status_code=200 if result.get("ok") else 422)
+
+    @app.post("/api/paper-type/agree")
+    async def api_paper_type_agree(request: Request) -> JSONResponse:
+        """Record the paper type the operator agreed in the panel."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = None
+        try:
+            return JSONResponse(await asyncio.to_thread(paper_type_view.agree, root_path, payload))
+        except paper_type_view.decision.DecisionError as exc:
+            return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
 
     @app.post("/api/prompt/check")
     async def api_prompt_check(request: Request) -> JSONResponse:

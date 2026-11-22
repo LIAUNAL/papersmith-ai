@@ -808,5 +808,12 @@
   "the verb (validate)": "el verbo (validate)",
   "the arms, trial budget, space or evaluator": "los brazos, el presupuesto de ensayos, el espacio o el evaluador",
   "estimate (with timing.json) or assess the split": "estimar (con timing.json) o evaluar la división",
-  "poc or experiments, and the product": "poc o experiments, y el producto"
+  "poc or experiments, and the product": "poc o experiments, y el producto",
+  "Paper Type": "Tipo de paper",
+  "No accepted idea yet: accept the plausibility report first": "Aún no hay una idea aceptada: acepte primero el reporte de plausibilidad",
+  "Suggested paper type: {type}, awaiting the operator's agreement": "Tipo de paper sugerido: {type}, a la espera del acuerdo del operador",
+  "Agreed paper type: {type}": "Tipo de paper acordado: {type}",
+  "The idea changed after the paper type was agreed; agree it again": "La idea cambió después de acordar el tipo de paper; acuérdelo de nuevo",
+  "No clear paper type yet: discuss it with the agent": "Aún no hay un tipo de paper claro: discútalo con el agente",
+  "The paper-type record cannot be read": "El registro del tipo de paper no se puede leer"
 }
