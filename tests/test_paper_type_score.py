@@ -241,6 +241,42 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json.loads(done.stdout)["error"], "RECORD_UNREADABLE")
         self.assertEqual(path.read_text(encoding="utf-8"), "[1, 2]")
 
+    def test_accept_refuses_before_writing_when_the_type_record_is_foreign(self) -> None:
+        record = self.root / ".papersmith" / "paper_type.json"
+        record.parent.mkdir()
+        record.write_text("[]", encoding="utf-8")
+        done = self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=SIM_IDEA)
+        self.assertEqual(json.loads(done.stdout)["error"], "RECORD_UNREADABLE")
+        self.assertFalse((self.root / ".papersmith" / "plausibility.json").exists())
+
+    def agree(self, *extra: str) -> dict:
+        return json.loads(self.run_cli("agree", "--root", str(self.root), *extra).stdout)
+
+    def test_agree_records_the_type_variant_and_operator(self) -> None:
+        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=SURVEY_IDEA)
+        out = self.agree("--type", "observational-measurement", "--variant", "observational", "--by", "op",
+                         "--rationale", "own survey of rural youth")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["layout"], "planned")
+        stored = json.loads((self.root / ".papersmith" / "paper_type.json").read_text(encoding="utf-8"))
+        self.assertEqual((stored["agreed"], stored["agreed_variant"], stored["agreed_by"]),
+                         ("observational-measurement", "observational", "op"))
+        self.assertEqual(stored["agreed_idea_sha256"], stored["idea_sha256"])
+        self.assertFalse(stored["agreed_stale"])
+
+    def test_agree_names_the_layout_step_for_an_available_type(self) -> None:
+        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=AI_IDEA)
+        self.assertEqual(self.agree("--type", "applied-ai", "--by", "op")["layout"], "current")
+        self.assertEqual(self.agree("--type", "review", "--by", "op")["layout"], "switch:review")
+
+    def test_agree_refusals(self) -> None:
+        self.assertEqual(self.agree("--type", "review", "--by", "op")["error"], "SCORES_ABSENT")
+        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=AI_IDEA)
+        self.assertEqual(self.agree("--type", "poetry", "--by", "op")["error"], "TYPE_UNKNOWN")
+        self.assertEqual(self.agree("--type", "review", "--variant", "materials", "--by", "op")["error"],
+                         "VARIANT_UNKNOWN")
+        self.assertEqual(self.agree("--type", "review")["error"], "OPERATOR_ABSENT")
+
     def test_usage_error(self) -> None:
         done = self.run_cli("nope")
         self.assertEqual(done.returncode, 2)

@@ -23,16 +23,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import registry
 from . import score as scoring
 
 PLAUSIBILITY = Path(".papersmith") / "plausibility.json"
 PAPER_TYPE = Path(".papersmith") / "paper_type.json"
 POOL = Path("sota-pool") / "candidates.json"
-_AGREED_KEYS = ("agreed", "agreed_by", "agreed_at", "agreed_idea_sha256")
+CONFIG = Path(".papersmith") / "config.json"
+_AGREED_KEYS = ("agreed", "agreed_variant", "agreed_by", "agreed_at", "agreed_idea_sha256", "agreed_rationale")
 
 
 class DecisionError(ValueError):
     """A refused write: no operator, no idea, or an unreadable record."""
+
+    code = "RECORD_UNREADABLE"
+
+
+class AgreeError(DecisionError):
+    """An agreement the catalogue or the record cannot hold; ``code`` names it."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _now() -> str:
@@ -129,5 +141,43 @@ def record_scores(root: Path, idea: str) -> dict:
     return record
 
 
-__all__ = ["DecisionError", "PAPER_TYPE", "PLAUSIBILITY", "compute", "pool_sha256", "pool_text", "read",
+def current_line(root: Path) -> str:
+    """The workspace's line (``paper_kind``), ``experimental`` when unset."""
+    try:
+        config = json.loads((Path(root) / CONFIG).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "experimental"
+    kind = config.get("paper_kind") if isinstance(config, dict) else None
+    return kind if isinstance(kind, str) and kind else "experimental"
+
+
+def agree(root: Path, type_id: str, *, by: str, variant: str | None = None, rationale: str = "") -> dict:
+    """Record the type the operator agreed for the scored idea.
+
+    ``layout`` says what the workspace must do next: ``current`` (its line is
+    already this type's), ``switch:<line>`` (``smith kind set`` moves it), or
+    ``planned`` (smith has no flow for this type yet; the workspace keeps its
+    line until one exists)."""
+    by = str(by or "").strip()
+    if not by:
+        raise AgreeError("OPERATOR_ABSENT", "name the operator who agreed the type with --by")
+    record = _read(Path(root) / PAPER_TYPE)
+    if record is None:
+        raise AgreeError("SCORES_ABSENT", "score the idea first (paper_type_cli.py accept or score)")
+    try:
+        item = registry.get(type_id)
+    except registry.RegistryError as error:
+        raise AgreeError("TYPE_UNKNOWN", str(error)) from error
+    if variant and variant not in [v["id"] for v in item.get("variants", [])]:
+        raise AgreeError("VARIANT_UNKNOWN", f"{type_id!r} has no variant {variant!r}")
+    record.update({"agreed": type_id, "agreed_variant": variant or None, "agreed_by": by, "agreed_at": _now(),
+                   "agreed_idea_sha256": record.get("idea_sha256"), "agreed_rationale": str(rationale or "").strip(),
+                   "agreed_stale": False})
+    _write(Path(root) / PAPER_TYPE, record)
+    line = item["line"]
+    layout = "planned" if line is None else ("current" if line == current_line(root) else f"switch:{line}")
+    return {**record, "line": line, "layout": layout}
+
+
+__all__ = ["AgreeError", "DecisionError", "agree", "current_line", "PAPER_TYPE", "PLAUSIBILITY", "compute", "pool_sha256", "pool_text", "read",
            "record_acceptance", "record_scores"]

@@ -3,17 +3,22 @@
 
     paper_type_cli.py accept --root . --by <operator> --idea-file <f|-> [--top5 <id> ...]
     paper_type_cli.py score  --root . [--idea-file <f|->] [--dry-run]
+    paper_type_cli.py agree  --root . --type <id> [--variant <id>] --by <operator> [--rationale <text>]
     paper_type_cli.py show   --root .
 
 ``accept`` records the plausibility acceptance (the idea read from
 ``--idea-file``; ``-`` reads stdin) in ``.papersmith/plausibility.json`` and
-scores it; it scores first, so a failure writes nothing. ``score`` scores the
+scores it; it reads the existing records and scores first, so a failure
+writes nothing. ``agree`` records the type (and variant) the operator agreed
+for the scored idea and answers ``layout``: ``current``, ``switch:<line>``
+(``smith kind set`` moves the workspace) or ``planned`` (no flow yet). ``score`` scores the
 idea from ``--idea-file`` or, without it, the accepted one, and writes
 ``.papersmith/paper_type.json`` (``--dry-run`` writes nothing). stdin is read
 only when asked with ``-``. Each verb prints one JSON object. A refusal prints
 ``{"ok": false, "error": <CODE>, "message": ...}`` and exits 1 (usage errors
 exit 2). Refusal codes: ``USAGE``, ``IDEA_ABSENT``, ``IDEA_UNREADABLE``,
-``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``.
+``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``, ``SCORES_ABSENT``, ``TYPE_UNKNOWN``,
+``VARIANT_UNKNOWN``.
 """
 
 from __future__ import annotations
@@ -64,13 +69,17 @@ def _idea(args: argparse.Namespace) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = _Parser(prog="paper_type_cli.py", description="Paper-type decision: accept, score, show.")
     sub = parser.add_subparsers(dest="verb", required=True)
-    for name in ("accept", "score", "show"):
+    for name in ("accept", "score", "agree", "show"):
         verb = sub.add_parser(name)
         verb.error = parser.error  # type: ignore[method-assign]
         verb.add_argument("--root", default=".")
-        if name != "show":
+        if name in ("accept", "score"):
             verb.add_argument("--idea-file")
     sub.choices["accept"].add_argument("--by", default="")
+    sub.choices["agree"].add_argument("--type", required=True)
+    sub.choices["agree"].add_argument("--variant")
+    sub.choices["agree"].add_argument("--by", default="")
+    sub.choices["agree"].add_argument("--rationale", default="")
     sub.choices["accept"].add_argument("--top5", nargs="*", default=[])
     sub.choices["score"].add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -78,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.verb == "show":
             return _out({"ok": True, **decision.read(root)})
+        if args.verb == "agree":
+            return _out({"ok": True, **decision.agree(root, args.type, by=args.by, variant=args.variant,
+                                                       rationale=args.rationale)})
         try:
             idea = _idea(args)
         except (OSError, UnicodeDecodeError) as error:
@@ -87,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
                 return _refuse("OPERATOR_ABSENT", "name the operator who accepted the report with --by")
             if not idea.strip():
                 return _refuse("IDEA_ABSENT", "give the accepted idea with --idea-file <file> or --idea-file -")
+            decision.read(root)  # a foreign record refuses here, before anything is written
             decision.compute(root, idea)  # score first: a failure leaves nothing half written
             accepted = decision.record_acceptance(root, idea, by=args.by, top5=args.top5)
             return _out({"ok": True, "plausibility": accepted, **decision.record_scores(root, idea)})
@@ -98,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         result = decision.compute(root, idea) if args.dry_run else decision.record_scores(root, idea)
         return _out({"ok": True, **result})
     except decision.DecisionError as error:
-        return _refuse("RECORD_UNREADABLE", str(error))
+        return _refuse(error.code, str(error))
 
 
 if __name__ == "__main__":
