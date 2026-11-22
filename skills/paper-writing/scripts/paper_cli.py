@@ -3272,6 +3272,14 @@ def cmd_verify(args: argparse.Namespace) -> dict:
         report, paper_coherence.run_guarded(evidence.main_tex_bytes, evidence.record))
     # #182 item 1: a cited source with no title or abstract on disk is a visible warning, never a failure.
     report = paper_verify.attach_reference_warnings(report)
+    # #182 items 2-3: the cite-once policy, quotes that share no term with their claim,
+    # and possibly off-field sources; advisory warnings, never verdicts.
+    try:
+        evidence_records = paper_evidence.read_all_records(paper_dir)
+    except (OSError, ValueError):
+        evidence_records = []  # an unreadable store screens nothing; `validate` rewrites it
+    report = paper_verify.attach_citation_warnings(report, evidence.main_tex_bytes, evidence.record,
+                                                   evidence_records, references)
     citations =next((c for c in report["checks"] if c.get("check") == "citations"), None)
     if citations is not None and citations.get("verdict") == "pass":
         return _refresh_atlas_manuscript(paper_dir, report)

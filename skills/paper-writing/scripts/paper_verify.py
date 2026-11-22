@@ -1108,6 +1108,138 @@ def attach_reference_warnings(report: dict) -> dict:
     return {**report, "warnings": list(report.get("warnings") or []) + warnings} if warnings else report
 
 
+#: #182: advisory citation warnings. Content terms are compared by their first
+#: TERM_PREFIX letters after folding accents and case, so "clasificacion",
+#: "clasificaciones" and "classification" meet; words shorter than four letters
+#: and generic research vocabulary never count as a shared topic.
+TERM_PREFIX = 5
+_FOLD = str.maketrans("\u00e1\u00e0\u00e4\u00e2\u00e3\u00e9\u00e8\u00eb\u00ea\u00ed\u00ec\u00ef\u00ee"
+                      "\u00f3\u00f2\u00f6\u00f4\u00f5\u00fa\u00f9\u00fc\u00fb\u00f1\u00e7",
+                      "aaaaaeeeeiiiiooooouuuunc")
+_TERM_RE = re.compile(r"[a-z]{4,}")
+_LATEX_COMMAND_RE = re.compile(r"\\[A-Za-z]+\*?")
+_TEX_COMMENT_RE = re.compile(rb"(?<!\\)%[^\n]*")
+_TITLE_RE = re.compile(rb"\\title\s*(?:\[[^\]]*\])?\s*\{((?:[^{}]|\{[^{}]*\})*)\}")
+_ABSTRACT_RE = re.compile(rb"\\begin\{abstract\}(.*?)\\end\{abstract\}", re.S)
+_STOP_PREFIXES = frozenset(word[:TERM_PREFIX] for word in """
+    that this with from have been were which their these those into than then also such when where
+    while there what they them more most other some only over under between about each both very
+    will would could should using used based show shows shown result results paper study studies
+    propose proposed approach method methods model models data work works first new
+    para como entre sobre este esta estos estas pero porque cuando donde desde hasta tambien segun
+    cada otro otra otros otras puede pueden tiene tienen modelo modelos metodo metodos datos
+    resultado resultados estudio estudios propuesta trabajo nuevo nueva
+""".split())
+
+
+def _terms(text) -> set:
+    folded = _LATEX_COMMAND_RE.sub(" ", str(text or "")).lower().translate(_FOLD)
+    return {word[:TERM_PREFIX] for word in _TERM_RE.findall(folded)} - _STOP_PREFIXES
+
+
+def _cite_occurrences(main_tex_bytes: bytes) -> list:
+    """Every cited key in reading order, once per citation; a `%`-commented
+    citation is not one."""
+    keys = []
+    for match in _CITE_RE.finditer(_TEX_COMMENT_RE.sub(b"", main_tex_bytes)):
+        for raw in match.group(1).split(b","):
+            key = raw.strip()
+            if key:
+                keys.append(key.decode("utf-8", errors="replace"))
+    return keys
+
+
+def _paper_terms(main_tex_bytes: bytes, record: dict) -> set:
+    text = []
+    for pattern in (_TITLE_RE, _ABSTRACT_RE):
+        found = pattern.search(main_tex_bytes)
+        if found:
+            text.append(found.group(1).decode("utf-8", errors="replace"))
+    # A hand-edited record may hold any shape; a wrong one adds no vocabulary.
+    facts = record.get("facts")
+    contributions = facts.get("contributions") if isinstance(facts, dict) else None
+    if isinstance(contributions, list):
+        text.extend(name for name in contributions if isinstance(name, str))
+    chain = record.get("chain")
+    links = chain.get("links") if isinstance(chain, dict) else None
+    if isinstance(links, list):
+        text.extend(link["word"] for link in links
+                    if isinstance(link, dict) and isinstance(link.get("word"), str))
+    return _terms(" ".join(text))
+
+
+def attach_citation_warnings(report: dict, main_tex_bytes: bytes, record: dict,
+                             evidence_records: list, references: dict) -> dict:
+    """`report` plus advisory `warnings` about citations (#182). Pure over its
+    inputs, like `run`; warnings never touch `clean`, `holds`, `fails` or
+    `unmeasured`.
+
+    - `CITED_MORE_THAN_ONCE`: only when `couplings.json` declares
+      `"citation_policy": {"cite_once": true}`, each key cited more than once.
+    - `QUOTE_SHARES_NO_TERM_WITH_CLAIM`: an evidence record judged `holds`
+      whose verbatim quote shares no content term with its claim.
+    - `SOURCE_SHARES_NO_TERM_WITH_PAPER`: a cited source whose title and
+      abstract share no content term with the paper's title, abstract and
+      declared contributions or chain words: possibly off-field. Unmeasured
+      when the paper declares none of those.
+
+    A lexical screen, not a judgement: a flagged citation may still be right,
+    and an unflagged one may still be wrong; the final judge reads them."""
+    record = record if isinstance(record, dict) else {}
+    occurrences = _cite_occurrences(main_tex_bytes)
+    warnings = []
+
+    policy = record.get("citation_policy")
+    if isinstance(policy, dict) and policy.get("cite_once") is True:
+        counts = {}
+        for key in occurrences:
+            counts[key] = counts.get(key, 0) + 1
+        repeated = {key: n for key, n in sorted(counts.items()) if n > 1}
+        if repeated:
+            warnings.append({
+                "code": "CITED_MORE_THAN_ONCE", "check": "citations", "keys": list(repeated),
+                "counts": repeated,
+                "message": (f"{len(repeated)} key(s) are cited more than once, and the paper declares "
+                            "citation_policy.cite_once: cite each source once and cross-reference it after"),
+            })
+
+    unsupported = []
+    for item in evidence_records or []:
+        if not isinstance(item, dict) or item.get("verdict") != "holds":
+            continue
+        claim_terms = _terms(item.get("claim"))
+        quote_terms = _terms(item.get("quote"))
+        if claim_terms and quote_terms and not claim_terms & quote_terms:
+            unsupported.append({"block_id": str(item.get("block_id") or ""),
+                                "cite_key": str(item.get("cite_key") or ""),
+                                "claim": str(item.get("claim") or "")[:200]})
+    if unsupported:
+        warnings.append({
+            "code": "QUOTE_SHARES_NO_TERM_WITH_CLAIM", "check": "citations",
+            "keys": sorted({entry["cite_key"] for entry in unsupported}), "records": unsupported,
+            "message": (f"{len(unsupported)} evidence record(s) quote a span that shares no term with the "
+                        "claim it is recorded to hold: confirm the quote supports the claim, or quote the span that does"),
+        })
+
+    paper_terms = _paper_terms(main_tex_bytes, record)
+    if paper_terms:
+        off_field = []
+        for key in sorted(set(occurrences)):
+            source = (references or {}).get(key)
+            if not isinstance(source, dict):
+                continue
+            source_terms = _terms(f"{source.get('title') or ''} {source.get('abstract') or ''}")
+            if source_terms and not source_terms & paper_terms:
+                off_field.append(key)
+        if off_field:
+            warnings.append({
+                "code": "SOURCE_SHARES_NO_TERM_WITH_PAPER", "check": "references", "keys": off_field,
+                "message": (f"{len(off_field)} cited source(s) share no term with the paper's title, abstract "
+                            "or declared contributions: check each is not off-field, or cite a source from the paper's own field"),
+            })
+    return {**report, "warnings": list(report.get("warnings") or []) + warnings} if warnings else report
+
+
 def attach_coherence(report: dict, coherence: list) -> dict:
     """`report` plus `coherence`: one entry per `COHERENCE_CHECKS` member, in
     roster order, each a warning (`severity` `warning`, verdict `pass`,

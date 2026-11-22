@@ -305,14 +305,12 @@
     },
     {
       "key": "citation-integrity",
-      "tier": 3,
-      "state": "needs-decision",
+      "tier": 2,
+      "state": "closed",
       "title": "Citations can rest on sources whose support is never checked",
-      "fix": "Done: bib build prefers published records and normalizes entities and types; verify warns on cited sources without title or abstract. Open: the opt-in cite-once policy and an auditor pass on claim/quote support, which need a maintainer decision.",
-      "proof": "tests/test_paper_bib_published.py, test_paper_verify_references.py; items 2, 4 and the visible warning released in 0.78.0",
-      "issues": [
-        182
-      ]
+      "fix": "bib build prefers published records and normalizes entities and types; verify warns on cited sources without title or abstract, and screens citations lexically: CITED_MORE_THAN_ONCE under the opt-in couplings citation_policy.cite_once, QUOTE_SHARES_NO_TERM_WITH_CLAIM, SOURCE_SHARES_NO_TERM_WITH_PAPER (decision: deterministic advisory, no model).",
+      "proof": "tests/test_paper_bib_published.py, test_paper_verify_references.py (0.78.0); tests/test_paper_verify_citation_support.py (RED on main, GREEN on fix/citation-integrity)",
+      "issues": []
     }
   ]
 }

@@ -20,6 +20,15 @@ number is `0`, breaking changes can still arrive without a major bump.
   `rundll32.exe url.dll,FileProtocolHandler`, and never Explorer; with no
   launcher the page says to open the login URL `smith ui` printed.
 
+- **`verify` screens citations (#182).** Three advisory `warnings`, never
+  failures: `CITED_MORE_THAN_ONCE` when `couplings.json` opts into
+  `"citation_policy": {"cite_once": true}`; `QUOTE_SHARES_NO_TERM_WITH_CLAIM`
+  for an evidence record whose verbatim quote shares no content term with the
+  claim it is recorded to hold; and `SOURCE_SHARES_NO_TERM_WITH_PAPER` for a
+  cited source whose title and abstract share no term with the paper's title,
+  abstract and declared contributions (a possible off-field source). The
+  screen is lexical and offline; the final judge still reads every citation.
+
 ## 0.82.0
 
 - **Prompt quality gate.** Every prompt a phase skill receives is scored
