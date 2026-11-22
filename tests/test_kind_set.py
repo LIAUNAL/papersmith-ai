@@ -107,6 +107,20 @@ class UpgradeKeepsEditedContractsTests(KindCase):
         self.assertIn("sections/04-limitations.md", result["changed_files"])
         self.assertEqual(contract.read_bytes(), (ROOT / "sections" / "04-limitations.md").read_bytes())
 
+    def test_an_edited_contract_recorded_unsynchronized_is_kept(self) -> None:
+        # An edit unreadable during one upgrade is recorded as unsynchronized;
+        # the next upgrade still keeps it (it differs from the kit).
+        workspace = self.init(scored=False)
+        contract = workspace / "sections" / "04-limitations.md"
+        contract.write_text("op edit\n", encoding="utf-8")
+        stored = manifest.load_manifest(workspace)
+        files = dict(stored["files"])
+        files["sections/04-limitations.md"] = "unsynchronized"
+        manifest.write_manifest(workspace, stored["version"], files, kind="workspace")
+        result = upgrade_module.upgrade(workspace)
+        self.assertEqual(contract.read_text(encoding="utf-8"), "op edit\n")
+        self.assertIn("sections/04-limitations.md", result["kept_edited"])
+
     def test_a_deleted_contract_is_still_repaired(self) -> None:
         workspace = self.init(scored=False)
         (workspace / "sections" / "04-limitations.md").unlink()
@@ -165,6 +179,39 @@ class KindSetTests(KindCase):
         code, status_out, _ = self.smith("status", str(workspace))
         self.assertEqual(code, 0)
         self.assertIn("Framework drift: none", status_out)
+
+    def test_an_upgrade_refusal_leaves_the_records_untouched(self) -> None:
+        workspace = self.init()
+        (workspace / ".papersmith" / "version").write_text("99.0.0\n", encoding="utf-8")
+        state = workspace / ".papersmith"
+        before = {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()}
+        code, _, err = self.smith("kind", "set", "review", "--by", "Ana", str(workspace))
+        self.assertNotEqual(code, 0)
+        self.assertIn("backwards", err)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()})
+        self.assertIn("01-materials-and-methods.md", self.sections(workspace))
+
+    def test_a_skill_with_an_edited_file_stays_whole(self) -> None:
+        workspace = self.init("review")
+        edited = workspace / "skills" / "systematic-review" / "scripts" / "review_cli.py"
+        edited.write_text(edited.read_text(encoding="utf-8") + "\n# our change\n", encoding="utf-8")
+        code, out, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", str(workspace))
+        self.assertEqual(code, 0, err)
+        self.assertTrue((workspace / "skills" / "systematic-review" / "SKILL.md").exists())
+        self.assertIn("Stranded (edited, kept): skills/systematic-review/SKILL.md", out)
+        self.assertIn("Stranded (edited, kept): skills/systematic-review/scripts/review_cli.py", out)
+
+    def test_the_new_line_gets_its_folders_and_the_summary_counts_both_passes(self) -> None:
+        workspace = self.init()
+        code, _, err = self.smith("kind", "set", "review", "--by", "Ana", str(workspace))
+        self.assertEqual(code, 0, err)
+        self.assertTrue((workspace / "review" / ".gitkeep").exists())
+        workspace = self.init("review")
+        code, out, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", str(workspace))
+        self.assertEqual(code, 0, err)
+        for folder in ("proposals", "experiments", "implementations", "kaggle-inbox"):
+            self.assertTrue((workspace / folder / ".gitkeep").exists(), folder)
+        self.assertNotIn("changed files: 0", out)
 
     def test_the_same_line_records_the_type_and_moves_nothing(self) -> None:
         workspace = self.init()

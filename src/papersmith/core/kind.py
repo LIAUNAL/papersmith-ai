@@ -21,7 +21,7 @@ from pathlib import Path
 
 from ..errors import PapersmithError, UserError
 from ..kit import resolve_and_validate_origin
-from . import fs, manifest, upgrade as upgrade_module
+from . import fs, init as init_module, manifest, upgrade as upgrade_module
 from .exit_codes import SUCCESS
 
 #: The workspace's copy of the paper-type catalogue and the module that
@@ -30,6 +30,7 @@ from .exit_codes import SUCCESS
 CATALOGUE = Path("skills") / "_core" / "paper_types" / "paper_types.json"
 DECISION_MODULE = "skills._core.paper_types.paper_type_cli"
 CONFIG = Path(".papersmith") / "config.json"
+PAPER_TYPE = Path(".papersmith") / "paper_type.json"
 
 
 def _line_of(root: Path, type_id: str) -> str:
@@ -79,17 +80,32 @@ def _agree(root: Path, type_id: str, by: str) -> dict:
     return reply
 
 
+def _skill_of(relpath: str) -> str | None:
+    parts = relpath.split("/")
+    return "/".join(parts[:2]) if len(parts) > 2 and parts[0] == "skills" else None
+
+
 def _remove_unedited(root: Path, paths: list[str], baseline: dict) -> tuple[list[str], list[str]]:
-    """Delete the old line's files whose bytes are the framework's; keep the rest."""
+    """Delete the old line's files whose bytes are the framework's; keep the rest.
+
+    A skill leaves whole or not at all: when one of its files is edited, every
+    file of that skill stays (stranded), so the workspace never holds a skill
+    folder without its ``SKILL.md``.
+    """
+    present = [relpath for relpath in paths
+               if fs.exists(root / relpath) and not manifest.is_preserved(relpath)]
+
+    def unedited(relpath: str) -> bool:
+        recorded = baseline.get(relpath)
+        current = manifest.sha256_if_readable(root / relpath)
+        return isinstance(recorded, str) and current is not None and current == recorded
+
+    held_skills = {_skill_of(relpath) for relpath in present if not unedited(relpath)} - {None}
     removed: list[str] = []
     stranded: list[str] = []
-    for relpath in paths:
+    for relpath in present:
         target = root / relpath
-        if not fs.exists(target) or manifest.is_preserved(relpath):
-            continue
-        recorded = baseline.get(relpath)
-        current = manifest.sha256_if_readable(target)
-        if not isinstance(recorded, str) or current is None or current != recorded:
+        if not unedited(relpath) or _skill_of(relpath) in held_skills:
             stranded.append(relpath)
             continue
         try:
@@ -108,7 +124,26 @@ def _remove_unedited(root: Path, paths: list[str], baseline: dict) -> tuple[list
     return removed, stranded
 
 
-def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = False) -> dict:
+def _restore(path: Path, original: bytes | None) -> None:
+    """Put a record back as it was before this run, absent included."""
+    try:
+        if original is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(original)
+    except OSError:
+        pass
+
+
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes() if fs.is_regular_file(path) else None
+    except OSError:
+        return None
+
+
+def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = False,
+             allow_dirty_kit: bool = False) -> dict:
     root = Path(workspace).expanduser().resolve()
     stored = manifest.load_manifest(root)
     if stored is None:
@@ -124,6 +159,7 @@ def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = Fals
             raise UserError(f"the paper has started on the {previous} line ({', '.join(markers)}); "
                             "moving it would leave its proposals and sections behind. "
                             "Re-run with --force to move it anyway")
+    agreed_before = _read_bytes(root / PAPER_TYPE)
     agreement = _agree(root, type_id, by)
     result = {"workspace": str(root), "type": type_id, "agreed_by": by, "from": previous, "to": line,
               "moved": False, "removed": [], "stranded": [], "upgrade": None,
@@ -140,18 +176,24 @@ def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = Fals
     if not fs.write_text(config_path, json.dumps(config, indent=2, sort_keys=False) + "\n"):
         raise UserError(f"could not write {config_path}")
     try:
-        report = upgrade_module.upgrade(root)
+        report = upgrade_module.upgrade(root, allow_dirty_kit=allow_dirty_kit)
     except PapersmithError:
         # ``upgrade`` refuses before its first write (dirty kit, downgrade), so
-        # restoring the line leaves the workspace exactly as it was.
+        # restoring the line and the agreement leaves the workspace exactly as
+        # it was.
         fs.write_text(config_path, original or "")
+        _restore(root / PAPER_TYPE, agreed_before)
         raise
+    init_module.create_topology(root, line)
     removed, stranded = _remove_unedited(root, leaving, stored["files"])
+    changed = list(report["changed_files"])
     if any(not relpath.startswith(upgrade_module.SECTION_CONTRACTS) for relpath in removed):
         # A removed skill still had rendered commands; a second pass renders
         # without it and sweeps them as orphans.
-        report = upgrade_module.upgrade(root)
-    result.update({"moved": True, "removed": removed, "stranded": stranded, "upgrade": report})
+        report = upgrade_module.upgrade(root, allow_dirty_kit=allow_dirty_kit)
+        changed.extend(relpath for relpath in report["changed_files"] if relpath not in changed)
+    result.update({"moved": True, "removed": removed, "stranded": stranded, "upgrade": report,
+                   "changed_files": changed})
     return result
 
 
@@ -163,11 +205,14 @@ def register(subparsers) -> None:
     parser.add_argument("--by", default="", help="the operator who agreed the type")
     parser.add_argument("--force", action="store_true",
                         help="move even when a proposal revision or paper/main.tex exists")
+    parser.add_argument("--allow-dirty-kit", action="store_true",
+                        help="move even when the kit source has uncommitted changes (see `smith upgrade`)")
     parser.set_defaults(handler=run_cli)
 
 
 def run_cli(args) -> int:
-    result = set_kind(args.directory, args.type, by=args.by, force=args.force)
+    result = set_kind(args.directory, args.type, by=args.by, force=args.force,
+                      allow_dirty_kit=args.allow_dirty_kit)
     variant = f", variant {result['agreed_variant']}" if result["agreed_variant"] else ""
     print(f"Paper type agreed: {result['type']}{variant} (by {result['agreed_by']})")
     if not result["moved"]:
@@ -175,7 +220,7 @@ def run_cli(args) -> int:
         return SUCCESS
     print(f"Paper line: {result['from']} -> {result['to']}")
     report = result["upgrade"]
-    print(f"Framework version: {report['version']}; changed files: {len(report['changed_files'])}")
+    print(f"Framework version: {report['version']}; changed files: {len(result['changed_files'])}")
     for relpath in result["removed"]:
         print(f"Removed (unedited): {relpath}")
     for relpath in result["stranded"]:

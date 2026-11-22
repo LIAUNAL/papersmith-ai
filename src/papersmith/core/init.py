@@ -137,6 +137,14 @@ def _create_topology(root: Path) -> None:
             fs.write_text(path, "")
 
 
+def create_topology(root: Path, kind: str) -> None:
+    """The research-state folders of ``kind``'s line; additive and idempotent."""
+    if kind == "review":
+        _create_review_topology(root)
+    else:
+        _create_topology(root)
+
+
 def _copy_kit(root: Path, kit_root: Path, kind: str = manifest.DEFAULT_PAPER_KIND) -> list[str]:
     """Copy every kit file into a fresh workspace, or fail loudly.
 
@@ -509,10 +517,7 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
         version = manifest.kit_version(kit_root) or __version__
         target = REMOTE_TARGETS[remote]
         name = root.name
-        if kind == "review":
-            _create_review_topology(root)
-        else:
-            _create_topology(root)
+        create_topology(root, kind)
         copied = _copy_kit(root, kit_root, kind)
     # A wired harness `skills` symlink is reported like every other kit file.
     # A path that could not be linked (no symlink privilege, read-only mount,

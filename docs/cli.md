@@ -218,13 +218,18 @@ with `SCORES_ABSENT`), writes `paper_kind` in `.papersmith/config.json` and
 runs `smith upgrade`, which applies the line's section contracts and
 regenerates the flow text of every harness entrypoint. The other line's files
 are removed only when unedited; an edited one stays and is reported as
-`Stranded (edited, kept): <path>`. When the workspace already follows the
-type's line, only the agreement is recorded.
+`Stranded (edited, kept): <path>`; a skill with one edited file stays whole.
+The new line's research folders (`review/`, or `proposals/`, `experiments/`,
+`implementations/`, `kaggle-inbox/`) are created when missing. A refusal
+(including `upgrade`'s own, such as a downgrade) leaves the records as they
+were. When the workspace already follows the type's line, only the agreement
+is recorded.
 
 | Flag | Effect |
 |------|--------|
 | `--by TEXT` | The operator who agreed the type (required) |
 | `--force` | Moves the workspace even when a proposal revision (`proposals/*-r*.md`) or `paper/main.tex` exists |
+| `--allow-dirty-kit` | Moves the workspace even when the kit source has uncommitted changes, as `smith upgrade --allow-dirty-kit` |
 
 ### `smith status [<dir>]`
 

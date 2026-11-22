@@ -121,8 +121,10 @@ def _edited_contract(root: Path, kit_root: Path, relpath: str, kit_relpath: str,
     ``upgrade`` wrote, so a contract whose current hash differs from it was
     edited in the workspace. A contract the manifest does not record (a file
     the operator put at a kit path, or one ``smith kind set`` left stranded) is
-    edited when it differs from the kit. An unsynchronized record proves
-    nothing about authorship, so that path is repaired as before.
+    edited when it differs from the kit, and so is one recorded as
+    unsynchronized (unreadable when the baseline was written): that record
+    proves nothing about who wrote the bytes, and the kit is the only copy
+    the framework could have put there.
     """
     if not relpath.startswith(SECTION_CONTRACTS):
         return False
@@ -130,9 +132,7 @@ def _edited_contract(root: Path, kit_root: Path, relpath: str, kit_relpath: str,
     if current is None:
         return False
     recorded = baseline.get(relpath)
-    if recorded == UNSYNCHRONIZED:
-        return False
-    if isinstance(recorded, str):
+    if isinstance(recorded, str) and recorded != UNSYNCHRONIZED:
         return current != recorded
     return current != manifest.sha256_if_readable(kit_root / kit_relpath)
 
