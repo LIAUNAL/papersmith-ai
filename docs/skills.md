@@ -127,7 +127,7 @@ slots, and the 20-planet limit per system is absolute.
 | `sun` | exactly 1 | the paper: title at the center |
 | `branch` | 0 to 2 | research branches the paper claims |
 | `topic_app` | exactly 1 | the topic as the application domain states it |
-| `topic_ai` | exactly 1 | the same topic framed as an AI problem |
+| `topic_ai` | exactly 1 | the same topic framed as an AI problem; for a paper whose method is not AI, framed by its method |
 | `problem` | exactly 1 | the problem the paper faces, in one claim |
 | `application` | exactly 1 | where it lands in the world |
 | `family` | exactly 1 | the group this system belongs to: one per paper, 3 to 7 families per pool |

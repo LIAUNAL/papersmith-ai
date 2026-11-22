@@ -51,7 +51,10 @@ DECLARED_ADDITIONS: dict[str, tuple[str, ...]] = {
     "status-en.json": (),
     "status-es.json": (),
     "phase-actions.json": (),
-    "harness-flow.json": (),
+    # T3: plausibility hands over to /paper-type; three added lines in step 2.
+    "harness-flow.json": (r"/\+:   On acceptance, `/paper-type` scores the idea against smith's paper types,$",
+                          r"/\+:   discusses the suggestion and records the type the operator agrees in$",
+                          r"/\+:   `\.papersmith/paper_type\.json`; the phases below do not change\.$"),
     # T3: the paper-type skill ships to every workspace; the AI flow does not call it.
     "kit.json": (r"^/skills/\+:paper-type$",),
 }
