@@ -1099,6 +1099,7 @@ window.PAPERSMITH_I18N.en = {
   "paperType.discuss": "Discuss with the agent",
   "paperType.readFailed": "The paper type could not be read: {error}",
   "nav.review": "📋 Review",
+  "board.noBoard": "The paper line \"{kind}\" has no board yet: the dashboard shows the experimental (applied-AI) board, whose phases and gates may not apply to this paper.",
   "sysreview.title": "📋 Review records",
   "sysreview.meta": "Protocol, searches, screening, PRISMA flow, extraction and risk of bias, read from review/",
   "sysreview.loading": "Loading the review records…",

@@ -3,10 +3,10 @@
  * GET /api/agents answers agents_view.get_agents_view(root): every agent of
  * the workspace's .claude/agents/ with its role, bound skill, stretch, tools,
  * the dashboard phase(s) it acts in and the harness projections that carry it.
- * The table sorts by any column and filters by free text. In a review
- * workspace (view.paper_kind === 'review') the phases are review steps and the
- * table lists only the agents some step uses. Every value is escaped before
- * insertion.
+ * The table sorts by any column and filters by free text. Under the board of
+ * another line than the experimental one (view.paper_kind set, e.g. 'review')
+ * the phases are that board's steps and the table lists only the agents some
+ * step uses. Every value is escaped before insertion.
  *
  * Public surface (window): refreshAgentsPanel(), AgentsPanel.render(view).
  */
@@ -19,8 +19,8 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
   const list = (v) => (Array.isArray(v) ? v : []);
-  // A review workspace's table: only the agents a review step uses.
-  const tableAgents = (view) => (view.paper_kind === 'review'
+  // Another line's table (the review's): only the agents one of its steps uses.
+  const tableAgents = (view) => (view.paper_kind && view.paper_kind !== 'experimental'
     ? list(view.agents).filter((a) => list(a.phases).length) : list(view.agents));
   const phaseNumber = (a) => {
     const m = /(?:Phase|Fase) (\d+)/.exec(list(a.phases)[0] || '');

@@ -1098,6 +1098,7 @@ window.PAPERSMITH_I18N.es = {
   "paperType.discuss": "Discutir con el agente",
   "paperType.readFailed": "No se pudo leer el tipo de paper: {error}",
   "nav.review": "📋 Revisión",
+  "board.noBoard": "La línea del artículo \"{kind}\" aún no tiene tablero: el tablero muestra el experimental (IA aplicada), cuyas fases y compuertas pueden no aplicar a este artículo.",
   "sysreview.title": "📋 Registros de la revisión",
   "sysreview.meta": "Protocolo, búsquedas, cribado, flujo PRISMA, extracción y riesgo de sesgo, leídos de review/",
   "sysreview.loading": "Cargando los registros de la revisión…",

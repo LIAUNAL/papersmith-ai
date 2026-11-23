@@ -123,26 +123,20 @@ def model_label(harness: str, meta: dict[str, Any] | None) -> str:
     return f"{name} · {detail}" if detail else name
 
 
-#: The paper line whose board has its own steps (``review_board``); every
-#: other line reads the experimental phases.
+#: The review line's kind (kept for callers; the boards live in ``lines``).
 REVIEW = "review"
-
-#: A ``/systematic-review`` verb the skill documents that no board action
-#: names, and the review step it runs.
-_REVIEW_VERB_ALIASES = {("systematic-review", "extract"): "appraisal_extraction"}
 
 
 def _board(kind: str) -> tuple[tuple[str, ...], dict[str, dict[str, Any]]]:
-    """The phases (or review steps) of ``kind`` in order, and their actions."""
-    if kind == REVIEW:
-        from . import review_board  # lazy: it reads phase_actions and state_extractor
-        return review_board.REVIEW_STAGES, review_board.REVIEW_ACTIONS
-    return phase_actions.STAGES, phase_actions.ACTIONS
+    """The phases (or steps) of ``kind``'s board in order, and their actions."""
+    from . import lines  # lazy: it reads phase_actions, state_extractor and review_board
+    board = lines.board(kind)
+    return board.stages, board.actions
 
 
 def skill_stages(kind: str = "experimental") -> dict[str, str]:
-    """Skill name -> the first phase (review step, for ``kind="review"``)
-    whose actions list it."""
+    """Skill name -> the first phase (step of ``kind``'s board) whose actions
+    list it."""
     stages, actions = _board(kind)
     out: dict[str, str] = {}
     for stage in stages:
@@ -151,24 +145,34 @@ def skill_stages(kind: str = "experimental") -> dict[str, str]:
     return out
 
 
-@functools.lru_cache(maxsize=1)
-def review_verbs() -> dict[tuple[str, str], str]:
-    """``(skill, verb)`` -> the review step that runs it: each prompt action's
-    slash command and prefix (``/systematic-review screen``), each
-    ``review_cli.py <verb>`` command as ``/systematic-review <verb>``, and the
+@functools.lru_cache(maxsize=32)
+def command_verbs(kind: str) -> dict[tuple[str, str], str]:
+    """``(skill, verb)`` -> the step of ``kind``'s board that runs it, for a
+    board whose commands carry a verb (``verb_skill``; empty otherwise): each
+    prompt action's slash command and prefix (``/systematic-review screen``),
+    each ``<verb_cli> <verb>`` command as ``/<verb_skill> <verb>``, and the
     skill's verbs no action names; the first step that names a verb keeps it."""
-    from . import review_board
+    from . import lines
+    board = lines.board(kind)
     out: dict[tuple[str, str], str] = {}
-    cli = review_board.REVIEW_CLI + " "
-    for stage in review_board.REVIEW_STAGES:
-        for action in review_board.REVIEW_ACTIONS[stage]["actions"]:
+    if not board.verb_skill:
+        return out
+    cli = f"{board.verb_cli} " if board.verb_cli else None
+    for stage in board.stages:
+        for action in board.actions[stage]["actions"]:
             if action.get("kind") == "prompt" and str(action.get("prefix") or "").strip():
                 out.setdefault((str(action["slash"]).lstrip("/"), action["prefix"].strip()), stage)
-            elif action.get("kind") == "command" and str(action.get("command") or "").startswith(cli):
-                out.setdefault(("systematic-review", action["command"][len(cli):].split(" ", 1)[0]), stage)
-    for key, stage in _REVIEW_VERB_ALIASES.items():
+            elif (cli and action.get("kind") == "command"
+                  and str(action.get("command") or "").startswith(cli)):
+                out.setdefault((board.verb_skill, action["command"][len(cli):].split(" ", 1)[0]), stage)
+    for key, stage in board.verb_aliases.items():
         out.setdefault(key, stage)
     return out
+
+
+def review_verbs() -> dict[tuple[str, str], str]:
+    """The review board's :func:`command_verbs`."""
+    return command_verbs(REVIEW)
 
 
 def _unmarked(args: str) -> str:
@@ -192,12 +196,13 @@ def command_of(text: str) -> tuple[str, str] | None:
 
 
 def stage_for(name: str, args: str, skills: dict[str, str], kind: str = "experimental") -> str | None:
-    """The phase a ``/<name> <args>`` command opens; in a review workspace,
-    the review step its verb (the first word of ``args``) runs, else the first
-    step that lists the skill."""
-    if kind == REVIEW:
+    """The phase a ``/<name> <args>`` command opens; on a board whose
+    commands carry a verb (the review line's), the step its verb (the first
+    word of ``args``) runs, else the first step that lists the skill."""
+    verbs = command_verbs(kind)
+    if verbs:
         head = args.strip().split(" ", 1)[0].lower()
-        return review_verbs().get((name, head)) or skills.get(name)
+        return verbs.get((name, head)) or skills.get(name)
     if name == "paper-writing":
         head = args.strip().split(" ", 1)[0].lower()
         return "declarations" if head == "mark" else "writing"
@@ -855,4 +860,4 @@ def clear_cache() -> None:
 
 __all__ = ["HARNESSES", "HARNESS_NAMES", "LINE_MODELS", "REVIEW", "UNASSIGNED", "antigravity_model_at", "antigravity_models",
            "attribute", "clear_cache", "command_of", "compact", "model_label",
-           "operator_text", "read_all", "related_dirs", "review_verbs", "session_turns", "skill_stages", "stage_for"]
+           "operator_text", "read_all", "related_dirs", "review_verbs", "command_verbs", "session_turns", "skill_stages", "stage_for"]

@@ -36,7 +36,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from . import ai_archive, ai_transcripts, decisions, phase_actions
+from . import ai_archive, ai_transcripts, decisions, lines, phase_actions
 
 try:
     from ..paper_types import decision as paper_type
@@ -49,15 +49,10 @@ except ImportError:
 MAX_PHASE_EVENTS = 60
 TEXT_MAX = 240
 
-#: decisions source -> the phase it belongs to.
-SOURCE_STAGES = {
-    "declarations": "declarations",
-    "proposal": "proposal",
-    "experiment": "poc_experiments",
-    "remote-execution": "poc_experiments",
-}
+#: decisions source -> the phase it belongs to (each board's ``decision_stages``).
+SOURCE_STAGES = lines.EXPERIMENTAL.decision_stages
 #: decisions source -> the review step it belongs to (review workspaces).
-REVIEW_SOURCE_STAGES = {"declarations": "writing"}
+REVIEW_SOURCE_STAGES = lines.REVIEW.decision_stages
 
 #: decisions event kinds that count as an error.
 ERROR_KINDS = frozenset({"errored"})
@@ -86,18 +81,16 @@ def _workspace_file(root: Path, ref: Any) -> str | None:
         return None
 
 
-def _line(root: Path) -> str:
-    """The workspace's board: ``review`` or ``experimental`` (every other line)."""
-    return ai_transcripts.REVIEW if paper_type.current_line(root) == ai_transcripts.REVIEW else "experimental"
+def _line(root: Path) -> lines.Board:
+    """The workspace's board (``lines.board``): its own line's, or the
+    experimental one with a notice for a line with no board."""
+    return lines.board(paper_type.current_line(root))
 
 
 def _definitions(kind: str) -> tuple[tuple[str, ...], dict[str, str], dict[str, Any], dict[str, Any]]:
     """``kind``'s phases in order, their labels, actions and evidence."""
-    if kind == ai_transcripts.REVIEW:
-        from . import review_board
-        return (review_board.REVIEW_STAGES, review_board.REVIEW_LABELS, review_board.REVIEW_ACTIONS,
-                review_board.REVIEW_EVIDENCE)
-    return phase_actions.STAGES, phase_actions.PHASE_LABELS, phase_actions.ACTIONS, phase_actions.EVIDENCE
+    board = lines.board(kind)
+    return board.stages, board.labels, board.actions, board.evidence
 
 
 def phase_artifacts(root: Path, stage: str, kind: str = "experimental") -> list[dict[str, Any]]:
@@ -307,14 +300,15 @@ def _sort_key(event: dict[str, Any]) -> tuple[int, str]:
 
 
 def _collect(root: Path | str, sessions: dict[str, Path | None] | None
-             ) -> tuple[Path, str, dict[str, list[dict[str, Any]]], dict[str, Any]]:
+             ) -> tuple[Path, lines.Board, dict[str, list[dict[str, Any]]], dict[str, Any]]:
     """The workspace's line, every phase's events (decisions, revisions,
     chats) and each source's status: the one read both the pane and the
     AI-usage record build on."""
     original = Path(root).expanduser().absolute()
     root = original.resolve()
-    kind = _line(root)
-    source_stages = REVIEW_SOURCE_STAGES if kind == ai_transcripts.REVIEW else SOURCE_STAGES
+    board = _line(root)
+    kind = board.kind
+    source_stages = board.decision_stages
     by_stage: dict[str, list[dict[str, Any]]] = {}
     sources: dict[str, Any] = {}
 
@@ -329,10 +323,10 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
     except Exception as exc:  # noqa: BLE001 - one broken source never fails the pane
         sources["decisions"] = {"status": "unreadable", "detail": type(exc).__name__}
 
-    # A review has no proposal phase: its proposal revisions belong to no step.
-    revisions = _revision_events(root) if kind != ai_transcripts.REVIEW else []
-    if kind != ai_transcripts.REVIEW:
-        by_stage.setdefault("proposal", []).extend(revisions)
+    # A line with no proposal phase (the review) assigns its revisions to no step.
+    revisions = _revision_events(root) if board.revisions_stage else []
+    if board.revisions_stage:
+        by_stage.setdefault(board.revisions_stage, []).extend(revisions)
     sources["revisions"] = {"status": "ok" if revisions else "absent", "count": len(revisions)}
 
     chats, sources["chats"] = ai_transcripts.read_all(root, sessions, original, kind=kind)
@@ -349,14 +343,14 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
                           "last_run": ai_archive.last_report(root)}
     for stage, items in chats.items():
         by_stage.setdefault(stage, []).extend(items)
-    return root, kind, by_stage, sources
+    return root, board, by_stage, sources
 
 
 def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
                      sessions: dict[str, Path | None] | None = None) -> dict[str, Any]:
     """``sessions`` overrides each harness's store (see :func:`ai_transcripts.read_all`)."""
-    root, kind, by_stage, sources = _collect(root, sessions)
-    labels = _definitions(kind)[1]
+    root, board, by_stage, sources = _collect(root, sessions)
+    kind, labels = board.kind, board.labels
     phases = []
     totals = dict.fromkeys(OUTCOMES, 0)
     pending = []
@@ -395,7 +389,8 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
     return {"phases": phases, "sources": sources, "decision_summary": totals, "pending": pending,
             "unassigned": unassigned,
             "note": ("Summary of the persisted decisions, the revisions and the chat sessions of this "
-                     "workspace; full conversations live in .papersmith/ai-history/.")}
+                     "workspace; full conversations live in .papersmith/ai-history/."),
+            **({"board_notice": board.notice} if board.notice else {})}
 
 
 def _harness_of(ref: Any) -> str | None:
@@ -419,8 +414,8 @@ def build_ai_usage(root: Path | str,
     errors. Phases with nothing recorded are omitted. The harness model or
     version comes from the pane's ``metrics``, not from here: ``model`` stays
     ``None`` so a declaration never states what it has not checked."""
-    root, kind, by_stage, sources = _collect(root, sessions)
-    stages, labels, actions, _ = _definitions(kind)
+    root, board, by_stage, sources = _collect(root, sessions)
+    stages, labels, actions = board.stages, board.labels, board.actions
     phases = []
     harnesses: set[str] = set()
     for stage in stages:

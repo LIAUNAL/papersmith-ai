@@ -8,9 +8,10 @@ dashboard phase(s) it acts in as ``"Phase N — <label>"`` and the harness
 projections that carry it. Bounded and contained: it never raises; whatever it
 cannot read becomes a line in ``warnings``.
 
-In a review workspace (``paper_kind: "review"``, read from the workspace on
-every call) the view says ``paper_kind`` and an agent's phases are the review
-steps (``review_board``) that use it, as ``"Phase N — <step label>"``:
+In a workspace of any other line with a board (``lines.board``; the review
+line, ``paper_kind: "review"``, read from the workspace on every call) the view
+says ``paper_kind`` and an agent's phases are the board's steps that use it,
+as ``"Phase N — <step label>"``:
 
 * the steps that reuse the actions of the experimental phases its tramo and
   :data:`EXTRA_PHASES` give it (the review's writing step reuses the
@@ -20,7 +21,8 @@ steps (``review_board``) that use it, as ``"Phase N — <step label>"``:
 * only when none of those holds, the steps whose skills hold its bound skill.
 
 ``agents`` still lists every agent (the office shows them all); an agent no
-review step uses has no phase, and the table leaves it out.
+step uses has no phase, and the table leaves it out. A line with no board keeps
+the experimental phases and says so in ``board_notice``.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import phase_actions, review_board
+from . import lines, phase_actions
 from .health_inspector import _frontmatter
 from .state_extractor import AGENT_STAGES, decision
 
@@ -81,39 +83,44 @@ def _phases(name: str, tramo: str | None) -> list[str]:
     return [_phase_label(stage) for stage in ordered]
 
 
-def _review_label(step: str) -> str:
-    number = review_board.REVIEW_STAGES.index(step) + 1
-    return f"Phase {number} — {review_board.REVIEW_LABELS.get(step, step)}"
+def _step_label(board: lines.Board, step: str) -> str:
+    number = board.stages.index(step) + 1
+    return f"Phase {number} — {board.labels.get(step, step)}"
 
 
-def _review_steps_of(stage: str) -> set[str]:
-    """The review steps that reuse an action of the experimental ``stage``."""
+def _steps_of(board: lines.Board, stage: str) -> set[str]:
+    """The board's steps that reuse an action of the experimental ``stage``."""
     own = (phase_actions.ACTIONS.get(stage) or {}).get("actions", ())
-    return {step for step in review_board.REVIEW_STAGES
-            if any(action in own for action in review_board.REVIEW_ACTIONS[step]["actions"])}
+    return {step for step in board.stages
+            if any(action in own for action in board.actions[step]["actions"])}
+
+
+def _prompt_steps(board: lines.Board) -> tuple[str, ...]:
+    """The board's steps whose box runs a skill: the prompt reviewer reviews them."""
+    return tuple(step for step in board.stages
+                 if any(action["kind"] == "prompt" for action in board.actions[step]["actions"]))
 
 
 #: The review steps whose box runs a skill: the prompt reviewer reviews them.
-REVIEW_PROMPT_STEPS: tuple[str, ...] = tuple(
-    step for step in review_board.REVIEW_STAGES
-    if any(action["kind"] == "prompt" for action in review_board.REVIEW_ACTIONS[step]["actions"]))
+REVIEW_PROMPT_STEPS: tuple[str, ...] = _prompt_steps(lines.REVIEW)
 
 _NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
-def _review_phases(name: str, tramo: str | None, skill: str) -> list[str]:
+def _board_phases(board: lines.Board, name: str, tramo: str | None, skill: str) -> list[str]:
+    """The steps of a board other than the experimental one that use the agent."""
     extra = () if name == "prompt-reviewer" else EXTRA_PHASES.get(name, ())
     steps: set[str] = set()
     for stage in (*TRAMO_PHASES.get(tramo or "", ()), *extra):
-        steps |= _review_steps_of(stage)
-    steps |= {step for step in review_board.REVIEW_STAGES
-              if name in _NAME_RE.findall(str(review_board.REVIEW_ACTIONS[step].get("agent", "")))}
+        steps |= _steps_of(board, stage)
+    steps |= {step for step in board.stages
+              if name in _NAME_RE.findall(str(board.actions[step].get("agent", "")))}
     if name == "prompt-reviewer":
-        steps |= set(REVIEW_PROMPT_STEPS)
+        steps |= set(_prompt_steps(board))
     if not steps and skill:
-        steps = {step for step in review_board.REVIEW_STAGES
-                 if skill in review_board.REVIEW_ACTIONS[step].get("skills", ())}
-    return [_review_label(step) for step in review_board.REVIEW_STAGES if step in steps]
+        steps = {step for step in board.stages
+                 if skill in board.actions[step].get("skills", ())}
+    return [_step_label(board, step) for step in board.stages if step in steps]
 
 
 def _first_sentence(text: str) -> str:
@@ -121,7 +128,7 @@ def _first_sentence(text: str) -> str:
     return (match.group(1) if match else text).strip()
 
 
-def _agent(root: Path, path: Path, warnings: list[str], kind: str = "experimental") -> dict[str, Any]:
+def _agent(root: Path, path: Path, warnings: list[str], board: lines.Board = lines.EXPERIMENTAL) -> dict[str, Any]:
     name = path.stem
     try:
         if path.stat().st_size > MAX_BYTES:
@@ -150,22 +157,23 @@ def _agent(root: Path, path: Path, warnings: list[str], kind: str = "experimenta
         "tools": tools,
         "model": str(meta.get("model", "")).strip(),
         "tramo": tramo or "",
-        "phases": (_review_phases(name, tramo, skill_match.group(1) if skill_match else "")
-                   if kind == REVIEW else _phases(name, tramo)),
+        "phases": (_phases(name, tramo) if board.is_base
+                   else _board_phases(board, name, tramo, skill_match.group(1) if skill_match else "")),
         "harnesses": [d for d in HARNESS_DIRS if (root / d / path.name).is_file()],
     }
 
 
 def get_agents_view(root: Path | str) -> dict[str, Any]:
     """Every shipped agent with its role, skill, stretch, tools, phases and
-    harnesses; in a review workspace the phases are review steps."""
+    harnesses; under another line's board (the review's) the phases are its steps."""
     warnings: list[str] = []
     agents: list[dict[str, Any]] = []
     line: dict[str, str] = {}
     try:
         base = Path(root)
-        kind = REVIEW if decision.current_line(base) == REVIEW else "experimental"
-        line = {"paper_kind": REVIEW} if kind == REVIEW else {}
+        board = lines.board(decision.current_line(base))
+        line = ({"board_notice": board.notice} if board.notice
+                else {} if board.is_base else {"paper_kind": board.kind})
         agents_dir = base / ".claude" / "agents"
         if not agents_dir.is_dir():
             return {"agents": [], "warnings": ["no .claude/agents/ directory in this workspace"], **line}
@@ -175,7 +183,7 @@ def get_agents_view(root: Path | str) -> dict[str, Any]:
             paths = paths[:MAX_AGENTS]
         for path in paths:
             try:
-                agents.append(_agent(base, path, warnings, kind))
+                agents.append(_agent(base, path, warnings, board))
             except Exception as exc:  # noqa: BLE001 - one bad file never hides the rest
                 warnings.append(f"{path.stem}: {exc.__class__.__name__}")
     except Exception as exc:  # noqa: BLE001 - the dashboard never fails on this table

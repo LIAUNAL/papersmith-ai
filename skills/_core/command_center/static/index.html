@@ -3227,6 +3227,13 @@
   /* The Review tab (review-panel.js) is the review line's own: hidden in an
      experimental workspace and until the page knows the workspace's line. */
   body:not([data-paper-kind="review"]) [data-kinds="review"] { display: none !important; }
+  /* Another line's own views (a board registered in lines.py) stay hidden
+     until the page knows the line; applyPaperKind then hides, for any line,
+     the views whose data-kinds does not list it. */
+  body:not([data-paper-kind]) [data-kinds]:not([data-kinds~="experimental"]) { display: none !important; }
+  /* A line with no board (lines.py) shows the experimental board under this notice. */
+  .board-notice { margin: 0 1rem 0.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--warn);
+    border-radius: 6px; background: var(--warn-dim); font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -4392,18 +4399,60 @@
       return kind && kinds && !kinds.split(/\s+/).includes(kind) ? 'pipeline' : tabId;
     }
 
+    // The views only the experimental line uses (the SOTA constellation, the
+    // novelty graph) are hidden under any other line's board.
+    function experimentalViewsHidden() {
+      const line = document.body.dataset.paperKind;
+      return Boolean(line) && line !== 'experimental';
+    }
+
+    // Hides, under the board in view, every view whose data-kinds does not
+    // list it, for any registered line (an adopted sheet: no DOM change).
+    let paperKindSheet = null;
+    function applyPaperKindRule(line) {
+      try {
+        if (!paperKindSheet) {
+          paperKindSheet = new CSSStyleSheet();
+          document.adoptedStyleSheets = [...document.adoptedStyleSheets, paperKindSheet];
+        }
+        const name = CSS.escape(line);
+        paperKindSheet.replaceSync(`body[data-paper-kind="${name}"] [data-kinds]:not([data-kinds~="${name}"]) { display: none !important; }`);
+      } catch (_) { /* the static rules still cover the experimental and review lines */ }
+    }
+
     // The paper line of the workspace (/api/status paper_kind), read on every
-    // poll: `smith kind set` can change it while the dashboard runs.
+    // poll: `smith kind set` can change it while the dashboard runs. The page
+    // shows the line's board: board_kind when the line has none of its own
+    // (the experimental one, under a notice).
     function applyPaperKind(kind) {
-      const line = kind === 'review' ? 'review' : 'experimental';
+      const line = (window.currentStatus && window.currentStatus.board_kind) || kind || 'experimental';
       if (document.body.dataset.paperKind === line) return;
       document.body.dataset.paperKind = line;
-      if (line === 'review' && (currentGraphKind === 'atlas' || currentGraphKind === 'novelty')) {
+      applyPaperKindRule(line);
+      if (experimentalViewsHidden() && (currentGraphKind === 'atlas' || currentGraphKind === 'novelty')) {
         if (graphFramePath() === 'blank') currentGraphKind = 'cited';
         else switchGraph('cited');
       }
       // Either line may hide the tab in view (the Review tab is the review line's).
       if (visibleTab(activeTab) !== activeTab) navigateTab(activeTab);
+    }
+
+    // A line with no board of its own (/api/status board_notice): a visible
+    // notice above the panes; nothing is added to the page otherwise.
+    function applyBoardNotice(data) {
+      let note = document.getElementById('boardNotice');
+      if (!data.board_notice) {
+        if (note) note.remove();
+        return;
+      }
+      if (!note) {
+        note = document.createElement('div');
+        note.id = 'boardNotice';
+        note.className = 'board-notice';
+        note.setAttribute('role', 'status');
+        document.querySelector('main')?.before(note);
+      }
+      note.textContent = t('board.noBoard', { kind: data.paper_kind || '' });
     }
 
     function navigateTab(tabId) {
@@ -4704,7 +4753,7 @@
 
     function switchGraph(kind) {
       // The SOTA constellation and the novelty graph belong to the experimental line.
-      if (document.body.dataset.paperKind === 'review' && (kind === 'atlas' || kind === 'novelty')) kind = 'cited';
+      if (experimentalViewsHidden() && (kind === 'atlas' || kind === 'novelty')) kind = 'cited';
       currentGraphKind = kind;
       clearAtlasSelection();
       const btnAtlas = document.getElementById('btnGraphAtlas');
@@ -5857,6 +5906,7 @@
         currentStatus = data;
         window.currentStatus = data;
         applyPaperKind(data.paper_kind);
+        applyBoardNotice(data);
         if (window.phaseRuns) window.phaseRuns.onStatus(data);
         refreshDrawerStatus(data);
 

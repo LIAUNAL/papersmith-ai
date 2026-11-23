@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, localize, paper_type_view, prompt_gate, prompt_review, review_board, review_view, toolchain
+from . import board_refresh, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, toolchain
 from ..paper_types import decision as paper_line
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -1590,6 +1590,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # workspace to another line while the dashboard runs.
         if paper_kind is None:
             paper_kind = paper_line.current_line(root_path)
+        # Its board (lines.board): the experimental one, with a notice, for a
+        # line that has none.
+        board = lines.board(paper_kind)
         state = get_workspace_state(root_path)
         paper_meta = state.get("paper_metadata", {})
         project_name = root_path.name
@@ -1627,8 +1630,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 total_words = max(total_words, len(words))
             except Exception:
                 pass
-        if paper_kind == "review":
-            # The review contracts declare their own blocks; 46 is the experimental paper's.
+        if board.blocks_total is None:
+            # The line's contracts declare their own blocks; 46 is the experimental paper's.
             total_blocks = totals_meta.get("blocks_total", 0)
 
         # Dynamic PDF page count
@@ -2042,17 +2045,17 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             )
         )
 
-        review_gates = None
-        if paper_kind == "review":
-            # The review line's ten steps and gates replace the experimental phases.
-            fases, review_gates = review_board.board(root_path, {
+        line_gates = None
+        if board.build is not None:
+            # The line's own steps and gates replace the experimental phases.
+            fases, line_gates = board.build(root_path, {
                 "harness_ok": harness_ok, "has_scaffold": has_scaffold, "has_decl": has_decl,
                 "blocks_written": written_blocks, "blocks_total": total_blocks, "words": total_words,
                 "figures": len([f for f in fig_dir.glob("*") if f.suffix in (".pdf", ".svg")]) if fig_dir.is_dir() else 0,
                 "pdf_exists": pdf_exists, "pdf_pages": pdf_pages, "pdf_kb": round(pdf_size / 1024, 1),
                 "audit": _audit_verdict(root_path)})
-            phase_actions.attach(fases, root_path, gates={g["id"]: g["status"] for g in review_gates},
-                                 kind="review")
+            phase_actions.attach(fases, root_path, gates={g["id"]: g["status"] for g in line_gates},
+                                 kind=board.kind)
         else:
             phase_actions.attach(fases, root_path,
                                  gates={"G-EXP-POC": g_exp_poc_status, "G-NOVELTY": g_nov_status,
@@ -2074,8 +2077,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "category": "LaTeX Manuscript",
                 "size_kb": round(tex.stat().st_size / 1024, 1)
             })
-        if paper_kind == "review":
-            artifacts.extend(review_board.artifacts(root_path))
+        artifacts.extend(board.artifacts(root_path))
         guidance_guide = root_path / "guidance" / "paper-guide"
         if guidance_guide.is_dir():
             for gp in sorted(guidance_guide.glob("*.md")):
@@ -2239,10 +2241,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             }
         }
 
-        if paper_kind == "review":
+        if board.section_metadata is not None:
             # Keyed by file stem per line: the review contracts share section
             # names (limitations, conclusions) with the experimental ones.
-            SECTION_METADATA = {**review_board.section_metadata(root_path),
+            SECTION_METADATA = {**board.section_metadata(root_path),
                                 "10-back-matter": SECTION_METADATA["10-back-matter"]}
 
         sections_data = []
@@ -2266,7 +2268,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "cross_relations": sec_meta.get("cross_relations", "Cross traceability with the rest of the manuscript.")
             })
 
-        gates_list = review_gates if review_gates is not None else [
+        gates_list = line_gates if line_gates is not None else [
             {
                 "id": "G-EXP-POC",
                 "name": "Proof-of-Concept Verification Gate",
@@ -2332,9 +2334,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         }
         telemetria = []
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        if paper_kind == "review":
-            # No numbers are recorded for the review steps: none are invented.
-            telemetria = review_board.telemetry(fases, today_str)
+        if board.telemetry is not None:
+            # No numbers are recorded for the line's steps: none are invented.
+            telemetria = board.telemetry(fases, today_str)
         else:
             for f in fases:
                 fid = f["id"]
@@ -2373,6 +2375,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse({
             "project_name": project_name,
             "paper_kind": paper_kind,
+            # Only for a line with no board: which board is shown, and why.
+            **({"board_kind": board.kind, "board_notice": board.notice} if board.notice else {}),
             "framework_version": _framework_version(root_path),
             "target_title": target_title,
             "topic": topic,
@@ -2446,14 +2450,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/flow")
     def api_flow() -> Response:
         # A workspace's own flow wins; otherwise the framework's, shipped with
-        # the dashboard: the review line's (a copy of
+        # the dashboard: the line's board names it (lines.board, read per
+        # request like the board): the review line's (a copy of
         # docs/diagrams/papersmith-review-flow.html) for a review workspace,
-        # read per request like the board, else the Pi flow (a copy of
-        # docs/diagrams/papersmith-pi-flow.html).
+        # else the Pi flow (a copy of docs/diagrams/papersmith-pi-flow.html).
         flow_path = root_path / "docs" / "papersmith-flow.html"
         if not flow_path.is_file():
-            shipped = ("papersmith-review-flow.html" if paper_type_view.decision.current_line(root_path) == "review"
-                       else "papersmith-flow.html")
+            shipped = lines.board(paper_type_view.decision.current_line(root_path)).flow_html
             flow_path = Path(__file__).resolve().parent / "static" / shipped
         if flow_path.is_file():
             return HTMLResponse(flow_path.read_text(encoding="utf-8"))
@@ -2925,10 +2928,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             ai_archive.sync_in_background(root_path)
             fases = json.loads(bytes(status_payload(line).body)).get("fases", [])
             phase = next((f for f in fases if f.get("stage_id") == stage), {})
-            if line == "review":
-                # A review step that shares a check (writing, paper, audit)
-                # answers with its own step id; the experimental body is
-                # unchanged.
+            if lines.board(line).shared_checks is not None:
+                # A step that shares a check (the review's writing, paper,
+                # audit) answers with its own step id; the experimental body
+                # is unchanged.
                 body["stage"] = stage
             body["status"] = phase.get("status", "PENDING")
             body["verified"] = body["status"] == "PASS"
@@ -3039,23 +3042,22 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
     def _stage_of(phase_id: str, line: str) -> str | None:
         """The stage a phase id names in the paper line ``line``."""
-        if line == "review":
-            return review_board.stage_for(phase_id)
-        return phase_actions.stage_for(phase_id)
+        return lines.board(line).stage_for(phase_id)
 
     async def _phase_check(payload: dict, line: str) -> JSONResponse:
         phase_id = str(payload.get("phase_id", ""))
         stage = _stage_of(phase_id, line)
         if stage is None:
             return JSONResponse({"ok": False, "error": f"unknown phase: {phase_id}"}, status_code=422)
-        if line == "review":
-            # A review step that compiles, builds or audits shares that check;
-            # every other one runs from its card.
-            shared = {"writing": "writing", "paper": "paper", "reporting_audit": "audit"}.get(stage)
+        board = lines.board(line)
+        if board.shared_checks is not None:
+            # A step that compiles, builds or audits shares that check; every
+            # other one runs from its card.
+            shared = board.shared_checks.get(stage)
             if shared is None:
                 return JSONResponse({
                     "ok": True, "phase_id": phase_id, "stage": stage,
-                    "message": f"Phase {review_board.REVIEW_STAGES.index(stage) + 1}: it runs from its card (agent command or panel).",
+                    "message": f"Phase {board.stages.index(stage) + 1}: it runs from its card (agent command or panel).",
                     "outputs": []
                 })
             stage = shared

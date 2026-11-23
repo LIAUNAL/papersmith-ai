@@ -73,8 +73,12 @@ REVIEW_SECTION_ORDER = (
 
 def section_order(root: Path | str) -> tuple[str, ...]:
     """The canonical sections of the workspace's paper line, read on every call
-    (``smith kind set`` can change the line while the dashboard runs)."""
-    return REVIEW_SECTION_ORDER if decision.current_line(Path(root)) == "review" else SECTION_ORDER
+    (``smith kind set`` can change the line while the dashboard runs): its
+    board's (``lines.board``); ``()`` for a line with no board, whose
+    contracts are listed as they are on disk."""
+    from . import lines  # lazy: lines reads this module's section orders
+
+    return lines.board(decision.current_line(Path(root))).section_order
 
 #: The pipeline's stages, in the order the paper-construction flow fixes them.
 #:

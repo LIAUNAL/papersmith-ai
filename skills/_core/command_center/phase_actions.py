@@ -320,14 +320,13 @@ def stage_for(phase_id: str) -> str | None:
 def _line(kind: str) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[tuple[str, str], ...]],
                              frozenset[str], dict[str, str], str]:
     """The definitions of a paper line: actions, evidence, ungated stages,
-    operator gates and the transversal stage. The review line's live in
-    ``review_board``; every other kind reads this module's (experimental)."""
-    if kind == "review":
-        from . import review_board
+    operator gates and the transversal stage, from the line's board
+    (``lines.board``: this module's for the experimental line and for a kind
+    with no board, ``review_board``'s for the review line)."""
+    from . import lines  # lazy: lines builds the experimental board from this module
 
-        return (review_board.REVIEW_ACTIONS, review_board.REVIEW_EVIDENCE, review_board.REVIEW_UNGATED,
-                review_board.REVIEW_PHASE_GATES, review_board.REVIEW_TRANSVERSAL)
-    return ACTIONS, EVIDENCE, UNGATED, PHASE_GATES, "audit"
+    board = lines.board(kind)
+    return board.actions, board.evidence, board.ungated, board.phase_gates, board.transversal
 
 
 def primary_command(stage: str, kind: str = "experimental") -> str:
@@ -404,7 +403,7 @@ def attach(fases: list[dict[str, Any]], root: Path | None = None,
     """Add each phase's actions, real skills, command, evidence and lock to
     the status view. An action that ``requires`` gates is ``locked`` until
     each one's status in ``gates`` is ``PASS``. ``kind`` is the workspace's
-    paper line: the review line reads its own steps (``review_board``)."""
+    paper line: each line reads its own board's steps (``lines.board``)."""
     gates = gates or {}
     actions, _evidence, ungated, phase_gates, transversal = _line(kind)
     previous: dict[str, Any] | None = None
