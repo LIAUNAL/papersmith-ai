@@ -166,7 +166,7 @@ Checked on v1 and on every successor, before anything is written
 | `sample-size-without-number` | the sample size names no number |
 | `sample-size-without-justification` | the sample size has no justification, or a placeholder one |
 | `analysis-plan-without-primary-model` | no `**Primary model:**`, or a placeholder one |
-| `field-states-result` | a labelled field reports a result: a p-value, "was reduced", "we found", "outperformed" |
+| `field-states-result` | the research question or an outcome field reports a result: a p-value, "was reduced", "we found", "outperformed" |
 | `url-without-verification-marker` | a URL not followed by `[pending-verification]` or `[verified: YYYY-MM-DD]` (the experimental convention) |
 
 An explicit `none` or `not applicable` is a decision for covariates, missing
@@ -198,8 +198,12 @@ A protocol is written before its data are collected or analysed. The
 profile's `sourceAuthority` (advisory, bound `guidance/data-paper`) reports
 every line anywhere in the document that states a result, so a background
 paragraph restating somebody else's published finding is acknowledged by id
-(`acknowledgedSourceConflicts`) rather than refused. A labelled field never
-gets that latitude: `field-states-result` refuses it outright.
+(`acknowledgedSourceConflicts`) rather than refused. The research question
+and the outcome fields never get that latitude: `field-states-result` refuses
+them outright. The planning fields (design, eligibility, sample size and its
+justification, the analysis plan) may cite a significance threshold, a
+past-tense screening criterion or a pilot estimate; result language there is
+reported by the advisory bound like any other line.
 
 ## Sources
 

@@ -164,7 +164,15 @@ test('a missing declaration reports line 1, and violations come back in line ord
 test('a field that states a result as already achieved is refused', () => {
     const found = violations(protocol({ primary: '**Primary outcome:** O1 -- systolic blood pressure, which was significantly reduced (p = 0.03); time point: 12 weeks' }));
     assert.deepEqual(found.map((entry) => entry.rule), ['field-states-result']);
-    assert.deepEqual(rules(protocol({ justification: '**Sample size justification:** we found a 5 mmHg effect in our data, so 74 per arm' })), ['field-states-result']);
+    assert.deepEqual(rules(protocol({ question: '**Research question:** We found that walking lowers systolic pressure; does it?' })), ['field-states-result']);
+});
+
+test('planning fields may cite thresholds and prior evidence without being refused', () => {
+    // A significance threshold, a past-tense eligibility criterion and a pilot
+    // estimate behind a sample size are planning language, not this study's
+    // result: only the outcome fields and the research question refuse.
+    assert.deepEqual(violations(protocol({ justification: '**Sample size justification:** two-sided test at p < 0.05 with 80% power; in our pilot we observed an SD of 10 mmHg, so 64 per arm plus 15% attrition' })), []);
+    assert.deepEqual(violations(protocol({ eligibility: '**Eligibility:** adults whose readings were higher than 140 mmHg at two screening visits' })), []);
 });
 
 test('prose outside the labelled fields is not refused for result language (the source bound reports it instead)', () => {

@@ -131,6 +131,6 @@ test('an analysis plan without a primary model refuses the first revision', asyn
 });
 
 test('a field stating a result as already achieved refuses the first revision', async () => {
-    const { details, onDisk } = await createInitialRevision(idea({ justification: '**Sample size justification:** we observed a 5 mmHg effect in the pilot, so 74 per arm' }));
+    const { details, onDisk } = await createInitialRevision(idea({ primary: '**Primary outcome:** O1 -- systolic blood pressure, which was significantly reduced; time point: 12 weeks' }));
     assertRefused(details, onDisk, 'field-states-result');
 });

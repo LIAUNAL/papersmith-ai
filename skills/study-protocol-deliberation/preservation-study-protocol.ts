@@ -46,6 +46,9 @@ const empty = (value: string) => undecided(value) || ABSENT.has(normalizedWhole(
  */
 export const STATED_RESULT = /\bp\s*(?:[<=≤]|&lt;)\s*0?\.\d+|\b(?:was|were)\s+(?:significantly\s+|substantially\s+)?(?:reduced|increased|improved|decreased|lowered|raised|higher|lower|greater|smaller|better|worse|superior|inferior|effective|associated)\b|\bwe\s+(?:found|observed|showed|demonstrated|confirmed|detected)\b|\bresults\s+(?:show|showed|demonstrate|demonstrated|confirm|confirmed)\b|\boutperform(?:s|ed)\b/iu;
 
+/** The fields a hard `field-states-result` refusal covers: what the study will measure and ask. */
+const RESULT_FREE_FIELDS: readonly FieldKey[] = ["researchQuestion", "primaryOutcome", "secondaryOutcome"];
+
 /** An external URL, as the experimental sibling reads one. */
 const EXTERNAL_URL = /https?:\/\/[^\s|)\]]+/gu;
 /** The experimental sibling's verification convention, unchanged: every URL is tagged `[pending-verification]` or `[verified: YYYY-MM-DD]`, immediately after it. */
@@ -179,8 +182,13 @@ export function violations(source: string): PreservationViolation[] {
 	else if (size && (justification.length === 0 || empty(justification[0]!.value)))
 		out.push({ rule: "sample-size-without-justification", line: justification[0]?.line ?? size.line, detail: `the sample size owes a ${label("sampleSizeJustification")} line: the power calculation (effect, variability, alpha, power, attrition) or the rationale for the number` });
 
-	// No labelled field reports a result.
-	for (const field of Object.keys(FIELD_LABELS) as FieldKey[])
+	// No outcome field and no research question reports a result. The planning
+	// fields (design, eligibility, sample size and its justification, the
+	// analysis plan) legitimately cite a significance threshold, a past-tense
+	// screening criterion or a pilot estimate; result language there is left to
+	// the document-wide advisory bound (`profile.ts`), which the operator
+	// acknowledges by id.
+	for (const field of RESULT_FREE_FIELDS)
 		for (const declared of fields[field]) {
 			const hit = STATED_RESULT.exec(declared.value);
 			if (hit) out.push({ rule: "field-states-result", line: declared.line, detail: `${label(field)} states a result (${JSON.stringify(hit[0])}); a protocol is written before its data exist, so every field plans and none reports` });
