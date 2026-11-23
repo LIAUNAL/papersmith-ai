@@ -1175,6 +1175,31 @@
       padding-left: 1rem;
       padding-right: 1rem;
     }
+    .caztor-host { position: relative; }
+    .caztor-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      background: var(--surface);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-radius: var(--radius);
+    }
+    .caztor-loading[hidden] { display: none; }
+    .caztor-loading__spinner {
+      width: 1.6rem;
+      height: 1.6rem;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: caztor-spin 0.8s linear infinite;
+    }
+    @keyframes caztor-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .caztor-loading__spinner { animation-duration: 2.4s; } }
     .caztor-toggle {
       display: inline-flex;
       align-items: center;
@@ -3882,6 +3907,10 @@
           <!-- Caztor: files, LaTeX editor, PDF and chat; the change-control panel stays to the right of its chat -->
           <div class="caztor-host" id="caztorHost" hidden>
             <iframe id="caztorFrame" class="caztor-frame" src="about:blank" title="Caztor LaTeX editor" data-i18n-attr="title:caztor.frameTitle"></iframe>
+            <div class="caztor-loading" id="caztorLoading" role="status" hidden>
+              <span class="caztor-loading__spinner" aria-hidden="true"></span>
+              <span data-i18n="caztor.loading">Loading the LaTeX editor…</span>
+            </div>
           </div>
           <p class="caztor-notice" id="caztorNotice" role="status" hidden></p>
 
@@ -7432,6 +7461,28 @@
     let caztorRetries = 0;
     let caztorWatch = null;
 
+    // A server just started can take a moment to be reachable from this browser (an SSH tunnel or the WSL
+    // relay notices a new port late): the frame loads once a request reaches it, so the browser never shows
+    // its "refused to connect" page. A tunnel that never reaches it still loads the frame, and the watch retries.
+    const CAZTOR_PROBE_SECONDS = 20;
+    async function waitUntilReachable(url) {
+      const deadline = Date.now() + CAZTOR_PROBE_SECONDS * 1000;
+      while (Date.now() < deadline) {
+        try {
+          await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+          return true;
+        } catch (_) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      return false;
+    }
+
+    function showCaztorLoading(shown) {
+      const loading = document.getElementById('caztorLoading');
+      if (loading) loading.hidden = !shown;
+    }
+
     function watchCaztorFrame() {
       clearTimeout(caztorWatch);
       caztorReady = false;
@@ -7439,6 +7490,7 @@
         const host = document.getElementById('caztorHost');
         if (caztorReady || !caztorEnabled() || !host || host.hidden) return;
         if (caztorRetries >= CAZTOR_RETRIES) {
+          showCaztorLoading(false);
           const notice = document.getElementById('caztorNotice');
           notice.hidden = false;
           notice.textContent = t('caztor.noAnswer');
@@ -7483,6 +7535,7 @@
     // The PDF viewer in place of Caztor, whose frame is emptied so a stopped server is not left on screen.
     function showPdfViewer() {
       clearTimeout(caztorWatch);
+      showCaztorLoading(false);
       caztorRetries = 0;
       caztorState = null;
       caztorOrigin = null;
@@ -7539,6 +7592,14 @@
         const instance = `${state.url}#${state.instance ?? ''}`;
         if (frame.dataset.instance !== instance) {
           frame.dataset.instance = instance;
+          frame.src = 'about:blank';
+          showCaztorLoading(true);
+          host.hidden = false;
+          legacy.hidden = true;
+          notice.hidden = true;
+          await waitUntilReachable(state.url);
+          // Turned off, or another instance asked for, while waiting.
+          if (!caztorEnabled() || frame.dataset.instance !== instance) return state;
           frame.src = state.url;
           watchCaztorFrame();
         }
@@ -7565,6 +7626,7 @@
       if (data && data.type === 'caztor:ready') {
         caztorReady = true;
         caztorRetries = 0;
+        showCaztorLoading(false);
         clearTimeout(caztorWatch);
         document.getElementById('caztorNotice').hidden = true;
         sendThemeToCaztor(document.documentElement.getAttribute('data-theme') || 'dark');
