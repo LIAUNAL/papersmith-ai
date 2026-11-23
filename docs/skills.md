@@ -3516,3 +3516,12 @@ the agent does not gate it again. If the check cannot be reached, the box
 launches as before and the agent's own gate still applies. The full contract is
 [`skills/prompt-gate/SKILL.md`](../skills/prompt-gate/SKILL.md).
 
+
+### Shared empirical modules (for the empirical paper lines)
+
+These modules live under `skills/_core/` and serve the empirical lines that the
+paper-type catalogue plans (observational and measurement studies,
+experiments and interventions, laboratory and hardware work, data resources,
+qualitative work). No applied-AI or review flow calls them.
+
+**Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
