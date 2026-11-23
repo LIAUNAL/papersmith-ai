@@ -24,6 +24,14 @@ describe("a PaperSmith agent named at the start of a message", () => {
     expect(expandAgentCommand("/math-tutor why?", [tutor])).toContain("holds none of the files a panel reads");
   });
 
+  it("tells the agent no image is attached in the chat, so it does not look for the panel's image folder", () => {
+    for (const sources of [[], ["paper/main.tex"]]) {
+      const text = expandAgentCommand("/math-tutor why?", [tutor], sources);
+      expect(text).toContain("No image is attached in this chat");
+      expect(text).toContain("do not look for attached images or their folder");
+    }
+  });
+
   it("keeps a multi-line message whole, and says when there is none", () => {
     expect(expandAgentCommand("/math-tutor first line\nsecond line", [tutor]).endsWith("first line\nsecond line")).toBe(true);
     expect(expandAgentCommand("/math-tutor", [tutor])).toContain("Do not read files or start tutoring: reply with one short sentence saying you are ready");

@@ -26,7 +26,7 @@ export function buildPrompt(userText: string, revertedFiles: readonly RelPath[])
 }
 
 /** How the note that replaces a PaperSmith dashboard panel's view begins. */
-export const AGENT_CONTEXT_HEADER = "[You run in Caztor's chat, not in a PaperSmith dashboard panel: no panel view, message mode or decision area reaches you.";
+export const AGENT_CONTEXT_HEADER = "[You run in Caztor's chat, not in a PaperSmith dashboard panel: no panel view, message mode or decision area reaches you. No image is attached in this chat: do not look for attached images or their folder.";
 
 /**
  * PaperSmith's dashboard panels hand an agent their own view (the paper's mathematics, the novelty card, the
