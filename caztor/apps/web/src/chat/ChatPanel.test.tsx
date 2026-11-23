@@ -102,6 +102,17 @@ describe("ChatPanel", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("shows a loading screen until the conversation and the assistants have loaded", async () => {
+    const fake = createFakeApi();
+    const controller = new ChatController({ api: fake.api, wait: async () => {} });
+    render(<ChatPanel controller={controller} />);
+    expect(screen.getByRole("status", { name: "Loading the chat" })).toBeInTheDocument();
+    expect(screen.queryByText(/ask the assistant/i)).toBeNull();
+    await act(() => controller.load());
+    expect(screen.queryByRole("status", { name: "Loading the chat" })).toBeNull();
+    expect(screen.getByText(/ask the assistant/i)).toBeInTheDocument();
+  });
+
   it("shows a loading failure with a way to try again", async () => {
     const fake = createFakeApi();
     fake.failNext(apiError("boom", "The server is not answering.", 500));

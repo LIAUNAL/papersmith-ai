@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Dialog } from "../components/Dialog.tsx";
 import { EmptyState } from "../components/EmptyState.tsx";
+import { Loading } from "../components/Loading.tsx";
 import { PROVIDER_ORDER } from "./providers.ts";
 import { Composer, type SlashCommand } from "./Composer.tsx";
 import { LoginHint } from "./LoginHint.tsx";
@@ -169,7 +170,11 @@ export function ChatPanel({ controller, onOpenFile, onCompile, explain }: ChatPa
           {trustProblem}
         </p>
       )}
-      {view.chat.timeline.length === 0 && !view.loading ? (
+      {view.chat.timeline.length === 0 && view.loading ? (
+        <div className="chat-panel__empty">
+          <Loading label="Loading the chat" />
+        </div>
+      ) : view.chat.timeline.length === 0 ? (
         <div className="chat-panel__empty">
           <EmptyState title="Ask the assistant">Describe a change to your document. The assistant edits your files directly, and you can undo each turn.</EmptyState>
         </div>
