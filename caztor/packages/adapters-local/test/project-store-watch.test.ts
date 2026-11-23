@@ -13,9 +13,9 @@ cleanupSandboxes();
 
 const pause = (ms = 15) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Waits until `check` holds, for at most two seconds of real time. */
+/** Waits until `check` holds, for at most ten seconds of real time: a CI runner's file events can be slow. */
 async function until(check: () => boolean): Promise<void> {
-  const limit = Date.now() + 2000;
+  const limit = Date.now() + 10_000;
   while (!check()) {
     if (Date.now() > limit) throw new Error("The condition did not hold in time");
     await pause(5);

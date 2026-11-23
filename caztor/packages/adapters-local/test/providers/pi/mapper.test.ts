@@ -46,7 +46,10 @@ describe("the synthetic fixtures", () => {
     for (const name of readdirSync(fixtures)) {
       const text = readFileSync(join(fixtures, name), "utf8");
       expect(text, name).not.toContain(homedir());
-      expect(text, name).not.toContain(userInfo().username);
+      // The user name as it leaks: a path segment or a quoted value. A bare word would flag prose on a machine
+      // whose user is called, say, "runner" (CI), next to a README that speaks of the runner's guard.
+      const user = userInfo().username;
+      for (const leak of [`/${user}/`, `\\${user}\\`, `"${user}"`]) expect(text, name).not.toContain(leak);
       for (const id of text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []) expect(id, name).toBe(SESSION_1);
     }
   });
