@@ -816,7 +816,7 @@ STUDY_UNMEASURED_REASONS: tuple[str, ...] = (
     "CHECK_FAILED",
 )
 #: The `outcomes` fact names the paper's primary outcome by its protocol id.
-_FACT_PRIMARY_RE = re.compile(r"\bprimary\b(?:\s+outcome)?\W{0,4}(O[1-9][0-9]*)\b", re.IGNORECASE)
+_FACT_PRIMARY_RE = re.compile(r"\bprimary\b(?:\s+outcomes?)?\W{0,4}(O[1-9][0-9]*)\b", re.IGNORECASE)
 #: The prose cites an outcome as the protocol does: `(Outcome O1)`, `[outcome:O1]`.
 _OUTCOME_CITE_RE = re.compile(r"\b[Oo]utcome\s*:?\s*(O[1-9][0-9]*)\b")
 _EXPLORATORY_RE = re.compile(r"\b(?:exploratory|post[- ]hoc|hypothesis[- ]generating|not pre-?specified|unplanned)\b",
@@ -892,7 +892,7 @@ def check_primary_outcome_switch(outcomes_fact: str | None, study: dict) -> dict
 
 def _log_gap(study: dict) -> str | None:
     state = (study.get("log") or {}).get("state")
-    return {"absent": "ANALYSIS_LOG_ABSENT", "corrupt": "ANALYSIS_LOG_CORRUPT"}.get(state)
+    return {"absent": "ANALYSIS_LOG_ABSENT", "corrupt": "ANALYSIS_LOG_CORRUPT", "torn": "ANALYSIS_LOG_CORRUPT"}.get(state)
 
 
 def check_exploratory_as_confirmatory(segs, study: dict) -> dict:
@@ -943,9 +943,16 @@ def run_study(main_tex: bytes, outcomes_fact: str | None, study: dict | None) ->
     """One entry per `STUDY_CHECKS` member, or `[]` when the workspace has no study protocol.
 
     `outcomes_fact`: the paper's fixed `outcomes` fact (`paper_declarations.read_fact`);
-    `study`: `skills/_core/empirical/analysis_log.manuscript_inputs(root)`, read by the caller."""
+    `study`: `skills/_core/empirical/analysis_log.manuscript_inputs(root)`, read by the caller,
+    or `{"unavailable": <why>}` when the workspace is a study but that module is
+    missing or raised: every check is then `unmeasured` (`CHECK_FAILED`), never dropped."""
     if study is None:
         return []
+    if isinstance(study, dict) and study.get("unavailable"):
+        why = str(study["unavailable"])
+        return [_study_result(check, "unmeasured", [], reason="CHECK_FAILED",
+                              rule=f"the study checks could not run: {why}", evidence={"unavailable": why})
+                for check in STUDY_CHECKS]
     segs = segments(main_tex)
     entries = [check_primary_outcome_switch(outcomes_fact, study), check_exploratory_as_confirmatory(segs, study),
                check_outcome_not_in_protocol(study), check_protocol_outcome_not_analysed(study)]

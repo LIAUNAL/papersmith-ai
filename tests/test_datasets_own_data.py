@@ -327,19 +327,60 @@ class PiiPublishTests(Base):
         self.assertEqual(self.cli("dictionary", "init", "--slug", "cohort", "--file", "data/cohort.csv").code, 0)
         self.assertEqual(self.cli("qc", "--slug", "cohort", "--file", "data/cohort.csv").code, 0)
 
-    def publish(self, *extra: str, runner=None) -> Run:
+    def publish(self, *extra: str, runner=None, slug: str = "cohort") -> Run:
         out, err = io.StringIO(), io.StringIO()
         result = Run.__new__(Run)
         with redirect_stdout(out), redirect_stderr(err):
-            result.code = CLI.run(["--root", str(self.root), "publish", "--slug", "cohort", "--owner", "someone",
+            result.code = CLI.run(["--root", str(self.root), "publish", "--slug", slug, "--owner", "someone",
                                    *extra], runner=runner)
         result.out, result.err = out.getvalue(), err.getvalue()
         result.json = json.loads(result.out) if result.out.strip().startswith("{") else None
         result.error = json.loads(result.err) if result.err.strip().startswith("{") else None
         return result
 
-    def deidentify(self, statement: str = STATEMENT) -> Run:
-        return self.cli("deidentify", "--slug", "cohort", "--by", "Dr. Operator", "--statement", statement)
+    def deidentify(self, statement: str = STATEMENT, slug: str = "cohort") -> Run:
+        return self.cli("deidentify", "--slug", slug, "--by", "Dr. Operator", "--statement", statement)
+
+    def clean_dataset(self) -> str:
+        """An own dataset whose dictionary never flagged a PII column."""
+        self.own("survey")
+        self.write_csv("data/survey.csv", ["age", "score"], [[str(30 + i), str(i)] for i in range(8)])
+        self.assertEqual(self.cli("qc", "--slug", "survey", "--file", "data/survey.csv").code, 0)
+        self.write_dictionary("survey", [column("age", "integer"), column("score", "integer")])
+        return "survey"
+
+    def test_the_registry_remembers_every_pii_column_ever_flagged(self) -> None:
+        self.assertEqual(self.entry("cohort")["pii_columns_seen"], ["patient_email"])
+        self.write_dictionary("cohort", [column("patient_email", "text"), column("age", "integer", pii=True)])
+        self.assertEqual(self.cli("dictionary", "check", "--slug", "cohort").code, 0)
+        self.assertEqual(self.entry("cohort")["pii_columns_seen"], ["age", "patient_email"])
+
+    def test_clearing_or_deleting_the_dictionary_does_not_bypass_the_gate(self) -> None:
+        self.write_dictionary("cohort", [column("patient_email", "text"), column("age", "integer")])
+        result = self.publish()
+        self.assertRefused(result, "pii-not-deidentified")
+        self.assertIn("patient_email", result.error["message"])
+        (self.root / "datasets/cohort/dictionary.json").unlink()
+        runner = FakeRunner()
+        result = self.publish("--consent", "cohort", runner=runner)
+        self.assertRefused(result, "pii-not-deidentified")
+        self.assertEqual(runner.calls, [])
+        result = self.deidentify()
+        self.assertEqual(result.code, 0, result.err)
+        self.assertEqual(self.entry("cohort")["deidentification"]["columns"], ["patient_email"])
+        self.assertEqual(self.publish().code, 0)
+
+    def test_a_malformed_dictionary_warns_without_pii_history_and_refuses_with_it(self) -> None:
+        slug = self.clean_dataset()
+        (self.root / "datasets" / slug / "dictionary.json").write_text("{not json", encoding="utf-8")
+        result = self.publish(slug=slug)
+        self.assertEqual(result.code, 0, result.err)
+        self.assertEqual([w["code"] for w in result.json["warnings"]], ["dictionary-unreadable"])
+        result = self.publish("--consent", slug, slug=slug, runner=FakeRunner())
+        self.assertEqual(result.code, 0, result.err)
+        self.assertEqual([w["code"] for w in result.json["warnings"]], ["dictionary-unreadable"])
+        (self.root / "datasets/cohort/dictionary.json").write_text("{not json", encoding="utf-8")
+        self.assertRefused(self.publish(), "dictionary-unreadable")
 
     def test_publish_refuses_pii_columns_until_the_operator_records_deidentification(self) -> None:
         before = self.registry()
@@ -397,24 +438,29 @@ class PiiPublishTests(Base):
                            "statement-missing")
         self.assertRefused(self.cli("deidentify", "--slug", "nope", "--by", "Op", "--statement", "x"),
                            "unknown-slug")
-        self.write_dictionary("cohort", [column("patient_email", "text"), column("age", "integer")])
-        self.assertRefused(self.deidentify(), "no-pii-columns")
-        (self.root / "datasets/cohort/dictionary.json").unlink()
-        self.assertRefused(self.deidentify(), "dictionary-missing")
-        self.assertNotIn("deidentification", self.entry("cohort"))
+        # A dataset with PII history is covered by test_clearing_or_deleting_the_dictionary_...;
+        # these two refusals hold for a dataset that never flagged one.
+        slug = self.clean_dataset()
+        self.assertRefused(self.deidentify(slug=slug), "no-pii-columns")
+        (self.root / "datasets" / slug / "dictionary.json").unlink()
+        self.assertRefused(self.deidentify(slug=slug), "dictionary-missing")
+        self.assertNotIn("deidentification", self.entry(slug))
 
     def test_publish_without_a_dictionary_or_without_pii_is_unchanged(self) -> None:
-        self.write_dictionary("cohort", [column("patient_email", "text"), column("age", "integer")])
-        clean = self.publish()
+        # A dataset whose dictionary never flagged PII (clearing the flags of one that
+        # did is the bypass test_clearing_or_deleting_the_dictionary_... refuses).
+        slug = self.clean_dataset()
+        clean = self.publish(slug=slug)
         self.assertEqual(clean.code, 0, clean.err)
-        (self.root / "datasets/cohort/dictionary.json").unlink()
-        bare = self.publish()
+        (self.root / "datasets" / slug / "dictionary.json").unlink()
+        bare = self.publish(slug=slug)
         self.assertEqual(bare.code, 0, bare.err)
         self.assertEqual(set(bare.json), {"slug", "dry_run", "host", "folder", "metadata", "plan", "next"})
         self.assertEqual(bare.json, clean.json)
-        result = self.publish("--consent", "cohort", runner=FakeRunner())
+        result = self.publish("--consent", slug, slug=slug, runner=FakeRunner())
         self.assertEqual(result.code, 0, result.err)
-        self.assertNotIn("deidentification", self.entry("cohort"))
+        self.assertNotIn("deidentification", self.entry(slug))
+        self.assertNotIn("pii_columns_seen", self.entry(slug))
 
 
 # ------------------------------------------------------------- unchanged

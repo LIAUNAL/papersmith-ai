@@ -36,8 +36,23 @@ MAX_BRANCHES = 6
 
 
 def has_control(text: str) -> bool:
-    """True when ``text`` holds a character an SVG (XML 1.0) text node cannot carry."""
-    return any(ord(ch) < 32 or 127 <= ord(ch) < 160 for ch in text)
+    """True when ``text`` holds a character an SVG (XML 1.0) text node cannot carry.
+
+    C0 and C1 controls (line breaks included), the surrogate range (a lone
+    surrogate JSON can carry as an escaped code unit) and U+FFFE, U+FFFF.
+    """
+    return any(ord(ch) < 32 or 127 <= ord(ch) < 160 or 0xD800 <= ord(ch) <= 0xDFFF
+               or ord(ch) in (0xFFFE, 0xFFFF) for ch in text)
+
+
+def arm_problem(names, noun: str = "arm") -> tuple[str, str] | None:
+    """(code, message) when operator-named arms are not 2 to MAX_BRANCHES distinct clean names."""
+    if (not isinstance(names, list) or not 2 <= len(names) <= MAX_BRANCHES
+            or not all(isinstance(x, str) and x.strip() for x in names) or len(set(names)) != len(names)):
+        return "BRANCHES_INVALID", f"name 2 to {MAX_BRANCHES} distinct {noun}s"
+    if any(has_control(name) for name in names):
+        return "TEXT_INVALID", f"an {noun} name holds no control characters or line breaks"
+    return None
 
 
 def _leave(gid: str, label: str, reasons: tuple[str, ...] = ()) -> dict:
@@ -121,7 +136,7 @@ class FlowError(Exception):
 
 
 def template(template_id: str) -> dict:
-    if template_id not in TEMPLATES:
+    if not isinstance(template_id, str) or template_id not in TEMPLATES:
         raise FlowError("TEMPLATE_UNKNOWN", f"unknown template {template_id!r}; known: {', '.join(TEMPLATES)}")
     return TEMPLATES[template_id]
 
@@ -155,6 +170,9 @@ def empty_flow(template_id: str, arms: list[str] | None = None) -> dict:
     flow: dict = {"schema": SCHEMA, "template": template_id}
     if spec and spec["source"] == "operator":
         flow["branches"] = list(arms or spec["default"])
+        problem = arm_problem(flow["branches"], spec["noun"])
+        if problem:
+            raise FlowError(*problem)
     branches = list(branch_labels(tpl, flow))
     stages = {}
     for stage in tpl["stages"]:
@@ -278,7 +296,7 @@ def check(flow) -> list[dict]:
     if not isinstance(flow, dict):
         c.add("SCHEMA_INVALID", "", "flow.json holds one JSON object")
         return c.problems
-    if flow.get("template") not in TEMPLATES:
+    if not isinstance(flow.get("template"), str) or flow["template"] not in TEMPLATES:
         c.add("TEMPLATE_UNKNOWN", "template", f"unknown template {flow.get('template')!r}; "
                                               f"known: {', '.join(TEMPLATES)}")
         return c.problems
@@ -292,13 +310,9 @@ def check(flow) -> list[dict]:
     for key in sorted(set(flow) - allowed):
         c.add("SCHEMA_INVALID", key, "unknown key")
     if spec and spec["source"] == "operator":
-        names = flow.get("branches")
-        if (not isinstance(names, list) or not 2 <= len(names) <= MAX_BRANCHES
-                or not all(isinstance(x, str) and x.strip() for x in names) or len(set(names)) != len(names)):
-            c.add("BRANCHES_INVALID", "branches", f"name 2 to {MAX_BRANCHES} distinct {spec['noun']}s")
-            return c.problems
-        if any(has_control(name) for name in names):
-            c.add("TEXT_INVALID", "branches", "an arm name holds no control characters or line breaks")
+        problem = arm_problem(flow.get("branches"), spec["noun"])
+        if problem:
+            c.add(problem[0], "branches", problem[1])
             return c.problems
     branches = list(branch_labels(tpl, flow))
     stages = flow.get("stages")
@@ -322,7 +336,8 @@ def check(flow) -> list[dict]:
         basis = previous
         options = stage.get("basis_options")
         if options and isinstance(body, dict) and "basis" in body:
-            if body["basis"] not in options or body["basis"] not in totals:
+            if (not isinstance(body["basis"], str) or body["basis"] not in options
+                    or body["basis"] not in totals):
                 c.add("BASIS_INVALID", f"{where}.basis", f"the basis is one of {', '.join(options)}")
                 basis = None
             else:

@@ -4,7 +4,16 @@
                               chained to the one before it by ``prev`` (the
                               sha256 of that line's bytes)
     analysis/streams/<sha>    the stdout and stderr of a wrapped run, stored
-                              under their own sha256
+                              under their own sha256 (``analysis/.gitignore``
+                              ignores them: they may hold participant data)
+    analysis/repairs.jsonl    one line per ``analysis_cli.py repair``: the torn
+                              final line it moved to ``analysis/torn/<sha>``
+
+A wrapped run writes two entries: ``run-started`` before its command runs
+(script, inputs, the outputs' prior hashes, the command) and ``run`` after it
+(``started`` names the first), so a run whose second append fails still leaves
+a trace; a started run with no ``run`` entry is reported as interrupted. Only
+``run`` and ``record`` entries count as analyses.
 
 An entry's ``label`` is computed here and never accepted from a caller
 (decision D7 of ``odd/tasks/paper-type-lines.md``): ``confirmatory`` when the
@@ -42,6 +51,10 @@ StudyError = records.StudyError
 SCHEMA = 1
 LOG_PATH = "analysis/log.jsonl"
 STREAMS_DIR = "analysis/streams"
+STREAMS_IGNORE = "analysis/.gitignore"
+REPAIRS_PATH = "analysis/repairs.jsonl"
+TORN_DIR = "analysis/torn"
+STARTED = "run-started"
 LABELS = ("confirmatory", "exploratory")
 #: The analysis-plan entries a protocol names, by the key `parseProtocol` reports them under.
 PLAN_ENTRIES = {"primary-model": "primaryModel", "covariates": "covariates",
@@ -157,21 +170,35 @@ def compute_label(root: Path, outcome: str, plan: str | None) -> tuple[str, dict
 # --------------------------------------------------------------------------- the log
 
 
-def read_log(root: Path) -> list[dict]:
-    """Every entry, oldest first; ``ANALYSIS_LOG_CORRUPT`` when a line is not an entry or the
-    chain of ``prev`` hashes is broken (a line edited, removed or inserted)."""
-    path = Path(root) / LOG_PATH
-    if not path.is_file():
-        return []
+def _entry(line: bytes) -> dict | None:
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        return None
+    return entry if isinstance(entry, dict) and entry.get("label") in LABELS else None
+
+
+def torn_tail(data: bytes) -> bytes:
+    """The final line of ``data`` when it is an interrupted append: not ended by a newline and
+    not an entry (``b""`` otherwise). A complete entry missing only its newline is not torn."""
+    tail = data[data.rfind(b"\n") + 1:]
+    return tail if tail and _entry(tail) is None else b""
+
+
+def parse_log(data: bytes) -> list[dict]:
+    """The entries of the log bytes ``data`` (see ``read_log``)."""
+    tail = torn_tail(data)
+    if tail:
+        number = data.count(b"\n") + 1
+        raise StudyError("ANALYSIS_LOG_TORN", f"{LOG_PATH} line {number} is an incomplete final line ({len(tail)} "
+                                              "bytes): an append was interrupted. `analysis_cli.py repair --by "
+                                              f"<operator>` moves it to {TORN_DIR}/ and records the repair")
     entries, prev = [], None
-    for number, line in enumerate(path.read_bytes().split(b"\n"), start=1):
+    for number, line in enumerate(data.split(b"\n"), start=1):
         if not line:
             continue
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            entry = None
-        if not isinstance(entry, dict) or entry.get("label") not in LABELS:
+        entry = _entry(line)
+        if entry is None:
             raise StudyError("ANALYSIS_LOG_CORRUPT", f"{LOG_PATH} line {number} is not an analysis entry; the log "
                                                      "is append-only, so restore the log from its copy")
         if entry.get("prev") != prev or entry.get("seq") != len(entries) + 1:
@@ -182,10 +209,39 @@ def read_log(root: Path) -> list[dict]:
     return entries
 
 
+def read_log(root: Path) -> list[dict]:
+    """Every entry, oldest first; ``ANALYSIS_LOG_CORRUPT`` when a line is not an entry or the
+    chain of ``prev`` hashes is broken (a line edited, removed or inserted);
+    ``ANALYSIS_LOG_TORN`` when only the final line is an interrupted append."""
+    path = Path(root) / LOG_PATH
+    if not path.is_file():
+        return []
+    return parse_log(path.read_bytes())
+
+
+def analyses(entries: list[dict]) -> list[dict]:
+    """The entries that are analyses (``run`` and ``record``), without the ``run-started`` markers."""
+    return [entry for entry in entries if entry.get("kind") != STARTED]
+
+
+def interrupted(entries: list[dict]) -> list[str]:
+    """The ids of ``run-started`` entries no ``run`` entry completes."""
+    done = {entry.get("started") for entry in entries if entry.get("kind") == "run"}
+    return [entry["id"] for entry in entries if entry.get("kind") == STARTED and entry.get("id") not in done]
+
+
+def repairs(root: Path) -> int:
+    path = Path(root) / REPAIRS_PATH
+    try:
+        return sum(1 for line in path.read_bytes().split(b"\n") if line.strip()) if path.is_file() else 0
+    except OSError:
+        return 0
+
+
 def summary(entries: list[dict]) -> dict:
     """Per outcome, how many entries of each label, and the label of its first entry."""
     outcomes: dict[str, dict] = {}
-    for entry in entries:
+    for entry in analyses(entries):
         counts = outcomes.setdefault(entry["outcome"], {"confirmatory": 0, "exploratory": 0,
                                                         "first": entry["label"]})
         counts[entry["label"]] += 1
@@ -193,13 +249,15 @@ def summary(entries: list[dict]) -> dict:
 
 
 def log_state(root: Path) -> dict:
-    """``{"state": "absent" | "ok" | "corrupt", "entries", "outcomes"}`` (``message`` when corrupt)."""
+    """``{"state": "absent" | "ok" | "corrupt" | "torn", "entries", "outcomes"}`` (``message``
+    when corrupt or torn)."""
     if not (Path(root) / LOG_PATH).is_file():
         return {"state": "absent", "entries": 0, "outcomes": {}}
     try:
         entries = read_log(root)
     except StudyError as error:
-        return {"state": "corrupt", "message": error.message, "entries": None, "outcomes": {}}
+        state = "torn" if error.code == "ANALYSIS_LOG_TORN" else "corrupt"
+        return {"state": state, "message": error.message, "entries": None, "outcomes": {}}
     return {"state": "ok", "entries": len(entries), "outcomes": summary(entries)}
 
 
@@ -214,11 +272,18 @@ def status(root: Path) -> dict:
     except StudyError as error:
         view, parser = None, {"code": error.code, "message": error.message}
         warnings.append(parser)
-    if log["state"] == "corrupt":
-        warnings.append({"code": "ANALYSIS_LOG_CORRUPT", "message": log["message"]})
+    if log["state"] in ("corrupt", "torn"):
+        warnings.append({"code": "ANALYSIS_LOG_TORN" if log["state"] == "torn" else "ANALYSIS_LOG_CORRUPT",
+                         "message": log["message"]})
     fields = view["fields"] if view else None
     planned = protocol_outcomes(fields) if fields else None
     entries = read_log(root) if log["state"] == "ok" else []
+    stopped = interrupted(entries)
+    if stopped:
+        warnings.append({"code": "RUN_INTERRUPTED", "runs": stopped,
+                         "message": f"{', '.join(stopped)} started but logged no completion: the command may have "
+                                    "run and changed its outputs; run the analysis again"})
+    entries = analyses(entries)
     labels = {label: sum(1 for entry in entries if entry["label"] == label) for label in LABELS}
     if planned is not None:
         for outcome in planned:
@@ -239,7 +304,8 @@ def status(root: Path) -> dict:
             "protocol_outcomes": None if fields is None else {"primary": fields.get("primary"),
                                                               "secondary": fields.get("secondary") or []},
             "plan_entries": plan_entries(fields) if fields else None,
-            "labels": labels, "failed_runs": failed, "warnings": warnings}
+            "labels": labels, "failed_runs": failed, "interrupted_runs": stopped, "repairs": repairs(root),
+            "warnings": warnings}
 
 
 # --------------------------------------------------------------------------- verify's disk read

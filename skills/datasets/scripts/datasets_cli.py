@@ -646,6 +646,8 @@ def cmd_dictionary(args, root: Path, **_inject) -> dict:
     slug = entry["slug"]
     if args.action == "check":
         columns, path = read_dictionary(root, slug, required=True)
+        if remember_pii(entry, [c["name"] for c in columns if c["pii"]]):
+            save_registry(root, registry)
         return {"slug": slug, "dictionary": path.relative_to(root).as_posix(), "columns": len(columns),
                 "pii": [c["name"] for c in columns if c["pii"]]}
     path, rel = workspace_file(root, args.file)
@@ -660,6 +662,8 @@ def cmd_dictionary(args, root: Path, **_inject) -> dict:
     document = {"slug": slug, "file": rel, "sha256": sha256(path), "created": today(), "columns": columns}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    if remember_pii(entry, [c["name"] for c in columns if c["pii"]]):
+        save_registry(root, registry)
     return {"slug": slug, "dictionary": target.relative_to(root).as_posix(), "columns": len(columns),
             "pii": [c["name"] for c in columns if c["pii"]],
             "next": "review every type, unit, range, level, missing code, description and PII flag, "
@@ -685,8 +689,14 @@ def cmd_deidentify(args, root: Path, **_inject) -> dict:
     registry = load_registry(root)
     entry = find(registry, args.slug)
     slug = entry["slug"]
-    columns, _path = read_dictionary(root, slug, required=True)
-    pii = [c["name"] for c in columns if c["pii"]]
+    # With PII history the dictionary may be gone or unreadable: the remembered
+    # columns are what the record must cover. Without it, the dictionary is required.
+    if entry.get("pii_columns_seen"):
+        current, pii = pii_columns(root, entry, [])
+    else:
+        columns, _path = read_dictionary(root, slug, required=True)
+        current = [c["name"] for c in columns if c["pii"]]
+        pii = current
     if not pii:
         raise Refusal("no-pii-columns", f"datasets/{slug}/dictionary.json flags no PII column; "
                                         "there is nothing to de-identify")
@@ -703,26 +713,57 @@ def cmd_deidentify(args, root: Path, **_inject) -> dict:
         history.append({key: previous.get(key) for key in ("statement", "by", "recorded", "columns", "files")})
         record["history"] = history
     entry["deidentification"] = record
+    remember_pii(entry, current)
     save_registry(root, registry)
     return {"slug": slug, "deidentification": record}
 
 
-def pii_problem(root: Path, entry: dict) -> str | None:
+def remember_pii(entry: dict, names: list[str]) -> bool:
+    """Add ``names`` to the entry's ``pii_columns_seen`` (every column a
+    dictionary ever flagged as PII); True when the entry changed. The key is
+    written only once a column was flagged, so entries without PII keep their shape."""
+    seen = sorted(set(entry.get("pii_columns_seen") or []) | set(names))
+    if seen and seen != entry.get("pii_columns_seen"):
+        entry["pii_columns_seen"] = seen
+        return True
+    return False
+
+
+def pii_columns(root: Path, entry: dict, warnings: list[dict]) -> tuple[list[str], list[str]]:
+    """(columns the dictionary flags now, those plus every column flagged before).
+
+    A missing dictionary flags nothing now. An unreadable or invalid one also
+    flags nothing now and is reported in ``warnings`` when the entry has no PII
+    history; with PII history its refusal is raised, since it may hide a flag."""
+    try:
+        found = read_dictionary(root, entry["slug"])
+    except Refusal as refusal:
+        if entry.get("pii_columns_seen"):
+            raise
+        warnings.append({"code": refusal.code, "message": refusal.message})
+        found = None
+    current = [c["name"] for c in found[0] if c["pii"]] if found else []
+    return current, sorted(set(current) | set(entry.get("pii_columns_seen") or []))
+
+
+def pii_problem(root: Path, entry: dict, warnings: list[dict] | None = None) -> str | None:
     """Why `publish` may not upload this entry's PII columns yet, or None.
 
-    None when there is no dictionary or it flags no PII column; otherwise the
-    operator's de-identification must cover every flagged column and match the
+    The PII columns are those the dictionary flags now plus every column it
+    flagged before (``pii_columns_seen``), so deleting the dictionary or
+    clearing a flag never lifts the gate. None when there are none; otherwise
+    the operator's de-identification must cover every one and match the
     sha256 of every registered file."""
-    found = read_dictionary(root, entry["slug"])
-    pii = [c["name"] for c in found[0] if c["pii"]] if found else []
+    _current, pii = pii_columns(root, entry, warnings if warnings is not None else [])
     if not pii:
         return None
     record = entry.get("deidentification")
     if not record:
-        return f"the dictionary flags PII columns {pii} and no de-identification is recorded"
+        return f"PII columns {pii} (flagged by the dictionary, now or before) and no de-identification is recorded"
     uncovered = [name for name in pii if name not in (record.get("columns") or [])]
     if uncovered:
-        return f"the dictionary flags PII columns {uncovered} the recorded de-identification does not cover"
+        return f"PII columns {uncovered} (flagged by the dictionary, now or before) are not covered by the " \
+               "recorded de-identification"
     recorded = record.get("files") or {}
     changed = [rel for rel, digest in file_hashes(root, entry["files"]).items() if recorded.get(rel) != digest]
     if changed:
@@ -877,6 +918,7 @@ def cmd_qc(args, root: Path, **_inject) -> dict:
     header, rows = read_rows(path)
     found = read_dictionary(root, entry["slug"])
     columns = found[0] if found else []
+    remember_pii(entry, [c["name"] for c in columns if c["pii"]])  # saved with the registry below
     report = qc_report(header, rows, args.label, args.group,
                        missing_codes={c["name"]: tuple(c["missing_codes"]) for c in columns},
                        withheld={c["name"] for c in columns if c["pii"]})
@@ -1151,7 +1193,14 @@ def cmd_publish(args, root: Path, runner=None, **_inject) -> dict:
     if entry["license"].get("decision") not in ("allowed", "overridden"):
         raise Refusal("license-not-allowed", f"{slug}'s license decision is "
                       f"{entry['license'].get('decision') or 'missing'}; run license first")
-    problem = pii_problem(root, entry)
+    warnings: list[dict] = []
+    try:
+        current, _pii = pii_columns(root, entry, [])
+    except Refusal:
+        current = []
+    if remember_pii(entry, current):
+        save_registry(root, registry)
+    problem = pii_problem(root, entry, warnings)
     if problem:
         raise Refusal("pii-not-deidentified", f"{slug}: {problem}; the operator records how they were removed or "
                       f"transformed with `deidentify --slug {slug} --by <operator> --statement \"<how>\"`")
@@ -1197,11 +1246,12 @@ def cmd_publish(args, root: Path, runner=None, **_inject) -> dict:
     notes = args.version_notes or "New version"
     plan = {"create": publisher.create_argv(str(remote_dir), args.public),
             "version": publisher.version_argv(str(remote_dir), notes)}
+    extra = {"warnings": warnings} if warnings else {}
     if args.consent != slug:
         return {"slug": slug, "dry_run": True, "host": host_name, "folder": remote_dir.relative_to(root).as_posix(),
                 "metadata": meta, "plan": " ".join(plan["version"] if known else plan["create"]),
                 "next": f"re-run with --consent {slug} to upload (private"
-                        + (", public on --consent-public" if args.public else "") + ")"}
+                        + (", public on --consent-public" if args.public else "") + ")", **extra}
     runner = runner or default_runner
 
     def call(argv):
@@ -1228,7 +1278,7 @@ def cmd_publish(args, root: Path, runner=None, **_inject) -> dict:
     entry["remote"] = {"ref": ref, "visibility": visibility, "version": version}
     save_registry(root, registry)
     return {"slug": slug, "dry_run": False, "host": host_name, "ran": " ".join(argv), "remote": entry["remote"],
-            "output": (out or "")[-1000:], "mount": publisher.mount_hint(ref)}
+            "output": (out or "")[-1000:], "mount": publisher.mount_hint(ref), **extra}
 
 
 # -------------------------------------------------------------------- status

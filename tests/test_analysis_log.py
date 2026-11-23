@@ -145,8 +145,11 @@ class LabelTests(AnalysisWorkspace):
         self.study("protocol", "amend", "--by", "Ana Ruiz", "--reason", "added waist circumference")
         later = self.run_analysis("O3")
         self.assertEqual((later["label"], later["protocol"]["amendments"]), ("confirmatory", 1))
-        self.assertEqual([e["label"] for e in self.log_lines()], ["exploratory", "exploratory", "confirmatory"])
-        self.assertEqual(self.log_lines()[0], first)
+        runs = [e for e in self.log_lines() if e["kind"] == "run"]  # each run-started entry carries the same label
+        self.assertEqual([e["label"] for e in runs], ["exploratory", "exploratory", "confirmatory"])
+        self.assertEqual([e["label"] for e in self.log_lines() if e["kind"] == "run-started"],
+                         ["exploratory", "exploratory", "confirmatory"])
+        self.assertEqual(runs[0], first)
         codes = [w["code"] for w in self.ok("status")["warnings"]]
         self.assertIn("OUTCOME_ADDED_AFTER_ANALYSIS", codes)
 
@@ -170,7 +173,7 @@ class LabelTests(AnalysisWorkspace):
         self.study("protocol", "approve", "--by", "Ana Ruiz")
         self.refused("PROTOCOL_PARSER_UNAVAILABLE", "run", "--outcome", "O1", "--", sys.executable, "analysis.py",
                      env=env)
-        self.assertEqual(len(self.log_lines()), 1)
+        self.assertEqual([e["kind"] for e in self.log_lines()], ["run-started", "run"])  # the first run only
 
 
 class HashTests(AnalysisWorkspace):
@@ -214,12 +217,16 @@ class HashTests(AnalysisWorkspace):
 
 class AppendOnlyTests(AnalysisWorkspace):
     def test_entries_are_chained(self) -> None:
+        # A wrapped run writes two entries: `run-started` before the command, `run` after it.
         self.run_analysis("O1")
         self.run_analysis("O2")
         raw = (self.root / LOG).read_bytes().split(b"\n")
-        first, second = self.log_lines()
-        self.assertEqual((first["seq"], first["id"], first["prev"]), (1, "A0001", None))
-        self.assertEqual((second["seq"], second["id"], second["prev"]), (2, "A0002", sha256(raw[0])))
+        lines = self.log_lines()
+        self.assertEqual([(e["seq"], e["id"], e["kind"]) for e in lines],
+                         [(1, "A0001", "run-started"), (2, "A0002", "run"), (3, "A0003", "run-started"),
+                          (4, "A0004", "run")])
+        self.assertEqual([e["prev"] for e in lines], [None] + [sha256(line) for line in raw[:3]])
+        self.assertEqual((lines[1]["started"], lines[3]["started"]), ("A0001", "A0003"))
 
     def test_a_corrupt_line_refuses_every_append_before_anything_runs(self) -> None:
         self.run_analysis("O1")
@@ -244,6 +251,116 @@ class AppendOnlyTests(AnalysisWorkspace):
         edited["label"] = "confirmatory"
         log.write_text("\n".join([json.dumps(edited, sort_keys=True)] + lines[1:]) + "\n", encoding="utf-8")
         self.refused("ANALYSIS_LOG_CORRUPT", "run", "--outcome", "O1", "--", sys.executable, "analysis.py")
+
+
+class RunTraceTests(AnalysisWorkspace):
+    BREAKER = ("import pathlib\n"
+               "log = pathlib.Path('analysis/log.jsonl')\n"
+               "log.write_bytes(log.read_bytes() + b'{broken\\n')\n"
+               "pathlib.Path('out.csv').write_text('beta,0.9\\n')\n")
+
+    def test_a_run_is_logged_before_its_command_so_a_failed_append_leaves_a_trace(self) -> None:
+        self.write("breaker.py", self.BREAKER)
+        self.refused("ANALYSIS_LOG_CORRUPT", "run", "--outcome", "O1", "--output", "out.csv", "--",
+                     sys.executable, "breaker.py")
+        self.assertEqual((self.root / "out.csv").read_text(encoding="utf-8"), "beta,0.9\n")
+        first = json.loads((self.root / LOG).read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual((first["kind"], first["id"], first["exit_code"]), ("run-started", "A0001", None))
+        self.assertEqual(first["command"][1:], ["breaker.py"])
+        self.assertEqual(first["outputs"], [{"path": "out.csv", "sha256": None}])
+
+    def test_a_run_killed_mid_command_is_reported_as_interrupted(self) -> None:
+        self.write("killer.py", "import os, signal\nos.kill(os.getppid(), signal.SIGKILL)\n")
+        proc = subprocess.run([sys.executable, str(ANALYSIS), "run", "--outcome", "O1", "--root", str(self.root),
+                               "--", sys.executable, "killer.py"], capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(proc.returncode, 0)
+        status = self.ok("status")
+        self.assertEqual(status["interrupted_runs"], ["A0001"])
+        self.assertIn("RUN_INTERRUPTED", [w["code"] for w in status["warnings"]])
+        self.assertEqual(status["labels"], {"confirmatory": 0, "exploratory": 0})
+        self.run_analysis("O1")
+        status = self.ok("status")
+        self.assertEqual((status["interrupted_runs"], status["labels"]["exploratory"]), (["A0001"], 1))
+
+    def test_a_command_that_cannot_start_is_refused_before_any_entry(self) -> None:
+        self.refused("COMMAND_NOT_FOUND", "run", "--outcome", "O1", "--script", "analysis.py", "--",
+                     "no-such-program-xyz", "analysis.py")
+        self.assertFalse((self.root / LOG).exists())
+
+
+class StreamsIgnoredTests(AnalysisWorkspace):
+    def test_run_ignores_its_streams_in_any_workspace(self) -> None:
+        self.run_analysis("O1")
+        self.assertEqual((self.root / "analysis" / ".gitignore").read_text(encoding="utf-8"), "streams/\n")
+        git = subprocess.run(["git", "init", "-q", str(self.root)], capture_output=True)
+        if git.returncode == 0:
+            check = subprocess.run(["git", "-C", str(self.root), "check-ignore", "-q",
+                                    f"analysis/streams/{sha256(b'analysed' + chr(10).encode())}"])
+            self.assertEqual(check.returncode, 0, "the streams are ignored by git")
+
+    def test_a_users_analysis_gitignore_is_never_overwritten(self) -> None:
+        self.write("analysis/.gitignore", "*.tmp\n")
+        out = self.ok("run", "--outcome", "O1", "--", sys.executable, "analysis.py")
+        self.assertEqual((self.root / "analysis" / ".gitignore").read_text(encoding="utf-8"), "*.tmp\n")
+        self.assertEqual([w["code"] for w in out["warnings"]], ["STREAMS_NOT_IGNORED"])
+        self.write("analysis/.gitignore", "*.tmp\nstreams/\n")
+        self.assertNotIn("warnings", self.ok("run", "--outcome", "O1", "--", sys.executable, "analysis.py"))
+
+
+class TornAppendTests(AnalysisWorkspace):
+    TAIL = b'{"schema": 1, "seq": 3, "kind": "run-sta'
+
+    def tear(self) -> bytes:
+        self.run_analysis("O1")
+        log = self.root / LOG
+        before = log.read_bytes()
+        log.write_bytes(before + self.TAIL)
+        return before
+
+    def test_a_torn_final_line_is_refused_with_its_own_code_and_nothing_runs(self) -> None:
+        self.tear()
+        (self.root / "out.csv").unlink()
+        out = self.refused("ANALYSIS_LOG_TORN", "run", "--outcome", "O1", "--output", "out.csv", "--",
+                           sys.executable, "analysis.py")
+        self.assertIn("repair --by", out["message"])
+        self.assertFalse((self.root / "out.csv").exists())
+        self.refused("ANALYSIS_LOG_TORN", "record", "--by", "Ana Ruiz", "--tool", "SPSS", "--outcome", "O1",
+                     "--output", "data/cohort.csv")
+        status = self.ok("status")
+        self.assertEqual(status["log"]["state"], "torn")
+        self.assertIn("ANALYSIS_LOG_TORN", [w["code"] for w in status["warnings"]])
+
+    def test_repair_moves_the_torn_tail_aside_records_it_and_logging_resumes(self) -> None:
+        before = self.tear()
+        self.refused("APPROVER_MISSING", "repair")
+        out = self.ok("repair", "--by", "Ana Ruiz")
+        repair = out["repair"]
+        self.assertEqual((repair["by"], repair["tail_bytes"], repair["tail_sha256"]),
+                         ("Ana Ruiz", len(self.TAIL), sha256(self.TAIL)))
+        self.assertEqual((self.root / repair["moved_to"]).read_bytes(), self.TAIL)
+        self.assertEqual((self.root / LOG).read_bytes(), before)
+        recorded = [json.loads(line) for line in
+                    (self.root / "analysis" / "repairs.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(recorded, [repair])
+        self.assertEqual(self.ok("status")["repairs"], 1)
+        self.assertEqual(self.run_analysis("O1")["seq"], 4)
+        self.refused("ANALYSIS_LOG_NOT_TORN", "repair", "--by", "Ana Ruiz")
+
+    def test_repair_never_touches_a_log_corrupt_before_its_tail(self) -> None:
+        self.run_analysis("O1")
+        log = self.root / LOG
+        log.write_bytes(b"{edited\n" + log.read_bytes() + self.TAIL)
+        damaged = log.read_bytes()
+        self.refused("ANALYSIS_LOG_CORRUPT", "repair", "--by", "Ana Ruiz")
+        self.assertEqual(log.read_bytes(), damaged)
+        self.assertFalse((self.root / "analysis" / "repairs.jsonl").exists())
+
+    def test_a_complete_final_line_without_its_newline_is_kept_and_the_next_append_starts_a_new_line(self) -> None:
+        self.run_analysis("O1")
+        log = self.root / LOG
+        log.write_bytes(log.read_bytes().rstrip(b"\n"))
+        self.run_analysis("O2")
+        self.assertEqual([e["seq"] for e in self.log_lines()], [1, 2, 3, 4])
 
 
 class AttestedRecordTests(AnalysisWorkspace):

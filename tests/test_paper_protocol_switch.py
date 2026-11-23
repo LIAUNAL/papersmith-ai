@@ -229,6 +229,77 @@ class AdvisoryTests(_Workspace):
         self.assertEqual(self.report["clean"], self.baseline["clean"])
 
 
+class StudyModuleUnavailableTests(_Workspace):
+    """`verify` in a study workspace whose kit lacks `skills/_core/empirical` (or whose module
+    raises) reports the study checks unmeasured instead of dropping them."""
+
+    def verify_in_process(self) -> dict:
+        import argparse
+        import importlib
+        sys.path.insert(0, str(SCRIPTS))
+        paper_cli = importlib.import_module("paper_cli")
+        return paper_cli.cmd_verify(argparse.Namespace(paper=str(self.paper_dir), sections=str(self.sections_dir)))
+
+    def assert_unmeasured(self, report: dict, fragment: str) -> None:
+        self.assertEqual([entry["check"] for entry in report["study"]], STUDY_CHECKS)
+        for entry in report["study"]:
+            self.assertEqual((entry["verdict"], entry["unmeasured_reason"]), ("unmeasured", "CHECK_FAILED"))
+            self.assertIn(fragment, entry["evidence"]["unavailable"])
+
+    def test_a_missing_module_is_reported_unmeasured_in_a_study_workspace(self) -> None:
+        self.locked()
+        self.declare_outcomes("primary: O2 body weight")
+        sys.path.insert(0, str(SCRIPTS))
+        import paper_cli
+        saved = paper_cli.ANALYSIS_LOG
+        self.addCleanup(setattr, paper_cli, "ANALYSIS_LOG", saved)
+        paper_cli.ANALYSIS_LOG = self.root / "absent" / "analysis_log.py"
+        self.assert_unmeasured(self.verify_in_process(), "not shipped")
+
+    def test_a_module_that_raises_is_reported_unmeasured_in_a_study_workspace(self) -> None:
+        self.locked()
+        sys.path.insert(0, str(SCRIPTS))
+        import paper_cli  # noqa: F401 -- loads the kit path the study module is imported from
+
+        class Broken:
+            @staticmethod
+            def manuscript_inputs(_root):
+                raise RuntimeError("boom")
+
+        name = "skills._core.empirical.analysis_log"
+        saved = sys.modules.get(name)
+        self.addCleanup(lambda: sys.modules.__setitem__(name, saved) if saved else sys.modules.pop(name, None))
+        sys.modules[name] = Broken  # type: ignore[assignment]
+        self.assert_unmeasured(self.verify_in_process(), "RuntimeError: boom")
+
+    def test_a_workspace_that_is_not_a_study_stays_without_a_study_key(self) -> None:
+        sys.path.insert(0, str(SCRIPTS))
+        import paper_cli
+        saved = paper_cli.ANALYSIS_LOG
+        self.addCleanup(setattr, paper_cli, "ANALYSIS_LOG", saved)
+        paper_cli.ANALYSIS_LOG = self.root / "absent" / "analysis_log.py"
+        self.assertNotIn("study", self.verify_in_process())
+
+    def test_a_torn_analysis_log_is_unmeasured_like_a_corrupt_one(self) -> None:
+        self.locked()
+        self.log("O1")
+        log = self.root / "analysis" / "log.jsonl"
+        log.write_bytes(log.read_bytes() + b'{"seq": 2')
+        entries = self.study_entries()
+        self.assertEqual(entries["outcome-not-in-protocol"]["unmeasured_reason"], "ANALYSIS_LOG_CORRUPT")
+
+
+class FactPrimaryTests(unittest.TestCase):
+    def test_the_outcomes_fact_names_its_primary_in_the_singular_plural_or_lower_case(self) -> None:
+        sys.path.insert(0, str(SCRIPTS))
+        import paper_coherence
+        for fact, expected in (("primary: O1", ["O1"]), ("Primary outcome: O2; secondary: O1", ["O2"]),
+                               ("Primary outcomes: O2", ["O2"]), ("primary outcomes - o3", ["O3"]),
+                               ("secondary: O2", [])):
+            with self.subTest(fact=fact):
+                self.assertEqual(paper_coherence.fact_primary(fact), expected)
+
+
 class RosterTests(unittest.TestCase):
     def test_paper_verify_registers_the_same_study_roster(self) -> None:
         sys.path.insert(0, str(SCRIPTS))

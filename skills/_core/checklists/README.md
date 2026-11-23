@@ -50,7 +50,10 @@ subprocesses once `paper/main.tex` exists. A block is written when its body is
 not empty (its digest differs from the empty body's); its text is the slice of
 `paper/main.tex` between its markers at the region `status` reports. Running
 the workspace's copy keeps the reader at the version the workspace writes with
-and imports nothing from paper-writing into this process.
+and imports nothing from paper-writing into this process. When `paper/main.tex`
+exists but `status` or `phases` fails (a crash, a timeout, output that is not
+JSON, a non-ok answer), the result's `notes` and each affected rule's `detail`
+name that failure instead of saying the paper is not scaffolded.
 
 A target is a section (`methods`, any of its blocks written) or a block
 (`methods.m-eligibility`). Targets are given per paper line
@@ -90,7 +93,7 @@ refuses a file with any problem (`GUIDELINE_INVALID`, every problem listed).
 | --- | --- | --- |
 | `text` (implicit) | the item's `targets` | every target holds text |
 | `file` | `path` | the file exists |
-| `record` | `path`, optional `pointer` or `field` + `values` | the JSON document (or the JSONL rows) exists and is not empty; with `pointer` (dotted, list indices as digits) the value there is not empty; with `field`/`values` the rows' `field` takes every listed value |
+| `record` | `path`, optional `pointer` or `field` + `values` | the JSON document (or the JSONL rows) exists and is not empty; with `pointer` (dotted, list indices as digits) the value there is not empty; with `field`/`values` (a non-empty list of strings or numbers) the rows' `field` takes every listed value |
 | `declaration` | `name` | paper-writing records that declaration |
 | `command` | `script`, `argv`, `expect` | the workspace's `script` (a `.py` under `skills/`), run with `argv` (`{root}` becomes the workspace path), prints a JSON object whose keys equal `expect` (reuses a skill's own validator, e.g. `review_cli.py protocol check`) |
 | `number` | `path`, `pointer`, optional `in` | the number the JSON record holds at `pointer` appears in the text (`1,234`, `1{,}234` and `1234` are equal) |

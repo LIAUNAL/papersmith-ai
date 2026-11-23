@@ -168,7 +168,9 @@ def cmd_protocol(args, root: Path) -> dict:
                                                       "`protocol approve --by <name>` comes first")
         revision = _revision(root, args.revision)
         digest = records.sha256(root / revision)
-        if digest == lock["sha256"]:
+        # A newer revision whose bytes equal the locked one is still a move forward
+        # (protocol_state reports it as newer-revision until the lock follows it).
+        if digest == lock["sha256"] and revision == lock["revision"]:
             raise StudyError("PROTOCOL_UNCHANGED", f"{revision} is the approved protocol, unchanged since its approval")
         if (records.revision_version(revision) or 0) < (records.revision_version(lock["revision"]) or 0):
             raise StudyError("REVISION_OLDER", f"{revision} is older than the locked {lock['revision']}; an amendment "

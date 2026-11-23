@@ -20,7 +20,8 @@ flow's validity, the figure (absent, current, stale) and the latest sign-off
 
 Each verb prints one JSON object. A refusal prints ``{"ok": false, "error":
 <CODE>, "message": ...}`` and exits 1 (usage errors exit 2). Refusal codes:
-``USAGE``, ``TEMPLATE_UNKNOWN``, ``ARMS_NOT_APPLICABLE``, ``FLOW_EXISTS``,
+``USAGE``, ``TEMPLATE_UNKNOWN``, ``ARMS_NOT_APPLICABLE``, ``BRANCHES_INVALID``,
+``TEXT_INVALID`` (`template` arms checked as `check` does), ``FLOW_EXISTS``,
 ``FLOW_ABSENT``, ``FLOW_UNREADABLE``, ``FLOW_INVALID`` (with ``problems``),
 ``FIGURE_ABSENT``, ``FIGURE_STALE``, ``OPERATOR_ABSENT``, ``SIGNOFF_UNCHANGED``,
 ``SIGNOFFS_CORRUPT``.

@@ -42,7 +42,8 @@ an agent never enters, derives or fills a count, and never signs.
 ```
 
 - `branches` (CONSORT only): the arms, 2 to 6 distinct names chosen by the
-  operator. STARD's branches are fixed (`positive`, `negative`, `inconclusive`).
+  operator; `template --arm` refuses other names (`BRANCHES_INVALID`,
+  `TEXT_INVALID`) before printing or writing anything. STARD's branches are fixed (`positive`, `negative`, `inconclusive`).
 - A stage holds `n` and its reason groups; a split stage holds
   `{"branches": {<branch>: {...}}}`.
 - A reason group is a list of `{"reason": <text>, "n": <count>}`. STARD's
@@ -62,7 +63,7 @@ an agent never enters, derives or fills a count, and never signs.
 | people reported but kept (did not receive, discontinued) are at most the stage's count | `NOTE_EXCEEDS_COUNT` |
 | reference standard results sum to the branch's count | `PARTITION_MISMATCH` |
 | every count is a non-negative whole number, entered | `COUNT_INVALID`, `COUNT_MISSING` |
-| every reason is named once, without control characters | `REASON_MISSING`, `REASON_DUPLICATE`, `TEXT_INVALID` |
+| every reason and arm name is named once, without control characters or other characters XML 1.0 forbids (surrogates, U+FFFE, U+FFFF) | `REASON_MISSING`, `REASON_DUPLICATE`, `TEXT_INVALID` |
 | the stages, keys, arms and basis are the template's | `SCHEMA_INVALID`, `TEMPLATE_UNKNOWN`, `BRANCHES_INVALID`, `BRANCH_MISMATCH`, `BASIS_INVALID` |
 
 Each problem is `{"code", "where", "message"}`, `where` being a path such as

@@ -178,6 +178,17 @@ class ProtocolLockTests(StudyWorkspace):
                      "--revision", "protocol/study-protocol-walking-v01.md")
         self.assertEqual(len(self.lock()["amendments"]), 1)
 
+    def test_amend_moves_the_lock_to_a_newer_revision_with_identical_bytes(self) -> None:
+        first = self.approved()
+        newer = first.with_name("study-protocol-walking-v02.md")
+        newer.write_bytes(first.read_bytes())
+        self.assertEqual(self.ok("protocol", "status")["protocol"]["reasons"], ["newer-revision"])
+        out = self.ok("protocol", "amend", "--by", "Ana Ruiz", "--reason", "republished without changes")
+        self.assertEqual(out["approval"]["revision"], "protocol/study-protocol-walking-v02.md")
+        self.assertEqual(self.lock()["amendments"][-1]["from_revision"], "protocol/study-protocol-walking-v01.md")
+        self.assertEqual(self.ok("protocol", "status")["protocol"]["state"], "current")
+        self.refused("PROTOCOL_UNCHANGED", "protocol", "amend", "--by", "Ana Ruiz", "--reason", "again")
+
     def test_amend_records_a_hand_edit_of_the_locked_revision(self) -> None:
         path = self.approved()
         path.write_text(path.read_text(encoding="utf-8") + "typo fixed\n", encoding="utf-8")

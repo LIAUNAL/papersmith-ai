@@ -106,6 +106,10 @@ class WorkspaceState:
     declarations: set[str]
     sections: dict[str, set[str]]
     notes: list[str] = field(default_factory=list)
+    #: Why the block reader failed on a scaffolded paper (``None``: it did not fail).
+    paper_error: str | None = None
+    #: Why the declaration reader failed (``None``: it did not fail).
+    declarations_error: str | None = None
 
 
 # --------------------------------------------------------------------------- data files
@@ -145,6 +149,11 @@ def _rule_problems(where: str, rule) -> list[str]:
             problems.append(f"{where}: term rule 'any' must be a non-empty list of terms")
     if kind == "record" and ("field" in rule) != ("values" in rule):
         problems.append(f"{where}: record rule takes 'field' and 'values' together")
+    if kind == "record" and "values" in rule:
+        values = rule["values"]
+        if (not isinstance(values, list) or not values
+                or not all(isinstance(v, (str, int, float)) and not isinstance(v, bool) for v in values)):
+            problems.append(f"{where}: record rule 'values' must be a non-empty list of strings or numbers")
     for key in ("pointer", "field", "name"):
         if key in rule and (not isinstance(rule[key], str) or not rule[key].strip()):
             problems.append(f"{where}: {key} must be a non-empty string")
@@ -272,19 +281,36 @@ def paper_line(root: Path) -> str:
     return kind if isinstance(kind, str) and kind else DEFAULT_LINE
 
 
-def _paper_cli(root: Path, verb: str) -> dict | None:
-    """``review_cli._paper_cli``'s contract: the workspace's own paper_cli,
-    only once ``paper/main.tex`` exists, an ``ok`` payload or ``None``."""
-    cli = root / "skills" / "paper-writing" / "scripts" / "paper_cli.py"
-    if not cli.is_file() or not (root / "paper" / "main.tex").is_file():
-        return None
+_PAPER_CLI = Path("skills") / "paper-writing" / "scripts" / "paper_cli.py"
+
+
+def _paper_cli(root: Path, verb: str) -> tuple[dict | None, str | None]:
+    """``review_cli._paper_cli``'s contract, copied rather than imported
+    (review_cli is a workspace skill script; ``PrismaParityTests`` pins the
+    two together): the workspace's own paper_cli, run only once
+    ``paper/main.tex`` exists.
+
+    Answers ``(payload, None)`` for an ``ok`` payload, ``(None, None)`` when
+    the paper is not scaffolded, and ``(None, reason)`` when the reader failed
+    on a scaffolded paper (crash, timeout, output that is not JSON, a non-ok
+    answer), so a failure is never reported as "not scaffolded"."""
+    if not (root / _PAPER_CLI).is_file() or not (root / "paper" / "main.tex").is_file():
+        return None, None
     try:
-        completed = subprocess.run([sys.executable, str(cli), verb], cwd=root, capture_output=True,
+        completed = subprocess.run([sys.executable, str(root / _PAPER_CLI), verb], cwd=root, capture_output=True,
                                    text=True, timeout=COMMAND_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"paper_cli.py {verb} failed ({type(exc).__name__}: {exc})"
+    try:
         payload = json.loads(completed.stdout)
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-    return payload if isinstance(payload, dict) and payload.get("status") == "ok" else None
+    except ValueError:
+        tail = (completed.stderr or completed.stdout).strip().splitlines()[-1:] or [""]
+        return None, (f"paper_cli.py {verb} failed (exit {completed.returncode}, output is not JSON"
+                      + (f": {tail[0][:160]}" if tail[0] else "") + ")")
+    if not isinstance(payload, dict) or payload.get("status") != "ok":
+        why = (payload.get("message") or payload.get("error")) if isinstance(payload, dict) else None
+        return None, f"paper_cli.py {verb} failed (not an ok answer" + (f": {str(why)[:160]}" if why else "") + ")"
+    return payload, None
 
 
 def _block_body(region: bytes) -> str:
@@ -305,8 +331,9 @@ def contract_sections(root: Path) -> dict[str, set[str]]:
         except (OSError, ValueError):
             continue
         section = head.get("section") if isinstance(head, dict) else None
-        if isinstance(section, str):
-            blocks = {b.get("id") for b in head.get("blocks", []) if isinstance(b, dict) and isinstance(b.get("id"), str)}
+        listed = head.get("blocks", []) if isinstance(head, dict) else []
+        if isinstance(section, str) and isinstance(listed, list):
+            blocks = {b.get("id") for b in listed if isinstance(b, dict) and isinstance(b.get("id"), str)}
             sections.setdefault(section, set()).update(blocks)
     return sections
 
@@ -318,18 +345,24 @@ def read_workspace(root: Path) -> WorkspaceState:
     notes: list[str] = []
     blocks: dict[str, str] = {}
     declarations: set[str] = set()
-    status = _paper_cli(root, "status")
-    if status is None:
+    declarations_error = None
+    status, paper_error = _paper_cli(root, "status")
+    if paper_error:
+        notes.append(f"{paper_error}; the blocks of paper/main.tex could not be read")
+    elif status is None:
         notes.append("paper/main.tex is not scaffolded yet (`/paper-writing`), so every item still owes its text")
     else:
         data = (root / "paper" / "main.tex").read_bytes()
         for block in status.get("blocks", []):
             start, end = block.get("region", [0, 0])
             blocks[block["id"]] = "" if block.get("digest") == _EMPTY_BODY else _block_body(data[start:end])
-        phases = _paper_cli(root, "phases") or {}
-        declarations = set((phases.get("declared") or {}).get("declarations") or [])
+        phases, declarations_error = _paper_cli(root, "phases")
+        if declarations_error:
+            notes.append(f"{declarations_error}; the recorded declarations could not be read")
+        declarations = set(((phases or {}).get("declared") or {}).get("declarations") or [])
     return WorkspaceState(root=root, line=paper_line(root), paper_available=status is not None, blocks=blocks,
-                          declarations=declarations, sections=contract_sections(root), notes=notes)
+                          declarations=declarations, sections=contract_sections(root), notes=notes,
+                          paper_error=paper_error, declarations_error=declarations_error)
 
 
 # --------------------------------------------------------------------------- predicates
@@ -361,7 +394,9 @@ def _check_target(state: WorkspaceState, target: str) -> dict:
         text for bid, text in state.blocks.items() if bid.startswith(section + "."))
     if written:
         return {**entry, "ok": True, "detail": "written"}
-    if not state.paper_available:
+    if state.paper_error:
+        detail = state.paper_error
+    elif not state.paper_available:
         detail = "paper/main.tex is not scaffolded yet"
     elif not known:
         what = f"no block '{target}'" if block else f"no section '{section}'"
@@ -469,7 +504,10 @@ _NUMBER_RE = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\w])|(?<![\w
 
 
 def numbers_in(text: str) -> list[float]:
-    text = text.replace("{,}", ",").replace("\\,", "").replace(" ", "").replace(" ", " ")
+    # Written as escapes on purpose: U+202F (narrow no-break space, a thousands
+    # separator) is deleted; U+00A0 (no-break space, between a number and its
+    # word) becomes a plain space so the trailing word boundary still matches.
+    text = text.replace("{,}", ",").replace("\\,", "").replace("\u202f", "").replace("\u00a0", " ")
     return [float(token.replace(",", "")) for token in _NUMBER_RE.findall(text)]
 
 
@@ -536,7 +574,7 @@ def _evaluate_item(entry: dict, state: WorkspaceState, cache: dict) -> dict:
             record.update(ok=ok, detail=detail)
         elif kind == "declaration":
             ok = rule["name"] in state.declarations
-            record.update(ok=ok, detail="recorded" if ok else
+            record.update(ok=ok, detail="recorded" if ok else state.declarations_error or state.paper_error or
                           f"`paper_cli.py declare --declaration {rule['name']}` has not been recorded")
         elif kind == "command":
             ok, detail = _command(state.root, rule, cache)

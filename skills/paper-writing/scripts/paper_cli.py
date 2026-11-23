@@ -1650,6 +1650,8 @@ def compute_observation(
     paper_declarations.validate_observation_report(report)
 
     measured = {}
+    structured_roots = {r.name for r in paper_declarations.FACT_SOURCE_ROOT.values()
+                        if r.kind is paper_declarations.SourceRootKind.STRUCTURED}
     for name, root in (
         ("proposals", proposals_dir), ("experiments", experiments_dir),
         ("implementation", implementation_dir),
@@ -1657,7 +1659,8 @@ def compute_observation(
         (paper_declarations.FACT_SOURCE_ROOT["participant-flow"].name, flow_path),
     ):
         if root is not None:
-            measured[name] = paper_declarations.source_available(root)
+            measured[name] = paper_declarations.source_available(
+                root, structured=name in structured_roots)
 
     disagreements = paper_declarations.reconcile_observation_report(report, measured)
     if disagreements:
@@ -3253,12 +3256,28 @@ def _scan_manuscript_language(main_tex_bytes: bytes) -> dict:
 ANALYSIS_LOG = Path(__file__).resolve().parents[2] / "_core" / "empirical" / "analysis_log.py"
 
 
+def _looks_like_study(root: Path) -> bool:
+    """A study workspace by its files alone (no empirical module needed): a
+    study-protocol revision, the protocol lock or the analysis log."""
+    try:
+        return (any((root / "protocol").glob("study-protocol-*.md"))
+                or (root / "study" / "protocol.lock.json").is_file()
+                or (root / "analysis" / "log.jsonl").is_file())
+    except OSError:
+        return False
+
+
 def _study_inputs(paper_dir: Path) -> dict | None:
     """`analysis_log.manuscript_inputs` of the workspace holding `paper_dir`:
-    None when the module is not shipped, cannot load, or the workspace has no
-    study protocol, so an applied-AI or review paper gets no study check."""
+    None when the workspace has no study protocol, so an applied-AI or review
+    paper gets no study check. In a study workspace whose kit does not ship the
+    module, or whose module fails to load or raises, `{"unavailable": <why>}`,
+    which `run_study` reports as unmeasured checks: the hard
+    primary-outcome-switch check never vanishes silently."""
+    root = Path(paper_dir).resolve().parent
     if not ANALYSIS_LOG.is_file():
-        return None
+        return ({"unavailable": "skills/_core/empirical/analysis_log.py is not shipped in this kit"}
+                if _looks_like_study(root) else None)
     try:
         import importlib  # noqa: PLC0415
 
@@ -3266,9 +3285,10 @@ def _study_inputs(paper_dir: Path) -> dict | None:
         if kit_root not in sys.path:
             sys.path.insert(0, kit_root)
         module = importlib.import_module("skills._core.empirical.analysis_log")
-        return module.manuscript_inputs(Path(paper_dir).resolve().parent)
-    except Exception:  # noqa: BLE001 - an advisory read never fails the verb
-        return None
+        return module.manuscript_inputs(root)
+    except Exception as exc:  # noqa: BLE001 - an advisory read never fails the verb
+        return ({"unavailable": f"the study module failed ({type(exc).__name__}: {exc})"[:300]}
+                if _looks_like_study(root) else None)
 
 
 def _outcomes_fact(paper_dir: Path) -> str | None:

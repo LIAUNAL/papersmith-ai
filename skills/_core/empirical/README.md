@@ -104,6 +104,7 @@ python skills/_core/empirical/analysis_cli.py run --outcome O1 [--plan primary-m
 python skills/_core/empirical/analysis_cli.py record --by "<operator>" --tool "SPSS 29" --outcome O2 \
     --input data/cohort.csv --output spss/glm.spv [--note "<text>"] --root .
 python skills/_core/empirical/analysis_cli.py status --root .
+python skills/_core/empirical/analysis_cli.py repair --by "<operator>" --root .
 ```
 
 - `run` hashes, before running, the script (`--script`, or the first
@@ -115,15 +116,33 @@ python skills/_core/empirical/analysis_cli.py status --root .
   duration, the sha256 of stdout and stderr (kept under
   `analysis/streams/<sha256>`) and of every `--output` (`null` when the run
   did not write it). It exits 0 once the entry is written, whatever the
-  command's exit code; `status` lists the failed runs.
+  command's exit code; `status` lists the failed runs. A run writes two
+  entries: `run-started` before the command (script, inputs, the outputs'
+  prior hashes, the command) and `run` after it (`started` names the
+  first), so a completing append that fails still leaves a trace; a command
+  that cannot start is refused (`COMMAND_NOT_FOUND`) before either. `run`
+  also writes `analysis/.gitignore` (`streams/`) when it is absent, so the
+  streams, which may hold participant-level values, are never committed; an
+  operator's own file is never overwritten, and a run warns
+  `STREAMS_NOT_IGNORED` while that file does not ignore them.
 - `record` is the operator's attested entry for an analysis run outside
   smith (SPSS, the R GUI): `--by`, `--tool` and at least one `--output` are
   required, and the entry carries `"attested": true`.
-- `status` reports the log (`absent`, `ok`, `corrupt`), the lock, the
-  protocol's outcomes and plan entries, the count per label, the failed runs
-  and the warnings `PROTOCOL_OUTCOME_NOT_ANALYSED`, `OUTCOME_NOT_IN_PROTOCOL`,
+- `repair --by` handles a torn final line, an append cut before its newline
+  (every verb refuses `ANALYSIS_LOG_TORN` until then): it moves those bytes
+  to `analysis/torn/<sha256>`, records the move (`by`, `at`, the tail's size
+  and sha256, where it went) in `analysis/repairs.jsonl`, and truncates the
+  log to its last complete entry. It refuses `ANALYSIS_LOG_NOT_TORN` when
+  the log ends with a complete entry and `ANALYSIS_LOG_CORRUPT`, changing
+  nothing, when an earlier line is damaged. A complete final entry that only
+  lacks its newline is kept; the next append starts a new line.
+- `status` reports the log (`absent`, `ok`, `corrupt`, `torn`), the lock, the
+  protocol's outcomes and plan entries, the count per label (`run` and
+  `record` entries; `run-started` markers are not analyses), the failed
+  runs, the interrupted runs (`interrupted_runs`, warning `RUN_INTERRUPTED`),
+  the number of repairs and the warnings `PROTOCOL_OUTCOME_NOT_ANALYSED`, `OUTCOME_NOT_IN_PROTOCOL`,
   `OUTCOME_ADDED_AFTER_ANALYSIS` (analysed as exploratory before an amendment
-  named it: a HARKing risk to report), `ANALYSIS_LOG_CORRUPT` and
+  named it: a HARKing risk to report), `ANALYSIS_LOG_CORRUPT`, `ANALYSIS_LOG_TORN` and
   `PROTOCOL_PARSER_UNAVAILABLE`.
 
 **The label is computed, never passed.** No flag sets it (an unknown or

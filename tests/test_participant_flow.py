@@ -167,6 +167,23 @@ class TemplateTests(FlowWorkspace):
         code, out = self.run_cli("template", "stard-2015", "--arm", "A")
         self.assertEqual((code, out["error"]), (1, "ARMS_NOT_APPLICABLE"))
 
+    def test_template_refuses_arms_that_check_would_reject(self) -> None:
+        cases = {
+            "one arm": (["Only"], "BRANCHES_INVALID"),
+            "seven arms": ([f"Arm {i}" for i in range(7)], "BRANCHES_INVALID"),
+            "a blank name": (["Drug", "  "], "BRANCHES_INVALID"),
+            "a duplicate": (["A", "A"], "BRANCHES_INVALID"),
+            "a control character": (["Drug\x07", "Control"], "TEXT_INVALID"),
+        }
+        for label, (arms, error) in cases.items():
+            with self.subTest(label):
+                argv = ["template", "consort-2025", "--write"]
+                for arm in arms:
+                    argv += ["--arm", arm]
+                code, out = self.run_cli(*argv)
+                self.assertEqual((code, out["ok"], out["error"]), (1, False, error))
+                self.assertFalse((self.root / "study" / "flow.json").exists(), "nothing is written")
+
     def test_write_saves_the_template_once_and_never_overwrites(self) -> None:
         code, out = self.run_cli("template", "strobe", "--write")
         self.assertEqual((code, out["ok"]), (0, True))
@@ -264,6 +281,29 @@ class ArithmeticTests(FlowWorkspace):
         flow = copy.deepcopy(CONSORT)
         flow["branches"] = ["Drug\x00", "Control"]
         self.assertEqual(self.codes(flow), {"TEXT_INVALID"})
+
+    def test_operator_text_holds_only_characters_xml_allows(self) -> None:
+        # json.dumps escapes a lone surrogate as \ud800, which JSON can carry.
+        for text in ("Did not ￾ meet", "Did not ￿ meet", "Did not \ud800 meet"):
+            with self.subTest(text=repr(text)):
+                flow = copy.deepcopy(STROBE)
+                flow["stages"]["eligible"]["excluded"][0]["reason"] = text
+                self.assertEqual(self.codes(flow), {"TEXT_INVALID"})
+                flow = copy.deepcopy(CONSORT)
+                flow["branches"] = [text, "Control"]
+                self.assertEqual(self.codes(flow), {"TEXT_INVALID"})
+
+    def test_a_template_or_basis_that_is_not_text_is_a_typed_problem(self) -> None:
+        for value in (["strobe"], {"id": "strobe"}):
+            with self.subTest(template=value):
+                flow = copy.deepcopy(STROBE)
+                flow["template"] = value
+                self.assertEqual(self.codes(flow), {"TEMPLATE_UNKNOWN"})
+        for value in (["follow_up"], {"stage": "follow_up"}):
+            with self.subTest(basis=value):
+                flow = copy.deepcopy(CONSORT)
+                flow["stages"]["analysed"]["basis"] = value
+                self.assertIn("BASIS_INVALID", self.codes(flow))
 
     def test_the_branches_of_a_split_stage_are_the_declared_arms(self) -> None:
         flow = copy.deepcopy(CONSORT)

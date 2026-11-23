@@ -6,6 +6,7 @@
     analysis_cli.py record --by <operator> --tool <name> --outcome <id> [--plan <entry>] \
         [--script <file>] [--input <file>]... --output <file> [--output <file>]... [--note <text>] --root .
     analysis_cli.py status --root .
+    analysis_cli.py repair --by <operator> --root .
 
 ``run`` wraps an analysis: before running it, it hashes the script (``--script``,
 or the first argument after the program that names a file in the workspace,
@@ -13,10 +14,16 @@ or the program itself when it is such a file), every ``--input`` (with the
 ``datasets`` QC hash when the input is a registered dataset file) and takes
 the protocol lock's sha256; it runs the command in the workspace root, then
 hashes its stdout, stderr (kept under ``analysis/streams/``) and every
-``--output``, and appends one entry to ``analysis/log.jsonl``. ``record``
+``--output``, and appends one entry to ``analysis/log.jsonl``. A ``run-started`` entry is appended before
+the command runs and the ``run`` entry after it, so a failed second append
+still leaves a trace. ``run`` writes ``analysis/.gitignore`` (``streams/``)
+when it is absent, never over the operator's file, and warns
+``STREAMS_NOT_IGNORED`` when that file does not ignore the streams. ``record``
 appends the operator's attested entry for an analysis run outside smith (a
 GUI tool such as SPSS or the R GUI). Decision D8 of
-``odd/tasks/paper-type-lines.md``.
+``odd/tasks/paper-type-lines.md``. ``repair --by`` moves a torn final line (an
+interrupted append) to ``analysis/torn/<sha256>`` and records the move in
+``analysis/repairs.jsonl``; it changes nothing else.
 
 No flag sets the label: each entry is ``confirmatory`` or ``exploratory`` as
 ``analysis_log.compute_label`` derives it (decision D7). The log is
@@ -29,7 +36,8 @@ exit 2). Refusal codes: ``USAGE``, ``APPROVER_MISSING``, ``FIELD_MISSING``,
 ``OUTCOME_INVALID``, ``PLAN_ENTRY_INVALID``, ``TEXT_INVALID``,
 ``PATH_OUTSIDE_WORKSPACE``, ``SCRIPT_ABSENT``, ``SCRIPT_NOT_FOUND``,
 ``INPUT_ABSENT``, ``OUTPUT_ABSENT``, ``OUTPUT_MISSING``, ``COMMAND_NOT_FOUND``,
-``ANALYSIS_LOG_CORRUPT``, ``PROTOCOL_PARSER_UNAVAILABLE``, ``INTERNAL_ERROR``.
+``ANALYSIS_LOG_CORRUPT``, ``ANALYSIS_LOG_TORN``, ``ANALYSIS_LOG_NOT_TORN``,
+``PROTOCOL_PARSER_UNAVAILABLE``, ``INTERNAL_ERROR``.
 """
 
 from __future__ import annotations
@@ -45,6 +53,7 @@ if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-p
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -145,14 +154,17 @@ def _append(root: Path, entry: dict) -> dict:
     with open(path, "a+b") as stream:
         if fcntl is not None:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        entries = analysis_log.read_log(root)
         stream.seek(0)
-        lines = [line for line in stream.read().split(b"\n") if line]
+        data = stream.read()
+        entries = analysis_log.parse_log(data)
+        lines = [line for line in data.split(b"\n") if line]
         seq = len(entries) + 1
         entry = {"schema": analysis_log.SCHEMA, "seq": seq, "id": f"A{seq:04d}", **entry,
                  "prev": analysis_log.sha256_bytes(lines[-1]) if lines else None}
         stream.seek(0, os.SEEK_END)
-        stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n")
+        # A complete last entry may lack its newline (a write cut right after it): start a new line.
+        lead = b"\n" if data and not data.endswith(b"\n") else b""
+        stream.write(lead + json.dumps(entry, ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n")
         stream.flush()
         os.fsync(stream.fileno())
     return entry
@@ -164,6 +176,35 @@ def _stream(root: Path, data: bytes) -> str:
     if not target.is_file():
         _atomic_write(target, data)
     return digest
+
+
+def _ignore_streams(root: Path) -> list[dict]:
+    """Write ``analysis/.gitignore`` ignoring the streams when it is absent; warn when the
+    operator's own file does not ignore them (it is never overwritten)."""
+    path = root / analysis_log.STREAMS_IGNORE
+    if not path.exists():
+        _atomic_write(path, b"streams/\n")
+        return []
+    try:
+        lines = {line.strip() for line in path.read_text(encoding="utf-8").splitlines()}
+    except (OSError, UnicodeDecodeError):
+        lines = set()
+    if lines & {"streams", "streams/", "/streams", "/streams/", "streams/*", "/streams/*"}:
+        return []
+    return [{"code": "STREAMS_NOT_IGNORED",
+             "message": f"{analysis_log.STREAMS_IGNORE} does not ignore streams/; the captured stdout and stderr "
+                        "may hold participant data: add `streams/` to it"}]
+
+
+def _launchable(root: Path, program: str) -> None:
+    """Refuse a command that cannot start before any entry is written."""
+    candidate = Path(program) if Path(program).is_absolute() else root / program
+    if os.sep in program or "/" in program:
+        found = candidate.is_file() and os.access(candidate, os.X_OK)
+    else:
+        found = shutil.which(program) is not None
+    if not found:
+        raise StudyError("COMMAND_NOT_FOUND", f"{program} cannot be run (not found or not executable)")
 
 
 def _labelled(root: Path, args) -> dict:
@@ -182,23 +223,36 @@ def cmd_run(args, root: Path) -> dict:
     head = _labelled(root, args)
     script = _script(root, args.script, command)
     inputs = _hashed(root, args.input, "INPUT_ABSENT", "--input")
-    for given in args.output:
-        _workspace_file(root, given, "OUTPUT_ABSENT", "--output", must_exist=False)
-    started, clock = _now(), time.perf_counter()
+    def hashed_outputs() -> list[dict]:
+        out = []
+        for given in args.output:
+            path, rel = _workspace_file(root, given, "OUTPUT_ABSENT", "--output", must_exist=False)
+            out.append({"path": rel, "sha256": records.sha256(path) if path.is_file() else None})
+        return out
+
+    prior = hashed_outputs()
+    _launchable(root, command[0])
+    warnings = _ignore_streams(root)
+    started = _now()
+    # Logged before the command runs: if the completing append fails, this entry still records the run.
+    opened = _append(root, {"kind": analysis_log.STARTED, "at": started, "attested": False, "by": None, "tool": None,
+                            **head, "script": script, "inputs": inputs, "outputs": prior, "command": command,
+                            "exit_code": None, "duration_s": None, "stdout_sha256": None, "stderr_sha256": None})
+    clock = time.perf_counter()
     try:
         proc = subprocess.run(command, cwd=str(root), capture_output=True, check=False)
     except (FileNotFoundError, PermissionError) as exc:
-        raise StudyError("COMMAND_NOT_FOUND", f"{command[0]} cannot be run ({exc.strerror or exc})") from None
+        raise StudyError("COMMAND_NOT_FOUND", f"{command[0]} cannot be run ({exc.strerror or exc}); "
+                                              f"{opened['id']} stays an interrupted run") from None
     duration = round(time.perf_counter() - clock, 3)
-    outputs = []
-    for given in args.output:
-        path, rel = _workspace_file(root, given, "OUTPUT_ABSENT", "--output", must_exist=False)
-        outputs.append({"path": rel, "sha256": records.sha256(path) if path.is_file() else None})
     entry = _append(root, {"kind": "run", "at": started, "attested": False, "by": None, "tool": None, **head,
-                           "script": script, "inputs": inputs, "outputs": outputs, "command": command,
-                           "exit_code": proc.returncode, "duration_s": duration,
+                           "script": script, "inputs": inputs, "outputs": hashed_outputs(), "command": command,
+                           "exit_code": proc.returncode, "duration_s": duration, "started": opened["id"],
                            "stdout_sha256": _stream(root, proc.stdout), "stderr_sha256": _stream(root, proc.stderr)})
-    return {"ok": True, "path": analysis_log.LOG_PATH, "entry": entry}
+    result = {"ok": True, "path": analysis_log.LOG_PATH, "entry": entry}
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def cmd_record(args, root: Path) -> dict:
@@ -222,6 +276,40 @@ def cmd_status(args, root: Path) -> dict:
     return {"ok": True, **analysis_log.status(root)}
 
 
+def cmd_repair(args, root: Path) -> dict:
+    """Move a torn final line (an interrupted append) aside, record the move, keep every entry."""
+    by = _operator(args)
+    path = root / analysis_log.LOG_PATH
+    if not path.is_file():
+        raise StudyError("ANALYSIS_LOG_NOT_TORN", f"{analysis_log.LOG_PATH} does not exist; there is nothing to repair")
+    with open(path, "r+b") as stream:
+        if fcntl is not None:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        data = stream.read()
+        tail = analysis_log.torn_tail(data)
+        if not tail:
+            analysis_log.parse_log(data)  # a corrupt log keeps its own refusal
+            raise StudyError("ANALYSIS_LOG_NOT_TORN", f"{analysis_log.LOG_PATH} ends with a complete entry; "
+                                                      "there is no torn line to repair")
+        kept = data[:len(data) - len(tail)]
+        entries = analysis_log.parse_log(kept)  # refuses ANALYSIS_LOG_CORRUPT, changing nothing
+        digest = analysis_log.sha256_bytes(tail)
+        moved = f"{analysis_log.TORN_DIR}/{digest}"
+        if not (root / moved).is_file():
+            _atomic_write(root / moved, tail)  # the bytes are kept before the log changes
+        repair = {"at": _now(), "by": by, "log": analysis_log.LOG_PATH, "log_bytes_before": len(data),
+                  "tail_bytes": len(tail), "tail_sha256": digest, "moved_to": moved, "entries_kept": len(entries)}
+        repairs = root / analysis_log.REPAIRS_PATH
+        with open(repairs, "ab") as record:
+            record.write(json.dumps(repair, ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n")
+            record.flush()
+            os.fsync(record.fileno())
+        stream.truncate(len(kept))
+        stream.flush()
+        os.fsync(stream.fileno())
+    return {"ok": True, "path": analysis_log.LOG_PATH, "repair": repair}
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     command: list[str] = []
@@ -231,12 +319,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = _Parser(prog="analysis_cli.py", description="The labelled analysis log of an empirical study.",
                      allow_abbrev=False)
     sub = parser.add_subparsers(dest="verb", required=True)
-    verbs = {"run": cmd_run, "record": cmd_record, "status": cmd_status}
+    verbs = {"run": cmd_run, "record": cmd_record, "status": cmd_status, "repair": cmd_repair}
     for name in verbs:
         verb = sub.add_parser(name, allow_abbrev=False)
         verb.error = parser.error  # type: ignore[method-assign]
         verb.add_argument("--root", default=".")
-        if name == "status":
+        if name == "repair":
+            verb.add_argument("--by", default="")
+        if name in ("status", "repair"):
             continue
         verb.add_argument("--outcome", required=True)
         verb.add_argument("--plan", default=None)

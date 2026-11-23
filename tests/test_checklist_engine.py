@@ -130,6 +130,17 @@ class GuidelineDataTests(unittest.TestCase):
                          "'../outside' is not a relative", "script must be a .py file under skills/"):
             self.assertIn(fragment, problems)
 
+    def test_record_values_must_be_a_list_of_scalars(self):
+        for values in (3, "abc", [], [["nested"]], None):
+            with self.subTest(values=values):
+                bad = guideline(item(evidence=[{"kind": "record", "path": "r.jsonl", "field": "kind",
+                                                "values": values}]))
+                problems = "\n".join(engine.validate_guideline(bad))
+                self.assertIn("record rule 'values' must be a non-empty list", problems)
+        good = guideline(item(evidence=[{"kind": "record", "path": "r.jsonl", "field": "kind",
+                                         "values": ["a", 2]}]))
+        self.assertEqual(engine.validate_guideline(good), [])
+
     def test_an_invalid_data_file_is_refused_when_loaded(self):
         tmp = new_tmp(self)
         (tmp / "broken.json").write_text(json.dumps(guideline(item(1, question=None))), encoding="utf-8")
@@ -270,6 +281,130 @@ class PredicateTests(unittest.TestCase):
         result = self.evaluate(item(), state(self.root, blocks={}, sections={}, available=False))
         self.assertEqual(result["missing"], ["text:methods.m-a"])
         self.assertIn("paper/main.tex is not scaffolded", result["evidence"][0]["detail"])
+
+
+class ShippedContentRuleTests(unittest.TestCase):
+    """Every term rule the STROBE and STARD data ship, against one passing and
+    one failing realistic sentence (the README's procedure for content rules)."""
+
+    CASES = {
+        ("strobe", 1): ("title-and-keywords.title",
+                        ["Sleep and blood pressure in older adults: a population-based cohort study",
+                         "Smoking and asthma: a Case-Control study", "A cross sectional survey of nurses"],
+                        ["Sleep and blood pressure in older adults: an observational report"]),
+        ("strobe", 4): ("methods.design",
+                        ["We conducted a prospective cohort study in three regions.",
+                         "This cross-sectional study used a household survey."],
+                        ["We enrolled adults from three regions between 2019 and 2021."]),
+        ("strobe", 16): ("results.main",
+                         ["The adjusted odds ratio was 1.8 (95% CI 1.2 to 2.6).",
+                          "The hazard ratio was 0.7 (CI: 0.5-0.9).", "a 95% confidence interval of 1.1 to 2.0"],
+                         ["The adjusted odds ratio was 1.8 (SD 0.4) among circulating CIRCA samples.",
+                          "The CIs overlapped in every stratum."]),
+        ("stard-2015", 1): ("title-and-keywords.title",
+                            ["Sensitivity and specificity of a rapid antigen test for influenza",
+                             "Diagnostic accuracy of point-of-care ultrasound (AUC 0.91)"],
+                            ["A rapid antigen test for influenza in primary care"]),
+        ("stard-2015", 5): ("methods.design",
+                            ["Data were collected prospectively at two hospitals.",
+                             "This retrospective study reviewed the 2020 records."],
+                            ["Data were collected at two hospitals."]),
+        ("stard-2015", 9): ("methods.sampling",
+                            ["Consecutive patients presenting with chest pain were invited.",
+                             "Participants were randomly selected from the register."],
+                            ["Patients presenting with chest pain were invited."]),
+        ("stard-2015", 24): ("results.accuracy",
+                             ["Sensitivity was 0.91 (95% CI 0.85 to 0.95)."],
+                             ["Sensitivity was 0.91 and specificity 0.88."]),
+    }
+
+    def test_every_shipped_term_rule_passes_and_fails_on_realistic_text(self):
+        root = new_tmp(self)
+        shipped = {(gid, entry["number"]) for gid in ("strobe", "stard-2015")
+                   for entry in engine.load_guideline(gid)["items"] if entry.get("evidence")}
+        self.assertEqual(shipped, set(self.CASES), "every shipped content rule has a case")
+        for (gid, number), (block, passing, failing) in self.CASES.items():
+            data = engine.load_guideline(gid)
+            entry = next(e for e in data["items"] if e["number"] == number)
+            only = guideline(entry, id=gid)
+            # Every other target holds neutral text, so only the case's sentence decides the term rule.
+            filler = {f"{target}.filler": "Neutral text." for target in entry["targets"]["default"]}
+            for text in passing:
+                with self.subTest(gid=gid, item=number, passing=text):
+                    result = one(engine.evaluate(only, state(root, blocks={**filler, block: text})))
+                    self.assertEqual(result["presence"], "satisfied")
+                    self.assertEqual(result["status"], "needs-judgment" if "question" in entry else "satisfied")
+            for text in failing:
+                with self.subTest(gid=gid, item=number, failing=text):
+                    result = one(engine.evaluate(only, state(root, blocks={**filler, block: text})))
+                    self.assertEqual(result["status"], "missing")
+                    self.assertTrue(any(m.startswith("term:") for m in result["missing"]), result)
+
+
+class WorkspaceReadingTests(unittest.TestCase):
+    """read_workspace tells a paper that is not scaffolded from a block reader that failed."""
+
+    def workspace(self, status: str | None, phases: str | None) -> Path:
+        root = new_tmp(self)
+        (root / ".papersmith").mkdir()
+        (root / "paper").mkdir()
+        (root / "paper" / "main.tex").write_text("\\documentclass{article}\n", encoding="utf-8")
+        script = root / "skills" / "paper-writing" / "scripts" / "paper_cli.py"
+        script.parent.mkdir(parents=True)
+        script.write_text(
+            "import sys\n"
+            f"answers = {{'status': {status!r}, 'phases': {phases!r}}}\n"
+            "answer = answers.get(sys.argv[1])\n"
+            "if answer is None:\n"
+            "    sys.stderr.write('Traceback: boom\\n')\n"
+            "    raise SystemExit(1)\n"
+            "print(answer)\n", encoding="utf-8")
+        return root
+
+    def test_a_failing_status_reader_is_named_not_reported_as_unscaffolded(self):
+        for label, answer in (("crash", None), ("not json", "garbage"),
+                              ("refusal", '{"status": "error", "message": "lock held"}')):
+            with self.subTest(label):
+                ws = engine.read_workspace(self.workspace(answer, None))
+                self.assertFalse(ws.paper_available)
+                notes = " ".join(ws.notes)
+                self.assertNotIn("not scaffolded", notes)
+                self.assertIn("paper_cli.py status failed", notes)
+                result = one(engine.evaluate(guideline(item()), ws))
+                self.assertEqual(result["status"], "missing")
+                self.assertIn("paper_cli.py status failed", result["evidence"][0]["detail"])
+                self.assertNotIn("not scaffolded", result["evidence"][0]["detail"])
+
+    def test_a_failing_phases_reader_is_named_on_declaration_rules(self):
+        ws = engine.read_workspace(self.workspace('{"status": "ok", "blocks": []}', None))
+        self.assertTrue(ws.paper_available)
+        self.assertIn("paper_cli.py phases failed", " ".join(ws.notes))
+        result = one(engine.evaluate(guideline(item(evidence=[{"kind": "declaration", "name": "funding"}])), ws))
+        detail = result["evidence"][1]["detail"]
+        self.assertIn("paper_cli.py phases failed", detail)
+        self.assertNotIn("has not been recorded", detail)
+
+    def test_an_unscaffolded_paper_still_says_so(self):
+        root = new_tmp(self)
+        (root / ".papersmith").mkdir()
+        ws = engine.read_workspace(root)
+        self.assertIn("not scaffolded", " ".join(ws.notes))
+
+    def test_a_contract_whose_blocks_are_not_a_list_is_skipped(self):
+        root = new_tmp(self)
+        (root / ".papersmith").mkdir()
+        (root / "sections").mkdir()
+        (root / "sections" / "methods.md").write_text('---\n{"section": "methods", "blocks": null}\n---\nBody\n',
+                                                      encoding="utf-8")
+        (root / "sections" / "results.md").write_text(
+            '---\n{"section": "results", "blocks": [{"id": "r-a"}]}\n---\nBody\n', encoding="utf-8")
+        ws = engine.read_workspace(root)
+        self.assertEqual(ws.sections, {"results": {"r-a"}})
+
+    def test_number_separators_are_read_as_the_text_writes_them(self):
+        # U+202F (narrow no-break space) separates thousands; U+00A0 separates a number from its word.
+        self.assertEqual(engine.numbers_in("1\u202f234 records"), [1234.0])
+        self.assertEqual(engine.numbers_in("4\u00a0records and 1{,}234 reports"), [4.0, 1234.0])
 
 
 # --------------------------------------------------------------------------- workspaces

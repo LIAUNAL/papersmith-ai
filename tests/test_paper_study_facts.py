@@ -173,6 +173,38 @@ class StudyFactStalenessTests(_CliFixture):
         self.assertEqual(sorted(self.stale()), ["participant-flow"])
 
 
+class StudyFlowDigestRobustnessTests(_CliFixture):
+    def test_valid_json_the_flow_hash_cannot_encode_still_records_a_basis(self) -> None:
+        # A lone surrogate is valid JSON (an escaped code unit) but not encodable as UTF-8,
+        # and a deeply nested array exhausts the JSON parser's recursion.
+        for label, text in (("lone surrogate", '{"schema": 1, "template": "strobe", "note": "\\ud800"}'),
+                            ("deep nesting", "[" * 100000 + "]" * 100000),
+                            ("a list", "[1, 2, 3]"), ("a number", "7")):
+            with self.subTest(label):
+                self.write(FLOW, text)
+                self.declare("--reopen", "participant-flow")
+                self.declare("--fact", "participant-flow", "--value", f"flow {label}")
+                code, payload, stderr = self.run_cli("plan", "--paper", str(self.paper_dir),
+                                                     "--sections", str(self.sections_dir))
+                self.assertEqual(code, 0, stderr or payload)
+                record = {r["id"]: r for r in payload["declarations"]["records"]}["participant-flow"]
+                self.assertRegex(record["basis"].get(FLOW, ""), r"^[0-9a-f]{64}$")
+                self.assertEqual(self.stale(), {})
+
+    def test_without_the_flow_module_the_basis_falls_back_to_the_bytes(self) -> None:
+        cache = list(paper_declarations._flow_model_cache)
+        self.addCleanup(lambda: paper_declarations._flow_model_cache.__setitem__(slice(None), cache))
+        paper_declarations._flow_model_cache[:] = [None]  # a kit without skills/_core/participant_flow
+        flow = self.root / FLOW
+        basis = paper_declarations.source_basis(self.root, "participant-flow")
+        import hashlib
+        self.assertEqual(basis, {FLOW: hashlib.sha256(flow.read_bytes()).hexdigest()})
+        changed = json.loads(json.dumps(self.flow))
+        changed["stages"]["potentially_eligible"]["n"] = 412
+        self.write(FLOW, json.dumps(changed))
+        self.assertNotEqual(paper_declarations.source_basis(self.root, "participant-flow"), basis)
+
+
 class StudySourceRootTests(_CliFixture):
     def test_the_protocol_revisions_take_the_revisions_marker(self) -> None:
         code, payload, stderr = self.run_cli(
@@ -219,6 +251,20 @@ class StudySourceRootTests(_CliFixture):
         )
         self.assertNotEqual(code, 0)
         self.assertEqual(payload["code"], "OBSERVATION_DISK_CONFLICT")
+
+    def test_a_file_counts_as_available_only_for_the_structured_flow_root(self) -> None:
+        # Baseline: a file passed to a directory root (--proposals, --experiments,
+        # --implementation) measured unavailable, so no disagreement arises.
+        report = self.root / "report.json"
+        stray = self.root / "notes.txt"
+        stray.write_text("not a folder\n", encoding="utf-8")
+        for flag, fact in (("--proposals", "formulation"), ("--experiments", "experimental-design"),
+                           ("--implementation", "implementation")):
+            with self.subTest(flag):
+                report.write_text(json.dumps({fact: {"satisfied": False, "evidence": []}}), encoding="utf-8")
+                code, payload, stderr = self.run_cli("observe", "--report", str(report), flag, str(stray))
+                self.assertNotEqual(payload.get("code"), "OBSERVATION_DISK_CONFLICT", stderr or payload)
+                self.assertEqual(code, 0, stderr or payload)
 
 
 if __name__ == "__main__":

@@ -85,7 +85,7 @@ Public surface:
         (`mark revisions`'s own engine; design.md Decision F)
     resolve_ingested_document(evidence_dir, lineage) -> Path  (pure disk read;
         the INGESTED-kind counterpart to resolve_lineage above)
-    source_available(root) -> bool  (pure disk measurement; gitignore-blind, `Path.iterdir()`)
+    source_available(root, *, structured=False) -> bool  (pure disk measurement; gitignore-blind, `Path.iterdir()`)
     reconcile_observation_report(report, measured) -> list[dict]  (pure; every
         disagreement between the agent's account and a real disk measurement)
 """
@@ -408,7 +408,11 @@ def _structured_digest(base: Path, root) -> str | None:
     re-stamped but unchanged record is no change); the sha256 of its bytes when
     it is not valid JSON, so a broken record is a change too; the sha256 of
     nothing when it is absent, so a record that appears later is a change.
-    None when it cannot be read, exceeds the bounds, or no module owns it."""
+    The sha256 of its bytes also when no module owns it (a kit without
+    `_core/participant_flow`: every byte change, a re-stamp included, then
+    counts as a change, never silently none) and when the module cannot hash
+    what was parsed (a lone surrogate, nesting deeper than the parser allows).
+    None when it cannot be read or exceeds the bounds."""
     path = base / root.name
     if not path.exists():
         return hashlib.sha256().hexdigest()
@@ -420,12 +424,11 @@ def _structured_digest(base: Path, root) -> str | None:
         return None
     model = _flow_model()
     if model is None:
-        return None
-    try:
-        record = json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
         return hashlib.sha256(data).hexdigest()
-    return model.flow_sha256(record)
+    try:
+        return model.flow_sha256(json.loads(data.decode("utf-8")))
+    except (ValueError, TypeError, RecursionError):  # UnicodeError and JSONDecodeError are ValueErrors
+        return hashlib.sha256(data).hexdigest()
 
 
 def _root_digest(base: Path, root) -> str | None:
@@ -2145,7 +2148,7 @@ def is_bindable_fact(fact_id: str) -> bool:
     return fact_id in FACT_SOURCE_ROOT
 
 
-def source_available(root: Path) -> bool:
+def source_available(root: Path, *, structured: bool = False) -> bool:
     """Gitignore-blind disk measurement of one source root's real
     availability, taken by THIS process -- `Path.iterdir()`, the same
     mechanism `paper_guidance.ingested_papers` already proved correct for
@@ -2154,11 +2157,13 @@ def source_available(root: Path) -> bool:
     in the session that produced this fix; `Path.iterdir()` is gitignore-
     blind by construction, never by instruction). A non-existent root and
     an existing-but-empty one both report `False` -- indistinguishable to
-    a fact this root is supposed to ground either way. A STRUCTURED root is
-    one file (`study/flow.json`): available when it exists and is non-empty.
+    a fact this root is supposed to ground either way. A STRUCTURED root
+    (`structured=True`) is one file (`study/flow.json`): available when it is
+    a non-empty file. Every other root is a folder, so a file given for it
+    measures unavailable, as it always did.
     """
-    if root.is_file():
-        return root.stat().st_size > 0
+    if structured:
+        return root.is_file() and root.stat().st_size > 0
     return root.is_dir() and any(root.iterdir())
 
 
