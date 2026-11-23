@@ -2133,8 +2133,8 @@ workspace's line (`paper_kind` in `.papersmith/config.json`, `experimental`
 when unset) and judges a round without `rubric` on that line's rubric:
 `ml-conference` for `experimental`, `systematic-review` for `review`,
 `empirical-study` for the empirical lines (`observational-measurement`,
-`experiment-intervention`, `qualitative-participatory`, `hardware`,
-`lab-simulation`, `data-resource`). A round whose rubric does not serve the
+`experiment-intervention`, `qualitative-participatory`, `data-resource`),
+`measurement-science` for `hardware` and `lab-simulation`. A round whose rubric does not serve the
 line is refused with `RUBRIC_KIND_MISMATCH`, whose detail names the line's
 rubric, and a line no rubric serves with `RUBRIC_LINE_UNKNOWN`; an unknown
 rubric id stays `REVIEW_ROUND_INVALID`. The mapping is data
@@ -2162,6 +2162,29 @@ gaps without a named checklist. The shared fields keep their rules. The PDF
 tab's final-judge panel shows the overall risk of bias, the adherence and its
 deviations, the design validity, the domains and the checklist gaps.
 
+**A hardware or lab-simulation paper is judged on the measurement-science
+rubric.** The `paper-reviewer` returns a `"rubric": "measurement-science"`
+round: no `overall`, `confidence` or `ratings`, but five criteria, each
+`{"rating", "justification"}` with `rating` one of `adequate`, `limited`,
+`inadequate`: `design_validity`, `calibration_traceability` (instruments
+calibrated and traceable, reference values used), `uncertainty` (a budget per
+reported quantity with type A and type B components, combined and expanded
+with its coverage factor), `reproducibility` (design files, data, code and
+protocol available under a licence) and `agreement` (for hardware, agreement
+with a reference device with its bias and limits of agreement; for
+lab-simulation, calibration against known values), which alone may also be
+`not applicable`, its justification giving the reason; plus `checklist_gaps`,
+`{"item", "gap"}`, by item number (`7` or `7b`) in the line's checklist. The
+verb fills `checklist` with that checklist (`hardwarex` for hardware,
+`gum-reporting` for lab-simulation) and refuses a round that names another, and
+derives `overall_rating`: any `inadequate` criterion is `major concerns`, else
+any `limited` is `minor concerns`, else `sound` (`not applicable` counts as
+neither). A round may state it, but one that disagrees with the rule is refused
+(`REVIEW_ROUND_INVALID`), as are a missing criterion, a rating outside its
+scale, an empty justification and a gap without an item number. The shared
+fields keep their rules. The PDF tab's final-judge panel shows the overall
+rating, the five criteria and the checklist gaps.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
@@ -2170,7 +2193,10 @@ from a missing input. In a review workspace note instead whether
 `review/protocol.lock.json` and `review/prisma.json` exist: AMSTAR 2 judges
 the protocol and the flow the paper reports against those records. On an
 empirical line note whether a locked study protocol exists under `protocol/`:
-without it the reviewer answers `no protocol` on adherence.
+without it the reviewer answers `no protocol` on adherence. On a hardware or
+lab-simulation line note whether `study/instruments.json` and the registered
+raw measurement files exist: calibration, uncertainty and agreement are judged
+against them.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,

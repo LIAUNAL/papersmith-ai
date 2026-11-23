@@ -99,6 +99,28 @@ def empirical_round(**overrides) -> dict:
     return data
 
 
+CRITERIA = ("design_validity", "calibration_traceability", "uncertainty", "reproducibility", "agreement")
+
+
+def criterion(rating: str = "adequate", why: str = "Section 4 and the calibration certificate.") -> dict:
+    return {"rating": rating, "justification": why}
+
+
+def measurement_round(**overrides) -> dict:
+    """A measurement-science round, every criterion `adequate` unless overridden."""
+    data = {
+        "rubric": "measurement-science",
+        "recommendation": "Minor revision",
+        **{name: criterion() for name in CRITERIA},
+        "checklist_gaps": [{"item": "7b", "gap": "The expanded uncertainty omits its coverage factor."},
+                           {"item": 3, "gap": "x"}],
+        "revisions": [{"rank": 1, "text": "State the coverage factor of every expanded uncertainty."}],
+        "report": "Measurement-science appraisal: ...",
+    }
+    data.update(overrides)
+    return data
+
+
 class RubricRecordTests(unittest.TestCase):
     def setUp(self) -> None:
         # `paper_cli.py` refuses a paper outside the repository, so the workspace
@@ -369,7 +391,7 @@ class RubricRecordTests(unittest.TestCase):
         self.assertEqual((code, self.rounds()[0]["rubric"]), (0, "systematic-review"))
         self.file.unlink()
         self.assertRefusedUnchanged(ml_round(), "amstar2 must answer each item 1-16 once")
-        self.set_line("hardware")
+        self.set_line("data-resource")
         data = empirical_round()
         del data["rubric"]
         code, _ = self.record(data)
@@ -385,12 +407,14 @@ class RubricRecordTests(unittest.TestCase):
 
     def test_the_registry_maps_each_line_to_one_rubric_by_data(self) -> None:
         review = load_paper_review()
-        self.assertEqual(list(review.RUBRICS), ["ml-conference", "systematic-review", "empirical-study"])
+        self.assertEqual(list(review.RUBRICS),
+                         ["ml-conference", "systematic-review", "empirical-study", "measurement-science"])
         self.assertEqual(review.RUBRICS["ml-conference"].lines, ("experimental",))
         self.assertEqual(review.RUBRICS["systematic-review"].lines, ("review",))
         self.assertEqual(review.RUBRICS["empirical-study"].lines,
                          ("observational-measurement", "experiment-intervention", "qualitative-participatory",
-                          "hardware", "lab-simulation", "data-resource"))
+                          "data-resource"))
+        self.assertEqual(review.RUBRICS["measurement-science"].lines, ("hardware", "lab-simulation"))
         for rubric_id, rubric in review.RUBRICS.items():
             for line in rubric.lines:
                 self.assertEqual(review.rubric_for_line(line), rubric_id)
@@ -509,6 +533,117 @@ class RubricRecordTests(unittest.TestCase):
         self.assertEqual(self.rounds()[1]["items"][0]["item"], "Declare the covariate change as an amendment.")
 
 
+    # --- the measurement-science rubric (F6) -----------------------------------
+
+    def test_hardware_and_lab_simulation_are_judged_on_measurement_science(self) -> None:
+        for line in ("hardware", "lab-simulation"):
+            with self.subTest(line=line):
+                self.set_line(line)
+                self.assertRefusedUnchanged(empirical_round(), 'the line\'s rubric is "measurement-science"',
+                                            code="RUBRIC_KIND_MISMATCH")
+                data = measurement_round()
+                del data["rubric"]
+                code, out = self.record(data)
+                self.assertEqual((code, out["status"]), (0, "ok"), out)
+                self.assertEqual(self.rounds()[0]["rubric"], "measurement-science")
+                self.file.unlink()
+        self.set_line("observational-measurement")
+        self.assertRefusedUnchanged(measurement_round(), 'the line\'s rubric is "empirical-study"',
+                                    code="RUBRIC_KIND_MISMATCH")
+        self.set_line("experimental")
+        self.assertRefusedUnchanged(measurement_round(), 'rubric "measurement-science" does not serve the line',
+                                    code="RUBRIC_KIND_MISMATCH")
+
+    def test_a_measurement_round_is_stored_with_its_derived_overall_and_the_lines_checklist(self) -> None:
+        self.set_line("hardware")
+        code, out = self.record(measurement_round(uncertainty=criterion("limited", "  No type B budget.  "),
+                                                  agreement=criterion("not applicable", "No reference device.")))
+        self.assertEqual((code, out["status"], out["round"], out["pending_revisions"]), (0, "ok", 1, 1))
+        entry = self.rounds()[0]
+        self.assertEqual(list(entry), ["round", "date", "rubric", "recommendation", *CRITERIA, "overall_rating",
+                                       "checklist", "checklist_gaps", "items", "revisions", "excluded", "report"])
+        self.assertEqual(entry["rubric"], "measurement-science")
+        self.assertEqual(entry["design_validity"], criterion())
+        self.assertEqual(entry["uncertainty"], {"rating": "limited", "justification": "No type B budget."})
+        self.assertEqual(entry["agreement"], {"rating": "not applicable", "justification": "No reference device."})
+        self.assertEqual(entry["overall_rating"], "minor concerns")
+        self.assertEqual(entry["checklist"], "hardwarex")
+        self.assertEqual(entry["checklist_gaps"], [
+            {"item": "7b", "gap": "The expanded uncertainty omits its coverage factor."}, {"item": 3, "gap": "x"}])
+        for absent in ("overall", "confidence", "ratings", "amstar2", "risk_of_bias", "protocol_adherence"):
+            self.assertNotIn(absent, entry)
+        self.file.unlink()
+        self.set_line("lab-simulation")
+        code, _ = self.record(measurement_round(checklist="gum-reporting"))
+        self.assertEqual((code, self.rounds()[0]["checklist"]), (0, "gum-reporting"))
+
+    def test_the_overall_rating_follows_the_stated_rule(self) -> None:
+        self.set_line("lab-simulation")
+        cases = [
+            ({}, "sound"),
+            ({"agreement": "not applicable"}, "sound"),
+            ({"reproducibility": "limited"}, "minor concerns"),
+            ({"design_validity": "limited", "agreement": "not applicable"}, "minor concerns"),
+            ({"uncertainty": "inadequate"}, "major concerns"),
+            ({"calibration_traceability": "inadequate", "reproducibility": "limited"}, "major concerns"),
+        ]
+        for ratings, expected in cases:
+            with self.subTest(ratings=ratings):
+                if self.file.exists():
+                    self.file.unlink()
+                code, _ = self.record(measurement_round(**{k: criterion(v) for k, v in ratings.items()}))
+                self.assertEqual((code, self.rounds()[0]["overall_rating"]), (0, expected))
+
+    def test_an_asserted_overall_rating_must_match_the_rule(self) -> None:
+        self.set_line("hardware")
+        self.assertRefusedUnchanged(measurement_round(uncertainty=criterion("inadequate"), overall_rating="sound"),
+                                    'overall_rating "sound" does not match the rule: major concerns')
+        code, _ = self.record(measurement_round(uncertainty=criterion("inadequate"), overall_rating="major concerns"))
+        self.assertEqual(code, 0)
+
+    def test_every_criterion_needs_a_rating_on_its_scale_and_a_justification(self) -> None:
+        self.set_line("hardware")
+        for name in CRITERIA:
+            with self.subTest(name=name):
+                self.assertRefusedUnchanged(measurement_round(**{name: None}), f"{name} must be an object")
+                self.assertRefusedUnchanged(measurement_round(**{name: criterion("fine")}),
+                                            f"{name}.rating must be one of adequate, limited, inadequate")
+                self.assertRefusedUnchanged(measurement_round(**{name: criterion(why=" ")}),
+                                            f"{name} needs a non-empty justification")
+        for name in CRITERIA[:-1]:
+            with self.subTest(not_applicable=name):
+                self.assertRefusedUnchanged(measurement_round(**{name: criterion("not applicable")}),
+                                            f"{name}.rating must be one of adequate, limited, inadequate")
+        self.assertRefusedUnchanged(measurement_round(agreement=criterion("not applicable", "")),
+                                    "agreement needs a non-empty justification")
+
+    def test_checklist_gaps_name_an_item_of_the_lines_checklist(self) -> None:
+        self.set_line("hardware")
+        self.assertRefusedUnchanged(measurement_round(checklist="gum-reporting"),
+                                    'checklist must be the line\'s checklist "hardwarex"')
+        self.assertRefusedUnchanged(measurement_round(checklist="STROBE"),
+                                    'checklist must be the line\'s checklist "hardwarex"')
+        self.assertRefusedUnchanged(measurement_round(checklist_gaps=[{"item": "a12", "gap": "x"}]),
+                                    "checklist_gaps[1] needs an item number")
+        self.assertRefusedUnchanged(measurement_round(checklist_gaps=[{"item": 2, "gap": ""}]),
+                                    "checklist_gaps[1] needs an item number")
+        self.assertRefusedUnchanged(measurement_round(checklist_gaps="none"), "checklist_gaps must be a list")
+        code, _ = self.record(measurement_round(checklist_gaps=[], checklist="hardwarex"))
+        self.assertEqual((code, self.rounds()[0]["checklist_gaps"]), (0, []))
+
+    def test_the_shared_fields_still_apply_to_a_measurement_round(self) -> None:
+        self.set_line("lab-simulation")
+        self.assertRefusedUnchanged(measurement_round(report=""), "report must be non-empty text")
+        self.assertRefusedUnchanged(measurement_round(recommendation=""), "recommendation must be non-empty text")
+        self.record(measurement_round())
+        self.assertRefusedUnchanged(measurement_round(), "[1]", code="REVIEW_ITEMS_MISSING")
+        code, out = self.record(measurement_round(items=[{"rank": 1, "verdict": "resolved", "evidence": "Table 3."}],
+                                                  revisions=[]))
+        self.assertEqual((code, out["round"]), (0, 2))
+        self.assertEqual(self.rounds()[1]["items"][0]["item"],
+                         "State the coverage factor of every expanded uncertainty.")
+
+
 HARNESS = r"""
 const fs = require('fs');
 const els = {};
@@ -600,6 +735,28 @@ class RubricPanelTests(unittest.TestCase):
         older = render({"status": "ok", "rounds": [entry, {**entry, "round": 3}]})
         self.assertIn("review.empirical.level.high · Minor revision", older)
 
+    def test_a_measurement_round_renders_its_criteria_escaped(self) -> None:
+        entry = {"round": 2, "rubric": "measurement-science", "recommendation": "Major revision",
+                 "design_validity": {"rating": "adequate", "justification": "<b>bench</b> rig"},
+                 "calibration_traceability": {"rating": "limited", "justification": "Certificate expired."},
+                 "uncertainty": {"rating": "inadequate", "justification": "<i>No budget</i>"},
+                 "reproducibility": {"rating": "adequate", "justification": "CERN-OHL files."},
+                 "agreement": {"rating": "not applicable", "justification": "No reference device."},
+                 "overall_rating": "major concerns", "checklist": "hardwarex",
+                 "checklist_gaps": [{"item": "7b", "gap": "<script>k</script>"}], "report": "r"}
+        html = render({"status": "ok", "rounds": [entry]})
+        for fragment in ("review.rubric.measurement", "review.measurement.overall",
+                         "review.measurement.overall.major_concerns", "review.measurement.criteria",
+                         "review.measurement.criterion.calibration_traceability",
+                         "review.measurement.criterion.agreement", "review.measurement.rating.not_applicable",
+                         "review.measurement.rating.inadequate", "review.measurement.gaps", "hardwarex", "7b",
+                         "&lt;b&gt;bench&lt;/b&gt;", "&lt;i&gt;No budget&lt;/i&gt;", "&lt;script&gt;k"):
+            self.assertIn(fragment, html)
+        for absent in ("<b>bench", "<script>k", "/6", "review.amstar2", "review.empirical"):
+            self.assertNotIn(absent, html)
+        older = render({"status": "ok", "rounds": [entry, {**entry, "round": 3}]})
+        self.assertIn("review.measurement.overall.major_concerns · Major revision", older)
+
     def test_the_ml_and_review_renderings_are_unchanged(self) -> None:
         ml = {"round": 1, "date": "2026-01-01", "overall": 4, "confidence": 3, "recommendation": "Accept",
               "ratings": {"Quality": 3}, "items": [{"item": "x", "verdict": "resolved", "evidence": "e"}],
@@ -613,6 +770,7 @@ class RubricPanelTests(unittest.TestCase):
         self.assertIn("review.overall 4/6", html)
         self.assertIn("review.amstar2.level.low", html)
         self.assertNotIn("review.empirical", html)
+        self.assertNotIn("review.measurement", html)
 
 if __name__ == "__main__":
     unittest.main()

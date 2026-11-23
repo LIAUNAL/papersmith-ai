@@ -12,7 +12,12 @@
  * the empirical-study rubric (`rubric: "empirical-study"`, the empirical lines)
  * shows its overall risk of bias, its protocol adherence and deviations, its
  * design validity, the risk of bias per domain and the reporting-checklist
- * gaps. Read-only: nothing here launches the judge or edits the paper.
+ * gaps. A round judged on the measurement-science rubric
+ * (`rubric: "measurement-science"`, the hardware and lab-simulation lines)
+ * shows its derived overall rating, its five criteria (design validity,
+ * calibration and traceability, uncertainty, reproducibility and open
+ * materials, agreement or validation) and the gaps against the line's
+ * checklist. Read-only: nothing here launches the judge or edits the paper.
  *
  * Every value is escaped before insertion. Public surface (window):
  * refreshPaperReview(), PaperReviewPanel (the pure HTML builder, for tests).
@@ -113,8 +118,36 @@
       ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.empirical.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.empirical.item'), t('review.empirical.gap')], gaps)}` : ''}`;
   }
 
-  const summary = (r) => (isEmpirical(r) ? empiricalSummary(r) : isReview(r) ? reviewSummary(r) : roundSummary(r));
-  const headline = (r) => (isEmpirical(r) ? esc(biasText(r.overall_risk_of_bias))
+  // The measurement-science rubric: five rated criteria, the derived overall, checklist gaps.
+  const isMeasurement = (r) => r.rubric === 'measurement-science';
+  const MEASUREMENT_CRITERIA = ['design_validity', 'calibration_traceability', 'uncertainty', 'reproducibility', 'agreement'];
+  const RATING_BADGE = { adequate: 'badge--ok', limited: 'badge--warn', inadequate: 'badge--bad', 'not applicable': 'badge--info' };
+  const OVERALL_BADGE = { sound: 'badge--ok', 'minor concerns': 'badge--warn', 'major concerns': 'badge--bad' };
+  const measurementText = (v) => t(`review.measurement.overall.${key(v)}`);
+
+  function measurementSummary(r) {
+    const criteria = MEASUREMENT_CRITERIA.map((name) => {
+      const c = obj(r[name]);
+      return `<tr><td>${esc(t(`review.measurement.criterion.${name}`))}</td>
+      <td>${keyed(RATING_BADGE, 'review.measurement.rating', c.rating)}</td><td>${esc(c.justification || '')}</td></tr>`;
+    });
+    const gaps = list(r.checklist_gaps).map((g) => `<tr><td>${esc(g.item)}</td><td>${esc(g.gap || '')}</td></tr>`);
+    return `
+      <div class="review-round__head" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+        <strong>${esc(t('review.round'))} ${esc(r.round)}</strong>
+        <span class="panel__meta">${esc(r.date || '')}</span>
+        <span class="badge badge--info">${esc(t('review.rubric.measurement'))}</span>
+        <span class="badge ${OVERALL_BADGE[r.overall_rating] || 'badge--info'}">${esc(t('review.measurement.overall'))}: ${esc(measurementText(r.overall_rating))}</span>
+      </div>
+      <p style="margin:0.4rem 0;"><strong>${esc(t('review.recommendation'))}:</strong> ${esc(r.recommendation || '')}</p>
+      <h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.measurement.criteria'))}</h4>${table([t('review.measurement.criterion'), t('review.measurement.rating'), t('review.measurement.justification')], criteria)}
+      ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.measurement.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.measurement.item'), t('review.measurement.gap')], gaps)}` : ''}`;
+  }
+
+  const summary = (r) => (isMeasurement(r) ? measurementSummary(r)
+    : isEmpirical(r) ? empiricalSummary(r) : isReview(r) ? reviewSummary(r) : roundSummary(r));
+  const headline = (r) => (isMeasurement(r) ? esc(measurementText(r.overall_rating))
+    : isEmpirical(r) ? esc(biasText(r.overall_risk_of_bias))
     : isReview(r) ? esc(levelText(r.overall_confidence)) : `${esc(r.overall)}/6`);
 
   function table(head, rows) {

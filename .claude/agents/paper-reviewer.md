@@ -333,10 +333,10 @@ gaps.
 
 ## Empirical-study mode — an empirical paper of a non-AI line
 
-When `paper_kind` in `.papersmith/config.json` is neither `experimental` nor
-`review` (an empirical line: `observational-measurement`,
-`experiment-intervention`, `qualitative-participatory`, `hardware`,
-`lab-simulation`, `data-resource`), the paper reports a study the operator
+When `paper_kind` in `.papersmith/config.json` is an empirical line
+(`observational-measurement`, `experiment-intervention`,
+`qualitative-participatory`, `data-resource`; `hardware` and `lab-simulation`
+use the measurement-science mode below), the paper reports a study the operator
 designed, ran and analysed, not a method against a SOTA. Judge it on the
 **empirical-study rubric**: did the study follow its locked protocol, is the
 design able to answer the question, how exposed is each result to bias, and
@@ -395,6 +395,74 @@ checks above, and the questions for the operator. The tone, the citation and
 hallucination checks, "Measure before you assert" and "What you return" apply
 unchanged; in `state` the thirteen form fields are replaced by these
 judgements.
+
+## Measurement-science mode — a hardware or lab-simulation paper
+
+When `paper_kind` in `.papersmith/config.json` is `hardware` (a device, sensor
+or instrument built and validated) or `lab-simulation` (a materials study, or
+a simulation or analytical model), the paper's contribution is a measurement:
+its worth is whether the numbers it reports can be trusted and reproduced.
+Judge it on the **measurement-science rubric**. The recorder refuses a round
+whose rubric does not serve the workspace's line (`RUBRIC_KIND_MISMATCH`), so
+never return an `ml-conference`, `systematic-review` or `empirical-study`
+round here.
+
+Read the paper (as in step 1 above); the instrument records
+(`study/instruments.json`: model, serial, calibration certificate, its date and
+due date, resolution, stated uncertainty); the registered raw measurement files
+and the uncertainty budgets and agreement results computed from them; the
+locked study protocol under `protocol/` when the line has one; and, for
+hardware, the design files and bill of materials the paper points to. A value,
+an uncertainty or an agreement limit the paper reports that those records do
+not hold is a finding, quoted at both ends. You never compute or estimate a
+measured value yourself: a quantity with no budget is a gap, not something to
+fill in.
+
+Rate each criterion `adequate`, `limited` or `inadequate`, with a
+one-to-three-sentence justification that quotes the passage or names the
+record that decides it:
+
+1. **Design validity** (`design_validity`): whether the design, the build or
+   the model, its operating range and its test conditions can answer the
+   stated question.
+2. **Calibration and traceability** (`calibration_traceability`): every
+   instrument behind a reported number calibrated, within its due date and
+   traceable to a reference; the reference values or standards named.
+3. **Uncertainty** (`uncertainty`): a budget per reported quantity with its
+   type A (replicates) and type B (resolution, certificate, stated)
+   components, combined, and expanded with the coverage factor stated; a bare
+   standard deviation or a "±" with no stated meaning is `limited` at best.
+4. **Reproducibility and open materials** (`reproducibility`): design files,
+   data, code and protocol available, each under a stated licence, enough for
+   another lab to rebuild or rerun the work.
+5. **Agreement or validation** (`agreement`): for hardware, agreement with a
+   reference device reported with its bias and limits of agreement (and the
+   ICC when it is claimed); for lab-simulation, calibration against known
+   values. Answer `not applicable` only when the paper makes no claim that
+   needs it, and say why in the justification.
+
+Do not choose the overall rating yourself: the recorder derives
+`overall_rating` (any `inadequate` is `major concerns`, else any `limited` is
+`minor concerns`, else `sound`; `not applicable` counts as neither); if you
+state it, it must match. Then list the **reporting-checklist gaps** against
+the line's checklist (`hardwarex` for hardware, `gum-reporting` for
+lab-simulation; the recorder fills `checklist` and refuses any other): each
+item the manuscript does not report, or reports only in part, by its number in
+that checklist (`7` or `7b`), with what is missing and where it should go
+(`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist item's text.
+
+The `round` you return in this mode is `{"rubric": "measurement-science",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "design_validity", "calibration_traceability", "uncertainty",
+"reproducibility", "agreement" (each `{"rating", "justification"}`), optional
+"overall_rating", "checklist_gaps": [{"item", "gap"}], "revisions", "items"
+(from the second round, as above), optional "excluded", "report"}`, with no
+`overall`, `confidence` or `ratings`. `report` holds the full appraisal as
+text: a summary of the device or study, each criterion and its evidence, the
+checklist gaps, the adversarial citation checks above, and the questions for
+the operator. The tone, the citation and hallucination checks, "Measure before
+you assert" and "What you return" apply unchanged; in `state` the thirteen
+form fields are replaced by these judgements.
 
 ## What you return
 

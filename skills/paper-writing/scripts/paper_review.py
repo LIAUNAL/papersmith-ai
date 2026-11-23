@@ -56,8 +56,8 @@ key, exactly as before. For a review paper (`paper_kind: review`) it is
   372:n71), `{"item": 1-27, "gap"}`.
 
 The empirical lines (observational-measurement, experiment-intervention,
-qualitative-participatory, hardware, lab-simulation, data-resource) are judged
-on `empirical-study`, which carries no `overall`, `confidence` or `ratings`:
+qualitative-participatory, data-resource) are judged on `empirical-study`,
+which carries no `overall`, `confidence` or `ratings`:
 
 - `protocol_adherence`: `{"primary_outcome", "analysis_plan", "deviations",
   "justification"}`, the first two one of `followed`, `deviated`, `no
@@ -75,6 +75,31 @@ on `empirical-study`, which carries no `overall`, `confidence` or `ratings`:
 - `checklist` (the reporting checklist the gaps refer to, e.g. `STROBE`;
   required when there are gaps) and `checklist_gaps`, `{"item", "gap"}`, the
   item by its number in that checklist (`12` or `12b`).
+
+The measurement lines (hardware, lab-simulation) are judged on
+`measurement-science`, which carries no `overall`, `confidence` or `ratings`
+either. Five criteria, each `{"rating", "justification"}`, `rating` one of
+`adequate`, `limited`, `inadequate`:
+
+- `design_validity`: whether the design, the build or the model can answer the
+  stated question;
+- `calibration_traceability`: the instruments calibrated and traceable, the
+  reference values used;
+- `uncertainty`: a budget per reported quantity with its type A and type B
+  components, combined and expanded with the coverage factor stated;
+- `reproducibility`: design files, data, code and protocol available under a
+  licence;
+- `agreement`: for hardware, agreement with a reference device reported with
+  its bias and limits of agreement; for lab-simulation, calibration against
+  known values. It alone may also be `not applicable`, its justification then
+  the reason;
+- `overall_rating`, derived here: any `inadequate` criterion is `major
+  concerns`, else any `limited` is `minor concerns`, else `sound` (`not
+  applicable` counts as neither). A round that asserts it must match the rule;
+- `checklist`, filled here with the line's reporting checklist (`hardwarex`
+  for hardware, `gum-reporting` for lab-simulation; a round that names another
+  is refused), and `checklist_gaps`, `{"item", "gap"}`, the item by its number
+  in that checklist (`7` or `7b`).
 
 `recommendation`, `items`, `revisions`, `excluded` and `report` apply to every
 rubric.
@@ -127,6 +152,15 @@ ADHERENCE = ("followed", "deviated", "no protocol")
 DESIGN_VALIDITY = ("adequate", "limited", "inadequate")
 BIAS_DOMAINS = ("selection", "measurement", "confounding", "missing data", "reporting")
 BIAS_LEVELS = ("low", "some concerns", "high")
+#: The measurement-science rubric's scale, the criteria it rates (in stored
+#: order), the one criterion that may be "not applicable", its overall levels
+#: and each measurement line's reporting checklist.
+MEASUREMENT_RATINGS = ("adequate", "limited", "inadequate")
+MEASUREMENT_CRITERIA = ("design_validity", "calibration_traceability", "uncertainty", "reproducibility",
+                        "agreement")
+MEASUREMENT_OPTIONAL = "agreement"
+MEASUREMENT_OVERALL = ("sound", "minor concerns", "major concerns")
+MEASUREMENT_CHECKLISTS = {"hardware": "hardwarex", "lab-simulation": "gum-reporting"}
 #: A reporting-checklist item number: `12`, `12b`, `6a`.
 CHECKLIST_ITEM = re.compile(r"[1-9][0-9]*[a-z]?")
 CONFIG = Path(".papersmith") / "config.json"
@@ -366,6 +400,70 @@ def _validate_empirical_study(data: dict, _context: dict) -> list[str]:
     return errors
 
 
+def overall_measurement_rating(ratings) -> str:
+    """Any `inadequate` is `major concerns`; else any `limited` is `minor concerns`; else `sound`."""
+    ratings = list(ratings)
+    if "inadequate" in ratings:
+        return "major concerns"
+    return "minor concerns" if "limited" in ratings else "sound"
+
+
+def measurement_basis(paper_dir: Path) -> dict:
+    """The reporting checklist of the workspace's measurement line (None for any other line)."""
+    return {"checklist": MEASUREMENT_CHECKLISTS.get(workspace_line(paper_dir))}
+
+
+def _validate_checklist_gaps(gaps) -> list[str]:
+    if not isinstance(gaps, list):
+        return ["checklist_gaps must be a list"]
+    return [f"checklist_gaps[{n}] needs an item number (e.g. 12 or 12b) and non-empty gap text"
+            for n, gap in enumerate(gaps, 1)
+            if not isinstance(gap, dict) or not _checklist_item(gap.get("item")) or not _text(gap.get("gap"))]
+
+
+def _validate_measurement_science(data: dict, context: dict) -> list[str]:
+    errors = []
+    if not _text(data.get("recommendation")):
+        errors.append("recommendation must be non-empty text")
+    rated = True
+    for name in MEASUREMENT_CRITERIA:
+        value = data.get(name)
+        if not isinstance(value, dict):
+            errors.append(f"{name} must be an object")
+            rated = False
+            continue
+        scale = MEASUREMENT_RATINGS + (("not applicable",) if name == MEASUREMENT_OPTIONAL else ())
+        if value.get("rating") not in scale:
+            errors.append(f"{name}.rating must be one of {', '.join(scale)}")
+            rated = False
+        if not _text(value.get("justification")):
+            reason = " (the reason when not applicable)" if name == MEASUREMENT_OPTIONAL else ""
+            errors.append(f"{name} needs a non-empty justification{reason}")
+    asserted = data.get("overall_rating")
+    if rated and asserted is not None:
+        level = overall_measurement_rating(data[name]["rating"] for name in MEASUREMENT_CRITERIA)
+        if asserted != level:
+            errors.append(f'overall_rating "{asserted}" does not match the rule: {level}')
+    errors += _validate_checklist_gaps(data.get("checklist_gaps", []))
+    checklist = data.get("checklist")
+    if checklist is not None and checklist != context["checklist"]:
+        errors.append(f'checklist must be the line\'s checklist "{context["checklist"]}" (or be left out), '
+                      f"not {json.dumps(checklist)}")
+    return errors
+
+
+def _shape_measurement_science(data: dict, context: dict) -> dict:
+    criteria = {name: {"rating": data[name]["rating"], "justification": data[name]["justification"].strip()}
+                for name in MEASUREMENT_CRITERIA}
+    return {
+        "recommendation": data["recommendation"].strip(),
+        **criteria,
+        "overall_rating": overall_measurement_rating(c["rating"] for c in criteria.values()),
+        "checklist": context["checklist"],
+        "checklist_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("checklist_gaps", [])],
+    }
+
+
 def _shape_ml_conference(data: dict, _context: dict) -> dict:
     return {
         "overall": data["overall"],
@@ -436,7 +534,9 @@ RUBRICS: dict[str, Rubric] = {
                                 context=amstar2_basis),
     "empirical-study": Rubric(_validate_empirical_study, _shape_empirical_study,
                               ("observational-measurement", "experiment-intervention", "qualitative-participatory",
-                               "hardware", "lab-simulation", "data-resource")),
+                               "data-resource")),
+    "measurement-science": Rubric(_validate_measurement_science, _shape_measurement_science,
+                                  tuple(MEASUREMENT_CHECKLISTS), context=measurement_basis),
 }
 
 
