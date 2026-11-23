@@ -1,7 +1,7 @@
 """`smith kind set`: move a workspace to the line of its agreed paper type.
 
 The operator agrees a paper type after plausibility (`/paper-type`). When that
-type's line (`experimental`, `review`) differs from the workspace's, this
+type's line (an entry of `manifest.LINES`) differs from the workspace's, this
 command records the agreement, writes the new `paper_kind` and lets `upgrade`
 apply the line's kit layout and harness flow text. The other line's files are
 removed only when unedited (their hash matches the stored manifest); an edited
@@ -50,17 +50,30 @@ def _line_of(root: Path, type_id: str) -> str:
     if line is None:
         raise UserError(f"paper type {type_id!r} has no flow in smith yet; agree it with /paper-type "
                         "and the workspace keeps its line until one exists")
-    if line not in manifest.PAPER_KINDS:
+    if line not in manifest.LINES:
         raise UserError(f"paper type {type_id!r} names an unknown line {line!r}")
     return line
 
 
-def started_markers(root: Path) -> list[str]:
-    """The files that show the paper has started on its current line."""
+#: What shows an empirical line's paper has started besides the shared
+#: markers: a study-protocol revision and the protocol lock.
+EMPIRICAL_PROTOCOL_GLOB = ("protocol", "study-protocol-*-v*.md")
+EMPIRICAL_LOCK = Path("study") / "protocol.lock.json"
+
+
+def started_markers(root: Path, line: str | None = None) -> list[str]:
+    """The files that show the paper has started on ``line`` (default: the workspace's)."""
+    entry = manifest.paper_line(manifest.paper_kind(root) if line is None else line)
     markers = sorted(path.relative_to(root).as_posix()
                      for path in (root / "proposals").glob("*-r*.md") if fs.is_regular_file(path))
+    if entry.empirical:
+        folder, pattern = EMPIRICAL_PROTOCOL_GLOB
+        markers.extend(sorted(path.relative_to(root).as_posix()
+                              for path in (root / folder).glob(pattern) if fs.is_regular_file(path)))
     if fs.is_regular_file(root / "paper" / "main.tex"):
         markers.append("paper/main.tex")
+    if entry.empirical and fs.is_regular_file(root / EMPIRICAL_LOCK):
+        markers.append(EMPIRICAL_LOCK.as_posix())
     return markers
 
 
@@ -154,7 +167,7 @@ def set_kind(workspace: str | Path, type_id: str, *, by: str, force: bool = Fals
     line = _line_of(root, type_id)
     previous = manifest.paper_kind(root)
     if line != previous and not force:
-        markers = started_markers(root)
+        markers = started_markers(root, previous)
         if markers:
             raise UserError(f"the paper has started on the {previous} line ({', '.join(markers)}); "
                             "moving it would leave its proposals and sections behind. "

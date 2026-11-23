@@ -991,10 +991,12 @@ def _context_with_defaults(context: dict[str, Any]) -> dict[str, Any]:
     result.setdefault("version", "0.1.0")
     result.setdefault("tools", ", ".join(ALL_TOOLS))
     result.setdefault("agents", "- No specialized agents have been installed yet.")
-    # One statement of the paper-construction flow, shared by every harness.
-    # A review workspace (``paper_kind: review``) follows the PRISMA 2020 line;
-    # every other workspace keeps the experimental flow.
-    flow = "paper-flow-review.md.tpl" if result.get("paper_kind") == "review" else "paper-flow.md.tpl"
+    # One statement of the paper-construction flow, shared by every harness:
+    # the flow template of the workspace's line (``manifest.LINES``); a
+    # workspace that records no known line keeps the experimental flow.
+    from .core import manifest  # ``manifest`` imports this module
+
+    flow = manifest.flow_template(result.get("paper_kind"))
     result.setdefault("paper_flow", render_package_template(flow, {}).strip())
     # One statement of which language the agent replies in and which stays English.
     result.setdefault("language_rule", render_package_template("language.md.tpl", {}).strip())

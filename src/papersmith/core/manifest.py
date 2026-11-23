@@ -31,6 +31,67 @@ MANIFEST_SCHEMA = 1
 #: explicitly.
 VERSION_MARKER = ".papersmith/version"
 
+
+@dataclass(frozen=True)
+class PaperLine:
+    """One paper line a workspace can follow (``paper_kind``), as data.
+
+    ``sections_dir`` is the kit directory whose contracts the line serves at
+    ``sections/`` (the experimental line's own ``sections/``).
+    ``only_prefixes`` are the kit paths only this line receives; every other
+    line drops them. ``shared_sections`` are experimental contracts the line
+    keeps as they are. ``flow_template`` is the package template of the
+    harness flow text, ``topology`` the research-state folders ``smith init``
+    creates (``init.TOPOLOGIES``), ``label`` what ``smith init`` prints after
+    "Paper line:", ``summary`` the line's ``--kind`` help, and ``empirical``
+    whether a study-protocol revision or its lock shows the paper started.
+    """
+
+    sections_dir: str
+    only_prefixes: tuple[str, ...]
+    shared_sections: tuple[str, ...]
+    flow_template: str
+    topology: str
+    label: str
+    summary: str
+    empirical: bool = False
+
+
+_SECTIONS = "sections/"
+
+#: The paper lines a workspace can follow, in the order they are offered.
+#: ``experimental`` is the original line and the default of every workspace
+#: that records no kind; a new line is an entry here plus its files.
+LINES: dict[str, PaperLine] = {
+    "experimental": PaperLine(
+        sections_dir=_SECTIONS,
+        only_prefixes=(),
+        shared_sections=(),
+        flow_template="paper-flow.md.tpl",
+        topology="experimental",
+        label="applied-AI experimental paper",
+        summary="default; proposal, experiments, results",
+    ),
+    "review": PaperLine(
+        sections_dir="sections-review/",
+        only_prefixes=("sections-review/", "skills/systematic-review/"),
+        # The back matter is the same accountability surface for both lines.
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-review.md.tpl",
+        topology="review",
+        label="PRISMA 2020 systematic review",
+        summary=("a PRISMA 2020 systematic review with no experiments: protocol, "
+                 "search, screening, synthesis under review/"),
+    ),
+}
+DEFAULT_PAPER_KIND = "experimental"
+
+
+def _line_section_entries() -> tuple[str, ...]:
+    """The kit directories of the lines' own section contracts."""
+    return tuple(line.sections_dir.rstrip("/") for line in LINES.values() if line.sections_dir != _SECTIONS)
+
+
 # The kit's top-level entries a workspace copies at init and re-syncs on
 # upgrade. Everything else a workspace holds is either generated (rendered
 # entrypoint docs) or preserved research state.
@@ -40,17 +101,19 @@ VERSION_MARKER = ".papersmith/version"
 # (``guidance/*/*``) keeps them out of git on purpose. ``walk_kit_files``
 # walks the filesystem, not git, so listing that directory here would bundle
 # whatever a maintainer's checkout happens to hold into every shipped kit. The
-# folder still reaches a fresh workspace empty, via ``_create_topology``'s
+# folder still reaches a fresh workspace empty, via ``init.create_topology``'s
 # ``.gitkeep``.
 #
 # ``sections`` travels WITH content: the ten ``sections/*.md`` files are
 # generic writing contracts, not this paper's own research, so a workspace
 # needs the same bytes this repository ships — like ``skills``, not like
 # ``guidance/paper-guide``.
+# Each non-experimental line's section directory (``LINES``) travels the
+# same way, after ``sections``.
 KIT_ENTRIES = (
     "skills",
     "sections",
-    "sections-review",
+    *_line_section_entries(),
     ".claude/agents",
     "scripts/setup_env.py",
     "scripts/setup-harnesses.sh",
@@ -163,7 +226,10 @@ def _walk_dir(root: Path, kit_root: Path, files: dict[str, str]) -> None:
 def walk_kit_files(kit_root: Path) -> dict[str, str]:
     """relpath -> sha256 for every file the kit ships, filtered."""
     files: dict[str, str] = {}
-    for entry in KIT_ENTRIES:
+    # A line's section directory is walked even when ``KIT_ENTRIES`` was
+    # computed before the line joined ``LINES``.
+    entries = (*KIT_ENTRIES, *(entry for entry in _line_section_entries() if entry not in KIT_ENTRIES))
+    for entry in entries:
         path = kit_root / entry
         if not fs.exists(path):
             continue
@@ -382,20 +448,39 @@ def kit_files(kit_root: Path) -> dict[str, str]:
     return walk_kit_files(kit_root)
 
 
-#: The paper lines a workspace can follow. ``experimental`` is the original
-#: line and the default of every workspace that records no kind.
-PAPER_KINDS = ("experimental", "review")
-DEFAULT_PAPER_KIND = "experimental"
-
+#: Names derived from ``LINES``, kept for their readers. They are computed
+#: once; code that must see every line reads ``LINES`` (or ``paper_kinds``).
+PAPER_KINDS = tuple(LINES)
 #: Kit paths that belong to the review line only. An experimental workspace
 #: never receives them, so its files stay exactly what they were before the
 #: review line existed.
-REVIEW_ONLY_PREFIXES = ("sections-review/", "skills/systematic-review/")
-_REVIEW_SECTIONS = "sections-review/"
-_SECTIONS = "sections/"
-#: Experimental section contracts the review line keeps as they are: the
-#: back matter is the same accountability surface for both lines.
-REVIEW_SHARED_SECTIONS = ("sections/10-back-matter.md",)
+REVIEW_ONLY_PREFIXES = LINES["review"].only_prefixes
+#: Experimental section contracts the review line keeps as they are.
+REVIEW_SHARED_SECTIONS = LINES["review"].shared_sections
+
+
+def paper_kinds() -> tuple[str, ...]:
+    """Every line of the table, in order."""
+    return tuple(LINES)
+
+
+def or_list(names: Sequence[str]) -> str:
+    """``a``, ``a or b``, ``a, b or c``: the lines named in a message."""
+    names = list(names)
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} or {names[-1]}"
+
+
+def paper_line(kind: str) -> PaperLine:
+    """The table entry of ``kind``, refusing a kind the table does not hold."""
+    line = LINES.get(kind)
+    if line is None:
+        raise UserError(f"paper kind must be one of {', '.join(LINES)}")
+    return line
+
+
+def flow_template(kind: str | None) -> str:
+    """The harness flow template of ``kind``; any other value gets the default line's."""
+    return LINES.get(kind or DEFAULT_PAPER_KIND, LINES[DEFAULT_PAPER_KIND]).flow_template
 
 
 def paper_kind(workspace: Path) -> str:
@@ -414,31 +499,32 @@ def paper_kind(workspace: Path) -> str:
     except json.JSONDecodeError:
         return DEFAULT_PAPER_KIND
     kind = data.get("paper_kind", DEFAULT_PAPER_KIND) if isinstance(data, dict) else DEFAULT_PAPER_KIND
-    if kind not in PAPER_KINDS:
+    if kind not in LINES:
         raise UserError(f"unknown paper_kind {kind!r} in {workspace / '.papersmith' / 'config.json'}; "
-                        f"expected one of {', '.join(PAPER_KINDS)}")
+                        f"expected one of {', '.join(LINES)}")
     return kind
 
 
 def kit_layout(kit_root: Path, kind: str = DEFAULT_PAPER_KIND) -> dict[str, str]:
     """Workspace relpath -> kit relpath for the files a ``kind`` workspace gets.
 
-    The experimental line maps every kit file onto itself except the
-    review-only ones. The review line drops the experimental section contracts
-    (but the shared back matter) and serves ``sections-review/<file>`` at
-    ``sections/<file>``, so every consumer that globs ``sections/*.md`` reads
-    the review contracts unchanged.
+    Every line drops the paths only another line receives. The experimental
+    line maps every other kit file onto itself. Any other line drops the
+    experimental section contracts (but its shared ones) and serves
+    ``<sections_dir><file>`` at ``sections/<file>``, so every consumer that
+    globs ``sections/*.md`` reads that line's contracts unchanged.
     """
-    if kind not in PAPER_KINDS:
-        raise UserError(f"paper kind must be one of {', '.join(PAPER_KINDS)}")
+    line = paper_line(kind)
+    foreign = tuple(prefix for other, entry in LINES.items() if other != kind for prefix in entry.only_prefixes)
     layout: dict[str, str] = {}
     for relpath in kit_files(kit_root):
-        if kind == "experimental":
-            if not relpath.startswith(REVIEW_ONLY_PREFIXES):
-                layout[relpath] = relpath
-        elif relpath.startswith(_REVIEW_SECTIONS):
-            layout[_SECTIONS + relpath[len(_REVIEW_SECTIONS):]] = relpath
-        elif not relpath.startswith(_SECTIONS) or relpath in REVIEW_SHARED_SECTIONS:
+        if relpath.startswith(foreign):
+            continue
+        if line.sections_dir == _SECTIONS:
+            layout[relpath] = relpath
+        elif relpath.startswith(line.sections_dir):
+            layout[_SECTIONS + relpath[len(line.sections_dir):]] = relpath
+        elif not relpath.startswith(_SECTIONS) or relpath in line.shared_sections:
             layout[relpath] = relpath
     return layout
 

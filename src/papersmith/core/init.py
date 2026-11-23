@@ -9,7 +9,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 from .. import __version__
 from ..errors import SourceError, UserError
@@ -56,93 +56,74 @@ def _write_text(root: Path, relpath: str, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-#: The research-state folders a review workspace gets instead of the
-#: experimental ones (``proposals``, ``implementations``, ``kaggle-inbox``,
-#: ``experiments``): ``review/`` holds the PRISMA 2020 records of
-#: ``skills/systematic-review``.
-_REVIEW_TOPOLOGY = (
-    ".papersmith",
-    ".claude/agents",
-    ".opencode",
-    ".pi/gentle-ai",
-    "guidance/paper-guide",
-    "guidance/reference-papers",
-    "guidance/data-paper",
-    "paper",
-    "review",
-    "sota-pool",
-)
+class Topology(NamedTuple):
+    """The research-state folders a line's workspace starts with.
+
+    ``directories`` are created; ``gitkeeps`` are the empty drop-zones that
+    get a ``.gitkeep``, so the folder itself travels through Git while its
+    contents -- third-party PDFs, managed revisions, run products -- stay on
+    the machine that made them.
+    """
+
+    directories: tuple[str, ...]
+    gitkeeps: tuple[str, ...]
 
 
-def _create_review_topology(root: Path) -> None:
-    for relpath in _REVIEW_TOPOLOGY:
-        (root / relpath).mkdir(parents=True, exist_ok=True)
-    for relpath in ("guidance/paper-guide/.gitkeep", "guidance/reference-papers/.gitkeep",
-                    "guidance/data-paper/.gitkeep", "paper/.gitkeep", "review/.gitkeep",
-                    "sota-pool/.gitkeep"):
-        path = root / relpath
-        if not fs.exists(path):
-            fs.write_text(path, "")
+#: The harness folders every line's workspace gets before its own.
+_HARNESS_DIRECTORIES = (".papersmith", ".claude/agents", ".opencode", ".pi/gentle-ai")
+#: The guidance drop-zones every line shares. `guidance/paper-guide` is listed
+#: even though the kit no longer bundles its own copy (see
+#: ``manifest.KIT_ENTRIES``): the workspace still needs the empty drop-zone.
+_GUIDANCE = ("guidance/paper-guide", "guidance/reference-papers", "guidance/data-paper")
 
 
-def _create_topology(root: Path) -> None:
-    # ``proposals/`` stays flat: this repository's own layout is
-    # `proposals/research-concept-rNN.md` with no subfolders (see
-    # `skills/proposal-deliberation/profile.ts`, which declares
-    # `directory: "proposals"` with no nested stage directories), and a fresh
-    # workspace must match it rather than diverge with a `drafts/deliberated/
-    # receipts` shape nothing reads.
-    directories = (
-        ".papersmith",
-        ".claude/agents",
-        ".opencode",
-        ".pi/gentle-ai",
-        "guidance/paper-guide",
-        "guidance/reference-papers",
-        "guidance/data-paper",
-        "proposals",
-        "implementations",
-        "kaggle-inbox",
-        "paper",
-        "experiments",
-        # The plausibility flow's graph pool: `candidates.json` from
-        # `sota-scout`, `atlas.json` from `sota-grapher`, and the `atlas.html`
-        # rendered from it. It was the one drop-zone the topology never
-        # scaffolded, so unlike every sibling above it did not travel through
-        # git as an empty folder and this framework's own root `.gitignore`
-        # named a `sota-pool/.gitkeep` that nothing created.
-        "sota-pool",
-    )
-    for relpath in directories:
-        (root / relpath).mkdir(parents=True, exist_ok=True)
-    # Every directory a fresh workspace must ship empty gets a `.gitkeep`, so
-    # the folder itself travels through Git while its contents — third-party
-    # PDFs, managed revisions, run products — stay on the machine that made
-    # them. `guidance/paper-guide` is listed even though the kit no longer
-    # bundles its own copy (see ``manifest.KIT_ENTRIES``): the workspace still
-    # needs the empty drop-zone.
-    for relpath in (
-        "guidance/paper-guide/.gitkeep",
-        "guidance/reference-papers/.gitkeep",
-        "guidance/data-paper/.gitkeep",
-        "proposals/.gitkeep",
-        "implementations/.gitkeep",
-        "kaggle-inbox/.gitkeep",
-        "paper/.gitkeep",
-        "experiments/.gitkeep",
-        "sota-pool/.gitkeep",
-    ):
-        path = root / relpath
-        if not fs.exists(path):
-            fs.write_text(path, "")
+def _topology(*drop_zones: str) -> Topology:
+    zones = (*_GUIDANCE, *drop_zones)
+    return Topology(directories=(*_HARNESS_DIRECTORIES, *zones),
+                    gitkeeps=tuple(f"{zone}/.gitkeep" for zone in zones))
+
+
+#: The research-state folders of each line, named by ``manifest.LINES``'s
+#: ``topology``.
+#:
+#: ``experimental``: ``proposals/`` stays flat: this repository's own layout is
+#: `proposals/research-concept-rNN.md` with no subfolders (see
+#: `skills/proposal-deliberation/profile.ts`, which declares
+#: `directory: "proposals"` with no nested stage directories), and a fresh
+#: workspace must match it rather than diverge with a `drafts/deliberated/
+#: receipts` shape nothing reads. ``sota-pool/`` is the plausibility flow's
+#: graph pool: `candidates.json` from `sota-scout`, `atlas.json` from
+#: `sota-grapher`, and the `atlas.html` rendered from it.
+#:
+#: ``review``: the review line's folders instead of the experimental ones
+#: (``proposals``, ``implementations``, ``kaggle-inbox``, ``experiments``):
+#: ``review/`` holds the PRISMA 2020 records of ``skills/systematic-review``.
+#:
+#: ``empirical``: the empirical lines' folders (paper-type-lines S7-S8):
+#: ``protocol/`` holds the study-protocol revisions, ``study/`` the operator
+#: records (protocol lock, ethics, registration), ``analysis/`` the analysis
+#: log, ``datasets/`` the own data. No line uses it yet.
+TOPOLOGIES: dict[str, Topology] = {
+    "experimental": _topology("proposals", "implementations", "kaggle-inbox", "paper", "experiments",
+                              "sota-pool"),
+    "review": _topology("paper", "review", "sota-pool"),
+    "empirical": _topology("protocol", "study", "analysis", "datasets", "paper", "sota-pool"),
+}
 
 
 def create_topology(root: Path, kind: str) -> None:
-    """The research-state folders of ``kind``'s line; additive and idempotent."""
-    if kind == "review":
-        _create_review_topology(root)
-    else:
-        _create_topology(root)
+    """The research-state folders of ``kind``'s line; additive and idempotent.
+
+    A kind the table does not hold gets the default line's folders.
+    """
+    line = manifest.LINES.get(kind, manifest.LINES[manifest.DEFAULT_PAPER_KIND])
+    topology = TOPOLOGIES[line.topology]
+    for relpath in topology.directories:
+        (root / relpath).mkdir(parents=True, exist_ok=True)
+    for relpath in topology.gitkeeps:
+        path = root / relpath
+        if not fs.exists(path):
+            fs.write_text(path, "")
 
 
 def _copy_kit(root: Path, kit_root: Path, kind: str = manifest.DEFAULT_PAPER_KIND) -> list[str]:
@@ -443,8 +424,8 @@ def initialize(destination: str | Path, *, title: str = "Untitled Paper",
     tools = validate_tools(list(tools))
     if remote not in REMOTE_CHOICES:
         raise UserError(f"remote must be one of {', '.join(REMOTE_CHOICES)}")
-    if kind not in manifest.PAPER_KINDS:
-        raise UserError(f"kind must be one of {', '.join(manifest.PAPER_KINDS)}")
+    if kind not in manifest.LINES:
+        raise UserError(f"kind must be one of {', '.join(manifest.LINES)}")
     if not isinstance(title, str) or not title.strip():
         raise UserError("title must be a non-empty string")
     if not isinstance(topic, str) or not topic.strip():
@@ -615,10 +596,9 @@ def register(subparsers) -> None:
     parser.add_argument("--topic", default="unspecified")
     parser.add_argument("--remote", choices=REMOTE_CHOICES, default="kaggle")
     parser.add_argument(
-        "--kind", choices=manifest.PAPER_KINDS, default=manifest.DEFAULT_PAPER_KIND,
-        help=("the paper line: experimental (default; proposal, experiments, results) or "
-              "review (a PRISMA 2020 systematic review with no experiments: protocol, "
-              "search, screening, synthesis under review/)"))
+        "--kind", choices=manifest.paper_kinds(), default=manifest.DEFAULT_PAPER_KIND,
+        help="the paper line: " + manifest.or_list(
+            [f"{kind} ({line.summary})" for kind, line in manifest.LINES.items()]))
     parser.add_argument("--import-existing", action="store_true",
                         help=("initialize a nonempty directory without overwriting existing files: keep its "
                               "README.md, merge papersmith's block into its .gitignore, and "
@@ -673,7 +653,8 @@ def run_cli(args) -> int:
     print(f"Initialized papersmith workspace: {result['workspace']}")
     print(f"Framework version: {result['version']}; default target: {result['default_target']}")
     if result.get("paper_kind"):
-        print(f"Paper line: {result['paper_kind']} (PRISMA 2020 systematic review; see CLAUDE.md)")
+        label = manifest.paper_line(result["paper_kind"]).label
+        print(f"Paper line: {result['paper_kind']} ({label}; see CLAUDE.md)")
     print(f"Kit source: {provenance.describe_record({'recorded': True, **result['kit_source']})}")
     print("Harness wiring:")
     for line in wiring.format_summary(result["wiring"]):
