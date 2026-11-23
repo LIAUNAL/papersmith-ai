@@ -88,8 +88,8 @@ class TableCase(unittest.TestCase):
 
 class TableShapeTests(TableCase):
     def test_the_shipped_lines_and_their_derived_names(self) -> None:
-        self.assertEqual(tuple(manifest.LINES), ("experimental", "review"))
-        self.assertEqual(manifest.PAPER_KINDS, ("experimental", "review"))
+        self.assertEqual(tuple(manifest.LINES), ("experimental", "review", "observational-measurement"))
+        self.assertEqual(manifest.PAPER_KINDS, ("experimental", "review", "observational-measurement"))
         self.assertEqual(manifest.DEFAULT_PAPER_KIND, "experimental")
         review = manifest.LINES["review"]
         self.assertEqual(manifest.REVIEW_ONLY_PREFIXES, review.only_prefixes)
@@ -125,7 +125,7 @@ class InjectedLineTests(TableCase):
             "sections/10-back-matter.md": "sections/10-back-matter.md",
             ".claude/agents/helper.md": ".claude/agents/helper.md",
         })
-        with self.assertRaisesRegex(UserError, "experimental, review, probe"):
+        with self.assertRaisesRegex(UserError, "experimental, review, observational-measurement, probe"):
             manifest.kit_layout(kit, "survey")
 
     def test_paper_kind_and_schema_accept_a_table_line(self) -> None:
@@ -138,7 +138,7 @@ class InjectedLineTests(TableCase):
         self.assertEqual(manifest.paper_kind(workspace), PROBE)
         config = json.loads((self.init("experimental") / ".papersmith" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(schema.validate_config_json({**config, "paper_kind": PROBE})["paper_kind"], PROBE)
-        with self.assertRaisesRegex(UserError, "must be experimental, review or probe"):
+        with self.assertRaisesRegex(UserError, "must be experimental, review, observational-measurement or probe"):
             schema.validate_config_json({**config, "paper_kind": "survey"})
 
     def test_the_harness_flow_text_comes_from_the_line_template(self) -> None:

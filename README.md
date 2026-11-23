@@ -579,6 +579,47 @@ The dashboard's phase board still shows the experimental phases; a review
 workspace follows the list in its `CLAUDE.md`. Details in
 [skills/systematic-review/SKILL.md](skills/systematic-review/SKILL.md).
 
+### The observational and measurement line
+
+A study of data the operator collects or holds, without assigning an
+intervention, is the first empirical line: observational studies (STROBE),
+diagnostic or clinical validations (STARD 2015) and measurement instruments
+such as indices, scales or questionnaires (COSMIN). The variant the operator
+agrees with `/paper-type` chooses the reporting checklist.
+
+```bash
+smith init ~/papers/rural-youth --kind observational-measurement \
+  --title "Migration intentions of rural youth: a cross-sectional survey"
+```
+
+An existing workspace moves to it with `smith kind set
+observational-measurement --by "<operator>"` once `/paper-type` has scored the
+idea, as for the review line. The workspace has `protocol/`, `study/`,
+`analysis/` and `datasets/` instead of the experimental folders, the study's
+section contracts in `sections/`, the `/observational-measurement` skill, and
+its `CLAUDE.md` states the line's flow:
+
+1. **Study protocol** with `/study-protocol-deliberation` (exactly one primary
+   outcome, design, eligibility, sample size and analysis plan), approved and
+   locked by the operator (G-STUDY-PROTOCOL); later changes are amendments.
+2. **Ethics and registration**, recorded by the operator (or recorded as not
+   applicable, with the reason).
+3. **Data** the operator collects: registered as own data with its data-use
+   statement, a data dictionary, quality checks and a de-identification record.
+4. **Analysis** through an append-only log that labels each run confirmatory
+   or exploratory against the locked protocol.
+5. **Participant flow** (STROBE or STARD 2015): counts entered by the
+   operator, checked, drawn and signed off.
+6. **Writing** with `/paper-writing` from those records, the reporting
+   checklist of the variant (`checklist_cli.py check`) and the final judge on
+   the empirical-study rubric.
+
+The assistant never generates measurements or data, and never records ethics,
+consent, data collection, sign-offs or the primary outcome on the operator's
+behalf. `/observational-measurement status` reports where the study stands.
+Details in
+[skills/observational-measurement/SKILL.md](skills/observational-measurement/SKILL.md).
+
 ### Open the dashboard from another device
 
 `smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open

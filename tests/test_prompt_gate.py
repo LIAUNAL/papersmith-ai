@@ -69,6 +69,14 @@ class GenericRubric(unittest.TestCase):
             "eligibility, sample size with its justification and the analysis plan.")["verdict"], "pass")
         self.assertEqual(prompt_gate.check("study-protocol-deliberation", "fix it")["verdict"], "fail")
 
+    def test_the_observational_line_skill_is_gated_by_the_generic_rubric(self) -> None:
+        # The line skill has no input contract of its own: empty input and `status` ask for the
+        # overview, a stage name routes to that stage, a vague request does not pass.
+        for text in ("", "status", "analysis", "draft the participant flow for the STROBE template"):
+            with self.subTest(text=text):
+                self.assertEqual(prompt_gate.check("observational-measurement", text)["verdict"], "pass")
+        self.assertEqual(prompt_gate.check("observational-measurement", "fix it")["verdict"], "fail")
+
     def test_a_skill_without_a_contract_handles_its_own_empty_input(self) -> None:
         for skill in ("math-tutor", "experiments-tutor", "journal-finder", "pixelrag", "ui-github",
                       "proposal-deliberation"):

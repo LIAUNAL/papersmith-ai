@@ -226,7 +226,8 @@ def register(subparsers) -> None:
     parser.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     parser.add_argument("--by", default="", help="the operator who agreed the type")
     parser.add_argument("--force", action="store_true",
-                        help="move even when a proposal revision or paper/main.tex exists")
+                        help="move even when a proposal revision or paper/main.tex exists (on an "
+                             "empirical line, also a study protocol revision or its lock)")
     parser.add_argument("--allow-dirty-kit", action="store_true",
                         help="move even when the kit source has uncommitted changes (see `smith upgrade`)")
     parser.set_defaults(handler=run_cli)

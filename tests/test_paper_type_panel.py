@@ -144,6 +144,16 @@ class PanelActionTests(unittest.TestCase):
         self.assertIn('smith kind set review --by &quot;Ana&quot; moves this workspace to it', out["rendered"])
         self.assertIn("smith init --kind review", out["rendered"])
 
+    def test_a_switch_to_the_observational_line_names_its_kind_set_command(self) -> None:
+        steps = [{"action": "agree-open", "type": "observational-measurement"},
+                 {"action": "agree-confirm", "type": "observational-measurement",
+                  "values": {"ptBy": "Juli", "ptVariant": "observational"}}]
+        out = run(view(), steps=steps, responses={"/api/paper-type/agree": {"status": 200, "body": {
+            "ok": True, "layout": "switch:observational-measurement"}}})
+        self.assertIn('smith kind set observational-measurement --by &quot;Juli&quot; moves this workspace to it',
+                      out["rendered"])
+        self.assertIn("smith init --kind observational-measurement", out["rendered"])
+
     def test_agree_form_offers_the_family_variants(self) -> None:
         out = run(view(), steps=[{"action": "agree-open", "type": "observational-measurement"}])
         for variant in ("observational", "diagnostic-validation", "measurement-instrument"):

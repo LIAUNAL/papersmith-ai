@@ -83,6 +83,17 @@ LINES: dict[str, PaperLine] = {
         summary=("a PRISMA 2020 systematic review with no experiments: protocol, "
                  "search, screening, synthesis under review/"),
     ),
+    "observational-measurement": PaperLine(
+        sections_dir="sections-observational-measurement/",
+        only_prefixes=("sections-observational-measurement/", "skills/observational-measurement/"),
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-observational-measurement.md.tpl",
+        topology="empirical",
+        label="observational or measurement study (STROBE, STARD 2015, COSMIN)",
+        summary=("an observational, diagnostic-validation or measurement-instrument study of the "
+                 "operator's own data: locked protocol, ethics, data QC, analysis log, participant flow"),
+        empirical=True,
+    ),
 }
 DEFAULT_PAPER_KIND = "experimental"
 

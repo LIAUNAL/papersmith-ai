@@ -11,8 +11,9 @@ knows eight types (`skills/_core/paper_types/paper_types.json`): applied AI
 method, review, observational and measurement study, experiment or
 intervention, qualitative, participatory and consensus study, hardware,
 laboratory and simulation science, and data resource. Some group variants that
-share one flow and change only the reporting checklist. Applied AI and review
-already have a flow (a workspace line); the others are planned.
+share one flow and change only the reporting checklist. Applied AI, review and
+observational and measurement studies already have a flow (a workspace line);
+the others are planned.
 
 The applied-AI flow does not depend on this skill: a workspace with no agreed
 type stays on its line, as before.

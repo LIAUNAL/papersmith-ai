@@ -82,8 +82,8 @@
     {
       "id": "observational-measurement",
       "name": "Observational and measurement study",
-      "status": "planned",
-      "line": null,
+      "status": "available",
+      "line": "observational-measurement",
       "summary": "Studies that measure what exists without assigning an intervention: populations and datasets, diagnostic or prediction accuracy, and measurement instruments.",
       "novelty": "The population, dataset or measure studied, and what its analysis or validation shows.",
       "stages": [
@@ -101,6 +101,8 @@
           "id": "observational",
           "name": "Observational study",
           "summary": "Surveys, cohorts, cross-sectional, econometric, spatial or network analyses of own or secondary data.",
+          "checklist": "strobe",
+          "flow_template": null,
           "guidelines": [
             {
               "name": "STROBE",
@@ -136,6 +138,8 @@
           "id": "diagnostic-validation",
           "name": "Diagnostic or clinical validation",
           "summary": "Accuracy, agreement or prediction of a test, measure or model against a reference standard, across sites or languages.",
+          "checklist": "stard-2015",
+          "flow_template": null,
           "guidelines": [
             {
               "name": "STARD 2015",
@@ -168,6 +172,8 @@
           "id": "measurement-instrument",
           "name": "Measurement instrument",
           "summary": "An index, scale or questionnaire: dimensions and items, weighting, reliability, validity, robustness and adoption.",
+          "checklist": "cosmin",
+          "flow_template": null,
           "guidelines": [
             {
               "name": "COSMIN (health measurement instruments)",

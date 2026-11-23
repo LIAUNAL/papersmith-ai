@@ -272,7 +272,7 @@ class CliTests(unittest.TestCase):
         out = self.agree("--type", "observational-measurement", "--variant", "observational", "--by", "op",
                          "--rationale", "own survey of rural youth")
         self.assertTrue(out["ok"], out)
-        self.assertEqual(out["layout"], "planned")
+        self.assertEqual(out["layout"], "switch:observational-measurement")
         stored = json.loads((self.root / ".papersmith" / "paper_type.json").read_text(encoding="utf-8"))
         self.assertEqual((stored["agreed"], stored["agreed_variant"], stored["agreed_by"]),
                          ("observational-measurement", "observational", "op"))
@@ -283,6 +283,9 @@ class CliTests(unittest.TestCase):
         self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=AI_IDEA)
         self.assertEqual(self.agree("--type", "applied-ai", "--by", "op")["layout"], "current")
         self.assertEqual(self.agree("--type", "review", "--by", "op")["layout"], "switch:review")
+        self.assertEqual(self.agree("--type", "observational-measurement", "--by", "op")["layout"],
+                         "switch:observational-measurement")
+        self.assertEqual(self.agree("--type", "hardware", "--by", "op")["layout"], "planned")
 
     def test_agree_refuses_scores_of_an_older_idea(self) -> None:
         self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=AI_IDEA)

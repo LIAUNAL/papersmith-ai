@@ -7,12 +7,17 @@ read. Each type names what kind of contribution it is, where its novelty lies,
 its canonical stages, the reporting guidelines journals expect, the words that
 signal it in an idea, and whether smith already has a flow (``line``) for it:
 
-* ``available`` types map to a workspace line (``experimental`` or ``review``,
+* ``available`` types map to a workspace line (``experimental``, ``review`` or
+  ``observational-measurement``,
   the ``paper_kind`` values ``smith init --kind`` accepts);
 * ``planned`` types have no line yet (``line`` is null).
 
 A type may group ``variants`` (each with its own name, summary, guidelines
 and signals): the family is one flow and the variant chooses its checklist.
+A variant may name ``checklist`` (the id of a reporting guideline the
+checklist engine ships, ``skills/_core/checklists/guidelines/<id>.json``) and
+``flow_template`` (a harness flow template); null or absent means none, and
+the family's flow template.
 A family's signals are its own plus its variants'; no signal appears twice in
 the catalogue. Names and summaries are English; the dashboard translates its
 own labels. Signals are lowercase ASCII stems matched against the folded idea.
@@ -30,11 +35,13 @@ from typing import Any
 
 CATALOGUE = Path(__file__).resolve().parent / "paper_types.json"
 STATUSES = ("available", "planned")
-LINES = ("experimental", "review")
+LINES = ("experimental", "review", "observational-measurement")
+GUIDELINES = Path(__file__).resolve().parent.parent / "checklists" / "guidelines"
 MAX_NAME = 48
 MAX_SUMMARY = 200
 _ID_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 _SIGNAL_RE = re.compile(r"^[a-z0-9][a-z0-9 +-]*$")
+_FLOW_TEMPLATE_RE = re.compile(r"^paper-flow[a-z0-9-]*\.md\.tpl$")
 _REQUIRED = ("id", "name", "status", "line", "summary", "novelty", "stages", "guidelines", "signals")
 _VARIANT_REQUIRED = ("id", "name", "summary", "guidelines", "signals")
 
@@ -85,6 +92,7 @@ def _check(item: Any) -> dict:
                 _fail(type_id, f"variant {variant['id']!r}: {field} must be non-empty text of at most {limit} characters")
         _check_guidelines(type_id, variant["guidelines"])
         _check_signals(type_id, variant["signals"], allow_empty=False)
+        _check_variant_flow(type_id, variant)
     _check_signals(type_id, item["signals"], allow_empty=bool(variants))
     every = all_signals(item)
     if len(set(every)) != len(every):
@@ -100,6 +108,19 @@ def _check_guidelines(type_id: str, guidelines: Any) -> None:
             _fail(type_id, "each guideline needs a name")
         if not str(guideline.get("url") or "").startswith("https://"):
             _fail(type_id, "each guideline url must start with https://")
+
+
+def _check_variant_flow(type_id: str, variant: dict) -> None:
+    """A variant's optional ``checklist`` and ``flow_template``: null, or a real one."""
+    checklist = variant.get("checklist")
+    if checklist is not None and (not isinstance(checklist, str) or not _ID_RE.match(checklist)
+                                  or not (GUIDELINES / f"{checklist}.json").is_file()):
+        _fail(type_id, f"variant {variant['id']!r}: checklist must be null or the id of a guideline in "
+                       f"skills/_core/checklists/guidelines/ (got {checklist!r})")
+    template = variant.get("flow_template")
+    if template is not None and (not isinstance(template, str) or not _FLOW_TEMPLATE_RE.match(template)):
+        _fail(type_id, f"variant {variant['id']!r}: flow_template must be null or a paper-flow*.md.tpl "
+                       f"template name (got {template!r})")
 
 
 def _check_signals(type_id: str, signals: Any, *, allow_empty: bool) -> None:
@@ -177,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["CATALOGUE", "LINES", "MAX_SUMMARY", "RegistryError", "STATUSES", "all_signals", "available", "by_line", "get",
+__all__ = ["CATALOGUE", "GUIDELINES", "LINES", "MAX_SUMMARY", "RegistryError", "STATUSES", "all_signals", "available", "by_line", "get",
            "load", "main", "validate"]
 
 if __name__ == "__main__":

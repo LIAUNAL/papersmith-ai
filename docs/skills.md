@@ -98,6 +98,8 @@ skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
 `experiments-tutor` and `journal-finder` — and each names its own seams.
 Section 20, `ui-github`, publishes the dashboard itself, read-only.
 Section 23, `prompt-gate`, measures the prompt every skill receives before it runs.
+Section 24, `observational-measurement`, is the observational and measurement
+line's own skill; it routes to the shared empirical modules described after it.
 
 ---
 
@@ -3519,12 +3521,42 @@ launches as before and the agent's own gate still applies. The full contract is
 [`skills/prompt-gate/SKILL.md`](../skills/prompt-gate/SKILL.md).
 
 
+### 24. `observational-measurement` — a study of the operator's own data, routed to the records that hold it
+
+**When.** Only in an observational-measurement workspace (`smith init --kind
+observational-measurement`, or `smith kind set observational-measurement`
+after `/paper-type`): an observational study, a diagnostic or clinical
+validation, or a measurement instrument (index, scale, questionnaire), with
+no intervention assigned. An experimental or review workspace never receives
+this skill.
+
+**How it runs.** `/observational-measurement` owns no script and no record. It
+reads the agreed variant (`agreed_variant` in `.papersmith/paper_type.json`)
+and its reporting checklist in the catalogue (`observational` → `strobe`,
+`diagnostic-validation` → `stard-2015`, `measurement-instrument` → `cosmin`),
+then either reports the study's status or runs one stage. The status overview
+is assembled from the shared modules' own JSON: `study_cli.py status`
+(protocol lock, ethics, registration), `analysis_cli.py status` (runs and
+their computed labels), `flow_cli.py status` (participant flow and sign-off),
+`datasets_cli.py status` (own data, dictionary, QC, de-identification) and
+`checklist_cli.py check --guideline <the variant's checklist>`; it names the
+first stage not done and the command that does it. The stages (protocol,
+ethics, registration, data, analysis, participant flow, writing, checklist and
+final judge) are the line's flow, stated in the workspace's `CLAUDE.md`.
+
+**What it never does.** It never generates, simulates, imputes or edits a
+measurement, a datum or a flow count; it never records an ethics approval, a
+consent route, a registration, a data-use statement, a de-identification, a
+protocol approval or amendment, or a sign-off on the operator's behalf; it
+never chooses or changes the primary outcome; and it never relabels an
+exploratory analysis or marks a `needs-judgment` checklist item satisfied.
+
 ### Shared empirical modules (for the empirical paper lines)
 
-These modules live under `skills/_core/` and serve the empirical lines that the
-paper-type catalogue plans (observational and measurement studies,
-experiments and interventions, laboratory and hardware work, data resources,
-qualitative work). No applied-AI or review flow calls them.
+These modules live under `skills/_core/` and serve the empirical lines of the
+paper-type catalogue: the observational and measurement line today, and the
+planned ones (experiments and interventions, laboratory and hardware work,
+data resources, qualitative work). No applied-AI or review flow calls them.
 
 **Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
 

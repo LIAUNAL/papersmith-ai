@@ -232,6 +232,21 @@ class HarnessCommandProjectionTests(unittest.TestCase):
                 self.assertIn("$ARGUMENTS", body)
                 self.assertIn("skills/paper-ingestion/SKILL.md", body)
 
+    def test_a_line_workspace_adds_its_line_skill_command(self) -> None:
+        # `observational-measurement` is line-only (`manifest.LINES`): only a
+        # workspace of that line receives the skill, and with it the command.
+        workspace = new_tmp(self) / "line-ws"
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main(["init", str(workspace), "--kind", "observational-measurement", "--no-npm", "--no-env",
+                       "--no-progress"])
+        self.assertEqual(rc, 0)
+        for harness in (".opencode/commands", ".claude/commands", ".pi/prompts"):
+            with self.subTest(harness=harness):
+                names = sorted(path.stem for path in (workspace / harness).glob("*.md"))
+                self.assertEqual(names, sorted((*self.COMMAND_NAMES, "observational-measurement")))
+                body = (workspace / harness / "observational-measurement.md").read_text(encoding="utf-8")
+                self.assertIn("skills/observational-measurement/SKILL.md", body)
+
     def test_antigravity_receives_no_command_directory(self) -> None:
         # Antigravity invokes `/name` from the skills link, so it gets no
         # command files of its own; Pi reads `.pi/prompts` (asserted above).

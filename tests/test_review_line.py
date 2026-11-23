@@ -70,7 +70,10 @@ class ExperimentalLineUnchangedTests(ReviewLineCase):
         kit = resolve_and_validate()
         layout = manifest.kit_layout(kit, "experimental")
         self.assertTrue(all(source == target for target, source in layout.items()))
-        expected = {p for p in manifest.kit_files(kit) if not p.startswith(manifest.REVIEW_ONLY_PREFIXES)}
+        # The experimental layout drops every other line's only-paths (review's and
+        # each later line's), never its own files.
+        only = tuple(p for line in manifest.LINES.values() for p in line.only_prefixes)
+        expected = {p for p in manifest.kit_files(kit) if not p.startswith(only)}
         self.assertEqual(set(layout), expected)
 
 

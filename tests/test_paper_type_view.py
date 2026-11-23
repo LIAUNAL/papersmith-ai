@@ -110,7 +110,7 @@ class EndpointTests(Case):
             "type": "observational-measurement", "variant": "observational", "by": "op",
             "rationale": "own survey"}).json()
         self.assertTrue(body["ok"], body)
-        self.assertEqual(body["layout"], "planned")
+        self.assertEqual(body["layout"], "switch:observational-measurement")
         self.assertEqual(json.loads((self.root / ".papersmith" / "paper_type.json").read_text())["agreed"],
                          "observational-measurement")
 
