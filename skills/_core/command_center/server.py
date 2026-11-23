@@ -17,6 +17,7 @@ script and reports its output; it changes no paper byte.
 from __future__ import annotations
 
 import argparse
+import atexit
 import asyncio
 import contextlib
 import hashlib
@@ -56,6 +57,11 @@ DEFAULT_HEALTH_TTL_SECONDS = 10.0
 #: left, and sends a keep-alive comment after this much silence.
 TERMINAL_WAIT_SECONDS = 1.0
 TERMINAL_PING_SECONDS = 15.0
+
+#: How long shutdown waits for open connections (the board's event stream never
+#: closes by itself) before it cancels them and runs the lifespan's cleanup,
+#: which stops Caztor; without a bound it waited forever and Caztor kept its port.
+SHUTDOWN_GRACE_SECONDS = 3
 
 _log = logging.getLogger(__name__)
 
@@ -4929,7 +4935,10 @@ def main(argv: list[str] | None = None) -> int:
                          daemon=True).start()
     if not args.no_browser:
         threading.Timer(1.0, open_browser, args=(url,)).start()
-    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+    # A forced quit skips the lifespan's cleanup: Caztor is stopped when the process exits anyway.
+    atexit.register(app.state.caztor.stop)
+    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level,
+                timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS)
     return 0
 
 

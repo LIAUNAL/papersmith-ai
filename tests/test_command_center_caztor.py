@@ -329,6 +329,23 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class ShutdownStopsCaztorTests(unittest.TestCase):
+    """An open event stream kept uvicorn waiting forever on shutdown, so the lifespan never stopped Caztor and it
+    kept its port: the dashboard bounds that wait and stops Caztor when the process exits in any case."""
+
+    def test_main_bounds_the_shutdown_wait_and_stops_caztor_at_exit(self) -> None:
+        from unittest import mock
+
+        with mock.patch.object(server, "create_app") as created, \
+                mock.patch("uvicorn.run") as run, \
+                mock.patch.object(server.atexit, "register") as register:
+            server.main(["--root", ".", "--port", "8099", "--no-browser", "--no-refresh"])
+
+        self.assertEqual(run.call_args.kwargs["timeout_graceful_shutdown"], server.SHUTDOWN_GRACE_SECONDS)
+        self.assertLessEqual(server.SHUTDOWN_GRACE_SECONDS, 5)
+        register.assert_any_call(created.return_value.state.caztor.stop)
+
+
 class SmithUiHandsTheBundledCaztorTests(unittest.TestCase):
     """The dashboard runs in the workspace's environment, which does not hold papersmith; smith ui names Caztor."""
 
