@@ -514,6 +514,9 @@ class CardTests(BoardCase):
         spec = importlib.util.spec_from_file_location(f"o4_cli_{script.stem}", script)
         module = importlib.util.module_from_spec(spec)
         saved = list(sys.path)
+        # A workspace CLI imports `skills` from its own (temporary) root; drop
+        # what it imported so later tests never resolve `skills` there.
+        modules = set(sys.modules)
         try:
             spec.loader.exec_module(module)
             entry = getattr(module, "run", None) if script.name == "datasets_cli.py" else module.main
@@ -526,6 +529,9 @@ class CardTests(BoardCase):
             return f"refused ({exc.code})"
         finally:
             sys.path[:] = saved
+            for name in set(sys.modules) - modules:
+                if name == "skills" or name.startswith("skills."):
+                    del sys.modules[name]
         return "not parsed"
 
     def test_every_operator_record_names_the_operator(self) -> None:
