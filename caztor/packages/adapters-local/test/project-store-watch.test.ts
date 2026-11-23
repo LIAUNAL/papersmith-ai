@@ -351,10 +351,12 @@ describe.each(implementations)("project store watching: %s", (_name, create) => 
       const { watcher, changes, start, clock, touch, fs, project } = await setup({}, { "a.tex": "one" });
       await start();
       expect(watcher.starts).toBe(1);
-      // Removed and created again with no scan in between: no scan ever sees the folder missing.
+      // Replaced with no scan in between: no scan ever sees the folder missing. The new folder is made before the old
+      // one is removed, so the file system cannot give it the old folder's inode back.
+      await fs.mkdir(`${project}.new`, { recursive: true });
+      await fs.writeFile(`${project}.new/b.tex`, encode("new project"));
       await fs.rm(project, { recursive: true });
-      await fs.mkdir(project, { recursive: true });
-      await fs.writeFile(`${project}/b.tex`, encode("new project"));
+      await fs.rename(`${project}.new`, project);
       clock.advance(RESCAN_MS);
       await until(() => watcher.starts === 2);
       await until(() => changes.some((change) => change.path === "b.tex"));
