@@ -51,6 +51,7 @@ SKILL_NAMES = (
     "remote-execution",
     "remote-parallelism",
     "skill-audit",
+    "study-protocol-deliberation",
     "ui-github",
     "upgrade-project",
 )
@@ -190,6 +191,14 @@ class SkillFrontDoorTests(unittest.TestCase):
         payload = json.loads(experiments.stdout)
         self.assertEqual(payload["status"], "ok")
         self.assertIn("experiments", payload["objective"]["purpose"])
+
+        protocol = run_node(
+            workspace / "skills/study-protocol-deliberation/cli.mjs",
+            '{"operation":"STATUS"}', workspace=workspace)
+        self.assertEqual(protocol.returncode, 0, protocol.stderr)
+        payload = json.loads(protocol.stdout)
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("study protocol", payload["objective"]["purpose"])
 
 
 class SkillWorkspaceVerbTests(unittest.TestCase):

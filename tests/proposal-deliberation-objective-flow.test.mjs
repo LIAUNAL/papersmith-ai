@@ -145,8 +145,10 @@ function head(text) {
 	return text;
 }
 
-test('exactly two profiles declare a north (a third is a decision)', () => {
-	assert.equal(pairs.length, 2, `expected 2 profiles declaring objective, found ${pairs.length}: ${pairs.map((p) => p.skillName).join(', ')}`);
+// The third (study-protocol-deliberation) was a decision: D1, accepted by the operator in
+// odd/tasks/paper-type-lines.md L47. A fourth is a decision again.
+test('exactly three profiles declare a north (proposal, experimental, study-protocol; a fourth is a decision)', () => {
+	assert.equal(pairs.length, 3, `expected 3 profiles declaring objective (proposal-deliberation, experimental-deliberation and the decided third, study-protocol-deliberation), found ${pairs.length}: ${pairs.map((p) => p.skillName).join(', ')}`);
 });
 
 test('every error path carries the north', () => {

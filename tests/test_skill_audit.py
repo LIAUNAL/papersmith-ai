@@ -9047,6 +9047,8 @@ class NewlyCoveredSubjectRosterTests(unittest.TestCase):
         # 9 -> 10: the adoption operation (0.14.0), the shared host's own
         # widening, measured from its refusal.
         ("experimental-deliberation", 10),
+        # T7-U1: the third profile on the same host, so the same ten operations.
+        ("study-protocol-deliberation", 10),
         # 22 -> 23: `launch-plan`, the shared engine's read-only launch
         # checklist, measured from its refusal.
         ("experimental-implementation", 23),

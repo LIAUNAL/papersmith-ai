@@ -830,6 +830,7 @@ the same change.
 | `references/probes/remote-execution.smoke-subcommands.json` | `remote-execution`'s nested `smoke record` `roster` recipe |
 | `references/probes/proposal-implementation.accepted-operations.json` | `proposal-implementation`'s `roster` recipe — same finding, over 2045 lines |
 | `references/probes/experimental-deliberation.accepted-operations.json` | `experimental-deliberation`'s `roster` recipe — `proposal-deliberation`'s sibling engine, previously unaudited |
+| `references/probes/study-protocol-deliberation.accepted-operations.json` | `study-protocol-deliberation`'s `roster` recipe — the deliberation engine's third profile, audited from its first commit |
 | `references/probes/experimental-implementation.accepted-operations.json` | `experimental-implementation`'s `roster` recipe — `proposal-implementation`'s sibling engine, previously unaudited |
 | `references/probes/kaggle-accounts.accepted-operations.json` | `kaggle-accounts`'s `roster` recipe — handles live credentials, previously unaudited |
 | `references/probes/paper-writing.accepted-operations.json` | `paper-writing`'s `roster` recipe — largest, newest skill in the forge, previously unaudited |

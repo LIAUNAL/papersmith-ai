@@ -10,7 +10,7 @@
 // the accept turn refused `atx-heading-standalone` -- so no successor could ever be published
 // until unrelated text was reworded.
 //
-// This file pins both halves of the repair, for BOTH deliberation skills:
+// This file pins both halves of the repair, for EVERY deliberation skill:
 //  - a code span is not a heading: the inline-code fixture passes v1, preview and accept;
 //  - a genuinely fused heading outside code still refuses, and with the SAME code
 //    (`atx-heading-standalone`) at all three points -- the check was fixed, not weakened.
@@ -31,9 +31,24 @@ const repoRoot = process.cwd();
 const engineDir = path.join(repoRoot, 'skills/_core/deliberation/engine');
 
 const IDEA = 'Measure the sweep across three seeds. Then compare the arms.';
-// The declarations satisfy the experiments domain's canonical form; the mathematical domain
-// recognizes nothing in them. The first line is the subject under test.
-const DECLARATIONS = '**Dataset:** Synthetic-Blobs, train/test split as distributed\n\n**Validation scheme:** paired t-test, 5 seeds, 10 repetitions';
+// The declarations satisfy the experiments domain's canonical form and the study-protocol
+// domain's (each ignores the other's labels); the mathematical domain recognizes nothing in
+// them. The first line is the subject under test.
+const DECLARATIONS = [
+	'**Dataset:** Synthetic-Blobs, train/test split as distributed',
+	'**Validation scheme:** paired t-test, 5 seeds, 10 repetitions',
+	'**Research question:** Does the sweep change the error between the arms?',
+	'**Primary outcome:** O1 -- held-out error rate; time point: end of the sweep',
+	'**Secondary outcomes:** none',
+	'**Design:** two-arm comparison over a fixed sweep',
+	'**Eligibility:** every configuration of the sweep',
+	'**Sample size:** 10 repetitions per arm',
+	'**Sample size justification:** the repetition count the validation scheme fixes',
+	'**Primary model:** paired t-test of the error between the arms',
+	'**Covariates:** none',
+	'**Missing data:** a failed run is repeated, never imputed',
+	'**Multiplicity:** not applicable to the single primary outcome',
+].join('\n\n');
 const INLINE_CODE_GUIDE = `Each log marks its boundary with \`## Results\` inline.\n\n${DECLARATIONS}`;
 const FUSED_GUIDE = `Each log marks its boundary with ## Results inline.\n\n${DECLARATIONS}`;
 // v1 derives this heading from the idea's second sentence, terminal punctuation dropped.
@@ -166,7 +181,7 @@ async function run(skill) {
 	return promise;
 }
 
-for (const [skill, stem] of [['proposal-deliberation', 'research-concept'], ['experimental-deliberation', 'experiments']]) {
+for (const [skill, stem] of [['proposal-deliberation', 'research-concept'], ['experimental-deliberation', 'experiments'], ['study-protocol-deliberation', 'study-protocol']]) {
 	test(`${skill}: the child answers for its own profile`, async () => {
 		const { profile } = await run(skill);
 		assert.equal(profile.stem, stem, 'DELIBERATION_DOMAIN_PROFILE must reach the child, or this file certifies the wrong skill');
