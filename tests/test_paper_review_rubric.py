@@ -345,6 +345,14 @@ class RubricRecordTests(unittest.TestCase):
         self.assertRefusedUnchanged(ml_round(rubric="neurips"),
                                     "rubric must be one of ml-conference, systematic-review, empirical-study")
 
+    def test_a_rubric_that_is_not_text_is_refused_not_crashed(self) -> None:
+        # A list or object as `rubric` must be a typed refusal, never a TypeError.
+        self.set_line("review")
+        for value in (["systematic-review"], {"id": "systematic-review"}):
+            with self.subTest(value=value):
+                self.assertRefusedUnchanged(ml_round(rubric=value),
+                                            "rubric must be one of ml-conference, systematic-review, empirical-study")
+
     def test_a_line_no_rubric_serves_is_refused(self) -> None:
         self.set_line("poetry")
         self.assertRefusedUnchanged(ml_round(), 'no rubric serves the line "poetry"', code="RUBRIC_LINE_UNKNOWN")

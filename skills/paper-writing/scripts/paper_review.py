@@ -451,7 +451,7 @@ def rubric_of(data: dict, line: str) -> str:
     Raises `Refused` for an unknown rubric, a line no rubric serves, or a rubric
     that does not serve the line.
     """
-    if "rubric" in data and data["rubric"] not in RUBRICS:
+    if "rubric" in data and (not isinstance(data["rubric"], str) or data["rubric"] not in RUBRICS):
         raise Refused("REVIEW_ROUND_INVALID", f"rubric must be one of {', '.join(RUBRICS)}")
     expected = rubric_for_line(line)
     if expected is None:
