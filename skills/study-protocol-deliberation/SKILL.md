@@ -262,3 +262,25 @@ yourself: you tell the operator the command. Until `protocol status` answers
 describe the study as approved by an ethics committee or registered unless
 `study_cli.py status` shows that record current. See
 [`skills/_core/empirical/README.md`](../_core/empirical/README.md).
+
+## The analysis log and its labels
+
+Once data exist, every analysis is logged in `analysis/log.jsonl` by
+`python skills/_core/empirical/analysis_cli.py run --outcome O1 [--plan
+primary-model] --input <data> --output <result> --root . -- <command>`, which
+hashes the script, the inputs and the lock before running and the streams and
+outputs after; an analysis the operator ran in a GUI tool is entered by the
+operator with `analysis_cli.py record --by <operator> --tool <name> ...`.
+Each entry is labelled `confirmatory` or `exploratory` by the log, never by
+you or the operator: confirmatory only when the lock is current and the
+outcome (and the plan entry named) is in the locked revision, which the log
+reads through `fields.mjs`, this skill's parser entry point. A run before the
+lock, of an outcome the protocol does not name, or of an unplanned analysis
+is exploratory, and stays so; only an amendment that adds the outcome makes a
+later run confirmatory, and `analysis_cli.py status` flags an outcome first
+analysed before the amendment named it. Never present an exploratory result
+as a confirmatory one, and never suggest an amendment to turn one into the
+other: an amendment records a decision the operator took for a reason, and
+the paper reports it. `paper_cli.py verify` fails a manuscript whose primary
+outcome is not the locked one unless an amendment declared the switch. See
+[`skills/_core/empirical/README.md`](../_core/empirical/README.md#the-analysis-log).

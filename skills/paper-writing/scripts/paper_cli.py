@@ -3247,6 +3247,38 @@ def _scan_manuscript_language(main_tex_bytes: bytes) -> dict:
     return paper_language.scan(main_tex_bytes.decode("utf-8", errors="replace"))
 
 
+#: The empirical module's verify-side disk read (S7, decision D9). It imports
+#: its sibling `records` as a package, so it is loaded as `skills._core.empirical`
+#: from the kit root that holds this script, like the manuscript graph.
+ANALYSIS_LOG = Path(__file__).resolve().parents[2] / "_core" / "empirical" / "analysis_log.py"
+
+
+def _study_inputs(paper_dir: Path) -> dict | None:
+    """`analysis_log.manuscript_inputs` of the workspace holding `paper_dir`:
+    None when the module is not shipped, cannot load, or the workspace has no
+    study protocol, so an applied-AI or review paper gets no study check."""
+    if not ANALYSIS_LOG.is_file():
+        return None
+    try:
+        import importlib  # noqa: PLC0415
+
+        kit_root = str(ANALYSIS_LOG.parents[3])
+        if kit_root not in sys.path:
+            sys.path.insert(0, kit_root)
+        module = importlib.import_module("skills._core.empirical.analysis_log")
+        return module.manuscript_inputs(Path(paper_dir).resolve().parent)
+    except Exception:  # noqa: BLE001 - an advisory read never fails the verb
+        return None
+
+
+def _outcomes_fact(paper_dir: Path) -> str | None:
+    """The paper's fixed `outcomes` fact, or None (never declared, reopened, or unreadable)."""
+    try:
+        return paper_declarations.read_fact(paper_dir, "outcomes")
+    except Exception:  # noqa: BLE001 - `verify` reports the fact as undeclared
+        return None
+
+
 def cmd_verify(args: argparse.Namespace) -> dict:
     """`verify`: a pure, read-only report over the five cross-section
     couplings, citation integrity, and contract currency
@@ -3279,6 +3311,10 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     # #180, #183: advisory caption and coherence warnings, never counted.
     report = paper_verify.attach_coherence(
         report, paper_coherence.run_guarded(evidence.main_tex_bytes, evidence.record))
+    # S7, D9: a study workspace's manuscript diffed against its locked protocol and analysis log.
+    study = _study_inputs(paper_dir)
+    report = paper_verify.attach_study(report, paper_coherence.run_study_guarded(
+        evidence.main_tex_bytes, None if study is None else _outcomes_fact(paper_dir), study))
     # #182 item 1: a cited source with no title or abstract on disk is a visible warning, never a failure.
     report = paper_verify.attach_reference_warnings(report)
     # #182 items 2-3: the cite-once policy, quotes that share no term with their claim,

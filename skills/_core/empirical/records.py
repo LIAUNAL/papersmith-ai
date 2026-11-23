@@ -2,7 +2,7 @@
 
 The analysis log, the dashboard and the checklist engine import these; none
 of them writes, creates a directory or calls a model. ``study_cli.py`` is the
-only writer.
+only writer of these records (``analysis_cli.py`` writes the analysis log).
 
     study/protocol.lock.json   gate G-STUDY-PROTOCOL: the approved revision of
                                protocol/study-protocol-<slug>-vNN.md, its sha256

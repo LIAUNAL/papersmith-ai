@@ -1,7 +1,8 @@
 # empirical
 
 The operator records of an empirical study: the approval of its protocol
-(gate G-STUDY-PROTOCOL), its ethics approval and its registration. Every one
+(gate G-STUDY-PROTOCOL), its ethics approval and its registration; and the
+labelled log of every analysis run. Every one
 of them is the operator's act, named with `--by`; an agent never approves,
 amends or records any of them on the operator's behalf (decisions D5 and D6
 of `odd/tasks/paper-type-lines.md`).
@@ -88,6 +89,79 @@ Every verb prints one JSON object. A refusal prints `{"ok": false, "error":
 `TEXT_INVALID`, `RECORD_UNCHANGED`, `ETHICS_CORRUPT`, `REGISTRATION_CORRUPT`,
 `INTERNAL_ERROR`. Writes are atomic.
 
+## The analysis log
+
+Every analysis of the study is an entry of `analysis/log.jsonl` (decisions
+D7 and D8): one JSON object per line, append-only, each line chained to the
+one before it by `prev`, the sha256 of that line's bytes. `analysis_cli.py`
+is its only writer; it sits beside `study_cli.py` rather than inside it
+because it wraps a command (`run ... -- <cmd>`) and writes a different file,
+so the operator records' parser and refusal roster stay as they were.
+
+```bash
+python skills/_core/empirical/analysis_cli.py run --outcome O1 [--plan primary-model] [--script analysis.R] \
+    --input data/cohort.csv --output results/model.csv [--note "<text>"] --root . -- Rscript analysis.R
+python skills/_core/empirical/analysis_cli.py record --by "<operator>" --tool "SPSS 29" --outcome O2 \
+    --input data/cohort.csv --output spss/glm.spv [--note "<text>"] --root .
+python skills/_core/empirical/analysis_cli.py status --root .
+```
+
+- `run` hashes, before running, the script (`--script`, or the first
+  argument after the program that names a file in the workspace, or the
+  program itself when it is one), every `--input` (a registered `datasets`
+  file also carries its `qc.json` hash, status and dictionary hash, and
+  whether the input still matches the hash QC saw) and the lock's sha256; it
+  runs the command in the workspace root, then records the exit code, the
+  duration, the sha256 of stdout and stderr (kept under
+  `analysis/streams/<sha256>`) and of every `--output` (`null` when the run
+  did not write it). It exits 0 once the entry is written, whatever the
+  command's exit code; `status` lists the failed runs.
+- `record` is the operator's attested entry for an analysis run outside
+  smith (SPSS, the R GUI): `--by`, `--tool` and at least one `--output` are
+  required, and the entry carries `"attested": true`.
+- `status` reports the log (`absent`, `ok`, `corrupt`), the lock, the
+  protocol's outcomes and plan entries, the count per label, the failed runs
+  and the warnings `PROTOCOL_OUTCOME_NOT_ANALYSED`, `OUTCOME_NOT_IN_PROTOCOL`,
+  `OUTCOME_ADDED_AFTER_ANALYSIS` (analysed as exploratory before an amendment
+  named it: a HARKing risk to report), `ANALYSIS_LOG_CORRUPT` and
+  `PROTOCOL_PARSER_UNAVAILABLE`.
+
+**The label is computed, never passed.** No flag sets it (an unknown or
+abbreviated flag is a usage error). `analysis_log.compute_label` gives
+`confirmatory` when the lock is current, the outcome is the locked revision's
+primary or a secondary outcome and, when `--plan` names an entry, the
+protocol plans it (`primary-model`, `covariates`, `missing-data`,
+`multiplicity`, each declared with a value other than `none` or `not
+applicable`; `primary-model` only for the primary outcome). Anything else is
+`exploratory` with its reason: `no-protocol-lock`, `protocol-lock-corrupt`,
+`protocol-changed`, `outcome-not-in-protocol`, `plan-entry-not-in-protocol`,
+`primary-model-not-for-outcome`. An entry keeps its label: an amendment that
+adds an outcome makes only the later runs of it confirmatory. The outcome
+ids and the plan are read by the study protocol's single parser
+(`skills/study-protocol-deliberation/fields.mjs` over `protocol-fields.ts`,
+under `node` 22.18+ from `PATH`); without node a locked study refuses with
+`PROTOCOL_PARSER_UNAVAILABLE`, and a study with no lock still logs.
+
+An entry is `{"schema", "seq", "id": "A0001", "kind": "run" | "record", "at",
+"attested", "by", "tool", "outcome", "plan", "label", "label_reason": {"code",
+"message"}, "protocol": {"state", "revision", "sha256", "amendments"},
+"script": {"path", "sha256"}, "inputs": [{"path", "sha256", "dataset"}],
+"outputs": [{"path", "sha256"}], "command", "exit_code", "duration_s",
+"stdout_sha256", "stderr_sha256", "note", "prev"}`.
+
+Refusals (exit 1; usage exit 2): `USAGE`, `APPROVER_MISSING`,
+`FIELD_MISSING`, `OUTCOME_INVALID`, `PLAN_ENTRY_INVALID`, `TEXT_INVALID`,
+`PATH_OUTSIDE_WORKSPACE`, `SCRIPT_ABSENT`, `SCRIPT_NOT_FOUND`,
+`INPUT_ABSENT`, `OUTPUT_ABSENT`, `OUTPUT_MISSING`, `COMMAND_NOT_FOUND`,
+`ANALYSIS_LOG_CORRUPT` (a line that is not an entry, or a broken chain: every
+append refuses, before the command runs, until the log is restored),
+`PROTOCOL_PARSER_UNAVAILABLE`, `INTERNAL_ERROR`.
+
+`paper_cli.py verify` reads the log and the lock through
+`analysis_log.manuscript_inputs(root)` and reports the study checks
+(`primary-outcome-switch`, a hard check, and three warnings); see the
+paper-writing skill.
+
 ## Readers for other modules
 
 `records.py` holds side-effect-free readers (no write, no directory created):
@@ -99,3 +173,5 @@ Every verb prints one JSON object. A refusal prints `{"ok": false, "error":
 | `study_status(root)` | the `status` object without `ok` |
 | `require_current_lock(root)` | the lock, or raises `StudyError` (`PROTOCOL_NOT_APPROVED`, `PROTOCOL_LOCK_CORRUPT`, `PROTOCOL_CHANGED`) |
 | `latest_revision(root)`, `managed_revisions(root)`, `read_lock(root)` | the building blocks above |
+| `analysis_log.read_log(root)`, `analysis_log.status(root)` | the log's entries (or `ANALYSIS_LOG_CORRUPT`), the `analysis status` object |
+| `analysis_log.manuscript_inputs(root)` | `None` without a study protocol; otherwise the lock, the locked revision parsed, the primary outcome at the approval and after each amendment, and the log per outcome |

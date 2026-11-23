@@ -43,6 +43,8 @@ experiments/*
 !experiments/.gitkeep
 protocol/*
 !protocol/.gitkeep
+# Captured stdout/stderr of logged analyses may hold participant-level values.
+analysis/streams/
 implementations/*
 !implementations/.gitkeep
 # The plausibility flow's graph pool. It was the one entry this file claimed to

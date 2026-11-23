@@ -55,6 +55,10 @@ Public surface:
                              validated `coherence` list: warnings only,
                              verdict `pass|warn|unmeasured`, never counted
                              and never changing `clean`
+    STUDY_CHECKS         -> the study checks (S7, D9) `paper_coherence.
+                             run_study` computes, for a study workspace only
+    attach_study(report, study) -> dict -- `report` plus `study`; a failed
+                             `primary-outcome-switch` makes `clean` false
 """
 from __future__ import annotations
 
@@ -136,6 +140,20 @@ COHERENCE_CHECKS: tuple[str, ...] = (
     "future-work-uncited",
 )
 _COHERENCE_VERDICTS = ("pass", "warn", "unmeasured")
+
+#: The study checks (S7, decision D9) `paper_coherence.run_study` computes
+#: from the manuscript, its `outcomes` fact and the study protocol's disk read,
+#: reported under their own `study` key and only for a workspace with a study
+#: protocol, so an applied-AI or review report is byte-identical to before.
+#: `primary-outcome-switch` is a hard check (a `fail` makes `clean` false);
+#: the other three are advisory warnings. Restated from `paper_coherence`;
+#: `tests/test_paper_protocol_switch.py` holds the two equal.
+STUDY_CHECKS: tuple[str, ...] = (
+    "primary-outcome-switch",
+    "exploratory-as-confirmatory",
+    "outcome-not-in-protocol",
+    "protocol-outcome-not-analysed",
+)
 
 _VERDICTS = ("pass", "fail", "unmeasured")
 #: Restated from `paper_bib.REFERENCE_STATUSES`: this module imports only `re`.
@@ -1253,3 +1271,23 @@ def attach_coherence(report: dict, coherence: list) -> dict:
         if entry.get("verdict") not in _COHERENCE_VERDICTS or entry.get("severity") != "warning":
             raise AssertionError(f"coherence entry {entry.get('check')!r} is not an advisory warning")
     return {**report, "coherence": list(coherence)}
+
+
+def attach_study(report: dict, study: list) -> dict:
+    """`report` plus `study` (one entry per `STUDY_CHECKS` member, in roster
+    order) when the workspace has a study protocol; `report` unchanged for an
+    empty list. A `primary-outcome-switch` that fails makes `clean` false and
+    leaves `holds`/`fails`/`unmeasured`, which count the `CHECKS` roster,
+    untouched; the advisory entries never change `clean`. A malformed list is
+    a programming error, raised rather than shipped."""
+    if not study:
+        return report
+    if [entry.get("check") for entry in study] != list(STUDY_CHECKS):
+        raise AssertionError("study entries must follow STUDY_CHECKS exactly")
+    hard, advisory = study[0], study[1:]
+    if hard.get("severity") != "error" or hard.get("verdict") not in _VERDICTS:
+        raise AssertionError("primary-outcome-switch is a hard check: severity error, verdict pass|fail|unmeasured")
+    for entry in advisory:
+        if entry.get("verdict") not in _COHERENCE_VERDICTS or entry.get("severity") != "warning":
+            raise AssertionError(f"study entry {entry.get('check')!r} is not an advisory warning")
+    return {**report, "study": list(study), "clean": report.get("clean", False) and hard["verdict"] != "fail"}
