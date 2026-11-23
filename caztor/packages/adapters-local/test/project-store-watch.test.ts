@@ -13,7 +13,7 @@ cleanupSandboxes();
 
 const pause = (ms = 15) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Waits until `check` holds, for at most ten seconds of real time: a CI runner's file events can be slow. */
+/** Waits until `check` holds, for at most ten seconds of real time: a CI runner's file events can be slow. Each test gets 30 seconds, so this limit, not the test timeout, is what fails. */
 async function until(check: () => boolean): Promise<void> {
   const limit = Date.now() + 10_000;
   while (!check()) {
@@ -430,4 +430,4 @@ describe.each(implementations)("project store watching: %s", (_name, create) => 
       expect(seen).toEqual(["a.tex"]);
     });
   });
-});
+}, 30_000);
