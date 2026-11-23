@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import functools
 import io
 import json
 import re
@@ -31,12 +32,13 @@ ROOT = Path(__file__).resolve().parents[1]
 KIND = "observational-measurement"
 SECTIONS_DIR = ROOT / "sections-observational-measurement"
 LINE_SKILL = "skills/observational-measurement/"
+SKILL_TEXT = (ROOT / LINE_SKILL / "SKILL.md").read_text(encoding="utf-8")
 FLOW_HEADING = "## Paper construction flow (observational and measurement line)"
 EXPERIMENTAL_ONLY = sorted(p.name for p in (ROOT / "sections").glob("*.md")
                            if f"sections/{p.name}" != "sections/10-back-matter.md")
 SURVEY_IDEA = ("We surveyed 368 rural young people in three municipalities with a structured questionnaire. "
                "A cross-sectional observational study estimates the prevalence of migration intentions.")
-#: The CLIs the flow names, and where their verbs live.
+#: The CLIs the flow and the line skill name, and where their verbs live.
 CLIS = {
     "study_cli.py": ROOT / "skills/_core/empirical/study_cli.py",
     "analysis_cli.py": ROOT / "skills/_core/empirical/analysis_cli.py",
@@ -44,6 +46,7 @@ CLIS = {
     "checklist_cli.py": ROOT / "skills/_core/checklists/checklist_cli.py",
     "datasets_cli.py": ROOT / "skills/datasets/scripts/datasets_cli.py",
     "paper_cli.py": ROOT / "skills/paper-writing/scripts/paper_cli.py",
+    "paper_type_cli.py": ROOT / "skills/_core/paper_types/paper_type_cli.py",
 }
 
 
@@ -51,12 +54,38 @@ def flow_text() -> str:
     return render.render_package_template(manifest.LINES[KIND].flow_template, {})
 
 
-def verbs_of(script: Path) -> set[str]:
-    """The subcommands a CLI's own argparse usage line accepts."""
-    done = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True,
+OPTION_RE = re.compile(r"(?<![\w-])--[a-z][a-z-]*")
+
+
+@functools.lru_cache(maxsize=None)
+def usage_of(script: Path, *verbs: str) -> str:
+    """The argparse usage paragraph of a CLI, or of one of its (nested) subcommands."""
+    done = subprocess.run([sys.executable, str(script), *verbs, "--help"], capture_output=True, text=True,
                           cwd=str(ROOT), check=False)
-    choices = re.search(r"\{([a-z_,-]+)\}", done.stdout)
+    return done.stdout.split("\n\n", 1)[0]
+
+
+def verbs_of(script: Path, *verbs: str) -> set[str]:
+    """The subcommands a CLI's (or a subcommand's) own argparse usage line accepts."""
+    choices = re.search(r"\{([a-z_,-]+)\}", usage_of(script, *verbs))
     return set(choices.group(1).split(",")) if choices else set()
+
+
+def required_options_of(script: Path, *verbs: str) -> set[str]:
+    """The options a subcommand's usage line shows outside brackets, so it requires."""
+    usage, previous = usage_of(script, *verbs), None
+    while usage != previous:
+        usage, previous = re.sub(r"\[[^\[\]]*\]", "", usage), usage
+    return set(OPTION_RE.findall(usage))
+
+
+def skill_invocations() -> list[str]:
+    """Every CLI command the line skill names: its bash lines and inline spans that call a CLI."""
+    fenced = re.findall(r"```bash\n(.*?)```", SKILL_TEXT, flags=re.S)
+    lines = [line.strip() for block in fenced for line in block.splitlines() if line.strip()]
+    prose = re.sub(r"```.*?```", "", SKILL_TEXT, flags=re.S)
+    spans = [span.replace("\\|", "|") for span in re.findall(r"`([^`\n]+)`", prose)]
+    return lines + [span for span in spans if re.search(r"(?:_cli\.py|^python -m) ", span)]
 
 
 class LineCase(unittest.TestCase):
@@ -205,6 +234,54 @@ class FlowTextTests(unittest.TestCase):
                 self.assertTrue((ROOT / path).is_file(), path)
 
 
+class SkillCommandTests(unittest.TestCase):
+    """The line skill's commands are checked against the CLIs as the flow's are."""
+
+    def test_every_cli_command_the_skill_names_exists_with_its_required_options(self) -> None:
+        commands = [c for c in skill_invocations() if "_cli.py " in c]
+        self.assertGreaterEqual(len(commands), 10)
+        for command in commands:
+            with self.subTest(command=command):
+                tokens = re.findall(r"<[^>]*>|\S+", command)
+                at = next(i for i, token in enumerate(tokens) if token.endswith("_cli.py"))
+                name = Path(tokens[at]).name
+                self.assertIn(name, CLIS, f"the skill names an unknown CLI {name}")
+                script, rest, chain = CLIS[name], tokens[at + 1:], []
+                if rest[:2] == ["--root", "."]:
+                    rest = rest[2:]
+                for token in rest:
+                    choices = verbs_of(script, *chain)
+                    if token.startswith(("-", "<", ".")) or not choices:
+                        break
+                    self.assertIn(token, choices)
+                    chain.append(token)
+                self.assertTrue(chain, "names no subcommand")
+                own = tokens[:tokens.index("--")] if "--" in tokens else tokens  # not the wrapped command
+                given = {token.split("=", 1)[0] for token in own}
+                self.assertLessEqual(required_options_of(script, *chain), given)
+                accepted = set(OPTION_RE.findall(usage_of(script) + usage_of(script, *chain)))
+                self.assertLessEqual({token for token in given if OPTION_RE.fullmatch(token)}, accepted)
+
+    def test_every_module_command_the_skill_names_runs(self) -> None:
+        commands = [c for c in skill_invocations() if c.startswith("python -m ")]
+        self.assertTrue(commands)
+        for command in commands:
+            with self.subTest(command=command):
+                done = subprocess.run([sys.executable, *command.split()[1:]], capture_output=True, text=True,
+                                      cwd=str(ROOT), check=False)
+                self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_every_slash_command_and_path_the_skill_names_exists(self) -> None:
+        slash = set(re.findall(r"`/([a-z][a-z-]*)", SKILL_TEXT))
+        self.assertIn("observational-measurement", slash)
+        for name in sorted(slash):
+            with self.subTest(command=name):
+                self.assertTrue((ROOT / "skills" / name / "SKILL.md").is_file(), name)
+        for path in re.findall(r"`(skills/[A-Za-z0-9_./-]+)`", SKILL_TEXT):
+            with self.subTest(path=path):
+                self.assertTrue((ROOT / path).exists(), path)
+
+
 class CatalogueTests(unittest.TestCase):
     def test_the_type_is_available_on_its_line(self) -> None:
         item = registry.get(KIND)
@@ -258,6 +335,7 @@ class KindSetTests(LineCase):
         for name in EXPERIMENTAL_ONLY:
             self.assertNotIn(name, names)
         code, status_out, _ = self.smith("status", str(workspace))
+        self.assertEqual(code, 0)
         self.assertIn("Framework drift: none", status_out)
 
         code, _, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", str(workspace))
@@ -276,6 +354,54 @@ class KindSetTests(LineCase):
         self.assertNotEqual(code, 0)
         self.assertIn("--force", err)
         self.assertEqual(self.config(workspace)["paper_kind"], KIND)
+
+    def test_the_protocol_lock_alone_shows_the_study_started_and_force_moves_it(self) -> None:
+        workspace = self.scored(self.init(KIND))
+        (workspace / "study" / "protocol.lock.json").write_text("{}\n", encoding="utf-8")
+        self.assertEqual(kind_module.started_markers(workspace), ["study/protocol.lock.json"])
+        code, _, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", str(workspace))
+        self.assertNotEqual(code, 0)
+        self.assertIn("study/protocol.lock.json", err)
+        self.assertIn("--force", err)
+        self.assertEqual(self.config(workspace)["paper_kind"], KIND)
+        self.assertTrue((workspace / LINE_SKILL / "SKILL.md").is_file())
+
+        code, out, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", "--force", str(workspace))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"Paper line: {KIND} -> experimental", out)
+        self.assertEqual(self.config(workspace)["paper_kind"], "experimental")
+        self.assertFalse((workspace / "skills" / "observational-measurement").exists())
+        self.assertEqual((workspace / "study" / "protocol.lock.json").read_text(encoding="utf-8"), "{}\n")
+
+    def test_review_to_the_line_keeps_an_edited_review_contract_stranded(self) -> None:
+        workspace = self.scored(self.init("review"))
+        edited = workspace / "sections" / "04-background.md"
+        edited.write_text("our background contract\n", encoding="utf-8")
+        code, out, err = self.smith("kind", "set", KIND, "--by", "Ana", str(workspace))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"Paper line: review -> {KIND}", out)
+        self.assertEqual(edited.read_text(encoding="utf-8"), "our background contract\n")
+        self.assertIn("Stranded (edited, kept): sections/04-background.md", out)
+        self.assertFalse((workspace / "sections" / "09-conclusions.md").exists())
+        self.assertFalse((workspace / "skills" / "systematic-review").exists())
+        self.assertTrue((workspace / LINE_SKILL / "SKILL.md").is_file())
+        for path in sorted(SECTIONS_DIR.glob("*.md")):
+            self.assertEqual((workspace / "sections" / path.name).read_bytes(), path.read_bytes(), path.name)
+
+    def test_the_line_to_review_keeps_an_edited_line_contract_stranded(self) -> None:
+        workspace = self.scored(self.init(KIND))
+        edited = workspace / "sections" / "04-methods.md"
+        edited.write_text("our methods contract\n", encoding="utf-8")
+        code, out, err = self.smith("kind", "set", "review", "--by", "Ana", str(workspace))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"Paper line: {KIND} -> review", out)
+        self.assertEqual(edited.read_text(encoding="utf-8"), "our methods contract\n")
+        self.assertIn("Stranded (edited, kept): sections/04-methods.md", out)
+        self.assertFalse((workspace / "sections" / "08-conclusions.md").exists())
+        self.assertFalse((workspace / "skills" / "observational-measurement").exists())
+        self.assertTrue((workspace / "skills" / "systematic-review" / "SKILL.md").is_file())
+        for path in sorted((ROOT / "sections-review").glob("*.md")):
+            self.assertEqual((workspace / "sections" / path.name).read_bytes(), path.read_bytes(), path.name)
 
 
 if __name__ == "__main__":

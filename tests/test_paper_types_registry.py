@@ -15,6 +15,7 @@ from papersmith.core import manifest
 from skills._core.paper_types import registry
 
 REPO = Path(__file__).resolve().parents[1]
+TEMPLATES = REPO / "src" / "papersmith" / "templates"
 PLANNED_CATALOGUE = (
     "applied-ai", "review", "observational-measurement", "experiment-intervention", "qualitative-participatory",
     "hardware", "lab-simulation", "data-resource",
@@ -37,6 +38,13 @@ def entry(**overrides) -> dict:
         "signals": ["survey", "cohort"],
     }
     return {**base, **overrides}
+
+
+def missing_flow_templates(document: dict) -> list[str]:
+    """The variant ``flow_template`` names with no file in the package's templates."""
+    named = [v["flow_template"] for t in document["types"] for v in t.get("variants", [])
+             if v.get("flow_template") is not None]
+    return [name for name in named if not (TEMPLATES / name).is_file()]
 
 
 class ShippedCatalogueTests(unittest.TestCase):
@@ -65,6 +73,19 @@ class ShippedCatalogueTests(unittest.TestCase):
         for item in registry.load():
             with self.subTest(type=item["id"]):
                 self.assertTrue(registry.all_signals(item))
+
+    def test_every_variant_flow_template_is_a_shipped_template(self) -> None:
+        # The registry ships to workspaces and checks only the name pattern;
+        # the repository is where the template files can be seen.
+        self.assertEqual(missing_flow_templates(json.loads(registry.CATALOGUE.read_text(encoding="utf-8"))), [])
+
+    def test_a_missing_flow_template_is_caught(self) -> None:
+        document = json.loads(registry.CATALOGUE.read_text(encoding="utf-8"))
+        variants = next(t for t in document["types"] if t.get("variants"))["variants"]
+        variants[0]["flow_template"] = "paper-flow-no-such-line.md.tpl"
+        variants[1]["flow_template"] = "paper-flow-review.md.tpl"
+        registry.validate(document)
+        self.assertEqual(missing_flow_templates(document), ["paper-flow-no-such-line.md.tpl"])
 
     def test_get_names_an_unknown_type(self) -> None:
         self.assertEqual(registry.get("review")["line"], "review")

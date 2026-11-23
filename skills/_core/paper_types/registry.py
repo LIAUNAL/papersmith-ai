@@ -111,7 +111,15 @@ def _check_guidelines(type_id: str, guidelines: Any) -> None:
 
 
 def _check_variant_flow(type_id: str, variant: dict) -> None:
-    """A variant's optional ``checklist`` and ``flow_template``: null, or a real one."""
+    """A variant's optional ``checklist`` and ``flow_template``, each null or named.
+
+    ``checklist`` must be the id of a guideline file in ``GUIDELINES``.
+    ``flow_template`` is checked only against the ``paper-flow*.md.tpl`` name
+    pattern: this registry ships to workspaces, which do not hold the package's
+    templates, so the repository test
+    ``test_every_variant_flow_template_is_a_shipped_template`` checks that the
+    named template exists in ``src/papersmith/templates/``.
+    """
     checklist = variant.get("checklist")
     if checklist is not None and (not isinstance(checklist, str) or not _ID_RE.match(checklist)
                                   or not (GUIDELINES / f"{checklist}.json").is_file()):
