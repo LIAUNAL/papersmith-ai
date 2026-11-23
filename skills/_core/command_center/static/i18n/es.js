@@ -334,6 +334,7 @@ window.PAPERSMITH_I18N.es = {
   "caztor.frameTitle": "Editor LaTeX Caztor",
   "caztor.toggle": "Editor LaTeX",
   "caztor.toggleHint": "Muestra Caztor (archivos, fuente LaTeX, PDF y chat del asistente) en esta pestaña; apagado muestra el visor PDF y detiene Caztor.",
+  "caztor.noAnswer": "El editor LaTeX (Caztor) no responde. Apaga y vuelve a encender el editor LaTeX; por SSH, revisa que el puerto de Caztor esté reenviado.",
   "annot.layer.comment": "Comentarios",
   "annot.layer.strikethrough": "Tachados",
   "annot.layer.humanize": "Humanización",

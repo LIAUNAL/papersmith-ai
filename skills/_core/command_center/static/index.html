@@ -7424,6 +7424,31 @@
     let caztorState = null;
     let caztorOrigin = null;
     let caztorRequest = null;
+    // The frame's watch: Caztor says `caztor:ready` once its page loads. A frame that stays silent (the server
+    // died, the port was not reachable yet, or Caztor refused this origin) asks for Caztor again and reloads.
+    const CAZTOR_READY_SECONDS = 12;
+    const CAZTOR_RETRIES = 2;
+    let caztorReady = false;
+    let caztorRetries = 0;
+    let caztorWatch = null;
+
+    function watchCaztorFrame() {
+      clearTimeout(caztorWatch);
+      caztorReady = false;
+      caztorWatch = setTimeout(() => {
+        const host = document.getElementById('caztorHost');
+        if (caztorReady || !caztorEnabled() || !host || host.hidden) return;
+        if (caztorRetries >= CAZTOR_RETRIES) {
+          const notice = document.getElementById('caztorNotice');
+          notice.hidden = false;
+          notice.textContent = t('caztor.noAnswer');
+          return;
+        }
+        caztorRetries += 1;
+        document.getElementById('caztorFrame').dataset.instance = '';
+        openPdfWorkspace();
+      }, CAZTOR_READY_SECONDS * 1000);
+    }
 
     function caztorActive() {
       return !!(caztorState && caztorState.available && caztorOrigin);
@@ -7457,6 +7482,8 @@
 
     // The PDF viewer in place of Caztor, whose frame is emptied so a stopped server is not left on screen.
     function showPdfViewer() {
+      clearTimeout(caztorWatch);
+      caztorRetries = 0;
       caztorState = null;
       caztorOrigin = null;
       const frame = document.getElementById('caztorFrame');
@@ -7513,6 +7540,7 @@
         if (frame.dataset.instance !== instance) {
           frame.dataset.instance = instance;
           frame.src = state.url;
+          watchCaztorFrame();
         }
         host.hidden = false;
         legacy.hidden = true;
@@ -7535,6 +7563,10 @@
       const data = event.data;
       // Caztor listens now: give it the dashboard's theme.
       if (data && data.type === 'caztor:ready') {
+        caztorReady = true;
+        caztorRetries = 0;
+        clearTimeout(caztorWatch);
+        document.getElementById('caztorNotice').hidden = true;
         sendThemeToCaztor(document.documentElement.getAttribute('data-theme') || 'dark');
         return;
       }
