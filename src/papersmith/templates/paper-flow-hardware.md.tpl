@@ -62,7 +62,10 @@ when a stage's input is missing.
    --reason <why>`, the operator's decision.
 7. **Agreement with a reference device** (gate G-AGREEMENT): the device's
    and the reference device's paired readings, each registered first with
-   `data register`, give the Bland-Altman bias, the limits of agreement and
+   `data register` and told apart by a condition (`--condition role=device`,
+   `--condition role=reference`: one uncertainty budget is computed per
+   instrument and condition set, never across two instruments), give the
+   Bland-Altman bias, the limits of agreement and
    ICC(2,1) (`python skills/_core/measurement/measure_cli.py agreement
    compute --root . --device-file <csv> --reference-file <csv> --pair-column
    <column>`), written to `study/agreement.json` and stale when either file
