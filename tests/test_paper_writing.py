@@ -8990,8 +8990,12 @@ class RefusalRosterTests(unittest.TestCase):
 
         238 -> 240 (daprosero-backlog T2): `--expect-digest` on substitute,
         humanize --apply and write refuses BLOCK_CHANGED_SINCE_READ (#185), and
-        `reorder` refuses REORDER_LAYOUT_AMBIGUOUS (#184 item 4)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 240)
+        `reorder` refuses REORDER_LAYOUT_AMBIGUOUS (#184 item 4).
+
+        240 -> 242 (paper-type-lines T7-U6): `review` refuses a round whose
+        rubric does not serve the workspace's line (RUBRIC_KIND_MISMATCH) and a
+        line no rubric serves (RUBRIC_LINE_UNKNOWN)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 242)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

@@ -682,6 +682,10 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "REVIEW_ITEM_UNKNOWN": INVOCATION_DEFECT,
     "REVIEW_ITEMS_MISSING": INVOCATION_DEFECT,
     "REVIEW_FILE_INVALID": WORK_STATE,
+    # A round whose rubric does not serve the workspace's paper line is the
+    # caller's error; a line no rubric serves is the workspace's state.
+    "RUBRIC_KIND_MISMATCH": INVOCATION_DEFECT,
+    "RUBRIC_LINE_UNKNOWN": WORK_STATE,
     # --- reorder (paper_reorder.py): no single place to move a block to ---
     "REORDER_LAYOUT_AMBIGUOUS": WORK_STATE,
 }
