@@ -67,7 +67,10 @@ def usage_of(script: Path, *verbs: str) -> str:
 
 def verbs_of(script: Path, *verbs: str) -> set[str]:
     """The subcommands a CLI's (or a subcommand's) own argparse usage line accepts."""
-    choices = re.search(r"\{([a-z_,-]+)\}", usage_of(script, *verbs))
+    # An option's own choices (`--distribution {normal,rectangular}`) are not
+    # subcommands: drop them before reading the subcommand group.
+    usage = re.sub(r"--?[\w-]+\s+\{[^{}]*\}", "", usage_of(script, *verbs))
+    choices = re.search(r"\{([a-z_,-]+)\}", usage)
     return set(choices.group(1).split(",")) if choices else set()
 
 

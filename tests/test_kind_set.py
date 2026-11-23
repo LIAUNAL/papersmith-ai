@@ -248,7 +248,7 @@ class KindSetTests(KindCase):
 
     def test_refusals_write_nothing(self) -> None:
         cases = (
-            (("hardware", "--by", "Ana"), "has no flow in smith yet"),
+            (("data-resource", "--by", "Ana"), "has no flow in smith yet"),
             (("no-such-type", "--by", "Ana"), "TYPE_UNKNOWN"),
             (("review",), "--by"),
         )

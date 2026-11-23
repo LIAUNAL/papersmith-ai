@@ -46,7 +46,7 @@ smith init ~/papers/sparse-ae \
 | `--topic TEXT` | Research topic |
 | `--tools TEXT` | Runtimes to provision, comma-separated |
 | `--remote {kaggle,local,slurm}` | Default compute target (default: `kaggle`) |
-| `--kind {experimental,review,observational-measurement}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. `observational-measurement` creates an observational, diagnostic-validation or measurement-instrument study workspace: the study section contracts in `sections/`, the `protocol/`, `study/`, `analysis/` and `datasets/` folders of the shared empirical tools, the `/observational-measurement` skill, the line's flow in every harness entrypoint and `paper_kind: "observational-measurement"`. A workspace never receives another line's files. See [The review line](../README.md#the-review-line-systematic-reviews) and [The observational and measurement line](../README.md#the-observational-and-measurement-line) |
+| `--kind {experimental,review,observational-measurement,hardware,lab-simulation}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. `observational-measurement` creates an observational, diagnostic-validation or measurement-instrument study workspace: the study section contracts in `sections/`, the `protocol/`, `study/`, `analysis/` and `datasets/` folders of the shared empirical tools, the `/observational-measurement` skill, the line's flow in every harness entrypoint and `paper_kind: "observational-measurement"`. `hardware` creates an open hardware or instrument workspace with the same folders: the HardwareX section contracts in `sections/` (specifications table, hardware in context, hardware description, design files, bill of materials, build and operation instructions, validation and characterization), the measurement core's records under `study/`, the `/hardware` skill and its flow. `lab-simulation` creates a laboratory or simulation study workspace with the same folders and the measurement core. A workspace never receives another line's files. See [The review line](../README.md#the-review-line-systematic-reviews), [The observational and measurement line](../README.md#the-observational-and-measurement-line) and [The hardware line](../README.md#the-hardware-line) |
 | `<dir>` | Where the workspace goes; omitted, it is the current directory (`smith init` alone sets up the folder you are in, on every operating system) |
 | `--import-existing` | Explicitly initialize a nonempty directory while preserving existing files: keeps its `README.md`, merges papersmith's block into its `.gitignore`, and refuses any other file or symlink collision before copying |
 | `--no-npm` | Skips the best-effort `npm install` (offline/hermetic use) |
@@ -211,9 +211,9 @@ smith kind set review --by "Ana" ~/papers/gnn-drug
 Moves a workspace to the line of the paper type the operator agreed after
 plausibility (`/paper-type`). `<type>` is a catalogue id
 (`skills/_core/paper_types/paper_types.json`): `applied-ai` maps to the
-`experimental` line, `review` to the `review` line and
-`observational-measurement` to the `observational-measurement` line; a planned
-type has no line yet and refuses. The command records the agreement in
+`experimental` line, `review` to the `review` line, and
+`observational-measurement`, `hardware` and `lab-simulation` each to the line of
+the same name; a planned type has no line yet and refuses. The command records the agreement in
 `.papersmith/paper_type.json` (the idea must be scored first, or it refuses
 with `SCORES_ABSENT`), writes `paper_kind` in `.papersmith/config.json` and
 runs `smith upgrade`, which applies the line's section contracts and
@@ -222,8 +222,8 @@ are removed only when unedited; an edited one stays and is reported as
 `Stranded (edited, kept): <path>`; a skill with one edited file stays whole.
 The new line's research folders (`review/`; `protocol/`, `study/`,
 `analysis/`, `datasets/`; or `proposals/`, `experiments/`, `implementations/`,
-`kaggle-inbox/`) are created when missing. Leaving an observational-measurement
-workspace also refuses once a study-protocol revision
+`kaggle-inbox/`) are created when missing. Leaving an empirical-line workspace
+(`observational-measurement`, `hardware`, `lab-simulation`) also refuses once a study-protocol revision
 (`protocol/study-protocol-*-v*.md`) or the protocol lock
 (`study/protocol.lock.json`) exists, unless `--force`. A refusal
 (including `upgrade`'s own, such as a downgrade) leaves the records as they
@@ -233,7 +233,7 @@ is recorded.
 | Flag | Effect |
 |------|--------|
 | `--by TEXT` | The operator who agreed the type (required) |
-| `--force` | Moves the workspace even when a proposal revision (`proposals/*-r*.md`) or `paper/main.tex` exists (in an observational-measurement workspace, also a study-protocol revision or the protocol lock) |
+| `--force` | Moves the workspace even when a proposal revision (`proposals/*-r*.md`) or `paper/main.tex` exists (in an empirical-line workspace, also a study-protocol revision or the protocol lock) |
 | `--allow-dirty-kit` | Moves the workspace even when the kit source has uncommitted changes, as `smith upgrade --allow-dirty-kit` |
 
 ### `smith status [<dir>]`
@@ -766,8 +766,8 @@ current). A record that cannot be read turns only its section into
 `GET /api/review/checklist`, off the server's event loop.
 
 **The Study tab (empirical workspaces only).** A workspace whose `paper_kind` is an
-empirical line (`observational-measurement`, and the planned `experiment-intervention`,
-`qualitative-participatory`, `hardware`, `lab-simulation` and `data-resource`) shows a
+empirical line (`observational-measurement`, `hardware`, `lab-simulation`, and the planned
+`experiment-intervention`, `qualitative-participatory` and `data-resource`) shows a
 *Study* tab (*Estudio* in Spanish) after *Pipeline and Progress*; an experimental or
 review workspace never shows it, and its routes answer `409` with
 `{"ok": false, "code": "NOT_A_STUDY_WORKSPACE", "paper_kind": ...}`. `GET /api/study`

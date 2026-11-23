@@ -380,8 +380,9 @@
     {
       "id": "hardware",
       "name": "Hardware or instrument",
-      "status": "planned",
-      "line": null,
+      "status": "available",
+      "line": "hardware",
+      "checklist": "hardwarex",
       "summary": "A device, sensor or instrument built and validated against a reference instrument, with open design files, bill of materials and measured performance.",
       "novelty": "The artefact, its cost and its measured performance against existing devices.",
       "stages": [
@@ -427,8 +428,8 @@
     {
       "id": "lab-simulation",
       "name": "Laboratory and simulation science",
-      "status": "planned",
-      "line": null,
+      "status": "available",
+      "line": "lab-simulation",
       "summary": "Physical-science studies that define a sample or a model, calibrate it against known values, sweep its parameters and quantify the error.",
       "novelty": "What the process does to the material, or the regimes the model reveals.",
       "stages": [
@@ -451,6 +452,8 @@
           "id": "materials",
           "name": "Materials and processes",
           "summary": "Synthesis, deposition or processing that varies the process and measures structure and properties by several techniques.",
+          "checklist": "gum-reporting",
+          "flow_template": null,
           "guidelines": [],
           "signals": [
             "deposition",
@@ -476,6 +479,8 @@
           "id": "modelling-simulation",
           "name": "Modelling and simulation",
           "summary": "A model solved by simulation (Monte Carlo, molecular dynamics, finite elements) or analytically, calibrated and explored over its parameters.",
+          "checklist": "gum-reporting",
+          "flow_template": null,
           "guidelines": [],
           "signals": [
             "simulation",

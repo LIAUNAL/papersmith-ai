@@ -102,7 +102,8 @@ def _topology(*drop_zones: str) -> Topology:
 #: ``empirical``: the empirical lines' folders (paper-type-lines S7-S8):
 #: ``protocol/`` holds the study-protocol revisions, ``study/`` the operator
 #: records (protocol lock, ethics, registration), ``analysis/`` the analysis
-#: log, ``datasets/`` the own data. No line uses it yet.
+#: log, ``datasets/`` the own data; the measurement lines (hardware,
+#: lab-simulation) also keep the measurement core's records under ``study/``.
 TOPOLOGIES: dict[str, Topology] = {
     "experimental": _topology("proposals", "implementations", "kaggle-inbox", "paper", "experiments",
                               "sota-pool"),

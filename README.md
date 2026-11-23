@@ -620,6 +620,43 @@ behalf. `/observational-measurement status` reports where the study stands.
 Details in
 [skills/observational-measurement/SKILL.md](skills/observational-measurement/SKILL.md).
 
+### The hardware line
+
+A device, sensor or instrument the operator designs, builds and validates
+against a reference device is the hardware line, written in the HardwareX
+article template and checked against the `hardwarex` and `gum-reporting`
+checklists.
+
+```bash
+smith init ~/papers/soil-sensor --kind hardware \
+  --title "A low-cost open soil moisture sensor for field monitoring"
+```
+
+An existing workspace moves to it with `smith kind set hardware --by
+"<operator>"` once `/paper-type` has scored the idea. The workspace has the
+empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+HardwareX section contracts in `sections/`, the `/hardware` skill, and its
+`CLAUDE.md` states the line's flow:
+
+1. **Requirements and specifications** with `/study-protocol-deliberation`,
+   signed by the operator when the protocol is approved and locked (G-SPEC).
+2. **Design files and bill of materials** in an open repository with a DOI,
+   and the **build**, both by the operator.
+3. **Calibration and uncertainty** (G-CALIBRATION): the operator records the
+   instruments and registers the raw files; `measure_cli.py` computes a GUM
+   uncertainty budget per quantity.
+4. **Agreement with a reference device** (G-AGREEMENT): Bland-Altman limits
+   of agreement and ICC(2,1) from the registered paired files.
+5. **Field or user validation**, with the ethics and registration records
+   only when people take part.
+6. **Writing** with `/paper-writing`, the two checklists and the final judge
+   on the measurement-science rubric.
+
+The assistant never generates measurements or data, and never records a
+calibration, ethics, consent, data collection, sign-offs or the primary
+outcome on the operator's behalf. `/hardware status` reports where the work
+stands. Details in [skills/hardware/SKILL.md](skills/hardware/SKILL.md).
+
 ### Open the dashboard from another device
 
 `smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open

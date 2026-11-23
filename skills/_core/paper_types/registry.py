@@ -7,9 +7,9 @@ read. Each type names what kind of contribution it is, where its novelty lies,
 its canonical stages, the reporting guidelines journals expect, the words that
 signal it in an idea, and whether smith already has a flow (``line``) for it:
 
-* ``available`` types map to a workspace line (``experimental``, ``review`` or
-  ``observational-measurement``,
-  the ``paper_kind`` values ``smith init --kind`` accepts);
+* ``available`` types map to a workspace line (``experimental``, ``review``,
+  ``observational-measurement``, ``hardware`` or ``lab-simulation``, the
+  ``paper_kind`` values ``smith init --kind`` accepts);
 * ``planned`` types have no line yet (``line`` is null).
 
 A type may group ``variants`` (each with its own name, summary, guidelines
@@ -17,7 +17,9 @@ and signals): the family is one flow and the variant chooses its checklist.
 A variant may name ``checklist`` (the id of a reporting guideline the
 checklist engine ships, ``skills/_core/checklists/guidelines/<id>.json``) and
 ``flow_template`` (a harness flow template); null or absent means none, and
-the family's flow template.
+the family's flow template. A type without variants may name its
+``checklist`` on the family instead; a type with variants never does, its
+variants choose. ``checklist_for`` reads either.
 A family's signals are its own plus its variants'; no signal appears twice in
 the catalogue. Names and summaries are English; the dashboard translates its
 own labels. Signals are lowercase ASCII stems matched against the folded idea.
@@ -35,7 +37,7 @@ from typing import Any
 
 CATALOGUE = Path(__file__).resolve().parent / "paper_types.json"
 STATUSES = ("available", "planned")
-LINES = ("experimental", "review", "observational-measurement")
+LINES = ("experimental", "review", "observational-measurement", "hardware", "lab-simulation")
 GUIDELINES = Path(__file__).resolve().parent.parent / "checklists" / "guidelines"
 MAX_NAME = 48
 MAX_SUMMARY = 200
@@ -93,6 +95,10 @@ def _check(item: Any) -> dict:
         _check_guidelines(type_id, variant["guidelines"])
         _check_signals(type_id, variant["signals"], allow_empty=False)
         _check_variant_flow(type_id, variant)
+    if "checklist" in item:
+        if variants:
+            _fail(type_id, "a type with variants names its checklist on each variant, not on the family")
+        _check_checklist(type_id, "checklist", item["checklist"])
     _check_signals(type_id, item["signals"], allow_empty=bool(variants))
     every = all_signals(item)
     if len(set(every)) != len(every):
@@ -120,15 +126,30 @@ def _check_variant_flow(type_id: str, variant: dict) -> None:
     ``test_every_variant_flow_template_is_a_shipped_template`` checks that the
     named template exists in ``src/papersmith/templates/``.
     """
-    checklist = variant.get("checklist")
-    if checklist is not None and (not isinstance(checklist, str) or not _ID_RE.match(checklist)
-                                  or not (GUIDELINES / f"{checklist}.json").is_file()):
-        _fail(type_id, f"variant {variant['id']!r}: checklist must be null or the id of a guideline in "
-                       f"skills/_core/checklists/guidelines/ (got {checklist!r})")
+    _check_checklist(type_id, f"variant {variant['id']!r}: checklist", variant.get("checklist"))
     template = variant.get("flow_template")
     if template is not None and (not isinstance(template, str) or not _FLOW_TEMPLATE_RE.match(template)):
         _fail(type_id, f"variant {variant['id']!r}: flow_template must be null or a paper-flow*.md.tpl "
                        f"template name (got {template!r})")
+
+
+def _check_checklist(type_id: str, where: str, checklist: Any) -> None:
+    """A ``checklist``: null, or the id of a guideline file in ``GUIDELINES``."""
+    if checklist is not None and (not isinstance(checklist, str) or not _ID_RE.match(checklist)
+                                  or not (GUIDELINES / f"{checklist}.json").is_file()):
+        _fail(type_id, f"{where} must be null or the id of a guideline in "
+                       f"skills/_core/checklists/guidelines/ (got {checklist!r})")
+
+
+def checklist_for(item: dict, variant: str | None) -> str | None:
+    """The reporting checklist of a type and its agreed variant: the variant's
+    ``checklist`` when the type has variants (``None`` while none is agreed or
+    the variant names none), else the family's own ``checklist``."""
+    variants = item.get("variants") or []
+    if variants:
+        chosen = next((v for v in variants if v["id"] == variant), None)
+        return chosen.get("checklist") if chosen else None
+    return item.get("checklist")
 
 
 def _check_signals(type_id: str, signals: Any, *, allow_empty: bool) -> None:
@@ -206,8 +227,8 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["CATALOGUE", "GUIDELINES", "LINES", "MAX_SUMMARY", "RegistryError", "STATUSES", "all_signals", "available", "by_line", "get",
-           "load", "main", "validate"]
+__all__ = ["CATALOGUE", "GUIDELINES", "LINES", "MAX_SUMMARY", "RegistryError", "STATUSES", "all_signals", "available", "by_line",
+           "checklist_for", "get", "load", "main", "validate"]
 
 if __name__ == "__main__":
     raise SystemExit(main())

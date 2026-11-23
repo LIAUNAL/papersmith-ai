@@ -118,6 +118,18 @@ class HardwareXDataTests(SharedDataRules, unittest.TestCase):
 class GumReportingDataTests(SharedDataRules, unittest.TestCase):
     gid, count, line, allowed = "gum-reporting", 18, "lab-simulation", IMRAD
 
+    def test_targets_are_default_targets_on_the_lines_section_names(self):
+        # gum-reporting serves the lab-simulation line through its IMRaD
+        # defaults and the hardware line through its own section names (a
+        # hardware paper has no methods or results sections).
+        for entry in self.data["items"]:
+            self.assertEqual(set(entry["targets"]), {"default", "hardware"}, entry["number"])
+            for target in entry["targets"]["default"]:
+                self.assertIn(target, self.allowed, entry["number"])
+            self.assertTrue(entry["targets"]["hardware"], entry["number"])
+            for target in entry["targets"]["hardware"]:
+                self.assertIn(target, HARDWARE_SECTIONS, entry["number"])
+
     def test_each_item_carries_its_gum_clause_in_order(self):
         prefixes = [entry["topic"].split(" ", 1)[0] for entry in self.data["items"]]
         self.assertEqual(prefixes, GUM_CLAUSES)

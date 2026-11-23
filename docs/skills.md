@@ -100,6 +100,10 @@ Section 20, `ui-github`, publishes the dashboard itself, read-only.
 Section 23, `prompt-gate`, measures the prompt every skill receives before it runs.
 Section 24, `observational-measurement`, is the observational and measurement
 line's own skill; it routes to the shared empirical modules described after it.
+Section 25, `hardware`, is the hardware line's own skill; it routes to the same
+modules and to the measurement core. The `lab-simulation` line is registered
+beside it (`smith init --kind lab-simulation`) and its skill is documented with
+it.
 
 ---
 
@@ -3551,12 +3555,57 @@ protocol approval or amendment, or a sign-off on the operator's behalf; it
 never chooses or changes the primary outcome; and it never relabels an
 exploratory analysis or marks a `needs-judgment` checklist item satisfied.
 
+### 25. `hardware` — a device or instrument, its signed specifications and its measured performance
+
+**When.** Only in a hardware workspace (`smith init --kind hardware`, or `smith
+kind set hardware` after `/paper-type`): a device, sensor or instrument the
+operator designs, builds and validates against a reference device, written in
+the HardwareX article template. Any other workspace never receives this skill.
+
+**How it runs.** `/hardware` owns no script and no record. The catalogue type
+has no variants, so its checklist is the family's (`hardwarex`, read with
+`registry.checklist_for`), and every uncertainty is also checked against
+`gum-reporting`. The status overview is assembled from the shared modules' own
+JSON: `study_cli.py status` (the protocol lock, ethics, registration),
+`measure_cli.py status` (instruments, registered raw files, uncertainty
+budgets, agreement), `flow_cli.py status` and the two checklists. The gates
+follow the catalogue's stages: G-SPEC is the study protocol's lock (the
+protocol, deliberated with `/study-protocol-deliberation`, holds the
+requirements and specifications, the primary performance outcome with its
+acceptance criterion and the validation design; the operator's `protocol
+approve --by` signs them), G-CALIBRATION the instruments calibrated and not
+past due with every uncertainty budget current, G-AGREEMENT the agreement with
+the reference device computed from registered files; ethics, registration and
+the participant flow apply only when people take part in the validation. The
+section contracts (`sections-hardware/`) follow the HardwareX sections:
+specifications table, hardware in context, hardware description, design
+files, bill of materials, build and operation instructions, and validation and
+characterization, whose blocks transcribe `study/instruments.json`,
+`study/uncertainty/` and `study/agreement.json`. The final judge uses the
+`measurement-science` rubric.
+
+**What it never does.** It never generates, simulates or edits a measurement,
+a reading, a price or a participant count; it never records an instrument, a
+calibration, a registered file, a protocol approval or amendment, an ethics
+approval, a consent route, a registration or a sign-off on the operator's
+behalf; it never chooses or changes the primary performance outcome; and it
+never reports a stale budget or marks a `needs-judgment` checklist item
+satisfied.
+
+### 26. `lab-simulation` — a laboratory or simulation study, every value with its uncertainty
+
+**When.** Only in a lab-simulation workspace (`smith init --kind lab-simulation`, or `smith kind set lab-simulation` after `/paper-type`): a materials study (synthesis, deposition or processing and characterization) or a modelling-simulation study (a model, its solver, parameters and convergence). Other workspaces never receive this skill.
+
+**How it runs.** `/lab-simulation` owns no script and no record. It reads `agreed_variant` (`materials` or `modelling-simulation`; both report on `gum-reporting`), then reports status or runs one stage. The overview comes from `study_cli.py status`, `measure_cli.py status` (instruments and calibration state, registered files, budgets current or stale), `analysis_cli.py status` and `checklist_cli.py check --guideline gum-reporting`. The stages are the sample matrix or model; the protocol (G-STUDY-PROTOCOL; the primary observable, and replicates or a parameter grid as the sample size); calibration against known values (G-CALIBRATION); data registration; GUM uncertainty budgets; the labelled analysis log; open data and code; writing; the checklist and the `measurement-science` final judge.
+
+**What it never does.** It never generates, imputes or edits a measured value, simulated output or raw file. It never records an instrument, calibration, data registration, ethics record, protocol approval or past-due override on the operator's behalf. It never chooses the primary observable, sample matrix, model or parameter grid. It never relabels an exploratory analysis or marks a `needs-judgment` item satisfied.
+
 ### Shared empirical modules (for the empirical paper lines)
 
 These modules live under `skills/_core/` and serve the empirical lines of the
-paper-type catalogue: the observational and measurement line today, and the
-planned ones (experiments and interventions, laboratory and hardware work,
-data resources, qualitative work). No applied-AI or review flow calls them.
+paper-type catalogue: the observational and measurement, hardware and
+lab-simulation lines today, and the planned ones (experiments and
+interventions, data resources, qualitative work). No applied-AI or review flow calls them.
 
 **Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
 

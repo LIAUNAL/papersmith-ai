@@ -94,6 +94,32 @@ LINES: dict[str, PaperLine] = {
                  "operator's own data: locked protocol, ethics, data QC, analysis log, participant flow"),
         empirical=True,
     ),
+    # The two measurement lines share the measurement core
+    # (`skills/_core/measurement/`: instruments, raw data files, uncertainty
+    # budgets, agreement with a reference device) under `study/`.
+    "hardware": PaperLine(
+        sections_dir="sections-hardware/",
+        only_prefixes=("sections-hardware/", "skills/hardware/"),
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-hardware.md.tpl",
+        topology="empirical",
+        label="open hardware or instrument (HardwareX template, GUM uncertainty)",
+        summary=("a device, sensor or instrument built and validated by the operator: signed "
+                 "specifications, design files and bill of materials, calibration and uncertainty, "
+                 "agreement with a reference device"),
+        empirical=True,
+    ),
+    "lab-simulation": PaperLine(
+        sections_dir="sections-lab-simulation/",
+        only_prefixes=("sections-lab-simulation/", "skills/lab-simulation/"),
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-lab-simulation.md.tpl",
+        topology="empirical",
+        label="laboratory or simulation study (GUM uncertainty)",
+        summary=("a materials or modelling-simulation study: locked protocol, calibration against "
+                 "known values, replicates or parameter grid, uncertainty budgets"),
+        empirical=True,
+    ),
 }
 DEFAULT_PAPER_KIND = "experimental"
 
