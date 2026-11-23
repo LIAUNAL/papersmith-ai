@@ -244,11 +244,21 @@ every preview.
 
 No `ANTHROPIC_API_KEY` and no model call is ever needed on this path.
 
-## The lock arrives later
+## The lock
 
-The protocol lock (G-STUDY-PROTOCOL: the operator approves or amends a
-published revision, bound to the sha256 of its bytes; ethics approval and
-registration recorded beside it, marked stale by an amendment) arrives with
-the operator-records unit, not with this skill. Until then a published
-revision is the current protocol and nothing more: never describe it as
-locked, approved or registered.
+Publishing a revision does not approve it. The operator passes gate
+G-STUDY-PROTOCOL with `python skills/_core/empirical/study_cli.py protocol
+approve --by <operator> --root .`, which pins the latest managed revision (or
+the one `--revision` names) by the sha256 of its bytes in
+`study/protocol.lock.json`. Once it is approved, a newer published revision
+leaves the lock `changed` until the operator runs `protocol amend --by
+<operator> --reason <why>`; the amendment moves the lock to that revision and
+keeps the history. The ethics approval (`ethics record`) and the registration
+(`registration record`, a retrospective one flagged) are recorded beside the
+lock and bound to its sha256, so an amendment marks them stale until the
+operator records them again. You never run `approve`, `amend` or `record`
+yourself: you tell the operator the command. Until `protocol status` answers
+`current`, never describe a revision as locked or approved, and never
+describe the study as approved by an ethics committee or registered unless
+`study_cli.py status` shows that record current. See
+[`skills/_core/empirical/README.md`](../_core/empirical/README.md).
