@@ -4,7 +4,7 @@
 Stdlib only. One JSON object on stdout per call; a refusal is
 `{"ok": false, "error": CODE, "message": ...}` with exit 2 and nothing written.
 
-    journal_cli.py search --workspace <dir> --quartiles <range> [--oa-only]
+    journal_cli.py search --workspace <dir> --quartiles <range> [--oa-only] [--refine-top N]
                           [--max-apc N] [--max-review-days N] [--limit N]
                           [--source auto|openalex|crossref] [--include-unknown-quartile]
                           [--sjr <csv>] [--out <path>] [--no-cache]
@@ -31,6 +31,13 @@ Fit score (`fit`, `fit_score`, `query.scoring`)
     Facets: the title's tail after "for" is the application, the rest the method; each gets its own OR query
     of at most 5 phrases and half the works budget. When both were searched, a journal with no application
     hit and application-topic overlap < 0.05 gets fit_score * 0.5 and the flag no-application-evidence.
+
+Second stage (`--refine-top N`, default 5, both scopes; `query.refinement`, candidate `refinement`)
+    For each of the first N journals, up to 10 recent articles of that journal like the paper (OpenAlex works
+    filtered by source, the paper's phrases as an OR search, else its latest articles) get a lexical research
+    profile (research_profile.py: approach, AI use, contribution kind, math depth); `style_match` compares them
+    with the paper's profile and the top N are re-ordered by
+    refined_score = 0.5 * fit_score / best fit_score of the top + 0.5 * style_match. fit_score is unchanged.
 
 Proxy quartile (`quartile_source: "openalex-proxy"`)
     share = journals of the same OpenAlex field (core journals with a
@@ -95,6 +102,8 @@ Environment
     PAPERSMITH_JOURNAL_MAX_WORKS works fetched from OpenAlex (default 200)
     PAPERSMITH_OPENALEX_MIN_INTERVAL  seconds between OpenAlex calls (default 0.11)
     PAPERSMITH_JOURNAL_CACHE_DIR response cache (default ~/.cache/papersmith/journal-finder/http)
+    PAPERSMITH_JOURNAL_REFINE_TOP     default of --refine-top (5; 0 turns the second stage off)
+    PAPERSMITH_JOURNAL_REFINE_DEADLINE   seconds for the national second stage (default 60)
 """
 from __future__ import annotations
 
@@ -212,6 +221,13 @@ LEXICAL_MIN_TERMS = 2
 SUBFIELD_RETRY_SECONDS = 900
 #: Each search also keeps its own result, so the dashboard can show the scope it is on.
 SCOPED_CANDIDATES = "journal-candidates-{scope}.json"
+REFINE_DEFAULT = 5  # journals of the first stage that get the similar-papers second stage
+REFINE_MAX = 10
+REFINE_WORKS = 10  # recent articles sampled per journal
+REFINE_WORKS_SHOWN = 5
+REFINE_PHRASES = 4
+REFINE_FIT_SHARE = 0.5
+REFINE_SELECT = "id,title,publication_year,doi,abstract_inverted_index"
 NATIONAL_MIN_PREFIX = 5
 #: A median below this many days from submission to publication means OJS dated articles loaded after acceptance.
 NATIONAL_MIN_PLAUSIBLE_DAYS = 30
@@ -2523,7 +2539,7 @@ def _subfield_phrases(profile: dict) -> list[tuple[str, float]]:
     return chosen or ([(profile["title"], 1.0)] if profile.get("title") else [])
 
 
-def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[str, float]:
+def paper_subfields(workspace: Path, profile: dict, notes: list[str], status: dict | None = None) -> dict[str, float]:
     """The paper's OpenAlex subfield shares, from `group_by=primary_topic.subfield.id` over each facet phrase.
 
     Cached in `paper/.journal-subfields.json` under a digest of the phrases; empty when OpenAlex does not
@@ -2543,6 +2559,8 @@ def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[st
             retry = dt.datetime.fromtimestamp(failed_at + SUBFIELD_RETRY_SECONDS, dt.timezone.utc)
             notes.append(f"OpenAlex did not answer the paper's subfield profile recently and is not asked again "
                          f"before {retry.isoformat(timespec='minutes')}: {fallback}")
+            if status is not None:
+                status["openalex_failed"] = True
             return {}
     except (OSError, ValueError, AttributeError, TypeError):
         pass
@@ -2564,6 +2582,8 @@ def paper_subfields(workspace: Path, profile: dict, notes: list[str]) -> dict[st
                     shares[name] = shares.get(name, 0.0) + share * weight / total_weight
     except Exception as exc:  # noqa: BLE001 - any failure here degrades to the offline gate, never fails the search
         notes.append(f"OpenAlex did not answer the paper's subfield profile ({type(exc).__name__}: {exc}): {fallback}")
+        if status is not None:
+            status["openalex_failed"] = True
         try:
             _write_json(cache, {"digest": digest, "failed_at": time.time()})
         except OSError:
@@ -2602,6 +2622,142 @@ def subfield_affinity(journal: dict, shares: dict[str, float], rarity: dict[str,
     return sum(weight(t.get("subfield") or "") for t in topics) / len(topics)
 
 
+# --------------------------------------------------------------------------- second stage: similar papers
+
+
+def _research_profile():
+    """research_profile.py, beside this script, loaded by path once."""
+    module = sys.modules.get("journal_finder_research_profile")
+    if module is None:
+        source = Path(__file__).resolve().parent / "research_profile.py"
+        spec = importlib.util.spec_from_file_location("journal_finder_research_profile", source)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {source}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+    return module
+
+
+def refine_top(args: argparse.Namespace) -> int:
+    """How many of the first-stage journals get the second stage: --refine-top, else
+    PAPERSMITH_JOURNAL_REFINE_TOP, else REFINE_DEFAULT; 0 turns it off."""
+    raw = args.refine_top if getattr(args, "refine_top", None) is not None \
+        else os.environ.get("PAPERSMITH_JOURNAL_REFINE_TOP", "").strip() or None
+    top = REFINE_DEFAULT if raw is None else _number(raw, "--refine-top", integer=True)
+    if not 0 <= top <= REFINE_MAX:
+        raise Refusal("FILTER_INVALID", f"--refine-top must be between 0 and {REFINE_MAX}")
+    return top
+
+
+def _paper_body(workspace: Path) -> str:
+    """The paper's LaTeX (main.tex and paper/sections/*.tex), read for its math density."""
+    parts = [_read_text(workspace / "paper" / "main.tex")]
+    folder = workspace / "paper" / "sections"
+    if folder.is_dir():
+        parts += [_read_text(path) for path in sorted(folder.glob("*.tex")) if path.is_file()]
+    return "\n".join(parts)
+
+
+def _recorded_contribution_type(workspace: Path) -> dict | None:
+    try:
+        spec = json.loads((workspace / ".papersmith" / "model_spec.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = spec.get("contribution_type") if isinstance(spec, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def _sample_journal_works(services: Services, source_id: str, query: str, since: dt.date) -> tuple[list[dict], str]:
+    """Up to REFINE_WORKS recent articles of one journal: those matching the paper's phrases, else its latest."""
+    base = {"filter": f"primary_location.source.id:{source_id},from_publication_date:{since.isoformat()},"
+                      "type:article", "select": REFINE_SELECT, "per-page": REFINE_WORKS}
+    if query:
+        works = services.openalex_get("/works", {**base, "search": query}).get("results") or []
+        if works:
+            return works, "similar"
+    works = services.openalex_get("/works", {**base, "sort": "publication_date:desc"}).get("results") or []
+    return works, "latest" if works else "none"
+
+
+def refine_candidates(services: Services | None, workspace: Path, profile: dict, terms: list[str],
+                      phrases: list[str], candidates: list[dict], top: int, notes: list[str],
+                      skipped: str | None = None) -> dict:
+    """Second stage: sample the works of each of the first `top` candidates that are like the paper, read
+    their research profile and re-order those candidates by `refined_score`. Never fails the search: a
+    journal with no sample (no record, no article, no answer) keeps its first-stage place, with a note."""
+    research = _research_profile()
+    paper = research.paper_profile(profile.get("title", ""), profile.get("abstract", ""), profile.get("keywords"),
+                                   _paper_body(workspace), _recorded_contribution_type(workspace))
+    summary = {"top": top, "applied": False, "basis": "lexical", "paper": paper, "weights": research.WEIGHTS,
+               "formula": f"refined_score = {REFINE_FIT_SHARE:g} * fit_score / best fit_score of the top "
+                          f"+ {1 - REFINE_FIT_SHARE:g} * style_match",
+               "sampled": 0, "unavailable": 0}
+    head = candidates[:top]
+    if not head:
+        return summary
+    if skipped:
+        notes.append(f"Second stage skipped: {skipped}; the order is the first-stage fit.")
+        return summary
+    query = or_query(phrases[:REFINE_PHRASES]) if phrases else " ".join(terms[:3])
+    since = recency_start(dt.date.today())
+
+    def sample(candidate: dict):
+        source_id = _short_id(candidate.get("openalex_id") or "")
+        if not re.fullmatch(r"S\d+", source_id):
+            return None, "no-record", None
+        try:
+            works, how = _sample_journal_works(services, source_id, query, since)
+        except Exception as exc:  # noqa: BLE001 - one journal's sample never fails the search
+            return None, "unavailable", f"{type(exc).__name__}: {exc}"
+        return works, how, None
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+        samples = list(executor.map(sample, head))
+    best_fit = max((c.get("fit_score") or 0.0 for c in head), default=0.0) or 1.0
+    failures = []
+    for candidate, (works, how, error) in zip(head, samples):
+        if error:
+            failures.append(error)
+        texts = [f"{w.get('title') or ''}. {research.abstract_from_index(w.get('abstract_inverted_index'))}"
+                 for w in works or []]
+        profiles = [research.classify(text) for text in texts]
+        matched = research.match(paper, profiles, texts, terms)
+        candidate["refinement"] = {
+            "status": how, "works_sampled": len(texts), "shares": research.shares(profiles),
+            "dimensions": matched["dimensions"], "active": matched["active"], "style_match": matched["score"],
+            "works": [{"title": w.get("title") or "", "year": w.get("publication_year"), "doi": w.get("doi"),
+                       **{k: p[k] for k in ("approach", "ai", "kind", "math")},
+                       "has_abstract": bool(w.get("abstract_inverted_index"))}
+                      for w, p in list(zip(works or [], profiles))[:REFINE_WORKS_SHOWN]]}
+        relative = (candidate.get("fit_score") or 0.0) / best_fit
+        style = matched["score"]
+        candidate["refined_score"] = round(REFINE_FIT_SHARE * relative + (1 - REFINE_FIT_SHARE) * style, 4) \
+            if style is not None else None
+        if style is not None:
+            summary["sampled"] += 1
+    summary["unavailable"] = len(failures)
+    summary["applied"] = bool(summary["sampled"])
+    # Only the journals that have a refined_score trade places, among the places they held; a journal with
+    # no sample keeps its first-stage place (its relative fit is on another scale than a refined_score).
+    places = [i for i, c in enumerate(head) if c["refined_score"] is not None]
+    ranked = sorted(places, key=lambda i: (-head[i]["refined_score"], i))
+    reordered = list(head)
+    for place, source in zip(places, ranked):
+        reordered[place] = head[source]
+    candidates[:len(head)] = reordered
+    if failures:
+        notes.append(f"OpenAlex did not answer the similar-papers sample of {len(failures)} of the top "
+                     f"{len(head)} journal(s) ({failures[0]}); they keep their first-stage place.")
+    if summary["applied"]:
+        notes.append(f"Second stage: the top {len(head)} journals were re-ordered by refined_score, which mixes the "
+                     "first-stage fit with style_match, how their recent articles like the paper agree with it in "
+                     "topic, research approach (quantitative, qualitative, mixed), contribution kind, AI use and "
+                     "mathematical depth. The profiles are lexical cues read from titles and abstracts: read the "
+                     "sampled articles before choosing.")
+    return summary
+
+
 def cmd_search_national(args: argparse.Namespace) -> dict:
     """Rank the journals of the Publindex list by lexical fit with the paper and by the paper's references."""
     refused = _international_only(args)
@@ -2610,7 +2766,8 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
                                         "--scope national accepts --categories, --limit and --out")
     categories = parse_category_range(args.categories)
     filters, notes = _validated_filters(args)
-    filters = {"categories": categories, "limit": filters["limit"]}
+    top = refine_top(args)
+    filters = {"categories": categories, "limit": filters["limit"], "refine_top": top}
     workspace = Path(args.workspace).expanduser()
     if not workspace.is_dir():
         raise Refusal("WORKSPACE_ABSENT", f"{workspace} is not a directory")
@@ -2642,7 +2799,8 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
         ordered = sorted(found)
         return sum(weight[k] for k in ordered), [spelled[k][0] for k in ordered]
 
-    shares = paper_subfields(workspace, profile, notes)
+    profile_status: dict = {}
+    shares = paper_subfields(workspace, profile, notes, profile_status)
     rarity = subfield_rarity(journals)
     rows = []
     reasons = {"category_range": 0, "off_topic": 0}
@@ -2708,6 +2866,12 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
     if len(candidates) > filters["limit"]:
         notes.append(f"{len(candidates) - filters['limit']} further journals of the list ranked below the limit")
     candidates = candidates[:filters["limit"]]
+    refine_services = Services(Deadline(_env_float("PAPERSMITH_JOURNAL_REFINE_DEADLINE", 60.0)),
+                               ResponseCache(cache_dir(), enabled=True)) if top else None
+    skipped = ("it reads the journals' articles from OpenAlex, which did not answer the paper's subfield profile"
+               if profile_status.get("openalex_failed") else None)
+    refinement = refine_candidates(refine_services, workspace, profile, terms, build_phrases(profile), candidates,
+                                   top, notes, skipped=skipped)
     for rank, candidate in enumerate(candidates, start=1):
         candidate["rank"] = rank
 
@@ -2744,7 +2908,8 @@ def cmd_search_national(args: argparse.Namespace) -> dict:
                   "subfields": [{"name": name, "share": share} for name, share in shares.items()],
                   "facets": {"tail": [], "queries": []}, "topics": [],
                   "cited": {"references_file": references_file, "entries": len(entries)},
-                  "fallback": None, "asta": {"queried": False, "answered": False}, "scoring": scoring},
+                  "fallback": None, "asta": {"queried": False, "answered": False}, "scoring": scoring,
+                  "refinement": refinement},
         "quartiles": categories,
         "filters": filters,
         "quartile_source_summary": {"publindex": len(candidates)},
@@ -2808,6 +2973,8 @@ def cmd_search(args: argparse.Namespace) -> dict:
     low, high = parse_quartile_range(args.quartiles)
     filters, notes = _validated_filters(args)
     filters["include_unknown_quartile"] = bool(args.include_unknown_quartile)
+    top = refine_top(args)
+    filters["refine_top"] = top
     workspace = Path(args.workspace).expanduser()
     if not workspace.is_dir():
         raise Refusal("WORKSPACE_ABSENT", f"{workspace} is not a directory")
@@ -2955,6 +3122,10 @@ def cmd_search(args: argparse.Namespace) -> dict:
             notes.append(f"{len(eligible) - index} further matching journals ranked below the limit were not "
                          "evaluated for review time")
 
+    skipped = ("it reads the journals' articles from OpenAlex, which did not answer this search"
+               if not on_openalex and candidates else None)
+    refinement = refine_candidates(services, workspace, profile, terms, found["phrases"], candidates, top, notes,
+                                   skipped=skipped)
     meta_by: set[str] = set()
     for rank, candidate in enumerate(candidates, start=1):
         candidate["rank"] = rank
@@ -3020,7 +3191,8 @@ def cmd_search(args: argparse.Namespace) -> dict:
             "cited": {"references_file": references_file, **cited["summary"]},
             "fallback": run["europepmc"],
             "asta": asta,
-            "scoring": scoring},
+            "scoring": scoring,
+            "refinement": refinement},
         "quartiles": [f"Q{n}" for n in range(low, high + 1)],
         "filters": filters,
         "quartile_source_summary": summary,
@@ -3096,6 +3268,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "openalex: refuse when unavailable; crossref: skip OpenAlex")
     search.add_argument("--include-unknown-quartile", action="store_true",
                         help="keep journals whose quartile is unknown (excluded and counted by default)")
+    search.add_argument("--refine-top", default=None,
+                        help=f"both scopes: re-order the first N journals (default {REFINE_DEFAULT}, 0 off, max "
+                             f"{REFINE_MAX}) by how their recent articles like the paper match its research "
+                             "profile (PAPERSMITH_JOURNAL_REFINE_TOP sets the default)")
     search.set_defaults(func=cmd_search)
 
     imp = sub.add_parser("sjr-import", help="validate and cache a SCImago 'Download data' CSV")

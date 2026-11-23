@@ -108,6 +108,7 @@ The full path, from a PDF to a compiled paper:
 | 13 | `/skill-audit` | Audits any of the above: what the code accepts versus what its documentation promises | a report, never a change |
 | 14 | `/upgrade-project` | Brings the workspace to the version of the CLI you have installed: it syncs the kit files and migrates the artifacts, delegating everything to `smith upgrade` | the workspace itself |
 | 15 | `/ui-github` | Publishes a read-only copy of the dashboard on GitHub Pages (`smith ui --publish-pages`): a static snapshot, nothing runs, and the site is public; it asks before pushing, and `--no-ai-history` leaves the masked AI history out | the `gh-pages` branch of the GitHub remote, never the workspace |
+| 16 | `/prompt-gate` (also applied automatically before every step above) | Measures the quality of the prompt a skill receives before it runs: a deterministic score per skill (`python -m skills._core.command_center.prompt_gate check`) plus a rubric from published prompt-engineering guidance. Under the threshold (60/100) or on a critical failure it alerts that the prompt is not clear and proposes an improved prompt for you to approve, or asks a few questions when your input is too thin, builds the prompt and launches it. It runs the same way in every agent (Claude Code, OpenCode, Pi, Antigravity), in the agent terminal, the dashboard's embedded terminal and the dashboard's phase boxes, where the alert and the suggestion appear in the box itself | nothing on disk; an approved prompt carries `[prompt-gate: approved]` |
 
 The minimum to try the forge is step 1: with the idea in two sentences,
 `/plausibility` tracks the SOTA and returns the constellation plus the top-5. Only
@@ -443,7 +444,7 @@ this forge.
 
 `main` is the only branch that's maintained, and each release also gets its tag,
 so an exact build is frozen by pinning it in the URL — for example
-`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.80.0"`.
+`pipx install --force "git+https://github.com/LIAUNAL/papersmith-ai@v0.82.0"`.
 **1b** takes the clone as it is, including uncommitted changes; a reproducible
 build comes from **1a** or a tag. The changelog is in [CHANGELOG.md](CHANGELOG.md).
 

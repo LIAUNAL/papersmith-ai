@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, caztor, doctor_view, keys_view, localize, toolchain
+from . import board_refresh, caztor, doctor_view, keys_view, localize, prompt_gate, prompt_review, toolchain
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -2926,6 +2926,38 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
         return JSONResponse(result)
 
+    async def _prompt_payload(request: Request) -> Any:
+        try:
+            return await request.json()
+        except Exception:
+            return None
+
+    @app.post("/api/prompt/check")
+    async def api_prompt_check(request: Request) -> JSONResponse:
+        """The prompt gate's deterministic score of a phase prompt (no model
+        call): the phase cards run it on every launch. Read only."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        try:
+            skill, text, optional = prompt_review.validate(await _prompt_payload(request))
+        except prompt_review.ReviewInvalid as exc:
+            return JSONResponse({"ok": False, "code": "PROMPT_INVALID", "error": str(exc)}, status_code=422)
+        return JSONResponse(prompt_gate.check(skill, text, optional=optional))
+
+    @app.post("/api/prompt/review")
+    async def api_prompt_review(request: Request) -> JSONResponse:
+        """A failed phase prompt handed to the headless prompt-reviewer agent:
+        an improved prompt, or clarifying questions (and, with the operator's
+        answers, the composed prompt). Read only; the operator launches."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        payload = await _prompt_payload(request)
+        try:
+            result = await asyncio.to_thread(prompt_review.review, root_path, payload)
+        except prompt_review.ReviewInvalid as exc:
+            return JSONResponse({"ok": False, "code": "PROMPT_INVALID", "error": str(exc)}, status_code=422)
+        return JSONResponse(result)
+
     async def _phase_check(request: Request) -> JSONResponse:
         try:
             payload = await request.json()
@@ -4661,8 +4693,16 @@ def _is_wsl() -> bool:
     return sys.platform == "linux" and "microsoft" in platform.release().lower()
 
 
-#: Launchers that hand a URL to the Windows browser from WSL, in order.
-WSL_BROWSER_LAUNCHERS = ("wslview", "explorer.exe")
+#: Launchers that hand a URL to the Windows browser from WSL, in order: the
+#: executable, then the arguments before the URL. ``rundll32 url.dll`` passes
+#: the URL to the default browser with its query string intact. Never
+#: ``explorer.exe``: given a URL with a query string (the terminal login
+#: ``?token=``) it opens the Documents folder, yet starts, so it would report a
+#: launch that never happened (issue #188).
+WSL_BROWSER_LAUNCHERS: tuple[tuple[str, ...], ...] = (
+    ("wslview",),
+    ("rundll32.exe", "url.dll,FileProtocolHandler"),
+)
 
 
 #: Where an X server listens on its local socket, one ``X<N>`` per display.
@@ -4772,14 +4812,14 @@ def open_browser(url: str) -> bool:
     printed on the server's console.
 
     Under WSL the Windows browser is reached through ``wslview`` (wslu), then
-    ``explorer.exe``. On Linux without a graphical display Python's
+    ``rundll32.exe url.dll,FileProtocolHandler``. On Linux without a graphical display Python's
     ``webbrowser`` would start a text browser (w3m, lynx) on the server's own
     terminal, so the URL is printed instead. A display found only through its
     socket (a terminal outside the desktop session) is named to ``xdg-open``
     in the child's environment. macOS and desktop Linux use ``webbrowser``.
     """
     if _is_wsl():
-        for launcher in WSL_BROWSER_LAUNCHERS:
+        for launcher, *args in WSL_BROWSER_LAUNCHERS:
             executable = shutil.which(launcher)
             if not executable:
                 continue
@@ -4787,7 +4827,7 @@ def open_browser(url: str) -> bool:
             # interpolation). Do not expose the terminal login URL through
             # child process output.
             try:
-                subprocess.Popen([executable, url], stdin=subprocess.DEVNULL,
+                subprocess.Popen([executable, *args, url], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  close_fds=True)
                 return True

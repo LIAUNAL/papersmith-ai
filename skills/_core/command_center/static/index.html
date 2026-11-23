@@ -13,40 +13,40 @@
   <link rel="stylesheet" href="./vendor/xterm.css">
   <script src="./vendor/xterm.js"></script>
   <script src="./vendor/xterm-addon-fit.js"></script>
-  <script src="./i18n/en.js?v=0.80.0"></script>
-  <script src="./i18n/es.js?v=0.80.0"></script>
-  <script src="./i18n.js?v=0.80.0"></script>
-<script src="./snapshot.js?v=0.80.0"></script>
-<script src="./board-refresh.js?v=0.80.0"></script>
-  <script src="./text-size.js?v=0.80.0"></script>
-  <script src="./section-folds.js?v=0.80.0"></script>
-  <script src="./cli-console.js?v=0.80.0"></script>
+  <script src="./i18n/en.js?v=0.82.0"></script>
+  <script src="./i18n/es.js?v=0.82.0"></script>
+  <script src="./i18n.js?v=0.82.0"></script>
+<script src="./snapshot.js?v=0.82.0"></script>
+<script src="./board-refresh.js?v=0.82.0"></script>
+  <script src="./text-size.js?v=0.82.0"></script>
+  <script src="./section-folds.js?v=0.82.0"></script>
+  <script src="./cli-console.js?v=0.82.0"></script>
   <link rel="stylesheet" href="./vendor/katex/katex.min.css">
   <script src="./vendor/katex/katex.min.js"></script>
-  <script src="./citations.js?v=0.80.0"></script>
-  <script src="./atlas-reference.js?v=0.80.0"></script>
-  <script src="./math-panel.js?v=0.80.0"></script>
-  <script src="./contribution-affinity.js?v=0.80.0"></script>
-  <script src="./model-panel.js?v=0.80.0"></script>
+  <script src="./citations.js?v=0.82.0"></script>
+  <script src="./atlas-reference.js?v=0.82.0"></script>
+  <script src="./math-panel.js?v=0.82.0"></script>
+  <script src="./contribution-affinity.js?v=0.82.0"></script>
+  <script src="./model-panel.js?v=0.82.0"></script>
   <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
-  <script type="module" src="./office3d.js?v=0.80.0"></script>
-  <script src="./office-panel.js?v=0.80.0"></script>
-  <script src="./experiments-panel.js?v=0.80.0"></script>
-  <script src="./experiments-tutor.js?v=0.80.0"></script>
-  <script src="./novelty-panel.js?v=0.80.0"></script>
-  <script src="./agents-panel.js?v=0.80.0"></script>
-  <script src="./doctor-panel.js?v=0.80.0"></script>
-  <script src="./keys-panel.js?v=0.80.0"></script>
-  <script src="./journals-panel.js?v=0.80.0"></script>
-  <script src="./translation-panel.js?v=0.80.0"></script>
-  <script src="./ai-history-panel.js?v=0.80.0"></script>
-  <script src="./phase-console.js?v=0.80.0"></script>
-  <script src="./phase-run.js?v=0.80.0"></script>
-  <script src="./atlas-manuscript-panel.js?v=0.80.0"></script>
-  <script src="./manuscript-graph-panel.js?v=0.80.0"></script>
-  <script src="./paper-explorer-panel.js?v=0.80.0"></script>
-  <script src="./manuscript-qa-panel.js?v=0.80.0"></script>
-  <script src="./paper-review-panel.js?v=0.80.0"></script>
+  <script type="module" src="./office3d.js?v=0.82.0"></script>
+  <script src="./office-panel.js?v=0.82.0"></script>
+  <script src="./experiments-panel.js?v=0.82.0"></script>
+  <script src="./experiments-tutor.js?v=0.82.0"></script>
+  <script src="./novelty-panel.js?v=0.82.0"></script>
+  <script src="./agents-panel.js?v=0.82.0"></script>
+  <script src="./doctor-panel.js?v=0.82.0"></script>
+  <script src="./keys-panel.js?v=0.82.0"></script>
+  <script src="./journals-panel.js?v=0.82.0"></script>
+  <script src="./translation-panel.js?v=0.82.0"></script>
+  <script src="./ai-history-panel.js?v=0.82.0"></script>
+  <script src="./phase-console.js?v=0.82.0"></script>
+  <script src="./phase-run.js?v=0.82.0"></script>
+  <script src="./atlas-manuscript-panel.js?v=0.82.0"></script>
+  <script src="./manuscript-graph-panel.js?v=0.82.0"></script>
+  <script src="./paper-explorer-panel.js?v=0.82.0"></script>
+  <script src="./manuscript-qa-panel.js?v=0.82.0"></script>
+  <script src="./paper-review-panel.js?v=0.82.0"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -2762,6 +2762,18 @@
     .kw-help__actions { display: flex; gap: 0.5rem; }
     .kw-help__unavailable { border: 1px solid var(--bad); background: rgba(248, 113, 113, 0.12); border-radius: 6px; padding: 0.5rem 0.65rem; font-size: 0.8rem; }
     .kw-help__unavailable span { color: var(--text-dim); font-size: 0.76rem; }
+    /* Prompt quality gate: the alert a failed phase prompt raises in its card. */
+    .phase-gate { margin-top: 0.5rem; border: 1px solid var(--warn); background: rgba(245, 158, 11, 0.1); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; }
+    .phase-gate__title { margin: 0; font-weight: 600; }
+    .phase-gate__issues, .phase-gate__kept { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.2rem; }
+    .phase-gate__note { margin: 0; color: var(--text-muted); }
+    .phase-gate__label { font-size: 0.78rem; font-weight: 600; margin: 0; }
+    .phase-gate__question { border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
+    .phase-gate__question legend { font-weight: 600; padding: 0 0.25rem; }
+    .phase-gate__option { display: flex; align-items: center; gap: 0.35rem; }
+    .phase-gate__free { font: inherit; padding: 0.3rem 0.45rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+    .phase-gate__sent { margin: 0; white-space: pre-wrap; font-size: 0.78rem; }
+    .phase-gate__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .run-dock { position: fixed; left: 16px; bottom: 16px; z-index: 99990; display: flex; flex-direction: column; gap: 0.4rem; max-width: min(340px, calc(100vw - 32px)); }
     .run-dock__item { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; align-items: center; text-align: left; background: var(--surface-2); color: var(--text); border: 1px solid var(--accent); border-radius: 12px; padding: 0.55rem 0.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); cursor: pointer; font: inherit; font-size: 0.8rem; }
     .run-dock__item.is-verified { border-color: var(--ok); }

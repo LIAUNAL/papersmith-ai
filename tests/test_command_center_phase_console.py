@@ -35,7 +35,7 @@ function el(id) {
     get innerHTML() { return this._html; },
     set innerHTML(v) {
       this._html = v;
-      const m = /<textarea[^>]*id="(kwDraft\d+)"[^>]*>([\s\S]*?)<\/textarea>/.exec(v);
+      const m = /<textarea[^>]*id="((?:kwDraft|gateDraft)\d+)"[^>]*>([\s\S]*?)<\/textarea>/.exec(v);
       if (m) el(m[1]).value = m[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
     },
   });
@@ -75,7 +75,11 @@ sendResult = input.sendResult;
 global.window.fetch = async (url, init) => {
   fetches.push([url, JSON.parse(init.body)]);
   if (input.fetchError) throw new Error(input.fetchError);
-  const r = input.fetchResponse || { status: 200, body: {} };
+  const path = url.split('?')[0];
+  const queued = path === '/api/prompt/review' && input.reviewSequence && input.reviewSequence.length
+    ? input.reviewSequence.shift() : null;
+  const r = queued || (input.fetchResponses || {})[path] || input.fetchResponse || { status: 200, body: {} };
+  if (path === '/api/prompt/review' && input.reviewDelay) await new Promise((res) => setTimeout(res, input.reviewDelay));
   return { ok: r.status < 400, status: r.status, json: async () => r.body };
 };
 if (input.agents) agents = input.agents;
@@ -90,17 +94,23 @@ function click(i) {
   listeners.click({ target: { closest: (sel) => (sel.includes('data-kw-help') ? null : { dataset: { phaseAction: String(i) } }) } });
 }
 for (const step of input.steps) {
+  if (step.wait) await new Promise((r) => setTimeout(r, step.wait));
   if (step.kw) {
     step.kw.forEach((word, n) => { el('kwInput' + step.i + '_' + n).value = word; });
     listeners.input({ target: { closest: () => ({ dataset: { kwInput: String(step.i) } }) } });
   }
   if (step.draft !== undefined) el('kwDraft' + step.i).value = step.draft;
   if (step.type) el('phaseInput' + step.i).value = step.type;
-  if (step.help) {
+  if (step.values) Object.entries(step.values).forEach(([id, v]) => { el(id).value = v; });
+  if (step.checks) step.checks.forEach((id) => { el(id).checked = true; });
+  if (step.gate) {
+    listeners.click({ target: { closest: (sel) => (sel.includes('data-gate') ? { dataset: { gate: step.gate, gateIndex: String(step.i) } } : null) } });
+  } else if (step.help) {
     listeners.click({ target: { closest: (sel) => (sel.includes('data-kw-help') ? { dataset: { kwHelp: step.help, kwIndex: String(step.i) } } : null) } });
   } else if (!step.kw) click(step.i);
   await new Promise((r) => setTimeout(r, 10));
 }
+if (input.settle) await new Promise((r) => setTimeout(r, input.settle));
 console.log(JSON.stringify({ html, calls, options, fetches, select: el('phaseAgent0').innerHTML, note: el('phaseAgentNote0').textContent, hints: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, v.textContent])), els: Object.fromEntries(Object.entries(els).map(([k, v]) => [k, { value: v.value, textContent: v.textContent, innerHTML: v.innerHTML, hidden: v.hidden, disabled: v.disabled }])) }));
 })();
 """
@@ -442,6 +452,159 @@ class PageWiringTests(unittest.TestCase):
         # A startup question (folder trust) is never answered by the command's Enter.
         self.assertIn("const STARTUP_QUESTIONS = /trust this folder|Do you trust|Enter to confirm/i;", script)
         self.assertIn("if (kind === 'slash' && STARTUP_QUESTIONS.test(screenText()))", script)
+
+
+
+# ---- prompt quality gate in the phase cards ---------------------------------
+GATE_FAIL = {"status": 200, "body": {"ok": True, "verdict": "fail", "score": 50, "threshold": 60, "critical": True,
+                                     "issues": [{"id": "figure", "severity": "critical",
+                                                 "message": "Missing: the id of a compiled figure."}]}}
+GATE_PASS = {"status": 200, "body": {"ok": True, "verdict": "pass", "score": 100, "threshold": 60, "issues": []}}
+IMPROVED = "Review the compiled figure fig-architecture and report whether it reads on its own."
+REVIEW_IMPROVE = {"status": 200, "body": {
+    "ok": True, "available": True, "verdict": "improve", "reply": "The figure id was missing.",
+    "issues": ["No figure id."], "improved_prompt": IMPROVED, "preserved_requirements": ["review"],
+    "questions": [], "improved_check": {"score": 100}}}
+REVIEW_CLARIFY = {"status": 200, "body": {
+    "ok": True, "available": True, "verdict": "clarify", "reply": "Which figure?", "issues": ["No figure id."],
+    "improved_prompt": "", "preserved_requirements": [],
+    "questions": [{"id": "q1", "question": "Which figure?", "options": ["fig-architecture", "fig-results"]}]}}
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class PromptGateCardTests(unittest.TestCase):
+    TEXT = "review the main picture"
+
+    def gate(self, result: dict) -> str:
+        return result["els"].get("phaseGate0", {}).get("innerHTML", "")
+
+    def test_a_passing_prompt_launches_unchanged_after_the_check(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}],
+                     fetchResponses={"/api/prompt/check": GATE_PASS})
+        self.assertEqual(result["fetches"][0], ["/api/prompt/check?lang=es",
+                                                {"skill": "figure-review", "text": self.TEXT, "optional": False}])
+        self.assertEqual(result["calls"], [["send", "/figure-review " + self.TEXT, True, "slash"]])
+
+    def test_a_failed_prompt_is_held_with_an_alert_and_a_suggestion(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE})
+        self.assertEqual(result["calls"], [], "nothing launches before the operator decides")
+        html = self.gate(result)
+        self.assertIn("no es lo bastante claro para /figure-review (puntaje 50/100, umbral 60)", html)
+        self.assertIn("Missing: the id of a compiled figure.", html)
+        self.assertIn('id="gateDraft0"', html)
+        self.assertIn(IMPROVED, html)
+        self.assertIn('data-gate="approve"', html)
+        self.assertIn('data-gate="asis"', html)
+        self.assertIn('data-gate="cancel"', html)
+        self.assertEqual([f[0] for f in result["fetches"]], ["/api/prompt/check?lang=es", "/api/prompt/review?lang=es"])
+        self.assertEqual(result["fetches"][1][1]["text"], self.TEXT)
+
+    def test_approve_launches_the_edited_suggestion_with_the_marker(self) -> None:
+        edited = IMPROVED + " Be brief."
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT},
+                                        {"i": 0, "values": {"gateDraft0": edited}, "gate": "approve"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE})
+        self.assertEqual(result["calls"],
+                         [["send", f"/figure-review {edited} [prompt-gate: approved]", True, "slash"]])
+        self.assertEqual(result["els"]["phaseInput0"]["value"], edited)
+        self.assertNotIn("prompt-gate", result["hints"]["phaseHint0"])
+
+    def test_launch_as_is_sends_the_original_with_the_marker(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "asis"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE})
+        self.assertEqual(result["calls"],
+                         [["send", f"/figure-review {self.TEXT} [prompt-gate: approved]", True, "slash"]])
+
+    def test_cancel_launches_nothing(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "cancel"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE})
+        self.assertEqual(result["calls"], [])
+        self.assertEqual(self.gate(result), "")
+
+    def test_questions_render_with_options_and_a_free_answer(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_CLARIFY})
+        html = self.gate(result)
+        self.assertIn("Which figure?", html)
+        self.assertIn('id="gateOpt0_0_0"', html)
+        self.assertIn('value="fig-results"', html)
+        self.assertIn('id="gateFree0_0"', html)
+        self.assertIn('data-gate="compose"', html)
+        self.assertEqual(result["calls"], [])
+
+    def test_compose_without_an_answer_asks_for_one(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "compose"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_CLARIFY})
+        self.assertEqual(result["calls"], [])
+        self.assertIn("Responde al menos una pregunta", result["hints"]["phaseHint0"])
+
+    def test_a_free_answer_wins_over_the_option(self) -> None:
+        result = run(phase("figures"), [
+            {"i": 0, "type": self.TEXT},
+            {"i": 0, "checks": ["gateOpt0_0_0"], "values": {"gateFree0_0": "fig-pipeline"}, "gate": "compose"},
+        ], fetchResponses={"/api/prompt/check": GATE_FAIL}, reviewSequence=[REVIEW_CLARIFY, REVIEW_IMPROVE])
+        reviews = [f for f in result["fetches"] if f[0].startswith("/api/prompt/review")]
+        self.assertEqual(reviews[1][1]["answers"][0]["answer"], "fig-pipeline")
+
+    def test_compose_sends_the_answers_and_launches_the_built_prompt(self) -> None:
+        # The first review returns questions; answering and composing posts the
+        # chosen option, and an improve answer launches with the marker.
+        result = run(phase("figures"), [
+            {"i": 0, "type": self.TEXT},
+            {"i": 0, "checks": ["gateOpt0_0_0"], "gate": "compose"},
+        ], fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_CLARIFY},
+            reviewSequence=[REVIEW_CLARIFY, REVIEW_IMPROVE])
+        reviews = [f for f in result["fetches"] if f[0].startswith("/api/prompt/review")]
+        self.assertEqual(reviews[1][1]["answers"],
+                         [{"id": "q1", "question": "Which figure?", "answer": "fig-architecture"}])
+        self.assertEqual(result["calls"],
+                         [["send", f"/figure-review {IMPROVED} [prompt-gate: approved]", True, "slash"]])
+
+    def test_an_unavailable_reviewer_offers_edit_launch_or_cancel(self) -> None:
+        down = {"status": 200, "body": {"ok": True, "available": False, "reason": "no agent CLI found"}}
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": down})
+        html = self.gate(result)
+        self.assertIn("no agent CLI found", html)
+        self.assertIn('data-gate="edit"', html)
+        self.assertIn('data-gate="asis"', html)
+        self.assertEqual(result["calls"], [])
+
+    def test_an_unreachable_check_never_blocks_the_launch(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}], fetchError="offline")
+        self.assertEqual(result["calls"], [["send", "/figure-review " + self.TEXT, True, "slash"]])
+
+    def test_cancel_while_the_reviewer_works_drops_its_answer(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "cancel"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE},
+                     reviewDelay=60, settle=120)
+        self.assertEqual(result["calls"], [])
+        self.assertEqual(self.gate(result), "", "a late answer does not reopen a cancelled box")
+
+    def test_launch_as_is_is_offered_while_the_reviewer_works(self) -> None:
+        result = run(phase("figures"), [{"i": 0, "type": self.TEXT}, {"i": 0, "gate": "asis"}],
+                     fetchResponses={"/api/prompt/check": GATE_FAIL, "/api/prompt/review": REVIEW_IMPROVE},
+                     reviewDelay=60, settle=120)
+        self.assertEqual(result["calls"],
+                         [["send", f"/figure-review {self.TEXT} [prompt-gate: approved]", True, "slash"]])
+        self.assertEqual(self.gate(result), "")
+
+    def test_cancel_while_composing_launches_nothing(self) -> None:
+        result = run(phase("figures"), [
+            {"i": 0, "type": self.TEXT},
+            {"i": 0, "wait": 80, "checks": ["gateOpt0_0_0"], "gate": "compose"},
+            {"i": 0, "gate": "cancel"},
+        ], fetchResponses={"/api/prompt/check": GATE_FAIL}, reviewSequence=[REVIEW_CLARIFY, REVIEW_IMPROVE],
+            reviewDelay=40, settle=150)
+        reviews = [f for f in result["fetches"] if f[0].startswith("/api/prompt/review")]
+        self.assertEqual(len(reviews), 2, "the compose request was sent")
+        self.assertEqual(result["calls"], [])
+
+    def test_the_card_marker_is_the_gate_marker(self) -> None:
+        from skills._core.command_center import prompt_gate
+        self.assertIn(f"const GATE_MARKER = '{prompt_gate.APPROVED_MARKER}';",
+                      (STATIC / "phase-console.js").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -24,6 +24,8 @@ Every top-level skill is projected as a Claude Code slash command under
 loads its `skills/<name>/SKILL.md` and takes your text as `$ARGUMENTS`. That
 directory is a derived artifact — regenerate it with the script (`--check` reports
 drift and exits non-zero) instead of editing it by hand.
+Each command body applies the prompt gate (`skills/prompt-gate/SKILL.md`) to
+`$ARGUMENTS` before following its skill.
 
 ## Language
 

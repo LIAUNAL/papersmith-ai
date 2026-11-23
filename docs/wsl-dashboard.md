@@ -32,7 +32,10 @@ smith ui .
 
 1. `wslview <url>` (from the `wslu` package), which opens the Windows default
    browser;
-2. otherwise `explorer.exe <url>`, through Windows interop;
+2. otherwise `rundll32.exe url.dll,FileProtocolHandler <url>`, through Windows
+   interop, which hands the URL (query string included) to the default
+   browser. `explorer.exe` is never used: given the terminal login URL it opens
+   the Documents folder instead;
 3. otherwise, on a WSLg desktop (`DISPLAY` or `WAYLAND_DISPLAY` set), Python's
    own browser lookup;
 4. otherwise it prints the URL; paste it into a Windows browser.
@@ -46,8 +49,13 @@ avoid issuing a terminal login URL, start with
 `smith ui . --no-browser --no-terminal` and open `http://localhost:8080/`.
 
 If Windows does not open automatically, check that Windows interop is
-enabled and that `command -v wslview` or `command -v explorer.exe` finds a
-launcher (`sudo apt install wslu` provides `wslview`).
+enabled and that `command -v wslview` or `command -v rundll32.exe` finds a
+launcher. `rundll32.exe` lives in `C:\Windows\System32`, which WSL puts on
+`PATH` unless `appendWindowsPath` is turned off in `/etc/wsl.conf`; `wslview`
+comes from `sudo apt install wslu`, where the release still packages it (Ubuntu
+26.04 does not). The dashboard's **Activate** button uses the same launchers;
+when none is found it says so, and the login URL printed by `smith ui` still
+works.
 
 ## When the Windows browser cannot reach 127.0.0.1
 

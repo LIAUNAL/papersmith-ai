@@ -373,7 +373,56 @@
       ['journals.fit.topic', fit.topic_overlap],
     ].filter(([, v]) => isNum(v)).map(([key, v]) => `${esc(t(key))} ${esc(fixed(v, 2))}`);
     const score = isNum(c.fit_score) ? `<strong>${esc(fixed(c.fit_score, 2))}</strong>` : '';
-    return `${score}<div class="panel__meta">${parts.join(' · ')}</div>`;
+    const refined = isNum(c.refined_score)
+      ? `<div class="panel__meta">${esc(t('journals.fit.refined'))} ${esc(fixed(c.refined_score, 2))}</div>` : '';
+    return `${score}<div class="panel__meta">${parts.join(' · ')}</div>${refined}`;
+  }
+
+  // The second stage: a research profile (approach, AI use, contribution kind, math depth) as words.
+  const STYLE_DIMENSIONS = ['topic', 'approach', 'kind', 'math', 'ai'];
+  function profileText(profile) {
+    const p = obj(profile);
+    const bits = [];
+    if (typeof p.approach === 'string') bits.push(t(`journals.style.approach.${p.approach}`));
+    if (typeof p.ai === 'boolean') bits.push(t(p.ai ? 'journals.style.ai.yes' : 'journals.style.ai.no'));
+    if (typeof p.kind === 'string') bits.push(t(`journals.style.kind.${p.kind}`));
+    if (typeof p.math === 'string') bits.push(t(`journals.style.math.${p.math}`));
+    return bits.join(' · ');
+  }
+
+  // query.refinement: the paper's profile and the second-stage formula, once above the table.
+  function refinementSummaryHtml(refinement) {
+    const info = obj(refinement);
+    if (!info.applied) return '';
+    const lines = [esc(t('journals.style.paper', { profile: profileText(info.paper) }))];
+    if (typeof info.formula === 'string') {
+      lines.push(esc(t('journals.style.formula', { top: info.top ?? '', formula: info.formula })));
+    }
+    return `<div class="panel__meta journals-scoring">${lines.map((line) => `<div>${line}</div>`).join('')}</div>`;
+  }
+
+  // A refined candidate: its style match per dimension and the sampled articles with their reading.
+  function refinementHtml(c) {
+    const r = obj(c.refinement);
+    if (typeof r.status !== 'string') return '';
+    if (!isNum(r.style_match)) {
+      return `<div class="panel__meta">${esc(t(`journals.style.status.${r.status}`))}</div>`;
+    }
+    const dims = obj(r.dimensions);
+    const bits = STYLE_DIMENSIONS.filter((d) => isNum(dims[d]))
+      .map((d) => `${esc(t(`journals.style.dim.${d}`))} ${esc(fixed(dims[d], 2))}`);
+    const items = list(r.works).map((w) => {
+      const work = obj(w);
+      const year = work.year ? ` (${esc(work.year)})` : '';
+      const doi = work.doi ? ` · ${doiLink(work.doi)}` : '';
+      return `<li>${esc(work.title || '—')}${year}${doi}<div class="panel__meta">${esc(profileText(work))}</div></li>`;
+    }).join('');
+    const how = t(`journals.style.status.${r.status}`);
+    const works = items ? `<details class="journals-works"><summary>`
+      + `${esc(t('journals.style.works', { count: r.works_sampled ?? list(r.works).length, how }))}</summary>`
+      + `<ul>${items}</ul></details>` : '';
+    return `<div class="panel__meta"><em>${esc(t('journals.style.match', { score: fixed(r.style_match, 2) }))}</em>`
+      + `${bits.length ? ` · ${bits.join(' · ')}` : ''}</div>${works}`;
   }
 
   // Hit counts are whole numbers, the overlap and the gate short decimals.
@@ -400,7 +449,7 @@
       const scope = oneLine(c.scope);
       const scopeHtml = scope
         ? `<details class="journals-works"><summary>${esc(t('journals.scope'))}</summary><p>${esc(scope)}</p></details>` : '';
-      return `${matched}${flags ? `<div>${flags}</div>` : ''}${scopeHtml}`;
+      return `${matched}${flags ? `<div>${flags}</div>` : ''}${scopeHtml}${refinementHtml(c)}`;
     }
     const works = list(c.similar_works);
     const count = isNum(c.similar_works_count) ? c.similar_works_count : works.length;
@@ -414,7 +463,7 @@
       ? `<details class="journals-works"><summary>${esc(t('journals.works.count', { count }))}</summary><ul>${items}</ul></details>`
       : `<span class="panel__meta">${esc(t('journals.works.none'))}</span>`;
     return `${facetBits.length ? `<div class="panel__meta">${facetBits.join(' · ')}</div>` : ''}`
-      + `${flags ? `<div>${flags}</div>` : ''}${details}`;
+      + `${flags ? `<div>${flags}</div>` : ''}${details}${refinementHtml(c)}`;
   }
 
   function journalCell(c) {
@@ -437,6 +486,10 @@
       rows.sort((a, b) => days(a) - days(b) || fitKey(b) - fitKey(a));
     } else if (sort === 'hindex') {
       rows.sort((a, b) => (isNum(b.h_index) ? b.h_index : -1) - (isNum(a.h_index) ? a.h_index : -1));
+    } else if (obj(obj(doc.query).refinement).applied) {
+      // The second stage re-ordered the top journals: the CLI's rank is the fit order.
+      const rank = (c) => (isNum(c.rank) ? c.rank : Infinity);
+      rows.sort((a, b) => rank(a) - rank(b) || fitKey(b) - fitKey(a));
     } else {
       rows.sort((a, b) => fitKey(b) - fitKey(a));
     }
@@ -625,7 +678,7 @@
     const providers = providersHtml(doc.providers);
     const fallback = fallbackHtml(doc.fallback);
     const unknownExcluded = unknownExcludedHtml(doc.excluded_reasons);
-    const scoring = scoringHtml(obj(doc.query).scoring);
+    const scoring = scoringHtml(obj(doc.query).scoring) + refinementSummaryHtml(obj(doc.query).refinement);
     // The fallback banner already carries the key guidance; say it once.
     const api = apiCallsHtml(doc.api_calls, Boolean(obj(doc.fallback).used));
     const notes = list(doc.notes).map((n) => `<li>${esc(n)}</li>`).join('');
