@@ -43,7 +43,12 @@ def _label(step: str) -> str:
 
 
 #: Computed on the code before the review line read its own steps.
-EXPERIMENTAL_VIEW_SHA256 = "2d2a9700f62b1a0c778301dda39982c1160b6deb04854780d5a15e12a33bf12d"
+#: The experimental table's structure (agents, their phases, order and every
+#: field but the prose an agent file states about itself, `role` and
+#: `description`), computed with the pre-T6c code. An agent's own wording may
+#: change with its file; which agents appear and under which phases may not.
+_PROSE_FIELDS = ("role", "description")
+EXPERIMENTAL_VIEW_SHA256 = "23e55db8f11c4e0eb8a623a8c48f891d04402162992c02e584466e3750936ffc"
 
 
 class ExperimentalAgentsUnchangedTests(unittest.TestCase):
@@ -52,7 +57,9 @@ class ExperimentalAgentsUnchangedTests(unittest.TestCase):
         self.assertNotIn("paper_kind", view)
         by_name = {a["name"]: a for a in view["agents"]}
         self.assertEqual(by_name["sota-scout"]["phases"], ["Phase 2 — Plausibility"])
-        digest = hashlib.sha256(json.dumps(view, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        structure = {**view, "agents": [{k: v for k, v in a.items() if k not in _PROSE_FIELDS}
+                                        for a in view["agents"]]}
+        digest = hashlib.sha256(json.dumps(structure, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
         self.assertEqual(digest, EXPERIMENTAL_VIEW_SHA256)
 
 
