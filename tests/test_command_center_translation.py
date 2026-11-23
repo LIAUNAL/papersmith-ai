@@ -465,9 +465,9 @@ class TranslationPanelTests(unittest.TestCase):
           out(host.innerHTML);""")
         self.assertIn("no paper/main.tex", html)
 
-    def test_the_page_mounts_the_panel_beside_the_preview(self) -> None:
+    def test_the_page_mounts_the_panel_below_the_preview(self) -> None:
         self.assertIn('<div id="translationPanel"></div>', PAGE)
-        self.assertLess(PAGE.index('id="translationPanel"'), PAGE.index('<div class="pdf-viewer-topbar">'))
+        self.assertLess(PAGE.index('<div class="pdf-viewer-topbar">'), PAGE.index('id="translationPanel"'))
         token = re.search(r'src="\./journals-panel\.js\?v=([^"]+)"', PAGE).group(1)
         self.assertIn(f'<script src="./translation-panel.js?v={token}"></script>', PAGE)
         self.assertIn("window.setPdfTranslation = setPdfTranslation;", PAGE)

@@ -1692,12 +1692,13 @@ class PanelRenderTests(unittest.TestCase):
         self.assertNotIn("Buscar revistas", after)
 
     # -- the page -------------------------------------------------------------
-    def test_the_page_mounts_the_panel_between_the_banner_and_the_top_bar(self) -> None:
+    def test_the_page_mounts_the_panel_below_the_pdf_viewer(self) -> None:
+        # The viewer takes the LaTeX editor's place right under the banner; the panels follow either one.
         banner = PAGE.index('id="linkPdfDirect"')
-        mount = PAGE.index('id="journalsPanel"')
         topbar = PAGE.index('<div class="pdf-viewer-topbar">')
-        self.assertLess(banner, mount)
-        self.assertLess(mount, topbar)
+        mount = PAGE.index('id="journalsPanel"')
+        self.assertLess(banner, topbar)
+        self.assertLess(topbar, mount)
         from papersmith import __version__
         self.assertIn(f'<script src="./journals-panel.js?v={__version__}"></script>', PAGE)
 
