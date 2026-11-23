@@ -39,6 +39,8 @@ declarations alone. For PRISMA 2020, `presence` equals the verdict of
 | `strobe` | STROBE combined checklist (cohort, case-control, cross-sectional) | 22 | generic section names |
 | `stard-2015` | STARD 2015 | 30 | generic section names |
 | `cosmin` | COSMIN Reporting Guideline 2.0 (measurement properties of PROMs) | 68 | generic section names |
+| `hardwarex` | HardwareX hardware article template (Version 2, June 2021) | 31 | the hardware line's HardwareX sections |
+| `gum-reporting` | GUM (JCGM 100:2008) clause 7, reporting uncertainty | 18 | generic section names |
 
 Sub-items (STROBE 6a/6b, STARD 10a/10b, …) are folded into their numbered
 item, whose question names every part.
@@ -54,6 +56,18 @@ numbers them 1-68 in that order and starts each topic with the guideline's
 identifier. Every item is a question with no deterministic rule; a
 property-specific question opens with "If the study evaluates …", so a reader
 answers it as not applicable when the study does not assess that property.
+
+HardwareX (the hardware line) follows the journal's article template rather
+than a numbered checklist: items 1-31 walk its title, abstract and keywords,
+specifications table, sections 1-7 (hardware in context to validation and
+characterization) and closing statements, targeting the hardware line's
+contracts of the same names. `gum-reporting` (the lab-simulation and hardware
+lines) paraphrases what the GUM's clause 7 asks a report of an uncertainty to
+give (measurand, estimate with uncertainty and units, coverage factor and level
+of confidence, components and how they were evaluated, degrees of freedom,
+correlations, the measurement model); each topic starts with its subclause.
+Both are questions only: whether a manuscript gives these is a reader's call,
+and the uncertainty budget itself lives in the measurement core's records.
 
 ## How blocks and declarations are read
 
