@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import config from "../vite.config";
+import config from "../vite.config.ts";
 
 describe("the web build", () => {
   it("keeps fonts as files, since the server's CSP has no font-src for data: URLs", () => {
