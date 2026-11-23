@@ -1611,7 +1611,8 @@ def cmd_separate(args: argparse.Namespace) -> dict:
 def compute_observation(
     report_path: Path, *,
     proposals_dir: Path | None = None, experiments_dir: Path | None = None,
-    implementation_dir: Path | None = None,
+    implementation_dir: Path | None = None, protocol_dir: Path | None = None,
+    flow_path: Path | None = None,
 ) -> dict:
     """`observe`'s own logic, taking already-resolved paths directly — the
     same separation `compute_plan`/`compute_readiness_report`/`build_
@@ -1652,6 +1653,8 @@ def compute_observation(
     for name, root in (
         ("proposals", proposals_dir), ("experiments", experiments_dir),
         ("implementation", implementation_dir),
+        (paper_declarations.FACT_SOURCE_ROOT["protocol"].name, protocol_dir),
+        (paper_declarations.FACT_SOURCE_ROOT["participant-flow"].name, flow_path),
     ):
         if root is not None:
             measured[name] = paper_declarations.source_available(root)
@@ -1675,7 +1678,7 @@ def compute_observation(
 def cmd_observe(args: argparse.Namespace) -> dict:
     """`observe`: the CLI front door for `compute_observation` — resolves
     `--report` (required) and `--proposals`/`--experiments`/
-    `--implementation` (each optional, none defaulted) against the real
+    `--implementation`/`--protocol`/`--flow` (each optional, none defaulted) against the real
     repository root before delegating.
 
     None of the three roots defaults to this repository's own top-level
@@ -1692,9 +1695,11 @@ def cmd_observe(args: argparse.Namespace) -> dict:
     proposals_dir = _resolve_repo_path(args.proposals) if args.proposals else None
     experiments_dir = _resolve_repo_path(args.experiments) if args.experiments else None
     implementation_dir = _resolve_repo_path(args.implementation) if args.implementation else None
+    protocol_dir = _resolve_repo_path(args.protocol) if getattr(args, "protocol", None) else None
+    flow_path = _resolve_repo_path(args.flow) if getattr(args, "flow", None) else None
     return compute_observation(
         report_path, proposals_dir=proposals_dir, experiments_dir=experiments_dir,
-        implementation_dir=implementation_dir,
+        implementation_dir=implementation_dir, protocol_dir=protocol_dir, flow_path=flow_path,
     )
 
 
@@ -4143,6 +4148,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="the target implementation repository's own path, for the disk-truth "
              "reconciliation; no default -- omit to skip reconciling implementation/results "
              "against disk; must resolve inside the repository root",
+    )
+    p_observe.add_argument(
+        "--protocol", default=None,
+        help="protocol/ location (the study protocol revisions), for the disk-truth "
+             "reconciliation; no default -- omit to skip reconciling protocol/sample/outcomes/"
+             "analysis-plan against disk; must resolve inside the repository root",
+    )
+    p_observe.add_argument(
+        "--flow", default=None,
+        help="study/flow.json location (the participant flow counts), for the disk-truth "
+             "reconciliation; no default -- omit to skip reconciling participant-flow against "
+             "disk; must resolve inside the repository root",
     )
 
     p_resolve = sub.add_parser(

@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implemen
 from impl_refusals import Refused  # noqa: E402
 
 #: `requires_facts` entries a block may declare — `specs/section-contract`,
-#: `Requirement: Closed Fact Vocabulary`. Ten ids, exactly as spelled there.
+#: `Requirement: Closed Fact Vocabulary`. Ten ids, exactly as spelled there,
+#: plus the five study facts of the empirical lines (S7, T7-U8).
 FACTS: tuple[str, ...] = (
     "formulation",
     "contributions",
@@ -27,6 +28,15 @@ FACTS: tuple[str, ...] = (
     "results",
     "limitations",
     "skeleton",
+    # The study facts (S7): the locked study protocol and four of its labelled
+    # fields, read from the managed revisions `protocol/study-protocol-<slug>-vNN.md`
+    # (`study-protocol-deliberation`), and the participant flow counts the
+    # operator entered in `study/flow.json` (`_core/participant_flow`).
+    "protocol",
+    "sample",
+    "outcomes",
+    "analysis-plan",
+    "participant-flow",
 )
 
 #: `requires_declarations` entries a block may declare — operator-supplied
@@ -49,6 +59,14 @@ DECLARATIONS: tuple[str, ...] = (
     # with the protocol's location -- PRISMA 2020 item 24a. Read by the
     # review line's abstract, methods and back-matter blocks.
     "review-registration",
+    # A primary study's registration: registry, registration id, registration
+    # date and first-enrolment date (e.g. "ClinicalTrials.gov NCT01234567,
+    # registered 2026-01-10, first enrolment 2026-02-01"), or "Not registered."
+    # -- copied from the operator's registration record, never derived from a
+    # fact; a registration dated after the first enrolment is retrospective and
+    # the paper says so. The paper states it (CONSORT 2025, STARD 2015 item 28).
+    # `review-registration` stays the review line's.
+    "study-registration",
 )
 
 #: A block's `citations` value — exactly one of these three.
@@ -124,14 +142,14 @@ def validate_condition_type(value) -> None:
 
 def validate_fact(fact_id: str) -> None:
     """Refuses `UNKNOWN_FACT` (work-state) when `fact_id` is not one of the
-    ten declared facts."""
+    declared facts (`FACTS`)."""
     if fact_id not in FACTS:
         raise Refused("UNKNOWN_FACT", f"{fact_id!r} is not one of the declared facts {FACTS}")
 
 
 def validate_declaration(declaration_id: str) -> None:
     """Refuses `UNKNOWN_DECLARATION` (work-state) when `declaration_id` is
-    not one of the seven declared declarations."""
+    not one of the declared declarations (`DECLARATIONS`)."""
     if declaration_id not in DECLARATIONS:
         raise Refused(
             "UNKNOWN_DECLARATION",

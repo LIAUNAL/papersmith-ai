@@ -325,20 +325,24 @@ sole producer from `introduction.block-4b` to
 `materials-and-methods.mm-proposal`, pulling the methods section's
 `mm-proposal` block (and everything after it in the graph) earlier.
 
-**The three closed vocabularies** a header may draw from: ten
+**The three closed vocabularies** a header may draw from: fifteen
 `requires_facts` ids (`formulation`, `contributions`, `problem-statement`,
 `gap`, `dataset`, `experimental-design`, `implementation`, `results`,
-`limitations`, `skeleton`), eight `requires_declarations` ids (`author-roles`,
-`grant-title`, `grant-code`, `repository-url`, `keyword-bounds`,
-`classification-line`, `ethics-approval`, `review-registration`), and three `citations` regimes (`discovery`,
+`limitations`, `skeleton`, and the study facts `protocol`, `sample`,
+`outcomes`, `analysis-plan`, `participant-flow`), nine
+`requires_declarations` ids (`author-roles`, `grant-title`, `grant-code`,
+`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`,
+`review-registration`, `study-registration`), and three `citations` regimes (`discovery`,
 `resolution`, `none`). A value outside any of the three refuses
 immediately — this is deliberately closed, not a convention.
 
 ### A fact is declared, or it is produced
 
-Every one of the ten `requires_facts` ids resolves through exactly one of
-two routes, never both: the five OBSERVABLE facts (`dataset`,
-`experimental-design`, `implementation`, `results`, `formulation`) and the
+Every one of the fifteen `requires_facts` ids resolves through exactly one
+of two routes, never both: the ten OBSERVABLE facts (`dataset`,
+`experimental-design`, `implementation`, `results`, `formulation`, and the
+study facts `protocol`, `sample`, `outcomes`, `analysis-plan`,
+`participant-flow`) and the
 structural `skeleton` fact stay `declare`-only, resolved from an operator
 measurement or the skeleton-startup mechanism; the remaining four —
 `contributions`, `problem-statement`, `gap`, `limitations` — are PRODUCED:
@@ -354,7 +358,7 @@ A `produces_facts` entry is the same rich `{value, source: {file, quote}}`
 shape `requires_facts` already uses. A block whose `produces_facts` and
 `requires_facts` name the same fact refuses `FACT_SELF_REQUIRED`; a
 `produces_facts` entry naming a fact that only resolves through `declare`
-(one of the five observable facts, or `skeleton`) refuses
+(one of the ten observable facts, or `skeleton`) refuses
 `FACT_ROUTE_AMBIGUOUS`; a required fact resolving to no producer anywhere
 and absent from the declarable route refuses `FACT_PRODUCER_ABSENT`; and a
 block requiring a produced fact whose own `### Internal chain` table
@@ -459,12 +463,13 @@ readable by Phase 1's block scanner: both markers share the `%% paper-writing
 `MARKER_PREFIX`'s own `startswith` check skips them (proven in
 `tests/test_paper_decisions.py::DisjointGrammarTests`).
 
-`declare` records two kinds of value: a `declaration` (one of the eight
+`declare` records two kinds of value: a `declaration` (one of the nine
 operator-input ids — `author-roles`, `grant-title`, `grant-code`,
 `repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`,
-`review-registration`, the last one used by review workspaces only)
-or a `fact`
-resolution (one of the ten fact ids). Recording either fixes it immediately
+`review-registration`, used by review workspaces only, and
+`study-registration`, a primary study's registry, registration id,
+registration date and first-enrolment date, copied from the operator's
+registration record) or a `fact` resolution (one of the fifteen fact ids). Recording either fixes it immediately
 — a further `declare` on the same id refuses `DECLARATION_FIXED` until
 `--reopen <id>` clears exactly that entry.
 
@@ -475,7 +480,7 @@ resolution (one of the ten fact ids). Recording either fixes it immediately
     --reopen repository-url
 ```
 
-`declare --fact` records the digest of the fact's source (`proposals/`, `experiments/`, the ingested evidence; `dataset` also covers `experiments/`). `readiness` and `phases` list `stale_facts` when that source changed since the declaration; that is a warning, not a refusal: check the value, then `declare --reopen <fact>` and declare it again.
+`declare --fact` records the digest of the fact's source (`proposals/`, `experiments/`, the ingested evidence; `dataset` also covers `experiments/`; `protocol`, `sample`, `outcomes` and `analysis-plan` the study protocol revisions under `protocol/`; `participant-flow` the counts in `study/flow.json`, a structured record hashed as the participant flow module hashes it, timestamp keys aside, so a re-stamped but unchanged record is no change). `readiness` and `phases` list `stale_facts` when that source changed since the declaration; that is a warning, not a refusal: check the value, then `declare --reopen <fact>` and declare it again.
 
 **A fact can also be DECLINED, not just resolved.** `declare --decline
 <fact-id> --reason <text> --condition <json>` records a fact the operator
@@ -558,8 +563,8 @@ are drawn from the SAME four-value vocabulary: `"undeclared"` (no marker),
 `"declared-unsealed"` (a valid marker with no seal — every marker written
 before this skill could seal one, and every marker written with `mark
 ... --unsealed`), `"declared-sealed"` (a valid marker whose recorded seal
-matches), or `"n/a"` (a `REPOSITORY`- or `INGESTED`-kind source root, which
-carries no revisions rule at all — never applies to a `guidance/` folder,
+matches), or `"n/a"` (a `REPOSITORY`-, `INGESTED`- or `STRUCTURED`-kind
+source root, which carries no revisions rule at all — never applies to a `guidance/` folder,
 since every listed one is classifiable). A worked `plan` reply, invented
 names throughout:
 
@@ -662,6 +667,14 @@ this is one subject (a directory's own declaration), not two.
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py mark class \
     --folder style-corpus --class style-reference
 ```
+
+The study protocol revisions take the same marker as `experiments/`:
+`mark revisions --root protocol --revision-prefix v --ordinal-digits 2`
+(names `protocol/study-protocol-<slug>-vNN.md`, the lineage being
+`study-protocol-<slug>`). `study/flow.json` is a `STRUCTURED` root, one JSON
+record its own module writes and hashes: never prose, so it takes no marker
+(`SOURCE_ROOT_UNDECLARABLE` names its kind) and is reported `unmeasured` for
+section binding.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
@@ -992,9 +1005,11 @@ noun-phrase citation is prohibited; under `resolution`, a citation attaches
 to the object it credits wherever that sits, and a noun-phrase citation is
 exactly what that asks for; under `none`, no citation is allowed at all.
 
-**Observing before declaring: the `insumos-observer` agent.** For the five
+**Observing before declaring: the `insumos-observer` agent.** For the ten
 facts an outside observer can check against evidence (`formulation`,
-`dataset`, `experimental-design`, `implementation`, `results`), this skill
+`dataset`, `experimental-design`, `implementation`, `results`, and the study
+facts `protocol`, `sample`, `outcomes`, `analysis-plan` from `protocol/` and
+`participant-flow` from `study/flow.json`), this skill
 delegates to the `insumos-observer` agent — it reports satisfaction and
 evidence, never a value, and never calls `declare` itself. Its JSON report
 is shuttled to a file and read back through `observe`, which validates it
@@ -1021,18 +1036,20 @@ workaround.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `observe --report <path> [--proposals <dir>] [--experiments <dir>] [--implementation <dir>]` | Read-only: validates an `insumos-observer` report against the ten observable facts and the `implementation`/`results` evidence-conflation guard, THEN reconciles it against a real disk measurement this process takes itself for every root given; writes nothing and never calls `declare` | `OBSERVATION_REPORT_UNREADABLE`, `NOT_AN_OBSERVABLE_FACT`, `EVIDENCE_CONFLATED`, `OBSERVATION_DISK_CONFLICT` |
+| `observe --report <path> [--proposals <dir>] [--experiments <dir>] [--implementation <dir>] [--protocol <dir>] [--flow <file>]` | Read-only: validates an `insumos-observer` report against the ten observable facts and the `implementation`/`results` evidence-conflation guard, THEN reconciles it against a real disk measurement this process takes itself for every root given; writes nothing and never calls `declare` | `OBSERVATION_REPORT_UNREADABLE`, `NOT_AN_OBSERVABLE_FACT`, `EVIDENCE_CONFLATED`, `OBSERVATION_DISK_CONFLICT` |
 
 **The skill measures source availability itself — it does not trust an
 agent's word for it, and it does not trust a human's memory either.**
-`--proposals`/`--experiments`/`--implementation` each name a root this
-process measures directly (`Path.iterdir()`, gitignore-blind by
+`--proposals`/`--experiments`/`--implementation`/`--protocol`/`--flow` each
+name a root this process measures directly (`Path.iterdir()`, gitignore-blind by
 construction — the same mechanism `ingested_papers` already uses for
 `guidance/`, never a shell call, never `fd`/`rg`, both of which honor
 `.gitignore` by default and can report a genuinely populated directory
 empty). Pass all three you can: when a fact's own source root
 (`formulation`/`dataset` from `proposals/`, `experimental-design` from
-`experiments/`, `implementation`/`results` from the target repository) is
+`experiments/`, `implementation`/`results` from the target repository, the
+study facts from `protocol/`, `participant-flow` from `study/flow.json`, a
+file that is available when it is non-empty) is
 measurably non-empty right now while the report claims that fact
 UNSATISFIED with no evidence at all, `observe` refuses
 `OBSERVATION_DISK_CONFLICT` naming the exact disagreement — never averaged
