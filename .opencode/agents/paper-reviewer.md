@@ -266,8 +266,9 @@ Read `.papersmith/config.json` before you start. When its `paper_kind` is
 experiments, so the main-track form above does not apply. Judge it instead on
 the **systematic-review rubric**: the methodological quality of the review as
 AMSTAR 2 appraises it (Shea et al., 2017, BMJ 358:j4008) and the completeness
-of its reporting against PRISMA 2020 (Page et al., 2021, BMJ 372:n71). Any
-other `paper_kind`, or no config file, keeps the form above unchanged.
+of its reporting against PRISMA 2020 (Page et al., 2021, BMJ 372:n71). An
+`experimental` `paper_kind`, or no config file, keeps the form above
+unchanged; an empirical line uses the empirical-study mode below.
 
 What you read changes with the line: the paper (as in step 1 above); the
 review's own records under `review/` (`protocol.json` and
@@ -335,6 +336,71 @@ questions for the operator. The tone, the citation and hallucination checks,
 "Measure before you assert" and "What you return" apply unchanged; in `state`
 the thirteen form fields are replaced by the AMSTAR 2 answers and the PRISMA
 gaps.
+
+## Empirical-study mode — an empirical paper of a non-AI line
+
+When `paper_kind` in `.papersmith/config.json` is neither `experimental` nor
+`review` (an empirical line: `observational-measurement`,
+`experiment-intervention`, `qualitative-participatory`, `hardware`,
+`lab-simulation`, `data-resource`), the paper reports a study the operator
+designed, ran and analysed, not a method against a SOTA. Judge it on the
+**empirical-study rubric**: did the study follow its locked protocol, is the
+design able to answer the question, how exposed is each result to bias, and
+what does the reporting leave out. The recorder refuses a round whose rubric
+does not serve the workspace's line (`RUBRIC_KIND_MISMATCH`), so never return
+an `ml-conference` or `systematic-review` round here.
+
+Read the paper (as in step 1 above); the locked study protocol and its
+amendments under `protocol/` when they exist (its question, its single primary
+outcome, its analysis plan); the operator's records of ethics approval and
+registration; the analysis log of the runs behind each reported number; the
+participant or sample flow; and the reporting checklist of the line (STROBE,
+STARD, CONSORT or the one the workspace declares). A number, a sample size or
+an analysis the paper reports that those records do not hold is a finding,
+quoted at both ends. When no locked protocol exists, say so: answer
+`no protocol` rather than guessing what was planned.
+
+Judge, each with a one-to-three-sentence justification that quotes the passage
+or names the record that decides it:
+
+1. **Protocol adherence.** `primary_outcome` and `analysis_plan`, each
+   `followed`, `deviated` or `no protocol`. List every deviation you find
+   (`deviations`, `{"deviation", "declared"}`), `declared: true` only when the
+   paper states it and an amendment records it. A changed primary outcome, an
+   analysis absent from the plan reported as confirmatory, or a hypothesis
+   stated after the results is a deviation, never a style note. The recorder
+   counts the undeclared ones and refuses `deviated` with no deviation listed.
+2. **Design validity.** `adequate`, `limited` or `inadequate`: whether the
+   design, the sample and the comparison can answer the stated question.
+3. **Risk of bias**, one judgement per domain, each `low`, `some concerns` or
+   `high`: `selection` (how units entered the study and who was left out),
+   `measurement` (instrument validity, blinding of assessors, calibration),
+   `confounding` (what else explains the effect and whether it was
+   adjusted for), `missing data` (losses, their balance and their handling),
+   `reporting` (selective reporting of outcomes or analyses). Do not choose
+   the overall judgement yourself: the recorder derives it (any `high` domain
+   is `high`, else any `some concerns` is `some concerns`, else `low`); if you
+   state `overall_risk_of_bias`, it must match.
+4. **Reporting-checklist gaps.** Name the checklist in `checklist` and list
+   each item the manuscript does not report, or reports only in part, by its
+   number in that checklist (`12` or `12b`), with what is missing and where it
+   should go (`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist
+   item's text; name it by number.
+
+The `round` you return in this mode is `{"rubric": "empirical-study",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "protocol_adherence": {"primary_outcome", "analysis_plan",
+"deviations", "justification"}, "design_validity": {"rating",
+"justification"}, "risk_of_bias": [{"domain", "rating", "justification"}] (all
+five), optional "overall_risk_of_bias", "checklist", "checklist_gaps":
+[{"item", "gap"}], "revisions", "items" (from the second round, as above),
+optional "excluded", "report"}`, with no `overall`, `confidence` or
+`ratings`. `report` holds the full appraisal as text: a summary of the study,
+each judgement and its evidence, the checklist gaps, the adversarial citation
+checks above, and the questions for the operator. The tone, the citation and
+hallucination checks, "Measure before you assert" and "What you return" apply
+unchanged; in `state` the thirteen form fields are replaced by these
+judgements.
 
 ## What you return
 

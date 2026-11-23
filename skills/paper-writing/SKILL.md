@@ -2105,13 +2105,49 @@ previous round raised. The PDF tab's final-judge panel shows the confidence,
 the flaws and weaknesses, the sixteen answers and the PRISMA gaps of such a
 round.
 
+**Each line has one rubric, and the verb checks it.** The verb reads the
+workspace's line (`paper_kind` in `.papersmith/config.json`, `experimental`
+when unset) and judges a round without `rubric` on that line's rubric:
+`ml-conference` for `experimental`, `systematic-review` for `review`,
+`empirical-study` for the empirical lines (`observational-measurement`,
+`experiment-intervention`, `qualitative-participatory`, `hardware`,
+`lab-simulation`, `data-resource`). A round whose rubric does not serve the
+line is refused with `RUBRIC_KIND_MISMATCH`, whose detail names the line's
+rubric, and a line no rubric serves with `RUBRIC_LINE_UNKNOWN`; an unknown
+rubric id stays `REVIEW_ROUND_INVALID`. The mapping is data
+(`paper_review.RUBRICS`): a new line joins a rubric by adding its id there.
+
+**An empirical paper is judged on the empirical-study rubric.** The
+`paper-reviewer` returns a `"rubric": "empirical-study"` round: no `overall`,
+`confidence` or `ratings`, but `protocol_adherence` (`primary_outcome` and
+`analysis_plan`, each `followed`, `deviated` or `no protocol` against the
+locked study protocol; `deviations`, `{"deviation", "declared": true|false}`,
+required when either is `deviated`; a `justification`), `design_validity`
+(`rating` one of `adequate`, `limited`, `inadequate`, and a `justification`),
+`risk_of_bias` (one `{"domain", "rating", "justification"}` per domain
+`selection`, `measurement`, `confounding`, `missing data`, `reporting`,
+`rating` one of `low`, `some concerns`, `high`), and `checklist` with
+`checklist_gaps`, `{"item", "gap"}` per item of the line's reporting
+checklist the manuscript does not fully report, the item by its number (`12`
+or `12b`). The verb counts the `undeclared_deviations` and derives
+`overall_risk_of_bias`: any `high` domain is `high`, else any `some concerns`
+is `some concerns`, else `low`. A round may state it, but one that disagrees
+with the rule is refused (`REVIEW_ROUND_INVALID`), as are a missing or
+repeated domain, a rating outside the scale, an empty justification, a
+`deviated` answer with no deviation listed, a gap without an item number and
+gaps without a named checklist. The shared fields keep their rules. The PDF
+tab's final-judge panel shows the overall risk of bias, the adherence and its
+deviations, the design validity, the domains and the checklist gaps.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
 judge an unfinished paper or novelty without a pool cannot tell a weak paper
 from a missing input. In a review workspace note instead whether
 `review/protocol.lock.json` and `review/prisma.json` exist: AMSTAR 2 judges
-the protocol and the flow the paper reports against those records.
+the protocol and the flow the paper reports against those records. On an
+empirical line note whether a locked study protocol exists under `protocol/`:
+without it the reviewer answers `no protocol` on adherence.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,

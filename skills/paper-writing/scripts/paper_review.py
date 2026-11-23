@@ -20,11 +20,17 @@ The file is `{"rounds": [...]}`. Each round:
   "note"}`, `status` defaulting to `pending`;
 - `excluded` (optional list of text) and `report` (the full review form).
 
-`rubric` names the form the round was judged on. Absent (or
-`ml-conference`) it is the main-track form of a machine-learning conference
-above, and the stored round carries no `rubric` key, exactly as before. For a
-review paper (`paper_kind: review`) it is `systematic-review`: the round
-carries no `overall`, `confidence` or `ratings`, and instead
+`rubric` names the form the round was judged on. `RUBRICS` is the registry:
+per rubric its validator, the shape it stores and the paper lines
+(`paper_kind` in `.papersmith/config.json`, `experimental` when unset) it
+serves. A round whose rubric does not serve the workspace's line is refused
+(`RUBRIC_KIND_MISMATCH`, naming the line's rubric), and a line no rubric
+serves too (`RUBRIC_LINE_UNKNOWN`); a round without `rubric` is judged on its
+line's rubric. `ml-conference` serves `experimental`: the main-track form of a
+machine-learning conference above, and the stored round carries no `rubric`
+key, exactly as before. For a review paper (`paper_kind: review`) it is
+`systematic-review`: the round carries no `overall`, `confidence` or
+`ratings`, and instead
 
 - `amstar2`: one `{"item", "answer", "justification"}` per AMSTAR 2 item 1-16
   (Shea et al., 2017, BMJ 358:j4008), `answer` one of `yes`, `partial yes`
@@ -38,7 +44,29 @@ carries no `overall`, `confidence` or `ratings`, and instead
 - `prisma_gaps`: the PRISMA 2020 reporting gaps (Page et al., 2021, BMJ
   372:n71), `{"item": 1-27, "gap"}`.
 
-`recommendation`, `items`, `revisions`, `excluded` and `report` apply to both.
+The empirical lines (observational-measurement, experiment-intervention,
+qualitative-participatory, hardware, lab-simulation, data-resource) are judged
+on `empirical-study`, which carries no `overall`, `confidence` or `ratings`:
+
+- `protocol_adherence`: `{"primary_outcome", "analysis_plan", "deviations",
+  "justification"}`, the first two one of `followed`, `deviated`, `no
+  protocol` (against the locked study protocol), `deviations` a list of
+  `{"deviation", "declared": true|false}` that may not be empty when either
+  is `deviated`; `undeclared_deviations` (the count) is filled here;
+- `design_validity`: `{"rating", "justification"}`, `rating` one of
+  `adequate`, `limited`, `inadequate`;
+- `risk_of_bias`: one `{"domain", "rating", "justification"}` per domain
+  `selection`, `measurement`, `confounding`, `missing data`, `reporting`,
+  `rating` one of `low`, `some concerns`, `high`;
+- `overall_risk_of_bias`, derived here: any `high` domain is `high`, else any
+  `some concerns` is `some concerns`, else `low`. A round that asserts it must
+  match the rule;
+- `checklist` (the reporting checklist the gaps refer to, e.g. `STROBE`;
+  required when there are gaps) and `checklist_gaps`, `{"item", "gap"}`, the
+  item by its number in that checklist (`12` or `12b`).
+
+`recommendation`, `items`, `revisions`, `excluded` and `report` apply to every
+rubric.
 
 A refused round leaves the file byte for byte as it was, and a file that is
 already malformed is reported, never overwritten.
@@ -49,9 +77,12 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import os
+import re
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
 from impl_refusals import Refused  # noqa: E402
@@ -62,8 +93,6 @@ MAX_BYTES = 2 * 1024 * 1024
 RATINGS = ("Quality", "Clarity", "Significance", "Originality")
 ITEM_VERDICTS = ("resolved", "partly", "not resolved")
 REVISION_STATUSES = ("pending", "done", "applied", "not done", "skipped")
-#: The final judge's forms; the first is the default of a round without one.
-RUBRICS = ("ml-conference", "systematic-review")
 AMSTAR2_ITEMS = tuple(range(1, 17))
 #: AMSTAR 2's seven critical domains (Shea et al., 2017, Box 2).
 AMSTAR2_CRITICAL = (2, 4, 7, 9, 11, 13, 15)
@@ -75,6 +104,14 @@ AMSTAR2_NOT_APPLICABLE = (11, 12, 15)
 AMSTAR2_CONFIDENCE = ("high", "moderate", "low", "critically low")
 #: PRISMA 2020 main checklist items run 1-27.
 PRISMA_ITEMS = 27
+#: The empirical-study rubric's scales.
+ADHERENCE = ("followed", "deviated", "no protocol")
+DESIGN_VALIDITY = ("adequate", "limited", "inadequate")
+BIAS_DOMAINS = ("selection", "measurement", "confounding", "missing data", "reporting")
+BIAS_LEVELS = ("low", "some concerns", "high")
+#: A reporting-checklist item number: `12`, `12b`, `6a`.
+CHECKLIST_ITEM = re.compile(r"[1-9][0-9]*[a-z]?")
+CONFIG = Path(".papersmith") / "config.json"
 
 
 def review_path(paper_dir: Path) -> Path:
@@ -123,9 +160,18 @@ def read_input(raw: str) -> dict:
     return data
 
 
-def rubric_of(data: dict) -> str:
-    """The rubric a round declares; `ml-conference` when it declares none."""
-    return data.get("rubric", RUBRICS[0])
+def workspace_line(paper_dir: Path) -> str:
+    """The workspace's line (`paper_kind`), `experimental` when unset or unreadable.
+
+    The same reading as `skills/_core/paper_types/decision.py` `current_line`,
+    repeated here so this script keeps running on its own.
+    """
+    try:
+        config = json.loads((paper_dir.parent / CONFIG).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "experimental"
+    kind = config.get("paper_kind") if isinstance(config, dict) else None
+    return kind if isinstance(kind, str) and kind else "experimental"
 
 
 def amstar2_confidence(answers: dict[int, str]) -> tuple[str, list[int], list[int]]:
@@ -200,11 +246,180 @@ def _validate_systematic_review(data: dict) -> list[str]:
     return errors
 
 
-def _validate(data: dict) -> list[str]:
-    rubric = rubric_of(data)
-    if rubric not in RUBRICS:
-        return [f"rubric must be one of {', '.join(RUBRICS)}"]
-    errors = _validate_systematic_review(data) if rubric == "systematic-review" else _validate_ml_conference(data)
+def overall_risk_of_bias(ratings) -> str:
+    """Any `high` domain is `high`; else any `some concerns` is `some concerns`; else `low`."""
+    ratings = list(ratings)
+    if "high" in ratings:
+        return "high"
+    return "some concerns" if "some concerns" in ratings else "low"
+
+
+def _checklist_item(value) -> bool:
+    if isinstance(value, str):
+        return CHECKLIST_ITEM.fullmatch(value) is not None
+    return _int_in(value, 1, 10**6)
+
+
+def _validate_empirical_study(data: dict) -> list[str]:
+    errors = []
+    if not _text(data.get("recommendation")):
+        errors.append("recommendation must be non-empty text")
+    adherence = data.get("protocol_adherence")
+    if not isinstance(adherence, dict):
+        errors.append("protocol_adherence must be an object")
+    else:
+        for field in ("primary_outcome", "analysis_plan"):
+            if adherence.get(field) not in ADHERENCE:
+                errors.append(f"protocol_adherence.{field} must be one of {', '.join(ADHERENCE)}")
+        deviations = adherence.get("deviations", [])
+        if not isinstance(deviations, list):
+            errors.append("protocol_adherence.deviations must be a list")
+        else:
+            for n, dev in enumerate(deviations, 1):
+                if (not isinstance(dev, dict) or not _text(dev.get("deviation"))
+                        or not isinstance(dev.get("declared"), bool)):
+                    errors.append(f"protocol_adherence.deviations[{n}] needs non-empty deviation text "
+                                  "and declared true or false")
+            for field in ("primary_outcome", "analysis_plan"):
+                if adherence.get(field) == "deviated" and not deviations:
+                    errors.append(f"protocol_adherence lists no deviation although {field} is deviated")
+        if not _text(adherence.get("justification")):
+            errors.append("protocol_adherence needs a non-empty justification")
+    design = data.get("design_validity")
+    if not isinstance(design, dict):
+        errors.append("design_validity must be an object")
+    else:
+        if design.get("rating") not in DESIGN_VALIDITY:
+            errors.append(f"design_validity.rating must be one of {', '.join(DESIGN_VALIDITY)}")
+        if not _text(design.get("justification")):
+            errors.append("design_validity needs a non-empty justification")
+    domains = data.get("risk_of_bias")
+    names = [d.get("domain") for d in domains if isinstance(d, dict)] if isinstance(domains, list) else []
+    if (not isinstance(domains, list) or len(names) != len(domains)
+            or sorted(map(str, names)) != sorted(BIAS_DOMAINS)):
+        errors.append(f"risk_of_bias must rate each domain once: {', '.join(BIAS_DOMAINS)}")
+    else:
+        bias_errors = []
+        for d in sorted(domains, key=lambda d: BIAS_DOMAINS.index(d["domain"])):
+            if d.get("rating") not in BIAS_LEVELS:
+                bias_errors.append(f"risk_of_bias {d['domain']} rating must be one of {', '.join(BIAS_LEVELS)}")
+            if not _text(d.get("justification")):
+                bias_errors.append(f"risk_of_bias {d['domain']} needs a non-empty justification")
+        asserted = data.get("overall_risk_of_bias")
+        if not bias_errors and asserted is not None:
+            level = overall_risk_of_bias(d["rating"] for d in domains)
+            if asserted != level:
+                bias_errors.append(f'overall_risk_of_bias "{asserted}" does not match the rule: {level}')
+        errors += bias_errors
+    gaps = data.get("checklist_gaps", [])
+    if not isinstance(gaps, list):
+        errors.append("checklist_gaps must be a list")
+    else:
+        for n, gap in enumerate(gaps, 1):
+            if not isinstance(gap, dict) or not _checklist_item(gap.get("item")) or not _text(gap.get("gap")):
+                errors.append(f"checklist_gaps[{n}] needs an item number (e.g. 12 or 12b) and non-empty gap text")
+        checklist = data.get("checklist")
+        if (gaps or checklist is not None) and not _text(checklist):
+            errors.append("checklist must name the reporting checklist the gaps refer to")
+    return errors
+
+
+def _shape_ml_conference(data: dict) -> dict:
+    return {
+        "overall": data["overall"],
+        "confidence": data["confidence"],
+        "recommendation": data["recommendation"].strip(),
+        "ratings": {k: data["ratings"][k] for k in RATINGS},
+    }
+
+
+def _shape_systematic_review(data: dict) -> dict:
+    answers = sorted(data["amstar2"], key=lambda a: a["item"])
+    level, flaws, weaknesses = amstar2_confidence({a["item"]: a["answer"] for a in answers})
+    return {
+        "recommendation": data["recommendation"].strip(),
+        "amstar2": [{"item": a["item"], "critical": a["item"] in AMSTAR2_CRITICAL, "answer": a["answer"],
+                     "justification": a["justification"].strip()} for a in answers],
+        "critical_flaws": flaws,
+        "non_critical_weaknesses": weaknesses,
+        "overall_confidence": level,
+        "prisma_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("prisma_gaps", [])],
+    }
+
+
+def _shape_empirical_study(data: dict) -> dict:
+    adherence = data["protocol_adherence"]
+    deviations = [{"deviation": d["deviation"].strip(), "declared": d["declared"]}
+                  for d in adherence.get("deviations", [])]
+    domains = sorted(data["risk_of_bias"], key=lambda d: BIAS_DOMAINS.index(d["domain"]))
+    return {
+        "recommendation": data["recommendation"].strip(),
+        "protocol_adherence": {
+            "primary_outcome": adherence["primary_outcome"],
+            "analysis_plan": adherence["analysis_plan"],
+            "deviations": deviations,
+            "undeclared_deviations": sum(1 for d in deviations if not d["declared"]),
+            "justification": adherence["justification"].strip(),
+        },
+        "design_validity": {"rating": data["design_validity"]["rating"],
+                            "justification": data["design_validity"]["justification"].strip()},
+        "risk_of_bias": [{"domain": d["domain"], "rating": d["rating"], "justification": d["justification"].strip()}
+                         for d in domains],
+        "overall_risk_of_bias": overall_risk_of_bias(d["rating"] for d in domains),
+        "checklist": (data.get("checklist") or "").strip(),
+        "checklist_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("checklist_gaps", [])],
+    }
+
+
+@dataclass(frozen=True)
+class Rubric:
+    """One final-judge form: what it validates, what it stores, which lines it serves."""
+
+    validate: Callable[[dict], list[str]]
+    shape: Callable[[dict], dict]
+    lines: tuple[str, ...]
+    #: Whether the stored round names its rubric (`ml-conference` rounds never did).
+    stores_id: bool = True
+
+
+#: The final judge's forms, by id. A line is served by exactly one rubric; a
+#: new paper line joins a rubric by adding its id to `lines`.
+RUBRICS: dict[str, Rubric] = {
+    "ml-conference": Rubric(_validate_ml_conference, _shape_ml_conference, ("experimental",), stores_id=False),
+    "systematic-review": Rubric(_validate_systematic_review, _shape_systematic_review, ("review",)),
+    "empirical-study": Rubric(_validate_empirical_study, _shape_empirical_study,
+                              ("observational-measurement", "experiment-intervention", "qualitative-participatory",
+                               "hardware", "lab-simulation", "data-resource")),
+}
+
+
+def rubric_for_line(line: str) -> str | None:
+    """The rubric that serves a paper line, or None when none does."""
+    return next((rubric_id for rubric_id, rubric in RUBRICS.items() if line in rubric.lines), None)
+
+
+def rubric_of(data: dict, line: str) -> str:
+    """The rubric a round is judged on: the one it declares, else its line's.
+
+    Raises `Refused` for an unknown rubric, a line no rubric serves, or a rubric
+    that does not serve the line.
+    """
+    if "rubric" in data and data["rubric"] not in RUBRICS:
+        raise Refused("REVIEW_ROUND_INVALID", f"rubric must be one of {', '.join(RUBRICS)}")
+    expected = rubric_for_line(line)
+    if expected is None:
+        raise Refused("RUBRIC_LINE_UNKNOWN", f'no rubric serves the line "{line}" (paper_kind in '
+                      f'.papersmith/config.json); known lines: '
+                      f'{", ".join(l for r in RUBRICS.values() for l in r.lines)}')
+    rubric = data.get("rubric", expected)
+    if line not in RUBRICS[rubric].lines:
+        raise Refused("RUBRIC_KIND_MISMATCH", f'rubric "{rubric}" does not serve the line "{line}" '
+                      f'(paper_kind in .papersmith/config.json); the line\'s rubric is "{expected}"')
+    return rubric
+
+
+def _validate(data: dict, rubric: str) -> list[str]:
+    errors = RUBRICS[rubric].validate(data)
     items = data.get("items", [])
     if not isinstance(items, list):
         errors.append("items must be a list")
@@ -277,32 +492,16 @@ def record(paper_dir: Path, data: dict, *, today: _dt.date | None = None) -> dic
     """Validate one round, number and date it, and append it to the file."""
     path = review_path(paper_dir)
     rounds = load_rounds(path)
-    errors = _validate(data)
+    rubric = rubric_of(data, workspace_line(paper_dir))
+    errors = _validate(data, rubric)
     if errors:
         raise Refused("REVIEW_ROUND_INVALID", "; ".join(errors))
     previous = rounds[-1] if rounds else None
     number = (max((r.get("round") for r in rounds if _int_in(r.get("round"), 1, 10**6)), default=0)) + 1
     entry = {"round": number, "date": (today or _dt.date.today()).isoformat()}
-    if rubric_of(data) == "systematic-review":
-        answers = sorted(data["amstar2"], key=lambda a: a["item"])
-        level, flaws, weaknesses = amstar2_confidence({a["item"]: a["answer"] for a in answers})
-        entry.update({
-            "rubric": "systematic-review",
-            "recommendation": data["recommendation"].strip(),
-            "amstar2": [{"item": a["item"], "critical": a["item"] in AMSTAR2_CRITICAL, "answer": a["answer"],
-                         "justification": a["justification"].strip()} for a in answers],
-            "critical_flaws": flaws,
-            "non_critical_weaknesses": weaknesses,
-            "overall_confidence": level,
-            "prisma_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("prisma_gaps", [])],
-        })
-    else:
-        entry.update({
-            "overall": data["overall"],
-            "confidence": data["confidence"],
-            "recommendation": data["recommendation"].strip(),
-            "ratings": {k: data["ratings"][k] for k in RATINGS},
-        })
+    if RUBRICS[rubric].stores_id:
+        entry["rubric"] = rubric
+    entry.update(RUBRICS[rubric].shape(data))
     entry.update({
         "items": _judged_items(data.get("items", []), previous),
         "revisions": [{"rank": r["rank"], "text": r["text"].strip(), "status": r.get("status", "pending"),

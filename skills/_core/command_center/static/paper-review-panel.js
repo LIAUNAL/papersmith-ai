@@ -8,8 +8,11 @@
  * the systematic-review rubric (`rubric: "systematic-review"`, review papers)
  * shows instead its AMSTAR 2 overall confidence, critical flaws and
  * non-critical weaknesses, the 16 item answers and the PRISMA 2020 reporting
- * gaps; a round without `rubric` renders exactly as before. Read-only: nothing
- * here launches the judge or edits the paper.
+ * gaps; a round without `rubric` renders exactly as before. A round judged on
+ * the empirical-study rubric (`rubric: "empirical-study"`, the empirical lines)
+ * shows its overall risk of bias, its protocol adherence and deviations, its
+ * design validity, the risk of bias per domain and the reporting-checklist
+ * gaps. Read-only: nothing here launches the judge or edits the paper.
  *
  * Every value is escaped before insertion. Public surface (window):
  * refreshPaperReview(), PaperReviewPanel (the pure HTML builder, for tests).
@@ -74,8 +77,45 @@
       ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.prisma.gaps'))}</h4>${table([t('review.prisma.item'), t('review.prisma.gap')], gaps)}` : ''}`;
   }
 
-  const summary = (r) => (isReview(r) ? reviewSummary(r) : roundSummary(r));
-  const headline = (r) => (isReview(r) ? esc(levelText(r.overall_confidence)) : `${esc(r.overall)}/6`);
+  // The empirical-study rubric: protocol adherence, design validity, risk of bias, checklist gaps.
+  const isEmpirical = (r) => r.rubric === 'empirical-study';
+  const BIAS_BADGE = { low: 'badge--ok', 'some concerns': 'badge--warn', high: 'badge--bad' };
+  const DESIGN_BADGE = { adequate: 'badge--ok', limited: 'badge--warn', inadequate: 'badge--bad' };
+  const ADHERENCE_BADGE = { followed: 'badge--ok', deviated: 'badge--warn', 'no protocol': 'badge--bad' };
+  const keyed = (map, prefix, v) => `<span class="badge ${map[v] || 'badge--info'}">${esc(t(`${prefix}.${key(v)}`))}</span>`;
+  const biasText = (v) => t(`review.empirical.level.${key(v)}`);
+
+  function empiricalSummary(r) {
+    const adherence = obj(r.protocol_adherence);
+    const design = obj(r.design_validity);
+    const deviations = list(adherence.deviations).map((d) => `<tr><td>${esc(d.deviation || '')}</td>
+      <td>${keyed({ true: 'badge--ok', false: 'badge--bad' }, 'review.empirical.declared', String(d.declared === true))}</td></tr>`);
+    const domains = list(r.risk_of_bias).map((d) => `<tr><td>${esc(t(`review.empirical.domain.${key(d.domain)}`))}</td>
+      <td>${keyed(BIAS_BADGE, 'review.empirical.level', d.rating)}</td><td>${esc(d.justification || '')}</td></tr>`);
+    const gaps = list(r.checklist_gaps).map((g) => `<tr><td>${esc(g.item)}</td><td>${esc(g.gap || '')}</td></tr>`);
+    return `
+      <div class="review-round__head" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+        <strong>${esc(t('review.round'))} ${esc(r.round)}</strong>
+        <span class="panel__meta">${esc(r.date || '')}</span>
+        <span class="badge badge--info">${esc(t('review.rubric.empirical'))}</span>
+        <span class="badge ${BIAS_BADGE[r.overall_risk_of_bias] || 'badge--info'}">${esc(t('review.empirical.overall'))}: ${esc(biasText(r.overall_risk_of_bias))}</span>
+      </div>
+      <p style="margin:0.4rem 0;"><strong>${esc(t('review.recommendation'))}:</strong> ${esc(r.recommendation || '')}</p>
+      <p style="margin:0.3rem 0;"><strong>${esc(t('review.empirical.adherence'))}:</strong>
+        ${esc(t('review.empirical.primary_outcome'))} ${keyed(ADHERENCE_BADGE, 'review.empirical.adherence', adherence.primary_outcome)}
+        · ${esc(t('review.empirical.analysis_plan'))} ${keyed(ADHERENCE_BADGE, 'review.empirical.adherence', adherence.analysis_plan)}
+        · ${esc(t('review.empirical.undeclared'))}: ${esc(adherence.undeclared_deviations ?? 0)}</p>
+      ${adherence.justification ? `<p class="panel__meta" style="margin:0.2rem 0;">${esc(adherence.justification)}</p>` : ''}
+      <p style="margin:0.3rem 0;"><strong>${esc(t('review.empirical.design'))}:</strong> ${keyed(DESIGN_BADGE, 'review.empirical.design', design.rating)}
+        ${esc(design.justification || '')}</p>
+      ${deviations.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.empirical.deviations'))}</h4>${table([t('review.empirical.deviation'), t('review.empirical.declared')], deviations)}` : ''}
+      ${domains.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.empirical.bias'))}</h4>${table([t('review.empirical.domain'), t('review.empirical.rating'), t('review.empirical.justification')], domains)}` : ''}
+      ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.empirical.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.empirical.item'), t('review.empirical.gap')], gaps)}` : ''}`;
+  }
+
+  const summary = (r) => (isEmpirical(r) ? empiricalSummary(r) : isReview(r) ? reviewSummary(r) : roundSummary(r));
+  const headline = (r) => (isEmpirical(r) ? esc(biasText(r.overall_risk_of_bias))
+    : isReview(r) ? esc(levelText(r.overall_confidence)) : `${esc(r.overall)}/6`);
 
   function table(head, rows) {
     if (!rows.length) return '';
