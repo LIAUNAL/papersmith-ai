@@ -38,9 +38,22 @@ declarations alone. For PRISMA 2020, `presence` equals the verdict of
 | `prisma-2020` | PRISMA 2020 main checklist | 27 | the review line's blocks (ported from `review_cli.py`'s `CHECKLIST`) |
 | `strobe` | STROBE combined checklist (cohort, case-control, cross-sectional) | 22 | generic section names |
 | `stard-2015` | STARD 2015 | 30 | generic section names |
+| `cosmin` | COSMIN Reporting Guideline 2.0 (measurement properties of PROMs) | 68 | generic section names |
 
 Sub-items (STROBE 6a/6b, STARD 10a/10b, …) are folded into their numbered
 item, whose question names every part.
+
+COSMIN 2.0 (Qual Life Res 2025, which supersedes the 2021 version 1.0) labels
+its items by section rather than 1..n: 31 general items (T1, A1-A5, I1-I4,
+GM1-GM9, GR1-GR4, DC1-DC7, O1) and 37 items specific to one measurement
+property (content validity CV1-CV6, structural validity SV1-SV3, internal
+consistency IC1-IC2, measurement invariance CCV1-CCV4, reliability R1-R6,
+measurement error ME1-ME6, criterion validity CriV1-CriV3, hypothesis testing
+for construct validity ConV1-ConV3, responsiveness Resp1-Resp4). The data file
+numbers them 1-68 in that order and starts each topic with the guideline's
+identifier. Every item is a question with no deterministic rule; a
+property-specific question opens with "If the study evaluates …", so a reader
+answers it as not applicable when the study does not assess that property.
 
 ## How blocks and declarations are read
 
