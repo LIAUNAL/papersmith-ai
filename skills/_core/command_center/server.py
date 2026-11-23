@@ -3025,13 +3025,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         return JSONResponse(study_view.view(root_path))
 
     @app.get("/api/study/checklist")
-    async def api_study_checklist() -> JSONResponse:
-        """The agreed variant's reporting checklist, on the operator's click only:
-        the engine runs paper_cli.py as subprocesses, so it runs off the event loop."""
+    async def api_study_checklist(guideline: str | None = None) -> JSONResponse:
+        """The agreed variant's reporting checklist, or ``?guideline=<id>`` (one of
+        the line's guidelines; 400 otherwise), on the operator's click only: the
+        engine runs paper_cli.py as subprocesses, so it runs off the event loop."""
         refused = study_view.refusal(root_path)
         if refused:
             return JSONResponse(refused, status_code=409)
-        return JSONResponse(await asyncio.to_thread(study_view.checklist, root_path))
+        if (wrong := study_view.checklist_refusal(root_path, guideline)) is not None:
+            return JSONResponse(wrong, status_code=400)
+        return JSONResponse(await asyncio.to_thread(study_view.checklist, root_path, guideline))
 
     @app.post("/api/prompt/check")
     async def api_prompt_check(request: Request) -> JSONResponse:

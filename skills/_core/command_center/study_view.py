@@ -10,10 +10,27 @@
   ``analysis`` (the analysis log: every analysis with its label, outcome,
   plan and exit code, interrupted runs, repairs and warnings), ``flow`` (the
   participant flow: valid, the figure current, the sign-off current, and the
-  validated counts) and ``reporting`` (the agreed variant and the guideline
-  its catalogue entry names).
-* ``checklist(root)``: that guideline evaluated by the checklist engine,
-  served on demand only (the engine runs ``paper_cli.py`` as subprocesses).
+  validated counts) and ``reporting`` (the agreed type and variant, the
+  guideline ``registry.checklist_for`` names for them, and, under
+  ``additional_guidelines`` when there are any, the other guidelines whose data
+  names this line: ``gum-reporting`` for a hardware workspace's uncertainty
+  reporting).
+  A ``hardware`` or ``lab-simulation`` workspace, and any workspace that holds
+  measurement records, also gets the measurement sections (decision F7), read
+  only through ``skills/_core/measurement/records.py``: ``instruments`` (each
+  instrument's latest record and whether its calibration is current or past due
+  today), ``measurements`` (each registered raw data file: quantity, unit,
+  instrument, rows, conditions, current or changed; never a measured value),
+  ``uncertainty`` (each budget per quantity and condition set: its type A/B
+  components, combined and expanded uncertainty, effective degrees of freedom,
+  coverage, current or stale with the reasons, the calibration and any
+  past-due override) and ``agreement`` (device and reference files, n,
+  Bland-Altman bias and limits, ICC(2,1), current or stale). The numbers are
+  the summary statistics the measurement core computed, never a reading.
+* ``checklist(root, guideline=None)``: the reporting guideline (or another of
+  the line's guidelines, ``checklist_refusal`` refusing any other) evaluated by
+  the checklist engine, served on demand only (the engine runs ``paper_cli.py``
+  as subprocesses).
 
 Every record is read through the shared modules' own readers
 (``skills/_core/empirical``, ``skills/_core/participant_flow``,
@@ -54,6 +71,16 @@ EMPIRICAL_KINDS: tuple[str, ...] = (
     "lab-simulation", "data-resource",
 )
 SECTIONS = ("protocol", "ethics", "registration", "data", "analysis", "flow", "reporting")
+GUIDELINE_NOT_THIS_LINE = "GUIDELINE_NOT_THIS_LINE"
+#: The lines built on the measurement core (decision F1): their Study tab always shows its sections.
+MEASUREMENT_KINDS: tuple[str, ...] = ("hardware", "lab-simulation")
+MEASUREMENT_SECTIONS = ("instruments", "measurements", "uncertainty", "agreement")
+#: The measurement core's reader module, relative to ``skills/_core``.
+MEASUREMENT_MODULE = "measurement.records"
+#: Its records (a test holds them equal to the module's constants): any of them
+#: present shows the measurement sections in a workspace of another line.
+MEASUREMENT_RECORDS = ("study/instruments.json", "study/measurements.json", "study/uncertainty",
+                       "study/agreement.json")
 
 #: Shared ``skills/_core`` modules, relative to that package.
 MODULES: dict[str, str] = {
@@ -374,8 +401,141 @@ def _flow(mods: dict[str, Any], root: Path) -> dict[str, Any]:
     return out
 
 
-def _reporting(_mods: dict[str, Any], root: Path) -> dict[str, Any]:
-    """The agreed type and variant, and the guideline its catalogue entry names (``None``: no data yet)."""
+# --------------------------------------------------------------------------- measurement (decision F7)
+
+
+def _measurement_shown(root: Path, line: str) -> bool:
+    if line in MEASUREMENT_KINDS:
+        return True
+    instruments, data, uncertainty, agreement = (root / rel for rel in MEASUREMENT_RECORDS)
+    return (instruments.is_file() or data.is_file() or agreement.is_file()
+            or (uncertainty.is_dir() and any(uncertainty.glob("*.json"))))
+
+
+class MeasurementRead(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+def _corrupt(state: dict[str, Any], code: str) -> None:
+    if state.get("state") == "corrupt":
+        raise MeasurementRead(code, _text(state.get("message")))
+
+
+_INSTRUMENT_KEYS = ("id", "model", "serial", "resolution", "stated_uncertainty", "calibration_certificate",
+                    "calibrated", "due", "calibration", "entries", "by", "at", "reason")
+
+
+def _instruments(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    state = mods["measurement"].instruments_state(root)
+    _corrupt(state, "INSTRUMENTS_CORRUPT")
+    rows = [{key: row.get(key) for key in _INSTRUMENT_KEYS} for row in _list(state.get("instruments"))]
+    return {"state": state["state"], "path": MEASUREMENT_RECORDS[0], "on": state.get("on"), "instruments": rows,
+            "past_due": list(state.get("past_due") or [])}
+
+
+_FILE_KEYS = ("path", "quantity", "unit", "instrument", "rows", "conditions", "value_column", "replicate_column",
+              "by", "at", "state")
+
+
+def _measurements(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    state = mods["measurement"].data_state(root)
+    _corrupt(state, "DATA_REGISTRY_CORRUPT")
+    return {"state": state["state"], "path": MEASUREMENT_RECORDS[1],
+            "files": [{key: item.get(key) for key in _FILE_KEYS} for item in _list(state.get("files"))]}
+
+
+_COMPONENT_KEYS = ("name", "type", "source", "u", "unit", "dof", "sensitivity", "contribution")
+
+
+def _uncertainty(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    records = mods["measurement"]
+    state = records.budget_state(root)
+    _corrupt(state, "UNCERTAINTY_CORRUPT")
+    stored: dict[str, list] = {}
+    rows = []
+    for row in _list(state.get("budgets")):
+        quantity = _text(row.get("quantity"))
+        if row.get("state") == "corrupt":
+            rows.append({"quantity": quantity, "state": "corrupt", "message": _text(row.get("message")),
+                         "path": records.budget_path(quantity)})
+            continue
+        if quantity not in stored:
+            stored[quantity] = _list(records.read_budgets(root, quantity).get("budgets"))
+        conditions = row.get("conditions") or {}
+        budget = next((b for b in stored[quantity] if isinstance(b, dict) and (b.get("conditions") or {}) == conditions),
+                      {})
+        type_a = _object(budget.get("type_a"))
+        rows.append({key: row.get(key) for key in ("quantity", "unit", "conditions", "computed_at",
+                                                   "combined_standard_uncertainty", "effective_dof",
+                                                   "expanded_uncertainty", "coverage", "n", "mean", "state",
+                                                   "reasons")}
+                    | {"path": records.budget_path(quantity), "model": budget.get("model"),
+                       "method": budget.get("method"), "sd": type_a.get("sd"),
+                       "components": [{key: _object(c).get(key) for key in _COMPONENT_KEYS}
+                                      for c in _list(budget.get("components"))],
+                       "calibration": _calibration_record(row.get("calibration"))})
+    return {"state": state["state"], "path": MEASUREMENT_RECORDS[2], "budgets": rows}
+
+
+def _calibration_record(value: Any) -> dict[str, Any] | None:
+    calibration = _object(value)
+    if not calibration:
+        return None
+    override = _object(calibration.get("override"))
+    return {"due": calibration.get("due"), "checked_on": calibration.get("checked_on"),
+            "state": calibration.get("state"),
+            "override": {key: _text(override.get(key)) for key in ("by", "at", "reason")} if override else None}
+
+
+def _agreement(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    state = mods["measurement"].agreement_state(root)
+    _corrupt(state, "AGREEMENT_CORRUPT")
+    rows = []
+    for item in _list(state.get("analyses")):
+        icc = _object(item.get("icc"))
+        rows.append({role: {key: _object(item.get(role)).get(key) for key in ("path", "instrument", "value_column")}
+                     for role in ("device", "reference")}
+                    | {key: item.get(key) for key in ("pair_column", "quantity", "unit", "n", "bland_altman",
+                                                      "computed_at", "state", "reasons")}
+                    | {"icc": {key: icc.get(key) for key in ("form", "value", "n", "k")}})
+    return {"state": state["state"], "path": MEASUREMENT_RECORDS[3], "analyses": rows}
+
+
+_MEASUREMENT_BUILDERS: dict[str, Callable[[dict[str, Any], Path], dict[str, Any]]] = {
+    "instruments": _instruments, "measurements": _measurements, "uncertainty": _uncertainty,
+    "agreement": _agreement,
+}
+
+
+def _guidelines_of_line(engine: Any, line: str) -> list[str]:
+    """Every guideline whose data names ``line`` (``lines``), in id order; an
+    invalid guideline file is skipped (the checklist engine's own tests hold them valid)."""
+    found = []
+    for path in sorted(Path(engine.GUIDELINES_DIR).glob("*.json")):
+        try:
+            data = engine.load_guideline(path.stem)
+        except engine.ChecklistRefusal:
+            continue
+        if line in (data.get("lines") or []):
+            found.append(data["id"])
+    return found
+
+
+def _reporting(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    """The agreed type and variant, the guideline ``registry.checklist_for`` names for
+    them (``None``: no data yet) and, when there are any, the line's other guidelines."""
+    out = _primary_guideline(root)
+    engine = mods.get("engine")
+    if engine is not None:
+        others = [gid for gid in _guidelines_of_line(engine, decision.current_line(root)) if gid != out["guideline"]]
+        if others:
+            out["additional_guidelines"] = others
+    return out
+
+
+def _primary_guideline(root: Path) -> dict[str, Any]:
     record = _object(decision.read(root).get("paper_type"))
     agreed, variant = record.get("agreed"), record.get("agreed_variant")
     line = decision.current_line(root)
@@ -388,14 +548,17 @@ def _reporting(_mods: dict[str, Any], root: Path) -> dict[str, Any]:
     if item.get("line") != line:
         out["reason"] = "type-not-this-line"
         return out
-    chosen = next((v for v in item.get("variants", []) if v["id"] == variant), None)
-    if chosen is None:
+    variants = item.get("variants") or []
+    chosen = next((v for v in variants if v["id"] == variant), None)
+    if variants and chosen is None:
         return out
-    out["variant_name"] = chosen.get("name")
-    if chosen.get("checklist"):
-        out.update(guideline=chosen["checklist"], code=None, reason=None)
+    if chosen is not None:
+        out["variant_name"] = chosen.get("name")
+    guideline = registry.checklist_for(item, variant)
+    if guideline:
+        out.update(guideline=guideline, code=None, reason=None)
     else:
-        out["reason"] = "variant-without-checklist"
+        out["reason"] = "variant-without-checklist" if chosen is not None else "type-without-checklist"
     return out
 
 
@@ -432,38 +595,83 @@ def _modules(root: Path) -> tuple[dict[str, Any], dict[str, str], list[str]]:
     return mods, missing, warnings
 
 
+def _measurement_module() -> tuple[Any | None, str | None]:
+    try:
+        return importlib.import_module(f"{_CORE}.{MEASUREMENT_MODULE}"), None
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - an absent module is reported, never raised
+        return None, f"measurement ({_CORE}.{MEASUREMENT_MODULE}) did not load: {type(exc).__name__}: {exc}"
+
+
 def view(root: Path) -> dict[str, Any]:
     root = Path(root)
     mods, missing, warnings = _modules(root)
-    out: dict[str, Any] = {"paper_kind": decision.current_line(root), "warnings": warnings}
+    line = decision.current_line(root)
+    out: dict[str, Any] = {"paper_kind": line, "warnings": warnings}
     for name in SECTIONS:
         absent = [missing[need] for need in NEEDS[name] if need in missing]
         if absent:
             out[name] = _unavailable(MODULE_UNAVAILABLE, "; ".join(absent))
         else:
             out[name] = _section(lambda build=_BUILDERS[name]: build(mods, root))
+    if _measurement_shown(root, line):
+        module, why = _measurement_module()
+        if module is None:
+            warnings.append(why)
+        for name in MEASUREMENT_SECTIONS:
+            if module is None:
+                out[name] = _unavailable(MODULE_UNAVAILABLE, why or "the measurement core did not load")
+            else:
+                out[name] = _section(lambda build=_MEASUREMENT_BUILDERS[name]: build({"measurement": module}, root))
     return out
 
 
-def checklist(root: Path) -> dict[str, Any]:
-    """The agreed variant's guideline through the checklist engine: slow (paper_cli
+def _allowed_guidelines(root: Path, engine: Any) -> list[str]:
+    primary = _primary_guideline(root)["guideline"]
+    others = _guidelines_of_line(engine, decision.current_line(root)) if engine is not None else []
+    return ([primary] if primary else []) + [gid for gid in others if gid != primary]
+
+
+def checklist_refusal(root: Path, guideline: str | None) -> dict[str, Any] | None:
+    """The 400 body when ``guideline`` is given and is not one of the line's guidelines
+    (the agreed variant's or one whose data names the line), ``None`` otherwise."""
+    if guideline is None:
+        return None
+    engine, _why = _module("engine")
+    try:
+        allowed = _allowed_guidelines(Path(root), engine)
+    except Exception:  # noqa: BLE001 - an unreadable record allows nothing extra
+        allowed = []
+    if guideline in allowed:
+        return None
+    return {"ok": False, "code": GUIDELINE_NOT_THIS_LINE, "guideline": guideline, "allowed": allowed,
+            "error": f"{guideline!r} is not a reporting guideline of this workspace's line; "
+                     f"allowed: {', '.join(allowed) or 'none'}"}
+
+
+def checklist(root: Path, guideline: str | None = None) -> dict[str, Any]:
+    """The agreed variant's guideline, or ``guideline`` (one of the line's, see
+    :func:`checklist_refusal`), through the checklist engine: slow (paper_cli
     subprocesses); call it off the event loop."""
     root = Path(root)
     engine, why = _module("engine")
-    reporting = _section(lambda: _reporting({}, root))
+    reporting = _section(lambda: _primary_guideline(root))
     if not reporting["available"]:
         return reporting
     head = {key: reporting[key] for key in ("type", "variant", "variant_name", "code", "reason")}
-    if reporting["guideline"] is None:
+    chosen = guideline or reporting["guideline"]
+    if guideline:
+        head.update(code=None, reason=None)
+    if chosen is None:
         return {"available": True, **head, "guideline": None}
     if engine is None:
         return {**_unavailable(MODULE_UNAVAILABLE, why or "the checklist engine did not load"), **head}
 
     def build() -> dict[str, Any]:
-        return {**head, **engine.check(reporting["guideline"], root)}
+        return {**head, **engine.check(chosen, root)}
 
     return _section(build)
 
 
-__all__ = ["EMPIRICAL_KINDS", "MODULE_UNAVAILABLE", "MODULES", "NOT_A_STUDY_WORKSPACE", "NO_CHECKLIST", "SECTIONS",
-           "checklist", "load_datasets_cli", "refusal", "view"]
+__all__ = ["EMPIRICAL_KINDS", "GUIDELINE_NOT_THIS_LINE", "MEASUREMENT_KINDS", "MEASUREMENT_MODULE",
+           "MEASUREMENT_RECORDS", "MEASUREMENT_SECTIONS", "MODULE_UNAVAILABLE", "MODULES", "NOT_A_STUDY_WORKSPACE",
+           "NO_CHECKLIST", "SECTIONS", "checklist", "checklist_refusal", "load_datasets_cli", "refusal", "view"]

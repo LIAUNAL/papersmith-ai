@@ -9,13 +9,19 @@
  * analysis (the analysis log: label, outcome, plan, exit code, interrupted runs,
  * repairs, warnings), flow (the participant flow: valid, the figure, the
  * sign-off, the validated counts) and reporting (the agreed variant and its
- * guideline). A section the server could not read carries
+ * guideline, plus the line's other guidelines: gum-reporting for hardware).
+ * A hardware or lab-simulation workspace (or any holding measurement records)
+ * also answers instruments, measurements (registered raw data files, never a
+ * reading), uncertainty (GUM budgets with their components) and agreement
+ * (Bland-Altman and ICC(2,1)); the numbers are the core's summary statistics.
+ * A section the server could not read carries
  * {available: false, code, message} and is drawn as unavailable; the others
  * still render. The variant's checklist is slow (the engine runs paper_cli.py)
  * and loads only when the operator clicks its button, from
- * GET /api/study/checklist. Every value is escaped before insertion.
+ * GET /api/study/checklist (another of the line's guidelines from
+ * ?guideline=<id>). Every value is escaped before insertion.
  *
- * Public surface (window): refreshStudyPanel(), StudyPanel.{html, render, act}.
+ * Public surface (window): refreshStudyPanel(), StudyPanel.{html, render, act(action, guideline)}.
  */
 (function () {
   'use strict';
@@ -57,14 +63,44 @@
     'type-not-agreed': 'study.reporting.typeNotAgreed', 'variant-not-agreed': 'study.reporting.variantNotAgreed',
     'type-not-this-line': 'study.reporting.typeNotThisLine',
     'variant-without-checklist': 'study.reporting.variantWithoutChecklist',
+    'type-without-checklist': 'study.reporting.typeWithoutChecklist',
   };
+  const ADDITIONAL_KEYS = { 'gum-reporting': 'study.reporting.gumReporting' };
+  const RECORD_KEYS = { absent: 'study.measure.absent' };
+  const CALIBRATION_KEYS = {
+    current: 'study.instruments.current', 'past-due': 'study.instruments.pastDue', unknown: 'study.instruments.unknown',
+  };
+  const FILE_KEYS = {
+    current: 'study.measurements.current', changed: 'study.measurements.changed', missing: 'study.measurements.missing',
+  };
+  const COMPUTED_KEYS = { current: 'study.measure.current', stale: 'study.measure.stale' };
+  const STALE_KEYS = {
+    'input-missing': 'study.measure.reason.inputMissing', 'input-changed': 'study.measure.reason.inputChanged',
+    'registration-changed': 'study.measure.reason.reregistered', 'inputs-added': 'study.measure.reason.inputsAdded',
+    'instrument-changed': 'study.measure.reason.instrumentChanged',
+    'device-missing': 'study.measure.reason.deviceMissing', 'device-changed': 'study.measure.reason.deviceChanged',
+    'device-reregistered': 'study.measure.reason.deviceReregistered',
+    'reference-missing': 'study.measure.reason.referenceMissing',
+    'reference-changed': 'study.measure.reason.referenceChanged',
+    'reference-reregistered': 'study.measure.reason.referenceReregistered',
+  };
+  const COVERAGE_KEYS = {
+    'student-t': 'study.uncertainty.coverage.t', normal: 'study.uncertainty.coverage.normal',
+    declared: 'study.uncertainty.coverage.declared',
+  };
+  const COMPONENT_KEYS = {
+    repeatability: 'study.uncertainty.component.repeatability', calibration: 'study.uncertainty.component.calibration',
+    resolution: 'study.uncertainty.component.resolution',
+  };
+  const MEASUREMENT_SECTIONS = ['instruments', 'measurements', 'uncertainty', 'agreement'];
   const STATUS_KEYS = {
     satisfied: 'study.checklist.satisfied', missing: 'study.checklist.missing',
     'needs-judgment': 'study.checklist.needsJudgment',
   };
 
   let lastView = null;
-  let checklist = null;   // null (not asked), {loading: true}, or the /api/study/checklist answer
+  // Per guideline ('' is the agreed variant's): null (not asked), {loading: true}, or the /api/study/checklist answer.
+  const checklists = {};
   let notice = '';        // the last action's outcome, already translated
 
   function unavailable(part) {
@@ -244,42 +280,166 @@
     return `${head}${figureLine}${signoff}${counts}${image}`;
   }
 
+  // Four significant digits: the summary statistics, never a reading.
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Number(v.toPrecision(4))) : fmt(v));
+  const magnitude = (m) => (m && typeof m === 'object' ? `${num(m.value)} ${m.unit || ''}`.trim() : DASH);
+  const conditionsText = (c) => {
+    const keys = Object.keys(obj(c)).sort();
+    return keys.length ? keys.map((k) => `${k}=${c[k]}`).join(', ') : t('study.measure.noConditions');
+  };
+  const reasonsText = (reasons) => list(reasons).map((r) => (STALE_KEYS[r] ? t(STALE_KEYS[r]) : r)).join(', ');
+  const stateClass = (ok) => (ok ? 'rv-ok' : 'rv-warn');
+
+  function computedState(item) {
+    return `<span class="${stateClass(item.state === 'current')}">${esc(t(COMPUTED_KEYS[item.state] || COMPUTED_KEYS.stale, { reasons: reasonsText(item.reasons) || DASH }))}</span>`;
+  }
+
+  function absentRecord(part, fallback) {
+    return `<p class="rv-muted">${esc(t(RECORD_KEYS.absent, { path: part.path || fallback }))}</p>`;
+  }
+
+  function instrumentsBody(p) {
+    if (p.state === 'absent') return absentRecord(p, 'study/instruments.json');
+    const rows = list(p.instruments).map((i) => {
+      const stated = i.stated_uncertainty
+        ? t('study.instruments.stated', { value: magnitude(i.stated_uncertainty), distribution: i.stated_uncertainty.distribution || DASH, k: fmt(i.stated_uncertainty.coverage_k) })
+        : DASH;
+      return [esc(i.id), esc(fmt(i.model)), esc(fmt(i.serial)), esc(magnitude(i.resolution)), esc(stated),
+        esc(fmt(i.calibration_certificate)), esc(fmt(i.calibrated)), esc(fmt(i.due)),
+        `<span class="${i.calibration === 'current' ? 'rv-ok' : 'rv-warn'}">${esc(t(CALIBRATION_KEYS[i.calibration] || CALIBRATION_KEYS.unknown))}</span>`];
+    });
+    const pastDue = list(p.past_due).length
+      ? `<p class="rv-warn">${esc(t('study.instruments.pastDueList', { ids: list(p.past_due).join(', ') }))}</p>` : '';
+    return `<p class="rv-muted">${esc(t('study.instruments.on', { on: p.on || DASH }))}</p>${pastDue}`
+      + table([t('study.instruments.id'), t('study.instruments.model'), t('study.instruments.serial'),
+        t('study.instruments.resolution'), t('study.instruments.statedCol'), t('study.instruments.certificate'),
+        t('study.instruments.calibrated'), t('study.instruments.due'), t('study.instruments.calibration')], rows);
+  }
+
+  function measurementsBody(p) {
+    if (p.state === 'absent') return absentRecord(p, 'study/measurements.json');
+    const rows = list(p.files).map((f) => [esc(f.path), esc(fmt(f.quantity)), esc(fmt(f.unit)), esc(fmt(f.instrument)),
+      esc(fmt(f.rows)), esc(conditionsText(f.conditions)),
+      `<span class="${stateClass(f.state === 'current')}">${esc(t(FILE_KEYS[f.state] || FILE_KEYS.changed))}</span>`]);
+    return `<p class="rv-muted">${esc(t('study.measurements.note'))}</p>`
+      + table([t('study.measurements.path'), t('study.measurements.quantity'), t('study.measurements.unit'),
+        t('study.measurements.instrument'), t('study.measurements.rows'), t('study.measurements.conditions'),
+        t('study.measurements.state')], rows);
+  }
+
+  function calibrationHtml(c) {
+    if (!c) return '';
+    const head = `<p class="${c.state === 'current' ? 'rv-muted' : 'rv-warn'}">${esc(t('study.uncertainty.calibration', {
+      state: t(CALIBRATION_KEYS[c.state] || CALIBRATION_KEYS.unknown), due: c.due || DASH, on: c.checked_on || DASH,
+    }))}</p>`;
+    const override = c.override
+      ? `<p class="rv-warn">${esc(t('study.uncertainty.override', { by: c.override.by || DASH, at: c.override.at || DASH, reason: c.override.reason || DASH }))}</p>` : '';
+    return head + override;
+  }
+
+  function budgetHtml(b) {
+    const title = `<h4>${esc(t('study.uncertainty.budget', { quantity: b.quantity || DASH, conditions: conditionsText(b.conditions) }))}</h4>`;
+    if (b.state === 'corrupt') {
+      return `${title}<p class="rv-error">${esc(t('study.uncertainty.corrupt', { path: b.path || DASH, message: b.message || '' }))}</p>`;
+    }
+    const coverage = obj(b.coverage);
+    const result = `<p>${esc(t('study.uncertainty.result', {
+      n: fmt(b.n), mean: num(b.mean), uc: num(b.combined_standard_uncertainty), unit: b.unit || '',
+      dof: num(b.effective_dof), k: num(coverage.k), U: num(b.expanded_uncertainty),
+      coverage: COVERAGE_KEYS[coverage.method] ? t(COVERAGE_KEYS[coverage.method], { level: num(coverage.level), dof: fmt(coverage.dof_used) }) : fmt(coverage.method),
+    }))}</p>`;
+    const rows = list(b.components).map((c) => [esc(COMPONENT_KEYS[c.name] ? t(COMPONENT_KEYS[c.name]) : fmt(c.name)),
+      esc(fmt(c.type)), esc(fmt(c.source)), esc(num(c.u)), esc(fmt(c.unit)), esc(num(c.dof)), esc(num(c.sensitivity)),
+      esc(num(c.contribution))]);
+    const components = rows.length
+      ? table([t('study.uncertainty.component'), t('study.uncertainty.type'), t('study.uncertainty.source'),
+        t('study.uncertainty.u'), t('study.uncertainty.unit'), t('study.uncertainty.dof'),
+        t('study.uncertainty.sensitivity'), t('study.uncertainty.contribution')], rows) : '';
+    return `${title}<p>${computedState(b)}</p>${result}${calibrationHtml(b.calibration)}${components}`
+      + `<p class="rv-muted">${esc(t('study.uncertainty.computed', { at: b.computed_at || DASH, method: b.method || DASH }))}</p>`;
+  }
+
+  function uncertaintyBody(p) {
+    if (p.state === 'absent') return absentRecord(p, 'study/uncertainty/');
+    return list(p.budgets).map(budgetHtml).join('');
+  }
+
+  function agreementBody(p) {
+    if (p.state === 'absent') return absentRecord(p, 'study/agreement.json');
+    const rows = list(p.analyses).map((a) => {
+      const ba = obj(a.bland_altman);
+      const device = obj(a.device);
+      const reference = obj(a.reference);
+      return [esc(`${device.path || DASH} (${device.instrument || DASH})`), esc(`${reference.path || DASH} (${reference.instrument || DASH})`),
+        esc(`${a.quantity || DASH} [${a.unit || DASH}]`), esc(fmt(a.n)), esc(num(ba.bias)),
+        esc(t('study.agreement.limits', { lower: num(ba.loa_lower), upper: num(ba.loa_upper) })),
+        esc(num(obj(a.icc).value)), computedState(a)];
+    });
+    return table([t('study.agreement.device'), t('study.agreement.reference'), t('study.agreement.quantity'),
+      t('study.agreement.n'), t('study.agreement.bias'), t('study.agreement.loa'), t('study.agreement.icc'),
+      t('study.agreement.state')], rows);
+  }
+
   function reportingLine(r) {
     r = obj(r);
+    const additional = list(r.additional_guidelines).map((g) => `<p>${esc(ADDITIONAL_KEYS[g] ? t(ADDITIONAL_KEYS[g]) : t('study.reporting.additional', { guideline: g }))}</p>`).join('');
     if (r.guideline) {
-      return `<p>${esc(t('study.reporting.agreed', { variant: r.variant_name || r.variant || DASH, type: r.type || DASH, guideline: r.guideline }))}</p>`;
+      const agreed = r.variant
+        ? t('study.reporting.agreed', { variant: r.variant_name || r.variant, type: r.type || DASH, guideline: r.guideline })
+        : t('study.reporting.agreedType', { type: r.type || DASH, guideline: r.guideline });
+      return `<p>${esc(agreed)}</p>${additional}`;
     }
     const reason = REASON_KEYS[r.reason] ? ` ${t(REASON_KEYS[r.reason])}` : '';
-    return `<p class="rv-warn">${esc(t('study.reporting.noData') + reason)}</p>`;
+    return `<p class="rv-warn">${esc(t('study.reporting.noData') + reason)}</p>${additional}`;
+  }
+
+  function checklistBody(checklist) {
+    if (!checklist) return `<p class="rv-muted">${esc(t('study.checklist.onDemand'))}</p>`;
+    if (checklist.loading) return `<p class="rv-muted" role="status">${esc(t('study.checklist.loading'))}</p>`;
+    if (checklist.available === false) return unavailable(checklist);
+    if (!checklist.guideline) return reportingLine(checklist);
+    const items = list(checklist.items);
+    const summary = obj(checklist.summary);
+    const guideline = obj(checklist.guideline);
+    const paper = checklist.paper_available === false ? `<p class="rv-warn">${esc(t('study.checklist.noPaper'))}</p>` : '';
+    const notes = list(checklist.notes).map((n) => `<p class="rv-warn">${esc(n)}</p>`).join('');
+    return `<p>${esc(t('study.checklist.guideline', { name: guideline.name || guideline.id || DASH, version: guideline.version || DASH }))}</p>`
+      + `<p>${esc(t('study.checklist.counts', {
+        satisfied: list(summary.satisfied).length, missing: list(summary.missing).length,
+        judgment: list(summary['needs-judgment']).length, total: items.length,
+      }))}</p>${paper}${notes}`
+      + table([t('study.checklist.item'), t('study.checklist.section'), t('study.checklist.topic'), t('study.checklist.status'), t('study.checklist.owed')],
+        items.map((i) => [esc(i.item), esc(i.section), esc(i.topic),
+          `<span class="${i.status === 'satisfied' ? 'rv-ok' : (i.status === 'missing' ? 'rv-error' : 'rv-warn')}">${esc(STATUS_KEYS[i.status] ? t(STATUS_KEYS[i.status]) : i.status)}</span>`
+            + (i.question ? `<span class="rv-quote">${esc(i.question)}</span>` : ''),
+          list(i.missing).length ? `<ul>${list(i.missing).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : esc(DASH)]));
+  }
+
+  function checklistButton(guideline) {
+    const state = checklists[guideline] || null;
+    const attr = guideline ? ` data-study-guideline="${esc(guideline)}"` : '';
+    const label = guideline
+      ? t(state && !state.loading ? 'study.checklist.rerunGuideline' : 'study.checklist.runGuideline', { guideline })
+      : t(state && !state.loading ? 'study.checklist.rerun' : 'study.checklist.run');
+    return `<button type="button" class="btn btn--sm" data-study-action="checklist"${attr}${state && state.loading ? ' disabled' : ''}>${esc(label)}</button>`;
   }
 
   function checklistHtml(reporting) {
-    const button = `<button type="button" class="btn btn--sm" data-study-action="checklist"${checklist && checklist.loading ? ' disabled' : ''}>${esc(t(checklist && !checklist.loading ? 'study.checklist.rerun' : 'study.checklist.run'))}</button>`;
-    let body = `<p class="rv-muted">${esc(t('study.checklist.onDemand'))}</p>`;
-    if (checklist && checklist.loading) body = `<p class="rv-muted" role="status">${esc(t('study.checklist.loading'))}</p>`;
-    else if (checklist && checklist.available === false) body = unavailable(checklist);
-    else if (checklist && !checklist.guideline) body = reportingLine(checklist);
-    else if (checklist) {
-      const items = list(checklist.items);
-      const summary = obj(checklist.summary);
-      const guideline = obj(checklist.guideline);
-      const paper = checklist.paper_available === false ? `<p class="rv-warn">${esc(t('study.checklist.noPaper'))}</p>` : '';
-      const notes = list(checklist.notes).map((n) => `<p class="rv-warn">${esc(n)}</p>`).join('');
-      body = `<p>${esc(t('study.checklist.guideline', { name: guideline.name || guideline.id || DASH, version: guideline.version || DASH }))}</p>`
-        + `<p>${esc(t('study.checklist.counts', {
-          satisfied: list(summary.satisfied).length, missing: list(summary.missing).length,
-          judgment: list(summary['needs-judgment']).length, total: items.length,
-        }))}</p>${paper}${notes}`
-        + table([t('study.checklist.item'), t('study.checklist.section'), t('study.checklist.topic'), t('study.checklist.status'), t('study.checklist.owed')],
-          items.map((i) => [esc(i.item), esc(i.section), esc(i.topic),
-            `<span class="${i.status === 'satisfied' ? 'rv-ok' : (i.status === 'missing' ? 'rv-error' : 'rv-warn')}">${esc(STATUS_KEYS[i.status] ? t(STATUS_KEYS[i.status]) : i.status)}</span>`
-              + (i.question ? `<span class="rv-quote">${esc(i.question)}</span>` : ''),
-            list(i.missing).length ? `<ul>${list(i.missing).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : esc(DASH)]));
-    }
     const head = reporting && reporting.available !== false ? reportingLine(reporting) : (reporting ? unavailable(reporting) : '');
+    const others = reporting && reporting.available !== false ? list(reporting.additional_guidelines) : [];
+    const extra = others.map((g) => `<div data-study-checklist="${esc(g)}"><h4>${esc(g)}</h4>
+      <div class="rv-actions">${checklistButton(g)}</div>${checklistBody(checklists[g] || null)}</div>`).join('');
     return `<section class="rv-section" data-study-section="checklist"><h3>${esc(t('study.checklist.title'))}</h3>
-      ${head}<div class="rv-actions">${button}</div>${body}</section>`;
+      ${head}<div class="rv-actions">${checklistButton('')}</div>${checklistBody(checklists[''] || null)}${extra}</section>`;
   }
+
+  const MEASUREMENT_TITLES = {
+    instruments: 'study.instruments.title', measurements: 'study.measurements.title',
+    uncertainty: 'study.uncertainty.title', agreement: 'study.agreement.title',
+  };
+  const MEASUREMENT_BODIES = {
+    instruments: instrumentsBody, measurements: measurementsBody, uncertainty: uncertaintyBody, agreement: agreementBody,
+  };
 
   function html(view) {
     view = obj(view);
@@ -292,6 +452,7 @@
       ${section('ethics', 'study.ethics.title', view.ethics, ethicsBody)}
       ${section('registration', 'study.registration.title', view.registration, registrationBody)}
       ${section('data', 'study.data.title', view.data, dataBody)}
+      ${MEASUREMENT_SECTIONS.filter((name) => view[name]).map((name) => section(name, MEASUREMENT_TITLES[name], view[name], MEASUREMENT_BODIES[name])).join('')}
       ${section('analysis', 'study.analysis.title', view.analysis, analysisBody)}
       ${section('flow', 'study.flow.title', view.flow, flowBody)}
       ${checklistHtml(view.reporting)}`;
@@ -323,20 +484,21 @@
     }
   }
 
-  async function act(action) {
+  async function act(action, guideline) {
     if (action === 'refresh') {
       notice = '';
       await refreshStudyPanel();
       return;
     }
     if (action === 'checklist') {
-      if (checklist && checklist.loading) return;
-      checklist = { loading: true };
+      const key = guideline || '';
+      if (checklists[key] && checklists[key].loading) return;
+      checklists[key] = { loading: true };
       render(lastView);
       try {
-        checklist = await getJson('/api/study/checklist');
+        checklists[key] = await getJson(key ? `/api/study/checklist?guideline=${encodeURIComponent(key)}` : '/api/study/checklist');
       } catch (err) {
-        checklist = { available: false, code: 'HTTP', message: err.message || String(err) };
+        checklists[key] = { available: false, code: 'HTTP', message: err.message || String(err) };
       }
       render(lastView);
     }
@@ -345,7 +507,7 @@
   document.addEventListener('click', (event) => {
     const el = event.target && event.target.closest && event.target.closest('[data-study-action]');
     if (!el || !el.dataset || !el.dataset.studyAction) return;
-    act(el.dataset.studyAction);
+    act(el.dataset.studyAction, el.dataset.studyGuideline);
   });
   document.addEventListener('languagechange', () => { if (lastView) render(lastView); });
 

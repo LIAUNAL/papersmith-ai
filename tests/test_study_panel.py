@@ -3,7 +3,10 @@ i18n runtime: every section of `GET /api/study` drawn with escaped values in
 English and Spanish, an unreadable section drawn as unavailable while the rest
 render, the participant-flow figure embedded through `/api/artifact`, a
 non-empirical workspace's 409 stated, and the variant's checklist fetched only
-on the operator's click ("no checklist data yet" when no guideline applies)."""
+on the operator's click ("no checklist data yet" when no guideline applies).
+A hardware workspace adds the measurement sections (instruments, data files,
+uncertainty budgets, agreement) and a second guideline, gum-reporting, run from
+its own button."""
 
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from skills._core.command_center import server
 from tests.test_study_view import KIND, build_study
+from tests.test_study_view_measurement import RAW, agree as agree_type, measurement_records
 from papersmith.core import init as init_module
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -52,7 +56,7 @@ global.fetch = async (url) => {
   out.before = calls.slice();
   for (const step of input.steps || []) {
     if (step.lang) window.i18n.setLanguage(step.lang);
-    if (step.action) await window.StudyPanel.act(step.action);
+    if (step.action) await window.StudyPanel.act(step.action, step.guideline);
     await new Promise((r) => setTimeout(r, 5));
     out.snapshots.push(el('studyPanel').innerHTML);
   }
@@ -172,6 +176,102 @@ class StudyPanelTests(unittest.TestCase):
     def test_a_language_switch_repaints(self) -> None:
         out = run(self.view, steps=[{"lang": "es"}])
         self.assertIn("Protocolo y bloqueo", out["snapshots"][0])
+
+
+@unittest.skipUnless(NODE, "node is required to run the panel")
+class MeasurementPanelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        holder = tempfile.TemporaryDirectory(prefix="study-panel-hw-", ignore_cleanup_errors=True)
+        cls.addClassCleanup(holder.cleanup)
+        root = Path(holder.name).resolve() / "ws"
+        init_module.initialize(root, tools=("claude",), run_npm=False, run_env=False, kind="hardware")
+        measurement_records(root)
+        agree_type(root, None, "hardware")
+        client = TestClient(server.create_app(root))
+        cls.view = client.get("/api/study").json()
+        cls.gum = client.get("/api/study/checklist?guideline=gum-reporting").json()
+        assert cls.view["uncertainty"]["available"] and cls.gum["available"], (cls.view, cls.gum)
+
+    def test_the_measurement_sections_in_english(self) -> None:
+        out = run(self.view)["html"]
+        for title in ("Instruments", "Measurement data files", "Uncertainty budgets",
+                      "Agreement with a reference device"):
+            with self.subTest(title=title):
+                self.assertIn(f"<h3>{title}</h3>", out)
+        self.assertIn("<td>caliper-1</td><td>Mitutoyo &lt;500&gt;</td><td>S-caliper-1</td><td>0.01 mm</td>"
+                      "<td>0.02 mm (normal, k = 2)</td><td>CERT &lt;9&gt;</td><td>2026-01-10</td><td>2099-01-10</td>"
+                      '<td><span class="rv-ok">current</span></td>', out)
+        self.assertIn("<td>data/length.csv</td><td>length</td><td>mm</td><td>caliper-1</td><td>4</td>"
+                      "<td>temperature=20 C</td>", out)
+        self.assertIn("its readings are never shown here", out)
+        self.assertIn("<h4>length (temperature=20 C)</h4>", out)
+        self.assertRegex(out, r"n = 4, mean = [0-9.]+ mm; combined standard uncertainty u_c = [0-9.e-]+ mm; "
+                              r"effective degrees of freedom [0-9.]+; coverage factor k = [0-9.]+ \(Student t, level "
+                              r"0\.95, \d+ degrees of freedom\); expanded uncertainty U = [0-9.e-]+ mm\.")
+        self.assertIn("<td>repeatability</td><td>A</td><td>replicates</td>", out)
+        self.assertIn("<td>resolution</td><td>B</td>", out)
+        self.assertIn("Calibration current (due 2099-01-10, checked on", out)
+        self.assertIn("<td>data/device.csv (device-1)</td><td>data/reference.csv (ref-1)</td><td>force [N]</td>"
+                      "<td>4</td>", out)
+        self.assertRegex(out, r"<td>-?[0-9.e-]+ to -?[0-9.e-]+</td><td>-?[0-9.e-]+</td><td><span class=\"rv-ok\">current</span>")
+        self.assertIn("Agreed type: hardware; reporting guideline: hardwarex.", out)
+        self.assertIn("gum-reporting also applies: how the uncertainty is reported (GUM clause 7).", out)
+        self.assertIn('data-study-guideline="gum-reporting"', out)
+        self.assertIn("Run gum-reporting", out)
+
+    def test_no_reading_and_no_unescaped_value(self) -> None:
+        out = run(self.view)["html"]
+        for raw in (*RAW, "<500>", "<9>"):
+            with self.subTest(raw=raw):
+                self.assertNotIn(raw, out)
+
+    def test_stale_reasons_and_a_past_due_override(self) -> None:
+        view = json.loads(json.dumps(self.view))
+        budget = view["uncertainty"]["budgets"][0]
+        budget.update(state="stale", reasons=["input-changed", "instrument-changed"])
+        budget["calibration"].update(state="past-due", override={"by": "Ana Ruiz", "at": "2026-11-20",
+                                                                 "reason": "Checked against a <gauge> block"})
+        view["agreement"]["analyses"][0].update(state="stale", reasons=["device-changed"])
+        view["measurements"]["files"][0]["state"] = "changed"
+        out = run(view)["html"]
+        self.assertIn("stale: an input file changed, the instrument record changed", out)
+        self.assertIn("Past-due calibration accepted by Ana Ruiz on 2026-11-20: Checked against a &lt;gauge&gt; block",
+                      out)
+        self.assertIn("stale: the device file changed", out)
+        self.assertIn("changed since its registration", out)
+        es = run(view, lang="es")["html"]
+        self.assertIn("desactualizado: cambió un archivo de entrada, cambió el registro del instrumento", es)
+        self.assertIn("Calibración vencida aceptada por Ana Ruiz el 2026-11-20", es)
+
+    def test_spanish(self) -> None:
+        out = run(self.view, lang="es")["html"]
+        for title in ("Instrumentos", "Archivos de datos de medición", "Presupuestos de incertidumbre",
+                      "Concordancia con un dispositivo de referencia"):
+            with self.subTest(title=title):
+                self.assertIn(f"<h3>{title}</h3>", out)
+        self.assertIn("incertidumbre expandida U =", out)
+        self.assertIn("<td>repetibilidad</td>", out)
+        self.assertIn("Tipo acordado: hardware; guía de reporte: hardwarex.", out)
+        self.assertIn("También aplica gum-reporting", out)
+        self.assertNotIn("Uncertainty budgets", out)
+
+    def test_the_second_guideline_is_fetched_only_on_its_click(self) -> None:
+        url = "/api/study/checklist?guideline=gum-reporting"
+        out = run(self.view, steps=[{"action": "checklist", "guideline": "gum-reporting"}],
+                  responses={url: {"status": 200, "body": self.gum}})
+        self.assertEqual(out["before"], [])
+        self.assertEqual(out["calls"], [url])
+        self.assertIn("Items: 18", out["rendered"])
+        self.assertIn("Run gum-reporting again", out["rendered"])
+        self.assertIn(">Run the checklist<", out["rendered"])
+
+    def test_a_view_without_measurement_sections_draws_none(self) -> None:
+        view = {key: value for key, value in self.view.items()
+                if key not in ("instruments", "measurements", "uncertainty", "agreement")}
+        out = run(view)["html"]
+        self.assertNotIn('data-study-section="instruments"', out)
+        self.assertNotIn("<h3>Uncertainty budgets</h3>", out)
 
 
 if __name__ == "__main__":

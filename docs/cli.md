@@ -784,12 +784,21 @@ logged analysis with its label and why, outcome, plan entry and exit code, the
 interrupted runs, the repairs and the log's warnings), `flow` (whether
 `study/flow.json` is valid, the figure `paper/Figures/participant-flow.svg` current
 and embedded through `/api/artifact`, the sign-off current, and the counts) and
-`reporting` (the agreed variant and the guideline its catalogue entry names). A record
+`reporting` (the agreed type and variant, the guideline the catalogue names for them,
+and the line's other guidelines under `additional_guidelines`: a hardware workspace
+names `hardwarex` and `gum-reporting`). A `hardware` or `lab-simulation` workspace, or any
+workspace holding measurement records, adds `instruments`, `measurements` (each
+registered raw data file, never a reading), `uncertainty` (each GUM budget with its type
+A/B components, sensitivity coefficients, combined and expanded uncertainty, effective
+degrees of freedom and coverage, current or stale with why, and any past-due override)
+and `agreement` (bias, limits of agreement and ICC(2,1)), read through
+`skills/_core/measurement/records.py`. A record
 that cannot be read turns only its section into `{"available": false, "code",
 "message"}`. The variant's reporting checklist runs the checklist engine, so it loads
-only when the operator clicks its button, from `GET /api/study/checklist`, off the
-server's event loop; without an agreed variant or guideline data it says "no
-checklist data yet".
+only when the operator clicks its button, from `GET /api/study/checklist` (another of
+the line's guidelines with `?guideline=<id>`; any other answers `400`
+`GUIDELINE_NOT_THIS_LINE`), off the server's event loop; without an agreed variant or
+guideline data it says "no checklist data yet".
 
 **Experiment protocol visibility.** In *Experiments*, the protocol and its
 hypotheses appear immediately after any launch-blocking warnings, before service
