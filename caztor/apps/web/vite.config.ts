@@ -18,6 +18,12 @@ function devToken(): Plugin {
 
 export default defineConfig({
   plugins: [react(), devToken()],
-  build: { outDir: "dist", emptyOutDir: true, sourcemap: false },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    sourcemap: false,
+    // Fonts stay files: the server's CSP has no font-src, so a font inlined as data: would be blocked.
+    assetsInlineLimit: (file: string) => (/\.(woff2?|ttf|otf|eot)$/.test(file) ? false : undefined),
+  },
   server: { proxy: { "/api": { target: `http://127.0.0.1:${DEV_PORT}`, changeOrigin: true } } },
 });
