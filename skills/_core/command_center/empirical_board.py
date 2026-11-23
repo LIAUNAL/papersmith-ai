@@ -1,37 +1,60 @@
-"""The command center's board for the empirical paper lines (S8, decision E5).
+"""The command center's board for the empirical paper lines (S8, decisions E5, F2, F3, F8).
 
 One board serves every empirical line. A line is a :class:`LineTable`: its
 steps in order (drawn from the shared :data:`STEPS` library), the gates its
 board lists, its phase locks and the step that is transversal. This module
-fills the table of ``observational-measurement``
-(``src/papersmith/templates/paper-flow-observational-measurement.md.tpl``); a
+fills the tables of ``observational-measurement``, ``hardware`` and
+``lab-simulation`` (``src/papersmith/templates/paper-flow-<kind>.md.tpl``); a
 later line adds its own table to :data:`LINE_TABLES` (reusing the library's
 steps and adding the ones only it has) and is registered with the rest at the
 end of this module. ``review_board`` stays the review line's own board.
 
 Every status is read from evidence on disk, never computed from a model:
 
-* G-STUDY-PROTOCOL: ``records.protocol_state`` is ``current``;
+* G-STUDY-PROTOCOL, and G-SPEC for hardware (the signed specifications are
+  the study protocol's lock): ``records.protocol_state`` is ``current``;
 * G-ETHICS and G-REGISTRATION: ``records.gate_state`` is recorded and bound
   to the current lock (a not-applicable record counts as passed);
 * G-DATA-QC: every own dataset's ``datasets/<slug>/qc.json`` matches the
   sha256 of its data file and of its current data dictionary, its status is
   not ``fail``, and ``datasets_cli.pii_problem`` finds nothing left to
   de-identify (what ``publish`` refuses as ``pii-not-deidentified``);
-* G-FLOW: the participant flow sign-off is current (``flow_cli`` status).
+* G-FLOW: the participant flow sign-off is current (``flow_cli`` status);
+* G-CALIBRATION: every instrument the registered raw data files use is
+  recorded and not past its calibration due date today, and every registered
+  quantity has a current uncertainty budget (the measurement core's
+  ``instruments_state``, ``data_state`` and ``budget_state``);
+* G-AGREEMENT: an agreement analysis in ``study/agreement.json`` is current
+  (``agreement_state``: bound to the registered device and reference files).
 
 The operator records every one of them with ``--by``; the board only reads
-(decision E8). The analysis actions wait for the protocol, the ethics and
-registration records and the data QC; the writing waits for the flow
-sign-off.
+(decision E8). Observational: the analysis actions wait for the protocol, the
+ethics and registration records and the data QC; the writing waits for the
+flow sign-off. Hardware: the agreement waits for G-CALIBRATION and the writing
+for G-AGREEMENT; the ethics, registration and flow gates are listed only once
+the operator declares a validation with people (an ethics or registration
+record that is not "not applicable", or a participant flow). Lab-simulation:
+the uncertainty step waits for the calibration against known values and the
+writing for G-CALIBRATION, whose budgets that step computes.
+
+Steps a step after them cannot wait for: a step waits for the one before it,
+so a step whose only record appears later must not hold the line. The
+hardware's design files are evidenced by the ``repository-url`` declaration,
+which ``paper/main.tex`` holds, so the calibration step (the instrument and
+reading records) waits for nothing; the open-files steps pass on the
+registered raw files unchanged and show the declaration beside them.
 
 The shared modules are read through their own functions, loaded by path the
 way ``review_board`` loads ``review_cli.py``: the workspace's copy first, else
 the dashboard's own, with a visible note on every step that read it when the
 workspace's copy exists but fails to load. A package module is loaded inside a
 private package of its own directory, so its relative imports resolve to its
-siblings and nothing is added to ``sys.path`` for it. Every label is English;
-the dashboard's Spanish comes from ``static/i18n/server-es.json``.
+siblings and nothing is added to ``sys.path`` for it; the measurement core,
+which imports ``..empirical``, is loaded one level up, inside a private
+package of ``skills/_core``. The ``repository-url`` declaration is read with
+paper-writing's own ``paper_declarations.read_declaration`` (the dashboard's
+copy, as ``manuscript_graph`` reads facts). Every label is English; the
+dashboard's Spanish comes from ``static/i18n/server-es.json``.
 """
 
 from __future__ import annotations
@@ -72,7 +95,14 @@ MODULES: dict[str, str] = {
     "flow_cli": "_core/participant_flow/flow_cli.py",
     "datasets_cli": "datasets/scripts/datasets_cli.py",
     "checklists": "_core/checklists/engine.py",
+    "measurement": "_core/measurement/records.py",
 }
+
+#: name -> the sibling packages under ``skills/_core`` its relative imports
+#: reach (``from ..empirical.records import ...``): it is loaded inside a
+#: private package of its parent's parent, and those packages' modules count
+#: in its stamp.
+_NESTED: dict[str, tuple[str, ...]] = {"measurement": ("empirical",)}
 
 _CACHE_LOCK = threading.Lock()
 #: path -> (stamp of its directory's modules, module or ``None``, why it did not load);
@@ -81,21 +111,29 @@ _LOADED: dict[str, tuple[str, Any, str | None]] = {}
 _PACKAGES = itertools.count()
 
 
-def _stamp(path: Path) -> str:
+def _stamp(path: Path, reaches: tuple[str, ...] = ()) -> str:
     """The sha256 of the module and its sibling modules: a sibling it imports
-    (``records`` beside ``analysis_log``) reloads it too."""
+    (``records`` beside ``analysis_log``) reloads it too, and so does a module
+    of a package its relative imports ``reach`` (beside its own package)."""
     digest = hashlib.sha256(path.read_bytes())
-    for sibling in sorted(path.parent.glob("*.py")):
-        if sibling != path:
-            digest.update(sibling.name.encode("utf-8") + b"\0" + sibling.read_bytes())
+    others = [sibling for sibling in sorted(path.parent.glob("*.py")) if sibling != path]
+    for package in reaches:
+        others += sorted((path.parent.parent / package).glob("*.py"))
+    for other in others:
+        digest.update(f"{other.parent.name}/{other.name}".encode("utf-8") + b"\0" + other.read_bytes())
     return digest.hexdigest()
 
 
-def _exec(path: Path) -> Any:
+def _exec(path: Path, nested: bool = False) -> Any:
     package = f"_papersmith_empirical_{next(_PACKAGES)}"
     holder = types.ModuleType(package)
-    holder.__path__ = [str(path.parent)]  # type: ignore[attr-defined]
+    holder.__path__ = [str(path.parent.parent if nested else path.parent)]  # type: ignore[attr-defined]
     sys.modules[package] = holder
+    if nested:
+        inner = types.ModuleType(f"{package}.{path.parent.name}")
+        inner.__path__ = [str(path.parent)]  # type: ignore[attr-defined]
+        sys.modules[inner.__name__] = inner
+        package = inner.__name__
     spec = importlib.util.spec_from_file_location(f"{package}.{path.stem}", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -103,11 +141,12 @@ def _exec(path: Path) -> Any:
     return module
 
 
-def _load(path: Path) -> tuple[Any | None, str | None] | None:
+def _load(path: Path, reaches: tuple[str, ...] | None = None) -> tuple[Any | None, str | None] | None:
     """``(module, None)``, ``(None, why)`` when the file fails to load, or
-    ``None`` when it does not exist. Reloaded when it or a sibling changes."""
+    ``None`` when it does not exist. Reloaded when it or a sibling changes.
+    ``reaches`` (not ``None``) loads it one package level up (see :data:`_NESTED`)."""
     try:
-        stamp = _stamp(path)
+        stamp = _stamp(path, reaches or ())
     except OSError:
         return None
     key = str(path)
@@ -116,7 +155,7 @@ def _load(path: Path) -> tuple[Any | None, str | None] | None:
         if cached and cached[0] == stamp:
             return cached[1], cached[2]
         try:
-            loaded: tuple[Any | None, str | None] = (_exec(path), None)
+            loaded: tuple[Any | None, str | None] = (_exec(path, reaches is not None), None)
         except (Exception, SystemExit) as exc:
             loaded = (None, f"{type(exc).__name__} at {path}")
         _LOADED[key] = (stamp, *loaded)
@@ -127,12 +166,12 @@ def load_module(root: Path, name: str) -> tuple[Any | None, str | None]:
     """The workspace's copy of module ``name`` (else the dashboard's own), or
     ``None`` when neither loads, and why the workspace's copy was passed over
     when it exists but fails to load (``None`` otherwise)."""
-    rel = MODULES[name]
-    workspace = _load(Path(root) / "skills" / rel)
+    rel, reaches = MODULES[name], _NESTED.get(name)
+    workspace = _load(Path(root) / "skills" / rel, reaches)
     if workspace is not None and workspace[0] is not None:
         return workspace
     warning = workspace[1] if workspace is not None else None
-    bundled = _load(DASHBOARD_SKILLS / rel)
+    bundled = _load(DASHBOARD_SKILLS / rel, reaches)
     return (bundled[0] if bundled is not None else None), warning
 
 
@@ -143,9 +182,14 @@ ANALYSIS_CLI = "python skills/_core/empirical/analysis_cli.py"
 FLOW_CLI = "python skills/_core/participant_flow/flow_cli.py"
 DATASETS_CLI = "python skills/datasets/scripts/datasets_cli.py --root ."
 CHECKLIST_CLI = "python skills/_core/checklists/checklist_cli.py"
+MEASURE_CLI = "python skills/_core/measurement/measure_cli.py"
+PAPER_CLI = "python skills/paper-writing/scripts/paper_cli.py"
 
 PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE = "G-STUDY-PROTOCOL", "G-ETHICS", "G-REGISTRATION"
 DATA_GATE, FLOW_GATE = "G-DATA-QC", "G-FLOW"
+SPEC_GATE, CALIBRATION_GATE, AGREEMENT_GATE = "G-SPEC", "G-CALIBRATION", "G-AGREEMENT"
+#: The gates a hardware board lists only when people take part in its validation.
+PEOPLE_GATES = (ETHICS_GATE, REGISTRATION_GATE, FLOW_GATE)
 #: What an analysis waits for: the protocol, the ethics and registration records and the data QC.
 ANALYSIS_GATES = (PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE, DATA_GATE)
 _OPERATOR = '"<operator name>"'
@@ -165,6 +209,8 @@ class Context:
     table: "LineTable"
     modules: dict[str, tuple[Any | None, str | None]] = field(default_factory=dict)
     gates: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: Whether the operator declared a validation with people (see :func:`with_people`).
+    people: bool = False
 
     def module(self, name: str) -> Any | None:
         if name not in self.modules:
@@ -219,8 +265,9 @@ def _harness(ctx: Context) -> dict[str, Any]:
 
 def agreed_type(root: Path) -> dict[str, Any]:
     """The agreed paper type and variant from ``.papersmith/paper_type.json``,
-    with the catalogue's ``line`` and the variant's ``checklist``
-    (``has_variants`` says whether the type chooses one)."""
+    with the catalogue's ``line`` and its reporting ``checklist``
+    (``registry.checklist_for``: the variant's, or the family's own for a type
+    without variants; ``has_variants`` says whether the type chooses one)."""
     record = decision.read(root)["paper_type"] or {}
     type_id, variant = record.get("agreed"), record.get("agreed_variant")
     out = {"type": type_id, "variant": variant, "by": record.get("agreed_by"),
@@ -231,11 +278,19 @@ def agreed_type(root: Path) -> dict[str, Any]:
         item = paper_types.get(type_id)
     except Exception:  # an unknown or unreadable catalogue entry: the type alone is shown
         return out
-    variants = {v["id"]: v for v in item.get("variants") or []}
-    out.update(line=item.get("line"), has_variants=bool(variants))
-    if variant in variants:
-        out["checklist"] = variants[variant].get("checklist")
+    out.update(line=item.get("line"), has_variants=bool(item.get("variants")),
+               checklist=paper_types.checklist_for(item, variant))
     return out
+
+
+def _line_has_variants(kind: str) -> bool:
+    """Whether the catalogue types of line ``kind`` choose a variant (``True``
+    when the catalogue cannot say: the variant wording is the default)."""
+    try:
+        items = [item for item in paper_types.load() if item.get("line") == kind]
+    except Exception:  # an unreadable catalogue: the default wording
+        return True
+    return not items or any(item.get("variants") for item in items)
 
 
 def _plausibility_type(ctx: Context) -> dict[str, Any]:
@@ -397,6 +452,165 @@ def _flow_gate(ctx: Context) -> dict[str, str]:
     return {"status": "PASS", "detail": f"Signed off by {signoff.get('by') or '?'} at {signoff.get('at') or '?'}"}
 
 
+# ----- the measurement core (hardware and lab-simulation)
+
+
+def _instrument_part(ctx: Context) -> dict[str, str]:
+    """Every instrument the registered raw files use: recorded, calibrated and not
+    past its due date today (the first half of G-CALIBRATION)."""
+    core = ctx.module("measurement")
+    instruments, data = core.instruments_state(ctx.root), core.data_state(ctx.root)
+    if instruments["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The instrument records are unreadable: {instruments['message']}"}
+    if data["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The raw data registrations are unreadable: {data['message']}"}
+    if instruments["state"] == "absent":
+        return {"status": "PENDING", "detail": "No instrument recorded yet (measure_cli.py instrument add)"}
+    if data["state"] == "absent":
+        return {"status": "PENDING", "detail": "No raw data file registered yet (measure_cli.py data register)"}
+    rows = {row["id"]: row for row in instruments["instruments"]}
+    used = sorted({str(item.get("instrument")) for item in data["files"]})
+    for ident in used:
+        row = rows.get(ident)
+        if row is None:
+            return {"status": "ACTIVE", "detail": f"Instrument {ident} of the registered data is not recorded "
+                                                  "(measure_cli.py instrument add)"}
+        if row["calibration"] == "past-due":
+            return {"status": "ACTIVE", "detail": (f"Instrument {ident} is past its calibration due date "
+                                                   f"({row.get('due')}) on {instruments['on']}: recalibrate it "
+                                                   "(measure_cli.py instrument add --reason)")}
+        if row["calibration"] != "current":
+            return {"status": "ACTIVE", "detail": f"Instrument {ident} has no readable calibration due date"}
+    return {"status": "PASS", "detail": (f"{len(used)} instrument(s) used by the registered data, calibrated and "
+                                         f"not past due on {instruments['on']}")}
+
+
+def _budget_part(ctx: Context) -> dict[str, str]:
+    """Every registered quantity with a current uncertainty budget and no stale
+    budget (the second half of G-CALIBRATION)."""
+    core = ctx.module("measurement")
+    data, budgets = core.data_state(ctx.root), core.budget_state(ctx.root)
+    if data["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The raw data registrations are unreadable: {data['message']}"}
+    if budgets["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The uncertainty budgets are unreadable: {budgets['message']}"}
+    rows = budgets["budgets"]
+    broken = next((row for row in rows if row["state"] == "corrupt"), None)
+    if broken is not None:
+        return {"status": "FAIL", "detail": f"An uncertainty budget is unreadable: {broken['message']}"}
+    stale = next((row for row in rows if row["state"] == "stale"), None)
+    if stale is not None:
+        return {"status": "ACTIVE", "detail": (f"The uncertainty budget of {stale['quantity']} is stale "
+                                               f"({', '.join(stale['reasons'])}): recompute it "
+                                               "(measure_cli.py uncertainty compute)")}
+    quantities = list(dict.fromkeys(str(item.get("quantity")) for item in data["files"]))
+    if not quantities:
+        return {"status": "PENDING", "detail": "No raw data file registered yet (measure_cli.py data register)"}
+    budgeted = {row["quantity"] for row in rows if row["state"] == "current"}
+    owed = [quantity for quantity in quantities if quantity not in budgeted]
+    if owed:
+        return {"status": "ACTIVE",
+                "detail": f"No current uncertainty budget for {owed[0]} (measure_cli.py uncertainty compute)"}
+    return {"status": "PASS", "detail": (f"{len(rows)} uncertainty budget(s) current for {len(quantities)} "
+                                         "registered quantity(ies)")}
+
+
+def _calibration_gate(ctx: Context) -> dict[str, str]:
+    instruments = _instrument_part(ctx)
+    if instruments["status"] != "PASS":
+        return instruments
+    budgets = _budget_part(ctx)
+    if budgets["status"] != "PASS":
+        return {"status": "FAIL" if budgets["status"] == "FAIL" else "ACTIVE", "detail": budgets["detail"]}
+    return {"status": "PASS", "detail": f"{instruments['detail']}; {budgets['detail']}"}
+
+
+def _agreement_gate(ctx: Context) -> dict[str, str]:
+    state = ctx.module("measurement").agreement_state(ctx.root)
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The agreement records are unreadable: {state['message']}"}
+    if state["state"] == "absent":
+        return {"status": "PENDING", "detail": "No agreement analysis yet (measure_cli.py agreement compute)"}
+
+    def pair(analysis: dict) -> tuple[str, str]:
+        return (str((analysis.get("device") or {}).get("path")), str((analysis.get("reference") or {}).get("path")))
+
+    current = [analysis for analysis in state["analyses"] if analysis["state"] == "current"]
+    if current:
+        device, reference = pair(current[-1])
+        return {"status": "PASS", "detail": (f"Agreement of {device} with {reference} current "
+                                             f"({current[-1].get('n')} pairs)")}
+    stale = state["analyses"][-1]
+    device, reference = pair(stale)
+    return {"status": "ACTIVE", "detail": (f"The agreement of {device} with {reference} is stale "
+                                           f"({', '.join(stale['reasons'])}): recompute it "
+                                           "(measure_cli.py agreement compute)")}
+
+
+def _data_files(ctx: Context) -> dict[str, Any]:
+    """The registered raw files: ``status``, ``detail`` and their count ``n``."""
+    data = ctx.module("measurement").data_state(ctx.root)
+    if data["state"] == "corrupt":
+        return {"status": "ACTIVE", "detail": f"The raw data registrations are unreadable: {data['message']}", "n": 0}
+    files = data["files"]
+    if not files:
+        return {"status": "PENDING", "detail": "No raw data file registered yet (measure_cli.py data register)",
+                "n": 0}
+    moved = next((item for item in files if item["state"] != "current"), None)
+    if moved is not None:
+        detail = (f"{moved['path']} changed since its registration: the operator registers it again "
+                  "(measure_cli.py data register --reason)" if moved["state"] == "changed" else
+                  f"{moved['path']} is registered but no longer exists")
+        return {"status": "ACTIVE", "n": len(files), "detail": detail}
+    return {"status": "PASS", "n": len(files),
+            "detail": f"{len(files)} registered raw data file(s), unchanged since their registration"}
+
+
+def _paper_declarations() -> Any:
+    """paper-writing's ``paper_declarations`` (the dashboard's copy), imported the
+    way ``manuscript_graph`` imports it."""
+    scripts = DASHBOARD_SKILLS / "paper-writing" / "scripts"
+    for path in (scripts, DASHBOARD_SKILLS / "_core" / "implementation"):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+    import paper_declarations  # noqa: PLC0415
+
+    return paper_declarations
+
+
+def _repository_url(ctx: Context) -> dict[str, str]:
+    """The ``repository-url`` declaration, read from ``paper/main.tex`` (never written)."""
+    if not (ctx.root / "paper" / "main.tex").is_file():
+        return {"status": "PENDING", "detail": ("No repository-url declaration yet: it is recorded with paper_cli.py "
+                                                "declare once paper/main.tex exists")}
+    try:
+        value = _paper_declarations().read_declaration(ctx.root / "paper", "repository-url")
+    except Exception as exc:  # a hand-edited or unreadable region: shown, never repaired
+        code = getattr(exc, "code", None)
+        return {"status": "ACTIVE", "detail": (f"The declarations of paper/main.tex are unreadable "
+                                               f"({code if isinstance(code, str) else type(exc).__name__})")}
+    if not value:
+        return {"status": "PENDING", "detail": ("No repository-url declaration yet (paper_cli.py declare "
+                                                "--declaration repository-url)")}
+    return {"status": "PASS", "detail": f"Repository declared (repository-url): {value}"}
+
+
+def with_people(ctx: Context) -> bool:
+    """Whether the operator declared a validation with people: an ethics or a
+    registration record that is not "not applicable", or a participant flow in
+    ``study/flow.json``. A bench-only validation records both as not applicable."""
+    if (ctx.root / "study" / "flow.json").is_file():
+        return True
+    records = ctx.module("records")
+    if records is None:
+        return False
+    for gate in ("ethics", "registration"):
+        entry = records.gate_state(ctx.root, gate)
+        if entry and entry.get("state") == "recorded" and entry.get("status") != "not-applicable":
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class Gate:
     """One operator gate the board lists: read from evidence, never passed by the board."""
@@ -434,19 +648,36 @@ GATES: dict[str, Gate] = {gate.id: gate for gate in (
          "them and the operator signed them off (flow_cli.py signoff --by <name>); it stays current while the "
          "counts and the figure are unchanged. The writing starts after it.",
          "participant_flow", _flow_gate, "flow_cli"),
+    Gate(SPEC_GATE, "Specifications Signature Gate",
+         "The operator signed the hardware's requirements and specifications by approving a managed revision of "
+         "protocol/study-protocol-<slug>-vNN.md (study_cli.py protocol approve --by <name>), pinned by its sha256 in "
+         "study/protocol.lock.json; it stays current while that revision is unchanged and no newer one exists, and a "
+         "change is an amendment with its reason. The specifications table reports the hardware against these "
+         "signed values.", "specifications", _protocol_gate, "records"),
+    Gate(CALIBRATION_GATE, "Calibration & Uncertainty Gate",
+         "Every instrument the registered raw data files use is recorded from its calibration certificate and is "
+         "not past its calibration due date on today's date (measure_cli.py instrument add --by <name>), and every "
+         "registered quantity has a current uncertainty budget in study/uncertainty/ (measure_cli.py uncertainty "
+         "compute), bound to the files and the instrument record it used. Read from the records; the board never "
+         "records it.", "calibration", _calibration_gate, "measurement"),
+    Gate(AGREEMENT_GATE, "Agreement Gate",
+         "An agreement analysis of the device against the reference device (Bland-Altman bias and limits of "
+         "agreement, ICC(2,1)) in study/agreement.json is current: computed from registered raw data files that "
+         "have not changed since (measure_cli.py agreement compute). The writing starts after it.",
+         "agreement", _agreement_gate, "measurement"),
 )}
 
 
 # ----- the steps that read the gates and the records
 
 
-def _study_protocol(ctx: Context) -> dict[str, Any]:
-    gate = ctx.gates[PROTOCOL_GATE]
+def _protocol_step(ctx: Context, gate_id: str, awaiting: str, none: str, approval: str) -> dict[str, Any]:
+    """A step whose gate is the study protocol's lock: G-STUDY-PROTOCOL, or G-SPEC for hardware."""
+    gate = ctx.gates[gate_id]
     revisions = ctx.module("records").managed_revisions(ctx.root)
     if gate["status"] == "PENDING":
         status = "ACTIVE" if revisions else "PENDING"
-        detail = (f"{len(revisions)} protocol revision(s); awaiting the operator's approval (G-STUDY-PROTOCOL)"
-                  if revisions else "No study protocol revision yet (/study-protocol-deliberation)")
+        detail = f"{len(revisions)} {awaiting}" if revisions else none
     else:
         status = "PASS" if gate["status"] == "PASS" else "ACTIVE"
         detail = gate["detail"]
@@ -454,8 +685,21 @@ def _study_protocol(ctx: Context) -> dict[str, Any]:
         ("Protocol revisions (protocol/study-protocol-*.md)", "PASS" if revisions else "PENDING",
          f"{len(revisions)} managed revision(s); latest {revisions[-1][1]}" if revisions
          else "No managed revision yet"),
-        ("Operator approval (G-STUDY-PROTOCOL)", gate["status"], gate["detail"]),
+        (approval, gate["status"], gate["detail"]),
     ]}
+
+
+def _study_protocol(ctx: Context) -> dict[str, Any]:
+    return _protocol_step(ctx, PROTOCOL_GATE, "protocol revision(s); awaiting the operator's approval (G-STUDY-PROTOCOL)",
+                          "No study protocol revision yet (/study-protocol-deliberation)",
+                          "Operator approval (G-STUDY-PROTOCOL)")
+
+
+def _specifications(ctx: Context) -> dict[str, Any]:
+    return _protocol_step(ctx, SPEC_GATE, "protocol revision(s); awaiting the operator's signature of the "
+                                          "specifications (G-SPEC)",
+                          "No specifications yet: the protocol holds them (/study-protocol-deliberation)",
+                          "Specifications signed (G-SPEC, operator)")
 
 
 def _ethics_registration(ctx: Context) -> dict[str, Any]:
@@ -516,6 +760,142 @@ def _analysis(ctx: Context) -> dict[str, Any]:
          f"{confirmatory} confirmatory, {exploratory} exploratory; the label is computed, never chosen"),
         ("Interrupted or failed runs", "ACTIVE" if stopped or failed else "PASS",
          f"{len(stopped)} interrupted, {len(failed)} failed"),
+    ]}
+
+
+# ----- the hardware and lab-simulation steps
+
+
+def _design_files(ctx: Context) -> dict[str, Any]:
+    repository = _repository_url(ctx)
+    return {"status": repository["status"], "detail": repository["detail"], "subfases": [
+        ("Editable design files and bill of materials (operator)", repository["status"],
+         "Kept by the operator in an open repository with a DOI; the assistant never estimates a price or invents "
+         "a part"),
+        ("Repository declared (repository-url)", repository["status"], repository["detail"]),
+    ]}
+
+
+def _build(ctx: Context) -> dict[str, Any]:
+    files = _data_files(ctx)
+    built = files["n"] > 0
+    status = "PASS" if built else "PENDING"
+    detail = (f"{files['n']} raw measurement file(s) registered: the hardware is built and measuring" if built
+              else "No record of the build yet: the first registered raw measurement file shows the hardware "
+                   "measuring")
+    return {"status": status, "detail": detail, "subfases": [
+        ("Build steps, photographs and design decisions (operator)", status,
+         "Kept by the operator for the build and operation instructions"),
+        ("First raw measurement file registered (study/measurements.json)", status, detail),
+    ]}
+
+
+def _calibration(ctx: Context) -> dict[str, Any]:
+    gate = ctx.gates[CALIBRATION_GATE]
+    instruments, budgets, files = _instrument_part(ctx), _budget_part(ctx), _data_files(ctx)
+    started = instruments["status"] != "PENDING" or files["n"] > 0
+    status = "PASS" if gate["status"] == "PASS" else ("ACTIVE" if started else "PENDING")
+    return {"status": status, "detail": gate["detail"], "subfases": [
+        ("Instruments calibrated, not past due (study/instruments.json)", instruments["status"], instruments["detail"]),
+        ("Raw data files registered (study/measurements.json)", files["status"], files["detail"]),
+        ("Uncertainty budgets (study/uncertainty/)", budgets["status"], budgets["detail"]),
+        ("Calibration and uncertainty (G-CALIBRATION, operator records)", gate["status"], gate["detail"]),
+    ]}
+
+
+def _agreement(ctx: Context) -> dict[str, Any]:
+    gate = ctx.gates[AGREEMENT_GATE]
+    status = "PASS" if gate["status"] == "PASS" else ("PENDING" if gate["status"] == "PENDING" else "ACTIVE")
+    return {"status": status, "detail": gate["detail"], "subfases": [
+        ("Agreement with the reference device (G-AGREEMENT)", gate["status"], gate["detail"]),
+    ]}
+
+
+def _field_validation(ctx: Context) -> dict[str, Any]:
+    ethics, registration = ctx.gates[ETHICS_GATE], ctx.gates[REGISTRATION_GATE]
+    subfases = [("Ethics approval (G-ETHICS, operator)", ethics["status"], ethics["detail"]),
+                ("Registration (G-REGISTRATION, operator)", registration["status"], registration["detail"])]
+    if ctx.people:
+        flow = ctx.gates[FLOW_GATE]
+        subfases.append(("Participant flow sign-off (G-FLOW, operator)", flow["status"], flow["detail"]))
+        passed = sum(1 for gate in (ethics, registration, flow) if gate["status"] == "PASS")
+        return {"status": _state(passed, 3, True),
+                "detail": f"Validation with people: {passed} of 3 operator records current (ethics, registration, "
+                          "participant flow)", "subfases": subfases}
+    passed = sum(1 for gate in (ethics, registration) if gate["status"] == "PASS")
+    if passed == 2:
+        detail = "Bench-only validation: ethics and registration recorded as not applicable"
+    elif all(gate["status"] == "PENDING" for gate in (ethics, registration)):
+        detail = ("No validation declared yet: record ethics and registration (as not applicable for a bench-only "
+                  "validation)")
+    else:
+        detail = f"{passed} of 2 operator records current (ethics, registration)"
+    started = any(gate["status"] != "PENDING" for gate in (ethics, registration))
+    return {"status": _state(passed, 2, started), "detail": detail, "subfases": subfases}
+
+
+def _open_files(ctx: Context) -> dict[str, Any]:
+    files, repository = _data_files(ctx), _repository_url(ctx)
+    return {"status": files["status"], "detail": files["detail"], "subfases": [
+        ("Registered raw data files unchanged (study/measurements.json)", files["status"], files["detail"]),
+        ("Repository declared (repository-url)", repository["status"], repository["detail"]),
+    ]}
+
+
+def _sample_model(ctx: Context) -> dict[str, Any]:
+    revisions = ctx.module("records").managed_revisions(ctx.root)
+    status = "PASS" if revisions else "PENDING"
+    detail = (f"{len(revisions)} protocol revision(s) hold the sample matrix or the model; the operator approves "
+              "one in the next step" if revisions else
+              "No protocol revision yet: the sample matrix or the model is written into the protocol "
+              "(/study-protocol-deliberation)")
+    return {"status": status, "detail": detail, "subfases": [
+        ("Sample matrix or model definition (operator)", status, detail),
+    ]}
+
+
+def _observables(ctx: Context) -> dict[str, Any]:
+    files = _data_files(ctx)
+    return {"status": files["status"], "detail": files["detail"], "subfases": [
+        ("Raw data files registered (study/measurements.json)", files["status"], files["detail"]),
+    ]}
+
+
+def _known_values(ctx: Context) -> dict[str, Any]:
+    instruments = _instrument_part(ctx)
+    status = "ACTIVE" if instruments["status"] == "FAIL" else instruments["status"]
+    return {"status": status, "detail": instruments["detail"], "subfases": [
+        ("Instruments calibrated, not past due (study/instruments.json)", instruments["status"], instruments["detail"]),
+    ]}
+
+
+def _uncertainty(ctx: Context) -> dict[str, Any]:
+    gate, budgets = ctx.gates[CALIBRATION_GATE], _budget_part(ctx)
+    log_module = ctx.module("analysis_log")
+    log = log_module.log_state(ctx.root)
+    if log["state"] == "absent":
+        entries, stopped, log_status, log_detail = [], [], "PENDING", "No analysis logged yet (analysis/log.jsonl)"
+    elif log["state"] != "ok":
+        entries, stopped = [], []
+        log_status, log_detail = "ACTIVE", f"The analysis log is unreadable: {log['message']}"
+    else:
+        entries = log_module.read_log(ctx.root)
+        stopped = log_module.interrupted(entries)
+        analyses = log_module.analyses(entries)
+        confirmatory = sum(1 for entry in analyses if entry.get("label") == "confirmatory")
+        log_status = "ACTIVE" if stopped else "PASS"
+        log_detail = (f"{len(analyses)} analysis entries logged: {confirmatory} confirmatory, "
+                      f"{len(analyses) - confirmatory} exploratory")
+    if gate["status"] == "PASS" and log_status != "ACTIVE":
+        status, detail = "PASS", gate["detail"]
+    else:
+        started = budgets["status"] != "PENDING" or bool(entries)
+        status = "ACTIVE" if started else "PENDING"
+        detail = gate["detail"] if gate["status"] != "PASS" else log_detail
+    return {"status": status, "detail": detail, "subfases": [
+        ("Uncertainty budgets (study/uncertainty/)", budgets["status"], budgets["detail"]),
+        ("Calibration and uncertainty (G-CALIBRATION, operator records)", gate["status"], gate["detail"]),
+        ("Analysis log (analysis/log.jsonl)", log_status, log_detail),
     ]}
 
 
@@ -589,8 +969,12 @@ def _paper(ctx: Context) -> dict[str, Any]:
 
 
 def checklist_detail(ctx: Context) -> tuple[str, str]:
-    """(sub-step name, detail) of the reporting checklist the agreed variant chooses."""
+    """(sub-step name, detail) of the reporting checklist the agreed type chooses
+    (through its variant when it has variants)."""
     agreed = agreed_type(ctx.root)
+    if not agreed["type"] and not _line_has_variants(ctx.table.kind):
+        return ("Reporting checklist", "No paper type agreed yet (/paper-type): the type names the reporting "
+                                       "checklist")
     if not agreed["type"] or (agreed["has_variants"] and not agreed["variant"]):
         return ("Reporting checklist", "No variant agreed yet (/paper-type): the variant chooses the reporting "
                                        "checklist")
@@ -598,6 +982,11 @@ def checklist_detail(ctx: Context) -> tuple[str, str]:
     if not checklist:
         return ("Reporting checklist", f"No checklist data yet for the {agreed['variant'] or agreed['type']} "
                                        "variant: the items are checked by hand")
+    return _guideline_detail(ctx, checklist)
+
+
+def _guideline_detail(ctx: Context, checklist: str) -> tuple[str, str]:
+    """(sub-step name, detail) of guideline ``checklist``: its name and item count."""
     name, items = checklist, None
     engine = ctx.module("checklists")
     if engine is not None:
@@ -619,8 +1008,10 @@ def _reporting(ctx: Context) -> dict[str, Any]:
               "The last audit failed: check .papersmith/audit.json" if verdict is False else
               "Cross-cutting audit pending")
     name, checklist = checklist_detail(ctx)
+    extras = [_guideline_detail(ctx, extra) for extra in ctx.table.extra_checklists]
     return {"status": status, "detail": detail, "subfases": [
         (name, "PENDING", checklist),
+        *((extra_name, "PENDING", extra_detail) for extra_name, extra_detail in extras),
         ("Workspace audit (smith audit .)", status, detail),
     ]}
 
@@ -785,6 +1176,314 @@ STEPS: dict[str, Step] = {step.id: step for step in (
                  *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
              ],
          }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
+    # ----- hardware (src/papersmith/templates/paper-flow-hardware.md.tpl)
+    Step("plausibility_hardware", "Plausibility and paper type", "Plausibility & Paper Type",
+         "The state of the art and the comparable devices scouted around the idea, the plausibility report accepted by the operator, and the hardware paper type agreed with /paper-type; the type names the hardwarex checklist and every uncertainty is checked against gum-reporting.",
+         ("read", "write", "http"), ("sota-pool/candidates.json", ".papersmith/paper_type.json"), "G-PAPER-TYPE", {
+             "skills": ["plausibility", "paper-type"],
+             "agent": "plausibility, paper-type-advisor & operator",
+             "actions": [
+                 _prompt("/plausibility", "Explore the plausibility of the idea", [
+                     "Write the idea in at least two sentences: what the hardware measures or does, for whom, and the reference it is validated against.",
+                     "The agent scouts about 25 SOTA references and comparable devices by their abstracts and grades the claims with verbatim quotes.",
+                     "Nothing moves on until you accept the report.",
+                 ], "E.g.: A low-cost load cell for field force measurement, validated against a laboratory dynamometer …",
+                     min_sentences=2),
+                 _prompt("/paper-type", "Agree the paper type", [
+                     "The agent scores the idea against the paper types and discusses its suggestion with you.",
+                     "The hardware type has no variants: its reporting checklist is hardwarex (the HardwareX article template).",
+                     "Every uncertainty is also checked against gum-reporting (GUM clause 7).",
+                 ], "E.g.: discuss whether this is a hardware paper or a measurement-instrument study.", optional=True),
+                 _redirect("View the paper types", "papertype", "Every paper type with its score, guideline and variants."),
+             ],
+         }, (("Candidate pool", "sota-pool/candidates.json"), ("Plausibility acceptance", ".papersmith/plausibility.json"),
+             ("Agreed paper type", ".papersmith/paper_type.json")), _plausibility_type),
+    Step("specifications", "Requirements and specifications", "Requirements & Specifications (G-SPEC)",
+         "The hardware's protocol as managed revisions: what it must measure or do and for whom, the primary performance outcome with its acceptance criterion, the secondary specifications, the validation design, the operating conditions, the units, replicates and paired readings, and the analysis plan. The operator signs the specifications by approving a revision; a later change is an amendment with its reason.",
+         ("read", "write"), ("protocol/study-protocol-<slug>-vNN.md", "study/protocol.lock.json"), SPEC_GATE, {
+             "skills": ["study-protocol-deliberation"],
+             "agent": "study-protocol-deliberation & operator",
+             "actions": [
+                 _prompt("/study-protocol-deliberation", "Deliberate the specifications with the agent", [
+                     "The agent drafts the protocol with you: requirements, the primary performance outcome and its acceptance criterion, secondary specifications, validation design, units and replicates, and the analysis plan.",
+                     "The acceptance criterion and the primary outcome are yours; the agent never invents a specification or a measured value.",
+                     "Each accepted change is published as a new managed revision under protocol/.",
+                 ], "E.g.: draft the specifications of the load cell: range, resolution and the limits of agreement allowed.",
+                     optional=True),
+                 _command(f"{STUDY_CLI} protocol status --root .", "Protocol lock status",
+                          "Whether the approved revision is current, changed or absent."),
+                 _command(f"{STUDY_CLI} protocol approve --root . --by {_OPERATOR}",
+                          "Sign the specifications (operator, G-SPEC)",
+                          "Only the operator signs; the approval pins the revision's sha256."),
+                 _command(f'{STUDY_CLI} protocol amend --root . --by {_OPERATOR} --reason "<why>"',
+                          "Record an amendment", "A change after the approval, with its reason; the methods report it."),
+             ],
+         }, (("Protocol revisions", "protocol/study-protocol-*.md"),
+             ("Specifications signature (G-SPEC)", "study/protocol.lock.json")), _specifications, ("records",)),
+    Step("design_files", "Design files and bill of materials", "Design Files & Bill of Materials",
+         "The editable design files (CAD, schematic and layout projects, firmware and software sources) and the bill of materials with its purchase records, kept by the operator in an open repository with a DOI and recorded as the repository-url declaration. The assistant never estimates a price or invents a part.",
+         ("read", "write"), ("paper/main.tex (repository-url)",), "G-DESIGN", {
+             "skills": ["hardware", "paper-writing"],
+             "agent": "hardware & operator",
+             "actions": [
+                 _prompt("/hardware", "Ask where the hardware stands", [
+                     "The agent reads the study, measurement and checklist records and reports each stage with its state.",
+                     "It names the first stage that is not done and the command that does it.",
+                 ], "E.g.: status", optional=True),
+                 _command(f'{PAPER_CLI} declare --declaration repository-url --value "<DOI or URL>"',
+                          "Declare the repository (operator)",
+                          "The DOI or URL of the open repository that holds the design files and the bill of materials."),
+             ],
+         }, (("Declarations (repository-url)", "paper/main.tex"),), _design_files),
+    Step("build", "Build", "Build",
+         "The operator builds the hardware and keeps the build steps, the photographs and the design decisions the build instructions will report; the first registered raw measurement file shows it measuring.",
+         ("read",), ("study/measurements.json",), "G-BUILD", {
+             "skills": ["hardware"],
+             "agent": "operator",
+             "actions": [
+                 _prompt("/hardware", "Ask where the hardware stands", [
+                     "The agent reads the study, measurement and checklist records and reports each stage with its state.",
+                     "It names the first stage that is not done and the command that does it.",
+                 ], "E.g.: status", optional=True),
+                 _command(f"{MEASURE_CLI} data status --root .", "Registered raw data files",
+                          "Each registered file with its sha256, current or changed."),
+             ],
+         }, (("Raw data registrations", "study/measurements.json"),), _build, ("measurement",)),
+    Step("calibration", "Calibration and uncertainty", "Calibration & Uncertainty (G-CALIBRATION)",
+         "Every reference and test instrument recorded from its calibration certificate, each raw measurement file the operator produced registered by its sha256, and an uncertainty budget per quantity computed from those files and instruments (type A from the replicates, type B from the instrument records, expanded with its coverage factor). A past-due instrument needs the operator's override.",
+         ("read", "write", "bash"), ("study/instruments.json", "study/measurements.json", "study/uncertainty/<quantity>.json"),
+         CALIBRATION_GATE, {
+             "skills": ["hardware"],
+             "agent": "measurement core & operator",
+             "actions": [
+                 _command(f'{MEASURE_CLI} instrument add --root . --id <id> --model "<model>" --serial "<serial>" '
+                          f'--resolution "<value unit>" --calibration-certificate "<certificate>" --calibrated <YYYY-MM-DD> '
+                          f'--due <YYYY-MM-DD> --by {_OPERATOR}',
+                          "Record an instrument (operator)", "From its calibration certificate; a new calibration is a new entry with --reason."),
+                 _command(f"{MEASURE_CLI} data register --root . --file <data.csv> --quantity <name> --unit <unit> "
+                          f"--instrument <id> --by {_OPERATOR}",
+                          "Register a raw data file (operator)", "Bound by its sha256; the core never writes into it."),
+                 _command(f"{MEASURE_CLI} uncertainty compute --root . --quantity <name>", "Compute an uncertainty budget",
+                          "The GUM budget of the quantity into study/uncertainty/<quantity>.json."),
+                 _command(f'{MEASURE_CLI} uncertainty compute --root . --quantity <name> --allow-past-due --by {_OPERATOR} '
+                          '--reason "<why the readings still hold>"',
+                          "Override a past-due calibration (operator)", "Your decision, with its reason; the budget records it."),
+                 _command(f"{MEASURE_CLI} status --root .", "Measurement records status",
+                          "Instruments, data files, budgets and agreement in one object, with every warning."),
+             ],
+         }, (("Instruments", "study/instruments.json"), ("Raw data registrations", "study/measurements.json"),
+             ("Uncertainty budgets (G-CALIBRATION)", "study/uncertainty/*.json")), _calibration, ("measurement",)),
+    Step("agreement", "Agreement with a reference device", "Agreement with a Reference Device (G-AGREEMENT)",
+         "The device's and the reference device's paired readings, each registered first, give the Bland-Altman bias, the limits of agreement and ICC(2,1); the analysis is stale when either file changes.",
+         ("read", "bash"), ("study/agreement.json",), AGREEMENT_GATE, {
+             "skills": ["hardware"],
+             "agent": "measurement core & operator",
+             "actions": [
+                 _requires(_command(f"{MEASURE_CLI} agreement compute --root . --device-file <device.csv> "
+                                    "--reference-file <reference.csv> --pair-column <column>",
+                                    "Compute the agreement", "Bland-Altman and ICC(2,1) from the two registered files."),
+                           CALIBRATION_GATE),
+                 _command(f"{MEASURE_CLI} agreement status --root .", "Agreement status",
+                          "Each analysis with its bias, limits and ICC, current or stale."),
+             ],
+         }, (("Agreement analyses (G-AGREEMENT)", "study/agreement.json"),), _agreement, ("measurement",)),
+    Step("field_validation", "Field or user validation", "Field or User Validation",
+         "When people take part (users in a field trial, a usability study, measurements on participants), the operator records the ethics approval and the registration, and the participant flow is signed off; a bench-only validation records both as not applicable.",
+         ("read", "write"), ("study/ethics.json", "study/registration.json", "study/flow.json"), "G-VALIDATION", {
+             "skills": [],
+             "agent": "operator",
+             "actions": [
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --committee "<committee>" '
+                          f'--code "<approval code>" --date <YYYY-MM-DD> --consent "<consent route>"',
+                          "Record the ethics approval (operator, G-ETHICS)",
+                          "The committee, the approval code, its date and the consent route."),
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --not-applicable --reason "<why>"',
+                          "Record that no ethics approval applies (operator)", "With the reason, in your words."),
+                 _command(f'{STUDY_CLI} registration record --root . --by {_OPERATOR} --registry "<registry>" '
+                          f'--id "<registration id>" --date <YYYY-MM-DD> --first-enrolment <YYYY-MM-DD>',
+                          "Record the registration (operator, G-REGISTRATION)",
+                          "A registration after the first enrolment is reported as retrospective."),
+                 _command(f'{STUDY_CLI} registration record --root . --by {_OPERATOR} --not-applicable --reason "<why>"',
+                          "Record that no registration applies (operator)", "With the reason, in your words."),
+                 _command(f"{FLOW_CLI} template strobe --root . --write", "Write the empty participant flow",
+                          "study/flow.json with no counts; you enter every count."),
+                 _command(f"{FLOW_CLI} signoff --root . --by {_OPERATOR}", "Sign the flow off (operator, G-FLOW)",
+                          "Refused on invalid counts or a missing or stale figure."),
+             ],
+         }, (("Ethics record (G-ETHICS)", "study/ethics.json"), ("Registration record (G-REGISTRATION)", "study/registration.json"),
+             ("Participant flow counts", "study/flow.json")), _field_validation, ("records",)),
+    Step("open_files", "Open design files and data", "Open Design Files & Data",
+         "Before writing, the repository holds the final design files, the firmware, the bill of materials and the raw measurement files registered in study/measurements.json, under the open licenses the specifications table states.",
+         ("read",), ("study/measurements.json", "paper/main.tex (repository-url)"), "G-OPEN", {
+             "skills": ["hardware", "paper-writing"],
+             "agent": "operator",
+             "actions": [
+                 _command(f"{MEASURE_CLI} data status --root .", "Registered raw data files",
+                          "Each registered file with its sha256, current or changed."),
+                 _command(f'{PAPER_CLI} declare --declaration repository-url --value "<DOI or URL>"',
+                          "Declare the repository (operator)",
+                          "The DOI or URL of the open repository that holds the design files and the bill of materials."),
+             ],
+         }, (("Raw data registrations", "study/measurements.json"), ("Declarations (repository-url)", "paper/main.tex")),
+         _open_files, ("measurement",)),
+    Step("reporting_hardware", "Reporting check and audit", "Reporting Check, Final Judge & Audit",
+         "The hardwarex checklist the type names and the gum-reporting checklist (item by item: satisfied, missing or needs judgment), the paper checks of paper_cli.py verify, the measurement-science final judge and the cross-cutting audit; audits report, they never repair.",
+         ("read", "bash"), (".papersmith/audit.json",), "G-AUDIT", {
+             "skills": ["skill-audit"],
+             "agent": "checklist engine, skill-audit & smith audit",
+             "actions": [
+                 _command(f"{CHECKLIST_CLI} check --guideline hardwarex --root .", "HardwareX checklist",
+                          "The HardwareX article template item by item: satisfied, missing or needs judgment."),
+                 _command(f"{CHECKLIST_CLI} check --guideline gum-reporting --root .", "GUM uncertainty reporting checklist",
+                          "GUM clause 7 item by item: satisfied, missing or needs judgment."),
+                 *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
+             ],
+         }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
+    # ----- lab-simulation (src/papersmith/templates/paper-flow-lab-simulation.md.tpl)
+    Step("plausibility_lab", "Plausibility and paper type", "Plausibility & Paper Type",
+         "The state of the art scouted around the idea, the plausibility report accepted by the operator, and the lab-simulation paper type and variant agreed with /paper-type: materials or modelling-simulation, both reported on gum-reporting.",
+         ("read", "write", "http"), ("sota-pool/candidates.json", ".papersmith/paper_type.json"), "G-PAPER-TYPE", {
+             "skills": ["plausibility", "paper-type"],
+             "agent": "plausibility, paper-type-advisor & operator",
+             "actions": [
+                 _prompt("/plausibility", "Explore the plausibility of the idea", [
+                     "Write the idea in at least two sentences: what the study makes, measures or simulates, and the observable it reports.",
+                     "The agent scouts about 25 SOTA references by their abstracts and grades the claims with verbatim quotes.",
+                     "Nothing moves on until you accept the report.",
+                 ], "E.g.: Annealing temperature controls the grain size of sputtered copper films. We deposit and characterize …",
+                     min_sentences=2),
+                 _prompt("/paper-type", "Agree the paper type and its variant", [
+                     "The agent scores the idea against the paper types and discusses its suggestion with you.",
+                     "You agree the type and the variant: materials (synthesis, deposition or processing) or modelling-simulation (an analytical or numerical model).",
+                     "Both variants report on the gum-reporting checklist (GUM clause 7).",
+                 ], "E.g.: discuss whether this is a materials or a modelling-simulation study.", optional=True),
+                 _redirect("View the paper types", "papertype", "Every paper type with its score, guideline and variants."),
+             ],
+         }, (("Candidate pool", "sota-pool/candidates.json"), ("Plausibility acceptance", ".papersmith/plausibility.json"),
+             ("Agreed paper type", ".papersmith/paper_type.json")), _plausibility_type),
+    Step("sample_model", "Sample matrix or model definition", "Sample Matrix or Model Definition",
+         "What the study varies and holds fixed, decided by the operator: the samples, compositions, process conditions and characterization techniques (materials), or the model, its solver, its parameters and their sources and the convergence criteria (modelling-simulation), written into the protocol.",
+         ("read", "write"), ("protocol/study-protocol-<slug>-vNN.md",), "G-DESIGN", {
+             "skills": ["study-protocol-deliberation"],
+             "agent": "study-protocol-deliberation & operator",
+             "actions": [
+                 _prompt("/study-protocol-deliberation", "Write the sample matrix or the model into the protocol", [
+                     "The agent drafts the design with you: the sample matrix or the model, its parameters and their sources.",
+                     "The choice is yours; the agent never chooses a parameter grid or a sample for you.",
+                     "Each accepted change is published as a new managed revision under protocol/.",
+                 ], "E.g.: three annealing temperatures, five films each, measured by XRD and four-point probe.",
+                     optional=True),
+             ],
+         }, (("Protocol revisions", "protocol/study-protocol-*.md"),), _sample_model, ("records",)),
+    Step("lab_protocol", "Synthesis or simulation protocol", "Synthesis or Simulation Protocol (G-STUDY-PROTOCOL)",
+         "The protocol as managed revisions: the research question, exactly one primary observable, the secondary observables, the design, the replicates per condition or the parameter grid with its justification and the analysis plan. The operator approves a revision; a later change is an amendment with its reason. Samples from people or animals need the ethics record.",
+         ("read", "write"), ("protocol/study-protocol-<slug>-vNN.md", "study/protocol.lock.json"), PROTOCOL_GATE, {
+             "skills": ["study-protocol-deliberation"],
+             "agent": "study-protocol-deliberation & operator",
+             "actions": [
+                 _prompt("/study-protocol-deliberation", "Deliberate the protocol with the agent", [
+                     "The agent drafts the protocol with you as labelled fields: question, one primary observable, secondary observables, design, replicates or parameter grid, and analysis plan.",
+                     "The choice of the primary observable is yours; the agent never invents data or a sample size from data it has not seen.",
+                     "Each accepted change is published as a new managed revision under protocol/.",
+                 ], "E.g.: draft the first protocol of the annealing study.", optional=True),
+                 _command(f"{STUDY_CLI} protocol status --root .", "Protocol lock status",
+                          "Whether the approved revision is current, changed or absent."),
+                 _command(f"{STUDY_CLI} protocol approve --root . --by {_OPERATOR}",
+                          "Approve the protocol (operator, G-STUDY-PROTOCOL)",
+                          "Only the operator approves; the approval pins the revision's sha256."),
+                 _command(f'{STUDY_CLI} protocol amend --root . --by {_OPERATOR} --reason "<why>"',
+                          "Record an amendment", "A change after the approval, with its reason; the methods report it."),
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --committee "<committee>" '
+                          f'--code "<approval code>" --date <YYYY-MM-DD> --consent "<consent route>"',
+                          "Record the ethics approval (operator, G-ETHICS)",
+                          "The committee, the approval code, its date and the consent route."),
+             ],
+         }, (("Protocol revisions", "protocol/study-protocol-*.md"),
+             ("Protocol approval (G-STUDY-PROTOCOL)", "study/protocol.lock.json")), _study_protocol, ("records",)),
+    Step("observables", "Characterization or observables", "Characterization or Observables",
+         "The operator measures the samples or runs the model and registers each raw data file by its sha256, with its quantity, unit, instrument, replicate column and conditions; the core never writes into a registered file.",
+         ("read", "write"), ("study/measurements.json",), "G-DATA", {
+             "skills": ["lab-simulation"],
+             "agent": "measurement core & operator",
+             "actions": [
+                 _command(f'{MEASURE_CLI} instrument add --root . --id <id> --model "<model>" --serial "<serial>" '
+                          f'--resolution "<value unit>" --calibration-certificate "<certificate>" --calibrated <YYYY-MM-DD> '
+                          f'--due <YYYY-MM-DD> --by {_OPERATOR}',
+                          "Record an instrument (operator)", "From its calibration certificate; a new calibration is a new entry with --reason."),
+                 _command(f"{MEASURE_CLI} data register --root . --file <data.csv> --quantity <name> --unit <unit> "
+                          f"--instrument <id> --replicate-column <column> --condition <key=value> --by {_OPERATOR}",
+                          "Register a raw data file with its conditions (operator)",
+                          "Bound by its sha256, one --condition per condition it was taken under."),
+                 _command(f"{MEASURE_CLI} data status --root .", "Registered raw data files",
+                          "Each registered file with its sha256, current or changed."),
+             ],
+         }, (("Raw data registrations", "study/measurements.json"),), _observables, ("measurement",)),
+    Step("known_values", "Calibration against known values", "Calibration against Known Values (G-CALIBRATION)",
+         "Every instrument recorded from its calibration certificate and current on today's date; the readings of a reference material or a standard sample are registered like any data file and compared with the known value, and a simulation reproduces an analytical solution or a benchmark case first.",
+         ("read", "write"), ("study/instruments.json",), CALIBRATION_GATE, {
+             "skills": ["lab-simulation"],
+             "agent": "measurement core & operator",
+             "actions": [
+                 _command(f'{MEASURE_CLI} instrument add --root . --id <id> --model "<model>" --serial "<serial>" '
+                          f'--resolution "<value unit>" --calibration-certificate "<certificate>" --calibrated <YYYY-MM-DD> '
+                          f'--due <YYYY-MM-DD> --by {_OPERATOR}',
+                          "Record an instrument (operator)", "From its calibration certificate; a new calibration is a new entry with --reason."),
+                 _command(f"{MEASURE_CLI} data register --root . --file <reference.csv> --quantity <name> --unit <unit> "
+                          f"--instrument <id> --condition reference=<material> --by {_OPERATOR}",
+                          "Register the readings of a reference material (operator)",
+                          "Compared with the known value of the material or the standard sample."),
+                 _command(f"{MEASURE_CLI} instrument status --root .", "Instrument calibration status",
+                          "Each instrument with its calibration current or past due today."),
+             ],
+         }, (("Instruments", "study/instruments.json"),), _known_values, ("measurement",)),
+    Step("uncertainty", "Uncertainty, replicates or statistical error", "Uncertainty, Replicates or Statistical Error",
+         "The GUM budget of every registered quantity (type A from the replicates, type B from the instrument records, combined, effective degrees of freedom and expanded with its coverage factor) and every fit, comparison and sweep through the append-only analysis log, labelled confirmatory or exploratory by the locked protocol.",
+         ("read", "write", "bash"), ("study/uncertainty/<quantity>.json", "analysis/log.jsonl"), "G-UNCERTAINTY", {
+             "skills": ["lab-simulation"],
+             "agent": "measurement core, analysis log & operator",
+             "actions": [
+                 _command(f"{MEASURE_CLI} uncertainty compute --root . --quantity <name> --condition <key=value>",
+                          "Compute an uncertainty budget",
+                          "The GUM budget of the quantity into study/uncertainty/<quantity>.json."),
+                 _command(f'{MEASURE_CLI} uncertainty compute --root . --quantity <name> --allow-past-due --by {_OPERATOR} '
+                          '--reason "<why the readings still hold>"',
+                          "Override a past-due calibration (operator)", "Your decision, with its reason; the budget records it."),
+                 _command(f"{ANALYSIS_CLI} run --root . --outcome <outcome-id> --input <data-file> "
+                          "--output <result-file> -- <command>", "Run a logged analysis",
+                          "Hashes the script, the inputs and the outputs and labels the run."),
+                 _command(f'{ANALYSIS_CLI} record --root . --outcome <outcome-id> --by {_OPERATOR} '
+                          '--tool "<tool name>"', "Record a GUI analysis (operator)",
+                          "Your attested entry for an analysis run outside a script."),
+                 _command(f"{MEASURE_CLI} status --root .", "Measurement records status",
+                          "Instruments, data files, budgets and agreement in one object, with every warning."),
+             ],
+         }, (("Uncertainty budgets (G-CALIBRATION)", "study/uncertainty/*.json"), ("Analysis log", "analysis/log.jsonl")),
+         _uncertainty, ("measurement", "analysis_log")),
+    Step("open_data", "Open data and code", "Open Data & Code",
+         "The operator deposits the registered raw data files, the model and analysis code and the budgets in a repository, named by the repository-url declaration of the back matter (data and code availability).",
+         ("read",), ("study/measurements.json", "paper/main.tex (repository-url)"), "G-OPEN", {
+             "skills": ["lab-simulation", "paper-writing"],
+             "agent": "operator",
+             "actions": [
+                 _command(f"{MEASURE_CLI} data status --root .", "Registered raw data files",
+                          "Each registered file with its sha256, current or changed."),
+                 _command(f'{PAPER_CLI} declare --declaration repository-url --value "<DOI or URL>"',
+                          "Declare the data and code repository (operator)",
+                          "The DOI or URL of the repository that holds the raw data, the code and the budgets."),
+             ],
+         }, (("Raw data registrations", "study/measurements.json"), ("Declarations (repository-url)", "paper/main.tex")),
+         _open_files, ("measurement",)),
+    Step("reporting_lab", "Reporting check and audit", "Reporting Check, Final Judge & Audit",
+         "The gum-reporting checklist of the agreed variant (item by item: satisfied, missing or needs judgment), the study checks of paper_cli.py verify, the measurement-science final judge and the cross-cutting audit; audits report, they never repair.",
+         ("read", "bash"), (".papersmith/audit.json",), "G-AUDIT", {
+             "skills": ["skill-audit"],
+             "agent": "checklist engine, skill-audit & smith audit",
+             "actions": [
+                 _command(f"{CHECKLIST_CLI} check --guideline gum-reporting --root .", "GUM uncertainty reporting checklist",
+                          "GUM clause 7 item by item: satisfied, missing or needs judgment."),
+                 *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
+             ],
+         }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
 )}
 
 
@@ -806,6 +1505,13 @@ class LineTable:
     transversal: str
     #: The flow diagram ``/api/flow`` serves; per-line diagrams are deferred (E11).
     flow_html: str = "papersmith-flow.html"
+    #: Gates listed only when the operator declared a validation with people
+    #: (:func:`with_people`); they are read always, so a step can show them.
+    conditional_gates: frozenset[str] = frozenset()
+    #: gate id -> the step this line lists it under, when not the gate's own ``step``.
+    gate_steps: Mapping[str, str] = field(default_factory=dict)
+    #: Reporting checklists the line names beside the agreed type's own.
+    extra_checklists: tuple[str, ...] = ()
 
 
 #: kind -> its table. A later line adds its own here.
@@ -818,6 +1524,33 @@ LINE_TABLES: dict[str, LineTable] = {
         phase_gates={"analysis": DATA_GATE, "writing": FLOW_GATE},
         ungated=frozenset({"harness", "reporting_audit"}),
         transversal="reporting_audit",
+    ),
+    # The calibration step waits for nothing: its instrument and reading records
+    # are the first the board can read after the specifications (the design files'
+    # repository-url declaration lives in paper/main.tex, opened at the writing).
+    "hardware": LineTable(
+        kind="hardware",
+        steps=("harness", "plausibility_hardware", "specifications", "design_files", "build", "calibration",
+               "agreement", "field_validation", "open_files", "writing", "paper", "reporting_hardware"),
+        gates=(SPEC_GATE, CALIBRATION_GATE, AGREEMENT_GATE, *PEOPLE_GATES),
+        phase_gates={"agreement": CALIBRATION_GATE, "writing": AGREEMENT_GATE},
+        ungated=frozenset({"harness", "calibration", "reporting_hardware"}),
+        transversal="reporting_hardware",
+        conditional_gates=frozenset(PEOPLE_GATES),
+        gate_steps={gate: "field_validation" for gate in PEOPLE_GATES},
+        extra_checklists=("gum-reporting",),
+    ),
+    # G-CALIBRATION completes with the budgets of the uncertainty step, so it is
+    # listed there; that step waits for the calibration against known values.
+    "lab-simulation": LineTable(
+        kind="lab-simulation",
+        steps=("harness", "plausibility_lab", "sample_model", "lab_protocol", "observables", "known_values",
+               "uncertainty", "open_data", "writing", "paper", "reporting_lab"),
+        gates=(PROTOCOL_GATE, CALIBRATION_GATE),
+        phase_gates={"writing": CALIBRATION_GATE},
+        ungated=frozenset({"harness", "reporting_lab"}),
+        transversal="reporting_lab",
+        gate_steps={PROTOCOL_GATE: "lab_protocol", CALIBRATION_GATE: "uncertainty"},
     ),
 }
 
@@ -855,6 +1588,11 @@ def board(table: LineTable, root: Path, facts: dict[str, Any]) -> tuple[list[dic
     ``review_board.board``)."""
     ctx = Context(root=Path(root), facts=facts, table=table)
     _read_gates(ctx)
+    if table.conditional_gates:
+        try:
+            ctx.people = with_people(ctx)
+        except Exception:  # an unreadable record: the people gates stay unlisted, the step shows why
+            ctx.people = False
     fases = []
     for number, stage in enumerate(table.steps, 1):
         step = STEPS[stage]
@@ -890,8 +1628,9 @@ def _gates(ctx: Context) -> list[dict[str, Any]]:
     table, facts = ctx.table, ctx.facts
     position = {stage: f"Fase {number}" for number, stage in enumerate(table.steps, 1)}
     out = [{"id": gate_id, "name": GATES[gate_id].name, "status": ctx.gates[gate_id]["status"],
-            "criteria": GATES[gate_id].criteria, "reviewer": "operator", "phase": position[GATES[gate_id].step]}
-           for gate_id in table.gates]
+            "criteria": GATES[gate_id].criteria, "reviewer": "operator",
+            "phase": position[table.gate_steps.get(gate_id, GATES[gate_id].step)]}
+           for gate_id in table.gates if ctx.people or gate_id not in table.conditional_gates]
     done, total = facts["blocks_written"], facts["blocks_total"]
     writing, paper = position.get("writing"), position.get("paper")
     return out + [
@@ -925,6 +1664,7 @@ def telemetry(fases: list[dict[str, Any]], date: str) -> list[dict[str, Any]]:
 _ARTIFACTS = (
     ("protocol", "*", "Study Protocol"),
     ("study", "*", "Study Records"),
+    ("study/uncertainty", "*.json", "Uncertainty Budgets"),
     ("analysis", "log.jsonl", "Analysis Log"),
     ("datasets", "*/qc.json", "Data Quality"),
     ("paper/Figures", "participant-flow.svg", "Participant Flow"),
@@ -1057,6 +1797,6 @@ for _table in LINE_TABLES.values():
         lines.register(board_for(_table))
 
 
-__all__ = ["ANALYSIS_GATES", "DASHBOARD_SKILLS", "GATES", "LINE_TABLES", "LineTable", "MODULES", "STEPS", "Step",
-           "TELEMETRY_NOTE", "agreed_type", "artifacts", "board", "board_for", "checklist_detail", "load_module",
-           "own_datasets", "section_metadata", "stage_for", "telemetry"]
+__all__ = ["ANALYSIS_GATES", "DASHBOARD_SKILLS", "GATES", "LINE_TABLES", "LineTable", "MODULES", "PEOPLE_GATES", "STEPS",
+           "Step", "TELEMETRY_NOTE", "agreed_type", "artifacts", "board", "board_for", "checklist_detail",
+           "load_module", "own_datasets", "section_metadata", "stage_for", "telemetry", "with_people"]
