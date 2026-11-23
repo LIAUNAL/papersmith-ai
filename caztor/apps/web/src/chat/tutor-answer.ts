@@ -7,19 +7,56 @@ export interface TutorAnswer {
 }
 
 const FENCE = /```json[ \t]*\n([\s\S]*?)\n```/;
+/**
+ * Where a tutor's answer sent without its fence begins: an object whose first key is a tutor's first field. Some models
+ * (DeepSeek through opencode) write it straight after their opening sentence.
+ */
+const BARE_START = /\{\s*"(?:reply|image_reading)"\s*:/g;
 
-/** The text around a tutor's JSON answer, and the answer; null when the text holds no such block. */
-export function splitTutorAnswer(text: string): { before: string; answer: TutorAnswer; raw: string; after: string } | null {
-  const match = FENCE.exec(text);
-  if (match === null) return null;
+/** The index just past the object that opens at `start`, or -1 while it is still open. */
+function objectEnd(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === "{" || char === "[") depth += 1;
+    else if ((char === "}" || char === "]") && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+const asAnswer = (raw: string): TutorAnswer | null => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(match[1]!);
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || typeof (parsed as { reply?: unknown }).reply !== "string") return null;
-  return { before: text.slice(0, match.index).trim(), answer: parsed as TutorAnswer, raw: match[1]!, after: text.slice(match.index + match[0].length).trim() };
+  return parsed as TutorAnswer;
+};
+
+/** The text around a tutor's JSON answer, and the answer; null when the text holds no such block. */
+export function splitTutorAnswer(text: string): { before: string; answer: TutorAnswer; raw: string; after: string } | null {
+  const match = FENCE.exec(text);
+  if (match !== null) {
+    const answer = asAnswer(match[1]!);
+    return answer === null ? null : { before: text.slice(0, match.index).trim(), answer, raw: match[1]!, after: text.slice(match.index + match[0].length).trim() };
+  }
+  for (const start of text.matchAll(BARE_START)) {
+    const end = objectEnd(text, start.index);
+    if (end === -1) return null;
+    const raw = text.slice(start.index, end);
+    const answer = asAnswer(raw);
+    if (answer !== null) return { before: text.slice(0, start.index).trim(), answer, raw, after: text.slice(end).trim() };
+  }
+  return null;
 }
 
 const OPEN_FENCE = /```json[ \t]*\n/;
@@ -89,11 +126,23 @@ export function closePartialJson(body: string): unknown {
 export function streamingTutorAnswer(text: string): { before: string; reply: string | null; answer: TutorAnswer | null } | null {
   if (FENCE.test(text)) return null;
   const open = OPEN_FENCE.exec(text);
-  if (open === null) return null;
+  if (open === null) return streamingBareAnswer(text);
   const body = text.slice(open.index + open[0].length);
   if (!body.trimStart().startsWith("{") && body.trim() !== "") return null;
   const before = text.slice(0, open.index).trim();
   const parsed = body.trim() === "" ? undefined : closePartialJson(body);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { before, reply: null, answer: null };
+  const fields = parsed as Record<string, unknown>;
+  const reply = typeof fields["reply"] === "string" ? fields["reply"] : null;
+  return { before, reply, answer: { ...fields, reply: reply ?? "" } };
+}
+
+/** The same for an answer sent without its fence: read while its object is still open. */
+function streamingBareAnswer(text: string): { before: string; reply: string | null; answer: TutorAnswer | null } | null {
+  const start = new RegExp(BARE_START.source).exec(text);
+  if (start === null || objectEnd(text, start.index) !== -1) return null;
+  const parsed = closePartialJson(text.slice(start.index));
+  const before = text.slice(0, start.index).trim();
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { before, reply: null, answer: null };
   const fields = parsed as Record<string, unknown>;
   const reply = typeof fields["reply"] === "string" ? fields["reply"] : null;

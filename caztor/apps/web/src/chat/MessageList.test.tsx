@@ -202,6 +202,14 @@ describe("streamingTutorAnswer", () => {
     expect(streamingTutorAnswer('```json\n{"reply": "done", "assessment": {"level": 2, "lab')).toMatchObject({ answer: { reply: "done", assessment: { level: 2 } } });
   });
 
+  it("reads an answer some models send without the fence, right after their opening sentence", () => {
+    expect(streamingTutorAnswer('I will read the files.{\n  "image_reading": "",\n  "reply": "Eq. $3$ is')).toMatchObject({ before: "I will read the files.", reply: "Eq. $3$ is" });
+    expect(streamingTutorAnswer('{"reply": "done", "question": "q')).toMatchObject({ before: "", answer: { reply: "done", question: "q" } });
+    expect(streamingTutorAnswer('{"reply": "done"}')).toBeNull();
+    expect(streamingTutorAnswer('Set {"a": 1, "reply": "x')).toBeNull();
+    expect(streamingTutorAnswer("Use {x} and {y} here")).toBeNull();
+  });
+
   it("leaves other text alone: no fence, a closed fence, or a fence that does not hold an object", () => {
     expect(streamingTutorAnswer("plain text")).toBeNull();
     expect(streamingTutorAnswer('```json\n{"reply": "x"}\n```')).toBeNull();
@@ -235,6 +243,19 @@ describe("MessageList PaperSmith tutor answers", () => {
     const raw = reply.querySelector<HTMLDetailsElement>("details.tutor-reply__raw")!;
     expect(raw.open).toBe(false);
     expect(raw).toHaveTextContent('"image_reading"');
+  });
+
+  it("shows an answer sent without the fence as sections too, keeping the sentence before it", () => {
+    const bare = "I'll start by loading the tutor skill.{\n" + JSON.stringify(answer, null, 2).slice(2);
+    const state = play([begin, { type: "text", messageId: "m", text: bare }, { type: "done", reason: "completed" }]);
+    const { container } = render(<MessageList timeline={state.timeline} />);
+    const reply = container.querySelector(".message--assistant")!;
+    expect(reply).toHaveTextContent("I'll start by loading the tutor skill.");
+    expect(reply.querySelector(".tutor-reply strong")?.textContent).toBe("colouring");
+    expect(reply.querySelector(".tutor-reply .tex-math--display .katex")).not.toBeNull();
+    const sections = [...reply.querySelectorAll(".tutor-reply__label")].map((label) => label.textContent);
+    expect(sections).toEqual(["Question", "Formulas", "Assessment", "Why it matters for the novelty", "Next step"]);
+    expect(reply.querySelector<HTMLDetailsElement>("details.tutor-reply__raw")!.open).toBe(false);
   });
 
   it("leaves other JSON blocks as code", () => {
