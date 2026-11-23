@@ -2104,7 +2104,9 @@ returns a `"rubric": "systematic-review"` round instead: no `overall`,
 `confidence` or `ratings`, but `amstar2`, one `{"item", "answer",
 "justification"}` per AMSTAR 2 item 1-16 (Shea et al., 2017, BMJ 358:j4008),
 `answer` one of `yes`, `partial yes` (items 2, 4, 7, 8, 9 only), `no` or `not
-applicable` (items 11, 12, 15 only, without a meta-analysis); and
+applicable` (items 11, 12, 15 only, without a meta-analysis; items 9 and 13
+too when `review/protocol.json` declares a `review_type` containing `scoping`
+or `bibliometric`, any case, a review that appraises no risk of bias); and
 `prisma_gaps`, `{"item": 1-27, "gap"}` per PRISMA 2020 item the manuscript
 does not fully report (Page et al., 2021, BMJ 372:n71). The verb marks the
 seven critical domains (items 2, 4, 7, 9, 11, 13, 15) and derives the
@@ -2112,7 +2114,11 @@ seven critical domains (items 2, 4, 7, 9, 11, 13, 15) and derives the
 `critical_flaws` and `non_critical_weaknesses` beside it: no or one
 non-critical weakness is `high`, more than one `moderate`, one critical flaw
 `low`, more than one `critically low` (`partial yes` and `not applicable`
-count as neither). A round may state `overall_confidence`, but one that
+count as neither). The round also stores `amstar2_basis`, `{"protocol":
+"review/protocol.json", "review_type", "risk_of_bias_not_applicable"}`: the
+review type the verb read (null when the protocol, the key or a text value is
+missing) and whether items 9 and 13 could be `not applicable`; any other review
+type, or no readable protocol, keeps both applicable. A round may state `overall_confidence`, but one that
 disagrees with the rule is refused (`REVIEW_ROUND_INVALID`), as are a missing
 or repeated item, an answer outside the scale or where AMSTAR 2 does not offer
 it, an empty justification and a gap without an item 1-27. `recommendation`,

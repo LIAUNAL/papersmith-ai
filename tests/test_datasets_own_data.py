@@ -304,6 +304,119 @@ class DomainCheckTests(Base):
         self.assertEqual(report["domain_checks"], [])
 
 
+# ------------------------------------------------------- PII and publish
+class FakeRunner:
+    """The publishing host's client, faked: every call succeeds except `status` (not yet created)."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv):
+        self.calls.append(list(argv))
+        return (1 if len(argv) > 2 and argv[2] == "status" else 0), "ok", ""
+
+
+class PiiPublishTests(Base):
+    STATEMENT = "Emails replaced by random study ids before export."
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.own()
+        self.data = self.write_csv("data/cohort.csv", ["patient_email", "age"],
+                                   [[f"p{i}@example.org", str(30 + i)] for i in range(8)])
+        self.assertEqual(self.cli("dictionary", "init", "--slug", "cohort", "--file", "data/cohort.csv").code, 0)
+        self.assertEqual(self.cli("qc", "--slug", "cohort", "--file", "data/cohort.csv").code, 0)
+
+    def publish(self, *extra: str, runner=None) -> Run:
+        out, err = io.StringIO(), io.StringIO()
+        result = Run.__new__(Run)
+        with redirect_stdout(out), redirect_stderr(err):
+            result.code = CLI.run(["--root", str(self.root), "publish", "--slug", "cohort", "--owner", "someone",
+                                   *extra], runner=runner)
+        result.out, result.err = out.getvalue(), err.getvalue()
+        result.json = json.loads(result.out) if result.out.strip().startswith("{") else None
+        result.error = json.loads(result.err) if result.err.strip().startswith("{") else None
+        return result
+
+    def deidentify(self, statement: str = STATEMENT) -> Run:
+        return self.cli("deidentify", "--slug", "cohort", "--by", "Dr. Operator", "--statement", statement)
+
+    def test_publish_refuses_pii_columns_until_the_operator_records_deidentification(self) -> None:
+        before = self.registry()
+        for extra in ((), ("--consent", "cohort")):
+            runner = FakeRunner()
+            result = self.publish(*extra, runner=runner)
+            self.assertRefused(result, "pii-not-deidentified")
+            self.assertIn("patient_email", result.error["message"])
+            self.assertIn("deidentify --slug cohort", result.error["message"])
+            self.assertEqual(runner.calls, [])
+        self.assertEqual(self.registry(), before)
+        self.assertFalse((self.root / "datasets/cohort/remote").exists())
+        result = self.deidentify()
+        self.assertEqual(result.code, 0, result.err)
+        record = self.entry("cohort")["deidentification"]
+        self.assertEqual({k: record[k] for k in ("statement", "by", "columns")},
+                         {"statement": self.STATEMENT, "by": "Dr. Operator", "columns": ["patient_email"]})
+        self.assertTrue(record["recorded"])
+        self.assertEqual(record["files"],
+                         {"data/cohort.csv": hashlib.sha256(self.data.read_bytes()).hexdigest()})
+        self.assertEqual(result.json["deidentification"], record)
+        self.assertEqual(self.publish().code, 0)
+        runner = FakeRunner()
+        result = self.publish("--consent", "cohort", runner=runner)
+        self.assertEqual(result.code, 0, result.err)
+        self.assertEqual(self.entry("cohort")["remote"]["ref"], "someone/cohort")
+
+    def test_a_changed_file_makes_the_deidentification_stale(self) -> None:
+        self.assertEqual(self.deidentify().code, 0)
+        with self.data.open("a", encoding="utf-8") as handle:
+            handle.write("p99@example.org,99\n")
+        result = self.publish()
+        self.assertRefused(result, "pii-not-deidentified")
+        self.assertIn("data/cohort.csv changed", result.error["message"])
+        first = self.entry("cohort")["deidentification"]
+        self.assertEqual(self.deidentify("Emails dropped; ids re-drawn.").code, 0)
+        record = self.entry("cohort")["deidentification"]
+        self.assertEqual(record["statement"], "Emails dropped; ids re-drawn.")
+        self.assertEqual(record["history"], [{k: first[k] for k in ("statement", "by", "recorded", "columns", "files")}])
+        self.assertEqual(self.publish().code, 0)
+
+    def test_a_newly_flagged_pii_column_makes_the_deidentification_stale(self) -> None:
+        self.assertEqual(self.deidentify().code, 0)
+        self.write_dictionary("cohort", [column("patient_email", "text", pii=True), column("age", "integer", pii=True)])
+        result = self.publish()
+        self.assertRefused(result, "pii-not-deidentified")
+        self.assertIn("age", result.error["message"])
+
+    def test_deidentify_needs_the_operator_a_statement_and_a_pii_column(self) -> None:
+        with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+            CLI.run(["--root", str(self.root), "deidentify", "--slug", "cohort", "--statement", "x"])
+        self.assertRefused(self.cli("deidentify", "--slug", "cohort", "--by", " ", "--statement", "x"),
+                           "operator-missing")
+        self.assertRefused(self.cli("deidentify", "--slug", "cohort", "--by", "Op", "--statement", " "),
+                           "statement-missing")
+        self.assertRefused(self.cli("deidentify", "--slug", "nope", "--by", "Op", "--statement", "x"),
+                           "unknown-slug")
+        self.write_dictionary("cohort", [column("patient_email", "text"), column("age", "integer")])
+        self.assertRefused(self.deidentify(), "no-pii-columns")
+        (self.root / "datasets/cohort/dictionary.json").unlink()
+        self.assertRefused(self.deidentify(), "dictionary-missing")
+        self.assertNotIn("deidentification", self.entry("cohort"))
+
+    def test_publish_without_a_dictionary_or_without_pii_is_unchanged(self) -> None:
+        self.write_dictionary("cohort", [column("patient_email", "text"), column("age", "integer")])
+        clean = self.publish()
+        self.assertEqual(clean.code, 0, clean.err)
+        (self.root / "datasets/cohort/dictionary.json").unlink()
+        bare = self.publish()
+        self.assertEqual(bare.code, 0, bare.err)
+        self.assertEqual(set(bare.json), {"slug", "dry_run", "host", "folder", "metadata", "plan", "next"})
+        self.assertEqual(bare.json, clean.json)
+        result = self.publish("--consent", "cohort", runner=FakeRunner())
+        self.assertEqual(result.code, 0, result.err)
+        self.assertNotIn("deidentification", self.entry("cohort"))
+
+
 # ------------------------------------------------------------- unchanged
 class ExistingRolesUnchangedTests(Base):
     def test_full_license_and_qc_outputs_keep_their_shape(self) -> None:

@@ -44,7 +44,9 @@ refusal prints the flow, so a blocked session knows which stage it is behind.
 **Own data adds a fourth.** Data the operator collected has no source license
 to classify: `own --by <operator> --statement "<data-use statement>"` records
 the operator's own statement of how it may be used, and `--by` names that
-operator.
+operator. **PII adds a fifth:** a dataset whose `dictionary.json` flags a PII
+column is not published until `deidentify --by <operator> --statement "<how>"`
+records how those columns were removed or transformed.
 
 An agent never types any of these tokens on its own initiative: they are the
 operator's words, relayed.
@@ -62,9 +64,10 @@ python3 skills/datasets/scripts/datasets_cli.py [--root <workspace>] <verb> ...
 | `license` | `--slug --source-license "<text>" [--override "<reason>"] [--title] [--source-url] [--role]`: decision `allowed` / `refused` / `overridden`, mapped to a host license name (`CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `ODbL-1.0`, `CC-BY-NC-4.0`, `CC-BY-NC-SA-4.0`, `other`); creates the full entry when missing |
 | `own` | `--slug --by <operator> --statement "<text>" [--title]`: registers the operator's own data — role `own`, `source.kind` `own`, `data_use{statement, by, recorded, history?}` — in place of a license classification (the license record reads `own data`, decision `allowed`, host license `other`). Running it again replaces the statement and keeps the previous ones under `history`. It never turns a `toy` or `full` entry into own data, and `license` never reclassifies an own entry (`role-conflict`) |
 | `dictionary` | `init --slug --file <csv> [--force]`: scaffolds `datasets/<slug>/dictionary.json` with one entry per header column (type inferred, levels for a small category, PII flagged from the column name, everything else blank for the operator to fill). `check --slug`: validates it and lists the PII columns. See [Own data and the data dictionary](#own-data-and-the-data-dictionary) |
+| `deidentify` | `--slug --by <operator> --statement "<how the PII columns were removed or transformed>"`: records `deidentification{statement, by, recorded, columns, files, history?}` on the entry — `columns` the PII columns the dictionary flags now, `files` the sha256 of every registered file now. Running it again replaces the record and keeps the previous ones under `history`. `publish` refuses (`pii-not-deidentified`) a dataset whose dictionary flags a PII column until this record exists, covers every flagged column and matches every file's current sha256: a file that changes, or a column flagged later, makes it stale |
 | `qc` | `--slug --file <csv> [--label col] [--group col]`: rows/columns, missing values, constant columns, duplicates, class balance, group (subject) counts and single-class groups, numeric ranges → `datasets/<slug>/qc.json` (with the file's `sha256`), status `pass` / `warn` / `fail` with reasons. When `datasets/<slug>/dictionary.json` exists, it is validated first and the data is checked against it into `domain_checks`; own data without a dictionary warns |
 | `prepare` | `--slug --file <csv> --label col --group col [--folds 5] [--seed <n> \| --seeds <n> <n> ...]`: stratified group k-fold by subject (no subject in two folds) → `splits.json` + `PREPARATION.md` (source sha256, steps, parameters, per-fold counts); each run is a new preparation version. `--seed` writes one split; its seed only breaks ties between equal-sized subjects, so when every subject differs in size the output carries an `inert-seed` warning. `--seeds` writes one split per seed under `repetitions` (repeated cross-validation): subjects are taken largest first in size strata of `--folds` subjects that the seed shuffles, so each seed gives its own split; the first repetition is also the top-level `assignment` |
-| `publish` | `--slug --owner <user> [--version-notes] [--keyword ...] [--consent <slug>] [--public --consent-public <slug>] [--dry-run]`: builds `datasets/<slug>/remote/` (`dataset-metadata.json` + copies of the files) and, on consent, runs `kaggle datasets create -p <dir>` (private; `-u` only with both public flags) or `kaggle datasets version -p <dir> -m <notes>` when the dataset already exists; records the remote ref, visibility and version; prints how a notebook mounts it |
+| `publish` | `--slug --owner <user> [--version-notes] [--keyword ...] [--consent <slug>] [--public --consent-public <slug>] [--dry-run]`: builds `datasets/<slug>/remote/` (`dataset-metadata.json` + copies of the files) and, on consent, runs `kaggle datasets create -p <dir>` (private; `-u` only with both public flags) or `kaggle datasets version -p <dir> -m <notes>` when the dataset already exists; records the remote ref, visibility and version; prints how a notebook mounts it. A dataset whose dictionary flags a PII column needs a current `deidentify` record first, dry run included; without a dictionary, or with one that flags no PII, nothing changes |
 | `status` | registry summary: slug, role, title, license decision, qc status, preparation, remote |
 
 Success prints one JSON object on stdout. A refusal prints
@@ -93,9 +96,9 @@ Success prints one JSON object on stdout. A refusal prints
 | `host-cli-missing` | the official `kaggle` client is not installed |
 | `host-cli-failed` | the official client exited non-zero; nothing is recorded |
 | `role-conflict` | `own` on a `toy` or `full` slug, or `license` on an own slug |
-| `operator-missing` | `own --by` is blank: the statement must name the operator |
-| `statement-missing` | `own --statement` is blank |
-| `dictionary-missing` | `dictionary check` on a dataset with no `dictionary.json` |
+| `operator-missing` | `own --by` or `deidentify --by` is blank: the statement must name the operator |
+| `statement-missing` | `own --statement` or `deidentify --statement` is blank |
+| `dictionary-missing` | `dictionary check` or `deidentify` on a dataset with no `dictionary.json` |
 | `dictionary-exists` | `dictionary init` over an existing dictionary without `--force` |
 | `dictionary-unreadable` | `dictionary.json` is not JSON, or not an object with a `columns` list |
 | `dictionary-unknown-type` | a column's type is not `number`, `integer`, `category`, `text`, `date` or `boolean` |
@@ -103,6 +106,8 @@ Success prints one JSON object on stdout. A refusal prints
 | `dictionary-empty-levels` | a `category` column without levels |
 | `dictionary-duplicate-column` | a column declared twice (or repeated in the header `init` reads) |
 | `dictionary-bad-entry` | any other malformed entry: a blank name, a range that is not `{min, max}` numbers with min ≤ max, repeated or non-string levels, levels on a non-category column, non-string missing codes, unit or description, a non-boolean `pii` |
+| `no-pii-columns` | `deidentify` on a dataset whose dictionary flags no PII column: there is nothing to de-identify |
+| `pii-not-deidentified` | `publish` on a dataset whose dictionary flags PII columns with no `deidentify` record, one that does not cover every flagged column, or one recorded for a registered file that has changed since |
 
 ## The capacity profile
 
@@ -186,6 +191,7 @@ rules. Own data with no dictionary warns. The file's `sha256` stays in
 `{slug, role: "toy"|"full"|"own", title, source{kind, url, retrieved},
 license{source_name, decision, host_license, reason, override?},
 data_use?{statement, by, recorded, history?},
+deidentification?{statement, by, recorded, columns, files{path: sha256}, history?},
 files, qc{status, report}, preparation{manifest, splits, version, sha256},
 remote{ref, visibility, version}}`. One folder `datasets/<slug>/` holds
 `TOY.md`, `dictionary.json`, `qc.json`, `splits.json`, `PREPARATION.md` and
@@ -270,6 +276,16 @@ information). Checking that a dataset is de-identified, that its consent and
 license allow the intended use and redistribution, and that publishing it is
 lawful where the operator works is the **operator's responsibility**. When in
 doubt, keep it private or do not upload it.
+
+## What it never does
+
+- It never records a de-identification on the operator's behalf: `deidentify
+  --by` names the operator who removed or transformed the PII columns, and its
+  `--statement` is their account of how, relayed, never written by an agent.
+  The CLI checks that the record exists, covers the flagged columns and matches
+  the files; it never checks that the data is actually de-identified.
+- It never publishes a dataset whose dictionary flags PII columns without that
+  current record, and never clears a column's `pii` flag to get past the check.
 
 ## Output Reporting
 

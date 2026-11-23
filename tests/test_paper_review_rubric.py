@@ -230,6 +230,70 @@ class RubricRecordTests(unittest.TestCase):
         self.assertRefusedUnchanged(review_round(amstar2=amstar(na=(9,))),
                                     'amstar2 item 9 cannot be "not applicable"')
 
+    # --- AMSTAR 2 items 9 and 13 in a review that appraises no risk of bias (L59 a) --
+
+    def set_protocol(self, review_type) -> None:
+        """Write `review/protocol.json` with this `review_type` (the systematic-review skill's file)."""
+        protocol = self.root / "review" / "protocol.json"
+        protocol.parent.mkdir(parents=True, exist_ok=True)
+        protocol.write_text(json.dumps({"title": "t", "review_type": review_type}), encoding="utf-8")
+
+    def test_items_9_and_13_may_be_not_applicable_in_a_scoping_or_bibliometric_review(self) -> None:
+        self.set_line("review")
+        for review_type in ("scoping review", "Bibliometric analysis", "systematic scoping review"):
+            with self.subTest(review_type=review_type):
+                self.file.unlink(missing_ok=True)
+                self.set_protocol(review_type)
+                code, out = self.record(review_round(amstar2=amstar(na=(9, 11, 12, 13, 15))))
+                self.assertEqual((code, out["status"]), (0, "ok"), out)
+                entry = self.rounds()[0]
+                self.assertEqual(entry["overall_confidence"], "high")
+                self.assertEqual((entry["critical_flaws"], entry["non_critical_weaknesses"]), ([], []))
+                self.assertEqual([a["answer"] for a in entry["amstar2"] if a["item"] in (9, 13)],
+                                 ["not applicable", "not applicable"])
+                self.assertEqual(entry["amstar2_basis"],
+                                 {"protocol": "review/protocol.json", "review_type": review_type,
+                                  "risk_of_bias_not_applicable": True})
+        self.file.unlink()
+        code, _ = self.record(review_round(amstar2=amstar(no=(4, 1), na=(9, 13))))
+        entry = self.rounds()[0]
+        self.assertEqual((code, entry["overall_confidence"]), (0, "low"))
+        self.assertEqual((entry["critical_flaws"], entry["non_critical_weaknesses"]), ([4], [1]))
+
+    def test_items_9_and_13_stay_applicable_in_any_other_review(self) -> None:
+        self.set_line("review")
+        for review_type in ("systematic review", "meta-analysis", None, 7):
+            with self.subTest(review_type=review_type):
+                self.set_protocol(review_type)
+                self.assertRefusedUnchanged(review_round(amstar2=amstar(na=(9,))),
+                                            'amstar2 item 9 cannot be "not applicable"')
+                self.assertRefusedUnchanged(review_round(amstar2=amstar(na=(13,))),
+                                            'amstar2 item 13 cannot be "not applicable"')
+        (self.root / "review" / "protocol.json").write_text("{not json", encoding="utf-8")
+        self.assertRefusedUnchanged(review_round(amstar2=amstar(na=(9,))), 'amstar2 item 9 cannot be "not applicable"')
+        (self.root / "review" / "protocol.json").unlink()
+        self.assertRefusedUnchanged(review_round(amstar2=amstar(na=(13,))),
+                                    'amstar2 item 13 cannot be "not applicable"')
+        code, _ = self.record(review_round())
+        self.assertEqual(code, 0)
+        self.assertEqual(self.rounds()[0]["amstar2_basis"],
+                         {"protocol": "review/protocol.json", "review_type": None,
+                          "risk_of_bias_not_applicable": False})
+        self.set_protocol("systematic review")
+        code, _ = self.record(review_round(items=[{"rank": 1, "verdict": "resolved"}], revisions=[]))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.rounds()[1]["amstar2_basis"]["review_type"], "systematic review")
+        self.assertFalse(self.rounds()[1]["amstar2_basis"]["risk_of_bias_not_applicable"])
+
+    def test_a_scoping_protocol_changes_no_other_rubric(self) -> None:
+        self.set_protocol("scoping review")
+        self.record(ml_round())
+        self.assertNotIn("amstar2_basis", self.rounds()[0])
+        self.set_line("observational-measurement")
+        self.file.unlink()
+        self.record(empirical_round())
+        self.assertNotIn("amstar2_basis", self.rounds()[0])
+
     def test_prisma_gaps_name_a_prisma_2020_item(self) -> None:
         self.set_line("review")
         self.assertRefusedUnchanged(review_round(prisma_gaps=[{"item": 28, "gap": "x"}]),

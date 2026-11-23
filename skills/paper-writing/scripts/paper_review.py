@@ -35,9 +35,20 @@ key, exactly as before. For a review paper (`paper_kind: review`) it is
 - `amstar2`: one `{"item", "answer", "justification"}` per AMSTAR 2 item 1-16
   (Shea et al., 2017, BMJ 358:j4008), `answer` one of `yes`, `partial yes`
   (items 2, 4, 7, 8, 9 only), `no`, `not applicable` (items 11, 12, 15 only:
-  no meta-analysis); `critical` is filled here for the seven critical domains;
+  no meta-analysis; and items 9 and 13 when the review appraises no risk of
+  bias, below); `critical` is filled here for the seven critical domains;
+- `amstar2_basis`: `{"protocol": "review/protocol.json", "review_type",
+  "risk_of_bias_not_applicable"}`, filled here from the workspace's review
+  protocol (the `systematic-review` skill's file): `review_type` as read (null
+  when the file, the key or a text value is missing) and whether items 9 (the
+  risk-of-bias technique) and 13 (risk of bias in the interpretation) may be
+  `not applicable`. They may only when `review_type` contains `scoping` or
+  `bibliometric` (any case): those reviews map or count the literature and do
+  not appraise risk of bias. Every other review type, and a missing or
+  unreadable protocol, keeps both items applicable;
 - `overall_confidence` is derived here by the AMSTAR 2 rule from the `no`
-  answers (`critical_flaws` and `non_critical_weaknesses`, also stored): no or
+  answers (`critical_flaws` and `non_critical_weaknesses`, also stored; a
+  `not applicable` counts as neither): no or
   one non-critical weakness is `high`, more than one `moderate`, one critical
   flaw `low`, more than one `critically low`. A round that asserts it must
   match the rule;
@@ -101,6 +112,13 @@ AMSTAR2_ANSWERS = ("yes", "partial yes", "no", "not applicable")
 #: "no meta-analysis conducted" (stored as "not applicable").
 AMSTAR2_PARTIAL = (2, 4, 7, 8, 9)
 AMSTAR2_NOT_APPLICABLE = (11, 12, 15)
+#: The risk-of-bias items (9: technique; 13: accounted for in the
+#: interpretation) a review that appraises no risk of bias may answer
+#: "not applicable", and the `review_type` words that mark such a review.
+AMSTAR2_RISK_OF_BIAS = (9, 13)
+NO_RISK_OF_BIAS_REVIEW_TYPES = ("scoping", "bibliometric")
+#: The systematic-review skill's protocol, relative to the workspace root.
+REVIEW_PROTOCOL = Path("review") / "protocol.json"
 AMSTAR2_CONFIDENCE = ("high", "moderate", "low", "critically low")
 #: PRISMA 2020 main checklist items run 1-27.
 PRISMA_ITEMS = 27
@@ -174,6 +192,22 @@ def workspace_line(paper_dir: Path) -> str:
     return kind if isinstance(kind, str) and kind else "experimental"
 
 
+def amstar2_basis(paper_dir: Path) -> dict:
+    """The review type `review/protocol.json` declares, and whether items 9 and 13 may be `not applicable`.
+
+    A missing or unreadable protocol, or a `review_type` that is not text, reads
+    as null and keeps both items applicable.
+    """
+    try:
+        protocol = json.loads((paper_dir.parent / REVIEW_PROTOCOL).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        protocol = None
+    review_type = protocol.get("review_type") if isinstance(protocol, dict) else None
+    review_type = review_type if isinstance(review_type, str) else None
+    exempt = review_type is not None and any(word in review_type.lower() for word in NO_RISK_OF_BIAS_REVIEW_TYPES)
+    return {"protocol": REVIEW_PROTOCOL.as_posix(), "review_type": review_type, "risk_of_bias_not_applicable": exempt}
+
+
 def amstar2_confidence(answers: dict[int, str]) -> tuple[str, list[int], list[int]]:
     """The AMSTAR 2 overall confidence, its critical flaws and non-critical weaknesses.
 
@@ -193,7 +227,11 @@ def amstar2_confidence(answers: dict[int, str]) -> tuple[str, list[int], list[in
     return level, flaws, weaknesses
 
 
-def _validate_ml_conference(data: dict) -> list[str]:
+def _no_context(_paper_dir: Path) -> dict:
+    return {}
+
+
+def _validate_ml_conference(data: dict, _context: dict) -> list[str]:
     errors = []
     if not _int_in(data.get("overall"), 1, 6):
         errors.append("overall must be an integer 1-6")
@@ -209,8 +247,9 @@ def _validate_ml_conference(data: dict) -> list[str]:
     return errors
 
 
-def _validate_systematic_review(data: dict) -> list[str]:
+def _validate_systematic_review(data: dict, context: dict) -> list[str]:
     errors = []
+    not_applicable = AMSTAR2_NOT_APPLICABLE + (AMSTAR2_RISK_OF_BIAS if context["risk_of_bias_not_applicable"] else ())
     if not _text(data.get("recommendation")):
         errors.append("recommendation must be non-empty text")
     answers = data.get("amstar2")
@@ -226,9 +265,12 @@ def _validate_systematic_review(data: dict) -> list[str]:
             elif answer == "partial yes" and item not in AMSTAR2_PARTIAL:
                 errors.append(f'amstar2 item {item} cannot be "partial yes" (only items '
                               f'{", ".join(map(str, AMSTAR2_PARTIAL))})')
-            elif answer == "not applicable" and item not in AMSTAR2_NOT_APPLICABLE:
+            elif answer == "not applicable" and item not in not_applicable:
                 errors.append(f'amstar2 item {item} cannot be "not applicable" (only items '
-                              f'{", ".join(map(str, AMSTAR2_NOT_APPLICABLE))}, without a meta-analysis)')
+                              f'{", ".join(map(str, AMSTAR2_NOT_APPLICABLE))}, without a meta-analysis; '
+                              f'items 9 and 13 too when {REVIEW_PROTOCOL.as_posix()} declares a review_type '
+                              f'containing {" or ".join(NO_RISK_OF_BIAS_REVIEW_TYPES)}, read here as '
+                              f'{json.dumps(context["review_type"])})')
             if not _text(a.get("justification")):
                 errors.append(f"amstar2 item {item} needs a non-empty justification")
         asserted = data.get("overall_confidence")
@@ -260,7 +302,7 @@ def _checklist_item(value) -> bool:
     return _int_in(value, 1, 10**6)
 
 
-def _validate_empirical_study(data: dict) -> list[str]:
+def _validate_empirical_study(data: dict, _context: dict) -> list[str]:
     errors = []
     if not _text(data.get("recommendation")):
         errors.append("recommendation must be non-empty text")
@@ -324,7 +366,7 @@ def _validate_empirical_study(data: dict) -> list[str]:
     return errors
 
 
-def _shape_ml_conference(data: dict) -> dict:
+def _shape_ml_conference(data: dict, _context: dict) -> dict:
     return {
         "overall": data["overall"],
         "confidence": data["confidence"],
@@ -333,7 +375,7 @@ def _shape_ml_conference(data: dict) -> dict:
     }
 
 
-def _shape_systematic_review(data: dict) -> dict:
+def _shape_systematic_review(data: dict, context: dict) -> dict:
     answers = sorted(data["amstar2"], key=lambda a: a["item"])
     level, flaws, weaknesses = amstar2_confidence({a["item"]: a["answer"] for a in answers})
     return {
@@ -343,11 +385,12 @@ def _shape_systematic_review(data: dict) -> dict:
         "critical_flaws": flaws,
         "non_critical_weaknesses": weaknesses,
         "overall_confidence": level,
+        "amstar2_basis": dict(context),
         "prisma_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("prisma_gaps", [])],
     }
 
 
-def _shape_empirical_study(data: dict) -> dict:
+def _shape_empirical_study(data: dict, _context: dict) -> dict:
     adherence = data["protocol_adherence"]
     deviations = [{"deviation": d["deviation"].strip(), "declared": d["declared"]}
                   for d in adherence.get("deviations", [])]
@@ -375,18 +418,22 @@ def _shape_empirical_study(data: dict) -> dict:
 class Rubric:
     """One final-judge form: what it validates, what it stores, which lines it serves."""
 
-    validate: Callable[[dict], list[str]]
-    shape: Callable[[dict], dict]
+    validate: Callable[[dict, dict], list[str]]
+    shape: Callable[[dict, dict], dict]
     lines: tuple[str, ...]
     #: Whether the stored round names its rubric (`ml-conference` rounds never did).
     stores_id: bool = True
+    #: What the rubric reads from the workspace besides the round (given the
+    #: paper directory), passed to `validate` and `shape`.
+    context: Callable[[Path], dict] = _no_context
 
 
 #: The final judge's forms, by id. A line is served by exactly one rubric; a
 #: new paper line joins a rubric by adding its id to `lines`.
 RUBRICS: dict[str, Rubric] = {
     "ml-conference": Rubric(_validate_ml_conference, _shape_ml_conference, ("experimental",), stores_id=False),
-    "systematic-review": Rubric(_validate_systematic_review, _shape_systematic_review, ("review",)),
+    "systematic-review": Rubric(_validate_systematic_review, _shape_systematic_review, ("review",),
+                                context=amstar2_basis),
     "empirical-study": Rubric(_validate_empirical_study, _shape_empirical_study,
                               ("observational-measurement", "experiment-intervention", "qualitative-participatory",
                                "hardware", "lab-simulation", "data-resource")),
@@ -418,8 +465,8 @@ def rubric_of(data: dict, line: str) -> str:
     return rubric
 
 
-def _validate(data: dict, rubric: str) -> list[str]:
-    errors = RUBRICS[rubric].validate(data)
+def _validate(data: dict, rubric: str, context: dict) -> list[str]:
+    errors = RUBRICS[rubric].validate(data, context)
     items = data.get("items", [])
     if not isinstance(items, list):
         errors.append("items must be a list")
@@ -493,7 +540,8 @@ def record(paper_dir: Path, data: dict, *, today: _dt.date | None = None) -> dic
     path = review_path(paper_dir)
     rounds = load_rounds(path)
     rubric = rubric_of(data, workspace_line(paper_dir))
-    errors = _validate(data, rubric)
+    context = RUBRICS[rubric].context(paper_dir)
+    errors = _validate(data, rubric, context)
     if errors:
         raise Refused("REVIEW_ROUND_INVALID", "; ".join(errors))
     previous = rounds[-1] if rounds else None
@@ -501,7 +549,7 @@ def record(paper_dir: Path, data: dict, *, today: _dt.date | None = None) -> dic
     entry = {"round": number, "date": (today or _dt.date.today()).isoformat()}
     if RUBRICS[rubric].stores_id:
         entry["rubric"] = rubric
-    entry.update(RUBRICS[rubric].shape(data))
+    entry.update(RUBRICS[rubric].shape(data, context))
     entry.update({
         "items": _judged_items(data.get("items", []), previous),
         "revisions": [{"rank": r["rank"], "text": r["text"].strip(), "status": r.get("status", "pending"),

@@ -79,7 +79,7 @@ OBJECTIVE_FLOW = {
     ],
 }
 
-VERBS = ("synth", "search", "license", "own", "dictionary", "qc", "prepare", "publish", "status")
+VERBS = ("synth", "search", "license", "own", "dictionary", "deidentify", "qc", "prepare", "publish", "status")
 
 ERROR_CODES = (
     "bad-slug", "slug-exists", "member-exists", "unknown-slug", "file-missing", "file-outside-workspace",
@@ -89,7 +89,7 @@ ERROR_CODES = (
     "role-conflict", "operator-missing", "statement-missing",
     "dictionary-missing", "dictionary-exists", "dictionary-unreadable", "dictionary-unknown-type",
     "dictionary-range-not-numeric", "dictionary-empty-levels", "dictionary-duplicate-column",
-    "dictionary-bad-entry",
+    "dictionary-bad-entry", "no-pii-columns", "pii-not-deidentified",
 )
 
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$")
@@ -666,6 +666,70 @@ def cmd_dictionary(args, root: Path, **_inject) -> dict:
                     f"then run `dictionary check --slug {slug}`"}
 
 
+# ---------------------------------------------------------------- deidentify
+def file_hashes(root: Path, files: list[str]) -> dict[str, str | None]:
+    """The sha256 of each registered file, None for one that is missing."""
+    return {rel: (sha256(root / rel) if (root / rel).is_file() else None) for rel in files}
+
+
+def cmd_deidentify(args, root: Path, **_inject) -> dict:
+    """Record the operator's statement of how the dictionary's PII columns were
+    removed or transformed, bound to the PII columns it covers and to the
+    sha256 of every registered file: `publish` treats it as stale once either
+    changes. ``--by`` names the operator; an agent relays it, never invents it."""
+    by, statement = (args.by or "").strip(), (args.statement or "").strip()
+    if not by:
+        raise Refusal("operator-missing", "--by must name the operator who de-identified the data")
+    if not statement:
+        raise Refusal("statement-missing", "--statement must state how the PII columns were removed or transformed")
+    registry = load_registry(root)
+    entry = find(registry, args.slug)
+    slug = entry["slug"]
+    columns, _path = read_dictionary(root, slug, required=True)
+    pii = [c["name"] for c in columns if c["pii"]]
+    if not pii:
+        raise Refusal("no-pii-columns", f"datasets/{slug}/dictionary.json flags no PII column; "
+                                        "there is nothing to de-identify")
+    if not entry["files"]:
+        raise Refusal("file-missing", f"{slug} registers no data file; run qc or prepare on it first")
+    hashes = file_hashes(root, entry["files"])
+    missing = [rel for rel, digest in hashes.items() if digest is None]
+    if missing:
+        raise Refusal("file-missing", f"registered files missing: {missing}")
+    previous = entry.get("deidentification")
+    record = {"statement": statement, "by": by, "recorded": today(), "columns": pii, "files": hashes}
+    if previous:
+        history = list(previous.get("history") or [])
+        history.append({key: previous.get(key) for key in ("statement", "by", "recorded", "columns", "files")})
+        record["history"] = history
+    entry["deidentification"] = record
+    save_registry(root, registry)
+    return {"slug": slug, "deidentification": record}
+
+
+def pii_problem(root: Path, entry: dict) -> str | None:
+    """Why `publish` may not upload this entry's PII columns yet, or None.
+
+    None when there is no dictionary or it flags no PII column; otherwise the
+    operator's de-identification must cover every flagged column and match the
+    sha256 of every registered file."""
+    found = read_dictionary(root, entry["slug"])
+    pii = [c["name"] for c in found[0] if c["pii"]] if found else []
+    if not pii:
+        return None
+    record = entry.get("deidentification")
+    if not record:
+        return f"the dictionary flags PII columns {pii} and no de-identification is recorded"
+    uncovered = [name for name in pii if name not in (record.get("columns") or [])]
+    if uncovered:
+        return f"the dictionary flags PII columns {uncovered} the recorded de-identification does not cover"
+    recorded = record.get("files") or {}
+    changed = [rel for rel, digest in file_hashes(root, entry["files"]).items() if recorded.get(rel) != digest]
+    if changed:
+        return f"{', '.join(changed)} changed since the de-identification was recorded"
+    return None
+
+
 # ------------------------------------------------------------------------ qc
 def _number(value: str) -> float | None:
     try:
@@ -1087,6 +1151,10 @@ def cmd_publish(args, root: Path, runner=None, **_inject) -> dict:
     if entry["license"].get("decision") not in ("allowed", "overridden"):
         raise Refusal("license-not-allowed", f"{slug}'s license decision is "
                       f"{entry['license'].get('decision') or 'missing'}; run license first")
+    problem = pii_problem(root, entry)
+    if problem:
+        raise Refusal("pii-not-deidentified", f"{slug}: {problem}; the operator records how they were removed or "
+                      f"transformed with `deidentify --slug {slug} --by <operator> --statement \"<how>\"`")
     if args.public and args.consent_public != slug:
         raise Refusal("public-consent-missing", f"--public needs --consent-public {slug}, typed by the operator")
     found = hosts.publisher()
@@ -1239,6 +1307,13 @@ def build_parser() -> argparse.ArgumentParser:
     q = actions.add_parser("check", help="validate the dictionary")
     q.add_argument("--slug", required=True)
     q.set_defaults(func=cmd_dictionary)
+
+    p = sub.add_parser("deidentify", help="record how the dictionary's PII columns were de-identified")
+    p.add_argument("--slug", required=True)
+    p.add_argument("--by", required=True, help="the operator who de-identified the data; never an agent")
+    p.add_argument("--statement", required=True,
+                   help="how the PII columns were removed or transformed, in the operator's words")
+    p.set_defaults(func=cmd_deidentify)
 
     p = sub.add_parser("qc", help="quality checks into datasets/<slug>/qc.json, against the dictionary when one exists")
     p.add_argument("--slug", required=True)

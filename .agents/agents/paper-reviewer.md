@@ -308,8 +308,11 @@ record that decides it. Paraphrased, the items ask whether the review:
 16. reports its own potential conflicts of interest, including its funding.
 
 AMSTAR 2 offers `partial yes` only on items 2, 4, 7, 8 and 9; items 11, 12 and
-15 take `not applicable` when no meta-analysis was run. The recorder refuses
-any other use of either. Do not choose the overall confidence yourself: the
+15 take `not applicable` when no meta-analysis was run. Items 9 and 13 may
+also be `not applicable` only when `review/protocol.json` declares a
+`review_type` containing `scoping` or `bibliometric` (a review that appraises no
+risk of bias); the recorder reads that file itself and stores what it read in
+`amstar2_basis`. The recorder refuses any other use of either. Do not choose the overall confidence yourself: the
 recorder derives it by the AMSTAR 2 rule from your `no` answers (no or one
 non-critical weakness `high`, more than one `moderate`, one critical flaw
 `low`, more than one `critically low`); if you state it, it must match.
