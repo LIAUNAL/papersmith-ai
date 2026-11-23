@@ -65,7 +65,7 @@ Branch: one branch per task (`feat/paper-type-*`), chained PRs. Delivery: ask-on
   - T8-O3 line registration (LINES entry, registry, catalogue), flow template and thin line skill -- delegated, wave 2 -- done (L72)
   - T8-O4 generic empirical board with its gates -- delegated, wave 3 -- done (L74)
   - T8-O5 study panel -- delegated, wave 3 -- done (L73)
-  - T8-O7 integration (kind set end to end, characterization unchanged, full suite, docs, reviews) -- parent, wave 4 -- in progress
+  - T8-O7 integration (kind set end to end, characterization unchanged, full suite, docs, reviews) -- parent, wave 4 -- done (L75, L76; 6919fafc)
   - later lines (hardware and lab-simulation with the measurement core U7, data-resource, experiment-intervention, qualitative-participatory) -- pending
 
 ## Log
