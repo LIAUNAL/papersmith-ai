@@ -332,6 +332,8 @@ window.PAPERSMITH_I18N.es = {
   "caztor.preparing": "Iniciando el editor LaTeX (Caztor). La primera vez descarga Node.js y Tectonic (unos 45 MB) y puede tardar un minuto.",
   "caztor.unavailable": "El editor LaTeX (Caztor) no está en marcha, así que se muestra el visor: {reason}",
   "caztor.frameTitle": "Editor LaTeX Caztor",
+  "caztor.toggle": "Editor LaTeX",
+  "caztor.toggleHint": "Muestra Caztor (archivos, fuente LaTeX, PDF y chat del asistente) en esta pestaña; apagado muestra el visor PDF y detiene Caztor.",
   "annot.layer.comment": "Comentarios",
   "annot.layer.strikethrough": "Tachados",
   "annot.layer.humanize": "Humanización",

@@ -2706,6 +2706,15 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         result = await asyncio.to_thread(app.state.caztor.ensure, f"http://{host}")
         return JSONResponse(result)
 
+    @app.post("/api/caztor/stop")
+    async def api_caztor_stop(request: Request) -> JSONResponse:
+        """Stop Caztor when the operator turns the PDF tab's LaTeX editor off; the next visit with it on starts it again."""
+        if not origin_is_same(request):
+            return JSONResponse({"stopped": False, "reason": "cross-origin request rejected"},
+                                status_code=403)
+        await asyncio.to_thread(app.state.caztor.stop)
+        return JSONResponse({"stopped": True})
+
     @app.post("/api/pdf/execute")
     async def api_pdf_execute(request: Request) -> JSONResponse:
         if not origin_is_same(request):

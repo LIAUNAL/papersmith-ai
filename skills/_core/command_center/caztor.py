@@ -12,7 +12,9 @@ navigator, and only the dashboard's origin may frame it.
 
 Caztor always binds loopback here: the exposure variables of the operator's
 environment are not passed on. Nothing is started until the PDF tab asks, and
-the process is stopped when the dashboard shuts down.
+the process is stopped when the dashboard shuts down. The tab's "LaTeX editor"
+switch turns it off in that browser: the tab shows the PDF viewer instead and
+Caztor is stopped until the switch is turned on again.
 """
 
 from __future__ import annotations

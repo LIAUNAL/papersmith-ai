@@ -304,6 +304,26 @@ class CaztorRouteTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertFalse((self.bin_dir / "args").exists())
 
+    def stop(self, headers: dict[str, str]):
+        response = asyncio.run(_post(self.app, "/api/caztor/stop")(_Request(headers)))
+        return response.status_code, json.loads(bytes(response.body))
+
+    def test_turning_the_editor_off_stops_caztor_and_a_later_visit_starts_a_new_one(self) -> None:
+        here = {"Host": "127.0.0.1:8080", "Origin": "http://127.0.0.1:8080"}
+        _, first = self.call(here)
+        status, body = self.stop(here)
+        self.assertEqual((status, body), (200, {"stopped": True}))
+        self.assertFalse(self.app.state.caztor._alive())
+        _, again = self.call(here)
+        self.assertTrue(again["available"])
+        self.assertNotEqual(again["instance"], first["instance"])
+
+    def test_a_cross_origin_page_cannot_stop_it(self) -> None:
+        self.call({"Host": "127.0.0.1:8080", "Origin": "http://127.0.0.1:8080"})
+        status, _ = self.stop({"Host": "127.0.0.1:8080", "Origin": "http://evil.example"})
+        self.assertEqual(status, 403)
+        self.assertTrue(self.app.state.caztor._alive())
+
 
 if __name__ == "__main__":
     unittest.main()
