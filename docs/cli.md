@@ -765,6 +765,32 @@ current). A record that cannot be read turns only its section into
 `paper_cli.py`, so it loads only when the operator clicks its button, from
 `GET /api/review/checklist`, off the server's event loop.
 
+**The Study tab (empirical workspaces only).** A workspace whose `paper_kind` is an
+empirical line (`observational-measurement`, and the planned `experiment-intervention`,
+`qualitative-participatory`, `hardware`, `lab-simulation` and `data-resource`) shows a
+*Study* tab (*Estudio* in Spanish) after *Pipeline and Progress*; an experimental or
+review workspace never shows it, and its routes answer `409` with
+`{"ok": false, "code": "NOT_A_STUDY_WORKSPACE", "paper_kind": ...}`. `GET /api/study`
+reads the study records through the shared readers (`skills/_core/empirical`,
+`skills/_core/participant_flow` and the workspace's `datasets_cli.py`, the dashboard's
+copy with a visible warning when that one does not load) and answers one section per
+panel: `protocol` (the G-STUDY-PROTOCOL lock, whether the protocol changed after it,
+the latest managed revision and the amendments), `ethics` and `registration` (the latest
+record, whether it is bound to the current lock or stale after an amendment, the
+retrospective flag, the reason when not applicable), `data` (each own dataset's
+data-use statement, dictionary summary, QC status with its domain checks, and the
+de-identification and whether it is current; never a data value), `analysis` (every
+logged analysis with its label and why, outcome, plan entry and exit code, the
+interrupted runs, the repairs and the log's warnings), `flow` (whether
+`study/flow.json` is valid, the figure `paper/Figures/participant-flow.svg` current
+and embedded through `/api/artifact`, the sign-off current, and the counts) and
+`reporting` (the agreed variant and the guideline its catalogue entry names). A record
+that cannot be read turns only its section into `{"available": false, "code",
+"message"}`. The variant's reporting checklist runs the checklist engine, so it loads
+only when the operator clicks its button, from `GET /api/study/checklist`, off the
+server's event loop; without an agreed variant or guideline data it says "no
+checklist data yet".
+
 **Experiment protocol visibility.** In *Experiments*, the protocol and its
 hypotheses appear immediately after any launch-blocking warnings, before service
 and environment setup. Expand an experiment to inspect its hypothesis, success

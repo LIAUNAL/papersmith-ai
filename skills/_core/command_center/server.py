@@ -42,7 +42,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, toolchain
+from . import board_refresh, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, study_view, toolchain
 from ..paper_types import decision as paper_line
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -3013,6 +3013,25 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if refused:
             return JSONResponse(refused, status_code=409)
         return JSONResponse(await asyncio.to_thread(review_view.checklist, root_path))
+
+    @app.get("/api/study")
+    def api_study() -> JSONResponse:
+        """The Study tab of an empirical workspace: protocol lock, ethics and
+        registration, own data, analysis log, participant flow and the agreed
+        variant's guideline; 409 elsewhere."""
+        refused = study_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(study_view.view(root_path))
+
+    @app.get("/api/study/checklist")
+    async def api_study_checklist() -> JSONResponse:
+        """The agreed variant's reporting checklist, on the operator's click only:
+        the engine runs paper_cli.py as subprocesses, so it runs off the event loop."""
+        refused = study_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(await asyncio.to_thread(study_view.checklist, root_path))
 
     @app.post("/api/prompt/check")
     async def api_prompt_check(request: Request) -> JSONResponse:

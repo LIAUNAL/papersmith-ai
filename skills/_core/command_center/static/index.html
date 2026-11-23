@@ -30,6 +30,7 @@
   <script src="./model-panel.js?v=0.82.0"></script>
   <script src="./paper-type-panel.js?v=0.82.0"></script>
   <script src="./review-panel.js?v=0.82.0"></script>
+  <script src="./study-panel.js?v=0.82.0"></script>
   <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
   <script type="module" src="./office3d.js?v=0.82.0"></script>
   <script src="./office-panel.js?v=0.82.0"></script>
@@ -3231,6 +3232,9 @@
      until the page knows the line; applyPaperKind then hides, for any line,
      the views whose data-kinds does not list it. */
   body:not([data-paper-kind]) [data-kinds]:not([data-kinds~="experimental"]) { display: none !important; }
+  /* The same rule, static, for the first two lines (another line's views, such
+     as the Study tab of the empirical lines, never show under them). */
+  body[data-paper-kind="experimental"] [data-kinds]:not([data-kinds~="experimental"]), body[data-paper-kind="review"] [data-kinds]:not([data-kinds~="review"]) { display: none !important; }
   /* A line with no board (lines.py) shows the experimental board under this notice. */
   .board-notice { margin: 0 1rem 0.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--warn);
     border-radius: 6px; background: var(--warn-dim); font-size: 0.85rem; }
@@ -3289,6 +3293,7 @@
     <button class="tab-nav__btn active" onclick="navigateTab('flow')" data-i18n="nav.flow">Archify Flow</button>
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
     <button class="tab-nav__btn" onclick="navigateTab('review')" data-kinds="review" data-i18n="nav.review">📋 Review</button>
+    <button class="tab-nav__btn" onclick="navigateTab('study')" data-kinds="observational-measurement experiment-intervention qualitative-participatory hardware lab-simulation data-resource" data-i18n="nav.study">🔬 Study</button>
     <button class="tab-nav__btn" onclick="navigateTab('papertype')" data-i18n="nav.paperType">🧭 Paper Type</button>
     <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-kinds="experimental" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
     <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-kinds="experimental" data-i18n="nav.experiments">🧪 Experiments</button>
@@ -3400,6 +3405,17 @@
           <span class="panel__meta" data-i18n="sysreview.meta">Protocol, searches, screening, PRISMA flow, extraction and risk of bias, read from review/</span>
         </div>
         <div id="reviewPanel" data-i18n="sysreview.loading">Loading the review records…</div>
+      </section>
+    </div>
+
+    <!-- TAB: STUDY (empirical workspaces only; study-panel.js, GET /api/study) -->
+    <div id="pane-study" class="tab-pane">
+      <section class="panel" id="studyCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="study.title">🔬 Study records</div>
+          <span class="panel__meta" data-i18n="study.meta">Protocol lock, ethics and registration, own data, analysis log and participant flow</span>
+        </div>
+        <div id="studyPanel" data-i18n="study.loading">Loading the study records…</div>
       </section>
     </div>
 
@@ -4495,6 +4511,9 @@
       }
       if (tabId === 'review') {
         window.refreshReviewPanel?.();
+      }
+      if (tabId === 'study') {
+        window.refreshStudyPanel?.();
       }
       if (tabId === 'novelty') window.showManuscriptGraph?.();
       else window.hideManuscriptGraph?.();
@@ -7534,7 +7553,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'review', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'review', 'study', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();
@@ -7554,6 +7573,7 @@
       experiments: () => { window.refreshExperimentsPanel?.(); window.refreshExperimentsTutor?.(); },
       novelty: () => window.refreshNoveltyPanel?.(),
       review: () => window.refreshReviewPanel?.(),
+      study: () => window.refreshStudyPanel?.(),
       historia: () => window.refreshAiHistoryPanel?.(),
       doctor: () => { window.refreshDoctorPanel?.(); window.refreshKeysPanel?.(); },
       modelo: () => { refreshModelData(); window.refreshMathPanel?.(); },
