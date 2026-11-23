@@ -732,13 +732,15 @@ def remember_pii(entry: dict, names: list[str]) -> bool:
 def pii_columns(root: Path, entry: dict, warnings: list[dict]) -> tuple[list[str], list[str]]:
     """(columns the dictionary flags now, those plus every column flagged before).
 
-    A missing dictionary flags nothing now. An unreadable or invalid one also
-    flags nothing now and is reported in ``warnings`` when the entry has no PII
-    history; with PII history its refusal is raised, since it may hide a flag."""
+    A missing dictionary flags nothing now. An unreadable or invalid one fails
+    closed: without PII history its refusal is raised, since it may hide a
+    flag (as `publish` refused before the PII gate existed); with PII history
+    the remembered columns stand in for it and the problem is reported in
+    ``warnings``, so the operator can still record the de-identification."""
     try:
         found = read_dictionary(root, entry["slug"])
     except Refusal as refusal:
-        if entry.get("pii_columns_seen"):
+        if not entry.get("pii_columns_seen"):
             raise
         warnings.append({"code": refusal.code, "message": refusal.message})
         found = None
@@ -1194,11 +1196,9 @@ def cmd_publish(args, root: Path, runner=None, **_inject) -> dict:
         raise Refusal("license-not-allowed", f"{slug}'s license decision is "
                       f"{entry['license'].get('decision') or 'missing'}; run license first")
     warnings: list[dict] = []
-    try:
-        current, _pii = pii_columns(root, entry, [])
-    except Refusal:
-        current = []
-    if remember_pii(entry, current):
+    current, _pii = pii_columns(root, entry, [])
+    # Only a real upload writes the registry: a dry run reports, never records.
+    if remember_pii(entry, current) and args.consent == slug:
         save_registry(root, registry)
     problem = pii_problem(root, entry, warnings)
     if problem:

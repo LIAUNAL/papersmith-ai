@@ -370,17 +370,33 @@ class PiiPublishTests(Base):
         self.assertEqual(self.entry("cohort")["deidentification"]["columns"], ["patient_email"])
         self.assertEqual(self.publish().code, 0)
 
-    def test_a_malformed_dictionary_warns_without_pii_history_and_refuses_with_it(self) -> None:
+    def test_a_malformed_dictionary_fails_closed(self) -> None:
+        # Without PII history an unreadable dictionary may hide a PII flag, so
+        # publish refuses as it did before the PII gate existed; with history
+        # the remembered columns keep the gate, and the operator can still
+        # record the de-identification without a readable dictionary.
         slug = self.clean_dataset()
         (self.root / "datasets" / slug / "dictionary.json").write_text("{not json", encoding="utf-8")
-        result = self.publish(slug=slug)
-        self.assertEqual(result.code, 0, result.err)
-        self.assertEqual([w["code"] for w in result.json["warnings"]], ["dictionary-unreadable"])
-        result = self.publish("--consent", slug, slug=slug, runner=FakeRunner())
-        self.assertEqual(result.code, 0, result.err)
-        self.assertEqual([w["code"] for w in result.json["warnings"]], ["dictionary-unreadable"])
+        self.assertRefused(self.publish(slug=slug), "dictionary-unreadable")
+        self.assertRefused(self.publish("--consent", slug, slug=slug, runner=FakeRunner()), "dictionary-unreadable")
+        self.publish()  # remember cohort's PII columns
         (self.root / "datasets/cohort/dictionary.json").write_text("{not json", encoding="utf-8")
-        self.assertRefused(self.publish(), "dictionary-unreadable")
+        self.assertRefused(self.publish(), "pii-not-deidentified")
+        result = self.deidentify()
+        self.assertEqual(result.code, 0, result.err)
+        self.assertEqual(self.entry("cohort")["deidentification"]["columns"], ["patient_email"])
+
+    def test_a_dry_run_never_writes_the_registry(self) -> None:
+        # An entry written before the PII history existed has no
+        # `pii_columns_seen`; a dry run still refuses but must not write it.
+        path = self.root / "datasets" / "registry.json"
+        entries = self.registry()
+        for entry in entries:
+            entry.pop("pii_columns_seen", None)
+        path.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
+        before = path.read_bytes()
+        self.assertRefused(self.publish(), "pii-not-deidentified")
+        self.assertEqual(path.read_bytes(), before)
 
     def test_publish_refuses_pii_columns_until_the_operator_records_deidentification(self) -> None:
         before = self.registry()
