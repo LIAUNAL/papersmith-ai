@@ -1181,7 +1181,7 @@
       gap: 0.4rem;
       white-space: nowrap;
       cursor: pointer;
-      color: var(--text-secondary);
+      color: var(--text-muted);
       font-size: 0.76rem;
       user-select: none;
     }
@@ -1192,10 +1192,10 @@
       height: 1.1rem;
       margin: 0;
       border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--bg-input);
+      border: 1px solid var(--text-dim);
+      background: var(--surface-2);
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background 0.15s, border-color 0.15s;
     }
     .caztor-toggle input::after {
       content: "";
@@ -1205,7 +1205,8 @@
       width: 0.8rem;
       height: 0.8rem;
       border-radius: 50%;
-      background: var(--text-secondary);
+      background: var(--text-dim);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
       transform: translateY(-50%);
       transition: left 0.15s, background 0.15s;
     }
@@ -3884,27 +3885,7 @@
           </div>
           <p class="caztor-notice" id="caztorNotice" role="status" hidden></p>
 
-          <details id="paperReviewDetails" class="journals-details" open ontoggle="if (this.open) window.refreshPaperReview?.()">
-            <summary data-i18n="review.title">Final judge (paper-reviewer)</summary>
-            <div id="paperReviewPanel"></div>
-          </details>
-
-          <details id="journalsDetails" class="journals-details" ontoggle="if (this.open) window.refreshJournalsPanel?.()">
-            <summary data-i18n="journals.title">Suggested journals</summary>
-            <div id="journalsPanel"></div>
-          </details>
-
-          <details id="translationDetails" class="journals-details" ontoggle="if (this.open) window.refreshTranslationPanel?.()">
-            <summary data-i18n="translation.title">Manuscript version (English or Spanish)</summary>
-            <div id="translationPanel"></div>
-          </details>
-
-          <details id="manuscriptQaDetails" class="journals-details" ontoggle="if (this.open) window.refreshManuscriptQa?.()">
-            <summary data-i18n="qa.title">Visual QA of the manuscript</summary>
-            <p class="qa-sub" data-i18n="qa.sub">Measured on the compiled PDF after every compile: text past the text block, figure and table text below 0.70 times the body size, and Overfull boxes.</p>
-            <div id="manuscriptQaPanel"></div>
-          </details>
-
+          <!-- The PDF viewer, in Caztor's place when the LaTeX editor is off or cannot run -->
           <div id="legacyPdfViewer">
           <div class="pdf-viewer-topbar">
             <div class="pdf-topbar__left">
@@ -3982,6 +3963,28 @@
             <iframe id="pdfNativeIframe" class="iframe-viewer" src="about:blank" style="display: none; height: 850px; width: 100%;"></iframe>
           </div>
           </div>
+
+          <details id="paperReviewDetails" class="journals-details" open ontoggle="if (this.open) window.refreshPaperReview?.()">
+            <summary data-i18n="review.title">Final judge (paper-reviewer)</summary>
+            <div id="paperReviewPanel"></div>
+          </details>
+
+          <details id="journalsDetails" class="journals-details" ontoggle="if (this.open) window.refreshJournalsPanel?.()">
+            <summary data-i18n="journals.title">Suggested journals</summary>
+            <div id="journalsPanel"></div>
+          </details>
+
+          <details id="translationDetails" class="journals-details" ontoggle="if (this.open) window.refreshTranslationPanel?.()">
+            <summary data-i18n="translation.title">Manuscript version (English or Spanish)</summary>
+            <div id="translationPanel"></div>
+          </details>
+
+          <details id="manuscriptQaDetails" class="journals-details" ontoggle="if (this.open) window.refreshManuscriptQa?.()">
+            <summary data-i18n="qa.title">Visual QA of the manuscript</summary>
+            <p class="qa-sub" data-i18n="qa.sub">Measured on the compiled PDF after every compile: text past the text block, figure and table text below 0.70 times the body size, and Overfull boxes.</p>
+            <div id="manuscriptQaPanel"></div>
+          </details>
+
         </div>
 
         <!-- Right column: unified change-control panel -->
@@ -7450,6 +7453,7 @@
       } catch (_) { /* a dashboard that is gone has no Caztor left to stop */ }
     }
     window.setCaztorEnabled = setCaztorEnabled;
+    { const toggle = document.getElementById('caztorToggle'); if (toggle) toggle.checked = caztorEnabled(); }
 
     // The PDF viewer in place of Caztor, whose frame is emptied so a stopped server is not left on screen.
     function showPdfViewer() {
