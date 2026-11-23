@@ -41,6 +41,11 @@ refusal prints the flow, so a blocked session knows which stage it is behind.
 3. **Public consent** — a dataset is created private. `--public` takes effect
    only together with `--consent-public <slug>`, a second, separate token.
 
+**Own data adds a fourth.** Data the operator collected has no source license
+to classify: `own --by <operator> --statement "<data-use statement>"` records
+the operator's own statement of how it may be used, and `--by` names that
+operator.
+
 An agent never types any of these tokens on its own initiative: they are the
 operator's words, relayed.
 
@@ -55,7 +60,9 @@ python3 skills/datasets/scripts/datasets_cli.py [--root <workspace>] <verb> ...
 | `synth` | `--slug --kind {classification,eeg} --seed --n-subjects --n-per-subject --channels --length --sfreq [--profile {alpha,theta-beta,capacity}] [--label-per {trial,subject}] [--force]`: seeded toy CSV + `datasets/<slug>/TOY.md` with the generating parameters; role `toy`. Same seed, same bytes. For `eeg`, `--profile alpha` (default) is a 10 Hz rhythm whose band power depends on the class; `--profile theta-beta` is a Theta (6 Hz) and a Beta (20 Hz) rhythm whose ratio depends on the class (class 1 elevated), needing `--sfreq` above 40 Hz; both add a per-subject gain and Gaussian noise. `--label-per subject` gives every subject one class (balanced across subjects), which a protocol that decides per subject needs; the default `trial` alternates classes within each subject. `--profile capacity` is described below |
 | `search` | `--query [--hosts ...] [--limit]`: queries every host module (official MCP `search_datasets` on Kaggle, Hugging Face Hub, OpenNeuro GraphQL, Zenodo) and writes `datasets/search-<date>.json` with every hit `{host, ref, title, url, license, retrieved}`. A host that fails is recorded, never fatal. Google Dataset Search has no API: its link is printed for a manual look |
 | `license` | `--slug --source-license "<text>" [--override "<reason>"] [--title] [--source-url] [--role]`: decision `allowed` / `refused` / `overridden`, mapped to a host license name (`CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`, `ODbL-1.0`, `CC-BY-NC-4.0`, `CC-BY-NC-SA-4.0`, `other`); creates the full entry when missing |
-| `qc` | `--slug --file <csv> [--label col] [--group col]`: rows/columns, missing values, constant columns, duplicates, class balance, group (subject) counts and single-class groups, numeric ranges → `datasets/<slug>/qc.json`, status `pass` / `warn` / `fail` with reasons |
+| `own` | `--slug --by <operator> --statement "<text>" [--title]`: registers the operator's own data — role `own`, `source.kind` `own`, `data_use{statement, by, recorded, history?}` — in place of a license classification (the license record reads `own data`, decision `allowed`, host license `other`). Running it again replaces the statement and keeps the previous ones under `history`. It never turns a `toy` or `full` entry into own data, and `license` never reclassifies an own entry (`role-conflict`) |
+| `dictionary` | `init --slug --file <csv> [--force]`: scaffolds `datasets/<slug>/dictionary.json` with one entry per header column (type inferred, levels for a small category, PII flagged from the column name, everything else blank for the operator to fill). `check --slug`: validates it and lists the PII columns. See [Own data and the data dictionary](#own-data-and-the-data-dictionary) |
+| `qc` | `--slug --file <csv> [--label col] [--group col]`: rows/columns, missing values, constant columns, duplicates, class balance, group (subject) counts and single-class groups, numeric ranges → `datasets/<slug>/qc.json` (with the file's `sha256`), status `pass` / `warn` / `fail` with reasons. When `datasets/<slug>/dictionary.json` exists, it is validated first and the data is checked against it into `domain_checks`; own data without a dictionary warns |
 | `prepare` | `--slug --file <csv> --label col --group col [--folds 5] [--seed <n> \| --seeds <n> <n> ...]`: stratified group k-fold by subject (no subject in two folds) → `splits.json` + `PREPARATION.md` (source sha256, steps, parameters, per-fold counts); each run is a new preparation version. `--seed` writes one split; its seed only breaks ties between equal-sized subjects, so when every subject differs in size the output carries an `inert-seed` warning. `--seeds` writes one split per seed under `repetitions` (repeated cross-validation): subjects are taken largest first in size strata of `--folds` subjects that the seed shuffles, so each seed gives its own split; the first repetition is also the top-level `assignment` |
 | `publish` | `--slug --owner <user> [--version-notes] [--keyword ...] [--consent <slug>] [--public --consent-public <slug>] [--dry-run]`: builds `datasets/<slug>/remote/` (`dataset-metadata.json` + copies of the files) and, on consent, runs `kaggle datasets create -p <dir>` (private; `-u` only with both public flags) or `kaggle datasets version -p <dir> -m <notes>` when the dataset already exists; records the remote ref, visibility and version; prints how a notebook mounts it |
 | `status` | registry summary: slug, role, title, license decision, qc status, preparation, remote |
@@ -85,6 +92,17 @@ Success prints one JSON object on stdout. A refusal prints
 | `no-publisher` | no host module declares a publisher |
 | `host-cli-missing` | the official `kaggle` client is not installed |
 | `host-cli-failed` | the official client exited non-zero; nothing is recorded |
+| `role-conflict` | `own` on a `toy` or `full` slug, or `license` on an own slug |
+| `operator-missing` | `own --by` is blank: the statement must name the operator |
+| `statement-missing` | `own --statement` is blank |
+| `dictionary-missing` | `dictionary check` on a dataset with no `dictionary.json` |
+| `dictionary-exists` | `dictionary init` over an existing dictionary without `--force` |
+| `dictionary-unreadable` | `dictionary.json` is not JSON, or not an object with a `columns` list |
+| `dictionary-unknown-type` | a column's type is not `number`, `integer`, `category`, `text`, `date` or `boolean` |
+| `dictionary-range-not-numeric` | a range on a column whose type is not `number` or `integer` |
+| `dictionary-empty-levels` | a `category` column without levels |
+| `dictionary-duplicate-column` | a column declared twice (or repeated in the header `init` reads) |
+| `dictionary-bad-entry` | any other malformed entry: a blank name, a range that is not `{min, max}` numbers with min ≤ max, repeated or non-string levels, levels on a non-category column, non-string missing codes, unit or description, a non-boolean `pii` |
 
 ## The capacity profile
 
@@ -113,15 +131,65 @@ pipeline runs (`scripts/capacity_toy.py`, stdlib, generator version 1):
   registry entry (role `toy`) whose `files` lists them, and one `TOY.md` that describes the family. Label
   noise belongs to the experiment, which flips training labels itself; the files carry clean labels only.
 
+## Own data and the data dictionary
+
+Data the operator collected — a cohort, a survey, field plots, lab records —
+enters with `own` instead of `license`: the question is not what a source's
+license permits but what the operator's consent, ethics approval and agreements
+allow, and only the operator can state that. For own data, `own` stands for the
+`sourced` and `licensed` stages; `qc`, `prepare` and `publish` (still only on
+`--consent`) work as for any entry.
+
+`datasets/<slug>/dictionary.json` describes each column:
+
+```json
+{"slug": "cohort", "file": "data/cohort.csv", "sha256": "…", "created": "2026-11-22",
+ "columns": [{"name": "sbp", "type": "number", "unit": "mmHg", "range": {"min": 60, "max": 240},
+              "levels": null, "missing_codes": ["999"], "description": "systolic blood pressure", "pii": false}]}
+```
+
+`type` is one of `number`, `integer`, `category` (with its non-empty
+`levels`), `text`, `date` (ISO `YYYY-MM-DD`) or `boolean` (`true/false`,
+`yes/no`, `t/f`, `y/n`, `1/0`, any case). `range` applies to `number` and
+`integer` only; either bound may be null. `missing_codes` are exact strings
+counted as missing, besides the generic blanks and `na`/`nan`/`null`/`none`.
+`pii` marks a column that identifies a person. `dictionary init` only
+scaffolds: the operator (or the curator, with the operator) reviews every
+field, then `dictionary check` validates it.
+
+With a dictionary, `qc` counts the declared missing codes as missing (in
+`missing`, and out of `ranges`), withholds the ranges and class values of PII
+columns, records the dictionary's path and sha256 under `dictionary`, and fills
+`domain_checks` with one item per finding: `{check, column, severity, count,
+rows?, values?, …}`. `rows` are the first five data rows (1 is the first row
+under the header); `values` are up to three distinct offending values, never
+given for a PII column.
+
+| Check | Severity | Finding |
+|---|---|---|
+| `absent-column` | `fail` | declared in the dictionary, absent from the file |
+| `type-mismatch` | `fail` | a present value is not of the declared type |
+| `out-of-range` | `warn` | a numeric value outside the declared range |
+| `unknown-level` | `warn` | a category value outside the declared levels |
+| `undeclared-column` | `warn` | in the file, not in the dictionary |
+| `pii-column` | `warn` | a PII column is in the file (count of present values): confirm it may be |
+| `missing-codes` | `info` | how many values were declared missing codes |
+
+The status rule: any `fail` check fails the report; any `warn` check turns a
+`pass` into a `warn`; `info` changes nothing; the stdlib checks keep their own
+rules. Own data with no dictionary warns. The file's `sha256` stays in
+`qc.json`, so what is checked can be bound to what is analysed.
+
 ## Workspace state
 
 `datasets/registry.json` is a list of entries:
-`{slug, role: "toy"|"full", title, source{kind, url, retrieved},
+`{slug, role: "toy"|"full"|"own", title, source{kind, url, retrieved},
 license{source_name, decision, host_license, reason, override?},
+data_use?{statement, by, recorded, history?},
 files, qc{status, report}, preparation{manifest, splits, version, sha256},
 remote{ref, visibility, version}}`. One folder `datasets/<slug>/` holds
-`TOY.md`, `qc.json`, `splits.json`, `PREPARATION.md` and the `remote/` upload
-folder.
+`TOY.md`, `dictionary.json`, `qc.json`, `splits.json`, `PREPARATION.md` and
+the `remote/` upload folder.
 
 **The preparation is the official one.** The proof of concept and the full
 experiments both read `datasets/<slug>/splits.json`; neither re-splits in its
@@ -131,7 +199,8 @@ the source sha256 it ran on.
 
 ## Quality checks beyond the stdlib
 
-`qc` measures what the standard library can. For EEG, the `dataset-curator`
+`qc` measures what the standard library can, and the dictionary's domain
+checks fill `domain_checks` on their own. For EEG, the `dataset-curator`
 agent may also run domain checks in the workspace environment — for example
 MNE-Python for channel names, sampling rate and flat or saturated channels,
 or PyPREP for bad-channel detection — and append each check, its tool version

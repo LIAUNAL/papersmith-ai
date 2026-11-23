@@ -2820,12 +2820,19 @@ of them on its own initiative.
 **The verbs.** `python3 skills/datasets/scripts/datasets_cli.py <verb>`:
 `synth` (a seeded toy CSV, or the `capacity` family of EEG replicates that tests
 what a classifier can represent), `search` (Kaggle, Hugging Face Hub, OpenNeuro
-and Zenodo, every hit recorded), `license`, `qc`, `prepare` (stratified group
+and Zenodo, every hit recorded), `license`, `own` (the operator's own data,
+registered with their data-use statement, `--by` naming them, instead of a
+license classification), `dictionary init|check` (`datasets/<slug>/dictionary.json`:
+per column its type, unit, range or levels, missing codes, description and PII
+flag), `qc` (checked against the dictionary when one exists: out-of-range values,
+unknown levels, type mismatches, undeclared or absent columns and PII columns,
+with counts and row numbers but never a PII value), `prepare` (stratified group
 k-fold by subject; `--seeds` for repeated cross-validation), `publish` (a dry run
 without consent) and `status`. The `dataset-scout` agent runs the search and
 license stretch, and `dataset-curator` the rest.
 
-**What it never does.** It never publishes without the operator's consent token,
+**What it never does.** It never records an own-data statement on the operator's
+behalf, never publishes without the operator's consent token,
 never makes a dataset public on one token, never splits a subject across folds,
 and never decides on the operator's behalf whether a recording holds personal
 data: that check is the operator's responsibility.

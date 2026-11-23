@@ -79,13 +79,17 @@ OBJECTIVE_FLOW = {
     ],
 }
 
-VERBS = ("synth", "search", "license", "qc", "prepare", "publish", "status")
+VERBS = ("synth", "search", "license", "own", "dictionary", "qc", "prepare", "publish", "status")
 
 ERROR_CODES = (
     "bad-slug", "slug-exists", "member-exists", "unknown-slug", "file-missing", "file-outside-workspace",
     "bad-column", "bad-folds", "too-few-groups", "identical-repetitions", "unknown-host", "license-not-allowed",
     "bad-owner", "bad-metadata", "public-consent-missing", "public-on-existing",
     "no-publisher", "host-cli-missing", "host-cli-failed", "bad-argument",
+    "role-conflict", "operator-missing", "statement-missing",
+    "dictionary-missing", "dictionary-exists", "dictionary-unreadable", "dictionary-unknown-type",
+    "dictionary-range-not-numeric", "dictionary-empty-levels", "dictionary-duplicate-column",
+    "dictionary-bad-entry",
 )
 
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$")
@@ -457,6 +461,9 @@ def cmd_license(args, root: Path, **_inject) -> dict:
     slug = check_slug(args.slug)
     registry = load_registry(root)
     entry = next((item for item in registry if item["slug"] == slug), None)
+    if entry is not None and entry["role"] == "own":
+        raise Refusal("role-conflict", f"{slug} is own data: its use is the operator's data-use statement "
+                                       "(`own`), never a source license")
     if entry is None:
         entry = new_entry(slug, args.role, args.title or slug)
         entry["source"] = {"kind": "external", "url": args.source_url or "", "retrieved": today()}
@@ -477,6 +484,188 @@ def cmd_license(args, root: Path, **_inject) -> dict:
     return {"slug": slug, **record}
 
 
+# ----------------------------------------------------------------------- own
+def cmd_own(args, root: Path, **_inject) -> dict:
+    """Register data the operator collected: role ``own``, source kind ``own``,
+    and the operator's data-use statement in place of a license classification.
+    ``--by`` names the operator; an agent relays it, never invents it."""
+    slug = check_slug(args.slug)
+    by, statement = (args.by or "").strip(), (args.statement or "").strip()
+    if not by:
+        raise Refusal("operator-missing", "--by must name the operator who owns this data-use statement")
+    if not statement:
+        raise Refusal("statement-missing", "--statement must state, in the operator's words, how the data may be used")
+    registry = load_registry(root)
+    entry = next((item for item in registry if item["slug"] == slug), None)
+    if entry is not None and entry["role"] != "own":
+        raise Refusal("role-conflict", f"{slug} is registered with role {entry['role']}; own data takes its own slug")
+    if entry is None:
+        entry = new_entry(slug, "own", args.title or slug)
+        entry["source"] = {"kind": "own", "url": "", "retrieved": today()}
+        registry.append(entry)
+    elif args.title:
+        entry["title"] = args.title
+    previous = entry.get("data_use")
+    data_use = {"statement": statement, "by": by, "recorded": today()}
+    if previous:
+        history = list(previous.get("history") or [])
+        history.append({key: previous.get(key) for key in ("statement", "by", "recorded")})
+        data_use["history"] = history
+    entry["data_use"] = data_use
+    entry["license"] = {"source_name": "own data", "decision": "allowed", "host_license": "other",
+                        "reason": "own data: its use is governed by the operator's data-use statement",
+                        "decided": today()}
+    save_registry(root, registry)
+    return {"slug": slug, "role": "own", "data_use": data_use, "license": entry["license"]}
+
+
+# ---------------------------------------------------------------- dictionary
+DICTIONARY_TYPES = ("number", "integer", "category", "text", "date", "boolean")
+NUMERIC_TYPES = ("number", "integer")
+BOOLEAN_WORDS = {"true", "false", "yes", "no", "t", "f", "y", "n", "0", "1"}
+#: Column-name words that make `dictionary init` flag a column as PII and never
+#: scaffold its levels; the operator confirms or clears the flag.
+PII_HINTS = {"name", "firstname", "lastname", "surname", "fullname", "email", "mail", "phone", "telephone",
+             "mobile", "address", "street", "dob", "birth", "birthdate", "ssn", "passport", "national"}
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+EXAMPLES = 5
+
+
+def dictionary_path(root: Path, slug: str) -> Path:
+    return datasets_dir(root) / slug / "dictionary.json"
+
+
+def _is_date(value: str) -> bool:
+    if not DATE_RE.match(value):
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def fits_type(value: str, kind: str) -> bool:
+    """Whether a present (non-missing) value is of the declared type."""
+    if kind == "number":
+        return _number(value) is not None
+    if kind == "integer":
+        number = _number(value)
+        return number is not None and number == int(number)
+    if kind == "date":
+        return _is_date(value)
+    if kind == "boolean":
+        return value.lower() in BOOLEAN_WORDS
+    return True
+
+
+def validate_dictionary(data) -> list[dict]:
+    """The dictionary's columns, normalized, or the first problem as a Refusal."""
+    if not isinstance(data, dict) or not isinstance(data.get("columns"), list):
+        raise Refusal("dictionary-unreadable", "dictionary.json must be an object with a `columns` list")
+    columns, seen = [], set()
+    for index, item in enumerate(data["columns"]):
+        where = f"columns[{index}]"
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip():
+            raise Refusal("dictionary-bad-entry", f"{where} needs a non-empty string `name`")
+        name = item["name"]
+        if name in seen:
+            raise Refusal("dictionary-duplicate-column", f"column {name!r} is declared twice")
+        seen.add(name)
+        kind = item.get("type")
+        if kind not in DICTIONARY_TYPES:
+            raise Refusal("dictionary-unknown-type", f"{name}: type {kind!r} is not one of {list(DICTIONARY_TYPES)}")
+        bounds = item.get("range")
+        if bounds is not None and kind not in NUMERIC_TYPES:
+            raise Refusal("dictionary-range-not-numeric", f"{name}: a range needs type number or integer, not {kind}")
+        if bounds is not None:
+            low, high = (bounds.get("min"), bounds.get("max")) if isinstance(bounds, dict) else (None, None)
+            numeric = all(v is None or (isinstance(v, (int, float)) and not isinstance(v, bool)) for v in (low, high))
+            if not isinstance(bounds, dict) or not numeric or (low is None and high is None) \
+                    or (low is not None and high is not None and low > high):
+                raise Refusal("dictionary-bad-entry", f"{name}: range must be {{min, max}} numbers (either may be "
+                                                      "null, not both) with min <= max")
+        levels = item.get("levels")
+        if kind == "category":
+            if not levels:
+                raise Refusal("dictionary-empty-levels", f"{name}: a category column declares its levels")
+            if not isinstance(levels, list) or not all(isinstance(v, str) for v in levels) \
+                    or len(set(levels)) != len(levels):
+                raise Refusal("dictionary-bad-entry", f"{name}: levels must be distinct strings")
+        elif levels:
+            raise Refusal("dictionary-bad-entry", f"{name}: only a category column declares levels")
+        codes = item.get("missing_codes") or []
+        pii = item.get("pii", False)
+        texts = [item.get(key, "") for key in ("unit", "description")]
+        if not isinstance(codes, list) or not all(isinstance(v, str) for v in codes) \
+                or not isinstance(pii, bool) or not all(isinstance(v, str) for v in texts if v is not None):
+            raise Refusal("dictionary-bad-entry", f"{name}: missing_codes are strings, pii a boolean, "
+                                                  "unit and description strings")
+        columns.append({"name": name, "type": kind, "range": bounds, "levels": levels if kind == "category" else None,
+                        "missing_codes": codes, "pii": pii})
+    return columns
+
+
+def read_dictionary(root: Path, slug: str, required: bool = False) -> tuple[list[dict], Path] | None:
+    path = dictionary_path(root, slug)
+    if not path.is_file():
+        if required:
+            raise Refusal("dictionary-missing", f"{path.relative_to(root).as_posix()} does not exist; "
+                                                f"run `dictionary init --slug {slug} --file <csv>`")
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise Refusal("dictionary-unreadable", f"{path.relative_to(root).as_posix()}: {exc}") from None
+    return validate_dictionary(data), path
+
+
+def scaffold_column(name: str, values: list[str]) -> dict:
+    words = set(re.findall(r"[a-z]+", name.lower()))
+    pii = bool(words & PII_HINTS)
+    present = [v.strip() for v in values if v.strip().lower() not in MISSING]
+    kind, levels = "text", None
+    if present and not pii:
+        if all(v.lower() in BOOLEAN_WORDS - {"0", "1"} for v in present):
+            kind = "boolean"
+        elif all(fits_type(v, "integer") for v in present):
+            kind = "integer"
+        elif all(fits_type(v, "number") for v in present):
+            kind = "number"
+        elif all(_is_date(v) for v in present):
+            kind = "date"
+        elif len(set(present)) <= 10 and 2 * len(set(present)) <= len(present):
+            kind, levels = "category", sorted(set(present))
+    return {"name": name, "type": kind, "unit": "", "range": None, "levels": levels, "missing_codes": [],
+            "description": "", "pii": pii}
+
+
+def cmd_dictionary(args, root: Path, **_inject) -> dict:
+    registry = load_registry(root)
+    entry = find(registry, args.slug)
+    slug = entry["slug"]
+    if args.action == "check":
+        columns, path = read_dictionary(root, slug, required=True)
+        return {"slug": slug, "dictionary": path.relative_to(root).as_posix(), "columns": len(columns),
+                "pii": [c["name"] for c in columns if c["pii"]]}
+    path, rel = workspace_file(root, args.file)
+    target = dictionary_path(root, slug)
+    if target.exists() and not args.force:
+        raise Refusal("dictionary-exists", f"{target.relative_to(root).as_posix()} exists; pass --force to "
+                                           "scaffold it again (the operator's edits are lost)")
+    header, rows = read_rows(path)
+    if len(set(header)) != len(header):
+        raise Refusal("dictionary-duplicate-column", f"{rel} repeats a column name in its header")
+    columns = [scaffold_column(name, [row.get(name) or "" for row in rows]) for name in header]
+    document = {"slug": slug, "file": rel, "sha256": sha256(path), "created": today(), "columns": columns}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    return {"slug": slug, "dictionary": target.relative_to(root).as_posix(), "columns": len(columns),
+            "pii": [c["name"] for c in columns if c["pii"]],
+            "next": "review every type, unit, range, level, missing code, description and PII flag, "
+                    f"then run `dictionary check --slug {slug}`"}
+
+
 # ------------------------------------------------------------------------ qc
 def _number(value: str) -> float | None:
     try:
@@ -486,9 +675,19 @@ def _number(value: str) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def qc_report(header: list[str], rows: list[dict], label: str | None, group: str | None) -> dict:
+def is_missing(value: str | None, codes=()) -> bool:
+    """The generic missing tokens, plus a column's declared missing codes."""
+    text = (value or "").strip()
+    return text.lower() in MISSING or text in codes
+
+
+def qc_report(header: list[str], rows: list[dict], label: str | None, group: str | None,
+              missing_codes: dict | None = None, withheld: set | None = None) -> dict:
+    """``missing_codes`` (column -> codes) count as missing; ``withheld`` (PII)
+    columns get no measured range and no class values in the report."""
+    codes, withheld = missing_codes or {}, withheld or set()
     reasons_fail, reasons_warn = [], []
-    missing = {col: sum(1 for row in rows if (row.get(col) or "").strip().lower() in MISSING) for col in header}
+    missing = {col: sum(1 for row in rows if is_missing(row.get(col), codes.get(col, ()))) for col in header}
     constant = [col for col in header if len({row.get(col) for row in rows}) <= 1] if rows else []
     seen, duplicates = set(), 0
     for row in rows:
@@ -497,7 +696,9 @@ def qc_report(header: list[str], rows: list[dict], label: str | None, group: str
         seen.add(key)
     ranges = {}
     for col in header:
-        present = [row.get(col) or "" for row in rows if (row.get(col) or "").strip().lower() not in MISSING]
+        if col in withheld:
+            continue
+        present = [row.get(col) or "" for row in rows if not is_missing(row.get(col), codes.get(col, ()))]
         numbers = [_number(value) for value in present]
         if present and all(n is not None for n in numbers):
             ranges[col] = {"min": min(numbers), "max": max(numbers)}
@@ -517,7 +718,8 @@ def qc_report(header: list[str], rows: list[dict], label: str | None, group: str
             reasons_fail.append(f"label column {label!r} not in the header")
         else:
             balance = Counter(row[label] for row in rows)
-            report["class_balance"] = dict(sorted(balance.items()))
+            report["class_balance"] = dict(sorted(balance.items())) if label not in withheld else \
+                {"withheld": "pii", "classes": len(balance)}
             if len(balance) < 2:
                 reasons_fail.append("fewer than two classes")
             elif max(balance.values()) > 3 * min(balance.values()):
@@ -543,13 +745,92 @@ def qc_report(header: list[str], rows: list[dict], label: str | None, group: str
     return report
 
 
+#: Severity of each domain check, and so its effect on the qc status: a `fail`
+#: check fails it, a `warn` check makes a pass a warn, `info` changes nothing.
+DOMAIN_SEVERITY = {"absent-column": "fail", "type-mismatch": "fail", "out-of-range": "warn",
+                   "unknown-level": "warn", "undeclared-column": "warn", "pii-column": "warn",
+                   "missing-codes": "info"}
+
+
+def domain_checks(header: list[str], rows: list[dict], columns: list[dict]) -> list[dict]:
+    """Each finding of the data against its dictionary: counts, the first data
+    row numbers (1 = the first row under the header) and, for a column not
+    flagged PII, a few distinct offending values. A PII column's values never
+    appear, only its counts and row numbers."""
+    checks = []
+
+    def add(check: str, column: str, count: int = 0, hits: list | None = None, pii: bool = False, **extra):
+        item = {"check": check, "column": column, "severity": DOMAIN_SEVERITY[check], "count": count, **extra}
+        if hits is not None:
+            item["rows"] = [number for number, _value in hits[:EXAMPLES]]
+            if not pii:
+                item["values"] = sorted({value for _row, value in hits})[:3]
+        checks.append(item)
+
+    declared = {c["name"]: c for c in columns}
+    for column in columns:
+        name = column["name"]
+        if name not in header:
+            add("absent-column", name, reason="declared in the dictionary, absent from the file")
+            continue
+        codes, kind, pii = column["missing_codes"], column["type"], column["pii"]
+        coded, wrong, outside, unknown, present = [], [], [], [], 0
+        for number, row in enumerate(rows, start=1):
+            value = (row.get(name) or "").strip()
+            if value in codes:
+                coded.append((number, value))
+                continue
+            if is_missing(value):
+                continue
+            present += 1
+            if kind == "category":
+                if value not in column["levels"]:
+                    unknown.append((number, value))
+            elif not fits_type(value, kind):
+                wrong.append((number, value))
+            elif column["range"] is not None and kind in NUMERIC_TYPES:
+                low, high, measured = column["range"].get("min"), column["range"].get("max"), float(value)
+                if (low is not None and measured < low) or (high is not None and measured > high):
+                    outside.append((number, value))
+        for check, hits, extra in (("type-mismatch", wrong, {"expected": kind}),
+                                   ("out-of-range", outside, {"range": column["range"]}),
+                                   ("unknown-level", unknown, {}),
+                                   ("missing-codes", coded, {})):
+            if hits:
+                add(check, name, len(hits), hits if check != "missing-codes" else None, pii, **extra)
+        if pii:
+            add("pii-column", name, present, reason="flagged PII in the dictionary: confirm the file may hold it")
+    for name in header:
+        if name not in declared:
+            add("undeclared-column", name, reason="in the file, not in the dictionary")
+    return checks
+
+
 def cmd_qc(args, root: Path, **_inject) -> dict:
     registry = load_registry(root)
     entry = find(registry, args.slug)
     path, rel = workspace_file(root, args.file)
     header, rows = read_rows(path)
-    report = qc_report(header, rows, args.label, args.group)
-    report.update({"file": rel, "sha256": sha256(path), "checked": today(), "domain_checks": []})
+    found = read_dictionary(root, entry["slug"])
+    columns = found[0] if found else []
+    report = qc_report(header, rows, args.label, args.group,
+                       missing_codes={c["name"]: tuple(c["missing_codes"]) for c in columns},
+                       withheld={c["name"] for c in columns if c["pii"]})
+    checks = domain_checks(header, rows, columns) if found else []
+    severities = {check["severity"] for check in checks}
+    report["reasons"] += [f"{c['check']} in {c['column']!r}" + (f" ({c['count']} values)" if c["count"] else "")
+                          for c in checks if c["severity"] != "info"]
+    if found is None and entry["role"] == "own":
+        severities.add("warn")
+        report["reasons"].append(f"own data has no data dictionary: run `dictionary init --slug {entry['slug']} "
+                                 "--file <csv>` and review it")
+    if "fail" in severities:
+        report["status"] = "fail"
+    elif "warn" in severities and report["status"] == "pass":
+        report["status"] = "warn"
+    report.update({"file": rel, "sha256": sha256(path), "checked": today(), "domain_checks": checks})
+    if found:
+        report["dictionary"] = {"file": found[1].relative_to(root).as_posix(), "sha256": sha256(found[1])}
     folder = datasets_dir(root) / entry["slug"]
     folder.mkdir(parents=True, exist_ok=True)
     out = folder / "qc.json"
@@ -941,7 +1222,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", choices=("toy", "full"), default="full")
     p.set_defaults(func=cmd_license)
 
-    p = sub.add_parser("qc", help="quality checks into datasets/<slug>/qc.json")
+    p = sub.add_parser("own", help="register the operator's own data with their data-use statement")
+    p.add_argument("--slug", required=True)
+    p.add_argument("--by", required=True, help="the operator who owns the statement; never an agent")
+    p.add_argument("--statement", required=True, help="how the data may be used, in the operator's words")
+    p.add_argument("--title")
+    p.set_defaults(func=cmd_own)
+
+    p = sub.add_parser("dictionary", help="scaffold or validate datasets/<slug>/dictionary.json")
+    actions = p.add_subparsers(dest="action", required=True, metavar="{init,check}")
+    q = actions.add_parser("init", help="scaffold one entry per header column of a CSV")
+    q.add_argument("--slug", required=True)
+    q.add_argument("--file", required=True)
+    q.add_argument("--force", action="store_true", help="scaffold again over an existing dictionary")
+    q.set_defaults(func=cmd_dictionary)
+    q = actions.add_parser("check", help="validate the dictionary")
+    q.add_argument("--slug", required=True)
+    q.set_defaults(func=cmd_dictionary)
+
+    p = sub.add_parser("qc", help="quality checks into datasets/<slug>/qc.json, against the dictionary when one exists")
     p.add_argument("--slug", required=True)
     p.add_argument("--file", required=True)
     p.add_argument("--label")
