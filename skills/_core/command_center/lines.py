@@ -190,3 +190,7 @@ def for_workspace(root: Path | str) -> tuple[str, Board]:
 
 __all__ = ["BASE", "BOARDS", "Board", "EXPERIMENTAL", "REVIEW", "board", "for_workspace", "notice",
            "register", "registered"]
+
+# The empirical lines register their boards (one per line table) when their
+# module is imported; it imports this one, so it is imported last.
+from . import empirical_board  # noqa: E402,F401
