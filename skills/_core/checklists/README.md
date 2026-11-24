@@ -42,6 +42,8 @@ declarations alone. For PRISMA 2020, `presence` equals the verdict of
 | `hardwarex` | HardwareX hardware article template (Version 2, June 2021) | 31 | the hardware line's HardwareX sections |
 | `gum-reporting` | GUM (JCGM 100:2008) clause 7, reporting uncertainty | 18 | generic section names |
 | `datasheets` | Datasheets for Datasets (Gebru et al., Commun ACM 2021) | 50 | the data-resource line's data-descriptor sections |
+| `consort-2025` | CONSORT 2025 statement (randomised trials) | 30 | the experiment-intervention line's IMRaD sections |
+| `arrive-2` | ARRIVE 2.0 (animal research; also plot or crop field experiments) | 21 | the experiment-intervention line's IMRaD sections |
 
 Sub-items (STROBE 6a/6b, STARD 10a/10b, …) are folded into their numbered
 item, whose question names every part.
@@ -80,6 +82,15 @@ line's data-descriptor contracts (background and summary, methods, data
 records, technical validation, usage notes, code availability) and back matter.
 Every item is a question; those about people apply only when the dataset
 relates to people.
+
+CONSORT 2025 and ARRIVE 2.0 (the experiment-intervention line) keep their
+own numbering with sub-items folded: CONSORT's 30 items in its six sections
+(title and abstract, open science 2-5, introduction, methods, results,
+discussion), ARRIVE's Essential 10 (items 1-10) and Recommended Set (11-21).
+A human trial reports on `consort-2025`; a field experiment on `arrive-2`,
+which also serves a plot or crop trial where its design and analysis items
+apply, since no formal checklist exists for those. CONSORT's open-science
+items target `methods` and `back-matter`. Every item is a question.
 
 ## How blocks and declarations are read
 
