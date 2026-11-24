@@ -788,6 +788,16 @@ and its `CLAUDE.md` states the line's flow:
    and `paper_cli.py verify`), the variant's checklist and the final judge on
    the qualitative-study rubric.
 
+In `smith ui` the line's board has ten steps with G-STUDY-PROTOCOL, G-ETHICS,
+G-TRANSCRIPTS, G-ROUNDS (consensus-foresight only) and G-ANALYSIS, decided by the
+agreed variant. A qualitative or mixed study (and any workspace with no variant
+agreed) needs the protocol, the ethics record, current transcript registrations and
+a current theme sign-off. A consensus study needs the protocol, the ethics record,
+the consensus plan and every planned round, with any recorded MICMAC analysis
+current; its transcripts are optional. An experience report keeps the protocol and
+the transcripts optional, and G-ANALYSIS does not apply. Writing waits for every
+gate. The board never shows a transcript's text, a response or a comment.
+
 The assistant never generates data, never writes or edits a transcript, never
 invents or polishes a quote and never enters a rating; ethics, consent, data
 collection and the analytic sign-off stay human.

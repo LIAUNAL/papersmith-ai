@@ -4,8 +4,8 @@ One board serves every empirical line. A line is a :class:`LineTable`: its
 steps in order (drawn from the shared :data:`STEPS` library), the gates its
 board lists, its phase locks and the step that is transversal. This module
 fills the tables of ``observational-measurement``, ``hardware``,
-``lab-simulation``, ``data-resource`` and ``experiment-intervention``
-(``src/papersmith/templates/paper-flow-<kind>.md.tpl``); a
+``lab-simulation``, ``data-resource``, ``experiment-intervention`` and
+``qualitative-participatory`` (``src/papersmith/templates/paper-flow-<kind>.md.tpl``); a
 later line adds its own table to :data:`LINE_TABLES` (reusing the library's
 steps and adding the ones only it has) and is registered with the rest at the
 end of this module. ``review_board`` stays the review line's own board.
@@ -48,6 +48,22 @@ Every status is read from evidence on disk, never computed from a model:
   so, and never blocks the writing). With no variant agreed (no type, a stale
   agreement or the type without its variant) the human-trial rules apply,
   the stricter case, and both gates say so.
+* G-TRANSCRIPTS: ``qualitative/records.transcripts_state`` passed (every
+  registered transcript holds the bytes it was registered with); G-ROUNDS:
+  ``qualitative/consensus.rounds_state`` passed (the plan current, every
+  planned round recorded and current). The board reads hashes and counts,
+  never a transcript's text, a response, a rating or a comment.
+* qualitative-participatory's own gates (:data:`QUAL_PROTOCOL`,
+  :data:`QUAL_ETHICS`, :data:`QUAL_TRANSCRIPTS`, :data:`QUAL_ROUNDS`,
+  :data:`QUAL_ANALYSIS`), decided by the agreed variant (:func:`qual_variant`,
+  decision K5): a qualitative or mixed study needs the protocol, the ethics
+  record, current transcripts and a current theme sign-off (G-ANALYSIS,
+  ``themes_state``); a consensus study needs the protocol, the ethics record,
+  G-ROUNDS and, for G-ANALYSIS, a current MICMAC analysis when one is recorded,
+  with the transcripts optional; an experience report keeps the protocol and
+  the transcripts optional and G-ANALYSIS not applicable. G-ROUNDS is listed
+  for a consensus study only. With no variant agreed the qualitative-mixed
+  rules apply, the strictest for transcripts, and the gates say so.
 
 The operator records every one of them with ``--by``; the board only reads
 (decision E8). Observational: the analysis actions wait for the protocol, the
@@ -64,6 +80,9 @@ resource is deposited whether or not it has baselines) but its record action
 waits for G-DATA-QC. Experiment-intervention: the pre-specified analyses
 wait for G-DATA-QC (their phase lock) and their actions for the protocol,
 ethics, registration and allocation records too; the writing waits for G-FLOW.
+Qualitative-participatory: the writing waits for G-ANALYSIS and for the
+integration step, which passes only once every line gate passed (an optional
+or not-applicable gate passes as such).
 
 Steps a step after them cannot wait for: a step waits for the one before it,
 so a step whose only record appears later must not hold the line. The
@@ -124,13 +143,15 @@ MODULES: dict[str, str] = {
     "datasets_cli": "datasets/scripts/datasets_cli.py",
     "checklists": "_core/checklists/engine.py",
     "measurement": "_core/measurement/records.py",
+    "qual_records": "_core/qualitative/records.py",
+    "consensus": "_core/qualitative/consensus.py",
 }
 
 #: name -> the sibling packages under ``skills/_core`` its relative imports
 #: reach (``from ..empirical.records import ...``): it is loaded inside a
 #: private package of its parent's parent, and those packages' modules count
 #: in its stamp.
-_NESTED: dict[str, tuple[str, ...]] = {"measurement": ("empirical",)}
+_NESTED: dict[str, tuple[str, ...]] = {"measurement": ("empirical",), "consensus": ("empirical",)}
 
 _CACHE_LOCK = threading.Lock()
 #: path -> (stamp of its directory's modules, module or ``None``, why it did not load);
@@ -217,6 +238,9 @@ PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE = "G-STUDY-PROTOCOL", "G-ETHICS", 
 DATA_GATE, FLOW_GATE = "G-DATA-QC", "G-FLOW"
 SPEC_GATE, CALIBRATION_GATE, AGREEMENT_GATE = "G-SPEC", "G-CALIBRATION", "G-AGREEMENT"
 DEPOSIT_GATE, ALLOCATION_GATE = "G-DEPOSIT", "G-ALLOCATION"
+TRANSCRIPTS_GATE, ROUNDS_GATE, QUAL_ANALYSIS_GATE = "G-TRANSCRIPTS", "G-ROUNDS", "G-ANALYSIS"
+QUAL_CLI = "python skills/_core/qualitative/qual_cli.py"
+CONSENSUS_CLI = "python skills/_core/qualitative/consensus_cli.py"
 #: The gates a hardware board lists only when people take part in its validation.
 PEOPLE_GATES = (ETHICS_GATE, REGISTRATION_GATE, FLOW_GATE)
 #: What an analysis waits for: the protocol, the ethics and registration records and the data QC.
@@ -688,6 +712,241 @@ def _allocation_gate(ctx: Context) -> dict[str, str]:
                                          f"{state.get('concealment')}")}
 
 
+# ----- the qualitative, participatory or consensus study (qualitative-participatory)
+
+QUAL_KIND = "qualitative-participatory"
+QUAL_MIXED, CONSENSUS, EXPERIENCE = "qualitative-mixed", "consensus-foresight", "experience-report"
+QUAL_VARIANTS = (QUAL_MIXED, CONSENSUS, EXPERIENCE)
+_NO_QUAL_VARIANT = ("No variant agreed yet, treated as a qualitative or mixed study (the strictest case for "
+                    "transcripts): {detail}")
+
+
+def qual_variant(root: Path) -> tuple[str, bool]:
+    """(variant, assumed) of a qualitative-participatory workspace: the variant
+    the operator agreed, else ``qualitative-mixed`` with ``assumed`` true (no
+    type agreed, another line's type, a stale agreement or the type agreed
+    without its variant): the protocol, the ethics record, the transcripts and
+    the theme sign-off are then all required, and the line's gates say so."""
+    agreed = agreed_type(root)
+    if agreed["line"] == QUAL_KIND and not agreed["stale"] and agreed["variant"] in QUAL_VARIANTS:
+        return agreed["variant"], False
+    return QUAL_MIXED, True
+
+
+def _qual_assumed(gate: dict[str, str], assumed: bool) -> dict[str, str]:
+    return {**gate, "detail": _NO_QUAL_VARIANT.format(detail=gate["detail"])} if assumed else gate
+
+
+#: One stale part per file and reason; the file comes last, so the parts of a
+#: joined list each read in Spanish (see ``localize.lookup``).
+_TRANSCRIPT_REASONS = {
+    "file-changed": "transcript changed since its registration: {transcript}",
+    "file-missing": "transcript missing: {transcript}",
+    "file-unreadable": "transcript unreadable: {transcript}",
+    "file-outside": "transcript path outside the workspace, not read: {transcript}",
+}
+
+
+def _transcripts_gate(ctx: Context) -> dict[str, str]:
+    """G-TRANSCRIPTS: ``records.transcripts_state`` passed. It reads the
+    registrations (codes, files, hashes, counts), never a transcript's text."""
+    state = ctx.module("qual_records").transcripts_state(ctx.root)
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The transcript registrations are unreadable: {state['message']}"}
+    if state["state"] == "absent":
+        return {"status": "PENDING", "detail": "No transcript registered yet (qual_cli.py transcripts add)"}
+    counts = state["counts"]
+    if not state["passed"]:
+        reasons = "; ".join(_TRANSCRIPT_REASONS.get(reason, reason + ": {transcript}").format(
+            transcript=f"{item.get('file')} ({item.get('participant')})")
+            for item in state["transcripts"] for reason in item.get("reasons") or ())
+        return {"status": "ACTIVE", "detail": (f"Stale ({reasons}): the operator registers the file again "
+                                               "(qual_cli.py transcripts add --replace)")}
+    return {"status": "PASS", "detail": (f"{counts['transcripts']} transcript(s) of {counts['participants']} "
+                                         "participant(s), each with its consent and de-identification statements "
+                                         "and unchanged since its registration")}
+
+
+_ROUND_REASONS = {
+    "file-changed": "its response file changed since it was recorded",
+    "file-missing": "its response file is missing",
+    "file-unreadable": "its response file is unreadable",
+    "file-outside": "the recorded path of its response file leaves the workspace and is not read",
+    "file-invalid": "its response file no longer parses",
+    "plan-changed": "the consensus plan was recorded again since",
+    "plan-stale": "the protocol changed under the consensus plan",
+    "plan-missing": "the plan entry it was recorded against is missing",
+    "beyond-plan": "it lies beyond the planned rounds",
+}
+
+
+def _rounds_gate(ctx: Context) -> dict[str, str]:
+    """G-ROUNDS: ``consensus.rounds_state`` passed. It reads the plan and the
+    rounds' counts, never a response, a rating or a comment."""
+    state = ctx.module("consensus").rounds_state(ctx.root)
+    if state["state"] == "corrupt":
+        message = state.get("message") or next((w["message"] for w in state.get("warnings") or ()), "")
+        return {"status": "FAIL", "detail": f"The consensus records are unreadable: {message}"}
+    if state["state"] == "absent":
+        return {"status": "PENDING", "detail": "No consensus plan recorded yet (consensus_cli.py plan record)"}
+    if not state["passed"]:
+        parts = []
+        if not state["plan"].get("current"):
+            parts.append("the consensus plan covers an earlier protocol: the operator records it again")
+        if state["missing"]:
+            parts.append(f"planned round(s) not recorded: {', '.join(map(str, state['missing']))}")
+        for item in state["stale"]:
+            parts.extend(f"round {item['round']}: {_ROUND_REASONS.get(reason, reason)}" for reason in item["reasons"])
+        recorded = len(state["rounds"])
+        return {"status": "ACTIVE" if recorded or parts else "PENDING",
+                "detail": (f"Open ({'; '.join(parts)}): the operator records each planned round "
+                           "(consensus_cli.py round record)")}
+    last = max(state["rounds"], key=lambda row: row["round"]) if state["rounds"] else {}
+    return {"status": "PASS", "detail": (f"All {state['planned']} planned round(s) recorded and current; round "
+                                         f"{last.get('round')}: {last.get('responders')} responder(s), "
+                                         f"{last.get('consensus_items')} of {last.get('items_count')} item(s) at "
+                                         "consensus")}
+
+
+def _qual_protocol_gate(ctx: Context) -> dict[str, str]:
+    """G-STUDY-PROTOCOL of the line (K5): the shared reading, required for a
+    qualitative or mixed study and a consensus study; an experience report
+    keeps it optional (it passes, saying so) unless it keeps a protocol, which
+    then reads as the shared gate."""
+    variant, assumed = qual_variant(ctx.root)
+    if variant == EXPERIENCE:
+        records = ctx.module("records")
+        if records.protocol_state(ctx.root)["state"] == "absent" and not records.managed_revisions(ctx.root):
+            return {"status": "PASS", "detail": "Optional for an experience report (not blocking): no study "
+                                                "protocol kept"}
+    return _qual_assumed(_protocol_gate(ctx), assumed)
+
+
+def _qual_ethics_gate(ctx: Context) -> dict[str, str]:
+    """G-ETHICS of the line (K5): the shared reading (a not-applicable record
+    passes, for an experience report without participant data too). The
+    ethics record is bound to an approved protocol, so an experience report
+    with no record and no protocol is told to approve one first."""
+    variant, assumed = qual_variant(ctx.root)
+    shared = _record_gate(ctx, "ethics")
+    if (variant == EXPERIENCE and shared["status"] == "PENDING"
+            and ctx.module("records").protocol_state(ctx.root)["state"] == "absent"):
+        return {"status": "PENDING", "detail": ("No ethics record yet: the ethics record, or why none applies "
+                                                "(--not-applicable), is bound to an approved protocol, so an "
+                                                "experience report approves a short protocol first "
+                                                "(study_cli.py protocol approve, then ethics record)")}
+    return _qual_assumed(shared, assumed)
+
+
+_OPTIONAL_FOR = {CONSENSUS: "Optional for a consensus study (not blocking): {detail}",
+                 EXPERIENCE: "Optional for an experience report (not blocking): {detail}"}
+_NOT_APPLICABLE_TO = {QUAL_MIXED: "Not applicable to a qualitative or mixed study",
+                      EXPERIENCE: "Not applicable to an experience report"}
+
+
+def _qual_transcripts_gate(ctx: Context) -> dict[str, str]:
+    """G-TRANSCRIPTS of the line (K5): required for a qualitative or mixed
+    study; a consensus study and an experience report show it as it stands
+    and it passes (never blocking)."""
+    variant, assumed = qual_variant(ctx.root)
+    shared = _transcripts_gate(ctx)
+    if variant == QUAL_MIXED:
+        return _qual_assumed(shared, assumed)
+    if shared["status"] == "PASS":
+        return shared
+    detail = shared["detail"] if shared["status"] != "PENDING" else "no transcript registered"
+    return {"status": "PASS", "detail": _OPTIONAL_FOR[variant].format(detail=detail)}
+
+
+def _qual_rounds_gate(ctx: Context) -> dict[str, str]:
+    """G-ROUNDS of the line (K5): required for a consensus study, not
+    applicable otherwise (the board does not list it then)."""
+    variant, _ = qual_variant(ctx.root)
+    if variant != CONSENSUS:
+        return {"status": "PASS", "detail": _NOT_APPLICABLE_TO[variant]}
+    return _rounds_gate(ctx)
+
+
+_THEMES_REASONS = {
+    "themes-file-changed": "the themes file changed since the sign-off",
+    "themes-file-missing": "the themes file is missing",
+    "themes-file-unreadable": "the themes file is unreadable",
+    "themes-file-outside": "the recorded path of the themes file leaves the workspace and is not read",
+    "codebook-changed": "another codebook version was recorded since",
+    "codebook-stale": "the codebook file changed or its record is unreadable",
+    "transcript-changed": "a signed transcript was replaced, changed or removed",
+    "transcript-added": "a transcript was registered after the sign-off",
+}
+_MICMAC_REASONS = {
+    "file-changed": "the influence matrix changed since it was computed",
+    "file-missing": "the influence matrix is missing",
+    "file-unreadable": "the influence matrix is unreadable",
+    "file-outside": "the recorded path of the influence matrix leaves the workspace and is not read",
+}
+
+
+def _themes_part(ctx: Context) -> dict[str, str]:
+    """The operator's theme sign-off (``records.themes_state``): bound to the
+    current codebook version and to every registered transcript."""
+    qual = ctx.module("qual_records")
+    state = qual.themes_state(ctx.root)
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The theme sign-off record is unreadable: {state['message']}"}
+    if state["state"] == "absent":
+        codebook = qual.codebook_state(ctx.root)
+        if codebook["state"] in ("current", "stale"):
+            return {"status": "ACTIVE", "detail": (f"Codebook version {codebook['version']} recorded; the themes "
+                                                   "await the operator's sign-off (qual_cli.py themes signoff)")}
+        return {"status": "PENDING", "detail": ("No codebook version or theme sign-off yet (qual_cli.py codebook "
+                                                "record, then themes signoff)")}
+    if not state["passed"]:
+        reasons = "; ".join(_THEMES_REASONS.get(reason, reason) for reason in state["reasons"])
+        return {"status": "ACTIVE", "detail": f"Stale ({reasons}): the operator signs the themes off again "
+                                              "(qual_cli.py themes signoff)"}
+    codebook = state.get("codebook") or {}
+    return {"status": "PASS", "detail": (f"Themes signed off by {state.get('by') or '?'} on codebook version "
+                                         f"{codebook.get('version')}, bound to {len(state.get('transcripts') or [])} "
+                                         "transcript(s)")}
+
+
+def _micmac_part(ctx: Context) -> dict[str, str] | None:
+    """The MICMAC analysis when one is recorded (``consensus.micmac_state``), else ``None``."""
+    state = ctx.module("consensus").micmac_state(ctx.root)
+    if state["state"] == "absent":
+        return None
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The MICMAC record is unreadable: {state['message']}"}
+    if not state.get("current"):
+        reasons = "; ".join(_MICMAC_REASONS.get(reason, reason) for reason in state.get("reasons") or ())
+        return {"status": "ACTIVE", "detail": (f"Stale ({reasons}): the MICMAC analysis is computed again from the "
+                                               "operator's influence matrix (consensus_cli.py micmac compute)")}
+    return {"status": "PASS", "detail": f"MICMAC analysis current, computed by {state.get('by') or '?'}"}
+
+
+def _qual_analysis_gate(ctx: Context) -> dict[str, str]:
+    """G-ANALYSIS of the line (K5). A qualitative or mixed study: the
+    operator's theme sign-off is current. A consensus study: G-ROUNDS passed
+    and, when a MICMAC analysis is recorded, it is current. An experience
+    report: not applicable (the reflection is the paper's own text)."""
+    variant, assumed = qual_variant(ctx.root)
+    if variant == EXPERIENCE:
+        return {"status": "PASS", "detail": "Not applicable to an experience report: the reflection is the "
+                                            "paper's own text"}
+    if variant == QUAL_MIXED:
+        return _qual_assumed(_themes_part(ctx), assumed)
+    rounds = _rounds_gate(ctx)
+    if rounds["status"] != "PASS":
+        return {"status": "PENDING" if rounds["status"] == "PENDING" else rounds["status"],
+                "detail": f"Waits for G-ROUNDS: {rounds['detail']}"}
+    micmac = _micmac_part(ctx)
+    if micmac is None:
+        return {"status": "PASS", "detail": "Consensus results read from the current rounds; no MICMAC analysis "
+                                            "recorded"}
+    if micmac["status"] != "PASS":
+        return micmac
+    return {"status": "PASS", "detail": f"Consensus results read from the current rounds; {micmac['detail']}"}
+
+
 # ----- the measurement core (hardware and lab-simulation)
 
 
@@ -913,6 +1172,19 @@ GATES: dict[str, Gate] = {gate.id: gate for gate in (
          "count, bound to the current protocol lock. It stays current while the list is unchanged and the protocol "
          "is not amended; the board reads the record, never the list. The pre-specified analyses wait for it.",
          "allocation", _allocation_gate, "records"),
+    Gate(TRANSCRIPTS_GATE, "Transcript Registration Gate",
+         "The operator registered every de-identified transcript, field note or document of the study (qual_cli.py "
+         "transcripts add --by <name>) with its participant code, how consent was given and how it was "
+         "de-identified, bound by its sha256; a file changed, missing or moved out of the workspace since makes it "
+         "stale until it is registered again. The board reads the registrations, never a transcript's text.",
+         "fieldwork", _transcripts_gate, "qual_records"),
+    Gate(ROUNDS_GATE, "Consensus Rounds Gate",
+         "The operator recorded the consensus plan (rounds, threshold, rating scale, agreement cut-off) against the "
+         "approved protocol (consensus_cli.py plan record --by <name>) and every planned round's response file "
+         "(consensus_cli.py round record --by <name>), bound by its sha256; the agreement per item is computed from "
+         "those files. A changed file, a plan recorded again or an amended protocol makes a round stale. The board "
+         "reads the counts, never a response, a rating or a comment.",
+         "fieldwork", _rounds_gate, "consensus"),
 )}
 
 #: The data-resource line's G-ETHICS: the ethics record plus the right to release the data.
@@ -944,6 +1216,50 @@ TRIAL_FLOW = Gate(
     "field experiment, which may report its experimental units in a table: it never blocks the writing, and a flow "
     "that is kept is shown as it stands.",
     "flow_units", _trial_flow_gate, "flow_cli")
+
+#: The qualitative-participatory line's own gates (K5): the agreed variant
+#: decides each, the qualitative-mixed rules when none is agreed.
+QUAL_PROTOCOL = Gate(
+    PROTOCOL_GATE, "Study Protocol Approval Gate",
+    "The operator approved a managed revision of protocol/study-protocol-<slug>-vNN.md (study_cli.py protocol "
+    "approve --by <name>), pinned by its sha256 in study/protocol.lock.json: the question, the approach and its "
+    "paradigm, the case or setting, the sampling and its sufficiency criterion, the data collection and the analysis "
+    "plan, and for a consensus study the panel, the rating scale, the threshold and the number of rounds. Required "
+    "for a qualitative or mixed study (and any workspace with no variant agreed) and a consensus study; optional "
+    "for an experience report, which passes without one and reads as this gate once it keeps a protocol.",
+    "case_framework", _qual_protocol_gate, "records")
+
+QUAL_ETHICS = Gate(
+    ETHICS_GATE, "Ethics & Consent Record Gate",
+    "The operator recorded the ethics approval and the consent route, consent to be quoted included (study_cli.py "
+    "ethics record --by <name>), or why none applies (--not-applicable --reason <why>, which an experience report "
+    "without participant data may record), bound to the current protocol lock; an amendment makes it stale until it "
+    "is recorded again.", "ethics_consent_quotes", _qual_ethics_gate, "records")
+
+QUAL_TRANSCRIPTS = Gate(
+    TRANSCRIPTS_GATE, "Transcript Registration Gate",
+    "Required for a qualitative or mixed study (and any workspace with no variant agreed): the operator registered "
+    "every de-identified transcript, field note or document (qual_cli.py transcripts add --by <name>) with its "
+    "participant code, consent and de-identification statements, bound by its sha256, and none changed since. "
+    "Optional for a consensus study and an experience report: shown as it stands, it never blocks the writing. The "
+    "board reads the registrations, never a transcript's text.", "fieldwork", _qual_transcripts_gate, "qual_records")
+
+QUAL_ROUNDS = Gate(
+    ROUNDS_GATE, "Consensus Rounds Gate",
+    "Required for a consensus study and listed only there: the consensus plan recorded against the approved "
+    "protocol (consensus_cli.py plan record --by <name>) is current and every planned round's response file is "
+    "recorded (consensus_cli.py round record --by <name>) and unchanged; the agreement per item is computed from "
+    "those files. The board reads the counts, never a response, a rating or a comment.",
+    "fieldwork", _qual_rounds_gate, "consensus")
+
+QUAL_ANALYSIS = Gate(
+    QUAL_ANALYSIS_GATE, "Analysis Sign-off Gate",
+    "A qualitative or mixed study (and any workspace with no variant agreed): the operator's theme sign-off "
+    "(qual_cli.py themes signoff --by <name>) is current, bound to the current codebook version and to every "
+    "registered transcript. A consensus study: G-ROUNDS passed and, when a MICMAC analysis is recorded "
+    "(consensus_cli.py micmac compute --by <name>), it is current. An experience report: not applicable, the "
+    "reflection is the paper's own text. The writing starts after it.",
+    "coding_consensus", _qual_analysis_gate, "qual_records")
 
 
 def gate_definition(table: "LineTable", gate_id: str) -> Gate:
@@ -1180,6 +1496,145 @@ def _flow_units(ctx: Context) -> dict[str, Any]:
     info = _participant_flow(ctx)
     if trial_variant(ctx.root)[0] == FIELD_EXPERIMENT and info["status"] != "PASS":
         info.update(status="PASS", detail=ctx.gates[FLOW_GATE]["detail"], progress=None)
+    return info
+
+
+# ----- the qualitative-participatory steps
+
+
+def _plan_part(ctx: Context) -> dict[str, str]:
+    """The consensus plan (``consensus.plan_state``): bound to the protocol lock."""
+    state = ctx.module("consensus").plan_state(ctx.root)
+    if state["state"] == "absent":
+        return {"status": "PENDING", "detail": "No consensus plan recorded yet (consensus_cli.py plan record)"}
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The consensus plan is unreadable: {state['message']}"}
+    if not state.get("current"):
+        return {"status": "ACTIVE", "detail": ("Stale: the protocol was amended or changed since the consensus plan "
+                                               "was recorded; the operator records it again")}
+    scale = state.get("scale") or {}
+    return {"status": "PASS", "detail": (f"{state.get('rounds')} round(s), threshold {state.get('threshold')}%, "
+                                         f"scale {scale.get('min')}-{scale.get('max')}, agreement from "
+                                         f"{state.get('agree_from')}; recorded by {state.get('by') or '?'}")}
+
+
+def _case_framework(ctx: Context) -> dict[str, Any]:
+    info = _study_protocol(ctx)  # an experience report's optional gate passes, and so does the step
+    if qual_variant(ctx.root)[0] == CONSENSUS:
+        plan = _plan_part(ctx)
+        info["subfases"].append(("Consensus plan: rounds, threshold and scale (operator)", plan["status"],
+                                 plan["detail"]))
+        if info["status"] == "PASS" and plan["status"] != "PASS":
+            info.update(status="ACTIVE", detail=plan["detail"])
+    return info
+
+
+def _panel_part(ctx: Context) -> dict[str, str]:
+    state = ctx.module("consensus").panel_state(ctx.root)
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The panel record is unreadable: {state['message']}"}
+    if state["state"] == "absent":
+        return {"status": "PENDING", "detail": "No panel member registered yet (consensus_cli.py panel add)"}
+    return {"status": "PASS", "detail": f"{state['size']} panel member(s) registered by anonymised code"}
+
+
+def _fieldwork(ctx: Context) -> dict[str, Any]:
+    variant = qual_variant(ctx.root)[0]
+    transcripts = ctx.gates[TRANSCRIPTS_GATE]
+    subfases = [("Transcripts and field notes (G-TRANSCRIPTS, operator)", transcripts["status"],
+                 transcripts["detail"])]
+    if variant == CONSENSUS:
+        rounds, panel = ctx.gates[ROUNDS_GATE], _panel_part(ctx)
+        subfases += [("Consensus panel (anonymised codes, operator)", panel["status"], panel["detail"]),
+                     ("Consensus rounds (G-ROUNDS, operator)", rounds["status"], rounds["detail"])]
+        return {"status": _gate_step(rounds), "detail": rounds["detail"], "subfases": subfases}
+    if variant == EXPERIENCE:
+        subfases.append(("What was done (the operator's own records)", "PASS",
+                         "Kept by the operator and described in the paper; no record is required"))
+    return {"status": _gate_step(transcripts), "detail": transcripts["detail"], "subfases": subfases}
+
+
+def _coding_consensus(ctx: Context) -> dict[str, Any]:
+    variant = qual_variant(ctx.root)[0]
+    gate = ctx.gates[QUAL_ANALYSIS_GATE]
+    if variant == QUAL_MIXED:
+        codebook = ctx.module("qual_records").codebook_state(ctx.root)
+        if codebook["state"] == "absent":
+            book = ("PENDING", "No codebook version recorded yet (qual_cli.py codebook record)")
+        elif codebook["state"] == "corrupt":
+            book = ("FAIL", f"The codebook record is unreadable: {codebook['message']}")
+        elif codebook["state"] == "stale":
+            book = ("ACTIVE", (f"Codebook version {codebook['version']}: its file changed since it was recorded; "
+                               "the operator records it again"))
+        else:
+            book = ("PASS", f"Codebook version {codebook['version']} recorded by {codebook.get('by') or '?'}")
+        subfases = [("Codebook versions (operator)", *book),
+                    ("Theme sign-off (G-ANALYSIS, operator)", gate["status"], gate["detail"])]
+    elif variant == CONSENSUS:
+        rounds = ctx.gates[ROUNDS_GATE]
+        micmac = _micmac_part(ctx) or {"status": "PENDING", "detail": "No MICMAC analysis recorded (optional)"}
+        subfases = [("Agreement per item from the recorded rounds (G-ROUNDS)", rounds["status"], rounds["detail"]),
+                    ("MICMAC analysis from the operator's influence matrix (optional)", micmac["status"],
+                     micmac["detail"]),
+                    ("Consensus results (G-ANALYSIS)", gate["status"], gate["detail"])]
+    else:
+        subfases = [("Reflection on what was done and what it taught", "PASS", gate["detail"])]
+    return {"status": _gate_step(gate), "detail": gate["detail"], "subfases": subfases}
+
+
+def _qual_lists_gate(ctx: Context, gate_id: str) -> bool:
+    """G-ROUNDS is listed for a consensus study only (and when the variant cannot be read)."""
+    if gate_id != ROUNDS_GATE:
+        return True
+    try:
+        return qual_variant(ctx.root)[0] == CONSENSUS
+    except Exception:  # an unreadable agreement: the gate is listed rather than hidden
+        return True
+
+
+#: The line's gates the writing waits for, in the order the flow places them.
+QUAL_WRITING_GATES = (PROTOCOL_GATE, ETHICS_GATE, TRANSCRIPTS_GATE, ROUNDS_GATE, QUAL_ANALYSIS_GATE)
+
+
+def _integration(ctx: Context) -> dict[str, Any]:
+    """Integration with prior work: written in the discussion, against the
+    accepted state of the art, once every gate the flow places before the
+    writing passed (an optional or not-applicable gate passes as such)."""
+    accepted = bool(decision.read(ctx.root)["plausibility"]) and (ctx.root / "sota-pool" / "candidates.json").is_file()
+    open_gates = [gate for gate in QUAL_WRITING_GATES if ctx.gates[gate]["status"] != "PASS"]
+    if not open_gates:
+        status, detail = "PASS", ("Every gate before the writing passed: the discussion compares each finding "
+                                  "with the accepted state of the art, each comparison cited")
+    else:
+        started = any(ctx.gates[gate]["status"] != "PENDING" for gate in QUAL_WRITING_GATES)
+        status, detail = (("ACTIVE" if started else "PENDING"),
+                          f"Waits for the gates before the writing: {', '.join(open_gates)}")
+    return {"status": status, "detail": detail, "subfases": [
+        ("Accepted state of the art (sota-pool/candidates.json)", "PASS" if accepted else "PENDING",
+         "The plausibility report accepted and its candidate pool" if accepted
+         else "No accepted plausibility report yet (/plausibility)"),
+        ("Operator gates before the writing", status, detail),
+    ]}
+
+
+def _reporting_qualitative(ctx: Context) -> dict[str, Any]:
+    """The reporting step: the variant's checklist (srqr with coreq as the
+    alternative, accord, or none for an experience report), the verbatim
+    quotes check and the audit, each computed on demand."""
+    info = _reporting(ctx)
+    variant, assumed = qual_variant(ctx.root)
+    extra = []
+    if not assumed and variant == EXPERIENCE:
+        info["subfases"][0] = ("Reporting checklist", "PENDING",
+                               "An experience report has no reporting checklist: the final judge and the operator's "
+                               "judgment only")
+    elif not assumed and variant == QUAL_MIXED:
+        name, detail = _guideline_detail(ctx, "coreq")
+        extra.append((f"{name}, the alternative for interviews or focus groups", "PENDING", detail))
+    quotes = ("Verbatim quotes (qual_cli.py quotes check, paper_cli.py verify)", "PENDING",
+              "Every \\pquote checked against a current transcript of its participant on demand, never on the "
+              "board's refresh")
+    info["subfases"][1:1] = [*extra, quotes]
     return info
 
 
@@ -2185,6 +2640,151 @@ STEPS.update({step.id: step for step in (
          }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
 )})
 
+# ----- qualitative-participatory (src/papersmith/templates/paper-flow-qualitative-participatory.md.tpl)
+STEPS.update({step.id: step for step in (
+    Step("plausibility_qualitative", "Plausibility and paper type", "Plausibility & Paper Type",
+         "The state of the art scouted around the idea, the plausibility report accepted by the operator, and the qualitative-participatory paper type and its variant agreed with /paper-type: a qualitative or mixed-methods study (SRQR, or COREQ for interviews and focus groups), an expert consensus or foresight study (ACCORD) or an experience report (no checklist). The variant chooses the reporting checklist and which records the writing waits for.",
+         ("read", "write", "http"), ("sota-pool/candidates.json", ".papersmith/paper_type.json"), "G-PAPER-TYPE", {
+             "skills": ["plausibility", "paper-type"],
+             "agent": "plausibility, paper-type-advisor & operator",
+             "actions": [
+                 _prompt("/plausibility", "Explore the plausibility of the idea", [
+                     "Write the idea in at least two sentences: the question, the people or the panel whose accounts or judgement answer it, and the setting.",
+                     "The agent scouts about 25 SOTA references by their abstracts and grades the claims with verbatim quotes.",
+                     "Nothing moves on until you accept the report.",
+                 ], "E.g.: Rural nurses adapt telehealth to their communities in ways the guidelines do not foresee. We interview twenty nurses in three districts …",
+                     min_sentences=2),
+                 _prompt("/paper-type", "Agree the paper type and its variant", [
+                     "The agent scores the idea against the paper types and discusses its suggestion with you.",
+                     "You agree the variant: a qualitative or mixed study (SRQR or COREQ), an expert consensus or foresight study (ACCORD) or an experience report.",
+                     "Until a variant is agreed the board applies the qualitative-study rules: a protocol, an ethics record, registered transcripts and a theme sign-off.",
+                 ], "E.g.: discuss whether this is an interview study, a Delphi panel or an experience report.", optional=True),
+                 _redirect("View the paper types", "papertype", "Every paper type with its score, guideline and variants."),
+             ],
+         }, (("Candidate pool", "sota-pool/candidates.json"), ("Plausibility acceptance", ".papersmith/plausibility.json"),
+             ("Agreed paper type", ".papersmith/paper_type.json")), _plausibility_type),
+    Step("case_framework", "Case, panel or experience and its framework", "Case, Panel or Experience & Framework (G-STUDY-PROTOCOL)",
+         "The protocol as managed revisions: the research question, the approach and its paradigm, the case or setting, the sampling and its sufficiency criterion, the data collection and the analysis plan; for a consensus study the panel, the rating scale, the consensus threshold and the number of rounds, fixed before the first round and recorded as the consensus plan. The operator approves a revision; an experience report may keep none.",
+         ("read", "write"), ("protocol/study-protocol-<slug>-vNN.md", "study/protocol.lock.json", "study/consensus/plan.json"),
+         PROTOCOL_GATE, {
+             "skills": ["study-protocol-deliberation"],
+             "agent": "study-protocol-deliberation & operator",
+             "actions": [
+                 _prompt("/study-protocol-deliberation", "Deliberate the protocol with the agent", [
+                     "The agent drafts the protocol with you as labelled fields: question, approach and paradigm, case or setting, sampling and its sufficiency, data collection and analysis plan.",
+                     "For a consensus study the panel, the rating scale, the threshold and the number of rounds are fixed here, before the first round.",
+                     "Each accepted change is published as a new managed revision under protocol/.",
+                 ], "E.g.: draft the first protocol of the rural telehealth interview study.", optional=True),
+                 _command(f"{STUDY_CLI} protocol status --root .", "Protocol lock status",
+                          "Whether the approved revision is current, changed or absent."),
+                 _command(f"{STUDY_CLI} protocol approve --root . --by {_OPERATOR}",
+                          "Approve the protocol (operator, G-STUDY-PROTOCOL)",
+                          "Only the operator approves; the approval pins the revision's sha256."),
+                 _command(f'{STUDY_CLI} protocol amend --root . --by {_OPERATOR} --reason "<why>"',
+                          "Record an amendment", "A change after the approval, with its reason; the methods report it."),
+                 _command(f"{CONSENSUS_CLI} plan record --root . --rounds <n> --threshold <percent> --scale <min-max> "
+                          f"--agree-from <rating> --by {_OPERATOR}",
+                          "Record the consensus plan (operator, consensus study)",
+                          "The rounds, the threshold, the rating scale and the agreement cut-off, bound to the approved protocol."),
+             ],
+         }, (("Protocol revisions", "protocol/study-protocol-*.md"),
+             ("Protocol approval (G-STUDY-PROTOCOL)", "study/protocol.lock.json"),
+             ("Consensus plan", "study/consensus/plan.json")), _case_framework, ("records",)),
+    Step("ethics_consent_quotes", "Ethics and consent", "Ethics & Consent (G-ETHICS)",
+         "The approval of the ethics committee and the consent route, consent to be quoted included, recorded by the operator against the approved protocol, or recorded as not applicable with the reason, as an experience report without participant data may; an amendment of the protocol makes it stale.",
+         ("read", "write"), ("study/ethics.json",), ETHICS_GATE, {
+             "skills": [],
+             "agent": "operator",
+             "actions": [
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --committee "<committee>" '
+                          f'--code "<approval code>" --date <YYYY-MM-DD> --consent "<consent route, consent to be quoted included>"',
+                          "Record the ethics approval (operator, G-ETHICS)",
+                          "The committee, the approval code, its date and the consent route, consent to be quoted included."),
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --not-applicable --reason "<why>"',
+                          "Record that no ethics approval applies (operator)", "With the reason, in your words."),
+                 _command(f"{STUDY_CLI} status --root .", "Study records status",
+                          "The protocol, ethics and registration states and their warnings."),
+             ],
+         }, (("Ethics record (G-ETHICS)", "study/ethics.json"),), _ethics_consent, ("records",)),
+    Step("fieldwork", "Fieldwork, rounds or implementation", "Fieldwork, Rounds or Implementation (G-TRANSCRIPTS, G-ROUNDS)",
+         "The operator conducts the interviews, focus groups or observation, transcribes and de-identifies the material and registers each file by its sha256 with the participant code and how consent was given; a consensus study registers its panel by anonymised codes and each round's response file in order. The assistant never writes or edits a transcript and never enters a rating.",
+         ("read", "write"), ("study/transcripts.json", "study/consensus/panel.json", "study/consensus/rounds.json"),
+         TRANSCRIPTS_GATE, {
+             "skills": [],
+             "agent": "operator",
+             "actions": [
+                 _command(f'{QUAL_CLI} transcripts add --root . --file <file> --participant <code> '
+                          f'--consent "<how consent was given>" --deidentified "<how it was de-identified>" --by {_OPERATOR}',
+                          "Register a transcript (operator, G-TRANSCRIPTS)",
+                          "One de-identified file by its sha256; --kind focus-group, field-note or document when it applies."),
+                 _command(f"{QUAL_CLI} transcripts status --root .", "Transcript registrations status",
+                          "Every registration current or stale; never a transcript's text."),
+                 _command(f'{CONSENSUS_CLI} panel add --root . --member <code> --expertise "<expertise>" --by {_OPERATOR}',
+                          "Register a panel member (operator, consensus study)",
+                          "An anonymised code and the member's expertise; names and emails are refused."),
+                 _command(f"{CONSENSUS_CLI} round record --root . --round <k> --file <responses.csv> --by {_OPERATOR}",
+                          "Record a consensus round (operator, G-ROUNDS)",
+                          "The round's response file by its sha256, in order; the agreement per item is computed from it."),
+                 _command(f"{CONSENSUS_CLI} round status --root .", "Consensus rounds status",
+                          "Each round current or stale, with its agreement per item; never a comment."),
+             ],
+         }, (("Transcript registrations (G-TRANSCRIPTS)", "study/transcripts.json"),
+             ("Consensus panel", "study/consensus/panel.json"),
+             ("Consensus rounds (G-ROUNDS)", "study/consensus/rounds.json")), _fieldwork, ("qual_records", "consensus")),
+    Step("coding_consensus", "Coding, consensus or reflection", "Coding, Consensus or Reflection (G-ANALYSIS)",
+         "The assistant may propose codes and themes in a draft file; the operator records each codebook version and signs the themes off, bound to the codebook version and to every transcript. A consensus study reads its agreement per item from the rounds and may compute MICMAC from the operator's influence matrix. An experience report reflects on what was done and what it taught.",
+         ("read", "write"), ("study/codebook.json", "study/themes.json", "study/consensus/micmac.json"), QUAL_ANALYSIS_GATE, {
+             "skills": ["qualitative-participatory"],
+             "agent": "qualitative-participatory & operator",
+             "actions": [
+                 _command(f"{QUAL_CLI} codebook record --root . --file <codebook> --by {_OPERATOR}",
+                          "Record a codebook version (operator)", "The codebook file by its sha256; each change is a new version."),
+                 _command(f"{QUAL_CLI} themes signoff --root . --file <themes> --by {_OPERATOR}",
+                          "Sign the themes off (operator, G-ANALYSIS)",
+                          "Bound to the current codebook version and to every registered transcript."),
+                 _command(f"{QUAL_CLI} themes status --root .", "Theme sign-off status",
+                          "Whether the sign-off is current or stale, and why."),
+                 _command(f"{CONSENSUS_CLI} micmac compute --root . --file <matrix.csv> --by {_OPERATOR}",
+                          "Compute MICMAC (operator, consensus study)",
+                          "Direct and indirect influence from your influence matrix; MACTOR and scenarios stay narrative."),
+                 _command(f"{CONSENSUS_CLI} status --root .", "Consensus status",
+                          "The panel, the plan, the rounds and the MICMAC analysis, with their warnings."),
+             ],
+         }, (("Codebook versions", "study/codebook.json"), ("Theme sign-off (G-ANALYSIS)", "study/themes.json"),
+             ("MICMAC analysis", "study/consensus/micmac.json")), _coding_consensus, ("qual_records", "consensus")),
+    Step("integration", "Integration with prior work", "Integration with Prior Work",
+         "The discussion compares each finding with the closest studies of the accepted state of the art and the literature the introduction names, each comparison cited; it is written once every gate the flow places before the writing has passed.",
+         ("read", "write"), ("sota-pool/candidates.json",), "G-ANALYSIS", {
+             "skills": ["qualitative-participatory"],
+             "agent": "qualitative-participatory & operator",
+             "actions": [
+                 _prompt("/qualitative-participatory", "Ask where the study stands", [
+                     "The agent reports each stage of the study from its records and names what is still owed.",
+                     "It never records a decision for you: every gate is yours.",
+                 ], "E.g.: status", optional=True),
+                 _redirect("View the state of the art", "atlas",
+                           "The SOTA constellation each finding is compared with."),
+             ],
+         }, (("Candidate pool", "sota-pool/candidates.json"),), _integration),
+    Step("reporting_qualitative", "Reporting check and audit", "Reporting Check, Quotes, Final Judge & Audit",
+         "The checklist of the agreed variant (srqr, or coreq for interviews and focus groups, for a qualitative or mixed study; accord for a consensus study; none for an experience report), the verbatim quotes check, the study checks of paper_cli.py verify, the qualitative-study final judge and the cross-cutting audit; audits report, they never repair.",
+         ("read", "bash"), (".papersmith/audit.json",), "G-AUDIT", {
+             "skills": ["skill-audit"],
+             "agent": "checklist engine, qualitative core, skill-audit & smith audit",
+             "actions": [
+                 _command(f"{CHECKLIST_CLI} check --guideline srqr --root .", "SRQR checklist",
+                          "For a qualitative or mixed study, item by item: satisfied, missing or needs judgment."),
+                 _command(f"{CHECKLIST_CLI} check --guideline coreq --root .", "COREQ checklist",
+                          "The alternative for a study of interviews or focus groups, item by item."),
+                 _command(f"{CHECKLIST_CLI} check --guideline accord --root .", "ACCORD checklist",
+                          "For a consensus study, item by item: satisfied, missing or needs judgment."),
+                 _command(f"{QUAL_CLI} quotes check --root .", "Check the verbatim quotes",
+                          "Every \\pquote must occur verbatim in a current transcript of its participant."),
+                 *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
+             ],
+         }, phase_actions.EVIDENCE["audit"], _reporting_qualitative, ("checklists",)),
+)})
+
 
 # --------------------------------------------------------------------------- line tables
 
@@ -2213,6 +2813,9 @@ class LineTable:
     extra_checklists: tuple[str, ...] = ()
     #: gate id -> the line's own definition of a shared gate id (see :func:`gate_definition`).
     gate_defs: Mapping[str, Gate] = field(default_factory=dict)
+    #: ``(ctx, gate id) -> listed?`` for a gate that does not apply to every
+    #: workspace of the line; read always, it is listed only when this says so.
+    lists_gate: Callable[[Context, str], bool] | None = None
 
 
 #: kind -> its table. A later line adds its own here.
@@ -2282,6 +2885,22 @@ LINE_TABLES: dict[str, LineTable] = {
         gate_steps={PROTOCOL_GATE: "protocol_registration", ETHICS_GATE: "ethics_consent",
                     DATA_GATE: "intervention_followup"},
         gate_defs={REGISTRATION_GATE: TRIAL_REGISTRATION, FLOW_GATE: TRIAL_FLOW},
+    ),
+    # Every gate is the line's own: the agreed variant decides each (K5), the
+    # qualitative-mixed rules when none is agreed. G-ROUNDS is listed only for a
+    # consensus study. The integration with prior work passes once every gate
+    # before the writing passed, so the writing waits for all of them.
+    QUAL_KIND: LineTable(
+        kind=QUAL_KIND,
+        steps=("harness", "plausibility_qualitative", "case_framework", "ethics_consent_quotes", "fieldwork",
+               "coding_consensus", "integration", "writing", "paper", "reporting_qualitative"),
+        gates=QUAL_WRITING_GATES,
+        phase_gates={"writing": QUAL_ANALYSIS_GATE},
+        ungated=frozenset({"harness", "reporting_qualitative"}),
+        transversal="reporting_qualitative",
+        gate_defs={PROTOCOL_GATE: QUAL_PROTOCOL, ETHICS_GATE: QUAL_ETHICS, TRANSCRIPTS_GATE: QUAL_TRANSCRIPTS,
+                   ROUNDS_GATE: QUAL_ROUNDS, QUAL_ANALYSIS_GATE: QUAL_ANALYSIS},
+        lists_gate=lambda ctx, gate: _qual_lists_gate(ctx, gate),
     ),
 }
 
@@ -2362,7 +2981,8 @@ def _gates(ctx: Context) -> list[dict[str, Any]]:
     out = [{"id": gate_id, "name": defined[gate_id].name, "status": ctx.gates[gate_id]["status"],
             "criteria": defined[gate_id].criteria, "reviewer": "operator",
             "phase": position[table.gate_steps.get(gate_id, defined[gate_id].step)]}
-           for gate_id in table.gates if ctx.people or gate_id not in table.conditional_gates]
+           for gate_id in table.gates if (ctx.people or gate_id not in table.conditional_gates)
+           and (table.lists_gate is None or table.lists_gate(ctx, gate_id))]
     done, total = facts["blocks_written"], facts["blocks_total"]
     writing, paper = position.get("writing"), position.get("paper")
     return out + [
@@ -2397,16 +3017,35 @@ _ARTIFACTS = (
     ("protocol", "*", "Study Protocol"),
     ("study", "*", "Study Records"),
     ("study/uncertainty", "*.json", "Uncertainty Budgets"),
+    ("study/consensus", "*.json", "Consensus Records"),
     ("analysis", "log.jsonl", "Analysis Log"),
     ("datasets", "*/qc.json", "Data Quality"),
     ("paper/Figures", "participant-flow.svg", "Participant Flow"),
 )
 
 
+def _participant_files(root: Path) -> set[str]:
+    """The files that hold what participants said or rated: the registered
+    transcripts and the consensus rounds' response files. They are never
+    listed as artifacts, wherever the operator keeps them."""
+    out: set[str] = set()
+    for relative in ("study/transcripts.json", "study/consensus/rounds.json"):
+        try:
+            history = json.loads((root / relative).read_text(encoding="utf-8")).get("history") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        for entry in history if isinstance(history, list) else ():
+            if isinstance(entry, dict) and isinstance(entry.get("file"), str):
+                out.add(Path(entry["file"]).as_posix())
+    return out
+
+
 def artifacts(root: Path) -> list[dict[str, Any]]:
-    """The study's records: ``protocol/*``, ``study/*``, ``analysis/log.jsonl``,
-    ``datasets/*/qc.json`` and the participant flow figure."""
+    """The study's records: ``protocol/*``, ``study/*``, ``study/consensus/*.json``,
+    ``analysis/log.jsonl``, ``datasets/*/qc.json`` and the participant flow
+    figure; never a registered transcript or a round's response file."""
     root = Path(root)
+    private = _participant_files(root)
     out = []
     for folder, pattern, category in _ARTIFACTS:
         base = root / folder
@@ -2416,6 +3055,8 @@ def artifacts(root: Path) -> list[dict[str, Any]]:
             if path.name.startswith(".") or not path.is_file():
                 continue
             rel = path.relative_to(root).as_posix()
+            if rel in private:
+                continue
             name = rel[len("datasets/"):] if folder == "datasets" else path.name
             out.append({"rel_path": rel, "name": name, "category": category,
                         "size_kb": round(path.stat().st_size / 1024, 1)})
@@ -2530,7 +3171,8 @@ for _table in LINE_TABLES.values():
 
 
 __all__ = ["ANALYSIS_GATES", "DASHBOARD_SKILLS", "GATES", "LINE_TABLES", "LineTable", "MODULES", "PEOPLE_GATES",
+           "QUAL_ANALYSIS", "QUAL_ETHICS", "QUAL_PROTOCOL", "QUAL_ROUNDS", "QUAL_TRANSCRIPTS", "QUAL_WRITING_GATES",
            "RESOURCE_ETHICS", "STEPS", "Step", "TELEMETRY_NOTE", "TRIAL_ANALYSIS_GATES", "TRIAL_FLOW",
            "TRIAL_REGISTRATION", "agreed_type", "artifacts", "board", "board_for", "checklist_detail",
-           "gate_definition", "load_module", "own_datasets", "resource_datasets", "section_metadata", "stage_for",
-           "telemetry", "trial_variant", "with_people"]
+           "gate_definition", "load_module", "own_datasets", "qual_variant", "resource_datasets", "section_metadata",
+           "stage_for", "telemetry", "trial_variant", "with_people"]

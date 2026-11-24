@@ -673,7 +673,8 @@ class OtherLinesTests(unittest.TestCase):
         self.assertIs(lines.REVIEW.actions, review_board.REVIEW_ACTIONS)
         self.assertIs(lines.EXPERIMENTAL.actions, phase_actions.ACTIONS)
         self.assertEqual(sorted(lines.BOARDS), sorted(["experimental", "review", KIND, "hardware", "lab-simulation",
-                                                      "data-resource", "experiment-intervention"]))
+                                                      "data-resource", "experiment-intervention",
+                                                      "qualitative-participatory"]))
 
 
 if __name__ == "__main__":

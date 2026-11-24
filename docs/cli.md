@@ -828,7 +828,15 @@ before writing. A field experiment passes with any current registration record,
 and its flow is optional and never blocks writing. G-ALLOCATION is current while
 the operator's allocation list and the protocol lock are unchanged; the board
 shows the record's method, row count and concealment, never the list, and the
-pre-specified analyses wait for it. A record
+pre-specified analyses wait for it. The `qualitative-participatory` board has ten steps with G-STUDY-PROTOCOL, G-ETHICS,
+G-TRANSCRIPTS, G-ROUNDS (consensus-foresight only) and G-ANALYSIS, decided by the
+agreed variant. A qualitative or mixed study (and any workspace with no variant
+agreed) needs the protocol, the ethics record, current transcript registrations and
+a current theme sign-off. A consensus study needs the protocol, the ethics record,
+the consensus plan and every planned round, with any recorded MICMAC analysis
+current; its transcripts are optional. An experience report keeps the protocol and
+the transcripts optional, and G-ANALYSIS does not apply. Writing waits for every
+gate. The board never shows a transcript's text, a response or a comment. A record
 that cannot be read turns only its section into `{"available": false, "code",
 "message"}`. The variant's reporting checklist runs the checklist engine, so it loads
 only when the operator clicks its button, from `GET /api/study/checklist` (another of
