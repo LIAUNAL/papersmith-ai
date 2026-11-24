@@ -76,7 +76,8 @@ def one(result: dict) -> dict:
 class GuidelineDataTests(unittest.TestCase):
     def test_every_shipped_guideline_validates_with_its_documented_item_count(self):
         counts = {"prisma-2020": 27, "strobe": 22, "stard-2015": 30, "cosmin": 68, "hardwarex": 31,
-                  "gum-reporting": 18, "datasheets": 50, "consort-2025": 30, "arrive-2": 21}
+                  "gum-reporting": 18, "datasheets": 50, "consort-2025": 30, "arrive-2": 21,
+                  "srqr": 21, "coreq": 32, "accord": 35}
         listed = {entry["id"]: entry for entry in engine.list_guidelines()}
         self.assertEqual(set(listed), set(counts))
         for gid, count in counts.items():
@@ -514,7 +515,8 @@ class CliTests(ReviewWorkspaceCase):
         self.assertEqual({(g["id"], g["items"]) for g in listing["guidelines"]},
                          {("prisma-2020", 27), ("strobe", 22), ("stard-2015", 30), ("cosmin", 68),
                           ("hardwarex", 31), ("gum-reporting", 18), ("datasheets", 50),
-                          ("consort-2025", 30), ("arrive-2", 21)})
+                          ("consort-2025", 30), ("arrive-2", 21), ("srqr", 21), ("coreq", 32),
+                          ("accord", 35)})
         code, shown = run_cli("show", "strobe")
         self.assertEqual((code, shown["ok"], len(shown["guideline"]["items"])), (0, True, 22))
 

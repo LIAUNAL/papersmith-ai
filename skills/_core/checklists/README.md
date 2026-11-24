@@ -44,6 +44,9 @@ declarations alone. For PRISMA 2020, `presence` equals the verdict of
 | `datasheets` | Datasheets for Datasets (Gebru et al., Commun ACM 2021) | 50 | the data-resource line's data-descriptor sections |
 | `consort-2025` | CONSORT 2025 statement (randomised trials) | 30 | the experiment-intervention line's IMRaD sections |
 | `arrive-2` | ARRIVE 2.0 (animal research; also plot or crop field experiments) | 21 | the experiment-intervention line's IMRaD sections |
+| `srqr` | SRQR, Standards for Reporting Qualitative Research (O'Brien et al. 2014) | 21 | the qualitative-participatory line's IMRaD sections |
+| `coreq` | COREQ, qualitative interviews and focus groups (Tong et al. 2007) | 32 | the qualitative-participatory line's IMRaD sections |
+| `accord` | ACCORD, consensus methods such as Delphi (Gattrell et al. 2024) | 35 | the qualitative-participatory line's IMRaD sections |
 
 Sub-items (STROBE 6a/6b, STARD 10a/10b, …) are folded into their numbered
 item, whose question names every part.
@@ -91,6 +94,19 @@ A human trial reports on `consort-2025`; a field experiment on `arrive-2`,
 which also serves a plot or crop trial where its design and analysis items
 apply, since no formal checklist exists for those. CONSORT's open-science
 items target `methods` and `back-matter`. Every item is a question.
+
+SRQR, COREQ and ACCORD (the qualitative-participatory line) keep their own
+numbering. A qualitative or mixed study reports on `srqr` (21 items: title and
+abstract, introduction, methods 5-15, results, discussion, other), or on
+`coreq` (32 items in three domains: research team and reflexivity 1-8, study
+design 9-23, analysis and findings 24-32) when its data are interviews or
+focus groups. A consensus or foresight study reports on `accord`, whose 35
+items the checklist labels by section (T1, I1-I3, M1-M21, R1-R5, D1-D2, O1-O3):
+the data file numbers them 1-35 in that order and starts each topic with the
+code. Reflexivity and ethics items target `methods`; funding and conflicts of
+interest `back-matter`. An experience report has no checklist (AGREE II
+appraises a finished guideline and is not a reporting checklist). Every item
+is a question.
 
 ## How blocks and declarations are read
 
