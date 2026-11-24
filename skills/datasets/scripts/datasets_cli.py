@@ -76,10 +76,12 @@ OBJECTIVE_FLOW = {
         "overriding a refused source license (--override with a reason)",
         "consenting to upload one named dataset (--consent <slug>)",
         "consenting separately to make it public (--public --consent-public <slug>)",
+        "recording a deposit the operator made in a repository (deposit --by <operator>); the CLI never deposits",
     ],
 }
 
-VERBS = ("synth", "search", "license", "own", "dictionary", "deidentify", "qc", "prepare", "publish", "status")
+VERBS = ("synth", "search", "license", "own", "dictionary", "deidentify", "qc", "prepare", "publish", "deposit",
+         "status")
 
 ERROR_CODES = (
     "bad-slug", "slug-exists", "member-exists", "unknown-slug", "file-missing", "file-outside-workspace",
@@ -90,6 +92,7 @@ ERROR_CODES = (
     "dictionary-missing", "dictionary-exists", "dictionary-unreadable", "dictionary-unknown-type",
     "dictionary-range-not-numeric", "dictionary-empty-levels", "dictionary-duplicate-column",
     "dictionary-bad-entry", "no-pii-columns", "pii-not-deidentified",
+    "bad-identifier", "deposit-license-missing",
 )
 
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$")
@@ -1281,6 +1284,136 @@ def cmd_publish(args, root: Path, runner=None, **_inject) -> dict:
             "output": (out or "")[-1000:], "mount": publisher.mount_hint(ref), **extra}
 
 
+# ------------------------------------------------------------------- deposit
+#: The persistent-identifier schemes `deposit --scheme` accepts, each with the
+#: shape its identifier must have. A DOI is ``10.<registrant>/<suffix>``.
+PID_SCHEMES = {
+    "doi": re.compile(r"^10\.\d{4,9}(?:\.\d+)*/\S+$"),
+    "handle": re.compile(r"^\d+(?:\.\d+)*/\S+$"),
+    "ark": re.compile(r"^ark:/?\d{5,9}/\S+$"),
+    "accession": re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{2,63}$"),
+}
+DOI_PREFIX_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)", re.IGNORECASE)
+URL_RE = re.compile(r"^https?://\S+$")
+DEPOSIT_KEYS = ("repository", "identifier", "scheme", "license", "url", "version", "date", "by", "recorded", "files")
+
+
+def normalize_identifier(scheme: str, identifier: str) -> str:
+    """``identifier`` stripped (and, for a DOI, without a ``doi:`` or
+    ``https://doi.org/`` prefix), or a ``bad-identifier`` refusal."""
+    text = (identifier or "").strip()
+    if scheme == "doi":
+        text = DOI_PREFIX_RE.sub("", text)
+    if not PID_SCHEMES[scheme].match(text):
+        shape = "10.<registrant>/<suffix>, e.g. 10.5281/zenodo.1234567" if scheme == "doi" else \
+            f"a {scheme} identifier"
+        raise Refusal("bad-identifier", f"{identifier!r} is not {shape}; another persistent identifier "
+                                        f"scheme is declared with --scheme {{{','.join(PID_SCHEMES)}}}")
+    return text
+
+
+def cmd_deposit(args, root: Path, **_inject) -> dict:
+    """Record a deposit the operator made: the repository, the persistent
+    identifier, the licence the deposit carries, and the sha256 of every
+    registered file, so the record goes stale once any file changes, is added
+    or goes missing. Nothing is uploaded and no repository is contacted.
+    ``--by`` names the operator; an agent relays it, never invents it."""
+    by, repository = (args.by or "").strip(), (args.repository or "").strip()
+    if not by:
+        raise Refusal("operator-missing", "--by must name the operator who deposited the data")
+    if not repository:
+        raise Refusal("bad-argument", "--repository must name the repository the data was deposited in")
+    identifier = normalize_identifier(args.scheme, args.identifier)
+    license_text = (args.license or "").strip()
+    allowed, host, reason = classify_license(license_text)
+    if not allowed and host == "other" and reason.startswith("no license stated"):
+        raise Refusal("deposit-license-missing", f"--license {args.license!r} states no licence: name the licence "
+                                                 "the deposit carries (an SPDX id such as CC-BY-4.0, or its name)")
+    url = (args.url or "").strip()
+    if url and not URL_RE.match(url):
+        raise Refusal("bad-argument", f"--url {args.url!r} is not an http(s) landing page")
+    date = (args.date or "").strip() or today()
+    try:
+        valid_date = bool(DATE_RE.match(date)) and datetime.date.fromisoformat(date).isoformat() == date
+    except ValueError:
+        valid_date = False
+    if not valid_date:
+        raise Refusal("bad-argument", f"--date {args.date!r} is not a YYYY-MM-DD date")
+    registry = load_registry(root)
+    entry = find(registry, args.slug)
+    slug = entry["slug"]
+    decision = (entry.get("license") or {}).get("decision")
+    if decision != "allowed":
+        raise Refusal("license-not-allowed",
+                      f"{slug}'s license decision is {decision or 'missing'}: a deposit redistributes the data, "
+                      "so only an allowed source license (or own data) may be recorded as deposited; an override "
+                      "accepts its use, not its redistribution")
+    current, _pii = pii_columns(root, entry, [])
+    remembered = remember_pii(entry, current)
+    problem = pii_problem(root, entry)
+    if problem:
+        if remembered:
+            save_registry(root, registry)
+        raise Refusal("pii-not-deidentified", f"{slug}: {problem}; the operator records how they were removed or "
+                      f"transformed with `deidentify --slug {slug} --by <operator> --statement \"<how>\"` "
+                      "before the deposit is recorded")
+    if not entry["files"]:
+        raise Refusal("file-missing", f"{slug} registers no data file; run qc or prepare on it first")
+    hashes = file_hashes(root, entry["files"])
+    missing = [rel for rel, digest in hashes.items() if digest is None]
+    if missing:
+        raise Refusal("file-missing", f"registered files missing: {missing}")
+    record = {"repository": repository, "identifier": identifier, "scheme": args.scheme, "license": license_text,
+              "url": url, "version": (args.version or "").strip(), "date": date, "by": by, "recorded": today(),
+              "files": hashes}
+    previous = entry.get("deposit")
+    if isinstance(previous, dict):
+        history = list(previous.get("history") or [])
+        history.append({key: previous.get(key) for key in DEPOSIT_KEYS if key in previous})
+        record["history"] = history
+    entry["deposit"] = record
+    save_registry(root, registry)
+    state = deposit_state(root, entry)
+    return {"slug": slug, "deposit": record, "current": state["current"], "stale": state["stale"]}
+
+
+def deposit_state(root: Path, entry: dict | str) -> dict:
+    """Whether the deposit recorded on ``entry`` (a registry entry, or a slug
+    read from ``datasets/registry.json``) still matches the registered files:
+    ``{"recorded", "current", "stale": [{"reason", "file"}], "deposit"}``,
+    ``reason`` one of ``file-changed``, ``file-added``, ``file-missing``.
+
+    Reads only; never writes, never refuses. An unknown slug, an unreadable
+    registry or a malformed record reads as not current."""
+    if isinstance(entry, str):
+        try:
+            entry = next((item for item in load_registry(root)
+                          if isinstance(item, dict) and item.get("slug") == entry), {})
+        except (OSError, ValueError):
+            entry = {}
+    record = entry.get("deposit") if isinstance(entry, dict) else None
+    if record is None:
+        return {"recorded": False, "current": False, "stale": [], "deposit": None}
+    recorded = record.get("files") if isinstance(record, dict) else None
+    if not isinstance(recorded, dict) or not recorded:
+        return {"recorded": True, "current": False, "stale": [], "deposit": record}
+    files = [rel for rel in (entry.get("files") or []) if isinstance(rel, str)]
+    stale = []
+    for rel in sorted(set(recorded) | set(files)):
+        if rel not in recorded:
+            stale.append({"reason": "file-added", "file": rel})
+            continue
+        try:
+            digest = sha256(root / rel) if rel in files and (root / rel).is_file() else None
+        except OSError:
+            digest = None
+        if digest is None:
+            stale.append({"reason": "file-missing", "file": rel})
+        elif digest != recorded[rel]:
+            stale.append({"reason": "file-changed", "file": rel})
+    return {"recorded": True, "current": not stale, "stale": stale, "deposit": record}
+
+
 # -------------------------------------------------------------------- status
 def cmd_status(args, root: Path, **_inject) -> dict:
     items = []
@@ -1291,6 +1424,11 @@ def cmd_status(args, root: Path, **_inject) -> dict:
                       "qc": (entry.get("qc") or {}).get("status"),
                       "prepared": bool(entry.get("preparation")),
                       "remote": entry.get("remote")})
+        if entry.get("deposit") is not None:
+            state = deposit_state(root, entry)
+            record = state["deposit"] if isinstance(state["deposit"], dict) else {}
+            items[-1]["deposit"] = {**{key: record.get(key) for key in DEPOSIT_KEYS[:8]},
+                                    "current": state["current"], "stale": state["stale"]}
     return {"datasets": items}
 
 
@@ -1393,6 +1531,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--consent-public", help="the dataset slug again, to make it public")
     p.add_argument("--dry-run", action="store_true", help="the default without --consent")
     p.set_defaults(func=cmd_publish)
+
+    p = sub.add_parser("deposit", help="record a deposit the operator made (persistent identifier, licence, "
+                                       "file sha256); never uploads")
+    p.add_argument("--slug", required=True)
+    p.add_argument("--repository", required=True, help="the repository the operator deposited in, e.g. Zenodo")
+    p.add_argument("--identifier", required=True, help="the persistent identifier the repository issued (a DOI "
+                                                       "10.<registrant>/<suffix> unless --scheme says otherwise)")
+    p.add_argument("--scheme", choices=tuple(PID_SCHEMES), default="doi", help="the identifier's scheme (default doi)")
+    p.add_argument("--license", required=True, help="the licence the deposit carries: an SPDX id or its name")
+    p.add_argument("--by", required=True, help="the operator who deposited the data; never an agent")
+    p.add_argument("--url", help="the deposit's landing page")
+    p.add_argument("--version", help="the deposit's version as the repository shows it")
+    p.add_argument("--date", help="the deposit date, YYYY-MM-DD (default today)")
+    p.set_defaults(func=cmd_deposit)
 
     p = sub.add_parser("status", help="registry summary")
     p.set_defaults(func=cmd_status)

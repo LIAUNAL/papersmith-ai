@@ -48,6 +48,12 @@ operator. **PII adds a fifth:** a dataset whose `dictionary.json` flags a PII
 column (now or ever before) is not published until `deidentify --by <operator>
 --statement "<how>"` records how those columns were removed or transformed.
 
+**A deposit is the operator's act.** Depositing a dataset in a repository
+(Zenodo, Dryad, Figshare, OSF, a domain archive) that issues a persistent
+identifier happens outside this CLI: `deposit --by <operator>` only records
+what the operator deposited, where, under which identifier and licence, bound
+to the sha256 of every registered file (G-DEPOSIT).
+
 An agent never types any of these tokens on its own initiative: they are the
 operator's words, relayed.
 
@@ -68,7 +74,8 @@ python3 skills/datasets/scripts/datasets_cli.py [--root <workspace>] <verb> ...
 | `qc` | `--slug --file <csv> [--label col] [--group col]`: rows/columns, missing values, constant columns, duplicates, class balance, group (subject) counts and single-class groups, numeric ranges → `datasets/<slug>/qc.json` (with the file's `sha256`), status `pass` / `warn` / `fail` with reasons. When `datasets/<slug>/dictionary.json` exists, it is validated first and the data is checked against it into `domain_checks`; own data without a dictionary warns |
 | `prepare` | `--slug --file <csv> --label col --group col [--folds 5] [--seed <n> \| --seeds <n> <n> ...]`: stratified group k-fold by subject (no subject in two folds) → `splits.json` + `PREPARATION.md` (source sha256, steps, parameters, per-fold counts); each run is a new preparation version. `--seed` writes one split; its seed only breaks ties between equal-sized subjects, so when every subject differs in size the output carries an `inert-seed` warning. `--seeds` writes one split per seed under `repetitions` (repeated cross-validation): subjects are taken largest first in size strata of `--folds` subjects that the seed shuffles, so each seed gives its own split; the first repetition is also the top-level `assignment` |
 | `publish` | `--slug --owner <user> [--version-notes] [--keyword ...] [--consent <slug>] [--public --consent-public <slug>] [--dry-run]`: builds `datasets/<slug>/remote/` (`dataset-metadata.json` + copies of the files) and, on consent, runs `kaggle datasets create -p <dir>` (private; `-u` only with both public flags) or `kaggle datasets version -p <dir> -m <notes>` when the dataset already exists; records the remote ref, visibility and version; prints how a notebook mounts it. A dataset whose dictionary flags or ever flagged a PII column needs a current `deidentify` record first, dry run included; without a dictionary, or with one that flags no PII and never did, nothing changes. An unreadable or invalid `dictionary.json` fails closed: refused with its own code (`dictionary-unreadable`, ...) when the dataset has no PII history, since it may hide a flag; with PII history the remembered columns stand in for it (reported under `warnings`), so `publish` refuses `pii-not-deidentified` until a current `deidentify` record covers them. A dry run never writes the registry |
-| `status` | registry summary: slug, role, title, license decision, qc status, preparation, remote |
+| `deposit` | `--slug --repository <name> --identifier <DOI or PID> --license <SPDX id or name> --by <operator> [--scheme {doi,handle,ark,accession}] [--url <landing page>] [--version <text>] [--date YYYY-MM-DD]`: records the deposit the operator made as `deposit{repository, identifier, scheme, license, url, version, date, by, recorded, files{path: sha256}, history?}` on the entry. It uploads nothing and contacts no repository. `--identifier` is a DOI `10.<registrant>/<suffix>` (a `doi:` or `https://doi.org/` prefix is dropped) unless `--scheme` declares a handle (`<prefix>/<suffix>`), an ARK (`ark:/<NAAN>/<name>`) or a repository accession number; `--date` defaults to today. Refused unless the entry's license decision is `allowed` (own data, or an allowed source licence: an override accepts use, not redistribution), the deposit names a licence, every PII column the dictionary flags or ever flagged has a current `deidentify` record (as for `publish`), and every registered file exists. `files` holds each registered file's sha256 now; the record is current only while they all match: `status` and `deposit_state()` report it stale with `file-changed`, `file-added` (registered after the deposit) or `file-missing` (gone from disk or from the registry). Running it again (a new version, a new identifier) replaces the record and keeps the previous ones under `history` |
+| `status` | registry summary: slug, role, title, license decision, qc status, preparation, remote, and, for an entry with a deposit, `deposit{repository, identifier, scheme, license, url, version, date, by, current, stale}` |
 
 Success prints one JSON object on stdout. A refusal prints
 `{"error", "message", "objective"}` on stderr and exits 2:
@@ -79,7 +86,7 @@ Success prints one JSON object on stdout. A refusal prints
 | `slug-exists` | `synth` onto a registered slug without `--force` |
 | `member-exists` | `synth --profile capacity` onto a replicate file that already exists without `--force` |
 | `unknown-slug` | the verb needs a registered dataset; run `synth` or `license` first |
-| `bad-argument` | a size parameter is not positive |
+| `bad-argument` | a size parameter is not positive, or a `deposit` `--repository` is blank, `--url` is not http(s) or `--date` is not a real YYYY-MM-DD date |
 | `file-missing` | a named or registered file does not exist |
 | `file-outside-workspace` | a file resolves outside the workspace root |
 | `bad-column` | `--label` / `--group` is not a column of the file |
@@ -87,7 +94,7 @@ Success prints one JSON object on stdout. A refusal prints
 | `too-few-groups` | fewer subjects than folds: a subject would land in two folds |
 | `identical-repetitions` | two of the `--seeds` give the same split; choose seeds whose splits differ |
 | `unknown-host` | `--hosts` names no host module |
-| `license-not-allowed` | `publish` without an `allowed` or `overridden` decision |
+| `license-not-allowed` | `publish` without an `allowed` or `overridden` decision, or `deposit` without an `allowed` one |
 | `bad-owner` | the remote account name is malformed |
 | `bad-metadata` | the metadata the host requires is invalid (title 6–50 chars, subtitle 20–80, `owner/slug` id, one known license) or two files share a name |
 | `public-consent-missing` | `--public` without `--consent-public <slug>` matching |
@@ -96,7 +103,7 @@ Success prints one JSON object on stdout. A refusal prints
 | `host-cli-missing` | the official `kaggle` client is not installed |
 | `host-cli-failed` | the official client exited non-zero; nothing is recorded |
 | `role-conflict` | `own` on a `toy` or `full` slug, or `license` on an own slug |
-| `operator-missing` | `own --by` or `deidentify --by` is blank: the statement must name the operator |
+| `operator-missing` | `own --by`, `deidentify --by` or `deposit --by` is blank: the record must name the operator |
 | `statement-missing` | `own --statement` or `deidentify --statement` is blank |
 | `dictionary-missing` | `dictionary check` or `deidentify` on a dataset with no `dictionary.json` |
 | `dictionary-exists` | `dictionary init` over an existing dictionary without `--force` |
@@ -107,7 +114,9 @@ Success prints one JSON object on stdout. A refusal prints
 | `dictionary-duplicate-column` | a column declared twice (or repeated in the header `init` reads) |
 | `dictionary-bad-entry` | any other malformed entry: a blank name, a range that is not `{min, max}` numbers with min ≤ max, repeated or non-string levels, levels on a non-category column, non-string missing codes, unit or description, a non-boolean `pii` |
 | `no-pii-columns` | `deidentify` on a dataset whose dictionary flags no PII column: there is nothing to de-identify |
-| `pii-not-deidentified` | `publish` on a dataset whose dictionary flags, or ever flagged (`pii_columns_seen`), PII columns with no `deidentify` record, one that does not cover every flagged column, or one recorded for a registered file that has changed since |
+| `pii-not-deidentified` | `publish` or `deposit` on a dataset whose dictionary flags, or ever flagged (`pii_columns_seen`), PII columns with no `deidentify` record, one that does not cover every flagged column, or one recorded for a registered file that has changed since |
+| `bad-identifier` | `deposit --identifier` does not have its scheme's shape (a DOI is `10.<registrant>/<suffix>`) |
+| `deposit-license-missing` | `deposit --license` is blank or states no licence (`unknown`, `none`, `unspecified`) |
 
 ## The capacity profile
 
@@ -192,6 +201,8 @@ rules. Own data with no dictionary warns. The file's `sha256` stays in
 license{source_name, decision, host_license, reason, override?},
 data_use?{statement, by, recorded, history?},
 deidentification?{statement, by, recorded, columns, files{path: sha256}, history?},
+deposit?{repository, identifier, scheme, license, url, version, date, by,
+recorded, files{path: sha256}, history?},
 pii_columns_seen? (every column a dictionary ever flagged as PII, recorded by
 `dictionary`, `qc`, `deidentify` and `publish`; never removed),
 files, qc{status, report}, preparation{manifest, splits, version, sha256},
@@ -268,7 +279,7 @@ spawned.
 Runs unchanged under **Claude Code, OpenCode and Pi**: the CLI is plain
 `python3` with no third-party imports, the agents run on the active session's
 own model and subscription, and nothing here calls an LLM API or needs an API
-key. Network is used only by `search` and `publish`.
+key. Network is used only by `search` and `publish`; `deposit` uses none.
 
 ## Personal data
 
@@ -289,6 +300,12 @@ doubt, keep it private or do not upload it.
 - It never publishes a dataset whose dictionary flags or ever flagged PII
   columns without that current record, and never clears a column's `pii` flag
   or edits `pii_columns_seen` to get past the check.
+- It never deposits a dataset in a repository and never records a deposit on
+  the operator's behalf: the operator deposits and obtains the persistent
+  identifier; `deposit --by` names that operator and records what they report.
+  The CLI checks the identifier's shape, the licence decision, the PII record
+  and the files' sha256; it never resolves the identifier or checks the
+  repository holds those bytes.
 
 ## Output Reporting
 
