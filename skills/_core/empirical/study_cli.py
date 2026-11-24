@@ -348,8 +348,7 @@ def main(argv: list[str] | None = None) -> int:
     for name in verbs:
         verb = sub.add_parser(name)
         verb.error = parser.error  # type: ignore[method-assign]
-        if name != "allocation":  # its two actions own their options, `--root` included
-            verb.add_argument("--root", default=".")
+        verb.add_argument("--root", default=".")
     protocol = sub.choices["protocol"]
     protocol.add_argument("action", choices=("approve", "amend", "status"))
     protocol.add_argument("--by", default="")
@@ -371,7 +370,9 @@ def main(argv: list[str] | None = None) -> int:
     status = actions.add_parser("status")
     for action in (record, status):
         action.error = parser.error  # type: ignore[method-assign]
-        action.add_argument("--root", default=".")
+        # `--root` is accepted before or after the action; SUPPRESS keeps an absent one
+        # from overriding the value given before it.
+        action.add_argument("--root", default=argparse.SUPPRESS)
     record.add_argument("--by", default="")
     record.add_argument("--file", default=None)
     record.add_argument("--method", choices=ALLOCATION_METHODS, default=None)

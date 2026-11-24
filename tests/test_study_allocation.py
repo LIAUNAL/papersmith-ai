@@ -93,6 +93,16 @@ class AllocationWorkspace(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         return path
 
+    def unreadable(self, path: Path) -> None:
+        """Make ``path`` unreadable, or skip where mode 0 does not stop reads (root, Windows)."""
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o644)
+        try:
+            path.read_bytes()
+        except OSError:
+            return
+        self.skipTest("this platform reads a file whatever its mode")
+
     def record_args(self, *extra: str, file: str = "allocation/sequence.csv") -> tuple[str, ...]:
         return ("allocation", "record", "--file", file, "--method", "simple", *CONCEALMENT, *extra)
 
@@ -248,12 +258,9 @@ class RefusalTests(AllocationWorkspace):
         self.refused("ALLOCATION_FILE_OUTSIDE", *self.record_args(*by, file="allocation/link.csv"))
         self.assertFalse((self.root / "study" / "allocation.json").exists())
 
-    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads a file whatever its mode")
     def test_an_unreadable_file_is_refused(self) -> None:
         self.approved()
-        path = self.sequence()
-        path.chmod(0)
-        self.addCleanup(path.chmod, 0o644)
+        self.unreadable(self.sequence())
         self.refused("ALLOCATION_FILE_UNREADABLE", *self.record_args("--by", "Ana Ruiz"))
         self.assertFalse((self.root / "study" / "allocation.json").exists())
 
@@ -306,13 +313,33 @@ class StalenessTests(AllocationWorkspace):
         state = self.status()
         self.assertEqual((state["state"], state["reasons"]), ("stale", ["file-missing"]))
 
-    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads a file whatever its mode")
     def test_an_unreadable_file_makes_the_record_stale(self) -> None:
-        path = self.recorded()
-        path.chmod(0)
-        self.addCleanup(path.chmod, 0o644)
+        self.unreadable(self.recorded())
         state = self.status()
         self.assertEqual((state["state"], state["reasons"]), ("stale", ["file-unreadable"]))
+
+    def test_an_invalid_stored_path_is_stale_not_a_crash(self) -> None:
+        """A hand-edited `file` that is not a valid path (an embedded NUL) names no file."""
+        self.recorded()
+        record = self.root / "study" / "allocation.json"
+        data = json.loads(record.read_text(encoding="utf-8"))
+        data["history"][-1]["file"] = "allocation/seq\u0000uence.csv"
+        record.write_text(json.dumps(data), encoding="utf-8")
+        state = self.status()
+        self.assertEqual((state["state"], state["reasons"]), ("stale", ["file-missing"]))
+
+    def test_root_may_come_before_the_action(self) -> None:
+        """`allocation --root <dir> status|record` worked before the actions became subparsers."""
+        self.approved()
+        self.sequence()
+        for args in (("allocation", "--root", str(self.root), *self.record_args("--by", "Ana Ruiz")[1:]),
+                     ("allocation", "--root", str(self.root), "status")):
+            proc = subprocess.run([sys.executable, str(CLI), *args], capture_output=True, text=True,
+                                  cwd=str(self.base))
+            self.outputs += [proc.stdout, proc.stderr]
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertTrue(json.loads(proc.stdout)["ok"])
+        self.assertEqual(self.allocation()["history"][-1]["by"], "Ana Ruiz")
 
     def test_a_stored_path_outside_the_workspace_is_stale_and_never_hashed(self) -> None:
         """A hand-edited `file` that leaves the workspace is confined like the record command:

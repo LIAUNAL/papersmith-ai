@@ -187,10 +187,15 @@ def allocation_state(root: Path) -> dict:
     # The same confinement as `allocation record`: a stored path that is absolute, traverses
     # out or names a link pointing out of the workspace is never followed nor hashed.
     workspace = root.resolve()
-    path = (root / stored).resolve() if stored else root
+    try:
+        path = (root / stored).resolve() if stored else root
+        named = bool(stored) and path.is_file()
+    except (OSError, ValueError):  # a hand-edited value that is no valid path names no file
+        path, named = root, False
+        stored = ""
     if stored and (Path(stored).is_absolute() or not path.is_relative_to(workspace)):
         reasons.append("file-outside")
-    elif not stored or not path.is_file():
+    elif not named:
         reasons.append("file-missing")
     else:
         try:
