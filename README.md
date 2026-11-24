@@ -657,6 +657,45 @@ calibration, ethics, consent, data collection, sign-offs or the primary
 outcome on the operator's behalf. `/hardware status` reports where the work
 stands. Details in [skills/hardware/SKILL.md](skills/hardware/SKILL.md).
 
+### The data-resource line
+
+A corpus, dataset or benchmark the operator collects and releases is the
+data-resource line, written as a data descriptor (background and summary,
+methods, data records, technical validation, usage notes, code availability)
+and checked against the `datasheets` checklist (Datasheets for Datasets).
+
+```bash
+smith init ~/papers/speech-corpus --kind data-resource \
+  --title "A corpus of annotated Spanish speech recordings"
+```
+
+An existing workspace moves to it with `smith kind set data-resource --by
+"<operator>"` once `/paper-type` has scored the idea. The workspace has the
+empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the data
+descriptor section contracts in `sections/`, the `/data-resource` skill, and
+its `CLAUDE.md` states the line's flow:
+
+1. **Collection protocol** with `/study-protocol-deliberation`, approved and
+   locked by the operator (G-STUDY-PROTOCOL).
+2. **Ethics, consent and licence** (G-ETHICS): the ethics record, and the
+   operator's own-data statement or the source's licence decision.
+3. **Curation and documentation**: the data dictionary, scaffolded from the
+   files and completed by the operator.
+4. **Quality checks** (G-DATA-QC) on the operator's files, with the
+   de-identification statement when the data hold personal information.
+5. **Baselines** in the labelled analysis log, exploratory unless the locked
+   protocol names them.
+6. **Deposit** (G-DEPOSIT): the operator deposits the files and records the
+   repository, persistent identifier and licence with `datasets_cli.py
+   deposit --by`.
+7. **Writing** with `/paper-writing`, the `datasheets` checklist and the final
+   judge on the data-descriptor rubric.
+
+The assistant never generates, labels or alters data; collection, consent,
+licence and deposit stay human. `/data-resource status` reports where the
+resource stands. Details in
+[skills/data-resource/SKILL.md](skills/data-resource/SKILL.md).
+
 ### Open the dashboard from another device
 
 `smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open

@@ -55,7 +55,8 @@ class ShippedCatalogueTests(unittest.TestCase):
         available = {t["id"]: t["line"] for t in registry.available()}
         self.assertEqual(available, {"applied-ai": "experimental", "review": "review",
                                      "observational-measurement": "observational-measurement",
-                                     "hardware": "hardware", "lab-simulation": "lab-simulation"})
+                                     "hardware": "hardware", "lab-simulation": "lab-simulation",
+                                     "data-resource": "data-resource"})
         self.assertEqual(set(available.values()), set(manifest.PAPER_KINDS))
         self.assertEqual(registry.by_line(manifest.DEFAULT_PAPER_KIND)["id"], "applied-ai")
 

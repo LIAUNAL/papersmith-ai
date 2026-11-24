@@ -103,7 +103,8 @@ line's own skill; it routes to the shared empirical modules described after it.
 Section 25, `hardware`, is the hardware line's own skill; it routes to the same
 modules and to the measurement core. The `lab-simulation` line is registered
 beside it (`smith init --kind lab-simulation`) and its skill is documented with
-it.
+it, in section 26. Section 27, `data-resource`, is the data-resource line's own
+skill; it routes to the shared empirical modules and to the `datasets` skill.
 
 ---
 
@@ -3600,12 +3601,20 @@ satisfied.
 
 **What it never does.** It never generates, imputes or edits a measured value, simulated output or raw file. It never records an instrument, calibration, data registration, ethics record, protocol approval or past-due override on the operator's behalf. It never chooses the primary observable, sample matrix, model or parameter grid. It never relabels an exploratory analysis or marks a `needs-judgment` item satisfied.
 
+### 27. `data-resource` — a corpus, dataset or benchmark, documented and deposited by the operator
+
+**When.** Only in a data-resource workspace (`smith init --kind data-resource`, or `smith kind set data-resource` after `/paper-type`): a corpus, dataset or benchmark the operator collected and releases as the contribution, written as a data descriptor (background and summary, methods, data records, technical validation, usage notes, code availability). Other workspaces never receive this skill.
+
+**How it runs.** `/data-resource` owns no script and no record; the type has no variants and reports on `datasheets` (Datasheets for Datasets). The overview comes from `study_cli.py status`, `datasets_cli.py --root . status` (own-data statement or licence decision, dictionary, quality report, de-identification and the deposit record, current or stale), `analysis_cli.py status` and `checklist_cli.py check --guideline datasheets`. The stages are the collection protocol (G-STUDY-PROTOCOL; the primary outcome is the variable or label the resource is built to measure); ethics, consent and licence (G-ETHICS: `study_cli.py ethics record`, and `datasets_cli.py own` or `license`); curation and documentation (`datasets_cli.py dictionary init|check`); quality checks (G-DATA-QC: `datasets_cli.py qc`, and `deidentify --by` when the dictionary flags personal data); baselines in the labelled analysis log (exploratory unless the locked protocol names them); the deposit the operator made, recorded with `datasets_cli.py deposit --by` (G-DEPOSIT: repository, persistent identifier, licence, bound to the sha256 of the files); writing; the checklist and the `data-descriptor` final judge.
+
+**What it never does.** It never generates, labels or alters data, never annotates on the annotators' behalf and never lets a toy set stand in for the resource. It never collects data, contacts participants, deposits or uploads: collection, consent, licence and deposit stay human. It never records an ethics approval, own-data statement, licence decision, de-identification, protocol approval or deposit on the operator's behalf, never chooses the primary outcome, sources, annotation scheme or licence, never relabels an exploratory baseline and never marks a `needs-judgment` item satisfied.
+
 ### Shared empirical modules (for the empirical paper lines)
 
 These modules live under `skills/_core/` and serve the empirical lines of the
-paper-type catalogue: the observational and measurement, hardware and
-lab-simulation lines today, and the planned ones (experiments and
-interventions, data resources, qualitative work). No applied-AI or review flow calls them.
+paper-type catalogue: the observational and measurement, hardware,
+lab-simulation and data-resource lines today, and the planned ones
+(experiments and interventions, qualitative work). No applied-AI or review flow calls them.
 
 **Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
 

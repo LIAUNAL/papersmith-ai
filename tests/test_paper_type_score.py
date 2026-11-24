@@ -286,7 +286,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self.agree("--type", "observational-measurement", "--by", "op")["layout"],
                          "switch:observational-measurement")
         self.assertEqual(self.agree("--type", "hardware", "--by", "op")["layout"], "switch:hardware")
-        self.assertEqual(self.agree("--type", "data-resource", "--by", "op")["layout"], "planned")
+        self.assertEqual(self.agree("--type", "data-resource", "--by", "op")["layout"], "switch:data-resource")
+        self.assertEqual(self.agree("--type", "experiment-intervention", "--by", "op")["layout"], "planned")
 
     def test_agree_refuses_scores_of_an_older_idea(self) -> None:
         self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=AI_IDEA)

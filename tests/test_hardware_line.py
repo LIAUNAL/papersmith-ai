@@ -187,7 +187,7 @@ class TableEntryTests(LineCase):
                 self.assertTrue(line.label and line.summary)
                 self.assertIn(f"sections-{kind}", manifest.KIT_ENTRIES)
         self.assertEqual(manifest.PAPER_KINDS, ("experimental", "review", "observational-measurement", "hardware",
-                                                "lab-simulation"))
+                                                "lab-simulation", "data-resource"))
         self.assertEqual(registry.LINES, tuple(manifest.LINES))
 
     def test_no_other_line_receives_the_line_files(self) -> None:

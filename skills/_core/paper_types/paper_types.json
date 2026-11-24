@@ -507,8 +507,9 @@
     {
       "id": "data-resource",
       "name": "Data resource or benchmark",
-      "status": "planned",
-      "line": null,
+      "status": "available",
+      "line": "data-resource",
+      "checklist": "datasheets",
       "summary": "A corpus, dataset or benchmark released for others: its collection protocol, consent, documentation, licence and baseline results.",
       "novelty": "The resource itself and the questions it lets others answer.",
       "stages": [

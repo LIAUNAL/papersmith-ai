@@ -8,8 +8,9 @@ its canonical stages, the reporting guidelines journals expect, the words that
 signal it in an idea, and whether smith already has a flow (``line``) for it:
 
 * ``available`` types map to a workspace line (``experimental``, ``review``,
-  ``observational-measurement``, ``hardware`` or ``lab-simulation``, the
-  ``paper_kind`` values ``smith init --kind`` accepts);
+  ``observational-measurement``, ``hardware``, ``lab-simulation`` or
+  ``data-resource``, the ``paper_kind`` values ``smith init --kind``
+  accepts);
 * ``planned`` types have no line yet (``line`` is null).
 
 A type may group ``variants`` (each with its own name, summary, guidelines
@@ -37,7 +38,7 @@ from typing import Any
 
 CATALOGUE = Path(__file__).resolve().parent / "paper_types.json"
 STATUSES = ("available", "planned")
-LINES = ("experimental", "review", "observational-measurement", "hardware", "lab-simulation")
+LINES = ("experimental", "review", "observational-measurement", "hardware", "lab-simulation", "data-resource")
 GUIDELINES = Path(__file__).resolve().parent.parent / "checklists" / "guidelines"
 MAX_NAME = 48
 MAX_SUMMARY = 200

@@ -120,6 +120,21 @@ LINES: dict[str, PaperLine] = {
                  "known values, replicates or parameter grid, uncertainty budgets"),
         empirical=True,
     ),
+    # A corpus, dataset or benchmark released as the contribution, written as a
+    # data descriptor; its deposit is the operator's record in the datasets
+    # registry (`datasets_cli.py deposit`).
+    "data-resource": PaperLine(
+        sections_dir="sections-data-resource/",
+        only_prefixes=("sections-data-resource/", "skills/data-resource/"),
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-data-resource.md.tpl",
+        topology="empirical",
+        label="data resource or benchmark (data descriptor, Datasheets for Datasets)",
+        summary=("a corpus, dataset or benchmark the operator collected and releases: locked collection "
+                 "protocol, ethics, consent and licence, data dictionary and QC, baselines, deposit with a "
+                 "persistent identifier"),
+        empirical=True,
+    ),
 }
 DEFAULT_PAPER_KIND = "experimental"
 
