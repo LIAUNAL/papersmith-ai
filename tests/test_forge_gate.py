@@ -264,30 +264,23 @@ def file_top_level_imports(path):
 
 
 def _pip_skippable_prefixes():
-    """`scripts/setup_env.py`'s own `PIP_PACKAGES`, read from that script's
-    AST rather than restated, normalized to the `-`-delimited prefix its
-    own `--no-ingestion` flag skips (`marker-pdf==2.0.0` -> `marker`). This
-    is a heuristic tied to that script's own declaration, not a hand-picked
-    exception: `--no-ingestion` skips exactly `PIP_PACKAGES`, so requiring
-    one of its entries here would turn a documented, supported install
-    into a red gate. Measured confirmation: `marker` is ABSENT from the
-    `.venv` that ran the suites, and no suite failure involved it.
+    """The requirements of `env/ingestion.txt`, the pip layer
+    `scripts/setup_env.py install --no-ingestion` skips, read from that file
+    rather than restated, normalized to the `-`-delimited prefix
+    (`marker-pdf==2.0.0` -> `marker`). This is a heuristic tied to that one
+    declaration, not a hand-picked exception: `--no-ingestion` skips exactly
+    that file, so requiring one of its entries here would turn a documented,
+    supported install into a red gate. Measured confirmation: `marker` is
+    ABSENT from the `.venv` that ran the suites, and no suite failure
+    involved it.
     """
-    setup_env = FORGE / "scripts" / "setup_env.py"
-    tree = ast.parse(setup_env.read_text(encoding="utf-8"), filename=str(setup_env))
-    entries = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if (isinstance(target, ast.Name) and target.id == "PIP_PACKAGES"
-                    and isinstance(node.value, ast.List)):
-                for elt in node.value.elts:
-                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                        entries.append(elt.value)
+    ingestion = FORGE / "env" / "ingestion.txt"
     prefixes = set()
-    for entry in entries:
-        normalized = re.split(r"[=<>!~\[]", entry, maxsplit=1)[0].strip()
+    for line in ingestion.read_text(encoding="utf-8").splitlines():
+        entry = line.split("#")[0].strip()
+        if not entry:
+            continue
+        normalized = re.split(r"[=<>!~\[;]", entry, maxsplit=1)[0].strip()
         prefixes.add(normalized.split("-")[0].lower())
     return prefixes
 
@@ -303,8 +296,8 @@ def required_third_party_imports():
     because the unguarded occurrence is what proves it. Excluded, in this
     order: the standard library (`sys.stdlib_module_names`), every local
     module name (`local_module_names()`, `papersmith` deliberately
-    excepted), and any name `scripts/setup_env.py` itself declares
-    skippable (`_pip_skippable_prefixes()`).
+    excepted), and any name `env/ingestion.txt` (the layer
+    `--no-ingestion` skips) declares skippable (`_pip_skippable_prefixes()`).
     """
     stdlib = set(sys.stdlib_module_names)
     local = local_module_names()

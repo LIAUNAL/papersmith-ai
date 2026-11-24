@@ -3,7 +3,8 @@
 `smith init` defers the multi-gigabyte workspace environment, and the pipx
 install declares no runtime dependency, so no interpreter could import the
 backend and `smith ui` refused on every fresh workspace. The command now
-installs the dashboard's four packages once into a shared cache environment and
+installs the dashboard's packages (their bounds from
+the kit's `env/environment.yml`) once into a shared cache environment and
 serves from it; only when that install fails does it refuse, naming both
 remedies.
 """
@@ -99,11 +100,27 @@ class UiRuntimeBootstrapTests(unittest.TestCase):
         self.assertIn("smith env install", message)
         self.assertIn(str(ui.ui_env_dir()), message)
 
-    def test_the_installed_packages_are_the_ones_requirements_declares(self) -> None:
-        requirements = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
+    def test_the_installed_packages_are_the_ones_the_environment_source_declares(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        self.assertEqual(ui.UI_ENV_PACKAGES, ui.ui_env_packages(repo))
+        self.assertEqual(ui.UI_ENV_PACKAGES, ("fastapi>=0.110", "uvicorn>=0.27", "watchfiles>=0.21",
+                                              "PyYAML>=6.0", "httpx2>=2.0"))
+        # requirements.txt is generated from the same source, so it agrees.
+        requirements = (repo / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        stated = {line.split("#")[0].strip() for line in requirements}
         for spec in ui.UI_ENV_PACKAGES:
             with self.subTest(spec=spec):
-                self.assertIn(spec, requirements)
+                self.assertIn(spec, stated)
+
+    def test_the_bounds_follow_the_kit_environment_source(self) -> None:
+        env = self.root / "kit" / "env"
+        env.mkdir(parents=True)
+        (env / "environment.yml").write_text(
+            "name: papersmith\ndependencies:\n  - python=3.12\n  - fastapi>=9.9  # moved\n"
+            "  - pyyaml>=7.0\n", encoding="utf-8")
+        self.assertEqual(ui.ui_env_packages(self.root / "kit"),
+                         ("fastapi>=9.9", "uvicorn", "watchfiles", "PyYAML>=7.0", "httpx2"))
+        self.assertEqual(ui.ui_env_packages(self.root / "no-kit"), ui.UI_ENV_DISTRIBUTIONS)
 
     def test_the_runtime_installs_the_http_client_the_snapshot_export_needs(self) -> None:
         # `--publish-pages` exports through `fastapi.testclient`, which needs

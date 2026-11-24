@@ -25,7 +25,7 @@ import tempfile
 from pathlib import Path
 
 from ..errors import SourceError, UserError
-from . import fs
+from . import fs, manifest
 from .exit_codes import SUCCESS, USER_ERROR
 
 #: The standalone module a workspace runs for the dashboard backend.
@@ -51,15 +51,38 @@ FALLBACK_INTERPRETERS = (
     Path(".venv") / "Scripts" / "python.exe",
 )
 
-#: The dashboard's own runtime, installed once into a shared cache environment
-#: when no interpreter can import the backend (a fresh `smith init` defers the
-#: workspace environment, and the pipx install declares no dependency). Each
-#: spec is the one `requirements.txt` declares.
+#: The distributions of the dashboard's own runtime, installed once into a
+#: shared cache environment when no interpreter can import the backend (a fresh
+#: `smith init` defers the workspace environment, and the pipx install declares
+#: no dependency). Their bounds are not restated here: `ui_env_packages` reads
+#: them from the kit's `env/environment.yml` (issue #58).
 #: `httpx2` is what `fastapi.testclient` needs for the static snapshot that
 #: `--export-snapshot` and `--publish-pages` write; starlette 1.x refuses
 #: without it (or the deprecated `httpx`), and fastapi does not bring it.
-UI_ENV_PACKAGES = ("fastapi>=0.110", "uvicorn>=0.27", "watchfiles>=0.21", "PyYAML>=6.0",
-                   "httpx2>=2.0")
+UI_ENV_DISTRIBUTIONS = ("fastapi", "uvicorn", "watchfiles", "PyYAML", "httpx2")
+
+
+def ui_env_packages(kit_root: Path | None = None) -> tuple[str, ...]:
+    """`UI_ENV_DISTRIBUTIONS` as pip requirements with the bounds the kit's
+    `env/environment.yml` declares; a distribution the file does not name (or
+    a kit without the file) is installed unbounded rather than not at all."""
+    if kit_root is None:
+        from ..kit import resolve_kit_root
+
+        kit_root = resolve_kit_root()
+    declared: dict[str, str] = {}
+    try:
+        for name, constraint, _ in manifest.conda_dependencies(kit_root / manifest.ENV_SOURCE):
+            requirement = manifest.pip_requirement(name, constraint)
+            if requirement is not None:
+                declared[manifest.PIP_DISTRIBUTIONS.get(name, name)] = requirement
+    except OSError:
+        pass
+    return tuple(declared.get(name, name) for name in UI_ENV_DISTRIBUTIONS)
+
+
+#: The dashboard runtime's requirements, derived at import (`ui_env_packages`).
+UI_ENV_PACKAGES = ui_env_packages()
 
 
 def ui_env_dir() -> Path:

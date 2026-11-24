@@ -6,23 +6,20 @@ These tests pin the pieces that make the script runnable and keep it on the
 safe distribution mode.
 """
 
-import ast
 import json
 import unittest
 from pathlib import Path
 
+from papersmith.core import manifest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
-def _conda_base_packages():
-    path = REPO / "scripts" / "setup_env.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == "CONDA_BASE_PACKAGES" for t in node.targets
-        ):
-            return [e.value for e in node.value.elts if isinstance(e, ast.Constant)]
-    raise AssertionError("CONDA_BASE_PACKAGES not found in scripts/setup_env.py")
+def _environment_specs():
+    """`env/environment.yml`'s dependencies (`name` + constraint), the source
+    `scripts/setup_env.py` builds the environment from through its locks."""
+    return [name + constraint for name, constraint, _ in
+            manifest.conda_dependencies(REPO / "env" / "environment.yml")]
 
 
 class ParallelTierTests(unittest.TestCase):
@@ -39,7 +36,7 @@ class ParallelTierTests(unittest.TestCase):
         self.assertTrue(self.scripts["test:py:par"].startswith(serial))
 
     def test_the_provisioned_environment_carries_xdist(self):
-        self.assertIn("pytest-xdist", _conda_base_packages())
+        self.assertTrue(any(spec.startswith("pytest-xdist") for spec in _environment_specs()))
 
     def test_the_manifest_names_xdist(self):
         lines = (REPO / "requirements.txt").read_text(encoding="utf-8").splitlines()

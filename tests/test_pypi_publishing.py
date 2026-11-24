@@ -50,6 +50,10 @@ WORKFLOW = REPO / ".github" / "workflows" / "publish.yml"
 KIT_SENTINELS = (
     "papersmith/_kit/kit-manifest.json",
     "papersmith/_kit/requirements.txt",
+    # scripts/setup_env.py builds a workspace's environment from these (#58).
+    "papersmith/_kit/env/environment.yml",
+    "papersmith/_kit/env/locks.json",
+    "papersmith/_kit/env/cpu.conda-lock.yml",
 )
 
 

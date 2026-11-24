@@ -123,7 +123,7 @@ migration is needed.
 With an editable install (`pipx install -e`) the kit is the live checkout,
 uncommitted edits included. That is why `init` and `upgrade` refuse, before
 writing a byte, when the paths the kit distributes (`skills/`, `sections/`,
-`.claude/agents/`, the provisioning scripts, `requirements.txt` and
+`.claude/agents/`, the provisioning scripts, `env/`, `requirements.txt` and
 `src/papersmith/`) have changes or untracked files, and also when the kit's git
 state cannot be determined (no `git`, the tree is not a repository): unknown is
 treated as dirty, not as clean. Commit or stash the changes, or repeat with
@@ -581,6 +581,11 @@ Works outside a workspace (the probe then comes from the kit). Always exits `0`.
 `smith env install` takes `--rocm` to force AMD's ROCm PyTorch wheels and
 `--cpu` to forbid every GPU build; without either it picks CUDA on NVIDIA,
 ROCm on a supported AMD target and the CPU build otherwise, and prints why.
+It builds the environment from that build's lock, `env/<cpu|cuda|rocm>.conda-lock.yml`,
+replacing an existing environment so it holds exactly the lock's packages; on
+a platform the lock does not cover (`env/locks.json`) it solves
+`env/environment.yml` live and warns that the result is not reproducible. The
+ROCm wheels and, unless `--no-ingestion`, `env/ingestion.txt` go in on top.
 
 ### `smith ui [<dir>]`
 
@@ -704,9 +709,9 @@ the site is public even for a private repository.
 **Right after `smith init`.** The dashboard runs from the workspace's environment
 when it exists (`.micromamba/envs/papersmith`, then a hand-made `.venv`). A fresh
 `smith init` defers that environment and the pipx install declares no runtime
-dependency, so on its first run `smith ui` installs the dashboard's own four
-packages (`fastapi`, `uvicorn`, `watchfiles`, `PyYAML`, as `requirements.txt`
-pins them) once into `$XDG_CACHE_HOME/papersmith/ui-env-py<version>`
+dependency, so on its first run `smith ui` installs the dashboard's own
+packages (`fastapi`, `uvicorn`, `watchfiles`, `PyYAML`, `httpx2`, with the bounds
+the kit's `env/environment.yml` declares) once into `$XDG_CACHE_HOME/papersmith/ui-env-py<version>`
 (`~/.cache/...` by default), outside every workspace, and serves from it. Only
 when that install fails (offline) does it refuse, naming `smith env install`.
 

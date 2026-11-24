@@ -192,12 +192,15 @@ python scripts/setup_env.py install
 # or, on macOS/Linux: ./skills/paper-ingestion/setup.sh
 ```
 
-The provisioner installs both dependency kinds a `requirements.txt` alone cannot:
+The provisioner builds the environment from the locked dependency set
+(`env/<cpu|cuda|rocm>.conda-lock.yml`, solved from `env/environment.yml`):
 
-- **Python deps** (`requirements.txt`): `pypdfium2` (the fast path, from
-  conda-forge with the base packages, so it is always there), `docling` (the heavy
-  pages), `mlx-vlm` on Apple Silicon, `PyYAML` — plus `pytorch`/`torchvision`,
-  `numpy`, `jsonschema` and `kagglesdk` from conda-forge.
+- **Locked conda packages**: `pypdfium2` (the fast path, so it is always there),
+  `pytorch`/`torchvision`, `numpy`, `pyyaml`, `jsonschema`, `kagglesdk` and
+  `llama.cpp`, at the exact builds the lock names.
+- **Ingestion's pip layer** (`env/ingestion.txt`, skipped by `--no-ingestion`):
+  `docling==2.141.0` (the heavy pages) and `mlx-vlm==0.7.10` on Apple Silicon,
+  pinned but not locked (docs/releasing.md says why).
 - **Marker, opt-in only**: `pip install marker-pdf==2.0.0` inside the environment
   (see the license note above); its OCR backend `llama-server` still comes from
   conda-forge's `llama.cpp`.

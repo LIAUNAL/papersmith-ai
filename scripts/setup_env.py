@@ -9,26 +9,31 @@ CPU otherwise) plus the `llama-server` OCR backend — pulled from conda-forge
 rather than Homebrew, so the same command works everywhere.
 
 What it installs
-    conda-forge: python=3.12, pip, pytest, pytest-xdist, python-build, numpy, pypdfium2, pyyaml, jsonschema,
-                 kagglesdk, llama.cpp (provides llama-server), nbformat, nbclient
-                 and ipykernel (remote-execution runs notebooks), fastapi,
-                 uvicorn, watchfiles and pydantic (the Paper Command Center
-                 server the kit ships), and torch —
-                 `pytorch-gpu`+`torchvision` on CUDA machines, else
-                 `pytorch-cpu`+`torchvision` (none on a ROCm machine).
+    One dependency specification (issue #58): `env/environment.yml` plus the
+    torch build's file (`env/torch-cpu.yml`, `env/torch-cuda.yml`), locked by
+    conda-lock into `env/<kind>.conda-lock.yml` (`scripts/lock-env.py`,
+    docs/releasing.md). `install` builds the environment from the lock of its
+    torch kind, so every machine of a platform gets the same packages:
+    conda-forge: python=3.12, pytest, numpy, pypdfium2, kagglesdk, llama.cpp
+                 (provides llama-server), the notebook runners, the Paper
+                 Command Center's server, and torch -- `pytorch-gpu` on CUDA
+                 machines, else `pytorch-cpu` (none in the ROCm lock).
     pip:         on an AMD GPU whose gfx target is in the probe's ROCm set
                  (`skills/_core/gpu/gpu_probe.py`, `ROCM_SUPPORTED_TARGETS`),
                  AMD's ROCm builds of torch and torchvision with the
                  `device-<gfx>` extra from https://stable.repo.amd.com/rocm/whl-next/
                  (the ROCm runtime ships in the wheels: no system ROCm needed);
                  this project itself, editable (`pip install -e .`), and the
-                 paper-ingestion heavy engine: docling (MIT), plus mlx-vlm (MIT)
-                 on Apple Silicon so its formula model runs on the GPU. Every one
-                 is license-unrestricted. pypdfium2 (Apache-2.0/BSD-3) is the
-                 fast path and comes from conda-forge with the base packages, so
-                 `--no-ingestion` still ingests digital PDFs. Marker is no longer
-                 installed: its weights are free only below USD 5M in funding or
-                 revenue; `pip install marker-pdf==2.0.0` opts in.
+                 paper-ingestion heavy engine, pinned in `env/ingestion.txt`:
+                 docling (MIT), plus mlx-vlm (MIT) on Apple Silicon so its
+                 formula model runs on the GPU. Every one is license-unrestricted.
+                 pypdfium2 (Apache-2.0/BSD-3) is the fast path and comes from the
+                 lock, so `--no-ingestion` still ingests digital PDFs. Marker is
+                 no longer installed: its weights are free only below USD 5M in
+                 funding or revenue; `pip install marker-pdf==2.0.0` opts in.
+    A platform no lock covers (`env/locks.json`: today linux-aarch64 and
+    win-arm64, and CUDA on macOS) is solved live from the same source files,
+    with a warning that the result is not reproducible.
 
 Usage
     python3 scripts/setup_env.py install          # detect hardware, provision
@@ -47,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import shutil
@@ -60,85 +66,12 @@ ENV_NAME = "papersmith"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MAMBA_ROOT = PROJECT_ROOT / ".micromamba"
 
-# Only pip-only packages go here. Everything else is available on conda-forge and
-# is installed through micromamba so platform + hardware variants resolve cleanly.
-PIP_PACKAGES = [
-    "docling==2.141.0",
-    "mlx-vlm==0.7.10; sys_platform == 'darwin' and platform_machine == 'arm64'",
-]
-
-CONDA_BASE_PACKAGES = [
-    "python=3.12",
-    "pip",
-    "pytest",
-    # `npm run test:py:par` runs the suite across workers (`--dist loadfile`).
-    "pytest-xdist",
-    # PyPI artifact tests run `python -m build`; the checkout's build/ namespace
-    # is not the build distribution. Keep this available even with --no-ingestion.
-    "python-build",
-    # `tests/test_remote_execution.py` imports requests at module scope, and
-    # `tests/test_forge_gate.py` derives every top-level third-party import the
-    # forge's own code requires and probes the gate's interpreter for each one.
-    # It lived only in `requirements.txt`, which this script never reads, so a
-    # correctly provisioned environment failed that probe.
-    "requests",
-    "numpy",
-    # The paper-ingestion fast path and page probe (Apache-2.0 / BSD-3-Clause).
-    "pypdfium2",
-    "pyyaml",
-    "jsonschema",
-    # Pinned to requirements.txt's version (tests/test_env_pins.py): the doctrine
-    # pin test requires exactly that version, and a bare name took conda-forge's
-    # newest build the day 0.1.38 was published (#108).
-    "kagglesdk==0.1.37",
-    "llama.cpp",
-    # remote-execution reads and executes notebooks. `nbformat` parses them
-    # and `nbclient` drives them, but driving a notebook means talking to a
-    # KERNEL, and the kernel is a separate package: `nbclient` pulls in
-    # `jupyter_client`, which knows how to speak to a kernel, and never
-    # `ipykernel`, which is the one that runs the cells. Without all three
-    # the notebook suites fail -- the first two on import, the last one at
-    # execution, where the failure surfaces as a unit process exiting
-    # non-zero rather than as a missing module.
-    #
-    # All three were absent here and present in a hand-made virtualenv that
-    # nothing in this repository creates, which is why the gap stayed
-    # invisible: every run was green on an environment this script had
-    # never actually produced.
-    "nbformat",
-    "nbclient",
-    "ipykernel",
-    # The Paper Command Center (`skills/_core/command_center/`) ships into every
-    # initialized workspace, and `requirements.txt` -- itself a kit entry, so it
-    # ships too -- names these four as that server's dependencies. This script
-    # never reads that file, so the declaration and the provisioning disagreed:
-    # the interpreter `package.json` names could not import `fastapi`, and
-    # `tests/test_command_center_server.py` failed to LOAD. A module that fails
-    # to load reports itself as a defect in the suite, which is the reading this
-    # gap produced for as long as it existed; `tests/test_suite_collects.py`
-    # names the module and never the missing distribution.
-    #
-    # `uvicorn` is imported unguarded inside `server.main`, so its absence is a
-    # hard failure at launch. `watchfiles` sits under a `try/except
-    # ModuleNotFoundError`, so its absence is silent instead -- the SSE channel
-    # simply stops updating, which is the worse of the two shapes and the reason
-    # it is named here rather than left to resolve transitively. `pydantic` is
-    # `fastapi`'s own requirement; it is listed so that this list and the
-    # manifest stay one declaration instead of two that can drift.
-    #
-    # `tests/test_forge_gate.py` derives its required-import set from every
-    # tracked `.py` under `tests/`, `src/`, `skills/*/scripts/` and
-    # `skills/_core/`, so a fifth dependency added to that tree fails the gate
-    # the day it lands instead of arriving as an unloadable suite.
-    "fastapi",
-    "uvicorn",
-    "watchfiles",
-    "pydantic",
-    # The client behind `fastapi.testclient`, which the dashboard's static
-    # snapshot export (`smith ui --publish-pages`) uses; starlette 1.x refuses
-    # without it, and `smith ui`'s backend probe now asks for it.
-    "httpx2",
-]
+#: The dependency source and its locks (scripts/lock-env.py writes them).
+ENV_DIR = PROJECT_ROOT / "env"
+#: Each torch kind's source file beside `environment.yml`; ROCm locks no torch.
+TORCH_SOURCES = {"cpu": "torch-cpu.yml", "cuda": "torch-cuda.yml", "rocm": None}
+#: Paper ingestion's pinned pip layer, skipped by `--no-ingestion`.
+INGESTION_REQUIREMENTS = ENV_DIR / "ingestion.txt"
 
 # The micromamba release `install` bootstraps, and the SHA-256 of each
 # platform's binary in it. A download is checked against this table before it
@@ -414,16 +347,43 @@ def env_exists(name: str) -> bool:
     return (MAMBA_ROOT / "envs" / name).exists()
 
 
-def conda_torch_packages(cuda: bool) -> list[str]:
-    """Hardware-appropriate PyTorch, from conda-forge's CPU/CUDA variants."""
-    if cuda:
-        return ["pytorch-gpu", "torchvision"]
-    return ["pytorch-cpu", "torchvision"]
+def lockfile(kind: str) -> Path:
+    # micromamba reads a file as a conda-lock lockfile only when its name ends in `-lock.yml`.
+    return ENV_DIR / f"{kind}.conda-lock.yml"
 
 
-#: conda-forge's torch packages a ROCm install removes from an existing env,
-#: so the ROCm wheels do not land on top of a conda CPU build.
-CONDA_TORCH_NAMES = ["pytorch", "pytorch-cpu", "pytorch-gpu", "torchvision"]
+def locked_platforms(kind: str) -> list[str]:
+    """The platforms `env/locks.json` records for this kind's lock; none when
+    the record is missing or unreadable."""
+    try:
+        record = json.loads((ENV_DIR / "locks.json").read_text(encoding="utf-8"))
+        platforms = record["variants"][kind]["platforms"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    return [p for p in platforms if isinstance(p, str)] if isinstance(platforms, list) else []
+
+
+def environment_args(kind: str, asset: str) -> list[str]:
+    """The `micromamba create` file arguments for this kind on this platform:
+    its lock when the lock covers the platform, else the source files solved
+    live (with a warning)."""
+    lock = lockfile(kind)
+    if asset in locked_platforms(kind) and lock.is_file():
+        print(f"[setup] environment: {lock.relative_to(PROJECT_ROOT)} ({asset})")
+        return ["-f", str(lock), "--category", "main"]
+    sources = [ENV_DIR / "environment.yml"]
+    if TORCH_SOURCES[kind]:
+        sources.append(ENV_DIR / TORCH_SOURCES[kind])
+    missing = [path for path in sources if not path.is_file()]
+    if missing:
+        raise SystemExit(f"[setup] {missing[0]} is missing; run `smith upgrade` to restore the kit")
+    names = " + ".join(str(path.relative_to(PROJECT_ROOT)) for path in sources)
+    print(f"[setup] WARNING: {asset} is not locked for the {kind} build (env/locks.json); "
+          f"solving {names} live, so this environment is not reproducible")
+    args: list[str] = []
+    for path in sources:
+        args += ["-f", str(path)]
+    return args
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -433,19 +393,17 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     mm = find_micromamba() or bootstrap_micromamba()
 
-    existed = env_exists(args.name)
-    conda_packages = CONDA_BASE_PACKAGES + ([] if kind == "rocm" else conda_torch_packages(kind == "cuda"))
-    verb = "install" if existed else "create"
-    run(mm, [verb, "-y", "-n", args.name, "-c", "conda-forge", *conda_packages],
+    # `create -y` over an existing environment removes it and builds it again,
+    # so it holds exactly the lock's packages: `install -f <lock>` would keep a
+    # conda torch an earlier build left there (measured with micromamba 2.9.0,
+    # 2026-11-24), under the ROCm wheels below. The pip layers that follow are
+    # installed again.
+    if env_exists(args.name):
+        print(f"[setup] rebuilding the existing environment '{args.name}' from the lock")
+    run(mm, ["create", "-y", "-n", args.name, *environment_args(kind, platform_asset())],
         mamba_env())
 
     if kind == "rocm":
-        if existed:
-            # Best-effort: an env built earlier may hold conda-forge's CPU torch.
-            try:
-                run(mm, ["remove", "-y", "-n", args.name, "--force", *CONDA_TORCH_NAMES], mamba_env())
-            except subprocess.CalledProcessError:
-                print("[setup] no conda-forge torch to remove")
         print(f"[setup] installing AMD's ROCm PyTorch wheels for {gfx} (runtime bundled; "
               "leave HSA_OVERRIDE_GFX_VERSION unset)")
         run(mm, ["run", "-n", args.name, "python", "-m", "pip", "install", *rocm_pip_args(gfx)], mamba_env())
@@ -464,10 +422,10 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"[setup] skipping editable install: {PROJECT_ROOT} has no "
               "pyproject.toml or setup.py")
 
-    pip_packages = [] if args.no_ingestion else PIP_PACKAGES
-    if pip_packages:
-        run(mm, ["run", "-n", args.name, "python", "-m", "pip", "install", *pip_packages],
-            mamba_env())
+    # After any torch, so docling resolves against the one already installed.
+    if not args.no_ingestion:
+        run(mm, ["run", "-n", args.name, "python", "-m", "pip", "install", "-r",
+                 str(INGESTION_REQUIREMENTS)], mamba_env())
 
     # The environment keeps its files; the downloaded tarballs and the index
     # cache only weigh on the workspace's disk once it is built. The extracted
@@ -530,7 +488,8 @@ def main() -> int:
     p_install.add_argument("--rocm", action="store_true",
                            help="force AMD's ROCm PyTorch wheels for the detected gfx target")
     p_install.add_argument("--no-ingestion", action="store_true",
-                           help="skip docling (the heavy ingestion engine); the pypdfium2 fast path stays")
+                           help="skip env/ingestion.txt (docling, the heavy ingestion engine); "
+                                "the pypdfium2 fast path stays")
 
     sub.add_parser("clean", help="remove the environment").add_argument(
         "--full", action="store_true", help="also delete bootstrapped micromamba")

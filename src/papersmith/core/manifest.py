@@ -193,15 +193,71 @@ def _line_section_entries() -> tuple[str, ...]:
 # ``guidance/paper-guide``.
 # Each non-experimental line's section directory (``LINES``) travels the
 # same way, after ``sections``.
+#
+# ``env`` is the dependency source and its locks (issue #58):
+# ``scripts/setup_env.py`` builds a workspace's environment from them.
 KIT_ENTRIES = (
     "skills",
     "sections",
     *_line_section_entries(),
     ".claude/agents",
+    "env",
     "scripts/setup_env.py",
     "scripts/setup-harnesses.sh",
     "requirements.txt",
 )
+
+#: The kit's dependency source (issue #58), which ``requirements.txt`` and the
+#: dashboard's venv (``ui.UI_ENV_PACKAGES``) are derived from.
+ENV_SOURCE = "env/environment.yml"
+
+#: conda-forge packages whose PyPI distribution has another name.
+PIP_DISTRIBUTIONS = {
+    "pytorch-cpu": "torch",
+    "pytorch-gpu": "torch",
+    "pillow": "Pillow",
+    "pyyaml": "PyYAML",
+    "python-build": "build",
+}
+
+#: conda-forge packages no pip requirement stands for.
+CONDA_ONLY = frozenset({"python", "pip", "llama.cpp"})
+
+
+def conda_dependencies(path: Path) -> list[tuple[str, str, str]]:
+    """``(name, constraint, comment)`` for each entry under ``dependencies:`` of
+    a conda environment file such as ``env/environment.yml``.
+
+    A line reader rather than a YAML parser, so the pipx install (no
+    dependencies) can read it; the files it reads hold one ``- spec  # comment``
+    per line."""
+    entries: list[tuple[str, str, str]] = []
+    inside = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            inside = line.split("#")[0].strip() == "dependencies:"
+            continue
+        if not inside:
+            continue
+        spec, _, comment = line.strip().removeprefix("-").partition("#")
+        spec = spec.strip()
+        name = spec
+        for index, char in enumerate(spec):
+            if char in "=<>!~ ":
+                name = spec[:index]
+                break
+        entries.append((name, spec[len(name):].strip(), comment.strip()))
+    return entries
+
+
+def pip_requirement(name: str, constraint: str) -> str | None:
+    """The pip requirement a conda dependency stands for, or None for a
+    conda-only package (``CONDA_ONLY``)."""
+    if name in CONDA_ONLY:
+        return None
+    return PIP_DISTRIBUTIONS.get(name, name) + constraint
 
 # Paths ``upgrade`` must never overwrite or delete. ``papersmith.yaml`` and
 # ``package.json`` are seeded once at init (see ``init._write_workspace_seed``),
