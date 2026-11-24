@@ -219,6 +219,38 @@ class EthicsTests(StudyWorkspace):
         self.refused("PROTOCOL_CHANGED", "ethics", "record", "--by", "Ana Ruiz", *ETHICS)
         self.assertFalse((self.root / "study" / "ethics.json").exists())
 
+    def agree(self, type_id: str, variant: str | None) -> None:
+        path = self.root / ".papersmith" / "paper_type.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"agreed": type_id, "agreed_variant": variant}), encoding="utf-8")
+
+    def test_an_experience_report_without_a_protocol_may_record_why_no_ethics_applies(self) -> None:
+        """K5: an experience report keeps the protocol optional, so with no protocol at all it
+        records a not-applicable ethics statement unbound to a lock; once a protocol is
+        approved that record is no longer current and is recorded again against it."""
+        self.agree("qualitative-participatory", "experience-report")
+        self.refused("PROTOCOL_NOT_APPROVED", "ethics", "record", "--by", "Ana Ruiz", *ETHICS)
+        out = self.ok("ethics", "record", "--by", "Ana Ruiz", "--not-applicable", "--reason",
+                      "the report describes a course; no participant data")
+        [entry] = self.record("ethics")["history"]
+        self.assertEqual((entry["status"], entry["protocol_revision"], entry["protocol_sha256"]),
+                         ("not-applicable", None, None))
+        self.assertTrue(out["ethics"]["current"])
+        self.approved()
+        self.assertFalse(self.ok("status")["ethics"]["current"])
+
+    def test_only_an_experience_report_without_any_protocol_skips_the_lock(self) -> None:
+        not_applicable = ("--not-applicable", "--reason", "no participants")
+        for type_id, variant in (("qualitative-participatory", "qualitative-mixed"),
+                                 ("qualitative-participatory", None), ("observational-measurement", None)):
+            with self.subTest(variant=variant, type_id=type_id):
+                self.agree(type_id, variant)
+                self.refused("PROTOCOL_NOT_APPROVED", "ethics", "record", "--by", "Ana Ruiz", *not_applicable)
+        self.agree("qualitative-participatory", "experience-report")
+        self.revision(1)  # a protocol exists, not yet approved: it is approved first
+        self.refused("PROTOCOL_NOT_APPROVED", "ethics", "record", "--by", "Ana Ruiz", *not_applicable)
+        self.assertFalse((self.root / "study" / "ethics.json").exists())
+
     def test_ethics_approval_is_bound_to_the_lock(self) -> None:
         self.approved()
         out = self.ok("ethics", "record", "--by", "Ana Ruiz", *ETHICS)

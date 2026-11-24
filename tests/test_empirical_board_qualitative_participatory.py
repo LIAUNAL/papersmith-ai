@@ -266,13 +266,19 @@ class ProtocolEthicsTests(QualBoardCase):
         gate = self.gate(self.status(root), "G-ETHICS")
         self.assertEqual(gate["status"], "PENDING")
         step = self.phase(self.status(root), "ethics_consent_quotes")
-        self.assertIn("approves a short protocol first", step["detail"])
-        self.approved(root)
+        self.assertIn("ethics record --not-applicable --reason <why> --by <name>", step["detail"])
+        # With no protocol at all, the report records why no ethics record applies (K5).
         self.study(root, "ethics", "record", "--by", "Ana Ruiz", "--not-applicable", "--reason",
                    "the report describes a course; no participant data")
         status = self.status(root)
         self.assertEqual(self.gate(status, "G-ETHICS")["status"], "PASS")
         self.assertIn("Not applicable, recorded by Ana Ruiz", self.phase(status, "ethics_consent_quotes")["detail"])
+        # Once it keeps a protocol, the statement is recorded again against the lock.
+        self.approved(root)
+        self.assertEqual(self.gate(self.status(root), "G-ETHICS")["status"], "ACTIVE")
+        self.study(root, "ethics", "record", "--by", "Ana Ruiz", "--not-applicable", "--reason",
+                   "the report describes a course; no participant data")
+        self.assertEqual(self.gate(self.status(root), "G-ETHICS")["status"], "PASS")
         # An amendment makes it stale, as for every line.
         self.revision(root, 2)
         self.study(root, "protocol", "amend", "--by", "Ana Ruiz", "--reason", "scope")

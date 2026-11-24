@@ -824,17 +824,18 @@ def _qual_protocol_gate(ctx: Context) -> dict[str, str]:
 
 def _qual_ethics_gate(ctx: Context) -> dict[str, str]:
     """G-ETHICS of the line (K5): the shared reading (a not-applicable record
-    passes, for an experience report without participant data too). The
-    ethics record is bound to an approved protocol, so an experience report
-    with no record and no protocol is told to approve one first."""
+    passes, for an experience report without participant data too). An
+    experience report with no protocol at all may record its not-applicable
+    statement unbound (study_cli.py), and is told how."""
     variant, assumed = qual_variant(ctx.root)
     shared = _record_gate(ctx, "ethics")
     if (variant == EXPERIENCE and shared["status"] == "PENDING"
             and ctx.module("records").protocol_state(ctx.root)["state"] == "absent"):
-        return {"status": "PENDING", "detail": ("No ethics record yet: the ethics record, or why none applies "
-                                                "(--not-applicable), is bound to an approved protocol, so an "
-                                                "experience report approves a short protocol first "
-                                                "(study_cli.py protocol approve, then ethics record)")}
+        return {"status": "PENDING", "detail": ("No ethics record yet: an experience report without participant "
+                                                "data records why none applies (study_cli.py ethics record "
+                                                "--not-applicable --reason <why> --by <name>); with participant "
+                                                "data it approves a short protocol and records the committee's "
+                                                "approval")}
     return _qual_assumed(shared, assumed)
 
 

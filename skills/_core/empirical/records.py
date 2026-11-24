@@ -97,6 +97,11 @@ def read_lock(root: Path) -> dict | None:
     return data
 
 
+def no_protocol(root: Path) -> bool:
+    """True when the workspace has no protocol at all: no lock and no revision."""
+    return protocol_state(root)["state"] == "absent" and latest_revision(Path(root)) is None
+
+
 def protocol_state(root: Path) -> dict:
     """``state``: ``absent`` (never approved), ``current``, ``changed`` (``reasons``: the locked
     revision was edited or removed, or a newer managed revision exists) or ``corrupt``."""
@@ -260,7 +265,11 @@ def gate_state(root: Path, gate: str) -> dict | None:
         lock = read_lock(root)
     except StudyError:
         lock = None
-    current = lock is not None and entry.get("protocol_sha256") == lock["sha256"]
+    if lock is None and entry.get("protocol_sha256") is None:
+        # An experience report's statement made without any protocol (K5) holds while none exists.
+        current = no_protocol(root)
+    else:
+        current = lock is not None and entry.get("protocol_sha256") == lock["sha256"]
     entry.update(state="recorded", current=current, records=len(history), warnings=_warnings(gate, entry, current))
     return entry
 

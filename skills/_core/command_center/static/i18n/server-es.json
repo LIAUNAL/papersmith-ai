@@ -1609,7 +1609,7 @@
   "Optional for a consensus study (not blocking): {detail}": "Opcional para un estudio de consenso (no bloquea): {detail}",
   "no study protocol kept": "no se lleva protocolo del estudio",
   "no transcript registered": "no hay transcripciones registradas",
-  "No ethics record yet: the ethics record, or why none applies (--not-applicable), is bound to an approved protocol, so an experience report approves a short protocol first (study_cli.py protocol approve, then ethics record)": "Aún no hay registro de ética: el registro de ética, o por qué no aplica ninguno (--not-applicable), está ligado a un protocolo aprobado, así que un reporte de experiencia aprueba primero un protocolo breve (study_cli.py protocol approve, luego ethics record)",
+  "No ethics record yet: an experience report without participant data records why none applies (study_cli.py ethics record --not-applicable --reason <why> --by <name>); with participant data it approves a short protocol and records the committee's approval": "Aún no hay registro de ética: un reporte de experiencia sin datos de participantes registra por qué no aplica ninguno (study_cli.py ethics record --not-applicable --reason <por qué> --by <nombre>); con datos de participantes aprueba un protocolo breve y registra la aprobación del comité",
   "Not applicable to a qualitative or mixed study": "No aplica a un estudio cualitativo o mixto",
   "Not applicable to an experience report": "No aplica a un reporte de experiencia",
   "the themes file changed since the sign-off": "el archivo de temas cambió desde la firma",

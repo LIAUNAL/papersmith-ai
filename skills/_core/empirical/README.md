@@ -38,6 +38,12 @@ skill's single parser, `protocol-fields.ts`.
 An ethics entry is `{"by", "at", "status": "approved", "committee", "code",
 "date", "consent", "protocol_revision", "protocol_sha256"}` or `{"by", "at",
 "status": "not-applicable", "reason", "protocol_revision", "protocol_sha256"}`.
+Every ethics record needs the approved, current protocol, with one exception
+(decision K5): an experience report (`qualitative-participatory`, agreed variant
+`experience-report`) that has no protocol at all, no revision and no lock, may
+record the `not-applicable` form without it; its `protocol_revision` and
+`protocol_sha256` are `null`, and it stays current only while the workspace has
+no protocol (once one is approved, the operator records it again against the lock).
 
 A registration entry is `{"by", "at", "status": "registered", "registry",
 "id", "date", "first_enrolment", "retrospective", "protocol_revision",

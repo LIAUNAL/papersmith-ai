@@ -222,10 +222,26 @@ def _entry(args, gate: str, fields: tuple, optional: tuple) -> dict:
     return entry
 
 
+def _protocol_optional(root: Path) -> bool:
+    """K5: an experience report (qualitative-participatory) keeps the protocol optional;
+    true only while it has none at all, no revision and no lock."""
+    try:
+        agreed = json.loads((root / ".papersmith" / "paper_type.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (isinstance(agreed, dict) and agreed.get("agreed") == "qualitative-participatory"
+            and agreed.get("agreed_variant") == "experience-report"
+            and records.no_protocol(root))
+
+
 def _record(root: Path, gate: str, by: str, entry: dict) -> dict:
     data = records.read_record(root, gate)
-    lock = records.require_current_lock(root)
-    entry.update(protocol_revision=lock["revision"], protocol_sha256=lock["sha256"])
+    if gate == "ethics" and entry.get("status") == "not-applicable" and _protocol_optional(root):
+        # No protocol to bind to: the statement stands until a protocol is approved.
+        entry.update(protocol_revision=None, protocol_sha256=None)
+    else:
+        lock = records.require_current_lock(root)
+        entry.update(protocol_revision=lock["revision"], protocol_sha256=lock["sha256"])
     history = data["history"]
     if history and {k: v for k, v in history[-1].items() if k not in ENTRY_META} == entry:
         raise StudyError("RECORD_UNCHANGED", f"the {gate} record is already current: nothing changed since it was "
