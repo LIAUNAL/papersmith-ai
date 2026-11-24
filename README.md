@@ -736,7 +736,13 @@ and animal husbandry), the `/experiment-intervention` skill, and its
 The assistant never generates data and never generates, reads out or alters
 the allocation sequence; ethics, consent, data collection and the choice of
 primary outcome stay human. `/experiment-intervention status` reports where
-the study stands. Details in
+the study stands. In `smith ui` the line's board shows these eleven steps and
+its gates. A trial with people (or a workspace with no variant agreed yet)
+fails G-REGISTRATION when the registration is retrospective (ICMJE requires it
+on or before the first enrolment) and waits for the signed-off CONSORT flow
+before writing; a field experiment passes with any current registration and
+its flow never blocks writing. The board shows the allocation record's method,
+row count and concealment, never the list. Details in
 [skills/experiment-intervention/SKILL.md](skills/experiment-intervention/SKILL.md).
 
 ### Open the dashboard from another device

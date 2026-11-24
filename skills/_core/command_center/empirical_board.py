@@ -4,7 +4,7 @@ One board serves every empirical line. A line is a :class:`LineTable`: its
 steps in order (drawn from the shared :data:`STEPS` library), the gates its
 board lists, its phase locks and the step that is transversal. This module
 fills the tables of ``observational-measurement``, ``hardware``,
-``lab-simulation`` and ``data-resource``
+``lab-simulation``, ``data-resource`` and ``experiment-intervention``
 (``src/papersmith/templates/paper-flow-<kind>.md.tpl``); a
 later line adds its own table to :data:`LINE_TABLES` (reusing the library's
 steps and adding the ones only it has) and is registered with the rest at the
@@ -34,6 +34,20 @@ Every status is read from evidence on disk, never computed from a model:
   ``allowed`` (a deposit redistributes the data, so an override does not count);
 * G-DEPOSIT: ``datasets_cli.deposit_state`` is current for every dataset of
   the resource (stale once a registered file changes, is added or goes missing).
+* G-ALLOCATION: ``records.allocation_state`` is current (the operator's
+  allocation list unchanged since its record and the protocol not amended);
+  the board shows the record's method, row count and concealment and the
+  stale reasons, never the list;
+* experiment-intervention's own G-REGISTRATION and G-FLOW
+  (:data:`TRIAL_REGISTRATION`, :data:`TRIAL_FLOW`), decided by the agreed
+  variant (:func:`trial_variant`): a trial with people (``human-trial``)
+  needs a current registration made on or before its first enrolment (ICMJE;
+  retrospective, unknown and not-applicable records fail with their reason)
+  and the signed-off participant flow; a field experiment passes with any
+  current registration record and keeps the flow optional (it passes, saying
+  so, and never blocks the writing). With no variant agreed (no type, a stale
+  agreement or the type without its variant) the human-trial rules apply,
+  the stricter case, and both gates say so.
 
 The operator records every one of them with ``--by``; the board only reads
 (decision E8). Observational: the analysis actions wait for the protocol, the
@@ -47,7 +61,9 @@ writing for G-CALIBRATION, whose budgets that step computes. Data-resource:
 the baselines wait for G-DATA-QC (their actions and their phase lock) and the
 writing for G-DEPOSIT; the deposit step waits for nothing in the chain (a
 resource is deposited whether or not it has baselines) but its record action
-waits for G-DATA-QC.
+waits for G-DATA-QC. Experiment-intervention: the pre-specified analyses
+wait for G-DATA-QC (their phase lock) and their actions for the protocol,
+ethics, registration and allocation records too; the writing waits for G-FLOW.
 
 Steps a step after them cannot wait for: a step waits for the one before it,
 so a step whose only record appears later must not hold the line. The
@@ -200,11 +216,13 @@ PAPER_CLI = "python skills/paper-writing/scripts/paper_cli.py"
 PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE = "G-STUDY-PROTOCOL", "G-ETHICS", "G-REGISTRATION"
 DATA_GATE, FLOW_GATE = "G-DATA-QC", "G-FLOW"
 SPEC_GATE, CALIBRATION_GATE, AGREEMENT_GATE = "G-SPEC", "G-CALIBRATION", "G-AGREEMENT"
-DEPOSIT_GATE = "G-DEPOSIT"
+DEPOSIT_GATE, ALLOCATION_GATE = "G-DEPOSIT", "G-ALLOCATION"
 #: The gates a hardware board lists only when people take part in its validation.
 PEOPLE_GATES = (ETHICS_GATE, REGISTRATION_GATE, FLOW_GATE)
 #: What an analysis waits for: the protocol, the ethics and registration records and the data QC.
 ANALYSIS_GATES = (PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE, DATA_GATE)
+#: What a pre-specified analysis of an experiment or intervention waits for: the allocation record too.
+TRIAL_ANALYSIS_GATES = (PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE, ALLOCATION_GATE, DATA_GATE)
 _OPERATOR = '"<operator name>"'
 
 TELEMETRY_NOTE = "No telemetry is recorded for the study steps yet"
@@ -563,6 +581,113 @@ def _deposit_gate(ctx: Context) -> dict[str, str]:
     return {"status": "ACTIVE" if started else "PENDING", "detail": owed[0][1]}
 
 
+# ----- the experiment or intervention (experiment-intervention)
+
+TRIAL_KIND = "experiment-intervention"
+HUMAN_TRIAL, FIELD_EXPERIMENT = "human-trial", "field-experiment"
+_NO_VARIANT = "No variant agreed yet, treated as a trial with people (the stricter case): {detail}"
+
+
+def trial_variant(root: Path) -> tuple[str, bool]:
+    """(variant, assumed) of an experiment-intervention workspace: the variant
+    the operator agreed (``human-trial`` or ``field-experiment``), else
+    ``human-trial`` with ``assumed`` true: no type agreed, another line's type,
+    a stale agreement or the type agreed without its variant get the stricter
+    rules (a prospective registration and a signed-off flow), and the gates
+    say so."""
+    agreed = agreed_type(root)
+    if agreed["line"] == TRIAL_KIND and not agreed["stale"] and agreed["variant"] in (HUMAN_TRIAL, FIELD_EXPERIMENT):
+        return agreed["variant"], False
+    return HUMAN_TRIAL, True
+
+
+def _assumed(gate: dict[str, str], assumed: bool) -> dict[str, str]:
+    return {**gate, "detail": _NO_VARIANT.format(detail=gate["detail"])} if assumed else gate
+
+
+def _trial_registration_gate(ctx: Context) -> dict[str, str]:
+    """G-REGISTRATION of the line (decision J3). A field experiment keeps the
+    shared reading (any current registration, or not applicable). A trial with
+    people needs a current registration made on or before its first enrolment
+    (ICMJE): retrospective, unknown (no first-enrolment date) and not-applicable
+    records fail with their reason."""
+    variant, assumed = trial_variant(ctx.root)
+    shared = _record_gate(ctx, "registration")
+    if variant == FIELD_EXPERIMENT:
+        return shared
+    entry = ctx.module("records").gate_state(ctx.root, "registration")
+    if entry is None or entry.get("state") == "corrupt" or not entry.get("current"):
+        return _assumed(shared, assumed)
+    by = entry.get("by") or "?"
+    if entry.get("status") == "not-applicable":
+        out = {"status": "FAIL", "detail": (f"A trial with people must be registered on or before its first "
+                                            f"enrolment (ICMJE): a not-applicable record does not count (recorded "
+                                            f"by {by}: {entry.get('reason') or ''})")}
+        return _assumed(out, assumed)
+    registry, ident, date = entry.get("registry"), entry.get("id"), entry.get("date")
+    first = entry.get("first_enrolment")
+    if entry.get("retrospective") is True:
+        out = {"status": "FAIL", "detail": (f"Retrospective registration: {registry} ({ident}) on {date}, after the "
+                                            f"first enrolment on {first}; ICMJE requires a trial with people to be "
+                                            f"registered on or before its first enrolment, so the paper states it as "
+                                            f"retrospective (recorded by {by})")}
+    elif entry.get("retrospective") is None:
+        out = {"status": "FAIL", "detail": (f"Registered in {registry} ({ident}) on {date} with no first-enrolment "
+                                            f"date recorded: whether it was prospective cannot be checked, and ICMJE "
+                                            f"requires a trial with people to be registered on or before its first "
+                                            f"enrolment; record it again with --first-enrolment (recorded by {by})")}
+    else:
+        out = {"status": "PASS", "detail": (f"Registered in {registry} ({ident}) on {date}, on or before the first "
+                                            f"enrolment on {first} (prospective); recorded by {by}")}
+    return _assumed(out, assumed)
+
+
+_OPTIONAL_FLOW = "Optional for a field experiment (not blocking): {detail}"
+_NO_FLOW_KEPT = "no participant flow kept; the experimental units are reported in a table"
+
+
+def _trial_flow_gate(ctx: Context) -> dict[str, str]:
+    """G-FLOW of the line (decision J4): the shared sign-off, required for a
+    trial with people; for a field experiment it always passes (it never
+    blocks the writing) and says how the flow stands, if one is kept."""
+    variant, assumed = trial_variant(ctx.root)
+    shared = _flow_gate(ctx)
+    if variant != FIELD_EXPERIMENT:
+        return _assumed(shared, assumed)
+    if shared["status"] == "PASS":
+        return shared
+    kept = (ctx.root / "study" / "flow.json").is_file()
+    return {"status": "PASS", "detail": _OPTIONAL_FLOW.format(detail=shared["detail"] if kept else _NO_FLOW_KEPT)}
+
+
+_ALLOCATION_REASONS = {
+    "file-changed": "the allocation list changed since it was recorded",
+    "file-missing": "the allocation list is missing",
+    "file-unreadable": "the allocation list is unreadable",
+    "file-outside": "the recorded path of the allocation list leaves the workspace and is not read",
+    "protocol-amended": "the protocol was amended since it was recorded",
+    "protocol-changed": "the protocol changed after its approval and is not current",
+}
+
+
+def _allocation_gate(ctx: Context) -> dict[str, str]:
+    """G-ALLOCATION: ``records.allocation_state`` is current. It reads the
+    record (method, concealment, row count, hashes), never the list."""
+    state = ctx.module("records").allocation_state(ctx.root)
+    if state["state"] == "absent":
+        return {"status": "PENDING", "detail": "No allocation record yet (study_cli.py allocation record)"}
+    if state["state"] == "corrupt":
+        return {"status": "FAIL", "detail": f"The allocation record is unreadable: {state['message']}"}
+    if not state.get("current"):
+        reasons = "; ".join(_ALLOCATION_REASONS.get(reason, reason) for reason in state.get("reasons") or ())
+        return {"status": "ACTIVE", "detail": (f"Stale ({reasons}): the operator records the allocation again "
+                                               "against the current list and protocol (study_cli.py allocation "
+                                               "record)")}
+    return {"status": "PASS", "detail": (f"Allocation recorded by {state.get('by') or '?'}: method "
+                                         f"{state.get('method')}, {state.get('rows')} row(s); concealment: "
+                                         f"{state.get('concealment')}")}
+
+
 # ----- the measurement core (hardware and lab-simulation)
 
 
@@ -782,6 +907,12 @@ GATES: dict[str, Gate] = {gate.id: gate for gate in (
          "file; a file changed, added or missing since makes it stale until the new version is deposited and "
          "recorded again. Read from the registry; the board never records it. The writing starts after it.",
          "deposit", _deposit_gate, "datasets_cli"),
+    Gate(ALLOCATION_GATE, "Allocation Record Gate",
+         "The operator generated and concealed the allocation sequence with their own tool or service and recorded it "
+         "(study_cli.py allocation record --by <name>): the method, the concealment and the list's sha256 and row "
+         "count, bound to the current protocol lock. It stays current while the list is unchanged and the protocol "
+         "is not amended; the board reads the record, never the list. The pre-specified analyses wait for it.",
+         "allocation", _allocation_gate, "records"),
 )}
 
 #: The data-resource line's G-ETHICS: the ethics record plus the right to release the data.
@@ -792,6 +923,27 @@ RESOURCE_ETHICS = Gate(
     "resource: the own-data statement (datasets_cli.py own --by <name>) or a source licence decision that is "
     "allowed (datasets_cli.py license); an overridden or refused licence does not count, since a deposit "
     "redistributes the data.", "ethics_licence", _ethics_licence_gate, "records")
+
+#: The experiment-intervention line's G-REGISTRATION: prospective for a trial with people (J3).
+TRIAL_REGISTRATION = Gate(
+    REGISTRATION_GATE, "Prospective Registration Gate",
+    "The operator recorded the registration (registry, id, date, first enrolment) with study_cli.py registration "
+    "record --by <name>, bound to the current protocol lock. A trial with people (human-trial, and any workspace "
+    "with no variant agreed, the stricter case) passes only with a current registration made on or before its first "
+    "enrolment, as ICMJE requires: a retrospective registration, one with no first-enrolment date and a "
+    "not-applicable record fail, and the paper states a retrospective registration as such. A field experiment "
+    "passes with any current registration record, or one recorded as not applicable.",
+    "protocol_registration", _trial_registration_gate, "records")
+
+#: The experiment-intervention line's G-FLOW: required for a trial with people, optional for a field experiment (J4).
+TRIAL_FLOW = Gate(
+    FLOW_GATE, "Participant Flow Sign-off Gate",
+    "Required for a trial with people (human-trial, and any workspace with no variant agreed): the CONSORT 2025 "
+    "participant flow counts in study/flow.json are valid, paper/Figures/participant-flow.svg is drawn from them and "
+    "the operator signed them off (flow_cli.py signoff --by <name>); the writing starts after it. Optional for a "
+    "field experiment, which may report its experimental units in a table: it never blocks the writing, and a flow "
+    "that is kept is shown as it stands.",
+    "flow_units", _trial_flow_gate, "flow_cli")
 
 
 def gate_definition(table: "LineTable", gate_id: str) -> Gate:
@@ -985,6 +1137,50 @@ def _deposit(ctx: Context) -> dict[str, Any]:
         ("Deposit recorded and current (G-DEPOSIT, operator)", gate["status"], gate["detail"]),
         ("Repository declared (repository-url)", repository["status"], repository["detail"]),
     ]}
+
+
+# ----- the experiment-intervention steps
+
+
+def _gate_step(gate: dict[str, str]) -> str:
+    """A step whose state is one gate's: PASS, PENDING, or ACTIVE (started, stale or failed)."""
+    return gate["status"] if gate["status"] in ("PASS", "PENDING") else "ACTIVE"
+
+
+def _protocol_registration(ctx: Context) -> dict[str, Any]:
+    info = _study_protocol(ctx)
+    registration = ctx.gates[REGISTRATION_GATE]
+    info["subfases"].append(("Registration (G-REGISTRATION, operator)", registration["status"],
+                             registration["detail"]))
+    if info["status"] == "PASS":
+        info["status"] = "PASS" if registration["status"] == "PASS" else "ACTIVE"
+        info["detail"] = registration["detail"]
+    return info
+
+
+def _ethics_consent(ctx: Context) -> dict[str, Any]:
+    gate = ctx.gates[ETHICS_GATE]
+    return {"status": _gate_step(gate), "detail": gate["detail"], "subfases": [
+        ("Ethics approval and consent route (G-ETHICS, operator)", gate["status"], gate["detail"]),
+    ]}
+
+
+def _allocation(ctx: Context) -> dict[str, Any]:
+    gate, protocol = ctx.gates[ALLOCATION_GATE], ctx.gates[PROTOCOL_GATE]
+    return {"status": _gate_step(gate), "detail": gate["detail"], "subfases": [
+        ("Blocks, plots and sample size in the locked protocol (G-STUDY-PROTOCOL)", protocol["status"],
+         protocol["detail"]),
+        ("Allocation record (G-ALLOCATION, operator)", gate["status"], gate["detail"]),
+    ]}
+
+
+def _flow_units(ctx: Context) -> dict[str, Any]:
+    """The participant flow step; for a field experiment it never holds the
+    line: it passes with the optional gate's reading."""
+    info = _participant_flow(ctx)
+    if trial_variant(ctx.root)[0] == FIELD_EXPERIMENT and info["status"] != "PASS":
+        info.update(status="PASS", detail=ctx.gates[FLOW_GATE]["detail"], progress=None)
+    return info
 
 
 # ----- the hardware and lab-simulation steps
@@ -1849,6 +2045,146 @@ STEPS: dict[str, Step] = {step.id: step for step in (
          }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
 )}
 
+# ----- experiment-intervention (src/papersmith/templates/paper-flow-experiment-intervention.md.tpl)
+STEPS.update({step.id: step for step in (
+    Step("plausibility_intervention", "Plausibility and paper type", "Plausibility & Paper Type",
+         "The state of the art scouted around the idea, the plausibility report accepted by the operator, and the experiment-intervention paper type and its variant agreed with /paper-type: a trial with people (CONSORT 2025) or a field experiment (ARRIVE 2.0). The variant chooses the reporting checklist and whether the registration must be prospective and the participant flow signed off.",
+         ("read", "write", "http"), ("sota-pool/candidates.json", ".papersmith/paper_type.json"), "G-PAPER-TYPE", {
+             "skills": ["plausibility", "paper-type"],
+             "agent": "plausibility, paper-type-advisor & operator",
+             "actions": [
+                 _prompt("/plausibility", "Explore the plausibility of the idea", [
+                     "Write the idea in at least two sentences: the intervention, its comparator and the outcome it should change.",
+                     "The agent scouts about 25 SOTA references by their abstracts and grades the claims with verbatim quotes.",
+                     "Nothing moves on until you accept the report.",
+                 ], "E.g.: A reading programme raises reading scores in primary schools. We randomise two schools' classes to the programme or to usual teaching …",
+                     min_sentences=2),
+                 _prompt("/paper-type", "Agree the paper type and its variant", [
+                     "The agent scores the idea against the paper types and discusses its suggestion with you.",
+                     "You agree the variant: a trial with people (CONSORT 2025) or a field experiment with plots, crops or animals (ARRIVE 2.0).",
+                     "Until a variant is agreed the board applies the trial rules: a prospective registration and a signed-off participant flow.",
+                 ], "E.g.: discuss whether this is a trial with people or a field experiment.", optional=True),
+                 _redirect("View the paper types", "papertype", "Every paper type with its score, guideline and variants."),
+             ],
+         }, (("Candidate pool", "sota-pool/candidates.json"), ("Plausibility acceptance", ".papersmith/plausibility.json"),
+             ("Agreed paper type", ".papersmith/paper_type.json")), _plausibility_type),
+    Step("protocol_registration", "Protocol and registration", "Protocol & Registration (G-STUDY-PROTOCOL, G-REGISTRATION)",
+         "The protocol as managed revisions: the research question, the intervention and the comparator, exactly one primary outcome, the secondary outcomes and the harms, the design, the eligibility, the sample size with its justification and the analysis plan. The operator approves a revision, then records the registration; a trial with people is registered on or before its first enrolment.",
+         ("read", "write"), ("protocol/study-protocol-<slug>-vNN.md", "study/protocol.lock.json", "study/registration.json"),
+         PROTOCOL_GATE, {
+             "skills": ["study-protocol-deliberation"],
+             "agent": "study-protocol-deliberation & operator",
+             "actions": [
+                 _prompt("/study-protocol-deliberation", "Deliberate the protocol with the agent", [
+                     "The agent drafts the protocol with you as labelled fields: question, intervention and comparator, one primary outcome, secondary outcomes and harms, design, eligibility, sample size and analysis plan.",
+                     "The intervention, the comparator and the primary outcome are yours; the agent never invents data or a sample size from data it has not seen.",
+                     "Each accepted change is published as a new managed revision under protocol/.",
+                 ], "E.g.: draft the first protocol of the reading programme trial.", optional=True),
+                 _command(f"{STUDY_CLI} protocol status --root .", "Protocol lock status",
+                          "Whether the approved revision is current, changed or absent."),
+                 _command(f"{STUDY_CLI} protocol approve --root . --by {_OPERATOR}",
+                          "Approve the protocol (operator, G-STUDY-PROTOCOL)",
+                          "Only the operator approves; the approval pins the revision's sha256."),
+                 _command(f'{STUDY_CLI} protocol amend --root . --by {_OPERATOR} --reason "<why>"',
+                          "Record an amendment", "A change after the approval, with its reason; the methods report it."),
+                 _command(f'{STUDY_CLI} registration record --root . --by {_OPERATOR} --registry "<registry>" '
+                          f'--id "<registration id>" --date <YYYY-MM-DD> --first-enrolment <YYYY-MM-DD>',
+                          "Record the registration (operator, G-REGISTRATION)",
+                          "A trial with people passes only when registered on or before its first enrolment (ICMJE)."),
+                 _command(f'{STUDY_CLI} registration record --root . --by {_OPERATOR} --not-applicable --reason "<why>"',
+                          "Record that no registration applies (operator)",
+                          "For a field experiment without a registry; a trial with people must be registered."),
+             ],
+         }, (("Protocol revisions", "protocol/study-protocol-*.md"),
+             ("Protocol approval (G-STUDY-PROTOCOL)", "study/protocol.lock.json"),
+             ("Registration record (G-REGISTRATION)", "study/registration.json")),
+         _protocol_registration, ("records",)),
+    Step("ethics_consent", "Ethics and consent", "Ethics & Consent (G-ETHICS)",
+         "The approval of the ethics or animal ethics committee and the consent route, recorded by the operator against the approved protocol, or recorded as not applicable with the reason; an amendment of the protocol makes it stale.",
+         ("read", "write"), ("study/ethics.json",), ETHICS_GATE, {
+             "skills": [],
+             "agent": "operator",
+             "actions": [
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --committee "<committee>" '
+                          f'--code "<approval code>" --date <YYYY-MM-DD> --consent "<consent route>"',
+                          "Record the ethics approval (operator, G-ETHICS)",
+                          "The committee, the approval code, its date and the consent route."),
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --not-applicable --reason "<why>"',
+                          "Record that no ethics approval applies (operator)", "With the reason, in your words."),
+                 _command(f"{STUDY_CLI} status --root .", "Study records status",
+                          "The protocol, ethics and registration states and their warnings."),
+             ],
+         }, (("Ethics record (G-ETHICS)", "study/ethics.json"),), _ethics_consent, ("records",)),
+    Step("allocation", "Allocation", "Allocation, Blocks & Sample Size (G-ALLOCATION)",
+         "The operator generates the allocation sequence with their own tool or service, keeps it concealed and records it: the method, the concealment and the list's sha256 and row count, bound to the protocol lock. The assistant never generates, reads out or alters the sequence; a field experiment's blocks, plots and units are part of the locked protocol.",
+         ("read", "write"), ("study/allocation.json",), ALLOCATION_GATE, {
+             "skills": [],
+             "agent": "operator",
+             "actions": [
+                 _command(f'{STUDY_CLI} allocation record --root . --by {_OPERATOR} --file <allocation-list.csv> '
+                          '--method block --block-size <n> --concealment "<how the sequence was concealed>"',
+                          "Record the allocation (operator, G-ALLOCATION)",
+                          "Method simple, block, stratified, minimisation or cluster (--strata for stratified and minimisation); the list stays yours."),
+                 _command(f"{STUDY_CLI} allocation status --root .", "Allocation record status",
+                          "Whether the record is current or stale: the list changed or removed, or the protocol amended."),
+             ],
+         }, (("Allocation record (G-ALLOCATION)", "study/allocation.json"),
+             ("Protocol approval (G-STUDY-PROTOCOL)", "study/protocol.lock.json")), _allocation, ("records",)),
+    Step("intervention_followup", "Intervention and follow-up", "Intervention, Follow-up & Data Quality (G-DATA-QC)",
+         "The operator delivers the intervention and collects the follow-up data, registered with its data-use statement, described by a data dictionary, measured by a quality check against it and de-identified where the dictionary flags personal data. The assistant never generates or edits data.",
+         ("read", "write"), ("datasets/registry.json", "datasets/<slug>/dictionary.json", "datasets/<slug>/qc.json"),
+         DATA_GATE, copy.deepcopy(STEPS["data"].actions), STEPS["data"].evidence, _data, ("datasets_cli",)),
+    Step("prespecified_analysis", "Pre-specified analysis", "Pre-specified Analysis Log",
+         "Every analysis through the append-only, hash-chained log, after the allocation is recorded: a wrapped script or the operator's entry for a GUI tool. The label is computed, never chosen: confirmatory only for an outcome and plan entry of the current locked protocol, exploratory otherwise.",
+         ("read", "bash"), ("analysis/log.jsonl",), "G-ANALYSIS", {
+             "skills": [],
+             "agent": "analysis log & operator",
+             "actions": [
+                 _requires(_command(f"{ANALYSIS_CLI} run --root . --outcome <outcome-id> --input <data-file> "
+                                    "--output <result-file> -- <command>", "Run a logged analysis",
+                                    "Hashes the script, the inputs and the outputs and labels the run."),
+                           *TRIAL_ANALYSIS_GATES),
+                 _requires(_command(f'{ANALYSIS_CLI} record --root . --outcome <outcome-id> --by {_OPERATOR} '
+                                    '--tool "<tool name>"', "Record a GUI analysis (operator)",
+                                    "Your attested entry for an analysis run outside a script."), *TRIAL_ANALYSIS_GATES),
+                 _command(f"{ANALYSIS_CLI} status --root .", "Analysis log status",
+                          "The runs with their labels and the protocol outcomes still unanalysed."),
+             ],
+         }, (("Analysis log", "analysis/log.jsonl"),), _analysis, ("analysis_log",)),
+    Step("flow_units", "Flow of units", "Flow of Units (G-FLOW)",
+         "The CONSORT 2025 participant flow with one column per arm: the operator enters every count, the arithmetic is checked, the figure drawn and the operator signs it off; any later edit makes the sign-off stale. Required for a trial with people; a field experiment may keep it or report its experimental units in a table.",
+         ("read", "write"), ("study/flow.json", "paper/Figures/participant-flow.svg", "study/flow-signoffs.json"), FLOW_GATE, {
+             "skills": [],
+             "agent": "participant flow & operator",
+             "actions": [
+                 _command(f"{FLOW_CLI} template consort-2025 --root . --arm <arm> --arm <arm> --write",
+                          "Write the empty CONSORT flow",
+                          "study/flow.json with one column per arm and no counts; you enter every count."),
+                 _command(f"{FLOW_CLI} check --root .", "Check the counts", "Every arithmetic problem of the flow."),
+                 _command(f"{FLOW_CLI} render --root .", "Draw the flow figure",
+                          "Writes paper/Figures/participant-flow.svg from valid counts."),
+                 _command(f"{FLOW_CLI} signoff --root . --by {_OPERATOR}", "Sign the flow off (operator, G-FLOW)",
+                          "Refused on invalid counts or a missing or stale figure."),
+                 _command(f"{FLOW_CLI} status --root .", "Participant flow status",
+                          "The counts' validity, the figure and the latest sign-off."),
+             ],
+         }, (("Participant flow counts", "study/flow.json"), ("Participant flow figure", "paper/Figures/participant-flow.svg"),
+             ("Participant flow sign-offs (G-FLOW)", "study/flow-signoffs.json")), _flow_units, ("flow_cli",)),
+    Step("reporting_intervention", "Reporting check and audit", "Reporting Check, Final Judge & Audit",
+         "The checklist of the agreed variant (consort-2025 for a trial with people, arrive-2 for a field experiment; item by item: satisfied, missing or needs judgment), the study checks of paper_cli.py verify, the empirical-study final judge and the cross-cutting audit; audits report, they never repair.",
+         ("read", "bash"), (".papersmith/audit.json",), "G-AUDIT", {
+             "skills": ["skill-audit"],
+             "agent": "checklist engine, skill-audit & smith audit",
+             "actions": [
+                 _command(f"{CHECKLIST_CLI} check --guideline consort-2025 --root .", "CONSORT 2025 checklist",
+                          "For a trial with people, item by item: satisfied, missing or needs judgment."),
+                 _command(f"{CHECKLIST_CLI} check --guideline arrive-2 --root .", "ARRIVE 2.0 checklist",
+                          "For a field experiment, item by item; a plot or crop experiment answers the design and analysis items that apply."),
+                 *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
+             ],
+         }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
+)})
+
 
 # --------------------------------------------------------------------------- line tables
 
@@ -1930,6 +2266,22 @@ LINE_TABLES: dict[str, LineTable] = {
         transversal="reporting_resource",
         gate_steps={PROTOCOL_GATE: "collection_protocol", DATA_GATE: "quality"},
         gate_defs={ETHICS_GATE: RESOURCE_ETHICS},
+    ),
+    # G-REGISTRATION and G-FLOW are the line's own: the agreed variant decides
+    # them (J3, J4), the stricter human-trial rules when none is agreed. The
+    # pre-specified analyses also wait for G-ALLOCATION (their actions).
+    TRIAL_KIND: LineTable(
+        kind=TRIAL_KIND,
+        steps=("harness", "plausibility_intervention", "protocol_registration", "ethics_consent", "allocation",
+               "intervention_followup", "prespecified_analysis", "flow_units", "writing", "paper",
+               "reporting_intervention"),
+        gates=(PROTOCOL_GATE, REGISTRATION_GATE, ETHICS_GATE, ALLOCATION_GATE, DATA_GATE, FLOW_GATE),
+        phase_gates={"prespecified_analysis": DATA_GATE, "writing": FLOW_GATE},
+        ungated=frozenset({"harness", "reporting_intervention"}),
+        transversal="reporting_intervention",
+        gate_steps={PROTOCOL_GATE: "protocol_registration", ETHICS_GATE: "ethics_consent",
+                    DATA_GATE: "intervention_followup"},
+        gate_defs={REGISTRATION_GATE: TRIAL_REGISTRATION, FLOW_GATE: TRIAL_FLOW},
     ),
 }
 
@@ -2178,6 +2530,7 @@ for _table in LINE_TABLES.values():
 
 
 __all__ = ["ANALYSIS_GATES", "DASHBOARD_SKILLS", "GATES", "LINE_TABLES", "LineTable", "MODULES", "PEOPLE_GATES",
-           "RESOURCE_ETHICS", "STEPS", "Step", "TELEMETRY_NOTE", "agreed_type", "artifacts", "board", "board_for",
-           "checklist_detail", "gate_definition", "load_module", "own_datasets", "resource_datasets",
-           "section_metadata", "stage_for", "telemetry", "with_people"]
+           "RESOURCE_ETHICS", "STEPS", "Step", "TELEMETRY_NOTE", "TRIAL_ANALYSIS_GATES", "TRIAL_FLOW",
+           "TRIAL_REGISTRATION", "agreed_type", "artifacts", "board", "board_for", "checklist_detail",
+           "gate_definition", "load_module", "own_datasets", "resource_datasets", "section_metadata", "stage_for",
+           "telemetry", "trial_variant", "with_people"]

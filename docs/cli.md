@@ -805,7 +805,18 @@ statement, the list's path, row count and short sha256, the protocol revision it
 bound to, who recorded it, and whether it is current or stale (the list changed,
 missing, unreadable or outside the workspace, or the protocol amended or not current),
 read only through `records.allocation_state`; the allocation list itself stays the
-operator's and concealed, and the tab never shows any of its values. A record
+operator's and concealed, and the tab never shows any of its values. The
+`experiment-intervention` board has eleven steps with the gates G-STUDY-PROTOCOL,
+G-REGISTRATION, G-ETHICS, G-ALLOCATION, G-DATA-QC and G-FLOW. A trial with people
+(`human-trial`, and any workspace with no variant agreed) needs a current
+registration made on or before its first enrolment (ICMJE): a retrospective
+registration, one without `--first-enrolment` and a not-applicable record fail
+with their reason; it also needs the signed-off CONSORT 2025 participant flow
+before writing. A field experiment passes with any current registration record,
+and its flow is optional and never blocks writing. G-ALLOCATION is current while
+the operator's allocation list and the protocol lock are unchanged; the board
+shows the record's method, row count and concealment, never the list, and the
+pre-specified analyses wait for it. A record
 that cannot be read turns only its section into `{"available": false, "code",
 "message"}`. The variant's reporting checklist runs the checklist engine, so it loads
 only when the operator clicks its button, from `GET /api/study/checklist` (another of
