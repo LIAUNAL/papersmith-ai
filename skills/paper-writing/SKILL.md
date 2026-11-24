@@ -2133,9 +2133,9 @@ workspace's line (`paper_kind` in `.papersmith/config.json`, `experimental`
 when unset) and judges a round without `rubric` on that line's rubric:
 `ml-conference` for `experimental`, `systematic-review` for `review`,
 `empirical-study` for the empirical lines (`observational-measurement`,
-`experiment-intervention`, `qualitative-participatory`),
-`measurement-science` for `hardware` and `lab-simulation`, `data-descriptor`
-for `data-resource`. A round whose rubric does not serve the
+`experiment-intervention`), `measurement-science` for `hardware` and
+`lab-simulation`, `data-descriptor` for `data-resource`, `qualitative-study`
+for `qualitative-participatory`. A round whose rubric does not serve the
 line is refused with `RUBRIC_KIND_MISMATCH`, whose detail names the line's
 rubric, and a line no rubric serves with `RUBRIC_LINE_UNKNOWN`; an unknown
 rubric id stays `REVIEW_ROUND_INVALID`. The mapping is data
@@ -2208,6 +2208,36 @@ scale, an empty justification and a gap without an item number. The shared
 fields keep their rules. The PDF tab's final-judge panel shows the overall
 rating, the five criteria and the datasheets gaps.
 
+**A qualitative-participatory paper is judged on the qualitative-study
+rubric.** The `paper-reviewer` returns a `"rubric": "qualitative-study"` round:
+no `overall`, `confidence` or `ratings`, but a `variant`
+(`qualitative-mixed`, `consensus-foresight` or `experience-report`) and the
+criteria that variant rates, each `{"rating", "justification"}` with `rating`
+one of `adequate`, `limited`, `inadequate`. Every variant rates
+`reflexivity` (the researchers' position and influence), `sampling_sufficiency`
+(who, why, and when sampling stopped), `analytic_rigour` (codebook, how the
+themes were derived, who signed them off), `quote_claim_fit` (every claim
+supported by verbatim data) and `transferability` (the context described so
+readers can judge); `consensus-foresight` adds `panel_composition`,
+`consensus_threshold` (pre-specified), `rounds_feedback` and
+`dissent_reported`; `experience-report` adds `context`, `what_was_done`,
+`what_it_taught` and `honest_limits` (no effect claimed without an
+evaluation). Only an experience report may rate `sampling_sufficiency` or
+`quote_claim_fit` `not applicable` (no participant data), the justification
+then the reason; a criterion of another variant is refused. The variant must
+be the one the operator agreed (`agreed_variant` in
+`.papersmith/paper_type.json`); a round that names none takes it, and is
+refused when none is agreed. The verb fills `checklist` with the variant's
+checklist (`srqr` for `qualitative-mixed`, which may name `coreq` instead;
+`accord` for `consensus-foresight`) and refuses any other; an experience
+report has no checklist (stored null) and lists no `checklist_gaps`. It
+derives `overall_rating` by the measurement-science rule (`not applicable`
+counts as neither); a round that states a different one is refused
+(`REVIEW_ROUND_INVALID`), as are a missing criterion, a rating outside the
+scale, an empty justification and a gap without an item number. The shared
+fields keep their rules. The PDF tab's final-judge panel shows the variant,
+the overall rating, the criteria and the checklist gaps.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
@@ -2222,7 +2252,11 @@ raw measurement files exist: calibration, uncertainty and agreement are judged
 against them. On a data-resource line note whether the data dictionary, the
 quality-check results and the deposit record (`datasets_cli.py deposit`) exist
 under `datasets/`: documentation, validation and access are judged against
-them.
+them. On a qualitative-participatory line note the agreed variant
+(`.papersmith/paper_type.json`) and whether the qualitative records exist
+(`skills/_core/qualitative/qual_cli.py`: the registered transcripts, the
+codebook versions and the theme sign-off, or the consensus rounds): the audit
+trail and the fit between quotes and claims are judged against them.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,

@@ -140,6 +140,33 @@ def descriptor_round(**overrides) -> dict:
     return data
 
 
+QUALITATIVE_COMMON = ("reflexivity", "sampling_sufficiency", "analytic_rigour", "quote_claim_fit",
+                      "transferability")
+QUALITATIVE_BLOCKS = {
+    "qualitative-mixed": (),
+    "consensus-foresight": ("panel_composition", "consensus_threshold", "rounds_feedback", "dissent_reported"),
+    "experience-report": ("context", "what_was_done", "what_it_taught", "honest_limits"),
+}
+
+
+def qualitative_round(variant: str = "qualitative-mixed", **overrides) -> dict:
+    """A qualitative-study round of one variant, its criteria `adequate` unless overridden."""
+    data = {
+        "rubric": "qualitative-study",
+        "variant": variant,
+        "recommendation": "Minor revision",
+        **{name: criterion(why="Methods 3.2 and the codebook v03.")
+           for name in QUALITATIVE_COMMON + QUALITATIVE_BLOCKS.get(variant, ())},
+        "checklist_gaps": ([] if variant == "experience-report" else
+                           [{"item": "6b", "gap": "The researcher's relationship to participants is not stated."},
+                            {"item": 9, "gap": "x"}]),
+        "revisions": [{"rank": 1, "text": "State the researchers' position towards the participants."}],
+        "report": "Qualitative-study appraisal: ...",
+    }
+    data.update(overrides)
+    return data
+
+
 class RubricRecordTests(unittest.TestCase):
     def setUp(self) -> None:
         # `paper_cli.py` refuses a paper outside the repository, so the workspace
@@ -428,13 +455,14 @@ class RubricRecordTests(unittest.TestCase):
         review = load_paper_review()
         self.assertEqual(list(review.RUBRICS),
                          ["ml-conference", "systematic-review", "empirical-study", "measurement-science",
-                          "data-descriptor"])
+                          "data-descriptor", "qualitative-study"])
         self.assertEqual(review.RUBRICS["ml-conference"].lines, ("experimental",))
         self.assertEqual(review.RUBRICS["systematic-review"].lines, ("review",))
         self.assertEqual(review.RUBRICS["empirical-study"].lines,
-                         ("observational-measurement", "experiment-intervention", "qualitative-participatory"))
+                         ("observational-measurement", "experiment-intervention"))
         self.assertEqual(review.RUBRICS["measurement-science"].lines, ("hardware", "lab-simulation"))
         self.assertEqual(review.RUBRICS["data-descriptor"].lines, ("data-resource",))
+        self.assertEqual(review.RUBRICS["qualitative-study"].lines, ("qualitative-participatory",))
         for rubric_id, rubric in review.RUBRICS.items():
             for line in rubric.lines:
                 self.assertEqual(review.rubric_for_line(line), rubric_id)
@@ -774,6 +802,196 @@ class RubricRecordTests(unittest.TestCase):
         self.assertEqual(self.rounds()[1]["items"][0]["item"], "Report the inter-annotator agreement of the labels.")
 
 
+    # --- the qualitative-study rubric (K6) -------------------------------------
+
+    def agree_variant(self, variant, type_id: str = "qualitative-participatory") -> None:
+        """Write `.papersmith/paper_type.json` as `paper_type_cli.py agree` leaves it."""
+        path = self.root / ".papersmith" / "paper_type.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"scores": [], "suggested": type_id, "agreed": type_id,
+                                    "agreed_variant": variant, "agreed_by": "op"}), encoding="utf-8")
+
+    def test_qualitative_participatory_is_judged_on_qualitative_study(self) -> None:
+        self.set_line("qualitative-participatory")
+        for other in (empirical_round(), measurement_round(), descriptor_round()):
+            with self.subTest(rubric=other["rubric"]):
+                self.assertRefusedUnchanged(other, 'the line\'s rubric is "qualitative-study"',
+                                            code="RUBRIC_KIND_MISMATCH")
+        data = qualitative_round()
+        del data["rubric"]
+        code, out = self.record(data)
+        self.assertEqual((code, out["status"]), (0, "ok"), out)
+        self.assertEqual(self.rounds()[0]["rubric"], "qualitative-study")
+        self.file.unlink()
+        for line, expected in (("observational-measurement", "empirical-study"), ("data-resource", "data-descriptor"),
+                               ("experimental", "ml-conference")):
+            with self.subTest(line=line):
+                self.set_line(line)
+                self.assertRefusedUnchanged(qualitative_round(), f'the line\'s rubric is "{expected}"',
+                                            code="RUBRIC_KIND_MISMATCH")
+
+    def test_a_round_of_each_variant_is_stored_with_its_criteria_derived_overall_and_checklist(self) -> None:
+        self.set_line("qualitative-participatory")
+        cases = (("qualitative-mixed", "srqr"), ("consensus-foresight", "accord"), ("experience-report", None))
+        for variant, checklist in cases:
+            with self.subTest(variant=variant):
+                self.file.unlink(missing_ok=True)
+                code, out = self.record(qualitative_round(variant, transferability=criterion("limited", "  Site?  ")))
+                self.assertEqual((code, out["status"], out["round"], out["pending_revisions"]), (0, "ok", 1, 1), out)
+                entry = self.rounds()[0]
+                criteria = QUALITATIVE_COMMON + QUALITATIVE_BLOCKS[variant]
+                self.assertEqual(list(entry), ["round", "date", "rubric", "recommendation", "variant", *criteria,
+                                               "overall_rating", "checklist", "checklist_gaps", "items",
+                                               "revisions", "excluded", "report"])
+                self.assertEqual((entry["rubric"], entry["variant"]), ("qualitative-study", variant))
+                self.assertEqual(entry["reflexivity"], criterion(why="Methods 3.2 and the codebook v03."))
+                self.assertEqual(entry["transferability"], {"rating": "limited", "justification": "Site?"})
+                self.assertEqual(entry["overall_rating"], "minor concerns")
+                self.assertEqual(entry["checklist"], checklist)
+                self.assertEqual(len(entry["checklist_gaps"]), 0 if checklist is None else 2)
+                for absent in ("overall", "confidence", "ratings", "amstar2", "risk_of_bias", "protocol_adherence",
+                               "design_validity", "agreement", "documentation_completeness"):
+                    self.assertNotIn(absent, entry)
+
+    def test_a_qualitative_mixed_round_may_name_coreq_instead_of_srqr(self) -> None:
+        self.set_line("qualitative-participatory")
+        code, _ = self.record(qualitative_round(checklist="coreq"))
+        self.assertEqual((code, self.rounds()[0]["checklist"]), (0, "coreq"))
+        self.file.unlink()
+        code, _ = self.record(qualitative_round(checklist="srqr"))
+        self.assertEqual((code, self.rounds()[0]["checklist"]), (0, "srqr"))
+
+    def test_the_qualitative_overall_rating_follows_the_stated_rule(self) -> None:
+        self.set_line("qualitative-participatory")
+        cases = [
+            ("qualitative-mixed", {}, "sound"),
+            ("qualitative-mixed", {"reflexivity": "limited"}, "minor concerns"),
+            ("qualitative-mixed", {"quote_claim_fit": "inadequate", "reflexivity": "limited"}, "major concerns"),
+            ("consensus-foresight", {"dissent_reported": "limited"}, "minor concerns"),
+            ("consensus-foresight", {"consensus_threshold": "inadequate"}, "major concerns"),
+            ("experience-report", {"honest_limits": "inadequate"}, "major concerns"),
+            ("experience-report", {"quote_claim_fit": "not applicable", "sampling_sufficiency": "not applicable"},
+             "sound"),
+            ("experience-report", {"quote_claim_fit": "not applicable", "what_it_taught": "limited"},
+             "minor concerns"),
+        ]
+        for variant, ratings, expected in cases:
+            with self.subTest(variant=variant, ratings=ratings):
+                self.file.unlink(missing_ok=True)
+                code, out = self.record(qualitative_round(variant, **{k: criterion(v) for k, v in ratings.items()}))
+                self.assertEqual((code, self.rounds()[0]["overall_rating"]), (0, expected), out)
+
+    def test_an_asserted_qualitative_overall_rating_must_match_the_rule(self) -> None:
+        self.set_line("qualitative-participatory")
+        self.assertRefusedUnchanged(
+            qualitative_round(analytic_rigour=criterion("inadequate"), overall_rating="sound"),
+            'overall_rating "sound" does not match the rule: major concerns')
+        code, _ = self.record(qualitative_round(analytic_rigour=criterion("inadequate"),
+                                                overall_rating="major concerns"))
+        self.assertEqual((code, self.rounds()[0]["overall_rating"]), (0, "major concerns"))
+
+    def test_every_criterion_of_the_variant_needs_a_rating_on_its_scale_and_a_justification(self) -> None:
+        self.set_line("qualitative-participatory")
+        for variant, block in QUALITATIVE_BLOCKS.items():
+            for name in QUALITATIVE_COMMON + block:
+                with self.subTest(variant=variant, name=name):
+                    self.assertRefusedUnchanged(qualitative_round(variant, **{name: None}), f"{name} must be an object")
+                    self.assertRefusedUnchanged(qualitative_round(variant, **{name: criterion("fine")}),
+                                                f"{name}.rating must be one of adequate, limited, inadequate")
+                    self.assertRefusedUnchanged(qualitative_round(variant, **{name: criterion(why=" ")}),
+                                                f"{name} needs a non-empty justification")
+
+    def test_not_applicable_only_for_sampling_and_quotes_in_an_experience_report(self) -> None:
+        self.set_line("qualitative-participatory")
+        for variant, block in QUALITATIVE_BLOCKS.items():
+            for name in QUALITATIVE_COMMON + block:
+                if variant == "experience-report" and name in ("sampling_sufficiency", "quote_claim_fit"):
+                    continue
+                with self.subTest(variant=variant, name=name):
+                    self.assertRefusedUnchanged(qualitative_round(variant, **{name: criterion("not applicable")}),
+                                                f"{name}.rating must be one of adequate, limited, inadequate")
+        self.assertRefusedUnchanged(
+            qualitative_round("experience-report", quote_claim_fit=criterion("not applicable", "")),
+            "quote_claim_fit needs a non-empty justification (the reason when not applicable)")
+        self.assertRefusedUnchanged(
+            qualitative_round("experience-report", sampling_sufficiency=criterion("fine")),
+            "sampling_sufficiency.rating must be one of adequate, limited, inadequate, not applicable")
+        code, _ = self.record(qualitative_round("experience-report",
+                                                quote_claim_fit=criterion("not applicable", "No participant data.")))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.rounds()[0]["quote_claim_fit"],
+                         {"rating": "not applicable", "justification": "No participant data."})
+
+    def test_another_variants_criteria_are_refused(self) -> None:
+        self.set_line("qualitative-participatory")
+        self.assertRefusedUnchanged(qualitative_round(panel_composition=criterion()),
+                                    "panel_composition does not apply to the qualitative-mixed variant")
+        self.assertRefusedUnchanged(qualitative_round("consensus-foresight", honest_limits=criterion()),
+                                    "honest_limits does not apply to the consensus-foresight variant")
+        self.assertRefusedUnchanged(qualitative_round("experience-report", rounds_feedback=criterion()),
+                                    "rounds_feedback does not apply to the experience-report variant")
+
+    def test_the_variant_is_declared_or_agreed_and_never_contradicts_the_agreed_one(self) -> None:
+        self.set_line("qualitative-participatory")
+        for value in ("delphi", "", 3, None):
+            with self.subTest(variant=value):
+                self.assertRefusedUnchanged(qualitative_round(variant=value),
+                                            "variant must be one of qualitative-mixed, consensus-foresight, "
+                                            "experience-report")
+        missing = qualitative_round()
+        del missing["variant"]
+        self.assertRefusedUnchanged(missing, "no variant is agreed in .papersmith/paper_type.json")
+        self.agree_variant("consensus-foresight")
+        self.assertRefusedUnchanged(qualitative_round("qualitative-mixed"),
+                                    'variant "qualitative-mixed" is not the agreed variant "consensus-foresight"')
+        data = qualitative_round("consensus-foresight")
+        del data["variant"]
+        code, out = self.record(data)
+        self.assertEqual((code, self.rounds()[0]["variant"], self.rounds()[0]["checklist"]),
+                         (0, "consensus-foresight", "accord"), out)
+        self.file.unlink()
+        # A variant recorded for another type, or none, leaves the round's own declaration in charge.
+        for variant, type_id in (("observational", "observational-measurement"), (None, "qualitative-participatory")):
+            with self.subTest(agreed=(type_id, variant)):
+                self.agree_variant(variant, type_id)
+                code, _ = self.record(qualitative_round("experience-report"))
+                self.assertEqual((code, self.rounds()[0]["variant"]), (0, "experience-report"))
+                self.file.unlink()
+        (self.root / ".papersmith" / "paper_type.json").write_text("{not json", encoding="utf-8")
+        self.assertRefusedUnchanged(missing, "no variant is agreed in .papersmith/paper_type.json")
+
+    def test_qualitative_checklist_and_gaps_follow_the_variant(self) -> None:
+        self.set_line("qualitative-participatory")
+        for variant, other, allowed in (("qualitative-mixed", "accord", '"srqr", "coreq"'),
+                                        ("qualitative-mixed", "STROBE", '"srqr", "coreq"'),
+                                        ("consensus-foresight", "srqr", '"accord"')):
+            with self.subTest(variant=variant, checklist=other):
+                self.assertRefusedUnchanged(qualitative_round(variant, checklist=other),
+                                            f"checklist must be one of the {variant} variant's checklists {allowed}")
+        self.assertRefusedUnchanged(qualitative_round("experience-report", checklist="srqr"),
+                                    "the experience-report variant has no reporting checklist")
+        self.assertRefusedUnchanged(
+            qualitative_round("experience-report", checklist_gaps=[{"item": 3, "gap": "x"}]),
+            "checklist_gaps must be empty: the experience-report variant has no reporting checklist")
+        self.assertRefusedUnchanged(qualitative_round(checklist_gaps=[{"item": "a12", "gap": "x"}]),
+                                    "checklist_gaps[1] needs an item number")
+        self.assertRefusedUnchanged(qualitative_round(checklist_gaps="none"), "checklist_gaps must be a list")
+        code, _ = self.record(qualitative_round(checklist_gaps=[]))
+        self.assertEqual((code, self.rounds()[0]["checklist_gaps"]), (0, []))
+
+    def test_the_shared_fields_still_apply_to_a_qualitative_round(self) -> None:
+        self.set_line("qualitative-participatory")
+        self.assertRefusedUnchanged(qualitative_round(report=""), "report must be non-empty text")
+        self.assertRefusedUnchanged(qualitative_round(recommendation=""), "recommendation must be non-empty text")
+        self.record(qualitative_round())
+        self.assertRefusedUnchanged(qualitative_round(), "[1]", code="REVIEW_ITEMS_MISSING")
+        code, out = self.record(qualitative_round(items=[{"rank": 1, "verdict": "resolved", "evidence": "4.1."}],
+                                                  revisions=[]))
+        self.assertEqual((code, out["round"]), (0, 2))
+        self.assertEqual(self.rounds()[1]["items"][0]["item"],
+                         "State the researchers' position towards the participants.")
+
+
 HARNESS = r"""
 const fs = require('fs');
 const els = {};
@@ -915,6 +1133,46 @@ class RubricPanelTests(unittest.TestCase):
         older = render({"status": "ok", "rounds": [entry, {**entry, "round": 3}]})
         self.assertIn("review.descriptor.overall.major_concerns · Major revision", older)
 
+    def test_a_qualitative_round_renders_its_variant_criteria_escaped(self) -> None:
+        common = {name: {"rating": "adequate", "justification": f"{name} ok"} for name in QUALITATIVE_COMMON}
+        entry = {"round": 2, "rubric": "qualitative-study", "variant": "consensus-foresight",
+                 "recommendation": "Major revision", **common,
+                 "reflexivity": {"rating": "limited", "justification": "<b>insider</b> role"},
+                 "panel_composition": {"rating": "adequate", "justification": "21 experts."},
+                 "consensus_threshold": {"rating": "inadequate", "justification": "<i>Set after round 1</i>"},
+                 "rounds_feedback": {"rating": "adequate", "justification": "Medians fed back."},
+                 "dissent_reported": {"rating": "limited", "justification": "Non-consensus items omitted."},
+                 "overall_rating": "major concerns", "checklist": "accord",
+                 "checklist_gaps": [{"item": "5b", "gap": "<script>k</script>"}], "report": "r"}
+        html = render({"status": "ok", "rounds": [entry]})
+        for fragment in ("review.rubric.qualitative", "review.qualitative.overall",
+                         "review.qualitative.overall.major_concerns", "review.qualitative.variant",
+                         "review.qualitative.variant.consensus_foresight", "review.qualitative.criteria",
+                         "review.qualitative.criterion", "review.qualitative.rating",
+                         "review.qualitative.justification",
+                         *(f"review.qualitative.criterion.{n}" for n in QUALITATIVE_COMMON),
+                         *(f"review.qualitative.criterion.{n}" for n in QUALITATIVE_BLOCKS["consensus-foresight"]),
+                         "review.qualitative.rating.adequate", "review.qualitative.rating.limited",
+                         "review.qualitative.rating.inadequate", "review.qualitative.gaps",
+                         "review.qualitative.item", "review.qualitative.gap", "accord", "5b",
+                         "&lt;b&gt;insider&lt;/b&gt;", "&lt;i&gt;Set after round 1&lt;/i&gt;", "&lt;script&gt;k"):
+            self.assertIn(fragment, html)
+        for absent in ("<b>insider", "<script>k", "/6", "review.amstar2", "review.empirical", "review.measurement",
+                       "review.descriptor", "review.qualitative.criterion.honest_limits"):
+            self.assertNotIn(absent, html)
+        older = render({"status": "ok", "rounds": [entry, {**entry, "round": 3}]})
+        self.assertIn("review.qualitative.overall.major_concerns · Major revision", older)
+        report = {**{k: v for k, v in entry.items() if k not in QUALITATIVE_BLOCKS["consensus-foresight"]},
+                  "variant": "experience-report", "checklist": None, "checklist_gaps": [],
+                  "quote_claim_fit": {"rating": "not applicable", "justification": "No participant data."},
+                  **{n: {"rating": "adequate", "justification": "j"} for n in QUALITATIVE_BLOCKS["experience-report"]}}
+        html = render({"status": "ok", "rounds": [report]})
+        for fragment in ("review.qualitative.variant.experience_report", "review.qualitative.rating.not_applicable",
+                         *(f"review.qualitative.criterion.{n}" for n in QUALITATIVE_BLOCKS["experience-report"])):
+            self.assertIn(fragment, html)
+        for absent in ("review.qualitative.gaps", "review.qualitative.criterion.panel_composition", "null"):
+            self.assertNotIn(absent, html)
+
     def test_the_ml_and_review_renderings_are_unchanged(self) -> None:
         ml = {"round": 1, "date": "2026-01-01", "overall": 4, "confidence": 3, "recommendation": "Accept",
               "ratings": {"Quality": 3}, "items": [{"item": "x", "verdict": "resolved", "evidence": "e"}],
@@ -930,6 +1188,7 @@ class RubricPanelTests(unittest.TestCase):
         self.assertNotIn("review.empirical", html)
         self.assertNotIn("review.measurement", html)
         self.assertNotIn("review.descriptor", html)
+        self.assertNotIn("review.qualitative", html)
 
 if __name__ == "__main__":
     unittest.main()

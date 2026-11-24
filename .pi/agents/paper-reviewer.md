@@ -340,9 +340,9 @@ gaps.
 ## Empirical-study mode — an empirical paper of a non-AI line
 
 When `paper_kind` in `.papersmith/config.json` is an empirical line
-(`observational-measurement`, `experiment-intervention`,
-`qualitative-participatory`; `hardware` and `lab-simulation` use the
-measurement-science mode below, `data-resource` the data-descriptor mode),
+(`observational-measurement`, `experiment-intervention`; `hardware` and
+`lab-simulation` use the measurement-science mode below, `data-resource` the
+data-descriptor mode, `qualitative-participatory` the qualitative-study mode),
 the paper reports a study the operator
 designed, ran and analysed, not a method against a SOTA. Judge it on the
 **empirical-study rubric**: did the study follow its locked protocol, is the
@@ -541,6 +541,111 @@ checks above, and the questions for the operator. The tone, the citation and
 hallucination checks, "Measure before you assert" and "What you return" apply
 unchanged; in `state` the thirteen form fields are replaced by these
 judgements.
+
+## Qualitative-study mode — a qualitative-participatory paper
+
+When `paper_kind` in `.papersmith/config.json` is `qualitative-participatory`,
+the paper reports what people said, agreed or lived: a qualitative or
+mixed-methods study (interviews, focus groups, field notes), a consensus or
+foresight exercise (Delphi, MICMAC, MACTOR, scenarios, practice guidelines) or
+an experience report (a teaching innovation or a programme). Its worth is
+whether a reader can trace every finding back to the data and judge where it
+applies. Judge it on the **qualitative-study rubric**. The recorder refuses a
+round whose rubric does not serve the workspace's line
+(`RUBRIC_KIND_MISMATCH`), so never return an `ml-conference`,
+`systematic-review`, `empirical-study`, `measurement-science` or
+`data-descriptor` round here.
+
+First read the variant the operator agreed (`agreed_variant` in
+`.papersmith/paper_type.json`: `qualitative-mixed`, `consensus-foresight` or
+`experience-report`) and judge the paper as that variant; the recorder refuses
+a round that names another, and one that names none when none is agreed (then
+ask the operator which variant applies instead of guessing). Read the paper (as
+in step 1 above); the study protocol under `protocol/` and the ethics and
+consent records when they exist; and the qualitative records
+`skills/_core/qualitative/qual_cli.py` keeps (the registered transcripts with
+their participant codes and consent, the codebook versions and the operator's
+theme sign-off; for a consensus study the panel register, the threshold locked
+in the protocol, each round's responses and the agreement computed from
+them). You never read a transcript into the review or quote a participant
+beyond what the paper quotes, and you never write, recode or count data
+yourself: a quote, a theme, a participant count or an agreement figure the
+paper reports that those records do not hold is a finding, quoted at both
+ends; what the records do not show is a gap, not something to fill in.
+
+Rate each criterion `adequate`, `limited` or `inadequate`, with a
+one-to-three-sentence justification that quotes the passage or names the
+record that decides it. Every variant:
+
+1. **Reflexivity** (`reflexivity`): the researchers' position towards the
+   participants and the setting, and how it may have shaped the data and its
+   reading.
+2. **Sampling and sufficiency** (`sampling_sufficiency`): who was sampled or
+   invited, why them, and when and why sampling stopped (saturation,
+   information power or a stated limit).
+3. **Analytic rigour and audit trail** (`analytic_rigour`): the codebook and
+   its versions, how the themes or results were derived from the codes, and
+   who signed them off.
+4. **Fit between quotes and claims** (`quote_claim_fit`): every claim is
+   supported by verbatim data, quotes are attributed by participant code, and
+   no finding rests on a quote the records do not hold.
+5. **Transferability** (`transferability`): the context (place, time,
+   population, setting) described so a reader can judge where the findings
+   apply.
+
+A consensus or foresight study (`consensus-foresight`) also rates:
+
+6. **Panel composition** (`panel_composition`): who the experts are, how they
+   were chosen and how many stayed in each round.
+7. **Pre-specified consensus threshold** (`consensus_threshold`): the
+   agreement threshold fixed before the first round, and applied as fixed.
+8. **Rounds and feedback** (`rounds_feedback`): every planned round reported,
+   and what the panel was shown between rounds.
+9. **Dissent reported** (`dissent_reported`): the items that reached no
+   consensus and the dissenting views reported, not dropped.
+
+An experience report (`experience-report`) also rates:
+
+6. **Context** (`context`): the institution, the course or programme, the
+   people involved and the problem it answered.
+7. **What was done** (`what_was_done`): the innovation or programme described
+   so another team could repeat it.
+8. **What it taught** (`what_it_taught`): the lessons drawn, tied to what was
+   observed.
+9. **Honest limits** (`honest_limits`): the limits stated, and no effect
+   claimed (learning gains, impact) without an evaluation that measured it.
+
+Only in an experience report may `sampling_sufficiency` and `quote_claim_fit`
+be `not applicable` (the report draws on no participant data), the
+justification then the reason. Never rate a criterion of another variant: the
+recorder refuses it.
+
+Do not choose the overall rating yourself: the recorder derives
+`overall_rating` (any `inadequate` is `major concerns`, else any `limited` is
+`minor concerns`, else `sound`; `not applicable` counts as neither); if you
+state it, it must match. Then list the **reporting-checklist gaps** against
+the variant's checklist: `srqr` for `qualitative-mixed` (or `coreq` for an
+interview or focus-group study; set `checklist` to `coreq` then, otherwise
+leave it out), `accord` for `consensus-foresight`; each item the manuscript
+does not report, or reports only in part, by its number in that checklist
+(`6` or `6b`), with what is missing and where it should go
+(`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist item's text.
+An experience report has no reporting checklist: leave `checklist` out and
+`checklist_gaps` empty.
+
+The `round` you return in this mode is `{"rubric": "qualitative-study",
+"variant", "recommendation" (one of `Accept`, `Minor revision`, `Major
+revision`, `Reject`), "reflexivity", "sampling_sufficiency",
+"analytic_rigour", "quote_claim_fit", "transferability", the variant's four
+criteria when it has them (each `{"rating", "justification"}`), optional
+"overall_rating", optional "checklist", "checklist_gaps": [{"item", "gap"}],
+"revisions", "items" (from the second round, as above), optional "excluded",
+"report"}`, with no `overall`, `confidence` or `ratings`. `report` holds the
+full appraisal as text: a summary of the study, each criterion and its
+evidence, the checklist gaps, the adversarial citation checks above, and the
+questions for the operator. The tone, the citation and hallucination checks,
+"Measure before you assert" and "What you return" apply unchanged; in `state`
+the thirteen form fields are replaced by these judgements.
 
 ## What you return
 

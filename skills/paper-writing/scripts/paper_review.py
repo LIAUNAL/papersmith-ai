@@ -55,9 +55,9 @@ key, exactly as before. For a review paper (`paper_kind: review`) it is
 - `prisma_gaps`: the PRISMA 2020 reporting gaps (Page et al., 2021, BMJ
   372:n71), `{"item": 1-27, "gap"}`.
 
-The empirical lines (observational-measurement, experiment-intervention,
-qualitative-participatory) are judged on `empirical-study`, which carries no
-`overall`, `confidence` or `ratings`:
+The empirical lines (observational-measurement, experiment-intervention) are
+judged on `empirical-study`, which carries no `overall`, `confidence` or
+`ratings`:
 
 - `protocol_adherence`: `{"primary_outcome", "analysis_plan", "deviations",
   "justification"}`, the first two one of `followed`, `deviated`, `no
@@ -122,6 +122,41 @@ may be `not applicable`):
 - `checklist`, filled here with `datasheets` (a round that names another is
   refused), and `checklist_gaps`, `{"item", "gap"}`, the item by its number in
   that checklist (`4` or `4b`).
+
+The qualitative-participatory line is judged on `qualitative-study`, which
+carries no `overall`, `confidence` or `ratings` either. A round is judged as
+one variant, `variant` one of `qualitative-mixed`, `consensus-foresight`,
+`experience-report`: the round may declare it, and it must then be the variant
+the operator agreed (`agreed_variant` in `.papersmith/paper_type.json`, when
+the agreed type is `qualitative-participatory`); a round that declares none
+takes the agreed one, and is refused when none is agreed. The variant decides
+which criteria the round rates, each `{"rating", "justification"}`, `rating`
+one of `adequate`, `limited`, `inadequate`:
+
+- every variant: `reflexivity` (the researchers' position and their influence
+  on the data and its reading), `sampling_sufficiency` (who was sampled, why,
+  and when sampling stopped), `analytic_rigour` (the audit trail: codebook
+  versions, how the themes or results were derived and who signed them off),
+  `quote_claim_fit` (every claim supported by verbatim data) and
+  `transferability` (the context described so a reader can judge where the
+  findings apply). In an experience report, `sampling_sufficiency` and
+  `quote_claim_fit` may also be `not applicable` (no participant data), the
+  justification then the reason;
+- `consensus-foresight` adds `panel_composition`, `consensus_threshold`
+  (pre-specified in the protocol), `rounds_feedback` (the rounds and the
+  feedback between them) and `dissent_reported` (dissent and non-consensus
+  items reported);
+- `experience-report` adds `context`, `what_was_done`, `what_it_taught` and
+  `honest_limits` (no effect claimed without an evaluation);
+- a criterion of another variant is refused;
+- `overall_rating`, derived by the measurement-science rule (`not applicable`
+  counts as neither). A round that asserts it must match the rule;
+- `checklist`, the variant's reporting checklist: `srqr` (or `coreq`, for an
+  interview or focus-group study) for `qualitative-mixed`, `accord` for
+  `consensus-foresight`, filled with the first when left out; an experience
+  report has none (stored null), so it names no checklist and lists no gaps;
+  `checklist_gaps`, `{"item", "gap"}`, the item by its number in that
+  checklist (`6` or `6b`).
 
 `recommendation`, `items`, `revisions`, `excluded` and `report` apply to every
 rubric.
@@ -188,6 +223,22 @@ MEASUREMENT_CHECKLISTS = {"hardware": "hardwarex", "lab-simulation": "gum-report
 DESCRIPTOR_CRITERIA = ("documentation_completeness", "collection_consent", "technical_validation",
                        "access_licence", "reuse_potential")
 DESCRIPTOR_CHECKLIST = "datasheets"
+#: The qualitative-study rubric: the criteria every variant rates, each
+#: variant's own criteria, the criteria a variant may rate `not applicable`,
+#: and each variant's reporting checklists (the first is the default).
+QUALITATIVE_COMMON = ("reflexivity", "sampling_sufficiency", "analytic_rigour", "quote_claim_fit",
+                      "transferability")
+QUALITATIVE_VARIANTS = {
+    "qualitative-mixed": (),
+    "consensus-foresight": ("panel_composition", "consensus_threshold", "rounds_feedback", "dissent_reported"),
+    "experience-report": ("context", "what_was_done", "what_it_taught", "honest_limits"),
+}
+QUALITATIVE_NOT_APPLICABLE = {"experience-report": ("sampling_sufficiency", "quote_claim_fit")}
+QUALITATIVE_CHECKLISTS = {"qualitative-mixed": ("srqr", "coreq"), "consensus-foresight": ("accord",),
+                          "experience-report": ()}
+QUALITATIVE_TYPE = "qualitative-participatory"
+#: The paper-type decision (`skills/_core/paper_types/decision.py`), relative to the workspace root.
+PAPER_TYPE = Path(".papersmith") / "paper_type.json"
 #: A reporting-checklist item number: `12`, `12b`, `6a`.
 CHECKLIST_ITEM = re.compile(r"[1-9][0-9]*[a-z]?")
 CONFIG = Path(".papersmith") / "config.json"
@@ -448,6 +499,34 @@ def _validate_checklist_gaps(gaps) -> list[str]:
             if not isinstance(gap, dict) or not _checklist_item(gap.get("item")) or not _text(gap.get("gap"))]
 
 
+def _rate_criteria(data: dict, criteria: tuple[str, ...], optional: tuple[str, ...] = ()) -> list[str]:
+    """Criteria rated on the measurement scale and the overall a round asserts.
+
+    `optional` names the criteria that may also be `not applicable`.
+    """
+    errors = []
+    rated = True
+    for name in criteria:
+        value = data.get(name)
+        if not isinstance(value, dict):
+            errors.append(f"{name} must be an object")
+            rated = False
+            continue
+        scale = MEASUREMENT_RATINGS + (("not applicable",) if name in optional else ())
+        if value.get("rating") not in scale:
+            errors.append(f"{name}.rating must be one of {', '.join(scale)}")
+            rated = False
+        if not _text(value.get("justification")):
+            reason = " (the reason when not applicable)" if name in optional else ""
+            errors.append(f"{name} needs a non-empty justification{reason}")
+    asserted = data.get("overall_rating")
+    if rated and asserted is not None:
+        level = overall_measurement_rating(data[name]["rating"] for name in criteria)
+        if asserted != level:
+            errors.append(f'overall_rating "{asserted}" does not match the rule: {level}')
+    return errors
+
+
 def _validate_rated_criteria(data: dict, context: dict, criteria: tuple[str, ...],
                              optional: str | None = None) -> list[str]:
     """A rubric of criteria rated on the measurement scale, its derived overall and checklist gaps.
@@ -457,25 +536,7 @@ def _validate_rated_criteria(data: dict, context: dict, criteria: tuple[str, ...
     errors = []
     if not _text(data.get("recommendation")):
         errors.append("recommendation must be non-empty text")
-    rated = True
-    for name in criteria:
-        value = data.get(name)
-        if not isinstance(value, dict):
-            errors.append(f"{name} must be an object")
-            rated = False
-            continue
-        scale = MEASUREMENT_RATINGS + (("not applicable",) if name == optional else ())
-        if value.get("rating") not in scale:
-            errors.append(f"{name}.rating must be one of {', '.join(scale)}")
-            rated = False
-        if not _text(value.get("justification")):
-            reason = " (the reason when not applicable)" if name == optional else ""
-            errors.append(f"{name} needs a non-empty justification{reason}")
-    asserted = data.get("overall_rating")
-    if rated and asserted is not None:
-        level = overall_measurement_rating(data[name]["rating"] for name in criteria)
-        if asserted != level:
-            errors.append(f'overall_rating "{asserted}" does not match the rule: {level}')
+    errors += _rate_criteria(data, criteria, (optional,) if optional else ())
     errors += _validate_checklist_gaps(data.get("checklist_gaps", []))
     checklist = data.get("checklist")
     if checklist is not None and checklist != context["checklist"]:
@@ -515,6 +576,81 @@ def _validate_data_descriptor(data: dict, context: dict) -> list[str]:
 
 def _shape_data_descriptor(data: dict, context: dict) -> dict:
     return _shape_rated_criteria(data, context, DESCRIPTOR_CRITERIA)
+
+
+def qualitative_basis(paper_dir: Path) -> dict:
+    """The variant the operator agreed for a qualitative-participatory paper, or None.
+
+    Read from `.papersmith/paper_type.json` (`agreed_variant`), only when the
+    agreed type is `qualitative-participatory` and the variant is one this
+    rubric knows; a missing or unreadable file reads as None.
+    """
+    try:
+        decision = json.loads((paper_dir.parent / PAPER_TYPE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        decision = None
+    if not isinstance(decision, dict) or decision.get("agreed") != QUALITATIVE_TYPE:
+        return {"variant": None}
+    variant = decision.get("agreed_variant")
+    return {"variant": variant if isinstance(variant, str) and variant in QUALITATIVE_VARIANTS else None}
+
+
+def _qualitative_variant(data: dict, context: dict) -> tuple[str | None, list[str]]:
+    """The variant a round is judged as, and why it cannot be determined."""
+    known = ", ".join(QUALITATIVE_VARIANTS)
+    declared, agreed = data.get("variant"), context["variant"]
+    if declared is None:
+        if agreed is None:
+            return None, [f"variant must be one of {known} (no variant is agreed in {PAPER_TYPE.as_posix()})"]
+        return agreed, []
+    if not isinstance(declared, str) or declared not in QUALITATIVE_VARIANTS:
+        return None, [f"variant must be one of {known}, not {json.dumps(declared)}"]
+    if agreed is not None and declared != agreed:
+        return None, [f'variant "{declared}" is not the agreed variant "{agreed}" ({PAPER_TYPE.as_posix()})']
+    return declared, []
+
+
+def _validate_qualitative_study(data: dict, context: dict) -> list[str]:
+    errors = []
+    if not _text(data.get("recommendation")):
+        errors.append("recommendation must be non-empty text")
+    variant, variant_errors = _qualitative_variant(data, context)
+    errors += variant_errors
+    if variant is None:
+        return errors + _rate_criteria(data, QUALITATIVE_COMMON)
+    errors += [f"{name} does not apply to the {variant} variant"
+               for other, block in QUALITATIVE_VARIANTS.items() if other != variant
+               for name in block if name in data]
+    errors += _rate_criteria(data, QUALITATIVE_COMMON + QUALITATIVE_VARIANTS[variant],
+                             QUALITATIVE_NOT_APPLICABLE.get(variant, ()))
+    errors += _validate_checklist_gaps(data.get("checklist_gaps", []))
+    allowed, checklist = QUALITATIVE_CHECKLISTS[variant], data.get("checklist")
+    if not allowed:
+        if checklist is not None:
+            errors.append(f"the {variant} variant has no reporting checklist: leave checklist out, "
+                          f"not {json.dumps(checklist)}")
+        if isinstance(data.get("checklist_gaps"), list) and data["checklist_gaps"]:
+            errors.append(f"checklist_gaps must be empty: the {variant} variant has no reporting checklist")
+    elif checklist is not None and checklist not in allowed:
+        errors.append(f"checklist must be one of the {variant} variant's checklists "
+                      f'{", ".join(json.dumps(c) for c in allowed)} (or be left out), not {json.dumps(checklist)}')
+    return errors
+
+
+def _shape_qualitative_study(data: dict, context: dict) -> dict:
+    variant = _qualitative_variant(data, context)[0]
+    criteria = QUALITATIVE_COMMON + QUALITATIVE_VARIANTS[variant]
+    rated = {name: {"rating": data[name]["rating"], "justification": data[name]["justification"].strip()}
+             for name in criteria}
+    allowed = QUALITATIVE_CHECKLISTS[variant]
+    return {
+        "recommendation": data["recommendation"].strip(),
+        "variant": variant,
+        **rated,
+        "overall_rating": overall_measurement_rating(c["rating"] for c in rated.values()),
+        "checklist": data.get("checklist") or (allowed[0] if allowed else None),
+        "checklist_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("checklist_gaps", [])],
+    }
 
 
 def _shape_ml_conference(data: dict, _context: dict) -> dict:
@@ -586,11 +722,13 @@ RUBRICS: dict[str, Rubric] = {
     "systematic-review": Rubric(_validate_systematic_review, _shape_systematic_review, ("review",),
                                 context=amstar2_basis),
     "empirical-study": Rubric(_validate_empirical_study, _shape_empirical_study,
-                              ("observational-measurement", "experiment-intervention", "qualitative-participatory")),
+                              ("observational-measurement", "experiment-intervention")),
     "measurement-science": Rubric(_validate_measurement_science, _shape_measurement_science,
                                   tuple(MEASUREMENT_CHECKLISTS), context=measurement_basis),
     "data-descriptor": Rubric(_validate_data_descriptor, _shape_data_descriptor, ("data-resource",),
                               context=descriptor_basis),
+    "qualitative-study": Rubric(_validate_qualitative_study, _shape_qualitative_study, (QUALITATIVE_TYPE,),
+                                context=qualitative_basis),
 }
 
 

@@ -22,7 +22,15 @@
  * overall rating, its five criteria (documentation completeness, collection
  * and consent, quality and technical validation, access, licence and
  * persistent identifier, reuse potential) and the gaps against the datasheets
- * checklist. Read-only: nothing here launches the judge or edits the paper.
+ * checklist. A round judged on the qualitative-study rubric
+ * (`rubric: "qualitative-study"`, the qualitative-participatory line) shows
+ * its variant, its derived overall rating, the five criteria every variant
+ * rates (reflexivity, sampling and sufficiency, analytic rigour and audit
+ * trail, fit between quotes and claims, transferability), its variant's own
+ * criteria (panel, consensus threshold, rounds and feedback, dissent for a
+ * consensus study; context, what was done, what it taught, honest limits for
+ * an experience report) and the gaps against the variant's checklist, when it
+ * has one. Read-only: nothing here launches the judge or edits the paper.
  *
  * Every value is escaped before insertion. Public surface (window):
  * refreshPaperReview(), PaperReviewPanel (the pure HTML builder, for tests).
@@ -174,9 +182,43 @@
       ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.descriptor.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.descriptor.item'), t('review.descriptor.gap')], gaps)}` : ''}`;
   }
 
-  const summary = (r) => (isDescriptor(r) ? descriptorSummary(r) : isMeasurement(r) ? measurementSummary(r)
+  // The qualitative-study rubric: the common criteria, the variant's own, the derived overall, the gaps.
+  const isQualitative = (r) => r.rubric === 'qualitative-study';
+  const QUALITATIVE_COMMON = ['reflexivity', 'sampling_sufficiency', 'analytic_rigour', 'quote_claim_fit',
+    'transferability'];
+  const QUALITATIVE_VARIANTS = {
+    'qualitative-mixed': [],
+    'consensus-foresight': ['panel_composition', 'consensus_threshold', 'rounds_feedback', 'dissent_reported'],
+    'experience-report': ['context', 'what_was_done', 'what_it_taught', 'honest_limits'],
+  };
+  const qualitativeText = (v) => t(`review.qualitative.overall.${key(v)}`);
+  const variantKey = (v) => String(v ?? '').replace(/[- ]/g, '_');
+
+  function qualitativeSummary(r) {
+    const names = QUALITATIVE_COMMON.concat(QUALITATIVE_VARIANTS[r.variant] || []);
+    const criteria = names.map((name) => {
+      const c = obj(r[name]);
+      return `<tr><td>${esc(t(`review.qualitative.criterion.${name}`))}</td>
+      <td>${keyed(RATING_BADGE, 'review.qualitative.rating', c.rating)}</td><td>${esc(c.justification || '')}</td></tr>`;
+    });
+    const gaps = list(r.checklist_gaps).map((g) => `<tr><td>${esc(g.item)}</td><td>${esc(g.gap || '')}</td></tr>`);
+    return `
+      <div class="review-round__head" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+        <strong>${esc(t('review.round'))} ${esc(r.round)}</strong>
+        <span class="panel__meta">${esc(r.date || '')}</span>
+        <span class="badge badge--info">${esc(t('review.rubric.qualitative'))}</span>
+        <span class="badge badge--info">${esc(t('review.qualitative.variant'))}: ${esc(t(`review.qualitative.variant.${variantKey(r.variant)}`))}</span>
+        <span class="badge ${OVERALL_BADGE[r.overall_rating] || 'badge--info'}">${esc(t('review.qualitative.overall'))}: ${esc(qualitativeText(r.overall_rating))}</span>
+      </div>
+      <p style="margin:0.4rem 0;"><strong>${esc(t('review.recommendation'))}:</strong> ${esc(r.recommendation || '')}</p>
+      <h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.qualitative.criteria'))}</h4>${table([t('review.qualitative.criterion'), t('review.qualitative.rating'), t('review.qualitative.justification')], criteria)}
+      ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.qualitative.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.qualitative.item'), t('review.qualitative.gap')], gaps)}` : ''}`;
+  }
+
+  const summary = (r) => (isQualitative(r) ? qualitativeSummary(r) : isDescriptor(r) ? descriptorSummary(r) : isMeasurement(r) ? measurementSummary(r)
     : isEmpirical(r) ? empiricalSummary(r) : isReview(r) ? reviewSummary(r) : roundSummary(r));
-  const headline = (r) => (isDescriptor(r) ? esc(descriptorText(r.overall_rating)) : isMeasurement(r) ? esc(measurementText(r.overall_rating))
+  const headline = (r) => (isQualitative(r) ? esc(qualitativeText(r.overall_rating))
+    : isDescriptor(r) ? esc(descriptorText(r.overall_rating)) : isMeasurement(r) ? esc(measurementText(r.overall_rating))
     : isEmpirical(r) ? esc(biasText(r.overall_risk_of_bias))
     : isReview(r) ? esc(levelText(r.overall_confidence)) : `${esc(r.overall)}/6`);
 
